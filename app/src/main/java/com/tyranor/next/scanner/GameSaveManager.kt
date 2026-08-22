@@ -12,7 +12,6 @@ import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
-import kotlin.math.abs
 
 class GameSaveManager(private val context: Context) {
     private val appContext = context.applicationContext
@@ -35,7 +34,7 @@ class GameSaveManager(private val context: Context) {
                     val internal = appContext.filesDir
                         ?: return SaveLocation(null, "应用内部存储目录不可用", false)
                     SaveLocation(
-                        File(File(File(internal, "krkr_mirror"), safeSaveName(root)), "savedata"),
+                        File(File(File(internal, "krkr_mirror"), EngineScanner.safeSaveName(root)), "savedata"),
                         "KRKR 独立存档目录",
                         true,
                     )
@@ -60,7 +59,7 @@ class GameSaveManager(private val context: Context) {
                     val external = appContext.getExternalFilesDir(null)
                         ?: return SaveLocation(null, "Tyrano 应用独立存储目录不可用", false)
                     SaveLocation(
-                        File(File(File(external, "save"), "tyrano"), safeSaveName(root)),
+                        File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root)),
                         "Tyrano 应用独立存档目录",
                         true,
                     )
@@ -130,7 +129,7 @@ class GameSaveManager(private val context: Context) {
         val target = when (game.engine) {
             EngineType.KIRIKIRI -> {
                 val internal = appContext.filesDir ?: return
-                File(File(internal, "krkr_mirror"), safeSaveName(root))
+                File(File(internal, "krkr_mirror"), EngineScanner.safeSaveName(root))
             }
             EngineType.ONS -> {
                 val external = appContext.getExternalFilesDir(null) ?: return
@@ -138,7 +137,7 @@ class GameSaveManager(private val context: Context) {
             }
             EngineType.TYRANO -> {
                 val external = appContext.getExternalFilesDir(null) ?: return
-                File(File(File(external, "save"), "tyrano"), safeSaveName(root))
+                File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root))
             }
             else -> return
         }
@@ -305,12 +304,6 @@ class GameSaveManager(private val context: Context) {
         val directory = File.createTempFile("save_zip_", "", appContext.cacheDir)
         if (!directory.delete() || !directory.mkdirs()) throw IOException("无法创建临时解压目录")
         return directory
-    }
-
-    private fun safeSaveName(rootPath: String): String {
-        val name = runCatching { File(rootPath).name.takeIf { it.isNotBlank() } }.getOrNull()
-            ?: abs(rootPath.hashCode()).toString()
-        return name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "default" }
     }
 
     companion object {

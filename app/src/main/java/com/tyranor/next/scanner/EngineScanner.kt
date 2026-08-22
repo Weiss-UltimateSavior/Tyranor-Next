@@ -6,7 +6,9 @@ import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Locale
+import kotlin.math.abs
 
 /**
  * 精简版游戏扫描器，识别逻辑移植自 RinneMobile 的 EngineDetector/GameScanner。
@@ -99,6 +101,13 @@ object EngineScanner {
     /** 从持久游戏库中移除指定游戏（在游戏页或首页删除游戏时调用，保证库与最近列表一致）。 */
     fun removeGame(context: Context, uri: String) {
         saveGames(context, loadGames(context).filterNot { it.uri == uri })
+    }
+
+    /** 目录名 → 安全文件名（用于应用内镜像/独立存档目录），非法字符替换为下划线。 */
+    fun safeSaveName(rootPath: String): String {
+        val name = runCatching { File(rootPath).name.takeIf { it.isNotBlank() } }.getOrNull()
+            ?: abs(rootPath.hashCode()).toString()
+        return name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "default" }
     }
 
     /**
