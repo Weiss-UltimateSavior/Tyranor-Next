@@ -108,6 +108,9 @@ fun GameScreen(modifier: Modifier = Modifier) {
         games = nextGames
         selectedGame = null
         EngineScanner.saveGames(context, nextGames)
+        // 最近记录/快捷启动同步持久化移除，避免切页取消 IO 清理协程后残留脏数据
+        EngineScanner.removeRecentGame(context, target.uri)
+        EngineScanner.removeQuickLaunch(context, target.uri)
         // 仅清理应用内数据（每游戏设置、最近记录、封面缓存、应用内存档镜像）；不触碰游戏文件
         scope.launch(Dispatchers.IO) {
             cleanupDeletedGame(context, target)

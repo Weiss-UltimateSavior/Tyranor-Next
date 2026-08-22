@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,12 +47,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.tyranor.next.scanner.EngineType
 import com.tyranor.next.scanner.GameSaveManager
 import com.tyranor.next.scanner.ScanGame
+import com.tyranor.next.scanner.ScanGameIntents
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TyranorNextTheme
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -64,10 +64,6 @@ class SaveManagementActivity : ComponentActivity() {
             statusBarStyle = androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
             navigationBarStyle = androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
         )
-        @Suppress("DEPRECATION")
-        window.statusBarColor = Color.TRANSPARENT
-        @Suppress("DEPRECATION")
-        window.navigationBarColor = Color.TRANSPARENT
 
         val game = intent.readScanGame()
         if (game == null) {
@@ -91,48 +87,17 @@ class SaveManagementActivity : ComponentActivity() {
     }
 
     companion object {
-        private const val EXTRA_TITLE = "extra_title"
-        private const val EXTRA_URI = "extra_uri"
-        private const val EXTRA_ENGINE = "extra_engine"
-        private const val EXTRA_LAUNCH_TARGET = "extra_launch_target"
-        private const val EXTRA_COVER_URI = "extra_cover_uri"
-        private const val EXTRA_VNDB_ID = "extra_vndb_id"
-        private const val EXTRA_METADATA_TITLE = "extra_metadata_title"
+        fun createIntent(context: Context, game: ScanGame): Intent =
+            ScanGameIntents.putGame(Intent(context, SaveManagementActivity::class.java), game)
 
-        fun createIntent(context: Context, game: ScanGame): Intent {
-            return Intent(context, SaveManagementActivity::class.java).apply {
-                putExtra(EXTRA_TITLE, game.title)
-                putExtra(EXTRA_URI, game.uri)
-                putExtra(EXTRA_ENGINE, game.engine.name)
-                putExtra(EXTRA_LAUNCH_TARGET, game.launchTarget)
-                game.coverUri?.let { putExtra(EXTRA_COVER_URI, it) }
-                game.vndbId?.let { putExtra(EXTRA_VNDB_ID, it) }
-                game.metadataTitle?.let { putExtra(EXTRA_METADATA_TITLE, it) }
-            }
-        }
-
-        private fun Intent.readScanGame(): ScanGame? {
-            val title = getStringExtra(EXTRA_TITLE) ?: return null
-            val uri = getStringExtra(EXTRA_URI) ?: return null
-            val engine = runCatching {
-                EngineType.valueOf(getStringExtra(EXTRA_ENGINE).orEmpty())
-            }.getOrDefault(EngineType.UNKNOWN)
-            return ScanGame(
-                title = title,
-                uri = uri,
-                engine = engine,
-                launchTarget = getStringExtra(EXTRA_LAUNCH_TARGET).orEmpty(),
-                coverUri = getStringExtra(EXTRA_COVER_URI),
-                vndbId = getStringExtra(EXTRA_VNDB_ID),
-                metadataTitle = getStringExtra(EXTRA_METADATA_TITLE),
-            )
-        }
+        private fun Intent.readScanGame(): ScanGame? = ScanGameIntents.getGame(this)
     }
 }
 
 @Composable
 private fun SaveManagementScreen(game: ScanGame) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf(manager.resolveSaveLocation(game)) }
     var fileCount by remember { mutableStateOf(manager.listSaveFiles(game).size) }
@@ -144,7 +109,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     }
 
     fun runSaveTask(block: suspend () -> String) {
-        CoroutineScope(Dispatchers.Main).launch {
+        scope.launch {
             val message = withContext(Dispatchers.IO) {
                 runCatching { block() }.getOrElse { it.message ?: "操作失败" }
             }

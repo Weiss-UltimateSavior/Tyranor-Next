@@ -130,7 +130,7 @@ object EngineLauncher {
                 }
                 if (ons.sharpness) {
                     args.add("--sharpness")
-                    args.add(ons.sharpnessValue)
+                    args.add(safeSharpnessValue(ons.sharpnessValue))
                 }
                 Intent(context, ONScripter::class.java).apply {
                     putStringArrayListExtra("gameargs", args)
@@ -389,6 +389,16 @@ object EngineLauncher {
         val name = runCatching { File(rootPath).name.takeIf { it.isNotBlank() } }.getOrNull()
             ?: abs(rootPath.hashCode()).toString()
         return name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "default" }
+    }
+
+    /** 与 OnsSettings.safeSharpness 一致：只接受 0.1~10.0 的数字，否则回退 "2"。 */
+    private fun safeSharpnessValue(value: String): String {
+        val v = value.trim()
+        if (v.isEmpty()) return "2"
+        val parsed = v.toDoubleOrNull() ?: return "2"
+        if (parsed.isNaN() || parsed.isInfinite()) return "2"
+        if (parsed < 0.1 || parsed > 10.0) return "2"
+        return v
     }
 
     /**
