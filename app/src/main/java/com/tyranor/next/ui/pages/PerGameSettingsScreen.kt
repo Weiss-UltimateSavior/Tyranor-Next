@@ -242,6 +242,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch("独立存档目录", globalTyScoped, tyScoped) { tyScoped = it }
                         }
                     }
+                    // PSP：PPSSPP 接入后补引擎级设置项
+                    EngineType.PSP -> { }
                 }
 
                 item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(12.dp)) }

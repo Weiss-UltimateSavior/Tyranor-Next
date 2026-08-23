@@ -117,5 +117,6 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.ONS -> "ONScripter，nscript.dat 与 .nsa 归档游戏"
     EngineType.TYRANO -> "TyranoBuilder，index.html 与 tyrano/ 脚本游戏"
     EngineType.ARTEMIS -> "Artemis，system.ini 与 .pfs 归档游戏"
+    EngineType.PSP -> "PPSSPP，.iso / .cso / .pbp 镜像"
     EngineType.UNKNOWN -> "未知引擎"
 }

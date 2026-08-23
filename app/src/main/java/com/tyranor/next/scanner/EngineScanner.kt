@@ -104,6 +104,31 @@ object EngineScanner {
         return name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "default" }
     }
 
+    /**
+     * PSP 存档根推导：从游戏真实路径逐级向上查找名为 "PSP" 的祖先目录。
+     * 候选包含游戏目录自身（镜像可直接放在 PSP 根部）；
+     * 特征确认要求其下存在 SAVEDATA/GAME/GAMES/ISO 子目录，
+     * 或任意 .iso/.cso/.pbp/.chd 镜像文件（全新部署尚无子目录时也能命中）。
+     * 命中即返回该目录作为 memstick 根（存档位于 …/PSP/SAVEDATA）；找不到返回 null。
+     */
+    fun derivePspMemstick(gameRealPath: String): String? {
+        var cur: File? = File(gameRealPath)
+        while (cur != null) {
+            // 从游戏目录自身开始逐级向上检查（镜像可能直接放在 PSP 根部）
+            if (cur.name.equals("PSP", ignoreCase = true)) {
+                val hasMarker = cur.listFiles()
+                    ?.any { it.isDirectory && (it.name.equals("SAVEDATA", true) ||
+                        it.name.equals("GAME", true) || it.name.equals("GAMES", true) ||
+                        it.name.equals("ISO", true)) } == true
+                if (hasMarker) return cur.absolutePath
+                // 名为 PSP 但无特征子目录：继续向上找（可能是同名但非根的目录）
+            }
+            cur = cur.parentFile
+        }
+        return null
+    }
+
+
 internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
         saveList(context, KEY_RECENT_GAMES, games)
 
@@ -199,6 +224,17 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
         return existing
     }
 
+    /** 新扫描根与已有根是否指向同一物理目录或互为父子（用于提示避免重复扫描）。 */
+    fun isDuplicateOrNestedRoot(context: Context, newUri: Uri): Boolean {
+        val newPath = safUriToPath(newUri.toString())?.trimEnd('/') ?: return false
+        if (newPath.isEmpty()) return false
+        return loadRoots(context).any { existing ->
+            val p = safUriToPath(existing)?.trimEnd('/') ?: return@any false
+            val a = newPath; val b = p
+            a == b || a.startsWith("$b/") || b.startsWith("$a/")
+        }
+    }
+
     fun removeRoot(context: Context, uri: Uri) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val existing = loadRoots(context).filterNot { it == uri.toString() }
@@ -254,6 +290,11 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
 
     // ============ 扫描游戏 ============
 
+    /** 去重键：优先用解析后的真实物理路径，同一目录经不同扫描根会得到不同 SAF URI，但真实路径相同。 */
+    private fun dedupKey(context: Context, game: ScanGame): String {
+        return safUriToPath(game.uri) ?: game.uri
+    }
+
     /** 全量扫描所有根目录（结果以本次扫描为准，用于首次/无数据场景）。 */
     suspend fun scanAll(context: Context): List<ScanGame> = withContext(Dispatchers.IO) {
         val all = mutableListOf<ScanGame>()
@@ -262,7 +303,7 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
             all += scanRoot(context, root, maxDepth)
         }
         val seen = mutableSetOf<String>()
-        all.filter { seen.add(it.uri) }
+        all.filter { seen.add(dedupKey(context, it)) }
     }
 
     /** 全量刷新游戏库：以当前扫描结果为准，移除已删除/改名路径的旧缓存条目。 */
@@ -293,8 +334,15 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
      */
     suspend fun incrementalScan(context: Context): List<ScanGame> = withContext(Dispatchers.IO) {
         val existing = loadGames(context)
-        val known = existing.mapTo(HashSet()) { it.uri }
+        // 已知游戏同时按 uri 与真实路径记录，避免同一目录经不同扫描根重复入库
+        val known = HashSet<String>()
         val seen = HashSet<String>()
+        existing.forEach {
+            known.add(it.uri)
+            safUriToPath(it.uri)?.let(known::add)
+            // 已有条目也占住去重键：新根下扫到的同一物理目录不再重复入库
+            seen.add(dedupKey(context, it))
+        }
         val found = mutableListOf<ScanGame>()
         val maxDepth = AppSettingsStore.getScanDepth(context)
         loadRoots(context).forEach { root ->
@@ -308,7 +356,7 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
                 scanRootIncrementalFile(File(path), 0, maxDepth, known, found)
             }
         }
-        existing + found.filter { seen.add(it.uri) }
+        existing + found.filter { seen.add(dedupKey(context, it)) }
     }
 
     /** 增量遍历：目录已在库中（已知游戏）→ 剪枝；识别为新游戏 → 记录并停止下钻。 */
@@ -494,6 +542,7 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
 
         val names = HashSet<String>()            // 小写名
         val xp3Files = mutableListOf<String>()
+        val pspFiles = mutableListOf<String>()
         var hasStartupTjs = false
         var hasConfigTjs = false
         var hasIndex = false
@@ -537,6 +586,11 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
                     lower == "onscript.nt2" || lower == "onscript.nt3" -> hasOnsScript = true
                 lower.endsWith(".nsa") || lower.endsWith(".sar") -> hasOnsArchive = true
                 lower.endsWith(".xp3") -> xp3Files.add(childRel)
+                lower.endsWith(".iso") || lower.endsWith(".cso") || lower.endsWith(".pbp") ||
+                    lower.endsWith(".chd") -> {
+                    // 粗校验：PSP 游戏镜像通常很大（≥10MB），避免把散落的小镜像误判为 PSP 游戏
+                    if (f.length() >= 10L * 1024L * 1024L) pspFiles.add(childRel)
+                }
             }
         }
         children.forEach { collect(it, "") }
@@ -559,6 +613,10 @@ internal fun saveRecentGames(context: Context, games: List<ScanGame>) =
         // ONS
         if (hasOnsScript || hasOnsArchive) {
             return Detection(EngineType.ONS, if (hasOnsScript) 90 else 70, "[游戏目录]")
+        }
+        // PSP（iso/cso/pbp 镜像文件）
+        if (pspFiles.isNotEmpty()) {
+            return Detection(EngineType.PSP, 90, pspFiles.first())
         }
         return r
     }

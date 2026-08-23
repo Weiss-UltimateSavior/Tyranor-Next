@@ -22,6 +22,7 @@ import com.tyranor.next.settings.EngineSettingsStore
 import com.tyranor.next.settings.PerGameSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.yuri.onscripter.ONScripter
+import org.ppsspp.ppsspp.PpssppActivity
 import java.io.File
 
 /**
@@ -38,6 +39,7 @@ object EngineLauncher {
         EngineType.ONS,
         EngineType.TYRANO,
         EngineType.ARTEMIS,
+        EngineType.PSP,
     )
 
     /** Artemis 补丁确认弹窗的用户选择：
@@ -192,6 +194,8 @@ object EngineLauncher {
 
             EngineType.ARTEMIS -> buildArtemisIntent(context, path, game, patchChoice)
 
+            EngineType.PSP -> buildPspIntent(context, path, game)
+
             EngineType.UNKNOWN -> Intent(context, TyranoActivity::class.java).apply {
                 putExtra("path", path)
                 putExtra("gamePath", path)
@@ -199,6 +203,7 @@ object EngineLauncher {
                 putExtra("launchTarget", game.launchTarget)
                 putExtra("type", "Tyrano")
             }
+
         }
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿，
@@ -477,6 +482,29 @@ object EngineLauncher {
             putExtra("engineLibName", libName)
             putExtra("artemisAutoFallback", auto)
             putExtra("artemisFallbackStage", stage)
+        }
+    }
+
+    /** PSP 启动：把 iso/cso/pbp 镜像交给内嵌的 PpssppActivity（PPSSPP）直接游玩。 */
+    private fun buildPspIntent(context: Context, path: String, game: ScanGame): Intent {
+        val target = if (game.launchTarget.isNotBlank() && game.launchTarget != "[游戏目录]") {
+            File(path, game.launchTarget)
+        } else {
+            File(path)
+        }
+        // 从游戏路径推导 memstick 根（…/PSP），使存档落在标准 PSP/SAVEDATA；
+        // 找不到标准结构时回退应用专属外部存储。
+        val memstick = EngineScanner.derivePspMemstick(path)
+            ?: context.getExternalFilesDir(null)?.let { ext ->
+                File(ext, "PSP").apply { mkdirs() }.absolutePath
+            }
+        memstick?.let { File(it).mkdirs() }
+        return Intent(context, PpssppActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            setDataAndType(Uri.fromFile(target), "application/octet-stream")
+            putExtra("path", target.absolutePath)
+            putExtra("gamePath", target.absolutePath)
+            putExtra("launcher_memstick", memstick)
         }
     }
 

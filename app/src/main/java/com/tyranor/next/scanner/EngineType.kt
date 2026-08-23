@@ -6,5 +6,6 @@ enum class EngineType(val displayName: String) {
     ONS("ONScripter"),
     TYRANO("Tyrano"),
     ARTEMIS("Artemis"),
+    PSP("PSP"),
     UNKNOWN("Unknown");
 }

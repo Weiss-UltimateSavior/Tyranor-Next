@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<color name="black">#FF000000</color>
+	<style name="ppsspp_style" parent="Theme.AppCompat.NoActionBar">
+		<item name="android:windowFullscreen">true</item>
+		<item name="android:windowNoTitle">true</item>
+		<item name="android:navigationBarColor">@color/black</item>
+	</style>
+	<style name="Theme.ProxyTransparent" parent="Theme.AppCompat.NoActionBar">
+		<item name="android:windowBackground">@android:color/transparent</item>
+		<item name="android:windowIsTranslucent">true</item>
+		<item name="android:windowNoTitle">true</item>
+	</style>
+</resources>

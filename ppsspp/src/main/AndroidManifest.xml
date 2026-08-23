@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:glEsVersion="0x00020000" />
+    <uses-feature android:name="android.hardware.screen.landscape" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 说明：不放行 RECORD_AUDIO / CAMERA / 定位等危险权限（PSP 外设模拟场景极少用），
+         避免合并进主应用后每次 adb 安装都触发设备端手动确认。 -->
+
+    <application>
+        <activity
+            android:name=".PpssppActivity"
+            android:configChanges="locale|keyboard|keyboardHidden|navigation|uiMode"
+            android:theme="@style/ppsspp_style"
+            android:launchMode="singleInstance"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="*/*" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.iso" />
+                <data android:pathPattern=".*\\..*\\.iso" />
+                <data android:pathPattern=".*\\.cso" />
+                <data android:pathPattern=".*\\..*\\.cso" />
+                <data android:pathPattern=".*\\.pbp" />
+                <data android:pathPattern=".*\\.ISO" />
+                <data android:pathPattern=".*\\.CSO" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ShortcutActivity"
+            android:label="@string/shortcut_name"
+            android:exported="true">
+            <intent-filter>
+                <category android:name="android.intent.category.DEFAULT" />
+                <action android:name="android.intent.action.CREATE_SHORTCUT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ImageResultProxyActivity"
+            android:theme="@style/Theme.ProxyTransparent"
+            android:launchMode="standard" />
+        <activity
+            android:name=".DocumentResultProxyActivity"
+            android:theme="@style/Theme.ProxyTransparent"
+            android:launchMode="standard" />
+    </application>
+</manifest>

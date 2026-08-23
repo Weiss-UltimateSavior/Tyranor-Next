@@ -179,7 +179,14 @@ fun GameScreen(modifier: Modifier = Modifier) {
                         android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
             }
-            // 保存根目录后立即全量扫描
+            // 保存根目录后立即扫描；重复/嵌套根提示
+            if (EngineScanner.isDuplicateOrNestedRoot(context, u)) {
+                android.widget.Toast.makeText(
+                    context,
+                    "该目录与已有扫描目录重复或互为子目录，可能产生重复条目",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
             EngineScanner.saveRoot(context, u)
             scanLibrary()
         }
@@ -565,7 +572,10 @@ internal fun GameActionsSheet(
                     }
                 }
             }
-            item { GameActionRow(R.drawable.ic_sheet_settings, "引擎设置", onClick = onEngineSettings) }
+            // PSP 暂无引擎级/单游戏设置项，隐藏入口避免打开空白页
+            if (game.engine != EngineType.PSP) {
+                item { GameActionRow(R.drawable.ic_sheet_settings, "引擎设置", onClick = onEngineSettings) }
+            }
             item { GameActionRow(R.drawable.ic_sheet_delete, "删除游戏", danger = true) { showDeleteConfirm = true } }
 
             launchError?.let {
@@ -1066,5 +1076,6 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.ONS -> Color(0xFF43A047)
     EngineType.TYRANO -> Color(0xFFC6443C)
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
+    EngineType.PSP -> Color(0xFF37474F)
     EngineType.UNKNOWN -> Color(0xFF607D8B)
 }

@@ -78,6 +78,20 @@ class GameSaveManager(private val context: Context) {
                 }
             }
             EngineType.ARTEMIS -> SaveLocation(File(root), "Artemis 游戏目录存档", true)
+                        EngineType.PSP -> {
+                // 内嵌 PPSSPP 的 memstick 从游戏真实路径推导（标准 …/PSP 结构）。
+                // Weiss 口径「只要存档」：管理目录收敛到 SAVEDATA（自动创建），
+                // 不把 SYSTEM 配置/其他即时存档卷进导出删除操作；描述附绝对路径便于排查。
+                val extFiles = appContext.getExternalFilesDir(null)
+                val memstick = EngineScanner.derivePspMemstick(root)
+                    ?: extFiles?.let { File(it, "PSP").apply { mkdirs() }.absolutePath }
+                val savedata = memstick?.let { File(it, "SAVEDATA").apply { mkdirs() } }
+                if (savedata == null) {
+                    SaveLocation(null, "PSP 应用外部存储不可用", false)
+                } else {
+                    SaveLocation(savedata, "PSP 存档目录（${savedata.absolutePath}）", true)
+                }
+            }
             EngineType.UNKNOWN -> SaveLocation(null, "未知引擎不支持存档管理", false)
         }
     }
@@ -148,6 +162,11 @@ class GameSaveManager(private val context: Context) {
             EngineType.TYRANO -> {
                 val external = appContext.getExternalFilesDir(null) ?: return
                 File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root))
+            }
+            EngineType.PSP -> {
+                // PSP 存档在多游戏共享的 memstick（extFiles/PSP）下，按游戏 ID 隔离，
+                // 删除单个库内条目时不动它，避免误删其他 PSP 游戏的存档。
+                return
             }
             else -> return
         }

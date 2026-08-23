@@ -1,0 +1,36 @@
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+android {
+    namespace 'org.ppsspp.ppsspp'
+    compileSdk 37
+
+    defaultConfig {
+        minSdk 26
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // 大体积 PPSSPP 原生库在 APK 内压缩存放，安装/打开时由系统解压（对应 Tyranor 的
+    // 「大编译文件压缩 + 打开时解压」策略）。
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+}
+
+dependencies {
+    implementation libs.appcompat
+    implementation libs.androidx.core.ktx
+    implementation libs.androidx.activity.compose
+    implementation libs.androidx.documentfile
+}
