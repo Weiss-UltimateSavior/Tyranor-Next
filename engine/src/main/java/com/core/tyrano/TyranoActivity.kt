@@ -68,6 +68,13 @@ class TyranoActivity : Activity() {
         super.attachBaseContext(wrapContextForUiScale(newBase) ?: newBase)
     }
 
+    /**
+     * Initializes the activity, resolves the game entry, starts the local server, and loads the game in a configured WebView.
+     *
+     * If the game directory, entry point, ASAR archive, save directory, or local server cannot be prepared, displays an error and finishes the activity.
+     *
+     * @param savedInstanceState Previously saved activity state, or `null` when creating the activity for the first time.
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -216,13 +223,24 @@ class TyranoActivity : Activity() {
         finish()
     }
 
-    private fun loadAsset(name: String): ByteArray = assets.open(name).buffered().use { it.readBytes() }
+    /**
+ * Loads an application asset into a byte array.
+ *
+ * @param name The asset path.
+ * @return The asset contents.
+ */
+private fun loadAsset(name: String): ByteArray = assets.open(name).buffered().use { it.readBytes() }
 
     /** 虚拟鼠标合成事件 API（懒加载缓存；见 assets/__tyranor_mouse.js）。 */
     private val mouseJs: String by lazy {
         runCatching { loadAsset(VIRTUAL_MOUSE_ASSET).toString(Charsets.UTF_8) }.getOrDefault("")
     }
 
+    /**
+     * Builds themed HTML that loads the RPG Maker modification styles and scripts.
+     *
+     * @return HTML containing the theme variables and modification assets.
+     */
     private fun buildRpgMakerModHtml(): String {
         val colors = EngineThemeColors.fromIntent(intent)
         fun cssColor(color: Int): String = String.format(Locale.US, "#%06X", color and 0xFFFFFF)
@@ -254,6 +272,11 @@ class TyranoActivity : Activity() {
         }
     }
 
+    /**
+     * Configures the WebView for local game rendering, navigation, resource access, JavaScript execution, media playback, and error reporting.
+     *
+     * @param browser The WebView to configure.
+     */
     private fun configureWebView(browser: WebView) {
         browser.isHorizontalScrollBarEnabled = false
         browser.isVerticalScrollBarEnabled = false

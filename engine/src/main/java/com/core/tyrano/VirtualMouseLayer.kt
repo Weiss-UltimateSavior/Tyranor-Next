@@ -138,7 +138,14 @@ class VirtualMouseLayer(
         invalidate()
     }
 
-    // ============================================================ 绘制
+    /**
+     * Updates the handle position when the view size changes and keeps it within the view bounds.
+     *
+     * @param w The new view width in pixels.
+     * @param h The new view height in pixels.
+     * @param ow The previous view width in pixels.
+     * @param oh The previous view height in pixels.
+     */
 
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
         super.onSizeChanged(w, h, ow, oh)
@@ -151,11 +158,21 @@ class VirtualMouseLayer(
         hy = hy.coerceIn(handleR, h - handleR)
     }
 
+    /**
+     * Draws the virtual mouse handle and, when enabled, the cursor.
+     *
+     * @param canvas The canvas on which to draw the virtual mouse controls.
+     */
     override fun onDraw(canvas: Canvas) {
         drawHandle(canvas)
         if (active) drawCursor(canvas)
     }
 
+    /**
+     * Draws the virtual mouse handle and its mouse-shaped glyph on the canvas.
+     *
+     * @param canvas The canvas on which to draw the handle.
+     */
     private fun drawHandle(canvas: Canvas) {
         handleFill.color = if (active) 0x73469AFF.toInt() else 0x29FFFFFF
         canvas.drawCircle(hx, hy, handleR, handleFill)
@@ -193,7 +210,14 @@ class VirtualMouseLayer(
         canvas.drawPath(cursorPath, cursorStroke)
     }
 
-    // ============================================================ 触控
+    /**
+     * Handles touch gestures for the virtual mouse, including handle movement,
+     * cursor dragging, left-click, right-click, and two-finger wheel input.
+     *
+     * @param event The touch event to process.
+     * @return `true` when the event is consumed; `false` when inactive touches are
+     * passed to the underlying WebView.
+     */
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -342,12 +366,20 @@ class VirtualMouseLayer(
         else if (id == pid2) { p2x = event.getX(idx); p2y = event.getY(idx) }
     }
 
+    /**
+     * Releases pending callbacks when the view is detached from the window.
+     */
     override fun onDetachedFromWindow() {
         removeCallbacks(longPressRunnable)
         removeCallbacks(flushRunnable)
         super.onDetachedFromWindow()
     }
 
+    /**
+     * Enables or disables the virtual mouse and updates its visible state.
+     *
+     * @param on Whether the virtual mouse should be enabled.
+     */
     private fun setActive(on: Boolean) {
         active = on
         android.util.Log.i("TyranoMouse", "virtual mouse " + if (on) "ON" else "OFF")
@@ -380,7 +412,12 @@ class VirtualMouseLayer(
         }
     }
 
-    /** 派发 `window.__tnMouse.<op>(args...)`；NaN/Inf 防御。 */
+    /**
+     * Dispatches a mouse operation to `window.__tnMouse`.
+     *
+     * @param op The mouse operation name.
+     * @param args The operation arguments; non-finite values are converted to zero.
+     */
     private fun js(op: String, vararg args: Float) {
         val sb = StringBuilder("window.__tnMouse&&window.__tnMouse.").append(op).append('(')
         args.forEachIndexed { i, v ->

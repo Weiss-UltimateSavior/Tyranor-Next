@@ -6,14 +6,23 @@
    * button：0=左键，2=右键（RMMZ 右键=取消/呼出菜单）。 */
   if (window.__tnMouse) return;
 
-  /** 命中测试：边缘内缩 1px，避免光标贴边时 elementFromPoint
-   *  落到 html/body 上导致事件派发不进游戏画布。 */
+  /**
+   * Finds the element at the specified viewport coordinates.
+   * @param {number} x - The horizontal viewport coordinate.
+   * @param {number} y - The vertical viewport coordinate.
+   * @return {Element|null} The element at the coordinates, or `null` if hit testing fails.
+   */
   function hitElement(x, y) {
     var cx = Math.min(Math.max(x, 0), (window.innerWidth || 1) - 1);
     var cy = Math.min(Math.max(y, 0), (window.innerHeight || 1) - 1);
     try { return document.elementFromPoint(cx, cy); } catch (e) { return null; }
   }
 
+  /**
+   * Dispatches a bubbling, cancelable event at the element located at the given client coordinates.
+   * @param {Function} constructor - Event constructor used to create the event.
+   * @param {Object} init - Event type and initialization data, including `clientX` and `clientY`.
+   */
   function fire(constructor, init) {
     var el = hitElement(init.clientX, init.clientY) ||
       document.body || document.documentElement;
@@ -31,6 +40,13 @@
     el.dispatchEvent(ev);
   }
 
+  /**
+   * Dispatches a mouse event at the specified coordinates and button state.
+   * @param {string} type - The mouse event type to dispatch.
+   * @param {number} x - The horizontal client and screen coordinate.
+   * @param {number} y - The vertical client and screen coordinate.
+   * @param {number} button - The button identifier, where `2` represents the right button.
+   */
   function mouseEvent(type, x, y, button) {
     fire(MouseEvent, {
       type: type, clientX: x, clientY: y,
