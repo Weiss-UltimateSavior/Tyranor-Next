@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 #include <mutex>
 #include <string>
 #include <cstdint>
@@ -277,17 +278,24 @@ bool isLaunchSceneReady(void* scene) {
     return formCount > 0;
 }
 
+
+bool startsWithPathPrefixCaseInsensitive(const char* str, const char* prefix, size_t prefixLen) {
+    if (str == nullptr || prefix == nullptr) return false;
+    if (strncasecmp(str, prefix, prefixLen) != 0) return false;
+    const char next = str[prefixLen];
+    return next == '\0' || next == '/';
+}
+
 bool pathMatchesPrefix(const char* path) {
     std::lock_guard<std::mutex> lock(gMutex);
     if (path == nullptr || gPathPrefix.empty()) return false;
     const char* normalized = path;
     if (std::strncmp(normalized, "file://", 7) == 0) normalized += 7;
     while (std::strncmp(normalized, "./", 2) == 0) normalized += 2;
-    if (std::strncmp(normalized, gPathPrefix.c_str(), gPathPrefix.size()) == 0) return true;
+    if (startsWithPathPrefixCaseInsensitive(normalized, gPathPrefix.c_str(), gPathPrefix.size())) return true;
     return gPathPrefix[0] == '/'
-            && std::strncmp(normalized, gPathPrefix.c_str() + 1, gPathPrefix.size() - 1) == 0;
+            && startsWithPathPrefixCaseInsensitive(normalized, gPathPrefix.c_str() + 1, gPathPrefix.size() - 1);
 }
-
 int callOriginal(OpenFn original, const char* path, int flags, mode_t mode) {
     if (original == nullptr) return -1;
     if ((flags & O_CREAT) != 0) return original(path, flags, mode);
