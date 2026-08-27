@@ -27,4 +27,11 @@ class GameCardItemKeyTest {
 
         assertEquals(gameCardItemKey(game), gameCardItemKey(recentlyOpened))
     }
+
+    @Test
+    fun hidesSaveManagementForExternalApkEngines() {
+        assertEquals(false, shouldShowSaveManagement(EngineType.RENPY))
+        assertEquals(true, shouldShowSaveManagement(EngineType.KIRIKIRI))
+        assertEquals(true, shouldShowSaveManagement(EngineType.RPG_MV))
+    }
 }

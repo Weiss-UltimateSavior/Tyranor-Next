@@ -87,7 +87,7 @@ class GameSaveManager(private val context: Context) {
                     )
                 }
             }
-            EngineType.VN, EngineType.WEB_OTHER ->
+            EngineType.VN, EngineType.WEB_OTHER, EngineType.RENPY ->
                 SaveLocation(null, "${game.engine.displayName} 没有标准文件存档接口", false)
             EngineType.ARTEMIS -> SaveLocation(File(root), "Artemis 游戏目录存档", true)
             EngineType.UNKNOWN -> SaveLocation(null, "未知引擎不支持存档管理", false)

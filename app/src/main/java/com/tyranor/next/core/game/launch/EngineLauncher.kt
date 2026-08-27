@@ -19,6 +19,9 @@ import com.akira.tyranoemu.remote.Kirikiroid139
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.tyrano.TyranoActivity
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
+import com.tyranor.next.core.engine.external.ExternalEngineLauncher
+import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
@@ -50,6 +53,7 @@ object EngineLauncher {
         EngineType.VN,
         EngineType.WEB_OTHER,
         EngineType.ARTEMIS,
+        EngineType.RENPY,
     ).sortedByDescending { it.displayName.length }
 
     /** Artemis 补丁确认弹窗的用户选择：
@@ -62,6 +66,21 @@ object EngineLauncher {
         val path = resolveGameDirectory(context, game)
         if (path == null) {
             return "无法解析游戏目录（仅支持本地文件路径）"
+        }
+        ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { module ->
+            val result = ExternalEngineLauncher.launch(
+                context,
+                ExternalEngineLaunchRequest(
+                    game = game,
+                    gameDirectoryPath = path,
+                    launchTarget = game.launchTarget,
+                ),
+            )
+            if (result.success) {
+                EngineScanner.recordRecentGame(context, game)
+                return null
+            }
+            return result.message ?: "启动 ${module.displayName} 失败"
         }
         requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
         EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let { return it }
@@ -227,6 +246,8 @@ object EngineLauncher {
             EngineType.WEB_OTHER -> buildWebIntent(context, path, game)
 
             EngineType.ARTEMIS -> buildArtemisIntent(context, path, game, patchChoice)
+
+            EngineType.RENPY -> error("Ren'Py is handled by external engine launcher")
 
             EngineType.UNKNOWN -> Intent(context, TyranoActivity::class.java).apply {
                 putExtra("path", path)

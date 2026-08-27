@@ -256,6 +256,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice("自动补丁", ART_PATCH_MAP2, globalArtPatch, artPatch) { artPatch = it }
                         }
                     }
+                    EngineType.RENPY -> item {
+                        SectionCard("Ren'Py") {
+                            Text(
+                                "Ren'Py 使用外置 APK 引擎模块，模块安装后默认启用；当前没有可由主应用覆盖的单游戏设置。",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
                     EngineType.TYRANO,
                     EngineType.RPG_MV,
                     EngineType.RPG_MZ,

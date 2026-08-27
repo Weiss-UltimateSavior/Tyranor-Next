@@ -94,6 +94,7 @@ import com.tyranor.next.core.cover.CoverScraperService
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.cover.VndbCoverService
@@ -597,10 +598,12 @@ internal fun GameActionsSheet(
                 }
             }
             item { GameActionRow(R.drawable.ic_sheet_rename, "名称修改") { showRenameDialog = true } }
-            item {
-                GameActionRow(R.drawable.ic_sheet_saves, "存档管理") {
-                    startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
-                    onDismiss()
+            if (shouldShowSaveManagement(game.engine)) {
+                item {
+                    GameActionRow(R.drawable.ic_sheet_saves, "存档管理") {
+                        startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
+                        onDismiss()
+                    }
                 }
             }
             if (game.engine == EngineType.KIRIKIRI) {
@@ -1485,5 +1488,9 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.VN -> Color(0xFF8E5A9E)
     EngineType.WEB_OTHER -> Color(0xFF546E7A)
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
+    EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.UNKNOWN -> Color(0xFF607D8B)
 }
+
+internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
+    !ExternalEngineModuleRegistry.isExternalEngine(engine)

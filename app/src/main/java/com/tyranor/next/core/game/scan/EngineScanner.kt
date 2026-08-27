@@ -757,6 +757,13 @@ object EngineScanner {
         var hasAnyPfs = false
         var hasOnsScript = false
         var hasOnsArchive = false
+        var hasRenpyDir = false
+        var hasGameDir = false
+        var hasRpa = false
+        var hasRpy = false
+        var hasRpyc = false
+        var hasGameScriptRpy = false
+        var hasGameOptionsRpy = false
 
         fun collect(entry: T, rel: String) {
             val lower = nameOf(entry).lowercase(Locale.ROOT)
@@ -764,6 +771,8 @@ object EngineScanner {
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
             if (isDirectory(entry)) {
                 if (lower == "tyrano") hasTyranoDir = true
+                if (lower == "renpy") hasRenpyDir = true
+                if (lower == "game") hasGameDir = true
                 if (lower == "app.asar" || childRel.endsWith("/app.asar")) hasAppAsar = true
                 if (lower in ENGINE_SEARCH_DIRECTORIES) {
                     childrenOf(entry).forEach { collect(it, childRel) }
@@ -786,6 +795,17 @@ object EngineScanner {
                     lower == "onscript.nt2" || lower == "onscript.nt3" -> hasOnsScript = true
                 lower.endsWith(".nsa") || lower.endsWith(".sar") -> hasOnsArchive = true
                 lower.endsWith(".xp3") -> xp3Files.add(childRel)
+                lower.endsWith(".rpa") -> hasRpa = true
+                lower.endsWith(".rpy") -> {
+                    hasRpy = true
+                    if (childRel == "game/script.rpy" || childRel.endsWith("/game/script.rpy")) {
+                        hasGameScriptRpy = true
+                    }
+                    if (childRel == "game/options.rpy" || childRel.endsWith("/game/options.rpy")) {
+                        hasGameOptionsRpy = true
+                    }
+                }
+                lower.endsWith(".rpyc") -> hasRpyc = true
             }
         }
         children.forEach { collect(it, "") }
@@ -808,6 +828,15 @@ object EngineScanner {
         if (hasAppAsar) {
             return Detection(EngineType.TYRANO, 80, "[游戏目录]")
         }
+        if (hasRpa || hasGameScriptRpy || hasGameOptionsRpy || (hasRenpyDir && (hasRpy || hasRpyc)) || (hasGameDir && hasRpy)) {
+            val confidence = when {
+                hasRpa -> 96
+                hasGameScriptRpy || hasGameOptionsRpy -> 94
+                hasRenpyDir && (hasRpy || hasRpyc) -> 90
+                else -> 85
+            }
+            return Detection(EngineType.RENPY, confidence, "[游戏目录]")
+        }
         if (hasIndex) {
             return Detection(EngineType.WEB_OTHER, 70, "[游戏目录]")
         }
@@ -829,6 +858,7 @@ object EngineScanner {
         "system",
         "app",
         "game",
+        "renpy",
         "resources",
         "app.asar",
         "www",

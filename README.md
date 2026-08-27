@@ -4,7 +4,7 @@
   <img src="screenshots/index.png" alt="Tyranor Next" width="850" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis 四套引擎运行环境，可识别和启动八类游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。
+基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis 四套引擎运行环境，并支持 Ren'Py 外置 APK 引擎模块，可识别和启动多类游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。
 
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
 
@@ -22,8 +22,10 @@
 | RPG Maker MZ | `www/`、`js/rmmz_core.js` | 内置 Web 运行环境 |
 | VN | `globalData.vndata` | 内置 Web 运行环境 |
 | WebOther | 通用 `index.html` 网页游戏 | 内置 Web 运行环境 |
+| Ren'Py | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块 |
 
 内置 Web 运行环境同时支持部分以 `app.asar` 打包的 NW.js 游戏；启动时会根据归档内容进一步识别具体类型。
+Ren'Py 当前通过外置 APK 模块运行：主 App 默认启用该能力，仅在引擎页检查目标模块是否已安装；未安装时引擎 item 显示打叉并提示下载安装。
 
 ### 平台与文件要求
 
@@ -68,7 +70,7 @@
 功能抽象层按领域继续拆分：
 
 - `core/game`：游戏模型、扫描、启动、存档管理
-- `core/engine`：引擎类型、引擎插件启动与安装编排
+- `core/engine`：引擎类型、内置引擎插件启动与安装编排、外置 APK 引擎模块注册与启动协议
 - `core/cover`：封面抓取、来源聚合、批量任务
 - `core/patch`：KRKR 在线补丁
 - `core/settings`：应用级配置、引擎级配置、单游戏配置
@@ -104,6 +106,7 @@ UI 层按页面域继续拆分：
 - 共享 Native 插件 `.so` 的源头位于 `engine/src/main/nativeplugins`；app 侧仅维护插件 `manifest.json` 和 app-only 插件。构建时由 Gradle 合并生成 `app/build/generated/assets/nativeplugins/*.zip`
 - 共享 RPG Maker 注入脚本源头位于 `engine/src/main/assets`；app 侧只保留应用专属注入脚本，构建时由 Gradle 同步生成到 app assets，避免两边手工维护重复文件
 - `app` 模块通过 `core/game/launch/EngineLauncher` 将扫描结果映射到对应引擎 Activity 启动（SAF URI → 真实路径转换）
+- Ren'Py 等外置 APK 引擎模块由 `core/engine/external` 统一注册、检测安装状态并按 intent 协议拉起；主 App 不维护手动启用开关，模块安装即视为可用
 - Tyrano 运行环境内置本地 HTTP 服务器、Asar 归档解析与 JS 钩子脚本（`__tyrano__.js` 等），无需外部依赖即可运行网页式脚本游戏
 - 原生库仅提供 `arm64-v8a` 架构
 
@@ -121,7 +124,7 @@ UI 层按页面域继续拆分：
 ```
 app/
 ├── src/main/java/com/tyranor/next/
-│   ├── core/      功能抽象层：扫描、启动、封面、存档、补丁、配置、授权、更新
+│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、配置、授权、更新
 │   ├── ui/        界面 UI 交互层：主界面、游戏页、设置页、弹窗、公共组件
 │   └── theme/     Compose / Miuix 主题、色调、深浅色适配
 ├── src/main/assets/

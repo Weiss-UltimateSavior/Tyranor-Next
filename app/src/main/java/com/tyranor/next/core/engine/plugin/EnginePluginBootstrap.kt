@@ -68,6 +68,7 @@ object EnginePluginBootstrap {
             EngineType.RPG_MZ,
             EngineType.VN,
             EngineType.WEB_OTHER,
+            EngineType.RENPY,
             EngineType.UNKNOWN -> return null
         }
         val app = context.applicationContext
