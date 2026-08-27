@@ -110,21 +110,24 @@ class KRKRCallWaitInputResultTest {
     fun resultFromSupersededDialogTreatedAsCancel() {
         val oldLatch = CountDownLatch(1)
         KRKRCall.mInputLatch = oldLatch
-        val pool = Executors.newSingleThreadExecutor()
-        try {
-            val future = pool.submit(java.util.concurrent.Callable { KRKRCall.WaitInputResult() })
-            // 让等待方快照 oldLatch 并进入 await
-            Thread.sleep(100)
-            // 新一轮 ShowInputBox 发起并已完成：替换 latch 并写入新结果
-            KRKRCall.mInputResult = "new input"
-            KRKRCall.mInputResultCode = 1
-            KRKRCall.mInputLatch = CountDownLatch(0)
-            // 旧对话框此刻才完成（迟滞回调）：触发旧 latch
-            oldLatch.countDown()
-            assertEquals("被取代对话框的结果不应上浮", -1, future.get(5, TimeUnit.SECONDS))
-        } finally {
-            pool.shutdownNow()
+        val result = IntArray(1)
+        val waiter = Thread { result[0] = KRKRCall.WaitInputResult() }
+        waiter.start()
+        // 有界等待等待线程进入 TIMED_WAITING（200ms await 切片），确认已快照 oldLatch，而非依赖固定 sleep
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (waiter.state != Thread.State.TIMED_WAITING && System.nanoTime() < deadline) {
+            Thread.sleep(5)
         }
+        assertTrue("等待线程应在有界时间内进入轮询等待，实际 ${waiter.state}", waiter.state == Thread.State.TIMED_WAITING)
+        // 新一轮 ShowInputBox 发起并已完成：替换 latch 并写入新结果
+        KRKRCall.mInputResult = "new input"
+        KRKRCall.mInputResultCode = 1
+        KRKRCall.mInputLatch = CountDownLatch(0)
+        // 旧对话框此刻才完成（迟滞回调）：触发旧 latch
+        oldLatch.countDown()
+        waiter.join(5_000)
+        assertTrue("等待线程应在有界时间内结束", !waiter.isAlive)
+        assertEquals("被取代对话框的结果不应上浮", -1, result[0])
     }
 
     /** 宿主销毁兜底：cancelPendingInput 必须解除 native 侧阻塞（onDestroy join 死锁回归）。 */
