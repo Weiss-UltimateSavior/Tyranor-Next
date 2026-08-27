@@ -23,6 +23,7 @@ import com.core.engine.EngineThemeColors;
 import org.libsdl3.app.SDLActivity;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public class KRKRCall {
     /**
@@ -31,10 +32,17 @@ public class KRKRCall {
      * mInputResult/mInputResultCode 由 UI 线程写入、native 线程（WaitInputResult）读取，
      * 跨线程 happens-before 由 CountDownLatch.await/countDown 保证；加 volatile 双保险（ARM 弱内存模型）。
      */
-    private static AlertDialog mInputDialog = null;
-    private static volatile String mInputResult = "";
-    private static volatile int mInputResultCode = -1;
-    private static volatile CountDownLatch mInputLatch = new CountDownLatch(1);
+    private static final long WAIT_SLICE_MS = 200L;
+    /** 保险丝默认值：极端异常下（对话框既未显示也未被取消）最多阻塞 10 分钟后按取消返回，避免引擎永久冻结 */
+    static final long DEFAULT_MAX_WAIT_MS = 10L * 60L * 1000L;
+    // 非常量以便同包回归测试注入短时限（验证保险丝未被移除）；生产路径勿改
+    static volatile long maxWaitMs = DEFAULT_MAX_WAIT_MS;
+    // 以下四个字段包内可见（默认 private），仅供同包回归测试重置/注入状态
+    static AlertDialog mInputDialog = null;
+    static volatile String mInputResult = "";
+    static volatile int mInputResultCode = -1;
+    // 初始即为已触发态：无弹窗时的杂散 WaitInputResult 立即按取消返回，而非永久阻塞
+    static volatile CountDownLatch mInputLatch = new CountDownLatch(0);
 
     public static void ShowInputBox(String title, String prompt, String text, String[] buttons) {
         final Activity act = SDLActivity.getContext();
@@ -50,8 +58,12 @@ public class KRKRCall {
             @Override
             public void run() {
                 // 守卫：post 与执行之间 Activity 可能已被销毁（Home 键/系统回收），
-                // 避免 dialog.show() 在已销毁 Activity 上抛 WindowManager$BadTokenException 闪退
-                if (act.isFinishing() || act.isDestroyed()) return;
+                // 避免 dialog.show() 在已销毁 Activity 上抛 WindowManager$BadTokenException 闪退；
+                // 同时立即放行 native 等待方，不依赖 onDestroy 的时序兜底
+                if (act.isFinishing() || act.isDestroyed()) {
+                    latch.countDown();
+                    return;
+                }
                 // 主题色从 Launcher 传入的 Intent extras 读取（跟随启动器主题与深浅色）
                 final EngineThemeColors.Palette colors = EngineThemeColors.fromIntent(act.getIntent());
                 final float density = act.getResources().getDisplayMetrics().density;
@@ -216,12 +228,26 @@ public class KRKRCall {
 
     // 阻塞等待对话框关闭
     public static int WaitInputResult() {
-        try {
-            mInputLatch.await();
-        } catch (InterruptedException e) {
-            // 等待被中断（宿主销毁/系统回收）：恢复中断标记并按取消处理，不静默吞异常
-            Thread.currentThread().interrupt();
-            return -1;
+        final long startNs = System.nanoTime();
+        while (true) {
+            // 快照当前 latch：期间若出现新的 ShowInputBox，旧等待立即作废，避免等错对象导致无限挂起
+            final CountDownLatch latch = mInputLatch;
+            try {
+                if (latch.await(WAIT_SLICE_MS, TimeUnit.MILLISECONDS)) {
+                    break;
+                }
+            } catch (InterruptedException e) {
+                // 等待被中断（宿主销毁/系统回收）：恢复中断标记并按取消处理，不静默吞异常
+                Thread.currentThread().interrupt();
+                return -1;
+            }
+            if (mInputLatch != latch) {
+                return -1;
+            }
+            // 注意单位：nanoTime 差值为纳秒，maxWaitMs 为毫秒，必须经 TimeUnit 显式换算后比较
+            if (System.nanoTime() - startNs > TimeUnit.MILLISECONDS.toNanos(maxWaitMs)) {
+                return -1;
+            }
         }
         return mInputResultCode;
     }
