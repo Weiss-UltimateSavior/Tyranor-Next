@@ -46,7 +46,14 @@ public class KRKRCall {
 
     public static void ShowInputBox(String title, String prompt, String text, String[] buttons) {
         final Activity act = SDLActivity.getContext();
-        if (act == null) return;
+        if (act == null) {
+            // 宿主未就绪：本次输入无法展示，替换为已触发 latch 立即放行 native 等待方（按取消返回），
+            // 而非让等待者悬置到保险丝时限才兜底
+            mInputResult = "";
+            mInputResultCode = -1;
+            mInputLatch = new CountDownLatch(0);
+            return;
+        }
 
         // 同步重置状态：先于 runOnUiThread，确保 native 线程 WaitInputResult 等待的是新 latch
         mInputResult = "";
@@ -234,7 +241,12 @@ public class KRKRCall {
             final CountDownLatch latch = mInputLatch;
             try {
                 if (latch.await(WAIT_SLICE_MS, TimeUnit.MILLISECONDS)) {
-                    break;
+                    // 触发的必须是当前 latch：若期间已被新一轮 ShowInputBox 替换，
+                    // 结果码可能已被重置/覆写而不可信，按取消返回而非上浮被污染的结果
+                    if (mInputLatch == latch) {
+                        return mInputResultCode;
+                    }
+                    return -1;
                 }
             } catch (InterruptedException e) {
                 // 等待被中断（宿主销毁/系统回收）：恢复中断标记并按取消处理，不静默吞异常
@@ -249,7 +261,6 @@ public class KRKRCall {
                 return -1;
             }
         }
-        return mInputResultCode;
     }
     // 获取结果
     public static String GetInputResult() {
