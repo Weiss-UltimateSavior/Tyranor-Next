@@ -131,7 +131,10 @@ object EnginePluginBootstrap {
         val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
         return try {
             val target = currentDirFor(app, spec.engineId)
-            if (target.exists()) target.deleteRecursively()
+            if (target.exists() && !target.deleteRecursively()) {
+                // 删除失败（可能部分删除）：中止安装，避免旧残留与解压产物混杂（CodeRabbit 意见）
+                throw IllegalStateException("cleanup failed for ${spec.engineId}")
+            }
             extractPluginZip(app, spec.engineId, target)
             // 先写标记再校验：installState 的 ENABLED 判定依赖 enabled 标记，须先标记才能读到就绪；
             // 目录缺必需文件会返回 INVALID（与标记无关），据此兜底回滚
