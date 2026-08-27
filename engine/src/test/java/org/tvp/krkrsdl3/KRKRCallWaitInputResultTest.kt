@@ -10,10 +10,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * C-1 回归护栏（audit/13 §二）：锁定 KRKRCall.WaitInputResult 的四条防冻结语义。
+ * C-1 回归护栏（audit/13 §二）：锁定 KRKRCall.WaitInputResult 的防冻结语义。
  *
  * 任一条被回退（初始 latch 改回未触发态 / 删掉 latch 作废检测 / 删掉保险丝 /
- * 吞掉中断标记），对应用例将挂起直至 @Test(timeout) 超时失败，而非静默通过。
+ * 吞掉中断标记 / 被取代对话框的结果码上浮），对应用例将挂起直至 @Test(timeout)
+ * 超时失败或断言失败，而非静默通过。
  */
 class KRKRCallWaitInputResultTest {
 
@@ -99,6 +100,28 @@ class KRKRCallWaitInputResultTest {
             }
             future.get(2, TimeUnit.SECONDS)
             assertEquals(0, KRKRCall.WaitInputResult())
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    /** await 已被触发但期间 latch 被新一轮 ShowInputBox 替换：结果码已被重置/覆写，必须按取消返回，不得上浮被污染的结果。 */
+    @Test(timeout = 5_000L)
+    fun resultFromSupersededDialogTreatedAsCancel() {
+        val oldLatch = CountDownLatch(1)
+        KRKRCall.mInputLatch = oldLatch
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            val future = pool.submit(java.util.concurrent.Callable { KRKRCall.WaitInputResult() })
+            // 让等待方快照 oldLatch 并进入 await
+            Thread.sleep(100)
+            // 新一轮 ShowInputBox 发起并已完成：替换 latch 并写入新结果
+            KRKRCall.mInputResult = "new input"
+            KRKRCall.mInputResultCode = 1
+            KRKRCall.mInputLatch = CountDownLatch(0)
+            // 旧对话框此刻才完成（迟滞回调）：触发旧 latch
+            oldLatch.countDown()
+            assertEquals("被取代对话框的结果不应上浮", -1, future.get(5, TimeUnit.SECONDS))
         } finally {
             pool.shutdownNow()
         }
