@@ -81,26 +81,44 @@ object EnginePluginBootstrap {
         }
     }
 
-    @Synchronized
+    /** 单飞锁：并发触发（快速重建/双入口）时仅一个线程执行解压，避免同目录交错写坏插件 */
+    private val provisionLock = Any()
+
     private fun provisionEngineIfNeeded(app: Context, spec: EngineSpec, requireEnabled: Boolean): Boolean {
+        if (resolveAlreadyInstalled(app, spec, requireEnabled)) return true
+        synchronized(provisionLock) {
+            // 双检：持锁后另一线程可能已完成安装
+            if (resolveAlreadyInstalled(app, spec, requireEnabled)) return true
+            return installNow(app, spec)
+        }
+    }
+
+    /** 已安装则按需刷新启用标记并返回 true。 */
+    private fun resolveAlreadyInstalled(app: Context, spec: EngineSpec, requireEnabled: Boolean): Boolean {
         val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
-        val state = installState(app, spec.engineId)
-        if (state == NativePluginInstallState.INSTALLED_ENABLED) {
-            markInstalled(prefs, spec, enabled = true)
-            return true
+        when (installState(app, spec.engineId)) {
+            NativePluginInstallState.INSTALLED_ENABLED -> {
+                markInstalled(prefs, spec, enabled = true)
+                return true
+            }
+            NativePluginInstallState.INSTALLED_DISABLED -> {
+                if (!requireEnabled) {
+                    markInstalled(prefs, spec, enabled = false)
+                    return true
+                }
+                markInstalled(prefs, spec, enabled = true)
+                return isReady(app, spec.engineId)
+            }
+            else -> return false
         }
-        if (!requireEnabled && state == NativePluginInstallState.INSTALLED_DISABLED) {
-            markInstalled(prefs, spec, enabled = false)
-            return true
-        }
-        if (requireEnabled && state == NativePluginInstallState.INSTALLED_DISABLED) {
-            markInstalled(prefs, spec, enabled = true)
-            return isReady(app, spec.engineId)
-        }
+    }
+
+    private fun installNow(app: Context, spec: EngineSpec): Boolean {
         return try {
             val target = currentDirFor(app, spec.engineId)
             if (target.exists()) target.deleteRecursively()
             extractPluginZip(app, spec.engineId, target)
+            val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
             markInstalled(prefs, spec, enabled = true)
             val ready = isReady(app, spec.engineId)
             if (ready) {
