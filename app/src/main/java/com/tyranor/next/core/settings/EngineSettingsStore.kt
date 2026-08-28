@@ -37,6 +37,8 @@ object EngineSettingsStore {
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
     const val KEY_TYRANO_SCOPED_SAVE_DIR = "tyrano_scoped_save_dir"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
+    const val KEY_RPG_MV_ENGINE_VERSION = "rpg_mv_engine_version"
+    const val KEY_RPG_MZ_ENGINE_VERSION = "rpg_mz_engine_version"
 
     // 取值常量
     const val KR_AUTO = "auto"
@@ -60,6 +62,9 @@ object EngineSettingsStore {
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
+
+    const val RPG_MV_V0 = "v0"
+    const val RPG_MZ_V0 = "v0"
 
     val KR_RENDER_PREF_KEYS = listOf(
         KEY_KR_RENDERER, KEY_KR_SOFTWARE_DRAW_THREAD, KEY_KR_SOFTWARE_COMPRESS_TEX,
@@ -203,4 +208,24 @@ object EngineSettingsStore {
     fun setTyranoScopedSaveDir(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_TYRANO_SCOPED_SAVE_DIR, b).apply()
     fun isRpgMakerModEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_RPG_MAKER_MOD_ENABLED, true)
     fun setRpgMakerModEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_MAKER_MOD_ENABLED, b).apply()
+
+    // ---------- RPG Maker MV / MZ ----------
+    fun getRpgMvEngineVersion(c: Context): String =
+        normalizeRpgMv(prefs(c).getString(KEY_RPG_MV_ENGINE_VERSION, RPG_MV_V0))
+    fun setRpgMvEngineVersion(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_RPG_MV_ENGINE_VERSION, normalizeRpgMv(v)).apply()
+    fun getRpgMzEngineVersion(c: Context): String =
+        normalizeRpgMz(prefs(c).getString(KEY_RPG_MZ_ENGINE_VERSION, RPG_MZ_V0))
+    fun setRpgMzEngineVersion(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_RPG_MZ_ENGINE_VERSION, normalizeRpgMz(v)).apply()
+
+    private fun normalizeRpgMv(v: String?): String = when (v?.trim()?.lowercase()) {
+        RPG_MV_V0 -> RPG_MV_V0
+        else -> RPG_MV_V0
+    }
+
+    private fun normalizeRpgMz(v: String?): String = when (v?.trim()?.lowercase()) {
+        RPG_MZ_V0 -> RPG_MZ_V0
+        else -> RPG_MZ_V0
+    }
 }

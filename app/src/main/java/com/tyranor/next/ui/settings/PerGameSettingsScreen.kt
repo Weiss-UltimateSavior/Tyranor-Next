@@ -86,6 +86,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
             PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED),
         )
     }
+    var rpgMvVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
+    var rpgMzVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -107,6 +109,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalTyExternal = EngineSettingsStore.isTyranoExternalNetwork(ctx)
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
+    val globalRpgMvVersion = EngineSettingsStore.getRpgMvEngineVersion(ctx)
+    val globalRpgMzVersion = EngineSettingsStore.getRpgMzEngineVersion(ctx)
 
     val isSdl3 = (krKernel ?: globalKrKernel) == EngineSettingsStore.KERNEL_KRKRSDL3
     val globalRenderer = configuredGlobalRenderer.ifEmpty {
@@ -152,6 +156,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
             PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED,
             rpgMakerMod,
         )
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION, rpgMvVersion)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION, rpgMzVersion)
     }
 
     MiuixSettingsTheme {
@@ -256,9 +262,23 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice("自动补丁", ART_PATCH_MAP2, globalArtPatch, artPatch) { artPatch = it }
                         }
                     }
+                    EngineType.RPG_MV -> item {
+                        SectionCard(game.engine.displayName) {
+                            OverrideChoice("引擎版本", RPG_MV_VERSION_MAP2, globalRpgMvVersion, rpgMvVersion) { rpgMvVersion = it }
+                            OverrideSwitch("允许外部网络", globalTyExternal, tyExternal) { tyExternal = it }
+                            OverrideSwitch("独立存档目录", globalTyScoped, tyScoped) { tyScoped = it }
+                            OverrideSwitch("游戏修改器", globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
+                        }
+                    }
+                    EngineType.RPG_MZ -> item {
+                        SectionCard(game.engine.displayName) {
+                            OverrideChoice("引擎版本", RPG_MZ_VERSION_MAP2, globalRpgMzVersion, rpgMzVersion) { rpgMzVersion = it }
+                            OverrideSwitch("允许外部网络", globalTyExternal, tyExternal) { tyExternal = it }
+                            OverrideSwitch("独立存档目录", globalTyScoped, tyScoped) { tyScoped = it }
+                            OverrideSwitch("游戏修改器", globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
+                        }
+                    }
                     EngineType.TYRANO,
-                    EngineType.RPG_MV,
-                    EngineType.RPG_MZ,
                     EngineType.VN,
                     EngineType.WEB_OTHER,
                     EngineType.UNKNOWN -> item {
@@ -266,9 +286,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch("允许外部网络", globalTyExternal, tyExternal) { tyExternal = it }
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideSwitch("独立存档目录", globalTyScoped, tyScoped) { tyScoped = it }
-                            }
-                            if (game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ) {
-                                OverrideSwitch("游戏修改器", globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
                             }
                         }
                     }
@@ -407,3 +424,5 @@ private val ART_PATCH_MAP2 = mapOf(
     EngineSettingsStore.AUTO_PATCH_AUTO to "自动",
     EngineSettingsStore.AUTO_PATCH_OFF to "关闭",
 )
+private val RPG_MV_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MV_V0 to "v0")
+private val RPG_MZ_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MZ_V0 to "v0")

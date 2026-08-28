@@ -553,6 +553,7 @@ object EngineLauncher {
             PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED),
             EngineSettingsStore.isRpgMakerModEnabled(context),
         )
+        val rpgMakerVersion = effectiveRpgMakerVersion(context, game)
         val scopedSaveRoot = if (scoped) {
             context.getExternalFilesDir(null)?.let { external ->
                 File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(path)).absolutePath
@@ -581,6 +582,11 @@ object EngineLauncher {
             scopedSaveRoot?.let { putExtra("scopedSaveRoot", it) }
             putExtra("rpgMakerModEnabled", rpgMakerModEnabled)
             putExtra("rpgMakerModGameId", game.uri)
+            rpgMakerVersion?.let {
+                putExtra("rpgMakerVersion", it)
+                putExtra("rpgMvVersion", if (game.engine == EngineType.RPG_MV) it else "")
+                putExtra("rpgMzVersion", if (game.engine == EngineType.RPG_MZ) it else "")
+            }
         }
     }
 
@@ -719,3 +725,13 @@ internal fun effectiveRpgMakerModEnabled(
     globalDefault: Boolean,
 ): Boolean = engine in setOf(EngineType.RPG_MV, EngineType.RPG_MZ) &&
     (perGameOverride ?: globalDefault)
+
+internal fun effectiveRpgMakerVersion(context: Context, game: ScanGame): String? = when (game.engine) {
+    EngineType.RPG_MV ->
+        PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MV_VERSION)
+            ?: EngineSettingsStore.getRpgMvEngineVersion(context)
+    EngineType.RPG_MZ ->
+        PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MZ_VERSION)
+            ?: EngineSettingsStore.getRpgMzEngineVersion(context)
+    else -> null
+}

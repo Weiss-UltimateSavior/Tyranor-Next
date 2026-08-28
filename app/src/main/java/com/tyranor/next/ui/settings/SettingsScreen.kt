@@ -401,6 +401,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var tyExternal by remember { mutableStateOf(EngineSettingsStore.isTyranoExternalNetwork(ctx)) }
     var tyScoped by remember { mutableStateOf(EngineSettingsStore.isTyranoScopedSaveDir(ctx)) }
     var rpgMakerMod by remember { mutableStateOf(EngineSettingsStore.isRpgMakerModEnabled(ctx)) }
+    var rpgMvVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMvEngineVersion(ctx)) }
+    var rpgMzVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMzEngineVersion(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -436,6 +438,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setTyranoExternalNetwork(ctx, tyExternal)
         EngineSettingsStore.setTyranoScopedSaveDir(ctx, tyScoped)
         EngineSettingsStore.setRpgMakerModEnabled(ctx, rpgMakerMod)
+        EngineSettingsStore.setRpgMvEngineVersion(ctx, rpgMvVersion)
+        EngineSettingsStore.setRpgMzEngineVersion(ctx, rpgMzVersion)
     }
 
     MiuixSettingsTheme {
@@ -468,11 +472,11 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 }
             },
         ) { innerPadding ->
-            LazyListPlaceholder(
+                LazyListPlaceholder(
                 kind,
                 krVersion, krKernel, krScoped, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
-                ons, artVersion, artRotate, artPatch, tyExternal, tyScoped, rpgMakerMod, fontLauncher,
+                ons, artVersion, artRotate, artPatch, tyExternal, tyScoped, rpgMakerMod, rpgMvVersion, rpgMzVersion, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -494,6 +498,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onTyExternal = { tyExternal = it },
                 onTyScoped = { tyScoped = it },
                 onRpgMakerMod = { rpgMakerMod = it },
+                onRpgMvVersion = { rpgMvVersion = it },
+                onRpgMzVersion = { rpgMzVersion = it },
             )
         }
     }
@@ -540,7 +546,7 @@ private fun LazyListPlaceholder(
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
     ons: EngineSettingsStore.Ons, artVersion: String, artRotate: Boolean, artPatch: String,
-    tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean, fontLauncher: FontPickerLauncher,
+    tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean, rpgMvVersion: String, rpgMzVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
@@ -549,6 +555,7 @@ private fun LazyListPlaceholder(
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
+    onRpgMvVersion: (String) -> Unit = {}, onRpgMzVersion: (String) -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
@@ -640,6 +647,8 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = "允许加载外部网络资源", checked = tyExternal, onCheckedChange = onTyExternal)
                 SwitchPreference(title = "独立存档目录", checked = tyScoped, onCheckedChange = onTyScoped)
                 SwitchPreference(title = "游戏修改器", checked = rpgMakerMod, onCheckedChange = onRpgMakerMod)
+                DropdownRow("RPG Maker MV 版本", RPG_MV_VERSION_MAP, rpgMvVersion, onRpgMvVersion)
+                DropdownRow("RPG Maker MZ 版本", RPG_MZ_VERSION_MAP, rpgMzVersion, onRpgMzVersion)
             }
         }
 
@@ -825,6 +834,8 @@ private val ART_PATCH_MAP = listOf(
     EngineSettingsStore.AUTO_PATCH_AUTO to "自动",
     EngineSettingsStore.AUTO_PATCH_OFF to "关闭",
 )
+private val RPG_MV_VERSION_MAP = listOf(EngineSettingsStore.RPG_MV_V0 to "v0")
+private val RPG_MZ_VERSION_MAP = listOf(EngineSettingsStore.RPG_MZ_V0 to "v0")
 
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
 private fun scanDirName(context: android.content.Context, uri: String): String = runCatching {

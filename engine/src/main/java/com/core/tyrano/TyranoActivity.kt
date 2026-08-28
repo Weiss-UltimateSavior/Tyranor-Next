@@ -62,6 +62,7 @@ class TyranoActivity : Activity() {
     private var allowExternalNetwork = false
     private var rpgMakerModEnabled = false
     private var rpgMakerModGameId = ""
+    private var rpgMakerVersion: String? = null
     private val processExitScheduled = AtomicBoolean(false)
 
     override fun attachBaseContext(newBase: Context) {
@@ -116,7 +117,10 @@ class TyranoActivity : Activity() {
         rpgMakerModGameId = intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID)
             ?.takeIf(String::isNotBlank)
             ?: resolvedGameDir
-        Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} asar=$asarPath contentRoot=${contentRoot.absolutePath}")
+        rpgMakerVersion = intent.getStringExtra(EXTRA_RPG_MAKER_VERSION)?.takeIf(String::isNotBlank)
+            ?: intent.getStringExtra("rpgMvVersion")?.takeIf(String::isNotBlank)
+            ?: intent.getStringExtra("rpgMzVersion")?.takeIf(String::isNotBlank)
+        Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} rpgMakerVersion=$rpgMakerVersion asar=$asarPath contentRoot=${contentRoot.absolutePath}")
         val needsSaveBridge = webGameType == WebGameType.TYRANO ||
             webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
         val saves = if (needsSaveBridge) resolveSaveDirectory(intent, gameRoot) else null
@@ -866,6 +870,7 @@ class TyranoActivity : Activity() {
         private const val EXTRA_SCOPED_SAVE_ROOT = "scopedSaveRoot"
         private const val EXTRA_RPG_MAKER_MOD_ENABLED = "rpgMakerModEnabled"
         private const val EXTRA_RPG_MAKER_MOD_GAME_ID = "rpgMakerModGameId"
+        private const val EXTRA_RPG_MAKER_VERSION = "rpgMakerVersion"
         private const val RPG_MAKER_MOD_PREFS = "tyranor_rpgmaker_mod_state"
         private const val RPG_MAKER_MOD_CORE_ASSET = "__rpgmaker_mod_core.js"
         private const val RPG_MAKER_MOD_UI_ASSET = "__rpgmaker_mod_ui.js"

@@ -1,0 +1,21 @@
+[
+  "js/rpg_sprites/_header.js",
+  "js/rpg_sprites/Sprite_Base.js",
+  "js/rpg_sprites/Sprite_Button.js",
+  "js/rpg_sprites/Sprite_Character.js",
+  "js/rpg_sprites/Sprite_Battler.js",
+  "js/rpg_sprites/Sprite_Actor.js",
+  "js/rpg_sprites/Sprite_Enemy.js",
+  "js/rpg_sprites/Sprite_Animation.js",
+  "js/rpg_sprites/Sprite_Damage.js",
+  "js/rpg_sprites/Sprite_StateIcon.js",
+  "js/rpg_sprites/Sprite_StateOverlay.js",
+  "js/rpg_sprites/Sprite_Weapon.js",
+  "js/rpg_sprites/Sprite_Balloon.js",
+  "js/rpg_sprites/Sprite_Picture.js",
+  "js/rpg_sprites/Sprite_Timer.js",
+  "js/rpg_sprites/Sprite_Destination.js",
+  "js/rpg_sprites/Spriteset_Base.js",
+  "js/rpg_sprites/Spriteset_Map.js",
+  "js/rpg_sprites/Spriteset_Battle.js"
+]
