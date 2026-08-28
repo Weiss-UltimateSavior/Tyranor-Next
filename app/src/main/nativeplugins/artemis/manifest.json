@@ -6,6 +6,7 @@
   "libs": [
     "libartemis.so",
     "libartemis-compatible.so",
-    "libartemis-compatible-v2.so"
+    "libartemis-compatible-v2.so",
+    "libartemis-v4.so"
   ]
 }

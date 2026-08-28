@@ -90,6 +90,7 @@ internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_V1 to "V1",
     EngineSettingsStore.ART_ENGINE_V2 to "V2",
     EngineSettingsStore.ART_ENGINE_V3 to "V3",
+    EngineSettingsStore.ART_ENGINE_V4 to "V4",
 )
 
 @Composable

@@ -99,7 +99,10 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 || !source.getBooleanExtra("artemisAutoFallback", false)
                 || SystemClock.elapsedRealtime() - createdAtElapsed > EARLY_EXIT_WINDOW_MS) return false;
         int stage = source.getIntExtra("artemisFallbackStage", 0);
-        String nextPackage = stage == 0 ? "internal.artemis.compat" : stage == 1 ? "internal.artemis.compat.v2" : null;
+        String nextPackage = stage == 0 ? "internal.artemis.compat"
+                : stage == 1 ? "internal.artemis.compat.v2"
+                : stage == 2 ? "internal.artemis.v4"
+                : null;
         String path = source.getStringExtra("path");
         if (nextPackage == null || path == null || path.trim().isEmpty()) return false;
 
@@ -108,12 +111,15 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 .apply();
         Intent retry = new Intent(this,
                 stage == 0 ? com.akira.tyranoemu.remote.ArtemisActivityV2.class
-                        : com.akira.tyranoemu.remote.ArtemisActivityV3.class);
+                        : stage == 1 ? com.akira.tyranoemu.remote.ArtemisActivityV3.class
+                        : com.akira.tyranoemu.remote.ArtemisActivityV4.class);
         retry.putExtras(source);
         retry.putExtra("artemisFallbackStage", stage + 1);
         // retry 到下一 revision 时，bootstrap loader 需加载对应的插件库名。
         retry.putExtra("engineLibName",
-                stage == 0 ? "artemis-compatible" : "artemis-compatible-v2");
+                stage == 0 ? "artemis-compatible"
+                        : stage == 1 ? "artemis-compatible-v2"
+                        : "artemis-v4");
         retry.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Log.w("YukiArtemis", "Artemis exited during startup; retrying with " + nextPackage + " path=" + path);
         try {
