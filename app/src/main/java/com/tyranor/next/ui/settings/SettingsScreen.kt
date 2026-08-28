@@ -332,14 +332,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         "输入游戏目录的绝对路径，例如 /storage/emulated/0/游戏",
-                        style = MiuixTheme.textStyles.bodyMedium,
-                        color = MiuixTheme.colorScheme.onSurfaceVariant,
+                        style = MiuixTheme.textStyles.main,
+                        color = MiuixTheme.colorScheme.onBackground,
                     )
                     AppSearchField(
                         query = pathInput,
                         onQueryChange = { pathInput = it },
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = MiuixTheme.textStyles.bodyMedium,
+                        textStyle = MiuixTheme.textStyles.main,
                     )
                 }
             },
