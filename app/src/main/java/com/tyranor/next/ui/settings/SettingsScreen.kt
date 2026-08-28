@@ -33,7 +33,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import com.tyranor.next.ui.common.AppSearchField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -329,13 +329,19 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showPathDialog = false },
             title = { Text("输入文件夹路径", style = MaterialTheme.typography.titleMedium) },
             text = {
-                OutlinedTextField(
-                    value = pathInput,
-                    onValueChange = { pathInput = it },
-                    singleLine = true,
-                    label = { Text("/storage/emulated/0/...") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "输入游戏目录的绝对路径，例如 /storage/emulated/0/游戏",
+                        style = MiuixTheme.textStyles.bodyMedium,
+                        color = MiuixTheme.colorScheme.onSurfaceVariant,
+                    )
+                    AppSearchField(
+                        query = pathInput,
+                        onQueryChange = { pathInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MiuixTheme.textStyles.bodyMedium,
+                    )
+                }
             },
             confirmButton = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
