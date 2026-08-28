@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 public final class DoubleBackExit {
-    private static final long EXIT_WINDOW_MS = 2_000L;
+    private static final long EXIT_WINDOW_MS = 500L;
     private static final Map<Activity, Long> LAST_BACK_TIME = new WeakHashMap<>();
     private static final Map<Activity, Boolean> SUPPRESS_BACK_UP = new WeakHashMap<>();
 

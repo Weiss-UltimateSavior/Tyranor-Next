@@ -12,6 +12,7 @@ import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -109,7 +110,10 @@ public class ONScripter extends SDLActivity {
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         // BACK 首按透传 ESC 给 ONS（游戏内取消/右键语义），2 秒内双击真正退出；
         // ESC 的 down+up 在 DOWN 时成对发送，UP 一律吞掉，避免重复/悬空事件。
+        // 鼠标来源的 BACK（侧键）静默消费：不透传 ESC、不计入双击退出
+        //（与 libsdl3 链 SDLSurface 吞掉鼠标 BACK 的净行为一致）。
         if (event != null && event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+            if ((event.getSource() & InputDevice.SOURCE_MOUSE) != 0) return true;
             switch (event.getAction()) {
                 case KeyEvent.ACTION_DOWN:
                     if (event.getRepeatCount() == 0) {
