@@ -46,6 +46,7 @@ import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModule
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.glassNavBottomInset
@@ -90,6 +91,14 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                 contentType = { "engine" },
             ) { engine ->
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
+                // 「去下载」按全局 Ren'Py 版本对应模块提供，避免恒指向 8.5
+                val downloadModule = if (engine == EngineType.RENPY) {
+                    ExternalEngineModuleRegistry.moduleForRenpyVersion(
+                        EngineSettingsStore.getRenpyVersion(context),
+                    ) ?: module
+                } else {
+                    module
+                }
                 val installed = module == null || externalInstallStates[engine] == true
                 EngineRow(
                     engine = engine,
@@ -97,7 +106,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     installed = installed,
                     onClick = {
                         if (module != null && !installed) {
-                            missingModule = module
+                            missingModule = downloadModule
                         }
                     },
                 )
