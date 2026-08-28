@@ -16,7 +16,7 @@ data class ScanGame(
     val coverSource: String? = null,
     val vndbId: String? = null,
     val metadataTitle: String? = null,
-    /** 外置 APK 模块内部别名，例如 internal.renpy / internal.rpgmxp，用于保留同一引擎下的子运行时。 */
+    /** 外置 APK 模块内部别名（如 internal.rpgmxp），用于保留同一引擎下的子运行时；Ren'Py 由单游戏版本设置决定，不写该字段。 */
     val externalModuleAlias: String? = null,
     /** 用户通过“启动文件”手动指定的启动入口文件名（相对游戏目录）；null 表示自动。 */
     val launchFile: String? = null,

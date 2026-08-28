@@ -78,6 +78,10 @@ object EngineLauncher {
             if (module.requiresGameDirectoryPath && path == null) {
                 return "无法解析游戏目录（仅支持本地文件路径）"
             }
+            // 外置引擎同样需要「所有文件访问」权限才能读取游戏目录（SAF 授权对外置 APK 无效）
+            if (path != null) {
+                requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+            }
             val result = ExternalEngineLauncher.launch(
                 context,
                 module,

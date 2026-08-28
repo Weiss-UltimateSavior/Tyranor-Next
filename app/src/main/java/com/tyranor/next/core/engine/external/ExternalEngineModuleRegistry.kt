@@ -29,6 +29,10 @@ object ExternalEngineModuleRegistry {
             else -> null
         }
 
+    /**
+     * 按内部别名查找模块。仅用于兼容历史扫描数据与测试；当前启动不走此路径——
+     * Ren'Py 按单游戏版本设置选模块，RPG Maker 直接读 ScanGame.externalModuleAlias。
+     */
     fun moduleForAlias(alias: String?): ExternalEngineModule? =
         modules.firstOrNull { it.supportsAlias(alias) }
 

@@ -4,6 +4,7 @@ import android.content.Intent
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.settings.EngineSettingsStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -48,6 +49,18 @@ class ExternalEngineModuleRegistryTest {
         assertEquals("cyou.joiplay.runtime.renpy.v7d7d1", RenPy77ExternalEngineModule.packageName)
         assertEquals("cyou.joiplay.renpy", RenPy80ExternalEngineModule.packageName)
         assertEquals(Intent.ACTION_MAIN, RenPy80ExternalEngineModule.action)
+    }
+
+    @Test
+    fun runtimeVersionsRequireGameDirectoryButStandaloneDoesNot() {
+        assertTrue(RenPyExternalEngineModule.requiresGameDirectoryPath)
+        assertTrue(RenPy77ExternalEngineModule.requiresGameDirectoryPath)
+        assertFalse(RenPy80ExternalEngineModule.requiresGameDirectoryPath)
+        // 版本选择链路：每游戏版本 → 对应模块 → 是否依赖目录解析
+        assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77))
+        assertTrue(ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77)!!.requiresGameDirectoryPath)
+        assertSame(RenPy80ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_803))
+        assertFalse(ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_803)!!.requiresGameDirectoryPath)
     }
 
     @Test

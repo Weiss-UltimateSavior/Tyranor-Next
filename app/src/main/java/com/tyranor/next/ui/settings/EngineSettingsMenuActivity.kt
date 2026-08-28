@@ -159,4 +159,5 @@ enum class EngineSettingsKind(val title: String, @param:DrawableRes val iconRes:
     ARTEMIS("Artemis引擎设置", R.drawable.ic_settings_engine),
     RPG_MAKER("RPG Maker引擎设置", R.drawable.ic_settings_engine),
     TYRANO("Tyrano引擎设置", R.drawable.ic_settings_engine),
+    RENPY("Ren'Py引擎设置", R.drawable.ic_settings_engine),
 }
