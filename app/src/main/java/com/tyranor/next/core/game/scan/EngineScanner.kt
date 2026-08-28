@@ -843,6 +843,7 @@ object EngineScanner {
         var hasRxdata = false
         var hasRvdata = false
         var hasRvdata2 = false
+        var hasMkxpZRubyRuntime = false
 
         fun collect(entry: T, rel: String) {
             val lower = nameOf(entry).lowercase(Locale.ROOT)
@@ -878,6 +879,8 @@ object EngineScanner {
                 lower.endsWith(".rgssad") -> if (firstRgssad == null) firstRgssad = childRel
                 lower.endsWith(".rgss2a") -> if (firstRgss2a == null) firstRgss2a = childRel
                 lower.endsWith(".rgss3a") -> if (firstRgss3a == null) firstRgss3a = childRel
+                rel.isEmpty() && lower.startsWith("x64-msvcrt-ruby") && lower.endsWith(".dll") ->
+                    hasMkxpZRubyRuntime = true
                 childRel.startsWith("data/") && lower.endsWith(".rxdata") -> hasRxdata = true
                 childRel.startsWith("data/") && lower.endsWith(".rvdata") -> hasRvdata = true
                 childRel.startsWith("data/") && lower.endsWith(".rvdata2") -> hasRvdata2 = true
@@ -920,14 +923,17 @@ object EngineScanner {
         firstRgss2a?.let {
             return Detection(EngineType.RPGMAKER, 96, it, "internal.rpgmvx")
         }
-        firstRgssad?.let {
-            return Detection(EngineType.RPGMAKER, 96, it, "internal.rpgmxp")
-        }
         if (hasGameIni && hasRvdata2) {
             return Detection(EngineType.RPGMAKER, 92, LAUNCH_TARGET_GAME_DIR, "internal.rpgmvxace")
         }
         if (hasGameIni && hasRvdata) {
             return Detection(EngineType.RPGMAKER, 92, LAUNCH_TARGET_GAME_DIR, "internal.rpgmvx")
+        }
+        if (hasMkxpZRubyRuntime) {
+            return Detection(EngineType.RPGMAKER, 92, LAUNCH_TARGET_GAME_DIR, "internal.mkxp-z")
+        }
+        firstRgssad?.let {
+            return Detection(EngineType.RPGMAKER, 96, it, "internal.rpgmxp")
         }
         if (hasGameIni && hasRxdata) {
             return Detection(EngineType.RPGMAKER, 92, LAUNCH_TARGET_GAME_DIR, "internal.rpgmxp")
