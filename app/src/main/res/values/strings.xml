@@ -161,6 +161,9 @@
     <string name="engine_settings_fps_limit">FPS 限制</string>
     <string name="engine_settings_opengl_texture_compression">OpenGL 纹理压缩</string>
     <string name="engine_settings_max_texture_size">最大纹理尺寸</string>
+    <string name="engine_settings_operation">操作</string>
+    <string name="engine_settings_vcursor_scale">虚拟鼠标缩放比</string>
+    <string name="engine_settings_menu_handler_opa">菜单按钮不透明度</string>
     <string name="engine_settings_font">字体</string>
     <string name="engine_settings_default_font">默认字体</string>
     <string name="engine_settings_builtin_font">内置字体</string>

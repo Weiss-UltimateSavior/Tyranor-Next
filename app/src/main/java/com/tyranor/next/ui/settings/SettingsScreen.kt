@@ -398,6 +398,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krTexsize by remember { mutableStateOf(EngineSettingsStore.getKrOglMaxTexsize(ctx)) }
     var krAccurate by remember { mutableStateOf(EngineSettingsStore.getKrOglAccurateRender(ctx)) }
     var krFps by remember { mutableStateOf(EngineSettingsStore.getKrFpsLimit(ctx)) }
+    var krVCursorScale by remember { mutableStateOf(EngineSettingsStore.getKrVCursorScale(ctx)) }
+    var krMenuOpa by remember { mutableStateOf(EngineSettingsStore.getKrMenuHandlerOpa(ctx)) }
 
     var ons by remember { mutableStateOf(EngineSettingsStore.loadOns(ctx)) }
 
@@ -437,6 +439,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrOglMaxTexsize(ctx, krTexsize)
         EngineSettingsStore.setKrOglAccurateRender(ctx, krAccurate)
         EngineSettingsStore.setKrFpsLimit(ctx, krFps)
+        EngineSettingsStore.setKrVCursorScale(ctx, krVCursorScale)
+        EngineSettingsStore.setKrMenuHandlerOpa(ctx, krMenuOpa)
         EngineSettingsStore.saveOns(ctx, ons)
         EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
         EngineSettingsStore.setArtRotateScreen(ctx, artRotate)
@@ -481,6 +485,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 kind,
                 krVersion, krKernel, krScoped, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
+                krVCursorScale, krMenuOpa,
                 ons, artVersion, artRotate, artPatch, tyExternal, tyScoped, rpgMakerMod, renpyVersion, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
@@ -495,6 +500,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrTexsize = { krTexsize = it },
                 onKrAccurate = { krAccurate = it },
                 onKrFps = { krFps = it },
+                onKrVCursorScale = { krVCursorScale = it },
+                onKrMenuOpa = { krMenuOpa = it },
                 onResetKrFont = { krFont = "" },
                 onOns = { ons = it },
                 onArtVersion = { artVersion = it },
@@ -549,6 +556,7 @@ private fun LazyListPlaceholder(
     krVersion: String, krKernel: String, krScoped: Boolean, krFont: String, krForceFont: Boolean,
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
+    krVCursorScale: String, krMenuOpa: String,
     ons: EngineSettingsStore.Ons, artVersion: String, artRotate: Boolean, artPatch: String,
     tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean, renpyVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
@@ -556,6 +564,7 @@ private fun LazyListPlaceholder(
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
     onKrSwCompress: (String) -> Unit, onKrOglCompress: (String) -> Unit, onKrMem: (String) -> Unit,
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
+    onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit,
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
@@ -625,6 +634,15 @@ private fun LazyListPlaceholder(
                 if (krVersion != EngineSettingsStore.KR_126) {
                     SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
                 }
+            }
+        }
+
+        if (kind == EngineSettingsKind.KRKR && !isSdl3) item {
+            EngineCard(stringResource(R.string.engine_settings_operation)) {
+                // 仅 kirikiri2 内核（libgame.so）读取这两项偏好，krkrsdl3 走命令行参数不生效
+                // 虚拟鼠标 1..100%，空心横条（1..150 档已验证超出屏幕，已收敛）
+                ContinuousSliderRow(stringResource(R.string.engine_settings_vcursor_scale), krkrPercentOptions(), krVCursorScale, onKrVCursorScale)
+                ContinuousSliderRow(stringResource(R.string.engine_settings_menu_handler_opa), krkrPercentOptions(), krMenuOpa, onKrMenuOpa)
             }
         }
 
@@ -758,6 +776,36 @@ private fun EnumSliderRow(
     )
 }
 
+@Composable
+private fun ContinuousSliderRow(
+    label: String,
+    options: List<Pair<String, String>>,
+    current: String,
+    onSelect: (String) -> Unit,
+) {
+    val initIndex = options.indexOfFirst { it.first == current }.takeIf { it >= 0 } ?: 0
+    var sliderIndex by remember(current) { mutableIntStateOf(initIndex) }
+    ArrowPreference(
+        title = label,
+        endActions = {
+            Text(
+                options[sliderIndex].second,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+        onClick = { },
+        bottomAction = {
+            Slider(
+                value = sliderIndex.toFloat(),
+                onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
+                onValueChangeFinished = { onSelect(options[sliderIndex].first) },
+                valueRange = 0f..(options.size - 1).toFloat(),
+            )
+        },
+    )
+}
+
 /** 字体行：Miuix ArrowPreference，右侧展示当前字体；点击弹出「内置字体 / 选择字体文件」。 */
 @Composable
 private fun FontRow(label: String, value: String, onReset: () -> Unit, onPick: () -> Unit) {
@@ -813,6 +861,10 @@ private fun importFont(ctx: android.content.Context, uri: Uri): String? = try {
     null
 }
 
+/** KRKR 百分比选项：""（引擎默认）+ 1..100%，供全局滑杆与单游戏下拉共用；顶层 val 取不到 stringResource，故封装为函数。 */
+@Composable
+internal fun krkrPercentOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_option_engine_default)) + (1..100).map { it.toString() to "$it%" }
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
 private fun scanDirName(context: android.content.Context, uri: String): String = runCatching {
     val docId = DocumentsContract.getTreeDocumentId(android.net.Uri.parse(uri))

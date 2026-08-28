@@ -64,7 +64,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
     val krRender = PerGameSettingsStore.KR_FIELDS.associateWith { field ->
-        remember(field) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, field)) }
+        remember(gid, field) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, field)) }
     }
 
     var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
@@ -142,6 +142,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalOglCompress = EngineSettingsStore.getKrOglCompressTex(ctx)
     val globalTexsize = EngineSettingsStore.getKrOglMaxTexsize(ctx)
     val globalFps = EngineSettingsStore.getKrFpsLimit(ctx)
+    val globalVCursorScale = EngineSettingsStore.getKrVCursorScale(ctx)
+    val globalMenuOpa = EngineSettingsStore.getKrMenuHandlerOpa(ctx)
     val effRenderer = krRender[PerGameSettingsStore.F_RENDERER]!!.value ?: globalRenderer
 
     fun save() {
@@ -245,6 +247,27 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                             krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value = it
                                         }
                                     }
+                                }
+                            }
+                        }
+                        if (!isSdl3) {
+                            item {
+                                SectionCard(stringResource(R.string.engine_settings_operation)) {
+                                    // 仅 kirikiri2 内核生效（与全局设置一致）
+                                    OverrideChoice(
+                                        stringResource(R.string.engine_settings_vcursor_scale),
+                                        krkrPercentOptions().toMap(),
+                                        globalVCursorScale,
+                                        krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value,
+                                        emptyLabel = stringResource(R.string.engine_option_engine_default),
+                                    ) { krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value = it }
+                                    OverrideChoice(
+                                        stringResource(R.string.engine_settings_menu_handler_opa),
+                                        krkrPercentOptions().toMap(),
+                                        globalMenuOpa,
+                                        krRender[PerGameSettingsStore.F_MENU_HANDLER_OPA]!!.value,
+                                        emptyLabel = stringResource(R.string.engine_option_engine_default),
+                                    ) { krRender[PerGameSettingsStore.F_MENU_HANDLER_OPA]!!.value = it }
                                 }
                             }
                         }
