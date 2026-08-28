@@ -8,7 +8,6 @@ import java.util.Locale
 object ExternalEngineModuleRegistry {
     val modules: List<ExternalEngineModule> = listOf(
         RenPyExternalEngineModule,
-        RenPy80ExternalEngineModule,
         RenPy77ExternalEngineModule,
         RpgMakerExternalEngineModule,
     )
@@ -28,7 +27,6 @@ object ExternalEngineModuleRegistry {
     fun moduleForRenpyVersion(version: String?): ExternalEngineModule? =
         when (version?.trim()?.lowercase(Locale.ROOT)) {
             EngineSettingsStore.RENPY_85 -> RenPyExternalEngineModule
-            EngineSettingsStore.RENPY_803 -> RenPy80ExternalEngineModule
             EngineSettingsStore.RENPY_77 -> RenPy77ExternalEngineModule
             else -> null
         }

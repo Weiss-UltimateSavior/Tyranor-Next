@@ -262,14 +262,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     EngineType.RENPY -> item {
                         SectionCard("Ren'Py") {
                             OverrideChoice("引擎版本", RENPY_VERSION_MAP2, globalRenpyVersion, renpyVersion) { renpyVersion = it }
-                            if ((renpyVersion ?: globalRenpyVersion) == EngineSettingsStore.RENPY_803) {
-                                Text(
-                                    "8.0.3 为独立插件：启动后将打开插件主界面，请在插件内手动选择游戏。",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                                )
-                            }
                             Text(
                                 "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。",
                                 style = MaterialTheme.typography.bodyMedium,
@@ -437,7 +429,6 @@ private val ART_VERSION_MAP2 = mapOf(
 private val RENPY_VERSION_MAP2 = mapOf(
     EngineSettingsStore.RENPY_AUTO to "自动",
     EngineSettingsStore.RENPY_85 to "8.5",
-    EngineSettingsStore.RENPY_803 to "8.0.3",
     EngineSettingsStore.RENPY_77 to "7.7.1",
 )
 private val ART_PATCH_MAP2 = mapOf(

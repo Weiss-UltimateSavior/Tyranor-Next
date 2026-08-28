@@ -657,10 +657,7 @@ private fun LazyListPlaceholder(
             EngineCard("Ren'Py") {
                 DropdownRow("引擎版本", RENPY_VERSION_MAP, renpyVersion, onRenpyVersion)
                 Text(
-                    if (renpyVersion == EngineSettingsStore.RENPY_803)
-                        "8.0.3 为独立插件：启动后将打开插件主界面，请在插件内手动选择游戏。"
-                    else
-                        "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。",
+                    "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MiuixTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -848,7 +845,6 @@ private val ART_VERSION_MAP = listOf(
 private val RENPY_VERSION_MAP = listOf(
     EngineSettingsStore.RENPY_AUTO to "自动",
     EngineSettingsStore.RENPY_85 to "8.5",
-    EngineSettingsStore.RENPY_803 to "8.0.3",
     EngineSettingsStore.RENPY_77 to "7.7.1",
 )
 private val ART_PATCH_MAP = listOf(

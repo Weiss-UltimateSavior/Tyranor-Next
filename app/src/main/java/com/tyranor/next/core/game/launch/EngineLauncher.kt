@@ -75,7 +75,6 @@ object EngineLauncher {
                     null
                 },
             ) ?: defaultModule
-            // 独立插件（如 Ren'Py 8.0.3）只需拉起插件主界面，不依赖游戏目录解析
             if (module.requiresGameDirectoryPath && path == null) {
                 return "无法解析游戏目录（仅支持本地文件路径）"
             }

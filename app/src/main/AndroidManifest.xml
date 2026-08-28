@@ -11,7 +11,6 @@
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
         <package android:name="cyou.joiplay.runtime.renpy.v8d4d1" />
         <package android:name="cyou.joiplay.runtime.renpy.v7d7d1" />
-        <package android:name="cyou.joiplay.renpy" />
     </queries>
 
     <application

@@ -67,7 +67,6 @@ object EngineSettingsStore {
     // Ren'Py 版本取值常量
     const val RENPY_AUTO = "auto"
     const val RENPY_85 = "8.5"
-    const val RENPY_803 = "8.0.3"
     const val RENPY_77 = "7.7.1"
 
     val KR_RENDER_PREF_KEYS = listOf(
@@ -209,7 +208,7 @@ object EngineSettingsStore {
     fun getRenpyVersion(c: Context): String {
         val v = prefs(c).getString(KEY_RENPY_ENGINE_VERSION, RENPY_AUTO)
         return when (v) {
-            RENPY_85, RENPY_803, RENPY_77 -> v
+            RENPY_85, RENPY_77 -> v
             else -> RENPY_AUTO
         }
     }

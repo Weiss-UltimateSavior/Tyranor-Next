@@ -235,8 +235,7 @@ private fun refreshExternalInstallStates(
     engines: List<EngineType>,
 ): Map<EngineType, Boolean> =
     engines.mapNotNull { engine ->
-        // 安装状态与下载/启动一致：Ren'Py 按全局版本解析目标模块（而非「任一版本已装」），
-        // 保证全局选 8.0.3 而仅装 8.5 时正确显示未安装并允许下载
+        // 安装状态与下载/启动一致：Ren'Py 按全局版本解析目标模块（而非「任一版本已装」）
         val module = ExternalEngineModuleRegistry.resolveModule(
             engine,
             EngineSettingsStore.getRenpyVersion(context),
