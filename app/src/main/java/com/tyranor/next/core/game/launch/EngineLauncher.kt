@@ -195,7 +195,8 @@ object EngineLauncher {
         }
     }
 
-    private fun needsAllFilesAccess(path: String): Boolean {
+    /** 判断路径是否位于共享存储（原生引擎无法仅凭 SAF 授权读取），供启动前与手动添加目录共用。 */
+    internal fun needsAllFilesAccess(path: String): Boolean {
         val normalized = path.replace('\\', '/')
         return normalized == "/sdcard" ||
             normalized.startsWith("/sdcard/") ||

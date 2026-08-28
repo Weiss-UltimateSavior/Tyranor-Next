@@ -53,6 +53,10 @@
     <string name="settings_invalid_suffix">無効</string>
     <string name="settings_add_dir">フォルダを追加</string>
     <string name="settings_done">完了</string>
+    <string name="settings_input_path">パスを入力</string>
+    <string name="settings_input_dir_title">フォルダのパスを入力</string>
+    <string name="settings_path_invalid">パスが存在しないか、フォルダではありません</string>
+    <string name="settings_all_files_access_required">先に「すべてのファイルへのアクセス」権限を許可してください</string>
     <string name="settings_qq_group">QQ グループ</string>
     <string name="settings_telegram_channel">Telegram チャンネル</string>
     <string name="update_found_title">新しいバージョンがあります</string>

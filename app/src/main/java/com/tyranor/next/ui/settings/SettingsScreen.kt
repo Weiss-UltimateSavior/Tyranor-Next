@@ -2,8 +2,11 @@ package com.tyranor.next.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,6 +61,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
+import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.scan.EngineScanner
@@ -66,6 +70,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -96,6 +101,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var showGroupDialog by remember { mutableStateOf(false) }
     var showScanDirs by remember { mutableStateOf(false) }
     var scanDirs by remember { mutableStateOf(EngineScanner.loadRoots(ctx)) }
+    var showPathDialog by remember { mutableStateOf(false) }
+    var pathInput by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         EngineScanner.rootsRevision.collect {
             scanDirs = withContext(Dispatchers.IO) { EngineScanner.loadRoots(ctx) }
@@ -309,10 +316,73 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             confirmButton = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
+                        onClick = { showPathDialog = true },
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) { Text(stringResource(R.string.settings_input_path), style = MaterialTheme.typography.bodyMedium) }
+                    TextButton(
                         onClick = { dirPicker.launch(null) },
                         modifier = Modifier.padding(end = 8.dp),
                     ) { Text(stringResource(R.string.settings_add_dir)) }
                     TextButton(onClick = { showScanDirs = false }) { Text(stringResource(R.string.settings_done)) }
+                }
+            },
+        )
+    }
+
+    if (showPathDialog) {
+        val pathInvalidMsg = stringResource(R.string.settings_path_invalid)
+        val allFilesAccessMsg = stringResource(R.string.settings_all_files_access_required)
+        val savePath: () -> Unit = {
+            scope.launch {
+                val trimmed = pathInput.trim()
+                val target = File(trimmed)
+                // 仅绝对路径且为有效目录才允许保存；磁盘 IO 放到 Dispatchers.IO（同本文件 :265-269 约定）。
+                val ok = target.isAbsolute &&
+                    withContext(Dispatchers.IO) { runCatching { target.isDirectory }.getOrDefault(false) }
+                if (!ok) {
+                    Toast.makeText(ctx, pathInvalidMsg, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                // /storage 等共享存储路径需“管理所有文件”权限，否则扫描会静默为空；先引导授权，不落盘。
+                if (guideAllFilesAccessIfNeeded(ctx, target.absolutePath)) {
+                    Toast.makeText(ctx, allFilesAccessMsg, Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                EngineScanner.saveRoot(ctx, target.absolutePath)
+                showPathDialog = false
+                pathInput = ""
+            }
+        }
+        AppAlertDialog(
+            onDismissRequest = {
+                showPathDialog = false
+                pathInput = ""
+            },
+            title = { Text(stringResource(R.string.settings_input_dir_title), style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppSearchField(
+                        query = pathInput,
+                        onQueryChange = { pathInput = it },
+                        onSearch = savePath,
+                        leadingIcon = painterResource(R.drawable.ic_sheet_folder),
+                        iconContentDescription = stringResource(R.string.settings_input_dir_title),
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+            },
+            confirmButton = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = savePath,
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) { Text(stringResource(R.string.common_confirm), style = MaterialTheme.typography.bodyMedium) }
+                    TextButton(
+                        onClick = {
+                            showPathDialog = false
+                            pathInput = ""
+                        },
+                    ) { Text(stringResource(R.string.common_cancel), style = MaterialTheme.typography.bodyMedium) }
                 }
             },
         )
@@ -866,13 +936,48 @@ private fun importFont(ctx: android.content.Context, uri: Uri): String? = try {
 internal fun krkrPercentOptions(): List<Pair<String, String>> =
     listOf("" to stringResource(R.string.engine_option_engine_default)) + (1..100).map { it.toString() to "$it%" }
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
-private fun scanDirName(context: android.content.Context, uri: String): String = runCatching {
-    val docId = DocumentsContract.getTreeDocumentId(android.net.Uri.parse(uri))
-    docId.substringAfterLast(':').substringAfterLast('/').ifBlank { uri }
-}.getOrDefault(uri)
+private fun scanDirName(context: android.content.Context, uri: String): String =
+    if (uri.startsWith('/')) {
+        runCatching { File(uri).name.takeIf { it.isNotBlank() } ?: uri }.getOrDefault(uri)
+    } else {
+        runCatching {
+            val docId = DocumentsContract.getTreeDocumentId(android.net.Uri.parse(uri))
+            docId.substringAfterLast(':').substringAfterLast('/').ifBlank { uri }
+        }.getOrDefault(uri)
+    }
 
 /** 游戏根目录是否仍可访问（被改名/删除/权限失效时返回 false；TF 卡暂时拔出也会显示失效，重插后恢复）。 */
-private fun isScanDirValid(context: android.content.Context, uri: String): Boolean = runCatching {
-    val doc = DocumentFile.fromTreeUri(context, android.net.Uri.parse(uri))
-    doc != null && doc.isDirectory
-}.getOrDefault(false)
+private fun isScanDirValid(context: android.content.Context, uri: String): Boolean =
+    if (uri.startsWith('/')) {
+        runCatching { File(uri).isDirectory }.getOrDefault(false)
+    } else {
+        runCatching {
+            val doc = DocumentFile.fromTreeUri(context, android.net.Uri.parse(uri))
+            doc != null && doc.isDirectory
+        }.getOrDefault(false)
+    }
+
+/**
+ * 手动添加共享存储路径前检查“管理所有文件”权限。
+ * Android 11+ 上原生引擎无法仅凭 SAF 授权读取 /storage 真实路径；缺少权限时
+ * 尝试打开系统授权页并返回 true（调用方应提示用户并暂不保存），与 EngineLauncher 启动前校验保持一致。
+ */
+private fun guideAllFilesAccessIfNeeded(context: android.content.Context, path: String): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+    if (Environment.isExternalStorageManager()) return false
+    if (!EngineLauncher.needsAllFilesAccess(path)) return false
+    val app = context.applicationContext
+    val packageUri = Uri.parse("package:${app.packageName}")
+    runCatching {
+        app.startActivity(
+            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.recoverCatching {
+        app.startActivity(
+            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+    return true
+}

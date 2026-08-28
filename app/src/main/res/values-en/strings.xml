@@ -53,6 +53,10 @@
     <string name="settings_invalid_suffix">invalid</string>
     <string name="settings_add_dir">Add folder</string>
     <string name="settings_done">Done</string>
+    <string name="settings_input_path">Enter path</string>
+    <string name="settings_input_dir_title">Enter folder path</string>
+    <string name="settings_path_invalid">Path does not exist or is not a folder</string>
+    <string name="settings_all_files_access_required">Grant “Manage all files” permission first</string>
     <string name="settings_qq_group">QQ group</string>
     <string name="settings_telegram_channel">Telegram channel</string>
     <string name="update_found_title">New version available</string>

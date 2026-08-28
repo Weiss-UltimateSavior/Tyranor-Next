@@ -280,10 +280,17 @@ object EngineScanner {
 
     // ============ 扫描根目录持久化 ============
 
-    fun saveRoot(context: Context, uri: Uri): List<String> {
+    fun saveRoot(context: Context, uri: Uri): List<String> = saveRoot(context, uri.toString())
+
+    /**
+     * 保存扫描根目录（支持 SAF URI 与真实路径）。
+     * 真实路径会规范化：去除首尾空白与尾部路径分隔符（保留根目录 "/"），
+     * 避免「/games」与「/games/」作为两个根重复保存、删除其一误清整目录游戏。
+     */
+    fun saveRoot(context: Context, rootPath: String): List<String> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val existing = loadRoots(context).toMutableList()
-        val key = uri.toString()
+        val key = rootPath.trim().trimEnd('/').let { if (it.isEmpty()) "/" else it }
         val added = !existing.contains(key)
         if (added) existing.add(key)
         prefs.edit().putString(KEY_ROOTS, existing.joinToString("\n")).apply()
@@ -345,10 +352,10 @@ object EngineScanner {
     }.getOrNull() ?: uriText.takeIf { it.startsWith("/") }
 
     private fun normalizePath(path: String?): String? =
-        path?.replace('\\', '/')?.trimEnd('/')?.takeIf { it.isNotBlank() }
+        path?.replace('\\', '/')?.trimEnd('/')?.let { if (it.isEmpty()) "/" else it }
 
     private fun isSameOrChildPath(rootPath: String, gamePath: String): Boolean =
-        gamePath == rootPath || gamePath.startsWith("$rootPath/")
+        rootPath == "/" || gamePath == rootPath || gamePath.startsWith("$rootPath/")
 
     // ============ 扫描游戏 ============
 

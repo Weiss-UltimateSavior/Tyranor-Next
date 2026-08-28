@@ -53,6 +53,10 @@
     <string name="settings_invalid_suffix">已失效</string>
     <string name="settings_add_dir">添加目录</string>
     <string name="settings_done">完成</string>
+    <string name="settings_input_path">输入路径</string>
+    <string name="settings_input_dir_title">输入文件夹路径</string>
+    <string name="settings_path_invalid">路径不存在或不是文件夹</string>
+    <string name="settings_all_files_access_required">请先授予“管理所有文件”权限后再添加</string>
     <string name="settings_qq_group">企鹅群聊</string>
     <string name="settings_telegram_channel">飞机频道</string>
     <string name="update_found_title">发现新版本</string>
