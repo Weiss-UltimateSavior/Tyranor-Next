@@ -58,7 +58,7 @@ object RenPyExternalEngineModule : RenPyRuntimeModule(
     id = "renpy85",
     displayName = "Ren'Py 8.5",
     packageName = "cyou.joiplay.runtime.renpy.v8d4d1",
-    installUrl = "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RPGM-Plugin-8.5.apk",
+    installUrl = "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk",
     defaultAlias = "internal.renpy",
     supportedAliases = setOf("external.renpy", "internal.renpy8"),
 )
@@ -68,7 +68,7 @@ object RenPy77ExternalEngineModule : RenPyRuntimeModule(
     id = "renpy77",
     displayName = "Ren'Py 7.7.1",
     packageName = "cyou.joiplay.runtime.renpy.v7d7d1",
-    installUrl = "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/tag/test#:~:text=RenPy%2DPlugin%2D7.7.1.apk",
+    installUrl = "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-7.7.1.apk",
     defaultAlias = "internal.renpy7",
     supportedAliases = setOf("external.renpy7", "internal.renpy77"),
 )

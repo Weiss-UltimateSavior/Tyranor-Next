@@ -111,7 +111,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 2
-        versionName = "1.23"
+        versionName = "1.24"
         buildConfigField("String", "HIKARINAGI_CLIENT_ID", hikarinagiClientId.asBuildConfigString())
     }
 

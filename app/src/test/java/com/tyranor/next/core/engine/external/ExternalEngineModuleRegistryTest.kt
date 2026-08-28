@@ -16,7 +16,7 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.renpy"))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RenPyExternalEngineModule.packageName))
         assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RENPY))
-        assertTrue(RenPyExternalEngineModule.installUrl.orEmpty().endsWith("/RPGM-Plugin-8.5.apk"))
+        assertTrue(RenPyExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-8.5.apk"))
     }
 
     @Test
@@ -61,7 +61,11 @@ class ExternalEngineModuleRegistryTest {
     @Test
     fun renpyVersionModuleProtocols() {
         assertEquals(
-            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/tag/test#:~:text=RenPy%2DPlugin%2D7.7.1.apk",
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-8.5.apk",
+            RenPyExternalEngineModule.installUrl,
+        )
+        assertEquals(
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RenPy-Plugin-7.7.1.apk",
             RenPy77ExternalEngineModule.installUrl,
         )
         assertEquals("cyou.joiplay.runtime.renpy.run", RenPy77ExternalEngineModule.action)
