@@ -167,15 +167,22 @@ class TyranoActivity : Activity() {
                 emptyMap()
             }
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
-            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${hook.size} scriptAppends=${scriptAppends.keys}")
+            val isRpgMvV1 = webGameType == WebGameType.RPG_MV && rpgMakerVersion == "v1"
+            val v1Overlay: Map<String, ByteArray> = if (isRpgMvV1) {
+                buildRpgMvV1Overlay()
+            } else {
+                emptyMap()
+            }
+            val internalResources = modResources + v1Overlay
+            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${hook.size} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion")
             val injectBeforeBody = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
-                    contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, modResources,
+                    contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, internalResources,
                 )
             } else {
                 TyranoLocalHttpServer(
-                    contentRoot, hook, injectBeforeBody, scriptAppends, modHtml, modResources,
+                    contentRoot, hook, injectBeforeBody, scriptAppends, modHtml, internalResources,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
@@ -877,6 +884,34 @@ class TyranoActivity : Activity() {
         private const val RPG_MAKER_MOD_CSS_ASSET = "__rpgmaker_mod.css"
         private const val RPG_MAKER_MOD_ICON_ASSET = "__rpgmaker_mod_icon.png"
         private const val VIRTUAL_MOUSE_ASSET = "__tyranor_mouse.js"
+        private const val RPG_MV_V1_PREFIX = "rpgmv-v1"
+        private val RPG_MV_V1_FILES = arrayOf(
+            "js/rpg_core.js",
+            "js/rpg_managers.js",
+            "js/rpg_objects.js",
+            "js/rpg_scenes.js",
+            "js/rpg_sprites.js",
+            "js/rpg_windows.js",
+            "js/libs/pixi.js",
+            "js/libs/pixi-tilemap.js",
+            "js/libs/pixi-picture.js",
+        )
+
+        private fun TyranoActivity.buildRpgMvV1Overlay(): Map<String, ByteArray> {
+            val out = mutableMapOf<String, ByteArray>()
+            for (path in RPG_MV_V1_FILES) {
+                val assetPath = RPG_MV_V1_PREFIX + "/" + path
+                val bytes = runCatching { assets.open(assetPath).buffered().use { it.readBytes() } }.getOrNull()
+                if (bytes != null && bytes.isNotEmpty()) {
+                    out[path] = bytes
+                    out["www/" + path] = bytes
+                } else {
+                    Log.w(TAG, "v1 overlay missing asset " + assetPath)
+                }
+            }
+            return out
+        }
+
         private const val RPG_MAKER_MOD_CORE_PATH = "__tyranor__/rpgmaker_mod_core.js"
         private const val RPG_MAKER_MOD_UI_PATH = "__tyranor__/rpgmaker_mod_ui.js"
         private const val RPG_MAKER_MOD_CSS_PATH = "__tyranor__/rpgmaker_mod.css"
