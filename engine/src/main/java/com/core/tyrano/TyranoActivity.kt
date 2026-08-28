@@ -150,10 +150,16 @@ class TyranoActivity : Activity() {
             val touchPadConfigJs = touchPadConf?.takeIf { it.isNotBlank() }?.let {
                 "window.__touchPadConfig=$it;"
             }.orEmpty()
+            val touchPadThemeJs = if (isRpgWebGame) {
+                val colors = EngineThemeColors.fromIntent(intent)
+                "window.__touchPadTheme={primary:'${cssColor(colors.primary)}',onPrimary:'${cssColor(colors.onPrimary)}'};"
+            } else {
+                ""
+            }
             val touchPad =
                 if (isRpgWebGame) {
                     val pad = try { String(loadAsset(TOUCH_PAD_ASSET), Charsets.UTF_8) } catch (_: Exception) { "" }
-                    (touchPadConfigJs + "\n" + pad).toByteArray(Charsets.UTF_8)
+                    (touchPadThemeJs + "\n" + touchPadConfigJs + "\n" + pad).toByteArray(Charsets.UTF_8)
                 } else {
                     ByteArray(0)
                 }
@@ -246,6 +252,8 @@ class TyranoActivity : Activity() {
 
     private fun loadAsset(name: String): ByteArray = assets.open(name).buffered().use { it.readBytes() }
 
+    private fun cssColor(color: Int): String = String.format(Locale.US, "#%06X", color and 0xFFFFFF)
+
     /** 虚拟鼠标合成事件 API（懒加载缓存；见 assets/__tyranor_mouse.js）。 */
     private val mouseJs: String by lazy {
         runCatching { loadAsset(VIRTUAL_MOUSE_ASSET).toString(Charsets.UTF_8) }.getOrDefault("")
@@ -253,7 +261,6 @@ class TyranoActivity : Activity() {
 
     private fun buildRpgMakerModHtml(): String {
         val colors = EngineThemeColors.fromIntent(intent)
-        fun cssColor(color: Int): String = String.format(Locale.US, "#%06X", color and 0xFFFFFF)
         return """
             <style>:root{--tm-primary:${cssColor(colors.primary)};--tm-on-primary:${cssColor(colors.onPrimary)};}</style>
             <link rel="stylesheet" href="/__tyranor__/rpgmaker_mod.css">

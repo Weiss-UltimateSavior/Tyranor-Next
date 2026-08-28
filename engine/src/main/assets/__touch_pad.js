@@ -87,6 +87,30 @@ window.addEventListener('load', () => {
     if (!isFinite(s) || s <= 0) return 1
     return Math.min(2, Math.max(0.01, s))
   }
+  const parseHexColor = (hex) => {
+    if (!hex || typeof hex !== 'string') return null
+    const normalized = hex.trim().replace(/^#/, '')
+    if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null
+    return {
+      r: parseInt(normalized.slice(0, 2), 16),
+      g: parseInt(normalized.slice(2, 4), 16),
+      b: parseInt(normalized.slice(4, 6), 16)
+    }
+  }
+  const rgbaFromTheme = (hex, alpha, fallback) => {
+    const rgb = parseHexColor(hex)
+    if (!rgb) return fallback
+    return `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`
+  }
+  const padTheme = window.__touchPadTheme || {}
+  const padPrimary = padTheme.primary || '#307DEF'
+  const padOnPrimary = padTheme.onPrimary || '#FFFFFF'
+  const padBgNormal = rgbaFromTheme(padPrimary, 0.42, 'rgba(48,125,239,0.42)')
+  const padBgPressed = rgbaFromTheme(padPrimary, 0.66, 'rgba(48,125,239,0.66)')
+  const padBgFaded = rgbaFromTheme(padPrimary, 0.36, 'rgba(48,125,239,0.36)')
+  const padTextColor = rgbaFromTheme(padOnPrimary, 0.74, 'rgba(255,255,255,0.74)')
+  const padShadowColor = rgbaFromTheme(padPrimary, 0.5, 'rgba(48,125,239,0.5)')
+  const padFadedOutlineColor = rgbaFromTheme(padPrimary, 0.82, 'rgba(48,125,239,0.82)')
 
   const keyCodes = {
     Tab: 9,
@@ -232,14 +256,14 @@ window.addEventListener('load', () => {
   }
   const btnStyle = {
     ...commonStyle,
-    background: 'rgba(255,150,200,0.4)',
-    color: 'rgba(255,255,255,0.3)',
+    background: padBgNormal,
+    color: padTextColor,
     textAlign: 'center',
-    boxShadow: '0 0 10px 0 rgba(255,255,255,0.5)'
+    boxShadow: `0 0 10px 0 ${padShadowColor}`
   }
   const textStyle = {
     ...commonStyle,
-    color: 'rgba(255,255,255,0.3)',
+    color: padTextColor,
     transform: 'translate(-50%,-50%)',
     left: '50%',
     top: '50%'
@@ -331,7 +355,7 @@ window.addEventListener('load', () => {
       const scale = btnScale(custom)
       Object.assign(el.style, {
         ...commonStyle,
-        boxShadow: '0 0 10px 0 rgba(255,255,255,0.5)',
+        boxShadow: `0 0 10px 0 ${padShadowColor}`,
         width: `${padSize}px`,
         height: `${padSize}px`,
         borderRadius: '50em'
@@ -388,7 +412,7 @@ window.addEventListener('load', () => {
       width: `${padSize}px`,
       height: `${padSize}px`,
       borderRadius: '50em',
-      boxShadow: '0 0 10px 0 rgba(255,255,255,0.5)'
+      boxShadow: `0 0 10px 0 ${padShadowColor}`
     })
     qwzxElement.__disp = showKeys ? 'block' : 'none'
     applyFade(qwzxElement, qcustom)
@@ -432,10 +456,10 @@ window.addEventListener('load', () => {
   }
 
   const setKeyDownColor = (e) => {
-    e.style.background = 'rgba(255,150,200,0.6)'
+    e.style.background = padBgPressed
   }
   const setKeyUpColor = (e) => {
-    e.style.background = 'rgba(255,150,200,0.4)'
+    e.style.background = padBgNormal
   }
   const startKeyEvent = (e, keyCode, keyEvent) => {
     const evtObj = document.createEvent('UIEvents')
@@ -925,9 +949,9 @@ window.addEventListener('load', () => {
       style.id = 'tm-pad-edit-css'
       style.textContent =
         '.tm-pad-editable{cursor:move}' +
-        '.tm-pad-faded{opacity:0.45;filter:grayscale(1);background:rgba(100,150,255,0.5);outline:1px dashed rgba(140,180,255,0.8)}' +
+        '.tm-pad-faded{opacity:0.45;filter:grayscale(1);background:' + padBgFaded + ';outline:1px dashed ' + padFadedOutlineColor + '}' +
         '.tm-pad-btn{background:#3a3a4a;color:#fff;border:1px solid #666;border-radius:8px;padding:8px 12px;cursor:pointer;font:14px sans-serif;touch-action:none}' +
-        '.tm-pad-btn.primary{background:#2b6cb0}' +
+        '.tm-pad-btn.primary{background:' + padPrimary + ';color:' + padOnPrimary + '}' +
         '.tm-pad-btn:disabled{opacity:0.4}' +
         '.tm-pad-scalebtn{background:#3a3a4a;color:#fff;border:1px solid #666;border-radius:6px;width:34px;height:34px;cursor:pointer;font:18px sans-serif;touch-action:none}' +
         '.tm-pad-nudge{background:#3a3a4a;color:#fff;border:1px solid #666;width:34px;height:34px;cursor:pointer;font:16px sans-serif;touch-action:none;position:absolute}'
