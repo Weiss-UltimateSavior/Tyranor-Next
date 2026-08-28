@@ -92,13 +92,10 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             ) { engine ->
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
                 // 「去下载」按全局 Ren'Py 版本对应模块提供，避免恒指向 8.5
-                val downloadModule = if (engine == EngineType.RENPY) {
-                    ExternalEngineModuleRegistry.moduleForRenpyVersion(
-                        EngineSettingsStore.getRenpyVersion(context),
-                    ) ?: module
-                } else {
-                    module
-                }
+                val downloadModule = ExternalEngineModuleRegistry.resolveModule(
+                    engine,
+                    EngineSettingsStore.getRenpyVersion(context),
+                ) ?: module
                 val installed = module == null || externalInstallStates[engine] == true
                 EngineRow(
                     engine = engine,
@@ -238,8 +235,11 @@ private fun refreshExternalInstallStates(
     engines: List<EngineType>,
 ): Map<EngineType, Boolean> =
     engines.mapNotNull { engine ->
-        val mods = ExternalEngineModuleRegistry.modulesForEngine(engine)
-        if (mods.isEmpty()) return@mapNotNull null
-        // 同一引擎有多个版本模块（如 Ren'Py 8.5/8.0.3/7.7.1）时，任一已装即视为可用
-        engine to mods.any { ExternalEngineLauncher.isPackageInstalled(context, it) }
+        // 安装状态与下载/启动一致：Ren'Py 按全局版本解析目标模块（而非「任一版本已装」），
+        // 保证全局选 8.0.3 而仅装 8.5 时正确显示未安装并允许下载
+        val module = ExternalEngineModuleRegistry.resolveModule(
+            engine,
+            EngineSettingsStore.getRenpyVersion(context),
+        ) ?: return@mapNotNull null
+        engine to ExternalEngineLauncher.isPackageInstalled(context, module)
     }.toMap()

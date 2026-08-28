@@ -33,12 +33,17 @@ class ExternalEngineModuleRegistryTest {
     }
 
     @Test
-    fun modulesForEngineAggregatesVersionModules() {
-        val renpy = ExternalEngineModuleRegistry.modulesForEngine(EngineType.RENPY)
-        assertEquals(3, renpy.size)
-        assertEquals(setOf("renpy85", "renpy80", "renpy77"), renpy.map { it.id }.toSet())
-        assertEquals(1, ExternalEngineModuleRegistry.modulesForEngine(EngineType.RPGMAKER).size)
-        assertEquals(0, ExternalEngineModuleRegistry.modulesForEngine(EngineType.KIRIKIRI).size)
+    fun resolveModulePicksVersionTargetForRenpy() {
+        // 全局/生效版本决定 Ren'Py 目标模块（而非「任一版本已装」），与启动/下载一致
+        assertSame(RenPy80ExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, EngineSettingsStore.RENPY_803))
+        assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, EngineSettingsStore.RENPY_77))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, EngineSettingsStore.RENPY_85))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, EngineSettingsStore.RENPY_AUTO))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, null))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, "unknown"))
+        // 其余引擎返回其唯一模块，忽略版本
+        assertSame(RpgMakerExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RPGMAKER, EngineSettingsStore.RENPY_803))
+        assertNull(ExternalEngineModuleRegistry.resolveModule(EngineType.KIRIKIRI))
     }
 
     @Test

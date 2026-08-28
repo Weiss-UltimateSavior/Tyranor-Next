@@ -16,9 +16,13 @@ object ExternalEngineModuleRegistry {
     fun moduleForEngine(engine: EngineType): ExternalEngineModule? =
         modules.firstOrNull { it.engine == engine }
 
-    /** 某引擎的全部外置模块（如 Ren'Py 的 8.5/8.0.3/7.7.1），用于安装状态聚合。 */
-    fun modulesForEngine(engine: EngineType): List<ExternalEngineModule> =
-        modules.filter { it.engine == engine }
+    /** 解析某引擎实际生效的外置模块：Ren'Py 按版本（null/auto/未知 → 默认 8.5），其余引擎返回其唯一模块。 */
+    fun resolveModule(engine: EngineType, renpyVersion: String? = null): ExternalEngineModule? {
+        if (engine == EngineType.RENPY) {
+            return moduleForRenpyVersion(renpyVersion) ?: moduleForEngine(engine)
+        }
+        return moduleForEngine(engine)
+    }
 
     /** 按 Ren'Py 版本（EngineSettingsStore 的 RENPY_* 常量）查找模块；auto/未知返回 null，由调用方回退默认。 */
     fun moduleForRenpyVersion(version: String?): ExternalEngineModule? =
