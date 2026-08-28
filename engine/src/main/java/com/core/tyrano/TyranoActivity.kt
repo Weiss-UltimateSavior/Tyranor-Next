@@ -146,7 +146,12 @@ class TyranoActivity : Activity() {
                 } else {
                     ByteArray(0)
                 }
-            val hook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
+            val nwPolyfill = if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ) {
+                try { loadAsset(NWJS_POLYFILL_ASSET) } catch (_: Exception) { ByteArray(0) }
+            } else {
+                ByteArray(0)
+            }
+            val hook = nwPolyfill + (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
                 touchPad
             val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
                 mapOf(
@@ -867,6 +872,7 @@ class TyranoActivity : Activity() {
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
         private const val TOUCH_PAD_ASSET = "__touch_pad.js"
+        private const val NWJS_POLYFILL_ASSET = "__nwjs_polyfill.js"
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val JS_BRIDGE_NAME = "appJsInterface"
