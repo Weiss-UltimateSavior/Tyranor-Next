@@ -894,7 +894,8 @@ object EngineScanner {
                 hasRenpyDir && (hasRpy || hasRpyc) -> 90
                 else -> 85
             }
-            return Detection(EngineType.RENPY, confidence, "[游戏目录]", "internal.renpy")
+            // Ren'Py 版本由单游戏设置选择，扫描不写死版本别名（避免误导为固定 8.5 模块）
+            return Detection(EngineType.RENPY, confidence, "[游戏目录]")
         }
         if (hasIndex) {
             return Detection(EngineType.WEB_OTHER, 70, "[游戏目录]")

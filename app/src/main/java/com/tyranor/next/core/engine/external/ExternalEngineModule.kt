@@ -16,6 +16,9 @@ interface ExternalEngineModule {
     val supportedAliases: Set<String>
     val installUrl: String?
 
+    /** 是否需要解析游戏目录真实路径。独立插件（仅拉起插件主界面）可覆写为 false。 */
+    val requiresGameDirectoryPath: Boolean get() = true
+
     fun prepareForLaunch(context: Context, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult? = null
 
     fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent

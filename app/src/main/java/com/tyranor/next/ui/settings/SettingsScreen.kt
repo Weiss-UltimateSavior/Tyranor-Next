@@ -407,6 +407,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var tyExternal by remember { mutableStateOf(EngineSettingsStore.isTyranoExternalNetwork(ctx)) }
     var tyScoped by remember { mutableStateOf(EngineSettingsStore.isTyranoScopedSaveDir(ctx)) }
     var rpgMakerMod by remember { mutableStateOf(EngineSettingsStore.isRpgMakerModEnabled(ctx)) }
+    var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -442,6 +443,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setTyranoExternalNetwork(ctx, tyExternal)
         EngineSettingsStore.setTyranoScopedSaveDir(ctx, tyScoped)
         EngineSettingsStore.setRpgMakerModEnabled(ctx, rpgMakerMod)
+        EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
     }
 
     MiuixSettingsTheme {
@@ -478,7 +480,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 kind,
                 krVersion, krKernel, krScoped, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
-                ons, artVersion, artRotate, artPatch, tyExternal, tyScoped, rpgMakerMod, fontLauncher,
+                ons, artVersion, artRotate, artPatch, tyExternal, tyScoped, rpgMakerMod, renpyVersion, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -500,6 +502,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onTyExternal = { tyExternal = it },
                 onTyScoped = { tyScoped = it },
                 onRpgMakerMod = { rpgMakerMod = it },
+                onRenpyVersion = { renpyVersion = it },
             )
         }
     }
@@ -546,7 +549,7 @@ private fun LazyListPlaceholder(
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
     ons: EngineSettingsStore.Ons, artVersion: String, artRotate: Boolean, artPatch: String,
-    tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean, fontLauncher: FontPickerLauncher,
+    tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean, renpyVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
@@ -555,6 +558,7 @@ private fun LazyListPlaceholder(
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
+    onRenpyVersion: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
@@ -646,6 +650,21 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = "允许加载外部网络资源", checked = tyExternal, onCheckedChange = onTyExternal)
                 SwitchPreference(title = "独立存档目录", checked = tyScoped, onCheckedChange = onTyScoped)
                 SwitchPreference(title = "游戏修改器", checked = rpgMakerMod, onCheckedChange = onRpgMakerMod)
+            }
+        }
+
+        if (kind == EngineSettingsKind.RENPY) item {
+            EngineCard("Ren'Py") {
+                DropdownRow("引擎版本", RENPY_VERSION_MAP, renpyVersion, onRenpyVersion)
+                Text(
+                    if (renpyVersion == EngineSettingsStore.RENPY_803)
+                        "8.0.3 为独立插件：启动后将打开插件主界面，请在插件内手动选择游戏。"
+                    else
+                        "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
             }
         }
 
@@ -825,6 +844,12 @@ private val ART_VERSION_MAP = listOf(
     EngineSettingsStore.ART_ENGINE_V1 to "V1",
     EngineSettingsStore.ART_ENGINE_V2 to "V2",
     EngineSettingsStore.ART_ENGINE_V3 to "V3",
+)
+private val RENPY_VERSION_MAP = listOf(
+    EngineSettingsStore.RENPY_AUTO to "自动",
+    EngineSettingsStore.RENPY_85 to "8.5",
+    EngineSettingsStore.RENPY_803 to "8.0.3",
+    EngineSettingsStore.RENPY_77 to "7.7.1",
 )
 private val ART_PATCH_MAP = listOf(
     EngineSettingsStore.AUTO_PATCH_ASK to "启动时询问",

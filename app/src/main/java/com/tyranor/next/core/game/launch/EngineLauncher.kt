@@ -65,15 +65,30 @@ object EngineLauncher {
      *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。 */
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): String? {
         val path = resolveGameDirectory(context, game)
-        if (path == null) {
-            return "无法解析游戏目录（仅支持本地文件路径）"
-        }
-        ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { module ->
+        ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
+            val module = ExternalEngineModuleRegistry.resolveModule(
+                game.engine,
+                if (game.engine == EngineType.RENPY) {
+                    PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RENPY_VERSION)
+                        ?: EngineSettingsStore.getRenpyVersion(context)
+                } else {
+                    null
+                },
+            ) ?: defaultModule
+            // 独立插件（如 Ren'Py 8.0.3）只需拉起插件主界面，不依赖游戏目录解析
+            if (module.requiresGameDirectoryPath && path == null) {
+                return "无法解析游戏目录（仅支持本地文件路径）"
+            }
+            // 需要目录解析的外置引擎同样要「所有文件访问」权限才能读取游戏目录（SAF 授权对外置 APK 无效）
+            if (module.requiresGameDirectoryPath && path != null) {
+                requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+            }
             val result = ExternalEngineLauncher.launch(
                 context,
+                module,
                 ExternalEngineLaunchRequest(
                     game = game,
-                    gameDirectoryPath = path,
+                    gameDirectoryPath = path.orEmpty(),
                     launchTarget = game.launchTarget,
                 ),
             )
@@ -82,6 +97,9 @@ object EngineLauncher {
                 return null
             }
             return result.message ?: "启动 ${module.displayName} 失败"
+        }
+        if (path == null) {
+            return "无法解析游戏目录（仅支持本地文件路径）"
         }
         requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
         EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let { return it }
