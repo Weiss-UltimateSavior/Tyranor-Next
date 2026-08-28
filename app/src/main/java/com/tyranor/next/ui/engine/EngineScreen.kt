@@ -229,6 +229,8 @@ private fun refreshExternalInstallStates(
     engines: List<EngineType>,
 ): Map<EngineType, Boolean> =
     engines.mapNotNull { engine ->
-        val module = ExternalEngineModuleRegistry.moduleForEngine(engine) ?: return@mapNotNull null
-        engine to ExternalEngineLauncher.isPackageInstalled(context, module)
+        val mods = ExternalEngineModuleRegistry.modulesForEngine(engine)
+        if (mods.isEmpty()) return@mapNotNull null
+        // 同一引擎有多个版本模块（如 Ren'Py 8.5/8.0.3/7.7.1）时，任一已装即视为可用
+        engine to mods.any { ExternalEngineLauncher.isPackageInstalled(context, it) }
     }.toMap()

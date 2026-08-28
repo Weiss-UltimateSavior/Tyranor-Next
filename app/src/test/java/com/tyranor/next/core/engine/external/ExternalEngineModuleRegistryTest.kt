@@ -32,6 +32,15 @@ class ExternalEngineModuleRegistryTest {
     }
 
     @Test
+    fun modulesForEngineAggregatesVersionModules() {
+        val renpy = ExternalEngineModuleRegistry.modulesForEngine(EngineType.RENPY)
+        assertEquals(3, renpy.size)
+        assertEquals(setOf("renpy85", "renpy80", "renpy77"), renpy.map { it.id }.toSet())
+        assertEquals(1, ExternalEngineModuleRegistry.modulesForEngine(EngineType.RPGMAKER).size)
+        assertEquals(0, ExternalEngineModuleRegistry.modulesForEngine(EngineType.KIRIKIRI).size)
+    }
+
+    @Test
     fun renpyVersionModuleProtocols() {
         assertTrue(RenPy80ExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-8.0.3.apk"))
         assertTrue(RenPy77ExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-7.7.1.apk"))

@@ -262,6 +262,14 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     EngineType.RENPY -> item {
                         SectionCard("Ren'Py") {
                             OverrideChoice("引擎版本", RENPY_VERSION_MAP2, globalRenpyVersion, renpyVersion) { renpyVersion = it }
+                            if ((renpyVersion ?: globalRenpyVersion) == EngineSettingsStore.RENPY_803) {
+                                Text(
+                                    "8.0.3 为独立插件：启动后将打开插件主界面，请在插件内手动选择游戏。",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                                )
+                            }
                             Text(
                                 "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。",
                                 style = MaterialTheme.typography.bodyMedium,
