@@ -289,6 +289,16 @@ object EngineScanner {
         return existing
     }
 
+    fun saveRoot(context: Context, rootPath: String): List<String> {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val existing = loadRoots(context).toMutableList()
+        val key = rootPath.trim()
+        val added = !existing.contains(key)
+        if (added) existing.add(key)
+        prefs.edit().putString(KEY_ROOTS, existing.joinToString(10.toChar().toString())).apply()
+        if (added) _rootsRevision.value++
+        return existing
+    }
     fun removeRoot(context: Context, uri: Uri) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val current = loadRoots(context)
