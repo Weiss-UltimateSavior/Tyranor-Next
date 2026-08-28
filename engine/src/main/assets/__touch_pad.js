@@ -105,11 +105,11 @@ window.addEventListener('load', () => {
   const padTheme = window.__touchPadTheme || {}
   const padPrimary = padTheme.primary || '#307DEF'
   const padOnPrimary = padTheme.onPrimary || '#FFFFFF'
-  const padBgNormal = rgbaFromTheme(padPrimary, 0.42, 'rgba(48,125,239,0.42)')
-  const padBgPressed = rgbaFromTheme(padPrimary, 0.66, 'rgba(48,125,239,0.66)')
-  const padBgFaded = rgbaFromTheme(padPrimary, 0.36, 'rgba(48,125,239,0.36)')
-  const padTextColor = rgbaFromTheme(padOnPrimary, 0.74, 'rgba(255,255,255,0.74)')
-  const padShadowColor = rgbaFromTheme(padPrimary, 0.5, 'rgba(48,125,239,0.5)')
+  const padBgNormal = rgbaFromTheme(padPrimary, 0.22, 'rgba(48,125,239,0.22)')
+  const padBgPressed = rgbaFromTheme(padPrimary, 0.46, 'rgba(48,125,239,0.46)')
+  const padBgFaded = rgbaFromTheme(padPrimary, 0.16, 'rgba(48,125,239,0.16)')
+  const padTextColor = rgbaFromTheme(padOnPrimary, 0.54, 'rgba(255,255,255,0.54)')
+  const padShadowColor = rgbaFromTheme(padPrimary, 0.3, 'rgba(48,125,239,0.3)')
   const padFadedOutlineColor = rgbaFromTheme(padPrimary, 0.82, 'rgba(48,125,239,0.82)')
 
   const keyCodes = {
