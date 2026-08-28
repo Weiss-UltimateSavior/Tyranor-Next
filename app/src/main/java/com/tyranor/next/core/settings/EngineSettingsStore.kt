@@ -33,6 +33,9 @@ object EngineSettingsStore {
     const val KEY_ARTEMIS_ROTATE_SCREEN = "artemis_rotate_screen"
     const val KEY_ARTEMIS_AUTO_PATCH = "artemis_auto_patch"
 
+    // Ren'Py 应用级默认（外置模块版本选择）
+    const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
+
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
     const val KEY_TYRANO_SCOPED_SAVE_DIR = "tyrano_scoped_save_dir"
@@ -60,6 +63,12 @@ object EngineSettingsStore {
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
+
+    // Ren'Py 版本取值常量
+    const val RENPY_AUTO = "auto"
+    const val RENPY_85 = "8.5"
+    const val RENPY_803 = "8.0.3"
+    const val RENPY_77 = "7.7.1"
 
     val KR_RENDER_PREF_KEYS = listOf(
         KEY_KR_RENDERER, KEY_KR_SOFTWARE_DRAW_THREAD, KEY_KR_SOFTWARE_COMPRESS_TEX,
@@ -195,6 +204,16 @@ object EngineSettingsStore {
         return if (v == AUTO_PATCH_AUTO || v == AUTO_PATCH_OFF) v else AUTO_PATCH_ASK
     }
     fun setArtAutoPatch(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_AUTO_PATCH, v).apply()
+
+    // ---------- Ren'Py ----------
+    fun getRenpyVersion(c: Context): String {
+        val v = prefs(c).getString(KEY_RENPY_ENGINE_VERSION, RENPY_AUTO)
+        return when (v) {
+            RENPY_85, RENPY_803, RENPY_77 -> v
+            else -> RENPY_AUTO
+        }
+    }
+    fun setRenpyVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_RENPY_ENGINE_VERSION, v).apply()
 
     // ---------- Tyrano ----------
     fun isTyranoExternalNetwork(c: Context): Boolean = prefs(c).getBoolean(KEY_TYRANO_EXTERNAL_NETWORK, false)

@@ -69,6 +69,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
     var artRotate by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
     var artPatch by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
+    var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
 
     val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
     var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
@@ -107,6 +108,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalTyExternal = EngineSettingsStore.isTyranoExternalNetwork(ctx)
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
+    val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
 
     val isSdl3 = (krKernel ?: globalKrKernel) == EngineSettingsStore.KERNEL_KRKRSDL3
     val globalRenderer = configuredGlobalRenderer.ifEmpty {
@@ -135,6 +137,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION, artVersion)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE, artRotate)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH, artPatch)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION, renpyVersion)
         val onsObj = JSONObject()
         putIfNotNull(onsObj, "scopedsavedir", onsScoped)
         putIfNotNull(onsObj, "strechfull", onsStretch)
@@ -258,8 +261,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.RENPY -> item {
                         SectionCard("Ren'Py") {
+                            OverrideChoice("引擎版本", RENPY_VERSION_MAP2, globalRenpyVersion, renpyVersion) { renpyVersion = it }
                             Text(
-                                "Ren'Py 使用外置 APK 引擎模块，模块安装后默认启用；当前没有可由主应用覆盖的单游戏设置。",
+                                "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -421,6 +425,12 @@ private val ART_VERSION_MAP2 = mapOf(
     EngineSettingsStore.ART_ENGINE_V1 to "V1",
     EngineSettingsStore.ART_ENGINE_V2 to "V2",
     EngineSettingsStore.ART_ENGINE_V3 to "V3",
+)
+private val RENPY_VERSION_MAP2 = mapOf(
+    EngineSettingsStore.RENPY_AUTO to "自动",
+    EngineSettingsStore.RENPY_85 to "8.5",
+    EngineSettingsStore.RENPY_803 to "8.0.3",
+    EngineSettingsStore.RENPY_77 to "7.7.1",
 )
 private val ART_PATCH_MAP2 = mapOf(
     EngineSettingsStore.AUTO_PATCH_ASK to "启动时询问",

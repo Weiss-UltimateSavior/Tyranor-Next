@@ -1,6 +1,10 @@
 package com.tyranor.next.core.engine.external
 
+import android.content.Intent
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.settings.EngineSettingsStore
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,7 +17,28 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.renpy"))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RenPyExternalEngineModule.packageName))
         assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RENPY))
-        assertTrue(RenPyExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin.apk"))
+        assertTrue(RenPyExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-8.5.apk"))
+    }
+
+    @Test
+    fun resolvesRenPyVersions() {
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_85))
+        assertSame(RenPy80ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_803))
+        assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_77))
+        assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion(EngineSettingsStore.RENPY_AUTO))
+        assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion("unknown"))
+        assertNull(ExternalEngineModuleRegistry.moduleForRenpyVersion(""))
+        assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.moduleForRenpyVersion(" 8.5 "))
+    }
+
+    @Test
+    fun renpyVersionModuleProtocols() {
+        assertTrue(RenPy80ExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-8.0.3.apk"))
+        assertTrue(RenPy77ExternalEngineModule.installUrl.orEmpty().endsWith("/RenPy-Plugin-7.7.1.apk"))
+        assertEquals("cyou.joiplay.runtime.renpy.run", RenPy77ExternalEngineModule.action)
+        assertEquals("cyou.joiplay.runtime.renpy.v7d7d1", RenPy77ExternalEngineModule.packageName)
+        assertEquals("cyou.joiplay.renpy", RenPy80ExternalEngineModule.packageName)
+        assertEquals(Intent.ACTION_MAIN, RenPy80ExternalEngineModule.action)
     }
 
     @Test

@@ -65,15 +65,25 @@ object EngineLauncher {
      *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。 */
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): String? {
         val path = resolveGameDirectory(context, game)
-        if (path == null) {
-            return "无法解析游戏目录（仅支持本地文件路径）"
-        }
-        ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { module ->
+        ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
+            val module = if (game.engine == EngineType.RENPY) {
+                ExternalEngineModuleRegistry.moduleForRenpyVersion(
+                    PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RENPY_VERSION)
+                        ?: EngineSettingsStore.getRenpyVersion(context),
+                ) ?: defaultModule
+            } else {
+                defaultModule
+            }
+            // 独立插件（如 Ren'Py 8.0.3）只需拉起插件主界面，不依赖游戏目录解析
+            if (module.requiresGameDirectoryPath && path == null) {
+                return "无法解析游戏目录（仅支持本地文件路径）"
+            }
             val result = ExternalEngineLauncher.launch(
                 context,
+                module,
                 ExternalEngineLaunchRequest(
                     game = game,
-                    gameDirectoryPath = path,
+                    gameDirectoryPath = path.orEmpty(),
                     launchTarget = game.launchTarget,
                 ),
             )
@@ -82,6 +92,9 @@ object EngineLauncher {
                 return null
             }
             return result.message ?: "启动 ${module.displayName} 失败"
+        }
+        if (path == null) {
+            return "无法解析游戏目录（仅支持本地文件路径）"
         }
         requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
         EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let { return it }

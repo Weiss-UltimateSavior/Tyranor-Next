@@ -23,13 +23,8 @@ object ExternalEngineLauncher {
             false
         }
 
-    fun launch(context: Context, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult {
-        val module = ExternalEngineModuleRegistry.moduleForEngine(request.game.engine)
-            ?: return ExternalEngineLaunchResult.failure(
-                "未配置 ${request.game.engine.displayName} 外置引擎模块",
-                "module_not_found",
-            )
-        if (request.gameDirectoryPath.isBlank()) {
+    fun launch(context: Context, module: ExternalEngineModule, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult {
+        if (module.requiresGameDirectoryPath && request.gameDirectoryPath.isBlank()) {
             return ExternalEngineLaunchResult.failure(
                 "无法解析 ${request.game.engine.displayName} 游戏目录真实路径，外置引擎模块无法启动",
                 "invalid_game_path",
