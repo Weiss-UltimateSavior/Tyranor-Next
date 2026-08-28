@@ -252,21 +252,21 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         }
                         if (!isSdl3) {
                             item {
-                                SectionCard("操作") {
+                                SectionCard(stringResource(R.string.engine_settings_operation)) {
                                     // 仅 kirikiri2 内核生效（与全局设置一致）
                                     OverrideChoice(
-                                        "虚拟鼠标缩放比",
-                                        KR_VCURSOR_SCALE_MAP2,
+                                        stringResource(R.string.engine_settings_vcursor_scale),
+                                        krkrPercentOptions().toMap(),
                                         globalVCursorScale,
                                         krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value,
-                                        emptyLabel = "引擎默认",
+                                        emptyLabel = stringResource(R.string.engine_option_engine_default),
                                     ) { krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value = it }
                                     OverrideChoice(
-                                        "菜单按钮不透明度",
-                                        KR_MENU_OPA_MAP2,
+                                        stringResource(R.string.engine_settings_menu_handler_opa),
+                                        krkrPercentOptions().toMap(),
                                         globalMenuOpa,
                                         krRender[PerGameSettingsStore.F_MENU_HANDLER_OPA]!!.value,
-                                        emptyLabel = "引擎默认",
+                                        emptyLabel = stringResource(R.string.engine_option_engine_default),
                                     ) { krRender[PerGameSettingsStore.F_MENU_HANDLER_OPA]!!.value = it }
                                 }
                             }
@@ -442,5 +442,3 @@ private fun onsStr(o: JSONObject, key: String, def: String): String? = if (o.has
 private fun putIfNotNull(o: JSONObject, key: String, v: Boolean?) { if (v != null) o.put(key, v) else o.remove(key) }
 private fun putIfNotNull(o: JSONObject, key: String, v: String?) { if (v != null) o.put(key, v) else o.remove(key) }
 private fun String.decode(): String = if (this == "sjis") "sjis" else if (this == "utf8") "utf8" else "gbk"
-private val KR_VCURSOR_SCALE_MAP2 = mapOf("" to "引擎默认") + (1..100).associate { it.toString() to "$it%" }
-private val KR_MENU_OPA_MAP2 = mapOf("" to "引擎默认") + (1..100).associate { it.toString() to "$it%" }

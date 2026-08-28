@@ -161,6 +161,9 @@
     <string name="engine_settings_fps_limit">FPS 制限</string>
     <string name="engine_settings_opengl_texture_compression">OpenGL テクスチャ圧縮</string>
     <string name="engine_settings_max_texture_size">最大テクスチャサイズ</string>
+    <string name="engine_settings_operation">操作</string>
+    <string name="engine_settings_vcursor_scale">仮想マウスの拡大縮小</string>
+    <string name="engine_settings_menu_handler_opa">メニューハンドラの不透明度</string>
     <string name="engine_settings_font">フォント</string>
     <string name="engine_settings_default_font">既定フォント</string>
     <string name="engine_settings_builtin_font">内蔵フォント</string>

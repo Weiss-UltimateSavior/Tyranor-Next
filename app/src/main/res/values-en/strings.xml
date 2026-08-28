@@ -161,6 +161,9 @@
     <string name="engine_settings_fps_limit">FPS limit</string>
     <string name="engine_settings_opengl_texture_compression">OpenGL texture compression</string>
     <string name="engine_settings_max_texture_size">Max texture size</string>
+    <string name="engine_settings_operation">Controls</string>
+    <string name="engine_settings_vcursor_scale">Virtual cursor scale</string>
+    <string name="engine_settings_menu_handler_opa">Menu handler opacity</string>
     <string name="engine_settings_font">Font</string>
     <string name="engine_settings_default_font">Default font</string>
     <string name="engine_settings_builtin_font">Built-in font</string>

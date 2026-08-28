@@ -638,11 +638,11 @@ private fun LazyListPlaceholder(
         }
 
         if (kind == EngineSettingsKind.KRKR && !isSdl3) item {
-            EngineCard("操作") {
+            EngineCard(stringResource(R.string.engine_settings_operation)) {
                 // 仅 kirikiri2 内核（libgame.so）读取这两项偏好，krkrsdl3 走命令行参数不生效
                 // 虚拟鼠标 1..100%，空心横条（1..150 档已验证超出屏幕，已收敛）
-                ContinuousSliderRow("虚拟鼠标缩放比", KR_VCURSOR_SCALE_MAP, krVCursorScale, onKrVCursorScale)
-                ContinuousSliderRow("菜单按钮不透明度", KR_MENU_OPA_MAP, krMenuOpa, onKrMenuOpa)
+                ContinuousSliderRow(stringResource(R.string.engine_settings_vcursor_scale), krkrPercentOptions(), krVCursorScale, onKrVCursorScale)
+                ContinuousSliderRow(stringResource(R.string.engine_settings_menu_handler_opa), krkrPercentOptions(), krMenuOpa, onKrMenuOpa)
             }
         }
 
@@ -861,8 +861,10 @@ private fun importFont(ctx: android.content.Context, uri: Uri): String? = try {
     null
 }
 
-private val KR_VCURSOR_SCALE_MAP = listOf("" to "引擎默认") + (1..100).map { it.toString() to "$it%" }
-private val KR_MENU_OPA_MAP = listOf("" to "引擎默认") + (1..100).map { it.toString() to "$it%" }
+/** KRKR 百分比选项：""（引擎默认）+ 1..100%，供全局滑杆与单游戏下拉共用；顶层 val 取不到 stringResource，故封装为函数。 */
+@Composable
+internal fun krkrPercentOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_option_engine_default)) + (1..100).map { it.toString() to "$it%" }
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
 private fun scanDirName(context: android.content.Context, uri: String): String = runCatching {
     val docId = DocumentsContract.getTreeDocumentId(android.net.Uri.parse(uri))
