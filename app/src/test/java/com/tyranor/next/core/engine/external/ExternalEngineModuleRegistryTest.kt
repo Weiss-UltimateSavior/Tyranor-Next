@@ -35,6 +35,22 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RenPy77ExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, EngineSettingsStore.RENPY_77))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, EngineSettingsStore.RENPY_85))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, EngineSettingsStore.RENPY_AUTO))
+        assertSame(
+            RenPy77ExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveModule(
+                EngineType.RENPY,
+                EngineSettingsStore.RENPY_AUTO,
+                detectedRenpyVersion = EngineSettingsStore.RENPY_77,
+            ),
+        )
+        assertSame(
+            RenPyExternalEngineModule,
+            ExternalEngineModuleRegistry.resolveModule(
+                EngineType.RENPY,
+                EngineSettingsStore.RENPY_85,
+                detectedRenpyVersion = EngineSettingsStore.RENPY_77,
+            ),
+        )
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, null))
         assertSame(RenPyExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RENPY, "unknown"))
         // 其余引擎返回其唯一模块，忽略版本

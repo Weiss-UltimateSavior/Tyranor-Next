@@ -251,6 +251,11 @@ internal fun mergeChangedGameFields(base: ScanGame, before: ScanGame, updated: S
     } else {
         base.externalModuleAlias
     },
+    detectedRenpyVersion = if (updated.detectedRenpyVersion != before.detectedRenpyVersion) {
+        updated.detectedRenpyVersion
+    } else {
+        base.detectedRenpyVersion
+    },
     launchFile = if (updated.launchFile != before.launchFile) updated.launchFile else base.launchFile,
     openTime = if (updated.openTime != before.openTime) updated.openTime else base.openTime,
 )

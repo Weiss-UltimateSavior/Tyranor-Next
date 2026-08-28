@@ -253,6 +253,7 @@ object EngineScanner {
             g.openTime.toString(),
             g.coverSource.orEmpty(),
             g.externalModuleAlias.orEmpty(),
+            g.detectedRenpyVersion.orEmpty(),
         ).joinToString("\u0001")
     }
 
@@ -271,6 +272,7 @@ object EngineScanner {
             openTime = p.getOrElse(8) { "" }.toLongOrNull() ?: 0,
             coverSource = p.getOrElse(9) { "" }.takeIf { it.isNotBlank() },
             externalModuleAlias = p.getOrElse(10) { "" }.takeIf { it.isNotBlank() },
+            detectedRenpyVersion = p.getOrElse(11) { "" }.takeIf { it.isNotBlank() },
         )
     }
 
@@ -455,6 +457,7 @@ object EngineScanner {
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
                 )
@@ -510,6 +513,7 @@ object EngineScanner {
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, children, session),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
                 )
@@ -591,6 +595,14 @@ object EngineScanner {
                 null,
             )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
         }.getOrNull()
+
+        fun readText(node: SafNode, maxBytes: Int = 64 * 1024): String? = runCatching {
+            resolver.openInputStream(node.uri)?.use { input ->
+                val buffer = ByteArray(maxBytes)
+                val count = input.read(buffer)
+                if (count <= 0) "" else String(buffer, 0, count, Charsets.UTF_8)
+            }
+        }.getOrNull()
     }
 
     private data class SafNode(
@@ -632,6 +644,31 @@ object EngineScanner {
         }
     }
 
+    private fun detectRenpyVersionIfNeeded(
+        detection: Detection,
+        children: List<SafNode>,
+        session: SafScanSession,
+    ): String? {
+        if (detection.engine != EngineType.RENPY) return null
+        val gameDir = children.firstOrNull { it.isDirectory && it.name.equals("game", ignoreCase = true) }
+        val gameChildren = gameDir?.let(session::children).orEmpty()
+        val scriptVersionTxt = gameChildren
+            .firstOrNull { !it.isDirectory && it.name.equals("script_version.txt", ignoreCase = true) }
+            ?.let(session::readText)
+        val scriptVersionRpy = gameChildren
+            .firstOrNull { !it.isDirectory && it.name.equals("script_version.rpy", ignoreCase = true) }
+            ?.let(session::readText)
+        val libDir = children.firstOrNull { it.isDirectory && it.name.equals("lib", ignoreCase = true) }
+        val hasPython27 = libDir?.let(session::children)
+            ?.any { it.name.equals("pythonlib2.7", ignoreCase = true) } == true
+        return RenPyVersionDetector.detect(scriptVersionTxt, scriptVersionRpy, hasPython27)
+    }
+
+    private fun detectRenpyVersionIfNeeded(detection: Detection, dir: File): String? {
+        if (detection.engine != EngineType.RENPY) return null
+        return RenPyVersionDetector.detect(dir)
+    }
+
     private class FileScanSession {
         private val childrenCache = HashMap<String, Array<File>>()
 
@@ -662,6 +699,7 @@ object EngineScanner {
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
                 )
@@ -693,6 +731,7 @@ object EngineScanner {
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
                     externalModuleAlias = detected.externalModuleAlias,
+                    detectedRenpyVersion = detectRenpyVersionIfNeeded(detected, dir),
                     coverUri = coverUri,
                     coverSource = if (coverUri.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
                 )

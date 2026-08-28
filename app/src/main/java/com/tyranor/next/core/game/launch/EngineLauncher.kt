@@ -74,6 +74,7 @@ object EngineLauncher {
                 } else {
                     null
                 },
+                detectedRenpyVersion = game.detectedRenpyVersion,
             ) ?: defaultModule
             if (module.requiresGameDirectoryPath && path == null) {
                 return "无法解析游戏目录（仅支持本地文件路径）"
