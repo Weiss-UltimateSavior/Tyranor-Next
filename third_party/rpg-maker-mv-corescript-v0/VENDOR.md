@@ -1,4 +1,6 @@
-# RPG Maker MV Corescript v0 — 來源說明（Tyranor-Next）
+# RPG Maker MV Corescript — 來源說明（Tyranor-Next）
+
+> 版本對應：`v0` = 現有 Tyranor-Next 內建 Web 宿主與注入腳本；`v1` = 本目錄 vendor 的 `rpgtkoolmv/corescript` 1.6.1 基線（行為參考與測試夾具，不打包進 APK）
 
 - **來源**：https://github.com/rpgtkoolmv/corescript（master，tag v1.3b，commit `182e314`）
 - **版本**：v1.3b，`Utils.RPGMAKER_VERSION = "1.6.1"`（見 `js/rpg_core/Utils.js`），Pixi.js v4.5.4（`js/libs/pixi.js`）

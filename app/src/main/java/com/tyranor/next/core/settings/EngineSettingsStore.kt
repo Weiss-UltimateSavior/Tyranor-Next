@@ -65,6 +65,8 @@ object EngineSettingsStore {
 
     const val RPG_MV_V0 = "v0"
     const val RPG_MZ_V0 = "v0"
+    const val RPG_MV_V1 = "v1"
+    const val RPG_MZ_V1 = "v1"
 
     val KR_RENDER_PREF_KEYS = listOf(
         KEY_KR_RENDERER, KEY_KR_SOFTWARE_DRAW_THREAD, KEY_KR_SOFTWARE_COMPRESS_TEX,
@@ -220,11 +222,13 @@ object EngineSettingsStore {
         prefs(c).edit().putString(KEY_RPG_MZ_ENGINE_VERSION, normalizeRpgMz(v)).apply()
 
     private fun normalizeRpgMv(v: String?): String = when (v?.trim()?.lowercase()) {
+        RPG_MV_V1 -> RPG_MV_V1
         RPG_MV_V0 -> RPG_MV_V0
         else -> RPG_MV_V0
     }
 
     private fun normalizeRpgMz(v: String?): String = when (v?.trim()?.lowercase()) {
+        RPG_MZ_V1 -> RPG_MZ_V1
         RPG_MZ_V0 -> RPG_MZ_V0
         else -> RPG_MZ_V0
     }

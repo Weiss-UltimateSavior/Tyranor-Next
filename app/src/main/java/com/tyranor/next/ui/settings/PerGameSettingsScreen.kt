@@ -424,5 +424,5 @@ private val ART_PATCH_MAP2 = mapOf(
     EngineSettingsStore.AUTO_PATCH_AUTO to "自动",
     EngineSettingsStore.AUTO_PATCH_OFF to "关闭",
 )
-private val RPG_MV_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MV_V0 to "v0")
-private val RPG_MZ_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MZ_V0 to "v0")
+private val RPG_MV_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MV_V0 to "v0 (現有)", EngineSettingsStore.RPG_MV_V1 to "v1 (1.6.1 corescript)")
+private val RPG_MZ_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MZ_V0 to "v0 (現有)", EngineSettingsStore.RPG_MZ_V1 to "v1 (預留)")
