@@ -378,12 +378,15 @@ object EngineLauncher {
             // 注意：buildKrEnginePrefsJson 遍历的是全局键（kr_renderer 等），
             // 而单游戏覆盖以 PerGameSettingsStore.KR_FIELDS（renderer 等）存储，需做键名映射。
             runCatching {
+                check(EngineSettingsStore.KR_RENDER_PREF_KEYS.size == PerGameSettingsStore.KR_FIELDS.size) {
+                    "KR pref keys / fields size mismatch"
+                }
                 val renderKeyMap = EngineSettingsStore.KR_RENDER_PREF_KEYS
                     .zip(PerGameSettingsStore.KR_FIELDS).toMap()
                 putExtra("krkr_engine_prefs", EngineSettingsStore.buildKrEnginePrefsJson(context) { globalKey ->
-                    renderKeyMap[globalKey]?.let { PerGameSettingsStore.getStr(context, gid, it) }
+                    renderKeyMap[globalKey]?.let { PerGameSettingsStore.getStr(context, gid, it)?.trim() }
                 })
-            }
+            }.onFailure { android.util.Log.w("EngineLauncher", "build krkr_engine_prefs failed", it) }
         }
     }
 

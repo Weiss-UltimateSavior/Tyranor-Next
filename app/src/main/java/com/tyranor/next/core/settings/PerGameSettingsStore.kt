@@ -29,9 +29,12 @@ object PerGameSettingsStore {
     const val F_OGL_MAX_TEXSIZE = "ogl_max_texsize"
     const val F_OGL_ACCURATE_RENDER = "ogl_accurate_render"
     const val F_FPS_LIMIT = "fps_limit"
+    const val F_VCURSOR_SCALE = "vcursor_scale"
+    const val F_MENU_HANDLER_OPA = "menu_handler_opa"
     val KR_FIELDS = listOf(
         F_RENDERER, F_SOFTWARE_DRAW_THREAD, F_SOFTWARE_COMPRESS_TEX, F_OGL_COMPRESS_TEX,
         F_MEM_USAGE, F_OGL_MAX_TEXSIZE, F_OGL_ACCURATE_RENDER, F_FPS_LIMIT,
+        F_VCURSOR_SCALE, F_MENU_HANDLER_OPA,
     )
 
     // Artemis
@@ -81,7 +84,7 @@ object PerGameSettingsStore {
     fun setStr(context: Context, gameId: String, key: String, value: String?) {
         if (gameId.isBlank()) return
         val j = load(context, gameId)
-        if (value == null) j.remove(key) else j.put(key, value)
+        if (value == null) j.remove(key) else j.put(key, value.trim())
         persist(context, gameId, j)
     }
 

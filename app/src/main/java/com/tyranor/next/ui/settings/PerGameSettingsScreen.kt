@@ -64,7 +64,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
     val krRender = PerGameSettingsStore.KR_FIELDS.associateWith { field ->
-        remember(field) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, field)) }
+        remember(gid, field) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, field)) }
     }
 
     var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
@@ -142,6 +142,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalOglCompress = EngineSettingsStore.getKrOglCompressTex(ctx)
     val globalTexsize = EngineSettingsStore.getKrOglMaxTexsize(ctx)
     val globalFps = EngineSettingsStore.getKrFpsLimit(ctx)
+    val globalVCursorScale = EngineSettingsStore.getKrVCursorScale(ctx)
+    val globalMenuOpa = EngineSettingsStore.getKrMenuHandlerOpa(ctx)
     val effRenderer = krRender[PerGameSettingsStore.F_RENDERER]!!.value ?: globalRenderer
 
     fun save() {
@@ -245,6 +247,27 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                             krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value = it
                                         }
                                     }
+                                }
+                            }
+                        }
+                        if (!isSdl3) {
+                            item {
+                                SectionCard("操作") {
+                                    // 仅 kirikiri2 内核生效（与全局设置一致）
+                                    OverrideChoice(
+                                        "虚拟鼠标缩放比",
+                                        KR_VCURSOR_SCALE_MAP2,
+                                        globalVCursorScale,
+                                        krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value,
+                                        emptyLabel = "引擎默认",
+                                    ) { krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value = it }
+                                    OverrideChoice(
+                                        "菜单按钮不透明度",
+                                        KR_MENU_OPA_MAP2,
+                                        globalMenuOpa,
+                                        krRender[PerGameSettingsStore.F_MENU_HANDLER_OPA]!!.value,
+                                        emptyLabel = "引擎默认",
+                                    ) { krRender[PerGameSettingsStore.F_MENU_HANDLER_OPA]!!.value = it }
                                 }
                             }
                         }
@@ -419,3 +442,5 @@ private fun onsStr(o: JSONObject, key: String, def: String): String? = if (o.has
 private fun putIfNotNull(o: JSONObject, key: String, v: Boolean?) { if (v != null) o.put(key, v) else o.remove(key) }
 private fun putIfNotNull(o: JSONObject, key: String, v: String?) { if (v != null) o.put(key, v) else o.remove(key) }
 private fun String.decode(): String = if (this == "sjis") "sjis" else if (this == "utf8") "utf8" else "gbk"
+private val KR_VCURSOR_SCALE_MAP2 = mapOf("" to "引擎默认") + (1..100).associate { it.toString() to "$it%" }
+private val KR_MENU_OPA_MAP2 = mapOf("" to "引擎默认") + (1..100).associate { it.toString() to "$it%" }
