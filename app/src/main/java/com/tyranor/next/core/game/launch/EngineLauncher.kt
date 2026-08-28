@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.documentfile.provider.DocumentFile
 import bridge.KrSafMirror
 import com.akira.tyranoemu.remote.ArtemisActivityV1
@@ -18,6 +19,7 @@ import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.tyrano.TyranoActivity
+import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
@@ -25,6 +27,7 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.unpack.ArtemisPfsUnpacker
@@ -42,6 +45,7 @@ import java.util.Locale
  */
 object EngineLauncher {
     private const val TAG = "EngineLauncher"
+    private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
 
     /** 支持的引擎列表（用于引擎页展示）。按名称长度从大到小排列。 */
     val supportedEngines: List<EngineType> = listOf(
@@ -77,7 +81,7 @@ object EngineLauncher {
                 detectedRenpyVersion = game.detectedRenpyVersion,
             ) ?: defaultModule
             if (module.requiresGameDirectoryPath && path == null) {
-                return "无法解析游戏目录（仅支持本地文件路径）"
+                return text(context, R.string.launch_resolve_local_dir_failed)
             }
             // 需要目录解析的外置引擎同样要「所有文件访问」权限才能读取游戏目录（SAF 授权对外置 APK 无效）
             if (module.requiresGameDirectoryPath && path != null) {
@@ -96,10 +100,10 @@ object EngineLauncher {
                 EngineScanner.recordRecentGame(context, game)
                 return null
             }
-            return result.message ?: "启动 ${module.displayName} 失败"
+            return result.message ?: text(context, R.string.launch_external_module_failed, module.displayName(AppLocaleController.wrap(context)))
         }
         if (path == null) {
-            return "无法解析游戏目录（仅支持本地文件路径）"
+            return text(context, R.string.launch_resolve_local_dir_failed)
         }
         requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
         EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let { return it }
@@ -112,7 +116,7 @@ object EngineLauncher {
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "prepare KRKR SAF mirror failed uri=${game.uri}", t)
-                return t.message ?: "无法准备 KRKR SD 卡镜像"
+                return t.message ?: text(context, R.string.launch_prepare_krkr_sd_mirror_failed)
             }
         } else {
             null
@@ -120,7 +124,7 @@ object EngineLauncher {
         if (game.engine == EngineType.KIRIKIRI) {
             if (krSafMirror != null) {
                 val saveDir = File(krSafMirror.mirrorRoot, "savedata")
-                if (!saveDir.isDirectory && !saveDir.mkdirs()) return "无法创建 KRKR 镜像存档目录"
+                if (!saveDir.isDirectory && !saveDir.mkdirs()) return text(context, R.string.launch_create_krkr_mirror_save_failed)
             } else {
                 ensureKrSaveDir(context, game, path)?.let { return it }
             }
@@ -142,7 +146,7 @@ object EngineLauncher {
             EngineScanner.recordRecentGame(context, game)
             null
         } catch (e: Exception) {
-            e.message ?: "启动失败"
+            e.message ?: text(context, R.string.launch_failed)
         }
     }
 
@@ -185,9 +189,9 @@ object EngineLauncher {
         }.isSuccess
 
         return if (opened) {
-            "请在系统页面允许“管理所有文件”，返回后再次启动游戏"
+            text(context, R.string.launch_all_files_access_request)
         } else {
-            "缺少“管理所有文件”权限，无法让原生引擎读取游戏目录"
+            text(context, R.string.launch_all_files_access_missing)
         }
     }
 
@@ -436,13 +440,13 @@ object EngineLauncher {
         val kernel = effectiveKrKernel(context, game.uri, path)
         val saveDir = resolveKrSaveDir(context, path, kernel, scoped)
         if (saveDir.isDirectory) return null
-        if (saveDir.exists()) return "KRKR 存档路径已存在但不是目录：${saveDir.absolutePath}"
+        if (saveDir.exists()) return text(context, R.string.launch_krkr_save_path_not_dir, saveDir.absolutePath)
         if (saveDir.mkdirs() || saveDir.isDirectory) return null
         if (!scoped && ensureKrGameSaveDirViaSaf(context, game, path)) return null
         return if (scoped) {
-            "无法创建 KRKR 应用独立存档目录：${saveDir.absolutePath}"
+            text(context, R.string.launch_create_krkr_scoped_save_failed, saveDir.absolutePath)
         } else {
-            "无法创建 KRKR 存档目录：${saveDir.absolutePath}"
+            text(context, R.string.launch_create_krkr_save_failed, saveDir.absolutePath)
         }
     }
 
@@ -664,7 +668,11 @@ object EngineLauncher {
 
         // launchTarget 若存在且非素材档，作为候选用
         val target = game.launchTarget
-            .takeIf { !it.isNullOrBlank() && it != "[游戏目录]" && it != "DIR" }
+            .takeIf {
+                !it.isNullOrBlank() &&
+                    it != LEGACY_GAME_DIR_TARGET &&
+                    !it.equals(EngineScanner.LAUNCH_TARGET_GAME_DIR, ignoreCase = true)
+            }
         if (target != null && !target.lowercase().startsWith("bg")) {
             val exact = java.io.File(path, target)
             val f = if (exact.isFile) exact else java.io.File(path, target.lowercase(Locale.ROOT))
@@ -752,6 +760,9 @@ object EngineLauncher {
             null
         }
     }
+
+    private fun text(context: Context, @StringRes id: Int, vararg args: Any): String =
+        AppLocaleController.wrap(context).getString(id, *args)
 }
 
 internal fun effectiveRpgMakerModEnabled(

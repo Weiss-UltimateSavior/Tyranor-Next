@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -109,6 +110,22 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
+    val krVersionMap = krSelectOptionsMap()
+    val krKernelMap = krKernelOptionsMap()
+    val krRendererMap = krRendererOptionsMap()
+    val krThreadMap = krThreadOptionsMap()
+    val krSwCompressMap = krSoftwareCompressOptionsMap()
+    val krOglCompressMap = krOglCompressOptionsMap()
+    val krMemMap = krMemOptionsMap()
+    val krTexsizeMap = krTexSizeOptionsMap()
+    val krFpsMap = krFpsOptionsMap()
+    val onsEncodingMap = onsEncodingOptionsMap()
+    val artVersionMap = artVersionOptionsMap()
+    val renpyVersionMap = renpyVersionOptionsMap()
+    val artPatchMap = artPatchOptionsMap()
+    val engineDefault = stringResource(R.string.engine_option_engine_default)
+    val builtinFont = stringResource(R.string.engine_settings_builtin_font)
+    val auto = stringResource(R.string.common_auto)
 
     val isSdl3 = (krKernel ?: globalKrKernel) == EngineSettingsStore.KERNEL_KRKRSDL3
     val globalRenderer = configuredGlobalRenderer.ifEmpty {
@@ -170,9 +187,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(game.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            TopBarIcon(painterResource(R.drawable.ic_save), "保存", MiuixTheme.colorScheme.primary) {
+                            TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.common_save), MiuixTheme.colorScheme.primary) {
                                 save()
-                                android.widget.Toast.makeText(ctx, "已保存", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(ctx, ctx.getString(R.string.engine_settings_per_game_saved), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -185,46 +202,46 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when (game.engine) {
-                    EngineType.KIRIKIRI -> {
+	                    EngineType.KIRIKIRI -> {
                         item {
                             SectionCard("KRKR") {
-                                OverrideSwitch("独立存档目录", globalKrScoped, krScoped) { krScoped = it }
-                                OverrideChoice("引擎版本", KR_VERSION_MAP2, globalKrVersion, krVersion) { krVersion = it }
-                                OverrideChoice("引擎内核", KR_KERNEL_MAP2, globalKrKernel, krKernel) { krKernel = it }
+                                OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalKrScoped, krScoped) { krScoped = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
                             }
                         }
                         item {
-                            SectionCard("渲染") {
+                            SectionCard(stringResource(R.string.engine_settings_render)) {
                                 if (!isSdl3) {
-                                    OverrideSwitch("OpenGL 精确渲染", globalAccurate, krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value == "1") { b ->
+                                    OverrideSwitch(stringResource(R.string.engine_settings_opengl_accurate_render), globalAccurate, krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value == "1") { b ->
                                         krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value = when (b) { null -> ""; true -> "1"; false -> "0" }
                                     }
-                                    OverrideChoice("内存用量", KR_MEM_MAP2, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = "引擎默认") {
+                                    OverrideChoice(stringResource(R.string.engine_settings_memory_usage), krMemMap, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = engineDefault) {
                                         krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value = it
                                     }
                                 }
-                                OverrideChoice("渲染器", KR_RENDERER_MAP2, globalRenderer, krRender[PerGameSettingsStore.F_RENDERER]!!.value, emptyLabel = "引擎默认") {
+                                OverrideChoice(stringResource(R.string.engine_settings_renderer), krRendererMap, globalRenderer, krRender[PerGameSettingsStore.F_RENDERER]!!.value, emptyLabel = engineDefault) {
                                     krRender[PerGameSettingsStore.F_RENDERER]!!.value = it
                                 }
                                 if (!isSdl3) {
                                     if (effRenderer == "" || effRenderer == EngineSettingsStore.RENDERER_SOFTWARE) {
-                                        OverrideChoice("软件渲染线程数", KR_THREAD_MAP2, globalDrawThread, krRender[PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD]!!.value, emptyLabel = "自动") {
+                                        OverrideChoice(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, globalDrawThread, krRender[PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD]!!.value, emptyLabel = auto) {
                                             krRender[PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD]!!.value = it
                                         }
-                                        OverrideChoice("软件纹理压缩", KR_SW_COMPRESS_MAP2, globalSwCompress, krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value, emptyLabel = "引擎默认") {
+                                        OverrideChoice(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, globalSwCompress, krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value, emptyLabel = engineDefault) {
                                             krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value = it
                                         }
                                     }
                                     if (!krIs134126) {
-                                        OverrideChoice("FPS 限制", KR_FPS_MAP2, globalFps, krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value, emptyLabel = "引擎默认") {
+                                        OverrideChoice(stringResource(R.string.engine_settings_fps_limit), krFpsMap, globalFps, krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value, emptyLabel = engineDefault) {
                                             krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value = it
                                         }
                                     }
                                     if (effRenderer == "" || effRenderer == EngineSettingsStore.RENDERER_OPENGL) {
-                                        OverrideChoice("OpenGL 纹理压缩", KR_OGL_COMPRESS_MAP2, globalOglCompress, krRender[PerGameSettingsStore.F_OGL_COMPRESS_TEX]!!.value, emptyLabel = "引擎默认") {
+                                        OverrideChoice(stringResource(R.string.engine_settings_opengl_texture_compression), krOglCompressMap, globalOglCompress, krRender[PerGameSettingsStore.F_OGL_COMPRESS_TEX]!!.value, emptyLabel = engineDefault) {
                                             krRender[PerGameSettingsStore.F_OGL_COMPRESS_TEX]!!.value = it
                                         }
-                                        OverrideChoice("最大纹理尺寸", KR_TEXSIZE_MAP2, globalTexsize, krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value, emptyLabel = "自动") {
+                                        OverrideChoice(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, globalTexsize, krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value, emptyLabel = auto) {
                                             krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value = it
                                         }
                                     }
@@ -233,10 +250,10 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         }
                         if (!isSdl3) {
                             item {
-                                SectionCard("字体") {
-                                    OverrideFont("默认字体", globalKrFont, krFont, onReset = { krFont = "" }, onPick = { fontLauncher.launch("*/*") })
+                                SectionCard(stringResource(R.string.engine_settings_font)) {
+                                    OverrideFont(stringResource(R.string.engine_settings_default_font), globalKrFont, krFont, onReset = { krFont = "" }, onPick = { fontLauncher.launch("*/*") })
                                     if (effVersion != EngineSettingsStore.KR_126) {
-                                        OverrideSwitch("强制默认字体", globalForce, krForceFont) { krForceFont = it }
+                                        OverrideSwitch(stringResource(R.string.engine_settings_force_default_font_short), globalForce, krForceFont) { krForceFont = it }
                                     }
                                 }
                             }
@@ -244,26 +261,26 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.ONS -> item {
                         SectionCard("ONS") {
-                            OverrideSwitch("独立存档目录", globalOns.scopedSaveDir, onsScoped) { onsScoped = it }
-                            OverrideSwitch("全屏拉伸", globalOns.stretchFull, onsStretch) { onsStretch = it }
-                            OverrideSwitch("忽略刘海", globalOns.ignoreCutout, onsCutout) { onsCutout = it }
-                            OverrideSwitch("禁用视频", globalOns.disableVideo, onsNoVideo) { onsNoVideo = it }
-                            OverrideSwitch("画面锐化", globalOns.sharpness, onsSharp) { onsSharp = it }
-                            OverrideChoice("文本编码", ONS_ENCODING_MAP2, globalOns.encoding.decode(), onsEnc) { onsEnc = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalOns.scopedSaveDir, onsScoped) { onsScoped = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_fullscreen_stretch), globalOns.stretchFull, onsStretch) { onsStretch = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_ignore_cutout), globalOns.ignoreCutout, onsCutout) { onsCutout = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_disable_video), globalOns.disableVideo, onsNoVideo) { onsNoVideo = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_sharpness), globalOns.sharpness, onsSharp) { onsSharp = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, globalOns.encoding.decode(), onsEnc) { onsEnc = it }
                         }
                     }
                     EngineType.ARTEMIS -> item {
                         SectionCard("Artemis") {
-                            OverrideChoice("引擎版本", ART_VERSION_MAP2, globalArtVersion, artVersion) { artVersion = it }
-                            OverrideSwitch("画面反转", globalArtRotate, artRotate) { artRotate = it }
-                            OverrideChoice("自动补丁", ART_PATCH_MAP2, globalArtPatch, artPatch) { artPatch = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
                         }
                     }
                     EngineType.RENPY -> item {
                         SectionCard("Ren'Py") {
-                            OverrideChoice("引擎版本", RENPY_VERSION_MAP2, globalRenpyVersion, renpyVersion) { renpyVersion = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_engine_version), renpyVersionMap, globalRenpyVersion, renpyVersion) { renpyVersion = it }
                             Text(
-                                "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。",
+                                stringResource(R.string.engine_settings_renpy_module_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -273,7 +290,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     EngineType.RPGMAKER -> item {
                         SectionCard("RPG Maker") {
                             Text(
-                                "RPG Maker XP/VX/VX Ace/mkxp-z 使用外置 APK 引擎模块，模块安装后默认启用；当前没有可由主应用覆盖的单游戏设置。",
+                                stringResource(R.string.engine_settings_rpgmaker_module_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -287,12 +304,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     EngineType.WEB_OTHER,
                     EngineType.UNKNOWN -> item {
                         SectionCard(if (game.engine == EngineType.UNKNOWN) "Web" else game.engine.displayName) {
-                            OverrideSwitch("允许外部网络", globalTyExternal, tyExternal) { tyExternal = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_external_network), globalTyExternal, tyExternal) { tyExternal = it }
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
-                                OverrideSwitch("独立存档目录", globalTyScoped, tyScoped) { tyScoped = it }
+                                OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
                             }
                             if (game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ) {
-                                OverrideSwitch("游戏修改器", globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
+                                OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
                             }
                         }
                     }
@@ -323,11 +340,18 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
 
 /** 覆盖版下拉行：Miuix OverlayDropdownPreference，选项首位为“跟随全局”。 */
 @Composable
-private fun OverrideChoice(label: String, options: Map<String, String>, global: String, override: String?, emptyLabel: String = "内置字体", onSet: (String?) -> Unit) {
+private fun OverrideChoice(
+    label: String,
+    options: Map<String, String>,
+    global: String,
+    override: String?,
+    emptyLabel: String = stringResource(R.string.engine_settings_builtin_font),
+    onSet: (String?) -> Unit,
+) {
     val following = override == null
     val effValue = override ?: global
     val keys = options.keys.toList()
-    val labels = listOf("跟随全局 · ${labelOf(effValue, options, emptyLabel)}") + keys.map { options[it] ?: it }
+    val labels = listOf(stringResource(R.string.engine_settings_follow_global_with_value, labelOf(effValue, options, emptyLabel))) + keys.map { options[it] ?: it }
     val index = if (following) 0 else (keys.indexOf(override).takeIf { it >= 0 } ?: -1) + 1
     OverlayDropdownPreference(
         title = label,
@@ -340,7 +364,9 @@ private fun OverrideChoice(label: String, options: Map<String, String>, global: 
 /** 覆盖版开关行：Miuix OverlayDropdownPreference，三态（跟随全局 / 开 / 关）。 */
 @Composable
 private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, onSet: (Boolean?) -> Unit) {
-    val labels = listOf("跟随全局（${if (global) "开" else "关"}）", "开", "关")
+    val onText = stringResource(R.string.common_enabled)
+    val offText = stringResource(R.string.common_disabled)
+    val labels = listOf(stringResource(R.string.engine_settings_follow_global_bool, if (global) onText else offText), onText, offText)
     val index = when { override == null -> 0; override -> 1; else -> 2 }
     OverlayDropdownPreference(
         title = label,
@@ -355,7 +381,12 @@ private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, o
 private fun OverrideFont(label: String, global: String, override: String?, onReset: () -> Unit, onPick: () -> Unit) {
     var open by remember { mutableStateOf(false) }
     val following = override == null
-    val summary = if (following) "跟随全局（${global.ifEmpty { "内置字体" }}）" else override.ifEmpty { "内置字体" }
+    val builtInFont = stringResource(R.string.engine_settings_builtin_font)
+    val summary = if (following) {
+        stringResource(R.string.engine_settings_follow_global_font, global.ifEmpty { builtInFont })
+    } else {
+        override.ifEmpty { builtInFont }
+    }
     ArrowPreference(title = label, summary = summary, onClick = { open = true })
     if (open) {
         AppAlertDialog(
@@ -363,11 +394,11 @@ private fun OverrideFont(label: String, global: String, override: String?, onRes
             title = { Text(label, style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column {
-                    Row(Modifier.fillMaxWidth().clickable { onReset(); open = false }.padding(vertical = 8.dp)) { Text("跟随全局", style = MaterialTheme.typography.bodyMedium) }
-                    Row(Modifier.fillMaxWidth().clickable { open = false; onPick() }.padding(vertical = 8.dp)) { Text("选择字体文件…", style = MaterialTheme.typography.bodyMedium) }
+                    Row(Modifier.fillMaxWidth().clickable { onReset(); open = false }.padding(vertical = 8.dp)) { Text(stringResource(R.string.engine_settings_follow_global), style = MaterialTheme.typography.bodyMedium) }
+                    Row(Modifier.fillMaxWidth().clickable { open = false; onPick() }.padding(vertical = 8.dp)) { Text(stringResource(R.string.engine_settings_select_font_file), style = MaterialTheme.typography.bodyMedium) }
                 }
             },
-            confirmButton = { TextButton(onClick = { open = false }) { Text("取消") } },
+            confirmButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 }
@@ -388,51 +419,3 @@ private fun onsStr(o: JSONObject, key: String, def: String): String? = if (o.has
 private fun putIfNotNull(o: JSONObject, key: String, v: Boolean?) { if (v != null) o.put(key, v) else o.remove(key) }
 private fun putIfNotNull(o: JSONObject, key: String, v: String?) { if (v != null) o.put(key, v) else o.remove(key) }
 private fun String.decode(): String = if (this == "sjis") "sjis" else if (this == "utf8") "utf8" else "gbk"
-
-private val KR_VERSION_MAP2 = mapOf(
-    EngineSettingsStore.KR_AUTO to "自动",
-    EngineSettingsStore.KR_139 to "1.3.9",
-    EngineSettingsStore.KR_134 to "1.3.4",
-    EngineSettingsStore.KR_126 to "1.2.6",
-)
-private val KR_KERNEL_MAP2 = mapOf(
-    EngineSettingsStore.KR_AUTO to "自动",
-    EngineSettingsStore.KERNEL_KIRIKIRI2 to "吉里吉里2",
-    EngineSettingsStore.KERNEL_KRKRSDL3 to "krkrsdl3",
-)
-private val KR_RENDERER_MAP2 = mapOf(
-    EngineSettingsStore.RENDERER_SOFTWARE to "软件渲染",
-    EngineSettingsStore.RENDERER_OPENGL to "OpenGL",
-)
-private val KR_THREAD_MAP2 = mapOf("0" to "自动") + (1..8).associate { it.toString() to "$it 线程" }
-private val KR_SW_COMPRESS_MAP2 = mapOf(
-    "none" to "无", "halfline" to "半行", "lz4" to "LZ4", "lz4+tlg5" to "LZ4+TLG5",
-)
-private val KR_OGL_COMPRESS_MAP2 = mapOf(
-    "none" to "无", "half" to "半精度", "etc2" to "ETC2", "pvrtc" to "PVRTC",
-)
-private val KR_MEM_MAP2 = mapOf(
-    EngineSettingsStore.MEM_USAGE_UNLIMITED to "不限制",
-    EngineSettingsStore.MEM_USAGE_HIGH to "高",
-    EngineSettingsStore.MEM_USAGE_MEDIUM to "中",
-    EngineSettingsStore.MEM_USAGE_LOW to "低",
-)
-private val KR_TEXSIZE_MAP2 = mapOf("0" to "自动") + listOf(1024, 2048, 4096, 8192, 16384).associate { it.toString() to it.toString() }
-private val KR_FPS_MAP2 = mapOf("60" to "60", "45" to "45", "30" to "30", "15" to "15")
-private val ONS_ENCODING_MAP2 = mapOf("gbk" to "GBK", "sjis" to "Shift-JIS", "utf8" to "UTF-8")
-private val ART_VERSION_MAP2 = mapOf(
-    EngineSettingsStore.ART_ENGINE_AUTO to "自动",
-    EngineSettingsStore.ART_ENGINE_V1 to "V1",
-    EngineSettingsStore.ART_ENGINE_V2 to "V2",
-    EngineSettingsStore.ART_ENGINE_V3 to "V3",
-)
-private val RENPY_VERSION_MAP2 = mapOf(
-    EngineSettingsStore.RENPY_AUTO to "自动",
-    EngineSettingsStore.RENPY_85 to "8.5",
-    EngineSettingsStore.RENPY_77 to "7.7.1",
-)
-private val ART_PATCH_MAP2 = mapOf(
-    EngineSettingsStore.AUTO_PATCH_ASK to "启动时询问",
-    EngineSettingsStore.AUTO_PATCH_AUTO to "自动",
-    EngineSettingsStore.AUTO_PATCH_OFF to "关闭",
-)

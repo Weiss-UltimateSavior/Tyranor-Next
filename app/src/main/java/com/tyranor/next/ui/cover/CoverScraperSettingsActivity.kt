@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -48,11 +49,13 @@ import com.tyranor.next.R
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
 import com.tyranor.next.core.auth.HikarinagiAuthService
 import com.tyranor.next.core.auth.HikarinagiAuthStore
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.core.i18n.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
 import com.tyranor.next.ui.common.WithoutPressIndication
@@ -73,13 +76,15 @@ class CoverScraperSettingsActivity : ComponentActivity() {
         )
 
         setContent {
-            TyranorNextTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    WithoutPressIndication {
-                        CoverScraperSettingsScreen()
+            ProvideAppLocale {
+                TyranorNextTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        WithoutPressIndication {
+                            CoverScraperSettingsScreen()
+                        }
                     }
                 }
             }
@@ -101,7 +106,7 @@ class CoverScraperSettingsActivity : ComponentActivity() {
 @Composable
 internal fun CoverScraperSettingsScreen() {
     val ctx = LocalContext.current
-    val activity = ctx as? ComponentActivity
+    val activity = AppLocaleController.findActivity(ctx) as? ComponentActivity
     val authVersion = HikarinagiAuthStore.statusVersion.value
     val settingsVersion = AppSettingsStore.coverScraperSettingsVersion.value
     val scrapeTaskState = CoverScrapeTaskManager.state.value
@@ -115,7 +120,7 @@ internal fun CoverScraperSettingsScreen() {
         scrapeTaskState.result?.let { result ->
             Toast.makeText(
                 ctx,
-                "批量刮削完成：更新 ${result.updatedCount}，跳过 ${result.skippedCount}，失败 ${result.failedCount}",
+                ctx.getString(R.string.cover_batch_result, result.updatedCount, result.skippedCount, result.failedCount),
                 Toast.LENGTH_SHORT,
             ).show()
         }
@@ -127,7 +132,7 @@ internal fun CoverScraperSettingsScreen() {
 
     fun startBatchScrape() {
         if (!CoverScrapeTaskManager.start(ctx)) {
-            Toast.makeText(ctx, "批量刮削正在进行", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, ctx.getString(R.string.game_batch_scraping_running), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -192,8 +197,8 @@ internal fun CoverScraperSettingsScreen() {
                     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                         Column(Modifier.background(NavWhite).padding(vertical = 4.dp)) {
                             SwitchPreference(
-                                title = "仅处理缺少封面的游戏",
-                                summary = "避免覆盖用户手动设置的封面",
+                                title = stringResource(R.string.cover_only_missing_title),
+                                summary = stringResource(R.string.cover_only_missing_summary),
                                 checked = onlyMissing,
                                 onCheckedChange = { checked ->
                                     onlyMissing = checked
@@ -211,13 +216,13 @@ internal fun CoverScraperSettingsScreen() {
                             verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
                             Text(
-                                "写入内容",
+                                stringResource(R.string.cover_write_content_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = TextColor,
                             )
                             Text(
-                                "当前只保存封面图片和来源标识，不写入标题、标签或简介。",
+                                stringResource(R.string.cover_write_content_summary),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -234,7 +239,7 @@ internal fun CoverScraperSettingsScreen() {
                                     ),
                                 ) {
                                     Text(
-                                        if (scraping) "正在批量刮削封面" else "开始批量刮削封面",
+                                        if (scraping) stringResource(R.string.cover_scraping_batch) else stringResource(R.string.cover_start_batch),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = androidx.compose.ui.graphics.Color.White,
                                     )
@@ -302,15 +307,15 @@ private fun CoverSourceRow(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(enabled = index > 0, onClick = onMoveUp) {
-                    Text("上移", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.cover_move_up), style = MaterialTheme.typography.bodyMedium)
                 }
                 TextButton(enabled = index < count - 1, onClick = onMoveDown) {
-                    Text("下移", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.cover_move_down), style = MaterialTheme.typography.bodyMedium)
                 }
                 if (source == AppSettingsStore.COVER_SOURCE_HIKARINAGI) {
                     TextButton(onClick = onAuthClick) {
                         Text(
-                            if (authStatus.authorized && !authStatus.needsReauth) "退出" else "登录",
+                            if (authStatus.authorized && !authStatus.needsReauth) stringResource(R.string.cover_logout) else stringResource(R.string.cover_login),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -330,7 +335,7 @@ private fun CoverScraperTopBar() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "封面刮削",
+                    stringResource(R.string.settings_cover_scraper),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = TextColor,
@@ -341,14 +346,15 @@ private fun CoverScraperTopBar() {
     }
 }
 
+@Composable
 private fun sourceSummary(source: String, authStatus: com.tyranor.next.core.auth.HikarinagiAuthStatus): String = when (source) {
     AppSettingsStore.COVER_SOURCE_HIKARINAGI -> when {
-        authStatus.needsReauth -> "授权已失效，重新登录后参与封面搜索"
-        authStatus.authorized -> "已授权，优先搜索中文条目封面"
-        else -> "可选登录；未登录时自动跳过此来源"
+        authStatus.needsReauth -> stringResource(R.string.cover_hikarinagi_reauth_summary)
+        authStatus.authorized -> stringResource(R.string.cover_hikarinagi_authorized_summary)
+        else -> stringResource(R.string.cover_hikarinagi_guest_summary)
     }
-    AppSettingsStore.COVER_SOURCE_BANGUMI -> "无需登录；用于补充番组条目封面"
-    AppSettingsStore.COVER_SOURCE_STEAM -> "无需登录；作为商店封面补充来源"
-    AppSettingsStore.COVER_SOURCE_VNDB -> "无需登录；稳定兜底来源"
+    AppSettingsStore.COVER_SOURCE_BANGUMI -> stringResource(R.string.cover_bangumi_summary)
+    AppSettingsStore.COVER_SOURCE_STEAM -> stringResource(R.string.cover_steam_summary)
+    AppSettingsStore.COVER_SOURCE_VNDB -> stringResource(R.string.cover_vndb_summary)
     else -> ""
 }

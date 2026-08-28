@@ -2,7 +2,10 @@ package com.tyranor.next.core.cover
 
 import android.content.Context
 import android.net.Uri
+import androidx.annotation.StringRes
+import com.tyranor.next.R
 import com.tyranor.next.core.auth.HikarinagiAuthService
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -95,15 +98,15 @@ object CoverScraperService {
         val query = keyword.trim()
         if (query.isBlank()) return CoverSearchResult.Success(emptyList())
         if (source !in AppSettingsStore.DEFAULT_COVER_SCRAPER_SOURCES) {
-            return CoverSearchResult.Failure("封面来源无效")
+            return CoverSearchResult.Failure(text(context, R.string.cover_error_invalid_source))
         }
         if (!AppSettingsStore.isCoverScraperSourceEnabled(context, source)) {
-            return CoverSearchResult.Failure("此封面来源已在设置中关闭")
+            return CoverSearchResult.Failure(text(context, R.string.cover_error_source_disabled))
         }
         return runCatching { searchWithSource(context, source, query, limit.coerceIn(1, 10)) }
             .fold(
                 onSuccess = { CoverSearchResult.Success(it) },
-                onFailure = { CoverSearchResult.Failure(it.message ?: "封面搜索失败，请检查网络") },
+                onFailure = { CoverSearchResult.Failure(it.message ?: text(context, R.string.cover_error_search_network)) },
             )
     }
 
@@ -147,9 +150,9 @@ object CoverScraperService {
     ): List<CoverSearchCandidate> =
         when (source) {
             AppSettingsStore.COVER_SOURCE_HIKARINAGI -> HikarinagiCoverSource.searchCandidates(context, keyword, limit)
-            AppSettingsStore.COVER_SOURCE_BANGUMI -> BangumiCoverSource.searchCandidates(keyword, limit)
-            AppSettingsStore.COVER_SOURCE_STEAM -> SteamCoverSource.searchCandidates(keyword, limit)
-            AppSettingsStore.COVER_SOURCE_VNDB -> VndbCoverService.searchCandidates(keyword, limit).map {
+            AppSettingsStore.COVER_SOURCE_BANGUMI -> BangumiCoverSource.searchCandidates(context, keyword, limit)
+            AppSettingsStore.COVER_SOURCE_STEAM -> SteamCoverSource.searchCandidates(context, keyword, limit)
+            AppSettingsStore.COVER_SOURCE_VNDB -> VndbCoverService.searchCandidates(context, keyword, limit).map {
                 CoverSearchCandidate(
                     source = AppSettingsStore.COVER_SOURCE_VNDB,
                     id = it.id,
@@ -173,7 +176,7 @@ private object HikarinagiCoverSource {
         val query = cleanTitle(game.title)
         if (query.isBlank()) return null
 
-        val candidate = searchRawCandidates(token, query, 5)
+        val candidate = searchRawCandidates(context, token, query, 5)
             .maxByOrNull { it.score }
             ?: return null
 
@@ -192,27 +195,27 @@ private object HikarinagiCoverSource {
 
     fun searchCandidates(context: Context, keyword: String, limit: Int): List<CoverSearchCandidate> {
         val token = HikarinagiAuthService.getValidAccessToken(context)
-            ?: throw CoverSearchException("Hikarinagi 授权已失效，请重新登录")
+            ?: throw CoverSearchException(text(context, R.string.auth_hikarinagi_expired))
         val query = cleanTitle(keyword)
         if (query.isBlank()) return emptyList()
-        return searchRawCandidates(token, query, limit).map {
+        return searchRawCandidates(context, token, query, limit).map {
             CoverSearchCandidate(
                 source = AppSettingsStore.COVER_SOURCE_HIKARINAGI,
                 id = it.id,
                 title = it.title,
                 subtitle = "",
-                detail = detailText("Hikarinagi", it.id, "票数 ${it.score}"),
+                detail = detailText("Hikarinagi", it.id, text(context, R.string.cover_hikarinagi_votes, it.score)),
                 score = it.score,
                 coverUrl = it.coverUrl,
             )
         }
     }
 
-    private fun searchRawCandidates(token: String, query: String, limit: Int): List<CoverCandidate> {
+    private fun searchRawCandidates(context: Context, token: String, query: String, limit: Int): List<CoverCandidate> {
         val url = "$SEARCH_URL?q=${query.urlEncode()}&types=galgame&page=1&page_size=${limit.coerceIn(1, 10)}"
         val json = httpJson(url, headers = mapOf("Authorization" to "Bearer $token"))
-            ?: throw CoverSearchException("Hikarinagi 搜索失败，请检查网络")
-        if (!json.optBoolean("success", false)) throw CoverSearchException("Hikarinagi 搜索失败，请稍后重试")
+            ?: throw CoverSearchException(text(context, R.string.cover_error_hikarinagi_network))
+        if (!json.optBoolean("success", false)) throw CoverSearchException(text(context, R.string.cover_error_hikarinagi_retry))
         val items = json.optJSONObject("data")?.optJSONArray("items") ?: return emptyList()
         return (0 until items.length()).asSequence()
             .mapNotNull { items.optJSONObject(it) }
@@ -246,7 +249,7 @@ private object BangumiCoverSource {
     fun fetchBestCover(context: Context, game: ScanGame): ScanGame? {
         val query = cleanTitle(game.title)
         if (query.isBlank()) return null
-        val candidate = searchCandidates(query, 1).firstOrNull() ?: return null
+        val candidate = searchCandidates(context, query, 1).firstOrNull() ?: return null
         val cover = CoverImageCache.download(context, candidate.coverUrl, "bangumi_${stableKey(game.uri)}", source = AppSettingsStore.COVER_SOURCE_BANGUMI)
             ?: return null
         return game.copy(
@@ -255,7 +258,7 @@ private object BangumiCoverSource {
         )
     }
 
-    fun searchCandidates(keyword: String, limit: Int): List<CoverSearchCandidate> {
+    fun searchCandidates(context: Context, keyword: String, limit: Int): List<CoverSearchCandidate> {
         val query = cleanTitle(keyword)
         if (query.isBlank()) return emptyList()
         val body = JSONObject()
@@ -270,7 +273,7 @@ private object BangumiCoverSource {
             .toString()
         val url = "$SEARCH_URL?limit=${limit.coerceIn(1, 10)}&offset=0"
         val json = httpJson(url, method = "POST", body = body)
-            ?: throw CoverSearchException("Bangumi 搜索失败，请检查网络")
+            ?: throw CoverSearchException(text(context, R.string.cover_error_bangumi_network))
         val data = json.optJSONArray("data") ?: return emptyList()
         return (0 until data.length()).asSequence()
             .mapNotNull { data.optJSONObject(it) }
@@ -301,7 +304,7 @@ private object SteamCoverSource {
     fun fetchBestCover(context: Context, game: ScanGame): ScanGame? {
         val query = cleanTitle(game.title)
         if (query.isBlank()) return null
-        for (candidate in searchCandidates(query, 3)) {
+        for (candidate in searchCandidates(context, query, 3)) {
             val appId = candidate.id.toIntOrNull() ?: continue
             val cover = CoverImageCache.download(context, candidate.coverUrl, "steam_${stableKey(game.uri)}", source = AppSettingsStore.COVER_SOURCE_STEAM)
                 ?: downloadSteamHeader(context, game, appId)
@@ -315,11 +318,11 @@ private object SteamCoverSource {
         return null
     }
 
-    fun searchCandidates(keyword: String, limit: Int): List<CoverSearchCandidate> {
+    fun searchCandidates(context: Context, keyword: String, limit: Int): List<CoverSearchCandidate> {
         val query = cleanTitle(keyword)
         if (query.isBlank()) return emptyList()
         val search = httpJson("$SEARCH_URL?term=${query.urlEncode()}&l=schinese&cc=CN")
-            ?: throw CoverSearchException("Steam 搜索失败，请检查网络")
+            ?: throw CoverSearchException(text(context, R.string.cover_error_steam_network))
         val items = search.optJSONArray("items") ?: return emptyList()
         return (0 until minOf(items.length(), limit.coerceIn(1, 10))).mapNotNull { index ->
             val item = items.optJSONObject(index) ?: return@mapNotNull null
@@ -395,3 +398,6 @@ private fun httpJson(
 
 private fun String.urlEncode(): String =
     URLEncoder.encode(this, StandardCharsets.UTF_8.name())
+
+private fun text(context: Context, @StringRes id: Int, vararg args: Any): String =
+    AppLocaleController.wrap(context).getString(id, *args)

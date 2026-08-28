@@ -107,10 +107,16 @@ internal object CoverImageCache {
 }
 
 internal fun cleanTitle(s: String): String {
+    val localizedEditionWords = listOf(
+        "\u6C49\u5316",
+        "\u4E2D\u6587\u7248",
+        "\u65E5\u6587\u7248",
+        "\u4F53\u9A8C\u7248",
+    ).joinToString("|")
     val cleaned = s.replace("""\[[^\]]*\]|【[^】]*】""".toRegex(), " ")
         .replace("[\\[\\]【】]".toRegex(), " ")
         .replace("[（）()].*".toRegex(), " ")
-        .replace("(?i)complete|汉化|中文版|日文版|体验版|trial|patch".toRegex(), " ")
+        .replace("(?i)complete|$localizedEditionWords|trial|patch".toRegex(), " ")
         .replace('_', ' ')
         .trim()
     return cleaned.ifEmpty { s.trim() }

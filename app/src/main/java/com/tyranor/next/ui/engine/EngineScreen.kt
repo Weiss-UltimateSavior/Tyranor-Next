@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,7 +75,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text("引擎", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Text(stringResource(R.string.nav_engine), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                 }
             }
         }
@@ -116,7 +117,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { missingModule = null },
             title = {
                 Text(
-                    "模块未安装",
+                    stringResource(R.string.engine_module_missing_title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -124,14 +125,14 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             },
             text = {
                 Text(
-                    "未检测到 ${module.displayName}，需要下载安装后才能启动 ${module.engine.displayName} 游戏。",
+                    stringResource(R.string.engine_module_missing_message, module.displayName(context), module.engine.displayName),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             },
             dismissButton = {
                 TextButton(onClick = { missingModule = null }) {
-                    Text("取消", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.common_cancel), style = MaterialTheme.typography.bodyMedium)
                 }
             },
             confirmButton = {
@@ -139,12 +140,12 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     onClick = {
                         val opened = ExternalEngineLauncher.openInstallPage(context, module)
                         if (!opened) {
-                            Toast.makeText(context, "无法打开下载页面", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.engine_open_download_failed), Toast.LENGTH_SHORT).show()
                         }
                         missingModule = null
                     },
                 ) {
-                    Text("去下载", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.update_go_download), style = MaterialTheme.typography.bodyMedium)
                 }
             },
         )
@@ -196,9 +197,9 @@ private fun EngineRow(
             Icon(
                 if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
                 contentDescription = when {
-                    module == null -> "已集成"
-                    installed -> "模块已安装"
-                    else -> "模块未安装"
+                    module == null -> stringResource(R.string.engine_integrated)
+                    installed -> stringResource(R.string.engine_module_installed)
+                    else -> stringResource(R.string.engine_module_not_installed)
                 },
                 tint = if (installed) {
                     MaterialTheme.colorScheme.primary
@@ -218,16 +219,17 @@ private fun engineDisplayName(engine: EngineType): String = when (engine) {
     else -> engine.displayName
 }
 
+@Composable
 private fun engineDescription(engine: EngineType): String = when (engine) {
-    EngineType.KIRIKIRI -> "Kirikiroid2 / krkrsdl3，.xp3 与 startup.tjs 游戏"
-    EngineType.ONS -> "ONScripter，nscript.dat 与 .nsa 归档游戏"
-    EngineType.TYRANO -> "TyranoBuilder，index.html 与 tyrano/ 脚本游戏"
-    EngineType.RPGMAKER -> "RPG Maker XP/VX/VX Ace/mkxp-z 外置 APK 模块"
-    EngineType.RPG_MV, EngineType.RPG_MZ -> "RPG Maker MV/MZ，www 与 js/rpg_core.js、rmmz_core.js 游戏"
-    EngineType.VN, EngineType.WEB_OTHER -> "WebOther/VN，globalData.vndata 或通用 index.html 网页游戏"
-    EngineType.ARTEMIS -> "Artemis，system.ini 与 .pfs 归档游戏"
-    EngineType.RENPY -> "Ren'Py 外置 APK 模块，检测安装状态后启动"
-    EngineType.UNKNOWN -> "未知引擎"
+    EngineType.KIRIKIRI -> stringResource(R.string.engine_desc_kirikiri)
+    EngineType.ONS -> stringResource(R.string.engine_desc_ons)
+    EngineType.TYRANO -> stringResource(R.string.engine_desc_tyrano)
+    EngineType.RPGMAKER -> stringResource(R.string.engine_desc_rpgmaker)
+    EngineType.RPG_MV, EngineType.RPG_MZ -> stringResource(R.string.engine_desc_rpg_mv_mz)
+    EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
+    EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
+    EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
+    EngineType.UNKNOWN -> stringResource(R.string.engine_desc_unknown)
 }
 
 private fun refreshExternalInstallStates(

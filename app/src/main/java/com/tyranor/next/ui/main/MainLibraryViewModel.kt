@@ -5,7 +5,9 @@ import android.util.Log
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tyranor.next.R
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.ui.game.cleanupDeletedGame
@@ -79,7 +81,12 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 handledEventId = task.eventId
                 val result = task.result
                 val message = if (result != null) {
-                    "批量刮削完成：更新 ${result.updatedCount}，跳过 ${result.skippedCount}，失败 ${result.failedCount}"
+                    AppLocaleController.wrap(appContext).getString(
+                        R.string.cover_scrape_done,
+                        result.updatedCount,
+                        result.skippedCount,
+                        result.failedCount,
+                    )
                 } else {
                     task.error
                 }

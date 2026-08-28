@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -121,10 +122,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             when (val result = GitHubUpdateChecker.check(ctx)) {
                 is UpdateCheckResult.UpdateAvailable -> updateAvailable = result
                 is UpdateCheckResult.UpToDate -> {
-                    Toast.makeText(ctx, "已经是最新版本", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, ctx.getString(R.string.settings_update_latest), Toast.LENGTH_SHORT).show()
                 }
                 is UpdateCheckResult.Failed -> {
-                    Toast.makeText(ctx, "检查更新失败：${result.message}", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, ctx.getString(R.string.settings_update_failed, result.message), Toast.LENGTH_SHORT).show()
                 }
             }
             checkingUpdate = false
@@ -136,7 +137,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             modifier = modifier,
             containerColor = MiuixTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0.dp),
-            topBar = { SettingsTopBar("设置") },
+            topBar = { SettingsTopBar(stringResource(R.string.nav_settings)) },
         ) { innerPadding ->
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
@@ -147,8 +148,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
-                                title = "游戏目录添加",
-                                summary = "${scanDirs.size} 个目录",
+                                title = stringResource(R.string.settings_add_game_dir),
+                                summary = stringResource(R.string.settings_dir_count, scanDirs.size),
                                 onClick = { showScanDirs = true },
                             )
                             var depth by remember { mutableIntStateOf(AppSettingsStore.getScanDepth(ctx)) }
@@ -157,12 +158,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
-                                    "扫描深度",
+                                    stringResource(R.string.settings_scan_depth),
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.weight(1f),
                                 )
                                 Text(
-                                    "$depth 级",
+                                    stringResource(R.string.settings_scan_depth_level, depth),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -180,13 +181,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             )
                             var gameSort by remember { mutableStateOf(AppSettingsStore.getGameSort(ctx)) }
                             val gameSortModes = listOf(
-                                AppSettingsStore.GAME_SORT_ALPHA to "字母大小",
-                                AppSettingsStore.GAME_SORT_BRACKET_TAG to "括号标签",
+                                AppSettingsStore.GAME_SORT_ALPHA to stringResource(R.string.settings_sort_alpha),
+                                AppSettingsStore.GAME_SORT_BRACKET_TAG to stringResource(R.string.settings_sort_bracket_tag),
                             )
                             val sortIndex = gameSortModes.indexOfFirst { it.first == gameSort }
                                 .let { if (it < 0) 0 else it }
                             OverlayDropdownPreference(
-                                title = "游戏排序",
+                                title = stringResource(R.string.settings_game_sort),
                                 items = gameSortModes.map { it.second },
                                 selectedIndex = sortIndex,
                                 onSelectedIndexChange = { index ->
@@ -203,7 +204,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
-                                title = "引擎设置",
+                                title = stringResource(R.string.settings_engine_settings),
                                 startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
                                 onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
                             )
@@ -214,26 +215,26 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
-                                title = "应用设置",
-                                summary = "有关应用内的各项配置",
+                                title = stringResource(R.string.settings_app_title),
+                                summary = stringResource(R.string.settings_app_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings_app) },
                                 onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
                             )
                             ArrowPreference(
-                                title = "封面刮削",
-                                summary = "设置多源封面来源、顺序与授权",
+                                title = stringResource(R.string.settings_cover_scraper),
+                                summary = stringResource(R.string.settings_cover_scraper_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_game_cover) },
                                 onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
                             )
                             ArrowPreference(
-                                title = if (checkingUpdate) "正在检查更新" else "更新检查",
-                                summary = "对项目Github获取更新信息",
+                                title = if (checkingUpdate) stringResource(R.string.settings_update_checking) else stringResource(R.string.settings_update_check),
+                                summary = stringResource(R.string.settings_update_check_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings_update) },
                                 onClick = { checkUpdate() },
                             )
                             ArrowPreference(
-                                title = "加入群聊",
-                                summary = "跳转到官方聊天群组",
+                                title = stringResource(R.string.settings_join_group),
+                                summary = stringResource(R.string.settings_join_group_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings_group) },
                                 onClick = {
                                     showGroupDialog = true
@@ -250,12 +251,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     if (showScanDirs) {
         AppAlertDialog(
             onDismissRequest = { showScanDirs = false },
-            title = { Text("游戏目录", style = MaterialTheme.typography.titleMedium) },
+            title = { Text(stringResource(R.string.settings_game_dirs_title), style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (scanDirs.isEmpty()) {
                         Text(
-                            "暂无游戏目录",
+                            stringResource(R.string.settings_no_game_dirs),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -282,7 +283,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 modifier = Modifier.size(22.dp),
                             )
                             Text(
-                                if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（已失效）",
+                                if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (valid) {
                                     MaterialTheme.colorScheme.onSurface
@@ -299,7 +300,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                     scanDirs = EngineScanner.loadRoots(ctx)
                                 },
                             ) {
-                                Text("删除", color = MaterialTheme.colorScheme.error)
+                                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -310,8 +311,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     TextButton(
                         onClick = { dirPicker.launch(null) },
                         modifier = Modifier.padding(end = 8.dp),
-                    ) { Text("添加目录") }
-                    TextButton(onClick = { showScanDirs = false }) { Text("完成") }
+                    ) { Text(stringResource(R.string.settings_add_dir)) }
+                    TextButton(onClick = { showScanDirs = false }) { Text(stringResource(R.string.settings_done)) }
                 }
             },
         )
@@ -320,24 +321,24 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     if (showGroupDialog) {
         AppAlertDialog(
             onDismissRequest = { showGroupDialog = false },
-            title = { Text("加入群聊", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.settings_join_group), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    AppNavItem("企鹅群聊", leadingIcon = R.drawable.ic_group_qq) {
+                    AppNavItem(stringResource(R.string.settings_qq_group), leadingIcon = R.drawable.ic_group_qq) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://qm.qq.com/q/M9JH8A9Yys")))
                     }
-                    AppNavItem("飞机频道", leadingIcon = R.drawable.ic_group_telegram) {
+                    AppNavItem(stringResource(R.string.settings_telegram_channel), leadingIcon = R.drawable.ic_group_telegram) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/tyranornext")))
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showGroupDialog = false }) { Text("取消") }
+                TextButton(onClick = { showGroupDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -345,28 +346,28 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     updateAvailable?.let { update ->
         AppAlertDialog(
             onDismissRequest = { updateAvailable = null },
-            title = { Text("发现新版本", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.update_found_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "当前版本：${update.currentVersion}",
+                        stringResource(R.string.update_current_version, update.currentVersion),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MiuixTheme.colorScheme.onBackground,
                     )
                     Text(
-                        "最新版本：${update.latestVersion}",
+                        stringResource(R.string.update_latest_version, update.latestVersion),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MiuixTheme.colorScheme.onBackground,
                     )
                     Text(
-                        "是否跳转到 GitHub 发布页下载新版本？",
+                        stringResource(R.string.update_open_github_message),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MiuixTheme.colorScheme.onBackground,
                     )
                 }
             },
             dismissButton = {
-                TextButton(onClick = { updateAvailable = null }) { Text("取消") }
+                TextButton(onClick = { updateAvailable = null }) { Text(stringResource(R.string.common_cancel)) }
             },
             confirmButton = {
                 TextButton(
@@ -374,7 +375,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         updateAvailable = null
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl)))
                     },
-                ) { Text("去下载") }
+                ) { Text(stringResource(R.string.update_go_download)) }
             },
         )
     }
@@ -459,7 +460,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                kind.title,
+                                engineSettingsKindTitle(kind),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MiuixTheme.colorScheme.onBackground,
@@ -467,9 +468,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            TopBarIcon(painterResource(R.drawable.ic_save), "保存设置", MiuixTheme.colorScheme.primary) {
+                            TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
                                 saveAll()
-                                android.widget.Toast.makeText(ctx, "引擎设置已保存", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(ctx, ctx.getString(R.string.engine_settings_saved), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -560,6 +561,22 @@ private fun LazyListPlaceholder(
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
     onRenpyVersion: (String) -> Unit,
 ) {
+    val krSelectMap = krSelectOptions()
+    val krKernelMap = krKernelOptions()
+    val krRendererMap = krRendererOptions()
+    val krSdl3RendererMap = krSdl3RendererOptions()
+    val krThreadMap = krThreadOptions()
+    val krSwCompressMap = krSoftwareCompressOptions()
+    val krOglCompressMap = krOglCompressOptions()
+    val krMemMap = krMemOptions()
+    val krTexsizeMap = krTexSizeOptions()
+    val krFpsMap = krFpsOptions()
+    val onsSharpnessMap = onsSharpnessOptions()
+    val onsEncodingMap = onsEncodingOptions()
+    val artVersionMap = artVersionOptions()
+    val renpyVersionMap = renpyVersionOptions()
+    val artPatchMap = artPatchOptions()
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
         contentPadding = PaddingValues(top = topInset + 12.dp, bottom = 24.dp),
@@ -567,63 +584,63 @@ private fun LazyListPlaceholder(
     ) {
         if (kind == EngineSettingsKind.KRKR) item {
             EngineCard("KRKR") {
-                SwitchPreference(title = "独立存档目录", checked = krScoped, onCheckedChange = onKrScoped)
-                DropdownRow("引擎版本", KR_SELECT_MAP, krVersion, onKrVersion)
-                DropdownRow("引擎内核", KR_KERNEL_MAP, krKernel, onKrKernel)
+                SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = krScoped, onCheckedChange = onKrScoped)
+                DropdownRow(stringResource(R.string.engine_settings_engine_version), krSelectMap, krVersion, onKrVersion)
+                DropdownRow(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, krKernel, onKrKernel)
             }
         }
 
         if (kind == EngineSettingsKind.KRKR) item {
-            EngineCard("渲染") {
+            EngineCard(stringResource(R.string.engine_settings_render)) {
                 if (!isSdl3) {
-                    SwitchPreference(title = "OpenGL 精确渲染", checked = krAccurate == "1", onCheckedChange = { b -> onKrAccurate(if (b) "1" else "0") })
-                    EnumSliderRow("内存用量", KR_MEM_MAP, krMem, onKrMem)
+                    SwitchPreference(title = stringResource(R.string.engine_settings_opengl_accurate_render), checked = krAccurate == "1", onCheckedChange = { b -> onKrAccurate(if (b) "1" else "0") })
+                    EnumSliderRow(stringResource(R.string.engine_settings_memory_usage), krMemMap, krMem, onKrMem)
                 }
-                val rendererOptions = if (isSdl3) KR_SDL3_RENDERER_MAP else KR_RENDERER_MAP
+                val rendererOptions = if (isSdl3) krSdl3RendererMap else krRendererMap
                 val selectedRenderer = if (isSdl3) {
                     krRenderer.ifEmpty { EngineSettingsStore.RENDERER_OPENGL }
                 } else {
                     krRenderer.ifEmpty { "default" }
                 }
-                DropdownRow("渲染器", rendererOptions, selectedRenderer) {
+                DropdownRow(stringResource(R.string.engine_settings_renderer), rendererOptions, selectedRenderer) {
                     onKrRenderer(if (!isSdl3 && it == "default") "" else it)
                 }
                 if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_SOFTWARE)) {
-                    EnumSliderRow("软件渲染线程数", KR_THREAD_MAP, krDrawThread, onKrDrawThread)
-                    DropdownRow("软件纹理压缩", KR_SW_COMPRESS_MAP, krSwCompress, onKrSwCompress)
+                    EnumSliderRow(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, krDrawThread, onKrDrawThread)
+                    DropdownRow(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, krSwCompress, onKrSwCompress)
                 }
                 if (!isSdl3 && !krIs134126) {
-                    EnumSliderRow("FPS 限制", KR_FPS_MAP, krFps, onKrFps)
+                    EnumSliderRow(stringResource(R.string.engine_settings_fps_limit), krFpsMap, krFps, onKrFps)
                 }
                 if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_OPENGL)) {
-                    DropdownRow("OpenGL 纹理压缩", KR_OGL_COMPRESS_MAP, krOglCompress, onKrOglCompress)
-                    EnumSliderRow("最大纹理尺寸", KR_TEXSIZE_MAP, krTexsize, onKrTexsize)
+                    DropdownRow(stringResource(R.string.engine_settings_opengl_texture_compression), krOglCompressMap, krOglCompress, onKrOglCompress)
+                    EnumSliderRow(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, krTexsize, onKrTexsize)
                 }
             }
         }
 
         if (kind == EngineSettingsKind.KRKR && !isSdl3) item {
-            EngineCard("字体") {
-                FontRow("默认字体", krFont.ifEmpty { "内置字体" }, onResetKrFont, { fontLauncher.launch("*/*") })
+            EngineCard(stringResource(R.string.engine_settings_font)) {
+                FontRow(stringResource(R.string.engine_settings_default_font), krFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }, onResetKrFont, { fontLauncher.launch("*/*") })
                 if (krVersion != EngineSettingsStore.KR_126) {
-                    SwitchPreference(title = "强制使用默认字体", checked = krForceFont, onCheckedChange = onKrForceFont)
+                    SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
                 }
             }
         }
 
         if (kind == EngineSettingsKind.ONS) item {
             EngineCard("ONS") {
-                SwitchPreference(title = "独立存档目录", checked = ons.scopedSaveDir, onCheckedChange = { b -> onOns(ons.copy(scopedSaveDir = b)) })
-                SwitchPreference(title = "全屏拉伸", checked = ons.stretchFull, onCheckedChange = { b -> onOns(ons.copy(stretchFull = b)) })
-                SwitchPreference(title = "忽略刘海", checked = ons.ignoreCutout, onCheckedChange = { b -> onOns(ons.copy(ignoreCutout = b)) })
-                SwitchPreference(title = "禁用视频", checked = ons.disableVideo, onCheckedChange = { b -> onOns(ons.copy(disableVideo = b)) })
-                SwitchPreference(title = "画面锐化", checked = ons.sharpness, onCheckedChange = { b -> onOns(ons.copy(sharpness = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = ons.scopedSaveDir, onCheckedChange = { b -> onOns(ons.copy(scopedSaveDir = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_fullscreen_stretch), checked = ons.stretchFull, onCheckedChange = { b -> onOns(ons.copy(stretchFull = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_ignore_cutout), checked = ons.ignoreCutout, onCheckedChange = { b -> onOns(ons.copy(ignoreCutout = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_disable_video), checked = ons.disableVideo, onCheckedChange = { b -> onOns(ons.copy(disableVideo = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_sharpness), checked = ons.sharpness, onCheckedChange = { b -> onOns(ons.copy(sharpness = b)) })
                 if (ons.sharpness) {
-                    EnumSliderRow("锐化强度", ONS_SHARPNESS_MAP, ons.sharpnessValue) {
+                    EnumSliderRow(stringResource(R.string.engine_settings_sharpness_strength), onsSharpnessMap, ons.sharpnessValue) {
                         onOns(ons.copy(sharpnessValue = it))
                     }
                 }
-                DropdownRow("文本编码", ONS_ENCODING_MAP, EngineSettingsStore.normalizeEncoding(ons.encoding)) {
+                DropdownRow(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, EngineSettingsStore.normalizeEncoding(ons.encoding)) {
                     onOns(ons.copy(encoding = it))
                 }
             }
@@ -631,33 +648,33 @@ private fun LazyListPlaceholder(
 
         if (kind == EngineSettingsKind.ARTEMIS) item {
             EngineCard("Artemis") {
-                DropdownRow("引擎版本", ART_VERSION_MAP, artVersion, onArtVersion)
-                SwitchPreference(title = "画面反转", checked = artRotate, onCheckedChange = onArtRotate)
-                DropdownRow("自动补丁", ART_PATCH_MAP, artPatch, onArtPatch)
+                DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
+                SwitchPreference(title = stringResource(R.string.engine_settings_rotate_screen), checked = artRotate, onCheckedChange = onArtRotate)
+                DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)
             }
         }
 
         if (kind == EngineSettingsKind.TYRANO) item {
             EngineCard("Tyrano") {
                 // RPG Maker Web 与 Tyrano 共用同一套 WebView 宿主开关，避免同类引擎重复配置。
-                SwitchPreference(title = "允许加载外部网络资源", checked = tyExternal, onCheckedChange = onTyExternal)
-                SwitchPreference(title = "独立存档目录", checked = tyScoped, onCheckedChange = onTyScoped)
+                SwitchPreference(title = stringResource(R.string.engine_settings_external_network_resources), checked = tyExternal, onCheckedChange = onTyExternal)
+                SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = tyScoped, onCheckedChange = onTyScoped)
             }
         }
 
         if (kind == EngineSettingsKind.RPG_MAKER) item {
             EngineCard("RPG Maker MV/MZ") {
-                SwitchPreference(title = "允许加载外部网络资源", checked = tyExternal, onCheckedChange = onTyExternal)
-                SwitchPreference(title = "独立存档目录", checked = tyScoped, onCheckedChange = onTyScoped)
-                SwitchPreference(title = "游戏修改器", checked = rpgMakerMod, onCheckedChange = onRpgMakerMod)
+                SwitchPreference(title = stringResource(R.string.engine_settings_external_network_resources), checked = tyExternal, onCheckedChange = onTyExternal)
+                SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = tyScoped, onCheckedChange = onTyScoped)
+                SwitchPreference(title = stringResource(R.string.engine_settings_game_modifier), checked = rpgMakerMod, onCheckedChange = onRpgMakerMod)
             }
         }
 
         if (kind == EngineSettingsKind.RENPY) item {
             EngineCard("Ren'Py") {
-                DropdownRow("引擎版本", RENPY_VERSION_MAP, renpyVersion, onRenpyVersion)
+                DropdownRow(stringResource(R.string.engine_settings_engine_version), renpyVersionMap, renpyVersion, onRenpyVersion)
                 Text(
-                    "Ren'Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。",
+                    stringResource(R.string.engine_settings_renpy_module_description_global),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MiuixTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -765,14 +782,14 @@ private fun FontRow(label: String, value: String, onReset: () -> Unit, onPick: (
             text = {
                 Column {
                     Row(Modifier.fillMaxWidth().clickable { onReset(); open = false }.padding(vertical = 8.dp)) {
-                        Text("使用内置字体", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.engine_settings_use_builtin_font), style = MaterialTheme.typography.bodyMedium)
                     }
                     Row(Modifier.fillMaxWidth().clickable { open = false; onPick() }.padding(vertical = 8.dp)) {
-                        Text("选择字体文件…", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.engine_settings_select_font_file), style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { open = false }) { Text("取消") } },
+            confirmButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.common_cancel)) } },
         )
     }
 }
@@ -795,63 +812,6 @@ private fun importFont(ctx: android.content.Context, uri: Uri): String? = try {
 } catch (t: Throwable) {
     null
 }
-
-// 选项表（保序；"" 表示未设置 = 引擎默认/自动，选中后写回空串，语义与旧实现一致）
-private val KR_SELECT_MAP = listOf(
-    EngineSettingsStore.KR_AUTO to "自动",
-    EngineSettingsStore.KR_139 to "1.3.9",
-    EngineSettingsStore.KR_134 to "1.3.4",
-    EngineSettingsStore.KR_126 to "1.2.6",
-)
-private val KR_KERNEL_MAP = listOf(
-    EngineSettingsStore.KR_AUTO to "自动",
-    EngineSettingsStore.KERNEL_KIRIKIRI2 to "吉里吉里2",
-    EngineSettingsStore.KERNEL_KRKRSDL3 to "krkrsdl3",
-)
-private val KR_RENDERER_MAP = listOf(
-    "default" to "引擎默认",
-    EngineSettingsStore.RENDERER_SOFTWARE to "软件渲染",
-    EngineSettingsStore.RENDERER_OPENGL to "OpenGL",
-)
-private val KR_SDL3_RENDERER_MAP = listOf(
-    EngineSettingsStore.RENDERER_OPENGL to "OpenGL（默认）",
-    EngineSettingsStore.RENDERER_SOFTWARE to "软件渲染",
-)
-private val KR_THREAD_MAP = listOf("0" to "自动") + (1..8).map { it.toString() to "$it 线程" }
-private val KR_SW_COMPRESS_MAP = listOf(
-    "" to "引擎默认", "none" to "无", "halfline" to "半行", "lz4" to "LZ4", "lz4+tlg5" to "LZ4+TLG5",
-)
-private val KR_OGL_COMPRESS_MAP = listOf(
-    "" to "引擎默认", "none" to "无", "half" to "半精度", "etc2" to "ETC2", "pvrtc" to "PVRTC",
-)
-private val KR_MEM_MAP = listOf(
-    "" to "引擎默认",
-    EngineSettingsStore.MEM_USAGE_UNLIMITED to "不限制",
-    EngineSettingsStore.MEM_USAGE_HIGH to "高",
-    EngineSettingsStore.MEM_USAGE_MEDIUM to "中",
-    EngineSettingsStore.MEM_USAGE_LOW to "低",
-)
-private val KR_TEXSIZE_MAP = listOf("0" to "自动") +
-    listOf(1024, 2048, 4096, 8192, 16384).map { it.toString() to it.toString() }
-private val KR_FPS_MAP = listOf("" to "引擎默认", "60" to "60", "45" to "45", "30" to "30", "15" to "15")
-private val ONS_SHARPNESS_MAP = listOf("1" to "1.0", "2" to "2.0", "3" to "3.0", "4" to "4.0", "5" to "5.0")
-private val ONS_ENCODING_MAP = listOf("gbk" to "GBK", "sjis" to "Shift-JIS", "utf8" to "UTF-8")
-private val ART_VERSION_MAP = listOf(
-    EngineSettingsStore.ART_ENGINE_AUTO to "自动",
-    EngineSettingsStore.ART_ENGINE_V1 to "V1",
-    EngineSettingsStore.ART_ENGINE_V2 to "V2",
-    EngineSettingsStore.ART_ENGINE_V3 to "V3",
-)
-private val RENPY_VERSION_MAP = listOf(
-    EngineSettingsStore.RENPY_AUTO to "自动",
-    EngineSettingsStore.RENPY_85 to "8.5",
-    EngineSettingsStore.RENPY_77 to "7.7.1",
-)
-private val ART_PATCH_MAP = listOf(
-    EngineSettingsStore.AUTO_PATCH_ASK to "启动时询问",
-    EngineSettingsStore.AUTO_PATCH_AUTO to "自动",
-    EngineSettingsStore.AUTO_PATCH_OFF to "关闭",
-)
 
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
 private fun scanDirName(context: android.content.Context, uri: String): String = runCatching {

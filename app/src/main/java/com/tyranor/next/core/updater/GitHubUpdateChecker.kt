@@ -3,6 +3,8 @@ package com.tyranor.next.core.updater
 import android.content.Context
 import android.content.pm.PackageInfo
 import android.os.Build
+import com.tyranor.next.R
+import com.tyranor.next.core.i18n.AppLocaleController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -18,7 +20,7 @@ object GitHubUpdateChecker {
             val app = context.applicationContext
             val packageInfo = app.packageInfoCompat(app.packageName)
             val currentVersion = packageInfo.versionName ?: "0"
-            val releases = fetchReleases()
+            val releases = fetchReleases(context)
 
             val available = (0 until releases.length())
                 .asSequence()
@@ -54,7 +56,8 @@ object GitHubUpdateChecker {
                 )
             }
         }.getOrElse { error ->
-            UpdateCheckResult.Failed(error.message ?: "网络请求失败")
+            val localizedContext = AppLocaleController.wrap(context)
+            UpdateCheckResult.Failed(error.message ?: localizedContext.getString(R.string.update_network_failed))
         }
     }
 
@@ -67,7 +70,7 @@ object GitHubUpdateChecker {
         }
     }
 
-    private fun fetchReleases(): JSONArray {
+    private fun fetchReleases(context: Context): JSONArray {
         val connection = (URL(RELEASES_API).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 10_000
@@ -84,7 +87,7 @@ object GitHubUpdateChecker {
             stream.bufferedReader().use { reader ->
                 val body = reader.readText()
                 if (connection.responseCode !in 200..299) {
-                    error("GitHub Releases 请求失败：HTTP ${connection.responseCode}")
+                    error(AppLocaleController.wrap(context).getString(R.string.update_github_request_failed, connection.responseCode))
                 }
                 JSONArray(body)
             }

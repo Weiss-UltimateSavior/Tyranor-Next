@@ -4,7 +4,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Environment
 import android.util.Log
+import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.core.game.scan.EngineScanner
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -17,10 +20,12 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
     private const val TYPE_RPGMVX = "rpgmvx"
     private const val TYPE_RPGMVXACE = "rpgmvxace"
     private const val TYPE_MKXP_Z = "mkxp-z"
+    private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
 
     override val id: String = "rpgmaker"
     override val engine: EngineType = EngineType.RPGMAKER
-    override val displayName: String = "RPGM 模块"
+    override val displayName: String = "RPGM Module"
+    override val displayNameRes: Int = R.string.external_rpgm_module_name
     override val packageName: String = "cyou.joiplay.runtime.rpgmaker"
     override val action: String = "cyou.joiplay.runtime.rpgmvxace.run"
     override val defaultAlias: String = "internal.rpgmaker"
@@ -43,7 +48,7 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         val folder = resolveGameFolder(request)
         if (folder.isBlank()) {
             return ExternalEngineLaunchResult.failure(
-                "无法解析 RPGM 游戏目录真实路径，外置 RPGM 模块无法启动",
+                AppLocaleController.wrap(context).getString(R.string.external_rpgm_resolve_dir_failed),
                 "invalid_game_path",
             )
         }
@@ -119,7 +124,11 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
     internal fun resolveGameFolder(request: ExternalEngineLaunchRequest): String {
         val root = request.gameDirectoryPath.trimEnd('/')
         val target = request.launchTarget.trim()
-        if (target.isEmpty() || target == "[游戏目录]" || target.equals("DIR", ignoreCase = true)) {
+        if (
+            target.isEmpty() ||
+            target == LEGACY_GAME_DIR_TARGET ||
+            target.equals(EngineScanner.LAUNCH_TARGET_GAME_DIR, ignoreCase = true)
+        ) {
             return root
         }
         if (target.startsWith('/')) {

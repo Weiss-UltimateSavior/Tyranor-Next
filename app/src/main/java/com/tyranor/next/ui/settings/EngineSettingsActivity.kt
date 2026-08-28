@@ -13,6 +13,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.i18n.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.WithoutPressIndication
 
@@ -37,13 +38,15 @@ class EngineSettingsActivity : ComponentActivity() {
         }
 
         setContent {
-            TyranorNextTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    WithoutPressIndication {
-                        EngineSettingsDetailScreen(kind = kind)
+            ProvideAppLocale {
+                TyranorNextTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        WithoutPressIndication {
+                            EngineSettingsDetailScreen(kind = kind)
+                        }
                     }
                 }
             }

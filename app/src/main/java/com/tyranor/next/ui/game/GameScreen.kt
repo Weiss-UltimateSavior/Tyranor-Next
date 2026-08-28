@@ -75,6 +75,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -99,6 +100,7 @@ import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.cover.VndbCoverService
 import com.tyranor.next.core.cover.stableKey
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
@@ -176,7 +178,7 @@ fun GameScreen(
     fun syncMissingCovers() {
         if (libraryState.scanning || scrapeTaskState.running) return
         if (!CoverScrapeTaskManager.start(context, games)) {
-            android.widget.Toast.makeText(context, "批量刮削正在进行", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, context.getString(R.string.game_batch_scraping_running), android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -245,14 +247,13 @@ fun GameScreen(
             onDismissRequest = { patchLaunchTarget = null },
             title = {
                 Text(
-                    "应用自动补丁",
+                    stringResource(R.string.game_auto_patch_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
             },
             text = {
                 Text(
-                    "「${game.title}」的启动文件打包在 .pfs 归档内，首次启动需要解出少量基础文件" +
-                        "（system.ini、窗口配置与视频）并适配 Android 平台。是否应用补丁？",
+                    stringResource(R.string.game_auto_patch_message, game.title),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -264,7 +265,7 @@ fun GameScreen(
                                 launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS)
                             }
                     },
-                ) { Text("总是") }
+                ) { Text(stringResource(R.string.game_patch_always)) }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -275,7 +276,7 @@ fun GameScreen(
                                 launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER)
                             }
                         },
-                    ) { Text("不再") }
+                    ) { Text(stringResource(R.string.game_patch_never)) }
                     TextButton(
                         onClick = {
                             patchLaunchTarget = null
@@ -283,7 +284,7 @@ fun GameScreen(
                                 launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE)
                             }
                         },
-                    ) { Text("本次") }
+                    ) { Text(stringResource(R.string.game_patch_once)) }
                 }
             },
         )
@@ -292,10 +293,10 @@ fun GameScreen(
     launchError?.let { message ->
         AppAlertDialog(
             onDismissRequest = { launchError = null },
-            title = { Text("启动失败", style = MaterialTheme.typography.titleMedium) },
+            title = { Text(stringResource(R.string.game_launch_failed), style = MaterialTheme.typography.titleMedium) },
             text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
             confirmButton = {
-                TextButton(onClick = { launchError = null }) { Text("确定") }
+                TextButton(onClick = { launchError = null }) { Text(stringResource(R.string.common_confirm)) }
             },
         )
     }
@@ -339,13 +340,14 @@ private fun deleteCoverFile(context: android.content.Context, coverUri: String?)
 }
 
 internal fun startActivityWithPageTransition(context: android.content.Context, intent: android.content.Intent) {
-    if (context is Activity) {
+    val activity = AppLocaleController.findActivity(context)
+    if (activity != null) {
         val options = ActivityOptions.makeCustomAnimation(
-            context,
+            activity,
             R.anim.page_slide_in_from_bottom,
             R.anim.page_slide_out_to_top,
         )
-        context.startActivity(intent, options.toBundle())
+        activity.startActivity(intent, options.toBundle())
     } else {
         intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
@@ -374,6 +376,7 @@ private fun GameLibraryContent(
         val q = query.trim()
         if (q.isEmpty()) sortedGames else sortedGames.filter { it.title.contains(q, ignoreCase = true) }
     }
+    val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
     Column(modifier.fillMaxSize()) {
         // ===== 顶部栏：页面背景色，标题居左 + 右侧四个图标按钮 =====
@@ -384,13 +387,13 @@ private fun GameLibraryContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "游戏",
+                        stringResource(R.string.game_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
                         modifier = Modifier.weight(1f),
                     )
-                    TopBarIcon(painterResource(R.drawable.ic_game_search), "搜索游戏", MaterialTheme.colorScheme.primary) {
+                    TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
                         showSearch = !showSearch
                         if (!showSearch) query = ""
                     }
@@ -402,17 +405,17 @@ private fun GameLibraryContent(
                             CircularProgressIndicator(
                                 modifier = Modifier
                                     .size(22.dp)
-                                    .semantics { contentDescription = "正在批量刮削封面" },
+                                    .semantics { contentDescription = scrapingCoversDescription },
                                 color = MaterialTheme.colorScheme.primary,
                                 strokeWidth = 2.dp,
                             )
                         }
                     } else {
-                        TopBarIcon(painterResource(R.drawable.ic_game_cover), "批量刮削封面", MaterialTheme.colorScheme.primary) {
+                        TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
                             syncMissingCovers()
                         }
                     }
-                    TopBarIcon(painterResource(R.drawable.ic_game_scan), "扫描游戏", MaterialTheme.colorScheme.primary) {
+                    TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
                         refreshGames()
                     }
                 }
@@ -438,9 +441,9 @@ private fun GameLibraryContent(
                         Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text("暂无游戏", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.game_empty_title), style = MaterialTheme.typography.bodyMedium)
                         Text(
-                            "点击添加文件夹并扫描",
+                            stringResource(R.string.game_empty_message),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
@@ -448,13 +451,13 @@ private fun GameLibraryContent(
                         Button(
                             onClick = { dirPickerLaunch() },
                             modifier = Modifier.padding(top = 16.dp),
-                        ) { Text("添加文件夹") }
+                        ) { Text(stringResource(R.string.game_add_folder)) }
                     }
                 }
                 else -> {
                     if (filteredGames.isEmpty()) {
                         Text(
-                            "未找到匹配的游戏",
+                            stringResource(R.string.game_no_match),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.align(Alignment.Center),
@@ -498,7 +501,7 @@ internal fun GameActionsSheet(
 
     fun isBatchScrapingActive(): Boolean {
         if (!CoverScrapeTaskManager.state.value.running) return false
-        android.widget.Toast.makeText(context, "批量刮削正在进行", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(context, context.getString(R.string.game_batch_scraping_running), android.widget.Toast.LENGTH_SHORT).show()
         return true
     }
 
@@ -515,7 +518,7 @@ internal fun GameActionsSheet(
         if (uri == null) return@rememberLauncherForActivityResult
         if (isBatchScrapingActive()) return@rememberLauncherForActivityResult
         scope.launch {
-            launchError = "正在设置封面…"
+            launchError = context.getString(R.string.game_setting_cover)
             val updated = withContext(Dispatchers.IO) {
                 runCatching { VndbCoverService.saveCustomCover(context, game, uri) }.getOrNull()
             }
@@ -524,7 +527,7 @@ internal fun GameActionsSheet(
                 launchError = null
                 onDismiss()
             } else {
-                launchError = "封面设置失败"
+                launchError = context.getString(R.string.game_cover_set_failed)
             }
         }
     }
@@ -558,7 +561,7 @@ internal fun GameActionsSheet(
             }
 
             item {
-                GameActionRow(R.drawable.ic_sheet_launch, "启动游戏") {
+                GameActionRow(R.drawable.ic_sheet_launch, stringResource(R.string.game_launch_action)) {
                     if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                         showPatchConfirm = true
                     } else {
@@ -570,37 +573,37 @@ internal fun GameActionsSheet(
                 item {
                     GameActionRow(
                         iconRes = R.drawable.ic_sheet_launch_file,
-                        label = "启动文件",
-                        subtitle = game.launchFile ?: "自动 - 如有错误请手动选择启动文件",
+                        label = stringResource(R.string.game_launch_file),
+                        subtitle = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
                     ) { showLaunchFilePicker = true }
                 }
             }
             item {
                 GameActionRow(
                     iconRes = R.drawable.ic_home,
-                    label = if (quickLaunched) "移除快捷启动" else "添加快捷启动",
+                    label = if (quickLaunched) stringResource(R.string.game_remove_quick_launch) else stringResource(R.string.game_add_quick_launch),
                 ) {
                     if (onQuickLaunchToggle()) {
                         onDismiss()
                     } else {
-                        android.widget.Toast.makeText(context, "首页快捷启动已满（最多 3 个）", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, context.getString(R.string.game_quick_launch_full), android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             }
             item {
-                GameActionRow(R.drawable.ic_sheet_search_cover, "搜索封面") {
+                GameActionRow(R.drawable.ic_sheet_search_cover, stringResource(R.string.game_search_cover)) {
                     if (!isBatchScrapingActive()) showCoverSourcePicker = true
                 }
             }
             item {
-                GameActionRow(R.drawable.ic_sheet_edit_cover, "修改封面") {
+                GameActionRow(R.drawable.ic_sheet_edit_cover, stringResource(R.string.game_edit_cover)) {
                     if (!isBatchScrapingActive()) imagePicker.launch("image/*")
                 }
             }
-            item { GameActionRow(R.drawable.ic_sheet_rename, "名称修改") { showRenameDialog = true } }
+            item { GameActionRow(R.drawable.ic_sheet_rename, stringResource(R.string.game_rename)) { showRenameDialog = true } }
             if (shouldShowSaveManagement(game.engine)) {
                 item {
-                    GameActionRow(R.drawable.ic_sheet_saves, "存档管理") {
+                    GameActionRow(R.drawable.ic_sheet_saves, stringResource(R.string.game_save_management)) {
                         startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
                         onDismiss()
                     }
@@ -608,14 +611,14 @@ internal fun GameActionsSheet(
             }
             if (game.engine == EngineType.KIRIKIRI) {
                 item {
-                    GameActionRow(R.drawable.ic_sheet_patch, "在线补丁") {
+                    GameActionRow(R.drawable.ic_sheet_patch, stringResource(R.string.game_online_patch)) {
                         startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
                         onDismiss()
                     }
                 }
             }
-            item { GameActionRow(R.drawable.ic_sheet_settings, "引擎设置", onClick = onEngineSettings) }
-            item { GameActionRow(R.drawable.ic_sheet_delete, "删除游戏", danger = true) { showDeleteConfirm = true } }
+            item { GameActionRow(R.drawable.ic_sheet_settings, stringResource(R.string.settings_engine_settings), onClick = onEngineSettings) }
+            item { GameActionRow(R.drawable.ic_sheet_delete, stringResource(R.string.game_delete_title), danger = true) { showDeleteConfirm = true } }
 
             launchError?.let {
                 item {
@@ -637,11 +640,10 @@ internal fun GameActionsSheet(
     if (showPatchConfirm) {
         AppAlertDialog(
             onDismissRequest = { showPatchConfirm = false },
-            title = { Text("应用自动补丁", style = MaterialTheme.typography.titleMedium) },
+            title = { Text(stringResource(R.string.game_auto_patch_title), style = MaterialTheme.typography.titleMedium) },
             text = {
                 Text(
-                    "「${game.title}」的启动文件打包在 .pfs 归档内，首次启动需要解出少量基础文件" +
-                        "（system.ini、窗口配置与视频）并适配 Android 平台。是否应用补丁？",
+                    stringResource(R.string.game_auto_patch_message, game.title),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -651,7 +653,7 @@ internal fun GameActionsSheet(
                         showPatchConfirm = false
                         startLaunch(EngineLauncher.ArtemisPatchChoice.ALWAYS)
                     },
-                ) { Text("总是") }
+                ) { Text(stringResource(R.string.game_patch_always)) }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -660,13 +662,13 @@ internal fun GameActionsSheet(
                             showPatchConfirm = false
                             startLaunch(EngineLauncher.ArtemisPatchChoice.NEVER)
                         },
-                    ) { Text("不再") }
+                    ) { Text(stringResource(R.string.game_patch_never)) }
                     TextButton(
                         onClick = {
                             showPatchConfirm = false
                             startLaunch(EngineLauncher.ArtemisPatchChoice.ONCE)
                         },
-                    ) { Text("本次") }
+                    ) { Text(stringResource(R.string.game_patch_once)) }
                 }
             },
         )
@@ -706,7 +708,7 @@ internal fun GameActionsSheet(
                             coverSearchSource = null
                             onDismiss()
                         } else {
-                            coverBindError = "封面下载失败"
+                            coverBindError = context.getString(R.string.game_cover_download_failed)
                         }
                     }
                 }
@@ -739,10 +741,10 @@ internal fun GameActionsSheet(
     if (showDeleteConfirm) {
         AppAlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除游戏", style = MaterialTheme.typography.titleMedium) },
+            title = { Text(stringResource(R.string.game_delete_title), style = MaterialTheme.typography.titleMedium) },
             text = {
                 Text(
-                    "将移除「${game.title}」的应用内记录、设置与缓存，不会删除游戏文件。",
+                    stringResource(R.string.game_delete_message, game.title),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -750,10 +752,10 @@ internal fun GameActionsSheet(
                 TextButton(onClick = {
                     showDeleteConfirm = false
                     onDeleteGame()
-                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -771,7 +773,7 @@ private fun RenameGameDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("名称修改", style = MaterialTheme.typography.titleMedium) },
+        title = { Text(stringResource(R.string.game_rename), style = MaterialTheme.typography.titleMedium) },
         text = {
             // 统一 Miuix 风格输入框（AppSearchField）；键盘“搜索/完成”动作直接保存（内容有效时）
             AppSearchField(
@@ -787,10 +789,10 @@ private fun RenameGameDialog(
             TextButton(
                 onClick = { onConfirm(normalizedTitle) },
                 enabled = canConfirm,
-            ) { Text("保存") }
+            ) { Text(stringResource(R.string.common_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }
@@ -809,7 +811,7 @@ private fun CoverSourcePickerDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择封面来源", style = MaterialTheme.typography.titleMedium) },
+        title = { Text(stringResource(R.string.game_select_cover_source), style = MaterialTheme.typography.titleMedium) },
         text = {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
@@ -829,7 +831,7 @@ private fun CoverSourcePickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
     )
 }
 
@@ -866,7 +868,7 @@ private fun CoverSearchDialog(
                 }) {
                     is CoverSearchResult.Success -> {
                         candidates = result.candidates.distinctBy { "${it.source}:${it.id}:${it.coverUrl}" }
-                        if (candidates.isEmpty()) error = "未找到匹配结果"
+                        if (candidates.isEmpty()) error = context.getString(R.string.game_cover_no_match)
                     }
                     is CoverSearchResult.Failure -> {
                         error = result.message
@@ -875,7 +877,7 @@ private fun CoverSearchDialog(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                error = e.message ?: "封面搜索失败"
+                error = e.message ?: context.getString(R.string.game_cover_search_failed)
             } finally {
                 searching = false
             }
@@ -926,7 +928,7 @@ private fun CoverSearchDialog(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                "搜索 ${coverSourceTitle(source)} 封面",
+                                stringResource(R.string.game_cover_search_title, coverSourceTitle(source)),
                                 style = MaterialTheme.typography.titleMedium,
                             )
                         }
@@ -939,7 +941,7 @@ private fun CoverSearchDialog(
                             )
                             if (searching) {
                                 Text(
-                                    "正在搜索封面…",
+                                    stringResource(R.string.game_cover_searching),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 8.dp),
@@ -947,7 +949,7 @@ private fun CoverSearchDialog(
                             }
                             if (binding) {
                                 Text(
-                                    "正在绑定封面…",
+                                    stringResource(R.string.game_cover_binding),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 8.dp),
@@ -998,13 +1000,13 @@ private fun CoverSearchDialog(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             TextButton(onClick = onDismiss) {
-                                Text("关闭", style = MaterialTheme.typography.bodyMedium)
+                                Text(stringResource(R.string.common_close), style = MaterialTheme.typography.bodyMedium)
                             }
                             TextButton(
                                 onClick = { search() },
                                 enabled = canSearch,
                             ) {
-                                Text(if (searching) "搜索中…" else "搜索", style = MaterialTheme.typography.bodyMedium)
+                                Text(if (searching) stringResource(R.string.game_searching) else stringResource(R.string.game_search), style = MaterialTheme.typography.bodyMedium)
                             }
                         }
                     }
@@ -1064,7 +1066,7 @@ private fun CoverCandidateCard(
         ) {
             when (val state = previewState) {
                 CoverPreviewState.Failed -> Text(
-                    "无预览",
+                    stringResource(R.string.game_no_preview),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1115,7 +1117,7 @@ private fun CoverCandidateOverlay(candidate: CoverSearchCandidate) {
             )
             candidate.score?.takeIf { it > 0 }?.let { score ->
                 Text(
-                    "票数 $score",
+                    stringResource(R.string.game_votes, score),
                     style = MaterialTheme.typography.bodyMedium,
                     color = NavWhite,
                     maxLines = 1,
@@ -1127,7 +1129,7 @@ private fun CoverCandidateOverlay(candidate: CoverSearchCandidate) {
             }
         }
         Text(
-            "使用",
+            stringResource(R.string.game_use),
             style = MaterialTheme.typography.bodyMedium,
             color = NavWhite,
             maxLines = 1,
@@ -1140,14 +1142,15 @@ private fun CoverCandidateOverlay(candidate: CoverSearchCandidate) {
     }
 }
 
+@Composable
 private fun coverSourcePickerSummary(source: String, enabled: Boolean, needsHikarinagiLogin: Boolean): String = when {
-    !enabled -> "已在封面刮削设置中关闭"
-    needsHikarinagiLogin -> "需要先在封面刮削设置中登录"
-    source == AppSettingsStore.COVER_SOURCE_HIKARINAGI -> "使用已授权账号搜索 Hikarinagi 封面"
-    source == AppSettingsStore.COVER_SOURCE_BANGUMI -> "搜索 Bangumi 条目封面"
-    source == AppSettingsStore.COVER_SOURCE_STEAM -> "搜索 Steam 商店竖版封面"
-    source == AppSettingsStore.COVER_SOURCE_VNDB -> "搜索 VNDB 封面"
-    else -> "搜索此来源"
+    !enabled -> stringResource(R.string.game_cover_source_disabled)
+    needsHikarinagiLogin -> stringResource(R.string.game_cover_source_requires_login)
+    source == AppSettingsStore.COVER_SOURCE_HIKARINAGI -> stringResource(R.string.game_cover_source_hikarinagi_summary)
+    source == AppSettingsStore.COVER_SOURCE_BANGUMI -> stringResource(R.string.game_cover_source_bangumi_summary)
+    source == AppSettingsStore.COVER_SOURCE_STEAM -> stringResource(R.string.game_cover_source_steam_summary)
+    source == AppSettingsStore.COVER_SOURCE_VNDB -> stringResource(R.string.game_cover_source_vndb_summary)
+    else -> stringResource(R.string.game_cover_source_generic_summary)
 }
 
 /** KRKR 专属：选择游戏启动入口文件（目录内 xp3 / exe）。 */
@@ -1175,14 +1178,14 @@ private fun LaunchFileDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("启动文件", style = MaterialTheme.typography.titleMedium) },
+        title = { Text(stringResource(R.string.game_launch_file), style = MaterialTheme.typography.titleMedium) },
         text = {
             when {
                 loading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
                 files.isEmpty() -> Text(
-                    "目录中未找到 xp3 或 exe 文件",
+                    stringResource(R.string.game_launch_file_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1222,10 +1225,10 @@ private fun LaunchFileDialog(
             TextButton(
                 onClick = { selected?.let(onConfirm) },
                 enabled = selected != null,
-            ) { Text("确定") }
+            ) { Text(stringResource(R.string.common_confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

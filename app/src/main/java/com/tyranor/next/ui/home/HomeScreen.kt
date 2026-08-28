@@ -58,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -132,7 +133,7 @@ fun HomeScreen(
                     modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text("首页", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Text(stringResource(R.string.nav_home), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                 }
             }
         }
@@ -173,7 +174,7 @@ fun HomeScreen(
                         )
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text(
-                                "暂无最近打开的游戏",
+                                stringResource(R.string.home_recent_empty),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -228,14 +229,13 @@ fun HomeScreen(
             onDismissRequest = { patchLaunchTarget = null },
             title = {
                 Text(
-                    "应用自动补丁",
+                    stringResource(R.string.game_auto_patch_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
             },
             text = {
                 Text(
-                    "「${game.title}」的启动文件打包在 .pfs 归档内，首次启动需要解出少量基础文件" +
-                        "（system.ini、窗口配置与视频）并适配 Android 平台。是否应用补丁？",
+                    stringResource(R.string.game_auto_patch_message, game.title),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
@@ -247,7 +247,7 @@ fun HomeScreen(
                             launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS)
                         }
                     },
-                ) { Text("总是") }
+                ) { Text(stringResource(R.string.game_patch_always)) }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -258,7 +258,7 @@ fun HomeScreen(
                                 launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER)
                             }
                         },
-                    ) { Text("不再") }
+                    ) { Text(stringResource(R.string.game_patch_never)) }
                     TextButton(
                         onClick = {
                             patchLaunchTarget = null
@@ -266,7 +266,7 @@ fun HomeScreen(
                                 launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE)
                             }
                         },
-                    ) { Text("本次") }
+                    ) { Text(stringResource(R.string.game_patch_once)) }
                 }
             },
         )
@@ -275,10 +275,10 @@ fun HomeScreen(
     launchError?.let { message ->
         AppAlertDialog(
             onDismissRequest = { launchError = null },
-            title = { Text("启动失败", style = MaterialTheme.typography.titleMedium) },
+            title = { Text(stringResource(R.string.game_launch_failed), style = MaterialTheme.typography.titleMedium) },
             text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
             confirmButton = {
-                TextButton(onClick = { launchError = null }) { Text("确定") }
+                TextButton(onClick = { launchError = null }) { Text(stringResource(R.string.common_confirm)) }
             },
         )
     }
@@ -482,12 +482,12 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
     ) {
         Icon(
             Icons.Filled.Add,
-            contentDescription = "空槽位",
+            contentDescription = stringResource(R.string.home_empty_slot_content_description),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(28.dp),
         )
         Text(
-            "快捷启动",
+            stringResource(R.string.home_quick_launch),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 4.dp),
         )
@@ -536,7 +536,7 @@ private fun RecentGameRow(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Delete,
-                        contentDescription = "删除",
+                        contentDescription = stringResource(R.string.common_delete),
                         tint = Color.White,
                     )
                 }

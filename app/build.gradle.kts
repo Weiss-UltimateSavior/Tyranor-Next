@@ -1,4 +1,5 @@
 import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Zip
 import java.util.Properties
@@ -91,6 +92,12 @@ val syncSharedEngineAssets by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/assets/engine"))
 }
 
+val checkHardcodedUiStrings by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Checks localized string resource parity and blocks visible CJK string literals in Kotlin UI/core code."
+    commandLine("python3", rootProject.layout.projectDirectory.file("tools/check-hardcoded-ui-strings.py").asFile.absolutePath)
+}
+
 android {
     namespace = "com.tyranor.next"
     // miuix 0.9.2 传递依赖要求 compileSdk 37（本地平台为 android-37.0）
@@ -165,6 +172,10 @@ tasks.matching {
 }.configureEach {
     dependsOn(packageBundledNativePlugins)
     dependsOn(syncSharedEngineAssets)
+}
+
+tasks.named("check") {
+    dependsOn(checkHardcodedUiStrings)
 }
 
 kotlin {

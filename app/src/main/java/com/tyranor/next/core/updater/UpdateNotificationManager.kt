@@ -13,10 +13,10 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.tyranor.next.R
+import com.tyranor.next.core.i18n.AppLocaleController
 
 object UpdateNotificationManager {
     private const val CHANNEL_ID = "app_updates"
-    private const val CHANNEL_NAME = "版本更新"
     private const val NOTIFICATION_ID = 0x54594E
     private const val PREFS_NAME = "background_update"
     private const val KEY_LAST_NOTIFIED_VERSION = "last_notified_version"
@@ -24,12 +24,13 @@ object UpdateNotificationManager {
 
     fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val localizedContext = AppLocaleController.wrap(context)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            CHANNEL_NAME,
+            localizedContext.getString(R.string.update_channel_name),
             NotificationManager.IMPORTANCE_DEFAULT,
         ).apply {
-            description = "发现 Tyranor Next 新版本时提醒"
+            description = localizedContext.getString(R.string.update_channel_description)
         }
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
@@ -52,13 +53,16 @@ object UpdateNotificationManager {
             releaseIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val localizedContext = AppLocaleController.wrap(appContext)
+        val fallbackText = localizedContext.getString(R.string.update_notification_fallback_text)
+        val releaseName = update.releaseName.ifBlank { fallbackText }
         val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_refresh)
-            .setContentTitle("发现新版本 ${update.latestVersion}")
-            .setContentText(update.releaseName.ifBlank { "点击查看发布详情并下载" })
+            .setContentTitle(localizedContext.getString(R.string.update_notification_title, update.latestVersion))
+            .setContentText(releaseName)
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
-                    "${update.releaseName}\n点击查看 GitHub 发布详情并下载新版本。",
+                    localizedContext.getString(R.string.update_notification_big_text, releaseName),
                 ),
             )
             .setContentIntent(contentIntent)

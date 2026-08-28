@@ -6,9 +6,11 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScannedRoot
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -424,11 +426,11 @@ object EngineScanner {
             val safSession = SafScanSession(context.applicationContext, rootUri)
             val safRoot = safSession.root()
             safRoot?.let { rootNode ->
-                scanRootIncremental(safSession, rootNode, 0, maxDepth, known, found)
+                scanRootIncremental(context, safSession, rootNode, 0, maxDepth, known, found)
             }
             // 只有 SAF 不可用时才走真实路径兜底；正常的“没有新游戏”不再重复扫描整棵目录树。
             if (found.size == beforeCount && (safRoot == null || safSession.queryFailed)) safUriToPath(root)?.let { path ->
-                scanRootIncrementalFile(FileScanSession(), File(path), 0, maxDepth, known, found)
+                scanRootIncrementalFile(context, FileScanSession(), File(path), 0, maxDepth, known, found)
             }
         }
         existing + found.filter { seen.add(it.uri) }
@@ -436,6 +438,7 @@ object EngineScanner {
 
     /** 增量遍历：目录已在库中（已知游戏）→ 剪枝；识别为新游戏 → 记录并停止下钻。 */
     private fun scanRootIncremental(
+        context: Context,
         session: SafScanSession,
         dir: SafNode,
         level: Int,
@@ -452,7 +455,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = dir.name.takeIf { it.isNotBlank() } ?: "未命名游戏",
+                    title = dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -466,7 +469,7 @@ object EngineScanner {
         }
         for (child in children) {
             if (child.isDirectory) {
-                scanRootIncremental(session, child, level + 1, maxDepth, known, out)
+                scanRootIncremental(context, session, child, level + 1, maxDepth, known, out)
             }
         }
     }
@@ -481,18 +484,19 @@ object EngineScanner {
         val safSession = SafScanSession(context, rootUri)
         val safRoot = safSession.root()
         safRoot?.let { root ->
-            traverseDirectories(safSession, root, 0, maxDepth, results)
+            traverseDirectories(context, safSession, root, 0, maxDepth, results)
         }
         // SAF 成功但未发现游戏是正常结果，不重复用 File API 扫一遍。
         // 查询异常/权限失效时仍保留 SD 卡真实路径兼容兜底。
         if (results.isEmpty() && (safRoot == null || safSession.queryFailed)) safUriToPath(rootUriStr)?.let { path ->
-            traverseFileDirectories(FileScanSession(), File(path), 0, maxDepth, results)
+            traverseFileDirectories(context, FileScanSession(), File(path), 0, maxDepth, results)
         }
         val seen = HashSet<String>()
         return results.filter { seen.add(it.uri) }
     }
 
     private fun traverseDirectories(
+        context: Context,
         session: SafScanSession,
         dir: SafNode,
         level: Int,
@@ -508,7 +512,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = dir.name.takeIf { it.isNotBlank() } ?: "未命名游戏",
+                    title = dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -525,7 +529,7 @@ object EngineScanner {
         // 2) 否则递归子目录
         for (child in children) {
             if (child.isDirectory) {
-                traverseDirectories(session, child, level + 1, maxDepth, out)
+                traverseDirectories(context, session, child, level + 1, maxDepth, out)
             }
         }
     }
@@ -534,7 +538,7 @@ object EngineScanner {
      * 一次 ContentResolver.query 取得一个目录的全部子项名称和类型。
      * 相比 DocumentFile.listFiles 后逐个读取 name/isDirectory，可显著减少 SAF Binder 往返。
      */
-    private class SafScanSession(context: Context, private val treeUri: Uri) {
+    private class SafScanSession(private val context: Context, private val treeUri: Uri) {
         private val resolver = context.contentResolver
         private val childrenCache = HashMap<String, List<SafNode>>()
         var queryFailed: Boolean = false
@@ -547,7 +551,7 @@ object EngineScanner {
                 DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
             }.getOrNull() ?: return null
             val name = queryDisplayName(uri)
-                ?: documentId.substringAfterLast('/').substringAfterLast(':').ifBlank { "未命名目录" }
+                ?: documentId.substringAfterLast('/').substringAfterLast(':').ifBlank { localizedText(context, R.string.scan_unnamed_directory) }
             return SafNode(uri, documentId, name, isDirectory = true)
         }
 
@@ -678,6 +682,7 @@ object EngineScanner {
     }
 
     private fun scanRootIncrementalFile(
+        context: Context,
         session: FileScanSession,
         dir: File,
         level: Int,
@@ -694,7 +699,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = dir.name.takeIf { it.isNotBlank() } ?: "未命名游戏",
+                    title = dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
                     uri = dir.absolutePath,
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -707,11 +712,12 @@ object EngineScanner {
             return
         }
         children.filter { it.isDirectory }.forEach { child ->
-            scanRootIncrementalFile(session, child, level + 1, maxDepth, known, out)
+            scanRootIncrementalFile(context, session, child, level + 1, maxDepth, known, out)
         }
     }
 
     private fun traverseFileDirectories(
+        context: Context,
         session: FileScanSession,
         dir: File,
         level: Int,
@@ -726,7 +732,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = dir.name.takeIf { it.isNotBlank() } ?: "未命名游戏",
+                    title = dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
                     uri = dir.absolutePath,
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -739,7 +745,7 @@ object EngineScanner {
             return
         }
         children.filter { it.isDirectory }.forEach { child ->
-            traverseFileDirectories(session, child, level + 1, maxDepth, out)
+            traverseFileDirectories(context, session, child, level + 1, maxDepth, out)
         }
     }
 
@@ -891,22 +897,22 @@ object EngineScanner {
         children.forEach { collect(it, "") }
 
         if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasAnyPfs) {
-            return Detection(EngineType.ARTEMIS, if ((hasSystemIni && hasFirstIet) || hasRootPfs) 95 else 90, "[游戏目录]")
+            return Detection(EngineType.ARTEMIS, if ((hasSystemIni && hasFirstIet) || hasRootPfs) 95 else 90, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasIndex && hasTyranoDir) {
-            return Detection(EngineType.TYRANO, 95, "[游戏目录]")
+            return Detection(EngineType.TYRANO, 95, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasIndex && hasRpgMvCore) {
-            return Detection(EngineType.RPG_MV, 95, "[游戏目录]")
+            return Detection(EngineType.RPG_MV, 95, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasIndex && hasRpgMzCore) {
-            return Detection(EngineType.RPG_MZ, 95, "[游戏目录]")
+            return Detection(EngineType.RPG_MZ, 95, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasIndex && hasVnData) {
-            return Detection(EngineType.VN, 90, "[游戏目录]")
+            return Detection(EngineType.VN, 90, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasAppAsar) {
-            return Detection(EngineType.TYRANO, 80, "[游戏目录]")
+            return Detection(EngineType.TYRANO, 80, LAUNCH_TARGET_GAME_DIR)
         }
         firstRgss3a?.let {
             return Detection(EngineType.RPGMAKER, 96, it, "internal.rpgmvxace")
@@ -918,13 +924,13 @@ object EngineScanner {
             return Detection(EngineType.RPGMAKER, 96, it, "internal.rpgmxp")
         }
         if (hasGameIni && hasRvdata2) {
-            return Detection(EngineType.RPGMAKER, 92, "[游戏目录]", "internal.rpgmvxace")
+            return Detection(EngineType.RPGMAKER, 92, LAUNCH_TARGET_GAME_DIR, "internal.rpgmvxace")
         }
         if (hasGameIni && hasRvdata) {
-            return Detection(EngineType.RPGMAKER, 92, "[游戏目录]", "internal.rpgmvx")
+            return Detection(EngineType.RPGMAKER, 92, LAUNCH_TARGET_GAME_DIR, "internal.rpgmvx")
         }
         if (hasGameIni && hasRxdata) {
-            return Detection(EngineType.RPGMAKER, 92, "[游戏目录]", "internal.rpgmxp")
+            return Detection(EngineType.RPGMAKER, 92, LAUNCH_TARGET_GAME_DIR, "internal.rpgmxp")
         }
         if (hasRpa || hasGameScriptRpy || hasGameOptionsRpy || (hasRenpyDir && (hasRpy || hasRpyc)) || (hasGameDir && hasRpy)) {
             val confidence = when {
@@ -934,21 +940,26 @@ object EngineScanner {
                 else -> 85
             }
             // Ren'Py 版本由单游戏设置选择，扫描不写死版本别名（避免误导为固定 8.5 模块）
-            return Detection(EngineType.RENPY, confidence, "[游戏目录]")
+            return Detection(EngineType.RENPY, confidence, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasIndex) {
-            return Detection(EngineType.WEB_OTHER, 70, "[游戏目录]")
+            return Detection(EngineType.WEB_OTHER, 70, LAUNCH_TARGET_GAME_DIR)
         }
         if (xp3Files.isNotEmpty() || hasStartupTjs || hasConfigTjs) {
-            return Detection(EngineType.KIRIKIRI, if (xp3Files.isNotEmpty()) 95 else 80, xp3Files.firstOrNull() ?: "[游戏目录]")
+            return Detection(EngineType.KIRIKIRI, if (xp3Files.isNotEmpty()) 95 else 80, xp3Files.firstOrNull() ?: LAUNCH_TARGET_GAME_DIR)
         }
         if (hasOnsScript || hasOnsArchive) {
-            return Detection(EngineType.ONS, if (hasOnsScript) 90 else 70, "[游戏目录]")
+            return Detection(EngineType.ONS, if (hasOnsScript) 90 else 70, LAUNCH_TARGET_GAME_DIR)
         }
         return UNKNOWN_DETECTION
     }
 
+    const val LAUNCH_TARGET_GAME_DIR = "DIR"
+
     private val UNKNOWN_DETECTION = Detection(EngineType.UNKNOWN, 0, "")
+
+    private fun localizedText(context: Context, stringRes: Int): String =
+        AppLocaleController.wrap(context.applicationContext).getString(stringRes)
 
     private val ENGINE_SEARCH_DIRECTORIES = setOf(
         "data",

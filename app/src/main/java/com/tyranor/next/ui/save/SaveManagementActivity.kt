@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,6 +54,7 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.core.i18n.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.WithoutPressIndication
@@ -77,10 +79,12 @@ class SaveManagementActivity : ComponentActivity() {
         }
 
         setContent {
-            TyranorNextTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    WithoutPressIndication {
-                        SaveManagementScreen(game = game)
+            ProvideAppLocale {
+                TyranorNextTheme {
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        WithoutPressIndication {
+                            SaveManagementScreen(game = game)
+                        }
                     }
                 }
             }
@@ -118,7 +122,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     fun runSaveTask(block: suspend () -> String) {
         scope.launch {
             val message = withContext(Dispatchers.IO) {
-                runCatching { block() }.getOrElse { it.message ?: "操作失败" }
+                runCatching { block() }.getOrElse { it.message ?: context.getString(R.string.save_operation_failed) }
             }
             refresh()
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -131,7 +135,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         if (uri != null) {
             runSaveTask {
                 val count = manager.exportToZip(game, uri)
-                "已导出 $count 个存档文件"
+                context.getString(R.string.save_exported_count, count)
             }
         }
     }
@@ -139,7 +143,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         if (uri != null) {
             runSaveTask {
                 val count = manager.importFromZip(game, uri)
-                "已覆盖导入 $count 个存档文件"
+                context.getString(R.string.save_imported_count, count)
             }
         }
     }
@@ -152,7 +156,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "存档管理",
+                        stringResource(R.string.save_management_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -185,7 +189,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                             modifier = Modifier.padding(top = 8.dp),
                         )
                         Text(
-                            if (location.available) "当前存档文件：$fileCount 个" else "当前不可管理",
+                            if (location.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 4.dp),
@@ -195,17 +199,17 @@ private fun SaveManagementScreen(game: ScanGame) {
             }
 
             item {
-                SaveActionCard("导出 ZIP") {
+                SaveActionCard(stringResource(R.string.save_export_zip)) {
                     exportLauncher.launch(defaultArchiveName(game))
                 }
             }
             item {
-                SaveActionCard("覆盖导入 ZIP") {
+                SaveActionCard(stringResource(R.string.save_import_zip)) {
                     importLauncher.launch("application/zip")
                 }
             }
             item {
-                SaveActionCard("删除存档") {
+                SaveActionCard(stringResource(R.string.save_delete_title)) {
                     showDeleteConfirm = true
                 }
             }
@@ -216,21 +220,21 @@ private fun SaveManagementScreen(game: ScanGame) {
     if (showDeleteConfirm) {
         AppAlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("删除存档", style = MaterialTheme.typography.titleMedium) },
-            text = { Text("将删除“${game.title}”当前可管理的存档文件。此操作不可撤销。") },
+            title = { Text(stringResource(R.string.save_delete_title), style = MaterialTheme.typography.titleMedium) },
+            text = { Text(stringResource(R.string.save_delete_message, game.title)) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showDeleteConfirm = false
                         runSaveTask {
                             val count = manager.deleteSaves(game)
-                            "已删除 $count 个存档条目"
+                            context.getString(R.string.save_deleted_count, count)
                         }
                     },
-                ) { Text("删除") }
+                ) { Text(stringResource(R.string.common_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }

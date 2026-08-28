@@ -32,9 +32,11 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.annotation.StringRes
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,18 +59,16 @@ import kotlinx.coroutines.withContext
 // 底部导航栏 Tab 定义
 @Immutable
 private data class Tab(
-  val label: String,
+  @StringRes val labelRes: Int,
   val iconRes: Int,
 )
 
 private val tabItems = listOf(
-  Tab("首页", R.drawable.ic_home),
-  Tab("游戏", R.drawable.ic_game),
-  Tab("引擎", R.drawable.ic_module),
-  Tab("设置", R.drawable.ic_settings),
+  Tab(R.string.nav_home, R.drawable.ic_home),
+  Tab(R.string.nav_games, R.drawable.ic_game),
+  Tab(R.string.nav_engine, R.drawable.ic_module),
+  Tab(R.string.nav_settings, R.drawable.ic_settings),
 )
-
-private val liquidGlassTabItems = tabItems.map { LiquidGlassNavItem(it.label, it.iconRes) }
 
 @Composable
 fun MainScreen(modifier: Modifier = Modifier) {
@@ -89,6 +89,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
     libraryViewModel.refreshFromStorage()
   }
   val liquidGlass = AppSettingsStore.navStyleState.value == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
+  val tabLabels = tabItems.map { stringResource(it.labelRes) }
+  val liquidGlassTabItems = tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
 
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
   fun selectPage(index: Int) {
@@ -185,6 +187,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           contentColor = androidx.compose.material3.LocalContentColor.current,
         ) {
           tabItems.forEachIndexed { index, tab ->
+            val label = tabLabels[index]
             val selected = selectedIndex == index
             val itemColor = if (selected) MaterialTheme.colorScheme.primary else unselectedColor
             NavigationBarItem(
@@ -193,12 +196,12 @@ fun MainScreen(modifier: Modifier = Modifier) {
               icon = {
                 Image(
                   painter = painterResource(tab.iconRes),
-                  contentDescription = tab.label,
+                  contentDescription = label,
                   colorFilter = ColorFilter.tint(itemColor),
                   modifier = Modifier.size(28.dp),
                 )
               },
-              label = { Text(tab.label) },
+              label = { Text(label) },
               // 去掉选中高亮：仅图标与文字通过主题色区分选中态
               colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
                 selectedIconColor = MaterialTheme.colorScheme.primary,

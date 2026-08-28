@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,12 +32,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.core.i18n.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.WithoutPressIndication
 import com.tyranor.next.ui.game.startActivityWithPageTransition
@@ -61,13 +64,15 @@ class EngineSettingsMenuActivity : ComponentActivity() {
         window.navigationBarColor = Color.TRANSPARENT
 
         setContent {
-            TyranorNextTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    WithoutPressIndication {
-                        EngineSettingsMenuScreen()
+            ProvideAppLocale {
+                TyranorNextTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        WithoutPressIndication {
+                            EngineSettingsMenuScreen()
+                        }
                     }
                 }
             }
@@ -104,7 +109,7 @@ internal fun EngineSettingsMenuScreen() {
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                "引擎设置",
+                                stringResource(R.string.settings_engine_settings),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MiuixTheme.colorScheme.onBackground,
@@ -129,12 +134,13 @@ internal fun EngineSettingsMenuScreen() {
                     item {
                         MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                             Column(Modifier.padding(vertical = 4.dp)) {
+                                val title = engineSettingsKindTitle(kind)
                                 ArrowPreference(
-                                    title = kind.title,
+                                    title = title,
                                     startAction = {
                                         Icon(
                                             painter = painterResource(kind.iconRes),
-                                            contentDescription = kind.title,
+                                            contentDescription = title,
                                             tint = MiuixTheme.colorScheme.primary,
                                             modifier = Modifier.padding(end = 6.dp).size(24.dp),
                                         )
@@ -153,11 +159,11 @@ internal fun EngineSettingsMenuScreen() {
 }
 
 /** 引擎细分设置类型：与引擎设置 Activity 共用，标识各引擎配置页。 */
-enum class EngineSettingsKind(val title: String, @param:DrawableRes val iconRes: Int) {
-    KRKR("KRKR引擎设置", R.drawable.ic_settings_engine),
-    ONS("ONS引擎设置", R.drawable.ic_settings_engine),
-    ARTEMIS("Artemis引擎设置", R.drawable.ic_settings_engine),
-    RPG_MAKER("RPG Maker引擎设置", R.drawable.ic_settings_engine),
-    TYRANO("Tyrano引擎设置", R.drawable.ic_settings_engine),
-    RENPY("Ren'Py引擎设置", R.drawable.ic_settings_engine),
+enum class EngineSettingsKind(@param:StringRes val titleRes: Int, @param:DrawableRes val iconRes: Int) {
+    KRKR(R.string.engine_settings_krkr_title, R.drawable.ic_settings_engine),
+    ONS(R.string.engine_settings_ons_title, R.drawable.ic_settings_engine),
+    ARTEMIS(R.string.engine_settings_artemis_title, R.drawable.ic_settings_engine),
+    RPG_MAKER(R.string.engine_settings_rpg_maker_title, R.drawable.ic_settings_engine),
+    TYRANO(R.string.engine_settings_tyrano_title, R.drawable.ic_settings_engine),
+    RENPY(R.string.engine_settings_renpy_title, R.drawable.ic_settings_engine),
 }
