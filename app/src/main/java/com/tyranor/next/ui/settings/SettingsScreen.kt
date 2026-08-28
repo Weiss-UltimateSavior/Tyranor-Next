@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -95,6 +96,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var showGroupDialog by remember { mutableStateOf(false) }
     var showScanDirs by remember { mutableStateOf(false) }
     var scanDirs by remember { mutableStateOf(EngineScanner.loadRoots(ctx)) }
+    var showPathDialog by remember { mutableStateOf(false) }
+    var pathInput by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         EngineScanner.rootsRevision.collect {
             scanDirs = withContext(Dispatchers.IO) { EngineScanner.loadRoots(ctx) }
@@ -308,10 +311,51 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             confirmButton = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     TextButton(
+                        onClick = { showPathDialog = true },
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) { Text("输入路径") }
+                    TextButton(
                         onClick = { dirPicker.launch(null) },
                         modifier = Modifier.padding(end = 8.dp),
                     ) { Text("添加目录") }
                     TextButton(onClick = { showScanDirs = false }) { Text("完成") }
+                }
+            },
+        )
+    }
+
+    if (showPathDialog) {
+        AppAlertDialog(
+            onDismissRequest = { showPathDialog = false },
+            title = { Text("输入文件夹路径", style = MaterialTheme.typography.titleMedium) },
+            text = {
+                OutlinedTextField(
+                    value = pathInput,
+                    onValueChange = { pathInput = it },
+                    singleLine = true,
+                    label = { Text("/storage/emulated/0/...") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = {
+                            val trimmed = pathInput.trim()
+                            val target = File(trimmed)
+                            val ok = runCatching { target.isDirectory }.getOrDefault(false)
+                            if (ok) {
+                                EngineScanner.saveRoot(ctx, trimmed)
+                                scanDirs = EngineScanner.loadRoots(ctx)
+                                showPathDialog = false
+                                pathInput = ""
+                            } else {
+                                Toast.makeText(ctx, "路径不存在或不是文件夹", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) { Text("确定") }
+                    TextButton(onClick = { showPathDialog = false }) { Text("取消") }
                 }
             },
         )
@@ -854,13 +898,25 @@ private val ART_PATCH_MAP = listOf(
 )
 
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
-private fun scanDirName(context: android.content.Context, uri: String): String = runCatching {
-    val docId = DocumentsContract.getTreeDocumentId(android.net.Uri.parse(uri))
-    docId.substringAfterLast(':').substringAfterLast('/').ifBlank { uri }
-}.getOrDefault(uri)
+private fun scanDirName(context: android.content.Context, uri: String): String =
+    if (uri.startsWith('/')) {
+        runCatching { File(uri).name.takeIf { it.isNotBlank() } ?: uri }.getOrDefault(uri)
+    } else {
+        runCatching {
+            val docId = DocumentsContract.getTreeDocumentId(android.net.Uri.parse(uri))
+            docId.substringAfterLast(':').substringAfterLast('/').ifBlank { uri }
+        }.getOrDefault(uri)
+    }
+
 
 /** 游戏根目录是否仍可访问（被改名/删除/权限失效时返回 false；TF 卡暂时拔出也会显示失效，重插后恢复）。 */
-private fun isScanDirValid(context: android.content.Context, uri: String): Boolean = runCatching {
-    val doc = DocumentFile.fromTreeUri(context, android.net.Uri.parse(uri))
-    doc != null && doc.isDirectory
-}.getOrDefault(false)
+private fun isScanDirValid(context: android.content.Context, uri: String): Boolean =
+    if (uri.startsWith('/')) {
+        runCatching { File(uri).isDirectory }.getOrDefault(false)
+    } else {
+        runCatching {
+            val doc = DocumentFile.fromTreeUri(context, android.net.Uri.parse(uri))
+            doc != null && doc.isDirectory
+        }.getOrDefault(false)
+    }
+
