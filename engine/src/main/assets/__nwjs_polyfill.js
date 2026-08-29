@@ -23,8 +23,8 @@
         } catch (e) {}
     }
     pinIsNwjs();
-    var pinTimer = setInterval(pinIsNwjs, 100);
-    window.addEventListener("load", pinIsNwjs);
+    var pinTimer = setInterval(function(){ pinIsNwjs(); if (window.Utils && window.Utils.isNwjs && window.Utils.isNwjs() === false && window.StorageManager && window.StorageManager.isLocalMode && window.StorageManager.isLocalMode() === false) { try{ clearInterval(pinTimer); }catch(e){} } }, 100);
+    window.addEventListener("load", function(){ pinIsNwjs(); setTimeout(function(){ try{ clearInterval(pinTimer);}catch(e){}}, 3000); });
     window.addEventListener("pagehide", function () { try { clearInterval(pinTimer); } catch (e) {} });
 
     if (typeof window.process === "undefined") window.process = {};
@@ -64,6 +64,9 @@
             }
             function _fromBinary(bin, enc) {
                 if (enc === "utf8" || enc === "utf-8") {
+                    try {
+                        if (typeof TextDecoder !== "undefined") return new TextDecoder("utf-8", {fatal:false}).decode(Uint8Array.from(bin, function(c){ return c.charCodeAt(0); }));
+                    } catch (e2a) {}
                     try { return decodeURIComponent(escape(bin)); } catch (e2) { return bin; }
                 }
                 if (enc === "hex") {

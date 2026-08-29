@@ -80,6 +80,38 @@ StorageManager.webStorageExists = function(savefileId) {
     return window.saveDataManager.Exists(key);
 };
 Utils.isMobileDevice = function() {return false;};
+StorageManager.removeWebStorage = function(savefileId) {
+    var key = this.webStorageKey(savefileId);
+    try { window.saveDataManager.Remove(key); } catch (e) { try { localStorage.removeItem(key); } catch (e2) {} }
+};
+StorageManager.webStorageBackupExists = StorageManager.webStorageBackupExists || function(savefileId) {
+    var key = this.webStorageKey(savefileId) + "bak";
+    try { return window.saveDataManager.Exists(key); } catch (e) { return false; }
+};
+StorageManager.backupWebStorage = function(savefileId) {
+    if (!this.webStorageExists(savefileId)) return;
+    var key = this.webStorageKey(savefileId);
+    try {
+        var data = this.loadFromWebStorage(savefileId);
+        var bak = key + "bak";
+        var comp = LZString ? LZString.compressToBase64(data) : data;
+        try { window.saveDataManager.Save(bak, comp); } catch (e2) { localStorage.setItem(bak, comp); }
+    } catch (e) {}
+};
+StorageManager.restoreWebStorageBackup = function(savefileId) {
+    var key = this.webStorageKey(savefileId);
+    var bak = key + "bak";
+    if (!this.webStorageBackupExists(savefileId)) return;
+    try {
+        var d = LZString ? LZString.decompressFromBase64(window.saveDataManager.Load(bak)) : window.saveDataManager.Load(bak);
+        if (d !== null) window.saveDataManager.Save(key, LZString ? LZString.compressToBase64(d) : d);
+        window.saveDataManager.Remove(bak);
+    } catch (e) {}
+};
+StorageManager.cleanWebStorageBackup = function(savefileId) {
+    var bak = this.webStorageKey(savefileId) + "bak";
+    try { window.saveDataManager.Remove(bak); } catch (e) { try { localStorage.removeItem(bak); } catch (e2) {} }
+};
 SceneManager.shouldUseCanvasRenderer = function() {return true;};
 Graphics._defaultStretchMode = function() {return true;};
 document.body.parentNode.style.overflow = "hidden";

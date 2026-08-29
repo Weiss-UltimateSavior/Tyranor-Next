@@ -37,7 +37,7 @@ internal class TyranoLocalHttpServer(
     private val asarRootPrefix: String
     private val scriptAppends: Map<String, ByteArray> = scriptAppends.mapKeys { it.key.lowercase(Locale.ROOT) }
     private val internalResources: Map<String, ByteArray> = internalResources.mapKeys {
-        it.key.trimStart('/').lowercase(Locale.ROOT)
+        it.key.trimStart('/').replace(Regex("""/\./"""), "/").replace(Regex("""//+"""), "/").lowercase(Locale.ROOT)
     }
     private val serverSocket: ServerSocket
     private val thread: Thread
@@ -125,10 +125,11 @@ internal class TyranoLocalHttpServer(
             }
             val q = uri.indexOf('?')
             if (q >= 0) uri = uri.substring(0, q)
-            uri = Uri.decode(uri) ?: uri
+            uri = try { Uri.decode(uri) ?: uri } catch (_: Throwable) { uri }
             if (uri == "/") uri = "/index.html"
             while (uri.startsWith("/")) uri = uri.substring(1)
-            internalResources[uri.lowercase(Locale.ROOT)]?.let { resource ->
+            val normalizedLookup = uri.replace(Regex("""/\./"""), "/").replace(Regex("""//+"""), "/").lowercase(Locale.ROOT)
+            internalResources[normalizedLookup]?.let { resource ->
                 sendBytes(socket, resource, uri, method.equals("HEAD", true))
                 return
             }
