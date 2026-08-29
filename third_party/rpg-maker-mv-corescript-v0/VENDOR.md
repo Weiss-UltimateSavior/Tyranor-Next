@@ -10,3 +10,7 @@
   - `Archeia/RPG-Maker-MV-Game-Player` 為同源 1.6.1 純淨鏡像，未另行 vendor，差異記錄於此
   - `siakoMobi/RPG-Maker-MV` 無 License，未引入
 - **構建**：`npm install && npm run build`（`concat.js` 生成六合一 `rpg_*.js`），`js/` 下為拆分源碼
+
+## 运行时资源
+
+`engine/src/main/assets/rpgmv-v1/` 下的 `pixi*.js` 与 `rpg_*.js` 由 `concat.js` 从本目录的拆分源（`rpg_*.json` 清单）生成；`pixi-tilemap.js` / `pixi-picture.js` 等共享库以本目录 `js/libs/` 为单一来源，构建时拷贝至运行时目录。

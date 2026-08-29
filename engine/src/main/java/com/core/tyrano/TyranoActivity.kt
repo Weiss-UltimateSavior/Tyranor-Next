@@ -193,6 +193,9 @@ class TyranoActivity : Activity() {
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
             val normalizedVersion = rpgMakerVersion?.trim()?.lowercase()
             val isRpgMvV1 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v1"
+            if (webGameType == WebGameType.RPG_MZ && normalizedVersion == "v1") {
+                android.util.Log.i(TAG, "MZ v1 is placeholder, falling back to v0 resources")
+            }
             val v1Overlay: Map<String, ByteArray> = if (isRpgMvV1) {
                 buildRpgMvV1Overlay(assets)
             } else {
@@ -291,7 +294,7 @@ class TyranoActivity : Activity() {
                 has("js/rpg_core.js", "www/js/rpg_core.js") -> WebGameType.RPG_MV
                 has("js/rmmz_core.js", "www/js/rmmz_core.js") -> WebGameType.RPG_MZ
                 has("globalData.vndata", "www/globalData.vndata") -> WebGameType.VN
-                else -> WebGameType.fromIntent(explicitType)
+                else -> WebGameType.entries.firstOrNull { it.intentValue.equals(explicitType, ignoreCase = true) } ?: WebGameType.WEB_OTHER
             }
         }
         return when {
@@ -1001,15 +1004,8 @@ class TyranoActivity : Activity() {
         // v1 覆盖：MV 1.6.1 核心（值契约来源：EngineSettingsStore.RPG_MV_V1 = "v1"）
         private fun buildRpgMvV1Overlay(manager: android.content.res.AssetManager): Map<String, ByteArray> {
             val out = mutableMapOf<String, ByteArray>()
-            // MZ 插件在 MV 引擎中会导致 Window_StatusBase 等缺失而黑屏（3959930_1.19 的 MPTPShowforActor.js）
-            // v1 覆盖时主动用兼容打桩版覆盖该插件，避免启动即崩溃
-            try {
-                val compatPlugin = manager.open("rpgmv-v1/js/plugins/MPTPShowforActor.compat.js").buffered().use { it.readBytes() }
-                out["js/plugins/MPTPShowforActor.js"] = compatPlugin
-                out["www/js/plugins/MPTPShowforActor.js"] = compatPlugin
-            } catch (_: Exception) {
-                // 无兼容插件文件时仅由 __nwjs_polyfill.js 的 Window 兼容兜底
-            }
+            // 3959930_1.19 的 MPTPShowforActor.js 为单游戏特例，已由 __nwjs_polyfill.js 的 Window 兼容运行时兜底，不在此无条件覆盖
+            var missing = false
             for (path in RPG_MV_V1_FILES) {
                 val assetPath = RPG_MV_V1_PREFIX + "/" + path
                 val bytes = runCatching { manager.open(assetPath).buffered().use { it.readBytes() } }.getOrNull()
@@ -1018,7 +1014,12 @@ class TyranoActivity : Activity() {
                     out["www/" + path] = bytes
                 } else {
                     Log.w(TAG, "v1 overlay missing asset " + assetPath)
+                    missing = true
                 }
+            }
+            if (missing) {
+                Log.w(TAG, "v1 overlay incomplete, falling back to v0 resources")
+                return emptyMap()
             }
             return out
         }

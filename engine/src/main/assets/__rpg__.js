@@ -75,6 +75,36 @@ StorageManager.webStorageBackupExists = function(savefileId) {
     return window.saveDataManager.Exists(key);
 };
 
+StorageManager.removeWebStorage = function(savefileId) {
+    var key = this.webStorageKey(savefileId);
+    try { window.saveDataManager.Remove(key); } catch (e) { try { localStorage.removeItem(key); } catch (e2) {} }
+};
+
+StorageManager.backup = function(savefileId) {
+    if (!this.exists(savefileId)) return;
+    var data = this.load(savefileId);
+    var compressed = LZString.compressToBase64(data);
+    var key = this.webStorageKey(savefileId) + "bak";
+    try { window.saveDataManager.Save(key, compressed); } catch (e) { try { localStorage.setItem(key, compressed); } catch (e2) {} }
+};
+
+StorageManager.cleanBackup = function(savefileId) {
+    var key = this.webStorageKey(savefileId) + "bak";
+    try { window.saveDataManager.Remove(key); } catch (e) { try { localStorage.removeItem(key); } catch (e2) {} }
+};
+
+StorageManager.restoreBackup = function(savefileId) {
+    var key = this.webStorageKey(savefileId) + "bak";
+    var data = null;
+    try { data = window.saveDataManager.Load(key); } catch (e) { try { data = localStorage.getItem(key); } catch (e2) {} }
+    if (data) {
+        var decompressed = LZString.decompressFromBase64(data);
+        var origKey = this.webStorageKey(savefileId);
+        try { window.saveDataManager.Save(origKey, LZString.compressToBase64(decompressed)); } catch (e) { try { localStorage.setItem(origKey, data); } catch (e2) {} }
+        this.cleanBackup(savefileId);
+    }
+};
+
 StorageManager.webStorageExists = function(savefileId) {
     var key = this.webStorageKey(savefileId);
     return window.saveDataManager.Exists(key);

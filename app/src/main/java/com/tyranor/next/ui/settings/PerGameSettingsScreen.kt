@@ -58,38 +58,38 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val gid = game.uri
 
     // 覆盖值（null=跟随全局）
-    var krVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION)) }
-    var krKernel by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL)) }
-    var krScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR)) }
-    var krFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
-    var krForceFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
+    var krVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION)) }
+    var krKernel by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL)) }
+    var krScoped by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR)) }
+    var krFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
+    var krForceFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
     val krRender = PerGameSettingsStore.KR_FIELDS.associateWith { field ->
         remember(gid, field) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, field)) }
     }
 
-    var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
-    var artRotate by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
-    var artPatch by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
-    var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
+    var artVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
+    var artRotate by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
+    var artPatch by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
+    var renpyVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
 
-    val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
-    var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
-    var onsStretch by remember { mutableStateOf(onsBool(onsOverride.value, "strechfull")) }
-    var onsCutout by remember { mutableStateOf(onsBool(onsOverride.value, "ignorecutout")) }
-    var onsNoVideo by remember { mutableStateOf(onsBool(onsOverride.value, "disablevideo")) }
-    var onsSharp by remember { mutableStateOf(onsBool(onsOverride.value, "sharpness")) }
-    var onsSharpVal by remember { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
-    var onsEnc by remember { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
+    val onsOverride = remember(gid) { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
+    var onsScoped by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
+    var onsStretch by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "strechfull")) }
+    var onsCutout by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "ignorecutout")) }
+    var onsNoVideo by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "disablevideo")) }
+    var onsSharp by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "sharpness")) }
+    var onsSharpVal by remember(gid) { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
+    var onsEnc by remember(gid) { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
 
-    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
-    var tyScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
-    var rpgMakerMod by remember {
+    var tyExternal by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
+    var tyScoped by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
+    var rpgMakerMod by remember(gid) {
         mutableStateOf(
             PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED),
         )
     }
-    var rpgMvVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
-    var rpgMzVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
+    var rpgMvVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
+    var rpgMzVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
