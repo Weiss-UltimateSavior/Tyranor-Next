@@ -395,12 +395,45 @@
         setTimeout(function () { try { clearInterval(pgTimer); } catch (e) {} }, 8000);
     })();
 
+    // MV v1: KELYEP_DragonBones / FilterController Object.create(undefined) 黑屏兜底 + split/exitFullscreen 级联
+    (function () {
+        var origCreate = Object.create;
+        Object.create = function (proto, props) {
+            if (proto == null) {
+                console.warn("[nw-polyfill] Object.create(null-proto) suppressed, fallback to {}");
+                return props ? origCreate.call(this, {}, props) : {};
+            }
+            return origCreate.call(this, proto, props);
+        };
+        Object.create.__tyranorPatched = true;
+        try {
+            var _origSplit = String.prototype.split;
+            String.prototype.split = function (sep, limit) {
+                if (sep == null) return [String(this)];
+                return _origSplit.call(this, sep, limit);
+            };
+            String.prototype.split.__tyranorPatched = true;
+        } catch (e) {}
+        try {
+            var docProto = Document && Document.prototype;
+            if (docProto && typeof docProto.exitFullscreen === "function" && !docProto.exitFullscreen.__tyranorPatched) {
+                var _origExit = docProto.exitFullscreen;
+                docProto.exitFullscreen = function () {
+                    try {
+                        if (!document.fullscreenElement && !document.webkitFullscreenElement) return Promise.resolve();
+                        return _origExit.apply(this, arguments);
+                    } catch (e) { return Promise.resolve(); }
+                };
+                docProto.exitFullscreen.__tyranorPatched = true;
+            }
+        } catch (e) {}
+    })();
+
     try {
         if (typeof window.makeVideoPlayableInline === "undefined") {
             window.makeVideoPlayableInline = function (video) { try { if (video) { video.setAttribute("playsinline", ""); video.setAttribute("webkit-playsinline", ""); } } catch (e) {} };
         }
     } catch (e) {}
-
 
     // Save UI: guard Window_SavefileList against null info (corrupted save)
     (function () {
