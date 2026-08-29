@@ -248,9 +248,17 @@ DataManager.loadGlobalInfo = function() {
         return [];
     }
     if (json) {
-        this._globalInfo = JSON.parse(json);
+        try {
+            this._globalInfo = JSON.parse(json);
+        } catch (e2) {
+            console.warn("[save] globalInfo corrupted, resetting", e2);
+            return this._globalInfo = [];
+        }
+        // Drop entries that have no backing file or whose info is malformed
         for (var i = 1; i <= this.maxSavefiles(); i++) {
             if (!StorageManager.exists(i)) {
+                delete this._globalInfo[i];
+            } else if (this._globalInfo[i] && (typeof this._globalInfo[i].title !== "string" || typeof this._globalInfo[i].timestamp !== "number")) {
                 delete this._globalInfo[i];
             }
         }
@@ -385,8 +393,17 @@ DataManager.saveGameWithoutRescue = function(savefileId) {
 DataManager.loadGameWithoutRescue = function(savefileId) {
     if (this.isThisGameFile(savefileId)) {
         var json = StorageManager.load(savefileId);
+        if (!json) return false;
+        var parsed;
+        try {
+            parsed = JsonEx.parse(json);
+        } catch (e) {
+            console.warn("[save] loadGame JsonEx.parse failed for " + savefileId, e);
+            return false;
+        }
+        if (!parsed || typeof parsed !== "object") return false;
         this.createGameObjects();
-        this.extractSaveContents(JsonEx.parse(json));
+        this.extractSaveContents(parsed);
         this._lastAccessedId = savefileId;
         return true;
     } else {
@@ -445,6 +462,7 @@ DataManager.makeSaveContents = function() {
 };
 
 DataManager.extractSaveContents = function(contents) {
+    if (!contents || typeof contents !== "object") throw new Error("save contents is null or not an object");
     $gameSystem        = contents.system;
     $gameScreen        = contents.screen;
     $gameTimer         = contents.timer;
@@ -455,6 +473,7 @@ DataManager.extractSaveContents = function(contents) {
     $gameParty         = contents.party;
     $gameMap           = contents.map;
     $gamePlayer        = contents.player;
+    if (!$gameParty || !$gameSystem || !$gameMap) throw new Error("save contents missing core objects");
 };
 
 DataManager.setAutoSaveFileId = function(autoSaveFileId) {

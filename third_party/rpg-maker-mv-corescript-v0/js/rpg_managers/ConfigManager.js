@@ -59,7 +59,12 @@ ConfigManager.load = function() {
         console.error(e);
     }
     if (json) {
-        config = JSON.parse(json);
+        try {
+            config = JSON.parse(json);
+        } catch (e2) {
+            console.warn("[save] config corrupted, using defaults", e2);
+            config = {};
+        }
     }
     this.applyData(config);
 };

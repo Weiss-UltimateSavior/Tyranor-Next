@@ -401,5 +401,29 @@
         }
     } catch (e) {}
 
-    console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
+
+    // Save UI: guard Window_SavefileList against null info (corrupted save)
+    (function () {
+        var uiTimer = setInterval(function(){
+            try {
+                if (window.Window_SavefileList && window.Window_SavefileList.prototype && !window.Window_SavefileList.prototype.__tyranorSavePatched) {
+                    var proto = window.Window_SavefileList.prototype;
+                    var origDrawItem = proto.drawItem;
+                    if (typeof origDrawItem === "function") {
+                        proto.drawItem = function(index){
+                            try { return origDrawItem.apply(this, arguments); } catch (e) { console.warn("[nw-polyfill] drawItem suppressed:", e.message); try { this.drawTitle && this.drawTitle(index); } catch(e2){} }
+                        };
+                    }
+                    var origIsValid = proto.isValidSavefileId;
+                    // no change needed, just ensure it doesn't throw
+                    proto.__tyranorSavePatched = true;
+                    clearInterval(uiTimer);
+                }
+            } catch(e){}
+        }, 300);
+        setTimeout(function(){ try{ clearInterval(uiTimer);}catch(e){}}, 8000);
+    })();
+
+
+        console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
 })();
