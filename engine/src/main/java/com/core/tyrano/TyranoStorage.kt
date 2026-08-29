@@ -51,8 +51,26 @@ internal object TyranoStorage {
             val file = resolveFile(directory, key, extension) ?: return false
             val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
             if (bytes.size > MAX_SAVE_BYTES) return false
-            file.outputStream().use { it.write(bytes) }
-            true
+            val dir = file.parentFile ?: return false
+            if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
+            val tmp = File(dir, file.name + ".tmp." + System.nanoTime())
+            var committed = false
+            try {
+                java.io.FileOutputStream(tmp).use { out ->
+                    out.write(bytes)
+                    out.fd.sync()
+                }
+                if (tmp.length() != bytes.size.toLong()) return false
+                if (file.exists() && !file.delete() && file.exists()) return false
+                committed = tmp.renameTo(file)
+                if (!committed) {
+                    java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    committed = true
+                }
+                committed
+            } finally {
+                if (!committed) try { tmp.delete() } catch (_: Throwable) {}
+            }
         } catch (error: Throwable) {
             Log.w(TAG, "setStorage failed key=$key", error)
             false

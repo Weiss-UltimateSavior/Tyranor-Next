@@ -74,7 +74,9 @@ StorageManager.loadFromWebStorage = function(savefileId) {
         try { data = localStorage.getItem(key); } catch (e2) {}
     }
     if (data == null || data === "") return null;
-    return LZString.decompressFromBase64(data);
+    var out = LZString.decompressFromBase64(data);
+    if (out == null) console.warn("[rpg-save] load decompress null for " + key);
+    return out;
 };
 
 StorageManager.loadFromWebStorageBackup = function(savefileId) {
@@ -85,7 +87,9 @@ StorageManager.loadFromWebStorageBackup = function(savefileId) {
         try { data = localStorage.getItem(key); } catch (e2) {}
     }
     if (data == null || data === "") return null;
-    return LZString.decompressFromBase64(data);
+    var out2 = LZString.decompressFromBase64(data);
+    if (out2 == null) console.warn("[rpg-save] load backup decompress null for " + key);
+    return out2;
 };
 
 StorageManager.webStorageBackupExists = function(savefileId) {
@@ -96,7 +100,8 @@ StorageManager.webStorageBackupExists = function(savefileId) {
 
 StorageManager.removeWebStorage = function(savefileId) {
     var key = this.webStorageKey(savefileId);
-    try { window.saveDataManager.Remove(key); } catch (e) { try { localStorage.removeItem(key); } catch (e2) {} }
+    try { window.saveDataManager.Remove(key); } catch (e) {}
+    try { localStorage.removeItem(key); } catch (e2) {}
 };
 
 StorageManager.backup = function(savefileId) {
@@ -115,7 +120,8 @@ StorageManager.backup = function(savefileId) {
 
 StorageManager.cleanBackup = function(savefileId) {
     var key = this.webStorageKey(savefileId) + "bak";
-    try { window.saveDataManager.Remove(key); } catch (e) { try { localStorage.removeItem(key); } catch (e2) {} }
+    try { window.saveDataManager.Remove(key); } catch (e) {}
+    try { localStorage.removeItem(key); } catch (e2) {}
 };
 
 StorageManager.restoreBackup = function(savefileId) {
