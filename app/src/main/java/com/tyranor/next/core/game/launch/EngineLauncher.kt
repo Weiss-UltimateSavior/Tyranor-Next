@@ -39,6 +39,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.charset.Charset
 import java.util.Locale
 
 /**
@@ -348,7 +349,6 @@ object EngineLauncher {
             }
         }
         val version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ENGINE_VERSION), EngineSettingsStore.getKrEngineVersion(context))
-        cleanupTyranorManagedKrPatchScript(engineRoot)
         val activity = when (version) {
             EngineSettingsStore.KR_134 -> Kirikiroid134::class.java
             EngineSettingsStore.KR_126 -> Kirikiroid126::class.java
@@ -362,6 +362,7 @@ object EngineLauncher {
         val defaultFont = PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_DEFAULT_FONT)
             ?: EngineSettingsStore.getKrDefaultFont(context)
         val forceFont = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT), EngineSettingsStore.isKrForceDefaultFont(context))
+        val patchOverlay = prepareKrPatchOverlay(context, gid, engineRoot)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
             putExtra("path", launchEntry)
@@ -374,6 +375,11 @@ object EngineLauncher {
             putExtra("launchTarget", game.launchTarget)
             putExtra("launchMode", "internal.kirikiroid2")
             putExtra("safFileFallback", needsSafFallback)
+            patchOverlay?.let {
+                putExtra("krPatchOverlayTarget", it.targetPatch.absolutePath)
+                putExtra("krPatchOverlayPath", it.overlayPatch.absolutePath)
+                putExtra("krPatchOverlayMode", it.mode)
+            }
             safMirror?.let {
                 putExtra("baseDoc", game.uri)
                 putExtra("safMirrorRoot", it.mirrorRoot.absolutePath)
@@ -746,17 +752,89 @@ object EngineLauncher {
         return path
     }
 
+    private data class KrPatchCleanupResult(
+        val patchFile: File,
+        val bytes: ByteArray,
+        val hadUserContent: Boolean,
+        val cleanedManagedBlock: Boolean,
+        val hadManagedMarker: Boolean,
+    )
+
+    private data class KrPatchOverlay(
+        val targetPatch: File,
+        val overlayPatch: File,
+        val mode: String,
+    )
+
+    /**
+     * 生成 KRKR 虚拟 patch.tjs overlay。
+     *
+     * 不再直接向用户游戏目录写入兼容脚本；只在 app 私有目录生成合成 patch.tjs，
+     * 再由 KRKR 文件 hook 在读取游戏 patch.tjs 时做只读重定向。
+     */
+    private fun prepareKrPatchOverlay(context: Context, gid: String, engineRoot: String): KrPatchOverlay? {
+        val root = File(engineRoot)
+        if (!root.isDirectory || engineRoot.startsWith("content://")) return null
+        val mode = EngineSettingsStore.normalizeKrPatchOverlayMode(
+            PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)
+                ?: EngineSettingsStore.getKrPatchOverlayMode(context),
+        )
+        val cleanup = cleanupTyranorManagedKrPatchScript(root)
+        if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
+
+        val hasSteamPlugin = rootContainsFbfSteamPlugin(root)
+        val force = mode == EngineSettingsStore.KR_PATCH_OVERLAY_FORCE
+        val includeBasicPatch = force || cleanup?.hadUserContent != true
+        val includeSteamStub = hasSteamPlugin && (force || mode == EngineSettingsStore.KR_PATCH_OVERLAY_AUTO)
+        if (!includeBasicPatch && !includeSteamStub) {
+            Log.i(TAG, "KRKR patch overlay skipped root=$engineRoot mode=$mode userPatch=true steam=false")
+            return null
+        }
+
+        val additionsText = buildString {
+            if (includeBasicPatch) append(krBasicPatchOverlayScript())
+            if (includeSteamStub) append(krFbfSteamStubScript())
+        }
+        val baseBytes = if (force || includeSteamStub) cleanup?.bytes ?: ByteArray(0) else ByteArray(0)
+        val patchCharset = detectKrPatchCharset(baseBytes)
+        val additions = additionsText.toByteArray(patchCharset)
+        if (additions.isEmpty()) return null
+
+        val output = ByteArrayOutputStream(baseBytes.size + additions.size + 4).apply {
+            if (baseBytes.isNotEmpty()) {
+                write(baseBytes)
+                write("\n".toByteArray(patchCharset))
+            }
+            write(additions)
+        }.toByteArray()
+
+        return runCatching {
+            val overlayDir = File(File(context.filesDir, "krkr_patch_overlay"), EngineScanner.safeSaveName(engineRoot))
+            if (!overlayDir.isDirectory && !overlayDir.mkdirs()) {
+                Log.w(TAG, "KRKR patch overlay directory unavailable root=$engineRoot dir=${overlayDir.absolutePath}")
+                return null
+            }
+            val overlay = File(overlayDir, "patch.tjs")
+            overlay.writeBytes(output)
+            val target = File(root, "patch.tjs")
+            Log.i(
+                TAG,
+                "KRKR patch overlay prepared root=$engineRoot mode=$mode basic=$includeBasicPatch steam=$includeSteamStub userPatch=${cleanup?.hadUserContent == true} bytes=${output.size}",
+            )
+            KrPatchOverlay(target, overlay, mode)
+        }.onFailure { error ->
+            Log.w(TAG, "KRKR patch overlay prepare failed root=$engineRoot", error)
+        }.getOrNull()
+    }
+
     /**
      * PR 44b6be2 曾在启动时向游戏目录 patch.tjs 自动追加 Tyranor Next 兼容脚本。
-     * 用户游戏脚本经常依赖自己的 patch.tjs 加载顺序/编码/插件定义，直接持久修改会导致部分
-     * 游戏闪退或脚本异常。这里不再追加新内容，只清理历史版本写入的精确托管块。
+     * 这里只清理历史版本写入的精确托管块，并返回清理后的原始 patch 内容供 overlay 合成。
      */
-    private fun cleanupTyranorManagedKrPatchScript(engineRoot: String) {
-        val root = File(engineRoot)
-        if (!root.isDirectory || engineRoot.startsWith("content://")) return
+    private fun cleanupTyranorManagedKrPatchScript(root: File): KrPatchCleanupResult? {
         val patch = File(root, "patch.tjs")
-        if (!patch.isFile) return
-        runCatching {
+        if (!patch.isFile) return null
+        return runCatching {
             val original = patch.readBytes()
             val blocks = listOf(
                 krLegacyPatchScript(fontScale = 1.0f),
@@ -769,19 +847,45 @@ object EngineLauncher {
             }
             if (!cleaned.contentEquals(original)) {
                 patch.writeBytes(cleaned)
-                Log.i(TAG, "KRKR managed patch.tjs block cleaned root=$engineRoot bytes=${original.size - cleaned.size}")
+                Log.i(TAG, "KRKR managed patch.tjs block cleaned root=${root.absolutePath} bytes=${original.size - cleaned.size}")
             } else if (
                 original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_8)) ||
                 original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_8)) ||
                 original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_16LE)) ||
                 original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_16LE))
             ) {
-                Log.w(TAG, "KRKR managed patch.tjs marker found but exact block did not match; left untouched root=$engineRoot")
+                Log.w(TAG, "KRKR managed patch.tjs marker found but exact block did not match; left untouched root=${root.absolutePath}")
             }
+            KrPatchCleanupResult(
+                patchFile = patch,
+                bytes = cleaned,
+                hadUserContent = hasMeaningfulPatchContent(cleaned),
+                cleanedManagedBlock = !cleaned.contentEquals(original),
+                hadManagedMarker = original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_8)) ||
+                    original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_8)) ||
+                    original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_16LE)) ||
+                    original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_16LE)),
+            )
         }.onFailure { error ->
-            Log.w(TAG, "KRKR managed patch.tjs cleanup failed root=$engineRoot", error)
+            Log.w(TAG, "KRKR managed patch.tjs cleanup failed root=${root.absolutePath}", error)
+        }.getOrNull()
+    }
+
+    private fun rootContainsFbfSteamPlugin(root: File): Boolean {
+        val files = root.listFiles() ?: return false
+        return files.any { file ->
+            file.isFile && file.name.equals("FBFSteamPlugin.dll", ignoreCase = true)
         }
     }
+
+    private fun krBasicPatchOverlayScript(): String = """
+        |
+        |
+        |// TYRANOR_NEXT_KRKR_PATCH_OVERLAY_V1
+        |System.setArgument("-debugwin","no");
+        |Plugins.link("kirikiroid2.dll");
+        |
+    """.trimMargin()
 
     private fun krLegacyPatchScript(fontScale: Float): String = """
         |
@@ -799,6 +903,34 @@ object EngineLauncher {
         |}
         |
     """.trimMargin()
+
+    private fun hasMeaningfulPatchContent(bytes: ByteArray): Boolean =
+        bytes.any { byte ->
+            val value = byte.toInt() and 0xFF
+            value > 0x20 && value != 0xFE && value != 0xFF
+        }
+
+    private fun detectKrPatchCharset(bytes: ByteArray): Charset {
+        if (bytes.size >= 2) {
+            val b0 = bytes[0].toInt() and 0xFF
+            val b1 = bytes[1].toInt() and 0xFF
+            if (b0 == 0xFF && b1 == 0xFE) return Charsets.UTF_16LE
+            if (b0 == 0xFE && b1 == 0xFF) return Charsets.UTF_16BE
+        }
+        val sampleSize = bytes.size.coerceAtMost(512)
+        if (sampleSize >= 16) {
+            var evenZeros = 0
+            var oddZeros = 0
+            for (i in 0 until sampleSize) {
+                if (bytes[i].toInt() == 0) {
+                    if (i % 2 == 0) evenZeros++ else oddZeros++
+                }
+            }
+            if (oddZeros > sampleSize / 4 && oddZeros > evenZeros * 2) return Charsets.UTF_16LE
+            if (evenZeros > sampleSize / 4 && evenZeros > oddZeros * 2) return Charsets.UTF_16BE
+        }
+        return Charsets.UTF_8
+    }
 
     private fun krFbfSteamStubScript(): String = """
         |

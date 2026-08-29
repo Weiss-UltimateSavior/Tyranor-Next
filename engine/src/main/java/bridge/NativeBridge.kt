@@ -18,6 +18,10 @@ object NativeBridge {
     private var SAF_DOCUMENTS: Map<String, Uri> = emptyMap()
     @Volatile
     private var krkrGameReadyListener: Runnable? = null
+    @Volatile
+    private var patchOverlayTarget: String? = null
+    @Volatile
+    private var patchOverlayPath: String? = null
 
     @JvmStatic external fun initialize(so: String?): Boolean
     @JvmStatic external fun isLaunchSceneReady(so: String?): Boolean
@@ -49,10 +53,29 @@ object NativeBridge {
         Log.i("NativeBridge", "SAF mirror index entries=${SAF_DOCUMENTS.size}")
     }
 
+    @JvmStatic
+    fun configurePatchOverlay(targetPath: String?, overlayPath: String?) {
+        val target = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(targetPath))
+        val overlay = KrPathUtils.normalizeFilePath(overlayPath)
+        val overlayFile = overlay?.let { File(it) }
+        if (target.isNullOrBlank() || overlay.isNullOrBlank() || overlayFile?.isFile != true) {
+            patchOverlayTarget = null
+            patchOverlayPath = null
+            Log.i("NativeBridge", "KRKR patch overlay disabled target=$targetPath overlay=$overlayPath")
+            return
+        }
+        patchOverlayTarget = target
+        patchOverlayPath = overlay
+        Log.i("NativeBridge", "KRKR patch overlay configured target=$target overlay=$overlay")
+    }
+
     @Synchronized
     @JvmStatic
     fun open(path: String?, mode: Int): Int {
         val normalized = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(path))
+        patchOverlayRedirect(normalized)?.takeIf { isReadOnlyOpen(mode) }?.let { overlay ->
+            return openDirectFile(path, overlay, mode, diagnosticPrefix = "patch overlay")
+        }
         val redirected = KrPathUtils.redirectScopedSavePath(normalized)
         // The native hook uses the stable storage-volume prefix because KRKR may lowercase
         // the game path. Keep regular asset I/O native; only scoped saves need Java redirection.
@@ -71,16 +94,7 @@ object NativeBridge {
             if (mirrorFd >= 0) return mirrorFd
         }
         return try {
-            val raf = RandomAccessFile(File(target), javaMode)
-            if ((mode and OsConstants.O_TRUNC) == OsConstants.O_TRUNC) raf.setLength(0)
-            if ((mode and OsConstants.O_APPEND) == OsConstants.O_APPEND) raf.seek(raf.length())
-            val fd = getFd(raf)
-            raf.close()
-            if (redirected != null) recordOpenDiagnostic(
-                "ok path=$path target=$target flags=$mode mode=$javaMode fd=$fd",
-            )
-            Log.i("NativeBridge", "open $fd $javaMode $path")
-            fd
+            openDirectFile(path, target, mode, diagnosticPrefix = if (redirected != null) "redirect" else null)
         } catch (directError: Throwable) {
             if (isSafFallbackEnabled()) {
                 val safFd = openViaSaf(target, mode, directError)
@@ -105,6 +119,28 @@ object NativeBridge {
     }
 
     @JvmStatic
+    fun redirectOpen(path: String?, mode: Int): String? {
+        val raw = KrPathUtils.normalizeFilePath(path)
+        val normalized = KrPathUtils.canonicalizeKrStoragePath(raw)
+        if (isReadOnlyOpen(mode)) {
+            patchOverlayRedirect(normalized)?.let { return it }
+        }
+        KrPathUtils.redirectScopedSavePath(normalized)?.let { return it }
+        if (normalized != null && normalized != path) return normalized
+        return null
+    }
+
+    @JvmStatic
+    fun redirectReadMetadata(path: String?): String? {
+        val raw = KrPathUtils.normalizeFilePath(path)
+        val normalized = KrPathUtils.canonicalizeKrStoragePath(raw)
+        patchOverlayRedirect(normalized)?.let { return it }
+        KrPathUtils.redirectScopedSavePath(normalized)?.let { return it }
+        if (normalized != null && normalized != path) return normalized
+        return null
+    }
+
+    @JvmStatic
     fun redirectScopedSave(path: String?): String? {
         val normalized = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(path))
         return KrPathUtils.redirectScopedSavePath(normalized)
@@ -116,6 +152,30 @@ object NativeBridge {
                 ?.edit()?.putString("last_open", value)?.commit()
         } catch (_: Throwable) {
         }
+    }
+
+    private fun patchOverlayRedirect(path: String?): String? {
+        val target = patchOverlayTarget ?: return null
+        val overlay = patchOverlayPath ?: return null
+        if (path == null || path.isBlank()) return null
+        return if (path.equals(target, ignoreCase = true)) overlay else null
+    }
+
+    private fun isReadOnlyOpen(mode: Int): Boolean =
+        (mode and OsConstants.O_ACCMODE) == OsConstants.O_RDONLY
+
+    private fun openDirectFile(path: String?, target: String, mode: Int, diagnosticPrefix: String?): Int {
+        val javaMode = toJavaMode(mode)
+        val raf = RandomAccessFile(File(target), javaMode)
+        if ((mode and OsConstants.O_TRUNC) == OsConstants.O_TRUNC) raf.setLength(0)
+        if ((mode and OsConstants.O_APPEND) == OsConstants.O_APPEND) raf.seek(raf.length())
+        val fd = getFd(raf)
+        raf.close()
+        if (diagnosticPrefix != null) recordOpenDiagnostic(
+            "$diagnosticPrefix ok path=$path target=$target flags=$mode mode=$javaMode fd=$fd",
+        )
+        Log.i("NativeBridge", "open $fd $javaMode $path -> $target")
+        return fd
     }
 
     private fun isSafFallbackEnabled(): Boolean {

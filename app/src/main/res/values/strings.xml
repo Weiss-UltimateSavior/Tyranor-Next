@@ -156,6 +156,7 @@
     <string name="engine_settings_scoped_save_dir">独立存档目录</string>
     <string name="engine_settings_engine_version">引擎版本</string>
     <string name="engine_settings_engine_kernel">引擎内核</string>
+    <string name="engine_settings_krkr_patch_overlay">KRKR 虚拟 patch.tjs 补丁</string>
     <string name="engine_settings_render">渲染</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL 精确渲染</string>
     <string name="engine_settings_memory_usage">内存用量</string>
@@ -206,6 +207,7 @@
     <string name="engine_option_low">低</string>
     <string name="engine_option_threads">%1$d 线程</string>
     <string name="engine_option_auto_patch_ask">启动时询问</string>
+    <string name="engine_option_force_enable">强制启用</string>
     <string name="engine_option_off">关闭</string>
 
     <string name="cover_source_local">本地封面</string>

@@ -458,6 +458,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krVersion by remember { mutableStateOf(EngineSettingsStore.getKrEngineVersion(ctx)) }
     var krKernel by remember { mutableStateOf(EngineSettingsStore.getKrKernel(ctx)) }
     var krScoped by remember { mutableStateOf(EngineSettingsStore.isKrScopedSaveDir(ctx)) }
+    var krPatchOverlayMode by remember { mutableStateOf(EngineSettingsStore.getKrPatchOverlayMode(ctx)) }
     var krFont by remember { mutableStateOf(EngineSettingsStore.getKrDefaultFont(ctx)) }
     var krForceFont by remember { mutableStateOf(EngineSettingsStore.isKrForceDefaultFont(ctx)) }
     var krRenderer by remember { mutableStateOf(EngineSettingsStore.getKrRenderer(ctx)) }
@@ -499,6 +500,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrEngineVersion(ctx, krVersion)
         EngineSettingsStore.setKrKernel(ctx, krKernel)
         EngineSettingsStore.setKrScopedSaveDir(ctx, krScoped)
+        EngineSettingsStore.setKrPatchOverlayMode(ctx, krPatchOverlayMode)
         EngineSettingsStore.setKrDefaultFont(ctx, krFont)
         EngineSettingsStore.setKrForceDefaultFont(ctx, krForceFont)
         EngineSettingsStore.setKrRenderer(ctx, krRenderer)
@@ -555,12 +557,13 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 kind,
                 krVersion, krKernel, krScoped, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
-                krVCursorScale, krMenuOpa,
+                krVCursorScale, krMenuOpa, krPatchOverlayMode,
                 ons, artVersion, artRotate, artPatch, tyExternal, tyScoped, rpgMakerMod, renpyVersion, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
                 onKrScoped = { krScoped = it },
+                onKrPatchOverlayMode = { krPatchOverlayMode = it },
                 onKrForceFont = { krForceFont = it },
                 onKrRenderer = { krRenderer = it },
                 onKrDrawThread = { krDrawThread = it },
@@ -626,11 +629,12 @@ private fun LazyListPlaceholder(
     krVersion: String, krKernel: String, krScoped: Boolean, krFont: String, krForceFont: Boolean,
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
-    krVCursorScale: String, krMenuOpa: String,
+    krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String,
     ons: EngineSettingsStore.Ons, artVersion: String, artRotate: Boolean, artPatch: String,
     tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean, renpyVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
+    onKrPatchOverlayMode: (String) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
     onKrSwCompress: (String) -> Unit, onKrOglCompress: (String) -> Unit, onKrMem: (String) -> Unit,
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
@@ -642,6 +646,7 @@ private fun LazyListPlaceholder(
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
+    val krPatchOverlayMap = krPatchOverlayOptions()
     val krRendererMap = krRendererOptions()
     val krSdl3RendererMap = krSdl3RendererOptions()
     val krThreadMap = krThreadOptions()
@@ -666,6 +671,9 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = krScoped, onCheckedChange = onKrScoped)
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), krSelectMap, krVersion, onKrVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, krKernel, onKrKernel)
+                if (!isSdl3) {
+                    DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
+                }
             }
         }
 

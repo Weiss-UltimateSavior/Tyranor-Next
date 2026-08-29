@@ -465,8 +465,52 @@ std::string callJavaPathMethod(const char* path, const char* methodName) {
     return result;
 }
 
+std::string callJavaPathModeMethod(const char* path, int mode, const char* methodName) {
+    if (gVm == nullptr || path == nullptr || methodName == nullptr) return {};
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (gVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return {};
+        attached = true;
+    }
+
+    std::string result;
+    jclass clazz = env->FindClass("bridge/NativeBridge");
+    if (clazz != nullptr) {
+        jmethodID method = env->GetStaticMethodID(
+                clazz, methodName, "(Ljava/lang/String;I)Ljava/lang/String;");
+        if (method != nullptr) {
+            jstring javaPath = env->NewStringUTF(path);
+            if (javaPath != nullptr) {
+                auto redirected = static_cast<jstring>(
+                        env->CallStaticObjectMethod(clazz, method, javaPath, mode));
+                if (redirected != nullptr) {
+                    result = takeString(env, redirected);
+                    env->DeleteLocalRef(redirected);
+                }
+                env->DeleteLocalRef(javaPath);
+            }
+        }
+        env->DeleteLocalRef(clazz);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        result.clear();
+    }
+    if (attached) gVm->DetachCurrentThread();
+    return result;
+}
+
 std::string callJavaRedirect(const char* path) {
     return callJavaPathMethod(path, "redirect");
+}
+
+std::string callJavaOpenRedirect(const char* path, int flags) {
+    return callJavaPathModeMethod(path, flags, "redirectOpen");
+}
+
+std::string callJavaReadMetadataRedirect(const char* path) {
+    return callJavaPathMethod(path, "redirectReadMetadata");
 }
 
 std::string callJavaScopedSaveRedirect(const char* path) {
@@ -486,7 +530,7 @@ int hookOpenCommon(OpenFn original, const char* path, int flags, va_list argumen
     const int fd = callJavaOpen(path, flags);
     if (fd >= 0) return fd;
 
-    const std::string redirected = callJavaRedirect(path);
+    const std::string redirected = callJavaOpenRedirect(path, flags);
     return callOriginal(original, redirected.empty() ? path : redirected.c_str(), flags, mode);
 }
 
@@ -538,7 +582,7 @@ FILE* hookFopenCommon(FopenFn original, const char* path, const char* mode) {
         }
     }
 
-    const std::string redirected = callJavaRedirect(path);
+    const std::string redirected = flags >= 0 ? callJavaOpenRedirect(path, flags) : callJavaRedirect(path);
     return original == nullptr ? nullptr
             : original(redirected.empty() ? path : redirected.c_str(), mode);
 }
@@ -560,23 +604,38 @@ int hookSinglePath(Fn original, const char* path, Args... args) {
 }
 
 int hookedStat(const char* path, struct stat* info) {
-    return hookSinglePath(gOriginalStat, path, info);
+    if (gOriginalStat == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalStat(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalStat(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedLstat(const char* path, struct stat* info) {
-    return hookSinglePath(gOriginalLstat, path, info);
+    if (gOriginalLstat == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalLstat(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalLstat(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedStat64(const char* path, struct stat64* info) {
-    return hookSinglePath(gOriginalStat64, path, info);
+    if (gOriginalStat64 == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalStat64(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalStat64(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedLstat64(const char* path, struct stat64* info) {
-    return hookSinglePath(gOriginalLstat64, path, info);
+    if (gOriginalLstat64 == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalLstat64(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalLstat64(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedAccess(const char* path, int mode) {
-    return hookSinglePath(gOriginalAccess, path, mode);
+    if (gOriginalAccess == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalAccess(path, mode);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalAccess(redirected.empty() ? path : redirected.c_str(), mode);
 }
 
 int hookedRename(const char* from, const char* to) {

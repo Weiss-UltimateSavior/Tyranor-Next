@@ -61,6 +61,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION)) }
     var krKernel by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL)) }
     var krScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR)) }
+    var krPatchOverlayMode by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)) }
     var krFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
     val krRender = PerGameSettingsStore.KR_FIELDS.associateWith { field ->
@@ -99,6 +100,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalKrVersion = EngineSettingsStore.getKrEngineVersion(ctx)
     val globalKrKernel = EngineSettingsStore.getKrKernel(ctx)
     val globalKrScoped = EngineSettingsStore.isKrScopedSaveDir(ctx)
+    val globalKrPatchOverlayMode = EngineSettingsStore.getKrPatchOverlayMode(ctx)
     val globalKrFont = EngineSettingsStore.getKrDefaultFont(ctx)
     val globalForce = EngineSettingsStore.isKrForceDefaultFont(ctx)
     val configuredGlobalRenderer = EngineSettingsStore.getKrRenderer(ctx)
@@ -112,6 +114,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
     val krVersionMap = krSelectOptionsMap()
     val krKernelMap = krKernelOptionsMap()
+    val krPatchOverlayMap = krPatchOverlayOptionsMap()
     val krRendererMap = krRendererOptionsMap()
     val krThreadMap = krThreadOptionsMap()
     val krSwCompressMap = krSoftwareCompressOptionsMap()
@@ -150,6 +153,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION, krVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL, krKernel)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR, krScoped)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE, krPatchOverlayMode)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT, krFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT, krForceFont)
         krRender.forEach { (field, st) -> PerGameSettingsStore.setStr(ctx, gid, field, st.value) }
@@ -210,6 +214,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalKrScoped, krScoped) { krScoped = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
+                                if (!isSdl3) {
+                                    OverrideChoice(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, globalKrPatchOverlayMode, krPatchOverlayMode) { krPatchOverlayMode = it }
+                                }
                             }
                         }
                         item {

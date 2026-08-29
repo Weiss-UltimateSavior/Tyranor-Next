@@ -24,6 +24,13 @@ internal fun krKernelOptions(): List<Pair<String, String>> = listOf(
 )
 
 @Composable
+internal fun krPatchOverlayOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.KR_PATCH_OVERLAY_AUTO to stringResource(R.string.common_auto),
+    EngineSettingsStore.KR_PATCH_OVERLAY_FORCE to stringResource(R.string.engine_option_force_enable),
+    EngineSettingsStore.KR_PATCH_OVERLAY_OFF to stringResource(R.string.engine_option_off),
+)
+
+@Composable
 internal fun krRendererOptions(): List<Pair<String, String>> = listOf(
     "default" to stringResource(R.string.engine_option_engine_default),
     EngineSettingsStore.RENDERER_SOFTWARE to stringResource(R.string.engine_option_software_renderer),
@@ -113,6 +120,9 @@ internal fun krSelectOptionsMap(): Map<String, String> = krSelectOptions().toMap
 
 @Composable
 internal fun krKernelOptionsMap(): Map<String, String> = krKernelOptions().toMap()
+
+@Composable
+internal fun krPatchOverlayOptionsMap(): Map<String, String> = krPatchOverlayOptions().toMap()
 
 @Composable
 internal fun krRendererOptionsMap(): Map<String, String> =

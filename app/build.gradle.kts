@@ -19,6 +19,7 @@ val localProperties = Properties().apply {
 fun configValue(name: String): String =
     System.getenv(name)?.takeIf { it.isNotBlank() }
         ?: localProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+        ?: providers.gradleProperty(name).orNull?.takeIf { it.isNotBlank() }
         ?: ""
 fun String.asBuildConfigString(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -35,6 +36,7 @@ val sharedEngineAssetNames = listOf(
     "__hook_rmmz_managers.js",
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
+val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
 val ciKeystoreFile = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
 val ciKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
 val ciKeyAlias = System.getenv("ANDROID_KEY_ALIAS")?.takeIf { it.isNotBlank() }
@@ -107,7 +109,7 @@ android {
         }
     }
     defaultConfig {
-        applicationId = "com.tyranor.next"
+        applicationId = tyranorApplicationId
         minSdk = 26
         targetSdk = 36
         versionCode = 2

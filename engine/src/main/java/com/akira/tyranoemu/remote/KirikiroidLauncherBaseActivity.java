@@ -501,13 +501,19 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         Intent intent = getIntent();
         boolean scopedSaveDir = intent != null && intent.getBooleanExtra("scopedSaveDir", false);
         boolean safFileFallback = intent != null && intent.getBooleanExtra("safFileFallback", false);
+        String patchOverlayTarget = intent == null ? null : intent.getStringExtra("krPatchOverlayTarget");
+        String patchOverlayPath = intent == null ? null : intent.getStringExtra("krPatchOverlayPath");
+        boolean patchOverlay = patchOverlayTarget != null && !patchOverlayTarget.trim().isEmpty()
+                && patchOverlayPath != null && !patchOverlayPath.trim().isEmpty();
         if (intent == null) {
             Log.i(TAG, "native interceptor skipped: no launch intent");
             return;
         }
 
-        if (!scopedSaveDir && !safFileFallback) {
-            Log.i(TAG, "native interceptor skipped: save redirect and SAF fallback disabled");
+        NativeBridge.configurePatchOverlay(patchOverlayTarget, patchOverlayPath);
+
+        if (!scopedSaveDir && !safFileFallback && !patchOverlay) {
+            Log.i(TAG, "native interceptor skipped: save redirect, SAF fallback and patch overlay disabled");
             return;
         }
         String prefix = null;
@@ -548,9 +554,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                 int relocateStatus = NativeBridge.relocate();
                 boolean relocated = relocateStatus != 0;
                 recordBridgeDiagnostic("relocate=" + relocateStatus + " prefix=" + prefix
-                        + " scoped=" + scopedSaveDir + " saf=" + safFileFallback);
+                        + " scoped=" + scopedSaveDir + " saf=" + safFileFallback
+                        + " patchOverlay=" + patchOverlay);
                 Log.i(TAG, "native interceptor enabled prefix=" + prefix
                         + " scoped=" + scopedSaveDir + " saf=" + safFileFallback
+                        + " patchOverlay=" + patchOverlay
                         + " relocated=" + relocated);
                 if (!relocated) {
                     Log.e(TAG, "native interceptor could not patch libgame file imports");

@@ -29,6 +29,7 @@ object EngineSettingsStore {
     const val KEY_KR_VCURSOR_SCALE = "kr_vcursor_scale"
     const val KEY_KR_MENU_HANDLER_OPA = "kr_menu_handler_opa"
     const val KEY_KR_SCOPED_SAVE_DIR = "kr_scoped_save_dir"
+    const val KEY_KR_PATCH_OVERLAY_MODE = "kr_patch_overlay_mode"
 
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
@@ -50,6 +51,9 @@ object EngineSettingsStore {
     const val KR_126 = "1.2.6"
     const val KERNEL_KIRIKIRI2 = "kirikiri2"
     const val KERNEL_KRKRSDL3 = "krkrsdl3"
+    const val KR_PATCH_OVERLAY_AUTO = "auto"
+    const val KR_PATCH_OVERLAY_FORCE = "force"
+    const val KR_PATCH_OVERLAY_OFF = "off"
 
     const val RENDERER_SOFTWARE = "software"
     const val RENDERER_OPENGL = "opengl"
@@ -118,6 +122,11 @@ object EngineSettingsStore {
         prefs(c).getBoolean(KEY_KR_SCOPED_SAVE_DIR, true)
     fun setKrScopedSaveDir(c: Context, b: Boolean) =
         prefs(c).edit().putBoolean(KEY_KR_SCOPED_SAVE_DIR, b).apply()
+
+    fun getKrPatchOverlayMode(c: Context): String =
+        normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))
+    fun setKrPatchOverlayMode(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_KR_PATCH_OVERLAY_MODE, normalizeKrPatchOverlayMode(v)).apply()
 
     fun getKrDefaultFont(c: Context): String = prefs(c).getString(KEY_KR_DEFAULT_FONT, "").orEmpty()
     fun setKrDefaultFont(c: Context, p: String) = prefs(c).edit().putString(KEY_KR_DEFAULT_FONT, p.trim()).apply()
@@ -188,6 +197,12 @@ object EngineSettingsStore {
         KR_134 -> KR_134
         KR_126 -> KR_126
         else -> KR_AUTO
+    }
+
+    fun normalizeKrPatchOverlayMode(v: String?): String = when (v?.trim()?.lowercase()) {
+        KR_PATCH_OVERLAY_FORCE -> KR_PATCH_OVERLAY_FORCE
+        KR_PATCH_OVERLAY_OFF -> KR_PATCH_OVERLAY_OFF
+        else -> KR_PATCH_OVERLAY_AUTO
     }
 
     // ---------- ONS（存 onsyuri/gameargs JSON，引擎进程 OnsSettings.load 直接读） ----------

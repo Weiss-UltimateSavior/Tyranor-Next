@@ -156,6 +156,7 @@
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
     <string name="engine_settings_engine_version">Engine version</string>
     <string name="engine_settings_engine_kernel">Engine kernel</string>
+    <string name="engine_settings_krkr_patch_overlay">KRKR virtual patch.tjs patch</string>
     <string name="engine_settings_render">Rendering</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL accurate rendering</string>
     <string name="engine_settings_memory_usage">Memory usage</string>
@@ -206,6 +207,7 @@
     <string name="engine_option_low">Low</string>
     <string name="engine_option_threads">%1$d threads</string>
     <string name="engine_option_auto_patch_ask">Ask on launch</string>
+    <string name="engine_option_force_enable">Force enable</string>
     <string name="engine_option_off">Off</string>
 
     <string name="cover_source_local">Local cover</string>
