@@ -50,6 +50,7 @@ internal object TyranoStorage {
         return try {
             val file = resolveFile(directory, key, extension) ?: return false
             val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
+
             if (bytes.size > MAX_SAVE_BYTES) return false
             val dir = file.parentFile ?: return false
             if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
