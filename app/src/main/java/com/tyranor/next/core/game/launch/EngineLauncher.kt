@@ -685,11 +685,7 @@ object EngineLauncher {
             scopedSaveRoot?.let { putExtra("scopedSaveRoot", it) }
             putExtra("rpgMakerModEnabled", rpgMakerModEnabled)
             putExtra("rpgMakerModGameId", game.uri)
-            rpgMakerVersion?.let {
-                putExtra("rpgMakerVersion", it)
-                putExtra("rpgMvVersion", if (game.engine == EngineType.RPG_MV) it else "")
-                putExtra("rpgMzVersion", if (game.engine == EngineType.RPG_MZ) it else "")
-            }
+            rpgMakerVersion?.let { putExtra("rpgMakerVersion", it) }
         }
     }
 

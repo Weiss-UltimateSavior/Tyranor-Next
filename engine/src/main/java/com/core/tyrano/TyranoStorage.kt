@@ -61,11 +61,16 @@ internal object TyranoStorage {
                     out.fd.sync()
                 }
                 if (tmp.length() != bytes.size.toLong()) return false
-                if (file.exists() && !file.delete() && file.exists()) return false
-                committed = tmp.renameTo(file)
-                if (!committed) {
-                    java.nio.file.Files.move(tmp.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-                    committed = true
+                committed = try {
+                    java.nio.file.Files.move(
+                        tmp.toPath(), file.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    )
+                    true
+                } catch (_: Throwable) {
+                    if (file.exists() && !file.delete() && file.exists()) false
+                    else tmp.renameTo(file)
                 }
                 committed
             } finally {
