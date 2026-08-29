@@ -31,6 +31,7 @@ object NativePluginConstants {
     const val LIB_ARTEMIS_COMPATIBLE = "libartemis-compatible.so"
     const val LIB_ARTEMIS_COMPATIBLE_V2 = "libartemis-compatible-v2.so"
     const val LIB_ARTEMIS_V4 = "libartemis-v4.so"
+    const val LIB_ARTEMIS_V5 = "libartemis-v5.so"
 
     const val LIB_SDL2_IMAGE = "libSDL2_image.so"
     const val LIB_SDL2_MIXER = "libSDL2_mixer.so"
@@ -60,11 +61,12 @@ object NativePluginConstants {
         LIB_ONSYURI,
     )
 
-    /** Artemis 外置插件必备 so：三套 revision 运行库，均只依赖系统库，互不依赖。 */
+    /** Artemis 外置插件必备 so：多套 revision 运行库，均只依赖系统库，互不依赖。 */
     val ARTEMIS_REQUIRED_LIBS: List<String> = listOf(
         LIB_ARTEMIS,
         LIB_ARTEMIS_COMPATIBLE,
         LIB_ARTEMIS_COMPATIBLE_V2,
         LIB_ARTEMIS_V4,
+        LIB_ARTEMIS_V5,
     )
 }

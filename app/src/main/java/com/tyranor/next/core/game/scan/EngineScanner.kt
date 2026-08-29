@@ -39,6 +39,8 @@ object EngineScanner {
     private const val KEY_GAMES = "scan_games"      // 已有游戏 entry，按行；每行字段用 \u0001 分隔
     private const val KEY_RECENT_GAMES = "recent_games"
     private const val KEY_QUICK_LAUNCH = "quick_launch" // 首页快捷启动（最多 3 个）
+    private val PFS_PATCH_NAME_RE = Regex("""^[^.]+\.pfs\.\d{3}$""")
+    private val OBB_NAME_RE = Regex("""^(main|patch)\.\d+\..+\.obb$""")
 
     // 主页面会在 Tab 动画中反复进入组合。将已解析的数据保留在进程内，避免每次切页都在
     // 主线程重新读取 SharedPreferences、split 字符串并构造完整游戏列表。
@@ -832,8 +834,11 @@ object EngineScanner {
         var hasVnData = false
         var hasSystemIni = false
         var hasFirstIet = false
+        var hasBootIni = false
         var hasRootPfs = false
+        var hasPatchPfs = false
         var hasAnyPfs = false
+        var hasObbLikeFile = false
         var hasOnsScript = false
         var hasOnsArchive = false
         var hasRenpyDir = false
@@ -875,10 +880,13 @@ object EngineScanner {
                 lower == "app.asar" || childRel.endsWith("/app.asar") -> hasAppAsar = true
                 lower == "startup.tjs" -> hasStartupTjs = true
                 lower == "config.tjs" -> hasConfigTjs = true
+                lower == "boot.ini" -> hasBootIni = true
                 lower == "system.ini" -> hasSystemIni = true
                 childRel == "system/first.iet" || childRel.endsWith("/system/first.iet") -> hasFirstIet = true
                 lower == "root.pfs" -> hasRootPfs = true
-                lower.endsWith(".pfs") -> hasAnyPfs = true
+                lower == "root.pfs" || PFS_PATCH_NAME_RE.matches(lower) -> hasPatchPfs = hasPatchPfs || lower != "root.pfs"
+                lower.endsWith(".pfs") || PFS_PATCH_NAME_RE.matches(lower) -> hasAnyPfs = true
+                lower.endsWith(".obb") || OBB_NAME_RE.matches(lower) -> hasObbLikeFile = true
                 lower == "0.txt" || lower == "00.txt" || lower == "nscript.dat" ||
                     lower == "onscript.nt2" || lower == "onscript.nt3" -> hasOnsScript = true
                 lower.endsWith(".nsa") || lower.endsWith(".sar") -> hasOnsArchive = true
@@ -906,8 +914,12 @@ object EngineScanner {
         }
         children.forEach { collect(it, "") }
 
-        if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasAnyPfs) {
-            return Detection(EngineType.ARTEMIS, if ((hasSystemIni && hasFirstIet) || hasRootPfs) 95 else 90, LAUNCH_TARGET_GAME_DIR)
+        if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasPatchPfs || hasAnyPfs || (hasBootIni && hasObbLikeFile)) {
+            return Detection(
+                EngineType.ARTEMIS,
+                if ((hasSystemIni && hasFirstIet) || hasRootPfs || (hasBootIni && hasObbLikeFile)) 95 else 90,
+                LAUNCH_TARGET_GAME_DIR,
+            )
         }
         if (hasIndex && hasTyranoDir) {
             return Detection(EngineType.TYRANO, 95, LAUNCH_TARGET_GAME_DIR)

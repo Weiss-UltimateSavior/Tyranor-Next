@@ -87,10 +87,11 @@ internal fun onsEncodingOptions(): List<Pair<String, String>> =
 @Composable
 internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_AUTO to stringResource(R.string.common_auto),
-    EngineSettingsStore.ART_ENGINE_V1 to "V1（Artroid+ 1.0）",
-    EngineSettingsStore.ART_ENGINE_V2 to "V2（Artroid+ 2.0）",
-    EngineSettingsStore.ART_ENGINE_V3 to "V3（Artroid+ 3.0）",
-    EngineSettingsStore.ART_ENGINE_V4 to "V4（Tyn 1.0）",
+    EngineSettingsStore.ART_ENGINE_V2 to "v1（Tyranor/Rev.2762）",
+    EngineSettingsStore.ART_ENGINE_V1 to "v2（Tyranor/Rev.3049/emote）",
+    EngineSettingsStore.ART_ENGINE_V3 to "v3（Tyranor/Rev.3201/emote）",
+    EngineSettingsStore.ART_ENGINE_V4 to "V1（TyranorNext/Rev.2958）",
+    EngineSettingsStore.ART_ENGINE_V5 to "V3（TyranorNext/Rev.3288）",
 )
 
 @Composable
