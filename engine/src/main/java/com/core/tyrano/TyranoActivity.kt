@@ -173,7 +173,7 @@ class TyranoActivity : Activity() {
             val normalizedVersion = rpgMakerVersion?.trim()?.lowercase()
             val isRpgMvV1 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v1"
             val v1Overlay: Map<String, ByteArray> = if (isRpgMvV1) {
-                buildRpgMvV1Overlay()
+                buildRpgMvV1Overlay(assets)
             } else {
                 emptyMap()
             }
@@ -905,12 +905,12 @@ class TyranoActivity : Activity() {
         )
 
         // v1 覆盖：MV 1.6.1 核心（值契约来源：EngineSettingsStore.RPG_MV_V1 = "v1"）
-        private fun buildRpgMvV1Overlay(): Map<String, ByteArray> {
+        private fun buildRpgMvV1Overlay(manager: android.content.res.AssetManager): Map<String, ByteArray> {
             val out = mutableMapOf<String, ByteArray>()
             // MZ 插件在 MV 引擎中会导致 Window_StatusBase 等缺失而黑屏（3959930_1.19 的 MPTPShowforActor.js）
             // v1 覆盖时主动用兼容打桩版覆盖该插件，避免启动即崩溃
             try {
-                val compatPlugin = assets.open("rpgmv-v1/js/plugins/MPTPShowforActor.compat.js").buffered().use { it.readBytes() }
+                val compatPlugin = manager.open("rpgmv-v1/js/plugins/MPTPShowforActor.compat.js").buffered().use { it.readBytes() }
                 out["js/plugins/MPTPShowforActor.js"] = compatPlugin
                 out["www/js/plugins/MPTPShowforActor.js"] = compatPlugin
             } catch (_: Exception) {
@@ -918,7 +918,7 @@ class TyranoActivity : Activity() {
             }
             for (path in RPG_MV_V1_FILES) {
                 val assetPath = RPG_MV_V1_PREFIX + "/" + path
-                val bytes = runCatching { assets.open(assetPath).buffered().use { it.readBytes() } }.getOrNull()
+                val bytes = runCatching { manager.open(assetPath).buffered().use { it.readBytes() } }.getOrNull()
                 if (bytes != null && bytes.isNotEmpty()) {
                     out[path] = bytes
                     out["www/" + path] = bytes
