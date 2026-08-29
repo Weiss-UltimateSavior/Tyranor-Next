@@ -151,7 +151,8 @@ class TyranoActivity : Activity() {
             } else {
                 ByteArray(0)
             }
-            val hook = nwPolyfill + (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
+            val earlyHook = nwPolyfill
+            val lateHook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
                 touchPad
             val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
                 mapOf(
@@ -180,14 +181,14 @@ class TyranoActivity : Activity() {
             }
             val internalResources = modResources + v1Overlay
             Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${hook.size} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion")
-            val injectBeforeBody = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
+            val injectBeforeBody = false // early hook at </head>, late hook at </body>
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
-                    contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, internalResources,
+                    contentRoot, asarArchive, lateHook, true, scriptAppends, modHtml, internalResources, earlyHook,
                 )
             } else {
                 TyranoLocalHttpServer(
-                    contentRoot, hook, injectBeforeBody, scriptAppends, modHtml, internalResources,
+                    contentRoot, lateHook, true, scriptAppends, modHtml, internalResources, earlyHook,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {

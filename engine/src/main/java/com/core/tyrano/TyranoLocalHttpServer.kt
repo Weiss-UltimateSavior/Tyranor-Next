@@ -29,6 +29,7 @@ internal class TyranoLocalHttpServer(
     scriptAppends: Map<String, ByteArray> = emptyMap(),
     private val injectedHtml: String = "",
     internalResources: Map<String, ByteArray> = emptyMap(),
+    private val earlyHook: ByteArray? = null,
 ) : Runnable {
     private val root: File
     private val asar: AsarArchive?
@@ -72,7 +73,8 @@ internal class TyranoLocalHttpServer(
         scriptAppends: Map<String, ByteArray> = emptyMap(),
         injectedHtml: String = "",
         internalResources: Map<String, ByteArray> = emptyMap(),
-    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources)
+        earlyHook: ByteArray? = null,
+    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook)
 
     fun start() { thread.start() }
     val port: Int get() = serverSocket.localPort
@@ -253,7 +255,14 @@ internal class TyranoLocalHttpServer(
     }
 
     private fun sendInjectedIndex(socket: Socket, html: String?, headOnly: Boolean) {
-        val data = buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
+        val injectedData = if (earlyHook != null && earlyHook.isNotEmpty()) {
+            // Two-phase injection: earlyHook at </head>, lateHook (tyranoHook) at </body>
+            val withEarly = String(buildInjectedHtml(html.orEmpty(), earlyHook, "", false), StandardCharsets.UTF_8)
+            buildInjectedHtml(withEarly, tyranoHook, injectedHtml, injectBeforeBody)
+        } else {
+            buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
+        }
+        val data = injectedData
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size}")
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
