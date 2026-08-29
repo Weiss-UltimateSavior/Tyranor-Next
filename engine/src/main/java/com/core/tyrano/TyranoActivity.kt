@@ -901,6 +901,9 @@ class TyranoActivity : Activity() {
             "js/libs/pixi.js",
             "js/libs/pixi-tilemap.js",
             "js/libs/pixi-picture.js",
+            "js/libs/iphone-inline-video.browser.js",
+            "js/libs/fpsmeter.js",
+            "js/libs/lz-string.js",
         )
 
         private fun TyranoActivity.buildRpgMvV1Overlay(): Map<String, ByteArray> {

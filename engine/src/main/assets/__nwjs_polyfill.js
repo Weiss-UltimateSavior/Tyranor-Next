@@ -469,5 +469,12 @@
         setTimeout(function(){ try{ clearInterval(pgTimer);}catch(e){}}, 8000);
     } catch(e){}
 
+    // makeVideoPlayableInline: v1 overlay may race with script order, guard missing
+    try {
+        if (typeof window.makeVideoPlayableInline === "undefined") {
+            window.makeVideoPlayableInline = function(video){ try { if(video) { video.setAttribute("playsinline",""); video.setAttribute("webkit-playsinline",""); } } catch(e){} };
+        }
+    } catch(e){}
+
     console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
 })();
