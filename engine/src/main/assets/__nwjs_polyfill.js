@@ -440,5 +440,34 @@
         setTimeout(function(){ try{ clearInterval(gcTimer);}catch(e){}}, 6000);
     } catch(e){}
 
+    // Ensure _progressElement guards are active even for v0 (game's own rpg_core.js)
+    try {
+        var _origSetup = window.Graphics && window.Graphics._setupProgress;
+        // Poll for Graphics and patch _hideProgress/_showProgress regardless of v1/v0
+        var pgTimer = setInterval(function(){
+            try {
+                if (window.Graphics && window.Graphics._hideProgress && !window.Graphics._hideProgress.__patched) {
+                    var oh = window.Graphics._hideProgress;
+                    window.Graphics._hideProgress = function(){ if(!this._progressElement || !this._progressElement.style) return; return oh.apply(this, arguments); };
+                    window.Graphics._hideProgress.__patched = true;
+                }
+                if (window.Graphics && window.Graphics._showProgress && !window.Graphics._showProgress.__patched) {
+                    var os = window.Graphics._showProgress;
+                    window.Graphics._showProgress = function(){ if(!this._progressElement || !this._progressElement.style) return; return os.apply(this, arguments); };
+                    window.Graphics._showProgress.__patched = true;
+                }
+                if (window.Graphics && window.Graphics._updateProgress && !window.Graphics._updateProgress.__patched) {
+                    var ou = window.Graphics._updateProgress;
+                    window.Graphics._updateProgress = function(){ if(!this._progressElement || !this._progressElement.style) return; return ou.apply(this, arguments); };
+                    window.Graphics._updateProgress.__patched = true;
+                }
+            } catch(e){}
+            if (window.Graphics && window.Graphics._hideProgress && window.Graphics._hideProgress.__patched) {
+                clearInterval(pgTimer);
+            }
+        }, 200);
+        setTimeout(function(){ try{ clearInterval(pgTimer);}catch(e){}}, 8000);
+    } catch(e){}
+
     console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
 })();

@@ -2105,6 +2105,7 @@ Graphics._setupProgress = function(){
 };
 
 Graphics._showProgress = function(){
+    if (!this._progressElement || !this._progressElement.style) return;
     if (this._progressEnabled) {
         this._progressElement.value = 0;
         this._progressElement.style.visibility = 'visible';
@@ -2113,6 +2114,7 @@ Graphics._showProgress = function(){
 };
 
 Graphics._hideProgress = function(){
+    if (!this._progressElement || !this._progressElement.style) return;
     this._progressElement.style.visibility = 'hidden';
     clearTimeout(this._progressTimeout);
 };
