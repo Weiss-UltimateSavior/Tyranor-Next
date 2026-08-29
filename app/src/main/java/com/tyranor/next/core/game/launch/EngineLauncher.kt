@@ -48,6 +48,8 @@ object EngineLauncher {
     private const val TAG = "EngineLauncher"
     private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
     private const val ARTEMIS_FALLBACK_STAGE_V4_DIRECT = -1
+    private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
+    private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
 
     /** 支持的引擎列表（用于引擎页展示）。按名称长度从大到小排列。 */
     val supportedEngines: List<EngineType> = listOf(
@@ -313,15 +315,15 @@ object EngineLauncher {
         val needsSafFallback = EngineScanner.isRemovableStoragePath(path)
         val kernel = effectiveKrKernel(context, gid, path)
         val engineRoot = safMirror?.mirrorRoot?.absolutePath ?: path
-        val launchEntry = pickKrActivateEntry(engineRoot, game)
+        val pickedLaunchEntry = pickKrActivateEntry(engineRoot, game)
         if (kernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
-            val args = buildKrkrsdl3Args(context, gid, path, launchEntry)
-            Log.i(TAG, "krkrsdl3 launch root=$path entry=$launchEntry args=$args")
+            val args = buildKrkrsdl3Args(context, gid, path, pickedLaunchEntry)
+            Log.i(TAG, "krkrsdl3 launch root=$path entry=$pickedLaunchEntry args=$args")
             // krkrsdl3 内核：gameargs 首项为启动文件绝对路径，后续为 TVP 命令行参数
             return Intent(context, Krkrsdl3Activity::class.java).apply {
                 putStringArrayListExtra("gameargs", args)
                 putExtra("path", path)
-                putExtra("gamePath", launchEntry)
+                putExtra("gamePath", pickedLaunchEntry)
                 putExtra("projectRoot", path)
                 putExtra("gamedir", path)
                 putExtra("rootUri", game.uri)
@@ -332,11 +334,13 @@ object EngineLauncher {
             }
         }
         val version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ENGINE_VERSION), EngineSettingsStore.getKrEngineVersion(context))
+        prepareKrPatchScript(engineRoot)
         val activity = when (version) {
             EngineSettingsStore.KR_134 -> Kirikiroid134::class.java
             EngineSettingsStore.KR_126 -> Kirikiroid126::class.java
             else -> Kirikiroid139::class.java
         }
+        val launchEntry = pickedLaunchEntry
         val scoped = effectiveKrScopedSaveDir(context, gid)
         val actualSaveRoot = safMirror?.let { File(it.mirrorRoot, "savedata") }
             ?: resolveKrSaveDir(context, path, kernel, scoped)
@@ -743,6 +747,100 @@ object EngineLauncher {
         }?.let { return it.absolutePath }
 
         return path
+    }
+
+    /**
+     * 复刻旧 Tyranor 的 Kirikiroid2 启动补丁：向游戏目录 patch.tjs 追加一段通用脚本。
+     * KRKR 会在启动主脚本前自动合并 patch.tjs，因此不会像替换启动入口那样触发二段跳崩溃。
+     */
+    private fun prepareKrPatchScript(engineRoot: String) {
+        val root = File(engineRoot)
+        if (!root.isDirectory || engineRoot.startsWith("content://")) return
+        val patch = File(root, "patch.tjs")
+        runCatching {
+            val charset = detectTextCharset(patch)
+            val existing = if (patch.isFile) patch.readText(charset) else ""
+            val additions = buildString {
+                if (!existing.contains(KR_LEGACY_PATCH_MARKER) &&
+                    !existing.contains("Plugins.link(\"kirikiroid2.dll\")")
+                ) {
+                    append(krLegacyPatchScript(fontScale = 1.0f))
+                }
+                if (rootContainsFbfSteamPlugin(root) && !existing.contains(KR_FBF_STEAM_STUB_MARKER)) {
+                    append(krFbfSteamStubScript())
+                }
+            }
+            if (additions.isEmpty()) return
+            patch.appendText(additions, charset)
+            Log.i(TAG, "KRKR patch.tjs compatibility appended root=$engineRoot bytes=${additions.length}")
+        }.onFailure { error ->
+            Log.w(TAG, "KRKR legacy patch.tjs compatibility append failed root=$engineRoot", error)
+        }
+    }
+
+    private fun rootContainsFbfSteamPlugin(root: File): Boolean {
+        val files = root.listFiles() ?: return false
+        return files.any { file ->
+            file.isFile && file.name.equals("FBFSteamPlugin.dll", ignoreCase = true)
+        }
+    }
+
+    private fun krLegacyPatchScript(fontScale: Float): String = """
+        |
+        |
+        |$KR_LEGACY_PATCH_MARKER
+        |System.setArgument("-debugwin","no");
+        |Plugins.link("kirikiroid2.dll");
+        |with(Font) {
+        |global._origFontHeightProp = &.height;
+        |property hook_font_height {
+        |setter(v) { global._origFontHeightProp = v * $fontScale; }
+        |getter { return global._origFontHeightProp; }
+        |}
+        |&.height = &(hook_font_height incontextof null);
+        |}
+        |
+    """.trimMargin()
+
+    private fun krFbfSteamStubScript(): String = """
+        |
+        |
+        |$KR_FBF_STEAM_STUB_MARKER
+        |class CFBFSteam {
+        |function CFBFSteam() {}
+        |function finalize() {}
+        |function Init() { return true; }
+        |function Shutdown() { return true; }
+        |function RestartAppIfNecessary(appId) { return false; }
+        |function IsSteamRunning() { return true; }
+        |function IsSubscribed() { return true; }
+        |function IsSubscribedApp(appId) { return true; }
+        |function IsDLCInstalled(appId) { return true; }
+        |function GetUserLanguage() { return "schinese"; }
+        |function GetCurrentGameLanguage() { return "schinese"; }
+        |function GetPersonaName() { return ""; }
+        |function GetSteamID() { return "0"; }
+        |function SetAchievement(name) { return true; }
+        |function ClearAchievement(name) { return true; }
+        |function GetAchievement(name) { return false; }
+        |function StoreStats() { return true; }
+        |function ResetAllStats(achievementsToo) { return true; }
+        |function IsOverlayEnabled() { return false; }
+        |function ActivateGameOverlay(dialog) { return false; }
+        |function ActivateGameOverlayToWebPage(url) { return false; }
+        |}
+        |
+    """.trimMargin()
+
+    private fun detectTextCharset(file: File): java.nio.charset.Charset {
+        if (!file.isFile || file.length() < 2L) return Charsets.UTF_8
+        return runCatching {
+            file.inputStream().use { input ->
+                val b0 = input.read()
+                val b1 = input.read()
+                if (b0 == 0xFF && b1 == 0xFE) Charsets.UTF_16LE else Charsets.UTF_8
+            }
+        }.getOrDefault(Charsets.UTF_8)
     }
 
     /**

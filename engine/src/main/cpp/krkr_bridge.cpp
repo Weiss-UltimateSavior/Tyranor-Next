@@ -89,6 +89,7 @@ struct GameApi {
     GetScene getScene = nullptr;
     StartupFrom startupFrom = nullptr;
     Update update = nullptr;
+    bool languageCheckPatched = false;
 };
 
 JavaVM* gVm = nullptr;
@@ -117,6 +118,10 @@ std::atomic<bool> gGameReadyReported{false};
 std::atomic<int> gLastLaunchReadiness{-1};
 int64_t gFirstSceneUpdateNs = 0;
 constexpr int64_t kMenuShrinkWaitNs = 1200LL * 1000LL * 1000LL;
+constexpr uint32_t kArm64RetInstruction = 0xD65F03C0;
+constexpr uint32_t kArm64SubSpPrologue = 0xD10203FF;
+constexpr uintptr_t kLibGameLanguageCheckOffset = 0x9235C8;
+constexpr uintptr_t kLibGame134LanguageCheckOffset = 0x90F6CC;
 
 bool supportedGameLibrary(const char* library) {
     if (library == nullptr || library[0] == '\0') return false;
@@ -134,6 +139,104 @@ std::string takeString(JNIEnv* env, jstring value) {
     std::string result(chars);
     env->ReleaseStringUTFChars(value, chars);
     return result;
+}
+
+const char* baseName(const char* path) {
+    if (path == nullptr) return "";
+    const char* name = std::strrchr(path, '/');
+    return name == nullptr ? path : name + 1;
+}
+
+struct LibraryBaseRequest {
+    const char* library;
+    uintptr_t base = 0;
+};
+
+int findLoadedLibraryBase(struct dl_phdr_info* info, size_t, void* data) {
+    auto* request = static_cast<LibraryBaseRequest*>(data);
+    if (info == nullptr || request == nullptr || request->library == nullptr) return 0;
+    const char* loaded = info->dlpi_name == nullptr ? "" : info->dlpi_name;
+    if (*loaded == '\0') return 0;
+    if (std::strcmp(loaded, request->library) != 0 &&
+            std::strcmp(baseName(loaded), baseName(request->library)) != 0) {
+        return 0;
+    }
+    request->base = static_cast<uintptr_t>(info->dlpi_addr);
+    return 1;
+}
+
+uintptr_t loadedLibraryBase(const std::string& library) {
+    LibraryBaseRequest request{library.c_str(), 0};
+    dl_iterate_phdr(findLoadedLibraryBase, &request);
+    return request.base;
+}
+
+bool patchCode32(uintptr_t address, uint32_t value) {
+    if (address == 0) return false;
+    const long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) return false;
+    const uintptr_t page = address & ~static_cast<uintptr_t>(pageSize - 1);
+    if (mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, kTag,
+                            "mprotect code patch failed address=%p errno=%d",
+                            reinterpret_cast<void*>(address), errno);
+        return false;
+    }
+    auto* slot = reinterpret_cast<uint32_t*>(address);
+    __atomic_store_n(slot, value, __ATOMIC_RELEASE);
+    __builtin___clear_cache(reinterpret_cast<char*>(address),
+                            reinterpret_cast<char*>(address + sizeof(uint32_t)));
+    const int restoreResult = mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+                                       PROT_READ | PROT_EXEC);
+    if (restoreResult != 0) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "restore code page protection failed address=%p errno=%d",
+                            reinterpret_cast<void*>(address), errno);
+    }
+    return true;
+}
+
+bool installLanguageCheckBypass(GameApi& api) {
+    if (api.languageCheckPatched || api.library.empty()) return api.languageCheckPatched;
+    const char* name = baseName(api.library.c_str());
+    uintptr_t offset = 0;
+    if (std::strcmp(name, "libgame.so") == 0) {
+        offset = kLibGameLanguageCheckOffset;
+    } else if (std::strcmp(name, "libgame134.so") == 0) {
+        offset = kLibGame134LanguageCheckOffset;
+    } else {
+        return false;
+    }
+
+    const uintptr_t base = loadedLibraryBase(api.library);
+    if (base == 0) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "language check bypass skipped: library base not found for %s",
+                            api.library.c_str());
+        return false;
+    }
+    const uintptr_t address = base + offset;
+    const uint32_t before = __atomic_load_n(reinterpret_cast<uint32_t*>(address), __ATOMIC_ACQUIRE);
+    if (before == kArm64RetInstruction) {
+        api.languageCheckPatched = true;
+        __android_log_print(ANDROID_LOG_INFO, kTag,
+                            "language check bypass already active %s offset=0x%lx",
+                            name, static_cast<unsigned long>(offset));
+        return true;
+    }
+    if (before != kArm64SubSpPrologue) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "language check bypass signature mismatch %s offset=0x%lx before=0x%08x",
+                            name, static_cast<unsigned long>(offset), before);
+        return false;
+    }
+    api.languageCheckPatched = patchCode32(address, kArm64RetInstruction);
+    __android_log_print(api.languageCheckPatched ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, kTag,
+                        "language check bypass %s %s offset=0x%lx address=%p",
+                        api.languageCheckPatched ? "installed" : "failed",
+                        name, static_cast<unsigned long>(offset), reinterpret_cast<void*>(address));
+    return api.languageCheckPatched;
 }
 
 bool resolveGameLocked(const char* library) {
@@ -170,6 +273,7 @@ bool resolveGameLocked(const char* library) {
     gGame.getScene = getScene;
     gGame.startupFrom = startupFrom;
     gGame.update = update;
+    installLanguageCheckBypass(gGame);
     __android_log_print(ANDROID_LOG_INFO, kTag, "initialized %s scene=%p startup=%p update=%p", library,
                         reinterpret_cast<void*>(getScene), reinterpret_cast<void*>(startupFrom),
                         reinterpret_cast<void*>(update));
