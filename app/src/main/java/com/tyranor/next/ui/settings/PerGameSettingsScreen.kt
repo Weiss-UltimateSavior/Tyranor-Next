@@ -88,6 +88,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
             PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED),
         )
     }
+    var rpgMvVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
+    var rpgMzVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -109,6 +111,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalTyExternal = EngineSettingsStore.isTyranoExternalNetwork(ctx)
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
+    val globalRpgMvVersion = EngineSettingsStore.getRpgMvEngineVersion(ctx)
+    val globalRpgMzVersion = EngineSettingsStore.getRpgMzEngineVersion(ctx)
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
     val krVersionMap = krSelectOptionsMap()
     val krKernelMap = krKernelOptionsMap()
@@ -174,6 +178,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
             PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED,
             rpgMakerMod,
         )
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION, rpgMvVersion)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION, rpgMzVersion)
     }
 
     MiuixSettingsTheme {
@@ -320,9 +326,21 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
+                    EngineType.RPG_MV, EngineType.RPG_MZ -> item {
+                        val isMv = game.engine == EngineType.RPG_MV
+                        val versionMap = if (isMv) rpgMvVersionOptionsMap() else rpgMzVersionOptionsMap()
+                        val globalVersion = if (isMv) globalRpgMvVersion else globalRpgMzVersion
+                        val overrideVersion = if (isMv) rpgMvVersion else rpgMzVersion
+                        SectionCard(game.engine.displayName) {
+                            OverrideChoice(stringResource(R.string.engine_settings_engine_version), versionMap, globalVersion, overrideVersion) { v ->
+                                if (isMv) rpgMvVersion = v else rpgMzVersion = v
+                            }
+                            OverrideSwitch(stringResource(R.string.engine_settings_external_network), globalTyExternal, tyExternal) { tyExternal = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
+                        }
+                    }
                     EngineType.TYRANO,
-                    EngineType.RPG_MV,
-                    EngineType.RPG_MZ,
                     EngineType.VN,
                     EngineType.WEB_OTHER,
                     EngineType.UNKNOWN -> item {
@@ -330,9 +348,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_external_network), globalTyExternal, tyExternal) { tyExternal = it }
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
-                            }
-                            if (game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ) {
-                                OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
                             }
                         }
                     }

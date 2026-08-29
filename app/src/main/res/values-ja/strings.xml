@@ -207,6 +207,10 @@
     <string name="engine_option_threads">%1$d スレッド</string>
     <string name="engine_option_auto_patch_ask">起動時に確認</string>
     <string name="engine_option_off">オフ</string>
+    <string name="engine_option_rpg_mv_v0">v0（現行）</string>
+    <string name="engine_option_rpg_mv_v1">v1（1.6.1 corescript）</string>
+    <string name="engine_option_rpg_mz_v0">v0（現行）</string>
+    <string name="engine_option_rpg_mz_v1">v1（予約）</string>
 
     <string name="cover_source_local">ローカルカバー</string>
     <string name="cover_source_custom">カスタムカバー</string>

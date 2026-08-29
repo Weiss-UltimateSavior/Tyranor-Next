@@ -1,5 +1,6 @@
 package com.core.tyrano
 
+import android.net.Uri
 import android.util.Log
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -13,7 +14,6 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
-import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
 import java.util.Locale
@@ -29,6 +29,7 @@ internal class TyranoLocalHttpServer(
     scriptAppends: Map<String, ByteArray> = emptyMap(),
     private val injectedHtml: String = "",
     internalResources: Map<String, ByteArray> = emptyMap(),
+    private val earlyHook: ByteArray? = null,
 ) : Runnable {
     private val root: File
     private val asar: AsarArchive?
@@ -72,7 +73,8 @@ internal class TyranoLocalHttpServer(
         scriptAppends: Map<String, ByteArray> = emptyMap(),
         injectedHtml: String = "",
         internalResources: Map<String, ByteArray> = emptyMap(),
-    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources)
+        earlyHook: ByteArray? = null,
+    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook)
 
     fun start() { thread.start() }
     val port: Int get() = serverSocket.localPort
@@ -123,7 +125,7 @@ internal class TyranoLocalHttpServer(
             }
             val q = uri.indexOf('?')
             if (q >= 0) uri = uri.substring(0, q)
-            uri = URLDecoder.decode(uri, StandardCharsets.UTF_8.name())
+            uri = Uri.decode(uri) ?: uri
             if (uri == "/") uri = "/index.html"
             while (uri.startsWith("/")) uri = uri.substring(1)
             internalResources[uri.lowercase(Locale.ROOT)]?.let { resource ->
@@ -177,7 +179,9 @@ internal class TyranoLocalHttpServer(
             if (target != null) { Log.i(TAG, "resource fallback rpgmvm->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
         }
         if (asar != null) {
-            val data = asar.read(asarRootPrefix + uri) ?: asar.read(uri)
+            val normalizedUri = uri.replace(Regex("/\\./"), "/").replace(Regex("//+"), "/")
+            val data = asar.read(asarRootPrefix + normalizedUri) ?: asar.read(normalizedUri)
+                ?: asar.read(asarRootPrefix + normalizedUri.lowercase(Locale.ROOT)) ?: asar.read(normalizedUri.lowercase(Locale.ROOT))
             if (data != null) return ResolvedFile(null, data)
             if (uri.equals("index.html", true) || uri.equals("index.htm", true)) {
                 var indexBytes = asar.read("index.html")
@@ -253,7 +257,14 @@ internal class TyranoLocalHttpServer(
     }
 
     private fun sendInjectedIndex(socket: Socket, html: String?, headOnly: Boolean) {
-        val data = buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
+        val injectedData = if (earlyHook != null && earlyHook.isNotEmpty()) {
+            // Two-phase injection: earlyHook at </head>, lateHook (tyranoHook) at </body>
+            val withEarly = String(buildInjectedHtml(html.orEmpty(), earlyHook, "", false), StandardCharsets.UTF_8)
+            buildInjectedHtml(withEarly, tyranoHook, injectedHtml, injectBeforeBody)
+        } else {
+            buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
+        }
+        val data = injectedData
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size}")
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
@@ -296,18 +307,24 @@ internal class TyranoLocalHttpServer(
         var start = 0L
         var end = fileLen - 1
         var partial = false
-        if (rangeHeader != null && rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) {
-            val range = rangeHeader.substring(6).trim()
-            val dash = range.indexOf('-')
-            if (dash >= 0) {
-                val a = range.substring(0, dash).trim()
-                val b = range.substring(dash + 1).trim()
-                if (a.isNotEmpty()) start = a.toLong()
-                if (b.isNotEmpty()) end = b.toLong()
-                if (end >= fileLen) end = fileLen - 1
-                if (start < 0) start = 0
-                if (start <= end) partial = true
+        try {
+            if (rangeHeader != null && rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) {
+                val range = rangeHeader.substring(6).trim().split(",")[0].trim()
+                val dash = range.indexOf('-')
+                if (dash >= 0) {
+                    val a = range.substring(0, dash).trim()
+                    val b = range.substring(dash + 1).trim()
+                    if (a.isNotEmpty()) start = a.toLong()
+                    if (b.isNotEmpty()) end = b.toLong()
+                    if (end >= fileLen) end = fileLen - 1
+                    if (start < 0) start = 0
+                    if (start >= fileLen || start > end) {
+                        start = 0; end = fileLen - 1; partial = false
+                    } else if (start <= end) partial = true
+                }
             }
+        } catch (_: Throwable) {
+            start = 0; end = fileLen - 1; partial = false
         }
         val len = Math.max(0, end - start + 1)
         val status = if (partial) "206 Partial Content" else "200 OK"

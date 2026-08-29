@@ -207,6 +207,10 @@
     <string name="engine_option_threads">%1$d threads</string>
     <string name="engine_option_auto_patch_ask">Ask on launch</string>
     <string name="engine_option_off">Off</string>
+    <string name="engine_option_rpg_mv_v0">v0 (current)</string>
+    <string name="engine_option_rpg_mv_v1">v1 (1.6.1 corescript)</string>
+    <string name="engine_option_rpg_mz_v0">v0 (current)</string>
+    <string name="engine_option_rpg_mz_v1">v1 (reserved)</string>
 
     <string name="cover_source_local">Local cover</string>
     <string name="cover_source_custom">Custom cover</string>

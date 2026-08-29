@@ -44,6 +44,8 @@ object PerGameSettingsStore {
 
     // RPG Maker MV/MZ
     const val F_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
+    const val F_RPG_MV_VERSION = "rpg_mv_engine_version"
+    const val F_RPG_MZ_VERSION = "rpg_mz_engine_version"
 
     // Ren'Py（外置模块版本选择）
     const val F_RENPY_VERSION = "renpy_engine_version"

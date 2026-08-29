@@ -207,6 +207,10 @@
     <string name="engine_option_threads">%1$d 线程</string>
     <string name="engine_option_auto_patch_ask">启动时询问</string>
     <string name="engine_option_off">关闭</string>
+    <string name="engine_option_rpg_mv_v0">v0（现有）</string>
+    <string name="engine_option_rpg_mv_v1">v1（1.6.1 corescript）</string>
+    <string name="engine_option_rpg_mz_v0">v0（现有）</string>
+    <string name="engine_option_rpg_mz_v1">v1（预留）</string>
 
     <string name="cover_source_local">本地封面</string>
     <string name="cover_source_custom">自定义封面</string>
