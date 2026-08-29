@@ -94,6 +94,17 @@
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
         </activity>
+        <activity
+            android:name="com.akira.tyranoemu.remote.ArtemisActivityV4"
+            android:exported="false"
+            android:process=":artemis.v4"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Artemis"
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
+        </activity>
 
         <!-- ONS（ons）SDL2 宿主 -->
         <activity

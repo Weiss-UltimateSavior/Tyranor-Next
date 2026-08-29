@@ -87,9 +87,10 @@ internal fun onsEncodingOptions(): List<Pair<String, String>> =
 @Composable
 internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_AUTO to stringResource(R.string.common_auto),
-    EngineSettingsStore.ART_ENGINE_V1 to "V1",
-    EngineSettingsStore.ART_ENGINE_V2 to "V2",
-    EngineSettingsStore.ART_ENGINE_V3 to "V3",
+    EngineSettingsStore.ART_ENGINE_V1 to "V1（Artroid+ 1.0）",
+    EngineSettingsStore.ART_ENGINE_V2 to "V2（Artroid+ 2.0）",
+    EngineSettingsStore.ART_ENGINE_V3 to "V3（Artroid+ 3.0）",
+    EngineSettingsStore.ART_ENGINE_V4 to "V4（Tyn 1.0）",
 )
 
 @Composable

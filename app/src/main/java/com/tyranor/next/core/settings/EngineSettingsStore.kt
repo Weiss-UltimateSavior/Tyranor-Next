@@ -78,6 +78,7 @@ object EngineSettingsStore {
     const val ART_ENGINE_V1 = "1"
     const val ART_ENGINE_V2 = "2"
     const val ART_ENGINE_V3 = "3"
+    const val ART_ENGINE_V4 = "4"
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
@@ -239,7 +240,12 @@ object EngineSettingsStore {
     // ---------- Artemis ----------
     fun getArtEngineVersion(c: Context): String {
         val v = prefs(c).getString(KEY_ARTEMIS_ENGINE_VERSION, ART_ENGINE_AUTO)
-        return if (v == ART_ENGINE_V1 || v == ART_ENGINE_V2 || v == ART_ENGINE_V3) v else ART_ENGINE_AUTO
+        return if (
+            v == ART_ENGINE_V1 ||
+            v == ART_ENGINE_V2 ||
+            v == ART_ENGINE_V3 ||
+            v == ART_ENGINE_V4
+        ) v else ART_ENGINE_AUTO
     }
     fun setArtEngineVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_ENGINE_VERSION, v).apply()
     fun isArtRotateScreen(c: Context): Boolean = prefs(c).getBoolean(KEY_ARTEMIS_ROTATE_SCREEN, false)

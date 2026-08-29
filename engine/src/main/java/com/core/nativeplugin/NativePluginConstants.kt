@@ -30,6 +30,7 @@ object NativePluginConstants {
     const val LIB_ARTEMIS = "libartemis.so"
     const val LIB_ARTEMIS_COMPATIBLE = "libartemis-compatible.so"
     const val LIB_ARTEMIS_COMPATIBLE_V2 = "libartemis-compatible-v2.so"
+    const val LIB_ARTEMIS_V4 = "libartemis-v4.so"
 
     const val LIB_SDL2_IMAGE = "libSDL2_image.so"
     const val LIB_SDL2_MIXER = "libSDL2_mixer.so"
@@ -64,5 +65,6 @@ object NativePluginConstants {
         LIB_ARTEMIS,
         LIB_ARTEMIS_COMPATIBLE,
         LIB_ARTEMIS_COMPATIBLE_V2,
+        LIB_ARTEMIS_V4,
     )
 }

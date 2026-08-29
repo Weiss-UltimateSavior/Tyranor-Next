@@ -14,6 +14,7 @@ import bridge.KrSafMirror
 import com.akira.tyranoemu.remote.ArtemisActivityV1
 import com.akira.tyranoemu.remote.ArtemisActivityV2
 import com.akira.tyranoemu.remote.ArtemisActivityV3
+import com.akira.tyranoemu.remote.ArtemisActivityV4
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
@@ -46,6 +47,7 @@ import java.util.Locale
 object EngineLauncher {
     private const val TAG = "EngineLauncher"
     private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
+    private const val ARTEMIS_FALLBACK_STAGE_V4_DIRECT = -1
 
     /** 支持的引擎列表（用于引擎页展示）。按名称长度从大到小排列。 */
     val supportedEngines: List<EngineType> = listOf(
@@ -558,16 +560,31 @@ object EngineLauncher {
                 EngineSettingsStore.ART_ENGINE_V3, "internal.artemis.compat.v2" -> {
                     stage = 2; EngineSettingsStore.ART_ENGINE_V3
                 }
+                EngineSettingsStore.ART_ENGINE_V4, "internal.artemis.v4" -> {
+                    stage = 3; EngineSettingsStore.ART_ENGINE_V4
+                }
                 EngineSettingsStore.ART_ENGINE_V2, "internal.artemis.compat" -> {
                     stage = 1; EngineSettingsStore.ART_ENGINE_V2
                 }
                 EngineSettingsStore.ART_ENGINE_V1, "internal.artemis" -> {
                     stage = 0; EngineSettingsStore.ART_ENGINE_V1
                 }
-                else -> { stage = 0; EngineSettingsStore.ART_ENGINE_AUTO }
+                else -> {
+                    if (isLikelyArtemisV4Game(path)) {
+                        // Android Artemis 新壳常见形态：boot.ini + root.pfs。
+                        // 首次无历史记忆时直达 V4；若 V4 仍在早退窗口内退出，Activity 侧会回落到旧链路。
+                        stage = ARTEMIS_FALLBACK_STAGE_V4_DIRECT
+                        Log.i(TAG, "Artemis auto selected V4 by package fingerprint path=$path")
+                        EngineSettingsStore.ART_ENGINE_V4
+                    } else {
+                        stage = 0
+                        EngineSettingsStore.ART_ENGINE_AUTO
+                    }
+                }
             }
         } else {
             stage = when (version) {
+                EngineSettingsStore.ART_ENGINE_V4 -> 3
                 EngineSettingsStore.ART_ENGINE_V3 -> 2
                 EngineSettingsStore.ART_ENGINE_V2 -> 1
                 else -> 0
@@ -576,6 +593,7 @@ object EngineLauncher {
         val (activity, libName) = when (version) {
             EngineSettingsStore.ART_ENGINE_V2 -> ArtemisActivityV2::class.java to "artemis-compatible"
             EngineSettingsStore.ART_ENGINE_V3 -> ArtemisActivityV3::class.java to "artemis-compatible-v2"
+            EngineSettingsStore.ART_ENGINE_V4 -> ArtemisActivityV4::class.java to "artemis-v4"
             else -> ArtemisActivityV1::class.java to "artemis"
         }
         return Intent(context, activity).apply {
@@ -591,6 +609,42 @@ object EngineLauncher {
             putExtra("artemisAutoFallback", auto)
             putExtra("artemisFallbackStage", stage)
         }
+    }
+
+    /**
+     * 保守的 V4 首次直达指纹。
+     *
+     * yrrw_1 这类较新的 Android Artemis 壳不是传统 Windows 松散 system.ini + system/first.iet
+     * 结构，而是以 boot.ini 描述 Android/资源包策略，并以 root.pfs 作为主资源包。只在 auto 且
+     * 没有历史记忆时使用该判断，未命中仍保留原有 V1→V2→V3→V4 兼容回退顺序。
+     */
+    private fun isLikelyArtemisV4Game(path: String): Boolean {
+        if (path.isBlank() || path.startsWith("content://")) return false
+        val dir = File(path)
+        if (!dir.isDirectory) return false
+        val boot = File(dir, "boot.ini")
+        if (!boot.isFile) return false
+        val hasRootPfs = File(dir, "root.pfs").isFile || (
+            dir.listFiles()?.any { file ->
+                val name = file.name.lowercase(Locale.ROOT)
+                file.isFile && (name == "root.pfs" || name.startsWith("root.pfs."))
+            } == true
+        )
+        if (!hasRootPfs) return false
+        val text = runCatching {
+            boot.inputStream().use { input ->
+                val bytes = ByteArray(minOf(64 * 1024, boot.length().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()))
+                val read = input.read(bytes)
+                if (read <= 0) "" else String(bytes, 0, read, Charsets.ISO_8859_1)
+            }
+        }.getOrDefault("")
+        val upper = text.uppercase(Locale.ROOT)
+        return upper.contains("[RESOURCE]") && (
+            upper.contains("PLAY_ASSET_DELIVERY") ||
+                upper.contains("APK_EXPANSION_FILES") ||
+                upper.contains("[DOWNLOAD]") ||
+                upper.contains("ROOT.PFS")
+        )
     }
 
     private fun buildWebIntent(context: Context, path: String, game: ScanGame): Intent {
