@@ -2,6 +2,8 @@ package com.tyranor.next.core.cover
 
 import android.content.Context
 import android.net.Uri
+import com.tyranor.next.R
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import org.json.JSONArray
@@ -31,7 +33,7 @@ object VndbCoverService {
 
     fun fetchBestCover(context: Context, game: ScanGame): ScanGame? {
         if (!game.coverUri.isNullOrBlank()) return game
-        val candidate = searchCandidates(game.title, 1).firstOrNull() ?: return null
+        val candidate = searchCandidates(context, game.title, 1).firstOrNull() ?: return null
         val cover = CoverImageCache.download(
             context,
             candidate.coverUrl,
@@ -86,7 +88,7 @@ object VndbCoverService {
         }
     }
 
-    fun searchCandidates(keyword: String, limit: Int): List<VndbCandidate> {
+    fun searchCandidates(context: Context, keyword: String, limit: Int): List<VndbCandidate> {
         val query = cleanTitle(keyword)
         if (query.isBlank()) return emptyList()
 
@@ -110,7 +112,7 @@ object VndbCoverService {
                 setRequestProperty("User-Agent", "TyranorNext/1.0")
             }
             conn.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
-            if (conn.responseCode !in 200..299) throw CoverSearchException("VNDB 搜索失败，请检查网络")
+            if (conn.responseCode !in 200..299) throw CoverSearchException(text(context, R.string.cover_error_vndb_network))
             val text = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
             val results = JSONObject(text).optJSONArray("results") ?: return emptyList()
             buildList {
@@ -121,7 +123,7 @@ object VndbCoverService {
         } catch (e: CoverSearchException) {
             throw e
         } catch (_: Exception) {
-            throw CoverSearchException("VNDB 搜索失败，请检查网络")
+            throw CoverSearchException(text(context, R.string.cover_error_vndb_network))
         } finally {
             conn?.disconnect()
         }
@@ -173,4 +175,7 @@ object VndbCoverService {
 
     private fun VndbCandidate.displayTitle(): String =
         firstNonEmpty(title, originalTitle).trim()
+
+    private fun text(context: Context, id: Int): String =
+        AppLocaleController.wrap(context).getString(id)
 }

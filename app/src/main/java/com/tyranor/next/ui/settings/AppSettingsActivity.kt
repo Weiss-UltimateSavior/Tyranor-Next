@@ -37,9 +37,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.core.i18n.ProvideAppLocale
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -71,13 +73,15 @@ class AppSettingsActivity : ComponentActivity() {
         window.navigationBarColor = Color.TRANSPARENT
 
         setContent {
-            TyranorNextTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    WithoutPressIndication {
-                        AppSettingsScreen()
+            ProvideAppLocale {
+                TyranorNextTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        WithoutPressIndication {
+                            AppSettingsScreen()
+                        }
                     }
                 }
             }
@@ -115,7 +119,7 @@ internal fun AppSettingsScreen() {
                             contentAlignment = Alignment.CenterStart,
                         ) {
                             Text(
-                                "应用设置",
+                                stringResource(R.string.settings_app_title),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MiuixTheme.colorScheme.onBackground,
@@ -133,8 +137,34 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
+                            var language by remember { mutableStateOf(AppSettingsStore.getLanguage(ctx)) }
+                            val languageModes = listOf(
+                                AppSettingsStore.LANGUAGE_ZH to stringResource(R.string.settings_language_zh),
+                                AppSettingsStore.LANGUAGE_JA to stringResource(R.string.settings_language_ja),
+                                AppSettingsStore.LANGUAGE_EN to stringResource(R.string.settings_language_en),
+                                AppSettingsStore.LANGUAGE_SYSTEM to stringResource(R.string.settings_language_system),
+                            )
+                            val languageIndex = languageModes.indexOfFirst { it.first == language }
+                                .let { if (it < 0) 0 else it }
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_language_title),
+                                items = languageModes.map { it.second },
+                                selectedIndex = languageIndex,
+                                onSelectedIndexChange = { index ->
+                                    languageModes.getOrNull(index)?.first?.let { mode ->
+                                        language = mode
+                                        AppSettingsStore.setLanguage(ctx, mode)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
-                                title = "色调轮盘",
+                                title = stringResource(R.string.settings_color_wheel),
                                 startAction = {
                                     Box(
                                         modifier = Modifier
@@ -162,14 +192,14 @@ internal fun AppSettingsScreen() {
                             // 状态驱动选中项：跟随系统时系统深浅不变也不会漏刷新下拉展示
                             var themeMode by remember { mutableStateOf(AppSettingsStore.getThemeMode(ctx)) }
                             val themeModes = listOf(
-                                AppSettingsStore.THEME_MODE_SYSTEM to "跟随系统",
-                                AppSettingsStore.THEME_MODE_LIGHT to "浅色",
-                                AppSettingsStore.THEME_MODE_DARK to "深色",
+                                AppSettingsStore.THEME_MODE_SYSTEM to stringResource(R.string.common_follow_system),
+                                AppSettingsStore.THEME_MODE_LIGHT to stringResource(R.string.settings_theme_mode_light),
+                                AppSettingsStore.THEME_MODE_DARK to stringResource(R.string.settings_theme_mode_dark),
                             )
                             val modeIndex = themeModes.indexOfFirst { it.first == themeMode }
                                 .let { if (it < 0) 1 else it } // 未知存量值回退浅色
                             OverlayDropdownPreference(
-                                title = "外观模式",
+                                title = stringResource(R.string.settings_theme_mode),
                                 items = themeModes.map { it.second },
                                 selectedIndex = modeIndex,
                                 onSelectedIndexChange = { index ->
@@ -187,7 +217,7 @@ internal fun AppSettingsScreen() {
                     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
-                                title = "色调切换",
+                                title = stringResource(R.string.settings_tone_switch),
                                 checked = AppThemeColors.toneSwitchEnabled,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setToneSwitchEnabled(ctx, checked)
@@ -201,7 +231,7 @@ internal fun AppSettingsScreen() {
                     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
-                                title = "圆角液态玻璃导航",
+                                title = stringResource(R.string.settings_liquid_glass_nav),
                                 checked = AppSettingsStore.navStyleState.value == AppSettingsStore.NAV_STYLE_LIQUID_GLASS,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setNavStyle(
@@ -243,7 +273,7 @@ private fun ColorPickerDialog(
     val invalid = pickerColor.isTransparentOrGray()
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("色调轮盘", style = MaterialTheme.typography.titleMedium) },
+        title = { Text(stringResource(R.string.settings_color_wheel), style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
                 ColorPicker(
@@ -252,7 +282,7 @@ private fun ColorPickerDialog(
                 )
                 if (invalid) {
                     Text(
-                        "不支持透明色或黑白灰色",
+                        stringResource(R.string.settings_invalid_theme_color),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 10.dp),
@@ -260,9 +290,9 @@ private fun ColorPickerDialog(
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
         confirmButton = {
-            TextButton(enabled = !invalid, onClick = { onConfirm(pickerColor) }) { Text("确定") }
+            TextButton(enabled = !invalid, onClick = { onConfirm(pickerColor) }) { Text(stringResource(R.string.common_confirm)) }
         },
     )
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
@@ -15,6 +16,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.SearchBarDefaults
+import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -45,7 +47,11 @@ fun AppSearchField(
     textStyle: TextStyle? = null,
 ) {
     MiuixSettingsTheme {
-        SearchBar(
+        // miuix 无 controller 的 MiuixTheme 重载不提供 LocalContentColor（默认黑色），
+        // InputField 内部强制以 LocalContentColor.current 作为输入文字颜色，
+        // 此处显式提供主题 onBackground（深色=白色系 / 浅色=深灰），保证深浅色下文字正确。
+        CompositionLocalProvider(LocalContentColor provides MiuixTheme.colorScheme.onBackground) {
+            SearchBar(
             inputField = {
                 InputField(
                     query = query,
@@ -71,6 +77,7 @@ fun AppSearchField(
             onExpandedChange = { },
             modifier = modifier.fillMaxWidth(),
             content = { },
-        )
+            )
+        }
     }
 }

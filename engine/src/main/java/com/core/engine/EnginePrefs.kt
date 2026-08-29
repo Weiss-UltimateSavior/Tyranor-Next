@@ -10,6 +10,13 @@ object EnginePrefs {
     const val APP_PREFS = "yukihub_prefs"
     const val NATIVE_PLUGIN_OVERRIDE_PREFS = "rinne_native_plugin_overrides"
 
+    /**
+     * 单游戏引擎设置覆盖层 prefs 文件名。
+     * 由 app 侧 PerGameSettingsStore 与引擎 TyranoActivity / TouchPadSaveBridge 共同读写；
+     * 引擎不得反向依赖 app，故契约锚点定在 engine、app 直接引用本常量，避免两侧字面量漂移。
+     */
+    const val GAME_OVERRIDES_PREFS = "tyranor_game_overrides"
+
     /** Tyrano 外部网络开关偏好键（镜像 app 模块 EngineSaveKeys.KEY_TYRANO_EXTERNAL_NETWORK）。 */
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
 

@@ -12,7 +12,7 @@
   var context = { actorId: 0, itemKind: "item", systemKind: "switch" };
   var tabs = [
     ["quick", "快捷"], ["items", "物品"], ["actors", "角色"], ["system", "系统"],
-    ["map", "地图"], ["battle", "战斗"], ["save", "存档"], ["about", "说明"]
+    ["map", "地图"], ["battle", "战斗"], ["save", "存档"], ["keys", "键盘"], ["about", "说明"]
   ];
   var flags = [
     ["godMode", "无敌"], ["oneHit", "一击必杀"], ["alwaysCrit", "必定暴击"],
@@ -49,6 +49,7 @@
     else if (activeTab === "map") renderMap(content);
     else if (activeTab === "battle") renderBattle(content);
     else if (activeTab === "save") renderSave(content);
+    else if (activeTab === "keys") renderKeys(content);
     else renderAbout(content);
   }
   function renderQuick(content) {
@@ -139,6 +140,30 @@
   function renderAbout(content) {
     content.innerHTML = card("Tyranor 修改器", '<p>版本 ' + escapeHtml(mod.version) + '</p><p>修改器只操作当前 RPG Maker MV/MZ 游戏的运行时对象。部分深度定制插件可能覆盖标准引擎 API；遇到异常时可在单游戏设置中关闭修改器。</p><p>事件加速和对话快进可能跳过演出或等待，建议先保存游戏。</p>');
   }
+  function renderKeys(content) {
+    var hasPad = !!(window.__touchPad);
+    content.innerHTML = card("触屏手柄", hasPad
+      ? '<p>自定义屏幕上虚拟键的位置、大小与显隐。进入映射后：</p><ul style="margin:6px 0 10px;padding-left:18px;font-size:12px"><li>拖拽按钮调整位置</li><li>缩放进度条调整大小（1%-200%）</li><li>“透明”隐藏按钮</li><li>十字键微调位置</li></ul><div class="tm-row">' + button("进入键盘映射", "enter-keys", "primary") + button("恢复默认", "reset-keys") + '</div>'
+      : '<p>当前未加载触屏手柄。</p>');
+    if (!hasPad) return;
+    var names;
+    try { names = window.__touchPad.listPresets(); } catch (e) { names = []; }
+    if (names && names.length) {
+      var rows = names.map(function (name) {
+        // escapeHtml 已覆盖引号转义，data-name 属性可直接使用
+        var esc = escapeHtml(name);
+        return '<div class="tm-row" style="justify-content:space-between">' +
+          '<label style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">' + escapeHtml(name) + '</label>' +
+          '<span style="display:flex;gap:6px">' +
+          button("预览", "preview-preset", "", 'data-name="' + esc + '"') +
+          button("载入", "load-preset", "", 'data-name="' + esc + '"') +
+          '</span></div>';
+      }).join("");
+      content.innerHTML += card("预设（" + names.length + "/10）", rows);
+    } else {
+      content.innerHTML += card("预设", '<p>暂无预设。在键盘映射面板中可保存当前布局为预设。</p>');
+    }
+  }
   function handleAction(action, node) {
     if (action === "close") return close();
     if (action === "render") return render();
@@ -165,6 +190,43 @@
     if (action === "save") return run(function () { return mod.saveGame(node.dataset.id); }, function () { toast("保存完成"); renderSave(root.querySelector(".tm-content")); });
     if (action === "load") return run(function () { return mod.loadGame(node.dataset.id); }, function () { toast("读取完成"); close(); });
     if (action === "delete-save") return run(function () { return mod.deleteSave(node.dataset.id); }, function () { toast("存档已删除"); renderSave(root.querySelector(".tm-content")); });
+    if (action === "enter-keys") {
+      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
+      close();
+      setTimeout(function () { try { window.__touchPad.enterEdit(); } catch (e) { toast(String(e && e.message || e), true); } }, 50);
+      return;
+    }
+    if (action === "reset-keys") {
+      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
+      try {
+        window.__touchPad.resetToDefaults();
+        toast("已恢复默认");
+      } catch (e) { toast(String(e && e.message || e), true); }
+      return;
+    }
+    if (action === "preview-preset") {
+      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
+      var pname = node.dataset.name;
+      close();
+      setTimeout(function () {
+        try {
+          var res = window.__touchPad.previewPreset(pname);
+          if (res && res.ok === false) toast(res.msg, true);
+        } catch (e) { toast(String(e && e.message || e), true); }
+      }, 50);
+      return;
+    }
+    if (action === "load-preset") {
+      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
+      var lname = node.dataset.name;
+      try {
+        var lres = window.__touchPad.loadPreset(lname);
+        if (lres && lres.ok) toast(lres.msg);
+        else toast(lres && lres.msg || "载入失败", true);
+        renderKeys(root.querySelector(".tm-content"));
+      } catch (e) { toast(String(e && e.message || e), true); }
+      return;
+    }
   }
   function block(event) {
     if (!root) return;

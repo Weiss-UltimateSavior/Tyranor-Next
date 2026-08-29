@@ -7,6 +7,7 @@ build/
 .kotlin/
 
 .trae/
+.zcode/
 
 # ===== IDE =====
 .idea/
@@ -36,3 +37,6 @@ captures/
 *.keystore
 *.p12
 *.pfx
+
+# ===== 逆向产物（Artemis 引擎逆向分析，不入库） =====
+/dex/

@@ -15,6 +15,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.i18n.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.WithoutPressIndication
 
@@ -36,13 +37,15 @@ class PerGameSettingsActivity : ComponentActivity() {
         }
 
         setContent {
-            TyranorNextTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    WithoutPressIndication {
-                        PerGameSettingsScreen(game = game)
+            ProvideAppLocale {
+                TyranorNextTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background,
+                    ) {
+                        WithoutPressIndication {
+                            PerGameSettingsScreen(game = game)
+                        }
                     }
                 }
             }

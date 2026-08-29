@@ -2,6 +2,7 @@ package com.tyranor.next.ui.engine
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,27 +20,52 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
-import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEngineLauncher
+import com.tyranor.next.core.engine.external.ExternalEngineModule
+import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
+import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.glassNavBottomInset
+import android.widget.Toast
 
 /** 引擎页：列表行展示已集成的游戏引擎。 */
 @Composable
 fun EngineScreen(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val engines = EngineLauncher.supportedEngines
+    var externalInstallStates by remember {
+        mutableStateOf(refreshExternalInstallStates(context, engines))
+    }
+    var missingModule by remember { mutableStateOf<ExternalEngineModule?>(null) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        externalInstallStates = refreshExternalInstallStates(context, engines)
+    }
 
     Column(modifier.fillMaxSize()) {
         // 顶部栏：页面背景色，标题居左
@@ -49,7 +75,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text("引擎", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Text(stringResource(R.string.nav_engine), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                 }
             }
         }
@@ -65,16 +91,78 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                 key = { it.name },
                 contentType = { "engine" },
             ) { engine ->
-                EngineRow(engine)
+                val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
+                // 「去下载」按全局 Ren'Py 版本对应模块提供，避免恒指向 8.5
+                val downloadModule = ExternalEngineModuleRegistry.resolveModule(
+                    engine,
+                    EngineSettingsStore.getRenpyVersion(context),
+                ) ?: module
+                val installed = module == null || externalInstallStates[engine] == true
+                EngineRow(
+                    engine = engine,
+                    module = module,
+                    installed = installed,
+                    onClick = {
+                        if (module != null && !installed) {
+                            missingModule = downloadModule
+                        }
+                    },
+                )
             }
         }
+    }
+
+    missingModule?.let { module ->
+        AppAlertDialog(
+            onDismissRequest = { missingModule = null },
+            title = {
+                Text(
+                    stringResource(R.string.engine_module_missing_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.engine_module_missing_message, module.displayName(context), module.engine.displayName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { missingModule = null }) {
+                    Text(stringResource(R.string.common_cancel), style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val opened = ExternalEngineLauncher.openInstallPage(context, module)
+                        if (!opened) {
+                            Toast.makeText(context, context.getString(R.string.engine_open_download_failed), Toast.LENGTH_SHORT).show()
+                        }
+                        missingModule = null
+                    },
+                ) {
+                    Text(stringResource(R.string.update_go_download), style = MaterialTheme.typography.bodyMedium)
+                }
+            },
+        )
     }
 }
 
 @Composable
-private fun EngineRow(engine: EngineType) {
+private fun EngineRow(
+    engine: EngineType,
+    module: ExternalEngineModule?,
+    installed: Boolean,
+    onClick: () -> Unit,
+) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = module != null && !installed, onClick = onClick),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),
         shape = RoundedCornerShape(8.dp),
@@ -107,9 +195,17 @@ private fun EngineRow(engine: EngineType) {
                 )
             }
             Icon(
-                Icons.Filled.CheckCircle,
-                contentDescription = "已集成",
-                tint = MaterialTheme.colorScheme.primary,
+                if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                contentDescription = when {
+                    module == null -> stringResource(R.string.engine_integrated)
+                    installed -> stringResource(R.string.engine_module_installed)
+                    else -> stringResource(R.string.engine_module_not_installed)
+                },
+                tint = if (installed) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -123,12 +219,28 @@ private fun engineDisplayName(engine: EngineType): String = when (engine) {
     else -> engine.displayName
 }
 
+@Composable
 private fun engineDescription(engine: EngineType): String = when (engine) {
-    EngineType.KIRIKIRI -> "Kirikiroid2 / krkrsdl3，.xp3 与 startup.tjs 游戏"
-    EngineType.ONS -> "ONScripter，nscript.dat 与 .nsa 归档游戏"
-    EngineType.TYRANO -> "TyranoBuilder，index.html 与 tyrano/ 脚本游戏"
-    EngineType.RPG_MV, EngineType.RPG_MZ -> "RPG Maker MV/MZ，www 与 js/rpg_core.js、rmmz_core.js 游戏"
-    EngineType.VN, EngineType.WEB_OTHER -> "WebOther/VN，globalData.vndata 或通用 index.html 网页游戏"
-    EngineType.ARTEMIS -> "Artemis，system.ini 与 .pfs 归档游戏"
-    EngineType.UNKNOWN -> "未知引擎"
+    EngineType.KIRIKIRI -> stringResource(R.string.engine_desc_kirikiri)
+    EngineType.ONS -> stringResource(R.string.engine_desc_ons)
+    EngineType.TYRANO -> stringResource(R.string.engine_desc_tyrano)
+    EngineType.RPGMAKER -> stringResource(R.string.engine_desc_rpgmaker)
+    EngineType.RPG_MV, EngineType.RPG_MZ -> stringResource(R.string.engine_desc_rpg_mv_mz)
+    EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
+    EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
+    EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
+    EngineType.UNKNOWN -> stringResource(R.string.engine_desc_unknown)
 }
+
+private fun refreshExternalInstallStates(
+    context: android.content.Context,
+    engines: List<EngineType>,
+): Map<EngineType, Boolean> =
+    engines.mapNotNull { engine ->
+        // 安装状态与下载/启动一致：Ren'Py 按全局版本解析目标模块（而非「任一版本已装」）
+        val module = ExternalEngineModuleRegistry.resolveModule(
+            engine,
+            EngineSettingsStore.getRenpyVersion(context),
+        ) ?: return@mapNotNull null
+        engine to ExternalEngineLauncher.isPackageInstalled(context, module)
+    }.toMap()

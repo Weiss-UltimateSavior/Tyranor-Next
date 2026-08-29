@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,6 +59,7 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.core.i18n.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.TimeFormats
@@ -84,10 +86,12 @@ class KrkrOnlinePatchActivity : ComponentActivity() {
         }
 
         setContent {
-            TyranorNextTheme {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    WithoutPressIndication {
-                        KrkrOnlinePatchScreen(game = game)
+            ProvideAppLocale {
+                TyranorNextTheme {
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        WithoutPressIndication {
+                            KrkrOnlinePatchScreen(game = game)
+                        }
                     }
                 }
             }
@@ -124,7 +128,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
             loading = true
             message = null
             val result = withContext(Dispatchers.IO) {
-                runCatching { KrkrOnlinePatchService.fetchPatchIndex() }
+                runCatching { KrkrOnlinePatchService.fetchPatchIndex(context) }
             }
             entries = result.getOrDefault(emptyList())
             message = result.exceptionOrNull()?.message
@@ -148,7 +152,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "在线补丁",
+                        stringResource(R.string.patch_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground,
@@ -156,7 +160,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    TopBarIcon(painterResource(R.drawable.ic_refresh), "刷新", MaterialTheme.colorScheme.primary) {
+                    TopBarIcon(painterResource(R.drawable.ic_refresh), stringResource(R.string.patch_refresh_content_description), MaterialTheme.colorScheme.primary) {
                         loadIndex()
                     }
                 }
@@ -200,7 +204,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
             if (!loading && filtered.isEmpty() && message == null) {
                 item {
                     Text(
-                        "未找到匹配补丁",
+                        stringResource(R.string.patch_no_match),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
@@ -222,10 +226,10 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                                 }
                             }
                             result.onSuccess {
-                                Toast.makeText(context, "已安装 ${it.installed.size} 个补丁", Toast.LENGTH_LONG).show()
-                                message = "已写入：${it.target}"
+                                Toast.makeText(context, context.getString(R.string.patch_installed_count, it.installed.size), Toast.LENGTH_LONG).show()
+                                message = context.getString(R.string.patch_written_to, it.target)
                             }.onFailure {
-                                message = it.message ?: "补丁安装失败"
+                                message = it.message ?: context.getString(R.string.patch_install_failed)
                             }
                             installing = false
                         }
@@ -316,7 +320,7 @@ private fun PatchEntryCard(
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
             ) {
                 Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(if (installing) "处理中" else "下载并安装", modifier = Modifier.padding(start = 8.dp))
+                Text(if (installing) stringResource(R.string.patch_processing) else stringResource(R.string.patch_download_install), modifier = Modifier.padding(start = 8.dp))
             }
         }
     }

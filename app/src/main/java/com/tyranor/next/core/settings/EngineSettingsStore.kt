@@ -26,12 +26,17 @@ object EngineSettingsStore {
     const val KEY_KR_OGL_MAX_TEXSIZE = "kr_ogl_max_texsize"
     const val KEY_KR_OGL_ACCURATE_RENDER = "kr_ogl_accurate_render"
     const val KEY_KR_FPS_LIMIT = "kr_fps_limit"
+    const val KEY_KR_VCURSOR_SCALE = "kr_vcursor_scale"
+    const val KEY_KR_MENU_HANDLER_OPA = "kr_menu_handler_opa"
     const val KEY_KR_SCOPED_SAVE_DIR = "kr_scoped_save_dir"
 
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
     const val KEY_ARTEMIS_ROTATE_SCREEN = "artemis_rotate_screen"
     const val KEY_ARTEMIS_AUTO_PATCH = "artemis_auto_patch"
+
+    // Ren'Py 应用级默认（外置模块版本选择）
+    const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
 
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
@@ -50,6 +55,22 @@ object EngineSettingsStore {
 
     const val RENDERER_SOFTWARE = "software"
     const val RENDERER_OPENGL = "opengl"
+
+    // 写入引擎 XML（Kirikiroid2Preference.xml/GlobalPreference.xml）的 Item 键名，
+    // 与 libgame.so 内 IndividualConfigManager 读取的键一致，键名不可改。
+    const val ENGINE_VCURSOR_SCALE = "vcursor_scale"
+    const val ENGINE_MENU_HANDLER_OPA = "menu_handler_opa"
+    // 供 krkr_engine_prefs JSON 写入引擎 XML 时的键名映射（prefs 键 → 引擎 Item 键）
+    private val KR_ENGINE_PREF_KEY_MAP = mapOf(
+        KEY_KR_VCURSOR_SCALE to ENGINE_VCURSOR_SCALE,
+        KEY_KR_MENU_HANDLER_OPA to ENGINE_MENU_HANDLER_OPA,
+    )
+    // 虚拟鼠标缩放比（1..100，引擎默认 100；1..150 档在 150% 时已超出屏幕，收敛至 100）
+    val KR_VCURSOR_SCALE_RANGE = 1..100
+    val KR_VCURSOR_SCALES: Set<String> = KR_VCURSOR_SCALE_RANGE.map { it.toString() }.toSet()
+    // 菜单按钮不透明度（1..100，引擎默认 100；滚动条 1..100 全可选）
+    val KR_MENU_HANDLER_OPA_RANGE = 1..100
+    val KR_MENU_HANDLER_OPAS: Set<String> = KR_MENU_HANDLER_OPA_RANGE.map { it.toString() }.toSet()
     const val MEM_USAGE_UNLIMITED = "unlimited"
     const val MEM_USAGE_HIGH = "high"
     const val MEM_USAGE_MEDIUM = "medium"
@@ -59,6 +80,7 @@ object EngineSettingsStore {
     const val ART_ENGINE_V1 = "1"
     const val ART_ENGINE_V2 = "2"
     const val ART_ENGINE_V3 = "3"
+    const val ART_ENGINE_V4 = "4"
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
@@ -68,11 +90,16 @@ object EngineSettingsStore {
     const val RPG_MV_V1 = "v1"
     const val RPG_MZ_V1 = "v1"
     // 与 PerGameSettingsStore.F_RPG_* 同名，分属不同 prefs 文件（yukihub_prefs vs tyranor_game_overrides）
+    // Ren'Py 版本取值常量
+    const val RENPY_AUTO = "auto"
+    const val RENPY_85 = "8.5"
+    const val RENPY_77 = "7.7.1"
 
     val KR_RENDER_PREF_KEYS = listOf(
         KEY_KR_RENDERER, KEY_KR_SOFTWARE_DRAW_THREAD, KEY_KR_SOFTWARE_COMPRESS_TEX,
         KEY_KR_OGL_COMPRESS_TEX, KEY_KR_MEM_USAGE, KEY_KR_OGL_MAX_TEXSIZE,
         KEY_KR_OGL_ACCURATE_RENDER, KEY_KR_FPS_LIMIT,
+        KEY_KR_VCURSOR_SCALE, KEY_KR_MENU_HANDLER_OPA,
     )
 
     private fun prefs(context: Context) =
@@ -123,14 +150,41 @@ object EngineSettingsStore {
     fun setKrOglAccurateRender(c: Context, v: String) = setKrPref(c, KEY_KR_OGL_ACCURATE_RENDER, v)
     fun getKrFpsLimit(c: Context): String { val v = krPref(c, KEY_KR_FPS_LIMIT); return if (v in setOf("60", "45", "30", "15")) v else "" }
     fun setKrFpsLimit(c: Context, v: String) = setKrPref(c, KEY_KR_FPS_LIMIT, v)
+    fun getKrVCursorScale(c: Context): String { val v = krPref(c, KEY_KR_VCURSOR_SCALE).trim(); return if (v in KR_VCURSOR_SCALES) v else "" }
+    fun setKrVCursorScale(c: Context, v: String) { val t = v.trim(); if (t.isEmpty() || t in KR_VCURSOR_SCALES) setKrPref(c, KEY_KR_VCURSOR_SCALE, t) }
+    fun getKrMenuHandlerOpa(c: Context): String { val v = krPref(c, KEY_KR_MENU_HANDLER_OPA).trim(); return if (v in KR_MENU_HANDLER_OPAS) v else "" }
+    fun setKrMenuHandlerOpa(c: Context, v: String) { val t = v.trim(); if (t.isEmpty() || t in KR_MENU_HANDLER_OPAS) setKrPref(c, KEY_KR_MENU_HANDLER_OPA, t) }
 
     /** 组装 krkr_engine_prefs JSON：{<引擎键>:{v, s}}。overrideGetter 返回某键的单游戏覆盖（null=跟随全局）。 */
     fun buildKrEnginePrefsJson(c: Context, overrideGetter: (String) -> String? = { null }): String {
         val json = JSONObject()
         KR_RENDER_PREF_KEYS.forEach { key ->
-            val override = overrideGetter(key)
-            val value = override ?: prefs(c).getString(key, null).orEmpty()
-            json.put(key, JSONObject().put("v", value).put("s", if (override != null) "game" else "global"))
+            val rawOverride = overrideGetter(key)
+            val override = rawOverride?.trim()?.takeIf { it.isNotEmpty() || rawOverride == "" }
+            // 仅保留合法值或显式空串（引擎默认），非法值按跟随全局处理
+            val sanitizedOverride = when (key) {
+                KEY_KR_VCURSOR_SCALE -> override?.let { if (it.isEmpty() || it in KR_VCURSOR_SCALES) it else null }
+                KEY_KR_MENU_HANDLER_OPA -> override?.let { if (it.isEmpty() || it in KR_MENU_HANDLER_OPAS) it else null }
+                else -> override
+            }
+            val globalRaw = prefs(c).getString(key, null).orEmpty().trim()
+            val sanitizedGlobal = when (key) {
+                KEY_KR_VCURSOR_SCALE -> if (globalRaw in KR_VCURSOR_SCALES) globalRaw else ""
+                KEY_KR_MENU_HANDLER_OPA -> if (globalRaw in KR_MENU_HANDLER_OPAS) globalRaw else ""
+                else -> prefs(c).getString(key, null).orEmpty()
+            }
+            val rawValue = sanitizedOverride ?: sanitizedGlobal
+            // 虚拟鼠标：prefs 存 1..100（百分比），引擎需 0.01..1.00 浮点字符串
+            val value = when (key) {
+                KEY_KR_VCURSOR_SCALE -> if (rawValue.isEmpty()) "" else {
+                    val p = rawValue.toIntOrNull()
+                    if (p == null || p !in KR_VCURSOR_SCALE_RANGE) rawValue
+                    else String.format(java.util.Locale.US, "%.2f", p / 100.0).trimEnd('0').trimEnd('.')
+                }
+                else -> rawValue
+            }
+            val engineKey = KR_ENGINE_PREF_KEY_MAP[key] ?: key
+            json.put(engineKey, JSONObject().put("v", value).put("s", if (sanitizedOverride != null) "game" else "global"))
         }
         return json.toString()
     }
@@ -193,7 +247,12 @@ object EngineSettingsStore {
     // ---------- Artemis ----------
     fun getArtEngineVersion(c: Context): String {
         val v = prefs(c).getString(KEY_ARTEMIS_ENGINE_VERSION, ART_ENGINE_AUTO)
-        return if (v == ART_ENGINE_V1 || v == ART_ENGINE_V2 || v == ART_ENGINE_V3) v else ART_ENGINE_AUTO
+        return if (
+            v == ART_ENGINE_V1 ||
+            v == ART_ENGINE_V2 ||
+            v == ART_ENGINE_V3 ||
+            v == ART_ENGINE_V4
+        ) v else ART_ENGINE_AUTO
     }
     fun setArtEngineVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_ENGINE_VERSION, v).apply()
     fun isArtRotateScreen(c: Context): Boolean = prefs(c).getBoolean(KEY_ARTEMIS_ROTATE_SCREEN, false)
@@ -203,6 +262,16 @@ object EngineSettingsStore {
         return if (v == AUTO_PATCH_AUTO || v == AUTO_PATCH_OFF) v else AUTO_PATCH_ASK
     }
     fun setArtAutoPatch(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_AUTO_PATCH, v).apply()
+
+    // ---------- Ren'Py ----------
+    fun getRenpyVersion(c: Context): String {
+        val v = prefs(c).getString(KEY_RENPY_ENGINE_VERSION, RENPY_AUTO)
+        return when (v) {
+            RENPY_85, RENPY_77 -> v
+            else -> RENPY_AUTO
+        }
+    }
+    fun setRenpyVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_RENPY_ENGINE_VERSION, v).apply()
 
     // ---------- Tyrano ----------
     fun isTyranoExternalNetwork(c: Context): Boolean = prefs(c).getBoolean(KEY_TYRANO_EXTERNAL_NETWORK, false)

@@ -16,6 +16,10 @@ data class ScanGame(
     val coverSource: String? = null,
     val vndbId: String? = null,
     val metadataTitle: String? = null,
+    /** 外置 APK 模块内部别名（如 internal.rpgmxp），用于保留同一引擎下的子运行时；Ren'Py 由单游戏版本设置决定，不写该字段。 */
+    val externalModuleAlias: String? = null,
+    /** 扫描阶段探测到的 Ren'Py 版本建议（EngineSettingsStore.RENPY_*）；null 表示未知或非 Ren'Py。 */
+    val detectedRenpyVersion: String? = null,
     /** 用户通过“启动文件”手动指定的启动入口文件名（相对游戏目录）；null 表示自动。 */
     val launchFile: String? = null,
     /** 最近一次打开时间戳（毫秒），仅最近打开列表展示使用；0 表示未知。 */
@@ -38,6 +42,8 @@ object ScanGameIntents {
     private const val EXTRA_COVER_SOURCE = "extra_cover_source"
     private const val EXTRA_VNDB_ID = "extra_vndb_id"
     private const val EXTRA_METADATA_TITLE = "extra_metadata_title"
+    private const val EXTRA_EXTERNAL_MODULE_ALIAS = "extra_external_module_alias"
+    private const val EXTRA_DETECTED_RENPY_VERSION = "extra_detected_renpy_version"
 
     fun putGame(intent: Intent, game: ScanGame): Intent = intent.apply {
         putExtra(EXTRA_TITLE, game.title)
@@ -48,6 +54,8 @@ object ScanGameIntents {
         game.coverSource?.let { putExtra(EXTRA_COVER_SOURCE, it) }
         game.vndbId?.let { putExtra(EXTRA_VNDB_ID, it) }
         game.metadataTitle?.let { putExtra(EXTRA_METADATA_TITLE, it) }
+        game.externalModuleAlias?.let { putExtra(EXTRA_EXTERNAL_MODULE_ALIAS, it) }
+        game.detectedRenpyVersion?.let { putExtra(EXTRA_DETECTED_RENPY_VERSION, it) }
     }
 
     fun getGame(intent: Intent): ScanGame? {
@@ -65,6 +73,8 @@ object ScanGameIntents {
             coverSource = intent.getStringExtra(EXTRA_COVER_SOURCE),
             vndbId = intent.getStringExtra(EXTRA_VNDB_ID),
             metadataTitle = intent.getStringExtra(EXTRA_METADATA_TITLE),
+            externalModuleAlias = intent.getStringExtra(EXTRA_EXTERNAL_MODULE_ALIAS),
+            detectedRenpyVersion = intent.getStringExtra(EXTRA_DETECTED_RENPY_VERSION),
         )
     }
 }

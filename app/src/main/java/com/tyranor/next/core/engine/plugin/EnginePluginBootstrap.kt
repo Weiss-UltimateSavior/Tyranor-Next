@@ -6,13 +6,15 @@ import com.core.engine.EnginePrefs
 import com.core.nativeplugin.NativePluginConstants
 import com.core.nativeplugin.NativePluginInstallState
 import com.core.nativeplugin.NativePluginManager
+import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.i18n.AppLocaleController
 import java.io.File
 import java.util.zip.ZipInputStream
 
 /**
  * 直接集成（非模块化）：把随 APK 打包在 assets 的引擎原生插件 zip，
- * 首次启动时自动"安装"到 app 私有插件目录，并标记为已安装+已启用。
+ * 首次启动时自动安装到 app 私有插件目录，并标记为已安装+已启用。
  *
  * 引擎加载器（NativeLibraryLoader/OnsLibLoader/Artemis 相关）从
  * filesDir/engine_plugins/<engine>/current/arm64-v8a/ 读取 .so；
@@ -68,15 +70,17 @@ object EnginePluginBootstrap {
             EngineType.RPG_MZ,
             EngineType.VN,
             EngineType.WEB_OTHER,
+            EngineType.RPGMAKER,
+            EngineType.RENPY,
             EngineType.UNKNOWN -> return null
         }
         val app = context.applicationContext
         val spec = engines.firstOrNull { it.engineId == engineId }
-            ?: return "未知引擎插件：$engineId"
+            ?: return text(context, R.string.plugin_unknown_engine, engineId)
         return if (provisionEngineIfNeeded(app, spec, requireEnabled = true)) {
             null
         } else {
-            "引擎插件安装失败，请重启应用或检查安装包完整性"
+            text(context, R.string.plugin_install_failed)
         }
     }
 
@@ -171,4 +175,7 @@ object EnginePluginBootstrap {
             "native plugin extraction produced no directory: $engineId"
         }
     }
+
+    private fun text(context: Context, id: Int, vararg args: Any): String =
+        AppLocaleController.wrap(context).getString(id, *args)
 }

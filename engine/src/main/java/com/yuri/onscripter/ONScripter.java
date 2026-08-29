@@ -21,6 +21,8 @@ import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -29,6 +31,7 @@ import android.view.ViewGroup;
 import org.libsdl.app.SDLActivity;
 
 import com.core.engine.DoubleBackExit;
+import com.core.engine.R;
 import com.core.ons.OnsLibLoader;
 import com.core.ons.OnsSettings;
 import com.core.ons.OnsVideoActivity;
@@ -44,6 +47,9 @@ public class ONScripter extends SDLActivity {
     public static final String YURI_VERSION = "Yuri_0.7.6";
     private static final String PREF_OVERLAY = "ons_overlay";
     private static final String KEY_OVERLAY_VISIBLE = "visible";
+    private static final int CONTROL_BUTTON_SIZE_DP = 40;
+    private static final int CONTROL_BUTTON_GAP_DP = 5;
+    private static final int TOGGLE_BUTTON_SIZE_DP = 32;
 
     private ArrayList<String> onsArgs;
     private boolean ignoreCutout = true;
@@ -51,7 +57,7 @@ public class ONScripter extends SDLActivity {
     private FrameLayout onsOverlay;
     private LinearLayout leftControls;
     private LinearLayout rightControls;
-    private TextView toggleButton;
+    private ImageButton toggleButton;
     private final ArrayList<TextView> autoButtons = new ArrayList<>();
     private boolean controlsVisible = true;
     private boolean autoMode = false;
@@ -229,17 +235,14 @@ public class ONScripter extends SDLActivity {
             onsOverlay.setClickable(false);
             onsOverlay.setFocusable(false);
 
-            leftControls = buildControlColumn(true);
-            rightControls = buildControlColumn(false);
+            leftControls = buildControlColumn();
+            rightControls = null;
             FrameLayout.LayoutParams leftLp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL);
-            FrameLayout.LayoutParams rightLp = new FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.END | Gravity.CENTER_VERTICAL);
             leftLp.leftMargin = dp(10);
-            rightLp.rightMargin = dp(10);
             onsOverlay.addView(leftControls, leftLp);
-            onsOverlay.addView(rightControls, rightLp);
 
-            toggleButton = makeActionButton(controlsVisible ? "×" : "≡", 24, true);
-            FrameLayout.LayoutParams toggleLp = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END | Gravity.TOP);
+            toggleButton = makeToggleButton();
+            FrameLayout.LayoutParams toggleLp = new FrameLayout.LayoutParams(dp(TOGGLE_BUTTON_SIZE_DP), dp(TOGGLE_BUTTON_SIZE_DP), Gravity.END | Gravity.TOP);
             toggleLp.topMargin = dp(12);
             toggleLp.rightMargin = dp(12);
             onsOverlay.addView(toggleButton, toggleLp);
@@ -261,25 +264,36 @@ public class ONScripter extends SDLActivity {
         int vis = controlsVisible ? View.VISIBLE : View.GONE;
         if (leftControls != null) leftControls.setVisibility(vis);
         if (rightControls != null) rightControls.setVisibility(vis);
-        if (toggleButton != null) toggleButton.setText(controlsVisible ? "✕" : "☰");
+        if (toggleButton != null) toggleButton.setImageResource(
+                controlsVisible ? R.drawable.ons_toggle_up : R.drawable.ons_toggle_down);
     }
 
-    private LinearLayout buildControlColumn(boolean left) {
+    private LinearLayout buildControlColumn() {
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setGravity(Gravity.CENTER);
-        int[] keys = left
-                ? new int[]{KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_MENU}
-                : new int[]{KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_A};
-        String[] labels = left
-                ? new String[]{"↩\nESC", "»\nSKIP", "▶\nAUTO", "☰\nMENU"}
-                : new String[]{"✓\nOK", "▸\nNEXT", "»\nSKIP", "▶\nAUTO"};
+        int[] keys = new int[]{
+                KeyEvent.KEYCODE_ESCAPE,
+                KeyEvent.KEYCODE_CTRL_LEFT,
+                KeyEvent.KEYCODE_A,
+                KeyEvent.KEYCODE_MENU,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_SPACE
+        };
+        String[] labels = new String[]{
+                "ESC",
+                "SKIP",
+                "AUTO",
+                "MENU",
+                "OK",
+                "NEXT"
+        };
         for (int i = 0; i < keys.length; i++) {
             TextView button = makeActionButton(labels[i], keys[i], false);
             if (labels[i].contains("AUTO")) autoButtons.add(button);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(60), dp(60));
-            lp.topMargin = dp(7);
-            lp.bottomMargin = dp(7);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(CONTROL_BUTTON_SIZE_DP), dp(CONTROL_BUTTON_SIZE_DP));
+            lp.topMargin = dp(CONTROL_BUTTON_GAP_DP);
+            lp.bottomMargin = dp(CONTROL_BUTTON_GAP_DP);
             column.addView(button, lp);
         }
         return column;
@@ -289,13 +303,18 @@ public class ONScripter extends SDLActivity {
         for (TextView b : autoButtons) {
             if (b == null) continue;
             styleVirtualButton(b, autoMode, false);
-            b.setText(autoMode ? "■\nAUTO" : "▶\nAUTO");
+            b.setText("AUTO");
         }
     }
 
     private void styleVirtualButton(TextView tv, boolean active, boolean toggle) {
+        tv.setBackground(makeVirtualButtonBackground(active, toggle));
+        tv.setTextColor(Color.WHITE);
+    }
+
+    private GradientDrawable makeVirtualButtonBackground(boolean active, boolean toggle) {
         GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(toggle ? 16 : 15));
+        bg.setCornerRadius(dp(toggle ? 11 : 10));
         if (active) {
             bg.setColor(Color.argb(210, 0, 122, 255));
             bg.setStroke(dp(2), Color.argb(230, 255, 255, 255));
@@ -303,8 +322,7 @@ public class ONScripter extends SDLActivity {
             bg.setColor(Color.argb(166, 16, 16, 16));
             bg.setStroke(dp(1), Color.argb(135, 255, 255, 255));
         }
-        tv.setBackground(bg);
-        tv.setTextColor(Color.WHITE);
+        return bg;
     }
 
     @SuppressLint("AppCompatCustomView") // SDLActivity is a platform Activity; its lightweight overlay intentionally uses platform widgets.
@@ -317,7 +335,7 @@ public class ONScripter extends SDLActivity {
         };
         tv.setText(label);
         tv.setTextColor(Color.WHITE);
-        tv.setTextSize(toggle ? 24 : 13);
+        tv.setTextSize(toggle ? 16 : 9);
         tv.setTypeface(Typeface.DEFAULT_BOLD);
         tv.setGravity(Gravity.CENTER);
         tv.setLines(toggle ? 1 : 2);
@@ -325,9 +343,11 @@ public class ONScripter extends SDLActivity {
         tv.setLineSpacing(0f, 0.92f);
         tv.setTag(label.contains("AUTO") ? "auto" : "normal");
         styleVirtualButton(tv, label.contains("AUTO") && autoMode, toggle);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(toggle ? dp(48) : dp(60), toggle ? dp(48) : dp(60));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                toggle ? dp(TOGGLE_BUTTON_SIZE_DP) : dp(CONTROL_BUTTON_SIZE_DP),
+                toggle ? dp(TOGGLE_BUTTON_SIZE_DP) : dp(CONTROL_BUTTON_SIZE_DP));
         tv.setLayoutParams(lp);
-        tv.setPadding(dp(2), dp(5), dp(2), dp(5));
+        tv.setPadding(dp(1), dp(3), dp(1), dp(3));
         final boolean[] touchActivation = {false};
         tv.setOnClickListener(v -> {
             if (touchActivation[0]) return;
@@ -373,6 +393,32 @@ public class ONScripter extends SDLActivity {
             return true;
         });
         return tv;
+    }
+
+    @SuppressLint("AppCompatCustomView") // SDLActivity is a platform Activity; its lightweight overlay intentionally uses platform widgets.
+    private ImageButton makeToggleButton() {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(controlsVisible ? R.drawable.ons_toggle_up : R.drawable.ons_toggle_down);
+        button.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        button.setBackground(makeVirtualButtonBackground(false, true));
+        button.setColorFilter(Color.WHITE);
+        button.setPadding(dp(6), dp(6), dp(6), dp(6));
+        button.setLayoutParams(new FrameLayout.LayoutParams(dp(TOGGLE_BUTTON_SIZE_DP), dp(TOGGLE_BUTTON_SIZE_DP)));
+        button.setOnClickListener(v -> toggleVirtualControls());
+        button.setOnTouchListener((v, e) -> {
+            if (e.getAction() == MotionEvent.ACTION_DOWN) {
+                v.setAlpha(0.65f);
+                return true;
+            } else if (e.getAction() == MotionEvent.ACTION_UP || e.getAction() == MotionEvent.ACTION_CANCEL) {
+                v.setAlpha(1f);
+                if (e.getAction() == MotionEvent.ACTION_UP) {
+                    v.performClick();
+                }
+                return true;
+            }
+            return true;
+        });
+        return button;
     }
 
     private int dp(int value) {

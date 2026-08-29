@@ -14,6 +14,7 @@ object AppSettingsStore {
     const val KEY_THEME_COLOR = "theme_color"
     const val KEY_NAV_STYLE = "nav_style"
     const val KEY_SCAN_DEPTH = "scan_depth"
+    const val KEY_LANGUAGE = "language"
     const val KEY_THEME_MODE = "theme_mode"
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
@@ -37,6 +38,21 @@ object AppSettingsStore {
 
     /** 默认主题色：#307DEF，与 theme/Color.kt 的 Blue40 一致。 */
     const val DEFAULT_THEME_COLOR = "#307DEF"
+
+    /** App 内语言：跟随系统。 */
+    const val LANGUAGE_SYSTEM = "system"
+
+    /** App 内语言：简体中文。 */
+    const val LANGUAGE_ZH = "zh"
+
+    /** App 内语言：日文。 */
+    const val LANGUAGE_JA = "ja"
+
+    /** App 内语言：英文。 */
+    const val LANGUAGE_EN = "en"
+
+    /** App 语言内存态：设置页切换后根 Composable 可即时重组。 */
+    val languageState: MutableState<String> = mutableStateOf(LANGUAGE_ZH)
 
     /** 外观模式：浅色。 */
     const val THEME_MODE_LIGHT = "light"
@@ -79,6 +95,10 @@ object AppSettingsStore {
         navStyleState.value = getNavStyle(c)
     }
 
+    fun initLanguage(c: Context) {
+        languageState.value = getLanguage(c)
+    }
+
     fun initGameSort(c: Context) {
         gameSortState.value = getGameSort(c)
     }
@@ -92,6 +112,15 @@ object AppSettingsStore {
 
     fun setThemeColorHex(c: Context, hex: String) =
         prefs(c).edit().putString(KEY_THEME_COLOR, hex).apply()
+
+    fun getLanguage(c: Context): String =
+        normalizeLanguage(prefs(c).getString(KEY_LANGUAGE, LANGUAGE_ZH))
+
+    fun setLanguage(c: Context, language: String) {
+        val normalized = normalizeLanguage(language)
+        prefs(c).edit().putString(KEY_LANGUAGE, normalized).apply()
+        languageState.value = normalized
+    }
 
     /** 当前底部导航栏样式（默认 / 液态玻璃）。 */
     fun getNavStyle(c: Context): String =
@@ -198,5 +227,12 @@ object AppSettingsStore {
 
     private fun bumpCoverScraperSettingsVersion() {
         coverScraperSettingsVersion.value += 1
+    }
+
+    private fun normalizeLanguage(language: String?): String = when (language) {
+        LANGUAGE_SYSTEM -> LANGUAGE_SYSTEM
+        LANGUAGE_JA -> LANGUAGE_JA
+        LANGUAGE_EN -> LANGUAGE_EN
+        else -> LANGUAGE_ZH
     }
 }

@@ -1,6 +1,8 @@
 package com.tyranor.next.core.cover
 
 import android.content.Context
+import com.tyranor.next.R
+import com.tyranor.next.core.i18n.AppLocaleController
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import com.tyranor.next.core.game.model.ScanGame
@@ -56,10 +58,10 @@ object CoverScrapeTaskManager {
                     }
                     postFinished(result = result.copy(games = mergedGames), error = null)
                 } catch (e: CancellationException) {
-                    postFinished(result = null, error = "批量刮削已取消")
+                    postFinished(result = null, error = appContext.getLocalizedString(R.string.cover_scrape_cancelled))
                     throw e
                 } catch (e: Exception) {
-                    postFinished(result = null, error = e.message ?: "批量刮削失败")
+                    postFinished(result = null, error = e.message ?: appContext.getLocalizedString(R.string.cover_scrape_failed))
                 } finally {
                     synchronized(lock) {
                         job = null
@@ -136,3 +138,6 @@ internal fun mergeScrapedCover(current: ScanGame, original: ScanGame, scraped: S
     } else {
         current
     }
+
+private fun Context.getLocalizedString(id: Int): String =
+    AppLocaleController.wrap(this).getString(id)

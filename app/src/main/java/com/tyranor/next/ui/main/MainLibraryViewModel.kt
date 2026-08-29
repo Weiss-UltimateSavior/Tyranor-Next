@@ -5,7 +5,9 @@ import android.util.Log
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tyranor.next.R
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.ui.game.cleanupDeletedGame
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -63,6 +66,13 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 _uiState.update { MainLibraryStateReducer.replaceGame(it, updated) }
             }
         }
+        // 设置页删除扫描目录时会同步清理该目录下的持久游戏缓存；
+        // 主库订阅 core 层修订号，避免跨 Tab 常驻组合下游戏页仍显示旧游戏。
+        viewModelScope.launch {
+            EngineScanner.libraryRevision.drop(1).collect {
+                refreshFromStorage()
+            }
+        }
         // 刮削任务属于应用级长任务，即使 GameScreen 已离开组合，也要立即发布给首页与游戏页。
         viewModelScope.launch {
             var handledEventId = 0L
@@ -71,7 +81,12 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 handledEventId = task.eventId
                 val result = task.result
                 val message = if (result != null) {
-                    "批量刮削完成：更新 ${result.updatedCount}，跳过 ${result.skippedCount}，失败 ${result.failedCount}"
+                    AppLocaleController.wrap(appContext).getString(
+                        R.string.cover_scrape_done,
+                        result.updatedCount,
+                        result.skippedCount,
+                        result.failedCount,
+                    )
                 } else {
                     task.error
                 }
@@ -238,6 +253,16 @@ internal fun mergeChangedGameFields(base: ScanGame, before: ScanGame, updated: S
     coverSource = if (updated.coverSource != before.coverSource) updated.coverSource else base.coverSource,
     vndbId = if (updated.vndbId != before.vndbId) updated.vndbId else base.vndbId,
     metadataTitle = if (updated.metadataTitle != before.metadataTitle) updated.metadataTitle else base.metadataTitle,
+    externalModuleAlias = if (updated.externalModuleAlias != before.externalModuleAlias) {
+        updated.externalModuleAlias
+    } else {
+        base.externalModuleAlias
+    },
+    detectedRenpyVersion = if (updated.detectedRenpyVersion != before.detectedRenpyVersion) {
+        updated.detectedRenpyVersion
+    } else {
+        base.detectedRenpyVersion
+    },
     launchFile = if (updated.launchFile != before.launchFile) updated.launchFile else base.launchFile,
     openTime = if (updated.openTime != before.openTime) updated.openTime else base.openTime,
 )

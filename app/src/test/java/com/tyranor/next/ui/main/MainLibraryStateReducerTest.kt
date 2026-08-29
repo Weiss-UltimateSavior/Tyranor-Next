@@ -84,6 +84,17 @@ class MainLibraryStateReducerTest {
         assertEquals("vndb", merged.coverSource)
     }
 
+    @Test
+    fun mergeChangedFieldsKeepsExternalModuleAliasWhenUnchangedByUpdate() {
+        val before = first.copy(externalModuleAlias = "internal.rpgmxp")
+        val base = before.copy(coverUri = "file:///new.jpg")
+        val renamedFromOldSnapshot = before.copy(title = "重命名")
+
+        val merged = mergeChangedGameFields(base, before, renamedFromOldSnapshot)
+
+        assertEquals("internal.rpgmxp", merged.externalModuleAlias)
+    }
+
     private fun game(id: String, title: String) = ScanGame(
         title = title,
         uri = "content://games/$id",

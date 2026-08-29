@@ -3,9 +3,12 @@ package com.tyranor.next.core.patch
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import androidx.annotation.StringRes
+import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.i18n.AppLocaleController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -32,8 +35,8 @@ object KrkrOnlinePatchService {
     private const val PATCH_BASE_URL = "https://zeas2.github.io/Kirikiroid2_patch/patch/"
     private val indexRegex = Regex("""\[(\d+), "(.+?)", "(.+?)", "(.+?)", \[(.+)]],?""")
 
-    suspend fun fetchPatchIndex(): List<KrkrPatchEntry> = withContext(Dispatchers.IO) {
-        val text = httpGetText(INDEX_URL)
+    suspend fun fetchPatchIndex(context: Context): List<KrkrPatchEntry> = withContext(Dispatchers.IO) {
+        val text = httpGetText(context, INDEX_URL)
         text.lineSequence()
             .mapNotNull { line -> parseLine(line.trim()) }
             .sortedWith(compareBy<KrkrPatchEntry> { it.name }.thenBy { it.brand })
@@ -56,8 +59,8 @@ object KrkrOnlinePatchService {
         urls: List<String>,
         progress: (String) -> Unit = {},
     ): KrkrPatchInstallResult = withContext(Dispatchers.IO) {
-        require(game.engine == EngineType.KIRIKIRI) { "仅 Kirikiri 游戏支持在线补丁" }
-        require(urls.isNotEmpty()) { "请选择要下载的补丁" }
+        require(game.engine == EngineType.KIRIKIRI) { text(context, R.string.patch_error_only_kirikiri) }
+        require(urls.isNotEmpty()) { text(context, R.string.patch_error_select_patch) }
 
         val downloadDir = File(context.getExternalFilesDir(null), "Download").apply { mkdirs() }
         val installed = mutableListOf<String>()
@@ -65,11 +68,11 @@ object KrkrOnlinePatchService {
 
         urls.forEach { url ->
             val fileName = fileNameFromUrl(url)
-            progress("正在下载 $fileName")
+            progress(text(context, R.string.patch_progress_downloading, fileName))
             val tempFile = File(downloadDir, fileName)
             try {
-                downloadToFile(url, tempFile)
-                progress("正在写入 $fileName")
+                downloadToFile(context, url, tempFile)
+                progress(text(context, R.string.patch_progress_writing, fileName))
                 copyIntoGameDir(context, game, tempFile, fileName)
                 installed += fileName
             } finally {
@@ -97,26 +100,26 @@ object KrkrOnlinePatchService {
         )
     }
 
-    private fun httpGetText(url: String): String {
+    private fun httpGetText(context: Context, url: String): String {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 12_000
             readTimeout = 20_000
             requestMethod = "GET"
         }
         return connection.use {
-            if (responseCode !in 200..299) error("补丁索引获取失败：HTTP $responseCode")
+            if (responseCode !in 200..299) error(text(context, R.string.patch_index_fetch_failed_http, responseCode))
             inputStream.bufferedReader(StandardCharsets.UTF_8).use { reader -> reader.readText() }
         }
     }
 
-    private fun downloadToFile(url: String, target: File) {
+    private fun downloadToFile(context: Context, url: String, target: File) {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 12_000
             readTimeout = 60_000
             requestMethod = "GET"
         }
         connection.use {
-            if (responseCode !in 200..299) error("补丁下载失败：HTTP $responseCode")
+            if (responseCode !in 200..299) error(text(context, R.string.patch_download_failed_http, responseCode))
             inputStream.use { input ->
                 target.outputStream().use { output -> input.copyTo(output) }
             }
@@ -138,13 +141,13 @@ object KrkrOnlinePatchService {
                 if (outFile != null) {
                     context.contentResolver.openOutputStream(outFile.uri, "w")?.use { output ->
                         source.inputStream().use { input -> input.copyTo(output) }
-                    } ?: error("无法打开补丁写入流")
+                    } ?: error(text(context, R.string.patch_error_open_write_stream))
                     return
                 }
             }
         }
 
-        error("无法写入游戏目录，请重新添加游戏目录并授予写入权限")
+        error(text(context, R.string.patch_error_write_game_dir))
     }
 
     private fun resolveWritableGameFileDir(game: ScanGame): File? {
@@ -175,4 +178,7 @@ object KrkrOnlinePatchService {
             disconnect()
         }
     }
+
+    private fun text(context: Context, @StringRes id: Int, vararg args: Any): String =
+        AppLocaleController.wrap(context).getString(id, *args)
 }

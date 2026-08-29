@@ -1,6 +1,7 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import com.core.engine.EnginePrefs
 import org.json.JSONObject
 
 /**
@@ -10,7 +11,9 @@ import org.json.JSONObject
  */
 object PerGameSettingsStore {
 
-    private const val PREF_NAME = "tyranor_game_overrides"
+    // prefs 文件名契约锚点在 engine（引擎 TyranoActivity/TouchPadSaveBridge 直读写同一文件），
+    // 改名只需改 EnginePrefs 一处。
+    private val PREF_NAME = EnginePrefs.GAME_OVERRIDES_PREFS
 
     // KR 覆盖字段名
     const val F_ENGINE_VERSION = "engine_version"
@@ -26,9 +29,12 @@ object PerGameSettingsStore {
     const val F_OGL_MAX_TEXSIZE = "ogl_max_texsize"
     const val F_OGL_ACCURATE_RENDER = "ogl_accurate_render"
     const val F_FPS_LIMIT = "fps_limit"
+    const val F_VCURSOR_SCALE = "vcursor_scale"
+    const val F_MENU_HANDLER_OPA = "menu_handler_opa"
     val KR_FIELDS = listOf(
         F_RENDERER, F_SOFTWARE_DRAW_THREAD, F_SOFTWARE_COMPRESS_TEX, F_OGL_COMPRESS_TEX,
         F_MEM_USAGE, F_OGL_MAX_TEXSIZE, F_OGL_ACCURATE_RENDER, F_FPS_LIMIT,
+        F_VCURSOR_SCALE, F_MENU_HANDLER_OPA,
     )
 
     // Artemis
@@ -40,6 +46,9 @@ object PerGameSettingsStore {
     const val F_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
     const val F_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val F_RPG_MZ_VERSION = "rpg_mz_engine_version"
+
+    // Ren'Py（外置模块版本选择）
+    const val F_RENPY_VERSION = "renpy_engine_version"
 
     // ONS 子对象键
     const val ONS_KEY = "ons"
@@ -77,7 +86,7 @@ object PerGameSettingsStore {
     fun setStr(context: Context, gameId: String, key: String, value: String?) {
         if (gameId.isBlank()) return
         val j = load(context, gameId)
-        if (value == null) j.remove(key) else j.put(key, value)
+        if (value == null) j.remove(key) else j.put(key, value.trim())
         persist(context, gameId, j)
     }
 
