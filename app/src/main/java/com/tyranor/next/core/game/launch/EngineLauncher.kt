@@ -37,6 +37,7 @@ import com.tyranor.next.theme.AppThemeColors
 import com.yuri.onscripter.ONScripter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
 
@@ -347,7 +348,7 @@ object EngineLauncher {
             }
         }
         val version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ENGINE_VERSION), EngineSettingsStore.getKrEngineVersion(context))
-        prepareKrPatchScript(engineRoot)
+        cleanupTyranorManagedKrPatchScript(engineRoot)
         val activity = when (version) {
             EngineSettingsStore.KR_134 -> Kirikiroid134::class.java
             EngineSettingsStore.KR_126 -> Kirikiroid126::class.java
@@ -746,38 +747,39 @@ object EngineLauncher {
     }
 
     /**
-     * 复刻旧 Tyranor 的 Kirikiroid2 启动补丁：向游戏目录 patch.tjs 追加一段通用脚本。
-     * KRKR 会在启动主脚本前自动合并 patch.tjs，因此不会像替换启动入口那样触发二段跳崩溃。
+     * PR 44b6be2 曾在启动时向游戏目录 patch.tjs 自动追加 Tyranor Next 兼容脚本。
+     * 用户游戏脚本经常依赖自己的 patch.tjs 加载顺序/编码/插件定义，直接持久修改会导致部分
+     * 游戏闪退或脚本异常。这里不再追加新内容，只清理历史版本写入的精确托管块。
      */
-    private fun prepareKrPatchScript(engineRoot: String) {
+    private fun cleanupTyranorManagedKrPatchScript(engineRoot: String) {
         val root = File(engineRoot)
         if (!root.isDirectory || engineRoot.startsWith("content://")) return
         val patch = File(root, "patch.tjs")
+        if (!patch.isFile) return
         runCatching {
-            val charset = detectTextCharset(patch)
-            val existing = if (patch.isFile) patch.readText(charset) else ""
-            val additions = buildString {
-                if (!existing.contains(KR_LEGACY_PATCH_MARKER) &&
-                    !existing.contains("Plugins.link(\"kirikiroid2.dll\")")
-                ) {
-                    append(krLegacyPatchScript(fontScale = 1.0f))
-                }
-                if (rootContainsFbfSteamPlugin(root) && !existing.contains(KR_FBF_STEAM_STUB_MARKER)) {
-                    append(krFbfSteamStubScript())
-                }
+            val original = patch.readBytes()
+            val blocks = listOf(
+                krLegacyPatchScript(fontScale = 1.0f),
+                krFbfSteamStubScript(),
+            )
+            var cleaned = original
+            blocks.forEach { block ->
+                cleaned = removeAllByteSequences(cleaned, block.toByteArray(Charsets.UTF_8))
+                cleaned = removeAllByteSequences(cleaned, block.toByteArray(Charsets.UTF_16LE))
             }
-            if (additions.isEmpty()) return
-            patch.appendText(additions, charset)
-            Log.i(TAG, "KRKR patch.tjs compatibility appended root=$engineRoot bytes=${additions.length}")
+            if (!cleaned.contentEquals(original)) {
+                patch.writeBytes(cleaned)
+                Log.i(TAG, "KRKR managed patch.tjs block cleaned root=$engineRoot bytes=${original.size - cleaned.size}")
+            } else if (
+                original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_8)) ||
+                original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_8)) ||
+                original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_16LE)) ||
+                original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_16LE))
+            ) {
+                Log.w(TAG, "KRKR managed patch.tjs marker found but exact block did not match; left untouched root=$engineRoot")
+            }
         }.onFailure { error ->
-            Log.w(TAG, "KRKR legacy patch.tjs compatibility append failed root=$engineRoot", error)
-        }
-    }
-
-    private fun rootContainsFbfSteamPlugin(root: File): Boolean {
-        val files = root.listFiles() ?: return false
-        return files.any { file ->
-            file.isFile && file.name.equals("FBFSteamPlugin.dll", ignoreCase = true)
+            Log.w(TAG, "KRKR managed patch.tjs cleanup failed root=$engineRoot", error)
         }
     }
 
@@ -828,15 +830,35 @@ object EngineLauncher {
         |
     """.trimMargin()
 
-    private fun detectTextCharset(file: File): java.nio.charset.Charset {
-        if (!file.isFile || file.length() < 2L) return Charsets.UTF_8
-        return runCatching {
-            file.inputStream().use { input ->
-                val b0 = input.read()
-                val b1 = input.read()
-                if (b0 == 0xFF && b1 == 0xFE) Charsets.UTF_16LE else Charsets.UTF_8
-            }
-        }.getOrDefault(Charsets.UTF_8)
+    private fun removeAllByteSequences(source: ByteArray, needle: ByteArray): ByteArray {
+        if (source.isEmpty() || needle.isEmpty()) return source
+        var index = source.indexOfByteSequence(needle, startIndex = 0)
+        if (index < 0) return source
+        val out = ByteArrayOutputStream(source.size)
+        var cursor = 0
+        while (index >= 0) {
+            out.write(source, cursor, index - cursor)
+            cursor = index + needle.size
+            index = source.indexOfByteSequence(needle, startIndex = cursor)
+        }
+        out.write(source, cursor, source.size - cursor)
+        return out.toByteArray()
+    }
+
+    private fun ByteArray.containsByteSequence(needle: ByteArray): Boolean =
+        indexOfByteSequence(needle, startIndex = 0) >= 0
+
+    private fun ByteArray.indexOfByteSequence(needle: ByteArray, startIndex: Int): Int {
+        if (needle.isEmpty()) return startIndex.coerceIn(0, size)
+        val max = size - needle.size
+        var i = startIndex.coerceAtLeast(0)
+        while (i <= max) {
+            var j = 0
+            while (j < needle.size && this[i + j] == needle[j]) j++
+            if (j == needle.size) return i
+            i++
+        }
+        return -1
     }
 
     /**
