@@ -905,6 +905,15 @@ class TyranoActivity : Activity() {
 
         private fun TyranoActivity.buildRpgMvV1Overlay(): Map<String, ByteArray> {
             val out = mutableMapOf<String, ByteArray>()
+            // MZ 插件在 MV 引擎中会导致 Window_StatusBase 等缺失而黑屏（3959930_1.19 的 MPTPShowforActor.js）
+            // v1 覆盖时主动用兼容打桩版覆盖该插件，避免启动即崩溃
+            try {
+                val compatPlugin = assets.open("rpgmv-v1/js/plugins/MPTPShowforActor.compat.js").buffered().use { it.readBytes() }
+                out["js/plugins/MPTPShowforActor.js"] = compatPlugin
+                out["www/js/plugins/MPTPShowforActor.js"] = compatPlugin
+            } catch (_: Exception) {
+                // 无兼容插件文件时仅由 __nwjs_polyfill.js 的 Window 兼容兜底
+            }
             for (path in RPG_MV_V1_FILES) {
                 val assetPath = RPG_MV_V1_PREFIX + "/" + path
                 val bytes = runCatching { assets.open(assetPath).buffered().use { it.readBytes() } }.getOrNull()

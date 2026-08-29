@@ -339,6 +339,42 @@
     try { if (typeof globalThis !== "undefined" && !globalThis.Buffer) globalThis.Buffer = window.Buffer; } catch(e){}
 
     // ──────────────────────────────────────────────
+    // 4b) MV/MZ Window 兼容：MZ 插件在 MV 引擎中会引用 Window_StatusBase 等
+    //    黑屏日志: ReferenceError: Window_StatusBase is not defined
+    //    第二个错: Graphics._createFPSMeter 相关 style 访问
+    // ──────────────────────────────────────────────
+    (function ensureWindowCompat(){
+        function defineIfMissing(name, fallback){
+            if (typeof window[name] !== "undefined") return;
+            try { window[name] = fallback; } catch(e){}
+            try { if (typeof globalThis !== "undefined" && !globalThis[name]) globalThis[name]=fallback; } catch(e){}
+        }
+        // MZ 独有而 MV 没有的基类，指向 MV 已有的近似基类
+        try {
+            if (typeof window.Window_StatusBase === "undefined" && typeof window.Window_Status !== "undefined") {
+                window.Window_StatusBase = window.Window_Status;
+            }
+            // 若 MV 侧两者皆无，则给空构造函数避免 ReferenceError，后续 Scene 加载前再被覆盖也安全
+            if (typeof window.Window_StatusBase === "undefined") {
+                window.Window_StatusBase = function(){ if (typeof window.Window_Selectable !== "undefined") return window.Window_Selectable.apply(this, arguments); };
+                try { window.Window_StatusBase.prototype = Object.create((window.Window_Selectable||function(){}).prototype); } catch(e){}
+            }
+            // 其它常见 MZ 插件依赖的空壳，缺失时给占位，避免级联报错
+            defineIfMissing("Window_SkillStatus", window.Window_StatusBase || window.Window_Selectable || function(){});
+            defineIfMissing("Window_EquipStatus", window.Window_StatusBase || window.Window_Selectable || function(){});
+            defineIfMissing("Window_ShopStatus", window.Window_StatusBase || window.Window_Selectable || function(){});
+        } catch(e){}
+        // 由于插件脚本在 rpg_windows.js 之前加载，上面的 fallback 可能仍为空，延时二次兜底
+        setTimeout(function(){
+            try {
+                if (typeof window.Window_StatusBase === "undefined" && typeof window.Window_Status !== "undefined") {
+                    window.Window_StatusBase = window.Window_Status;
+                }
+            } catch(e){}
+        }, 800);
+    })();
+
+    // ──────────────────────────────────────────────
     // 5) Game_Interpreter.eval 兜底（水印脚本等）
     // ──────────────────────────────────────────────
     function patchInterpreter() {
@@ -367,6 +403,42 @@
     var patchTimer = setInterval(patchInterpreter, 300);
     setTimeout(function(){ clearInterval(patchTimer); patchInterpreter(); }, 8000);
     window.addEventListener("load", patchInterpreter);
+
+    // FPSMeter / Graphics 404 容忍：v1 overlay 或旧插件可能触发的 rpg_core.js:2116 style 访问，提前给 document 兜底
+    try {
+        if (typeof window.FPSMeter === "undefined") {
+            window.FPSMeter = function(){ this.hide=function(){}; this.show=function(){}; this.tickStart=function(){}; this.tick=function(){}; };
+        }
+    } catch(e){}
+
+    // Black screen second error: rpg_core.js:2116 style access before DOM ready
+    // Guard Graphics._centerElement / _createFPSMeter etc
+    try {
+        var _origCenter = window.Graphics && window.Graphics._centerElement;
+        // Patch after Graphics is defined - poll
+        var gcTimer = setInterval(function(){
+            try {
+                if (window.Graphics) {
+                    clearInterval(gcTimer);
+                    // wrap _centerElement to tolerate undefined element
+                    if (typeof window.Graphics._centerElement === "function") {
+                        var _orig = window.Graphics._centerElement;
+                        window.Graphics._centerElement = function(el){
+                            if (!el || !el.style) return;
+                            try { return _orig.call(this, el); } catch(e){ console.warn("[polyfill] _centerElement suppressed:", e.message); }
+                        };
+                    }
+                    if (typeof window.Graphics._createFPSMeter === "function") {
+                        var _origFps = window.Graphics._createFPSMeter;
+                        window.Graphics._createFPSMeter = function(){
+                            try { return _origFps.apply(this, arguments); } catch(e){ console.warn("[polyfill] _createFPSMeter suppressed:", e.message); }
+                        };
+                    }
+                }
+            } catch(e){}
+        }, 200);
+        setTimeout(function(){ try{ clearInterval(gcTimer);}catch(e){}}, 6000);
+    } catch(e){}
 
     console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
 })();
