@@ -199,14 +199,15 @@ class TyranoActivity : Activity() {
                 emptyMap()
             }
             val internalResources = modResources + v1Overlay
-            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${lateHook.size} early=${nwPolyfill.size} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion")
+            val isRpgWebGameForInject = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
+            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${lateHook.size} early=${nwPolyfill.size} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion injectBeforeBody=${isRpgWebGameForInject}")
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
-                    contentRoot, asarArchive, lateHook, true, scriptAppends, modHtml, internalResources, nwPolyfill,
+                    contentRoot, asarArchive, lateHook, isRpgWebGameForInject, scriptAppends, modHtml, internalResources, nwPolyfill,
                 )
             } else {
                 TyranoLocalHttpServer(
-                    contentRoot, lateHook, true, scriptAppends, modHtml, internalResources, nwPolyfill,
+                    contentRoot, lateHook, isRpgWebGameForInject, scriptAppends, modHtml, internalResources, nwPolyfill,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {

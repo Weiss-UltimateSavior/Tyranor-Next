@@ -41,19 +41,45 @@ internal object TyranoStorage {
     }
 
     @JvmStatic
-    fun write(directory: File?, key: String?, value: String?) {
-        write(directory, key, value, ".sav")
+    fun write(directory: File?, key: String?, value: String?): Boolean {
+        return write(directory, key, value, ".sav")
     }
 
     @JvmStatic
-    fun write(directory: File?, key: String?, value: String?, extension: String) {
-        try {
-            val file = resolveFile(directory, key, extension) ?: return
+    fun write(directory: File?, key: String?, value: String?, extension: String): Boolean {
+        return try {
+            val file = resolveFile(directory, key, extension) ?: return false
             val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
-            if (bytes.size > MAX_SAVE_BYTES) return
-            file.outputStream().use { it.write(bytes) }
+
+            if (bytes.size > MAX_SAVE_BYTES) return false
+            val dir = file.parentFile ?: return false
+            if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
+            val tmp = File(dir, file.name + ".tmp." + System.nanoTime())
+            var committed = false
+            try {
+                java.io.FileOutputStream(tmp).use { out ->
+                    out.write(bytes)
+                    out.fd.sync()
+                }
+                if (tmp.length() != bytes.size.toLong()) return false
+                committed = try {
+                    java.nio.file.Files.move(
+                        tmp.toPath(), file.toPath(),
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    )
+                    true
+                } catch (_: Throwable) {
+                    if (file.exists() && !file.delete() && file.exists()) false
+                    else tmp.renameTo(file)
+                }
+                committed
+            } finally {
+                if (!committed) try { tmp.delete() } catch (_: Throwable) {}
+            }
         } catch (error: Throwable) {
             Log.w(TAG, "setStorage failed key=$key", error)
+            false
         }
     }
 
