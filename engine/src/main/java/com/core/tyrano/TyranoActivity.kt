@@ -180,7 +180,7 @@ class TyranoActivity : Activity() {
                 emptyMap()
             }
             val internalResources = modResources + v1Overlay
-            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${hook.size} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion")
+            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${(earlyHook.size + lateHook.size)} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion")
             val injectBeforeBody = false // early hook at </head>, late hook at </body>
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
