@@ -11,6 +11,7 @@ import com.core.engine.EnginePrefs;
 
 public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.ArtemisActivity {
     private static final long EARLY_EXIT_WINDOW_MS = 3_000L;
+    private static final int FALLBACK_STAGE_V4_DIRECT = -1;
     private static final String KEY_ARTEMIS_ENGINE_PREFIX = "artemis_engine.";
     private long createdAtElapsed;
     private boolean userRequestedFinish;
@@ -99,7 +100,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 || !source.getBooleanExtra("artemisAutoFallback", false)
                 || SystemClock.elapsedRealtime() - createdAtElapsed > EARLY_EXIT_WINDOW_MS) return false;
         int stage = source.getIntExtra("artemisFallbackStage", 0);
-        String nextPackage = stage == 0 ? "internal.artemis.compat"
+        String nextPackage = stage == FALLBACK_STAGE_V4_DIRECT ? "internal.artemis"
+                : stage == 0 ? "internal.artemis.compat"
                 : stage == 1 ? "internal.artemis.compat.v2"
                 : stage == 2 ? "internal.artemis.v4"
                 : null;
@@ -110,14 +112,16 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 .putString(KEY_ARTEMIS_ENGINE_PREFIX + Integer.toHexString(path.hashCode()), nextPackage)
                 .apply();
         Intent retry = new Intent(this,
-                stage == 0 ? com.akira.tyranoemu.remote.ArtemisActivityV2.class
+                stage == FALLBACK_STAGE_V4_DIRECT ? com.akira.tyranoemu.remote.ArtemisActivityV1.class
+                        : stage == 0 ? com.akira.tyranoemu.remote.ArtemisActivityV2.class
                         : stage == 1 ? com.akira.tyranoemu.remote.ArtemisActivityV3.class
                         : com.akira.tyranoemu.remote.ArtemisActivityV4.class);
         retry.putExtras(source);
-        retry.putExtra("artemisFallbackStage", stage + 1);
+        retry.putExtra("artemisFallbackStage", stage == FALLBACK_STAGE_V4_DIRECT ? 0 : stage + 1);
         // retry 到下一 revision 时，bootstrap loader 需加载对应的插件库名。
         retry.putExtra("engineLibName",
-                stage == 0 ? "artemis-compatible"
+                stage == FALLBACK_STAGE_V4_DIRECT ? "artemis"
+                        : stage == 0 ? "artemis-compatible"
                         : stage == 1 ? "artemis-compatible-v2"
                         : "artemis-v4");
         retry.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);

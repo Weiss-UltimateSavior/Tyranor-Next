@@ -11,9 +11,9 @@ import kotlin.text.Charsets.UTF_8
 /**
  * Artemis base patcher for titles whose required startup files are packed in .pfs archives.
  *
- * Some Artemis games ship without a loose system.ini. The native engine expects a few Android
- * startup files to exist on disk, so we extract only those small required entries and let the
- * engine continue streaming the rest from the archive.
+ * Some Artemis games ship without loose Android startup files. The native engine expects a few
+ * bootstrap entries such as system.ini and the BOOT script to exist on disk, so we extract only
+ * those small required entries and let the engine continue streaming the rest from the archive.
  */
 object ArtemisPfsUnpacker {
     private const val TAG = "ArtemisPfsUnpacker"
@@ -28,8 +28,11 @@ object ArtemisPfsUnpacker {
         if (rootPath.isNullOrBlank() || rootPath.startsWith("content://")) return false
         val dir = File(rootPath)
         if (!dir.isDirectory) return false
-        if (File(dir, "system.ini").exists()) return false
-        return listPfsFiles(dir).isNotEmpty()
+        val pfsFiles = listPfsFiles(dir)
+        if (pfsFiles.isEmpty()) return false
+        val systemIni = File(dir, "system.ini")
+        if (!systemIni.isFile) return true
+        return hasMissingStartupFile(dir, systemIni)
     }
 
     fun applyBasePatch(rootPath: String?): Boolean {
@@ -45,6 +48,7 @@ object ArtemisPfsUnpacker {
                 }
             }
             ensureSystemIni(dir)
+            ensureBootFileAvailable(dir)
             true
         } catch (error: Exception) {
             logWarn("apply base patch failed root=$rootPath", error)
@@ -99,12 +103,12 @@ object ArtemisPfsUnpacker {
                 readM(raf)
                 val offset = readM(raf).toLong()
                 val dataLen = readM(raf).toLong()
-                if (offset < 0 || dataLen < 0 || offset + dataLen > fileLength || dataLen > MAX_ENTRY_BYTES) {
-                    logWarn("invalid pfs entry bounds name=$rawName offset=$offset len=$dataLen")
-                    return written
-                }
                 val relPath = rawName.replace('\\', '/')
                 if (!shouldExtract(relPath)) continue
+                if (offset < 0 || dataLen < 0 || offset + dataLen > fileLength || dataLen > MAX_ENTRY_BYTES) {
+                    logWarn("invalid pfs entry bounds name=$rawName offset=$offset len=$dataLen")
+                    continue
+                }
                 val target = safeTarget(gameDir, relPath) ?: continue
                 val data = readEntryData(raf, offset, dataLen.toInt(), key) ?: return written
                 writeEntry(target, data)
@@ -119,10 +123,24 @@ object ArtemisPfsUnpacker {
 
     private fun shouldExtract(relPath: String): Boolean {
         val lower = relPath.lowercase(Locale.ROOT)
-        if (lower.contains("system.ini") || lower.contains("list_windows")) return true
+        if (lower == "system.ini") return true
+        if (isArtemisStartupSystemFile(lower)) return true
         if (!lower.contains("movie")) return false
         return lower.endsWith(".dat") || lower.endsWith(".mp4") || lower.endsWith(".ogv") ||
             lower.endsWith(".wmv") || lower.endsWith(".mpg") || lower.endsWith(".webm")
+    }
+
+    private fun isArtemisStartupSystemFile(lowerRelPath: String): Boolean {
+        if (!lowerRelPath.startsWith("system/")) return false
+        if (lowerRelPath.contains("/../")) return false
+        return lowerRelPath.endsWith(".iet") ||
+            lowerRelPath.endsWith(".lua") ||
+            lowerRelPath.endsWith(".asb") ||
+            lowerRelPath.endsWith(".tbl") ||
+            lowerRelPath.endsWith(".glsl") ||
+            lowerRelPath.endsWith(".ini") ||
+            lowerRelPath.endsWith(".json") ||
+            lowerRelPath.endsWith(".txt")
     }
 
     private fun readEntryData(raf: RandomAccessFile, offset: Long, dataLen: Int, key: ByteArray): ByteArray? {
@@ -244,6 +262,62 @@ object ArtemisPfsUnpacker {
         }
     }
 
+    private fun ensureBootFileAvailable(dir: File) {
+        val systemIni = File(dir, "system.ini")
+        val bootPath = readBootPath(systemIni) ?: DEFAULT_ANDROID_BOOT
+        val bootFile = safeTarget(dir, bootPath)
+        if (bootFile?.isFile == true) return
+        logWarn("Artemis BOOT script still missing after base patch: $bootPath")
+    }
+
+    private fun hasMissingStartupFile(dir: File, systemIni: File): Boolean {
+        val bootPath = readBootPath(systemIni) ?: DEFAULT_ANDROID_BOOT
+        val bootFile = safeTarget(dir, bootPath)
+        if (bootFile?.isFile != true) return true
+
+        // Android Artemis 启动脚本通常立刻 include system/init.lua，随后 init.lua 再挂载
+        // system/adv、system/ui、system/table 等基础系统脚本/表。若这些仍留在 PFS 内，
+        // 部分 native revision 首屏会只完成窗口初始化但无法进入标题画面。
+        if (!File(dir, "system/init.lua").isFile) return true
+        if (!File(dir, "system/table/list_android.tbl").isFile &&
+            !File(dir, "system/table/list_android_ja.tbl").isFile
+        ) return true
+        return false
+    }
+
+    private fun readBootPath(systemIni: File): String? {
+        if (!systemIni.isFile) return null
+        val lines = runCatching { systemIni.readLines(UTF_8) }
+            .getOrElse {
+                runCatching { systemIni.readLines(Charsets.ISO_8859_1) }.getOrNull()
+            }
+            ?: return null
+        var section = ""
+        var androidBoot: String? = null
+        var firstBoot: String? = null
+        for (raw in lines) {
+            val line = raw.substringBefore(';').trim()
+            if (line.isEmpty()) continue
+            if (line.startsWith("[") && line.endsWith("]")) {
+                section = line.substring(1, line.length - 1).trim().uppercase(Locale.ROOT)
+                continue
+            }
+            val equals = line.indexOf('=')
+            if (equals <= 0) continue
+            val key = line.substring(0, equals).trim().uppercase(Locale.ROOT)
+            if (key != "BOOT") continue
+            val value = line.substring(equals + 1)
+                .trim()
+                .trim('"')
+                .replace('\\', '/')
+                .takeIf { it.isNotBlank() }
+                ?: continue
+            if (firstBoot == null) firstBoot = value
+            if (section == "ANDROID") androidBoot = value
+        }
+        return androidBoot ?: firstBoot
+    }
+
     private fun readM(raf: RandomAccessFile): Int {
         val b0 = raf.read()
         val b1 = raf.read()
@@ -260,4 +334,6 @@ object ArtemisPfsUnpacker {
     private fun logWarn(message: String, error: Throwable? = null) {
         runCatching { if (error == null) Log.w(TAG, message) else Log.w(TAG, message, error) }
     }
+
+    private const val DEFAULT_ANDROID_BOOT = "system/first.iet"
 }
