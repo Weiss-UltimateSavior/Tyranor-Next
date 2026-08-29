@@ -262,17 +262,15 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice("自动补丁", ART_PATCH_MAP2, globalArtPatch, artPatch) { artPatch = it }
                         }
                     }
-                    EngineType.RPG_MV -> item {
+                    EngineType.RPG_MV, EngineType.RPG_MZ -> item {
+                        val isMv = game.engine == EngineType.RPG_MV
+                        val versionMap = if (isMv) RPG_MV_VERSION_MAP2 else RPG_MZ_VERSION_MAP2
+                        val globalVersion = if (isMv) globalRpgMvVersion else globalRpgMzVersion
+                        val overrideVersion = if (isMv) rpgMvVersion else rpgMzVersion
                         SectionCard(game.engine.displayName) {
-                            OverrideChoice("引擎版本", RPG_MV_VERSION_MAP2, globalRpgMvVersion, rpgMvVersion) { rpgMvVersion = it }
-                            OverrideSwitch("允许外部网络", globalTyExternal, tyExternal) { tyExternal = it }
-                            OverrideSwitch("独立存档目录", globalTyScoped, tyScoped) { tyScoped = it }
-                            OverrideSwitch("游戏修改器", globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
-                        }
-                    }
-                    EngineType.RPG_MZ -> item {
-                        SectionCard(game.engine.displayName) {
-                            OverrideChoice("引擎版本", RPG_MZ_VERSION_MAP2, globalRpgMzVersion, rpgMzVersion) { rpgMzVersion = it }
+                            OverrideChoice("引擎版本", versionMap, globalVersion, overrideVersion) { v ->
+                                if (isMv) rpgMvVersion = v else rpgMzVersion = v
+                            }
                             OverrideSwitch("允许外部网络", globalTyExternal, tyExternal) { tyExternal = it }
                             OverrideSwitch("独立存档目录", globalTyScoped, tyScoped) { tyScoped = it }
                             OverrideSwitch("游戏修改器", globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
@@ -424,5 +422,5 @@ private val ART_PATCH_MAP2 = mapOf(
     EngineSettingsStore.AUTO_PATCH_AUTO to "自动",
     EngineSettingsStore.AUTO_PATCH_OFF to "关闭",
 )
-private val RPG_MV_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MV_V0 to "v0 (現有)", EngineSettingsStore.RPG_MV_V1 to "v1 (1.6.1 corescript)")
-private val RPG_MZ_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MZ_V0 to "v0 (現有)", EngineSettingsStore.RPG_MZ_V1 to "v1 (預留)")
+private val RPG_MV_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MV_V0 to "v0（现有）", EngineSettingsStore.RPG_MV_V1 to "v1（1.6.1 corescript）")
+private val RPG_MZ_VERSION_MAP2 = mapOf(EngineSettingsStore.RPG_MZ_V0 to "v0（现有）", EngineSettingsStore.RPG_MZ_V1 to "v1（预留）")

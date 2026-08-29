@@ -118,8 +118,6 @@ class TyranoActivity : Activity() {
             ?.takeIf(String::isNotBlank)
             ?: resolvedGameDir
         rpgMakerVersion = intent.getStringExtra(EXTRA_RPG_MAKER_VERSION)?.takeIf(String::isNotBlank)
-            ?: intent.getStringExtra("rpgMvVersion")?.takeIf(String::isNotBlank)
-            ?: intent.getStringExtra("rpgMzVersion")?.takeIf(String::isNotBlank)
         Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} rpgMakerVersion=$rpgMakerVersion asar=$asarPath contentRoot=${contentRoot.absolutePath}")
         val needsSaveBridge = webGameType == WebGameType.TYRANO ||
             webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
@@ -151,7 +149,6 @@ class TyranoActivity : Activity() {
             } else {
                 ByteArray(0)
             }
-            val earlyHook = nwPolyfill
             val lateHook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
                 touchPad
             val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
@@ -173,22 +170,22 @@ class TyranoActivity : Activity() {
                 emptyMap()
             }
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
-            val isRpgMvV1 = webGameType == WebGameType.RPG_MV && rpgMakerVersion == "v1"
+            val normalizedVersion = rpgMakerVersion?.trim()?.lowercase()
+            val isRpgMvV1 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v1"
             val v1Overlay: Map<String, ByteArray> = if (isRpgMvV1) {
                 buildRpgMvV1Overlay()
             } else {
                 emptyMap()
             }
             val internalResources = modResources + v1Overlay
-            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${(earlyHook.size + lateHook.size)} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion")
-            val injectBeforeBody = false // early hook at </head>, late hook at </body>
+            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${lateHook.size} early=${nwPolyfill.size} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion")
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
-                    contentRoot, asarArchive, lateHook, true, scriptAppends, modHtml, internalResources, earlyHook,
+                    contentRoot, asarArchive, lateHook, true, scriptAppends, modHtml, internalResources, nwPolyfill,
                 )
             } else {
                 TyranoLocalHttpServer(
-                    contentRoot, lateHook, true, scriptAppends, modHtml, internalResources, earlyHook,
+                    contentRoot, lateHook, true, scriptAppends, modHtml, internalResources, nwPolyfill,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
@@ -268,7 +265,7 @@ class TyranoActivity : Activity() {
                 has("js/rpg_core.js", "www/js/rpg_core.js") -> WebGameType.RPG_MV
                 has("js/rmmz_core.js", "www/js/rmmz_core.js") -> WebGameType.RPG_MZ
                 has("globalData.vndata", "www/globalData.vndata") -> WebGameType.VN
-                else -> WebGameType.WEB_OTHER
+                else -> WebGameType.fromIntent(explicitType)
             }
         }
         return when {
@@ -907,7 +904,8 @@ class TyranoActivity : Activity() {
             "js/libs/lz-string.js",
         )
 
-        private fun TyranoActivity.buildRpgMvV1Overlay(): Map<String, ByteArray> {
+        // v1 覆盖：MV 1.6.1 核心（值契约来源：EngineSettingsStore.RPG_MV_V1 = "v1"）
+        private fun buildRpgMvV1Overlay(): Map<String, ByteArray> {
             val out = mutableMapOf<String, ByteArray>()
             // MZ 插件在 MV 引擎中会导致 Window_StatusBase 等缺失而黑屏（3959930_1.19 的 MPTPShowforActor.js）
             // v1 覆盖时主动用兼容打桩版覆盖该插件，避免启动即崩溃

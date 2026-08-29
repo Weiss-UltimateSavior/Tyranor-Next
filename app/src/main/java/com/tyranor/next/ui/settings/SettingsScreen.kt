@@ -28,10 +28,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -472,7 +470,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 }
             },
         ) { innerPadding ->
-                LazyListPlaceholder(
+            LazyListPlaceholder(
                 kind,
                 krVersion, krKernel, krScoped, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
@@ -834,8 +832,8 @@ private val ART_PATCH_MAP = listOf(
     EngineSettingsStore.AUTO_PATCH_AUTO to "自动",
     EngineSettingsStore.AUTO_PATCH_OFF to "关闭",
 )
-private val RPG_MV_VERSION_MAP = listOf(EngineSettingsStore.RPG_MV_V0 to "v0 (現有)", EngineSettingsStore.RPG_MV_V1 to "v1 (1.6.1 corescript)")
-private val RPG_MZ_VERSION_MAP = listOf(EngineSettingsStore.RPG_MZ_V0 to "v0 (現有)", EngineSettingsStore.RPG_MZ_V1 to "v1 (預留)")
+private val RPG_MV_VERSION_MAP = listOf(EngineSettingsStore.RPG_MV_V0 to "v0（现有）", EngineSettingsStore.RPG_MV_V1 to "v1（1.6.1 corescript）")
+private val RPG_MZ_VERSION_MAP = listOf(EngineSettingsStore.RPG_MZ_V0 to "v0（现有）", EngineSettingsStore.RPG_MZ_V1 to "v1（预留）")
 
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
 private fun scanDirName(context: android.content.Context, uri: String): String = runCatching {

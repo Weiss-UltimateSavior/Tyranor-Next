@@ -727,11 +727,15 @@ internal fun effectiveRpgMakerModEnabled(
     (perGameOverride ?: globalDefault)
 
 internal fun effectiveRpgMakerVersion(context: Context, game: ScanGame): String? = when (game.engine) {
-    EngineType.RPG_MV ->
-        PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MV_VERSION)
-            ?: EngineSettingsStore.getRpgMvEngineVersion(context)
-    EngineType.RPG_MZ ->
-        PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MZ_VERSION)
-            ?: EngineSettingsStore.getRpgMzEngineVersion(context)
+    EngineType.RPG_MV -> {
+        val override = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MV_VERSION)
+            ?.let { EngineSettingsStore.normalizeRpgMvForIntent(it) }
+        override ?: EngineSettingsStore.getRpgMvEngineVersion(context)
+    }
+    EngineType.RPG_MZ -> {
+        val override = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MZ_VERSION)
+            ?.let { EngineSettingsStore.normalizeRpgMzForIntent(it) }
+        override ?: EngineSettingsStore.getRpgMzEngineVersion(context)
+    }
     else -> null
 }
