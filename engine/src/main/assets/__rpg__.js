@@ -58,7 +58,8 @@ StorageManager.saveToWebStorage = function(savefileId, json) {
     var key = this.webStorageKey(savefileId);
     var data = LZString.compressToBase64(json);
     var ok = false;
-    try { window.saveDataManager.Save(key, data); ok = true; } catch (e) {}
+    try { var r = window.saveDataManager.Save(key, data); ok = (r !== false && r !== 0); } catch (e) { ok = false; }
+    // Null/undefined return from bridge means success (void bridge compat); only explicit false/0 fails
     if (!ok) {
         try { localStorage.setItem(key, data); ok = true; } catch (e2) {}
     }
@@ -105,7 +106,7 @@ StorageManager.backup = function(savefileId) {
     var compressed = LZString.compressToBase64(data);
     var key = this.webStorageKey(savefileId) + "bak";
     var ok = false;
-    try { window.saveDataManager.Save(key, compressed); ok = true; } catch (e) {}
+    try { var r2 = window.saveDataManager.Save(key, compressed); ok = (r2 !== false && r2 !== 0); } catch (e) { ok = false; }
     if (!ok) {
         try { localStorage.setItem(key, compressed); ok = true; } catch (e2) {}
     }
@@ -132,7 +133,7 @@ StorageManager.restoreBackup = function(savefileId) {
     }
     var origKey = this.webStorageKey(savefileId);
     var writeOk = false;
-    try { window.saveDataManager.Save(origKey, LZString.compressToBase64(decompressed)); writeOk = true; } catch (e) {}
+    try { var r3 = window.saveDataManager.Save(origKey, LZString.compressToBase64(decompressed)); writeOk = (r3 !== false && r3 !== 0); } catch (e) { writeOk = false; }
     if (!writeOk) {
         try { localStorage.setItem(origKey, data); writeOk = true; } catch (e2) {}
     }

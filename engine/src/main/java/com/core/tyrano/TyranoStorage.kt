@@ -41,19 +41,21 @@ internal object TyranoStorage {
     }
 
     @JvmStatic
-    fun write(directory: File?, key: String?, value: String?) {
-        write(directory, key, value, ".sav")
+    fun write(directory: File?, key: String?, value: String?): Boolean {
+        return write(directory, key, value, ".sav")
     }
 
     @JvmStatic
-    fun write(directory: File?, key: String?, value: String?, extension: String) {
-        try {
-            val file = resolveFile(directory, key, extension) ?: return
+    fun write(directory: File?, key: String?, value: String?, extension: String): Boolean {
+        return try {
+            val file = resolveFile(directory, key, extension) ?: return false
             val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
-            if (bytes.size > MAX_SAVE_BYTES) return
+            if (bytes.size > MAX_SAVE_BYTES) return false
             file.outputStream().use { it.write(bytes) }
+            true
         } catch (error: Throwable) {
             Log.w(TAG, "setStorage failed key=$key", error)
+            false
         }
     }
 
