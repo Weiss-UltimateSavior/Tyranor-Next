@@ -57,22 +57,40 @@ Graphics._createRenderer = function() {
 StorageManager.saveToWebStorage = function(savefileId, json) {
     var key = this.webStorageKey(savefileId);
     var data = LZString.compressToBase64(json);
-    window.saveDataManager.Save(key, data);
+    var ok = false;
+    try { window.saveDataManager.Save(key, data); ok = true; } catch (e) {}
+    if (!ok) {
+        try { localStorage.setItem(key, data); ok = true; } catch (e2) {}
+    }
+    if (!ok) throw new Error("saveToWebStorage failed: both backends rejected key=" + key);
 };
 
 StorageManager.loadFromWebStorage = function(savefileId) {
     var key = this.webStorageKey(savefileId);
-    return LZString.decompressFromBase64(window.saveDataManager.Load(key));
+    var data = null;
+    try { data = window.saveDataManager.Load(key); } catch (e) {}
+    if (data == null || data === "") {
+        try { data = localStorage.getItem(key); } catch (e2) {}
+    }
+    if (data == null || data === "") return null;
+    return LZString.decompressFromBase64(data);
 };
 
 StorageManager.loadFromWebStorageBackup = function(savefileId) {
     var key = this.webStorageKey(savefileId) + "bak";
-    return LZString.decompressFromBase64(window.saveDataManager.Load(key));
+    var data = null;
+    try { data = window.saveDataManager.Load(key); } catch (e) {}
+    if (data == null || data === "") {
+        try { data = localStorage.getItem(key); } catch (e2) {}
+    }
+    if (data == null || data === "") return null;
+    return LZString.decompressFromBase64(data);
 };
 
 StorageManager.webStorageBackupExists = function(savefileId) {
     var key = this.webStorageKey(savefileId) + "bak";
-    return window.saveDataManager.Exists(key);
+    try { if (window.saveDataManager.Exists(key)) return true; } catch (e) {}
+    try { return localStorage.getItem(key) != null; } catch (e2) { return false; }
 };
 
 StorageManager.removeWebStorage = function(savefileId) {
@@ -83,9 +101,15 @@ StorageManager.removeWebStorage = function(savefileId) {
 StorageManager.backup = function(savefileId) {
     if (!this.exists(savefileId)) return;
     var data = this.load(savefileId);
+    if (data == null) return;
     var compressed = LZString.compressToBase64(data);
     var key = this.webStorageKey(savefileId) + "bak";
-    try { window.saveDataManager.Save(key, compressed); } catch (e) { try { localStorage.setItem(key, compressed); } catch (e2) {} }
+    var ok = false;
+    try { window.saveDataManager.Save(key, compressed); ok = true; } catch (e) {}
+    if (!ok) {
+        try { localStorage.setItem(key, compressed); ok = true; } catch (e2) {}
+    }
+    if (!ok) throw new Error("backup failed: both backends rejected key=" + key);
 };
 
 StorageManager.cleanBackup = function(savefileId) {
@@ -96,18 +120,33 @@ StorageManager.cleanBackup = function(savefileId) {
 StorageManager.restoreBackup = function(savefileId) {
     var key = this.webStorageKey(savefileId) + "bak";
     var data = null;
-    try { data = window.saveDataManager.Load(key); } catch (e) { try { data = localStorage.getItem(key); } catch (e2) {} }
-    if (data) {
-        var decompressed = LZString.decompressFromBase64(data);
-        var origKey = this.webStorageKey(savefileId);
-        try { window.saveDataManager.Save(origKey, LZString.compressToBase64(decompressed)); } catch (e) { try { localStorage.setItem(origKey, data); } catch (e2) {} }
-        this.cleanBackup(savefileId);
+    try { data = window.saveDataManager.Load(key); } catch (e) {}
+    if (data == null || data === "") {
+        try { data = localStorage.getItem(key); } catch (e2) {}
     }
+    if (!data) return;
+    var decompressed = LZString.decompressFromBase64(data);
+    if (decompressed == null) {
+        console.warn("[rpg-save] restore skipped: backup decompress returned null for " + key);
+        return;
+    }
+    var origKey = this.webStorageKey(savefileId);
+    var writeOk = false;
+    try { window.saveDataManager.Save(origKey, LZString.compressToBase64(decompressed)); writeOk = true; } catch (e) {}
+    if (!writeOk) {
+        try { localStorage.setItem(origKey, data); writeOk = true; } catch (e2) {}
+    }
+    if (!writeOk) {
+        console.warn("[rpg-save] restore write failed, backup retained for " + key);
+        return;
+    }
+    this.cleanBackup(savefileId);
 };
 
 StorageManager.webStorageExists = function(savefileId) {
     var key = this.webStorageKey(savefileId);
-    return window.saveDataManager.Exists(key);
+    try { if (window.saveDataManager.Exists(key)) return true; } catch (e) {}
+    try { return localStorage.getItem(key) != null; } catch (e2) { return false; }
 };
 Utils.isMobileDevice = function() {return false;};
 SceneManager.shouldUseCanvasRenderer = function() {return true;};
