@@ -36,6 +36,15 @@ class GameSaveManager(private val context: Context) {
 
         return when (game.engine) {
             EngineType.KIRIKIRI -> {
+                // 可移动存储上启动器强制走 KrSafMirror 镜像（与独立存档开关无关），
+                // 引擎实际读写的是镜像目录内的 savedata，存档管理必须指向同一处。
+                if (EngineScanner.isRemovableStoragePath(root)) {
+                    return SaveLocation(
+                        File(bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title), "savedata"),
+                        text(R.string.save_location_krkr_sd_mirror),
+                        true,
+                    )
+                }
                 val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_SCOPED_SAVE_DIR)
                     ?: EngineSettingsStore.isKrScopedSaveDir(appContext)
                 if (scoped) {
@@ -129,14 +138,21 @@ class GameSaveManager(private val context: Context) {
         if (!destination.isDirectory) throw IOException(text(R.string.save_error_save_dir_unavailable))
 
         val temp = createTemporaryDirectory()
+        // 与目标目录同文件系统的暂存目录：解压+复制阶段完全不触碰原存档，
+        // 复制全部成功后才清空目标并做毫秒级的同盘 rename，中断不再丢失原档。
+        val staging = File(destination.parentFile, destination.name + ".import_staging")
         try {
             val extracted = extractZip(sourceUri, temp)
             if (extracted == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
+            staging.deleteRecursively()
+            if (!staging.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
+            copyDirectoryContents(temp, staging, excludeFor(game.engine))
             clearSaveDirectory(destination, game.engine)
-            copyDirectoryContents(temp, destination, excludeFor(game.engine))
+            moveDirectoryContents(staging, destination)
             return extracted
         } finally {
             temp.deleteRecursively()
+            staging.deleteRecursively()
         }
     }
 
@@ -162,6 +178,14 @@ class GameSaveManager(private val context: Context) {
                 appContext.getExternalFilesDir(null)?.let { external ->
                     targetList += File(File(external, "save"), EngineScanner.safeSaveName(root))
                 }
+                if (EngineScanner.isRemovableStoragePath(root)) {
+                    // 可移动存储走 KrSafMirror：清理镜像树与 SAF 索引，避免内部存储持续膨胀
+                    targetList += bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title)
+                    targetList += File(
+                        File(appContext.noBackupFilesDir, "krkr_saf_index"),
+                        "${bridge.KrSafMirror.mirrorKey(game.uri, root)}.idx",
+                    )
+                }
                 targetList
             }
             EngineType.ONS -> {
@@ -177,9 +201,12 @@ class GameSaveManager(private val context: Context) {
             else -> return
         }
         val appInternal = appContext.filesDir.canonicalPath + File.separator
+        // KrSafMirror 镜像根（games/）与 SAF 索引（no_backup/）位于 filesDir 的父目录（应用数据根）下
+        val appDataRoot = appContext.filesDir.parentFile?.canonicalPath?.let { it + File.separator }
         val appExternal = appContext.getExternalFilesDir(null)?.canonicalPath
         targets.forEach { target ->
             val inAppStorage = target.canonicalPath.startsWith(appInternal) ||
+                (appDataRoot != null && target.canonicalPath.startsWith(appDataRoot)) ||
                 (appExternal != null && target.canonicalPath.startsWith(appExternal + File.separator))
             if (inAppStorage) target.deleteRecursively()
         }
@@ -312,6 +339,29 @@ class GameSaveManager(private val context: Context) {
             }
         }
         return copied
+    }
+
+    /** 同盘移动：优先 rename（原子），跨设备兜底逐文件复制。 */
+    @Throws(IOException::class)
+    private fun moveDirectoryContents(source: File, destination: File) {
+        source.listFiles().orEmpty().forEach { child ->
+            val target = File(destination, child.name)
+            if (child.isDirectory) {
+                if (!target.exists() && !target.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                moveDirectoryContents(child, target)
+                if (!child.deleteRecursively()) child.deleteRecursively()
+            } else if (child.isFile) {
+                target.parentFile?.let {
+                    if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                }
+                if (!child.renameTo(target)) {
+                    val lastModified = child.lastModified()
+                    child.copyTo(target, overwrite = true)
+                    if (!child.delete()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                    target.setLastModified(lastModified)
+                }
+            }
+        }
     }
 
     private fun clearSaveDirectory(directory: File, engine: EngineType): Int {

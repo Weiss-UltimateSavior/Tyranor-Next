@@ -85,8 +85,13 @@ object EngineLauncher {
     enum class ArtemisPatchChoice { ONCE, ALWAYS, NEVER }
 
     /** 尝试启动游戏。返回错误信息；null 表示成功发起。
-     *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。 */
-    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): String? {
+     *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。
+     *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
+     *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
+    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): String? =
+        withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+
+    private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): String? {
         val path = resolveGameDirectory(context, game)
         ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
             val module = ExternalEngineModuleRegistry.resolveModule(
@@ -173,15 +178,17 @@ object EngineLauncher {
      * Artemis 补丁确认弹窗的触发条件：补丁策略为“启动时询问”（单游戏覆盖 > 全局）
      * 且该游戏确实需要 PFS 基础补丁（缺 system.ini 且存在 .pfs）。
      * UI 层据此弹窗，用户选择经 [launch] 的 [patchChoice] 传入。
+     * 含 runBlocking 的设置读取与目录枚举，切 IO 执行。
      */
-    fun needsArtemisPatchConfirm(context: Context, game: ScanGame): Boolean {
-        if (game.engine != EngineType.ARTEMIS) return false
-        val strategy = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_ART_PATCH)
-            ?: EngineSettingsStore.getArtAutoPatch(context)
-        if (strategy != EngineSettingsStore.AUTO_PATCH_ASK) return false
-        val path = resolveGameDirectory(context, game) ?: return false
-        return ArtemisPfsUnpacker.needsBasePatch(path)
-    }
+    suspend fun needsArtemisPatchConfirm(context: Context, game: ScanGame): Boolean =
+        withContext(Dispatchers.IO) {
+            if (game.engine != EngineType.ARTEMIS) return@withContext false
+            val strategy = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_ART_PATCH)
+                ?: EngineSettingsStore.getArtAutoPatch(context)
+            if (strategy != EngineSettingsStore.AUTO_PATCH_ASK) return@withContext false
+            val path = resolveGameDirectory(context, game) ?: return@withContext false
+            ArtemisPfsUnpacker.needsBasePatch(path)
+        }
 
     /**
      * Native engines receive a real /storage path, so SAF tree grants are not enough on Android 11+.

@@ -38,10 +38,7 @@ object KrSafMirror {
     ): Prepared {
         val tree = resolveDocumentDirectory(context.applicationContext, sourceReference, logicalPath)
             ?: error("无法读取 SD 卡游戏目录，请重新添加包含该游戏的 SD 卡目录授权")
-        val key = sha256("$sourceReference\n$logicalPath").take(16)
-        val safeName = sanitize(displayName.ifBlank { tree.name.orEmpty() }).ifBlank { "game" }
-        val dataRoot = context.filesDir.parentFile ?: context.filesDir
-        val mirrorRoot = File(File(dataRoot, "games"), "${safeName.lowercase(Locale.ROOT)}-$key")
+        val mirrorRoot = mirrorRootFor(context, sourceReference, logicalPath, displayName)
         if (!mirrorRoot.isDirectory && !mirrorRoot.mkdirs()) error("无法创建 KRKR 镜像目录")
 
         val entries = ArrayList<Pair<String, String>>()
@@ -49,9 +46,22 @@ object KrSafMirror {
 
         val indexDir = File(context.noBackupFilesDir, "krkr_saf_index")
         if (!indexDir.isDirectory && !indexDir.mkdirs()) error("无法创建 KRKR SAF 索引目录")
-        val indexFile = File(indexDir, "$key.idx")
+        val indexFile = File(indexDir, "${mirrorKey(sourceReference, logicalPath)}.idx")
         writeIndex(indexFile, entries)
         return Prepared(mirrorRoot, indexFile, entries.size)
+    }
+
+    /** [prepare] 使用的镜像 key；存档管理侧据此定位引擎真实读写的镜像目录，算法必须与 prepare 一致。 */
+    @JvmStatic
+    fun mirrorKey(sourceReference: String, logicalPath: String): String =
+        sha256("$sourceReference\n$logicalPath").take(16)
+
+    /** 预测 [prepare] 将使用的镜像根目录（不触发构建、不读取 SAF），供存档定位与删除清理复用。 */
+    @JvmStatic
+    fun mirrorRootFor(context: Context, sourceReference: String, logicalPath: String, displayName: String): File {
+        val safeName = sanitize(displayName.ifBlank { "" }).ifBlank { "game" }
+        val dataRoot = context.filesDir.parentFile ?: context.filesDir
+        return File(File(dataRoot, "games"), "${safeName.lowercase(Locale.ROOT)}-${mirrorKey(sourceReference, logicalPath)}")
     }
 
     @JvmStatic

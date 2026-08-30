@@ -253,6 +253,7 @@
     <string name="save_error_app_internal_unavailable">アプリ内部ストレージを使用できません</string>
     <string name="save_location_krkr_scoped">KRKR 個別セーブフォルダ</string>
     <string name="save_location_krkr_game_dir">KRKR ゲームフォルダ内セーブ</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SDカード ミラーセーブ（アプリ専用領域）</string>
     <string name="save_error_ons_external_unavailable">ONS のアプリ個別ストレージを使用できません</string>
     <string name="save_location_ons_scoped">ONS アプリ個別セーブフォルダ</string>
     <string name="save_location_ons_game_dir">ONS ゲーム内セーブフォルダ</string>

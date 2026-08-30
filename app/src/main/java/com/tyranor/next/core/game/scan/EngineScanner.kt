@@ -59,6 +59,20 @@ object EngineScanner {
     private val _libraryRevision = MutableStateFlow(0)
     val libraryRevision: StateFlow<Int> = _libraryRevision.asStateFlow()
 
+    init {
+        // 落库失败时丢弃内存缓存回源 DB，防止「缓存已更新、DB 缺行」的分叉永久化（重启后丢失游戏）
+        GameLibraryRepository.onPersistFailure = { invalidatePersistenceCaches() }
+    }
+
+    /** 持久化写失败后的自愈入口：清空派生自 DB 的缓存（roots 单独管理，不受影响）。 */
+    private fun invalidatePersistenceCaches() {
+        synchronized(cacheLock) {
+            gamesCache = null
+            recentGamesCache = null
+            quickLaunchCache = null
+        }
+    }
+
     /**
      * 将 SAF tree/document URI 映射为真实文件路径（用于引擎 native 启动）。
      * 移植自 RinneMobile ScriptEngineLaunchers.uriToFilePath：

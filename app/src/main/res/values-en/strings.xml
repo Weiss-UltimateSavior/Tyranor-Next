@@ -253,6 +253,7 @@
     <string name="save_error_app_internal_unavailable">App internal storage is unavailable</string>
     <string name="save_location_krkr_scoped">KRKR isolated save directory</string>
     <string name="save_location_krkr_game_dir">KRKR game-directory saves</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SD-card mirror saves (app-specific storage)</string>
     <string name="save_error_ons_external_unavailable">ONS app-specific storage is unavailable</string>
     <string name="save_location_ons_scoped">ONS app-specific save directory</string>
     <string name="save_location_ons_game_dir">ONS in-game save directory</string>

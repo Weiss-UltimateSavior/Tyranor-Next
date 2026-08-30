@@ -216,10 +216,12 @@ fun GameScreen(
         refreshGames = { scanLibrary() },
         onGameClick = { selectedGameUri = it.uri },
         onGameLongClick = { game ->
-            if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-                patchLaunchTarget = game
-            } else {
-                scope.launch { launchError = EngineLauncher.launch(context, game) }
+            scope.launch {
+                if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
+                    patchLaunchTarget = game
+                } else {
+                    launchError = EngineLauncher.launch(context, game)
+                }
             }
         },
         dbSearchQuery = libraryState.searchQuery,
@@ -573,10 +575,12 @@ internal fun GameActionsSheet(
 
             item {
                 GameActionRow(R.drawable.ic_sheet_launch, stringResource(R.string.game_launch_action)) {
-                    if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-                        showPatchConfirm = true
-                    } else {
-                        startLaunch()
+                    scope.launch {
+                        if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
+                            showPatchConfirm = true
+                        } else {
+                            startLaunch()
+                        }
                     }
                 }
             }

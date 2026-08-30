@@ -253,6 +253,7 @@
     <string name="save_error_app_internal_unavailable">应用内部存储目录不可用</string>
     <string name="save_location_krkr_scoped">KRKR 独立存档目录</string>
     <string name="save_location_krkr_game_dir">KRKR 游戏目录存档</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SD 卡镜像存档（应用专属目录）</string>
     <string name="save_error_ons_external_unavailable">ONS 应用独立存储目录不可用</string>
     <string name="save_location_ons_scoped">ONS 应用独立存档目录</string>
     <string name="save_location_ons_game_dir">ONS 游戏内存档目录</string>

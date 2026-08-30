@@ -68,6 +68,18 @@ class TyranoActivity : Activity() {
         super.attachBaseContext(wrapContextForUiScale(newBase) ?: newBase)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // singleInstance 启动模式下切换游戏只走到这里：path 变化时整体重建，
+        // 让 onCreate 按 Intent 重新解析游戏目录/存档目录并重建 WebView。
+        val newDir = resolveGameDir(intent)
+        if (!newDir.isNullOrBlank() && newDir != gameDir) {
+            Log.i(TAG, "onNewIntent switch game $gameDir -> $newDir; recreate")
+            recreate()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -371,7 +383,10 @@ class TyranoActivity : Activity() {
                 return super.onConsoleMessage(consoleMessage)
             }
         }
-        runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
+        // 仅 debug 构建开放 chrome://inspect 远程调试；release 保持关闭，避免任意 JS 注入面
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
+        }
         browser.settings.apply {
             userAgentString = "$userAgentString;tyranoplayer-android-1.0;tyranor-internal-tyrano"
             javaScriptEnabled = true

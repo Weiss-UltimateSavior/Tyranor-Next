@@ -35,6 +35,8 @@ val sharedEngineAssetNames = listOf(
     "__rmmz__.js",
     "__hook_rmmz_core.js",
     "__hook_rmmz_managers.js",
+    "__tyrano__.js",
+    "__rpg__.js",
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
 val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
