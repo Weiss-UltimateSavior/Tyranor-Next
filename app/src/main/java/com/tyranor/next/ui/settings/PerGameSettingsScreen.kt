@@ -88,6 +88,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
             PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED),
         )
     }
+    var rpgLegacyRenderer by remember(gid) {
+        mutableStateOf(
+            PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_LEGACY_RENDERER),
+        )
+    }
     var rpgMvVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
     var rpgMzVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
 
@@ -111,6 +116,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalTyExternal = EngineSettingsStore.isTyranoExternalNetwork(ctx)
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
+    val globalRpgLegacyRenderer = EngineSettingsStore.isRpgLegacyRenderer(ctx)
     val globalRpgMvVersion = EngineSettingsStore.getRpgMvEngineVersion(ctx)
     val globalRpgMzVersion = EngineSettingsStore.getRpgMzEngineVersion(ctx)
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
@@ -177,6 +183,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
             gid,
             PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED,
             rpgMakerMod,
+        )
+        PerGameSettingsStore.setBool(
+            ctx,
+            gid,
+            PerGameSettingsStore.F_RPG_LEGACY_RENDERER,
+            rpgLegacyRenderer,
         )
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION, rpgMvVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION, rpgMzVersion)
@@ -338,6 +350,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_external_network), globalTyExternal, tyExternal) { tyExternal = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_legacy_renderer), globalRpgLegacyRenderer, rpgLegacyRenderer) { rpgLegacyRenderer = it }
                         }
                     }
                     EngineType.TYRANO,

@@ -685,6 +685,11 @@ object EngineLauncher {
             scopedSaveRoot?.let { putExtra("scopedSaveRoot", it) }
             putExtra("rpgMakerModEnabled", rpgMakerModEnabled)
             putExtra("rpgMakerModGameId", game.uri)
+            putExtra(
+                "rpgLegacyRenderer",
+                PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_LEGACY_RENDERER)
+                    ?: EngineSettingsStore.isRpgLegacyRenderer(context),
+            )
             rpgMakerVersion?.let { putExtra("rpgMakerVersion", it) }
         }
     }

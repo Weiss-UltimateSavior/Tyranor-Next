@@ -184,6 +184,7 @@
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>
+    <string name="engine_settings_legacy_renderer">PIXI 兼容渲染（黑屏时开启）</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z 使用外置 APK 引擎模块，模块安装后默认启用；当前没有可由主应用覆盖的单游戏设置。</string>

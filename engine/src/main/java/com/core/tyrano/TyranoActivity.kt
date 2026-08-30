@@ -279,9 +279,11 @@ class TyranoActivity : Activity() {
             WebGameType.TYRANO -> browser.addJavascriptInterface(TyranoJsBridge(saves), JS_BRIDGE_NAME)
             WebGameType.VN, WebGameType.WEB_OTHER -> Unit
         }
-        // v1 会话启用 PIXI legacy 渲染（?android-legacy，__rpg__.js 的既定开关），
-        // 规避部分 Android GPU 上 WebGL 正常初始化却整屏渲染为黑的问题；v0 不带参数
-        val url = if (isRpgMvV1) {
+        // PIXI legacy 兼容渲染（?android-legacy，__rpg__.js 的既定开关）：
+        // 由设置页开关经 rpgLegacyRenderer extra 控制，规避部分 Android GPU
+        // 上 WebGL 正常初始化却整屏渲染为黑的问题；默认关闭不影响既有行为
+        val useLegacyRenderer = intent.getBooleanExtra(EXTRA_RPG_LEGACY_RENDERER, false)
+        val url = if (useLegacyRenderer) {
             "http://localhost:${requireNotNull(localServer).port}/index.html?android-legacy"
         } else {
             "http://localhost:${requireNotNull(localServer).port}/index.html"
@@ -1011,6 +1013,7 @@ class TyranoActivity : Activity() {
         private const val EXTRA_RPG_MAKER_MOD_ENABLED = "rpgMakerModEnabled"
         private const val EXTRA_RPG_MAKER_MOD_GAME_ID = "rpgMakerModGameId"
         private const val EXTRA_RPG_MAKER_VERSION = "rpgMakerVersion"
+        private const val EXTRA_RPG_LEGACY_RENDERER = "rpgLegacyRenderer"
         private const val RPG_MAKER_MOD_PREFS = "tyranor_rpgmaker_mod_state"
         private const val PER_GAME_TOUCH_PAD_KEY = "touch_pad_config"
         private const val PER_GAME_TOUCH_PAD_PRESETS_KEY = "touch_pad_presets"

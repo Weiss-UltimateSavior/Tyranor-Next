@@ -184,6 +184,7 @@
     <string name="engine_settings_external_network_resources">外部ネットワークリソースを許可</string>
     <string name="engine_settings_external_network">外部ネットワークを許可</string>
     <string name="engine_settings_game_modifier">ゲーム改造ツール</string>
+    <string name="engine_settings_legacy_renderer">PIXI 互換レンダリング（黒画面時有効）</string>
     <string name="engine_settings_renpy_module_description">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。モジュールのインストール後は既定で有効です。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z は外部 APK エンジンモジュールを使用します。モジュールのインストール後は既定で有効です。現在、メインアプリから上書きできる個別ゲーム設定はありません。</string>
