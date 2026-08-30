@@ -318,7 +318,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     TextButton(
                         onClick = { showPathDialog = true },
                         modifier = Modifier.padding(end = 8.dp),
-                    ) { Text(stringResource(R.string.settings_input_path), style = MaterialTheme.typography.bodyMedium) }
+                    ) { Text(stringResource(R.string.settings_input_path)) }
                     TextButton(
                         onClick = { dirPicker.launch(null) },
                         modifier = Modifier.padding(end = 8.dp),
