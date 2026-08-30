@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
+   Auto-backup rules (API < 31). See https://developer.android.com/guide/topics/data/autobackup
    for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="hikarinagi_auth.xml" />
+    <!-- OAuth 令牌加密库：Keystore 密钥换机不可解密，必须排除 -->
+    <exclude domain="sharedpref" path="hikarinagi_auth_secure.xml" />
+    <!-- 游戏库 DB 整体排除：WAL 未合并进主文件的云备份快照会静默丢失增量且令修复导入
+         失效（countGames>0 即跳过）；DB 可由 prefs 镜像 + 启动修复完整重建，恢复后
+         首次启动自动从 game_scanner/tyranor_game_overrides 镜像重导入（迁移方案第十节） -->
+    <exclude domain="database" path="game_library.db" />
+    <exclude domain="database" path="game_library.db-wal" />
+    <exclude domain="database" path="game_library.db-shm" />
 </full-backup-content>

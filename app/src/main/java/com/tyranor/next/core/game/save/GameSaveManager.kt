@@ -74,7 +74,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.RPG_MV,
             EngineType.RPG_MZ -> {
                 // Tyrano 与 RPG Maker Web 共用 TyranoActivity，存档目录开关保持同一套配置。
-                val scoped = PerGameSettingsStore.getBool(appContext, game.uri, "ty_scoped")
+                val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_TY_SCOPED)
                     ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
                 if (scoped) {
                     val external = appContext.getExternalFilesDir(null)

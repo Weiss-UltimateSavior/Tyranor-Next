@@ -55,7 +55,7 @@ class EngineScannerRpgMakerTest {
         val detection = EngineScanner.detectEngine(gameRoot)
 
         assertEquals(EngineType.RPGMAKER, detection.engine)
-        assertEquals("[游戏目录]", detection.launchTarget)
+        assertEquals(EngineScanner.LAUNCH_TARGET_GAME_DIR, detection.launchTarget)
         assertEquals("internal.rpgmxp", detection.externalModuleAlias)
     }
 

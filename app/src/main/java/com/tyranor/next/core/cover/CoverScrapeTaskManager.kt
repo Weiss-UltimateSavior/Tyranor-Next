@@ -51,10 +51,10 @@ object CoverScrapeTaskManager {
                         }
                         persisted?.let { _gameUpdates.emit(it) }
                     }
+                    // 每张封面已通过 updateGameCover 单行落库（迁移方案阶段 2），
+                    // 这里只读最新库作为结果快照，不再触发整库重写。
                     val mergedGames = withContext(NonCancellable + Dispatchers.IO) {
-                        EngineScanner.updateGames(appContext) { currentGames ->
-                            mergeWithCurrentLibrary(currentGames, input, result.games)
-                        }
+                        EngineScanner.loadGames(appContext)
                     }
                     postFinished(result = result.copy(games = mergedGames), error = null)
                 } catch (e: CancellationException) {
@@ -79,38 +79,10 @@ object CoverScrapeTaskManager {
         }
     }
 
-    private fun mergeWithCurrentLibrary(
-        currentGames: List<ScanGame>,
-        originalGames: List<ScanGame>,
-        scrapedGames: List<ScanGame>,
-    ): List<ScanGame> {
-        if (currentGames.isEmpty()) return emptyList()
-        val originalByUri = originalGames.associateBy { it.uri }
-        val scrapedByUri = scrapedGames.associateBy { it.uri }
-        return currentGames.map { current ->
-            val original = originalByUri[current.uri] ?: return@map current
-            val scraped = scrapedByUri[current.uri] ?: return@map current
+    private fun persistScrapedCover(context: Context, original: ScanGame, scraped: ScanGame): ScanGame? =
+        EngineScanner.updateGameCover(context, original.uri) { current ->
             mergeScrapedCover(current, original, scraped)
         }
-    }
-
-    private fun persistScrapedCover(context: Context, original: ScanGame, scraped: ScanGame): ScanGame? {
-        var persisted: ScanGame? = null
-        EngineScanner.updateGames(context) { currentGames ->
-            currentGames.map { current ->
-                if (current.uri != original.uri) {
-                    current
-                } else {
-                    mergeScrapedCover(current, original, scraped).also { merged ->
-                        if (merged.coverUri != current.coverUri || merged.coverSource != current.coverSource) {
-                            persisted = merged
-                        }
-                    }
-                }
-            }
-        }
-        return persisted
-    }
 
     private suspend fun postFinished(result: CoverScrapeResult?, error: String?) {
         val eventId = synchronized(lock) {

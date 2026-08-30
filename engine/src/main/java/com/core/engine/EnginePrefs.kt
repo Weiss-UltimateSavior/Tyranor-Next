@@ -7,7 +7,12 @@ package com.core.engine
  * engine 不得反向依赖 app，故在 engine 侧镜像常量作为单一来源，避免各引擎类各自持有字面量副本。
  */
 object EnginePrefs {
-    const val APP_PREFS = "yukihub_prefs"
+    /**
+     * 全局引擎设置/状态共享 prefs 文件名（原 yukihub_prefs，已更名）。
+     * App 与引擎子进程共用；旧文件内容由应用启动时的 PrefsRenameMigration 一次性拷贝迁移，
+     * 旧文件保留至少一个版本便于回滚。
+     */
+    const val APP_PREFS = "tyranor_prefs"
     const val NATIVE_PLUGIN_OVERRIDE_PREFS = "rinne_native_plugin_overrides"
 
     /**

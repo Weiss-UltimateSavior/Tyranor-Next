@@ -230,7 +230,7 @@ object NativeBridge {
     fun createDirectoryViaSafIfPossible(path: String?): Boolean {
         return try {
             val p = KrPathUtils.canonicalizeKrStoragePath(path) ?: return false
-            val uri = storagePathToPersistedDocumentUri(p + "/.yukihub_dir_probe", OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_TRUNC) ?: return false
+            val uri = storagePathToPersistedDocumentUri(p + "/.tyranor_dir_probe", OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_TRUNC) ?: return false
             val activity = KrPathUtils.currentActivity()
             if (activity != null) {
                 try { DocumentsContract.deleteDocument(activity.contentResolver, uri) } catch (_: Throwable) {}

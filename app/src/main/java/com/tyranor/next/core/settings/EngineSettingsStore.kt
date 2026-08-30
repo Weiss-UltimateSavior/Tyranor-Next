@@ -1,11 +1,12 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import com.core.engine.EnginePrefs
 import org.json.JSONObject
 
 /**
  * 引擎设置存储层。键名与 RinneMobile 保持一致：
- * - KRKR / Artemis / Tyrano 的全局设置存 yukihub_prefs（引擎进程读取同一 prefs）
+ * - KRKR / Artemis / Tyrano 的全局设置存 tyranor_prefs（原 yukihub_prefs，引擎进程读取同一 prefs）
  * - ONS 设置存 onsyuri 的 gameargs JSON（OnsSettings.load 读取同文件）
  *
  * 设置值经 launcher 在启动时以 Intent extra 注入引擎（KR 走 krkr_engine_prefs 等，
@@ -101,7 +102,7 @@ object EngineSettingsStore {
     )
 
     private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences("yukihub_prefs", Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
 
     private fun onsPrefs(context: Context) =
         context.applicationContext.getSharedPreferences("onsyuri", Context.MODE_PRIVATE)

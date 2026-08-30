@@ -29,6 +29,8 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
@@ -52,8 +54,6 @@ object EngineLauncher {
     private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
-    private const val KEY_ARTEMIS_ENGINE_PREFIX = "artemis_engine."
-    private const val KEY_ARTEMIS_ENGINE_SUCCESS_PREFIX = "artemis_engine_success."
     private const val EXTRA_ARTEMIS_CURRENT_VERSION = "artemisCurrentVersion"
     private const val EXTRA_ARTEMIS_FALLBACK_VERSIONS = "artemisFallbackVersions"
     private const val EXTRA_ARTEMIS_FALLBACK_INDEX = "artemisFallbackIndex"
@@ -580,17 +580,16 @@ object EngineLauncher {
         var planReason = "manual"
         var stage = 0
         if (auto) {
+            // 自动识别缓存（迁移方案阶段 5）：优先命中 DB 记忆（含引擎子进程经 prefs 写回的
+            // 成功版本，consume-and-clear 归一）；指纹变化即失效，重走特征识别。
             val pathHash = Integer.toHexString(path.hashCode())
-            val prefs = context.getSharedPreferences("yukihub_prefs", Context.MODE_PRIVATE)
-            val remembered = normalizeArtemisVersion(
-                prefs.getString(KEY_ARTEMIS_ENGINE_SUCCESS_PREFIX + pathHash, null)
-                    ?: prefs.getString(KEY_ARTEMIS_ENGINE_PREFIX + pathHash, null),
-            )
+            val fingerprint = GameDirFingerprint.compute(path)
+            val remembered = EngineDetectionRepository.lookupArtemisBlocking(context, game.uri, pathHash, fingerprint)
             if (remembered != null) {
                 version = remembered
                 fallbackVersions = fallbackChainStartingWith(remembered)
                 planReason = "history"
-                Log.i(TAG, "Artemis auto history hit path=$path version=$version chain=${fallbackVersions.joinToString(",")}")
+                Log.i(TAG, "Artemis auto history hit path=$path version=$version chain=${fallbackVersions.joinToString(",")} fingerprint=$fingerprint")
             } else {
                 val plan = ArtemisEngineFingerprintDetector.buildAutoPlan(path)
                 version = plan.initialVersion
@@ -622,16 +621,6 @@ object EngineLauncher {
             putExtra(EXTRA_ARTEMIS_AUTO_PLAN_REASON, planReason)
         }
     }
-
-    private fun normalizeArtemisVersion(value: String?): String? =
-        when (value?.trim()) {
-            EngineSettingsStore.ART_ENGINE_V1, "internal.artemis" -> EngineSettingsStore.ART_ENGINE_V1
-            EngineSettingsStore.ART_ENGINE_V2, "internal.artemis.compat" -> EngineSettingsStore.ART_ENGINE_V2
-            EngineSettingsStore.ART_ENGINE_V3, "internal.artemis.compat.v2" -> EngineSettingsStore.ART_ENGINE_V3
-            EngineSettingsStore.ART_ENGINE_V4, "internal.artemis.v4" -> EngineSettingsStore.ART_ENGINE_V4
-            EngineSettingsStore.ART_ENGINE_V5, "internal.artemis.v5" -> EngineSettingsStore.ART_ENGINE_V5
-            else -> null
-        }
 
     private fun fallbackChainStartingWith(version: String): List<String> =
         (listOf(version) + ARTEMIS_DEFAULT_FALLBACK_CHAIN.filterNot { it == version }).distinct()
