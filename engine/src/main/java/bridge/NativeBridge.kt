@@ -22,6 +22,10 @@ object NativeBridge {
     private var patchOverlayTarget: String? = null
     @Volatile
     private var patchOverlayPath: String? = null
+    @Volatile
+    private var steamConfigOverlayTarget: String? = null
+    @Volatile
+    private var steamConfigOverlayPath: String? = null
 
     @JvmStatic external fun initialize(so: String?): Boolean
     @JvmStatic external fun isLaunchSceneReady(so: String?): Boolean
@@ -69,12 +73,28 @@ object NativeBridge {
         Log.i("NativeBridge", "KRKR patch overlay configured target=$target overlay=$overlay")
     }
 
+    @JvmStatic
+    fun configureSteamConfigOverlay(targetPath: String?, overlayPath: String?) {
+        val target = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(targetPath))
+        val overlay = KrPathUtils.normalizeFilePath(overlayPath)
+        val overlayFile = overlay?.let { File(it) }
+        if (target.isNullOrBlank() || overlay.isNullOrBlank() || overlayFile?.isFile != true) {
+            steamConfigOverlayTarget = null
+            steamConfigOverlayPath = null
+            Log.i("NativeBridge", "KRKR Steam config overlay disabled target=$targetPath overlay=$overlayPath")
+            return
+        }
+        steamConfigOverlayTarget = target
+        steamConfigOverlayPath = overlay
+        Log.i("NativeBridge", "KRKR Steam config overlay configured target=$target overlay=$overlay")
+    }
+
     @Synchronized
     @JvmStatic
     fun open(path: String?, mode: Int): Int {
         val normalized = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(path))
-        patchOverlayRedirect(normalized)?.takeIf { isReadOnlyOpen(mode) }?.let { overlay ->
-            return openDirectFile(path, overlay, mode, diagnosticPrefix = "patch overlay")
+        readOnlyOverlayRedirect(normalized)?.takeIf { isReadOnlyOpen(mode) }?.let { overlay ->
+            return openDirectFile(path, overlay, mode, diagnosticPrefix = "read-only overlay")
         }
         val redirected = KrPathUtils.redirectScopedSavePath(normalized)
         // The native hook uses the stable storage-volume prefix because KRKR may lowercase
@@ -123,7 +143,7 @@ object NativeBridge {
         val raw = KrPathUtils.normalizeFilePath(path)
         val normalized = KrPathUtils.canonicalizeKrStoragePath(raw)
         if (isReadOnlyOpen(mode)) {
-            patchOverlayRedirect(normalized)?.let { return it }
+            readOnlyOverlayRedirect(normalized)?.let { return it }
         }
         KrPathUtils.redirectScopedSavePath(normalized)?.let { return it }
         if (normalized != null && normalized != path) return normalized
@@ -134,7 +154,7 @@ object NativeBridge {
     fun redirectReadMetadata(path: String?): String? {
         val raw = KrPathUtils.normalizeFilePath(path)
         val normalized = KrPathUtils.canonicalizeKrStoragePath(raw)
-        patchOverlayRedirect(normalized)?.let { return it }
+        readOnlyOverlayRedirect(normalized)?.let { return it }
         KrPathUtils.redirectScopedSavePath(normalized)?.let { return it }
         if (normalized != null && normalized != path) return normalized
         return null
@@ -154,11 +174,33 @@ object NativeBridge {
         }
     }
 
-    private fun patchOverlayRedirect(path: String?): String? {
-        val target = patchOverlayTarget ?: return null
-        val overlay = patchOverlayPath ?: return null
+    private fun readOnlyOverlayRedirect(path: String?): String? {
         if (path == null || path.isBlank()) return null
-        return if (path.equals(target, ignoreCase = true)) overlay else null
+        val steamConfigTarget = steamConfigOverlayTarget
+        val steamConfigOverlay = steamConfigOverlayPath
+        if (
+            !steamConfigTarget.isNullOrBlank() &&
+            !steamConfigOverlay.isNullOrBlank() &&
+            matchesOverlayTarget(path, steamConfigTarget)
+        ) {
+            return steamConfigOverlay
+        }
+        val patchTarget = patchOverlayTarget
+        val patchOverlay = patchOverlayPath
+        if (
+            !patchTarget.isNullOrBlank() &&
+            !patchOverlay.isNullOrBlank() &&
+            matchesOverlayTarget(path, patchTarget)
+        ) {
+            return patchOverlay
+        }
+        return null
+    }
+
+    private fun matchesOverlayTarget(path: String, target: String): Boolean {
+        if (path.equals(target, ignoreCase = true)) return true
+        if (path.contains('/')) return false
+        return path.equals(File(target).name, ignoreCase = true)
     }
 
     private fun isReadOnlyOpen(mode: Int): Boolean =

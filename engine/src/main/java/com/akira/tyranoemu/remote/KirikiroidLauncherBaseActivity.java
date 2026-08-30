@@ -505,15 +505,20 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         String patchOverlayPath = intent == null ? null : intent.getStringExtra("krPatchOverlayPath");
         boolean patchOverlay = patchOverlayTarget != null && !patchOverlayTarget.trim().isEmpty()
                 && patchOverlayPath != null && !patchOverlayPath.trim().isEmpty();
+        String steamConfigOverlayTarget = intent == null ? null : intent.getStringExtra("krSteamConfigOverlayTarget");
+        String steamConfigOverlayPath = intent == null ? null : intent.getStringExtra("krSteamConfigOverlayPath");
+        boolean steamConfigOverlay = steamConfigOverlayTarget != null && !steamConfigOverlayTarget.trim().isEmpty()
+                && steamConfigOverlayPath != null && !steamConfigOverlayPath.trim().isEmpty();
         if (intent == null) {
             Log.i(TAG, "native interceptor skipped: no launch intent");
             return;
         }
 
         NativeBridge.configurePatchOverlay(patchOverlayTarget, patchOverlayPath);
+        NativeBridge.configureSteamConfigOverlay(steamConfigOverlayTarget, steamConfigOverlayPath);
 
-        if (!scopedSaveDir && !safFileFallback && !patchOverlay) {
-            Log.i(TAG, "native interceptor skipped: save redirect, SAF fallback and patch overlay disabled");
+        if (!scopedSaveDir && !safFileFallback && !patchOverlay && !steamConfigOverlay) {
+            Log.i(TAG, "native interceptor skipped: save redirect, SAF fallback and read-only overlay disabled");
             return;
         }
         String prefix = null;
@@ -555,10 +560,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                 boolean relocated = relocateStatus != 0;
                 recordBridgeDiagnostic("relocate=" + relocateStatus + " prefix=" + prefix
                         + " scoped=" + scopedSaveDir + " saf=" + safFileFallback
-                        + " patchOverlay=" + patchOverlay);
+                        + " patchOverlay=" + patchOverlay + " steamConfigOverlay=" + steamConfigOverlay);
                 Log.i(TAG, "native interceptor enabled prefix=" + prefix
                         + " scoped=" + scopedSaveDir + " saf=" + safFileFallback
                         + " patchOverlay=" + patchOverlay
+                        + " steamConfigOverlay=" + steamConfigOverlay
                         + " relocated=" + relocated);
                 if (!relocated) {
                     Log.e(TAG, "native interceptor could not patch libgame file imports");

@@ -388,6 +388,10 @@ bool pathMatchesPrefix(const char* path) {
     const char* normalized = path;
     if (std::strncmp(normalized, "file://", 7) == 0) normalized += 7;
     while (std::strncmp(normalized, "./", 2) == 0) normalized += 2;
+    // Some Windows Steam wrappers read root config files through relative paths
+    // (for example "ds.ini") after chdir/gamedir setup. Keep this whitelist tight:
+    // Java will still redirect only when the matching overlay has been configured.
+    if (std::strcmp(normalized, "ds.ini") == 0 || std::strcmp(normalized, "patch.tjs") == 0) return true;
     if (std::strncmp(normalized, gPathPrefix.c_str(), gPathPrefix.size()) == 0) return true;
     return gPathPrefix[0] == '/'
             && std::strncmp(normalized, gPathPrefix.c_str() + 1, gPathPrefix.size() - 1) == 0;

@@ -363,6 +363,7 @@ object EngineLauncher {
             ?: EngineSettingsStore.getKrDefaultFont(context)
         val forceFont = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT), EngineSettingsStore.isKrForceDefaultFont(context))
         val patchOverlay = prepareKrPatchOverlay(context, gid, engineRoot)
+        val steamConfigOverlay = prepareKrSteamConfigOverlay(context, gid, engineRoot)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
             putExtra("path", launchEntry)
@@ -379,6 +380,10 @@ object EngineLauncher {
                 putExtra("krPatchOverlayTarget", it.targetPatch.absolutePath)
                 putExtra("krPatchOverlayPath", it.overlayPatch.absolutePath)
                 putExtra("krPatchOverlayMode", it.mode)
+            }
+            steamConfigOverlay?.let {
+                putExtra("krSteamConfigOverlayTarget", it.targetConfig.absolutePath)
+                putExtra("krSteamConfigOverlayPath", it.overlayConfig.absolutePath)
             }
             safMirror?.let {
                 putExtra("baseDoc", game.uri)
@@ -755,6 +760,11 @@ object EngineLauncher {
         val mode: String,
     )
 
+    private data class KrSteamConfigOverlay(
+        val targetConfig: File,
+        val overlayConfig: File,
+    )
+
     /**
      * 生成 KRKR 虚拟 patch.tjs overlay。
      *
@@ -813,6 +823,51 @@ object EngineLauncher {
             KrPatchOverlay(target, overlay, mode)
         }.onFailure { error ->
             Log.w(TAG, "KRKR patch overlay prepare failed root=$engineRoot", error)
+        }.getOrNull()
+    }
+
+    /**
+     * 部分 Windows Steam 版 KRKR 移植包会带 ds.ini，并用 Language=xxx 决定 UI 语言。
+     * 不直接修改用户游戏目录，只在 app 私有目录生成 schinese 版本并由 NativeBridge 只读映射。
+     */
+    private fun prepareKrSteamConfigOverlay(context: Context, gid: String, engineRoot: String): KrSteamConfigOverlay? {
+        val root = File(engineRoot)
+        if (!root.isDirectory || engineRoot.startsWith("content://") || !rootContainsFbfSteamPlugin(root)) return null
+        val mode = EngineSettingsStore.normalizeKrPatchOverlayMode(
+            PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)
+                ?: EngineSettingsStore.getKrPatchOverlayMode(context),
+        )
+        if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
+
+        val config = File(root, "ds.ini")
+        if (!config.isFile) return null
+        return runCatching {
+            val bytes = config.readBytes()
+            val charset = detectKrPatchCharset(bytes)
+            val text = bytes.toString(charset)
+            val languageRegex = Regex("(?im)^(\\s*Language\\s*=\\s*)[^\\r\\n]*")
+            val patched = if (languageRegex.containsMatchIn(text)) {
+                languageRegex.replace(text) { match ->
+                    "${match.groupValues[1]}schinese"
+                }
+            } else {
+                text.trimEnd() + "\nLanguage=schinese\n"
+            }
+            if (patched == text) return null
+            val overlayDir = File(File(context.filesDir, "krkr_config_overlay"), EngineScanner.safeSaveName(engineRoot))
+            if (!overlayDir.isDirectory && !overlayDir.mkdirs()) {
+                Log.w(TAG, "KRKR Steam config overlay directory unavailable root=$engineRoot dir=${overlayDir.absolutePath}")
+                return null
+            }
+            val overlay = File(overlayDir, "ds.ini")
+            overlay.writeText(patched, charset)
+            Log.i(
+                TAG,
+                "KRKR Steam config overlay prepared root=$engineRoot target=${config.absolutePath} overlay=${overlay.absolutePath}",
+            )
+            KrSteamConfigOverlay(config, overlay)
+        }.onFailure { error ->
+            Log.w(TAG, "KRKR Steam config overlay prepare failed root=${root.absolutePath}", error)
         }.getOrNull()
     }
 
@@ -937,17 +992,23 @@ object EngineLauncher {
         |function IsDLCInstalled(appId) { return true; }
         |function GetUserLanguage() { return "schinese"; }
         |function GetCurrentGameLanguage() { return "schinese"; }
-        |function GetPersonaName() { return ""; }
+        |function GetAvailableGameLanguages() { return "schinese,english,japanese"; }
+        |function GetPersonaName() { return "Tyranor"; }
+        |function GetAppID() { return 0; }
         |function GetSteamID() { return "0"; }
         |function SetAchievement(name) { return true; }
         |function ClearAchievement(name) { return true; }
         |function GetAchievement(name) { return false; }
+        |function IndicateAchievementProgress(name, current, max) { return true; }
         |function StoreStats() { return true; }
         |function ResetAllStats(achievementsToo) { return true; }
+        |function SetStat(name, value) { return true; }
+        |function GetStat(name) { return 0; }
         |function IsOverlayEnabled() { return false; }
         |function ActivateGameOverlay(dialog) { return false; }
         |function ActivateGameOverlayToWebPage(url) { return false; }
         |}
+        |global.FBFSteam = new CFBFSteam();
         |
     """.trimMargin()
 
