@@ -569,15 +569,27 @@ object EngineLauncher {
     ): Intent {
         val gid = game.uri
         fun <T> or(override: T?, global: T): T = override ?: global
+        fun artString(override: String?, global: String, allowed: Set<String>): String {
+            val value = override?.trim()?.takeIf { it in allowed } ?: global.trim()
+            return value.takeIf { it in allowed } ?: ""
+        }
         var version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(context))
         val rotate = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_ART_ROTATE), EngineSettingsStore.isArtRotateScreen(context))
         var autoPatch = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_PATCH), EngineSettingsStore.getArtAutoPatch(context))
+        val androidSettings = ArtemisPfsUnpacker.AndroidSettings(
+            resolution = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_RESOLUTION), EngineSettingsStore.getArtResolution(context), EngineSettingsStore.ART_RESOLUTIONS),
+            sideCut = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SIDE_CUT), EngineSettingsStore.getArtSideCut(context), EngineSettingsStore.ART_TOGGLES),
+            surfaceCacheSize = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE), EngineSettingsStore.getArtSurfaceCacheSize(context), EngineSettingsStore.ART_SURFACE_CACHES),
+            fontCacheSize = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE), EngineSettingsStore.getArtFontCacheSize(context), EngineSettingsStore.ART_FONT_CACHES),
+            powerSaving = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_POWER_SAVING), EngineSettingsStore.getArtPowerSaving(context), EngineSettingsStore.ART_TOGGLES),
+        )
         when (patchChoice) {
             ArtemisPatchChoice.ONCE, ArtemisPatchChoice.ALWAYS -> autoPatch = EngineSettingsStore.AUTO_PATCH_AUTO
             ArtemisPatchChoice.NEVER -> autoPatch = EngineSettingsStore.AUTO_PATCH_OFF
             null -> Unit
         }
         applyArtemisBasePatchIfNeeded(path, autoPatch)
+        ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)
         // 自动补丁=off 时禁用自动回退；否则 auto 版本启用兼容回退
         val auto = version == EngineSettingsStore.ART_ENGINE_AUTO &&
             autoPatch != EngineSettingsStore.AUTO_PATCH_OFF

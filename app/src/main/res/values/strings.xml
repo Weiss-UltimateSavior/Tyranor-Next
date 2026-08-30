@@ -183,6 +183,11 @@
     <string name="engine_settings_text_encoding">文本编码</string>
     <string name="engine_settings_rotate_screen">画面反转</string>
     <string name="engine_settings_auto_patch">自动补丁</string>
+    <string name="engine_settings_artemis_resolution">舞台分辨率</string>
+    <string name="engine_settings_artemis_side_cut">裁切铺满</string>
+    <string name="engine_settings_artemis_surface_cache">图像缓存</string>
+    <string name="engine_settings_artemis_font_cache">字体缓存</string>
+    <string name="engine_settings_artemis_power_saving">省电绘制</string>
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>

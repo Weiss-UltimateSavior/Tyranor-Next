@@ -47,6 +47,11 @@ object PerGameSettingsStore {
     const val F_ART_VERSION = "art_engine_version"
     const val F_ART_ROTATE = "art_rotate_screen"
     const val F_ART_PATCH = "art_auto_patch"
+    const val F_ART_RESOLUTION = "art_resolution"
+    const val F_ART_SIDE_CUT = "art_side_cut"
+    const val F_ART_SURFACE_CACHE_SIZE = "art_surface_cache_size"
+    const val F_ART_FONT_CACHE_SIZE = "art_font_cache_size"
+    const val F_ART_POWER_SAVING = "art_power_saving"
 
     // RPG Maker MV/MZ
     const val F_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"

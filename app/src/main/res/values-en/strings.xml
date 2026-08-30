@@ -183,6 +183,11 @@
     <string name="engine_settings_text_encoding">Text encoding</string>
     <string name="engine_settings_rotate_screen">Rotate screen</string>
     <string name="engine_settings_auto_patch">Automatic patch</string>
+    <string name="engine_settings_artemis_resolution">Stage resolution</string>
+    <string name="engine_settings_artemis_side_cut">Crop to fill</string>
+    <string name="engine_settings_artemis_surface_cache">Surface cache</string>
+    <string name="engine_settings_artemis_font_cache">Font cache</string>
+    <string name="engine_settings_artemis_power_saving">Power-saving rendering</string>
     <string name="engine_settings_external_network_resources">Allow external network resources</string>
     <string name="engine_settings_external_network">Allow external network</string>
     <string name="engine_settings_game_modifier">Game modifier</string>

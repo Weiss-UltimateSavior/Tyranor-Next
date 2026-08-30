@@ -71,6 +71,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
     var artRotate by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
     var artPatch by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
+    var artResolution by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_RESOLUTION)) }
+    var artSideCut by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SIDE_CUT)) }
+    var artSurfaceCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE)) }
+    var artFontCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE)) }
+    var artPowerSaving by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
     var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
 
     val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
@@ -108,6 +113,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalArtVersion = EngineSettingsStore.getArtEngineVersion(ctx)
     val globalArtRotate = EngineSettingsStore.isArtRotateScreen(ctx)
     val globalArtPatch = EngineSettingsStore.getArtAutoPatch(ctx)
+    val globalArtResolution = EngineSettingsStore.getArtResolution(ctx)
+    val globalArtSideCut = EngineSettingsStore.getArtSideCut(ctx)
+    val globalArtSurfaceCache = EngineSettingsStore.getArtSurfaceCacheSize(ctx)
+    val globalArtFontCache = EngineSettingsStore.getArtFontCacheSize(ctx)
+    val globalArtPowerSaving = EngineSettingsStore.getArtPowerSaving(ctx)
     val globalTyExternal = EngineSettingsStore.isTyranoExternalNetwork(ctx)
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
@@ -126,6 +136,10 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val artVersionMap = artVersionOptionsMap()
     val renpyVersionMap = renpyVersionOptionsMap()
     val artPatchMap = artPatchOptionsMap()
+    val artResolutionMap = artResolutionOptionsMap()
+    val artToggleMap = artToggleOptionsMap()
+    val artSurfaceCacheMap = artSurfaceCacheOptionsMap()
+    val artFontCacheMap = artFontCacheOptionsMap()
     val engineDefault = stringResource(R.string.engine_option_engine_default)
     val builtinFont = stringResource(R.string.engine_settings_builtin_font)
     val auto = stringResource(R.string.common_auto)
@@ -160,6 +174,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION, artVersion)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE, artRotate)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH, artPatch)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_RESOLUTION, artResolution)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_SIDE_CUT, artSideCut)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE, artSurfaceCache)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE, artFontCache)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING, artPowerSaving)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION, renpyVersion)
         val onsObj = JSONObject()
         putIfNotNull(onsObj, "scopedsavedir", onsScoped)
@@ -304,6 +323,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
                             OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
+                            OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
                         }
                     }
                     EngineType.RENPY -> item {

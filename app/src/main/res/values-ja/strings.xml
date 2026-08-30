@@ -183,6 +183,11 @@
     <string name="engine_settings_text_encoding">テキストエンコード</string>
     <string name="engine_settings_rotate_screen">画面を反転</string>
     <string name="engine_settings_auto_patch">自動パッチ</string>
+    <string name="engine_settings_artemis_resolution">ステージ解像度</string>
+    <string name="engine_settings_artemis_side_cut">切り抜いて全画面表示</string>
+    <string name="engine_settings_artemis_surface_cache">画像キャッシュ</string>
+    <string name="engine_settings_artemis_font_cache">フォントキャッシュ</string>
+    <string name="engine_settings_artemis_power_saving">省電力描画</string>
     <string name="engine_settings_external_network_resources">外部ネットワークリソースを許可</string>
     <string name="engine_settings_external_network">外部ネットワークを許可</string>
     <string name="engine_settings_game_modifier">ゲーム改造ツール</string>

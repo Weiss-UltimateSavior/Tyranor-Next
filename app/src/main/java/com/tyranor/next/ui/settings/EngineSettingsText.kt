@@ -116,6 +116,38 @@ internal fun artPatchOptions(): List<Pair<String, String>> = listOf(
 )
 
 @Composable
+internal fun artResolutionOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_RESOLUTION_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_RESOLUTION_1920_1080 to "1920 × 1080",
+    EngineSettingsStore.ART_RESOLUTION_1280_720 to "1280 × 720",
+    EngineSettingsStore.ART_RESOLUTION_960_540 to "960 × 540",
+)
+
+@Composable
+internal fun artToggleOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_TOGGLE_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_TOGGLE_OFF to stringResource(R.string.common_disabled),
+    EngineSettingsStore.ART_TOGGLE_ON to stringResource(R.string.common_enabled),
+)
+
+@Composable
+internal fun artSurfaceCacheOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_CACHE_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_SURFACE_CACHE_64MB to "64 MB",
+    EngineSettingsStore.ART_SURFACE_CACHE_128MB to "128 MB",
+    EngineSettingsStore.ART_SURFACE_CACHE_256MB to "256 MB",
+)
+
+@Composable
+internal fun artFontCacheOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_CACHE_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_FONT_CACHE_8MB to "8 MB",
+    EngineSettingsStore.ART_FONT_CACHE_16MB to "16 MB",
+    EngineSettingsStore.ART_FONT_CACHE_32MB to "32 MB",
+    EngineSettingsStore.ART_FONT_CACHE_64MB to "64 MB",
+)
+
+@Composable
 internal fun krSelectOptionsMap(): Map<String, String> = krSelectOptions().toMap()
 
 @Composable
@@ -160,3 +192,15 @@ internal fun renpyVersionOptionsMap(): Map<String, String> = renpyVersionOptions
 
 @Composable
 internal fun artPatchOptionsMap(): Map<String, String> = artPatchOptions().toMap()
+
+@Composable
+internal fun artResolutionOptionsMap(): Map<String, String> = artResolutionOptions().toMap()
+
+@Composable
+internal fun artToggleOptionsMap(): Map<String, String> = artToggleOptions().toMap()
+
+@Composable
+internal fun artSurfaceCacheOptionsMap(): Map<String, String> = artSurfaceCacheOptions().toMap()
+
+@Composable
+internal fun artFontCacheOptionsMap(): Map<String, String> = artFontCacheOptions().toMap()
