@@ -114,6 +114,8 @@ object EngineLauncher {
             if (module.requiresGameDirectoryPath && path != null) {
                 requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
             }
+            // 与内置引擎路径一致：真正拉起外置引擎前确认未取消，避免取消后仍执行启动副作用
+            currentCoroutineContext().ensureActive()
             val result = ExternalEngineLauncher.launch(
                 context,
                 module,
@@ -124,6 +126,7 @@ object EngineLauncher {
                 ),
             )
             if (result.success) {
+                currentCoroutineContext().ensureActive()
                 EngineScanner.recordRecentGame(context, game)
                 return null
             }

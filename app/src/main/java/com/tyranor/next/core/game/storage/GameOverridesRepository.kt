@@ -113,7 +113,10 @@ object GameOverridesRepository {
     /** 更新整条记录：DB 异步落库（prefs 镜像由调用方同步写，保证引擎立即可读）。 */
     internal fun updateRecord(context: Context, gameId: String, record: JSONObject) {
         val row = GameOverridePartitions.split(gameId, record, System.currentTimeMillis())
-        synchronized(cacheLock) { rowCache[gameId] = row }
+        synchronized(cacheLock) {
+            cacheGeneration++
+            rowCache[gameId] = row
+        }
         GameLibraryRepository.post(context) {
             GameLibraryDatabase.get(it).gameLibraryDao().upsertOverrideRows(listOf(row))
         }
@@ -122,12 +125,18 @@ object GameOverridesRepository {
     /** 落库失败时的自愈入口：清空行缓存并重置同步标记——prefs 持有调用方同步写入的
      *  最新值，下次读取重新从 prefs 回灌 DB，避免 syncDone 仍为 true 而读到过期 DB 行。 */
     internal fun invalidateRowCache() {
-        synchronized(cacheLock) { rowCache.clear() }
+        synchronized(cacheLock) {
+            cacheGeneration++
+            rowCache.clear()
+        }
         syncDone = false
     }
 
     internal fun clearRow(context: Context, gameId: String) {
-        synchronized(cacheLock) { rowCache.remove(gameId) }
+        synchronized(cacheLock) {
+            cacheGeneration++
+            rowCache.remove(gameId)
+        }
         GameLibraryRepository.post(context) {
             GameLibraryDatabase.get(it).gameLibraryDao().deleteOverrideRow(gameId)
         }

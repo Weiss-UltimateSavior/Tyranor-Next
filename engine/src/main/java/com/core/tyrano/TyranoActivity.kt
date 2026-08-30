@@ -70,16 +70,26 @@ class TyranoActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // singleInstance 启动模式下切换游戏只走到这里：path 变化时整体重建，
-        // 让 onCreate 按 Intent 重新解析游戏目录/存档目录并重建 WebView。
+        // singleInstance 启动模式下切换游戏只走到这里：路径或行为相关 extras
+        // （独立存档目录、修改器开关等）变化时整体重建，让 onCreate 按 Intent 重新解析
         val newDir = resolveGameDir(intent)
         if (newDir.isNullOrBlank()) return // 无法解析的意图不接管当前游戏，保留原 Intent
+        val changed = newDir != gameDir || behaviorSignature(intent) != behaviorSignature(getIntent())
         setIntent(intent)
-        if (newDir != gameDir && !isFinishing) {
-            Log.i(TAG, "onNewIntent switch game $gameDir -> $newDir; recreate")
+        if (changed && !isFinishing) {
+            Log.i(TAG, "onNewIntent relaunch with changed intent; recreate")
             recreate()
         }
     }
+
+    /** 影响引擎行为的 Intent extras 摘要，用于判断单游戏重启是否需要重建。 */
+    private fun behaviorSignature(intent: Intent): String = listOf(
+        resolveGameDir(intent),
+        intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false).toString(),
+        intent.getStringExtra(EXTRA_SCOPED_SAVE_ROOT),
+        intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true).toString(),
+        intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID),
+    ).joinToString("\u0000")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
