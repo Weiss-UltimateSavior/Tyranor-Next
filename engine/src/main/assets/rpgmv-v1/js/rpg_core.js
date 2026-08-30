@@ -9606,9 +9606,10 @@ Decrypter.extToEncryptExt = function(url) {
 };
 
 Decrypter.readEncryptionkey = function(){
+    // 判空只影响密钥本身；hasEncrypted* 标志来自 System.json，不可在此关闭，
+    // 否则加密游戏会退化成 .png 直读而 404（应由服务器端 .png->.rpgmvp 回退兜底）
     var k = $dataSystem && $dataSystem.encryptionKey;
     if (!k || typeof k !== "string") {
-        if (!$dataSystem || !$dataSystem.encryptionKey) Decrypter.hasEncryptedImages = Decrypter.hasEncryptedAudio = false;
         this._encryptionKey = [];
         return;
     }

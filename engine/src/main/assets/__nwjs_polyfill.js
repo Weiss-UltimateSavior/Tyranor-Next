@@ -457,6 +457,23 @@
         setTimeout(function(){ try{ clearInterval(uiTimer);}catch(e){}}, 8000);
     })();
 
+    // 单张贴图 404 不再卡死场景：printLoadingError 降级为警告，不计入 loading 阻塞
+    (function () {
+        var pleTimer = setInterval(function(){
+            try {
+                if (window.Graphics && typeof window.Graphics.printLoadingError === "function" && !window.Graphics.printLoadingError.__tyranorPatched) {
+                    var _origPrint = window.Graphics.printLoadingError;
+                    window.Graphics.printLoadingError = function (url) {
+                        console.warn("[nw-polyfill] printLoadingError suppressed for", url);
+                        // 不改 _errorPrinter、不置 _loadingCount = -Infinity，场景继续等待其余资源
+                    };
+                    window.Graphics.printLoadingError.__tyranorPatched = true;
+                    clearInterval(pleTimer);
+                }
+            } catch (e) {}
+        }, 200);
+        setTimeout(function(){ try{ clearInterval(pleTimer);}catch(e){}}, 8000);
+    })();
 
         console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
 })();

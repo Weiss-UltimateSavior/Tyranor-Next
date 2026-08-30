@@ -179,6 +179,18 @@ internal class TyranoLocalHttpServer(
             target = canonicalIfValid(alt)
             if (target != null) { Log.i(TAG, "resource fallback rpgmvm->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
         }
+        // 加密包以 .rpgmvp/.rpgmvo 落盘，页面可能直接请求 .png/.ogg，
+        // 命中失败时回退同名加密扩展，由 WebView/Decrypter 侧处理
+        if (lower.endsWith(".png")) {
+            val alt = replaceSuffix(uri, ".png", ".rpgmvp")
+            target = canonicalIfValid(alt)
+            if (target != null) { Log.i(TAG, "resource fallback png->rpgmvp $uri -> $alt"); return ResolvedFile(target, null) }
+        }
+        if (lower.endsWith(".ogg")) {
+            val alt = replaceSuffix(uri, ".ogg", ".rpgmvo")
+            target = canonicalIfValid(alt)
+            if (target != null) { Log.i(TAG, "resource fallback ogg->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
+        }
         if (asar != null) {
             val normalizedUri = uri.replace(Regex("/\\./"), "/").replace(Regex("//+"), "/")
             val data = asar.read(asarRootPrefix + normalizedUri) ?: asar.read(normalizedUri)

@@ -116,9 +116,9 @@ Decrypter.extToEncryptExt = function(url) {
 };
 
 Decrypter.readEncryptionkey = function(){
+    // 判空只影响密钥本身；hasEncrypted* 标志来自 System.json，不可在此关闭
     var k = $dataSystem && $dataSystem.encryptionKey;
     if (!k || typeof k !== "string") {
-        if (!$dataSystem || !$dataSystem.encryptionKey) Decrypter.hasEncryptedImages = Decrypter.hasEncryptedAudio = false;
         this._encryptionKey = [];
         return;
     }
