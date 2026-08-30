@@ -72,6 +72,7 @@
     <string name="update_network_failed">ネットワーク要求に失敗しました</string>
     <string name="update_github_request_failed">GitHub Releases の要求に失敗しました：HTTP %1$d</string>
 
+    <string name="engine_list_title">%1$s エンジンリスト</string>
     <string name="engine_module_missing_title">モジュール未インストール</string>
     <string name="engine_module_missing_message">%1$s が見つかりません。%2$s のゲームを起動するには先にダウンロードしてインストールしてください。</string>
     <string name="engine_open_download_failed">ダウンロードページを開けません</string>
@@ -195,7 +196,7 @@
     <string name="engine_settings_use_builtin_font">内蔵フォントを使用</string>
     <string name="engine_settings_select_font_file">フォントファイルを選択…</string>
     <string name="engine_option_engine_default">エンジン既定</string>
-    <string name="engine_option_kirikiri2">吉里吉里2</string>
+    <string name="engine_option_kirikiri2">Kirikiroid2</string>
     <string name="engine_option_software_renderer">ソフトウェア描画</string>
     <string name="engine_option_opengl_default">OpenGL（既定）</string>
     <string name="engine_option_none">なし</string>
@@ -314,7 +315,7 @@
     <string name="external_engine_no_activity">%1$s には起動要求を受け取れる Activity がありません</string>
     <string name="external_engine_denied">%1$s の起動がシステムに拒否されました。モジュール権限を確認してください</string>
     <string name="external_engine_launch_failed">%1$s の起動に失敗しました。モジュール権限を確認してください</string>
-    <string name="external_rpgm_module_name">RPGM モジュール</string>
+    <string name="external_rpgm_module_name">RPGM-1.22.00</string>
     <string name="external_rpgm_resolve_dir_failed">RPGM ゲームフォルダ実パスを解析できないため、外部 RPGM モジュールを起動できません</string>
 
     <string name="plugin_unknown_engine">不明なエンジンプラグイン：%1$s</string>
