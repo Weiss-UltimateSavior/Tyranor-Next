@@ -70,6 +70,18 @@ class TyranoActivity : Activity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // BUILD_TAG 用于辨识设备上实际运行的构建，出现该行即说明是新代码
+        Log.i(TAG, "onCreate begin build=$BUILD_TAG type=${intent?.getStringExtra("type")} rpgMakerVersion=${intent?.getStringExtra(EXTRA_RPG_MAKER_VERSION)}")
+        try {
+            onCreateInternal(savedInstanceState)
+        } catch (t: Throwable) {
+            // 顶层兜底：任何初始化异常都落日志并走可见的失败提示，避免无日志黑屏
+            Log.e(TAG, "onCreate crashed build=$BUILD_TAG", t)
+            failLaunch(getString(R.string.engine_tyrano_server_failed))
+        }
+    }
+
+    private fun onCreateInternal(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterFullscreen()
@@ -273,6 +285,7 @@ class TyranoActivity : Activity() {
     }
 
     private fun failLaunch(message: String) {
+        Log.e(TAG, "failLaunch: $message")
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         finish()
     }
@@ -549,9 +562,11 @@ class TyranoActivity : Activity() {
     }
 
     override fun finish() {
+        Log.i(TAG, "finish called build=$BUILD_TAG")
         super.finish()
         if (processExitScheduled.compareAndSet(false, true)) {
             Handler(Looper.getMainLooper()).postDelayed({
+                Log.i(TAG, "process self-exit (killProcess)")
                 runCatching { android.os.Process.killProcess(android.os.Process.myPid()) }
             }, PROCESS_EXIT_DELAY_MS)
         }
@@ -970,6 +985,8 @@ class TyranoActivity : Activity() {
 
     companion object {
         private const val TAG = "YukiTyrano"
+        /** 诊断用构建标识：日志中出现该值即可确认设备运行的是哪一版代码 */
+        private const val BUILD_TAG = "v1iso-20260830"
         private const val TYRANO_HOOK_ASSET = "__tyrano__.js"
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"

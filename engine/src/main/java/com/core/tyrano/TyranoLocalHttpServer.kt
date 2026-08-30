@@ -87,7 +87,7 @@ internal class TyranoLocalHttpServer(
     }
 
     override fun run() {
-        Log.i(TAG, "local server started port=$port root=$root")
+        Log.i(TAG, "local server started port=$port root=$root v1Only=$v1OnlyFallbacks early=${earlyHook?.size ?: 0} late=${tyranoHook.size} internalRes=${internalResources.size}")
         while (running) {
             try {
                 val socket = serverSocket.accept()
@@ -137,6 +137,7 @@ internal class TyranoLocalHttpServer(
             }
             val resolved = resolveRequestedFile(uri)
             if (resolved == null || (resolved.file == null && resolved.data == null)) {
+                Log.w(TAG, "404 uri=$uri")
                 sendText(socket, 404, "Not Found", "not found: $uri")
                 return
             }
