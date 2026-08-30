@@ -102,7 +102,7 @@ object ArtemisPfsUnpacker {
             val charset = detectSystemIniCharset(bytes)
             val text = String(bytes, charset)
             val patched = if (settings.hasOverrides()) {
-                patchAndroidSection(text, settings)
+                ensureAndroidCompatibilityDefaults(patchAndroidSection(text, settings))
             } else {
                 restoreAndroidSectionDefaults(text)
             }
@@ -278,13 +278,14 @@ object ArtemisPfsUnpacker {
 
     private fun patchSystemIni(file: File) {
         try {
-            val lines = file.readLines(UTF_8).toMutableList()
-            if (lines.any { it.trim() == "[ANDROID]" }) return
-            lines += "\n[ANDROID]"
-            lines += "SIDECUT = 0"
-            lines += "BOOT = system/first.iet"
-            lines += "FONT_CACHE_SIZE = 8388608"
-            file.writeText(lines.joinToString("\n"), UTF_8)
+            val bytes = file.readBytes()
+            val charset = detectSystemIniCharset(bytes)
+            val text = String(bytes, charset)
+            val patched = ensureAndroidCompatibilityDefaults(text)
+            if (patched != text) {
+                file.writeText(patched, charset)
+                logInfo("patched Android system.ini defaults ${file.path}")
+            }
         } catch (error: Exception) {
             logWarn("patch system.ini failed ${file.path}", error)
         }
@@ -405,6 +406,47 @@ object ArtemisPfsUnpacker {
         return androidBoot ?: firstBoot
     }
 
+    private fun ensureAndroidCompatibilityDefaults(text: String): String {
+        val lines = text.split('\n').toMutableList()
+        var androidBounds = findSectionBounds(lines, "ANDROID")
+        if (androidBounds == null) {
+            if (lines.isNotEmpty() && lines.last().isNotEmpty()) lines += ""
+            lines += "[ANDROID]"
+            androidBounds = findSectionBounds(lines, "ANDROID") ?: return text
+        }
+
+        val androidRange = androidBounds.contentStart until androidBounds.contentEndExclusive
+        val updates = linkedMapOf<String, String>()
+        val inheritedResolution = readResolutionFromSections(
+            lines,
+            listOf("ANDROID", "SYSTEM", "WINDOWS", "IOS", "WASM"),
+        ) ?: (1280 to 720)
+        if (readSectionValue(lines, androidRange, "WIDTH").isNullOrBlank()) {
+            updates["WIDTH"] = inheritedResolution.first.toString()
+        }
+        if (readSectionValue(lines, androidRange, "HEIGHT").isNullOrBlank()) {
+            updates["HEIGHT"] = inheritedResolution.second.toString()
+        }
+        if (readSectionValue(lines, androidRange, "SIDECUT").isNullOrBlank()) {
+            updates["SIDECUT"] = "0"
+        }
+        if (readSectionValue(lines, androidRange, "BOOT").isNullOrBlank()) {
+            updates["BOOT"] = readFirstValueFromSections(
+                lines,
+                listOf("ANDROID", "SYSTEM", "WINDOWS", "IOS", "WASM"),
+                "BOOT",
+            ) ?: DEFAULT_ANDROID_BOOT
+        }
+        if (readSectionValue(lines, androidRange, "FONT_CACHE_SIZE").isNullOrBlank()) {
+            updates["FONT_CACHE_SIZE"] = "8388608"
+        }
+        if (updates.isEmpty()) return text
+
+        val insertion = updates.map { (key, value) -> "$key = $value" }
+        lines.addAll(androidBounds.contentEndExclusive, insertion)
+        return lines.joinToString("\n")
+    }
+
     private fun patchAndroidSection(text: String, settings: AndroidSettings): String {
         val updates = linkedMapOf<String, String>()
         parseResolution(settings.resolution)?.let { (width, height) ->
@@ -451,7 +493,9 @@ object ArtemisPfsUnpacker {
     private fun restoreAndroidSectionDefaults(text: String): String {
         val originalLines = text.split('\n')
         val withoutBlock = removeManagedAndroidBlock(originalLines)
-        return removeLegacyManagedAndroidLines(withoutBlock).joinToString("\n")
+        return ensureAndroidCompatibilityDefaults(
+            removeLegacyManagedAndroidLines(withoutBlock).joinToString("\n"),
+        )
     }
 
     private fun removeManagedAndroidBlock(lines: List<String>): List<String> {
@@ -482,27 +526,65 @@ object ArtemisPfsUnpacker {
     }
 
     private fun findAndroidSectionRange(lines: List<String>): IntRange? {
-        var start = -1
-        var endExclusive = lines.size
+        val bounds = findSectionBounds(lines, "ANDROID") ?: return null
+        return bounds.contentStart until bounds.contentEndExclusive
+    }
+
+    private data class SectionBounds(
+        val headerIndex: Int,
+        val contentStart: Int,
+        val contentEndExclusive: Int,
+    )
+
+    private fun findSectionBounds(lines: List<String>, sectionName: String): SectionBounds? {
+        var headerIndex = -1
+        var contentStart = -1
+        var contentEndExclusive = lines.size
+        val wanted = sectionName.uppercase(Locale.ROOT)
         for (i in lines.indices) {
             val section = lines[i].substringBefore(';').trim()
             if (!section.startsWith("[") || !section.endsWith("]")) continue
             val name = section.substring(1, section.length - 1).trim().uppercase(Locale.ROOT)
-            if (name == "ANDROID") {
-                start = i + 1
-                endExclusive = lines.size
-            } else if (start >= 0) {
-                endExclusive = i
+            if (name == wanted) {
+                headerIndex = i
+                contentStart = i + 1
+                contentEndExclusive = lines.size
+            } else if (headerIndex >= 0) {
+                contentEndExclusive = i
                 break
             }
         }
-        return if (start >= 0 && start < endExclusive) start until endExclusive else null
+        return if (headerIndex >= 0) {
+            SectionBounds(headerIndex, contentStart, contentEndExclusive)
+        } else {
+            null
+        }
     }
 
     private fun readSectionValue(lines: List<String>, range: IntRange, key: String): String? {
         for (i in range) {
             val parsed = parseIniAssignment(lines[i]) ?: continue
             if (parsed.first == key) return parsed.second
+        }
+        return null
+    }
+
+    private fun readFirstValueFromSections(lines: List<String>, sections: List<String>, key: String): String? {
+        for (section in sections) {
+            val bounds = findSectionBounds(lines, section) ?: continue
+            val value = readSectionValue(lines, bounds.contentStart until bounds.contentEndExclusive, key)
+            if (!value.isNullOrBlank()) return value
+        }
+        return null
+    }
+
+    private fun readResolutionFromSections(lines: List<String>, sections: List<String>): Pair<Int, Int>? {
+        for (section in sections) {
+            val bounds = findSectionBounds(lines, section) ?: continue
+            val range = bounds.contentStart until bounds.contentEndExclusive
+            val width = readSectionValue(lines, range, "WIDTH")?.toIntOrNull()
+            val height = readSectionValue(lines, range, "HEIGHT")?.toIntOrNull()
+            if (width != null && height != null) return width to height
         }
         return null
     }
