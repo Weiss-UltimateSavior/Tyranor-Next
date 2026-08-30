@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.save
 import android.content.Context
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
@@ -213,12 +214,36 @@ class GameSaveManager(private val context: Context) {
     }
 
     private fun resolveGameDirectory(game: ScanGame): String? {
+        // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
+        // 两边解析出不同路径会让存档管理/清理指向错误镜像。
         EngineScanner.safUriToPath(game.uri)?.let { path ->
-            if (File(path).isDirectory) return File(path).absolutePath
+            val f = File(path)
+            if (f.isDirectory) return f.absolutePath
+            // 可移动存储上的 KRKR 允许仅 SAF 可读（启动器将以镜像模式运行），需解析出同一路径
+            if (game.engine == EngineType.KIRIKIRI && EngineScanner.isRemovableStoragePath(path)) {
+                val readableBySaf = runCatching {
+                    DocumentFile.fromTreeUri(appContext, Uri.parse(game.uri))?.isDirectory == true
+                }.getOrDefault(false)
+                if (readableBySaf) return f.absolutePath
+            }
         }
         val uri = runCatching { Uri.parse(game.uri) }.getOrNull()
-        if (uri?.scheme.equals("file", ignoreCase = true)) return uri?.path
-        return null
+        if (uri?.scheme == "file") return uri.path
+        // 兜底：_data 直查（与 EngineLauncher 的第二步一致）
+        return try {
+            val doc = DocumentFile.fromTreeUri(appContext, uri ?: return null)
+            if (doc == null || !doc.exists()) return null
+            appContext.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val dataIdx = c.getColumnIndex("_data")
+                    if (dataIdx >= 0) c.getString(dataIdx) else null
+                } else {
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun effectiveOnsScoped(game: ScanGame): Boolean {
@@ -341,15 +366,16 @@ class GameSaveManager(private val context: Context) {
         return copied
     }
 
-    /** 同盘移动：优先 rename（原子），跨设备兜底逐文件复制。 */
+    /** 同盘移动：优先 rename（原子），跨设备兜底逐文件复制。暂存目录缺失视为导入流程损坏，直接报错。 */
     @Throws(IOException::class)
     private fun moveDirectoryContents(source: File, destination: File) {
+        if (!source.isDirectory) throw IOException(text(R.string.save_error_create_temp_dir))
         source.listFiles().orEmpty().forEach { child ->
             val target = File(destination, child.name)
             if (child.isDirectory) {
                 if (!target.exists() && !target.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
                 moveDirectoryContents(child, target)
-                if (!child.deleteRecursively()) child.deleteRecursively()
+                child.deleteRecursively()
             } else if (child.isFile) {
                 target.parentFile?.let {
                     if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))

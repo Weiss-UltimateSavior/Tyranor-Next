@@ -106,6 +106,11 @@ object GameOverridesRepository {
         }
     }
 
+    /** 落库失败时的自愈入口：丢弃行缓存，下次读取回源 DB（供 EngineScanner 的失效回调复用）。 */
+    internal fun invalidateRowCache() {
+        synchronized(cacheLock) { rowCache.clear() }
+    }
+
     internal fun clearRow(context: Context, gameId: String) {
         synchronized(cacheLock) { rowCache.remove(gameId) }
         GameLibraryRepository.post(context) {

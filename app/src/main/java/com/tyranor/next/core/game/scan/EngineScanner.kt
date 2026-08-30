@@ -12,6 +12,7 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.storage.GameLibraryDao
 import com.tyranor.next.core.game.storage.GameLibraryRepository
+import com.tyranor.next.core.game.storage.GameOverridesRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
@@ -71,6 +72,8 @@ object EngineScanner {
             recentGamesCache = null
             quickLaunchCache = null
         }
+        // 单游戏覆盖同样走「缓存先行、post 落库」模式，一并回源
+        GameOverridesRepository.invalidateRowCache()
     }
 
     /**

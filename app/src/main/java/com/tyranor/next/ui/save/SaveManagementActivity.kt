@@ -113,6 +113,8 @@ private fun SaveManagementScreen(game: ScanGame) {
     var location by remember { mutableStateOf(manager.resolveSaveLocation(game)) }
     var fileCount by remember { mutableStateOf(manager.listSaveFiles(game).size) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
+    var taskRunning by remember { mutableStateOf(false) }
 
     fun refresh() {
         location = manager.resolveSaveLocation(game)
@@ -120,12 +122,18 @@ private fun SaveManagementScreen(game: ScanGame) {
     }
 
     fun runSaveTask(block: suspend () -> String) {
+        if (taskRunning) return
         scope.launch {
-            val message = withContext(Dispatchers.IO) {
-                runCatching { block() }.getOrElse { it.message ?: context.getString(R.string.save_operation_failed) }
+            taskRunning = true
+            try {
+                val message = withContext(Dispatchers.IO) {
+                    runCatching { block() }.getOrElse { it.message ?: context.getString(R.string.save_operation_failed) }
+                }
+                refresh()
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            } finally {
+                taskRunning = false
             }
-            refresh()
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
 

@@ -70,11 +70,12 @@ class TyranoActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        setIntent(intent)
         // singleInstance 启动模式下切换游戏只走到这里：path 变化时整体重建，
         // 让 onCreate 按 Intent 重新解析游戏目录/存档目录并重建 WebView。
         val newDir = resolveGameDir(intent)
-        if (!newDir.isNullOrBlank() && newDir != gameDir) {
+        if (newDir.isNullOrBlank()) return // 无法解析的意图不接管当前游戏，保留原 Intent
+        setIntent(intent)
+        if (newDir != gameDir && !isFinishing) {
             Log.i(TAG, "onNewIntent switch game $gameDir -> $newDir; recreate")
             recreate()
         }
