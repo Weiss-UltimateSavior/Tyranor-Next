@@ -354,8 +354,9 @@ object GameLibraryRepository {
             try {
                 writeMutex.withLock { block(app) }
                 schedulePrefsMirror(app)
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
             } catch (t: Throwable) {
-                if (t is kotlinx.coroutines.CancellationException) throw t
                 Log.e(TAG, "Game library persistence failed", t)
                 // 缓存已指向未落库的新状态：丢弃之，下次读取回源 DB，避免分叉永不自愈
                 runCatching { onPersistFailure?.invoke() }

@@ -106,9 +106,11 @@ object GameOverridesRepository {
         }
     }
 
-    /** 落库失败时的自愈入口：丢弃行缓存，下次读取回源 DB（供 EngineScanner 的失效回调复用）。 */
+    /** 落库失败时的自愈入口：清空行缓存并重置同步标记——prefs 持有调用方同步写入的
+     *  最新值，下次读取重新从 prefs 回灌 DB，避免 syncDone 仍为 true 而读到过期 DB 行。 */
     internal fun invalidateRowCache() {
         synchronized(cacheLock) { rowCache.clear() }
+        syncDone = false
     }
 
     internal fun clearRow(context: Context, gameId: String) {

@@ -139,21 +139,38 @@ class GameSaveManager(private val context: Context) {
         if (!destination.isDirectory) throw IOException(text(R.string.save_error_save_dir_unavailable))
 
         val temp = createTemporaryDirectory()
-        // 与目标目录同文件系统的暂存目录：解压+复制阶段完全不触碰原存档，
-        // 复制全部成功后才清空目标并做毫秒级的同盘 rename，中断不再丢失原档。
+        // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
+        // 提交阶段用两次 rename 原子交换（旧目录改名留作备份 → 暂存目录顶替），
+        // 任一步失败即从备份回滚，备份在交换成功前绝不被清理。
         val staging = File(destination.parentFile, destination.name + ".import_staging")
+        val backup = File(destination.parentFile, destination.name + ".import_backup")
+        var swapped = false
         try {
             val extracted = extractZip(sourceUri, temp)
             if (extracted == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
             staging.deleteRecursively()
             if (!staging.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
             copyDirectoryContents(temp, staging, excludeFor(game.engine))
-            clearSaveDirectory(destination, game.engine)
-            moveDirectoryContents(staging, destination)
+            // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入，
+            // 先整体 rename 进暂存目录随交换一起顶上（中途失败逐个搬回保持原目录完整）
+            if (game.engine == EngineType.ARTEMIS) {
+                moveExcludedIntoStaging(destination, staging, game.engine)
+            }
+            if (destination.exists()) {
+                backup.deleteRecursively()
+                if (!destination.renameTo(backup)) throw IOException(text(R.string.save_error_save_dir_unavailable))
+            }
+            if (!staging.renameTo(destination)) {
+                if (backup.exists()) backup.renameTo(destination)
+                throw IOException(text(R.string.save_error_save_dir_unavailable))
+            }
+            swapped = true
             return extracted
         } finally {
             temp.deleteRecursively()
             staging.deleteRecursively()
+            // 仅交换成功后清理备份；失败路径保留备份数据，恢复不依赖被清理的暂存目录
+            if (swapped) backup.deleteRecursively()
         }
     }
 
@@ -366,27 +383,26 @@ class GameSaveManager(private val context: Context) {
         return copied
     }
 
-    /** 同盘移动：优先 rename（原子），跨设备兜底逐文件复制。暂存目录缺失视为导入流程损坏，直接报错。 */
+    /**
+     * Artemis 导入前置步骤：把目标目录（即游戏根）中不参与导入的引擎资源整体 rename
+     * 到暂存目录，随目录交换一起顶替回目标位置；中途失败把已移动的资源搬回原处。
+     */
     @Throws(IOException::class)
-    private fun moveDirectoryContents(source: File, destination: File) {
-        if (!source.isDirectory) throw IOException(text(R.string.save_error_create_temp_dir))
-        source.listFiles().orEmpty().forEach { child ->
-            val target = File(destination, child.name)
-            if (child.isDirectory) {
-                if (!target.exists() && !target.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
-                moveDirectoryContents(child, target)
-                child.deleteRecursively()
-            } else if (child.isFile) {
-                target.parentFile?.let {
-                    if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
-                }
-                if (!child.renameTo(target)) {
-                    val lastModified = child.lastModified()
-                    child.copyTo(target, overwrite = true)
-                    if (!child.delete()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
-                    target.setLastModified(lastModified)
-                }
+    private fun moveExcludedIntoStaging(destination: File, staging: File, engine: EngineType) {
+        val exclude = excludeFor(engine)
+        val moved = mutableListOf<Pair<File, File>>()
+        try {
+            destination.listFiles().orEmpty().forEach { child ->
+                if (!exclude(child.name)) return@forEach
+                val target = File(staging, child.name)
+                if (!child.renameTo(target)) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                moved += child to target
             }
+        } catch (t: Throwable) {
+            moved.forEach { (original, movedFile) ->
+                if (!movedFile.renameTo(original)) movedFile.copyRecursively(original, overwrite = true)
+            }
+            throw t
         }
     }
 
