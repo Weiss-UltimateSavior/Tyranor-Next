@@ -9606,7 +9606,13 @@ Decrypter.extToEncryptExt = function(url) {
 };
 
 Decrypter.readEncryptionkey = function(){
-    this._encryptionKey = $dataSystem.encryptionKey.split(/(.{2})/).filter(Boolean);
+    var k = $dataSystem && $dataSystem.encryptionKey;
+    if (!k || typeof k !== "string") {
+        if (!$dataSystem || !$dataSystem.encryptionKey) Decrypter.hasEncryptedImages = Decrypter.hasEncryptedAudio = false;
+        this._encryptionKey = [];
+        return;
+    }
+    this._encryptionKey = k.split(/(.{2})/).filter(Boolean);
 };
 
 //-----------------------------------------------------------------------------
