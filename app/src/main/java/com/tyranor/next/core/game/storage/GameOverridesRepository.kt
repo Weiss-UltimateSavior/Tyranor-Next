@@ -28,6 +28,9 @@ object GameOverridesRepository {
     /** 每游戏一行；value=null 表示已加载确认无覆盖，避免重复阻塞读。 */
     private val rowCache = HashMap<String, GameOverrideEntity?>()
 
+    /** 缓存代数：失效时自增；读取期间的旧查询结果回填前必须核对代数，防止过期值写回。 */
+    private var cacheGeneration = 0L
+
     private val syncMutex = Mutex()
 
     @Volatile
@@ -88,12 +91,18 @@ object GameOverridesRepository {
         }
 
     private suspend fun loadRowCached(context: Context, gameId: String): GameOverrideEntity? {
+        val generation: Long
         synchronized(cacheLock) {
             if (rowCache.containsKey(gameId)) return rowCache[gameId]
+            generation = cacheGeneration
         }
         // 缓存未命中：并发未命中会各自读一次单行索引查询，结果一致，无一致性风险
         val row = GameLibraryDatabase.get(context).gameLibraryDao().getOverrideRow(gameId)
-        synchronized(cacheLock) { rowCache[gameId] = row }
+        synchronized(cacheLock) {
+            // 读取期间发生过失效（cacheGeneration 已变）则丢弃本次旧查询结果，
+            // 下次读取重新回源，避免把失效前的 DB 行写回缓存
+            if (generation == cacheGeneration) rowCache[gameId] = row
+        }
         return row
     }
 

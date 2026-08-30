@@ -150,7 +150,10 @@ class GameSaveManager(private val context: Context) {
             if (extracted == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
             staging.deleteRecursively()
             if (!staging.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
-            copyDirectoryContents(temp, staging, excludeFor(game.engine))
+            // 过滤引擎资源后可能一件存档都没有（如纯资源 ZIP）：必须在交换前拦截，
+            // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失
+            val copied = copyDirectoryContents(temp, staging, excludeFor(game.engine))
+            if (copied == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
             // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入，
             // 先整体 rename 进暂存目录随交换一起顶上（中途失败逐个搬回保持原目录完整）
             if (game.engine == EngineType.ARTEMIS) {
@@ -165,7 +168,7 @@ class GameSaveManager(private val context: Context) {
                 throw IOException(text(R.string.save_error_save_dir_unavailable))
             }
             swapped = true
-            return extracted
+            return copied
         } finally {
             temp.deleteRecursively()
             staging.deleteRecursively()

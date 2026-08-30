@@ -93,6 +93,10 @@ object EngineSettingsStore {
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
+    /** Artemis 引擎版本全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
+    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V3, ART_ENGINE_V4, ART_ENGINE_V5)
+    /** Artemis 补丁策略全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
+    val ART_PATCHES = setOf(AUTO_PATCH_ASK, AUTO_PATCH_AUTO, AUTO_PATCH_OFF)
     const val ART_RESOLUTION_DEFAULT = ""
     const val ART_RESOLUTION_1920_1080 = "1920x1080"
     const val ART_RESOLUTION_1280_720 = "1280x720"

@@ -37,7 +37,10 @@ import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.unpack.ArtemisPfsUnpacker
 import com.tyranor.next.theme.AppThemeColors
 import com.yuri.onscripter.ONScripter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -138,6 +141,8 @@ object EngineLauncher {
                 withContext(Dispatchers.IO) {
                     KrSafMirror.prepare(context.applicationContext, game.uri, path, game.title)
                 }
+            } catch (ce: CancellationException) {
+                throw ce // 取消不是启动失败，原样传播给调用方
             } catch (t: Throwable) {
                 Log.e(TAG, "prepare KRKR SAF mirror failed uri=${game.uri}", t)
                 return t.message ?: text(context, R.string.launch_prepare_krkr_sd_mirror_failed)
@@ -163,12 +168,18 @@ object EngineLauncher {
                 else -> Unit
             }
         }
+        // 阻塞准备（镜像/overlay/PFS）完成后统一检查取消：已取消则不执行任何启动副作用
+        currentCoroutineContext().ensureActive()
         return try {
             val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror)
+            // Intent 组装后、真正拉起引擎前最后一次确认，取消后不 startActivity
+            currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             EngineScanner.recordRecentGame(context, game)
             null
+        } catch (ce: CancellationException) {
+            throw ce // 取消不是启动失败，原样传播给调用方
         } catch (e: Exception) {
             e.message ?: text(context, R.string.launch_failed)
         }
@@ -183,7 +194,9 @@ object EngineLauncher {
     suspend fun needsArtemisPatchConfirm(context: Context, game: ScanGame): Boolean =
         withContext(Dispatchers.IO) {
             if (game.engine != EngineType.ARTEMIS) return@withContext false
-            val strategy = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_ART_PATCH)
+            // 单游戏覆盖值走白名单校验：损坏/历史遗留的非法值回退全局，防止静默改变补丁行为
+            val override = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_ART_PATCH)
+            val strategy = override?.trim()?.takeIf { it in EngineSettingsStore.ART_PATCHES }
                 ?: EngineSettingsStore.getArtAutoPatch(context)
             if (strategy != EngineSettingsStore.AUTO_PATCH_ASK) return@withContext false
             val path = resolveGameDirectory(context, game) ?: return@withContext false
@@ -580,9 +593,10 @@ object EngineLauncher {
             val value = override?.trim()?.takeIf { it in allowed } ?: global.trim()
             return value.takeIf { it in allowed } ?: ""
         }
-        var version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(context))
+        // 版本/补丁策略的覆盖值同样走白名单（artString），非法持久化值回退全局
+        var version = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(context), EngineSettingsStore.ART_VERSIONS)
         val rotate = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_ART_ROTATE), EngineSettingsStore.isArtRotateScreen(context))
-        var autoPatch = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_PATCH), EngineSettingsStore.getArtAutoPatch(context))
+        var autoPatch = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_PATCH), EngineSettingsStore.getArtAutoPatch(context), EngineSettingsStore.ART_PATCHES)
         val androidSettings = ArtemisPfsUnpacker.AndroidSettings(
             resolution = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_RESOLUTION), EngineSettingsStore.getArtResolution(context), EngineSettingsStore.ART_RESOLUTIONS),
             sideCut = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SIDE_CUT), EngineSettingsStore.getArtSideCut(context), EngineSettingsStore.ART_TOGGLES),
