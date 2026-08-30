@@ -65,7 +65,11 @@ object GameOverridesRepository {
         // 清理孤儿行：prefs 中已不存在的覆盖（如 clear() 的 DB 删除丢失）不回灌复活
         val orphans = dao.getAllOverrideRows().mapNotNull { if (it.gameUri in prefKeys) null else it.gameUri }
         orphans.chunked(SQL_CHUNK_SIZE).forEach { dao.deleteOverrideRowsByUris(it) }
-        synchronized(cacheLock) { rowCache.clear() }
+        // 清缓存同时递增代数：使在途读取的旧查询结果回填前失效（与 invalidateRowCache 同款防护）
+        synchronized(cacheLock) {
+            cacheGeneration++
+            rowCache.clear()
+        }
         if (imported > 0 || orphans.isNotEmpty()) {
             Log.i(TAG, "Game overrides synced from prefs: imported=$imported pruned=${orphans.size}")
         }

@@ -144,6 +144,11 @@ class GameSaveManager(private val context: Context) {
         // 任一步失败即从备份回滚，备份在交换成功前绝不被清理。
         val staging = File(destination.parentFile, destination.name + ".import_staging")
         val backup = File(destination.parentFile, destination.name + ".import_backup")
+        // 上次导入在「旧目录已改名、新目录未顶替」的两步 rename 之间被杀会留下孤儿备份：
+        // 目标缺失而备份存在时先还原，避免本次导入把唯一剩下的旧存档当作垃圾清掉
+        if (backup.isDirectory && !destination.exists()) {
+            if (!backup.renameTo(destination)) throw IOException(text(R.string.save_error_save_dir_unavailable))
+        }
         var swapped = false
         try {
             val extracted = extractZip(sourceUri, temp)
