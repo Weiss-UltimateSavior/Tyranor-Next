@@ -395,85 +395,11 @@
         setTimeout(function () { try { clearInterval(pgTimer); } catch (e) {} }, 8000);
     })();
 
-    // MV v1: KELYEP_DragonBones / FilterController Object.create(undefined) 黑屏兜底 + split/exitFullscreen 级联
-    (function () {
-        var origCreate = Object.create;
-        Object.create = function (proto, props) {
-            if (proto == null) {
-                console.warn("[nw-polyfill] Object.create(null-proto) suppressed, fallback to {}");
-                return props ? origCreate.call(this, {}, props) : {};
-            }
-            return origCreate.call(this, proto, props);
-        };
-        Object.create.__tyranorPatched = true;
-        try {
-            var _origSplit = String.prototype.split;
-            String.prototype.split = function (sep, limit) {
-                if (sep == null) return [String(this)];
-                return _origSplit.call(this, sep, limit);
-            };
-            String.prototype.split.__tyranorPatched = true;
-        } catch (e) {}
-        try {
-            var docProto = Document && Document.prototype;
-            if (docProto && typeof docProto.exitFullscreen === "function" && !docProto.exitFullscreen.__tyranorPatched) {
-                var _origExit = docProto.exitFullscreen;
-                docProto.exitFullscreen = function () {
-                    try {
-                        if (!document.fullscreenElement && !document.webkitFullscreenElement) return Promise.resolve();
-                        return _origExit.apply(this, arguments);
-                    } catch (e) { return Promise.resolve(); }
-                };
-                docProto.exitFullscreen.__tyranorPatched = true;
-            }
-        } catch (e) {}
-    })();
-
     try {
         if (typeof window.makeVideoPlayableInline === "undefined") {
             window.makeVideoPlayableInline = function (video) { try { if (video) { video.setAttribute("playsinline", ""); video.setAttribute("webkit-playsinline", ""); } } catch (e) {} };
         }
     } catch (e) {}
 
-    // Save UI: guard Window_SavefileList against null info (corrupted save)
-    (function () {
-        var uiTimer = setInterval(function(){
-            try {
-                if (window.Window_SavefileList && window.Window_SavefileList.prototype && !window.Window_SavefileList.prototype.__tyranorSavePatched) {
-                    var proto = window.Window_SavefileList.prototype;
-                    var origDrawItem = proto.drawItem;
-                    if (typeof origDrawItem === "function") {
-                        proto.drawItem = function(index){
-                            try { return origDrawItem.apply(this, arguments); } catch (e) { console.warn("[nw-polyfill] drawItem suppressed:", e.message); try { this.drawTitle && this.drawTitle(index); } catch(e2){} }
-                        };
-                    }
-                    var origIsValid = proto.isValidSavefileId;
-                    // no change needed, just ensure it doesn't throw
-                    proto.__tyranorSavePatched = true;
-                    clearInterval(uiTimer);
-                }
-            } catch(e){}
-        }, 300);
-        setTimeout(function(){ try{ clearInterval(uiTimer);}catch(e){}}, 8000);
-    })();
-
-    // 单张贴图 404 不再卡死场景：printLoadingError 降级为警告，不计入 loading 阻塞
-    (function () {
-        var pleTimer = setInterval(function(){
-            try {
-                if (window.Graphics && typeof window.Graphics.printLoadingError === "function" && !window.Graphics.printLoadingError.__tyranorPatched) {
-                    var _origPrint = window.Graphics.printLoadingError;
-                    window.Graphics.printLoadingError = function (url) {
-                        console.warn("[nw-polyfill] printLoadingError suppressed for", url);
-                        // 不改 _errorPrinter、不置 _loadingCount = -Infinity，场景继续等待其余资源
-                    };
-                    window.Graphics.printLoadingError.__tyranorPatched = true;
-                    clearInterval(pleTimer);
-                }
-            } catch (e) {}
-        }, 200);
-        setTimeout(function(){ try{ clearInterval(pleTimer);}catch(e){}}, 8000);
-    })();
-
-        console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
+    console.log("[nw-polyfill] full installed (fs/path/os/util/events/child_process/crypto/url/nw.gui/Buffer/process)");
 })();

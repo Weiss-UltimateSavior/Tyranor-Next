@@ -165,11 +165,6 @@ class TyranoActivity : Activity() {
                 } else {
                     ByteArray(0)
                 }
-            val nwPolyfill = if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ) {
-                try { loadAsset(NWJS_POLYFILL_ASSET) } catch (_: Exception) { ByteArray(0) }
-            } else {
-                ByteArray(0)
-            }
             val lateHook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
                 touchPad
             val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
@@ -196,21 +191,35 @@ class TyranoActivity : Activity() {
             if (webGameType == WebGameType.RPG_MZ && normalizedVersion == "v1") {
                 android.util.Log.i(TAG, "MZ v1 is placeholder, falling back to v0 resources")
             }
+            val nwPolyfill = if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ) {
+                try {
+                    val base = String(loadAsset(NWJS_POLYFILL_ASSET), Charsets.UTF_8)
+                    // v1 专属兜底仅注入到 v1 会话，v0 保持与历史版本一致的注入内容
+                    val v1Only = if (isRpgMvV1) {
+                        loadAsset(NWJS_POLYFILL_V1_EXTRA_ASSET).toString(Charsets.UTF_8)
+                    } else {
+                        ""
+                    }
+                    (base + v1Only).toByteArray(Charsets.UTF_8)
+                } catch (_: Exception) { ByteArray(0) }
+            } else {
+                ByteArray(0)
+            }
+            val isRpgWebGameForInject = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
             val v1Overlay: Map<String, ByteArray> = if (isRpgMvV1) {
                 buildRpgMvV1Overlay(assets)
             } else {
                 emptyMap()
             }
             val internalResources = modResources + v1Overlay
-            val isRpgWebGameForInject = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
             Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${lateHook.size} early=${nwPolyfill.size} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion injectBeforeBody=${isRpgWebGameForInject}")
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
-                    contentRoot, asarArchive, lateHook, isRpgWebGameForInject, scriptAppends, modHtml, internalResources, nwPolyfill,
+                    contentRoot, asarArchive, lateHook, isRpgWebGameForInject, scriptAppends, modHtml, internalResources, nwPolyfill, isRpgMvV1,
                 )
             } else {
                 TyranoLocalHttpServer(
-                    contentRoot, lateHook, isRpgWebGameForInject, scriptAppends, modHtml, internalResources, nwPolyfill,
+                    contentRoot, lateHook, isRpgWebGameForInject, scriptAppends, modHtml, internalResources, nwPolyfill, isRpgMvV1,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
@@ -966,6 +975,7 @@ class TyranoActivity : Activity() {
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
         private const val TOUCH_PAD_ASSET = "__touch_pad.js"
         private const val NWJS_POLYFILL_ASSET = "__nwjs_polyfill.js"
+        private const val NWJS_POLYFILL_V1_EXTRA_ASSET = "__nwjs_polyfill_v1.js"
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val JS_BRIDGE_NAME = "appJsInterface"

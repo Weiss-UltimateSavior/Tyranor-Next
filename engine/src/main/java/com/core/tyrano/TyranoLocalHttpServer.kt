@@ -30,6 +30,7 @@ internal class TyranoLocalHttpServer(
     private val injectedHtml: String = "",
     internalResources: Map<String, ByteArray> = emptyMap(),
     private val earlyHook: ByteArray? = null,
+    private val v1OnlyFallbacks: Boolean = false,
 ) : Runnable {
     private val root: File
     private val asar: AsarArchive?
@@ -74,7 +75,8 @@ internal class TyranoLocalHttpServer(
         injectedHtml: String = "",
         internalResources: Map<String, ByteArray> = emptyMap(),
         earlyHook: ByteArray? = null,
-    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook)
+        v1OnlyFallbacks: Boolean = false,
+    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v1OnlyFallbacks)
 
     fun start() { thread.start() }
     val port: Int get() = serverSocket.localPort
@@ -180,16 +182,19 @@ internal class TyranoLocalHttpServer(
             if (target != null) { Log.i(TAG, "resource fallback rpgmvm->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
         }
         // 加密包以 .rpgmvp/.rpgmvo 落盘，页面可能直接请求 .png/.ogg，
-        // 命中失败时回退同名加密扩展，由 WebView/Decrypter 侧处理
-        if (lower.endsWith(".png")) {
-            val alt = replaceSuffix(uri, ".png", ".rpgmvp")
-            target = canonicalIfValid(alt)
-            if (target != null) { Log.i(TAG, "resource fallback png->rpgmvp $uri -> $alt"); return ResolvedFile(target, null) }
-        }
-        if (lower.endsWith(".ogg")) {
-            val alt = replaceSuffix(uri, ".ogg", ".rpgmvo")
-            target = canonicalIfValid(alt)
-            if (target != null) { Log.i(TAG, "resource fallback ogg->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
+        // 命中失败时回退同名加密扩展，由 WebView/Decrypter 侧处理。
+        // v1Only 门控：仅 v1 覆盖会话启用，v0 路径与历史版本行为完全一致
+        if (v1OnlyFallbacks) {
+            if (lower.endsWith(".png")) {
+                val alt = replaceSuffix(uri, ".png", ".rpgmvp")
+                target = canonicalIfValid(alt)
+                if (target != null) { Log.i(TAG, "resource fallback png->rpgmvp $uri -> $alt"); return ResolvedFile(target, null) }
+            }
+            if (lower.endsWith(".ogg")) {
+                val alt = replaceSuffix(uri, ".ogg", ".rpgmvo")
+                target = canonicalIfValid(alt)
+                if (target != null) { Log.i(TAG, "resource fallback ogg->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
+            }
         }
         if (asar != null) {
             val normalizedUri = uri.replace(Regex("/\\./"), "/").replace(Regex("//+"), "/")
