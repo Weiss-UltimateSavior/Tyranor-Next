@@ -135,7 +135,11 @@ class OnsSettings {
         args.add(if (stretchFull) "--fullscreen2" else "--fullscreen")
         if (disableVideo) args.add("--no-video")
         args.add("--enc:" + normalizeEncoding(encoding))
-        if (saveDir != null && (saveDir.exists() || saveDir.mkdirs())) {
+        if (saveDir != null) {
+            val ready = saveDir.isDirectory || saveDir.mkdirs()
+            if (!ready) {
+                Log.w(TAG, "save dir not created before launch, still passing --save-dir=${saveDir.absolutePath}")
+            }
             args.add("--save-dir")
             args.add(saveDir.absolutePath)
         }

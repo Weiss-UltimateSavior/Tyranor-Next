@@ -258,14 +258,20 @@ object EngineLauncher {
                 if (ons.disableVideo) args.add("--no-video")
                 args.add("--enc:" + EngineSettingsStore.normalizeEncoding(ons.encoding))
                 val saveDir = if (ons.scopedSaveDir) {
-                    File(context.getExternalFilesDir(null), "save/${File(path).name}")
+                    val external = context.getExternalFilesDir(null) ?: context.filesDir
+                    File(File(external, "save"), File(path).name)
                 } else {
                     File(path, "save")
                 }
-                if (saveDir.exists() || saveDir.mkdirs()) {
-                    args.add("--save-dir")
-                    args.add(saveDir.absolutePath)
+                val saveDirReady = saveDir.isDirectory ||
+                    saveDir.mkdirs() ||
+                    (!ons.scopedSaveDir && createSafDirectoryForStoragePath(context, saveDir.absolutePath))
+                if (!saveDirReady) {
+                    Log.w(TAG, "ONS save dir not created before launch, still passing --save-dir=${saveDir.absolutePath}")
                 }
+                args.add("--save-dir")
+                args.add(saveDir.absolutePath)
+                Log.i(TAG, "ONS launch scopedSaveDir=${ons.scopedSaveDir} saveDir=${saveDir.absolutePath} ready=$saveDirReady")
                 if (ons.sharpness) {
                     args.add("--sharpness")
                     args.add(safeSharpnessValue(ons.sharpnessValue))
