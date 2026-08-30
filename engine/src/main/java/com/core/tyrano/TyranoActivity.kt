@@ -279,7 +279,13 @@ class TyranoActivity : Activity() {
             WebGameType.TYRANO -> browser.addJavascriptInterface(TyranoJsBridge(saves), JS_BRIDGE_NAME)
             WebGameType.VN, WebGameType.WEB_OTHER -> Unit
         }
-        val url = "http://localhost:${requireNotNull(localServer).port}/index.html"
+        // v1 会话启用 PIXI legacy 渲染（?android-legacy，__rpg__.js 的既定开关），
+        // 规避部分 Android GPU 上 WebGL 正常初始化却整屏渲染为黑的问题；v0 不带参数
+        val url = if (isRpgMvV1) {
+            "http://localhost:${requireNotNull(localServer).port}/index.html?android-legacy"
+        } else {
+            "http://localhost:${requireNotNull(localServer).port}/index.html"
+        }
         Log.i(TAG, "loadUrl=$url")
         browser.loadUrl(url)
     }
