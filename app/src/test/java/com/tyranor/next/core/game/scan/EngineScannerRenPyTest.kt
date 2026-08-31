@@ -18,7 +18,7 @@ class EngineScannerRenPyTest {
         val detection = EngineScanner.detectEngine(gameRoot)
 
         assertEquals(EngineType.RENPY, detection.engine)
-        assertEquals("[游戏目录]", detection.launchTarget)
+        assertEquals(EngineScanner.LAUNCH_TARGET_GAME_DIR, detection.launchTarget)
     }
 
     @Test
@@ -31,7 +31,7 @@ class EngineScannerRenPyTest {
         val detection = EngineScanner.detectEngine(gameRoot)
 
         assertEquals(EngineType.RENPY, detection.engine)
-        assertEquals("[游戏目录]", detection.launchTarget)
+        assertEquals(EngineScanner.LAUNCH_TARGET_GAME_DIR, detection.launchTarget)
     }
 
     @Test

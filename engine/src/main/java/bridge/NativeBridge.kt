@@ -18,6 +18,14 @@ object NativeBridge {
     private var SAF_DOCUMENTS: Map<String, Uri> = emptyMap()
     @Volatile
     private var krkrGameReadyListener: Runnable? = null
+    @Volatile
+    private var patchOverlayTarget: String? = null
+    @Volatile
+    private var patchOverlayPath: String? = null
+    @Volatile
+    private var steamConfigOverlayTarget: String? = null
+    @Volatile
+    private var steamConfigOverlayPath: String? = null
 
     @JvmStatic external fun initialize(so: String?): Boolean
     @JvmStatic external fun isLaunchSceneReady(so: String?): Boolean
@@ -49,10 +57,45 @@ object NativeBridge {
         Log.i("NativeBridge", "SAF mirror index entries=${SAF_DOCUMENTS.size}")
     }
 
+    @JvmStatic
+    fun configurePatchOverlay(targetPath: String?, overlayPath: String?) {
+        val target = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(targetPath))
+        val overlay = KrPathUtils.normalizeFilePath(overlayPath)
+        val overlayFile = overlay?.let { File(it) }
+        if (target.isNullOrBlank() || overlay.isNullOrBlank() || overlayFile?.isFile != true) {
+            patchOverlayTarget = null
+            patchOverlayPath = null
+            Log.i("NativeBridge", "KRKR patch overlay disabled target=$targetPath overlay=$overlayPath")
+            return
+        }
+        patchOverlayTarget = target
+        patchOverlayPath = overlay
+        Log.i("NativeBridge", "KRKR patch overlay configured target=$target overlay=$overlay")
+    }
+
+    @JvmStatic
+    fun configureSteamConfigOverlay(targetPath: String?, overlayPath: String?) {
+        val target = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(targetPath))
+        val overlay = KrPathUtils.normalizeFilePath(overlayPath)
+        val overlayFile = overlay?.let { File(it) }
+        if (target.isNullOrBlank() || overlay.isNullOrBlank() || overlayFile?.isFile != true) {
+            steamConfigOverlayTarget = null
+            steamConfigOverlayPath = null
+            Log.i("NativeBridge", "KRKR Steam config overlay disabled target=$targetPath overlay=$overlayPath")
+            return
+        }
+        steamConfigOverlayTarget = target
+        steamConfigOverlayPath = overlay
+        Log.i("NativeBridge", "KRKR Steam config overlay configured target=$target overlay=$overlay")
+    }
+
     @Synchronized
     @JvmStatic
     fun open(path: String?, mode: Int): Int {
         val normalized = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(path))
+        readOnlyOverlayRedirect(normalized)?.takeIf { isReadOnlyOpen(mode) }?.let { overlay ->
+            return openDirectFile(path, overlay, mode, diagnosticPrefix = "read-only overlay")
+        }
         val redirected = KrPathUtils.redirectScopedSavePath(normalized)
         // The native hook uses the stable storage-volume prefix because KRKR may lowercase
         // the game path. Keep regular asset I/O native; only scoped saves need Java redirection.
@@ -71,16 +114,7 @@ object NativeBridge {
             if (mirrorFd >= 0) return mirrorFd
         }
         return try {
-            val raf = RandomAccessFile(File(target), javaMode)
-            if ((mode and OsConstants.O_TRUNC) == OsConstants.O_TRUNC) raf.setLength(0)
-            if ((mode and OsConstants.O_APPEND) == OsConstants.O_APPEND) raf.seek(raf.length())
-            val fd = getFd(raf)
-            raf.close()
-            if (redirected != null) recordOpenDiagnostic(
-                "ok path=$path target=$target flags=$mode mode=$javaMode fd=$fd",
-            )
-            Log.i("NativeBridge", "open $fd $javaMode $path")
-            fd
+            openDirectFile(path, target, mode, diagnosticPrefix = if (redirected != null) "redirect" else null)
         } catch (directError: Throwable) {
             if (isSafFallbackEnabled()) {
                 val safFd = openViaSaf(target, mode, directError)
@@ -105,6 +139,28 @@ object NativeBridge {
     }
 
     @JvmStatic
+    fun redirectOpen(path: String?, mode: Int): String? {
+        val raw = KrPathUtils.normalizeFilePath(path)
+        val normalized = KrPathUtils.canonicalizeKrStoragePath(raw)
+        if (isReadOnlyOpen(mode)) {
+            readOnlyOverlayRedirect(normalized)?.let { return it }
+        }
+        KrPathUtils.redirectScopedSavePath(normalized)?.let { return it }
+        if (normalized != null && normalized != path) return normalized
+        return null
+    }
+
+    @JvmStatic
+    fun redirectReadMetadata(path: String?): String? {
+        val raw = KrPathUtils.normalizeFilePath(path)
+        val normalized = KrPathUtils.canonicalizeKrStoragePath(raw)
+        readOnlyOverlayRedirect(normalized)?.let { return it }
+        KrPathUtils.redirectScopedSavePath(normalized)?.let { return it }
+        if (normalized != null && normalized != path) return normalized
+        return null
+    }
+
+    @JvmStatic
     fun redirectScopedSave(path: String?): String? {
         val normalized = KrPathUtils.canonicalizeKrStoragePath(KrPathUtils.normalizeFilePath(path))
         return KrPathUtils.redirectScopedSavePath(normalized)
@@ -116,6 +172,52 @@ object NativeBridge {
                 ?.edit()?.putString("last_open", value)?.commit()
         } catch (_: Throwable) {
         }
+    }
+
+    private fun readOnlyOverlayRedirect(path: String?): String? {
+        if (path == null || path.isBlank()) return null
+        val steamConfigTarget = steamConfigOverlayTarget
+        val steamConfigOverlay = steamConfigOverlayPath
+        if (
+            !steamConfigTarget.isNullOrBlank() &&
+            !steamConfigOverlay.isNullOrBlank() &&
+            matchesOverlayTarget(path, steamConfigTarget)
+        ) {
+            return steamConfigOverlay
+        }
+        val patchTarget = patchOverlayTarget
+        val patchOverlay = patchOverlayPath
+        if (
+            !patchTarget.isNullOrBlank() &&
+            !patchOverlay.isNullOrBlank() &&
+            matchesOverlayTarget(path, patchTarget)
+        ) {
+            return patchOverlay
+        }
+        return null
+    }
+
+    private fun matchesOverlayTarget(path: String, target: String): Boolean {
+        if (path.equals(target, ignoreCase = true)) return true
+        if (path.contains('/')) return false
+        return path.equals(File(target).name, ignoreCase = true)
+    }
+
+    private fun isReadOnlyOpen(mode: Int): Boolean =
+        (mode and OsConstants.O_ACCMODE) == OsConstants.O_RDONLY
+
+    private fun openDirectFile(path: String?, target: String, mode: Int, diagnosticPrefix: String?): Int {
+        val javaMode = toJavaMode(mode)
+        val raf = RandomAccessFile(File(target), javaMode)
+        if ((mode and OsConstants.O_TRUNC) == OsConstants.O_TRUNC) raf.setLength(0)
+        if ((mode and OsConstants.O_APPEND) == OsConstants.O_APPEND) raf.seek(raf.length())
+        val fd = getFd(raf)
+        raf.close()
+        if (diagnosticPrefix != null) recordOpenDiagnostic(
+            "$diagnosticPrefix ok path=$path target=$target flags=$mode mode=$javaMode fd=$fd",
+        )
+        Log.i("NativeBridge", "open $fd $javaMode $path -> $target")
+        return fd
     }
 
     private fun isSafFallbackEnabled(): Boolean {
@@ -170,7 +272,7 @@ object NativeBridge {
     fun createDirectoryViaSafIfPossible(path: String?): Boolean {
         return try {
             val p = KrPathUtils.canonicalizeKrStoragePath(path) ?: return false
-            val uri = storagePathToPersistedDocumentUri(p + "/.yukihub_dir_probe", OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_TRUNC) ?: return false
+            val uri = storagePathToPersistedDocumentUri(p + "/.tyranor_dir_probe", OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_TRUNC) ?: return false
             val activity = KrPathUtils.currentActivity()
             if (activity != null) {
                 try { DocumentsContract.deleteDocument(activity.contentResolver, uri) } catch (_: Throwable) {}

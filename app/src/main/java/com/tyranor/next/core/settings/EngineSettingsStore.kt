@@ -1,11 +1,12 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import com.core.engine.EnginePrefs
 import org.json.JSONObject
 
 /**
  * 引擎设置存储层。键名与 RinneMobile 保持一致：
- * - KRKR / Artemis / Tyrano 的全局设置存 yukihub_prefs（引擎进程读取同一 prefs）
+ * - KRKR / Artemis / Tyrano 的全局设置存 tyranor_prefs（原 yukihub_prefs，引擎进程读取同一 prefs）
  * - ONS 设置存 onsyuri 的 gameargs JSON（OnsSettings.load 读取同文件）
  *
  * 设置值经 launcher 在启动时以 Intent extra 注入引擎（KR 走 krkr_engine_prefs 等，
@@ -29,11 +30,17 @@ object EngineSettingsStore {
     const val KEY_KR_VCURSOR_SCALE = "kr_vcursor_scale"
     const val KEY_KR_MENU_HANDLER_OPA = "kr_menu_handler_opa"
     const val KEY_KR_SCOPED_SAVE_DIR = "kr_scoped_save_dir"
+    const val KEY_KR_PATCH_OVERLAY_MODE = "kr_patch_overlay_mode"
 
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
     const val KEY_ARTEMIS_ROTATE_SCREEN = "artemis_rotate_screen"
     const val KEY_ARTEMIS_AUTO_PATCH = "artemis_auto_patch"
+    const val KEY_ARTEMIS_RESOLUTION = "artemis_resolution"
+    const val KEY_ARTEMIS_SIDE_CUT = "artemis_side_cut"
+    const val KEY_ARTEMIS_SURFACE_CACHE_SIZE = "artemis_surface_cache_size"
+    const val KEY_ARTEMIS_FONT_CACHE_SIZE = "artemis_font_cache_size"
+    const val KEY_ARTEMIS_POWER_SAVING = "artemis_power_saving"
 
     // Ren'Py 应用级默认（外置模块版本选择）
     const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
@@ -53,6 +60,9 @@ object EngineSettingsStore {
     const val KR_126 = "1.2.6"
     const val KERNEL_KIRIKIRI2 = "kirikiri2"
     const val KERNEL_KRKRSDL3 = "krkrsdl3"
+    const val KR_PATCH_OVERLAY_AUTO = "auto"
+    const val KR_PATCH_OVERLAY_FORCE = "force"
+    const val KR_PATCH_OVERLAY_OFF = "off"
 
     const val RENDERER_SOFTWARE = "software"
     const val RENDERER_OPENGL = "opengl"
@@ -82,9 +92,45 @@ object EngineSettingsStore {
     const val ART_ENGINE_V2 = "2"
     const val ART_ENGINE_V3 = "3"
     const val ART_ENGINE_V4 = "4"
+    const val ART_ENGINE_V5 = "5"
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
+    const val ART_RESOLUTION_DEFAULT = ""
+    const val ART_RESOLUTION_1920_1080 = "1920x1080"
+    const val ART_RESOLUTION_1280_720 = "1280x720"
+    const val ART_RESOLUTION_960_540 = "960x540"
+    const val ART_TOGGLE_DEFAULT = ""
+    const val ART_TOGGLE_OFF = "0"
+    const val ART_TOGGLE_ON = "1"
+    const val ART_CACHE_DEFAULT = ""
+    const val ART_SURFACE_CACHE_64MB = "67108864"
+    const val ART_SURFACE_CACHE_128MB = "134217728"
+    const val ART_SURFACE_CACHE_256MB = "268435456"
+    const val ART_FONT_CACHE_8MB = "8388608"
+    const val ART_FONT_CACHE_16MB = "16777216"
+    const val ART_FONT_CACHE_32MB = "33554432"
+    const val ART_FONT_CACHE_64MB = "67108864"
+    val ART_RESOLUTIONS = setOf(
+        ART_RESOLUTION_DEFAULT,
+        ART_RESOLUTION_1920_1080,
+        ART_RESOLUTION_1280_720,
+        ART_RESOLUTION_960_540,
+    )
+    val ART_TOGGLES = setOf(ART_TOGGLE_DEFAULT, ART_TOGGLE_OFF, ART_TOGGLE_ON)
+    val ART_SURFACE_CACHES = setOf(
+        ART_CACHE_DEFAULT,
+        ART_SURFACE_CACHE_64MB,
+        ART_SURFACE_CACHE_128MB,
+        ART_SURFACE_CACHE_256MB,
+    )
+    val ART_FONT_CACHES = setOf(
+        ART_CACHE_DEFAULT,
+        ART_FONT_CACHE_8MB,
+        ART_FONT_CACHE_16MB,
+        ART_FONT_CACHE_32MB,
+        ART_FONT_CACHE_64MB,
+    )
 
     const val RPG_MV_V0 = "v0"
     const val RPG_MZ_V0 = "v0"
@@ -104,7 +150,7 @@ object EngineSettingsStore {
     )
 
     private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences("yukihub_prefs", Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
 
     private fun onsPrefs(context: Context) =
         context.applicationContext.getSharedPreferences("onsyuri", Context.MODE_PRIVATE)
@@ -125,6 +171,11 @@ object EngineSettingsStore {
         prefs(c).getBoolean(KEY_KR_SCOPED_SAVE_DIR, true)
     fun setKrScopedSaveDir(c: Context, b: Boolean) =
         prefs(c).edit().putBoolean(KEY_KR_SCOPED_SAVE_DIR, b).apply()
+
+    fun getKrPatchOverlayMode(c: Context): String =
+        normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))
+    fun setKrPatchOverlayMode(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_KR_PATCH_OVERLAY_MODE, normalizeKrPatchOverlayMode(v)).apply()
 
     fun getKrDefaultFont(c: Context): String = prefs(c).getString(KEY_KR_DEFAULT_FONT, "").orEmpty()
     fun setKrDefaultFont(c: Context, p: String) = prefs(c).edit().putString(KEY_KR_DEFAULT_FONT, p.trim()).apply()
@@ -197,6 +248,12 @@ object EngineSettingsStore {
         else -> KR_AUTO
     }
 
+    fun normalizeKrPatchOverlayMode(v: String?): String = when (v?.trim()?.lowercase()) {
+        KR_PATCH_OVERLAY_FORCE -> KR_PATCH_OVERLAY_FORCE
+        KR_PATCH_OVERLAY_OFF -> KR_PATCH_OVERLAY_OFF
+        else -> KR_PATCH_OVERLAY_AUTO
+    }
+
     // ---------- ONS（存 onsyuri/gameargs JSON，引擎进程 OnsSettings.load 直接读） ----------
     data class Ons(
         var scopedSaveDir: Boolean = true,
@@ -252,7 +309,8 @@ object EngineSettingsStore {
             v == ART_ENGINE_V1 ||
             v == ART_ENGINE_V2 ||
             v == ART_ENGINE_V3 ||
-            v == ART_ENGINE_V4
+            v == ART_ENGINE_V4 ||
+            v == ART_ENGINE_V5
         ) v else ART_ENGINE_AUTO
     }
     fun setArtEngineVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_ENGINE_VERSION, v).apply()
@@ -263,6 +321,26 @@ object EngineSettingsStore {
         return if (v == AUTO_PATCH_AUTO || v == AUTO_PATCH_OFF) v else AUTO_PATCH_ASK
     }
     fun setArtAutoPatch(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_AUTO_PATCH, v).apply()
+    fun getArtResolution(c: Context): String = artStringPref(c, KEY_ARTEMIS_RESOLUTION, ART_RESOLUTIONS)
+    fun setArtResolution(c: Context, v: String) = setArtStringPref(c, KEY_ARTEMIS_RESOLUTION, v, ART_RESOLUTIONS)
+    fun getArtSideCut(c: Context): String = artStringPref(c, KEY_ARTEMIS_SIDE_CUT, ART_TOGGLES)
+    fun setArtSideCut(c: Context, v: String) = setArtStringPref(c, KEY_ARTEMIS_SIDE_CUT, v, ART_TOGGLES)
+    fun getArtSurfaceCacheSize(c: Context): String = artStringPref(c, KEY_ARTEMIS_SURFACE_CACHE_SIZE, ART_SURFACE_CACHES)
+    fun setArtSurfaceCacheSize(c: Context, v: String) = setArtStringPref(c, KEY_ARTEMIS_SURFACE_CACHE_SIZE, v, ART_SURFACE_CACHES)
+    fun getArtFontCacheSize(c: Context): String = artStringPref(c, KEY_ARTEMIS_FONT_CACHE_SIZE, ART_FONT_CACHES)
+    fun setArtFontCacheSize(c: Context, v: String) = setArtStringPref(c, KEY_ARTEMIS_FONT_CACHE_SIZE, v, ART_FONT_CACHES)
+    fun getArtPowerSaving(c: Context): String = artStringPref(c, KEY_ARTEMIS_POWER_SAVING, ART_TOGGLES)
+    fun setArtPowerSaving(c: Context, v: String) = setArtStringPref(c, KEY_ARTEMIS_POWER_SAVING, v, ART_TOGGLES)
+
+    private fun artStringPref(c: Context, key: String, allowed: Set<String>): String {
+        val value = prefs(c).getString(key, ART_CACHE_DEFAULT).orEmpty().trim()
+        return if (value in allowed) value else ART_CACHE_DEFAULT
+    }
+
+    private fun setArtStringPref(c: Context, key: String, value: String, allowed: Set<String>) {
+        val normalized = value.trim().takeIf { it in allowed } ?: ART_CACHE_DEFAULT
+        prefs(c).edit().putString(key, normalized).apply()
+    }
 
     // ---------- Ren'Py ----------
     fun getRenpyVersion(c: Context): String {

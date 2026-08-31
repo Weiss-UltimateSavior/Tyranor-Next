@@ -24,6 +24,13 @@ internal fun krKernelOptions(): List<Pair<String, String>> = listOf(
 )
 
 @Composable
+internal fun krPatchOverlayOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.KR_PATCH_OVERLAY_AUTO to stringResource(R.string.common_auto),
+    EngineSettingsStore.KR_PATCH_OVERLAY_FORCE to stringResource(R.string.engine_option_force_enable),
+    EngineSettingsStore.KR_PATCH_OVERLAY_OFF to stringResource(R.string.engine_option_off),
+)
+
+@Composable
 internal fun krRendererOptions(): List<Pair<String, String>> = listOf(
     "default" to stringResource(R.string.engine_option_engine_default),
     EngineSettingsStore.RENDERER_SOFTWARE to stringResource(R.string.engine_option_software_renderer),
@@ -87,10 +94,11 @@ internal fun onsEncodingOptions(): List<Pair<String, String>> =
 @Composable
 internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_AUTO to stringResource(R.string.common_auto),
-    EngineSettingsStore.ART_ENGINE_V1 to "V1（Artroid+ 1.0）",
-    EngineSettingsStore.ART_ENGINE_V2 to "V2（Artroid+ 2.0）",
-    EngineSettingsStore.ART_ENGINE_V3 to "V3（Artroid+ 3.0）",
-    EngineSettingsStore.ART_ENGINE_V4 to "V4（Tyn 1.0）",
+    EngineSettingsStore.ART_ENGINE_V2 to "v1（Tyranor/Rev.2762）",
+    EngineSettingsStore.ART_ENGINE_V1 to "v2（Tyranor/Rev.3049/emote）",
+    EngineSettingsStore.ART_ENGINE_V3 to "v3（Tyranor/Rev.3201/emote）",
+    EngineSettingsStore.ART_ENGINE_V4 to "V1（TyranorNext/Rev.2958）",
+    EngineSettingsStore.ART_ENGINE_V5 to "V3（TyranorNext/Rev.3288）",
 )
 
 @Composable
@@ -108,10 +116,45 @@ internal fun artPatchOptions(): List<Pair<String, String>> = listOf(
 )
 
 @Composable
+internal fun artResolutionOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_RESOLUTION_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_RESOLUTION_1920_1080 to "1920 × 1080",
+    EngineSettingsStore.ART_RESOLUTION_1280_720 to "1280 × 720",
+    EngineSettingsStore.ART_RESOLUTION_960_540 to "960 × 540",
+)
+
+@Composable
+internal fun artToggleOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_TOGGLE_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_TOGGLE_OFF to stringResource(R.string.common_disabled),
+    EngineSettingsStore.ART_TOGGLE_ON to stringResource(R.string.common_enabled),
+)
+
+@Composable
+internal fun artSurfaceCacheOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_CACHE_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_SURFACE_CACHE_64MB to "64 MB",
+    EngineSettingsStore.ART_SURFACE_CACHE_128MB to "128 MB",
+    EngineSettingsStore.ART_SURFACE_CACHE_256MB to "256 MB",
+)
+
+@Composable
+internal fun artFontCacheOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_CACHE_DEFAULT to stringResource(R.string.engine_option_engine_default),
+    EngineSettingsStore.ART_FONT_CACHE_8MB to "8 MB",
+    EngineSettingsStore.ART_FONT_CACHE_16MB to "16 MB",
+    EngineSettingsStore.ART_FONT_CACHE_32MB to "32 MB",
+    EngineSettingsStore.ART_FONT_CACHE_64MB to "64 MB",
+)
+
+@Composable
 internal fun krSelectOptionsMap(): Map<String, String> = krSelectOptions().toMap()
 
 @Composable
 internal fun krKernelOptionsMap(): Map<String, String> = krKernelOptions().toMap()
+
+@Composable
+internal fun krPatchOverlayOptionsMap(): Map<String, String> = krPatchOverlayOptions().toMap()
 
 @Composable
 internal fun krRendererOptionsMap(): Map<String, String> =
@@ -167,3 +210,15 @@ internal fun rpgMvVersionOptionsMap(): Map<String, String> = rpgMvVersionOptions
 
 @Composable
 internal fun rpgMzVersionOptionsMap(): Map<String, String> = rpgMzVersionOptions().toMap()
+
+@Composable
+internal fun artResolutionOptionsMap(): Map<String, String> = artResolutionOptions().toMap()
+
+@Composable
+internal fun artToggleOptionsMap(): Map<String, String> = artToggleOptions().toMap()
+
+@Composable
+internal fun artSurfaceCacheOptionsMap(): Map<String, String> = artSurfaceCacheOptions().toMap()
+
+@Composable
+internal fun artFontCacheOptionsMap(): Map<String, String> = artFontCacheOptions().toMap()

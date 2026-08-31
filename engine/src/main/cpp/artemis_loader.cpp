@@ -106,7 +106,8 @@ bool isAllowedEngineLibName(const std::string& name) {
     return name == "artemis"
         || name == "artemis-compatible"
         || name == "artemis-compatible-v2"
-        || name == "artemis-v4";
+        || name == "artemis-v4"
+        || name == "artemis-v5";
 }
 
 }  // namespace

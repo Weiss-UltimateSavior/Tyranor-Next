@@ -7,7 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
- * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 yukihub_prefs。
+ * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 tyranor_prefs。
  */
 object AppSettingsStore {
 

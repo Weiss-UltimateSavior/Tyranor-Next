@@ -4,6 +4,7 @@ import android.util.Log
 import java.io.EOFException
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.util.Locale
 import kotlin.text.Charsets.UTF_8
@@ -23,6 +24,34 @@ object ArtemisPfsUnpacker {
     private const val MAX_ENTRY_COUNT = 10_000
     private const val MAX_NAME_BYTES = 4096
     private const val MIN_ENCRYPTED_LEN = 8
+    private const val MANAGED_BLOCK_BEGIN = "; TYRANOR_NEXT_ARTEMIS_SETTINGS_BEGIN"
+    private const val MANAGED_BLOCK_END = "; TYRANOR_NEXT_ARTEMIS_SETTINGS_END"
+    private val MANAGED_ANDROID_KEYS = setOf(
+        "WIDTH",
+        "HEIGHT",
+        "SIDECUT",
+        "SURFACE_CACHE_SIZE",
+        "FONT_CACHE_SIZE",
+        "POWER_SAVING",
+    )
+    private val MANAGED_RESOLUTIONS = setOf(1920 to 1080, 1280 to 720, 960 to 540)
+    private val MANAGED_SURFACE_CACHE_VALUES = setOf("67108864", "134217728", "268435456")
+    private val MANAGED_FONT_CACHE_VALUES = setOf("8388608", "16777216", "33554432", "67108864")
+
+    data class AndroidSettings(
+        val resolution: String = "",
+        val sideCut: String = "",
+        val surfaceCacheSize: String = "",
+        val fontCacheSize: String = "",
+        val powerSaving: String = "",
+    ) {
+        fun hasOverrides(): Boolean =
+            resolution.isNotBlank() ||
+                sideCut.isNotBlank() ||
+                surfaceCacheSize.isNotBlank() ||
+                fontCacheSize.isNotBlank() ||
+                powerSaving.isNotBlank()
+    }
 
     fun needsBasePatch(rootPath: String?): Boolean {
         if (rootPath.isNullOrBlank() || rootPath.startsWith("content://")) return false
@@ -56,6 +85,60 @@ object ArtemisPfsUnpacker {
         }
     }
 
+    fun applyAndroidSettings(rootPath: String?, settings: AndroidSettings): Boolean {
+        if (rootPath.isNullOrBlank() || rootPath.startsWith("content://")) return false
+        val dir = File(rootPath)
+        if (!dir.isDirectory) return false
+        val systemIni = File(dir, "system.ini")
+        if (!systemIni.isFile) {
+            if (!settings.hasOverrides()) return true
+            if (!extractSystemIniIfMissing(dir)) {
+                logWarn("skip Artemis Android settings: system.ini missing root=$rootPath")
+                return false
+            }
+        }
+        return runCatching {
+            val bytes = systemIni.readBytes()
+            val charset = detectSystemIniCharset(bytes)
+            val text = String(bytes, charset)
+            val patched = if (settings.hasOverrides()) {
+                ensureAndroidCompatibilityDefaults(patchAndroidSection(text, settings))
+            } else {
+                restoreAndroidSectionDefaults(text)
+            }
+            if (patched != text) {
+                systemIni.writeText(patched, charset)
+                logInfo("applied Artemis Android settings root=$rootPath settings=$settings")
+            }
+            true
+        }.getOrElse { error ->
+            logWarn("apply Artemis Android settings failed root=$rootPath", error)
+            false
+        }
+    }
+
+    private fun extractSystemIniIfMissing(dir: File): Boolean {
+        val systemIni = File(dir, "system.ini")
+        if (systemIni.isFile) return true
+        return runCatching {
+            for (pfs in listPfsFiles(dir)) {
+                val written = unpackPfs(
+                    gameDir = dir,
+                    pfs = pfs,
+                    shouldExtractEntry = { relPath -> relPath.equals("system.ini", ignoreCase = true) },
+                )
+                if (written > 0 && systemIni.isFile) {
+                    logInfo("extracted system.ini from ${pfs.name}")
+                    return true
+                }
+            }
+            systemIni.isFile
+        }.getOrElse { error ->
+            logWarn("extract system.ini failed dir=${dir.path}", error)
+            false
+        }
+    }
+
     private fun listPfsFiles(dir: File): List<File> {
         val files = runCatching { dir.listFiles()?.filter { it.isFile && isPfsName(it.name) } }
             .getOrNull() ?: return emptyList()
@@ -67,7 +150,11 @@ object ArtemisPfsUnpacker {
         return lower.endsWith(".pfs") || Regex("^[^.]+\\.pfs\\.\\d{3}$").matches(lower)
     }
 
-    private fun unpackPfs(gameDir: File, pfs: File): Long {
+    private fun unpackPfs(
+        gameDir: File,
+        pfs: File,
+        shouldExtractEntry: (String) -> Boolean = ::shouldExtract,
+    ): Long {
         var written = 0L
         var entries = 0
         RandomAccessFile(pfs, "r").use { raf ->
@@ -104,7 +191,7 @@ object ArtemisPfsUnpacker {
                 val offset = readM(raf).toLong()
                 val dataLen = readM(raf).toLong()
                 val relPath = rawName.replace('\\', '/')
-                if (!shouldExtract(relPath)) continue
+                if (!shouldExtractEntry(relPath)) continue
                 if (offset < 0 || dataLen < 0 || offset + dataLen > fileLength || dataLen > MAX_ENTRY_BYTES) {
                     logWarn("invalid pfs entry bounds name=$rawName offset=$offset len=$dataLen")
                     continue
@@ -191,13 +278,14 @@ object ArtemisPfsUnpacker {
 
     private fun patchSystemIni(file: File) {
         try {
-            val lines = file.readLines(UTF_8).toMutableList()
-            if (lines.any { it.trim() == "[ANDROID]" }) return
-            lines += "\n[ANDROID]"
-            lines += "SIDECUT = 0"
-            lines += "BOOT = system/first.iet"
-            lines += "FONT_CACHE_SIZE = 8388608"
-            file.writeText(lines.joinToString("\n"), UTF_8)
+            val bytes = file.readBytes()
+            val charset = detectSystemIniCharset(bytes)
+            val text = String(bytes, charset)
+            val patched = ensureAndroidCompatibilityDefaults(text)
+            if (patched != text) {
+                file.writeText(patched, charset)
+                logInfo("patched Android system.ini defaults ${file.path}")
+            }
         } catch (error: Exception) {
             logWarn("patch system.ini failed ${file.path}", error)
         }
@@ -316,6 +404,231 @@ object ArtemisPfsUnpacker {
             if (section == "ANDROID") androidBoot = value
         }
         return androidBoot ?: firstBoot
+    }
+
+    private fun ensureAndroidCompatibilityDefaults(text: String): String {
+        val lines = text.split('\n').toMutableList()
+        var androidBounds = findSectionBounds(lines, "ANDROID")
+        if (androidBounds == null) {
+            if (lines.isNotEmpty() && lines.last().isNotEmpty()) lines += ""
+            lines += "[ANDROID]"
+            androidBounds = findSectionBounds(lines, "ANDROID") ?: return text
+        }
+
+        val androidRange = androidBounds.contentStart until androidBounds.contentEndExclusive
+        val updates = linkedMapOf<String, String>()
+        val inheritedResolution = readResolutionFromSections(
+            lines,
+            listOf("ANDROID", "SYSTEM", "WINDOWS", "IOS", "WASM"),
+        ) ?: (1280 to 720)
+        if (readSectionValue(lines, androidRange, "WIDTH").isNullOrBlank()) {
+            updates["WIDTH"] = inheritedResolution.first.toString()
+        }
+        if (readSectionValue(lines, androidRange, "HEIGHT").isNullOrBlank()) {
+            updates["HEIGHT"] = inheritedResolution.second.toString()
+        }
+        if (readSectionValue(lines, androidRange, "SIDECUT").isNullOrBlank()) {
+            updates["SIDECUT"] = "0"
+        }
+        if (readSectionValue(lines, androidRange, "BOOT").isNullOrBlank()) {
+            updates["BOOT"] = readFirstValueFromSections(
+                lines,
+                listOf("ANDROID", "SYSTEM", "WINDOWS", "IOS", "WASM"),
+                "BOOT",
+            ) ?: DEFAULT_ANDROID_BOOT
+        }
+        if (readSectionValue(lines, androidRange, "FONT_CACHE_SIZE").isNullOrBlank()) {
+            updates["FONT_CACHE_SIZE"] = "8388608"
+        }
+        if (updates.isEmpty()) return text
+
+        val insertion = updates.map { (key, value) -> "$key = $value" }
+        lines.addAll(androidBounds.contentEndExclusive, insertion)
+        return lines.joinToString("\n")
+    }
+
+    private fun patchAndroidSection(text: String, settings: AndroidSettings): String {
+        val updates = linkedMapOf<String, String>()
+        parseResolution(settings.resolution)?.let { (width, height) ->
+            updates["WIDTH"] = width.toString()
+            updates["HEIGHT"] = height.toString()
+        }
+        if (settings.sideCut.isNotBlank()) updates["SIDECUT"] = settings.sideCut
+        if (settings.surfaceCacheSize.isNotBlank()) updates["SURFACE_CACHE_SIZE"] = settings.surfaceCacheSize
+        if (settings.fontCacheSize.isNotBlank()) updates["FONT_CACHE_SIZE"] = settings.fontCacheSize
+        if (settings.powerSaving.isNotBlank()) updates["POWER_SAVING"] = settings.powerSaving
+        if (updates.isEmpty()) return text
+
+        val lines = removeLegacyManagedAndroidLines(removeManagedAndroidBlock(text.split('\n'))).toMutableList()
+        var androidStart = -1
+        var androidEnd = lines.size
+        for (i in lines.indices) {
+            val section = lines[i].substringBefore(';').trim()
+            if (!section.startsWith("[") || !section.endsWith("]")) continue
+            val name = section.substring(1, section.length - 1).trim().uppercase(Locale.ROOT)
+            if (name == "ANDROID") {
+                androidStart = i
+                androidEnd = lines.size
+            } else if (androidStart >= 0) {
+                androidEnd = i
+                break
+            }
+        }
+        if (androidStart < 0) {
+            if (lines.isNotEmpty() && lines.last().isNotEmpty()) lines += ""
+            lines += "[ANDROID]"
+            androidStart = lines.lastIndex
+            androidEnd = lines.size
+        }
+
+        val block = buildList {
+            add(MANAGED_BLOCK_BEGIN)
+            updates.forEach { (key, value) -> add("$key = $value") }
+            add(MANAGED_BLOCK_END)
+        }
+        lines.addAll(androidEnd, block)
+        return lines.joinToString("\n")
+    }
+
+    private fun restoreAndroidSectionDefaults(text: String): String {
+        val originalLines = text.split('\n')
+        val withoutBlock = removeManagedAndroidBlock(originalLines)
+        return ensureAndroidCompatibilityDefaults(
+            removeLegacyManagedAndroidLines(withoutBlock).joinToString("\n"),
+        )
+    }
+
+    private fun removeManagedAndroidBlock(lines: List<String>): List<String> {
+        val out = mutableListOf<String>()
+        var inBlock = false
+        for (line in lines) {
+            when (line.trim()) {
+                MANAGED_BLOCK_BEGIN -> inBlock = true
+                MANAGED_BLOCK_END -> inBlock = false
+                else -> if (!inBlock) out += line
+            }
+        }
+        return out
+    }
+
+    private fun removeLegacyManagedAndroidLines(lines: List<String>): List<String> {
+        val androidRange = findAndroidSectionRange(lines) ?: return lines
+        val width = readSectionValue(lines, androidRange, "WIDTH")?.toIntOrNull()
+        val height = readSectionValue(lines, androidRange, "HEIGHT")?.toIntOrNull()
+        val legacyResolution = width != null && height != null && (width to height) in MANAGED_RESOLUTIONS
+        return lines.filterIndexed { index, line ->
+            if (index !in androidRange) return@filterIndexed true
+            val parsed = parseIniAssignment(line) ?: return@filterIndexed true
+            val (key, value) = parsed
+            if (key !in MANAGED_ANDROID_KEYS) return@filterIndexed true
+            !isLegacyManagedValue(key, value, legacyResolution)
+        }
+    }
+
+    private fun findAndroidSectionRange(lines: List<String>): IntRange? {
+        val bounds = findSectionBounds(lines, "ANDROID") ?: return null
+        return bounds.contentStart until bounds.contentEndExclusive
+    }
+
+    private data class SectionBounds(
+        val headerIndex: Int,
+        val contentStart: Int,
+        val contentEndExclusive: Int,
+    )
+
+    private fun findSectionBounds(lines: List<String>, sectionName: String): SectionBounds? {
+        var headerIndex = -1
+        var contentStart = -1
+        var contentEndExclusive = lines.size
+        val wanted = sectionName.uppercase(Locale.ROOT)
+        for (i in lines.indices) {
+            val section = lines[i].substringBefore(';').trim()
+            if (!section.startsWith("[") || !section.endsWith("]")) continue
+            val name = section.substring(1, section.length - 1).trim().uppercase(Locale.ROOT)
+            if (name == wanted) {
+                headerIndex = i
+                contentStart = i + 1
+                contentEndExclusive = lines.size
+            } else if (headerIndex >= 0) {
+                contentEndExclusive = i
+                break
+            }
+        }
+        return if (headerIndex >= 0) {
+            SectionBounds(headerIndex, contentStart, contentEndExclusive)
+        } else {
+            null
+        }
+    }
+
+    private fun readSectionValue(lines: List<String>, range: IntRange, key: String): String? {
+        for (i in range) {
+            val parsed = parseIniAssignment(lines[i]) ?: continue
+            if (parsed.first == key) return parsed.second
+        }
+        return null
+    }
+
+    private fun readFirstValueFromSections(lines: List<String>, sections: List<String>, key: String): String? {
+        for (section in sections) {
+            val bounds = findSectionBounds(lines, section) ?: continue
+            val value = readSectionValue(lines, bounds.contentStart until bounds.contentEndExclusive, key)
+            if (!value.isNullOrBlank()) return value
+        }
+        return null
+    }
+
+    private fun readResolutionFromSections(lines: List<String>, sections: List<String>): Pair<Int, Int>? {
+        for (section in sections) {
+            val bounds = findSectionBounds(lines, section) ?: continue
+            val range = bounds.contentStart until bounds.contentEndExclusive
+            val width = readSectionValue(lines, range, "WIDTH")?.toIntOrNull()
+            val height = readSectionValue(lines, range, "HEIGHT")?.toIntOrNull()
+            if (width != null && height != null) return width to height
+        }
+        return null
+    }
+
+    private fun parseIniAssignment(line: String): Pair<String, String>? {
+        val withoutComment = line.substringBefore(';')
+        val equals = withoutComment.indexOf('=')
+        if (equals <= 0) return null
+        val key = withoutComment.substring(0, equals).trim().uppercase(Locale.ROOT)
+        val value = withoutComment.substring(equals + 1).trim().trim('"')
+        return key to value
+    }
+
+    private fun isLegacyManagedValue(key: String, value: String, legacyResolution: Boolean): Boolean =
+        when (key) {
+            "WIDTH", "HEIGHT" -> legacyResolution
+            "SIDECUT", "POWER_SAVING" -> value == "0" || value == "1"
+            "SURFACE_CACHE_SIZE" -> value in MANAGED_SURFACE_CACHE_VALUES
+            "FONT_CACHE_SIZE" -> value in MANAGED_FONT_CACHE_VALUES
+            else -> false
+        }
+
+    private fun parseResolution(value: String): Pair<Int, Int>? {
+        val parts = value.lowercase(Locale.ROOT).split('x')
+        if (parts.size != 2) return null
+        val width = parts[0].trim().toIntOrNull() ?: return null
+        val height = parts[1].trim().toIntOrNull() ?: return null
+        if (width !in 320..4096 || height !in 240..2160) return null
+        return width to height
+    }
+
+    private fun detectSystemIniCharset(bytes: ByteArray): Charset {
+        if (bytes.size >= 3 &&
+            bytes[0] == 0xEF.toByte() &&
+            bytes[1] == 0xBB.toByte() &&
+            bytes[2] == 0xBF.toByte()
+        ) {
+            return UTF_8
+        }
+        val utf8 = runCatching { String(bytes, UTF_8) }.getOrNull()
+        if (utf8 != null && Regex("(?im)^\\s*CHARSET\\s*=\\s*UTF-?8\\s*$").containsMatchIn(utf8)) {
+            return UTF_8
+        }
+        return runCatching { Charset.forName("Shift_JIS") }.getOrDefault(UTF_8)
     }
 
     private fun readM(raf: RandomAccessFile): Int {

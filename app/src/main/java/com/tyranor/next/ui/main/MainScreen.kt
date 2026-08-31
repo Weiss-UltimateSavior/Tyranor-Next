@@ -173,6 +173,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
                   onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
                   onScanLibrary = libraryViewModel::scanLibrary,
                   onScrapeEventShown = libraryViewModel::acknowledgeScrapeEvent,
+                  onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
                 )
                 2 -> EngineScreen(Modifier.fillMaxSize())
                 3 -> SettingsScreen(Modifier.fillMaxSize())

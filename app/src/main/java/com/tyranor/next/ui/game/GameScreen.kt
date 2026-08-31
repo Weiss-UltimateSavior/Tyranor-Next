@@ -97,6 +97,7 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
+import com.tyranor.next.core.game.model.GameSortKeys
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.cover.VndbCoverService
 import com.tyranor.next.core.cover.stableKey
@@ -129,7 +130,6 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
-import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 @Composable
@@ -141,6 +141,7 @@ fun GameScreen(
     onQuickLaunchToggle: (ScanGame) -> Boolean,
     onScanLibrary: () -> Unit,
     onScrapeEventShown: (Long) -> Unit,
+    onSearchQueryChanged: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -221,6 +222,9 @@ fun GameScreen(
                 scope.launch { launchError = EngineLauncher.launch(context, game) }
             }
         },
+        dbSearchQuery = libraryState.searchQuery,
+        dbSearchResults = libraryState.searchResults,
+        onSearchQueryChanged = onSearchQueryChanged,
     )
 
     // ===== 点击游戏卡片的底部抽屉栏 =====
@@ -302,24 +306,17 @@ fun GameScreen(
     }
 }
 
+// 排序键与 Room 预计算列共用 GameSortKeys，保证 SQL 排序与内存排序结果一致（迁移方案阶段 3）。
 private fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
     return when (sortMode) {
         AppSettingsStore.GAME_SORT_BRACKET_TAG -> games.sortedWith(
-            compareBy<ScanGame> { bracketTag(it.title).isBlank() }
-                .thenBy { bracketTag(it.title).lowercase(Locale.ROOT) }
-                .thenBy { titleSortKey(it.title) },
+            compareBy<ScanGame> { GameSortKeys.bracketTag(it.title).isBlank() }
+                .thenBy { GameSortKeys.tagKey(it.title) }
+                .thenBy { GameSortKeys.titleKey(it.title) },
         )
-        else -> games.sortedBy { titleSortKey(it.title) }
+        else -> games.sortedBy { GameSortKeys.titleKey(it.title) }
     }
 }
-
-private fun bracketTag(title: String): String {
-    val match = Regex("""【([^】]+)】|\[([^\]]+)]""").find(title) ?: return ""
-    return (match.groups[1]?.value ?: match.groups[2]?.value).orEmpty().trim()
-}
-
-private fun titleSortKey(title: String): String =
-    title.lowercase(Locale.ROOT).trim()
 
 /** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
 internal fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
@@ -367,14 +364,28 @@ private fun GameLibraryContent(
     refreshGames: () -> Unit,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
+    dbSearchQuery: String,
+    dbSearchResults: List<ScanGame>?,
+    onSearchQueryChanged: (String) -> Unit,
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val gameSort = AppSettingsStore.gameSortState.value
     val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
-    val filteredGames = remember(sortedGames, query) {
+    val fallbackFiltered = remember(sortedGames, query) {
         val q = query.trim()
         if (q.isEmpty()) sortedGames else sortedGames.filter { it.title.contains(q, ignoreCase = true) }
+    }
+    // 搜索走 Room DAO（迁移方案阶段 3）：预计算排序键排序 + LIKE 转义；
+    // DB 结果未返回（防抖窗口内）时先用内存过滤兜底，行为与旧版一致。
+    // 已知差异：SQLite LIKE 仅对 ASCII 折叠大小写，全角拉丁/带音符字符的命中可能与
+    // 内存过滤（Unicode）略有出入；后续如需完全对齐可引入 FTS5（方案阶段 3 的预留路径）。
+    LaunchedEffect(query, gameSort) { onSearchQueryChanged(query) }
+    val dbResults = if (query.isNotBlank() && dbSearchQuery == query) dbSearchResults else null
+    val filteredGames = when {
+        query.isBlank() -> sortedGames
+        dbResults != null -> dbResults
+        else -> fallbackFiltered
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 

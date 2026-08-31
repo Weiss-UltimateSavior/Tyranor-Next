@@ -26,12 +26,6 @@ data class ScanGame(
     val openTime: Long = 0,
 )
 
-/** 简化描述，兼容 SharedPreferences 持久化所需的字段。 */
-data class ScannedRoot(
-    val uri: String,
-    val name: String,
-)
-
 /** ScanGame ↔ Intent 序列化助手，供各详情页 Activity（引擎设置/存档/在线补丁）复用，避免重复实现。 */
 object ScanGameIntents {
     private const val EXTRA_TITLE = "extra_title"

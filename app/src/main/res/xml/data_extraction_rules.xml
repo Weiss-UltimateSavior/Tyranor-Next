@@ -1,13 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   Data extraction rules (API 31+). See https://developer.android.com/about/versions/12/backup-restore
    for details.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="hikarinagi_auth.xml" />
+        <!-- OAuth 令牌加密库：Keystore 密钥换机不可解密，必须排除 -->
+        <exclude domain="sharedpref" path="hikarinagi_auth_secure.xml" />
+        <!-- 游戏库 DB 整体排除：WAL 快照不一致会静默丢增量，恢复后由镜像 + 修复导入重建 -->
+        <exclude domain="database" path="game_library.db" />
+        <exclude domain="database" path="game_library.db-wal" />
+        <exclude domain="database" path="game_library.db-shm" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="hikarinagi_auth.xml" />
+        <exclude domain="sharedpref" path="hikarinagi_auth_secure.xml" />
+        <exclude domain="database" path="game_library.db" />
+        <exclude domain="database" path="game_library.db-wal" />
+        <exclude domain="database" path="game_library.db-shm" />
     </device-transfer>
 </data-extraction-rules>

@@ -15,6 +15,7 @@ import com.akira.tyranoemu.remote.ArtemisActivityV1
 import com.akira.tyranoemu.remote.ArtemisActivityV2
 import com.akira.tyranoemu.remote.ArtemisActivityV3
 import com.akira.tyranoemu.remote.ArtemisActivityV4
+import com.akira.tyranoemu.remote.ArtemisActivityV5
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
@@ -28,6 +29,8 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
@@ -36,7 +39,9 @@ import com.tyranor.next.theme.AppThemeColors
 import com.yuri.onscripter.ONScripter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.charset.Charset
 import java.util.Locale
 
 /**
@@ -47,7 +52,19 @@ import java.util.Locale
 object EngineLauncher {
     private const val TAG = "EngineLauncher"
     private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
-    private const val ARTEMIS_FALLBACK_STAGE_V4_DIRECT = -1
+    private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
+    private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
+    private const val EXTRA_ARTEMIS_CURRENT_VERSION = "artemisCurrentVersion"
+    private const val EXTRA_ARTEMIS_FALLBACK_VERSIONS = "artemisFallbackVersions"
+    private const val EXTRA_ARTEMIS_FALLBACK_INDEX = "artemisFallbackIndex"
+    private const val EXTRA_ARTEMIS_AUTO_PLAN_REASON = "artemisAutoPlanReason"
+    private val ARTEMIS_DEFAULT_FALLBACK_CHAIN = listOf(
+        EngineSettingsStore.ART_ENGINE_V2,
+        EngineSettingsStore.ART_ENGINE_V1,
+        EngineSettingsStore.ART_ENGINE_V3,
+        EngineSettingsStore.ART_ENGINE_V4,
+        EngineSettingsStore.ART_ENGINE_V5,
+    )
 
     /** 支持的引擎列表（用于引擎页展示）。按名称长度从大到小排列。 */
     val supportedEngines: List<EngineType> = listOf(
@@ -241,14 +258,20 @@ object EngineLauncher {
                 if (ons.disableVideo) args.add("--no-video")
                 args.add("--enc:" + EngineSettingsStore.normalizeEncoding(ons.encoding))
                 val saveDir = if (ons.scopedSaveDir) {
-                    File(context.getExternalFilesDir(null), "save/${File(path).name}")
+                    val external = context.getExternalFilesDir(null) ?: context.filesDir
+                    File(File(external, "save"), File(path).name)
                 } else {
                     File(path, "save")
                 }
-                if (saveDir.exists() || saveDir.mkdirs()) {
-                    args.add("--save-dir")
-                    args.add(saveDir.absolutePath)
+                val saveDirReady = saveDir.isDirectory ||
+                    saveDir.mkdirs() ||
+                    (!ons.scopedSaveDir && createSafDirectoryForStoragePath(context, saveDir.absolutePath))
+                if (!saveDirReady) {
+                    Log.w(TAG, "ONS save dir not created before launch, still passing --save-dir=${saveDir.absolutePath}")
                 }
+                args.add("--save-dir")
+                args.add(saveDir.absolutePath)
+                Log.i(TAG, "ONS launch scopedSaveDir=${ons.scopedSaveDir} saveDir=${saveDir.absolutePath} ready=$saveDirReady")
                 if (ons.sharpness) {
                     args.add("--sharpness")
                     args.add(safeSharpnessValue(ons.sharpnessValue))
@@ -313,15 +336,15 @@ object EngineLauncher {
         val needsSafFallback = EngineScanner.isRemovableStoragePath(path)
         val kernel = effectiveKrKernel(context, gid, path)
         val engineRoot = safMirror?.mirrorRoot?.absolutePath ?: path
-        val launchEntry = pickKrActivateEntry(engineRoot, game)
+        val pickedLaunchEntry = pickKrActivateEntry(engineRoot, game)
         if (kernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
-            val args = buildKrkrsdl3Args(context, gid, path, launchEntry)
-            Log.i(TAG, "krkrsdl3 launch root=$path entry=$launchEntry args=$args")
+            val args = buildKrkrsdl3Args(context, gid, path, pickedLaunchEntry)
+            Log.i(TAG, "krkrsdl3 launch root=$path entry=$pickedLaunchEntry args=$args")
             // krkrsdl3 内核：gameargs 首项为启动文件绝对路径，后续为 TVP 命令行参数
             return Intent(context, Krkrsdl3Activity::class.java).apply {
                 putStringArrayListExtra("gameargs", args)
                 putExtra("path", path)
-                putExtra("gamePath", launchEntry)
+                putExtra("gamePath", pickedLaunchEntry)
                 putExtra("projectRoot", path)
                 putExtra("gamedir", path)
                 putExtra("rootUri", game.uri)
@@ -337,6 +360,7 @@ object EngineLauncher {
             EngineSettingsStore.KR_126 -> Kirikiroid126::class.java
             else -> Kirikiroid139::class.java
         }
+        val launchEntry = pickedLaunchEntry
         val scoped = effectiveKrScopedSaveDir(context, gid)
         val actualSaveRoot = safMirror?.let { File(it.mirrorRoot, "savedata") }
             ?: resolveKrSaveDir(context, path, kernel, scoped)
@@ -344,6 +368,8 @@ object EngineLauncher {
         val defaultFont = PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_DEFAULT_FONT)
             ?: EngineSettingsStore.getKrDefaultFont(context)
         val forceFont = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT), EngineSettingsStore.isKrForceDefaultFont(context))
+        val patchOverlay = prepareKrPatchOverlay(context, gid, engineRoot)
+        val steamConfigOverlay = prepareKrSteamConfigOverlay(context, gid, engineRoot)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
             putExtra("path", launchEntry)
@@ -356,6 +382,15 @@ object EngineLauncher {
             putExtra("launchTarget", game.launchTarget)
             putExtra("launchMode", "internal.kirikiroid2")
             putExtra("safFileFallback", needsSafFallback)
+            patchOverlay?.let {
+                putExtra("krPatchOverlayTarget", it.targetPatch.absolutePath)
+                putExtra("krPatchOverlayPath", it.overlayPatch.absolutePath)
+                putExtra("krPatchOverlayMode", it.mode)
+            }
+            steamConfigOverlay?.let {
+                putExtra("krSteamConfigOverlayTarget", it.targetConfig.absolutePath)
+                putExtra("krSteamConfigOverlayPath", it.overlayConfig.absolutePath)
+            }
             safMirror?.let {
                 putExtra("baseDoc", game.uri)
                 putExtra("safMirrorRoot", it.mirrorRoot.absolutePath)
@@ -527,7 +562,8 @@ object EngineLauncher {
         }
 
     /**
-     * Artemis 启动：按设置页选择的引擎版本路由到 V1/V2/V3，并应用画面反转与补丁策略。
+     * Artemis 启动：手动版本直达；自动版本按历史成功记录与目录/PFS 指纹生成候选链，
+     * 再由 ArtemisLauncherBaseActivity 在早退时跨进程尝试下一候选版本。
      * 策略为“启动时询问”时由 UI 层先弹窗确认（needsArtemisPatchConfirm）；
      * [patchChoice] 为弹窗选择，本次/总是按 auto、不再按 off 覆盖生效值（持久化在 launch() 完成）。
      */
@@ -539,63 +575,57 @@ object EngineLauncher {
     ): Intent {
         val gid = game.uri
         fun <T> or(override: T?, global: T): T = override ?: global
+        fun artString(override: String?, global: String, allowed: Set<String>): String {
+            val value = override?.trim()?.takeIf { it in allowed } ?: global.trim()
+            return value.takeIf { it in allowed } ?: ""
+        }
         var version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(context))
         val rotate = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_ART_ROTATE), EngineSettingsStore.isArtRotateScreen(context))
         var autoPatch = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_PATCH), EngineSettingsStore.getArtAutoPatch(context))
+        val androidSettings = ArtemisPfsUnpacker.AndroidSettings(
+            resolution = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_RESOLUTION), EngineSettingsStore.getArtResolution(context), EngineSettingsStore.ART_RESOLUTIONS),
+            sideCut = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SIDE_CUT), EngineSettingsStore.getArtSideCut(context), EngineSettingsStore.ART_TOGGLES),
+            surfaceCacheSize = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE), EngineSettingsStore.getArtSurfaceCacheSize(context), EngineSettingsStore.ART_SURFACE_CACHES),
+            fontCacheSize = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE), EngineSettingsStore.getArtFontCacheSize(context), EngineSettingsStore.ART_FONT_CACHES),
+            powerSaving = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_POWER_SAVING), EngineSettingsStore.getArtPowerSaving(context), EngineSettingsStore.ART_TOGGLES),
+        )
         when (patchChoice) {
             ArtemisPatchChoice.ONCE, ArtemisPatchChoice.ALWAYS -> autoPatch = EngineSettingsStore.AUTO_PATCH_AUTO
             ArtemisPatchChoice.NEVER -> autoPatch = EngineSettingsStore.AUTO_PATCH_OFF
             null -> Unit
         }
         applyArtemisBasePatchIfNeeded(path, autoPatch)
+        ArtemisPfsUnpacker.applyAndroidSettings(path, androidSettings)
         // 自动补丁=off 时禁用自动回退；否则 auto 版本启用兼容回退
         val auto = version == EngineSettingsStore.ART_ENGINE_AUTO &&
             autoPatch != EngineSettingsStore.AUTO_PATCH_OFF
+        var fallbackVersions = listOf(version)
+        var planReason = "manual"
         var stage = 0
         if (auto) {
-            // 读取引擎侧记忆的上次可用包名（artemis_engine.<路径hash>），从该版本起启动
-            val remembered = context.getSharedPreferences("yukihub_prefs", Context.MODE_PRIVATE)
-                .getString("artemis_engine." + Integer.toHexString(path.hashCode()), null)
-            version = when (remembered) {
-                EngineSettingsStore.ART_ENGINE_V3, "internal.artemis.compat.v2" -> {
-                    stage = 2; EngineSettingsStore.ART_ENGINE_V3
-                }
-                EngineSettingsStore.ART_ENGINE_V4, "internal.artemis.v4" -> {
-                    stage = 3; EngineSettingsStore.ART_ENGINE_V4
-                }
-                EngineSettingsStore.ART_ENGINE_V2, "internal.artemis.compat" -> {
-                    stage = 1; EngineSettingsStore.ART_ENGINE_V2
-                }
-                EngineSettingsStore.ART_ENGINE_V1, "internal.artemis" -> {
-                    stage = 0; EngineSettingsStore.ART_ENGINE_V1
-                }
-                else -> {
-                    if (isLikelyArtemisV4Game(path)) {
-                        // Android Artemis 新壳常见形态：boot.ini + root.pfs。
-                        // 首次无历史记忆时直达 V4；若 V4 仍在早退窗口内退出，Activity 侧会回落到旧链路。
-                        stage = ARTEMIS_FALLBACK_STAGE_V4_DIRECT
-                        Log.i(TAG, "Artemis auto selected V4 by package fingerprint path=$path")
-                        EngineSettingsStore.ART_ENGINE_V4
-                    } else {
-                        stage = 0
-                        EngineSettingsStore.ART_ENGINE_AUTO
-                    }
-                }
+            // 自动识别缓存（迁移方案阶段 5）：优先命中 DB 记忆（含引擎子进程经 prefs 写回的
+            // 成功版本，consume-and-clear 归一）；指纹变化即失效，重走特征识别。
+            val pathHash = Integer.toHexString(path.hashCode())
+            val fingerprint = GameDirFingerprint.compute(path)
+            val remembered = EngineDetectionRepository.lookupArtemisBlocking(context, game.uri, pathHash, fingerprint)
+            if (remembered != null) {
+                version = remembered
+                fallbackVersions = fallbackChainStartingWith(remembered)
+                planReason = "history"
+                Log.i(TAG, "Artemis auto history hit path=$path version=$version chain=${fallbackVersions.joinToString(",")} fingerprint=$fingerprint")
+            } else {
+                val plan = ArtemisEngineFingerprintDetector.buildAutoPlan(path)
+                version = plan.initialVersion
+                fallbackVersions = plan.fallbackVersions
+                planReason = plan.reason
+                Log.i(TAG, "Artemis auto fingerprint selected path=$path version=$version chain=${fallbackVersions.joinToString(",")} reason=$planReason")
             }
+            stage = artemisFallbackStage(version)
         } else {
-            stage = when (version) {
-                EngineSettingsStore.ART_ENGINE_V4 -> 3
-                EngineSettingsStore.ART_ENGINE_V3 -> 2
-                EngineSettingsStore.ART_ENGINE_V2 -> 1
-                else -> 0
-            }
+            stage = artemisFallbackStage(version)
         }
-        val (activity, libName) = when (version) {
-            EngineSettingsStore.ART_ENGINE_V2 -> ArtemisActivityV2::class.java to "artemis-compatible"
-            EngineSettingsStore.ART_ENGINE_V3 -> ArtemisActivityV3::class.java to "artemis-compatible-v2"
-            EngineSettingsStore.ART_ENGINE_V4 -> ArtemisActivityV4::class.java to "artemis-v4"
-            else -> ArtemisActivityV1::class.java to "artemis"
-        }
+        val (activity, libName) = artemisActivityAndLib(version)
+        val fallbackIndex = fallbackVersions.indexOf(version).coerceAtLeast(0)
         return Intent(context, activity).apply {
             putExtra("path", path)
             putExtra("gamePath", path)
@@ -608,44 +638,33 @@ object EngineLauncher {
             putExtra("engineLibName", libName)
             putExtra("artemisAutoFallback", auto)
             putExtra("artemisFallbackStage", stage)
+            putExtra(EXTRA_ARTEMIS_CURRENT_VERSION, version)
+            putExtra(EXTRA_ARTEMIS_FALLBACK_VERSIONS, fallbackVersions.joinToString(","))
+            putExtra(EXTRA_ARTEMIS_FALLBACK_INDEX, fallbackIndex)
+            putExtra(EXTRA_ARTEMIS_AUTO_PLAN_REASON, planReason)
         }
     }
 
-    /**
-     * 保守的 V4 首次直达指纹。
-     *
-     * yrrw_1 这类较新的 Android Artemis 壳不是传统 Windows 松散 system.ini + system/first.iet
-     * 结构，而是以 boot.ini 描述 Android/资源包策略，并以 root.pfs 作为主资源包。只在 auto 且
-     * 没有历史记忆时使用该判断，未命中仍保留原有 V1→V2→V3→V4 兼容回退顺序。
-     */
-    private fun isLikelyArtemisV4Game(path: String): Boolean {
-        if (path.isBlank() || path.startsWith("content://")) return false
-        val dir = File(path)
-        if (!dir.isDirectory) return false
-        val boot = File(dir, "boot.ini")
-        if (!boot.isFile) return false
-        val hasRootPfs = File(dir, "root.pfs").isFile || (
-            dir.listFiles()?.any { file ->
-                val name = file.name.lowercase(Locale.ROOT)
-                file.isFile && (name == "root.pfs" || name.startsWith("root.pfs."))
-            } == true
-        )
-        if (!hasRootPfs) return false
-        val text = runCatching {
-            boot.inputStream().use { input ->
-                val bytes = ByteArray(minOf(64 * 1024, boot.length().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()))
-                val read = input.read(bytes)
-                if (read <= 0) "" else String(bytes, 0, read, Charsets.ISO_8859_1)
-            }
-        }.getOrDefault("")
-        val upper = text.uppercase(Locale.ROOT)
-        return upper.contains("[RESOURCE]") && (
-            upper.contains("PLAY_ASSET_DELIVERY") ||
-                upper.contains("APK_EXPANSION_FILES") ||
-                upper.contains("[DOWNLOAD]") ||
-                upper.contains("ROOT.PFS")
-        )
-    }
+    private fun fallbackChainStartingWith(version: String): List<String> =
+        (listOf(version) + ARTEMIS_DEFAULT_FALLBACK_CHAIN.filterNot { it == version }).distinct()
+
+    private fun artemisFallbackStage(version: String): Int =
+        when (version) {
+            EngineSettingsStore.ART_ENGINE_V2 -> 1
+            EngineSettingsStore.ART_ENGINE_V3 -> 2
+            EngineSettingsStore.ART_ENGINE_V4 -> 3
+            EngineSettingsStore.ART_ENGINE_V5 -> 4
+            else -> 0
+        }
+
+    private fun artemisActivityAndLib(version: String): Pair<Class<*>, String> =
+        when (version) {
+            EngineSettingsStore.ART_ENGINE_V2 -> ArtemisActivityV2::class.java to "artemis-compatible"
+            EngineSettingsStore.ART_ENGINE_V3 -> ArtemisActivityV3::class.java to "artemis-compatible-v2"
+            EngineSettingsStore.ART_ENGINE_V4 -> ArtemisActivityV4::class.java to "artemis-v4"
+            EngineSettingsStore.ART_ENGINE_V5 -> ArtemisActivityV5::class.java to "artemis-v5"
+            else -> ArtemisActivityV1::class.java to "artemis"
+        }
 
     private fun buildWebIntent(context: Context, path: String, game: ScanGame): Intent {
         // Tyrano 与 RPG Maker Web 共用 TyranoActivity，因此沿用同一组 WebView 宿主设置。
@@ -750,6 +769,303 @@ object EngineLauncher {
         }?.let { return it.absolutePath }
 
         return path
+    }
+
+    private data class KrPatchCleanupResult(
+        val patchFile: File,
+        val bytes: ByteArray,
+        val hadUserContent: Boolean,
+        val cleanedManagedBlock: Boolean,
+        val hadManagedMarker: Boolean,
+    )
+
+    private data class KrPatchOverlay(
+        val targetPatch: File,
+        val overlayPatch: File,
+        val mode: String,
+    )
+
+    private data class KrSteamConfigOverlay(
+        val targetConfig: File,
+        val overlayConfig: File,
+    )
+
+    /**
+     * 生成 KRKR 虚拟 patch.tjs overlay。
+     *
+     * 不再直接向用户游戏目录写入兼容脚本；只在 app 私有目录生成合成 patch.tjs，
+     * 再由 KRKR 文件 hook 在读取游戏 patch.tjs 时做只读重定向。
+     */
+    private fun prepareKrPatchOverlay(context: Context, gid: String, engineRoot: String): KrPatchOverlay? {
+        val root = File(engineRoot)
+        if (!root.isDirectory || engineRoot.startsWith("content://")) return null
+        val mode = EngineSettingsStore.normalizeKrPatchOverlayMode(
+            PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)
+                ?: EngineSettingsStore.getKrPatchOverlayMode(context),
+        )
+        val cleanup = cleanupTyranorManagedKrPatchScript(root)
+        if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
+
+        val hasSteamPlugin = rootContainsFbfSteamPlugin(root)
+        val force = mode == EngineSettingsStore.KR_PATCH_OVERLAY_FORCE
+        val includeBasicPatch = force || cleanup?.hadUserContent != true
+        val includeSteamStub = hasSteamPlugin && (force || mode == EngineSettingsStore.KR_PATCH_OVERLAY_AUTO)
+        if (!includeBasicPatch && !includeSteamStub) {
+            Log.i(TAG, "KRKR patch overlay skipped root=$engineRoot mode=$mode userPatch=true steam=false")
+            return null
+        }
+
+        val additionsText = buildString {
+            if (includeBasicPatch) append(krBasicPatchOverlayScript())
+            if (includeSteamStub) append(krFbfSteamStubScript())
+        }
+        val baseBytes = if (force || includeSteamStub) cleanup?.bytes ?: ByteArray(0) else ByteArray(0)
+        val patchCharset = detectKrPatchCharset(baseBytes)
+        val additions = additionsText.toByteArray(patchCharset)
+        if (additions.isEmpty()) return null
+
+        val output = ByteArrayOutputStream(baseBytes.size + additions.size + 4).apply {
+            if (baseBytes.isNotEmpty()) {
+                write(baseBytes)
+                write("\n".toByteArray(patchCharset))
+            }
+            write(additions)
+        }.toByteArray()
+
+        return runCatching {
+            val overlayDir = File(File(context.filesDir, "krkr_patch_overlay"), EngineScanner.safeSaveName(engineRoot))
+            if (!overlayDir.isDirectory && !overlayDir.mkdirs()) {
+                Log.w(TAG, "KRKR patch overlay directory unavailable root=$engineRoot dir=${overlayDir.absolutePath}")
+                return null
+            }
+            val overlay = File(overlayDir, "patch.tjs")
+            overlay.writeBytes(output)
+            val target = File(root, "patch.tjs")
+            Log.i(
+                TAG,
+                "KRKR patch overlay prepared root=$engineRoot mode=$mode basic=$includeBasicPatch steam=$includeSteamStub userPatch=${cleanup?.hadUserContent == true} bytes=${output.size}",
+            )
+            KrPatchOverlay(target, overlay, mode)
+        }.onFailure { error ->
+            Log.w(TAG, "KRKR patch overlay prepare failed root=$engineRoot", error)
+        }.getOrNull()
+    }
+
+    /**
+     * 部分 Windows Steam 版 KRKR 移植包会带 ds.ini，并用 Language=xxx 决定 UI 语言。
+     * 不直接修改用户游戏目录，只在 app 私有目录生成 schinese 版本并由 NativeBridge 只读映射。
+     */
+    private fun prepareKrSteamConfigOverlay(context: Context, gid: String, engineRoot: String): KrSteamConfigOverlay? {
+        val root = File(engineRoot)
+        if (!root.isDirectory || engineRoot.startsWith("content://") || !rootContainsFbfSteamPlugin(root)) return null
+        val mode = EngineSettingsStore.normalizeKrPatchOverlayMode(
+            PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)
+                ?: EngineSettingsStore.getKrPatchOverlayMode(context),
+        )
+        if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
+
+        val config = File(root, "ds.ini")
+        if (!config.isFile) return null
+        return runCatching {
+            val bytes = config.readBytes()
+            val charset = detectKrPatchCharset(bytes)
+            val text = bytes.toString(charset)
+            val languageRegex = Regex("(?im)^(\\s*Language\\s*=\\s*)[^\\r\\n]*")
+            val patched = if (languageRegex.containsMatchIn(text)) {
+                languageRegex.replace(text) { match ->
+                    "${match.groupValues[1]}schinese"
+                }
+            } else {
+                text.trimEnd() + "\nLanguage=schinese\n"
+            }
+            if (patched == text) return null
+            val overlayDir = File(File(context.filesDir, "krkr_config_overlay"), EngineScanner.safeSaveName(engineRoot))
+            if (!overlayDir.isDirectory && !overlayDir.mkdirs()) {
+                Log.w(TAG, "KRKR Steam config overlay directory unavailable root=$engineRoot dir=${overlayDir.absolutePath}")
+                return null
+            }
+            val overlay = File(overlayDir, "ds.ini")
+            overlay.writeText(patched, charset)
+            Log.i(
+                TAG,
+                "KRKR Steam config overlay prepared root=$engineRoot target=${config.absolutePath} overlay=${overlay.absolutePath}",
+            )
+            KrSteamConfigOverlay(config, overlay)
+        }.onFailure { error ->
+            Log.w(TAG, "KRKR Steam config overlay prepare failed root=${root.absolutePath}", error)
+        }.getOrNull()
+    }
+
+    /**
+     * PR 44b6be2 曾在启动时向游戏目录 patch.tjs 自动追加 Tyranor Next 兼容脚本。
+     * 这里只清理历史版本写入的精确托管块，并返回清理后的原始 patch 内容供 overlay 合成。
+     */
+    private fun cleanupTyranorManagedKrPatchScript(root: File): KrPatchCleanupResult? {
+        val patch = File(root, "patch.tjs")
+        if (!patch.isFile) return null
+        return runCatching {
+            val original = patch.readBytes()
+            val blocks = listOf(
+                krLegacyPatchScript(fontScale = 1.0f),
+                krFbfSteamStubScript(),
+            )
+            var cleaned = original
+            blocks.forEach { block ->
+                cleaned = removeAllByteSequences(cleaned, block.toByteArray(Charsets.UTF_8))
+                cleaned = removeAllByteSequences(cleaned, block.toByteArray(Charsets.UTF_16LE))
+            }
+            if (!cleaned.contentEquals(original)) {
+                patch.writeBytes(cleaned)
+                Log.i(TAG, "KRKR managed patch.tjs block cleaned root=${root.absolutePath} bytes=${original.size - cleaned.size}")
+            } else if (
+                original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_8)) ||
+                original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_8)) ||
+                original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_16LE)) ||
+                original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_16LE))
+            ) {
+                Log.w(TAG, "KRKR managed patch.tjs marker found but exact block did not match; left untouched root=${root.absolutePath}")
+            }
+            KrPatchCleanupResult(
+                patchFile = patch,
+                bytes = cleaned,
+                hadUserContent = hasMeaningfulPatchContent(cleaned),
+                cleanedManagedBlock = !cleaned.contentEquals(original),
+                hadManagedMarker = original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_8)) ||
+                    original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_8)) ||
+                    original.containsByteSequence(KR_LEGACY_PATCH_MARKER.toByteArray(Charsets.UTF_16LE)) ||
+                    original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_16LE)),
+            )
+        }.onFailure { error ->
+            Log.w(TAG, "KRKR managed patch.tjs cleanup failed root=${root.absolutePath}", error)
+        }.getOrNull()
+    }
+
+    private fun rootContainsFbfSteamPlugin(root: File): Boolean {
+        val files = root.listFiles() ?: return false
+        return files.any { file ->
+            file.isFile && file.name.equals("FBFSteamPlugin.dll", ignoreCase = true)
+        }
+    }
+
+    private fun krBasicPatchOverlayScript(): String = """
+        |
+        |
+        |// TYRANOR_NEXT_KRKR_PATCH_OVERLAY_V1
+        |System.setArgument("-debugwin","no");
+        |Plugins.link("kirikiroid2.dll");
+        |
+    """.trimMargin()
+
+    private fun krLegacyPatchScript(fontScale: Float): String = """
+        |
+        |
+        |$KR_LEGACY_PATCH_MARKER
+        |System.setArgument("-debugwin","no");
+        |Plugins.link("kirikiroid2.dll");
+        |with(Font) {
+        |global._origFontHeightProp = &.height;
+        |property hook_font_height {
+        |setter(v) { global._origFontHeightProp = v * $fontScale; }
+        |getter { return global._origFontHeightProp; }
+        |}
+        |&.height = &(hook_font_height incontextof null);
+        |}
+        |
+    """.trimMargin()
+
+    private fun hasMeaningfulPatchContent(bytes: ByteArray): Boolean =
+        bytes.any { byte ->
+            val value = byte.toInt() and 0xFF
+            value > 0x20 && value != 0xFE && value != 0xFF
+        }
+
+    private fun detectKrPatchCharset(bytes: ByteArray): Charset {
+        if (bytes.size >= 2) {
+            val b0 = bytes[0].toInt() and 0xFF
+            val b1 = bytes[1].toInt() and 0xFF
+            if (b0 == 0xFF && b1 == 0xFE) return Charsets.UTF_16LE
+            if (b0 == 0xFE && b1 == 0xFF) return Charsets.UTF_16BE
+        }
+        val sampleSize = bytes.size.coerceAtMost(512)
+        if (sampleSize >= 16) {
+            var evenZeros = 0
+            var oddZeros = 0
+            for (i in 0 until sampleSize) {
+                if (bytes[i].toInt() == 0) {
+                    if (i % 2 == 0) evenZeros++ else oddZeros++
+                }
+            }
+            if (oddZeros > sampleSize / 4 && oddZeros > evenZeros * 2) return Charsets.UTF_16LE
+            if (evenZeros > sampleSize / 4 && evenZeros > oddZeros * 2) return Charsets.UTF_16BE
+        }
+        return Charsets.UTF_8
+    }
+
+    private fun krFbfSteamStubScript(): String = """
+        |
+        |
+        |$KR_FBF_STEAM_STUB_MARKER
+        |class CFBFSteam {
+        |function CFBFSteam() {}
+        |function finalize() {}
+        |function Init() { return true; }
+        |function Shutdown() { return true; }
+        |function RestartAppIfNecessary(appId) { return false; }
+        |function IsSteamRunning() { return true; }
+        |function IsSubscribed() { return true; }
+        |function IsSubscribedApp(appId) { return true; }
+        |function IsDLCInstalled(appId) { return true; }
+        |function GetUserLanguage() { return "schinese"; }
+        |function GetCurrentGameLanguage() { return "schinese"; }
+        |function GetAvailableGameLanguages() { return "schinese,english,japanese"; }
+        |function GetPersonaName() { return "Tyranor"; }
+        |function GetAppID() { return 0; }
+        |function GetSteamID() { return "0"; }
+        |function SetAchievement(name) { return true; }
+        |function ClearAchievement(name) { return true; }
+        |function GetAchievement(name) { return false; }
+        |function IndicateAchievementProgress(name, current, max) { return true; }
+        |function StoreStats() { return true; }
+        |function ResetAllStats(achievementsToo) { return true; }
+        |function SetStat(name, value) { return true; }
+        |function GetStat(name) { return 0; }
+        |function IsOverlayEnabled() { return false; }
+        |function ActivateGameOverlay(dialog) { return false; }
+        |function ActivateGameOverlayToWebPage(url) { return false; }
+        |}
+        |global.FBFSteam = new CFBFSteam();
+        |
+    """.trimMargin()
+
+    private fun removeAllByteSequences(source: ByteArray, needle: ByteArray): ByteArray {
+        if (source.isEmpty() || needle.isEmpty()) return source
+        var index = source.indexOfByteSequence(needle, startIndex = 0)
+        if (index < 0) return source
+        val out = ByteArrayOutputStream(source.size)
+        var cursor = 0
+        while (index >= 0) {
+            out.write(source, cursor, index - cursor)
+            cursor = index + needle.size
+            index = source.indexOfByteSequence(needle, startIndex = cursor)
+        }
+        out.write(source, cursor, source.size - cursor)
+        return out.toByteArray()
+    }
+
+    private fun ByteArray.containsByteSequence(needle: ByteArray): Boolean =
+        indexOfByteSequence(needle, startIndex = 0) >= 0
+
+    private fun ByteArray.indexOfByteSequence(needle: ByteArray, startIndex: Int): Int {
+        if (needle.isEmpty()) return startIndex.coerceIn(0, size)
+        val max = size - needle.size
+        var i = startIndex.coerceAtLeast(0)
+        while (i <= max) {
+            var j = 0
+            while (j < needle.size && this[i + j] == needle[j]) j++
+            if (j == needle.size) return i
+            i++
+        }
+        return -1
     }
 
     /**

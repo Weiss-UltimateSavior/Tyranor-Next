@@ -72,6 +72,7 @@
     <string name="update_network_failed">网络请求失败</string>
     <string name="update_github_request_failed">GitHub Releases 请求失败：HTTP %1$d</string>
 
+    <string name="engine_list_title">%1$s 引擎列表</string>
     <string name="engine_module_missing_title">模块未安装</string>
     <string name="engine_module_missing_message">未检测到 %1$s，需要下载安装后才能启动 %2$s 游戏。</string>
     <string name="engine_open_download_failed">无法打开下载页面</string>
@@ -156,6 +157,7 @@
     <string name="engine_settings_scoped_save_dir">独立存档目录</string>
     <string name="engine_settings_engine_version">引擎版本</string>
     <string name="engine_settings_engine_kernel">引擎内核</string>
+    <string name="engine_settings_krkr_patch_overlay">KRKR 虚拟 patch.tjs 补丁</string>
     <string name="engine_settings_render">渲染</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL 精确渲染</string>
     <string name="engine_settings_memory_usage">内存用量</string>
@@ -181,6 +183,11 @@
     <string name="engine_settings_text_encoding">文本编码</string>
     <string name="engine_settings_rotate_screen">画面反转</string>
     <string name="engine_settings_auto_patch">自动补丁</string>
+    <string name="engine_settings_artemis_resolution">舞台分辨率</string>
+    <string name="engine_settings_artemis_side_cut">裁切铺满</string>
+    <string name="engine_settings_artemis_surface_cache">图像缓存</string>
+    <string name="engine_settings_artemis_font_cache">字体缓存</string>
+    <string name="engine_settings_artemis_power_saving">省电绘制</string>
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>
@@ -195,7 +202,7 @@
     <string name="engine_settings_use_builtin_font">使用内置字体</string>
     <string name="engine_settings_select_font_file">选择字体文件…</string>
     <string name="engine_option_engine_default">引擎默认</string>
-    <string name="engine_option_kirikiri2">吉里吉里2</string>
+    <string name="engine_option_kirikiri2">Kirikiroid2</string>
     <string name="engine_option_software_renderer">软件渲染</string>
     <string name="engine_option_opengl_default">OpenGL（默认）</string>
     <string name="engine_option_none">无</string>
@@ -207,6 +214,7 @@
     <string name="engine_option_low">低</string>
     <string name="engine_option_threads">%1$d 线程</string>
     <string name="engine_option_auto_patch_ask">启动时询问</string>
+    <string name="engine_option_force_enable">强制启用</string>
     <string name="engine_option_off">关闭</string>
     <string name="engine_option_rpg_mv_v0">v0（现有）</string>
     <string name="engine_option_rpg_mv_v1">v1（1.6.1 corescript）</string>
@@ -317,7 +325,7 @@
     <string name="external_engine_no_activity">%1$s 未提供可接收启动请求的 Activity</string>
     <string name="external_engine_denied">%1$s 启动被系统拒绝，请检查模块权限</string>
     <string name="external_engine_launch_failed">%1$s 启动失败，请检查模块权限</string>
-    <string name="external_rpgm_module_name">RPGM 模块</string>
+    <string name="external_rpgm_module_name">RPGM-1.22.00</string>
     <string name="external_rpgm_resolve_dir_failed">无法解析 RPGM 游戏目录真实路径，外置 RPGM 模块无法启动</string>
 
     <string name="plugin_unknown_engine">未知引擎插件：%1$s</string>

@@ -89,6 +89,7 @@ struct GameApi {
     GetScene getScene = nullptr;
     StartupFrom startupFrom = nullptr;
     Update update = nullptr;
+    bool languageCheckPatched = false;
 };
 
 JavaVM* gVm = nullptr;
@@ -117,6 +118,10 @@ std::atomic<bool> gGameReadyReported{false};
 std::atomic<int> gLastLaunchReadiness{-1};
 int64_t gFirstSceneUpdateNs = 0;
 constexpr int64_t kMenuShrinkWaitNs = 1200LL * 1000LL * 1000LL;
+constexpr uint32_t kArm64RetInstruction = 0xD65F03C0;
+constexpr uint32_t kArm64SubSpPrologue = 0xD10203FF;
+constexpr uintptr_t kLibGameLanguageCheckOffset = 0x9235C8;
+constexpr uintptr_t kLibGame134LanguageCheckOffset = 0x90F6CC;
 
 bool supportedGameLibrary(const char* library) {
     if (library == nullptr || library[0] == '\0') return false;
@@ -134,6 +139,104 @@ std::string takeString(JNIEnv* env, jstring value) {
     std::string result(chars);
     env->ReleaseStringUTFChars(value, chars);
     return result;
+}
+
+const char* baseName(const char* path) {
+    if (path == nullptr) return "";
+    const char* name = std::strrchr(path, '/');
+    return name == nullptr ? path : name + 1;
+}
+
+struct LibraryBaseRequest {
+    const char* library;
+    uintptr_t base = 0;
+};
+
+int findLoadedLibraryBase(struct dl_phdr_info* info, size_t, void* data) {
+    auto* request = static_cast<LibraryBaseRequest*>(data);
+    if (info == nullptr || request == nullptr || request->library == nullptr) return 0;
+    const char* loaded = info->dlpi_name == nullptr ? "" : info->dlpi_name;
+    if (*loaded == '\0') return 0;
+    if (std::strcmp(loaded, request->library) != 0 &&
+            std::strcmp(baseName(loaded), baseName(request->library)) != 0) {
+        return 0;
+    }
+    request->base = static_cast<uintptr_t>(info->dlpi_addr);
+    return 1;
+}
+
+uintptr_t loadedLibraryBase(const std::string& library) {
+    LibraryBaseRequest request{library.c_str(), 0};
+    dl_iterate_phdr(findLoadedLibraryBase, &request);
+    return request.base;
+}
+
+bool patchCode32(uintptr_t address, uint32_t value) {
+    if (address == 0) return false;
+    const long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) return false;
+    const uintptr_t page = address & ~static_cast<uintptr_t>(pageSize - 1);
+    if (mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+                 PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+        __android_log_print(ANDROID_LOG_ERROR, kTag,
+                            "mprotect code patch failed address=%p errno=%d",
+                            reinterpret_cast<void*>(address), errno);
+        return false;
+    }
+    auto* slot = reinterpret_cast<uint32_t*>(address);
+    __atomic_store_n(slot, value, __ATOMIC_RELEASE);
+    __builtin___clear_cache(reinterpret_cast<char*>(address),
+                            reinterpret_cast<char*>(address + sizeof(uint32_t)));
+    const int restoreResult = mprotect(reinterpret_cast<void*>(page), static_cast<size_t>(pageSize),
+                                       PROT_READ | PROT_EXEC);
+    if (restoreResult != 0) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "restore code page protection failed address=%p errno=%d",
+                            reinterpret_cast<void*>(address), errno);
+    }
+    return true;
+}
+
+bool installLanguageCheckBypass(GameApi& api) {
+    if (api.languageCheckPatched || api.library.empty()) return api.languageCheckPatched;
+    const char* name = baseName(api.library.c_str());
+    uintptr_t offset = 0;
+    if (std::strcmp(name, "libgame.so") == 0) {
+        offset = kLibGameLanguageCheckOffset;
+    } else if (std::strcmp(name, "libgame134.so") == 0) {
+        offset = kLibGame134LanguageCheckOffset;
+    } else {
+        return false;
+    }
+
+    const uintptr_t base = loadedLibraryBase(api.library);
+    if (base == 0) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "language check bypass skipped: library base not found for %s",
+                            api.library.c_str());
+        return false;
+    }
+    const uintptr_t address = base + offset;
+    const uint32_t before = __atomic_load_n(reinterpret_cast<uint32_t*>(address), __ATOMIC_ACQUIRE);
+    if (before == kArm64RetInstruction) {
+        api.languageCheckPatched = true;
+        __android_log_print(ANDROID_LOG_INFO, kTag,
+                            "language check bypass already active %s offset=0x%lx",
+                            name, static_cast<unsigned long>(offset));
+        return true;
+    }
+    if (before != kArm64SubSpPrologue) {
+        __android_log_print(ANDROID_LOG_WARN, kTag,
+                            "language check bypass signature mismatch %s offset=0x%lx before=0x%08x",
+                            name, static_cast<unsigned long>(offset), before);
+        return false;
+    }
+    api.languageCheckPatched = patchCode32(address, kArm64RetInstruction);
+    __android_log_print(api.languageCheckPatched ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, kTag,
+                        "language check bypass %s %s offset=0x%lx address=%p",
+                        api.languageCheckPatched ? "installed" : "failed",
+                        name, static_cast<unsigned long>(offset), reinterpret_cast<void*>(address));
+    return api.languageCheckPatched;
 }
 
 bool resolveGameLocked(const char* library) {
@@ -170,6 +273,7 @@ bool resolveGameLocked(const char* library) {
     gGame.getScene = getScene;
     gGame.startupFrom = startupFrom;
     gGame.update = update;
+    installLanguageCheckBypass(gGame);
     __android_log_print(ANDROID_LOG_INFO, kTag, "initialized %s scene=%p startup=%p update=%p", library,
                         reinterpret_cast<void*>(getScene), reinterpret_cast<void*>(startupFrom),
                         reinterpret_cast<void*>(update));
@@ -284,6 +388,10 @@ bool pathMatchesPrefix(const char* path) {
     const char* normalized = path;
     if (std::strncmp(normalized, "file://", 7) == 0) normalized += 7;
     while (std::strncmp(normalized, "./", 2) == 0) normalized += 2;
+    // Some Windows Steam wrappers read root config files through relative paths
+    // (for example "ds.ini") after chdir/gamedir setup. Keep this whitelist tight:
+    // Java will still redirect only when the matching overlay has been configured.
+    if (std::strcmp(normalized, "ds.ini") == 0 || std::strcmp(normalized, "patch.tjs") == 0) return true;
     if (std::strncmp(normalized, gPathPrefix.c_str(), gPathPrefix.size()) == 0) return true;
     return gPathPrefix[0] == '/'
             && std::strncmp(normalized, gPathPrefix.c_str() + 1, gPathPrefix.size() - 1) == 0;
@@ -361,8 +469,52 @@ std::string callJavaPathMethod(const char* path, const char* methodName) {
     return result;
 }
 
+std::string callJavaPathModeMethod(const char* path, int mode, const char* methodName) {
+    if (gVm == nullptr || path == nullptr || methodName == nullptr) return {};
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (gVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return {};
+        attached = true;
+    }
+
+    std::string result;
+    jclass clazz = env->FindClass("bridge/NativeBridge");
+    if (clazz != nullptr) {
+        jmethodID method = env->GetStaticMethodID(
+                clazz, methodName, "(Ljava/lang/String;I)Ljava/lang/String;");
+        if (method != nullptr) {
+            jstring javaPath = env->NewStringUTF(path);
+            if (javaPath != nullptr) {
+                auto redirected = static_cast<jstring>(
+                        env->CallStaticObjectMethod(clazz, method, javaPath, mode));
+                if (redirected != nullptr) {
+                    result = takeString(env, redirected);
+                    env->DeleteLocalRef(redirected);
+                }
+                env->DeleteLocalRef(javaPath);
+            }
+        }
+        env->DeleteLocalRef(clazz);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        result.clear();
+    }
+    if (attached) gVm->DetachCurrentThread();
+    return result;
+}
+
 std::string callJavaRedirect(const char* path) {
     return callJavaPathMethod(path, "redirect");
+}
+
+std::string callJavaOpenRedirect(const char* path, int flags) {
+    return callJavaPathModeMethod(path, flags, "redirectOpen");
+}
+
+std::string callJavaReadMetadataRedirect(const char* path) {
+    return callJavaPathMethod(path, "redirectReadMetadata");
 }
 
 std::string callJavaScopedSaveRedirect(const char* path) {
@@ -382,7 +534,7 @@ int hookOpenCommon(OpenFn original, const char* path, int flags, va_list argumen
     const int fd = callJavaOpen(path, flags);
     if (fd >= 0) return fd;
 
-    const std::string redirected = callJavaRedirect(path);
+    const std::string redirected = callJavaOpenRedirect(path, flags);
     return callOriginal(original, redirected.empty() ? path : redirected.c_str(), flags, mode);
 }
 
@@ -434,7 +586,7 @@ FILE* hookFopenCommon(FopenFn original, const char* path, const char* mode) {
         }
     }
 
-    const std::string redirected = callJavaRedirect(path);
+    const std::string redirected = flags >= 0 ? callJavaOpenRedirect(path, flags) : callJavaRedirect(path);
     return original == nullptr ? nullptr
             : original(redirected.empty() ? path : redirected.c_str(), mode);
 }
@@ -456,23 +608,38 @@ int hookSinglePath(Fn original, const char* path, Args... args) {
 }
 
 int hookedStat(const char* path, struct stat* info) {
-    return hookSinglePath(gOriginalStat, path, info);
+    if (gOriginalStat == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalStat(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalStat(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedLstat(const char* path, struct stat* info) {
-    return hookSinglePath(gOriginalLstat, path, info);
+    if (gOriginalLstat == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalLstat(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalLstat(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedStat64(const char* path, struct stat64* info) {
-    return hookSinglePath(gOriginalStat64, path, info);
+    if (gOriginalStat64 == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalStat64(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalStat64(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedLstat64(const char* path, struct stat64* info) {
-    return hookSinglePath(gOriginalLstat64, path, info);
+    if (gOriginalLstat64 == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalLstat64(path, info);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalLstat64(redirected.empty() ? path : redirected.c_str(), info);
 }
 
 int hookedAccess(const char* path, int mode) {
-    return hookSinglePath(gOriginalAccess, path, mode);
+    if (gOriginalAccess == nullptr) return -1;
+    if (!pathMatchesPrefix(path)) return gOriginalAccess(path, mode);
+    const std::string redirected = callJavaReadMetadataRedirect(path);
+    return gOriginalAccess(redirected.empty() ? path : redirected.c_str(), mode);
 }
 
 int hookedRename(const char* from, const char* to) {

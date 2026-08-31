@@ -44,7 +44,7 @@ import org.json.JSONObject
  * Tyrano WebView 宿主；资源服务与存档沙箱分别由独立组件负责。
  *
  * 本 Activity 隶属于 engine 模块，不依赖 app 层。用户偏好（UI 缩放、外网开关）
- * 直接读取共享的 yukihub_prefs，与 OnsSettings 同模式；确认对话框通过 Intent extras
+ * 直接读取共享的 tyranor_prefs（原 yukihub_prefs），与 OnsSettings 同模式；确认对话框通过 Intent extras
  * 传入的 Launcher 主题色在 engine 内复刻 LauncherDialogFactory 的视觉风格，保持统一。
  */
 class TyranoActivity : Activity() {
@@ -422,7 +422,7 @@ class TyranoActivity : Activity() {
         }
         runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
         browser.settings.apply {
-            userAgentString = "$userAgentString;tyranoplayer-android-1.0;yukihub-internal-tyrano"
+            userAgentString = "$userAgentString;tyranoplayer-android-1.0;tyranor-internal-tyrano"
             javaScriptEnabled = true
             allowContentAccess = false
             allowFileAccess = false
@@ -918,7 +918,8 @@ class TyranoActivity : Activity() {
         private val preferences
             get() = getSharedPreferences(EnginePrefs.GAME_OVERRIDES_PREFS, Context.MODE_PRIVATE)
 
-        // touch_pad_config / touch_pad_presets 键目前仅 engine 侧读写（常量留在本文件）；
+        // touch_pad_config / touch_pad_presets 键名在本文件与 app 侧 GameOverridePartitions
+        // 双处锚定（engine 不得反向依赖 app）：app 侧经 game_overrides 表 + prefs 镜像参与读写；
         // 与 PerGameSettingsStore 的其它引擎字段共存于同一条 JSON 记录，必须整条读改写以保留他人字段。
         // 已知限制：app 主线程的设置页写路径与本桥线程之间暂无跨层互斥，极端并发下存在丢更新窗口，
         // 后续如需彻底收口应把该记录的全部读写收敛到单一同步入口。
@@ -1100,7 +1101,7 @@ class TyranoActivity : Activity() {
         /**
          * 通过 SharedPreferences 持久化的用户偏好创建自定义 Configuration 的 Context。
          *
-         * 复刻 app 模块 UiScaleUtil.wrap 的语义：读取 yukihub_prefs 中的字体缩放与全局
+         * 复刻 app 模块 UiScaleUtil.wrap 的语义：读取 tyranor_prefs 中的字体缩放与全局
          * UI 缩放，应用到 Configuration 后返回新的 Context。engine 不依赖 app 的工具类，
          * 此处保留独立的等价实现以避免反向依赖。
          */

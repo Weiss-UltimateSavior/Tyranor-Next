@@ -72,6 +72,7 @@
     <string name="update_network_failed">Network request failed</string>
     <string name="update_github_request_failed">GitHub Releases request failed: HTTP %1$d</string>
 
+    <string name="engine_list_title">%1$s Engine List</string>
     <string name="engine_module_missing_title">Module not installed</string>
     <string name="engine_module_missing_message">%1$s was not detected. Download and install it before starting %2$s games.</string>
     <string name="engine_open_download_failed">Unable to open the download page</string>
@@ -156,6 +157,7 @@
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
     <string name="engine_settings_engine_version">Engine version</string>
     <string name="engine_settings_engine_kernel">Engine kernel</string>
+    <string name="engine_settings_krkr_patch_overlay">KRKR virtual patch.tjs patch</string>
     <string name="engine_settings_render">Rendering</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL accurate rendering</string>
     <string name="engine_settings_memory_usage">Memory usage</string>
@@ -181,6 +183,11 @@
     <string name="engine_settings_text_encoding">Text encoding</string>
     <string name="engine_settings_rotate_screen">Rotate screen</string>
     <string name="engine_settings_auto_patch">Automatic patch</string>
+    <string name="engine_settings_artemis_resolution">Stage resolution</string>
+    <string name="engine_settings_artemis_side_cut">Crop to fill</string>
+    <string name="engine_settings_artemis_surface_cache">Surface cache</string>
+    <string name="engine_settings_artemis_font_cache">Font cache</string>
+    <string name="engine_settings_artemis_power_saving">Power-saving rendering</string>
     <string name="engine_settings_external_network_resources">Allow external network resources</string>
     <string name="engine_settings_external_network">Allow external network</string>
     <string name="engine_settings_game_modifier">Game modifier</string>
@@ -195,7 +202,7 @@
     <string name="engine_settings_use_builtin_font">Use built-in font</string>
     <string name="engine_settings_select_font_file">Choose font file…</string>
     <string name="engine_option_engine_default">Engine default</string>
-    <string name="engine_option_kirikiri2">Kirikiri 2</string>
+    <string name="engine_option_kirikiri2">Kirikiroid2</string>
     <string name="engine_option_software_renderer">Software rendering</string>
     <string name="engine_option_opengl_default">OpenGL (default)</string>
     <string name="engine_option_none">None</string>
@@ -207,6 +214,7 @@
     <string name="engine_option_low">Low</string>
     <string name="engine_option_threads">%1$d threads</string>
     <string name="engine_option_auto_patch_ask">Ask on launch</string>
+    <string name="engine_option_force_enable">Force enable</string>
     <string name="engine_option_off">Off</string>
     <string name="engine_option_rpg_mv_v0">v0 (current)</string>
     <string name="engine_option_rpg_mv_v1">v1 (1.6.1 corescript)</string>
@@ -317,7 +325,7 @@
     <string name="external_engine_no_activity">%1$s does not provide an Activity that can receive launch requests</string>
     <string name="external_engine_denied">%1$s launch was denied by the system. Check the module permissions</string>
     <string name="external_engine_launch_failed">%1$s launch failed. Check the module permissions</string>
-    <string name="external_rpgm_module_name">RPGM module</string>
+    <string name="external_rpgm_module_name">RPGM-1.22.00</string>
     <string name="external_rpgm_resolve_dir_failed">Unable to resolve the real path for the RPGM game directory, so the external RPGM module cannot start</string>
 
     <string name="plugin_unknown_engine">Unknown engine plugin: %1$s</string>

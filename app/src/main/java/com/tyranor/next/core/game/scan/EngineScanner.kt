@@ -9,7 +9,9 @@ import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.model.ScannedRoot
+import com.tyranor.next.core.game.storage.EngineDetectionRepository
+import com.tyranor.next.core.game.storage.GameLibraryDao
+import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
@@ -34,14 +36,11 @@ object EngineScanner {
 
     private const val TAG = "EngineScanner"
 
-    private const val PREFS = "game_scanner"
-    private const val KEY_ROOTS = "scan_roots"      // uri 按换行分隔
-    private const val KEY_GAMES = "scan_games"      // 已有游戏 entry，按行；每行字段用 \u0001 分隔
-    private const val KEY_RECENT_GAMES = "recent_games"
-    private const val KEY_QUICK_LAUNCH = "quick_launch" // 首页快捷启动（最多 3 个）
+    private val PFS_PATCH_NAME_RE = Regex("""^[^.]+\.pfs\.\d{3}$""")
+    private val OBB_NAME_RE = Regex("""^(main|patch)\.\d+\..+\.obb$""")
 
     // 主页面会在 Tab 动画中反复进入组合。将已解析的数据保留在进程内，避免每次切页都在
-    // 主线程重新读取 SharedPreferences、split 字符串并构造完整游戏列表。
+    // 主线程重新读库、解析并构造完整游戏列表。
     private val cacheLock = Any()
     @Volatile
     private var gamesCache: List<ScanGame>? = null
@@ -49,6 +48,8 @@ object EngineScanner {
     private var recentGamesCache: List<ScanGame>? = null
     @Volatile
     private var quickLaunchCache: List<ScanGame>? = null
+    @Volatile
+    private var rootsCache: List<String>? = null
 
     // 快捷启动版本号：任何增删/刷新后自增，供首页实时感知改动后重新加载
     private val _quickLaunchRevision = MutableStateFlow(0)
@@ -110,45 +111,100 @@ object EngineScanner {
 
     // ============ 游戏结果持久化 ============
 
-    fun saveGames(context: Context, games: List<ScanGame>) {
-        synchronized(cacheLock) {
-            saveGamesLocked(context, games.toList())
-        }
+    // 持久化已迁移到 GameLibraryRepository（Room，见 docs/应用持久化存储迁移与性能优化计划方案.md）。
+    // 本类保留同步缓存门面：读命中内存缓存，未命中阻塞读库一次（Application 启动已预热）；
+    // 写同步更新缓存并按发起顺序在仓库单线程写调度器上落库（失败仅记日志，不回滚缓存）。
+
+    /** Application 启动预热：回填全部同步门面缓存，避免主线程首读阻塞。 */
+    internal fun prewarmCaches(context: Context) {
+        loadGames(context)
+        loadRecentGames(context)
+        loadQuickLaunch(context)
+        loadRoots(context)
     }
 
     fun loadGames(context: Context): List<ScanGame> =
         gamesCache ?: synchronized(cacheLock) {
-            gamesCache ?: loadList(context, KEY_GAMES).also { gamesCache = it }
+            loadGamesLocked(context)
         }
 
     fun updateGames(context: Context, transform: (List<ScanGame>) -> List<ScanGame>): List<ScanGame> =
         synchronized(cacheLock) {
-            val current = gamesCache ?: loadList(context, KEY_GAMES).also { gamesCache = it }
+            val current = loadGamesLocked(context)
             val updated = transform(current).toList()
-            saveGamesLocked(context, updated)
+            if (updated != current) {
+                gamesCache = updated
+                // 差量落库：仅 upsert 变更行、删除消失行，封面单字段变化不再触发整库序列化。
+                GameLibraryRepository.post(context) { GameLibraryRepository.applyDiff(it, current, updated) }
+            }
             updated
         }
 
-    private fun saveGamesLocked(context: Context, games: List<ScanGame>) {
-        gamesCache = games
-        saveList(context, KEY_GAMES, games)
+    private fun loadGamesLocked(context: Context): List<ScanGame> =
+        gamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadGames(it) }
+            .also { gamesCache = it }
+
+    /**
+     * 封面元数据单行更新（迁移方案阶段 2）：DB 只 UPDATE 封面相关列，封面刮削等高频路径
+     * 不再触发整库序列化。返回更新后的游戏；游戏不在库中或封面四列均无变化时返回 null。
+     */
+    fun updateGameCover(
+        context: Context,
+        uri: String,
+        transform: (ScanGame) -> ScanGame,
+    ): ScanGame? = synchronized(cacheLock) {
+        val current = loadGamesLocked(context)
+        val before = current.firstOrNull { it.uri == uri } ?: return null
+        val after = transform(before)
+        if (after.coverUri == before.coverUri && after.coverSource == before.coverSource &&
+            after.vndbId == before.vndbId && after.metadataTitle == before.metadataTitle
+        ) {
+            return null
+        }
+        gamesCache = current.map { if (it.uri == uri) after else it }
+        GameLibraryRepository.post(context) {
+            GameLibraryRepository.updateCover(
+                it,
+                uri,
+                after.coverUri,
+                after.coverSource,
+                after.vndbId,
+                after.metadataTitle,
+            )
+        }
+        after
     }
 
     fun recordRecentGame(context: Context, game: ScanGame) {
-        val touched = game.copy(openTime = System.currentTimeMillis())
+        val openTime = System.currentTimeMillis()
+        synchronized(cacheLock) {
+            // 同步回填主库缓存：applyDiff 全行 upsert 以缓存快照为准，不同步会让后续
+            // 改名/重扫等整行写把 DB 的 last_opened_at 回滚到启动时的旧值（最近列表退化）。
+            gamesCache = gamesCache?.map { if (it.uri == game.uri) it.copy(openTime = openTime) else it }
+        }
+        val touched = game.copy(openTime = openTime)
         updateRecentGames(context) { current ->
-            (listOf(touched) + current.filterNot { it.uri == game.uri }).take(20)
+            (listOf(touched) + current.filterNot { it.uri == game.uri }).take(GameLibraryDao.RECENT_LIMIT)
         }
     }
 
     fun loadRecentGames(context: Context): List<ScanGame> =
         recentGamesCache ?: synchronized(cacheLock) {
-            recentGamesCache ?: loadList(context, KEY_RECENT_GAMES).also { recentGamesCache = it }
+            loadRecentGamesLocked(context)
         }
 
-    /** 删除游戏时从最近游戏列表中移除对应条目。 */
+    private fun loadRecentGamesLocked(context: Context): List<ScanGame> =
+        recentGamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRecentGames(it) }
+            .also { recentGamesCache = it }
+
+    /** 删除游戏时从最近打开列表移除（最近打开为 games.last_opened_at 的派生视图，写 0 即移除）。 */
     fun removeRecentGame(context: Context, uri: String) {
-        updateRecentGames(context) { games -> games.filterNot { it.uri == uri } }
+        synchronized(cacheLock) {
+            recentGamesCache = recentGamesCache?.filterNot { it.uri == uri }
+            // 主库缓存同步清零，避免后续整行 upsert 复活已移除的最近记录。
+            gamesCache = gamesCache?.map { if (it.uri == uri) it.copy(openTime = 0) else it }
+        }
+        GameLibraryRepository.post(context) { GameLibraryRepository.clearRecent(it, uri) }
     }
 
     /** 从持久游戏库中移除指定游戏（在游戏页或首页删除游戏时调用，保证库与最近列表一致）。 */
@@ -163,42 +219,39 @@ object EngineScanner {
         return name.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifEmpty { "default" }
     }
 
-    internal fun saveRecentGames(context: Context, games: List<ScanGame>) {
-        synchronized(cacheLock) {
-            saveRecentGamesLocked(context, games.toList())
-        }
-    }
-
     internal fun updateRecentGames(
         context: Context,
         transform: (List<ScanGame>) -> List<ScanGame>,
     ): List<ScanGame> = synchronized(cacheLock) {
-        val current = recentGamesCache ?: loadList(context, KEY_RECENT_GAMES).also { recentGamesCache = it }
+        val current = loadRecentGamesLocked(context)
         val updated = transform(current).toList()
-        if (updated != current) saveRecentGamesLocked(context, updated)
+        if (updated != current) {
+            recentGamesCache = updated
+            // 最近打开为派生视图：只回写保留条目的 openTime，被过滤条目对应游戏行已不在库中。
+            GameLibraryRepository.post(context) { GameLibraryRepository.restoreRecent(it, updated) }
+        }
         updated
-    }
-
-    private fun saveRecentGamesLocked(context: Context, games: List<ScanGame>) {
-        recentGamesCache = games
-        saveList(context, KEY_RECENT_GAMES, games)
     }
 
     // ============ 首页快捷启动（最多 3 个） ============
 
     fun loadQuickLaunch(context: Context): List<ScanGame> =
         quickLaunchCache ?: synchronized(cacheLock) {
-            quickLaunchCache ?: loadList(context, KEY_QUICK_LAUNCH).also { quickLaunchCache = it }
+            loadQuickLaunchLocked(context)
         }
+
+    private fun loadQuickLaunchLocked(context: Context): List<ScanGame> =
+        quickLaunchCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadQuickLaunch(it) }
+            .also { quickLaunchCache = it }
 
     fun isQuickLaunched(context: Context, uri: String): Boolean =
         loadQuickLaunch(context).any { it.uri == uri }
 
-    /** 加入快捷启动。已存在视为成功；槽位满 3 个返回 false。 */
+    /** 加入快捷启动。已存在视为成功；槽位满（MAX_QUICK_LAUNCH=3）返回 false。 */
     fun addQuickLaunch(context: Context, game: ScanGame): Boolean {
         val current = loadQuickLaunch(context)
         if (current.any { it.uri == game.uri }) return true
-        if (current.size >= 3) return false
+        if (current.size >= GameLibraryDao.MAX_QUICK_LAUNCH) return false
         saveQuickLaunch(context, current + game)
         return true
     }
@@ -209,7 +262,7 @@ object EngineScanner {
 
     /**
      * 用主游戏库最新数据刷新快捷启动快照（游戏页修改封面等后首页实时同步），并回写存储。
-     * 已从库中删除的游戏保留原快照（不主动移除）。
+     * 快捷启动为 games 的关联视图（JOIN），标题/封面更新自动生效；不存在孤儿快照。
      */
     fun refreshQuickLaunch(context: Context): List<ScanGame> {
         val library = loadGames(context).associateBy { it.uri }
@@ -222,60 +275,10 @@ object EngineScanner {
     internal fun saveQuickLaunch(context: Context, games: List<ScanGame>) {
         val snapshot = games.toList()
         quickLaunchCache = snapshot
-        saveList(context, KEY_QUICK_LAUNCH, snapshot)
+        GameLibraryRepository.post(context) {
+            GameLibraryRepository.replaceQuickLaunch(it, snapshot.map { game -> game.uri })
+        }
         _quickLaunchRevision.value++
-    }
-
-    // ---------- 通用存取助手 ----------
-
-    private fun saveList(context: Context, key: String, games: List<ScanGame>) {
-        val str = games.joinToString("\n") { serializeGame(it) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(key, str).apply()
-    }
-
-    private fun loadList(context: Context, key: String): List<ScanGame> {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(key, null) ?: return emptyList()
-        return raw.split("\n").mapNotNull { parseGame(it) }
-    }
-
-    private fun serializeGame(g: ScanGame): String {
-        // 标题/元数据可能来自 VNDB，含 \n 或 \u0001 会把整个持久化文件解析错乱，需清洗。
-        fun clean(s: String): String = s.replace("\n", " ").replace("\u0001", " ")
-        return listOf(
-            clean(g.title),
-            g.uri,
-            g.engine.name,
-            g.launchTarget,
-            g.coverUri.orEmpty(),
-            g.vndbId.orEmpty(),
-            clean(g.metadataTitle.orEmpty()),
-            g.launchFile.orEmpty(),
-            g.openTime.toString(),
-            g.coverSource.orEmpty(),
-            g.externalModuleAlias.orEmpty(),
-            g.detectedRenpyVersion.orEmpty(),
-        ).joinToString("\u0001")
-    }
-
-    private fun parseGame(line: String): ScanGame? {
-        val p = line.split("\u0001")
-        if (p.size < 3) return null
-        return ScanGame(
-            title = p[0],
-            uri = p[1],
-            engine = runCatching { EngineType.valueOf(p[2]) }.getOrDefault(EngineType.UNKNOWN),
-            launchTarget = p.getOrElse(3) { "" },
-            coverUri = p.getOrElse(4) { "" }.takeIf { it.isNotBlank() },
-            vndbId = p.getOrElse(5) { "" }.takeIf { it.isNotBlank() },
-            metadataTitle = p.getOrElse(6) { "" }.takeIf { it.isNotBlank() },
-            launchFile = p.getOrElse(7) { "" }.takeIf { it.isNotBlank() },
-            openTime = p.getOrElse(8) { "" }.toLongOrNull() ?: 0,
-            coverSource = p.getOrElse(9) { "" }.takeIf { it.isNotBlank() },
-            externalModuleAlias = p.getOrElse(10) { "" }.takeIf { it.isNotBlank() },
-            detectedRenpyVersion = p.getOrElse(11) { "" }.takeIf { it.isNotBlank() },
-        )
     }
 
     // ============ 扫描根目录持久化 ============
@@ -288,22 +291,28 @@ object EngineScanner {
      * 避免「/games」与「/games/」作为两个根重复保存、删除其一误清整目录游戏。
      */
     fun saveRoot(context: Context, rootPath: String): List<String> {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val existing = loadRoots(context).toMutableList()
         val key = rootPath.trim().trimEnd('/').let { if (it.isEmpty()) "/" else it }
-        val added = !existing.contains(key)
-        if (added) existing.add(key)
-        prefs.edit().putString(KEY_ROOTS, existing.joinToString("\n")).apply()
-        if (added) _rootsRevision.value++
-        return existing
+        synchronized(cacheLock) {
+            val existing = loadRootsLocked(context).toMutableList()
+            val added = !existing.contains(key)
+            if (!added) return existing
+            existing.add(key)
+            rootsCache = existing.toList()
+            GameLibraryRepository.post(context) { GameLibraryRepository.saveRoot(it, key) }
+            _rootsRevision.value++
+            return existing
+        }
     }
 
     fun removeRoot(context: Context, uri: Uri) {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val current = loadRoots(context)
-        val existing = current.filterNot { it == uri.toString() }
-        prefs.edit().putString(KEY_ROOTS, existing.joinToString("\n")).apply()
-        if (existing.size != current.size) _rootsRevision.value++
+        synchronized(cacheLock) {
+            val current = loadRootsLocked(context)
+            val existing = current.filterNot { it == uri.toString() }
+            if (existing.size == current.size) return
+            rootsCache = existing
+            GameLibraryRepository.post(context) { GameLibraryRepository.removeRoot(it, uri.toString()) }
+            _rootsRevision.value++
+        }
     }
 
     fun removeRootAndGames(context: Context, uri: Uri) {
@@ -317,45 +326,25 @@ object EngineScanner {
             games.filterNot { it.uri in removedUris }
         }
         if (removedUris.isEmpty()) return
-        saveRecentGames(context, loadRecentGames(context).filterNot { it.uri in removedUris })
+        // 最近打开/快捷启动的 DB 行已随游戏行删除（派生视图 + 级联），这里只需同步内存缓存。
+        synchronized(cacheLock) {
+            recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
+        }
         saveQuickLaunch(context, loadQuickLaunch(context).filterNot { it.uri in removedUris })
         _libraryRevision.value++
     }
 
     fun loadRoots(context: Context): List<String> =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_ROOTS, null)
-            ?.split("\n")
-            ?.filter { it.isNotBlank() }
-            ?: emptyList()
+        rootsCache ?: synchronized(cacheLock) {
+            loadRootsLocked(context)
+        }
 
-    private fun isGameUnderRoot(rootUriText: String, gameUriText: String): Boolean {
-        val rootPath = normalizePath(safUriToPath(rootUriText))
-        val gamePath = normalizePath(safUriToPath(gameUriText) ?: uriFilePath(gameUriText))
-        if (rootPath != null && gamePath != null && isSameOrChildPath(rootPath, gamePath)) return true
+    private fun loadRootsLocked(context: Context): List<String> =
+        rootsCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRoots(it) }
+            .also { rootsCache = it }
 
-        val rootDocId = documentId(rootUriText) ?: return false
-        val gameDocId = documentId(gameUriText) ?: return false
-        return gameDocId == rootDocId || gameDocId.startsWith("${rootDocId.trimEnd('/')}/")
-    }
-
-    private fun documentId(uriText: String): String? = runCatching {
-        val uri = Uri.parse(uriText)
-        DocumentsContract.getDocumentId(uri)
-    }.getOrNull() ?: runCatching {
-        DocumentsContract.getTreeDocumentId(Uri.parse(uriText))
-    }.getOrNull()
-
-    private fun uriFilePath(uriText: String): String? = runCatching {
-        val uri = Uri.parse(uriText)
-        if (uri.scheme.equals("file", ignoreCase = true)) uri.path else null
-    }.getOrNull() ?: uriText.takeIf { it.startsWith("/") }
-
-    private fun normalizePath(path: String?): String? =
-        path?.replace('\\', '/')?.trimEnd('/')?.let { if (it.isEmpty()) "/" else it }
-
-    private fun isSameOrChildPath(rootPath: String, gamePath: String): Boolean =
-        rootPath == "/" || gamePath == rootPath || gamePath.startsWith("$rootPath/")
+    private fun isGameUnderRoot(rootUriText: String, gameUriText: String): Boolean =
+        GameRootMatcher.isGameUnderRoot(rootUriText, gameUriText)
 
     // ============ 扫描游戏 ============
 
@@ -412,8 +401,13 @@ object EngineScanner {
             }
         }
         val validUris = refreshed.mapTo(HashSet()) { it.uri }
-        saveRecentGames(context, loadRecentGames(context).filter { it.uri in validUris })
+        // 最近打开/快捷启动为 games 派生视图，消失的游戏行已随差量删除，这里同步内存缓存即可。
+        synchronized(cacheLock) {
+            recentGamesCache = recentGamesCache?.filter { it.uri in validUris }
+        }
         saveQuickLaunch(context, loadQuickLaunch(context).filter { it.uri in validUris })
+        // 扫描识别结果入缓存（迁移方案阶段 5）：Ren'Py 版本建议与 RPGM 子运行时。
+        GameLibraryRepository.post(context) { EngineDetectionRepository.recordScanDetections(it, refreshed) }
         refreshed
     }
 
@@ -832,8 +826,11 @@ object EngineScanner {
         var hasVnData = false
         var hasSystemIni = false
         var hasFirstIet = false
+        var hasBootIni = false
         var hasRootPfs = false
+        var hasPatchPfs = false
         var hasAnyPfs = false
+        var hasObbLikeFile = false
         var hasOnsScript = false
         var hasOnsArchive = false
         var hasRenpyDir = false
@@ -875,10 +872,13 @@ object EngineScanner {
                 lower == "app.asar" || childRel.endsWith("/app.asar") -> hasAppAsar = true
                 lower == "startup.tjs" -> hasStartupTjs = true
                 lower == "config.tjs" -> hasConfigTjs = true
+                lower == "boot.ini" -> hasBootIni = true
                 lower == "system.ini" -> hasSystemIni = true
                 childRel == "system/first.iet" || childRel.endsWith("/system/first.iet") -> hasFirstIet = true
                 lower == "root.pfs" -> hasRootPfs = true
-                lower.endsWith(".pfs") -> hasAnyPfs = true
+                lower == "root.pfs" || PFS_PATCH_NAME_RE.matches(lower) -> hasPatchPfs = hasPatchPfs || lower != "root.pfs"
+                lower.endsWith(".pfs") || PFS_PATCH_NAME_RE.matches(lower) -> hasAnyPfs = true
+                lower.endsWith(".obb") || OBB_NAME_RE.matches(lower) -> hasObbLikeFile = true
                 lower == "0.txt" || lower == "00.txt" || lower == "nscript.dat" ||
                     lower == "onscript.nt2" || lower == "onscript.nt3" -> hasOnsScript = true
                 lower.endsWith(".nsa") || lower.endsWith(".sar") -> hasOnsArchive = true
@@ -906,8 +906,12 @@ object EngineScanner {
         }
         children.forEach { collect(it, "") }
 
-        if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasAnyPfs) {
-            return Detection(EngineType.ARTEMIS, if ((hasSystemIni && hasFirstIet) || hasRootPfs) 95 else 90, LAUNCH_TARGET_GAME_DIR)
+        if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasPatchPfs || hasAnyPfs || (hasBootIni && hasObbLikeFile)) {
+            return Detection(
+                EngineType.ARTEMIS,
+                if ((hasSystemIni && hasFirstIet) || hasRootPfs || (hasBootIni && hasObbLikeFile)) 95 else 90,
+                LAUNCH_TARGET_GAME_DIR,
+            )
         }
         if (hasIndex && hasTyranoDir) {
             return Detection(EngineType.TYRANO, 95, LAUNCH_TARGET_GAME_DIR)

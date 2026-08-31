@@ -316,7 +316,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     TextButton(
                         onClick = { showPathDialog = true },
                         modifier = Modifier.padding(end = 8.dp),
-                    ) { Text(stringResource(R.string.settings_input_path), style = MaterialTheme.typography.bodyMedium) }
+                    ) { Text(stringResource(R.string.settings_input_path)) }
                     TextButton(
                         onClick = { dirPicker.launch(null) },
                         modifier = Modifier.padding(end = 8.dp),
@@ -456,6 +456,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krVersion by remember { mutableStateOf(EngineSettingsStore.getKrEngineVersion(ctx)) }
     var krKernel by remember { mutableStateOf(EngineSettingsStore.getKrKernel(ctx)) }
     var krScoped by remember { mutableStateOf(EngineSettingsStore.isKrScopedSaveDir(ctx)) }
+    var krPatchOverlayMode by remember { mutableStateOf(EngineSettingsStore.getKrPatchOverlayMode(ctx)) }
     var krFont by remember { mutableStateOf(EngineSettingsStore.getKrDefaultFont(ctx)) }
     var krForceFont by remember { mutableStateOf(EngineSettingsStore.isKrForceDefaultFont(ctx)) }
     var krRenderer by remember { mutableStateOf(EngineSettingsStore.getKrRenderer(ctx)) }
@@ -474,6 +475,11 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var artVersion by remember { mutableStateOf(EngineSettingsStore.getArtEngineVersion(ctx)) }
     var artRotate by remember { mutableStateOf(EngineSettingsStore.isArtRotateScreen(ctx)) }
     var artPatch by remember { mutableStateOf(EngineSettingsStore.getArtAutoPatch(ctx)) }
+    var artResolution by remember { mutableStateOf(EngineSettingsStore.getArtResolution(ctx)) }
+    var artSideCut by remember { mutableStateOf(EngineSettingsStore.getArtSideCut(ctx)) }
+    var artSurfaceCache by remember { mutableStateOf(EngineSettingsStore.getArtSurfaceCacheSize(ctx)) }
+    var artFontCache by remember { mutableStateOf(EngineSettingsStore.getArtFontCacheSize(ctx)) }
+    var artPowerSaving by remember { mutableStateOf(EngineSettingsStore.getArtPowerSaving(ctx)) }
 
     var tyExternal by remember { mutableStateOf(EngineSettingsStore.isTyranoExternalNetwork(ctx)) }
     var tyScoped by remember { mutableStateOf(EngineSettingsStore.isTyranoScopedSaveDir(ctx)) }
@@ -500,6 +506,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrEngineVersion(ctx, krVersion)
         EngineSettingsStore.setKrKernel(ctx, krKernel)
         EngineSettingsStore.setKrScopedSaveDir(ctx, krScoped)
+        EngineSettingsStore.setKrPatchOverlayMode(ctx, krPatchOverlayMode)
         EngineSettingsStore.setKrDefaultFont(ctx, krFont)
         EngineSettingsStore.setKrForceDefaultFont(ctx, krForceFont)
         EngineSettingsStore.setKrRenderer(ctx, krRenderer)
@@ -516,6 +523,11 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
         EngineSettingsStore.setArtRotateScreen(ctx, artRotate)
         EngineSettingsStore.setArtAutoPatch(ctx, artPatch)
+        EngineSettingsStore.setArtResolution(ctx, artResolution)
+        EngineSettingsStore.setArtSideCut(ctx, artSideCut)
+        EngineSettingsStore.setArtSurfaceCacheSize(ctx, artSurfaceCache)
+        EngineSettingsStore.setArtFontCacheSize(ctx, artFontCache)
+        EngineSettingsStore.setArtPowerSaving(ctx, artPowerSaving)
         EngineSettingsStore.setTyranoExternalNetwork(ctx, tyExternal)
         EngineSettingsStore.setTyranoScopedSaveDir(ctx, tyScoped)
         EngineSettingsStore.setRpgMakerModEnabled(ctx, rpgMakerMod)
@@ -559,12 +571,14 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 kind,
                 krVersion, krKernel, krScoped, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
-                krVCursorScale, krMenuOpa,
-                ons, artVersion, artRotate, artPatch, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgMvVersion, rpgMzVersion, renpyVersion, fontLauncher,
+                krVCursorScale, krMenuOpa, krPatchOverlayMode,
+                ons, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgMvVersion, rpgMzVersion, renpyVersion, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
                 onKrScoped = { krScoped = it },
+                onKrPatchOverlayMode = { krPatchOverlayMode = it },
                 onKrForceFont = { krForceFont = it },
                 onKrRenderer = { krRenderer = it },
                 onKrDrawThread = { krDrawThread = it },
@@ -581,6 +595,11 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onArtVersion = { artVersion = it },
                 onArtRotate = { artRotate = it },
                 onArtPatch = { artPatch = it },
+                onArtResolution = { artResolution = it },
+                onArtSideCut = { artSideCut = it },
+                onArtSurfaceCache = { artSurfaceCache = it },
+                onArtFontCache = { artFontCache = it },
+                onArtPowerSaving = { artPowerSaving = it },
                 onTyExternal = { tyExternal = it },
                 onTyScoped = { tyScoped = it },
                 onRpgMakerMod = { rpgMakerMod = it },
@@ -633,17 +652,24 @@ private fun LazyListPlaceholder(
     krVersion: String, krKernel: String, krScoped: Boolean, krFont: String, krForceFont: Boolean,
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
-    krVCursorScale: String, krMenuOpa: String,
+    krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String,
     ons: EngineSettingsStore.Ons, artVersion: String, artRotate: Boolean, artPatch: String,
-    tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean, rpgLegacyRenderer: Boolean, rpgMvVersion: String, rpgMzVersion: String, renpyVersion: String, fontLauncher: FontPickerLauncher,
+    artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
+    artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
+    rpgLegacyRenderer: Boolean, rpgMvVersion: String, rpgMzVersion: String,
+    renpyVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
+    onKrPatchOverlayMode: (String) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
     onKrSwCompress: (String) -> Unit, onKrOglCompress: (String) -> Unit, onKrMem: (String) -> Unit,
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
     onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit,
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
+    onArtResolution: (String) -> Unit, onArtSideCut: (String) -> Unit,
+    onArtSurfaceCache: (String) -> Unit, onArtFontCache: (String) -> Unit,
+    onArtPowerSaving: (String) -> Unit,
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
     onRpgLegacyRenderer: (Boolean) -> Unit,
     onRpgMvVersion: (String) -> Unit, onRpgMzVersion: (String) -> Unit,
@@ -651,6 +677,7 @@ private fun LazyListPlaceholder(
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
+    val krPatchOverlayMap = krPatchOverlayOptions()
     val krRendererMap = krRendererOptions()
     val krSdl3RendererMap = krSdl3RendererOptions()
     val krThreadMap = krThreadOptions()
@@ -664,6 +691,10 @@ private fun LazyListPlaceholder(
     val artVersionMap = artVersionOptions()
     val renpyVersionMap = renpyVersionOptions()
     val artPatchMap = artPatchOptions()
+    val artResolutionMap = artResolutionOptions()
+    val artToggleMap = artToggleOptions()
+    val artSurfaceCacheMap = artSurfaceCacheOptions()
+    val artFontCacheMap = artFontCacheOptions()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
@@ -675,6 +706,9 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = krScoped, onCheckedChange = onKrScoped)
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), krSelectMap, krVersion, onKrVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, krKernel, onKrKernel)
+                if (!isSdl3) {
+                    DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
+                }
             }
         }
 
@@ -748,6 +782,11 @@ private fun LazyListPlaceholder(
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
                 SwitchPreference(title = stringResource(R.string.engine_settings_rotate_screen), checked = artRotate, onCheckedChange = onArtRotate)
                 DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)
+                DropdownRow(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, artResolution, onArtResolution)
+                DropdownRow(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, artSideCut, onArtSideCut)
+                DropdownRow(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, artSurfaceCache, onArtSurfaceCache)
+                DropdownRow(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, artFontCache, onArtFontCache)
+                DropdownRow(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, artPowerSaving, onArtPowerSaving)
             }
         }
 

@@ -69,8 +69,11 @@ object ExternalEngineLauncher {
         }
     }
 
-    fun openInstallPage(context: Context, module: ExternalEngineModule): Boolean {
-        val url = module.installUrl?.takeIf { it.isNotBlank() } ?: return false
+    fun openInstallPage(context: Context, module: ExternalEngineModule): Boolean =
+        module.installUrl?.let { openInstallPage(context, it) } ?: false
+
+    fun openInstallPage(context: Context, url: String): Boolean {
+        if (url.isBlank()) return false
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
             context.applicationContext.startActivity(intent)
