@@ -135,8 +135,6 @@ class GameSaveManager(private val context: Context) {
     @Throws(IOException::class)
     fun importFromZip(game: ScanGame, sourceUri: Uri): Int = synchronized(importLock) {
         val destination = resolveSaveLocation(game).directory ?: throw IOException(text(R.string.save_error_resolve_actual_dir))
-        if (!destination.exists() && !destination.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
-        if (!destination.isDirectory) throw IOException(text(R.string.save_error_save_dir_unavailable))
 
         val temp = createTemporaryDirectory()
         // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
@@ -145,7 +143,10 @@ class GameSaveManager(private val context: Context) {
         // 移回全部成功才清理备份——任何失败路径下备份都保有完整恢复数据。
         val staging = File(destination.parentFile, destination.name + ".import_staging")
         val backup = File(destination.parentFile, destination.name + ".import_backup")
-        // 上次导入的遗留备份恢复：目标缺失（rename 间隙被杀）整体还原；
+        // 上次导入的遗留备份恢复：必须在创建 destination 前完成，否则前一次
+        // 在 destination.renameTo(backup) 与 staging.renameTo(destination) 之间
+        // 中断会导致 destination 缺失；若先 mkdirs 会得到空目录并跳过恢复，
+        // 随后提交阶段又删除仍含旧存档的 backup，造成永久丢档。
         // Artemis 资源移回中断则逐个移回剩余资源。恢复完成备份里只剩可丢弃的旧存档。
         if (backup.isDirectory) {
             when {
@@ -155,6 +156,8 @@ class GameSaveManager(private val context: Context) {
                     restoreExcludedFromBackup(backup, destination, game.engine)
             }
         }
+        if (!destination.exists() && !destination.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
+        if (!destination.isDirectory) throw IOException(text(R.string.save_error_save_dir_unavailable))
         var committed = false
         var backupConsumed = false
         try {

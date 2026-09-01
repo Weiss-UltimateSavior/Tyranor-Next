@@ -41,10 +41,19 @@ object GameOverridesRepository {
      * （DB 先写、prefs 后写的 App 正常路径两者恒等；差异只可能来自引擎 touchpad 写回
      * 或回滚版本期间的修改）。幂等可重入；首次读路径也会等待它完成，避免读到半迁移状态。
      */
-    suspend fun ensureSynced(context: Context) = syncMutex.withLock {
-        if (syncDone) return
-        withContext(Dispatchers.IO) { syncFromPrefsLocked(context) }
-        syncDone = true
+    suspend fun ensureSynced(context: Context) {
+        syncMutex.withLock {
+            if (syncDone) return
+            val startGeneration = synchronized(cacheLock) { cacheGeneration }
+            withContext(Dispatchers.IO) { syncFromPrefsLocked(context) }
+            synchronized(cacheLock) {
+                // 同步期间若发生 invalidateRowCache（cacheGeneration 已递增），旧同步不能
+                // 覆盖失效：保持 syncDone=false 让下次读取重新回灌，避免旧 DB 行复活
+                if (cacheGeneration == startGeneration + 1) {
+                    syncDone = true
+                }
+            }
+        }
     }
 
     private suspend fun syncFromPrefsLocked(context: Context) {
@@ -95,19 +104,25 @@ object GameOverridesRepository {
         }
 
     private suspend fun loadRowCached(context: Context, gameId: String): GameOverrideEntity? {
-        val generation: Long
-        synchronized(cacheLock) {
-            if (rowCache.containsKey(gameId)) return rowCache[gameId]
-            generation = cacheGeneration
+        while (true) {
+            val generation: Long
+            synchronized(cacheLock) {
+                if (rowCache.containsKey(gameId)) return rowCache[gameId]
+                generation = cacheGeneration
+            }
+            // 缓存未命中：并发未命中会各自读一次单行索引查询，结果一致，无一致性风险
+            val row = GameLibraryDatabase.get(context).gameLibraryDao().getOverrideRow(gameId)
+            synchronized(cacheLock) {
+                // 读取期间发生过失效（cacheGeneration 已变）则丢弃本次旧查询结果，
+                // 不返回 stale 行而是重试：重新检查同步状态并回源，避免旧值覆盖新状态
+                if (generation == cacheGeneration) {
+                    rowCache[gameId] = row
+                    return row
+                }
+            }
+            // 代数已变说明期间有 invalidate/update/clear，重新校验同步状态后重试
+            ensureSynced(context)
         }
-        // 缓存未命中：并发未命中会各自读一次单行索引查询，结果一致，无一致性风险
-        val row = GameLibraryDatabase.get(context).gameLibraryDao().getOverrideRow(gameId)
-        synchronized(cacheLock) {
-            // 读取期间发生过失效（cacheGeneration 已变）则丢弃本次旧查询结果，
-            // 下次读取重新回源，避免把失效前的 DB 行写回缓存
-            if (generation == cacheGeneration) rowCache[gameId] = row
-        }
-        return row
     }
 
     /** 更新整条记录：DB 异步落库（prefs 镜像由调用方同步写，保证引擎立即可读）。 */
@@ -128,14 +143,17 @@ object GameOverridesRepository {
         synchronized(cacheLock) {
             cacheGeneration++
             rowCache.clear()
+            syncDone = false
         }
-        syncDone = false
     }
 
     internal fun clearRow(context: Context, gameId: String) {
         synchronized(cacheLock) {
             cacheGeneration++
-            rowCache.remove(gameId)
+            // 保留 null tombstone 直到 DB 删除完成，防止并发 loadRowCached 在删除提交前
+            // 读回旧行并以新代数重新写入缓存；失败时由 post 的 onPersistFailure 触发
+            // invalidateRowCache 清空 tombstone 并重置同步，保留一致性
+            rowCache[gameId] = null
         }
         GameLibraryRepository.post(context) {
             GameLibraryDatabase.get(it).gameLibraryDao().deleteOverrideRow(gameId)

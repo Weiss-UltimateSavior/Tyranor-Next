@@ -743,8 +743,8 @@ private fun LazyListPlaceholder(
         if (kind == EngineSettingsKind.KRKR && !isSdl3) item {
             EngineCard(stringResource(R.string.engine_settings_operation)) {
                 // 仅 kirikiri2 内核（libgame.so）读取这两项偏好，krkrsdl3 走命令行参数不生效
-                // 虚拟鼠标 1..100%，空心横条（1..150 档已验证超出屏幕，已收敛）
-                ContinuousSliderRow(stringResource(R.string.engine_settings_vcursor_scale), krkrPercentOptions(), krVCursorScale, onKrVCursorScale)
+                // 虚拟鼠标 1..150%（50% 即原版 Ty 的 0.5），菜单不透明度 1..100%
+                ContinuousSliderRow(stringResource(R.string.engine_settings_vcursor_scale), krkrVcursorOptions(), krVCursorScale, onKrVCursorScale)
                 ContinuousSliderRow(stringResource(R.string.engine_settings_menu_handler_opa), krkrPercentOptions(), krMenuOpa, onKrMenuOpa)
             }
         }
@@ -973,6 +973,15 @@ private fun importFont(ctx: android.content.Context, uri: Uri): String? = try {
 @Composable
 internal fun krkrPercentOptions(): List<Pair<String, String>> =
     listOf("" to stringResource(R.string.engine_option_engine_default)) + (1..100).map { it.toString() to "$it%" }
+
+/** KRKR 虚拟鼠标专用：0.01..1.50 两位小数（0.50 与 Tyranor 2.3.4 的 0.5 等价，下限 0.01） */
+@Composable
+internal fun krkrVcursorOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_option_engine_default)) +
+        (1..150).map {
+            val v = String.format(java.util.Locale.US, "%.2f", it / 100.0)
+            v to v
+        }
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */
 private fun scanDirName(context: android.content.Context, uri: String): String =
     if (uri.startsWith('/')) {

@@ -170,7 +170,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE, krPatchOverlayMode)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT, krFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT, krForceFont)
-        krRender.forEach { (field, st) -> PerGameSettingsStore.setStr(ctx, gid, field, st.value) }
+        krRender.forEach { (field, st) ->
+            val v = if (field == PerGameSettingsStore.F_VCURSOR_SCALE) {
+                st.value?.let { EngineSettingsStore.normalizeVcursorScale(it) } ?: st.value
+            } else st.value
+            PerGameSettingsStore.setStr(ctx, gid, field, v)
+        }
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION, artVersion)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE, artRotate)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH, artPatch)
@@ -279,12 +284,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         if (!isSdl3) {
                             item {
                                 SectionCard(stringResource(R.string.engine_settings_operation)) {
-                                    // 仅 kirikiri2 内核生效（与全局设置一致）
+                                    // 仅 kirikiri2 内核生效（0.01..1.50，两位小数，0.50 即 Ty 0.5）
                                     OverrideChoice(
                                         stringResource(R.string.engine_settings_vcursor_scale),
-                                        krkrPercentOptions().toMap(),
+                                        krkrVcursorOptions().toMap(),
                                         globalVCursorScale,
-                                        krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value,
+                                        krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value?.let { EngineSettingsStore.normalizeVcursorScale(it) ?: it },
                                         emptyLabel = stringResource(R.string.engine_option_engine_default),
                                     ) { krRender[PerGameSettingsStore.F_VCURSOR_SCALE]!!.value = it }
                                     OverrideChoice(
