@@ -156,14 +156,6 @@ StorageManager.webStorageExists = function(savefileId) {
     try { return localStorage.getItem(key) != null; } catch (e2) { return false; }
 };
 Utils.isMobileDevice = function() {return false;};
-StorageManager.removeWebStorage = function(savefileId) {
-    var key = this.webStorageKey(savefileId);
-    try { window.saveDataManager.Remove(key); } catch (e) { try { localStorage.removeItem(key); } catch (e2) {} }
-};
-StorageManager.webStorageBackupExists = StorageManager.webStorageBackupExists || function(savefileId) {
-    var key = this.webStorageKey(savefileId) + "bak";
-    try { return window.saveDataManager.Exists(key); } catch (e) { return false; }
-};
 StorageManager.backupWebStorage = function(savefileId) {
     if (!this.webStorageExists(savefileId)) return;
     var key = this.webStorageKey(savefileId);

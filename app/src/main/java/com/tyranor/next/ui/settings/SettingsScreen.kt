@@ -804,8 +804,8 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = tyScoped, onCheckedChange = onTyScoped)
                 SwitchPreference(title = stringResource(R.string.engine_settings_game_modifier), checked = rpgMakerMod, onCheckedChange = onRpgMakerMod)
                 SwitchPreference(title = stringResource(R.string.engine_settings_legacy_renderer), checked = rpgLegacyRenderer, onCheckedChange = onRpgLegacyRenderer)
-                DropdownRow(stringResource(R.string.engine_settings_engine_version) + " - MV", rpgMvVersionOptions(), rpgMvVersion, onRpgMvVersion)
-                DropdownRow(stringResource(R.string.engine_settings_engine_version) + " - MZ", rpgMzVersionOptions(), rpgMzVersion, onRpgMzVersion)
+                DropdownRow(stringResource(R.string.engine_settings_engine_version_mv), rpgMvVersionOptions(), rpgMvVersion, onRpgMvVersion)
+                DropdownRow(stringResource(R.string.engine_settings_engine_version_mz), rpgMzVersionOptions(), rpgMzVersion, onRpgMzVersion)
             }
         }
 

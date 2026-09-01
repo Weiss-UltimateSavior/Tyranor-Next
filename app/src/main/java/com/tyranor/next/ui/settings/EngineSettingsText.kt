@@ -202,7 +202,7 @@ internal fun rpgMvVersionOptions(): List<Pair<String, String>> = listOf(
 @Composable
 internal fun rpgMzVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.RPG_MZ_V0 to stringResource(R.string.engine_option_rpg_mz_v0),
-    EngineSettingsStore.RPG_MZ_V1 to stringResource(R.string.engine_option_rpg_mz_v1),
+    // RPG_MZ v1 为预留占位（TyranoActivity 对 MZ v1 仅回退 v0，不构建 overlay），本期不在选项中暴露以免误导
 )
 
 @Composable

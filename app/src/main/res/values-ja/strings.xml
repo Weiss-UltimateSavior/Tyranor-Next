@@ -156,6 +156,8 @@
     <string name="engine_settings_renpy_title">Ren’Py エンジン設定</string>
     <string name="engine_settings_scoped_save_dir">個別セーブフォルダ</string>
     <string name="engine_settings_engine_version">エンジンバージョン</string>
+    <string name="engine_settings_engine_version_mv">エンジンバージョン - MV</string>
+    <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>
     <string name="engine_settings_engine_kernel">エンジンカーネル</string>
     <string name="engine_settings_krkr_patch_overlay">KRKR 仮想 patch.tjs パッチ</string>
     <string name="engine_settings_render">描画</string>

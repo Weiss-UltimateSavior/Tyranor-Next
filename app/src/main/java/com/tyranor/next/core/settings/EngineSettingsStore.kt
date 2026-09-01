@@ -382,7 +382,4 @@ object EngineSettingsStore {
     private fun normalizeRpgMv(v: String?): String = normalizeRpgVersion(v)
 
     private fun normalizeRpgMz(v: String?): String = normalizeRpgVersion(v)
-
-    internal fun normalizeRpgMvForIntent(v: String?): String = normalizeRpgMv(v)
-    internal fun normalizeRpgMzForIntent(v: String?): String = normalizeRpgMz(v)
 }

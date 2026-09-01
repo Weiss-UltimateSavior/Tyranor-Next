@@ -156,6 +156,8 @@
     <string name="engine_settings_renpy_title">Ren’Py engine settings</string>
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
     <string name="engine_settings_engine_version">Engine version</string>
+    <string name="engine_settings_engine_version_mv">Engine version - MV</string>
+    <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
     <string name="engine_settings_engine_kernel">Engine kernel</string>
     <string name="engine_settings_krkr_patch_overlay">KRKR virtual patch.tjs patch</string>
     <string name="engine_settings_render">Rendering</string>

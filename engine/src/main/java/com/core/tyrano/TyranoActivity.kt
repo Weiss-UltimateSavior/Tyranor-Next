@@ -33,6 +33,7 @@ import androidx.appcompat.app.AlertDialog
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineThemeColors
+import com.core.engine.BuildConfig
 import com.core.engine.R
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -996,7 +997,7 @@ class TyranoActivity : Activity() {
     companion object {
         private const val TAG = "YukiTyrano"
         /** 诊断用构建标识：日志中出现该值即可确认设备运行的是哪一版代码 */
-        private const val BUILD_TAG = "v1iso-20260830"
+        private const val BUILD_TAG = BuildConfig.VERSION_NAME + "-" + BuildConfig.VERSION_CODE
         private const val TYRANO_HOOK_ASSET = "__tyrano__.js"
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
