@@ -540,7 +540,11 @@ internal fun GameActionsSheet(
 
     /** Requests a new shortcut or updates the existing shortcut for this game. */
     fun requestDesktopShortcut(customIconUri: android.net.Uri? = null) {
-        if (shortcutRequestInFlight) return
+        if (shortcutRequestInFlight) {
+            // 上一次请求（系统确认框）尚未结束：丢弃新生成的临时图标，避免孤儿文件
+            deleteShortcutCropBitmap(context.applicationContext, customIconUri)
+            return
+        }
         shortcutRequestInFlight = true
         scope.launch {
             val result = try {
@@ -611,7 +615,12 @@ internal fun GameActionsSheet(
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            // 关闭抽屉时一并清除裁切弹窗状态，避免 rememberSaveable 在下一次打开时残留旧弹窗
+            shortcutCropUriText = null
+            shortcutPickerForNoCover = false
+            onDismiss()
+        },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = { WindowInsets(0.dp) },
@@ -741,38 +750,11 @@ internal fun GameActionsSheet(
 
     // ===== Artemis 自动补丁确认：总是（记住 auto）/ 本次 / 不再（记住 off）；点遮罩取消 = 不启动 =====
     if (showPatchConfirm) {
-        AppAlertDialog(
-            onDismissRequest = { showPatchConfirm = false },
-            title = { Text(stringResource(R.string.game_auto_patch_title), style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Text(
-                    stringResource(R.string.game_auto_patch_message, game.title),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showPatchConfirm = false
-                        startLaunch(EngineLauncher.ArtemisPatchChoice.ALWAYS)
-                    },
-                ) { Text(stringResource(R.string.game_patch_always)) }
-            },
-            dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
-                        onClick = {
-                            showPatchConfirm = false
-                            startLaunch(EngineLauncher.ArtemisPatchChoice.NEVER)
-                        },
-                    ) { Text(stringResource(R.string.game_patch_never)) }
-                    TextButton(
-                        onClick = {
-                            showPatchConfirm = false
-                            startLaunch(EngineLauncher.ArtemisPatchChoice.ONCE)
-                        },
-                    ) { Text(stringResource(R.string.game_patch_once)) }
-                }
+        ArtemisPatchChoiceDialog(
+            game = game,
+            onChoice = { choice ->
+                showPatchConfirm = false
+                if (choice != null) startLaunch(choice)
             },
         )
     }

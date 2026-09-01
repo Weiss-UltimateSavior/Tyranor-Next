@@ -1,6 +1,5 @@
 package com.tyranor.next.ui.game
 
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -15,20 +14,20 @@ import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 
-/** Transparent trampoline that resolves a pinned shortcut against the current game library. */
+/**
+ * 桌面快捷方式回跳蹦床。
+ *
+ * 该 Activity 是 `ShortcutInfo.setIntent` 的目标，由桌面 Launcher 以显式 Intent 跨进程启动，
+ * 因此 `exported=true` 是**必需**的（改为 false 会触发 Permission Denial），请勿回退。
+ * 入参 `EXTRA_SHORTCUT_ID` 为库内游戏 uri 的 SHA-256，可通过 [GameShortcutActivity.createIntent]
+ * 重新解析库内游戏并启动，必要时先做 Artemis 补丁确认。
+ */
 class GameShortcutActivity : ComponentActivity() {
-    /** Resolves the shortcut ID, confirms Artemis patch policy, and launches the game. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (savedInstanceState != null) {
-            finish()
-            return
-        }
-
+        // 配置变更/进程重建后继续（弹窗会重新出现），不要静默 finish，否则用户点快捷方式无反馈
         val shortcutId = intent.getStringExtra(EXTRA_SHORTCUT_ID)
         if (shortcutId.isNullOrBlank()) {
             showUnavailableAndFinish()
@@ -50,7 +49,7 @@ class GameShortcutActivity : ComponentActivity() {
                     EngineLauncher.needsArtemisPatchConfirm(applicationContext, game)
                 }
                 val patchChoice = if (needsArtemisPatchConfirm) {
-                    awaitArtemisPatchChoice(game) ?: return@launch
+                    confirmArtemisPatchChoice(game) ?: return@launch
                 } else {
                     null
                 }
@@ -84,34 +83,6 @@ class GameShortcutActivity : ComponentActivity() {
     private fun showLaunchFailure(error: Throwable) {
         Log.e(TAG, "Shortcut game launch failed", error)
         Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_LONG).show()
-    }
-
-    /** Suspends until the user chooses an Artemis patch policy or dismisses the dialog. */
-    private suspend fun awaitArtemisPatchChoice(
-        game: com.tyranor.next.core.game.model.ScanGame,
-    ): EngineLauncher.ArtemisPatchChoice? = suspendCancellableCoroutine { continuation ->
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.game_auto_patch_title)
-            .setMessage(getString(R.string.game_auto_patch_message, game.title))
-            .setPositiveButton(R.string.game_patch_always) { _, _ ->
-                if (continuation.isActive) continuation.resume(EngineLauncher.ArtemisPatchChoice.ALWAYS)
-            }
-            .setNegativeButton(R.string.game_patch_never) { _, _ ->
-                if (continuation.isActive) continuation.resume(EngineLauncher.ArtemisPatchChoice.NEVER)
-            }
-            .setNeutralButton(R.string.game_patch_once) { _, _ ->
-                if (continuation.isActive) continuation.resume(EngineLauncher.ArtemisPatchChoice.ONCE)
-            }
-            .setOnCancelListener {
-                if (continuation.isActive) continuation.resume(null)
-            }
-            .create()
-
-        continuation.invokeOnCancellation { dialog.dismiss() }
-        if (continuation.isActive) {
-            dialog.show()
-            if (!continuation.isActive && dialog.isShowing) dialog.dismiss()
-        }
     }
 
     companion object {

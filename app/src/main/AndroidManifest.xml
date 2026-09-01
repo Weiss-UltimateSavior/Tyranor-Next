@@ -42,6 +42,7 @@
         <activity
             android:name=".ui.save.SaveManagementActivity"
             android:exported="false" />
+        <!-- 桌面快捷方式回跳蹦床：exported=true 为桌面 Launcher 跨进程显式启动所必需，勿改回 false（见 GameShortcutActivity KDoc） -->
         <activity
             android:name=".ui.game.GameShortcutActivity"
             android:excludeFromRecents="true"
