@@ -76,9 +76,10 @@ object EngineSettingsStore {
         KEY_KR_VCURSOR_SCALE to ENGINE_VCURSOR_SCALE,
         KEY_KR_MENU_HANDLER_OPA to ENGINE_MENU_HANDLER_OPA,
     )
-    // 虚拟鼠标缩放比（1..100，引擎默认 100；1..150 档在 150% 时已超出屏幕，收敛至 100）
-    val KR_VCURSOR_SCALE_RANGE = 1..100
-    val KR_VCURSOR_SCALES: Set<String> = KR_VCURSOR_SCALE_RANGE.map { it.toString() }.toSet()
+    // 虚拟鼠标缩放比（0.01..1.50，引擎默认 1.00；0.50 与原版 Ty 一致，两位小数）
+    val KR_VCURSOR_SCALE_MIN = 0.01f
+    val KR_VCURSOR_SCALE_MAX = 1.50f
+    val KR_VCURSOR_SCALES: Set<String> = (1..150).map { String.format(java.util.Locale.US, "%.2f", it / 100.0) }.toSet()
     // 菜单按钮不透明度（1..100，引擎默认 100；滚动条 1..100 全可选）
     val KR_MENU_HANDLER_OPA_RANGE = 1..100
     val KR_MENU_HANDLER_OPAS: Set<String> = KR_MENU_HANDLER_OPA_RANGE.map { it.toString() }.toSet()
@@ -96,6 +97,10 @@ object EngineSettingsStore {
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
+    /** Artemis 引擎版本全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
+    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V3, ART_ENGINE_V4, ART_ENGINE_V5)
+    /** Artemis 补丁策略全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
+    val ART_PATCHES = setOf(AUTO_PATCH_ASK, AUTO_PATCH_AUTO, AUTO_PATCH_OFF)
     const val ART_RESOLUTION_DEFAULT = ""
     const val ART_RESOLUTION_1920_1080 = "1920x1080"
     const val ART_RESOLUTION_1280_720 = "1280x720"
@@ -202,8 +207,43 @@ object EngineSettingsStore {
     fun setKrOglAccurateRender(c: Context, v: String) = setKrPref(c, KEY_KR_OGL_ACCURATE_RENDER, v)
     fun getKrFpsLimit(c: Context): String { val v = krPref(c, KEY_KR_FPS_LIMIT); return if (v in setOf("60", "45", "30", "15")) v else "" }
     fun setKrFpsLimit(c: Context, v: String) = setKrPref(c, KEY_KR_FPS_LIMIT, v)
-    fun getKrVCursorScale(c: Context): String { val v = krPref(c, KEY_KR_VCURSOR_SCALE).trim(); return if (v in KR_VCURSOR_SCALES) v else "" }
-    fun setKrVCursorScale(c: Context, v: String) { val t = v.trim(); if (t.isEmpty() || t in KR_VCURSOR_SCALES) setKrPref(c, KEY_KR_VCURSOR_SCALE, t) }
+    fun getKrVCursorScale(c: Context): String {
+        val v = krPref(c, KEY_KR_VCURSOR_SCALE).trim()
+        if (v.isEmpty()) return ""
+        // 兼容旧版整型百分比 1..150（如 "50" → "0.50"）
+        normalizeVcursorScale(v)?.let { return it }
+        return ""
+    }
+    fun setKrVCursorScale(c: Context, v: String) {
+        val t = v.trim()
+        if (t.isEmpty()) { setKrPref(c, KEY_KR_VCURSOR_SCALE, ""); return }
+        normalizeVcursorScale(t)?.let { setKrPref(c, KEY_KR_VCURSOR_SCALE, it) }
+    }
+
+    fun normalizeVcursorScale(raw: String): String? {
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        if (t in KR_VCURSOR_SCALES) return t
+        // 旧整型百分比兼容： "50" → "0.50"
+        t.toIntOrNull()?.let { iv ->
+            if (iv in 1..150) return String.format(java.util.Locale.US, "%.2f", iv / 100.0)
+        }
+        // 单小数位等宽容： "0.5" → "0.50"，"1" → "1.00"
+        val f = t.toFloatOrNull() ?: return null
+        if (f < KR_VCURSOR_SCALE_MIN - 1e-6 || f > KR_VCURSOR_SCALE_MAX + 1e-6) return null
+        // 四舍五入到两位小数
+        val rounded = Math.round(f * 100) / 100.0
+        val formatted = String.format(java.util.Locale.US, "%.2f", rounded)
+        return if (formatted in KR_VCURSOR_SCALES) formatted else null
+    }
+
+    /** 供 PerGameSettingsScreen 等对旧整型/单小数位做展示归一，空串保持空 */
+    fun normalizeVcursorScaleForDisplay(raw: String?): String? {
+        if (raw == null) return null
+        val t = raw.trim()
+        if (t.isEmpty()) return null
+        return normalizeVcursorScale(t) ?: t
+    }
     fun getKrMenuHandlerOpa(c: Context): String { val v = krPref(c, KEY_KR_MENU_HANDLER_OPA).trim(); return if (v in KR_MENU_HANDLER_OPAS) v else "" }
     fun setKrMenuHandlerOpa(c: Context, v: String) { val t = v.trim(); if (t.isEmpty() || t in KR_MENU_HANDLER_OPAS) setKrPref(c, KEY_KR_MENU_HANDLER_OPA, t) }
 
@@ -213,25 +253,31 @@ object EngineSettingsStore {
         KR_RENDER_PREF_KEYS.forEach { key ->
             val rawOverride = overrideGetter(key)
             val override = rawOverride?.trim()?.takeIf { it.isNotEmpty() || rawOverride == "" }
-            // 仅保留合法值或显式空串（引擎默认），非法值按跟随全局处理
+            // 仅保留合法值或显式空串（引擎默认），非法值按跟随全局处理；vcursor 支持旧整型兼容
             val sanitizedOverride = when (key) {
-                KEY_KR_VCURSOR_SCALE -> override?.let { if (it.isEmpty() || it in KR_VCURSOR_SCALES) it else null }
+                KEY_KR_VCURSOR_SCALE -> override?.let {
+                    if (it.isEmpty()) it else normalizeVcursorScale(it)
+                }
                 KEY_KR_MENU_HANDLER_OPA -> override?.let { if (it.isEmpty() || it in KR_MENU_HANDLER_OPAS) it else null }
                 else -> override
             }
             val globalRaw = prefs(c).getString(key, null).orEmpty().trim()
+            val normalizedGlobal = normalizeVcursorScale(globalRaw)
             val sanitizedGlobal = when (key) {
-                KEY_KR_VCURSOR_SCALE -> if (globalRaw in KR_VCURSOR_SCALES) globalRaw else ""
+                KEY_KR_VCURSOR_SCALE -> when {
+                    globalRaw.isEmpty() -> ""
+                    normalizedGlobal != null -> normalizedGlobal
+                    else -> ""
+                }
                 KEY_KR_MENU_HANDLER_OPA -> if (globalRaw in KR_MENU_HANDLER_OPAS) globalRaw else ""
                 else -> prefs(c).getString(key, null).orEmpty()
             }
             val rawValue = sanitizedOverride ?: sanitizedGlobal
-            // 虚拟鼠标：prefs 存 1..100（百分比），引擎需 0.01..1.00 浮点字符串
+            // 虚拟鼠标：prefs 存 "0.01".."1.50"（两位小数），引擎需浮点字符串，去尾零与 Ty 一致
             val value = when (key) {
                 KEY_KR_VCURSOR_SCALE -> if (rawValue.isEmpty()) "" else {
-                    val p = rawValue.toIntOrNull()
-                    if (p == null || p !in KR_VCURSOR_SCALE_RANGE) rawValue
-                    else String.format(java.util.Locale.US, "%.2f", p / 100.0).trimEnd('0').trimEnd('.')
+                    // 已是两位小数格式，去尾零后与原版 Ty 的 "0.5" 等价
+                    rawValue.trimEnd('0').trimEnd('.').ifEmpty { rawValue }
                 }
                 else -> rawValue
             }

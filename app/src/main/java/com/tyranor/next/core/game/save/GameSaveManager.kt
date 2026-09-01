@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.save
 import android.content.Context
 import android.net.Uri
 import androidx.annotation.StringRes
+import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
@@ -36,6 +37,15 @@ class GameSaveManager(private val context: Context) {
 
         return when (game.engine) {
             EngineType.KIRIKIRI -> {
+                // 可移动存储上启动器强制走 KrSafMirror 镜像（与独立存档开关无关），
+                // 引擎实际读写的是镜像目录内的 savedata，存档管理必须指向同一处。
+                if (EngineScanner.isRemovableStoragePath(root)) {
+                    return SaveLocation(
+                        File(bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title), "savedata"),
+                        text(R.string.save_location_krkr_sd_mirror),
+                        true,
+                    )
+                }
                 val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_SCOPED_SAVE_DIR)
                     ?: EngineSettingsStore.isKrScopedSaveDir(appContext)
                 if (scoped) {
@@ -123,20 +133,67 @@ class GameSaveManager(private val context: Context) {
     }
 
     @Throws(IOException::class)
-    fun importFromZip(game: ScanGame, sourceUri: Uri): Int {
+    fun importFromZip(game: ScanGame, sourceUri: Uri): Int = synchronized(importLock) {
         val destination = resolveSaveLocation(game).directory ?: throw IOException(text(R.string.save_error_resolve_actual_dir))
+
+        // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
+        // 提交阶段用两次 rename 原子交换（旧目录改名留作备份 → 暂存目录顶替），
+        // 任一步失败即从备份回滚。Artemis 的引擎资源在交换完成后再从备份移回，
+        // 移回全部成功才清理备份——任何失败路径下备份都保有完整恢复数据。
+        val staging = File(destination.parentFile, destination.name + ".import_staging")
+        val backup = File(destination.parentFile, destination.name + ".import_backup")
+        // 上次导入的遗留备份恢复：必须在创建 destination 前完成，否则前一次
+        // 在 destination.renameTo(backup) 与 staging.renameTo(destination) 之间
+        // 中断会导致 destination 缺失；若先 mkdirs 会得到空目录并跳过恢复，
+        // 随后提交阶段又删除仍含旧存档的 backup，造成永久丢档。
+        // Artemis 资源移回中断则逐个移回剩余资源。恢复完成备份里只剩可丢弃的旧存档。
+        // 注意 temp 延后创建：备份恢复抛异常时不泄漏 cacheDir 临时目录
+        if (backup.isDirectory) {
+            when {
+                !destination.exists() ->
+                    if (!backup.renameTo(destination)) throw IOException(text(R.string.save_error_save_dir_unavailable))
+                game.engine == EngineType.ARTEMIS ->
+                    restoreExcludedFromBackup(backup, destination, game.engine)
+            }
+        }
         if (!destination.exists() && !destination.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
         if (!destination.isDirectory) throw IOException(text(R.string.save_error_save_dir_unavailable))
-
         val temp = createTemporaryDirectory()
+        var committed = false
+        var backupConsumed = false
         try {
             val extracted = extractZip(sourceUri, temp)
             if (extracted == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
-            clearSaveDirectory(destination, game.engine)
-            copyDirectoryContents(temp, destination, excludeFor(game.engine))
-            return extracted
+            staging.deleteRecursively()
+            if (!staging.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
+            // 过滤引擎资源后可能一件存档都没有（如纯资源 ZIP）：必须在交换前拦截，
+            // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失
+            val copied = copyDirectoryContents(temp, staging, excludeFor(game.engine))
+            if (copied == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
+            if (destination.exists()) {
+                // 走到这里备份必已被开头恢复步骤消费（只剩旧存档或不存在），可安全删除
+                if (backup.exists() && !backup.deleteRecursively()) {
+                    throw IOException(text(R.string.save_error_save_dir_unavailable))
+                }
+                if (!destination.renameTo(backup)) throw IOException(text(R.string.save_error_save_dir_unavailable))
+            }
+            if (!staging.renameTo(destination)) {
+                if (backup.exists()) backup.renameTo(destination)
+                throw IOException(text(R.string.save_error_save_dir_unavailable))
+            }
+            committed = true
+            // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入，
+            // 交换后从备份移回；全部移回前备份绝不清理，失败可再次恢复
+            if (game.engine == EngineType.ARTEMIS) {
+                restoreExcludedFromBackup(backup, destination, game.engine)
+            }
+            backupConsumed = true
+            return copied
         } finally {
             temp.deleteRecursively()
+            staging.deleteRecursively()
+            // 仅在交换成功且备份内容已消费完毕后清理备份；否则保留备份数据供下次恢复
+            if (committed && backupConsumed) backup.deleteRecursively()
         }
     }
 
@@ -162,6 +219,14 @@ class GameSaveManager(private val context: Context) {
                 appContext.getExternalFilesDir(null)?.let { external ->
                     targetList += File(File(external, "save"), EngineScanner.safeSaveName(root))
                 }
+                if (EngineScanner.isRemovableStoragePath(root)) {
+                    // 可移动存储走 KrSafMirror：清理镜像树与 SAF 索引，避免内部存储持续膨胀
+                    targetList += bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title)
+                    targetList += File(
+                        File(appContext.noBackupFilesDir, "krkr_saf_index"),
+                        "${bridge.KrSafMirror.mirrorKey(game.uri, root)}.idx",
+                    )
+                }
                 targetList
             }
             EngineType.ONS -> {
@@ -177,21 +242,48 @@ class GameSaveManager(private val context: Context) {
             else -> return
         }
         val appInternal = appContext.filesDir.canonicalPath + File.separator
+        // KrSafMirror 镜像根（games/）与 SAF 索引（no_backup/）位于 filesDir 的父目录（应用数据根）下
+        val appDataRoot = appContext.filesDir.parentFile?.canonicalPath?.let { it + File.separator }
         val appExternal = appContext.getExternalFilesDir(null)?.canonicalPath
         targets.forEach { target ->
             val inAppStorage = target.canonicalPath.startsWith(appInternal) ||
+                (appDataRoot != null && target.canonicalPath.startsWith(appDataRoot)) ||
                 (appExternal != null && target.canonicalPath.startsWith(appExternal + File.separator))
             if (inAppStorage) target.deleteRecursively()
         }
     }
 
     private fun resolveGameDirectory(game: ScanGame): String? {
+        // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
+        // 两边解析出不同路径会让存档管理/清理指向错误镜像。
         EngineScanner.safUriToPath(game.uri)?.let { path ->
-            if (File(path).isDirectory) return File(path).absolutePath
+            val f = File(path)
+            if (f.isDirectory) return f.absolutePath
+            // 可移动存储上的 KRKR 允许仅 SAF 可读（启动器将以镜像模式运行），需解析出同一路径
+            if (game.engine == EngineType.KIRIKIRI && EngineScanner.isRemovableStoragePath(path)) {
+                val readableBySaf = runCatching {
+                    DocumentFile.fromTreeUri(appContext, Uri.parse(game.uri))?.isDirectory == true
+                }.getOrDefault(false)
+                if (readableBySaf) return f.absolutePath
+            }
         }
         val uri = runCatching { Uri.parse(game.uri) }.getOrNull()
-        if (uri?.scheme.equals("file", ignoreCase = true)) return uri?.path
-        return null
+        if (uri?.scheme == "file") return uri.path
+        // 兜底：_data 直查（与 EngineLauncher 的第二步一致）
+        return try {
+            val doc = DocumentFile.fromTreeUri(appContext, uri ?: return null)
+            if (doc == null || !doc.exists()) return null
+            appContext.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { c ->
+                if (c.moveToFirst()) {
+                    val dataIdx = c.getColumnIndex("_data")
+                    if (dataIdx >= 0) c.getString(dataIdx) else null
+                } else {
+                    null
+                }
+            }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun effectiveOnsScoped(game: ScanGame): Boolean {
@@ -314,6 +406,40 @@ class GameSaveManager(private val context: Context) {
         return copied
     }
 
+    /**
+     * 把备份目录中不参与导入的 Artemis 引擎资源（system/、*.pfs 等）逐个 rename 回目标目录；
+     * 按相对路径递归遍历，嵌套资源如 foo/data.pfs 亦能恢复（copyDirectoryContents 每层均过滤）。
+     * 全部成功后清理备份并返回，任一失败先把已移回的资源搬回备份、保留备份再抛出，
+     * 保证任何时刻备份都保有完整的引擎资源副本。
+     */
+    @Throws(IOException::class)
+    private fun restoreExcludedFromBackup(backup: File, destination: File, engine: EngineType) {
+        val exclude = excludeFor(engine)
+        val moved = mutableListOf<Pair<File, File>>()
+        try {
+            fun restoreRecursive(currentBackup: File, currentDest: File) {
+                currentBackup.listFiles().orEmpty().forEach { child ->
+                    if (exclude(child.name)) {
+                        val target = File(currentDest, child.name)
+                        target.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name)) }
+                        if (!child.renameTo(target)) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                        moved += child to target
+                    } else if (child.isDirectory) {
+                        val subDest = File(currentDest, child.name)
+                        restoreRecursive(child, subDest)
+                    }
+                }
+            }
+            restoreRecursive(backup, destination)
+        } catch (t: Throwable) {
+            moved.forEach { (backupFile, destinationFile) ->
+                runCatching { if (!destinationFile.renameTo(backupFile)) destinationFile.copyRecursively(backupFile, overwrite = true) }
+            }
+            throw IOException(text(R.string.save_error_save_dir_unavailable), t)
+        }
+        backup.deleteRecursively()
+    }
+
     private fun clearSaveDirectory(directory: File, engine: EngineType): Int {
         var deleted = 0
         val exclude = excludeFor(engine)
@@ -360,5 +486,9 @@ class GameSaveManager(private val context: Context) {
         private const val BUFFER_SIZE = 16 * 1024
         private const val MAX_SAVE_ZIP_FILES = 20_000
         private const val MAX_SAVE_ZIP_BYTES = 1024L * 1024L * 1024L
+
+        // 导入互斥锁：UI 层的 taskRunning 守卫会随 Activity 重建丢失（旋转屏幕时
+        // 旧协程的阻塞 IO 仍在后台跑完），进程级锁保证不会对同一存档并发导入
+        private val importLock = Any()
     }
 }

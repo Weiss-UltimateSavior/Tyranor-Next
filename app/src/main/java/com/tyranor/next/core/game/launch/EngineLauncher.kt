@@ -37,7 +37,10 @@ import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.unpack.ArtemisPfsUnpacker
 import com.tyranor.next.theme.AppThemeColors
 import com.yuri.onscripter.ONScripter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -85,8 +88,13 @@ object EngineLauncher {
     enum class ArtemisPatchChoice { ONCE, ALWAYS, NEVER }
 
     /** 尝试启动游戏。返回错误信息；null 表示成功发起。
-     *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。 */
-    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): String? {
+     *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。
+     *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
+     *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
+    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): String? =
+        withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+
+    private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): String? {
         val path = resolveGameDirectory(context, game)
         ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
             val module = ExternalEngineModuleRegistry.resolveModule(
@@ -106,6 +114,8 @@ object EngineLauncher {
             if (module.requiresGameDirectoryPath && path != null) {
                 requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
             }
+            // 与内置引擎路径一致：真正拉起外置引擎前确认未取消，避免取消后仍执行启动副作用
+            currentCoroutineContext().ensureActive()
             val result = ExternalEngineLauncher.launch(
                 context,
                 module,
@@ -116,6 +126,7 @@ object EngineLauncher {
                 ),
             )
             if (result.success) {
+                currentCoroutineContext().ensureActive()
                 EngineScanner.recordRecentGame(context, game)
                 return null
             }
@@ -133,6 +144,8 @@ object EngineLauncher {
                 withContext(Dispatchers.IO) {
                     KrSafMirror.prepare(context.applicationContext, game.uri, path, game.title)
                 }
+            } catch (ce: CancellationException) {
+                throw ce // 取消不是启动失败，原样传播给调用方
             } catch (t: Throwable) {
                 Log.e(TAG, "prepare KRKR SAF mirror failed uri=${game.uri}", t)
                 return t.message ?: text(context, R.string.launch_prepare_krkr_sd_mirror_failed)
@@ -158,12 +171,18 @@ object EngineLauncher {
                 else -> Unit
             }
         }
+        // 阻塞准备（镜像/overlay/PFS）完成后统一检查取消：已取消则不执行任何启动副作用
+        currentCoroutineContext().ensureActive()
         return try {
             val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror)
+            // Intent 组装后、真正拉起引擎前最后一次确认，取消后不 startActivity
+            currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             EngineScanner.recordRecentGame(context, game)
             null
+        } catch (ce: CancellationException) {
+            throw ce // 取消不是启动失败，原样传播给调用方
         } catch (e: Exception) {
             e.message ?: text(context, R.string.launch_failed)
         }
@@ -173,15 +192,19 @@ object EngineLauncher {
      * Artemis 补丁确认弹窗的触发条件：补丁策略为“启动时询问”（单游戏覆盖 > 全局）
      * 且该游戏确实需要 PFS 基础补丁（缺 system.ini 且存在 .pfs）。
      * UI 层据此弹窗，用户选择经 [launch] 的 [patchChoice] 传入。
+     * 含 runBlocking 的设置读取与目录枚举，切 IO 执行。
      */
-    fun needsArtemisPatchConfirm(context: Context, game: ScanGame): Boolean {
-        if (game.engine != EngineType.ARTEMIS) return false
-        val strategy = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_ART_PATCH)
-            ?: EngineSettingsStore.getArtAutoPatch(context)
-        if (strategy != EngineSettingsStore.AUTO_PATCH_ASK) return false
-        val path = resolveGameDirectory(context, game) ?: return false
-        return ArtemisPfsUnpacker.needsBasePatch(path)
-    }
+    suspend fun needsArtemisPatchConfirm(context: Context, game: ScanGame): Boolean =
+        withContext(Dispatchers.IO) {
+            if (game.engine != EngineType.ARTEMIS) return@withContext false
+            // 单游戏覆盖值走白名单校验：损坏/历史遗留的非法值回退全局，防止静默改变补丁行为
+            val override = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_ART_PATCH)
+            val strategy = override?.trim()?.takeIf { it in EngineSettingsStore.ART_PATCHES }
+                ?: EngineSettingsStore.getArtAutoPatch(context)
+            if (strategy != EngineSettingsStore.AUTO_PATCH_ASK) return@withContext false
+            val path = resolveGameDirectory(context, game) ?: return@withContext false
+            ArtemisPfsUnpacker.needsBasePatch(path)
+        }
 
     /**
      * Native engines receive a real /storage path, so SAF tree grants are not enough on Android 11+.
@@ -579,9 +602,10 @@ object EngineLauncher {
             val value = override?.trim()?.takeIf { it in allowed } ?: global.trim()
             return value.takeIf { it in allowed } ?: ""
         }
-        var version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(context))
+        // 版本/补丁策略的覆盖值同样走白名单（artString），非法持久化值回退全局
+        var version = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(context), EngineSettingsStore.ART_VERSIONS)
         val rotate = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_ART_ROTATE), EngineSettingsStore.isArtRotateScreen(context))
-        var autoPatch = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_PATCH), EngineSettingsStore.getArtAutoPatch(context))
+        var autoPatch = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_PATCH), EngineSettingsStore.getArtAutoPatch(context), EngineSettingsStore.ART_PATCHES)
         val androidSettings = ArtemisPfsUnpacker.AndroidSettings(
             resolution = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_RESOLUTION), EngineSettingsStore.getArtResolution(context), EngineSettingsStore.ART_RESOLUTIONS),
             sideCut = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SIDE_CUT), EngineSettingsStore.getArtSideCut(context), EngineSettingsStore.ART_TOGGLES),

@@ -79,6 +79,29 @@ class TyranoActivity : Activity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // singleInstance 启动模式下切换游戏只走到这里：路径或行为相关 extras
+        // （独立存档目录、修改器开关等）变化时整体重建，让 onCreate 按 Intent 重新解析
+        val newDir = resolveGameDir(intent)
+        if (newDir.isNullOrBlank()) return // 无法解析的意图不接管当前游戏，保留原 Intent
+        val changed = newDir != gameDir || behaviorSignature(intent) != behaviorSignature(getIntent())
+        setIntent(intent)
+        if (changed && !isFinishing) {
+            Log.i(TAG, "onNewIntent relaunch with changed intent; recreate")
+            recreate()
+        }
+    }
+
+    /** 影响引擎行为的 Intent extras 摘要，用于判断单游戏重启是否需要重建。 */
+    private fun behaviorSignature(intent: Intent): String = listOf(
+        resolveGameDir(intent),
+        intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false).toString(),
+        intent.getStringExtra(EXTRA_SCOPED_SAVE_ROOT),
+        intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true).toString(),
+        intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID),
+    ).joinToString("\u0000")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // buildTag 用于辨识设备上实际运行的构建，出现该行即说明是新代码
         Log.i(TAG, "onCreate begin build=$buildTag type=${intent?.getStringExtra("type")} rpgMakerVersion=${intent?.getStringExtra(EXTRA_RPG_MAKER_VERSION)}")
@@ -430,7 +453,10 @@ class TyranoActivity : Activity() {
                 return super.onConsoleMessage(consoleMessage)
             }
         }
-        runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
+        // 仅 debug 构建开放 chrome://inspect 远程调试；release 保持关闭，避免任意 JS 注入面
+        if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
+        }
         browser.settings.apply {
             userAgentString = "$userAgentString;tyranoplayer-android-1.0;tyranor-internal-tyrano"
             javaScriptEnabled = true

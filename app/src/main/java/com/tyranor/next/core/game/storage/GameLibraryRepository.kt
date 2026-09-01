@@ -339,6 +339,11 @@ object GameLibraryRepository {
 
     // ============ 缓存门面接入 ============
 
+    /** 持久化写失败回调：缓存先行更新后落库失败会让内存缓存与 DB（事实源）分叉，
+     *  注册方（EngineScanner）借此丢弃内存缓存，下次读取回源 DB 自愈。 */
+    @Volatile
+    var onPersistFailure: (() -> Unit)? = null
+
     /**
      * 把一次持久化写追加到单线程写队列：FIFO 启动、互斥完成、失败仅记日志（缓存已先行更新）；
      * 成功后追加防抖 prefs 镜像。
@@ -349,8 +354,12 @@ object GameLibraryRepository {
             try {
                 writeMutex.withLock { block(app) }
                 schedulePrefsMirror(app)
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
             } catch (t: Throwable) {
                 Log.e(TAG, "Game library persistence failed", t)
+                // 缓存已指向未落库的新状态：丢弃之，下次读取回源 DB，避免分叉永不自愈
+                runCatching { onPersistFailure?.invoke() }
             }
         }
     }

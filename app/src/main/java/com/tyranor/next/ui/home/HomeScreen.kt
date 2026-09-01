@@ -119,10 +119,12 @@ fun HomeScreen(
 
     // 点按直接启动游戏；Artemis 按既有策略弹出补丁确认（与游戏页长按启动一致）。
     fun launchGame(game: ScanGame) {
-        if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-            patchLaunchTarget = game
-        } else {
-            scope.launch { launchError = EngineLauncher.launch(context, game) }
+        scope.launch {
+            if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
+                patchLaunchTarget = game
+            } else {
+                launchError = EngineLauncher.launch(context, game)
+            }
         }
     }
 

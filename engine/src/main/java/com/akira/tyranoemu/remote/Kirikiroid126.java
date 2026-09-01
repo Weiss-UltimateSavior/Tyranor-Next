@@ -1,6 +1,5 @@
 package com.akira.tyranoemu.remote;
 
-import android.util.Log;
 
 import com.core.nativeplugin.NativeLibraryLoader;
 
@@ -21,8 +20,9 @@ public final class Kirikiroid126 extends KirikiroidLauncherBaseActivity {
     public void onLoadNativeLibraries() {
         String gameLibrary = NativeLibraryLoader.loadKirikiroid126(this);
         if (gameLibrary == null) {
-            Log.e("Kirikiroid2", "Kirikiroid2 plugin missing or invalid for libgame126.so");
-            return;
+            // 与 KR2Activity 契约一致：静默 return 会让 Cocos 宿主带着缺失的 libgame126.so
+            // 继续启动，最终在 GL 线程以难以诊断的 UnsatisfiedLinkError 崩溃（见 Kirikiroid139）。
+            throw new UnsatisfiedLinkError("Kirikiroid2 plugin missing or invalid for libgame126.so");
         }
         setResolvedGameLibrary(gameLibrary);
         System.loadLibrary("krkr_bridge_v2");
