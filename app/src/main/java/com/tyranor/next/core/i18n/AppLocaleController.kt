@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import com.tyranor.next.core.settings.AppSettingsStore
 import java.util.Locale
 
@@ -61,6 +62,10 @@ fun ProvideAppLocale(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalContext provides localizedContext,
         LocalConfiguration provides localizedConfiguration,
+        // stringResource() reads LocalResources rather than LocalContext. Providing
+        // the localized Resources here keeps every Compose screen in sync with the
+        // app-selected language, including sheets and dialogs opened later.
+        LocalResources provides localizedContext.resources,
         content = content,
     )
 }

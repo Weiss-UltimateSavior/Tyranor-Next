@@ -100,7 +100,24 @@ val syncSharedEngineAssets by tasks.registering(Sync::class) {
 val checkHardcodedUiStrings by tasks.registering(Exec::class) {
     group = "verification"
     description = "Checks localized string resource parity and blocks visible CJK string literals in Kotlin UI/core code."
-    commandLine("python3", rootProject.layout.projectDirectory.file("tools/check-hardcoded-ui-strings.py").asFile.absolutePath)
+    // Keep the verification task usable on both developer Windows machines and
+    // Unix CI hosts: Python is commonly exposed as `python` on Windows and
+    // `python3` elsewhere.
+    val isWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
+    val pythonCommand = if (isWindows) {
+        "python"
+    } else {
+        "python3"
+    }
+    val checkerScript = rootProject.layout.projectDirectory.file("tools/check-hardcoded-ui-strings.py").asFile.absolutePath
+    if (isWindows) {
+        // Launch through cmd.exe: Windows Python shims can reject a direct
+        // CreateProcess call from an elevated Gradle process even though the
+        // same interpreter is available from the shell.
+        commandLine("cmd.exe", "/c", pythonCommand, checkerScript)
+    } else {
+        commandLine(pythonCommand, checkerScript)
+    }
 }
 
 android {

@@ -109,6 +109,10 @@ class SaveManagementActivity : ComponentActivity() {
 private fun SaveManagementScreen(game: ScanGame) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val saveOperationFailedMessage = stringResource(R.string.save_operation_failed)
+    val saveExportedCountFormat = stringResource(R.string.save_exported_count)
+    val saveImportedCountFormat = stringResource(R.string.save_imported_count)
+    val saveDeletedCountFormat = stringResource(R.string.save_deleted_count)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf(manager.resolveSaveLocation(game)) }
     var fileCount by remember { mutableStateOf(manager.listSaveFiles(game).size) }
@@ -127,7 +131,7 @@ private fun SaveManagementScreen(game: ScanGame) {
             taskRunning = true
             try {
                 val message = withContext(Dispatchers.IO) {
-                    runCatching { block() }.getOrElse { it.message ?: context.getString(R.string.save_operation_failed) }
+                    runCatching { block() }.getOrElse { it.message ?: saveOperationFailedMessage }
                 }
                 refresh()
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -143,7 +147,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         if (uri != null) {
             runSaveTask {
                 val count = manager.exportToZip(game, uri)
-                context.getString(R.string.save_exported_count, count)
+                saveExportedCountFormat.format(count)
             }
         }
     }
@@ -151,7 +155,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         if (uri != null) {
             runSaveTask {
                 val count = manager.importFromZip(game, uri)
-                context.getString(R.string.save_imported_count, count)
+                saveImportedCountFormat.format(count)
             }
         }
     }
@@ -236,7 +240,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         showDeleteConfirm = false
                         runSaveTask {
                             val count = manager.deleteSaves(game)
-                            context.getString(R.string.save_deleted_count, count)
+                            saveDeletedCountFormat.format(count)
                         }
                     },
                 ) { Text(stringResource(R.string.common_delete)) }

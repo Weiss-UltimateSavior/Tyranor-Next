@@ -73,6 +73,17 @@ object UpdateNotificationManager {
             .build()
 
         return runCatching {
+            // Re-check immediately before posting: notification permission can be
+            // revoked while the notification is being assembled. Keeping this
+            // guard next to notify() also lets Android lint verify the contract.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(
+                    appContext,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                return@runCatching false
+            }
             NotificationManagerCompat.from(appContext).notify(NOTIFICATION_ID, notification)
             prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, update.latestVersion).apply()
             true

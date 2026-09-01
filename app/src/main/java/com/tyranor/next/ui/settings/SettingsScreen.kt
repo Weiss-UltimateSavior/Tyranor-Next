@@ -101,6 +101,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var scanDirs by remember { mutableStateOf(EngineScanner.loadRoots(ctx)) }
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
+    val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
+    val settingsUpdateFailedFormat = stringResource(R.string.settings_update_failed)
     LaunchedEffect(Unit) {
         EngineScanner.rootsRevision.collect {
             scanDirs = withContext(Dispatchers.IO) { EngineScanner.loadRoots(ctx) }
@@ -127,10 +129,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             when (val result = GitHubUpdateChecker.check(ctx)) {
                 is UpdateCheckResult.UpdateAvailable -> updateAvailable = result
                 is UpdateCheckResult.UpToDate -> {
-                    Toast.makeText(ctx, ctx.getString(R.string.settings_update_latest), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, settingsUpdateLatestMessage, Toast.LENGTH_SHORT).show()
                 }
                 is UpdateCheckResult.Failed -> {
-                    Toast.makeText(ctx, ctx.getString(R.string.settings_update_failed, result.message), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, settingsUpdateFailedFormat.format(result.message), Toast.LENGTH_SHORT).show()
                 }
             }
             checkingUpdate = false
@@ -452,10 +454,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 @Composable
 internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     val ctx = LocalContext.current
+    val engineSettingsSavedMessage = stringResource(R.string.engine_settings_saved)
 
     var krVersion by remember { mutableStateOf(EngineSettingsStore.getKrEngineVersion(ctx)) }
     var krKernel by remember { mutableStateOf(EngineSettingsStore.getKrKernel(ctx)) }
     var krScoped by remember { mutableStateOf(EngineSettingsStore.isKrScopedSaveDir(ctx)) }
+    var krSkipStartupDialogs by remember { mutableStateOf(EngineSettingsStore.isKrSkipStartupDialogs(ctx)) }
     var krPatchOverlayMode by remember { mutableStateOf(EngineSettingsStore.getKrPatchOverlayMode(ctx)) }
     var krFont by remember { mutableStateOf(EngineSettingsStore.getKrDefaultFont(ctx)) }
     var krForceFont by remember { mutableStateOf(EngineSettingsStore.isKrForceDefaultFont(ctx)) }
@@ -506,6 +510,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrEngineVersion(ctx, krVersion)
         EngineSettingsStore.setKrKernel(ctx, krKernel)
         EngineSettingsStore.setKrScopedSaveDir(ctx, krScoped)
+        EngineSettingsStore.setKrSkipStartupDialogs(ctx, krSkipStartupDialogs)
         EngineSettingsStore.setKrPatchOverlayMode(ctx, krPatchOverlayMode)
         EngineSettingsStore.setKrDefaultFont(ctx, krFont)
         EngineSettingsStore.setKrForceDefaultFont(ctx, krForceFont)
@@ -560,7 +565,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                             )
                             TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
                                 saveAll()
-                                android.widget.Toast.makeText(ctx, ctx.getString(R.string.engine_settings_saved), android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(ctx, engineSettingsSavedMessage, android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -569,7 +574,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         ) { innerPadding ->
             LazyListPlaceholder(
                 kind,
-                krVersion, krKernel, krScoped, krFont, krForceFont, krRenderer, krDrawThread,
+                krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode,
                 ons, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
@@ -578,6 +583,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
                 onKrScoped = { krScoped = it },
+                onKrSkipStartupDialogs = { krSkipStartupDialogs = it },
                 onKrPatchOverlayMode = { krPatchOverlayMode = it },
                 onKrForceFont = { krForceFont = it },
                 onKrRenderer = { krRenderer = it },
@@ -649,7 +655,8 @@ private typealias FontPickerLauncher = androidx.activity.compose.ManagedActivity
 @Composable
 private fun LazyListPlaceholder(
     kind: EngineSettingsKind,
-    krVersion: String, krKernel: String, krScoped: Boolean, krFont: String, krForceFont: Boolean,
+    krVersion: String, krKernel: String, krScoped: Boolean, krSkipStartupDialogs: Boolean,
+    krFont: String, krForceFont: Boolean,
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
     krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String,
@@ -660,6 +667,7 @@ private fun LazyListPlaceholder(
     renpyVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
+    onKrSkipStartupDialogs: (Boolean) -> Unit,
     onKrPatchOverlayMode: (String) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
     onKrSwCompress: (String) -> Unit, onKrOglCompress: (String) -> Unit, onKrMem: (String) -> Unit,
@@ -704,6 +712,12 @@ private fun LazyListPlaceholder(
         if (kind == EngineSettingsKind.KRKR) item {
             EngineCard("KRKR") {
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = krScoped, onCheckedChange = onKrScoped)
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_skip_startup_dialogs),
+                    summary = stringResource(R.string.engine_settings_skip_startup_dialogs_summary),
+                    checked = krSkipStartupDialogs,
+                    onCheckedChange = onKrSkipStartupDialogs,
+                )
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), krSelectMap, krVersion, onKrVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, krKernel, onKrKernel)
                 if (!isSdl3) {

@@ -10,6 +10,7 @@
     <string name="common_disabled">Off</string>
     <string name="common_auto">Auto</string>
     <string name="common_follow_system">Follow system</string>
+    <string name="common_search_content_description">Search</string>
 
     <string name="nav_home">Home</string>
     <string name="nav_games">Games</string>
@@ -88,6 +89,8 @@
     <string name="engine_desc_artemis">Artemis games using system.ini and .pfs archives</string>
     <string name="engine_desc_renpy">Ren’Py external APK module, launched after install-state detection</string>
     <string name="engine_desc_unknown">Unknown engine</string>
+    <string name="engine_name_unknown">Unknown engine</string>
+    <string name="engine_name_web">Web game</string>
 
     <string name="game_title">Games</string>
     <string name="game_search_content_description">Search games</string>
@@ -166,6 +169,8 @@
     <string name="engine_settings_tyrano_title">Tyrano engine settings</string>
     <string name="engine_settings_renpy_title">Ren’Py engine settings</string>
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
+    <string name="engine_settings_skip_startup_dialogs">Block game launch pop-ups</string>
+    <string name="engine_settings_skip_startup_dialogs_summary">Block repeated pop-ups before each game launch and enter the game directly</string>
     <string name="engine_settings_engine_version">Engine version</string>
     <string name="engine_settings_engine_version_mv">Engine version - MV</string>
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>

@@ -147,6 +147,7 @@ fun GameScreen(
     onSearchQueryChanged: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
     val scope = rememberCoroutineScope()
     val games = libraryState.games
     var selectedGameUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -182,7 +183,7 @@ fun GameScreen(
     fun syncMissingCovers() {
         if (libraryState.scanning || scrapeTaskState.running) return
         if (!CoverScrapeTaskManager.start(context, games)) {
-            android.widget.Toast.makeText(context, context.getString(R.string.game_batch_scraping_running), android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, batchScrapeRunningMessage, android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -517,6 +518,11 @@ internal fun GameActionsSheet(
     var shortcutRequestInFlight by remember(game.uri) { mutableStateOf(false) }
     var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
+    val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
+    val settingCoverMessage = stringResource(R.string.game_setting_cover)
+    val coverSetFailedMessage = stringResource(R.string.game_cover_set_failed)
+    val quickLaunchFullMessage = stringResource(R.string.game_quick_launch_full)
+    val coverDownloadFailedMessage = stringResource(R.string.game_cover_download_failed)
     val shortcutRequestedMessage = stringResource(R.string.game_desktop_shortcut_requested)
     val shortcutUpdatedMessage = stringResource(R.string.game_desktop_shortcut_updated)
     val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
@@ -525,7 +531,7 @@ internal fun GameActionsSheet(
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
         if (!CoverScrapeTaskManager.state.value.running) return false
-        android.widget.Toast.makeText(context, context.getString(R.string.game_batch_scraping_running), android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(context, batchScrapeRunningMessage, android.widget.Toast.LENGTH_SHORT).show()
         return true
     }
 
@@ -600,7 +606,7 @@ internal fun GameActionsSheet(
         if (uri == null) return@rememberLauncherForActivityResult
         if (isBatchScrapingActive()) return@rememberLauncherForActivityResult
         scope.launch {
-            launchError = context.getString(R.string.game_setting_cover)
+            launchError = settingCoverMessage
             val updated = withContext(Dispatchers.IO) {
                 runCatching { VndbCoverService.saveCustomCover(context, game, uri) }.getOrNull()
             }
@@ -609,7 +615,7 @@ internal fun GameActionsSheet(
                 launchError = null
                 onDismiss()
             } else {
-                launchError = context.getString(R.string.game_cover_set_failed)
+                launchError = coverSetFailedMessage
             }
         }
     }
@@ -675,7 +681,7 @@ internal fun GameActionsSheet(
                     if (onQuickLaunchToggle()) {
                         onDismiss()
                     } else {
-                        android.widget.Toast.makeText(context, context.getString(R.string.game_quick_launch_full), android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, quickLaunchFullMessage, android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -793,7 +799,7 @@ internal fun GameActionsSheet(
                             coverSearchSource = null
                             onDismiss()
                         } else {
-                            coverBindError = context.getString(R.string.game_cover_download_failed)
+                            coverBindError = coverDownloadFailedMessage
                         }
                     }
                 }
@@ -866,7 +872,7 @@ private fun RenameGameDialog(
                 onQueryChange = { title = it },
                 onSearch = { if (canConfirm) onConfirm(normalizedTitle) },
                 leadingIcon = painterResource(R.drawable.ic_sheet_rename),
-                iconContentDescription = "Rename",
+                iconContentDescription = stringResource(R.string.game_rename),
                 textStyle = MaterialTheme.typography.bodyMedium,
             )
         },
@@ -930,6 +936,8 @@ private fun CoverSearchDialog(
     onBind: (CoverSearchCandidate) -> Unit,
 ) {
     val context = LocalContext.current
+    val coverNoMatchMessage = stringResource(R.string.game_cover_no_match)
+    val coverSearchFailedMessage = stringResource(R.string.game_cover_search_failed)
     var keyword by rememberSaveable(source, game.uri) { mutableStateOf(game.title) }
     var searching by remember { mutableStateOf(false) }
     var error by rememberSaveable(source, game.uri) { mutableStateOf<String?>(null) }
@@ -953,7 +961,7 @@ private fun CoverSearchDialog(
                 }) {
                     is CoverSearchResult.Success -> {
                         candidates = result.candidates.distinctBy { "${it.source}:${it.id}:${it.coverUrl}" }
-                        if (candidates.isEmpty()) error = context.getString(R.string.game_cover_no_match)
+                        if (candidates.isEmpty()) error = coverNoMatchMessage
                     }
                     is CoverSearchResult.Failure -> {
                         error = result.message
@@ -962,7 +970,7 @@ private fun CoverSearchDialog(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                error = e.message ?: context.getString(R.string.game_cover_search_failed)
+                error = e.message ?: coverSearchFailedMessage
             } finally {
                 searching = false
             }
@@ -1407,6 +1415,11 @@ internal fun GameCard(
     onLongClick: (() -> Unit)? = null,
 ) {
     Column(modifier) {
+        val engineName = if (game.engine == EngineType.UNKNOWN) {
+            stringResource(R.string.engine_name_unknown)
+        } else {
+            game.engine.displayName
+        }
         val coverBitmap by rememberCoverBitmap(game.coverUri)
         val pressModifier = if (onLongClick != null) {
             Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -1439,7 +1452,7 @@ internal fun GameCard(
                         color = Color.White.copy(alpha = 0.7f),
                     )
                     Text(
-                        game.engine.displayName,
+                        engineName,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White,
                         modifier = Modifier.padding(top = 4.dp),

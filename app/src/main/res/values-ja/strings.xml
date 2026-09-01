@@ -10,6 +10,7 @@
     <string name="common_disabled">オフ</string>
     <string name="common_auto">自動</string>
     <string name="common_follow_system">システムに従う</string>
+    <string name="common_search_content_description">検索</string>
 
     <string name="nav_home">ホーム</string>
     <string name="nav_games">ゲーム</string>
@@ -88,6 +89,8 @@
     <string name="engine_desc_artemis">Artemis、system.ini と .pfs アーカイブのゲーム</string>
     <string name="engine_desc_renpy">Ren’Py 外部 APK モジュール。インストール状態を確認して起動</string>
     <string name="engine_desc_unknown">不明なエンジン</string>
+    <string name="engine_name_unknown">不明なエンジン</string>
+    <string name="engine_name_web">Web ゲーム</string>
 
     <string name="game_title">ゲーム</string>
     <string name="game_search_content_description">ゲームを検索</string>
@@ -166,6 +169,8 @@
     <string name="engine_settings_tyrano_title">Tyrano エンジン設定</string>
     <string name="engine_settings_renpy_title">Ren’Py エンジン設定</string>
     <string name="engine_settings_scoped_save_dir">個別セーブフォルダ</string>
+    <string name="engine_settings_skip_startup_dialogs">ゲーム起動時のポップアップを非表示</string>
+    <string name="engine_settings_skip_startup_dialogs_summary">ゲームを起動するたびに表示される重複ポップアップを非表示にして、すぐにゲームを開始します</string>
     <string name="engine_settings_engine_version">エンジンバージョン</string>
     <string name="engine_settings_engine_version_mv">エンジンバージョン - MV</string>
     <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>

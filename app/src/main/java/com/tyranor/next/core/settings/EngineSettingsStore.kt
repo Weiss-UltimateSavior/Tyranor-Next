@@ -31,6 +31,7 @@ object EngineSettingsStore {
     const val KEY_KR_MENU_HANDLER_OPA = "kr_menu_handler_opa"
     const val KEY_KR_SCOPED_SAVE_DIR = "kr_scoped_save_dir"
     const val KEY_KR_PATCH_OVERLAY_MODE = "kr_patch_overlay_mode"
+    const val KEY_KR_SKIP_STARTUP_DIALOGS = "kr_skip_startup_dialogs"
 
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
@@ -181,6 +182,13 @@ object EngineSettingsStore {
         normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))
     fun setKrPatchOverlayMode(c: Context, v: String) =
         prefs(c).edit().putString(KEY_KR_PATCH_OVERLAY_MODE, normalizeKrPatchOverlayMode(v)).apply()
+
+    /** Automatically confirm one-button KRKR information dialogs during the first 30 seconds. */
+    fun isKrSkipStartupDialogs(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_KR_SKIP_STARTUP_DIALOGS, false)
+
+    fun setKrSkipStartupDialogs(c: Context, enabled: Boolean) =
+        prefs(c).edit().putBoolean(KEY_KR_SKIP_STARTUP_DIALOGS, enabled).apply()
 
     fun getKrDefaultFont(c: Context): String = prefs(c).getString(KEY_KR_DEFAULT_FONT, "").orEmpty()
     fun setKrDefaultFont(c: Context, p: String) = prefs(c).edit().putString(KEY_KR_DEFAULT_FONT, p.trim()).apply()

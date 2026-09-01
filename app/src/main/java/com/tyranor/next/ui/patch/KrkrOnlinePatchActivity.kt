@@ -116,6 +116,9 @@ class KrkrOnlinePatchActivity : ComponentActivity() {
 private fun KrkrOnlinePatchScreen(game: ScanGame) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val patchInstalledCountFormat = stringResource(R.string.patch_installed_count)
+    val patchWrittenToFormat = stringResource(R.string.patch_written_to)
+    val patchInstallFailedMessage = stringResource(R.string.patch_install_failed)
     var keyword by remember { mutableStateOf(game.title) }
     var loading by remember { mutableStateOf(false) }
     var installing by remember { mutableStateOf(false) }
@@ -226,10 +229,10 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                                 }
                             }
                             result.onSuccess {
-                                Toast.makeText(context, context.getString(R.string.patch_installed_count, it.installed.size), Toast.LENGTH_LONG).show()
-                                message = context.getString(R.string.patch_written_to, it.target)
+                                Toast.makeText(context, patchInstalledCountFormat.format(it.installed.size), Toast.LENGTH_LONG).show()
+                                message = patchWrittenToFormat.format(it.target)
                             }.onFailure {
-                                message = it.message ?: context.getString(R.string.patch_install_failed)
+                                message = it.message ?: patchInstallFailedMessage
                             }
                             installing = false
                         }

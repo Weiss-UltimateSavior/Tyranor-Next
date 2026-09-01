@@ -1648,8 +1648,15 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
         // sanity checks
 
-        if ((buttonFlags.length != buttonIds.length) && (buttonIds.length != buttonTexts.length)) {
+        if (buttonFlags == null || buttonIds == null || buttonTexts == null
+                || buttonTexts.length == 0
+                || buttonFlags.length != buttonIds.length
+                || buttonIds.length != buttonTexts.length) {
             return -1; // implementation broken
+        }
+
+        if (shouldAutoSkipMessageBox(flags, title, message, buttonFlags, buttonIds, buttonTexts)) {
+            return buttonIds[0];
         }
 
         // collect arguments for Dialog
@@ -1686,6 +1693,21 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
         // return selected value
 
         return messageboxSelection[0];
+    }
+
+    /**
+     * Hook for an engine-specific message-box policy. SDL itself keeps the
+     * default behavior unchanged; KRKRActivity overrides this for its optional
+     * startup information-dialog suppression.
+     */
+    protected boolean shouldAutoSkipMessageBox(
+            int flags,
+            String title,
+            String message,
+            int[] buttonFlags,
+            int[] buttonIds,
+            String[] buttonTexts) {
+        return false;
     }
 
     protected void messageboxCreateAndShow(Bundle args) {

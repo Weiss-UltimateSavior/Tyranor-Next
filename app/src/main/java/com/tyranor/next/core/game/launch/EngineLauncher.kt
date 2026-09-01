@@ -19,6 +19,7 @@ import com.akira.tyranoemu.remote.ArtemisActivityV5
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.engine.KrkrStartupDialogPolicy
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.tyrano.TyranoActivity
 import com.tyranor.next.R
@@ -358,6 +359,11 @@ object EngineLauncher {
         fun <T> or(override: T?, global: T): T = override ?: global
         val needsSafFallback = EngineScanner.isRemovableStoragePath(path)
         val kernel = effectiveKrKernel(context, gid, path)
+        val skipStartupDialogs = PerGameSettingsStore.getBool(
+            context,
+            gid,
+            PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS,
+        ) ?: EngineSettingsStore.isKrSkipStartupDialogs(context)
         val engineRoot = safMirror?.mirrorRoot?.absolutePath ?: path
         val pickedLaunchEntry = pickKrActivateEntry(engineRoot, game)
         if (kernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
@@ -373,6 +379,7 @@ object EngineLauncher {
                 putExtra("rootUri", game.uri)
                 putExtra("launchTarget", game.launchTarget)
                 putExtra("launchMode", "internal.krkrsdl3")
+                putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
                 putExtra("orientation", 6)
                 putExtra("focus", "true")
             }
@@ -404,6 +411,7 @@ object EngineLauncher {
             putExtra("rootUri", game.uri)
             putExtra("launchTarget", game.launchTarget)
             putExtra("launchMode", "internal.kirikiroid2")
+            putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
             putExtra("safFileFallback", needsSafFallback)
             patchOverlay?.let {
                 putExtra("krPatchOverlayTarget", it.targetPatch.absolutePath)
