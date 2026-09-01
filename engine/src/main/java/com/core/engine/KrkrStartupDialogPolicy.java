@@ -7,8 +7,8 @@ import java.util.Locale;
  *
  * <p>The native KRKR integrations expose startup messages as ordinary message
  * boxes, so the portable distinction available to both kernels is the button
- * count and a short launch-time window. Input boxes use a separate API and are
- * never passed to this policy.</p>
+ * count, a short launch-time window, and a conservative error-message guard.
+ * Input boxes use a separate API and are never passed to this policy.</p>
  */
 public final class KrkrStartupDialogPolicy {
     /** Intent extra used by both the Kirikiroid2 and SDL3 hosts. */

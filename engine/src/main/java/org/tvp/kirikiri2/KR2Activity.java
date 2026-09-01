@@ -158,6 +158,10 @@ public class KR2Activity extends Cocos2dxActivity {
             notifyAutoConfirmedDialog();
             return;
         }
+        // A malformed native call with an empty button list would otherwise
+        // create a dialog that can never produce a result for the native wait.
+        // KrDialogStyle already treats null as the legacy single "OK" button.
+        if (buttons != null && buttons.length == 0) buttons = null;
         KrDialogModel dialogModel = mDialogMessage;
         dialogModel.title = title;
         dialogModel.message = msg;
@@ -425,13 +429,19 @@ public class KR2Activity extends Cocos2dxActivity {
         try {
             android.util.Log.i("KR2Activity", "destroy KR2Activity");
             DoubleBackExit.clear(this);
-            mTextEdit = null;
-            if (msgHandler != null) msgHandler.removeCallbacksAndMessages(null);
-            msgHandler = null;
-            mCurrentDialog = null;
-            skipStartupDialogs = false;
-            launchStartElapsedMs = -1L;
-            if (sInstance == this) sInstance = null;
+            boolean ownsBridge = sInstance == this;
+            if (ownsBridge) sInstance = null;
+            // Static JNI bridges are shared by the isolated KRKR process. Only
+            // the instance that owns the bridge may clear it; an older Activity
+            // finishing after recreation must not tear down the new instance.
+            if (ownsBridge) {
+                mTextEdit = null;
+                if (msgHandler != null) msgHandler.removeCallbacksAndMessages(null);
+                msgHandler = null;
+                mCurrentDialog = null;
+                skipStartupDialogs = false;
+                launchStartElapsedMs = -1L;
+            }
         } catch (Throwable ignored) { }
         super.onDestroy();
     }

@@ -716,6 +716,11 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
         SDLAudioManager.release(this);
 
+        // A native message-box call blocks the SDL thread until its dialog is
+        // dismissed. Wake it before joining during Activity teardown so a
+        // rotation, task swipe, or engine exit cannot leave the thread stuck.
+        cancelPendingMessageBox();
+
         if (SDLActivity.mBrokenLibraries) {
            super.onDestroy();
            return;
@@ -1624,6 +1629,9 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
     /** Result of current messagebox. Also used for blocking the calling thread. */
     protected final int[] messageboxSelection = new int[1];
+    /** Guards the one-at-a-time native message-box request and its lifecycle. */
+    private boolean messageboxPending;
+    private AlertDialog messageboxDialog;
 
     /**
      * This method is called by SDL using JNI.
@@ -1644,8 +1652,6 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
             final String[] buttonTexts,
             final int[] colors) {
 
-        messageboxSelection[0] = -1;
-
         // sanity checks
 
         if (buttonFlags == null || buttonIds == null || buttonTexts == null
@@ -1657,6 +1663,15 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
         if (shouldAutoSkipMessageBox(flags, title, message, buttonFlags, buttonIds, buttonTexts)) {
             return buttonIds[0];
+        }
+
+        synchronized (messageboxSelection) {
+            // SDL exposes a synchronous message-box API. Reject a re-entrant
+            // request instead of allowing two native callers to overwrite the
+            // shared result slot and wake the wrong waiter.
+            if (messageboxPending) return -1;
+            messageboxSelection[0] = -1;
+            messageboxPending = true;
         }
 
         // collect arguments for Dialog
@@ -1672,27 +1687,34 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
         // trigger Dialog creation on UI thread
 
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                messageboxCreateAndShow(args);
-            }
-        });
+        try {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    messageboxCreateAndShow(args);
+                }
+            });
+        } catch (RuntimeException ex) {
+            completeMessageBox(-1);
+            return -1;
+        }
 
         // block the calling thread
 
         synchronized (messageboxSelection) {
-            try {
-                messageboxSelection.wait();
-            } catch (InterruptedException ex) {
-                ex.printStackTrace();
-                return -1;
+            while (messageboxPending) {
+                try {
+                    messageboxSelection.wait();
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    messageboxSelection[0] = -1;
+                    messageboxPending = false;
+                    messageboxSelection.notifyAll();
+                    return -1;
+                }
             }
+            return messageboxSelection[0];
         }
-
-        // return selected value
-
-        return messageboxSelection[0];
     }
 
     /**
@@ -1712,6 +1734,10 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
     protected void messageboxCreateAndShow(Bundle args) {
 
+        synchronized (messageboxSelection) {
+            if (!messageboxPending) return;
+        }
+
         // 统一风格：主题色从 Launcher 传入的 Intent extras 读取（跟随启动器主题与深浅色），
         // 复刻 LauncherDialogFactory 视觉风格，替换 SDL 默认 AlertDialog 样式。
 
@@ -1719,13 +1745,13 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
         final float density = getResources().getDisplayMetrics().density;
 
         final AlertDialog dialog = new AlertDialog.Builder(this).create();
+        messageboxDialog = dialog;
         dialog.setCancelable(false);
         dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
             @Override
             public void onDismiss(DialogInterface unused) {
-                synchronized (messageboxSelection) {
-                    messageboxSelection.notify();
-                }
+                if (messageboxDialog == dialog) messageboxDialog = null;
+                completeMessageBox(-1);
             }
         });
 
@@ -1795,7 +1821,7 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
             button.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    messageboxSelection[0] = id;
+                    completeMessageBox(id);
                     dialog.dismiss();
                 }
             });
@@ -1834,13 +1860,36 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
             }
         });
 
-        dialog.show();
+        try {
+            dialog.show();
+        } catch (RuntimeException ex) {
+            if (messageboxDialog == dialog) messageboxDialog = null;
+            completeMessageBox(-1);
+            return;
+        }
 
         // 窗口：透明背景 + 252dp 宽度（带屏幕兜底），与 LauncherDialogFactory 一致
 
         dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         int width = Math.min(dp(252f), getResources().getDisplayMetrics().widthPixels - dp(48f));
         dialog.getWindow().setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
+    /** Completes the current synchronous native request exactly once. */
+    private void completeMessageBox(int result) {
+        synchronized (messageboxSelection) {
+            if (!messageboxPending) return;
+            messageboxSelection[0] = result;
+            messageboxPending = false;
+            messageboxSelection.notifyAll();
+        }
+    }
+
+    /** Dismisses a dialog and wakes SDL before native teardown joins its thread. */
+    private void cancelPendingMessageBox() {
+        AlertDialog dialog = messageboxDialog;
+        if (dialog != null && dialog.isShowing()) dialog.dismiss();
+        completeMessageBox(-1);
     }
 
     /** dp 转 px（四舍五入）。 */
