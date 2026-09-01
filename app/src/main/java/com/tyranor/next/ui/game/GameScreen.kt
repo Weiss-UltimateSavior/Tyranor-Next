@@ -95,6 +95,7 @@ import com.tyranor.next.core.cover.CoverSearchResult
 import com.tyranor.next.core.cover.CoverScraperService
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -552,9 +553,7 @@ internal fun GameActionsSheet(
                 GameShortcutManager.RequestResult.FAILED
             } finally {
                 shortcutRequestInFlight = false
-                if (customIconUri?.scheme == "file") {
-                    runCatching { customIconUri.path?.let { java.io.File(it).delete() } }
-                }
+                deleteShortcutCropBitmap(context.applicationContext, customIconUri)
             }
             val message = when (result) {
                 GameShortcutManager.RequestResult.REQUESTED -> shortcutRequestedMessage

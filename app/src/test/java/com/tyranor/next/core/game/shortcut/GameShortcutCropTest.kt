@@ -5,8 +5,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GameShortcutCropTest {
-    @Test
     /** Verifies the default crop centers common aspect ratios. */
+    @Test
     fun initialCrop_centersLandscapePortraitAndSquareImages() {
         assertEquals(
             CropSourceRect(left = 350, top = 0, size = 900),
@@ -22,8 +22,8 @@ class GameShortcutCropTest {
         )
     }
 
-    @Test
     /** Verifies panning and zooming are clamped to the decoded image bounds. */
+    @Test
     fun zoomAndPan_stayInsideSourceBounds() {
         val metrics = CropImageMetrics(viewportSize = 900f, imageWidth = 1600f, imageHeight = 900f)
         val zoomed = constrainCropTransform(
@@ -39,8 +39,8 @@ class GameShortcutCropTest {
         assertTrue(rect.top + rect.size <= 900)
     }
 
-    @Test
     /** Verifies the rendered image always covers the square crop viewport. */
+    @Test
     fun renderRect_alwaysCoversTheCropViewport() {
         val metrics = CropImageMetrics(viewportSize = 900f, imageWidth = 1600f, imageHeight = 900f)
         val rect = requireNotNull(cropRenderRect(CropTransform(), metrics))
@@ -50,8 +50,8 @@ class GameShortcutCropTest {
         assertEquals(0f, rect.top, 0.001f)
     }
 
-    @Test
     /** Verifies malformed gesture values are sanitized before export. */
+    @Test
     fun invalidGestureValues_areSanitized() {
         val metrics = CropImageMetrics(viewportSize = 512f, imageWidth = 8192f, imageHeight = 1f)
         val result = applyCropGesture(

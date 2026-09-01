@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
@@ -81,8 +82,8 @@ class GameShortcutActivity : ComponentActivity() {
 
     /** Converts an unexpected launch exception into a user-visible localized toast. */
     private fun showLaunchFailure(error: Throwable) {
-        val message = error.message?.takeIf { it.isNotBlank() } ?: getString(R.string.launch_failed)
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        Log.e(TAG, "Shortcut game launch failed", error)
+        Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_LONG).show()
     }
 
     /** Suspends until the user chooses an Artemis patch policy or dismisses the dialog. */
@@ -114,6 +115,7 @@ class GameShortcutActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val TAG = "GameShortcutActivity"
         private const val EXTRA_SHORTCUT_ID = "extra_shortcut_id"
 
         /** Builds the explicit trampoline intent carried by a pinned shortcut. */

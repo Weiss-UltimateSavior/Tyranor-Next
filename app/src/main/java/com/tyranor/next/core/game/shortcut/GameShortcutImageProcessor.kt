@@ -67,6 +67,19 @@ internal fun writeShortcutCropBitmap(
     }
 }
 
+/** Deletes one generated crop file after it has been consumed by ShortcutManager. */
+internal fun deleteShortcutCropBitmap(context: Context, uri: Uri?) {
+    if (uri?.scheme != "file") return
+    val file = uri.path?.let(::File) ?: return
+    val cacheDir = runCatching { context.cacheDir.canonicalFile }.getOrNull() ?: return
+    val cropFile = runCatching { file.canonicalFile }.getOrNull() ?: return
+    val isGeneratedCrop = cropFile.name.startsWith("shortcut_crop_") && cropFile.name.endsWith(".png")
+    val isInCache = cropFile.path.startsWith(cacheDir.path + File.separator)
+    if (isGeneratedCrop && isInCache) {
+        runCatching { cropFile.delete() }
+    }
+}
+
 /** Opens a crop source through ContentResolver and falls back to its local file path. */
 private fun openShortcutCropInputStream(context: Context, uri: Uri): InputStream? {
     val resolverStream = runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()

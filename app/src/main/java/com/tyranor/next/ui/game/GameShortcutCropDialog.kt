@@ -52,6 +52,7 @@ import com.tyranor.next.core.game.shortcut.CropImageMetrics
 import com.tyranor.next.core.game.shortcut.CropTransform
 import com.tyranor.next.core.game.shortcut.applyCropGesture
 import com.tyranor.next.core.game.shortcut.cropRenderRect
+import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.decodeShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.initialCropTransform
 import com.tyranor.next.core.game.shortcut.writeShortcutCropBitmap
@@ -107,21 +108,35 @@ internal fun GameShortcutCropDialog(
         cropFailed = false
         val current = transform
         scope.launch {
-            val croppedUri = withContext(Dispatchers.IO) {
-                writeShortcutCropBitmap(context.applicationContext, currentBitmap, current, metrics)
-            }
-            confirming = false
-            if (croppedUri == null) {
-                cropFailed = true
-            } else {
-                onConfirm(croppedUri)
+            var croppedUri: Uri? = null
+            var handedOff = false
+            try {
+                croppedUri = withContext(Dispatchers.IO) {
+                    writeShortcutCropBitmap(context.applicationContext, currentBitmap, current, metrics)
+                }
+                if (croppedUri == null) {
+                    cropFailed = true
+                } else {
+                    val resultUri = croppedUri
+                    onConfirm(resultUri)
+                    handedOff = true
+                }
+            } finally {
+                confirming = false
+                if (!handedOff) {
+                    deleteShortcutCropBitmap(context.applicationContext, croppedUri)
+                }
             }
         }
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        onDismissRequest = { if (!confirming) onDismiss() },
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = !confirming,
+            dismissOnClickOutside = !confirming,
+        ),
     ) {
         Box(
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 18.dp),
