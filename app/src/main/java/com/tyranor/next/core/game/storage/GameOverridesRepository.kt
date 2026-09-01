@@ -105,23 +105,37 @@ object GameOverridesRepository {
 
     private suspend fun loadRowCached(context: Context, gameId: String): GameOverrideEntity? {
         while (true) {
-            val generation: Long
+            ensureSynced(context)
+            var generation = -1L
+            var shouldRetry = false
+            var hasCached = false
+            var cached: GameOverrideEntity? = null
             synchronized(cacheLock) {
-                if (rowCache.containsKey(gameId)) return rowCache[gameId]
+                if (!syncDone) {
+                    shouldRetry = true
+                    return@synchronized
+                }
+                if (rowCache.containsKey(gameId)) {
+                    cached = rowCache[gameId]
+                    hasCached = true
+                    return@synchronized
+                }
                 generation = cacheGeneration
+                if (!syncDone) shouldRetry = true
             }
+            if (hasCached) return cached
+            if (shouldRetry) continue
             // 缓存未命中：并发未命中会各自读一次单行索引查询，结果一致，无一致性风险
             val row = GameLibraryDatabase.get(context).gameLibraryDao().getOverrideRow(gameId)
+            var shouldReturn = false
             synchronized(cacheLock) {
-                // 读取期间发生过失效（cacheGeneration 已变）则丢弃本次旧查询结果，
-                // 不返回 stale 行而是重试：重新检查同步状态并回源，避免旧值覆盖新状态
-                if (generation == cacheGeneration) {
+                if (syncDone && generation == cacheGeneration) {
                     rowCache[gameId] = row
-                    return row
+                    shouldReturn = true
                 }
             }
-            // 代数已变说明期间有 invalidate/update/clear，重新校验同步状态后重试
-            ensureSynced(context)
+            if (shouldReturn) return row
+            // 同步失效或代数变化均丢弃旧查询结果，重试并重新同步
         }
     }
 

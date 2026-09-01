@@ -136,7 +136,6 @@ class GameSaveManager(private val context: Context) {
     fun importFromZip(game: ScanGame, sourceUri: Uri): Int = synchronized(importLock) {
         val destination = resolveSaveLocation(game).directory ?: throw IOException(text(R.string.save_error_resolve_actual_dir))
 
-        val temp = createTemporaryDirectory()
         // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
         // 提交阶段用两次 rename 原子交换（旧目录改名留作备份 → 暂存目录顶替），
         // 任一步失败即从备份回滚。Artemis 的引擎资源在交换完成后再从备份移回，
@@ -148,6 +147,7 @@ class GameSaveManager(private val context: Context) {
         // 中断会导致 destination 缺失；若先 mkdirs 会得到空目录并跳过恢复，
         // 随后提交阶段又删除仍含旧存档的 backup，造成永久丢档。
         // Artemis 资源移回中断则逐个移回剩余资源。恢复完成备份里只剩可丢弃的旧存档。
+        // 注意 temp 延后创建：备份恢复抛异常时不泄漏 cacheDir 临时目录
         if (backup.isDirectory) {
             when {
                 !destination.exists() ->
@@ -158,6 +158,7 @@ class GameSaveManager(private val context: Context) {
         }
         if (!destination.exists() && !destination.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
         if (!destination.isDirectory) throw IOException(text(R.string.save_error_save_dir_unavailable))
+        val temp = createTemporaryDirectory()
         var committed = false
         var backupConsumed = false
         try {
@@ -407,20 +408,29 @@ class GameSaveManager(private val context: Context) {
 
     /**
      * 把备份目录中不参与导入的 Artemis 引擎资源（system/、*.pfs 等）逐个 rename 回目标目录；
+     * 按相对路径递归遍历，嵌套资源如 foo/data.pfs 亦能恢复（copyDirectoryContents 每层均过滤）。
      * 全部成功后清理备份并返回，任一失败先把已移回的资源搬回备份、保留备份再抛出，
      * 保证任何时刻备份都保有完整的引擎资源副本。
      */
     @Throws(IOException::class)
     private fun restoreExcludedFromBackup(backup: File, destination: File, engine: EngineType) {
         val exclude = excludeFor(engine)
-        val resources = backup.listFiles().orEmpty().filter { exclude(it.name) }
         val moved = mutableListOf<Pair<File, File>>()
         try {
-            resources.forEach { resource ->
-                val target = File(destination, resource.name)
-                if (!resource.renameTo(target)) throw IOException(text(R.string.save_error_create_save_dir_named, resource.name))
-                moved += resource to target
+            fun restoreRecursive(currentBackup: File, currentDest: File) {
+                currentBackup.listFiles().orEmpty().forEach { child ->
+                    if (exclude(child.name)) {
+                        val target = File(currentDest, child.name)
+                        target.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name)) }
+                        if (!child.renameTo(target)) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                        moved += child to target
+                    } else if (child.isDirectory) {
+                        val subDest = File(currentDest, child.name)
+                        restoreRecursive(child, subDest)
+                    }
+                }
             }
+            restoreRecursive(backup, destination)
         } catch (t: Throwable) {
             moved.forEach { (backupFile, destinationFile) ->
                 runCatching { if (!destinationFile.renameTo(backupFile)) destinationFile.copyRecursively(backupFile, overwrite = true) }
