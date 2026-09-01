@@ -113,6 +113,17 @@
     <string name="game_remove_quick_launch">移除快捷启动</string>
     <string name="game_add_quick_launch">添加快捷启动</string>
     <string name="game_quick_launch_full">首页快捷启动已满（最多 3 个）</string>
+    <string name="game_add_desktop_shortcut">添加到桌面</string>
+    <string name="game_desktop_shortcut_requested">请在系统弹窗中确认添加</string>
+    <string name="game_desktop_shortcut_updated">桌面快捷方式已更新</string>
+    <string name="game_desktop_shortcut_unsupported">当前桌面不支持固定快捷方式</string>
+    <string name="game_desktop_shortcut_failed">无法请求添加桌面快捷方式</string>
+    <string name="game_desktop_shortcut_unavailable">游戏已被移除或无法识别</string>
+    <string name="game_desktop_shortcut_crop_title">裁切快捷方式图标</string>
+    <string name="game_desktop_shortcut_crop_hint">拖动图片调整位置，双指缩放</string>
+    <string name="game_desktop_shortcut_crop_choose_image">选择自定义图片</string>
+    <string name="game_desktop_shortcut_crop_image_failed">无法读取所选图片</string>
+    <string name="game_desktop_shortcut_crop_failed">裁切图片失败，请重试</string>
     <string name="game_search_cover">搜索封面</string>
     <string name="game_edit_cover">修改封面</string>
     <string name="game_rename">名称修改</string>

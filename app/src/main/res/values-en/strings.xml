@@ -113,6 +113,17 @@
     <string name="game_remove_quick_launch">Remove from quick launch</string>
     <string name="game_add_quick_launch">Add to quick launch</string>
     <string name="game_quick_launch_full">Home quick launch is full (max 3)</string>
+    <string name="game_add_desktop_shortcut">Add to Home screen</string>
+    <string name="game_desktop_shortcut_requested">Confirm the shortcut in the system dialog</string>
+    <string name="game_desktop_shortcut_updated">Home screen shortcut updated</string>
+    <string name="game_desktop_shortcut_unsupported">The current launcher does not support pinned shortcuts</string>
+    <string name="game_desktop_shortcut_failed">Could not request the Home screen shortcut</string>
+    <string name="game_desktop_shortcut_unavailable">The game was removed or is no longer recognized</string>
+    <string name="game_desktop_shortcut_crop_title">Crop shortcut icon</string>
+    <string name="game_desktop_shortcut_crop_hint">Drag to position; pinch with two fingers to zoom</string>
+    <string name="game_desktop_shortcut_crop_choose_image">Use a custom image</string>
+    <string name="game_desktop_shortcut_crop_image_failed">Unable to read the selected image</string>
+    <string name="game_desktop_shortcut_crop_failed">Could not crop the image. Please try again.</string>
     <string name="game_search_cover">Search cover</string>
     <string name="game_edit_cover">Change cover</string>
     <string name="game_rename">Rename</string>

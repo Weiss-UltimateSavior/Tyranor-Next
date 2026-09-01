@@ -113,6 +113,17 @@
     <string name="game_remove_quick_launch">クイック起動から削除</string>
     <string name="game_add_quick_launch">クイック起動に追加</string>
     <string name="game_quick_launch_full">ホームのクイック起動は最大 3 件までです</string>
+    <string name="game_add_desktop_shortcut">ホーム画面に追加</string>
+    <string name="game_desktop_shortcut_requested">システムダイアログで追加を確認してください</string>
+    <string name="game_desktop_shortcut_updated">ホーム画面ショートカットを更新しました</string>
+    <string name="game_desktop_shortcut_unsupported">現在のランチャーは固定ショートカットに対応していません</string>
+    <string name="game_desktop_shortcut_failed">ホーム画面ショートカットを追加できませんでした</string>
+    <string name="game_desktop_shortcut_unavailable">ゲームが削除されたか、認識できません</string>
+    <string name="game_desktop_shortcut_crop_title">ショートカットアイコンをトリミング</string>
+    <string name="game_desktop_shortcut_crop_hint">画像をドラッグして位置を調整し、2本指で拡大縮小</string>
+    <string name="game_desktop_shortcut_crop_choose_image">カスタム画像を選択</string>
+    <string name="game_desktop_shortcut_crop_image_failed">選択した画像を読み込めません</string>
+    <string name="game_desktop_shortcut_crop_failed">画像をトリミングできません。もう一度お試しください。</string>
     <string name="game_search_cover">カバー画像を検索</string>
     <string name="game_edit_cover">カバー画像を変更</string>
     <string name="game_rename">名前を変更</string>

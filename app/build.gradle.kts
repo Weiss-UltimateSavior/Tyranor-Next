@@ -234,6 +234,7 @@ dependencies {
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
   implementation(libs.androidx.documentfile)
+  implementation(libs.androidx.exifinterface)
   implementation(libs.appauth)
 
   // Miuix 组件库（设置页 Card + Preference 体系）

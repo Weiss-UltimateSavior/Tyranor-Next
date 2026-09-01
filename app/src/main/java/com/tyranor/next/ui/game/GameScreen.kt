@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.ActivityOptions
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.util.LruCache
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -94,6 +95,8 @@ import com.tyranor.next.core.cover.CoverSearchResult
 import com.tyranor.next.core.cover.CoverScraperService
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
+import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
@@ -511,7 +514,15 @@ internal fun GameActionsSheet(
     var showLaunchFilePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showRenameDialog by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showPatchConfirm by rememberSaveable(game.uri) { mutableStateOf(false) }
+    var shortcutRequestInFlight by remember(game.uri) { mutableStateOf(false) }
+    var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
+    var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
+    val shortcutRequestedMessage = stringResource(R.string.game_desktop_shortcut_requested)
+    val shortcutUpdatedMessage = stringResource(R.string.game_desktop_shortcut_updated)
+    val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
+    val shortcutFailedMessage = stringResource(R.string.game_desktop_shortcut_failed)
 
+    /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
         if (!CoverScrapeTaskManager.state.value.running) return false
         android.widget.Toast.makeText(context, context.getString(R.string.game_batch_scraping_running), android.widget.Toast.LENGTH_SHORT).show()
@@ -519,10 +530,64 @@ internal fun GameActionsSheet(
     }
 
     // 发起启动；Artemis 需要 PFS 基础补丁且策略为“启动时询问”时，先弹窗确认再带选择启动
+    /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
         scope.launch {
             launchError = EngineLauncher.launch(context, game, patchChoice)
             if (launchError == null) onDismiss()
+        }
+    }
+
+    /** Requests a new shortcut or updates the existing shortcut for this game. */
+    fun requestDesktopShortcut(customIconUri: android.net.Uri? = null) {
+        if (shortcutRequestInFlight) return
+        shortcutRequestInFlight = true
+        scope.launch {
+            val result = try {
+                GameShortcutManager.requestPinShortcut(
+                    context = context,
+                    game = game,
+                    launchIntent = GameShortcutActivity.createIntent(context, game.uri),
+                    customIconUri = customIconUri,
+                )
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                GameShortcutManager.RequestResult.FAILED
+            } finally {
+                shortcutRequestInFlight = false
+                deleteShortcutCropBitmap(context.applicationContext, customIconUri)
+            }
+            val message = when (result) {
+                GameShortcutManager.RequestResult.REQUESTED -> shortcutRequestedMessage
+                GameShortcutManager.RequestResult.UPDATED -> shortcutUpdatedMessage
+                GameShortcutManager.RequestResult.UNSUPPORTED -> shortcutUnsupportedMessage
+                GameShortcutManager.RequestResult.FAILED -> shortcutFailedMessage
+            }
+            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            if (result == GameShortcutManager.RequestResult.REQUESTED || result == GameShortcutManager.RequestResult.UPDATED) {
+                onDismiss()
+            }
+        }
+    }
+
+    val shortcutIconPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            shortcutPickerForNoCover = false
+            shortcutCropUriText = uri.toString()
+        } else if (shortcutPickerForNoCover) {
+            shortcutPickerForNoCover = false
+            requestDesktopShortcut()
+        }
+    }
+
+    /** Opens cover cropping, falling back to custom-image selection when no cover exists. */
+    fun openShortcutCrop() {
+        val coverUri = game.coverUri?.takeIf { it.isNotBlank() }
+        if (coverUri != null) {
+            shortcutCropUriText = coverUri
+        } else {
+            shortcutPickerForNoCover = true
+            shortcutIconPicker.launch("image/*")
         }
     }
 
@@ -606,6 +671,12 @@ internal fun GameActionsSheet(
                 }
             }
             item {
+                GameActionRow(
+                    iconRes = R.drawable.ic_sheet_desktop_shortcut,
+                    label = stringResource(R.string.game_add_desktop_shortcut),
+                ) { if (!shortcutRequestInFlight) openShortcutCrop() }
+            }
+            item {
                 GameActionRow(R.drawable.ic_sheet_search_cover, stringResource(R.string.game_search_cover)) {
                     if (!isBatchScrapingActive()) showCoverSourcePicker = true
                 }
@@ -649,6 +720,23 @@ internal fun GameActionsSheet(
             // 底部安全区留白
             item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(16.dp)) }
         }
+    }
+
+    shortcutCropUriText?.let { uriText ->
+        GameShortcutCropDialog(
+            imageUri = Uri.parse(uriText),
+            onDismiss = { shortcutCropUriText = null },
+            onPickImage = {
+                if (!shortcutRequestInFlight) {
+                    shortcutPickerForNoCover = false
+                    shortcutIconPicker.launch("image/*")
+                }
+            },
+            onConfirm = { croppedUri ->
+                shortcutCropUriText = null
+                requestDesktopShortcut(croppedUri)
+            },
+        )
     }
 
     // ===== Artemis 自动补丁确认：总是（记住 auto）/ 本次 / 不再（记住 off）；点遮罩取消 = 不启动 =====
