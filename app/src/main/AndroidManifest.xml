@@ -43,6 +43,12 @@
             android:name=".ui.save.SaveManagementActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.game.GameShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.TyranorNext.Translucent" />
+        <activity
             android:name=".ui.patch.KrkrOnlinePatchActivity"
             android:exported="false" />
         <activity
