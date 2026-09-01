@@ -7,6 +7,7 @@ import org.junit.Test
 
 class GameShortcutManagerTest {
     @Test
+    /** Verifies IDs are stable and do not expose the source URI. */
     fun shortcutId_isStableAndDoesNotExposeGameUri() {
         val uri = "content://com.android.externalstorage.documents/tree/primary%3AGames%2FExample"
 
@@ -19,6 +20,7 @@ class GameShortcutManagerTest {
     }
 
     @Test
+    /** Verifies separate game URIs cannot share a shortcut identity. */
     fun shortcutId_distinguishesDifferentGames() {
         assertNotEquals(
             GameShortcutManager.shortcutId("content://games/one"),

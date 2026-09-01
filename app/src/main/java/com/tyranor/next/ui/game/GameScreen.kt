@@ -513,12 +513,13 @@ internal fun GameActionsSheet(
     var showPatchConfirm by rememberSaveable(game.uri) { mutableStateOf(false) }
     var shortcutRequestInFlight by remember(game.uri) { mutableStateOf(false) }
     var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
-    var shortcutPickerForNoCover by remember(game.uri) { mutableStateOf(false) }
+    var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
     val shortcutRequestedMessage = stringResource(R.string.game_desktop_shortcut_requested)
     val shortcutUpdatedMessage = stringResource(R.string.game_desktop_shortcut_updated)
     val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
     val shortcutFailedMessage = stringResource(R.string.game_desktop_shortcut_failed)
 
+    /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
         if (!CoverScrapeTaskManager.state.value.running) return false
         android.widget.Toast.makeText(context, context.getString(R.string.game_batch_scraping_running), android.widget.Toast.LENGTH_SHORT).show()
@@ -526,6 +527,7 @@ internal fun GameActionsSheet(
     }
 
     // 发起启动；Artemis 需要 PFS 基础补丁且策略为“启动时询问”时，先弹窗确认再带选择启动
+    /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
         scope.launch {
             launchError = EngineLauncher.launch(context, game, patchChoice)
@@ -533,6 +535,7 @@ internal fun GameActionsSheet(
         }
     }
 
+    /** Requests a new shortcut or updates the existing shortcut for this game. */
     fun requestDesktopShortcut(customIconUri: android.net.Uri? = null) {
         if (shortcutRequestInFlight) return
         shortcutRequestInFlight = true
@@ -547,10 +550,11 @@ internal fun GameActionsSheet(
             } catch (error: Throwable) {
                 if (error is CancellationException) throw error
                 GameShortcutManager.RequestResult.FAILED
-            }
-            shortcutRequestInFlight = false
-            if (customIconUri?.scheme == "file") {
-                runCatching { customIconUri.path?.let { java.io.File(it).delete() } }
+            } finally {
+                shortcutRequestInFlight = false
+                if (customIconUri?.scheme == "file") {
+                    runCatching { customIconUri.path?.let { java.io.File(it).delete() } }
+                }
             }
             val message = when (result) {
                 GameShortcutManager.RequestResult.REQUESTED -> shortcutRequestedMessage
@@ -575,6 +579,7 @@ internal fun GameActionsSheet(
         }
     }
 
+    /** Opens cover cropping, falling back to custom-image selection when no cover exists. */
     fun openShortcutCrop() {
         val coverUri = game.coverUri?.takeIf { it.isNotBlank() }
         if (coverUri != null) {

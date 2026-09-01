@@ -1,4 +1,4 @@
-package com.tyranor.next.ui.game
+package com.tyranor.next.core.game.shortcut
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -6,6 +6,7 @@ import org.junit.Test
 
 class GameShortcutCropTest {
     @Test
+    /** Verifies the default crop centers common aspect ratios. */
     fun initialCrop_centersLandscapePortraitAndSquareImages() {
         assertEquals(
             CropSourceRect(left = 350, top = 0, size = 900),
@@ -22,6 +23,7 @@ class GameShortcutCropTest {
     }
 
     @Test
+    /** Verifies panning and zooming are clamped to the decoded image bounds. */
     fun zoomAndPan_stayInsideSourceBounds() {
         val metrics = CropImageMetrics(viewportSize = 900f, imageWidth = 1600f, imageHeight = 900f)
         val zoomed = constrainCropTransform(
@@ -38,6 +40,7 @@ class GameShortcutCropTest {
     }
 
     @Test
+    /** Verifies the rendered image always covers the square crop viewport. */
     fun renderRect_alwaysCoversTheCropViewport() {
         val metrics = CropImageMetrics(viewportSize = 900f, imageWidth = 1600f, imageHeight = 900f)
         val rect = requireNotNull(cropRenderRect(CropTransform(), metrics))
@@ -48,6 +51,7 @@ class GameShortcutCropTest {
     }
 
     @Test
+    /** Verifies malformed gesture values are sanitized before export. */
     fun invalidGestureValues_areSanitized() {
         val metrics = CropImageMetrics(viewportSize = 512f, imageWidth = 8192f, imageHeight = 1f)
         val result = applyCropGesture(
@@ -67,6 +71,7 @@ class GameShortcutCropTest {
         assertTrue(rect.top + rect.size <= 1)
     }
 
+    /** Computes an exported crop rectangle for a test image size. */
     private fun initialRect(
         viewport: Float = 900f,
         width: Float,

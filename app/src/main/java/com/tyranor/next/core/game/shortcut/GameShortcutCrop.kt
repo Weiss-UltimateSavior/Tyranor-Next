@@ -1,4 +1,4 @@
-package com.tyranor.next.ui.game
+package com.tyranor.next.core.game.shortcut
 
 import kotlin.math.floor
 import kotlin.math.ceil
@@ -26,18 +26,21 @@ data class CropImageMetrics(
         get() = (minimumScale * 6f).coerceAtLeast(minimumScale)
 }
 
+/** Mutable crop gesture state expressed in viewport pixels. */
 data class CropTransform(
     val scale: Float = 1f,
     val offsetX: Float = 0f,
     val offsetY: Float = 0f,
 )
 
+/** Integer source rectangle exported from the decoded bitmap. */
 data class CropSourceRect(
     val left: Int,
     val top: Int,
     val size: Int,
 )
 
+/** Destination rectangle used to render the bounded bitmap into the viewport. */
 data class CropRenderRect(
     val left: Float,
     val top: Float,

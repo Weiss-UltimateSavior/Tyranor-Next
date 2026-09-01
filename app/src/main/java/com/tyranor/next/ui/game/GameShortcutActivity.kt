@@ -20,6 +20,7 @@ import kotlin.coroutines.resume
 
 /** Transparent trampoline that resolves a pinned shortcut against the current game library. */
 class GameShortcutActivity : ComponentActivity() {
+    /** Resolves the shortcut ID, confirms Artemis patch policy, and launches the game. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState != null) {
@@ -67,20 +68,24 @@ class GameShortcutActivity : ComponentActivity() {
         }
     }
 
+    /** Shows the localized missing-game message without changing launcher state. */
     private fun showUnavailable() {
         Toast.makeText(this, R.string.game_desktop_shortcut_unavailable, Toast.LENGTH_LONG).show()
     }
 
+    /** Shows the missing-game message and closes the transparent trampoline. */
     private fun showUnavailableAndFinish() {
         showUnavailable()
         finish()
     }
 
+    /** Converts an unexpected launch exception into a user-visible localized toast. */
     private fun showLaunchFailure(error: Throwable) {
         val message = error.message?.takeIf { it.isNotBlank() } ?: getString(R.string.launch_failed)
         Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
+    /** Suspends until the user chooses an Artemis patch policy or dismisses the dialog. */
     private suspend fun awaitArtemisPatchChoice(
         game: com.tyranor.next.core.game.model.ScanGame,
     ): EngineLauncher.ArtemisPatchChoice? = suspendCancellableCoroutine { continuation ->
@@ -111,6 +116,7 @@ class GameShortcutActivity : ComponentActivity() {
     companion object {
         private const val EXTRA_SHORTCUT_ID = "extra_shortcut_id"
 
+        /** Builds the explicit trampoline intent carried by a pinned shortcut. */
         fun createIntent(context: Context, gameUri: String): Intent =
             Intent(context, GameShortcutActivity::class.java).apply {
                 action = Intent.ACTION_VIEW

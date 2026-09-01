@@ -21,6 +21,7 @@ import kotlin.math.min
 object GameShortcutManager {
     enum class RequestResult { REQUESTED, UPDATED, UNSUPPORTED, FAILED }
 
+    /** Creates a new pinned shortcut or updates the existing shortcut for this game. */
     suspend fun requestPinShortcut(
         context: Context,
         game: ScanGame,
@@ -74,11 +75,13 @@ object GameShortcutManager {
         }
     }
 
+    /** Returns the stable, non-sensitive launcher shortcut ID for a game URI. */
     internal fun shortcutId(gameUri: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(gameUri.toByteArray(Charsets.UTF_8))
         return ID_PREFIX + digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
+    /** Decodes and center-crops a fallback icon source to the launcher target size. */
     private fun decodeSquareIcon(context: Context, uriText: String, targetSize: Int): Bitmap? = runCatching {
         val uri = Uri.parse(uriText)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -116,6 +119,7 @@ object GameShortcutManager {
         scaled
     }.getOrNull()
 
+    /** Opens a shortcut icon URI through the resolver, with a local file fallback. */
     private fun openShortcutIconInputStream(context: Context, uri: Uri): java.io.InputStream? {
         val resolverStream = runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
         if (resolverStream != null) return resolverStream
