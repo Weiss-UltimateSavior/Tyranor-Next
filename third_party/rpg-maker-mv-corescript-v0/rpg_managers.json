@@ -1,0 +1,13 @@
+[
+  "js/rpg_managers/_header.js",
+  "js/rpg_managers/DataManager.js",
+  "js/rpg_managers/ConfigManager.js",
+  "js/rpg_managers/StorageManager.js",
+  "js/rpg_managers/ImageManager.js",
+  "js/rpg_managers/AudioManager.js",
+  "js/rpg_managers/SoundManager.js",
+  "js/rpg_managers/TextManager.js",
+  "js/rpg_managers/SceneManager.js",
+  "js/rpg_managers/BattleManager.js",
+  "js/rpg_managers/PluginManager.js"
+]

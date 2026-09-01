@@ -194,6 +194,24 @@ internal fun renpyVersionOptionsMap(): Map<String, String> = renpyVersionOptions
 internal fun artPatchOptionsMap(): Map<String, String> = artPatchOptions().toMap()
 
 @Composable
+internal fun rpgMvVersionOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.RPG_MV_V0 to stringResource(R.string.engine_option_rpg_mv_v0),
+    EngineSettingsStore.RPG_MV_V1 to stringResource(R.string.engine_option_rpg_mv_v1),
+)
+
+@Composable
+internal fun rpgMzVersionOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.RPG_MZ_V0 to stringResource(R.string.engine_option_rpg_mz_v0),
+    // RPG_MZ v1 为预留占位（TyranoActivity 对 MZ v1 仅回退 v0，不构建 overlay），本期不在选项中暴露以免误导
+)
+
+@Composable
+internal fun rpgMvVersionOptionsMap(): Map<String, String> = rpgMvVersionOptions().toMap()
+
+@Composable
+internal fun rpgMzVersionOptionsMap(): Map<String, String> = rpgMzVersionOptions().toMap()
+
+@Composable
 internal fun artResolutionOptionsMap(): Map<String, String> = artResolutionOptions().toMap()
 
 @Composable

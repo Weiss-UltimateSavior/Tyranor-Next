@@ -72,6 +72,8 @@ RPG Maker JavaScript 运行时
 - [ ] 修改 Android 返回键流程：菜单打开时先关闭，否则沿用双击退出。
 - [x] 增加独立“RPG Maker 引擎设置”入口及设置页，提供外部网络、独立存档和默认开启的修改器开关。
 - [ ] 增加 RPG MV/MZ 单游戏覆盖开关，并由启动器传入宿主。
+- [x] 新增 RPG MV/MZ 版本选择（v0）：全局与单游戏各一套，`EngineSettingsStore` / `PerGameSettingsStore` 分键存储，`EngineLauncher.effectiveRpgMakerVersion` 合并优先级 `单游戏覆盖 ?: 全局`，经 `rpgMakerVersion` / `rpgMvVersion` / `rpgMzVersion` extra 透传至 `TyranoActivity`（MV v1 会通过 TyranoLocalHttpServer 覆盖核心脚本，MZ v1 当前为预留版本）。
+- [x] 三仓库对比：`rpgtkoolmv/corescript`（1.6.1/community-1.3b，MIT，Pixi 4.5.4，移动端修复完整）选为 v1 基线（v0 保留现有宿主能力），vendor 至 `third_party/rpg-maker-mv-corescript-v0/`（见 `VENDOR.md`）；`Archeia` 为同源备选，`siakoMobi` 無 License 已排除。
 - [ ] 为注入 HTML、启动设置合并和关键 JS 结构增加自动化测试。
 - [ ] 完成 Debug 构建、单元测试、连接设备安装和基础启动验证。
 
