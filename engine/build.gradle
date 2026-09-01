@@ -10,6 +10,8 @@ android {
     defaultConfig {
         minSdk 26
         consumerProguardFiles "consumer-rules.pro"
+        versionCode = 1
+        versionName = "1.0"
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17"
@@ -37,9 +39,6 @@ android {
     }
 
     buildFeatures {
-        // TyranoActivity.BUILD_TAG 引用 BuildConfig.VERSION_NAME/VERSION_CODE；
-        // AGP 8+ 默认关闭 BuildConfig 生成，library 模块需显式开启（同 app 模块）
-        buildConfig = true
         viewBinding false
     }
 

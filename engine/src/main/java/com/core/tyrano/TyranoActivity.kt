@@ -33,7 +33,6 @@ import androidx.appcompat.app.AlertDialog
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineThemeColors
-import com.core.engine.BuildConfig
 import com.core.engine.R
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -66,18 +65,28 @@ class TyranoActivity : Activity() {
     private var rpgMakerVersion: String? = null
     private val processExitScheduled = AtomicBoolean(false)
 
+    private var buildTag: String = "unknown"
+
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(wrapContextForUiScale(newBase) ?: newBase)
+        // 诊断用构建标识（library 模块不启用 BuildConfig 生成，改用 PackageManager 取版本号）
+        buildTag = try {
+            val pm = newBase.packageManager
+            val info = pm.getPackageInfo(newBase.packageName, 0)
+            info.versionName + "-" + info.longVersionCode
+        } catch (e: Exception) {
+            "unknown"
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // BUILD_TAG 用于辨识设备上实际运行的构建，出现该行即说明是新代码
-        Log.i(TAG, "onCreate begin build=$BUILD_TAG type=${intent?.getStringExtra("type")} rpgMakerVersion=${intent?.getStringExtra(EXTRA_RPG_MAKER_VERSION)}")
+        // buildTag 用于辨识设备上实际运行的构建，出现该行即说明是新代码
+        Log.i(TAG, "onCreate begin build=$buildTag type=${intent?.getStringExtra("type")} rpgMakerVersion=${intent?.getStringExtra(EXTRA_RPG_MAKER_VERSION)}")
         try {
             onCreateInternal(savedInstanceState)
         } catch (t: Throwable) {
             // 顶层兜底：任何初始化异常都落日志并走可见的失败提示，避免无日志黑屏
-            Log.e(TAG, "onCreate crashed build=$BUILD_TAG", t)
+            Log.e(TAG, "onCreate crashed build=$buildTag", t)
             failLaunch(getString(R.string.engine_tyrano_server_failed))
         }
     }
@@ -572,7 +581,7 @@ class TyranoActivity : Activity() {
     }
 
     override fun finish() {
-        Log.i(TAG, "finish called build=$BUILD_TAG")
+        Log.i(TAG, "finish called build=$buildTag")
         super.finish()
         if (processExitScheduled.compareAndSet(false, true)) {
             Handler(Looper.getMainLooper()).postDelayed({
@@ -996,8 +1005,6 @@ class TyranoActivity : Activity() {
 
     companion object {
         private const val TAG = "YukiTyrano"
-        /** 诊断用构建标识：日志中出现该值即可确认设备运行的是哪一版代码 */
-        private const val BUILD_TAG = BuildConfig.VERSION_NAME + "-" + BuildConfig.VERSION_CODE
         private const val TYRANO_HOOK_ASSET = "__tyrano__.js"
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
