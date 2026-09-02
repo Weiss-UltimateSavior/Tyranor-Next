@@ -12,6 +12,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.media.AudioTrack;
 import android.view.KeyEvent;
@@ -24,6 +25,7 @@ import java.io.FileOutputStream;
 import bridge.NativeBridge;
 import bridge.KrPathUtils;
 import com.core.engine.DoubleBackExit;
+import com.core.engine.KrkrStartupDialogPolicy;
 import com.core.nativeplugin.NativeLibraryLoader;
 import java.util.Locale;
 import org.cocos2dx.lib.Cocos2dxActivity;
@@ -39,6 +41,8 @@ public class KR2Activity extends Cocos2dxActivity {
     static ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
     static ActivityManager mAcitivityManager = null;
     static Debug.MemoryInfo mDbgMemoryInfo = new Debug.MemoryInfo();
+    private static volatile boolean skipStartupDialogs;
+    private static volatile long launchStartElapsedMs = -1L;
     SharedPreferences Sp;
     /** True only when this Activity paused SDL playback, so a user/game pause is never undone. */
     private boolean sdlAudioPausedForBackground;
@@ -147,6 +151,17 @@ public class KR2Activity extends Cocos2dxActivity {
     }
 
     public static void ShowMessageBox(String title, String msg, String[] buttons) {
+        if (shouldAutoConfirmStartupDialog(title, msg, buttons)) {
+            android.util.Log.i("KR2Activity", "auto-confirm KRKR startup information dialog");
+            // Keep the callback on the same main thread used by the normal dialog
+            // path. Native callers remain blocked until the posted result arrives.
+            notifyAutoConfirmedDialog();
+            return;
+        }
+        // A malformed native call with an empty button list would otherwise
+        // create a dialog that can never produce a result for the native wait.
+        // KrDialogStyle already treats null as the legacy single "OK" button.
+        if (buttons != null && buttons.length == 0) buttons = null;
         KrDialogModel dialogModel = mDialogMessage;
         dialogModel.title = title;
         dialogModel.message = msg;
@@ -248,6 +263,25 @@ public class KR2Activity extends Cocos2dxActivity {
         }
     }
 
+    private static boolean shouldAutoConfirmStartupDialog(String title, String message, String[] buttons) {
+        return KrkrStartupDialogPolicy.shouldAutoConfirm(
+                skipStartupDialogs,
+                launchStartElapsedMs,
+                SystemClock.elapsedRealtime(),
+                title,
+                message,
+                buttons);
+    }
+
+    private static void notifyAutoConfirmedDialog() {
+        Handler handler = msgHandler;
+        if (handler == null || Looper.myLooper() == handler.getLooper()) {
+            notifyDialogResult(0);
+        } else {
+            handler.post(() -> notifyDialogResult(0));
+        }
+    }
+
     private static File scopedSaveDirectory(Intent intent) {
         if (sInstance == null || intent == null) return null;
         String explicit = KrPathUtils.normalizeFilePath(intent.getStringExtra("scopedSaveRoot"));
@@ -298,6 +332,10 @@ public class KR2Activity extends Cocos2dxActivity {
         System.loadLibrary("krkr_bridge_v2");
     }
     @Override public void onCreate(Bundle savedInstanceState) {
+        Intent launchIntent = getIntent();
+        skipStartupDialogs = launchIntent != null
+                && launchIntent.getBooleanExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, false);
+        launchStartElapsedMs = SystemClock.elapsedRealtime();
         sInstance = this;
         msgHandler = new Handler(Looper.getMainLooper()) { @Override public void handleMessage(Message msg) { KR2Activity.this.handleMessage(msg); } };
         Sp = PreferenceManager.getDefaultSharedPreferences(this);
@@ -391,11 +429,19 @@ public class KR2Activity extends Cocos2dxActivity {
         try {
             android.util.Log.i("KR2Activity", "destroy KR2Activity");
             DoubleBackExit.clear(this);
-            mTextEdit = null;
-            if (msgHandler != null) msgHandler.removeCallbacksAndMessages(null);
-            msgHandler = null;
-            mCurrentDialog = null;
-            if (sInstance == this) sInstance = null;
+            boolean ownsBridge = sInstance == this;
+            if (ownsBridge) sInstance = null;
+            // Static JNI bridges are shared by the isolated KRKR process. Only
+            // the instance that owns the bridge may clear it; an older Activity
+            // finishing after recreation must not tear down the new instance.
+            if (ownsBridge) {
+                mTextEdit = null;
+                if (msgHandler != null) msgHandler.removeCallbacksAndMessages(null);
+                msgHandler = null;
+                mCurrentDialog = null;
+                skipStartupDialogs = false;
+                launchStartElapsedMs = -1L;
+            }
         } catch (Throwable ignored) { }
         super.onDestroy();
     }

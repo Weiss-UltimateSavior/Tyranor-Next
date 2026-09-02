@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.theme.NavWhite
@@ -374,6 +375,11 @@ private fun QuickLaunchCard(
             .clip(RoundedCornerShape(8.dp))
             .background(QuickLaunchFallbackBackground),
     ) {
+        val engineName = if (game.engine == EngineType.UNKNOWN) {
+            stringResource(R.string.engine_name_unknown)
+        } else {
+            game.engine.displayName
+        }
         val cardMaxWidth = maxWidth
         val coverBitmap by rememberCoverBitmap(game.coverUri)
         coverBitmap?.let { bmp ->
@@ -404,7 +410,7 @@ private fun QuickLaunchCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        game.engine.displayName,
+                        engineName,
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,

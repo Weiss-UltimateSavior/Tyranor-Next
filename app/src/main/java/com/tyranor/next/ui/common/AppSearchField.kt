@@ -43,9 +43,11 @@ fun AppSearchField(
     modifier: Modifier = Modifier,
     onSearch: () -> Unit = { },
     leadingIcon: Painter? = null,
-    iconContentDescription: String = "Search",
+    iconContentDescription: String? = null,
     textStyle: TextStyle? = null,
 ) {
+    val resolvedIconContentDescription = iconContentDescription
+        ?: androidx.compose.ui.res.stringResource(R.string.common_search_content_description)
     MiuixSettingsTheme {
         // miuix 无 controller 的 MiuixTheme 重载不提供 LocalContentColor（默认黑色），
         // InputField 内部强制以 LocalContentColor.current 作为输入文字颜色，
@@ -67,7 +69,7 @@ fun AppSearchField(
                                 .size(26.dp),
                             painter = leadingIcon ?: painterResource(R.drawable.ic_game_search),
                             tint = MiuixTheme.colorScheme.primary,
-                            contentDescription = iconContentDescription,
+                            contentDescription = resolvedIconContentDescription,
                         )
                     },
                     modifier = Modifier.fillMaxWidth(),

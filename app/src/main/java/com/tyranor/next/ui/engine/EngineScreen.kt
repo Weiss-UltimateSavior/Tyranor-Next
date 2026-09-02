@@ -59,6 +59,7 @@ import android.widget.Toast
 @Composable
 fun EngineScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
+    val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
     var externalInstallStates by remember {
         mutableStateOf(refreshExternalInstallStates(context, engines))
@@ -137,7 +138,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                             if (!entry.installed && entry.installUrl != null) {
                                 val opened = ExternalEngineLauncher.openInstallPage(context, entry.installUrl)
                                 if (!opened) {
-                                    Toast.makeText(context, context.getString(R.string.engine_open_download_failed), Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
                                 }
                             }
                             moduleDialogEngine = null

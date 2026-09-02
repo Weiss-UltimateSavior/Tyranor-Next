@@ -59,7 +59,7 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
-import com.tyranor.next.core.i18n.ProvideAppLocale
+import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.TimeFormats
@@ -116,6 +116,9 @@ class KrkrOnlinePatchActivity : ComponentActivity() {
 private fun KrkrOnlinePatchScreen(game: ScanGame) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val patchInstalledCountFormat = stringResource(R.string.patch_installed_count)
+    val patchWrittenToFormat = stringResource(R.string.patch_written_to)
+    val patchInstallFailedMessage = stringResource(R.string.patch_install_failed)
     var keyword by remember { mutableStateOf(game.title) }
     var loading by remember { mutableStateOf(false) }
     var installing by remember { mutableStateOf(false) }
@@ -226,10 +229,10 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                                 }
                             }
                             result.onSuccess {
-                                Toast.makeText(context, context.getString(R.string.patch_installed_count, it.installed.size), Toast.LENGTH_LONG).show()
-                                message = context.getString(R.string.patch_written_to, it.target)
+                                Toast.makeText(context, patchInstalledCountFormat.format(it.installed.size), Toast.LENGTH_LONG).show()
+                                message = patchWrittenToFormat.format(it.target)
                             }.onFailure {
-                                message = it.message ?: context.getString(R.string.patch_install_failed)
+                                message = it.message ?: patchInstallFailedMessage
                             }
                             installing = false
                         }

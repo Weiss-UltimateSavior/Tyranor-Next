@@ -11,6 +11,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
+import com.tyranor.next.core.i18n.AppLocaleController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +26,10 @@ import kotlinx.coroutines.withContext
  * 重新解析库内游戏并启动，必要时先做 Artemis 补丁确认。
  */
 class GameShortcutActivity : ComponentActivity() {
+    private val localizedContext: Context
+        get() = AppLocaleController.wrap(this)
+
+    /** Resolves the shortcut ID, confirms Artemis patch policy, and launches the game. */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 配置变更/进程重建后继续（弹窗会重新出现），不要静默 finish，否则用户点快捷方式无反馈
@@ -49,14 +54,14 @@ class GameShortcutActivity : ComponentActivity() {
                     EngineLauncher.needsArtemisPatchConfirm(applicationContext, game)
                 }
                 val patchChoice = if (needsArtemisPatchConfirm) {
-                    confirmArtemisPatchChoice(game) ?: return@launch
+                    localizedContext.confirmArtemisPatchChoice(game) ?: return@launch
                 } else {
                     null
                 }
 
                 val error = EngineLauncher.launch(this@GameShortcutActivity, game, patchChoice)
                 if (error != null) {
-                    Toast.makeText(this@GameShortcutActivity, error, Toast.LENGTH_LONG).show()
+                    Toast.makeText(localizedContext, error, Toast.LENGTH_LONG).show()
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -70,7 +75,7 @@ class GameShortcutActivity : ComponentActivity() {
 
     /** Shows the localized missing-game message without changing launcher state. */
     private fun showUnavailable() {
-        Toast.makeText(this, R.string.game_desktop_shortcut_unavailable, Toast.LENGTH_LONG).show()
+        Toast.makeText(localizedContext, R.string.game_desktop_shortcut_unavailable, Toast.LENGTH_LONG).show()
     }
 
     /** Shows the missing-game message and closes the transparent trampoline. */
@@ -82,7 +87,7 @@ class GameShortcutActivity : ComponentActivity() {
     /** Converts an unexpected launch exception into a user-visible localized toast. */
     private fun showLaunchFailure(error: Throwable) {
         Log.e(TAG, "Shortcut game launch failed", error)
-        Toast.makeText(this, R.string.launch_failed, Toast.LENGTH_LONG).show()
+        Toast.makeText(localizedContext, R.string.launch_failed, Toast.LENGTH_LONG).show()
     }
 
     companion object {

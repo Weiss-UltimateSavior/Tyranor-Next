@@ -55,7 +55,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
-import com.tyranor.next.core.i18n.ProvideAppLocale
+import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
 import com.tyranor.next.ui.common.WithoutPressIndication
@@ -114,13 +114,17 @@ internal fun CoverScraperSettingsScreen() {
     var onlyMissing by remember(settingsVersion) { mutableStateOf(AppSettingsStore.isCoverScraperOnlyMissing(ctx)) }
     val scraping = scrapeTaskState.running
     val authStatus = remember(authVersion) { HikarinagiAuthStore.getStatus(ctx) }
+    val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
+    val scrapeResultMessage = scrapeTaskState.result?.let { result ->
+        stringResource(R.string.cover_batch_result, result.updatedCount, result.skippedCount, result.failedCount)
+    }
 
     LaunchedEffect(scrapeTaskState.eventId) {
         if (scrapeTaskState.eventId == 0L) return@LaunchedEffect
-        scrapeTaskState.result?.let { result ->
+        scrapeResultMessage?.let { message ->
             Toast.makeText(
                 ctx,
-                ctx.getString(R.string.cover_batch_result, result.updatedCount, result.skippedCount, result.failedCount),
+                message,
                 Toast.LENGTH_SHORT,
             ).show()
         }
@@ -132,7 +136,7 @@ internal fun CoverScraperSettingsScreen() {
 
     fun startBatchScrape() {
         if (!CoverScrapeTaskManager.start(ctx)) {
-            Toast.makeText(ctx, ctx.getString(R.string.game_batch_scraping_running), Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, batchScrapeRunningMessage, Toast.LENGTH_SHORT).show()
         }
     }
 

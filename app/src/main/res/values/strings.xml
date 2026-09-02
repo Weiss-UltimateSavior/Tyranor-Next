@@ -10,6 +10,7 @@
     <string name="common_disabled">关</string>
     <string name="common_auto">自动</string>
     <string name="common_follow_system">跟随系统</string>
+    <string name="common_search_content_description">搜索</string>
 
     <string name="nav_home">首页</string>
     <string name="nav_games">游戏</string>
@@ -88,6 +89,8 @@
     <string name="engine_desc_artemis">Artemis，system.ini 与 .pfs 归档游戏</string>
     <string name="engine_desc_renpy">Ren’Py 外置 APK 模块，检测安装状态后启动</string>
     <string name="engine_desc_unknown">未知引擎</string>
+    <string name="engine_name_unknown">未知引擎</string>
+    <string name="engine_name_web">Web 游戏</string>
 
     <string name="game_title">游戏</string>
     <string name="game_search_content_description">搜索游戏</string>
@@ -166,6 +169,8 @@
     <string name="engine_settings_tyrano_title">Tyrano引擎设置</string>
     <string name="engine_settings_renpy_title">Ren’Py引擎设置</string>
     <string name="engine_settings_scoped_save_dir">独立存档目录</string>
+    <string name="engine_settings_skip_startup_dialogs">屏蔽游戏启动弹窗</string>
+    <string name="engine_settings_skip_startup_dialogs_summary">屏蔽每次进入游戏前的重复弹窗，直接进入游戏</string>
     <string name="engine_settings_engine_version">引擎版本</string>
     <string name="engine_settings_engine_version_mv">引擎版本 - MV</string>
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>

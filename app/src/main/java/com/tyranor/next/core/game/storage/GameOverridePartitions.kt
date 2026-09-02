@@ -22,6 +22,7 @@ internal object GameOverridePartitions {
     const val KEY_DEFAULT_FONT = "default_font"
     const val KEY_FORCE_DEFAULT_FONT = "force_default_font"
     const val KEY_PATCH_OVERLAY_MODE = "patch_overlay_mode"
+    const val KEY_SKIP_STARTUP_DIALOGS = "skip_startup_dialogs"
     const val KEY_RENDERER = "renderer"
     const val KEY_SOFTWARE_DRAW_THREAD = "software_draw_thread"
     const val KEY_SOFTWARE_COMPRESS_TEX = "software_compress_tex"
@@ -45,6 +46,7 @@ internal object GameOverridePartitions {
         KEY_FORCE_DEFAULT_FONT, KEY_PATCH_OVERLAY_MODE, KEY_RENDERER, KEY_SOFTWARE_DRAW_THREAD,
         KEY_SOFTWARE_COMPRESS_TEX, KEY_OGL_COMPRESS_TEX, KEY_MEM_USAGE, KEY_OGL_MAX_TEXSIZE,
         KEY_OGL_ACCURATE_RENDER, KEY_FPS_LIMIT, KEY_VCURSOR_SCALE, KEY_MENU_HANDLER_OPA,
+        KEY_SKIP_STARTUP_DIALOGS,
     )
     val ARTEMIS_KEYS: Set<String> = setOf(KEY_ART_VERSION, KEY_ART_ROTATE, KEY_ART_PATCH)
     val TYRANO_KEYS: Set<String> = setOf(KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED)

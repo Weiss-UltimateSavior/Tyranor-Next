@@ -55,17 +55,25 @@ object HikarinagiAuthService {
             .setPrompt("consent")
             .build()
 
+        // AppAuth supplies the authorization result through a fill-in Intent, so
+        // these PendingIntents must remain mutable. Restrict both copies to this
+        // application before handing them to AppAuth; a package-scoped Intent is
+        // explicit enough to avoid mutable implicit PendingIntent hijacking.
+        val completeCallback = Intent(callbackIntent).setPackage(activity.packageName)
+        val cancelCallback = Intent(callbackIntent)
+            .setPackage(activity.packageName)
+            .putExtra(EXTRA_AUTH_CANCELED, true)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
         val completeIntent = PendingIntent.getActivity(
             activity,
             0,
-            Intent(callbackIntent),
+            completeCallback,
             flags,
         )
         val cancelIntent = PendingIntent.getActivity(
             activity,
             1,
-            Intent(callbackIntent).putExtra(EXTRA_AUTH_CANCELED, true),
+            cancelCallback,
             flags,
         )
         val service = AuthorizationService(appContext)
