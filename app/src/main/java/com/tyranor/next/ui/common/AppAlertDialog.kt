@@ -40,7 +40,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.tyranor.next.theme.PageGrey
+import com.tyranor.next.theme.NavWhite
 import kotlinx.coroutines.launch
 
 /**
@@ -102,7 +102,7 @@ internal fun AppAlertDialog(
                     // 消费卡片区域点击，避免穿透到遮罩
                     .pointerInput(Unit) { detectTapGestures { } },
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                colors = CardDefaults.cardColors(containerColor = PageGrey),
+                colors = CardDefaults.cardColors(containerColor = NavWhite),
                 shape = RoundedCornerShape(8.dp),
             ) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
