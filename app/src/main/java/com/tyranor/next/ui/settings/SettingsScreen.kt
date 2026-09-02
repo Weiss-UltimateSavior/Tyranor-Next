@@ -66,6 +66,7 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
@@ -279,7 +280,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(NavWhite)
+                                .background(PageGrey)
                                 .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -397,11 +398,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    AppNavItem(stringResource(R.string.settings_qq_group), leadingIcon = R.drawable.ic_group_qq) {
+                    AppNavItem(stringResource(R.string.settings_qq_group), leadingIcon = R.drawable.ic_group_qq, containerColor = PageGrey) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://qm.qq.com/q/M9JH8A9Yys")))
                     }
-                    AppNavItem(stringResource(R.string.settings_telegram_channel), leadingIcon = R.drawable.ic_group_telegram) {
+                    AppNavItem(stringResource(R.string.settings_telegram_channel), leadingIcon = R.drawable.ic_group_telegram, containerColor = PageGrey) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/tyranornext")))
                     }

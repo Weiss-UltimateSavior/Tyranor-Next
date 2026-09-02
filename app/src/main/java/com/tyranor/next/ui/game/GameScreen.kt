@@ -1292,7 +1292,7 @@ private fun LaunchFileDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
-                                    .background(NavWhite)
+                                    .background(PageGrey)
                                     .clickable { selected = name }
                                     .padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,

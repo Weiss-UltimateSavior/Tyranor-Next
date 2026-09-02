@@ -49,6 +49,7 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.glassNavBottomInset
@@ -134,6 +135,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         AppNavItem(
                             title = entry.title,
                             summary = stringResource(entry.summaryRes),
+                            containerColor = PageGrey,
                         ) {
                             if (!entry.installed && entry.installUrl != null) {
                                 val opened = ExternalEngineLauncher.openInstallPage(context, entry.installUrl)
