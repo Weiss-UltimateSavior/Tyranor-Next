@@ -69,39 +69,32 @@ fun PerGameSettingsScreen(game: ScanGame) {
         remember(gid, field) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, field)) }
     }
 
-    var artVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
-    var artRotate by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
-    var artPatch by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
-    var artResolution by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_RESOLUTION)) }
-    var artSideCut by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SIDE_CUT)) }
-    var artSurfaceCache by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE)) }
-    var artFontCache by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE)) }
-    var artPowerSaving by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
-    var renpyVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
+    var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
+    var artRotate by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
+    var artPatch by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
+    var artResolution by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_RESOLUTION)) }
+    var artSideCut by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SIDE_CUT)) }
+    var artSurfaceCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE)) }
+    var artFontCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE)) }
+    var artPowerSaving by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
+    var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
 
-    val onsOverride = remember(gid) { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
-    var onsScoped by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
-    var onsStretch by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "strechfull")) }
-    var onsCutout by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "ignorecutout")) }
-    var onsNoVideo by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "disablevideo")) }
-    var onsSharp by remember(gid) { mutableStateOf(onsBool(onsOverride.value, "sharpness")) }
-    var onsSharpVal by remember(gid) { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
-    var onsEnc by remember(gid) { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
+    val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
+    var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
+    var onsStretch by remember { mutableStateOf(onsBool(onsOverride.value, "strechfull")) }
+    var onsCutout by remember { mutableStateOf(onsBool(onsOverride.value, "ignorecutout")) }
+    var onsNoVideo by remember { mutableStateOf(onsBool(onsOverride.value, "disablevideo")) }
+    var onsSharp by remember { mutableStateOf(onsBool(onsOverride.value, "sharpness")) }
+    var onsSharpVal by remember { mutableStateOf(onsStr(onsOverride.value, "sharpness_value", "2")) }
+    var onsEnc by remember { mutableStateOf(onsStr(onsOverride.value, "encoding", "gbk")) }
 
-    var tyExternal by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
-    var tyScoped by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
-    var rpgMakerMod by remember(gid) {
+    var tyExternal by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_external")) }
+    var tyScoped by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, "ty_scoped")) }
+    var rpgMakerMod by remember {
         mutableStateOf(
             PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED),
         )
     }
-    var rpgLegacyRenderer by remember(gid) {
-        mutableStateOf(
-            PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_RPG_LEGACY_RENDERER),
-        )
-    }
-    var rpgMvVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
-    var rpgMzVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -130,9 +123,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalTyExternal = EngineSettingsStore.isTyranoExternalNetwork(ctx)
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
-    val globalRpgLegacyRenderer = EngineSettingsStore.isRpgLegacyRenderer(ctx)
-    val globalRpgMvVersion = EngineSettingsStore.getRpgMvEngineVersion(ctx)
-    val globalRpgMzVersion = EngineSettingsStore.getRpgMzEngineVersion(ctx)
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
     val krVersionMap = krSelectOptionsMap()
     val krKernelMap = krKernelOptionsMap()
@@ -221,14 +211,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
             PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED,
             rpgMakerMod,
         )
-        PerGameSettingsStore.setBool(
-            ctx,
-            gid,
-            PerGameSettingsStore.F_RPG_LEGACY_RENDERER,
-            rpgLegacyRenderer,
-        )
-        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION, rpgMvVersion)
-        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION, rpgMzVersion)
     }
 
     MiuixSettingsTheme {
@@ -390,22 +372,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
-                    EngineType.RPG_MV, EngineType.RPG_MZ -> item {
-                        val isMv = game.engine == EngineType.RPG_MV
-                        val versionMap = if (isMv) rpgMvVersionOptionsMap() else rpgMzVersionOptionsMap()
-                        val globalVersion = if (isMv) globalRpgMvVersion else globalRpgMzVersion
-                        val overrideVersion = if (isMv) rpgMvVersion else rpgMzVersion
-                        SectionCard(game.engine.displayName) {
-                            OverrideChoice(stringResource(R.string.engine_settings_engine_version), versionMap, globalVersion, overrideVersion) { v ->
-                                if (isMv) rpgMvVersion = v else rpgMzVersion = v
-                            }
-                            OverrideSwitch(stringResource(R.string.engine_settings_external_network), globalTyExternal, tyExternal) { tyExternal = it }
-                            OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
-                            OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
-                            OverrideSwitch(stringResource(R.string.engine_settings_legacy_renderer), globalRpgLegacyRenderer, rpgLegacyRenderer) { rpgLegacyRenderer = it }
-                        }
-                    }
                     EngineType.TYRANO,
+                    EngineType.RPG_MV,
+                    EngineType.RPG_MZ,
                     EngineType.VN,
                     EngineType.WEB_OTHER,
                     EngineType.UNKNOWN -> item {
@@ -419,6 +388,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_external_network), globalTyExternal, tyExternal) { tyExternal = it }
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
+                            }
+                            if (game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ) {
+                                OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
                             }
                         }
                     }

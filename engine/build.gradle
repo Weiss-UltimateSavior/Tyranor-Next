@@ -10,8 +10,6 @@ android {
     defaultConfig {
         minSdk 26
         consumerProguardFiles "consumer-rules.pro"
-        versionCode = 1
-        versionName = "1.0"
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++17"

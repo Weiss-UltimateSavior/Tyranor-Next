@@ -57,9 +57,6 @@
 - `app/src/main/assets/engine`：App 专属注入脚本；共享脚本由 Gradle 从 `engine/src/main/assets` 生成到 app assets。
 
 - `engine/src/main/nativeplugins`：共享 Native 插件 so 源头。
-
-- `third_party/rpg-maker-mv-corescript-v0/`：MV v1 vendor 源（拆分 `js/` + `rpg_*.json` 清单），由 `npm run build`（concat.js）生成 `dist/`，再同步至 `engine/src/main/assets/rpgmv-v1/`（运行时覆盖）。
-
 - `app/src/main/nativeplugins`：插件 manifest 与 app-only 插件源头。
 
 - 禁止在 app 与 engine 两边手工维护同一份二进制或共享脚本；构建脚本会检查重复源文件。
