@@ -55,7 +55,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
-import com.tyranor.next.core.i18n.ProvideAppLocale
+import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
 import com.tyranor.next.ui.common.WithoutPressIndication
