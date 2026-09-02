@@ -54,7 +54,7 @@ class GameShortcutActivity : ComponentActivity() {
                     EngineLauncher.needsArtemisPatchConfirm(applicationContext, game)
                 }
                 val patchChoice = if (needsArtemisPatchConfirm) {
-                    localizedContext.confirmArtemisPatchChoice(game) ?: return@launch
+                    awaitArtemisPatchChoice(game) ?: return@launch
                 } else {
                     null
                 }

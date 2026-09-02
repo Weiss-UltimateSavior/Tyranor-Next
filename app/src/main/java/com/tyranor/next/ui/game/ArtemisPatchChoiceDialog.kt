@@ -1,19 +1,24 @@
 package com.tyranor.next.ui.game
 
-import android.app.AlertDialog
-import android.content.Context
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.ProvideAppLocale
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -73,29 +78,27 @@ internal fun ArtemisPatchChoiceDialog(
     )
 }
 
-/** 原生版本：供非 Compose 的透明蹦床（快捷方式启动）使用，行为与 Compose 版本一致。 */
-suspend fun Context.confirmArtemisPatchChoice(game: ScanGame): EngineLauncher.ArtemisPatchChoice? =
+/**
+ * Compose 挂起版确认入口：供非 Compose 的透明蹦床（GameShortcutActivity）使用，
+ * 行为与 Compose 版完全一致，并遵循 AppAlertDialog 弹窗规范（白底 / 8dp 圆角 / 统一排版）。
+ *
+ * 通过 [ComponentActivity.setContent] 挂载 [ArtemisPatchChoiceDialog]，选择后卸载弹窗并返回结果；
+ * 配置变更 / 进程重建时 composition 随 Activity 重建，弹窗会重新出现，由调用方负责不静默退出。
+ */
+suspend fun ComponentActivity.awaitArtemisPatchChoice(game: ScanGame): EngineLauncher.ArtemisPatchChoice? =
     suspendCancellableCoroutine { continuation ->
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.game_auto_patch_title)
-            .setMessage(getString(R.string.game_auto_patch_message, game.title))
-            .setPositiveButton(PatchChoiceOption.ALWAYS.labelRes) { _, _ ->
-                if (continuation.isActive) continuation.resume(PatchChoiceOption.ALWAYS.toArtemisChoice())
+        setContent {
+            ProvideAppLocale {
+                var showDialog by remember { mutableStateOf(true) }
+                if (showDialog) {
+                    ArtemisPatchChoiceDialog(
+                        game = game,
+                        onChoice = { choice ->
+                            showDialog = false
+                            if (continuation.isActive) continuation.resume(choice)
+                        },
+                    )
+                }
             }
-            .setNegativeButton(PatchChoiceOption.NEVER.labelRes) { _, _ ->
-                if (continuation.isActive) continuation.resume(PatchChoiceOption.NEVER.toArtemisChoice())
-            }
-            .setNeutralButton(PatchChoiceOption.ONCE.labelRes) { _, _ ->
-                if (continuation.isActive) continuation.resume(PatchChoiceOption.ONCE.toArtemisChoice())
-            }
-            .setOnCancelListener {
-                if (continuation.isActive) continuation.resume(null)
-            }
-            .create()
-
-        continuation.invokeOnCancellation { dialog.dismiss() }
-        if (continuation.isActive) {
-            dialog.show()
-            if (!continuation.isActive && dialog.isShowing) dialog.dismiss()
         }
     }
