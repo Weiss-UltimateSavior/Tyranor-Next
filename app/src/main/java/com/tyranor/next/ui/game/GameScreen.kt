@@ -8,6 +8,8 @@ import android.net.Uri
 import android.util.LruCache
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -70,6 +72,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -1398,6 +1401,8 @@ private fun GameGrid(
                 game = game,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
+                // 滚动/惯性中暂缓封面解码，滚动停止后回填，避免首滑解码风暴挤占滑动帧
+                scrolling = gridState.isScrollInProgress,
             )
         }
     }
@@ -1413,6 +1418,7 @@ internal fun GameCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
+    scrolling: Boolean = false,
 ) {
     Column(modifier) {
         val engineName = if (game.engine == EngineType.UNKNOWN) {
@@ -1420,13 +1426,20 @@ internal fun GameCard(
         } else {
             game.engine.displayName
         }
-        val coverBitmap by rememberCoverBitmap(game.coverUri)
+        val coverBitmap by rememberCoverBitmap(game.coverUri, scrolling)
         val pressModifier = if (onLongClick != null) {
             Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
         } else {
             Modifier.clickable(onClick = onClick)
         }
         // 卡片 1:3（高:宽 = 4:3 立式封面，一行三列）
+        // 封面加载完成后从 0 渐显到 1；占位（引擎色 + 文字）始终在底层，加载前不可见差异
+        val bmp = coverBitmap
+        val coverAlpha by animateFloatAsState(
+            targetValue = if (bmp != null) 1f else 0f,
+            animationSpec = tween(durationMillis = 300),
+            label = "coverFadeIn",
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1436,28 +1449,26 @@ internal fun GameCard(
                 .then(pressModifier),
             contentAlignment = Alignment.Center,
         ) {
-            val bmp = coverBitmap
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Tyranor",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                )
+                Text(
+                    engineName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
             if (bmp != null) {
                 Image(
                     bitmap = bmp,
                     contentDescription = game.title,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
                 )
-            } else {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "Tyranor",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.7f),
-                    )
-                    Text(
-                        engineName,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                }
             }
         }
         Text(
@@ -1471,12 +1482,24 @@ internal fun GameCard(
     }
 }
 
+/**
+ * 读取游戏封面；[scrolling] 为 true（列表滑动/惯性中）时不启动解码，
+ * 保持 [EngineType.coverColor] 占位，待滚动停止后（[scrolling] 变 false）再触发解码回填，
+ * 避免首滑时「解码完成 → 重组/纹理上传」风暴挤占滑动帧。
+ */
 @Composable
-internal fun rememberCoverBitmap(coverUri: String?): androidx.compose.runtime.State<ImageBitmap?> {
+internal fun rememberCoverBitmap(
+    coverUri: String?,
+    scrolling: Boolean = false,
+): androidx.compose.runtime.State<ImageBitmap?> {
     val context = LocalContext.current
     val cached = coverUri?.let(CoverBitmapCache::get)
-    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri) {
+    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri, scrolling) {
         if (cached != null || coverUri.isNullOrBlank()) return@produceState
+        if (scrolling) {
+            // 滚动中不启动解码：滚动状态变化会变更 key 重新进入本块，滚动停止后这里再次放行
+            return@produceState
+        }
         value = CoverThumbnailLoader.load(context.applicationContext, coverUri)?.asImageBitmap()
     }
 }
@@ -1551,7 +1574,9 @@ private object CoverBitmapCache : LruCache<String, Bitmap>(24 * 1024 * 1024) {
  * 第二批等待者在获得许可后会再次检查缓存，进一步避免排队期间的重复解码。
  */
 private object CoverThumbnailLoader {
-    private val coordinator = BoundedKeyedLoader<String>(parallelism = 2)
+    // 解码本身在 IO 线程不占主线程，主线程瓶颈已由「滚动感知解码」缓解；
+    // 这里适度提高并行度以加速滚动停止后的批量回填
+    private val coordinator = BoundedKeyedLoader<String>(parallelism = 4)
 
     suspend fun load(context: android.content.Context, uriText: String): Bitmap? = coordinator.load(
         key = uriText,
