@@ -951,12 +951,25 @@ private fun FontRow(label: String, value: String, onReset: () -> Unit, onPick: (
             onDismissRequest = { open = false },
             title = { Text(label, style = MaterialTheme.typography.titleMedium) },
             text = {
-                Column {
-                    Row(Modifier.fillMaxWidth().clickable { onReset(); open = false }.padding(vertical = 8.dp)) {
-                        Text(stringResource(R.string.engine_settings_use_builtin_font), style = MaterialTheme.typography.bodyMedium)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AppNavItem(
+                        title = stringResource(R.string.engine_settings_use_builtin_font),
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = PageGrey,
+                    ) {
+                        onReset()
+                        open = false
                     }
-                    Row(Modifier.fillMaxWidth().clickable { open = false; onPick() }.padding(vertical = 8.dp)) {
-                        Text(stringResource(R.string.engine_settings_select_font_file), style = MaterialTheme.typography.bodyMedium)
+                    AppNavItem(
+                        title = stringResource(R.string.engine_settings_select_font_file),
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = PageGrey,
+                    ) {
+                        open = false
+                        onPick()
                     }
                 }
             },
