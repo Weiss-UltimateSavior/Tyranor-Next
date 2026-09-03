@@ -2,6 +2,7 @@ package com.tyranor.next.ui.main
 
 import android.os.Build
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.Image
@@ -11,11 +12,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
@@ -24,10 +27,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -183,6 +190,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
         }
       }
       if (!liquidGlass) {
+        // 去掉点击 ripple（material3 1.4 起 ripple 读取 LocalRippleConfiguration，置 null 全局禁用）
+        CompositionLocalProvider(LocalRippleConfiguration provides null) {
         NavigationBar(
           containerColor = com.tyranor.next.theme.NavWhite,
           contentColor = androidx.compose.material3.LocalContentColor.current,
@@ -195,15 +204,47 @@ fun MainScreen(modifier: Modifier = Modifier) {
               selected = selected,
               onClick = { selectPage(index) },
               icon = {
-                Image(
-                  painter = painterResource(tab.iconRes),
-                  contentDescription = label,
-                  colorFilter = ColorFilter.tint(itemColor),
-                  modifier = Modifier.size(28.dp),
+                // 选中态染色动画：底层铺未选中灰，上层主题色图标用渐变遮罩自下而上填充
+                // （fill 0→1 时遮罩分界线从底边升到顶边），取消选中时自上而下退色。
+                val fill by animateFloatAsState(
+                  targetValue = if (selected) 1f else 0f,
+                  animationSpec = tween(durationMillis = 700),
+                  label = "navIconFill$index",
                 )
+                Box(Modifier.size(28.dp)) {
+                  Image(
+                    painter = painterResource(tab.iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    colorFilter = ColorFilter.tint(unselectedColor),
+                  )
+                  Image(
+                    painter = painterResource(tab.iconRes),
+                    contentDescription = label,
+                    modifier = Modifier
+                      .fillMaxSize()
+                      .graphicsLayer {
+                        // 离屏合成，保证 DstIn 遮罩只作用于本层图标
+                        compositingStrategy = CompositingStrategy.Offscreen
+                        clip = true
+                      }
+                      .drawWithCache {
+                        onDrawWithContent {
+                          // fill=0 → 分界线在底边（全隐藏）；fill=1 → 分界线在顶边（全显示）
+                          val edge = 1f - fill
+                          val mask = Brush.verticalGradient(
+                            colorStops = arrayOf(edge to Color.Transparent, edge to Color.White),
+                          )
+                          drawContent()
+                          drawRect(brush = mask, blendMode = BlendMode.DstIn)
+                        }
+                      },
+                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                  )
+                }
               },
               label = { Text(label) },
-              // 去掉选中高亮：仅图标与文字通过主题色区分选中态
+              // 去掉选中高亮：仅图标颜色填充动画与文字颜色区分选中态
               colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
                 selectedIconColor = MaterialTheme.colorScheme.primary,
                 selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -213,6 +254,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
               ),
             )
           }
+        }
         }
       }
     }
