@@ -32,6 +32,7 @@ object EngineSettingsStore {
     const val KEY_KR_SCOPED_SAVE_DIR = "kr_scoped_save_dir"
     const val KEY_KR_PATCH_OVERLAY_MODE = "kr_patch_overlay_mode"
     const val KEY_KR_SKIP_STARTUP_DIALOGS = "kr_skip_startup_dialogs"
+    const val KEY_KR_ANIME4K_MODE = "kr_anime4k_mode"
 
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
@@ -61,6 +62,21 @@ object EngineSettingsStore {
     const val KR_PATCH_OVERLAY_AUTO = "auto"
     const val KR_PATCH_OVERLAY_FORCE = "force"
     const val KR_PATCH_OVERLAY_OFF = "off"
+
+    // Anime4K 画面超分模式（仅 kirikiri2 内核路径生效；取值与引擎侧 Anime4kRuntime 一致）
+    const val ANIME4K_OFF = "off"
+    const val ANIME4K_S = "s"
+    const val ANIME4K_M = "m"
+    const val ANIME4K_L = "l"
+    const val ANIME4K_SOFT_S = "soft_s"
+    const val ANIME4K_SOFT_M = "soft_m"
+    const val ANIME4K_SOFT_L = "soft_l"
+    const val ANIME4K_DEBLUR = "deblur"
+    /** Anime4K 模式全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
+    val ANIME4K_MODES = setOf(
+        ANIME4K_OFF, ANIME4K_S, ANIME4K_M, ANIME4K_L,
+        ANIME4K_SOFT_S, ANIME4K_SOFT_M, ANIME4K_SOFT_L, ANIME4K_DEBLUR,
+    )
 
     const val RENDERER_SOFTWARE = "software"
     const val RENDERER_OPENGL = "opengl"
@@ -174,6 +190,13 @@ object EngineSettingsStore {
         normalizeKrPatchOverlayMode(prefs(c).getString(KEY_KR_PATCH_OVERLAY_MODE, KR_PATCH_OVERLAY_AUTO))
     fun setKrPatchOverlayMode(c: Context, v: String) =
         prefs(c).edit().putString(KEY_KR_PATCH_OVERLAY_MODE, normalizeKrPatchOverlayMode(v)).apply()
+
+    fun getKrAnime4kMode(c: Context): String {
+        val v = prefs(c).getString(KEY_KR_ANIME4K_MODE, null)
+        return if (v != null && v in ANIME4K_MODES) v else ANIME4K_OFF
+    }
+    fun setKrAnime4kMode(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_KR_ANIME4K_MODE, if (v in ANIME4K_MODES) v else ANIME4K_OFF).apply()
 
     /** Automatically confirm one-button KRKR information dialogs during the first 30 seconds. */
     fun isKrSkipStartupDialogs(c: Context): Boolean =

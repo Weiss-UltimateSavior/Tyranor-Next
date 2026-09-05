@@ -231,6 +231,14 @@
     <string name="engine_option_auto_patch_ask">Ask on launch</string>
     <string name="engine_option_force_enable">Force enable</string>
     <string name="engine_option_off">Off</string>
+    <string name="engine_settings_anime4k">Upscaling</string>
+    <string name="engine_option_anime4k_fast">Fast (S)</string>
+    <string name="engine_option_anime4k_balanced">Balanced (M)</string>
+    <string name="engine_option_anime4k_high">High (L)</string>
+    <string name="engine_option_anime4k_soft_fast">Soft · Fast</string>
+    <string name="engine_option_anime4k_soft_balanced">Soft · Balanced</string>
+    <string name="engine_option_anime4k_soft_high">Soft · High</string>
+    <string name="engine_option_anime4k_deblur">Deblur (DoG)</string>
 
     <string name="cover_source_local">Local cover</string>
     <string name="cover_source_custom">Custom cover</string>

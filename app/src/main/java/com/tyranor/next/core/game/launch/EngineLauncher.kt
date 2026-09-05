@@ -443,6 +443,13 @@ object EngineLauncher {
             // 字体偏好
             if (defaultFont.isNotEmpty()) putExtra("default_font", defaultFont)
             if (forceFont) putExtra("force_default_font", true)
+            // Anime4K 画面超分（单游戏覆盖 > 全局；仅 kirikiri2 内核路径支持）
+            val anime4kMode = or(
+                PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ANIME4K_MODE)
+                    ?.takeIf { it in EngineSettingsStore.ANIME4K_MODES },
+                EngineSettingsStore.getKrAnime4kMode(context),
+            )
+            putExtra(com.core.gl.Anime4kRuntime.EXTRA_MODE, anime4kMode)
             // 渲染/内存偏好 JSON：单游戏覆盖 与 全局 逐键合并
             // 注意：buildKrEnginePrefsJson 遍历的是全局键（kr_renderer 等），
             // 而单游戏覆盖以 PerGameSettingsStore.KR_FIELDS（renderer 等）存储，需做键名映射。

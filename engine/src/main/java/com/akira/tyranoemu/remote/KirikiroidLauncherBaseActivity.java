@@ -99,6 +99,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         applyKrkrRequestedOrientation();
         doSetSystemUiVisibility();
         NativeBridge.configureSafMirror(getIntent().getStringExtra("safMirrorIndex"));
+        // Anime4K 后处理：必须在 super.onCreate（GL SurfaceView 构造，EGL 版本定型）前配置
+        com.core.gl.Anime4kRuntime.configure(this, getIntent().getStringExtra(com.core.gl.Anime4kRuntime.EXTRA_MODE));
         // Must run before super.onCreate (native library loading and preference singleton construction).
         applyFontPreferences();
         applyEnginePreferences();
@@ -841,6 +843,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             maskHint = null;
             loadingSpinner = null;
             NativeBridge.setKrkrGameReadyListener(null);
+            com.core.gl.Anime4kRuntime.reset();
             if (app == this) app = null;
         } catch (Throwable ignored) {
             // 清理阶段部分成员已为 null/已回收，失败可安全忽略（进程即将被 kill）

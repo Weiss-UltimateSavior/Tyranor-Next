@@ -154,10 +154,12 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - `engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 授权分发
 - 基于本项目发布的衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码
 - Miuix 等第三方依赖按各自许可证引入
+- Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
 
 ## 致谢
 
 - **Tyranor 模拟器**：本项目引擎运行时与核心架构的逆向重写基础
 - **RinneMobile**：游戏扫描识别/SAF路径映射逻辑/独立存档映射/krkrsdl3 等多个功能的参考实现
 - [Miuix](https://github.com/compose-miuix-ui/miuix)：设置界面组件库
+- [Anime4K](https://github.com/bloc97/Anime4K)（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）
 - 各引擎运行时均基于其开源许可引入

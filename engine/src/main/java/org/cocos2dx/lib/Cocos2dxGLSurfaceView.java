@@ -121,7 +121,9 @@ public class Cocos2dxGLSurfaceView extends GLSurfaceView {
     }
 
     public void initView() {
-        setEGLContextClientVersion(2);
+        // Anime4K 启用时需要 GLES3 上下文（CNN 中间值可为负，需 RGBA16F 渲染目标）。
+        // ES3 上下文向后兼容引擎的 ES2 渲染路径；未启用时保持原样，零回归风险。
+        setEGLContextClientVersion(com.core.gl.Anime4kRuntime.useGles3Context() ? 3 : 2);
         setFocusableInTouchMode(true);
         mCocos2dxGLSurfaceView = this;
         sCocos2dxTextInputWraper = new Cocos2dxTextInputWraper(this);

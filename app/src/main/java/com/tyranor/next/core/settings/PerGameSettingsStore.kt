@@ -38,6 +38,7 @@ object PerGameSettingsStore {
     const val F_FPS_LIMIT = "fps_limit"
     const val F_VCURSOR_SCALE = "vcursor_scale"
     const val F_MENU_HANDLER_OPA = "menu_handler_opa"
+    const val F_ANIME4K_MODE = "anime4k_mode"
     val KR_FIELDS = listOf(
         F_RENDERER, F_SOFTWARE_DRAW_THREAD, F_SOFTWARE_COMPRESS_TEX, F_OGL_COMPRESS_TEX,
         F_MEM_USAGE, F_OGL_MAX_TEXSIZE, F_OGL_ACCURATE_RENDER, F_FPS_LIMIT,
