@@ -143,7 +143,7 @@ internal fun CoverScraperSettingsScreen() {
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = PageGrey,
+            containerColor = MiuixTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = { CoverScraperTopBar() },
         ) { innerPadding ->
