@@ -190,6 +190,7 @@
     <string name="engine_settings_default_font">Default font</string>
     <string name="engine_settings_builtin_font">Built-in font</string>
     <string name="engine_settings_force_default_font">Force default font</string>
+    <string name="engine_settings_force_font_hint">When off, only fonts missing from the game are replaced. Enable this to make your chosen font take effect fully</string>
     <string name="engine_settings_force_default_font_short">Force default font</string>
     <string name="engine_settings_fullscreen_stretch">Stretch to fullscreen</string>
     <string name="engine_settings_ignore_cutout">Ignore display cutout</string>
@@ -207,7 +208,7 @@
     <string name="engine_settings_external_network_resources">Allow external network resources</string>
     <string name="engine_settings_external_network">Allow external network</string>
     <string name="engine_settings_game_modifier">Game modifier</string>
-    <string name="engine_settings_legacy_renderer">PIXI legacy renderer (only applies to MV v1/v2 sessions)</string>
+    <string name="engine_settings_legacy_renderer">PIXI legacy renderer (only applies to TynMV engine sessions)</string>
     <string name="engine_settings_engine_version_mv">Engine version - MV</string>
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py uses an external APK engine module and opens the plugin matching the selected version. Modules are enabled by default once installed.</string>
@@ -234,11 +235,11 @@
     <string name="engine_option_auto_patch_ask">Ask on launch</string>
     <string name="engine_option_force_enable">Force enable</string>
     <string name="engine_option_off">Off</string>
-    <string name="engine_option_rpg_mv_v0">v0</string>
-    <string name="engine_option_rpg_mv_v1">v1 (1.6.1 corescript)</string>
-    <string name="engine_option_rpg_mv_v2">v2</string>
-    <string name="engine_option_rpg_mz_v0">v0</string>
-    <string name="engine_option_rpg_mz_v2">v2</string>
+    <string name="engine_option_rpg_mv_v0">Tyranor-2.3.4</string>
+    <string name="engine_option_rpg_mv_v1">TynMV-0.1</string>
+    <string name="engine_option_rpg_mv_v2">TynMV-0.2</string>
+    <string name="engine_option_rpg_mz_v0">Tyranor-2.3.4</string>
+    <string name="engine_option_rpg_mz_v2">TynMZ-0.1</string>
     <string name="engine_settings_anime4k">Upscaling</string>
     <string name="engine_option_anime4k_fast">Fast (S)</string>
     <string name="engine_option_anime4k_balanced">Balanced (M)</string>
