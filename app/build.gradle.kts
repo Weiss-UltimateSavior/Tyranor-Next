@@ -260,5 +260,4 @@ dependencies {
   // 液态玻璃导航（圆角流体玻璃底部导航，参考 RinneMobile）
   implementation(libs.backdrop)
   implementation(project(":engine"))
-  implementation(project(":rpgmaker"))
 }

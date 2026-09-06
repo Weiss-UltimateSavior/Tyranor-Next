@@ -24,9 +24,9 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
-import com.core.engine.DoubleBackExit
-import com.core.engine.EnginePrefs
-import com.core.engine.EngineThemeColors
+import com.core.rpgmaker.DoubleBackExit
+import com.core.rpgmaker.EnginePrefs
+import com.core.rpgmaker.EngineThemeColors
 import com.core.rpgmaker.R
 import java.io.ByteArrayInputStream
 import java.io.File

@@ -207,7 +207,7 @@
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>
-    <string name="engine_settings_legacy_renderer">PIXI 兼容渲染（黑屏时开启；仅 MV v1/v2 会话生效）</string>
+    <string name="engine_settings_legacy_renderer">PIXI 兼容渲染（仅 MV v1/v2 会话生效）</string>
     <string name="engine_settings_engine_version_mv">引擎版本 - MV</string>
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。</string>
@@ -234,11 +234,11 @@
     <string name="engine_option_auto_patch_ask">启动时询问</string>
     <string name="engine_option_force_enable">强制启用</string>
     <string name="engine_option_off">关闭</string>
-    <string name="engine_option_rpg_mv_v0">v0（现有）</string>
+    <string name="engine_option_rpg_mv_v0">v0</string>
     <string name="engine_option_rpg_mv_v1">v1（1.6.1 corescript）</string>
-    <string name="engine_option_rpg_mv_v2">v2（NWJS 兼容 + 游戏自带引擎）</string>
-    <string name="engine_option_rpg_mz_v0">v0（现有）</string>
-    <string name="engine_option_rpg_mz_v2">v2（NWJS 兼容 + 游戏自带引擎）</string>
+    <string name="engine_option_rpg_mv_v2">v2</string>
+    <string name="engine_option_rpg_mz_v0">v0</string>
+    <string name="engine_option_rpg_mz_v2">v2</string>
 
     <string name="cover_source_local">本地封面</string>
     <string name="cover_source_custom">自定义封面</string>
