@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.launch
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -19,8 +20,10 @@ import com.akira.tyranoemu.remote.ArtemisActivityV5
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.engine.EngineSessionRegistry
 import com.core.engine.KrkrStartupDialogPolicy
 import com.core.krkrsdl3.Krkrsdl3Activity
+import com.core.rpgmaker.RpgMakerActivity
 import com.core.tyrano.TyranoActivity
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -713,7 +716,7 @@ object EngineLauncher {
         }
 
     private fun buildWebIntent(context: Context, path: String, game: ScanGame): Intent {
-        // Tyrano 与 RPG Maker Web 共用 TyranoActivity，因此沿用同一组 WebView 宿主设置。
+        // Tyrano 与 RPG Maker Web 共用同一组 WebView 宿主设置。
         val scoped = PerGameSettingsStore.getBool(context, game.uri, "ty_scoped")
             ?: EngineSettingsStore.isTyranoScopedSaveDir(context)
         val rpgMakerModEnabled = effectiveRpgMakerModEnabled(
@@ -728,7 +731,30 @@ object EngineLauncher {
         } else {
             null
         }
-        return Intent(context, TyranoActivity::class.java).apply {
+        // v1/v2 由独立 rpgmaker 运行时（:rpgmaker 进程）承载；v0 与 MZ v1（占位版本）
+        // 沿用原 tyrano 宿主的 v0 链路，不传版本 extras，行为与历史版本完全一致。
+        // 版本/legacy 读取仅在 RPG 会话进行，Tyrano/VN/WebOther 启动路径零新增开销。
+        val rpgSession = game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ
+        val rpgMakerVersion = if (rpgSession) effectiveRpgMakerVersion(context, game) else null
+        val rpgLegacyRenderer = if (rpgSession) {
+            PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_LEGACY_RENDERER)
+                ?: EngineSettingsStore.isRpgLegacyRenderer(context)
+        } else {
+            false
+        }
+        val useRpgMakerRuntime = when (game.engine) {
+            EngineType.RPG_MV -> rpgMakerVersion == EngineSettingsStore.RPG_MV_V1 ||
+                rpgMakerVersion == EngineSettingsStore.RPG_MV_V2
+            EngineType.RPG_MZ -> rpgMakerVersion == EngineSettingsStore.RPG_MZ_V2
+            else -> false
+        }
+        if (rpgSession) {
+            // 与宿主侧 resolveGameDir 同型归一：目录（游戏路径为文件时取其父目录）
+            val sessionGameDir = File(path).let { f -> (if (f.isFile) f.parentFile else f)?.absolutePath }
+            stopOppositeRpgHost(context, useRpgMakerRuntime, sessionGameDir)
+        }
+        val target = if (useRpgMakerRuntime) RpgMakerActivity::class.java else TyranoActivity::class.java
+        return Intent(context, target).apply {
             putExtra("path", path)
             putExtra("gamePath", path)
             putExtra("projectRoot", path)
@@ -749,6 +775,37 @@ object EngineLauncher {
             scopedSaveRoot?.let { putExtra("scopedSaveRoot", it) }
             putExtra("rpgMakerModEnabled", rpgMakerModEnabled)
             putExtra("rpgMakerModGameId", game.uri)
+            if (useRpgMakerRuntime) {
+                rpgMakerVersion?.let { putExtra("rpgMakerVersion", it) }
+                putExtra("rpgLegacyRenderer", rpgLegacyRenderer)
+            }
+        }
+    }
+
+    /**
+     * 仅当会话登记表显示另一宿主正运行【同一游戏】时才回收对方进程（PR review 意见：
+     * 按进程后缀终止会误杀后台无关的 Tyrano/RPG 会话并可能丢失未存档进度）。
+     * 会话登记由各宿主 onCreate/onDestroy 经 EngineSessionRegistry 维护（跨进程文件，
+     * 主进程读取始终为最新值）；getRunningAppProcesses 仅返回本应用（同 uid）进程。
+     */
+    private fun stopOppositeRpgHost(context: Context, targetIsRpgMaker: Boolean, sessionGameDir: String?) {
+        if (sessionGameDir.isNullOrBlank()) return
+        val oppositeHost = if (targetIsRpgMaker) EngineSessionRegistry.HOST_TYRANO else EngineSessionRegistry.HOST_RPGMAKER
+        val registered = EngineSessionRegistry.currentGame(context, oppositeHost) ?: return
+        val matches = try {
+            File(registered).canonicalPath == File(sessionGameDir).canonicalPath
+        } catch (_: Throwable) {
+            registered == sessionGameDir
+        }
+        if (!matches) return
+        val oppositeSuffix = if (targetIsRpgMaker) ":tyrano" else ":rpgmaker"
+        runCatching {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            am?.runningAppProcesses
+                ?.filter { it.processName.endsWith(oppositeSuffix) }
+                ?.forEach { processInfo ->
+                    runCatching { android.os.Process.killProcess(processInfo.pid) }
+                }
         }
     }
 
@@ -1191,3 +1248,21 @@ internal fun effectiveRpgMakerModEnabled(
     globalDefault: Boolean,
 ): Boolean = engine in setOf(EngineType.RPG_MV, EngineType.RPG_MZ) &&
     (perGameOverride ?: globalDefault)
+
+internal fun effectiveRpgMakerVersion(context: Context, game: ScanGame): String? = when (game.engine) {
+    EngineType.RPG_MV -> {
+        val raw = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MV_VERSION)
+        val override = raw?.trim()?.lowercase()?.let { v ->
+            if (v == EngineSettingsStore.RPG_MV_V0 || v == EngineSettingsStore.RPG_MV_V1 || v == EngineSettingsStore.RPG_MV_V2) v else null
+        }
+        override ?: EngineSettingsStore.getRpgMvEngineVersion(context)
+    }
+    EngineType.RPG_MZ -> {
+        val raw = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MZ_VERSION)
+        val override = raw?.trim()?.lowercase()?.let { v ->
+            if (v == EngineSettingsStore.RPG_MZ_V0 || v == EngineSettingsStore.RPG_MZ_V1 || v == EngineSettingsStore.RPG_MZ_V2) v else null
+        }
+        override ?: EngineSettingsStore.getRpgMzEngineVersion(context)
+    }
+    else -> null
+}

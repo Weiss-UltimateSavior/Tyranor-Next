@@ -1,14 +1,11 @@
-package com.core.tyrano
+package com.core.rpgmaker
 
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
-import android.view.Gravity
 import android.view.KeyEvent
 import android.os.Build
 import android.os.Bundle
@@ -26,10 +23,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
@@ -42,27 +36,45 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
 
 /**
- * Tyrano WebView 宿主；资源服务与存档沙箱分别由独立组件负责。
+ * RPG Maker MV/MZ 独立运行时（v1/v2）的 WebView 宿主。
  *
- * 本 Activity 隶属于 engine 模块，不依赖 app 层。用户偏好（UI 缩放、外网开关）
- * 直接读取共享的 tyranor_prefs（原 yukihub_prefs），与 OnsSettings 同模式；确认对话框通过 Intent extras
- * 传入的 Launcher 主题色在 engine 内复刻 LauncherDialogFactory 的视觉风格，保持统一。
+ * 由 tyrano 运行时的 v0 宿主（engine 模块 TyranoActivity）复制而来并按本运行时
+ * 的需要裁剪：仅承载 RPG Maker MV/MZ 会话，v0 仍由 engine 模块的 tyrano 宿主
+ * 承载（行为保持不变）。v1/v2 的 NW.js 兼容层（polyfill、rpgmv-v1 核心覆盖、
+ * PC 存档兜底、屏幕方向回退等）在此按 [EXTRA_RPG_MAKER_VERSION] 版本门控注入，
+ * 不影响 v0 路径。
+ *
+ * 本 Activity 位于 engine 模块的 com.core.rpgmaker 独立运行时包（不依赖 app 层），
+ * 与 tyrano 宿主（com.core.tyrano，承载 v0）互不引用；v1/v2 专属运行时资产集中在
+ * assets/rpgmaker/ 子目录，共享脚本（__rpg__.js、__rmmz__.js、触屏手柄、修改器等）
+ * 仍以 engine assets 根为单份源头。用户偏好（UI 缩放、外网开关）直接读取共享的
+ * tyranor_prefs，与 engine 内其他宿主同模式。
  */
-class TyranoActivity : Activity() {
+class RpgMakerActivity : Activity() {
     private var webView: WebView? = null
     private var virtualMouseLayer: VirtualMouseLayer? = null
     private var gameDir: String? = null
-    private var gameRootFile: File? = null
     private var saveDirectory: File? = null
     private var gameUsesAsar = false
-    private var webGameType = WebGameType.TYRANO
+    private var webGameType = WebGameType.RPG_MV
     private var asarPath: String? = null
     private var asarArchive: AsarArchive? = null
     private var firstResume = true
-    private var localServer: TyranoLocalHttpServer? = null
+
+    // WebView 回调线程（shouldInterceptRequest）会读取这两项，onCreate 主线程写入
+    @Volatile
+    private var localServer: RpgMakerLocalHttpServer? = null
+
+    // 与 localServer 同一线程契约：shouldInterceptRequest 在 WebView 回调线程读取
+    @Volatile
     private var allowExternalNetwork = false
     private var rpgMakerModEnabled = false
     private var rpgMakerModGameId = ""
+    private var rpgMakerVersion: String? = null
+
+    /** v1/v2 兼容会话（NW.js polyfill、加密资源回退等）；版本缺失的兜底会话按 v0 资源策略。 */
+    @Volatile
+    private var v12Session = false
     private val processExitScheduled = AtomicBoolean(false)
 
     override fun attachBaseContext(newBase: Context) {
@@ -72,7 +84,7 @@ class TyranoActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // singleInstance 启动模式下切换游戏只走到这里：路径或行为相关 extras
-        // （独立存档目录、修改器开关等）变化时整体重建，让 onCreate 按 Intent 重新解析
+        // （独立存档目录、修改器开关、运行时版本等）变化时整体重建，让 onCreate 按 Intent 重新解析
         val newDir = resolveGameDir(intent)
         if (newDir.isNullOrBlank()) return // 无法解析的意图不接管当前游戏，保留原 Intent
         val changed = newDir != gameDir || behaviorSignature(intent) != behaviorSignature(getIntent())
@@ -90,12 +102,20 @@ class TyranoActivity : Activity() {
         intent.getStringExtra(EXTRA_SCOPED_SAVE_ROOT),
         intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true).toString(),
         intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID),
+        intent.getStringExtra(EXTRA_RPG_MAKER_VERSION),
+        intent.getBooleanExtra(EXTRA_RPG_LEGACY_RENDERER, false).toString(),
     ).joinToString("\u0000")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterFullscreen()
+        // 多进程 WebView 数据目录隔离：:tyrano 与 :rpgmaker 都承载 WebView，API 28+
+        // 起多进程共用默认数据目录会直接抛异常（PR review 意见）；必须在本进程任何
+        // WebView 实例创建之前调用，且 :tyrano 侧保持默认目录，两侧目录互异
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching { WebView.setDataDirectorySuffix("rpgmaker") }
+        }
         allowExternalNetwork = getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
             .getBoolean(EnginePrefs.KEY_TYRANO_EXTERNAL_NETWORK, false)
 
@@ -103,22 +123,21 @@ class TyranoActivity : Activity() {
         Log.i(TAG, "onCreate gameDir=$gameDir")
         val resolvedGameDir = gameDir
         if (resolvedGameDir.isNullOrBlank()) {
-            failLaunch(getString(R.string.engine_tyrano_empty_game_directory))
+            failLaunch(getString(R.string.engine_rpgmaker_empty_game_directory))
             return
         }
 
-        EngineSessionRegistry.record(this, EngineSessionRegistry.HOST_TYRANO, resolvedGameDir)
+        EngineSessionRegistry.record(this, EngineSessionRegistry.HOST_RPGMAKER, resolvedGameDir)
 
         val gameRoot = File(resolvedGameDir)
-        gameRootFile = gameRoot
 
-        val entry = findTyranoEntry(gameRoot, 0)
+        val entry = findGameEntry(gameRoot, 0)
         if (entry == null) {
             val rootAsar = File(gameRoot, "app.asar")
             val resourcesAsar = File(File(gameRoot, "resources"), "app.asar")
             val index = File(gameRoot, "index.html")
             Log.e(TAG, "entry not found index=${index.absolutePath} app.asar=${rootAsar.absolutePath} resources/app.asar=${resourcesAsar.absolutePath} (searched subdirs: ${WEB_ENTRY_SUBDIRS.joinToString()})")
-            failLaunch(getString(R.string.engine_tyrano_entry_not_found))
+            failLaunch(getString(R.string.engine_rpgmaker_entry_not_found))
             return
         }
         val contentRoot = entry.contentRoot
@@ -132,39 +151,77 @@ class TyranoActivity : Activity() {
                 asarArchive = AsarArchive(File(requireNotNull(asarPath)))
             } catch (error: Throwable) {
                 Log.e(TAG, "open asar failed", error)
-                failLaunch(getString(R.string.engine_tyrano_asar_unreadable))
+                failLaunch(getString(R.string.engine_rpgmaker_asar_unreadable))
                 return
             }
         }
         webGameType = detectWebGameType(intent.getStringExtra("type"), contentRoot, asarArchive)
-        rpgMakerModEnabled = intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true) &&
-            (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ)
+        rpgMakerModEnabled = intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true)
         rpgMakerModGameId = intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID)
             ?.takeIf(String::isNotBlank)
             ?: resolvedGameDir
-        Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} asar=$asarPath contentRoot=${contentRoot.absolutePath}")
-        val needsSaveBridge = webGameType == WebGameType.TYRANO ||
-            webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
-        val saves = if (needsSaveBridge) resolveSaveDirectory(intent, gameRoot) else null
+        rpgMakerVersion = intent.getStringExtra(EXTRA_RPG_MAKER_VERSION)?.takeIf(String::isNotBlank)
+        Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} rpgMakerVersion=$rpgMakerVersion asar=$asarPath contentRoot=${contentRoot.absolutePath}")
+        val saves = resolveSaveDirectory(intent, gameRoot)
         saveDirectory = saves
-        if (needsSaveBridge && !ensureWritableSaveDirectory(saves)) {
-            failLaunch(getString(R.string.engine_tyrano_unwritable_save_directory))
+        if (!ensureWritableSaveDirectory(saves)) {
+            failLaunch(getString(R.string.engine_rpgmaker_unwritable_save_directory))
             return
         }
         Log.i(TAG, "save directory=${saves?.absolutePath ?: "none"} scoped=${intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false)}")
 
-        try {
-            val hookAsset = when (webGameType) {
-                WebGameType.TYRANO -> TYRANO_HOOK_ASSET
-                WebGameType.RPG_MV -> RPG_MV_HOOK_ASSET
-                WebGameType.RPG_MZ -> RPG_MZ_HOOK_ASSET
-                WebGameType.VN, WebGameType.WEB_OTHER -> null
+        val bundle = buildInjectionBundle(contentRoot) ?: return
+        startLocalServer(bundle)
+        if (localServer == null) return
+        setupGameUi(saves, bundle)
+    }
+
+    /** 注入内容与本地服务器构造参数的一次性装配结果（onCreate 编排用）。 */
+    private data class InjectionBundle(
+        val contentRoot: File,
+        val lateHook: ByteArray,
+        val scriptAppends: Map<String, ByteArray>,
+        val internalResources: Map<String, ByteArray>,
+        val nwPolyfill: ByteArray?,
+        val modHtml: String,
+        val legacyRenderer: Boolean,
+    )
+
+    /**
+     * 装配注入内容与服务器参数；失败时提示并返回 null（调用方应直接结束启动流程）。
+     * 从 onCreate 拆出（PR review 意见：原方法圈复杂度 45 超阈值），按职责只负责
+     * 版本门控判定与资产装配；服务器启动与视图装配分别由独立方法承担。
+     */
+    private fun buildInjectionBundle(contentRoot: File): InjectionBundle? {
+        return try {
+            val normalizedVersion = rpgMakerVersion?.trim()?.lowercase()
+            // v2 = v1 的 NWJS 兼容层 + v0 的引擎文件策略（不覆盖核心脚本）
+            val isRpgMvV1 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v1"
+            val isRpgMvV2 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v2"
+            val isRpgMzV2 = webGameType == WebGameType.RPG_MZ && normalizedVersion == "v2"
+            v12Session = isRpgMvV1 || isRpgMvV2 || isRpgMzV2
+            var useCoreScriptOverlay = isRpgMvV1
+            if (!v12Session && normalizedVersion != null) {
+                // 目前仅 MZ v1 为占位版本；缺版本（null）视为未配置的兜底会话，均回退 v0 资源策略
+                Log.i(TAG, "rpgMakerVersion=$normalizedVersion has no dedicated runtime, falling back to v0 resources")
+            }
+            // v1 覆盖包要求核心文件齐全；任一缺失（打包回归）时整体降级为 v0 资源策略——
+            // 连同 __rpg_v12.js hook 与 NWJS polyfill 一起放弃，避免“v12 补丁配游戏自带老核心”的混合态
+            val v1Overlay: Map<String, ByteArray> = if (useCoreScriptOverlay) {
+                val overlay = buildRpgMvV1Overlay(assets)
+                if (overlay.isEmpty()) {
+                    Log.w(TAG, "v1 overlay incomplete, downgrading session to v0 resources")
+                    v12Session = false
+                    useCoreScriptOverlay = false
+                }
+                overlay
+            } else {
+                emptyMap()
             }
             // 触屏手柄（issue #35）：MV/MZ 共用 __touch_pad.js，拼接进 hook 注入，
             // 独立于修改器开关。手柄代码零引擎依赖，MV/MZ 的 Input 均读 keyCode。
             // issue #30：游戏内可自定义按钮布局，逐游戏配置在此注入供 JS 读取。
-            val isRpgWebGame = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
-            val touchPadConf = if (isRpgWebGame && rpgMakerModGameId.isNotBlank()) {
+            val touchPadConf = if (rpgMakerModGameId.isNotBlank()) {
                 getSharedPreferences(EnginePrefs.GAME_OVERRIDES_PREFS, Context.MODE_PRIVATE)
                     .getString(rpgMakerModGameId, null)?.let { raw ->
                         runCatching { JSONObject(raw).optString(PER_GAME_TOUCH_PAD_KEY) }
@@ -176,21 +233,22 @@ class TyranoActivity : Activity() {
             val touchPadConfigJs = touchPadConf?.takeIf { it.isNotBlank() }?.let {
                 "window.__touchPadConfig=$it;"
             }.orEmpty()
-            val touchPadThemeJs = if (isRpgWebGame) {
+            val touchPadThemeJs = run {
                 val colors = EngineThemeColors.fromIntent(intent)
                 "window.__touchPadTheme={primary:'${cssColor(colors.primary)}',onPrimary:'${cssColor(colors.onPrimary)}'};"
-            } else {
-                ""
             }
-            val touchPad =
-                if (isRpgWebGame) {
-                    val pad = try { String(loadAsset(TOUCH_PAD_ASSET), Charsets.UTF_8) } catch (_: Exception) { "" }
-                    (touchPadThemeJs + "\n" + touchPadConfigJs + "\n" + pad).toByteArray(Charsets.UTF_8)
-                } else {
-                    ByteArray(0)
-                }
-            val hook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
-                touchPad
+            val touchPad = run {
+                val pad = loadAssetOrNull(TOUCH_PAD_ASSET)?.toString(Charsets.UTF_8).orEmpty()
+                (touchPadThemeJs + "\n" + touchPadConfigJs + "\n" + pad).toByteArray(Charsets.UTF_8)
+            }
+            // v1/v2 用带 PC 存档兜底的 MV hook（__rpg_v12.js，本模块资产）；
+            // 版本缺失的兜底会话用 v0 的 __rpg__.js（engine 模块资产，与 v0 宿主一致）
+            val hookAsset = when {
+                webGameType == WebGameType.RPG_MZ -> RPG_MZ_HOOK_ASSET
+                v12Session -> RPG_MV_V12_HOOK_ASSET
+                else -> RPG_MV_HOOK_ASSET
+            }
+            val lateHook = (loadAssetOrNull(hookAsset) ?: ByteArray(0)) + touchPad
             val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
                 mapOf(
                     "js/rmmz_core.js" to loadAsset(RPG_MZ_CORE_HOOK_ASSET),
@@ -210,23 +268,55 @@ class TyranoActivity : Activity() {
                 emptyMap()
             }
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
-            Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${hook.size} scriptAppends=${scriptAppends.keys}")
-            val injectBeforeBody = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
+            // v1/v2 会话注入 NWJS 兼容层（earlyHook，</head> 处），v0 兜底会话不注入（与 v0 宿主一致）
+            val nwPolyfill: ByteArray? = if (v12Session) {
+                val base = loadAssetOrNull(NWJS_POLYFILL_ASSET)?.toString(Charsets.UTF_8)
+                if (base == null) {
+                    null
+                } else {
+                    // v1/v2 的 NWJS 兼容层兜底统一注入；v2 追加额外兼容层（仅 v2 生效）
+                    val compatExtra = loadAssetOrNull(NWJS_POLYFILL_V1_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()
+                    val v2Extra = if (isRpgMvV2 || isRpgMzV2) {
+                        loadAssetOrNull(NWJS_POLYFILL_V2_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()
+                    } else {
+                        ""
+                    }
+                    (base + compatExtra + v2Extra).toByteArray(Charsets.UTF_8)
+                }
+            } else {
+                null
+            }
+            val internalResources = modResources + v1Overlay
+            Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} early=${nwPolyfill?.size ?: 0} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
+            val legacyRenderer = intent.getBooleanExtra(EXTRA_RPG_LEGACY_RENDERER, false)
+            InjectionBundle(contentRoot, lateHook, scriptAppends, internalResources, nwPolyfill, modHtml, legacyRenderer)
+        } catch (error: Throwable) {
+            Log.e(TAG, "build injection bundle failed", error)
+            failLaunch(getString(R.string.engine_rpgmaker_server_failed))
+            null
+        }
+    }
+
+    /** 启动本地 HTTP 服务器；失败时提示并保持 localServer 为 null（调用方据此中止）。 */
+    private fun startLocalServer(bundle: InjectionBundle) {
+        try {
             localServer = if (gameUsesAsar) {
-                TyranoLocalHttpServer(
-                    contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, modResources,
+                RpgMakerLocalHttpServer(
+                    bundle.contentRoot, asarArchive, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session,
                 )
             } else {
-                TyranoLocalHttpServer(
-                    contentRoot, hook, injectBeforeBody, scriptAppends, modHtml, modResources,
+                RpgMakerLocalHttpServer(
+                    bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
             Log.e(TAG, "start local server failed", error)
-            failLaunch(getString(R.string.engine_tyrano_server_failed))
-            return
+            failLaunch(getString(R.string.engine_rpgmaker_server_failed))
         }
+    }
 
+    /** 创建 WebView 与各 JS 桥、按 legacy 开关拼 URL 并装载游戏页。 */
+    private fun setupGameUi(saves: File?, bundle: InjectionBundle) {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             layoutParams = ViewGroup.LayoutParams(-1, -1)
@@ -237,36 +327,36 @@ class TyranoActivity : Activity() {
         }
         webView = browser
         root.addView(browser)
-        // 虚拟鼠标层（issue #25）：仅 RPG Maker MV/MZ 需要，叠在 WebView 之上
-        if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ) {
-            val layer = VirtualMouseLayer(this) { js ->
-                webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } }
-            }
-            virtualMouseLayer = layer
-            root.addView(layer, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // 虚拟鼠标层（issue #25）：叠在 WebView 之上
+        val layer = VirtualMouseLayer(this) { js ->
+            webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } }
         }
+        virtualMouseLayer = layer
+        root.addView(layer, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
 
         configureWebView(browser)
-        when (webGameType) {
-            WebGameType.RPG_MV, WebGameType.RPG_MZ -> {
-                browser.addJavascriptInterface(RpgMakerSaveBridge(saves), RPG_MAKER_SAVE_BRIDGE_NAME)
-                browser.addJavascriptInterface(
-                    TouchPadSaveBridge(rpgMakerModGameId),
-                    TOUCH_PAD_BRIDGE_NAME,
-                )
-                if (rpgMakerModEnabled) {
-                    browser.addJavascriptInterface(
-                        RpgMakerModBridge(rpgMakerModGameId),
-                        RPG_MAKER_MOD_BRIDGE_NAME,
-                    )
-                }
-            }
-            WebGameType.TYRANO -> browser.addJavascriptInterface(TyranoJsBridge(saves), JS_BRIDGE_NAME)
-            WebGameType.VN, WebGameType.WEB_OTHER -> Unit
+        browser.addJavascriptInterface(RpgMakerSaveBridge(saves), RPG_MAKER_SAVE_BRIDGE_NAME)
+        browser.addJavascriptInterface(
+            TouchPadSaveBridge(rpgMakerModGameId),
+            TOUCH_PAD_BRIDGE_NAME,
+        )
+        if (rpgMakerModEnabled) {
+            browser.addJavascriptInterface(
+                RpgMakerModBridge(rpgMakerModGameId),
+                RPG_MAKER_MOD_BRIDGE_NAME,
+            )
         }
-        val url = "http://localhost:${requireNotNull(localServer).port}/index.html"
+        // PIXI legacy 兼容渲染（?android-legacy=1，__rpg_v12.js 的既定开关）：
+        // 由设置页开关经 rpgLegacyRenderer extra 控制，规避部分 Android GPU
+        // 上 WebGL 正常初始化却整屏渲染为黑的问题；默认关闭不影响既有行为。
+        // 注意必须带 =1：__rpg_v12.js 的参数正则要求 key=value 格式，裸参数会被忽略
+        val url = if (bundle.legacyRenderer) {
+            "http://localhost:${requireNotNull(localServer).port}/index.html?android-legacy=1"
+        } else {
+            "http://localhost:${requireNotNull(localServer).port}/index.html"
+        }
         Log.i(TAG, "loadUrl=$url")
         browser.loadUrl(url)
     }
@@ -277,6 +367,8 @@ class TyranoActivity : Activity() {
     }
 
     private fun loadAsset(name: String): ByteArray = assets.open(name).buffered().use { it.readBytes() }
+
+    private fun loadAssetOrNull(name: String): ByteArray? = try { loadAsset(name) } catch (_: Exception) { null }
 
     private fun cssColor(color: Int): String = String.format(Locale.US, "#%06X", color and 0xFFFFFF)
 
@@ -299,19 +391,15 @@ class TyranoActivity : Activity() {
         if (asar != null) {
             fun has(vararg paths: String): Boolean = paths.any { asar.has(it) || asar.isDirectory(it) }
             return when {
-                has("tyrano", "www/tyrano", "tyrano/tyrano.js", "www/tyrano/tyrano.js") -> WebGameType.TYRANO
                 has("js/rpg_core.js", "www/js/rpg_core.js") -> WebGameType.RPG_MV
                 has("js/rmmz_core.js", "www/js/rmmz_core.js") -> WebGameType.RPG_MZ
-                has("globalData.vndata", "www/globalData.vndata") -> WebGameType.VN
-                else -> WebGameType.WEB_OTHER
+                else -> WebGameType.fromIntent(explicitType) ?: WebGameType.RPG_MV
             }
         }
         return when {
-            File(contentRoot, "tyrano").isDirectory -> WebGameType.TYRANO
             File(contentRoot, "js/rpg_core.js").isFile -> WebGameType.RPG_MV
             File(contentRoot, "js/rmmz_core.js").isFile -> WebGameType.RPG_MZ
-            File(contentRoot, "globalData.vndata").isFile -> WebGameType.VN
-            else -> WebGameType.fromIntent(explicitType)
+            else -> WebGameType.fromIntent(explicitType) ?: WebGameType.RPG_MV
         }
     }
 
@@ -402,7 +490,7 @@ class TyranoActivity : Activity() {
             runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
         }
         browser.settings.apply {
-            userAgentString = "$userAgentString;tyranoplayer-android-1.0;tyranor-internal-tyrano"
+            userAgentString = "$userAgentString;tyranoplayer-android-1.0;tyranor-internal-rpgmaker"
             javaScriptEnabled = true
             allowContentAccess = false
             allowFileAccess = false
@@ -428,7 +516,6 @@ class TyranoActivity : Activity() {
 
     private fun handleNavigation(url: String?, mainFrame: Boolean): Boolean {
         if (url == null) return true
-        if (handleSpecialScheme(url)) return true
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return true
         if (isLocalGameUri(uri)) return false
         if (mainFrame) openExternalHttpUrl(uri)
@@ -438,8 +525,16 @@ class TyranoActivity : Activity() {
     private fun isLocalGameUri(uri: Uri?): Boolean {
         val server = localServer ?: return false
         if (!uri?.scheme.equals("http", ignoreCase = true)) return false
-        return (uri?.host.equals("localhost", ignoreCase = true) || uri?.host == "127.0.0.1") &&
-            uri?.port == server.port
+        if (!v12Session) {
+            // v0 兜底会话：与 v0 宿主一致的严格回环判断
+            return (uri?.host.equals("localhost", ignoreCase = true) || uri?.host == "127.0.0.1") &&
+                uri?.port == server.port
+        }
+        // 兼容 localhost/127.0.0.1/host 为空（部分 WebView 对 localhost 归一化）的解析差异
+        val host = uri?.host?.trim()?.lowercase(Locale.ROOT)
+        val isLoopback = host.isNullOrEmpty() || host == "localhost" || host == "127.0.0.1" ||
+            host == "0.0.0.0" || host == "[::1]"
+        return isLoopback && (uri?.port == server.port)
     }
 
     private fun isAllowedGameResource(uri: Uri): Boolean = isLocalGameUri(uri) ||
@@ -449,9 +544,12 @@ class TyranoActivity : Activity() {
         uri.scheme.equals("blob", ignoreCase = true) ||
         uri.scheme.equals("about", ignoreCase = true)
 
-    private fun blockedResponse() = WebResourceResponse(
+    private fun blockedResponse(): WebResourceResponse = WebResourceResponse(
         "text/plain",
         "UTF-8",
+        403,
+        "Forbidden",
+        mapOf("Content-Length" to "0"),
         ByteArrayInputStream(ByteArray(0)),
     )
 
@@ -504,52 +602,6 @@ class TyranoActivity : Activity() {
     private fun firstNonEmpty(vararg values: String?): String? =
         values.firstOrNull { !it.isNullOrBlank() }?.trim()
 
-    private fun handleSpecialScheme(url: String): Boolean {
-        val lower = url.lowercase(Locale.ROOT)
-        return try {
-            when {
-                lower.startsWith("tyranoplayer-save://") -> {
-                    persistTyranoPlayerSave(url)
-                    true
-                }
-                lower.startsWith("tyranoplayer-web://") -> {
-                    val target = Uri.decode(
-                        queryParam(url, "url")?.takeIf(String::isNotBlank)
-                            ?: url.removePrefix("tyranoplayer-web://"),
-                    )
-                    target?.takeIf(String::isNotBlank)?.let { openExternalHttpUrl(Uri.parse(it.trim())) }
-                    true
-                }
-                lower.startsWith("tyranoplayer-back://") -> {
-                    runOnUiThread(::onBackPressed)
-                    true
-                }
-                else -> false
-            }
-        } catch (error: Throwable) {
-            Log.w(TAG, "handleSpecialScheme failed url=$url", error)
-            true
-        }
-    }
-
-    private fun persistTyranoPlayerSave(url: String) {
-        try {
-            TyranoStorage.write(saveDirectory, queryParam(url, "key"), queryParam(url, "data"))
-        } catch (error: Throwable) {
-            Log.w(TAG, "persistTyranoPlayerSave failed url=$url", error)
-        }
-    }
-
-    private fun confirmReturnToTitle() {
-        showEngineConfirm(
-            getString(R.string.engine_return_to_title),
-            getString(R.string.engine_return_to_title_message),
-            getString(R.string.engine_confirm),
-        ) {
-            webView?.post { runCatching { webView?.reload() } }
-        }
-    }
-
     override fun finish() {
         super.finish()
         if (processExitScheduled.compareAndSet(false, true)) {
@@ -557,20 +609,6 @@ class TyranoActivity : Activity() {
                 runCatching { android.os.Process.killProcess(android.os.Process.myPid()) }
             }, PROCESS_EXIT_DELAY_MS)
         }
-    }
-
-    private fun queryParam(url: String?, key: String?): String? {
-        if (url == null || key == null) return null
-        val queryStart = url.indexOf('?')
-        if (queryStart < 0 || queryStart + 1 >= url.length) return null
-        for (pair in url.substring(queryStart + 1).split('&')) {
-            val equals = pair.indexOf('=')
-            val encodedKey = if (equals >= 0) pair.substring(0, equals) else pair
-            if (key.equals(Uri.decode(encodedKey), ignoreCase = true)) {
-                return if (equals >= 0) Uri.decode(pair.substring(equals + 1)) else ""
-            }
-        }
-        return null
     }
 
     @Deprecated("Deprecated in Android")
@@ -603,7 +641,15 @@ class TyranoActivity : Activity() {
 
     override fun onPause() {
         virtualMouseLayer?.reset()
-        runCatching { webView?.loadUrl("javascript:if(window._tyrano_player){_tyrano_player.pauseAllAudio();}") }
+        // MV/MZ 的 WebAudio 主上下文挂起（WebView.onPause 不暂停 WebAudio，切后台会继续出声；
+        // Html5Audio/视频旁路无法全局枚举，引擎主路径已覆盖）。v0 宿主的 _tyrano_player 挂起
+        // 为 tyrano 专用，此处为 MV/MZ 等价实现。
+        runCatching {
+            webView?.evaluateJavascript(
+                "try{if(window.WebAudio&&WebAudio._context&&WebAudio._context.state==='running'){WebAudio._context.suspend();}}catch(e){}",
+                null,
+            )
+        }
         runCatching { webView?.onPause() }
         super.onPause()
     }
@@ -612,13 +658,19 @@ class TyranoActivity : Activity() {
         super.onResume()
         enterFullscreen()
         if (firstResume) firstResume = false else {
-            runCatching { webView?.loadUrl("javascript:if(window._tyrano_player){_tyrano_player.resumeAllAudio();}") }
+            // 与 v0 宿主同构：首帧跳过恢复（页面尚未开始播放），前后台切换时恢复 WebAudio
+            runCatching {
+                webView?.evaluateJavascript(
+                    "try{if(window.WebAudio&&WebAudio._context&&WebAudio._context.state==='suspended'){WebAudio._context.resume();}}catch(e){}",
+                    null,
+                )
+            }
         }
         runCatching { webView?.onResume() }
     }
 
     override fun onDestroy() {
-        EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_TYRANO)
+        EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_RPGMAKER)
         DoubleBackExit.clear(this)
         runCatching {
             webView?.stopLoading()
@@ -667,210 +719,20 @@ class TyranoActivity : Activity() {
         return gameRoot?.let { File(it, "savedata") }
     }
 
-    /**
-     * 与 Launcher 统一风格的确认对话框。
-     *
-     * engine 模块不依赖 app 的 LauncherDialogFactory/LauncherTheme，但 Launcher 通过
-     * Intent extras 传入了主题色（primaryColor / themeColorCard / themeColorText 等，
-     * 见 LauncherUiBridge.appendEngineThemeExtrasSafely）。此处用这些颜色在 engine 内复刻
-     * LauncherDialogFactory.showConfirm 的视觉效果：圆角卡片背景 + 药丸形按钮，
-     * 与 app 内其他确认弹窗保持一致。
-     */
-    private fun showEngineConfirm(
-        title: String,
-        message: String,
-        confirmText: String,
-        onConfirm: () -> Unit,
-    ) {
-        val dialog = AlertDialog.Builder(this).create()
-        dialog.setCancelable(true)
-        dialog.setCanceledOnTouchOutside(true)
-
-        val density = resources.displayMetrics.density
-        val dp = { value: Float -> (value * density + 0.5f).toInt() }
-        val colors = EngineThemeColors.fromIntent(intent)
-
-        // 根容器：圆角卡片，padding 22dp
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(22f), dp(22f), dp(22f), dp(22f))
-            background = GradientDrawable().apply {
-                setColor(colors.card)
-                cornerRadius = dp(20f).toFloat()
-            }
-        }
-
-        // 标题：16sp bold 居中
-        val titleView = TextView(this).apply {
-            text = title
-            setTextColor(colors.text)
-            textSize = 16f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(-1, -2)
-        }
-        root.addView(titleView)
-
-        // 消息：13sp 居中，topMargin 14dp
-        val messageView = TextView(this).apply {
-            text = message
-            setTextColor(colors.textMuted)
-            textSize = 13f
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(14f)
-            }
-        }
-        root.addView(messageView)
-
-        // 按钮行：topMargin 22dp
-        val buttonRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(-1, -2).apply {
-                topMargin = dp(22f)
-            }
-        }
-
-        // 取消按钮：药丸形（card 底色 + primary 文字）
-        val cancelBtn = TextView(this).apply {
-            text = getString(R.string.engine_cancel)
-            setTextColor(colors.primary)
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                setColor(colors.card)
-                cornerRadius = dp(999f).toFloat()
-            }
-            layoutParams = LinearLayout.LayoutParams(0, dp(36f)).apply {
-                weight = 1f
-                marginEnd = dp(7f)
-            }
-        }
-        buttonRow.addView(cancelBtn)
-
-        // 确认按钮：药丸形（primary 底色 + onPrimary 文字）
-        val confirmBtn = TextView(this).apply {
-            text = confirmText
-            setTextColor(colors.onPrimary)
-            textSize = 13f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                setColor(colors.primary)
-                cornerRadius = dp(999f).toFloat()
-            }
-            layoutParams = LinearLayout.LayoutParams(0, dp(36f)).apply {
-                weight = 1f
-                marginStart = dp(7f)
-            }
-        }
-        buttonRow.addView(confirmBtn)
-        root.addView(buttonRow)
-
-        dialog.setView(root)
-        dialog.show()
-
-        // 窗口：透明背景 + 固定宽度 252dp，与 LauncherDialogFactory 一致
-        dialog.window?.apply {
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            setLayout(dp(252f), -2)
-        }
-
-        cancelBtn.setOnClickListener { dialog.dismiss() }
-        confirmBtn.setOnClickListener {
-            dialog.dismiss()
-            onConfirm()
-        }
-    }
-
-    /**
-     * Tyrano 游戏入口定位结果。
-     *
-     * @property contentRoot 包含 index.html 或 app.asar 的目录，将作为本地 HTTP 服务器的 root。
-     * @property asarPath 命中的 app.asar 绝对路径；非空表示 asar 模式，空表示散文件模式。
-     */
-    private class TyranoEntry(val contentRoot: File, val asarPath: String?)
-
-    /**
-     * 递归查找 Tyrano 游戏入口（index.html 或 app.asar）。
-     *
-     * 根目录优先匹配 app.asar / resources/app.asar / index.html；未命中时按
-     * [WEB_ENTRY_SUBDIRS] 列表递归搜索子目录，与启动器侧的引擎特征探测子目录保持一致，
-     * 避免扫描器识别成功但启动器找不到入口而闪退。
-     *
-     * @param dir 当前搜索目录。
-     * @param depth 当前递归深度，根目录传入 0。
-     * @return 入口定位结果；未找到返回 null。
-     */
-    private fun findTyranoEntry(dir: File, depth: Int): TyranoEntry? {
-        // 当前目录的入口文件（保持原逻辑：asar 优先于 index.html）
-        dir.resolve("app.asar").takeIf { it.isFile }?.let {
-            return TyranoEntry(dir, it.absolutePath)
-        }
-        dir.resolve("resources/app.asar").takeIf { it.isFile }?.let {
-            return TyranoEntry(dir, it.absolutePath)
-        }
-        dir.resolve("app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
-            return TyranoEntry(it, null)
-        }
-        dir.resolve("resources/app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
-            return TyranoEntry(it, null)
-        }
-        dir.resolve("index.html").takeIf { it.isFile }?.let {
-            return TyranoEntry(dir, null)
-        }
-        // 达到最大深度后不再递归
-        if (depth >= MAX_ENTRY_SEARCH_DEPTH) return null
-        for (name in WEB_ENTRY_SUBDIRS) {
-            val sub = dir.resolve(name)
-            if (!sub.isDirectory) continue
-            findTyranoEntry(sub, depth + 1)?.let { return it }
-        }
-        return null
-    }
-
-    inner class TyranoJsBridge(private val saveDirectory: File?) {
-        @JavascriptInterface
-        fun closeGame() = runOnUiThread(::onBackPressed)
-
-        @JavascriptInterface
-        fun finishGame() = runOnUiThread(::confirmReturnToTitle)
-
-        @JavascriptInterface
-        fun getStorage(key: String?): String = TyranoStorage.read(saveDirectory, key)
-
-        @JavascriptInterface
-        fun setStorage(key: String?, value: String?) = TyranoStorage.write(saveDirectory, key, value)
-
-        @JavascriptInterface
-        fun openUrl(url: String?) = runOnUiThread {
-            try {
-                openExternalHttpUrl(Uri.parse(url))
-            } catch (error: Throwable) {
-                Log.w(TAG, "invalid external URL", error)
-            }
-        }
-
-        @JavascriptInterface fun stopMovie() = Unit
-        @JavascriptInterface fun audio(value: String?) = Unit
-    }
-
     /** RPG Maker MV/MZ 的 StorageManager 兼容桥，接口名与旧项目保持一致。 */
     inner class RpgMakerSaveBridge(private val saveDirectory: File?) {
         @JavascriptInterface
         fun Save(key: String?, base64Data: String?) =
-            TyranoStorage.write(saveDirectory, key, base64Data, RPG_MV_SAVE_EXTENSION)
+            RpgMakerStorage.write(saveDirectory, key, base64Data, RPG_MV_SAVE_EXTENSION)
 
         @JavascriptInterface
-        fun Load(key: String?): String = TyranoStorage.read(saveDirectory, key, RPG_MV_SAVE_EXTENSION)
+        fun Load(key: String?): String = RpgMakerStorage.read(saveDirectory, key, RPG_MV_SAVE_EXTENSION)
 
         @JavascriptInterface
-        fun Exists(key: String?): Boolean = TyranoStorage.exists(saveDirectory, key, RPG_MV_SAVE_EXTENSION)
+        fun Exists(key: String?): Boolean = RpgMakerStorage.exists(saveDirectory, key, RPG_MV_SAVE_EXTENSION)
 
         @JavascriptInterface
-        fun Remove(key: String?): Boolean = TyranoStorage.remove(saveDirectory, key, RPG_MV_SAVE_EXTENSION)
+        fun Remove(key: String?): Boolean = RpgMakerStorage.remove(saveDirectory, key, RPG_MV_SAVE_EXTENSION)
     }
 
     /** 修改器仅能读写当前游戏的布尔开关，不暴露文件系统或其他游戏的状态键。 */
@@ -958,29 +820,75 @@ class TyranoActivity : Activity() {
         }
     }
 
+    /**
+     * 游戏入口定位结果。
+     *
+     * @property contentRoot 包含 index.html 或 app.asar 的目录，将作为本地 HTTP 服务器的 root。
+     * @property asarPath 命中的 app.asar 绝对路径；非空表示 asar 模式，空表示散文件模式。
+     */
+    private class GameEntry(val contentRoot: File, val asarPath: String?)
+
+    /**
+     * 递归查找游戏入口（index.html 或 app.asar）。
+     *
+     * 根目录优先匹配 app.asar / resources/app.asar / index.html；未命中时按
+     * [WEB_ENTRY_SUBDIRS] 列表递归搜索子目录，与启动器侧的引擎特征探测子目录保持一致，
+     * 避免扫描器识别成功但启动器找不到入口而闪退。
+     *
+     * @param dir 当前搜索目录。
+     * @param depth 当前递归深度，根目录传入 0。
+     * @return 入口定位结果；未找到返回 null。
+     */
+    private fun findGameEntry(dir: File, depth: Int): GameEntry? {
+        // 当前目录的入口文件（保持原逻辑：asar 优先于 index.html）
+        dir.resolve("app.asar").takeIf { it.isFile }?.let {
+            return GameEntry(dir, it.absolutePath)
+        }
+        dir.resolve("resources/app.asar").takeIf { it.isFile }?.let {
+            return GameEntry(dir, it.absolutePath)
+        }
+        dir.resolve("app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
+            return GameEntry(it, null)
+        }
+        dir.resolve("resources/app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
+            return GameEntry(it, null)
+        }
+        dir.resolve("index.html").takeIf { it.isFile }?.let {
+            return GameEntry(dir, null)
+        }
+        // 达到最大深度后不再递归
+        if (depth >= MAX_ENTRY_SEARCH_DEPTH) return null
+        for (name in WEB_ENTRY_SUBDIRS) {
+            val sub = dir.resolve(name)
+            if (!sub.isDirectory) continue
+            findGameEntry(sub, depth + 1)?.let { return it }
+        }
+        return null
+    }
+
     private enum class WebGameType(val intentValue: String) {
-        TYRANO("Tyrano"),
         RPG_MV("RPG"),
-        RPG_MZ("RMMZ"),
-        VN("VN"),
-        WEB_OTHER("WebOther");
+        RPG_MZ("RMMZ");
 
         companion object {
-            fun fromIntent(value: String?): WebGameType = entries.firstOrNull {
+            fun fromIntent(value: String?): WebGameType? = entries.firstOrNull {
                 it.intentValue.equals(value, ignoreCase = true)
-            } ?: TYRANO
+            }
         }
     }
 
     companion object {
-        private const val TAG = "YukiTyrano"
-        private const val TYRANO_HOOK_ASSET = "__tyrano__.js"
+        private const val TAG = "YukiRpgMaker"
+        // 共享脚本资产在 engine assets 根；v1/v2 专属运行时资产统一在 rpgmaker/ 子目录
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
+        private const val RPG_MV_V12_HOOK_ASSET = "rpgmaker/__rpg_v12.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
         private const val TOUCH_PAD_ASSET = "__touch_pad.js"
+        private const val NWJS_POLYFILL_ASSET = "rpgmaker/__nwjs_polyfill.js"
+        private const val NWJS_POLYFILL_V1_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v1.js"
+        private const val NWJS_POLYFILL_V2_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v2.js"
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
-        private const val JS_BRIDGE_NAME = "appJsInterface"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"
         private const val RPG_MAKER_MOD_BRIDGE_NAME = "TyranorModNative"
         private const val TOUCH_PAD_BRIDGE_NAME = "TyranorTouchPadNative"
@@ -989,6 +897,8 @@ class TyranoActivity : Activity() {
         private const val EXTRA_SCOPED_SAVE_ROOT = "scopedSaveRoot"
         private const val EXTRA_RPG_MAKER_MOD_ENABLED = "rpgMakerModEnabled"
         private const val EXTRA_RPG_MAKER_MOD_GAME_ID = "rpgMakerModGameId"
+        private const val EXTRA_RPG_MAKER_VERSION = "rpgMakerVersion"
+        private const val EXTRA_RPG_LEGACY_RENDERER = "rpgLegacyRenderer"
         private const val RPG_MAKER_MOD_PREFS = "tyranor_rpgmaker_mod_state"
         private const val PER_GAME_TOUCH_PAD_KEY = "touch_pad_config"
         private const val PER_GAME_TOUCH_PAD_PRESETS_KEY = "touch_pad_presets"
@@ -997,6 +907,45 @@ class TyranoActivity : Activity() {
         private const val RPG_MAKER_MOD_CSS_ASSET = "__rpgmaker_mod.css"
         private const val RPG_MAKER_MOD_ICON_ASSET = "__rpgmaker_mod_icon.png"
         private const val VIRTUAL_MOUSE_ASSET = "__tyranor_mouse.js"
+        private const val RPG_MV_V1_PREFIX = "rpgmaker/rpgmv-v1"
+        private val RPG_MV_V1_FILES = arrayOf(
+            "js/rpg_core.js",
+            "js/rpg_managers.js",
+            "js/rpg_objects.js",
+            "js/rpg_scenes.js",
+            "js/rpg_sprites.js",
+            "js/rpg_windows.js",
+            "js/libs/pixi.js",
+            "js/libs/pixi-tilemap.js",
+            "js/libs/pixi-picture.js",
+            "js/libs/iphone-inline-video.browser.js",
+            "js/libs/fpsmeter.js",
+            "js/libs/lz-string.js",
+        )
+
+        // v1 覆盖：MV 1.6.1 corescript（与全局设置 RPG_MV_V1 = "v1" 对应）
+        private fun buildRpgMvV1Overlay(manager: android.content.res.AssetManager): Map<String, ByteArray> {
+            val out = mutableMapOf<String, ByteArray>()
+            // 3959930_1.19 的 MPTPShowforActor.js 为单游戏特例，已由 __nwjs_polyfill.js 的 Window 兼容运行时兜底，不在此无条件覆盖
+            var missing = false
+            for (path in RPG_MV_V1_FILES) {
+                val assetPath = RPG_MV_V1_PREFIX + "/" + path
+                val bytes = runCatching { manager.open(assetPath).buffered().use { it.readBytes() } }.getOrNull()
+                if (bytes != null && bytes.isNotEmpty()) {
+                    out[path] = bytes
+                    out["www/" + path] = bytes
+                } else {
+                    Log.w(TAG, "v1 overlay missing asset " + assetPath)
+                    missing = true
+                }
+            }
+            if (missing) {
+                Log.w(TAG, "v1 overlay incomplete, falling back to v0 resources")
+                return emptyMap()
+            }
+            return out
+        }
+
         private const val RPG_MAKER_MOD_CORE_PATH = "__tyranor__/rpgmaker_mod_core.js"
         private const val RPG_MAKER_MOD_UI_PATH = "__tyranor__/rpgmaker_mod_ui.js"
         private const val RPG_MAKER_MOD_CSS_PATH = "__tyranor__/rpgmaker_mod.css"
@@ -1027,17 +976,12 @@ class TyranoActivity : Activity() {
             false
         }
 
-        @JvmStatic
-        @Throws(Exception::class)
-        fun resolveStorageFile(directory: File?, key: String?): File? =
-            TyranoStorage.resolveFile(directory, key)
-
         /**
          * 通过 SharedPreferences 持久化的用户偏好创建自定义 Configuration 的 Context。
          *
          * 复刻 app 模块 UiScaleUtil.wrap 的语义：读取 tyranor_prefs 中的字体缩放与全局
-         * UI 缩放，应用到 Configuration 后返回新的 Context。engine 不依赖 app 的工具类，
-         * 此处保留独立的等价实现以避免反向依赖。
+         * UI 缩放，应用到 Configuration 后返回新的 Context。rpgmaker 模块不依赖 app 的
+         * 工具类，此处保留独立的等价实现以避免反向依赖。
          */
         private fun wrapContextForUiScale(base: Context?): Context? {
             if (base == null) return null

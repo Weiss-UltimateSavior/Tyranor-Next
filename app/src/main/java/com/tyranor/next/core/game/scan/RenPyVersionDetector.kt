@@ -3,7 +3,7 @@ package com.tyranor.next.core.game.scan
 import com.tyranor.next.core.settings.EngineSettingsStore
 import java.io.File
 
-/** Ren'Py 游戏版本探测。规则参考 JoiPlay 的 script_version/runtime 自动匹配链路。 */
+/** Ren'Py 游戏版本探测。按 script_version/runtime 自动匹配链路探测。 */
 object RenPyVersionDetector {
     private const val RENPY_8_THRESHOLD = 80000
 

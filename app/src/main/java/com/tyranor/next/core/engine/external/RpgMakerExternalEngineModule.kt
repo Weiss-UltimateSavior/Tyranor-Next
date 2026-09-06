@@ -12,7 +12,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
 
-/** JoiPlay RPG Maker Runtime 外置 APK 模块协议。 */
+/** RPG Maker Runtime 外置 APK 模块协议。 */
 object RpgMakerExternalEngineModule : ExternalEngineModule {
     private const val TAG = "RpgMakerExternalModule"
 
