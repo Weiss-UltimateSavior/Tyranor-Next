@@ -1,4 +1,4 @@
-// v2-only compat - ported from JoiPlay globals.js/webgl.js/overrides.json
+// v2-only compat - WebGL1-on-WebGL2 shim / save helpers / screen orientation fallbacks
 // Injected via TyranoActivity only when rpgMakerVersion=v2 (MV/MZ), after __nwjs_polyfill.js
 (function () {
     "use strict";
@@ -35,29 +35,16 @@
         } catch (e5) {}
     })();
 
-    // ---- JoiPlay joiSaveAs + screen.orientation helpers (backend-agnostic fallbacks) ----
+    // ---- screen.orientation helpers (backend-agnostic fallbacks) ----
     try {
-        if (typeof window.joiSaveAs !== "function") {
-            window.joiSaveAs = function (blob, type, path) {
-                try {
-                    var reader = new FileReader();
-                    reader.readAsDataURL(blob);
-                    reader.onloadend = function () {
-                        var base64data = reader.result;
-                        try { if (typeof window.NWJSApi !== "undefined" && NWJSApi.saveBlob) { NWJSApi.saveBlob(base64data, path); return; } } catch (e) {}
-                        try { if (typeof window.saveDataManager !== "undefined" && typeof window.saveDataManager.Save === "function") { window.saveDataManager.Save(path, base64data); } } catch (e2) {}
-                    };
-                } catch (e3) {}
-            };
-        }
         if (typeof window.screen === "undefined") window.screen = {};
         if (typeof window.screen.orientation === "undefined") window.screen.orientation = {};
         if (typeof window.screen.orientation.lock !== "function") { window.screen.orientation.lock = function () {}; }
         if (typeof window.screen.orientation.unlock !== "function") { window.screen.orientation.unlock = function () {}; }
     } catch (e) {}
 
-    // ---- WebGL1-on-WebGL2 shim (verbatim port of JoiPlay webgl.js, no Java bridge dependency) ----
-    // 修复：Tyranor 无 NWJSApi，JoiPlay 原版靠 isTranspileEnabled() 门控；
+    // ---- WebGL1-on-WebGL2 shim (no Java bridge dependency) ----
+    // 修复：本宿主无 NWJSApi，原实现靠 isTranspileEnabled() 门控；
     // 无门控裸奔会导致 isTranspiling 全局泄漏 + getQueryParameter 未定义 +
     // bindTexture 强制改参数，所有 v2 游戏开局卡死。此处加等效门控：
     // 仅当 WebGL1 上下文不存在且 NWJSApi 提供 transpile 能力时才劫持，
@@ -65,15 +52,15 @@
     (function () {
         var hasWebGL2Canvas;
         try { hasWebGL2Canvas = !!(document.createElement("canvas").getContext("webgl2")); } catch (e) { hasWebGL2Canvas = false; }
-        // JoiPlay 原版在 webgl.js 顶部设置 window.hasWebGL2（webgl.js.joi-src:1-3），
-        // 移植时曾遗漏该赋值，导致 getContext 补丁的 hasWebGL2 门控永不生效
+        // 原实现在 webgl.js 顶部设置 window.hasWebGL2，移植时曾遗漏该赋值，
+        // 导致 getContext 补丁的 hasWebGL2 门控永不生效
         window.hasWebGL2 = hasWebGL2Canvas;
         if (!hasWebGL2Canvas) return;
-        var hasJoiTranspile = (typeof window.NWJSApi !== "undefined" &&
+        var hasTranspile = (typeof window.NWJSApi !== "undefined" &&
             typeof NWJSApi.isTranspileEnabled === "function" && NWJSApi.isTranspileEnabled()) ||
             (typeof window.NWJSApi !== "undefined" && typeof NWJSApi.transpileToGLSL3 === "function");
         // Tyranor 无 NWJSApi：不劫持，保持原生 WebGL2 路径（Pixi 4.0.3 直接可用）
-        if (!hasJoiTranspile) return;
+        if (!hasTranspile) return;
 
         function WebGLDummyExtension(gl) {
             this.gl = gl;
@@ -144,44 +131,44 @@
             }
         }
         
-        const joiCanvasGetContext = HTMLCanvasElement.prototype.getContext;
+        const baseCanvasGetContext = HTMLCanvasElement.prototype.getContext;
         HTMLCanvasElement.prototype.getContext = function(contextType, contextAttributes = null){
             if(((contextType === "webgl") || (contextType === "experimental-webgl")) && window.hasWebGL2){
                 console.log("WebGL1 context is requested. Returning WebGL2 context instead.")
                 window.isTranspiling = true;
-                return joiCanvasGetContext.apply(this,["webgl2", contextAttributes]);
+                return baseCanvasGetContext.apply(this,["webgl2", contextAttributes]);
             }
         
             window.isTranspiling = false;
         
-            return joiCanvasGetContext.apply(this,[contextType, contextAttributes]);
+            return baseCanvasGetContext.apply(this,[contextType, contextAttributes]);
         }
         
-        const joiCreateShader = WebGL2RenderingContext.prototype.createShader;
+        const baseCreateShader = WebGL2RenderingContext.prototype.createShader;
         WebGL2RenderingContext.prototype.createShader = function(stype){
-            if(!window.isTranspiling) return joiCreateShader.apply(this,[stype]);
+            if(!window.isTranspiling) return baseCreateShader.apply(this,[stype]);
         
-            var shader = joiCreateShader.apply(this,[stype]);
+            var shader = baseCreateShader.apply(this,[stype]);
             shader.type = stype;
             return shader;
         }
         
-        const joiShaderSource = WebGL2RenderingContext.prototype.shaderSource;
+        const baseShaderSource = WebGL2RenderingContext.prototype.shaderSource;
         WebGL2RenderingContext.prototype.shaderSource = function(shader, source){
-            if(!window.isTranspiling) return joiShaderSource.apply(this, [shader, source]);
+            if(!window.isTranspiling) return baseShaderSource.apply(this, [shader, source]);
         
-                // JoiPlay shader transpile path (preserved verbatim when NWJSApi is present)
+                // shader transpile path (preserved verbatim when host provides NWJSApi)
                 try {
                     if (typeof window.NWJSApi !== "undefined" && typeof NWJSApi.transpileToGLSL3 === "function") {
-                        return joiShaderSource.apply(this, [shader, NWJSApi.transpileToGLSL3(source, shader.type == WebGL2RenderingContext.FRAGMENT_SHADER)]);
+                        return baseShaderSource.apply(this, [shader, NWJSApi.transpileToGLSL3(source, shader.type == WebGL2RenderingContext.FRAGMENT_SHADER)]);
                     }
                 } catch (e2) {}
-                return joiShaderSource.apply(this, [shader, source]);
+                return baseShaderSource.apply(this, [shader, source]);
         }
         
-        const joiGetExtension = WebGL2RenderingContext.prototype.getExtension;
+        const baseGetExtension = WebGL2RenderingContext.prototype.getExtension;
         WebGL2RenderingContext.prototype.getExtension = function(name){
-            if(!window.isTranspiling) return joiGetExtension.apply(this, [name]);
+            if(!window.isTranspiling) return baseGetExtension.apply(this, [name]);
         
             switch(name){
                 case "OES_vertex_array_object":
@@ -191,14 +178,14 @@
                     break;
                 case "WEBGL_color_buffer_float":
                 case "OES_texture_half_float":
-                    return joiGetExtension.apply(this, ["EXT_color_buffer_float"]);
+                    return baseGetExtension.apply(this, ["EXT_color_buffer_float"]);
                     break;
                 case "EXT_disjoint_timer_query":
-                    var ext = joiGetExtension.apply(this, ["EXT_disjoint_timer_query_webgl2"]);
+                    var ext = baseGetExtension.apply(this, ["EXT_disjoint_timer_query_webgl2"]);
                     var cpext = {
                         ...ext,
                         getQueryObject: function(...args){
-                            // 原 JoiPlay 调用未定义的 getQueryParameter；改为经 ext.getQueryParameter 转发
+                            // 原实现调用未定义的 getQueryParameter；改为经 ext.getQueryParameter 转发
                             try { if (ext && typeof ext.getQueryParameter === "function") return ext.getQueryParameter.apply(ext, args); } catch (e4) {}
                             return null;
                         }
@@ -206,14 +193,14 @@
                     return cpext;
                     break;
                 default:
-                    return joiGetExtension.apply(this, [name]);
+                    return baseGetExtension.apply(this, [name]);
                     break;
             }
         }
         
-        const joiBindTexture1 = WebGLRenderingContext.prototype.bindTexture;
+        const baseBindTexture1 = WebGLRenderingContext.prototype.bindTexture;
         WebGLRenderingContext.prototype.bindTexture = function(target, texture){
-            joiBindTexture1.apply(this, [target, texture]);
+            baseBindTexture1.apply(this, [target, texture]);
         
             this.texParameteri(target, this.TEXTURE_MAG_FILTER, this.NEAREST);
             this.texParameteri(target, this.TEXTURE_MIN_FILTER, this.NEAREST);
@@ -222,8 +209,8 @@
         }
     })();
 
-    // ---- overrides table (verbatim JoiPlay overrides.json) ----
-    // 注：JoiPlay overrides.json 的游戏专用改写表未随本文件移植——polyfill 内没有
+    // ---- overrides table（外部 runtime 的游戏专用改写表，本文件未移植） ----
+    // 注：改写表未随本文件移植——polyfill 内没有
     // 消费方（无任何代码读取改写表并执行替换），保留死表只制造 review 噪音；
     // 如后续需要，应先实现改写引擎再按需恢复（历史版本见 git）。
 
@@ -704,5 +691,5 @@
         setTimeout(function () { try { clearInterval(patchTimer); } catch (e) {} }, 10000);
     })();
 
-    console.log("[nw-polyfill-v2] JoiPlay compat installed (webgl shims + overrides + joiSaveAs + json rehydrate)");
+    console.log("[nw-polyfill-v2] compat installed (webgl shims + screen orientation + json rehydrate)");
 })();

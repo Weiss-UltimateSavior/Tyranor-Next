@@ -41,7 +41,7 @@ import org.json.JSONObject
  * 由 tyrano 运行时的 v0 宿主（engine 模块 TyranoActivity）复制而来并按本运行时
  * 的需要裁剪：仅承载 RPG Maker MV/MZ 会话，v0 仍由 engine 模块的 tyrano 宿主
  * 承载（行为保持不变）。v1/v2 的 NW.js 兼容层（polyfill、rpgmv-v1 核心覆盖、
- * JoiPlay shims、PC 存档兜底等）在此按 [EXTRA_RPG_MAKER_VERSION] 版本门控注入，
+ * PC 存档兜底、屏幕方向回退等）在此按 [EXTRA_RPG_MAKER_VERSION] 版本门控注入，
  * 不影响 v0 路径。
  *
  * 本 Activity 位于 engine 模块的 com.core.rpgmaker 独立运行时包（不依赖 app 层），
@@ -274,7 +274,7 @@ class RpgMakerActivity : Activity() {
                 if (base == null) {
                     null
                 } else {
-                    // v1/v2 的 NWJS 兼容层兜底统一注入；v2 追加 JoiPlay shim（仅 v2 生效）
+                    // v1/v2 的 NWJS 兼容层兜底统一注入；v2 追加额外兼容层（仅 v2 生效）
                     val compatExtra = loadAssetOrNull(NWJS_POLYFILL_V1_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()
                     val v2Extra = if (isRpgMvV2 || isRpgMzV2) {
                         loadAssetOrNull(NWJS_POLYFILL_V2_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()

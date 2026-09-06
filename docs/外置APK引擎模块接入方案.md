@@ -50,7 +50,7 @@ RPGM 落地目标：
   - extra `game`：JSON 字符串，含 `title / id / folder / execFile / type`
   - extra `settings`：JSON 字符串；RPGXP 必须传 `{"rpg":{"useRuby18":{"boolean":true}}}`，否则容易把 RGSS1 脚本交给 Ruby 1.9/3.x 解析导致语法错误。
   - extra `orientation`：横屏可传 `6`
-  - RPGM 模块还需要准备 JoiPlay 风格 RTP 目录与 `configuration.json`，这是它比 RenPy 多出来的关键适配点。
+  - RPGM 模块还需要准备 外置 Runtime 风格 RTP 目录与 `configuration.json`，这是它比 RenPy 多出来的关键适配点。
 
 ## 3. 架构定位
 
@@ -483,7 +483,7 @@ RinneMobile 的核心实现位于：
 2. 游戏库里保存内部别名，表达具体 RPGM 子类型。
 3. 启动时根据别名或扫描结果得到 `game.type`。
 4. 再由 `game.type` 映射到真实 action。
-5. 启动前尽力准备 JoiPlay 兼容目录和配置文件。
+5. 启动前尽力准备 外置 Runtime 兼容目录和配置文件。
 
 RinneMobile 使用的内部别名：
 
@@ -699,7 +699,7 @@ RPGM 插件需要真实路径。沿用 RenPy 的路径策略：
 RinneMobile 发现 RPGM 插件会无条件尝试挂载：
 
 ```text
-/sdcard/JoiPlay/RTP/<engineName>/app
+/sdcard/外置 Runtime/RTP/<engineName>/app
 ```
 
 RTP 目录名映射：
@@ -714,7 +714,7 @@ RTP 目录名映射：
 TyranorNext 启动前应尽力创建：
 
 ```text
-/sdcard/JoiPlay/RTP/<engineName>/app/
+/sdcard/外置 Runtime/RTP/<engineName>/app/
 ```
 
 并尝试放入：
@@ -739,13 +739,13 @@ RPGXP 还需要 `configuration.json` 双保险：
 
 ```text
 <game.folder>/configuration.json
-/sdcard/JoiPlay/games/<gameId>/configuration.json
+/sdcard/外置 Runtime/games/<gameId>/configuration.json
 ```
 
 规则：
 
 - 仅 `rpgmxp` 必须创建。
-- 文件已存在时不覆盖，尊重用户已有 JoiPlay 配置。
+- 文件已存在时不覆盖，尊重用户已有 外置 Runtime 配置。
 - 创建失败只记录日志，不阻断启动。
 
 注意 `configuration.json` 是插件 `loadFromFile()` 读取的扁平格式；intent extra `settings` 是 `parse(String)` 读取的嵌套格式，二者不能混用。
@@ -1062,7 +1062,7 @@ app/src/main/java/com/tyranor/next/ui/engine/EngineScreen.kt
 
 ### 12.1 外置 APK 协议不稳定
 
-JoiPlay 系插件 action、package、extra JSON 字段来自逆向和实际行为验证，未来版本可能变化。
+外置 Runtime 系插件 action、package、extra JSON 字段来自逆向和实际行为验证，未来版本可能变化。
 
 缓解：
 

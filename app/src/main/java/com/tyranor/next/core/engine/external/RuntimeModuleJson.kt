@@ -1,6 +1,6 @@
 package com.tyranor.next.core.engine.external
 
-/** JoiPlay 外置模块共用的 JSON 转义与字段拼接工具（避免各引擎模块重复实现）。 */
+/** 外置引擎模块共用的 JSON 转义与字段拼接工具（避免各引擎模块重复实现）。 */
 
 internal fun StringBuilder.appendJsonField(name: String, value: String) {
     append('"')

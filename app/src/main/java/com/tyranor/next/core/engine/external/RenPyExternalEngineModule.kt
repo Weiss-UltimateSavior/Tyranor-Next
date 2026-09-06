@@ -6,12 +6,12 @@ import com.tyranor.next.core.engine.EngineType
 /**
  * Ren'Py 外置 APK 引擎模块家族（issue #52）。
  *
- * - Ren'Py 8.5 / 7.7.1 走 JoiPlay runtime 模块协议（`cyou.joiplay.runtime.renpy.run`），
+ * - Ren'Py 8.5 / 7.7.1 走外置 runtime 模块协议（`cyou.joiplay.runtime.renpy.run`），
  *   两者仅包名不同，共享 [RenPyRuntimeModule] 的 intent 构造。
  * 启动协议集中在模块文件内，UI / 扫描器不散落 package/action 字符串。
  */
 
-/** JoiPlay Ren'Py Runtime 模块通用协议（runtime.run）。 */
+/** Ren'Py Runtime 外置模块通用协议（runtime.run）。 */
 abstract class RenPyRuntimeModule(
     override val id: String,
     override val displayName: String,
