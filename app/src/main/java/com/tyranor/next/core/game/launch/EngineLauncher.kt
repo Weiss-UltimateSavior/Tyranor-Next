@@ -440,9 +440,12 @@ object EngineLauncher {
                 EngineSettingsStore.KR_126 -> "1.2.6"
                 else -> "1.3.9"
             })
-            // 字体偏好
-            if (defaultFont.isNotEmpty()) putExtra("default_font", defaultFont)
-            if (forceFont) putExtra("force_default_font", true)
+            // 字体偏好：两个 extra 必须无条件注入。引擎侧 applyFontPreferences 仅在
+            // hasExtra 时执行写入/按所有权标记清理——若仅在非空/为真时注入，用户关闭
+            // 强制或清空字体后引擎 XML 里的旧值会永久残留（issue #74「换字体无法生效」
+            // 的根因：残留的 force_default_font=1 一直压住新设置的字体）。
+            putExtra("default_font", defaultFont)
+            putExtra("force_default_font", forceFont)
             // Anime4K 画面超分（单游戏覆盖 > 全局；仅 kirikiri2 内核路径支持）
             val anime4kMode = or(
                 PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ANIME4K_MODE)

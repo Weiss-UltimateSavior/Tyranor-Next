@@ -756,6 +756,12 @@ private fun LazyListPlaceholder(
                 FontRow(stringResource(R.string.engine_settings_default_font), krFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }, onResetKrFont, { fontLauncher.launch("*/*") })
                 if (krVersion != EngineSettingsStore.KR_126) {
                     SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
+                    Text(
+                        stringResource(R.string.engine_settings_force_font_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MiuixTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
                 }
             }
         }
