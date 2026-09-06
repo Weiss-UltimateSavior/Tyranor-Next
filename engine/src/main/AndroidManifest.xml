@@ -60,6 +60,16 @@
             android:screenOrientation="sensorLandscape"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
 
+        <!-- RPG Maker MV/MZ 独立运行时（v1/v2）：WebView 宿主，独立进程与 tyrano(:tyrano) 隔离 -->
+        <activity
+            android:name="com.core.rpgmaker.RpgMakerActivity"
+            android:exported="false"
+            android:process=":rpgmaker"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.RpgMaker"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
         <!-- Artemis（ar）原生引擎宿主 -->
         <activity
             android:name="com.akira.tyranoemu.remote.ArtemisActivityV1"

@@ -52,9 +52,4 @@ dependencies {
     implementation libs.androidx.documentfile
     implementation libs.kotlin.stdlib
     testImplementation libs.junit
-    // RPG Maker MV/MZ 独立运行时（:rpgmaker，独立 :rpgmaker 进程宿主）挂在 engine
-    // 网关之下：三层架构中 app 仅依赖 :engine，经 api 传递获得 rpgmaker 的编译可见性。
-    // rpgmaker 自身不依赖 :engine（无循环），其运行期读取的共享脚本资产仍以
-    // engine/src/main/assets 为单份源头。
-    api project(':rpgmaker')
 }

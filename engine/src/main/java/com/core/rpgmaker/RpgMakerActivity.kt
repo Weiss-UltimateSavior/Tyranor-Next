@@ -24,10 +24,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
-import com.core.rpgmaker.DoubleBackExit
-import com.core.rpgmaker.EnginePrefs
-import com.core.rpgmaker.EngineThemeColors
-import com.core.rpgmaker.R
+import com.core.engine.DoubleBackExit
+import com.core.engine.EnginePrefs
+import com.core.engine.EngineThemeColors
+import com.core.engine.R
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.Locale
@@ -43,9 +43,11 @@ import org.json.JSONObject
  * JoiPlay shims、PC 存档兜底等）在此按 [EXTRA_RPG_MAKER_VERSION] 版本门控注入，
  * 不影响 v0 路径。
  *
- * 本 Activity 隶属于 rpgmaker 模块，不依赖 app 层。用户偏好（UI 缩放、外网开关）
- * 直接读取共享的 tyranor_prefs，与 engine 内其他宿主同模式；确认对话框通过
- * Intent extras 传入的 Launcher 主题色复刻 Launcher 的视觉风格。
+ * 本 Activity 位于 engine 模块的 com.core.rpgmaker 独立运行时包（不依赖 app 层），
+ * 与 tyrano 宿主（com.core.tyrano，承载 v0）互不引用；v1/v2 专属运行时资产集中在
+ * assets/rpgmaker/ 子目录，共享脚本（__rpg__.js、__rmmz__.js、触屏手柄、修改器等）
+ * 仍以 engine assets 根为单份源头。用户偏好（UI 缩放、外网开关）直接读取共享的
+ * tyranor_prefs，与 engine 内其他宿主同模式。
  */
 class RpgMakerActivity : Activity() {
     private var webView: WebView? = null
@@ -826,13 +828,14 @@ class RpgMakerActivity : Activity() {
 
     companion object {
         private const val TAG = "YukiRpgMaker"
+        // 共享脚本资产在 engine assets 根；v1/v2 专属运行时资产统一在 rpgmaker/ 子目录
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
-        private const val RPG_MV_V12_HOOK_ASSET = "__rpg_v12.js"
+        private const val RPG_MV_V12_HOOK_ASSET = "rpgmaker/__rpg_v12.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
         private const val TOUCH_PAD_ASSET = "__touch_pad.js"
-        private const val NWJS_POLYFILL_ASSET = "__nwjs_polyfill.js"
-        private const val NWJS_POLYFILL_V1_EXTRA_ASSET = "__nwjs_polyfill_v1.js"
-        private const val NWJS_POLYFILL_V2_EXTRA_ASSET = "__nwjs_polyfill_v2.js"
+        private const val NWJS_POLYFILL_ASSET = "rpgmaker/__nwjs_polyfill.js"
+        private const val NWJS_POLYFILL_V1_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v1.js"
+        private const val NWJS_POLYFILL_V2_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v2.js"
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"
@@ -853,7 +856,7 @@ class RpgMakerActivity : Activity() {
         private const val RPG_MAKER_MOD_CSS_ASSET = "__rpgmaker_mod.css"
         private const val RPG_MAKER_MOD_ICON_ASSET = "__rpgmaker_mod_icon.png"
         private const val VIRTUAL_MOUSE_ASSET = "__tyranor_mouse.js"
-        private const val RPG_MV_V1_PREFIX = "rpgmv-v1"
+        private const val RPG_MV_V1_PREFIX = "rpgmaker/rpgmv-v1"
         private val RPG_MV_V1_FILES = arrayOf(
             "js/rpg_core.js",
             "js/rpg_managers.js",

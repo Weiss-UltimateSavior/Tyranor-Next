@@ -32,4 +32,3 @@ plugins {
 rootProject.name = "Tyranor Next"
 include(":app")
 include(":engine")
-include(":rpgmaker")
