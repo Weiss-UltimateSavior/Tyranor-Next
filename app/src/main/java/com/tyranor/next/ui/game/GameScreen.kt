@@ -648,72 +648,140 @@ internal fun GameActionsSheet(
             }
 
             item {
-                GameActionRow(R.drawable.ic_sheet_launch, stringResource(R.string.game_launch_action)) {
-                    scope.launch {
-                        if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-                            showPatchConfirm = true
-                        } else {
-                            startLaunch()
+                AppNavItem(
+                    title = stringResource(R.string.game_launch_action),
+                    leadingIcon = R.drawable.ic_sheet_launch,
+                    containerColor = NavWhite,
+                    showArrow = false,
+                    leadingIconTint = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        scope.launch {
+                            if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
+                                showPatchConfirm = true
+                            } else {
+                                startLaunch()
+                            }
                         }
-                    }
-                }
+                    },
+                )
             }
             if (game.engine == EngineType.KIRIKIRI) {
                 item {
-                    GameActionRow(
-                        iconRes = R.drawable.ic_sheet_launch_file,
-                        label = stringResource(R.string.game_launch_file),
-                        subtitle = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
-                    ) { showLaunchFilePicker = true }
+                    AppNavItem(
+                        title = stringResource(R.string.game_launch_file),
+                        summary = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
+                        leadingIcon = R.drawable.ic_sheet_launch_file,
+                        containerColor = NavWhite,
+                        showArrow = false,
+                        leadingIconTint = MaterialTheme.colorScheme.primary,
+                        onClick = { showLaunchFilePicker = true },
+                    )
                 }
             }
             item {
-                GameActionRow(
-                    iconRes = R.drawable.ic_home,
-                    label = if (quickLaunched) stringResource(R.string.game_remove_quick_launch) else stringResource(R.string.game_add_quick_launch),
-                ) {
-                    if (onQuickLaunchToggle()) {
-                        onDismiss()
-                    } else {
-                        android.widget.Toast.makeText(context, quickLaunchFullMessage, android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }
+                AppNavItem(
+                    title = if (quickLaunched) stringResource(R.string.game_remove_quick_launch) else stringResource(R.string.game_add_quick_launch),
+                    leadingIcon = R.drawable.ic_home,
+                    containerColor = NavWhite,
+                    showArrow = false,
+                    leadingIconTint = MaterialTheme.colorScheme.primary,
+                    onClick = {
+                        if (onQuickLaunchToggle()) {
+                            onDismiss()
+                        } else {
+                            android.widget.Toast.makeText(context, quickLaunchFullMessage, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
             }
             item {
-                GameActionRow(
-                    iconRes = R.drawable.ic_sheet_desktop_shortcut,
-                    label = stringResource(R.string.game_add_desktop_shortcut),
-                ) { if (!shortcutRequestInFlight) openShortcutCrop() }
+                AppNavItem(
+                    title = stringResource(R.string.game_add_desktop_shortcut),
+                    leadingIcon = R.drawable.ic_sheet_desktop_shortcut,
+                    containerColor = NavWhite,
+                    showArrow = false,
+                    leadingIconTint = MaterialTheme.colorScheme.primary,
+                    onClick = { if (!shortcutRequestInFlight) openShortcutCrop() },
+                )
             }
             item {
-                GameActionRow(R.drawable.ic_sheet_search_cover, stringResource(R.string.game_search_cover)) {
-                    if (!isBatchScrapingActive()) showCoverSourcePicker = true
-                }
+                AppNavItem(
+                    title = stringResource(R.string.game_search_cover),
+                    leadingIcon = R.drawable.ic_sheet_search_cover,
+                    containerColor = NavWhite,
+                    showArrow = false,
+                    leadingIconTint = MaterialTheme.colorScheme.primary,
+                    onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
+                )
             }
             item {
-                GameActionRow(R.drawable.ic_sheet_edit_cover, stringResource(R.string.game_edit_cover)) {
-                    if (!isBatchScrapingActive()) imagePicker.launch("image/*")
-                }
+                AppNavItem(
+                    title = stringResource(R.string.game_edit_cover),
+                    leadingIcon = R.drawable.ic_sheet_edit_cover,
+                    containerColor = NavWhite,
+                    showArrow = false,
+                    leadingIconTint = MaterialTheme.colorScheme.primary,
+                    onClick = { if (!isBatchScrapingActive()) imagePicker.launch("image/*") },
+                )
             }
-            item { GameActionRow(R.drawable.ic_sheet_rename, stringResource(R.string.game_rename)) { showRenameDialog = true } }
+            item {
+                AppNavItem(
+                    title = stringResource(R.string.game_rename),
+                    leadingIcon = R.drawable.ic_sheet_rename,
+                    containerColor = NavWhite,
+                    showArrow = false,
+                    leadingIconTint = MaterialTheme.colorScheme.primary,
+                    onClick = { showRenameDialog = true },
+                )
+            }
             if (shouldShowSaveManagement(game.engine)) {
                 item {
-                    GameActionRow(R.drawable.ic_sheet_saves, stringResource(R.string.game_save_management)) {
-                        startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
-                        onDismiss()
-                    }
+                    AppNavItem(
+                        title = stringResource(R.string.game_save_management),
+                        leadingIcon = R.drawable.ic_sheet_saves,
+                        containerColor = NavWhite,
+                        leadingIconTint = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
+                            onDismiss()
+                        },
+                    )
                 }
             }
             if (game.engine == EngineType.KIRIKIRI) {
                 item {
-                    GameActionRow(R.drawable.ic_sheet_patch, stringResource(R.string.game_online_patch)) {
-                        startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
-                        onDismiss()
-                    }
+                    AppNavItem(
+                        title = stringResource(R.string.game_online_patch),
+                        leadingIcon = R.drawable.ic_sheet_patch,
+                        containerColor = NavWhite,
+                        leadingIconTint = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
+                            onDismiss()
+                        },
+                    )
                 }
             }
-            item { GameActionRow(R.drawable.ic_sheet_settings, stringResource(R.string.settings_engine_settings), onClick = onEngineSettings) }
-            item { GameActionRow(R.drawable.ic_sheet_delete, stringResource(R.string.game_delete_title), danger = true) { showDeleteConfirm = true } }
+            item {
+                AppNavItem(
+                    title = stringResource(R.string.settings_engine_settings),
+                    leadingIcon = R.drawable.ic_sheet_settings,
+                    containerColor = NavWhite,
+                    leadingIconTint = MaterialTheme.colorScheme.primary,
+                    onClick = onEngineSettings,
+                )
+            }
+            item {
+                AppNavItem(
+                    title = stringResource(R.string.game_delete_title),
+                    leadingIcon = R.drawable.ic_sheet_delete,
+                    containerColor = NavWhite,
+                    showArrow = false,
+                    leadingIconTint = MaterialTheme.colorScheme.error,
+                    titleColor = MaterialTheme.colorScheme.error,
+                    onClick = { showDeleteConfirm = true },
+                )
+            }
 
             launchError?.let {
                 item {
@@ -1318,47 +1386,6 @@ private fun LaunchFileDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
-}
-
-@Composable
-private fun GameActionRow(
-    iconRes: Int,
-    label: String,
-    subtitle: String? = null,
-    danger: Boolean = false,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(NavWhite)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 16.5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Image(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            colorFilter = ColorFilter.tint(if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary),
-            modifier = Modifier.size(24.dp),
-        )
-        Column(Modifier.padding(start = 20.dp)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (danger) MaterialTheme.colorScheme.error else Color.Unspecified,
-            )
-            subtitle?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-    }
 }
 
 @Composable

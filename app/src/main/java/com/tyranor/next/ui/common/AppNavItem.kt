@@ -50,6 +50,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param summary 可选摘要
  * @param leadingIcon 左侧图标 drawable；null 时使用默认占位图标 [DEFAULT_LEADING_ICON]
  * @param containerColor 条目容器背景色；默认 [NavWhite]（页面灰底上的白卡），弹窗内应传 `PageGrey` 与白底弹窗形成反差
+ * @param showArrow 是否显示右侧跳转箭头；「进入下一级」的跳转条目保持 true，「执行动作」条目传 false
+ * @param leadingIconTint 显式覆盖左侧图标颜色（如主题色 [MaterialTheme.colorScheme.primary] / 危险色 error）；
+ *   null 时保持默认行为（深色染白、浅色用原图）
+ * @param titleColor 显式覆盖标题颜色（如危险条目用 error 色）；null 时用默认 [TextColor]
  */
 @Composable
 fun AppNavItem(
@@ -58,6 +62,9 @@ fun AppNavItem(
     summary: String? = null,
     @DrawableRes leadingIcon: Int? = null,
     containerColor: Color = NavWhite,
+    showArrow: Boolean = true,
+    leadingIconTint: Color? = null,
+    titleColor: Color? = null,
     onClick: (() -> Unit)? = null,
 ) {
     val enabled = onClick != null
@@ -75,8 +82,12 @@ fun AppNavItem(
             painter = painterResource(leadingIcon ?: DEFAULT_LEADING_ICON),
             contentDescription = null,
             modifier = Modifier.size(24.dp),
-            // 深色模式下左侧图标染白，保持低亮度背景上的可读性
-            colorFilter = if (AppThemeColors.isDark) ColorFilter.tint(Color.White) else null,
+            // 显式 tint 优先；否则深色模式下染白，保持低亮度背景上的可读性
+            colorFilter = when {
+                leadingIconTint != null -> ColorFilter.tint(leadingIconTint.copy(alpha = contentAlpha))
+                AppThemeColors.isDark -> ColorFilter.tint(Color.White.copy(alpha = contentAlpha))
+                else -> null
+            },
         )
         Column(
             modifier = Modifier.weight(1f).padding(start = 12.dp),
@@ -85,7 +96,7 @@ fun AppNavItem(
             Text(
                 title,
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextColor.copy(alpha = contentAlpha),
+                color = (titleColor ?: TextColor).copy(alpha = contentAlpha),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -99,17 +110,19 @@ fun AppNavItem(
                 )
             }
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            modifier = Modifier.padding(start = 12.dp),
-            // 深色模式下右侧箭头染白，与左侧图标保持一致
-            tint = if (AppThemeColors.isDark) {
-                Color.White.copy(alpha = contentAlpha)
-            } else {
-                MiuixTheme.colorScheme.onBackground.copy(alpha = contentAlpha)
-            },
-        )
+        if (showArrow) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.padding(start = 12.dp),
+                // 深色模式下右侧箭头染白，与左侧图标保持一致
+                tint = if (AppThemeColors.isDark) {
+                    Color.White.copy(alpha = contentAlpha)
+                } else {
+                    MiuixTheme.colorScheme.onBackground.copy(alpha = contentAlpha)
+                },
+            )
+        }
     }
 }
 

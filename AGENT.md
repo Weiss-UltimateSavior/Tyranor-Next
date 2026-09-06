@@ -255,7 +255,11 @@ Column(fillMaxSize)                                // 页面根
 
 - 进入跳转的 icon 统一用 `KeyboardArrowRight`，组件内置，调用方不传。
 
-- **深色模式适配**：左侧图标（PNG drawable）与右侧箭头在深色模式下自动染色为 `Color.White`，浅色模式保持原色不变；不可点击状态（`onClick = null`）保留 `contentAlpha` 衰减。这一适配由组件内部完成，调用方无需处理。
+- `showArrow`：是否显示右侧跳转箭头。**「进入下一级」的跳转条目必须 `true`（默认）**；「执行动作」的条目（如启动游戏、删除等不产生跳转的动作）传 `false` 隐藏箭头，避免误导为可跳转。
+
+- `leadingIconTint` / `titleColor`：显式覆盖左侧图标与标题颜色（如游戏操作面板用主题色 `MaterialTheme.colorScheme.primary` 统一图标、危险条目用 `colorScheme.error` 上色）。传 `null`（默认）时使用面板默认行为（深色染白、浅色原图 / `TextColor`）。
+
+- 深色模式适配：左侧图标（PNG drawable）与右侧箭头在深色模式下自动染色为 `Color.White`，浅色模式保持原色不变；不可点击状态（`onClick = null`）保留 `contentAlpha` 衰减。这一适配由组件内部完成，调用方无需处理。
 
 - 颜色判断依赖全局 `AppThemeColors.isDark` 快照，切换外观模式自动重组刷新，与整体主题保持同步。
 
@@ -341,6 +345,8 @@ Column(fillMaxSize)                                // 页面根
 - 卡片/导航栏/组件容器（含弹窗背景） → `NavWhite`
 
 - 弹窗内的条目容器（如 `AppNavItem` 传 `containerColor = PageGrey`、手写条目行） → `PageGrey`，与弹窗白色背景形成对偶反差
+
+- **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
 
 - 页面背景 → `PageGrey`
 
