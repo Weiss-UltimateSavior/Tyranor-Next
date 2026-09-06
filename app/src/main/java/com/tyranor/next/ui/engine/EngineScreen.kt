@@ -257,13 +257,19 @@ private fun builtinEntry(id: String, title: String): EngineDialogEntry =
 
 private val tyranorWebBuiltin = listOf(builtinEntry("tyranor-builtin", TYRANOR_BUILTIN_VERSION))
 
+/** RPG Maker MV/MZ 弹窗条目：内置网页壳 + TyranorNext 系列（0.1/0.2 合并显示）。 */
+private val rpgMakerWebBuiltin = listOf(
+    builtinEntry("tyranor-builtin", TYRANOR_BUILTIN_VERSION),
+    builtinEntry("tyranornext-01-02", "TyranorNext-0.1/0.2"),
+)
+
 /** 各内置引擎的「版本条目」弹窗内容（条目顺序即展示顺序）。 */
 private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = mapOf(
     EngineType.TYRANO to tyranorWebBuiltin,
     EngineType.WEB_OTHER to tyranorWebBuiltin,
     EngineType.VN to tyranorWebBuiltin,
-    EngineType.RPG_MV to tyranorWebBuiltin,
-    EngineType.RPG_MZ to tyranorWebBuiltin,
+    EngineType.RPG_MV to rpgMakerWebBuiltin,
+    EngineType.RPG_MZ to rpgMakerWebBuiltin,
     EngineType.ONS to listOf(
         builtinEntry("ons-builtin", "ONScripter-0.7.6"),
     ),
