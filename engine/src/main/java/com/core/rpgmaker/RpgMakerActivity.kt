@@ -26,6 +26,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
+import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineThemeColors
 import com.core.engine.R
 import java.io.ByteArrayInputStream
@@ -312,8 +313,6 @@ class RpgMakerActivity : Activity() {
             Log.e(TAG, "start local server failed", error)
             failLaunch(getString(R.string.engine_rpgmaker_server_failed))
         }
-    }
-        setupGameUi(saves, bundle)
     }
 
     /** 创建 WebView 与各 JS 桥、按 legacy 开关拼 URL 并装载游戏页。 */

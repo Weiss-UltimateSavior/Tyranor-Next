@@ -20,6 +20,9 @@ import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
+// ASAR 条目走流式的体积阈值：低于此值一次性读取更简单高效
+internal const val ASAR_STREAM_THRESHOLD = 256L * 1024L
+
 internal class RpgMakerLocalHttpServer(
     root: File,
     asar: AsarArchive?,
@@ -106,9 +109,6 @@ internal class RpgMakerLocalHttpServer(
         private const val MAX_HEADER_LINE_CHARS = 16 * 1024
         private const val MAX_HEADER_COUNT = 100
     }
-
-    // ASAR 条目走流式的体积阈值：低于此值一次性读取更简单高效
-internal const val ASAR_STREAM_THRESHOLD = 256L * 1024L
 
     private class ResolvedFile(
         val file: File?,
@@ -623,6 +623,7 @@ internal fun parseRangeHeader(rangeHeader: String?, fileLen: Long): RangeSpec? {
                     }
                 }
             } else {
+                if (a.isNotEmpty()) start = a.toLong()
                 if (b.isNotEmpty()) end = b.toLong()
                 if (end >= fileLen) end = fileLen - 1
                 if (start < 0) start = 0
