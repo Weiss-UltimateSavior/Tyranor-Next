@@ -624,6 +624,8 @@ internal fun GameActionsSheet(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = { WindowInsets(0.dp) },
+        // 顶部圆角与弹窗内条目圆角（AppNavItem 8dp）保持一致
+        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
     ) {
         // 小平板横屏下屏幕高度可能 < 560dp，硬编码会导致抽屉填满屏幕，
         // SwipeableState 无法区分滚动/收起，快速滑动时高速振荡（issue #27）。
