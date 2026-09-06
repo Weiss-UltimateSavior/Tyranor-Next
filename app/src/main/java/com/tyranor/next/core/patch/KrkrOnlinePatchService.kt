@@ -10,6 +10,8 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.i18n.AppLocaleController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
@@ -34,6 +36,12 @@ object KrkrOnlinePatchService {
     private const val INDEX_URL = "https://zeas2.github.io/Kirikiroid2_patch/patch/alldata.js"
     private const val PATCH_BASE_URL = "https://zeas2.github.io/Kirikiroid2_patch/patch/"
     private val indexRegex = Regex("""\[(\d+), "(.+?)", "(.+?)", "(.+?)", \[(.+)]],?""")
+
+    // 安装互斥锁：UI 层的 installing 守卫会随 Activity 重建丢失（旋转屏幕时旧协程的阻塞 IO
+    // 仍会跑完并继续写盘），进程级锁保证 downloadAndInstall 任意时刻只有一个实例在下载/写入，
+    // 避免并发任务交错写同一临时文件、以及先完成者 finally 删除他人正在写的文件。参照
+    // GameSaveManager.importLock 的既有模式。
+    private val installLock = Mutex()
 
     suspend fun fetchPatchIndex(context: Context): List<KrkrPatchEntry> = withContext(Dispatchers.IO) {
         val text = httpGetText(context, INDEX_URL)
@@ -62,25 +70,29 @@ object KrkrOnlinePatchService {
         require(game.engine == EngineType.KIRIKIRI) { text(context, R.string.patch_error_only_kirikiri) }
         require(urls.isNotEmpty()) { text(context, R.string.patch_error_select_patch) }
 
-        val downloadDir = File(context.getExternalFilesDir(null), "Download").apply { mkdirs() }
-        val installed = mutableListOf<String>()
-        val targetDescription = resolveTargetDescription(game)
+        installLock.withLock {
+            val downloadDir = File(context.getExternalFilesDir(null), "Download").apply { mkdirs() }
+            val installed = mutableListOf<String>()
+            val targetDescription = resolveTargetDescription(game)
 
-        urls.forEach { url ->
-            val fileName = fileNameFromUrl(url)
-            progress(text(context, R.string.patch_progress_downloading, fileName))
-            val tempFile = File(downloadDir, fileName)
-            try {
-                downloadToFile(context, url, tempFile)
-                progress(text(context, R.string.patch_progress_writing, fileName))
-                copyIntoGameDir(context, game, tempFile, fileName)
-                installed += fileName
-            } finally {
-                tempFile.delete()
+            urls.forEach { url ->
+                val fileName = fileNameFromUrl(url)
+                progress(text(context, R.string.patch_progress_downloading, fileName))
+                // 唯一临时文件：并发只会被 installLock 串行化，但保险起见仍用 createTempFile
+                // 保证不与历史残留文件（崩溃遗留的 .tmp）冲突，finally 只清理自己的临时文件。
+                val tempFile = File.createTempFile("$fileName.", ".tmp", downloadDir)
+                try {
+                    downloadToFile(context, url, tempFile)
+                    progress(text(context, R.string.patch_progress_writing, fileName))
+                    copyIntoGameDir(context, game, tempFile, fileName)
+                    installed += fileName
+                } finally {
+                    tempFile.delete()
+                }
             }
-        }
 
-        KrkrPatchInstallResult(installed = installed, target = targetDescription)
+            KrkrPatchInstallResult(installed = installed, target = targetDescription)
+        }
     }
 
     private fun parseLine(line: String): KrkrPatchEntry? {
