@@ -331,7 +331,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         if (!isSdl3) {
                             item {
                                 SectionCard(stringResource(R.string.engine_settings_font)) {
-                                    OverrideFont(stringResource(R.string.engine_settings_default_font), globalKrFont, krFont, onReset = { krFont = "" }, onPick = { fontLauncher.launch("*/*") })
+                                    // 「跟随全局」必须删除覆盖键（null），存 "" 会被引擎当作
+                                    // 显式内置字体覆盖，导致全局字体设置对该游戏永久失效
+                                    OverrideFont(stringResource(R.string.engine_settings_default_font), globalKrFont, krFont, onReset = { krFont = null }, onPick = { fontLauncher.launch("*/*") })
                                     if (effVersion != EngineSettingsStore.KR_126) {
                                         OverrideSwitch(stringResource(R.string.engine_settings_force_default_font_short), globalForce, krForceFont) { krForceFont = it }
                                     }

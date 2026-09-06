@@ -190,6 +190,7 @@
     <string name="engine_settings_default_font">默认字体</string>
     <string name="engine_settings_builtin_font">内置字体</string>
     <string name="engine_settings_force_default_font">强制使用默认字体</string>
+    <string name="engine_settings_force_font_hint">未开启时仅替换游戏缺失的字体；要让更换的字体完全生效，请开启强制使用默认字体</string>
     <string name="engine_settings_force_default_font_short">强制默认字体</string>
     <string name="engine_settings_fullscreen_stretch">全屏拉伸</string>
     <string name="engine_settings_ignore_cutout">忽略刘海</string>

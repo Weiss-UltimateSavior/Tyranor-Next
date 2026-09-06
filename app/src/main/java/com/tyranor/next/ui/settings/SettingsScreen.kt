@@ -649,6 +649,10 @@ private fun BottomInsetSpacer() {
 
 private typealias FontPickerLauncher = androidx.activity.compose.ManagedActivityResultLauncher<String, Uri?>
 
+/** 引擎设置详情页的滚动列表内容：按 [kind] 渲染对应引擎的设置卡片。
+ *  全部控件仅更新本地状态，统一由顶部保存按钮落盘（编辑→保存模型）。
+ *  KRKR 专属卡片按内核/版本条件显隐：渲染项随 [isSdl3] 切换数据源，
+ *  字体与「操作」卡片仅 kirikiri2 内核显示（krkrsdl3 走命令行参数不生效）。 */
 @Composable
 private fun LazyListPlaceholder(
     kind: EngineSettingsKind,
@@ -756,6 +760,12 @@ private fun LazyListPlaceholder(
                 FontRow(stringResource(R.string.engine_settings_default_font), krFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }, onResetKrFont, { fontLauncher.launch("*/*") })
                 if (krVersion != EngineSettingsStore.KR_126) {
                     SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
+                    Text(
+                        stringResource(R.string.engine_settings_force_font_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MiuixTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    )
                 }
             }
         }

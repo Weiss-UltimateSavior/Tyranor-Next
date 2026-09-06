@@ -190,6 +190,7 @@
     <string name="engine_settings_default_font">既定フォント</string>
     <string name="engine_settings_builtin_font">内蔵フォント</string>
     <string name="engine_settings_force_default_font">既定フォントを強制使用</string>
+    <string name="engine_settings_force_font_hint">オフの場合、ゲームに存在しないフォントのみ置き換えます。変更したフォントを完全に反映するには強制を有効にしてください</string>
     <string name="engine_settings_force_default_font_short">既定フォントを強制</string>
     <string name="engine_settings_fullscreen_stretch">全画面に引き伸ばす</string>
     <string name="engine_settings_ignore_cutout">ノッチを無視</string>

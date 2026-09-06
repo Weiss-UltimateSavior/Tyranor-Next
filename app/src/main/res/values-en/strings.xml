@@ -190,6 +190,7 @@
     <string name="engine_settings_default_font">Default font</string>
     <string name="engine_settings_builtin_font">Built-in font</string>
     <string name="engine_settings_force_default_font">Force default font</string>
+    <string name="engine_settings_force_font_hint">When off, only fonts missing from the game are replaced. Enable this to make your chosen font take effect fully</string>
     <string name="engine_settings_force_default_font_short">Force default font</string>
     <string name="engine_settings_fullscreen_stretch">Stretch to fullscreen</string>
     <string name="engine_settings_ignore_cutout">Ignore display cutout</string>
