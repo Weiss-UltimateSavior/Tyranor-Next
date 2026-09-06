@@ -239,6 +239,14 @@
     <string name="engine_option_rpg_mv_v2">v2</string>
     <string name="engine_option_rpg_mz_v0">v0</string>
     <string name="engine_option_rpg_mz_v2">v2</string>
+    <string name="engine_settings_anime4k">アップスケーリング</string>
+    <string name="engine_option_anime4k_fast">高速（S）</string>
+    <string name="engine_option_anime4k_balanced">バランス（M）</string>
+    <string name="engine_option_anime4k_high">高品質（L）</string>
+    <string name="engine_option_anime4k_soft_fast">ソフト・高速</string>
+    <string name="engine_option_anime4k_soft_balanced">ソフト・バランス</string>
+    <string name="engine_option_anime4k_soft_high">ソフト・高品質</string>
+    <string name="engine_option_anime4k_deblur">ぼかし除去（DoG）</string>
 
     <string name="cover_source_local">ローカルカバー</string>
     <string name="cover_source_custom">カスタムカバー</string>

@@ -63,6 +63,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krScoped by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR)) }
     var krSkipStartupDialogs by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS)) }
     var krPatchOverlayMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)) }
+    var krAnime4kMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE)) }
     var krFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
     val krRender = PerGameSettingsStore.KR_FIELDS.associateWith { field ->
@@ -115,6 +116,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalKrScoped = EngineSettingsStore.isKrScopedSaveDir(ctx)
     val globalKrSkipStartupDialogs = EngineSettingsStore.isKrSkipStartupDialogs(ctx)
     val globalKrPatchOverlayMode = EngineSettingsStore.getKrPatchOverlayMode(ctx)
+    val globalKrAnime4kMode = EngineSettingsStore.getKrAnime4kMode(ctx)
     val globalKrFont = EngineSettingsStore.getKrDefaultFont(ctx)
     val globalForce = EngineSettingsStore.isKrForceDefaultFont(ctx)
     val configuredGlobalRenderer = EngineSettingsStore.getKrRenderer(ctx)
@@ -182,6 +184,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR, krScoped)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS, krSkipStartupDialogs)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE, krPatchOverlayMode)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE, krAnime4kMode?.takeIf { it in EngineSettingsStore.ANIME4K_MODES })
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT, krFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT, krForceFont)
         krRender.forEach { (field, st) ->
@@ -284,6 +287,13 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     OverrideChoice(stringResource(R.string.engine_settings_memory_usage), krMemMap, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = engineDefault) {
                                         krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value = it
                                     }
+                                    // Anime4K 后处理仅 kirikiri2 内核路径支持（GLSurfaceView 注入）
+                                    OverrideChoice(
+                                        stringResource(R.string.engine_settings_anime4k),
+                                        krAnime4kOptionsMap(),
+                                        globalKrAnime4kMode,
+                                        krAnime4kMode,
+                                    ) { krAnime4kMode = it }
                                 }
                                 OverrideChoice(stringResource(R.string.engine_settings_renderer), krRendererMap, globalRenderer, krRender[PerGameSettingsStore.F_RENDERER]!!.value, emptyLabel = engineDefault) {
                                     krRender[PerGameSettingsStore.F_RENDERER]!!.value = it

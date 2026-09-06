@@ -31,6 +31,18 @@ internal fun krPatchOverlayOptions(): List<Pair<String, String>> = listOf(
 )
 
 @Composable
+internal fun krAnime4kOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ANIME4K_OFF to stringResource(R.string.engine_option_off),
+    EngineSettingsStore.ANIME4K_S to stringResource(R.string.engine_option_anime4k_fast),
+    EngineSettingsStore.ANIME4K_M to stringResource(R.string.engine_option_anime4k_balanced),
+    EngineSettingsStore.ANIME4K_L to stringResource(R.string.engine_option_anime4k_high),
+    EngineSettingsStore.ANIME4K_SOFT_S to stringResource(R.string.engine_option_anime4k_soft_fast),
+    EngineSettingsStore.ANIME4K_SOFT_M to stringResource(R.string.engine_option_anime4k_soft_balanced),
+    EngineSettingsStore.ANIME4K_SOFT_L to stringResource(R.string.engine_option_anime4k_soft_high),
+    EngineSettingsStore.ANIME4K_DEBLUR to stringResource(R.string.engine_option_anime4k_deblur),
+)
+
+@Composable
 internal fun krRendererOptions(): List<Pair<String, String>> = listOf(
     "default" to stringResource(R.string.engine_option_engine_default),
     EngineSettingsStore.RENDERER_SOFTWARE to stringResource(R.string.engine_option_software_renderer),
@@ -155,6 +167,9 @@ internal fun krKernelOptionsMap(): Map<String, String> = krKernelOptions().toMap
 
 @Composable
 internal fun krPatchOverlayOptionsMap(): Map<String, String> = krPatchOverlayOptions().toMap()
+
+@Composable
+internal fun krAnime4kOptionsMap(): Map<String, String> = krAnime4kOptions().toMap()
 
 @Composable
 internal fun krRendererOptionsMap(): Map<String, String> =
