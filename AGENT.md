@@ -4,6 +4,23 @@
 
 > 领域术语：项目核心概念（引擎/游戏库/设置/封面/存档/界面规范等）的权威定义见 `CONTEXT.md`（仓库根目录）。开发与代码评审时若涉及上述领域词汇，以 `CONTEXT.md` 中的术语与 `_Avoid_` 意见为准，避免引入异名同义的新词。
 
+## 文档工作流 Skills（docs/skills）
+
+项目内置三类文档工作流 skill（与全局用户级 skill 同名，以本仓库版本为准），用于打磨设计与沉淀领域知识：
+
+| Skill | 位置 | 用途 |
+| --- | --- | --- |
+| grilling | `docs/skills/grilling/SKILL.md` | 对计划/决策/想法进行逐轮质询，以「设计树 + 轮次」方式收敛到共享理解 |
+| grill-with-docs | `docs/skills/grill-with-docs/SKILL.md` | grilling 之上叠加文档产出：质询过程中同步落 ADR 与术语表 |
+| domain-modeling | `docs/skills/domain-modeling/SKILL.md` | 构建/打磨项目领域模型：维护 `CONTEXT.md` 术语表、撰写 ADR（格式见 `docs/skills/domain-modeling/CONTEXT-FORMAT.md` 与 `ADR-FORMAT.md`） |
+
+约束：
+
+- **质询纪律**：grilling 类流程仅在用户明确要求「打磨/质询/审方案」时启用；round 间必须等待用户回答，不得自行代答或跳过 frontier。
+- **领域模型维护**：任何术语或领域决策的变更，须同步更新仓库根 `CONTEXT.md`；`CONTEXT.md` 只收项目特有术语（通用编程概念不得入表），定义保持一至两句。
+- **ADR 三门槛**：只有当某决策同时满足「难逆转、无上下文费解、真实取舍」三点时，才创建 `docs/adr/` 下的 ADR 并引用对应 `ADR-FORMAT.md`；不满足则跳过，不强行沉淀。
+- **文档与实践一致**：术语表或 ADR 与代码冲突时，以代码为事实源当场指出差异，而不是静默改写文档。
+
 ## 技术栈
 
 - Android Jetpack Compose + Material 3
