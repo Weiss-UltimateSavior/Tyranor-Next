@@ -248,7 +248,11 @@ object EngineLauncher {
             EngineScanner.isRemovableStoragePath(normalized)
     }
 
-    /** 构建引擎 Intent；path 为真实文件路径。 */
+    /** 构建引擎 Intent；path 为真实文件路径。
+     *  字体偏好契约：`default_font`（空串=引擎按所有权标记清理残留）与
+     *  `force_default_font`（false 写 "0"）**必须无条件注入**——引擎侧
+     *  applyFontPreferences 仅在 hasExtra 时执行写入/清理，缺省会让
+     *  引擎配置里的旧值永久残留（issue #74）。 */
     private fun buildIntent(
         context: Context,
         engine: EngineType,
