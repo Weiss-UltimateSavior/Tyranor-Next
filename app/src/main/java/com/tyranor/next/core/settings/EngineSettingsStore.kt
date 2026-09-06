@@ -428,14 +428,17 @@ object EngineSettingsStore {
     fun setRpgMzEngineVersion(c: Context, v: String) =
         prefs(c).edit().putString(KEY_RPG_MZ_ENGINE_VERSION, normalizeRpgMz(v)).apply()
 
-    private fun normalizeRpgVersion(v: String?): String = when (v?.trim()?.lowercase()) {
+    private fun normalizeRpgMv(v: String?): String = when (v?.trim()?.lowercase()) {
         RPG_MV_V1 -> RPG_MV_V1
         RPG_MV_V2 -> RPG_MV_V2
         RPG_MV_V0 -> RPG_MV_V0
         else -> RPG_MV_V0
     }
 
-    private fun normalizeRpgMv(v: String?): String = normalizeRpgVersion(v)
-
-    private fun normalizeRpgMz(v: String?): String = normalizeRpgVersion(v)
+    private fun normalizeRpgMz(v: String?): String = when (v?.trim()?.lowercase()) {
+        RPG_MZ_V1 -> RPG_MZ_V1
+        RPG_MZ_V2 -> RPG_MZ_V2
+        RPG_MZ_V0 -> RPG_MZ_V0
+        else -> RPG_MZ_V0
+    }
 }

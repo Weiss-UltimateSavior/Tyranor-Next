@@ -37,6 +37,9 @@ internal object GameOverridePartitions {
     const val KEY_ART_ROTATE = "art_rotate_screen"
     const val KEY_ART_PATCH = "art_auto_patch"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
+    const val KEY_RPG_LEGACY_RENDERER = "rpg_legacy_renderer"
+    const val KEY_RPG_MV_VERSION = "rpg_mv_engine_version"
+    const val KEY_RPG_MZ_VERSION = "rpg_mz_engine_version"
     const val KEY_TY_SCOPED = "ty_scoped"
     const val KEY_RENPY_VERSION = "renpy_engine_version"
     const val ONS_OBJECT_KEY = "ons"
@@ -49,7 +52,13 @@ internal object GameOverridePartitions {
         KEY_SKIP_STARTUP_DIALOGS,
     )
     val ARTEMIS_KEYS: Set<String> = setOf(KEY_ART_VERSION, KEY_ART_ROTATE, KEY_ART_PATCH)
-    val TYRANO_KEYS: Set<String> = setOf(KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED)
+    // RPG Maker 会话键（legacy 渲染、MV/MZ 运行时版本）与 tyrano 共用分区：
+    // v0 宿主与 v1/v2 宿主的逐游戏覆盖都在这一条 blob 里，显式建模，
+    // 不依赖“未识别键兜底归入 tyrano”的 else 路径，防止未来收紧分区时丢键
+    val TYRANO_KEYS: Set<String> = setOf(
+        KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED,
+        KEY_RPG_LEGACY_RENDERER, KEY_RPG_MV_VERSION, KEY_RPG_MZ_VERSION,
+    )
     val RENPY_KEYS: Set<String> = setOf(KEY_RENPY_VERSION)
     val TOUCHPAD_KEYS: Set<String> = setOf(TOUCH_PAD_CONFIG_KEY, TOUCH_PAD_PRESETS_KEY)
 

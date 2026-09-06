@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="rpgmaker_empty_game_directory">RPG Maker failed to start: the game folder is empty</string>
+    <string name="rpgmaker_unwritable_save_directory">RPG Maker failed to start: the save folder is not writable</string>
+    <string name="rpgmaker_entry_not_found">RPG Maker failed to start: index.html or app.asar was not found</string>
+    <string name="rpgmaker_asar_unreadable">RPG Maker failed to start: app.asar could not be read</string>
+    <string name="rpgmaker_server_failed">RPG Maker failed to start: the local server could not be started</string>
+</resources>

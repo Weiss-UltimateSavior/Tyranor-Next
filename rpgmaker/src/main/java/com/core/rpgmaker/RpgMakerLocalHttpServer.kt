@@ -13,7 +13,6 @@ import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
-import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
 import java.util.Locale
@@ -227,46 +226,6 @@ internal class RpgMakerLocalHttpServer(
         return if (!isInsideRoot(target) || !target.isFile) null else target
     }
 
-    // 宽松 URI 解码：文件名可含字面 '%'（如 "xiclotlan_s_128%.rpgmvp"）。
-    // java.net.URLDecoder.decode 遇到非法 % 序列（% 后非两个 hex）会抛
-    // IllegalArgumentException（旧引擎宿主侧则产生 U+FFFD 替换字符），把合法
-    // 文件名破坏成找不到的乱码（战斗图片 404 卡加载）。
-    // 这里字节级解码：%XX 收集为原始字节（多字节 UTF-8 序列保持连贯），
-    // 最后整体按 UTF-8 组装；非法 % 序列保留 '%' 原字符。
-    // 注意：不能按单字节 toChar 逐个追加——那会把 %E9%BB%91 这类 UTF-8
-    // 多字节序列解成三个 Latin-1 字符（é»）而非"黑"。
-    private fun decodeUriLenient(uri: String): String {
-        if (!uri.contains('%')) return uri
-        val bytes = java.io.ByteArrayOutputStream(uri.length)
-        val plain = StringBuilder(uri.length)
-        var hasDecoded = false
-        var i = 0
-        val n = uri.length
-        while (i < n) {
-            val c = uri[i]
-            if (c == '%' && i + 2 < n) {
-                val h = uri[i + 1]
-                val l = uri[i + 2]
-                if (h.isHex() && l.isHex()) {
-                    bytes.write(plain.toString().toByteArray(Charsets.UTF_8))
-                    plain.setLength(0)
-                    bytes.write(((Character.digit(h, 16) shl 4) or Character.digit(l, 16)))
-                    hasDecoded = true
-                    i += 3
-                    continue
-                }
-            }
-            plain.append(c)
-            i++
-        }
-        if (!hasDecoded) return uri
-        bytes.write(plain.toString().toByteArray(Charsets.UTF_8))
-        return bytes.toString("UTF-8")
-    }
-
-    private fun Char.isHex(): Boolean =
-        (this in '0'..'9') || (this in 'a'..'f') || (this in 'A'..'F')
-
     private fun replaceSuffix(value: String?, oldSuffix: String, newSuffix: String): String? {
         if (value == null) return null
         return value.substring(0, value.length - oldSuffix.length) + newSuffix
@@ -324,14 +283,13 @@ internal class RpgMakerLocalHttpServer(
     }
 
     private fun sendInjectedIndex(socket: Socket, html: String?, headOnly: Boolean) {
-        val injectedData = if (earlyHook != null && earlyHook.isNotEmpty()) {
-            // 两段式注入：earlyHook（NW.js polyfill）在 </head>，lateHook（引擎 hook）在 </body>
-            val withEarly = String(buildInjectedHtml(html.orEmpty(), earlyHook, "", false), StandardCharsets.UTF_8)
-            buildInjectedHtml(withEarly, tyranoHook, injectedHtml, injectBeforeBody)
+        val data = if (earlyHook != null && earlyHook.isNotEmpty()) {
+            buildInjectedHtmlTwoPhase(
+                html.orEmpty(), earlyHook, tyranoHook, injectedHtml, injectBeforeBody,
+            )
         } else {
             buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
         }
-        val data = injectedData
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size}")
         val out = BufferedOutputStream(socket.getOutputStream())
         out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
@@ -374,18 +332,29 @@ internal class RpgMakerLocalHttpServer(
         var start = 0L
         var end = fileLen - 1
         var partial = false
-        if (rangeHeader != null && rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) {
-            val range = rangeHeader.substring(6).trim()
-            val dash = range.indexOf('-')
-            if (dash >= 0) {
-                val a = range.substring(0, dash).trim()
-                val b = range.substring(dash + 1).trim()
-                if (a.isNotEmpty()) start = a.toLong()
-                if (b.isNotEmpty()) end = b.toLong()
-                if (end >= fileLen) end = fileLen - 1
-                if (start < 0) start = 0
-                if (start <= end) partial = true
+        // Range 解析三重防御（与 feat 版 TyranoLocalHttpServer 逐行一致，支撑本模块新增的
+        // ogg->m4a / 加密资源回退触发的媒体 Range 请求）：
+        // 1) 多段 Range（bytes=0-1,4-5）只取第一段，避免 "," 进入 toLong 抛异常走 500；
+        // 2) 越界起点（start >= fileLen 或 start > end）回退全量 200，避免 Content-Length: 0 卡死媒体；
+        // 3) 整体 try/catch，畸形输入一律回退全量 200。
+        try {
+            if (rangeHeader != null && rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) {
+                val range = rangeHeader.substring(6).trim().split(",")[0].trim()
+                val dash = range.indexOf('-')
+                if (dash >= 0) {
+                    val a = range.substring(0, dash).trim()
+                    val b = range.substring(dash + 1).trim()
+                    if (a.isNotEmpty()) start = a.toLong()
+                    if (b.isNotEmpty()) end = b.toLong()
+                    if (end >= fileLen) end = fileLen - 1
+                    if (start < 0) start = 0
+                    if (start >= fileLen || start > end) {
+                        start = 0; end = fileLen - 1; partial = false
+                    } else if (start <= end) partial = true
+                }
             }
+        } catch (_: Throwable) {
+            start = 0; end = fileLen - 1; partial = false
         }
         val len = Math.max(0, end - start + 1)
         val status = if (partial) "206 Partial Content" else "200 OK"
@@ -510,3 +479,75 @@ internal fun buildInjectedHtml(
     }
     return result.toByteArray(StandardCharsets.UTF_8)
 }
+
+/**
+ * 两段式注入（v1/v2 会话专用）：earlyHook（NW.js polyfill）注入在 `</head>` 处，
+ * lateHook（引擎 hook + 修改器 HTML）注入在 `</body>` 处，保证 polyfill 先于游戏
+ * 脚本与引擎补丁执行。
+ *
+ * 与“先 early 后 late 各调一次 [buildInjectedHtml]”的朴素两段拼接不同：当页面没有
+ * `</body>` 标记时，[buildInjectedHtml] 会前插——late 段将插到已前插的 early 段
+ * 之前，导致引擎 hook 先于 polyfill 执行（顺序反转）。本函数在 `</body>` 缺失时
+ * 改为**尾插** late 段，任何 HTML 形态下都维持 early < late 的执行顺序。
+ */
+internal fun buildInjectedHtmlTwoPhase(
+    html: String,
+    earlyHook: ByteArray,
+    lateHook: ByteArray,
+    injectedHtml: String,
+    injectBeforeBody: Boolean,
+): ByteArray {
+    val withEarly = String(buildInjectedHtml(html, earlyHook, "", false), StandardCharsets.UTF_8)
+    if (lateHook.isEmpty() && injectedHtml.isBlank()) return withEarly.toByteArray(StandardCharsets.UTF_8)
+    val script = String(lateHook, StandardCharsets.UTF_8)
+    val hookTag = if (script.isBlank()) "" else "\n<script type='text/javascript'>\n$script\n</script>\n"
+    val injected = hookTag + injectedHtml
+    if (injected.isBlank()) return withEarly.toByteArray(StandardCharsets.UTF_8)
+    val position = withEarly.lowercase(Locale.ROOT).indexOf("</body>")
+    val result = if (position >= 0) {
+        withEarly.substring(0, position) + injected + withEarly.substring(position)
+    } else {
+        withEarly + injected
+    }
+    return result.toByteArray(StandardCharsets.UTF_8)
+}
+
+// 宽松 URI 解码：文件名可含字面 '%'（如 "xiclotlan_s_128%.rpgmvp"）。
+// java.net.URLDecoder.decode 遇到非法 % 序列（% 后非两个 hex）会抛
+// IllegalArgumentException（旧引擎宿主侧则产生 U+FFFD 替换字符），把合法
+// 文件名破坏成找不到的乱码（战斗图片 404 卡加载）。
+// 这里字节级解码：%XX 收集为原始字节（多字节 UTF-8 序列保持连贯），
+// 最后整体按 UTF-8 组装；非法 % 序列保留 '%' 原字符。
+// 注意：不能按单字节 toChar 逐个追加——那会把 %E9%BB%91 这类 UTF-8
+// 多字节序列解成三个 Latin-1 字符（é»）而非“黑”。
+internal fun decodeUriLenient(uri: String): String {
+    if (!uri.contains('%')) return uri
+    val bytes = java.io.ByteArrayOutputStream(uri.length)
+    val plain = StringBuilder(uri.length)
+    var hasDecoded = false
+    var i = 0
+    val n = uri.length
+    while (i < n) {
+        val c = uri[i]
+        if (c == '%' && i + 2 < n) {
+            val h = uri[i + 1]
+            val l = uri[i + 2]
+            if (h.isHexDigit() && l.isHexDigit()) {
+                bytes.write(plain.toString().toByteArray(Charsets.UTF_8))
+                plain.setLength(0)
+                bytes.write(((Character.digit(h, 16) shl 4) or Character.digit(l, 16)))
+                hasDecoded = true
+                i += 3
+                continue
+            }
+        }
+        plain.append(c)
+        i++
+    }
+    if (!hasDecoded) return uri
+    bytes.write(plain.toString().toByteArray(Charsets.UTF_8))
+    return bytes.toString("UTF-8")
+}
+
+private fun Char.isHexDigit(): Boolean =
+    (this in '0'..'9') || (this in 'a'..'f') || (this in 'A'..'F')

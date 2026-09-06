@@ -27,7 +27,7 @@ import android.widget.Toast
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineThemeColors
-import com.core.engine.R
+import com.core.rpgmaker.R
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.Locale
@@ -51,13 +51,15 @@ class RpgMakerActivity : Activity() {
     private var webView: WebView? = null
     private var virtualMouseLayer: VirtualMouseLayer? = null
     private var gameDir: String? = null
-    private var gameRootFile: File? = null
     private var saveDirectory: File? = null
     private var gameUsesAsar = false
     private var webGameType = WebGameType.RPG_MV
     private var asarPath: String? = null
     private var asarArchive: AsarArchive? = null
     private var firstResume = true
+
+    // WebView 回调线程（shouldInterceptRequest）会读取这两项，onCreate 主线程写入
+    @Volatile
     private var localServer: RpgMakerLocalHttpServer? = null
     private var allowExternalNetwork = false
     private var rpgMakerModEnabled = false
@@ -65,6 +67,7 @@ class RpgMakerActivity : Activity() {
     private var rpgMakerVersion: String? = null
 
     /** v1/v2 兼容会话（NW.js polyfill、加密资源回退等）；版本缺失的兜底会话按 v0 资源策略。 */
+    @Volatile
     private var v12Session = false
     private val processExitScheduled = AtomicBoolean(false)
 
@@ -108,20 +111,19 @@ class RpgMakerActivity : Activity() {
         Log.i(TAG, "onCreate gameDir=$gameDir")
         val resolvedGameDir = gameDir
         if (resolvedGameDir.isNullOrBlank()) {
-            failLaunch(getString(R.string.engine_tyrano_empty_game_directory))
+            failLaunch(getString(R.string.rpgmaker_empty_game_directory))
             return
         }
 
         val gameRoot = File(resolvedGameDir)
-        gameRootFile = gameRoot
 
-        val entry = findTyranoEntry(gameRoot, 0)
+        val entry = findGameEntry(gameRoot, 0)
         if (entry == null) {
             val rootAsar = File(gameRoot, "app.asar")
             val resourcesAsar = File(File(gameRoot, "resources"), "app.asar")
             val index = File(gameRoot, "index.html")
             Log.e(TAG, "entry not found index=${index.absolutePath} app.asar=${rootAsar.absolutePath} resources/app.asar=${resourcesAsar.absolutePath} (searched subdirs: ${WEB_ENTRY_SUBDIRS.joinToString()})")
-            failLaunch(getString(R.string.engine_tyrano_entry_not_found))
+            failLaunch(getString(R.string.rpgmaker_entry_not_found))
             return
         }
         val contentRoot = entry.contentRoot
@@ -135,7 +137,7 @@ class RpgMakerActivity : Activity() {
                 asarArchive = AsarArchive(File(requireNotNull(asarPath)))
             } catch (error: Throwable) {
                 Log.e(TAG, "open asar failed", error)
-                failLaunch(getString(R.string.engine_tyrano_asar_unreadable))
+                failLaunch(getString(R.string.rpgmaker_asar_unreadable))
                 return
             }
         }
@@ -149,7 +151,7 @@ class RpgMakerActivity : Activity() {
         val saves = resolveSaveDirectory(intent, gameRoot)
         saveDirectory = saves
         if (!ensureWritableSaveDirectory(saves)) {
-            failLaunch(getString(R.string.engine_tyrano_unwritable_save_directory))
+            failLaunch(getString(R.string.rpgmaker_unwritable_save_directory))
             return
         }
         Log.i(TAG, "save directory=${saves?.absolutePath ?: "none"} scoped=${intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false)}")
@@ -161,10 +163,23 @@ class RpgMakerActivity : Activity() {
             val isRpgMvV2 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v2"
             val isRpgMzV2 = webGameType == WebGameType.RPG_MZ && normalizedVersion == "v2"
             v12Session = isRpgMvV1 || isRpgMvV2 || isRpgMzV2
-            val useCoreScriptOverlay = isRpgMvV1
+            var useCoreScriptOverlay = isRpgMvV1
             if (!v12Session && normalizedVersion != null) {
                 // 目前仅 MZ v1 为占位版本；缺版本（null）视为未配置的兜底会话，均回退 v0 资源策略
                 Log.i(TAG, "rpgMakerVersion=$normalizedVersion has no dedicated runtime, falling back to v0 resources")
+            }
+            // v1 覆盖包要求核心文件齐全；任一缺失（打包回归）时整体降级为 v0 资源策略——
+            // 连同 __rpg_v12.js hook 与 NWJS polyfill 一起放弃，避免“v12 补丁配游戏自带老核心”的混合态
+            val v1Overlay: Map<String, ByteArray> = if (useCoreScriptOverlay) {
+                val overlay = buildRpgMvV1Overlay(assets)
+                if (overlay.isEmpty()) {
+                    Log.w(TAG, "v1 overlay incomplete, downgrading session to v0 resources")
+                    v12Session = false
+                    useCoreScriptOverlay = false
+                }
+                overlay
+            } else {
+                emptyMap()
             }
             // 触屏手柄（issue #35）：MV/MZ 共用 __touch_pad.js，拼接进 hook 注入，
             // 独立于修改器开关。手柄代码零引擎依赖，MV/MZ 的 Input 均读 keyCode。
@@ -186,7 +201,7 @@ class RpgMakerActivity : Activity() {
                 "window.__touchPadTheme={primary:'${cssColor(colors.primary)}',onPrimary:'${cssColor(colors.onPrimary)}'};"
             }
             val touchPad = run {
-                val pad = try { String(loadAsset(TOUCH_PAD_ASSET), Charsets.UTF_8) } catch (_: Exception) { "" }
+                val pad = loadAssetOrNull(TOUCH_PAD_ASSET)?.toString(Charsets.UTF_8).orEmpty()
                 (touchPadThemeJs + "\n" + touchPadConfigJs + "\n" + pad).toByteArray(Charsets.UTF_8)
             }
             // v1/v2 用带 PC 存档兜底的 MV hook（__rpg_v12.js，本模块资产）；
@@ -218,26 +233,21 @@ class RpgMakerActivity : Activity() {
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
             // v1/v2 会话注入 NWJS 兼容层（earlyHook，</head> 处），v0 兜底会话不注入（与 v0 宿主一致）
             val nwPolyfill: ByteArray? = if (v12Session) {
-                try {
-                    val base = String(loadAsset(NWJS_POLYFILL_ASSET), Charsets.UTF_8)
-                    val compatExtra = try { String(loadAsset(NWJS_POLYFILL_V1_EXTRA_ASSET), Charsets.UTF_8) } catch (_: Exception) { "" }
-                    // v2-only: JoiPlay webgl/overrides/joiSaveAs shim (isolated to v2)
+                val base = loadAssetOrNull(NWJS_POLYFILL_ASSET)?.toString(Charsets.UTF_8)
+                if (base == null) {
+                    null
+                } else {
+                    // v1/v2 的 NWJS 兼容层兜底统一注入；v2 追加 JoiPlay shim（仅 v2 生效）
+                    val compatExtra = loadAssetOrNull(NWJS_POLYFILL_V1_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()
                     val v2Extra = if (isRpgMvV2 || isRpgMzV2) {
-                        runCatching { String(loadAsset(NWJS_POLYFILL_V2_EXTRA_ASSET), Charsets.UTF_8) }.getOrNull().orEmpty()
+                        loadAssetOrNull(NWJS_POLYFILL_V2_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()
                     } else {
                         ""
                     }
                     (base + compatExtra + v2Extra).toByteArray(Charsets.UTF_8)
-                } catch (_: Exception) {
-                    null
                 }
             } else {
                 null
-            }
-            val v1Overlay: Map<String, ByteArray> = if (useCoreScriptOverlay) {
-                buildRpgMvV1Overlay(assets)
-            } else {
-                emptyMap()
             }
             val internalResources = modResources + v1Overlay
             Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} early=${nwPolyfill?.size ?: 0} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
@@ -253,7 +263,7 @@ class RpgMakerActivity : Activity() {
             }.also { it.start() }
         } catch (error: Throwable) {
             Log.e(TAG, "start local server failed", error)
-            failLaunch(getString(R.string.engine_tyrano_server_failed))
+            failLaunch(getString(R.string.rpgmaker_server_failed))
             return
         }
 
@@ -579,6 +589,15 @@ class RpgMakerActivity : Activity() {
 
     override fun onPause() {
         virtualMouseLayer?.reset()
+        // MV/MZ 的 WebAudio 主上下文挂起（WebView.onPause 不暂停 WebAudio，切后台会继续出声；
+        // Html5Audio/视频旁路无法全局枚举，引擎主路径已覆盖）。v0 宿主的 _tyrano_player 挂起
+        // 为 tyrano 专用，此处为 MV/MZ 等价实现。
+        runCatching {
+            webView?.evaluateJavascript(
+                "try{if(window.WebAudio&&WebAudio._context&&WebAudio._context.state==='running'){WebAudio._context.suspend();}}catch(e){}",
+                null,
+            )
+        }
         runCatching { webView?.onPause() }
         super.onPause()
     }
@@ -586,7 +605,15 @@ class RpgMakerActivity : Activity() {
     override fun onResume() {
         super.onResume()
         enterFullscreen()
-        if (firstResume) firstResume = false
+        if (firstResume) firstResume = false else {
+            // 与 v0 宿主同构：首帧跳过恢复（页面尚未开始播放），前后台切换时恢复 WebAudio
+            runCatching {
+                webView?.evaluateJavascript(
+                    "try{if(window.WebAudio&&WebAudio._context&&WebAudio._context.state==='suspended'){WebAudio._context.resume();}}catch(e){}",
+                    null,
+                )
+            }
+        }
         runCatching { webView?.onResume() }
     }
 
@@ -759,7 +786,7 @@ class RpgMakerActivity : Activity() {
      * @param depth 当前递归深度，根目录传入 0。
      * @return 入口定位结果；未找到返回 null。
      */
-    private fun findTyranoEntry(dir: File, depth: Int): GameEntry? {
+    private fun findGameEntry(dir: File, depth: Int): GameEntry? {
         // 当前目录的入口文件（保持原逻辑：asar 优先于 index.html）
         dir.resolve("app.asar").takeIf { it.isFile }?.let {
             return GameEntry(dir, it.absolutePath)
@@ -781,7 +808,7 @@ class RpgMakerActivity : Activity() {
         for (name in WEB_ENTRY_SUBDIRS) {
             val sub = dir.resolve(name)
             if (!sub.isDirectory) continue
-            findTyranoEntry(sub, depth + 1)?.let { return it }
+            findGameEntry(sub, depth + 1)?.let { return it }
         }
         return null
     }
@@ -894,11 +921,6 @@ class RpgMakerActivity : Activity() {
             // 目录探测/创建失败视为不可写，返回 false 由调用方回退（边界兜底，§8）
             false
         }
-
-        @JvmStatic
-        @Throws(Exception::class)
-        fun resolveStorageFile(directory: File?, key: String?): File? =
-            RpgMakerStorage.resolveFile(directory, key)
 
         /**
          * 通过 SharedPreferences 持久化的用户偏好创建自定义 Configuration 的 Context。

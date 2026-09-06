@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.launch
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -715,17 +716,24 @@ object EngineLauncher {
         } else {
             null
         }
-        val rpgMakerVersion = effectiveRpgMakerVersion(context, game)
-        val rpgLegacyRenderer = PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_LEGACY_RENDERER)
-            ?: EngineSettingsStore.isRpgLegacyRenderer(context)
         // v1/v2 由独立 rpgmaker 运行时（:rpgmaker 进程）承载；v0 与 MZ v1（占位版本）
         // 沿用原 tyrano 宿主的 v0 链路，不传版本 extras，行为与历史版本完全一致。
+        // 版本/legacy 读取仅在 RPG 会话进行，Tyrano/VN/WebOther 启动路径零新增开销。
+        val rpgSession = game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ
+        val rpgMakerVersion = if (rpgSession) effectiveRpgMakerVersion(context, game) else null
+        val rpgLegacyRenderer = if (rpgSession) {
+            PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_LEGACY_RENDERER)
+                ?: EngineSettingsStore.isRpgLegacyRenderer(context)
+        } else {
+            false
+        }
         val useRpgMakerRuntime = when (game.engine) {
             EngineType.RPG_MV -> rpgMakerVersion == EngineSettingsStore.RPG_MV_V1 ||
                 rpgMakerVersion == EngineSettingsStore.RPG_MV_V2
             EngineType.RPG_MZ -> rpgMakerVersion == EngineSettingsStore.RPG_MZ_V2
             else -> false
         }
+        if (rpgSession) stopOppositeRpgHost(context, useRpgMakerRuntime)
         val target = if (useRpgMakerRuntime) RpgMakerActivity::class.java else TyranoActivity::class.java
         return Intent(context, target).apply {
             putExtra("path", path)
@@ -752,6 +760,26 @@ object EngineLauncher {
                 rpgMakerVersion?.let { putExtra("rpgMakerVersion", it) }
                 putExtra("rpgLegacyRenderer", rpgLegacyRenderer)
             }
+        }
+    }
+
+    /**
+     * v0 宿主（:tyrano 进程）与 v1/v2 宿主（:rpgmaker 进程）分属不同进程，同一游戏在
+     * 两侧同时存活会产生存档写竞争。启动 RPG 会话前先结束另一侧 RPG 宿主进程，
+     * 等效于“退出再切换”的常规流程（宿主 finish 后本就自杀整进程）。
+     * getRunningAppProcesses 仅返回本应用（同 uid）的进程，无越权终止。
+     * 注意 :tyrano 进程同时承载 tyrano 游戏——后台 tyrano 游戏会被一并结束，
+     * 这里取“RPG 同游戏不双活”优先；启动 RPG 会话属显式用户动作。
+     */
+    private fun stopOppositeRpgHost(context: Context, targetIsRpgMaker: Boolean) {
+        val oppositeSuffix = if (targetIsRpgMaker) ":tyrano" else ":rpgmaker"
+        runCatching {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            am?.runningAppProcesses
+                ?.filter { it.processName.endsWith(oppositeSuffix) }
+                ?.forEach { processInfo ->
+                    runCatching { android.os.Process.killProcess(processInfo.pid) }
+                }
         }
     }
 

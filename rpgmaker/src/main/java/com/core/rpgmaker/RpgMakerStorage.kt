@@ -5,17 +5,12 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
-/** 供 Tyrano JavaScript 桥使用的、限制在单一存档目录内的文件存储。 */
+/** 供 RPG Maker MV/MZ 存档桥（RpgMakerSaveBridge，StorageManager 兼容接口）使用的、限制在单一存档目录内的文件存储。 */
 internal object RpgMakerStorage {
     private const val TAG = "YukiRpgMaker"
     private const val MAX_SAVE_BYTES = 8L * 1024L * 1024L
     private val directFileKey = Regex("[A-Za-z0-9._-]{1,128}")
     private const val MAX_KEY_CHARS = 512
-
-    @JvmStatic
-    fun read(directory: File?, key: String?): String {
-        return read(directory, key, ".sav")
-    }
 
     @JvmStatic
     fun read(directory: File?, key: String?, extension: String): String {
@@ -38,11 +33,6 @@ internal object RpgMakerStorage {
             Log.w(TAG, "getStorage failed key=$key", error)
             ""
         }
-    }
-
-    @JvmStatic
-    fun write(directory: File?, key: String?, value: String?) {
-        write(directory, key, value, ".sav")
     }
 
     @JvmStatic
@@ -69,9 +59,6 @@ internal object RpgMakerStorage {
         Log.w(TAG, "removeStorage failed key=$key", error)
         false
     }
-
-    @JvmStatic
-    fun resolveFile(directory: File?, key: String?): File? = resolveFile(directory, key, ".sav")
 
     @JvmStatic
     fun resolveFile(directory: File?, key: String?, extension: String): File? {

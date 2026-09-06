@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="rpgmaker_empty_game_directory">RPG Maker 启动失败：游戏目录为空</string>
+    <string name="rpgmaker_unwritable_save_directory">RPG Maker 启动失败：存档目录不可写</string>
+    <string name="rpgmaker_entry_not_found">RPG Maker 启动失败：未找到 index.html 或 app.asar</string>
+    <string name="rpgmaker_asar_unreadable">RPG Maker 启动失败：无法读取 app.asar</string>
+    <string name="rpgmaker_server_failed">RPG Maker 启动失败：本地服务器启动失败</string>
+</resources>

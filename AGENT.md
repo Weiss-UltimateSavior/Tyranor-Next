@@ -24,9 +24,9 @@
 
 ### 1. 底层引擎层
 
-- 目录：`engine/`
+- 目录：`engine/`；RPG Maker MV/MZ 的 v1/v2 独立运行时另设顶层模块 `rpgmaker/`（与 ppsspp 外置引擎同模式：独立模块 + 独立 `:rpgmaker` 进程，只依赖 `engine` 与自身）。v0 基线变体仍由 `engine/` 的 `com.core.tyrano` 宿主承载。
 
-- 职责：KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Tyrano、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源、Native 插件底层加载。
+- 职责：KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Tyrano、RPG Maker MV/MZ、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源、Native 插件底层加载。
 
 - 规则：不得依赖 `com.tyranor.next.ui.*`；不得关心 App 页面、Compose 状态或列表展示。
 
@@ -53,6 +53,8 @@
 ### 4. 资源归属
 
 - `engine/src/main/assets`：底层引擎运行资源与共享引擎脚本源头。
+
+- `rpgmaker/src/main/assets`：RPG Maker MV/MZ v1/v2 专属运行时资产（`__nwjs_polyfill*.js`、`__rpg_v12.js`、`rpgmv-v1/`、`rpgmv-v2-joi/`）。rpgmaker 运行期按名读取的共享脚本（`__rpg__.js`、`__rmmz__.js`、MZ hooks、触屏手柄、修改器资源等）单份源头在 `engine/src/main/assets`，经库模块资产合并进 APK；修改这些共享脚本需同时回归 v0 与 v1/v2 两条运行时路径。rpgmaker 内的 AsarArchive/VirtualMouseLayer/RpgMakerStorage 为 engine 同源复制件（分叉基线与同步命令见 `rpgmaker/build.gradle` 头注释），engine 侧修复须双处同步。
 
 - `app/src/main/assets/engine`：App 专属注入脚本；共享脚本由 Gradle 从 `engine/src/main/assets` 生成到 app assets。
 

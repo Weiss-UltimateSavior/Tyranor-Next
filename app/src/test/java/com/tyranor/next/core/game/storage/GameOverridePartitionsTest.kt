@@ -21,6 +21,9 @@ class GameOverridePartitionsTest {
         .put(PerGameSettingsStore.F_ART_ROTATE, true)
         .put(PerGameSettingsStore.F_TY_SCOPED, false)
         .put(PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED, true)
+        .put(PerGameSettingsStore.F_RPG_LEGACY_RENDERER, true)
+        .put(PerGameSettingsStore.F_RPG_MV_VERSION, "v2")
+        .put(PerGameSettingsStore.F_RPG_MZ_VERSION, "v2")
         .put(PerGameSettingsStore.F_RENPY_VERSION, "8.5")
         .put(
             PerGameSettingsStore.ONS_KEY,
@@ -63,8 +66,12 @@ class GameOverridePartitionsTest {
         val touchpad = JSONObject(row.touchpadJson!!)
         assertTrue(touchpad.has(GameOverridePartitions.TOUCH_PAD_CONFIG_KEY))
         assertTrue(touchpad.has(GameOverridePartitions.TOUCH_PAD_PRESETS_KEY))
-        // 未识别键兜底归入 tyrano 分区
+        // 未识别键兜底归入 tyrano 分区；RPG Maker 会话键显式归入 tyrano 分区
         assertEquals("keep-me", JSONObject(row.tyranoJson!!).getString("future_engine_key"))
+        val tyranoPartition = JSONObject(row.tyranoJson!!)
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_LEGACY_RENDERER))
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_MV_VERSION))
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_MZ_VERSION))
     }
 
     @Test
@@ -107,6 +114,9 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_ART_ROTATE, GameOverridePartitions.KEY_ART_ROTATE)
         assertEquals(PerGameSettingsStore.F_ART_PATCH, GameOverridePartitions.KEY_ART_PATCH)
         assertEquals(PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED, GameOverridePartitions.KEY_RPG_MAKER_MOD_ENABLED)
+        assertEquals(PerGameSettingsStore.F_RPG_LEGACY_RENDERER, GameOverridePartitions.KEY_RPG_LEGACY_RENDERER)
+        assertEquals(PerGameSettingsStore.F_RPG_MV_VERSION, GameOverridePartitions.KEY_RPG_MV_VERSION)
+        assertEquals(PerGameSettingsStore.F_RPG_MZ_VERSION, GameOverridePartitions.KEY_RPG_MZ_VERSION)
         assertEquals(PerGameSettingsStore.F_TY_SCOPED, GameOverridePartitions.KEY_TY_SCOPED)
         assertEquals(PerGameSettingsStore.F_RENPY_VERSION, GameOverridePartitions.KEY_RENPY_VERSION)
         assertEquals(PerGameSettingsStore.ONS_KEY, GameOverridePartitions.ONS_OBJECT_KEY)

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="rpgmaker_empty_game_directory">RPG Maker の起動に失敗しました：ゲームフォルダーが空です</string>
+    <string name="rpgmaker_unwritable_save_directory">RPG Maker の起動に失敗しました：セーブフォルダーに書き込めません</string>
+    <string name="rpgmaker_entry_not_found">RPG Maker の起動に失敗しました：index.html または app.asar が見つかりません</string>
+    <string name="rpgmaker_asar_unreadable">RPG Maker の起動に失敗しました：app.asar を読み込めません</string>
+    <string name="rpgmaker_server_failed">RPG Maker の起動に失敗しました：ローカルサーバーを起動できません</string>
+</resources>

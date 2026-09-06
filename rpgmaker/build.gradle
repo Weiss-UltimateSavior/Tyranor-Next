@@ -4,9 +4,25 @@
 // 宿主代码由 v0 宿主复制而来并叠加版本门控的 v1/v2 兼容层，运行在独立的
 // :rpgmaker 进程；运行时资产（NW.js polyfill、rpgmv-v1 核心覆盖、
 // rpgmv-v2-joi shims、__rpg_v12.js hook）随本模块打包。
-// 复用 engine 模块的共享基础（EnginePrefs/EngineThemeColors/DoubleBackExit、
-// 引擎侧字符串资源），以及 engine assets 中的共用文件（__rmmz__.js、MZ hooks、
-// 触屏手柄、修改器资源等，内容与 feat 分支一致，避免跨模块重复资产名）。
+//
+// 【共享资产契约】本模块运行期按文件名读取以下 engine 模块资产（经库模块
+// assets 平铺合并进 APK，单份源头在 engine，禁止两处手工维护）：
+//   __rpg__.js / __rmmz__.js / __hook_rmmz_core.js / __hook_rmmz_managers.js
+//   __touch_pad.js / __tyranor_mouse.js / __rpgmaker_mod_core.js / __rpgmaker_mod_ui.js
+//   __rpgmaker_mod.css / __rpgmaker_mod_icon.png
+// engine 侧修改这些文件需同时回归 v0 与 v1/v2 两条运行时路径。
+// engine/assets 中不存在同名文件，故无合并冲突；本模块资产均为 v1/v2 专属。
+//
+// 【复制件基线】AsarArchive / VirtualMouseLayer / RpgMakerStorage 为 engine 模块
+// com.core.tyrano 同名文件的复制件（分叉基线：d97dc0a，即 origin/main@3ba8ef8）。
+// 同步检查命令：
+//   git diff --no-index engine/src/main/java/com/core/tyrano/AsarArchive.kt rpgmaker/src/main/java/com/core/rpgmaker/AsarArchive.kt
+//   git diff --no-index engine/src/main/java/com/core/tyrano/VirtualMouseLayer.kt rpgmaker/src/main/java/com/core/rpgmaker/VirtualMouseLayer.kt
+//   git diff --no-index engine/src/main/java/com/core/tyrano/TyranoStorage.kt rpgmaker/src/main/java/com/core/rpgmaker/RpgMakerStorage.kt
+// v0 侧修复这三处 bug 时须双处同步（v0 冻结约束排除了直接引用 tyrano 包的方案）。
+//
+// 复用 engine 模块的共享基础（EnginePrefs/EngineThemeColors/DoubleBackExit）；
+// 失败提示等 UI 文案使用本模块自有字符串资源（rpgmaker_*），不与 engine 共用键。
 plugins {
     alias(libs.plugins.android.library)
 }
@@ -26,8 +42,6 @@ android {
 }
 
 dependencies {
-    implementation libs.appcompat
-    implementation libs.androidx.documentfile
     implementation libs.kotlin.stdlib
     implementation project(':engine')
     testImplementation libs.junit
