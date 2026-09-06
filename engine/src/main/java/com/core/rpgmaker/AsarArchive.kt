@@ -75,6 +75,53 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return e != null && e.directory
     }
 
+    /**
+     * 打开条目的流式读取（PR review 意见：大体积媒体以完整 ByteArray 在内存流转，
+     * 既无法 Range/seek 也有 OOM 风险）。返回 [输入流, 条目总大小]；每次调用独立
+     * 打开 RandomAccessFile，调用方关闭输入流时同步关闭底层文件句柄。
+     */
+    fun openStream(path: String): Pair<java.io.InputStream, Long>? {
+        return try {
+            val e = entries[normalize(path)] ?: return null
+            if (e.directory) return null
+            val raf = RandomAccessFile(archiveFile, "r")
+            try {
+                raf.seek(dataOffset + e.offset)
+            } catch (t: Throwable) {
+                try { raf.close() } catch (_: Throwable) {}
+                return null
+            }
+            Pair(EntryStream(raf, e.size), e.size)
+        } catch (t: Throwable) {
+            Log.w(TAG, "openStream failed path=$path", t)
+            null
+        }
+    }
+
+    private class EntryStream(private val raf: RandomAccessFile, private val remaining: Long) : java.io.InputStream() {
+        private var left = remaining
+
+        override fun read(): Int {
+            if (left <= 0) return -1
+            val b = raf.read()
+            if (b < 0) { left = 0; return -1 }
+            left--
+            return b
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            if (left <= 0) return -1
+            val n = raf.read(b, off, minOf(len.toLong(), left).toInt())
+            if (n < 0) { left = 0; return -1 }
+            left -= n
+            return n
+        }
+
+        override fun close() {
+            try { raf.close() } catch (_: Throwable) {}
+        }
+    }
+
     fun read(path: String): ByteArray? {
         return try {
             val e = entries[normalize(path)] ?: return null

@@ -35,14 +35,33 @@
         }
     } catch (e) {}
 
-    // 单张贴图 404 不卡死场景：printLoadingError 降级为警告，
-    // 不再置 _loadingCount = -Infinity（服务器端 .png->.rpgmvp 回退已在 Kotlin 侧）
+    // 单张贴图 404 不卡死场景：不沿用原版 _loadingCount = -Infinity（会永久冻结
+    // 加载界面），降级为非阻塞提示 + Retry 按钮——Retry 走 ResourceHandler.retry()
+    // 重载失败资源（服务器端 .png->.rpgmvp 回退已在 Kotlin 侧，绝大多数 404 不会
+    // 走到这里），保留用户可见的自救入口（PR review 意见）
     (function () {
         var pleTimer = setInterval(function () {
             try {
                 if (window.Graphics && typeof window.Graphics.printLoadingError === "function" && !window.Graphics.printLoadingError.__tyranorV1Patched) {
                     window.Graphics.printLoadingError = function (url) {
-                        console.warn("[nw-polyfill-v1] printLoadingError suppressed for", url);
+                        console.warn("[nw-polyfill-v1] Failed to load: " + url);
+                        try {
+                            if (document.getElementById("tyranorRetryEntry")) return;
+                            var box = document.createElement("div");
+                            box.id = "tyranorRetryEntry";
+                            box.style.cssText = "position:fixed;left:0;right:0;bottom:10%;text-align:center;z-index:99999;font:16px sans-serif;";
+                            var btn = document.createElement("button");
+                            btn.textContent = "Retry";
+                            btn.style.cssText = "padding:10px 28px;font-size:16px;cursor:pointer;background:#000;color:#fff;border:1px solid #888;border-radius:6px;";
+                            btn.addEventListener("click", function () {
+                                try {
+                                    if (window.ResourceHandler && typeof window.ResourceHandler.retry === "function") { window.ResourceHandler.retry(); return; }
+                                } catch (eR) {}
+                                try { window.location.reload(); } catch (eL) {}
+                            });
+                            box.appendChild(btn);
+                            (document.body || document.documentElement).appendChild(box);
+                        } catch (eUi) {}
                     };
                     window.Graphics.printLoadingError.__tyranorV1Patched = true;
                     clearInterval(pleTimer);

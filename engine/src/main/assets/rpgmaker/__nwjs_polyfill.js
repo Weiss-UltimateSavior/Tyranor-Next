@@ -107,11 +107,18 @@
                 },
                 allocUnsafe: function (size) { return B.alloc(size); },
                 allocUnsafeSlow: function (size) { return B.alloc(size); },
-                isBuffer: function () { return false; },
+                // 本桩对象带 _bin 标记：isBuffer 必须对自身产物返回 true，
+                // 否则插件把 Buffer 当普通对象走错分支（PR review 意见）
+                isBuffer: function (o) { return !!(o && typeof o === "object" && typeof o._bin === "string"); },
                 isEncoding: function (e) { return ["utf8", "utf-8", "base64", "hex", "ascii", "binary", "latin1"].indexOf(e) >= 0; },
                 byteLength: function (str, enc) {
-                    if (enc === "base64") try { return atob(str).length; } catch (e) { return 0; }
-                    return String(str).length;
+                    var s = String(str);
+                    enc = String(enc || "utf8").toLowerCase();
+                    if (enc === "base64") try { return atob(s).length; } catch (e) { return 0; }
+                    if (enc === "hex") return Math.floor(s.length / 2);
+                    if (enc === "ucs2" || enc === "ucs-2" || enc === "utf16le" || enc === "utf-16le") return s.length * 2;
+                    // 默认 utf8：按 UTF-8 字节数计（多字节字符按 3/4 字节计）
+                    try { return unescape(encodeURIComponent(s)).length; } catch (e) { return s.length; }
                 },
                 concat: function (list) {
                     var s = ""; list.forEach(function (b) { s += (b && b._bin) ? b._bin : (b ? String(b) : ""); });
@@ -192,7 +199,7 @@
     };
     var utilStub = {
         inherits: function (ctor, superCtor) { ctor.super_ = superCtor; ctor.prototype = Object.create(superCtor.prototype, { constructor: { value: ctor } }); },
-        format: function (f) { var a = Array.prototype.slice.call(arguments, 1); var i = 0; return String(f).replace(/%[sdj%]/g, function (x) { if (x === "%%") return "%"; if (i >= a.length) return x; switch (x) { case "%s": return String(a[i++]); case "%d": return Number(a[i++]); case "%j": try { return JSON.stringify(a[i++]); } catch (e) { return "[Circular]"; } default: return x; } }); if (a.length > i) return f + " " + a.slice(i).join(" "); return f; },
+        format: function (f) { var a = Array.prototype.slice.call(arguments, 1); var i = 0; return String(f).replace(/%[sdj%]/g, function (x) { if (x === "%%") return "%"; if (i >= a.length) return x; switch (x) { case "%s": return String(a[i++]); case "%d": return Number(a[i++]); case "%j": try { return JSON.stringify(a[i++]); } catch (e) { return "[Circular]"; } default: return x; } }); },
         inspect: function (o) { try { return JSON.stringify(o); } catch (e) { return String(o); } },
         isArray: Array.isArray, isString: function (x) { return typeof x === "string"; }, deprecate: function (fn) { return fn; }
     };
@@ -412,9 +419,20 @@
                         pendingStub = false;
                     }
                 }
-                if (typeof window.Window_SkillStatus === "undefined" && window.Window_StatusBase) window.Window_SkillStatus = window.Window_StatusBase;
-                if (typeof window.Window_EquipStatus === "undefined" && window.Window_StatusBase) window.Window_EquipStatus = window.Window_StatusBase;
-                if (typeof window.Window_ShopStatus === "undefined" && window.Window_StatusBase) window.Window_ShopStatus = window.Window_StatusBase;
+                // 三个状态窗口必须各自是 Window_StatusBase 的独立子类：
+                // 直接别名共享同一 prototype，MV 插件对任一窗口类的 prototype 补丁
+                // 会同时改写其余两类与基类，导致状态窗口绘制错乱（PR review 意见）
+                function ensureStatusSubclass(name) {
+                    if (typeof window[name] !== "undefined" || !window.Window_StatusBase) return;
+                    var B = window.Window_StatusBase;
+                    var F = function () { return B.apply(this, arguments); };
+                    F.prototype = Object.create(B.prototype);
+                    F.prototype.constructor = F;
+                    window[name] = F;
+                }
+                ensureStatusSubclass("Window_SkillStatus");
+                ensureStatusSubclass("Window_EquipStatus");
+                ensureStatusSubclass("Window_ShopStatus");
             } catch (e) {}
         }
         tryResolve();

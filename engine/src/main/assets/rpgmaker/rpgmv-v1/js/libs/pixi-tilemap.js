@@ -730,7 +730,7 @@ var PIXI;
                 this.checkLeaks();
                 var vb = this.vbs[id];
                 if (vb) {
-                    vb.lastAccessTime = Date.now();
+                    vb.lastTimeAccess = Date.now();
                     return vb;
                 }
                 return null;

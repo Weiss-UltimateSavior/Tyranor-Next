@@ -16,19 +16,22 @@ Graphics._createRenderer = function() {
     var param = getUrlParameters();
 
     if ("android-legacy" in param) {
-        console.log("Android loader enabled.");
-        console.log("Add options to the PIXI renderer.");
-
+        // 设置页"PIXI 兼容渲染"开关：强制 Canvas 渲染器 + PIXI legacy 选项。
+        // 此前仅设置 legacy 选项、渲染器仍由 autoDetect 决定，开关对渲染路径无效
+        window.__tyranorUseLegacyCanvas = true;
+        this._rendererType = "canvas";
+        console.log("Android legacy renderer enabled.");
         const AndroidLegacyOption = {
             legacy: true
         };
-
         for (var optkey in AndroidLegacyOption) {
             options[optkey] = AndroidLegacyOption[optkey];
-            console.log(`Option added : ${"$"}{optkey} => ${"$"}{options[optkey]}`);
+            console.log(`Option added : ${optkey} => ${options[optkey]}`);
         }
-    } else
+    } else {
+        window.__tyranorUseLegacyCanvas = false;
         console.log("Android loader has been disabled. (Not a legacy device or running in desktop)");
+    }
 
     try {
 
@@ -55,7 +58,7 @@ Graphics._createRenderer = function() {
 };
 
 // PC 版 MV 的本地存档文件名是 global.bin / fileN.bin / config.bin（globalId/title 校验
-// 也能对上），而 webStorageKey 产出的键（桥经 TyranoStorage.resolveFile 对含空格/
+// 也能对上），而 webStorageKey 产出的键（桥经 RpgMakerStorage.resolveFile 对含空格/
 // 非 ASCII 键会哈希成 key_sha256.bin）永远读不到 PC 存档（标题页"继续"选项消失）。
 // 键名形态有两种（读路径都要兜底；写路径只写游戏自己请求的键，不双写）：
 //   原版 MV：'RPG Global' / 'RPG FileN' / 'RPG Config'
@@ -85,8 +88,8 @@ StorageManager.saveToWebStorage = function(savefileId, json) {
     var key = this.webStorageKey(savefileId);
     var data = LZString.compressToBase64(json);
     var ok = false;
-    try { var r = window.saveDataManager.Save(key, data); ok = (r !== false && r !== 0); } catch (e) { ok = false; }
-    // Null/undefined return from bridge means success (void bridge compat); only explicit false/0 fails
+    try { var r = window.saveDataManager.Save(key, data); ok = (r === true); } catch (e) { ok = false; }
+    // 桥明确返回 Boolean（RpgMakerStorage.write 原子写结果）；非 true 一律视为失败并回退 localStorage
     if (!ok) {
         try { localStorage.setItem(key, data); ok = true; } catch (e2) {}
     }
@@ -142,7 +145,7 @@ StorageManager.backup = function(savefileId) {
     var compressed = LZString.compressToBase64(data);
     var key = this.webStorageKey(savefileId) + "bak";
     var ok = false;
-    try { var r2 = window.saveDataManager.Save(key, compressed); ok = (r2 !== false && r2 !== 0); } catch (e) { ok = false; }
+    try { var r2 = window.saveDataManager.Save(key, compressed); ok = (r2 === true); } catch (e) { ok = false; }
     if (!ok) {
         try { localStorage.setItem(key, compressed); ok = true; } catch (e2) {}
     }
@@ -170,7 +173,7 @@ StorageManager.restoreBackup = function(savefileId) {
     }
     var origKey = this.webStorageKey(savefileId);
     var writeOk = false;
-    try { var r3 = window.saveDataManager.Save(origKey, LZString.compressToBase64(decompressed)); writeOk = (r3 !== false && r3 !== 0); } catch (e) { writeOk = false; }
+    try { var r3 = window.saveDataManager.Save(origKey, LZString.compressToBase64(decompressed)); writeOk = (r3 === true); } catch (e) { writeOk = false; }
     if (!writeOk) {
         try { localStorage.setItem(origKey, data); writeOk = true; } catch (e2) {}
     }
@@ -197,9 +200,13 @@ StorageManager.backupWebStorage = function(savefileId) {
     var key = this.webStorageKey(savefileId);
     try {
         var data = this.loadFromWebStorage(savefileId);
+        // 读取失败（null/空串）时不得用空备份覆盖已有有效备份（PR review 意见）
+        if (data == null || data === "") return;
         var bak = key + "bak";
         var comp = LZString ? LZString.compressToBase64(data) : data;
-        try { window.saveDataManager.Save(bak, comp); } catch (e2) { localStorage.setItem(bak, comp); }
+        var saved = false;
+        try { saved = window.saveDataManager.Save(bak, comp) === true; } catch (e2) {}
+        if (!saved) { try { localStorage.setItem(bak, comp); } catch (e3) {} }
     } catch (e) {}
 };
 StorageManager.restoreWebStorageBackup = function(savefileId) {
@@ -208,14 +215,23 @@ StorageManager.restoreWebStorageBackup = function(savefileId) {
     if (!this.webStorageBackupExists(savefileId)) return;
     try {
         var d = LZString ? LZString.decompressFromBase64(window.saveDataManager.Load(bak)) : window.saveDataManager.Load(bak);
-        if (d !== null) window.saveDataManager.Save(key, LZString ? LZString.compressToBase64(d) : d);
-        window.saveDataManager.Remove(bak);
+        if (!d) return;
+        // 仅在恢复写回成功后才删除备份；失败保留备份避免存档丢失（PR review 意见）
+        var writeOk = false;
+        try { writeOk = window.saveDataManager.Save(key, LZString ? LZString.compressToBase64(d) : d) === true; } catch (e2) {}
+        if (!writeOk) { try { localStorage.setItem(key, d); writeOk = true; } catch (e3) {} }
+        if (writeOk) {
+            try { window.saveDataManager.Remove(bak); } catch (e4) {}
+            try { localStorage.removeItem(bak); } catch (e5) {}
+        }
     } catch (e) {}
 };
 StorageManager.cleanWebStorageBackup = function(savefileId) {
     var bak = this.webStorageKey(savefileId) + "bak";
     try { window.saveDataManager.Remove(bak); } catch (e) { try { localStorage.removeItem(bak); } catch (e2) {} }
 };
-SceneManager.shouldUseCanvasRenderer = function() {return true;};
+// MV 1.6.1 核心自身不调用此函数（渲染器由 autoDetectRenderer 决定），但插件可能读取；
+// 返回与 _createRenderer 实际选择一致的结果（legacy 开关 = Canvas）
+SceneManager.shouldUseCanvasRenderer = function() { return window.__tyranorUseLegacyCanvas === true; };
 Graphics._defaultStretchMode = function() {return true;};
-document.body.parentNode.style.overflow = "hidden";
+if (document.documentElement) document.documentElement.style.overflow = "hidden";

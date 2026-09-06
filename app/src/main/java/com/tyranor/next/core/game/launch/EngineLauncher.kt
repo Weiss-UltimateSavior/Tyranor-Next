@@ -20,6 +20,7 @@ import com.akira.tyranoemu.remote.ArtemisActivityV5
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.engine.EngineSessionRegistry
 import com.core.engine.KrkrStartupDialogPolicy
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.rpgmaker.RpgMakerActivity
@@ -740,7 +741,11 @@ object EngineLauncher {
             EngineType.RPG_MZ -> rpgMakerVersion == EngineSettingsStore.RPG_MZ_V2
             else -> false
         }
-        if (rpgSession) stopOppositeRpgHost(context, useRpgMakerRuntime)
+        if (rpgSession) {
+            // 与宿主侧 resolveGameDir 同型归一：目录（游戏路径为文件时取其父目录）
+            val sessionGameDir = File(path).let { f -> (if (f.isFile) f.parentFile else f)?.absolutePath }
+            stopOppositeRpgHost(context, useRpgMakerRuntime, sessionGameDir)
+        }
         val target = if (useRpgMakerRuntime) RpgMakerActivity::class.java else TyranoActivity::class.java
         return Intent(context, target).apply {
             putExtra("path", path)
@@ -771,14 +776,21 @@ object EngineLauncher {
     }
 
     /**
-     * v0 宿主（:tyrano 进程）与 v1/v2 宿主（:rpgmaker 进程）分属不同进程，同一游戏在
-     * 两侧同时存活会产生存档写竞争。启动 RPG 会话前先结束另一侧 RPG 宿主进程，
-     * 等效于“退出再切换”的常规流程（宿主 finish 后本就自杀整进程）。
-     * getRunningAppProcesses 仅返回本应用（同 uid）的进程，无越权终止。
-     * 注意 :tyrano 进程同时承载 tyrano 游戏——后台 tyrano 游戏会被一并结束，
-     * 这里取“RPG 同游戏不双活”优先；启动 RPG 会话属显式用户动作。
+     * 仅当会话登记表显示另一宿主正运行【同一游戏】时才回收对方进程（PR review 意见：
+     * 按进程后缀终止会误杀后台无关的 Tyrano/RPG 会话并可能丢失未存档进度）。
+     * 会话登记由各宿主 onCreate/onDestroy 经 EngineSessionRegistry 维护（跨进程文件，
+     * 主进程读取始终为最新值）；getRunningAppProcesses 仅返回本应用（同 uid）进程。
      */
-    private fun stopOppositeRpgHost(context: Context, targetIsRpgMaker: Boolean) {
+    private fun stopOppositeRpgHost(context: Context, targetIsRpgMaker: Boolean, sessionGameDir: String?) {
+        if (sessionGameDir.isNullOrBlank()) return
+        val oppositeHost = if (targetIsRpgMaker) EngineSessionRegistry.HOST_TYRANO else EngineSessionRegistry.HOST_RPGMAKER
+        val registered = EngineSessionRegistry.currentGame(context, oppositeHost) ?: return
+        val matches = try {
+            File(registered).canonicalPath == File(sessionGameDir).canonicalPath
+        } catch (_: Throwable) {
+            registered == sessionGameDir
+        }
+        if (!matches) return
         val oppositeSuffix = if (targetIsRpgMaker) ":tyrano" else ":rpgmaker"
         runCatching {
             val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager

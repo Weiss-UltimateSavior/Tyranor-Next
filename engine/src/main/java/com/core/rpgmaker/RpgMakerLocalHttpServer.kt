@@ -100,21 +100,59 @@ internal class RpgMakerLocalHttpServer(
 
     companion object {
         private const val TAG = "YukiRpgMaker"
+
+        // 请求行/头有界读取上限（防本地恶意客户端 OOM，PR review 意见）
+        private const val MAX_REQUEST_LINE_CHARS = 8 * 1024
+        private const val MAX_HEADER_LINE_CHARS = 16 * 1024
+        private const val MAX_HEADER_COUNT = 100
     }
 
-    private class ResolvedFile(val file: File?, val data: ByteArray?)
+    // ASAR 条目走流式的体积阈值：低于此值一次性读取更简单高效
+internal const val ASAR_STREAM_THRESHOLD = 256L * 1024L
+
+    private class ResolvedFile(
+        val file: File?,
+        val data: ByteArray?,
+        val stream: java.io.InputStream? = null,
+        val streamLen: Long = 0L,
+    )
+
+    // 单行读取带长度上限：readLine 本身不限长，本地任意应用可发超长行触发 OOM
+    // （PR review 意见）；超限时排空该行剩余内容并返回 null，调用方按失败处理
+    private fun readBoundedLine(reader: BufferedReader, maxChars: Int): String? {
+        val sb = StringBuilder(256)
+        while (true) {
+            val c = reader.read()
+            if (c < 0) return if (sb.isEmpty()) null else sb.toString()
+            if (c == '\n'.code) return sb.toString().trimEnd('\r')
+            if (sb.length >= maxChars) {
+                while (true) {
+                    val d = reader.read()
+                    if (d < 0 || d == '\n'.code) break
+                }
+                return null
+            }
+            sb.append(c.toChar())
+        }
+    }
 
     private fun handle(socket: Socket) {
         try {
             socket.soTimeout = 15000
             val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
-            val requestLine = reader.readLine()
+            val requestLine = readBoundedLine(reader, MAX_REQUEST_LINE_CHARS)
             if (requestLine.isNullOrEmpty()) { close(socket); return }
             val headers = HashMap<String, String>()
-            var line: String?
-            while (reader.readLine().also { line = it } != null && line!!.isNotEmpty()) {
-                val idx = line!!.indexOf(':')
-                if (idx > 0) headers[line!!.substring(0, idx).trim().lowercase(Locale.ROOT)] = line!!.substring(idx + 1).trim()
+            var headerCount = 0
+            while (true) {
+                val line = readBoundedLine(reader, MAX_HEADER_LINE_CHARS) ?: break
+                if (line.isEmpty()) break
+                if (++headerCount > MAX_HEADER_COUNT) {
+                    sendText(socket, 431, "Request Header Fields Too Large", "headers too large")
+                    return
+                }
+                val idx = line.indexOf(':')
+                if (idx > 0) headers[line.substring(0, idx).trim().lowercase(Locale.ROOT)] = line.substring(idx + 1).trim()
             }
             val parts = requestLine.split(" ")
             if (parts.size < 2) { sendText(socket, 400, "Bad Request", "bad request"); return }
@@ -144,6 +182,11 @@ internal class RpgMakerLocalHttpServer(
                 if (isIndexHtml(uri)) sendInjectedIndex(socket, resolved.data, method.equals("HEAD", true))
                 else if (hasScriptAppend(uri)) sendAppendedBytes(socket, resolved.data, uri, method.equals("HEAD", true))
                 else sendBytes(socket, resolved.data, uri, method.equals("HEAD", true))
+                return
+            }
+            if (resolved.stream != null) {
+                // ASAR 大条目（>256KiB，媒体为主）流式响应：支持 Range/seek，避免整段进堆
+                sendStream(socket, resolved.stream, resolved.streamLen, uri, headers["range"], method.equals("HEAD", true))
                 return
             }
             if (isIndexHtml(uri, resolved.file)) {
@@ -206,6 +249,15 @@ internal class RpgMakerLocalHttpServer(
         }
         if (asar != null) {
             val normalizedUri = uri.replace(Regex("/\\./"), "/").replace(Regex("//+"), "/")
+            // 大条目优先流式：媒体需要 Range/seek，整段 ByteArray 有 OOM 风险（PR review 意见）
+            for (p in listOf(asarRootPrefix + normalizedUri, normalizedUri,
+                    asarRootPrefix + normalizedUri.lowercase(Locale.ROOT), normalizedUri.lowercase(Locale.ROOT))) {
+                val streamed = asar.openStream(p) ?: continue
+                if (streamed.second >= ASAR_STREAM_THRESHOLD) {
+                    return ResolvedFile(null, null, streamed.first, streamed.second)
+                }
+                runCatching { streamed.first.close() }
+            }
             val data = asar.read(asarRootPrefix + normalizedUri) ?: asar.read(normalizedUri)
                 ?: asar.read(asarRootPrefix + normalizedUri.lowercase(Locale.ROOT)) ?: asar.read(normalizedUri.lowercase(Locale.ROOT))
             if (data != null) return ResolvedFile(null, data)
@@ -297,6 +349,48 @@ internal class RpgMakerLocalHttpServer(
         out.flush()
     }
 
+    /**
+     * ASAR 大条目流式响应：与 [sendFile] 同一套 Range 语义（含后缀式 bytes=-N），
+     * 跳过起始字节后分块复制；输入流由本函数负责关闭（PR review 意见）。
+     */
+    private fun sendStream(socket: Socket, input: java.io.InputStream, totalLen: Long, uri: String, rangeHeader: String?, headOnly: Boolean) {
+        val spec = parseRangeHeader(rangeHeader, totalLen) ?: RangeSpec(0, (totalLen - 1).coerceAtLeast(0), false)
+        val len = Math.max(0, spec.end - spec.start + 1)
+        val status = if (spec.partial) "206 Partial Content" else "200 OK"
+        try {
+            val raw = BufferedOutputStream(socket.getOutputStream())
+            val h = StringBuilder()
+            h.append("HTTP/1.1 ").append(status).append("\r\n")
+            h.append("Accept-Ranges: bytes\r\n")
+            h.append("Content-Type: ").append(mime(uri)).append("\r\n")
+            h.append("Cache-Control: no-cache\r\n")
+            h.append("Access-Control-Allow-Origin: *\r\n")
+            h.append("Content-Length: ").append(len).append("\r\n")
+            if (spec.partial) h.append("Content-Range: bytes ").append(spec.start).append('-').append(spec.end).append('/').append(totalLen).append("\r\n")
+            h.append("Connection: close\r\n\r\n")
+            raw.write(h.toString().toByteArray(StandardCharsets.UTF_8))
+            if (!headOnly) {
+                var skipped = 0L
+                while (skipped < spec.start) {
+                    val s = input.skip(spec.start - skipped)
+                    if (s <= 0) break
+                    skipped += s
+                }
+                val buf = ByteArray(64 * 1024)
+                var left = len
+                while (left > 0) {
+                    val read = input.read(buf, 0, Math.min(buf.size.toLong(), left).toInt())
+                    if (read < 0) break
+                    raw.write(buf, 0, read)
+                    left -= read
+                }
+            }
+            raw.flush()
+        } finally {
+            try { input.close() } catch (_: Throwable) {}
+        }
+    }
+
     private fun hasScriptAppend(uri: String): Boolean = scriptAppends.containsKey(uri.lowercase(Locale.ROOT))
 
     private fun sendAppendedFile(socket: Socket, file: File, uri: String, headOnly: Boolean) {
@@ -329,33 +423,10 @@ internal class RpgMakerLocalHttpServer(
     private fun sendFile(socket: Socket, file: File?, rangeHeader: String?, headOnly: Boolean) {
         if (file == null) { sendText(socket, 404, "Not Found", "file missing"); return }
         val fileLen = file.length()
-        var start = 0L
-        var end = fileLen - 1
-        var partial = false
-        // Range 解析三重防御（与 feat 版 TyranoLocalHttpServer 逐行一致，支撑本模块新增的
-        // ogg->m4a / 加密资源回退触发的媒体 Range 请求）：
-        // 1) 多段 Range（bytes=0-1,4-5）只取第一段，避免 "," 进入 toLong 抛异常走 500；
-        // 2) 越界起点（start >= fileLen 或 start > end）回退全量 200，避免 Content-Length: 0 卡死媒体；
-        // 3) 整体 try/catch，畸形输入一律回退全量 200。
-        try {
-            if (rangeHeader != null && rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) {
-                val range = rangeHeader.substring(6).trim().split(",")[0].trim()
-                val dash = range.indexOf('-')
-                if (dash >= 0) {
-                    val a = range.substring(0, dash).trim()
-                    val b = range.substring(dash + 1).trim()
-                    if (a.isNotEmpty()) start = a.toLong()
-                    if (b.isNotEmpty()) end = b.toLong()
-                    if (end >= fileLen) end = fileLen - 1
-                    if (start < 0) start = 0
-                    if (start >= fileLen || start > end) {
-                        start = 0; end = fileLen - 1; partial = false
-                    } else if (start <= end) partial = true
-                }
-            }
-        } catch (_: Throwable) {
-            start = 0; end = fileLen - 1; partial = false
-        }
+        val spec = parseRangeHeader(rangeHeader, fileLen) ?: RangeSpec(0, (fileLen - 1).coerceAtLeast(0), false)
+        val start = spec.start
+        val end = spec.end
+        val partial = spec.partial
         val len = Math.max(0, end - start + 1)
         val status = if (partial) "206 Partial Content" else "200 OK"
         val raw = BufferedOutputStream(socket.getOutputStream())
@@ -520,6 +591,54 @@ internal fun buildInjectedHtmlTwoPhase(
 // 最后整体按 UTF-8 组装；非法 % 序列保留 '%' 原字符。
 // 注意：不能按单字节 toChar 逐个追加——那会把 %E9%BB%91 这类 UTF-8
 // 多字节序列解成三个 Latin-1 字符（é»）而非“黑”。
+/**
+ * Range 头解析（纯函数，可单测）。三重防御（与 feat 版 TyranoLocalHttpServer 逐行一致，
+ * 支撑媒体回退链路触发的 Range 请求）：
+ * 1) 多段 Range（bytes=0-1,4-5）只取第一段，避免 "," 进入 toLong 抛异常走 500；
+ * 2) 越界起点（start >= fileLen 或 start > end）回退全量 200，避免 Content-Length: 0 卡死媒体；
+ * 3) 整体 try/catch，畸形输入一律回退全量 200；
+ * 4) 后缀式 bytes=-N → 末尾 N 字节（此前被错误解析为开头 N+1 字节，PR review 意见）。
+ * 无 Range 头或 fileLen<=0 时返回 null（调用方按全量 200 处理）。
+ */
+internal fun parseRangeHeader(rangeHeader: String?, fileLen: Long): RangeSpec? {
+    if (rangeHeader == null || fileLen <= 0) return null
+    var start = 0L
+    var end = fileLen - 1
+    var partial = false
+    try {
+        if (!rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) return null
+        val range = rangeHeader.substring(6).trim().split(",")[0].trim()
+        val dash = range.indexOf('-')
+        if (dash >= 0) {
+            val a = range.substring(0, dash).trim()
+            val b = range.substring(dash + 1).trim()
+            if (a.isEmpty()) {
+                // 后缀式：bytes=-N → 文件末尾 N 字节
+                if (b.isNotEmpty()) {
+                    val suffix = b.toLong()
+                    if (suffix > 0) {
+                        start = (fileLen - suffix).coerceAtLeast(0L)
+                        end = fileLen - 1
+                        partial = true
+                    }
+                }
+            } else {
+                if (b.isNotEmpty()) end = b.toLong()
+                if (end >= fileLen) end = fileLen - 1
+                if (start < 0) start = 0
+                if (start >= fileLen || start > end) {
+                    start = 0; end = fileLen - 1; partial = false
+                } else if (start <= end) partial = true
+            }
+        }
+    } catch (_: Throwable) {
+        start = 0; end = fileLen - 1; partial = false
+    }
+    return RangeSpec(start, end, partial)
+}
+
+internal class RangeSpec(val start: Long, val end: Long, val partial: Boolean)
+
 internal fun decodeUriLenient(uri: String): String {
     if (!uri.contains('%')) return uri
     val bytes = java.io.ByteArrayOutputStream(uri.length)

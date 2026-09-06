@@ -36,14 +36,37 @@ internal object RpgMakerStorage {
     }
 
     @JvmStatic
-    fun write(directory: File?, key: String?, value: String?, extension: String) {
-        try {
-            val file = resolveFile(directory, key, extension) ?: return
+    fun write(directory: File?, key: String?, value: String?, extension: String): Boolean {
+        // 原子写：先写同目录临时文件并 fsync，再 rename 覆盖；写入中途进程被杀
+        // （finish 500ms 自杀 / 系统回收）不会留下截断的存档文件（PR review 意见）
+        return try {
+            val file = resolveFile(directory, key, extension) ?: return false
             val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
-            if (bytes.size > MAX_SAVE_BYTES) return
-            file.outputStream().use { it.write(bytes) }
+            if (bytes.size > MAX_SAVE_BYTES) return false
+            val dir = file.parentFile ?: return false
+            if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
+            val tmp = File(dir, file.name + ".tmp." + System.nanoTime())
+            var committed = false
+            try {
+                java.io.FileOutputStream(tmp).use { out ->
+                    out.write(bytes)
+                    out.fd.sync()
+                }
+                committed = if (tmp.renameTo(file)) {
+                    true
+                } else {
+                    // rename 失败（目标被占用等）退回直接覆盖，保底不丢数据
+                    file.outputStream().use { it.write(bytes) }
+                    tmp.delete()
+                    true
+                }
+            } finally {
+                if (tmp.exists()) tmp.delete()
+            }
+            committed
         } catch (error: Throwable) {
             Log.w(TAG, "setStorage failed key=$key", error)
+            false
         }
     }
 

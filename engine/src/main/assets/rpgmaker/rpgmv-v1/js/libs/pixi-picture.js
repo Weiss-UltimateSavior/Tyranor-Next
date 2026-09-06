@@ -148,7 +148,7 @@ var PIXI;
             PictureRenderer.prototype._getRenderTexture = function (minWidth, minHeight) {
                 if (this._renderTexture.width < minWidth ||
                     this._renderTexture.height < minHeight) {
-                    minHeight = nextPow2(minWidth);
+                    minWidth = nextPow2(minWidth);
                     minHeight = nextPow2(minHeight);
                     this._renderTexture.resize(minWidth, minHeight);
                 }
@@ -206,7 +206,7 @@ var PIXI;
                 bounds.width = spriteBounds.width * resolution;
                 bounds.height = spriteBounds.height * resolution;
                 if (flipX) {
-                    bounds.y = fbw - bounds.width - bounds.x;
+                    bounds.x = fbw - bounds.width - bounds.x;
                 }
                 if (flipY) {
                     bounds.y = fbh - bounds.height - bounds.y;

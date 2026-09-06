@@ -32,6 +32,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
+import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineThemeColors
 import com.core.engine.R
 import java.io.ByteArrayInputStream
@@ -105,6 +106,8 @@ class TyranoActivity : Activity() {
             failLaunch(getString(R.string.engine_tyrano_empty_game_directory))
             return
         }
+
+        EngineSessionRegistry.record(this, EngineSessionRegistry.HOST_TYRANO, resolvedGameDir)
 
         val gameRoot = File(resolvedGameDir)
         gameRootFile = gameRoot
@@ -615,6 +618,7 @@ class TyranoActivity : Activity() {
     }
 
     override fun onDestroy() {
+        EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_TYRANO)
         DoubleBackExit.clear(this)
         runCatching {
             webView?.stopLoading()

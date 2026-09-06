@@ -13,11 +13,11 @@
     <string name="engine_tyrano_entry_not_found">Tyrano の起動に失敗しました：index.html または app.asar が見つかりません</string>
     <string name="engine_tyrano_asar_unreadable">Tyrano の起動に失敗しました：app.asar を読み込めません</string>
     <string name="engine_tyrano_server_failed">Tyrano の起動に失敗しました：ローカルサーバーを起動できません</string>
-    <string name="rpgmaker_empty_game_directory">RPG Maker の起動に失敗しました：ゲームフォルダーが空です</string>
-    <string name="rpgmaker_unwritable_save_directory">RPG Maker の起動に失敗しました：セーブフォルダーに書き込めません</string>
-    <string name="rpgmaker_entry_not_found">RPG Maker の起動に失敗しました：index.html または app.asar が見つかりません</string>
-    <string name="rpgmaker_asar_unreadable">RPG Maker の起動に失敗しました：app.asar を読み込めません</string>
-    <string name="rpgmaker_server_failed">RPG Maker の起動に失敗しました：ローカルサーバーを起動できません</string>
+    <string name="engine_rpgmaker_empty_game_directory">RPG Maker の起動に失敗しました：ゲームフォルダーが空です</string>
+    <string name="engine_rpgmaker_unwritable_save_directory">RPG Maker の起動に失敗しました：セーブフォルダーに書き込めません</string>
+    <string name="engine_rpgmaker_entry_not_found">RPG Maker の起動に失敗しました：index.html または app.asar が見つかりません</string>
+    <string name="engine_rpgmaker_asar_unreadable">RPG Maker の起動に失敗しました：app.asar を読み込めません</string>
+    <string name="engine_rpgmaker_server_failed">RPG Maker の起動に失敗しました：ローカルサーバーを起動できません</string>
     <string name="engine_return_to_title">タイトルへ戻る</string>
     <string name="engine_return_to_title_message">タイトル画面に戻りますか？（ゲームの進行状況を保存してください。）</string>
     <string name="engine_confirm">決定</string>

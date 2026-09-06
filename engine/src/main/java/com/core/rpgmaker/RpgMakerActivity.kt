@@ -63,6 +63,9 @@ class RpgMakerActivity : Activity() {
     // WebView 回调线程（shouldInterceptRequest）会读取这两项，onCreate 主线程写入
     @Volatile
     private var localServer: RpgMakerLocalHttpServer? = null
+
+    // 与 localServer 同一线程契约：shouldInterceptRequest 在 WebView 回调线程读取
+    @Volatile
     private var allowExternalNetwork = false
     private var rpgMakerModEnabled = false
     private var rpgMakerModGameId = ""
@@ -106,6 +109,12 @@ class RpgMakerActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterFullscreen()
+        // 多进程 WebView 数据目录隔离：:tyrano 与 :rpgmaker 都承载 WebView，API 28+
+        // 起多进程共用默认数据目录会直接抛异常（PR review 意见）；必须在本进程任何
+        // WebView 实例创建之前调用，且 :tyrano 侧保持默认目录，两侧目录互异
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            runCatching { WebView.setDataDirectorySuffix("rpgmaker") }
+        }
         allowExternalNetwork = getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
             .getBoolean(EnginePrefs.KEY_TYRANO_EXTERNAL_NETWORK, false)
 
@@ -113,9 +122,11 @@ class RpgMakerActivity : Activity() {
         Log.i(TAG, "onCreate gameDir=$gameDir")
         val resolvedGameDir = gameDir
         if (resolvedGameDir.isNullOrBlank()) {
-            failLaunch(getString(R.string.rpgmaker_empty_game_directory))
+            failLaunch(getString(R.string.engine_rpgmaker_empty_game_directory))
             return
         }
+
+        EngineSessionRegistry.record(this, EngineSessionRegistry.HOST_RPGMAKER, resolvedGameDir)
 
         val gameRoot = File(resolvedGameDir)
 
@@ -125,7 +136,7 @@ class RpgMakerActivity : Activity() {
             val resourcesAsar = File(File(gameRoot, "resources"), "app.asar")
             val index = File(gameRoot, "index.html")
             Log.e(TAG, "entry not found index=${index.absolutePath} app.asar=${rootAsar.absolutePath} resources/app.asar=${resourcesAsar.absolutePath} (searched subdirs: ${WEB_ENTRY_SUBDIRS.joinToString()})")
-            failLaunch(getString(R.string.rpgmaker_entry_not_found))
+            failLaunch(getString(R.string.engine_rpgmaker_entry_not_found))
             return
         }
         val contentRoot = entry.contentRoot
@@ -139,7 +150,7 @@ class RpgMakerActivity : Activity() {
                 asarArchive = AsarArchive(File(requireNotNull(asarPath)))
             } catch (error: Throwable) {
                 Log.e(TAG, "open asar failed", error)
-                failLaunch(getString(R.string.rpgmaker_asar_unreadable))
+                failLaunch(getString(R.string.engine_rpgmaker_asar_unreadable))
                 return
             }
         }
@@ -153,12 +164,35 @@ class RpgMakerActivity : Activity() {
         val saves = resolveSaveDirectory(intent, gameRoot)
         saveDirectory = saves
         if (!ensureWritableSaveDirectory(saves)) {
-            failLaunch(getString(R.string.rpgmaker_unwritable_save_directory))
+            failLaunch(getString(R.string.engine_rpgmaker_unwritable_save_directory))
             return
         }
         Log.i(TAG, "save directory=${saves?.absolutePath ?: "none"} scoped=${intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false)}")
 
-        try {
+        val bundle = buildInjectionBundle(contentRoot) ?: return
+        startLocalServer(bundle)
+        if (localServer == null) return
+        setupGameUi(saves, bundle)
+    }
+
+    /** 注入内容与本地服务器构造参数的一次性装配结果（onCreate 编排用）。 */
+    private data class InjectionBundle(
+        val contentRoot: File,
+        val lateHook: ByteArray,
+        val scriptAppends: Map<String, ByteArray>,
+        val internalResources: Map<String, ByteArray>,
+        val nwPolyfill: ByteArray?,
+        val modHtml: String,
+        val legacyRenderer: Boolean,
+    )
+
+    /**
+     * 装配注入内容与服务器参数；失败时提示并返回 null（调用方应直接结束启动流程）。
+     * 从 onCreate 拆出（PR review 意见：原方法圈复杂度 45 超阈值），按职责只负责
+     * 版本门控判定与资产装配；服务器启动与视图装配分别由独立方法承担。
+     */
+    private fun buildInjectionBundle(contentRoot: File): InjectionBundle? {
+        return try {
             val normalizedVersion = rpgMakerVersion?.trim()?.lowercase()
             // v2 = v1 的 NWJS 兼容层 + v0 的引擎文件策略（不覆盖核心脚本）
             val isRpgMvV1 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v1"
@@ -253,22 +287,37 @@ class RpgMakerActivity : Activity() {
             }
             val internalResources = modResources + v1Overlay
             Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} early=${nwPolyfill?.size ?: 0} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
-            val injectBeforeBody = true
+            val legacyRenderer = intent.getBooleanExtra(EXTRA_RPG_LEGACY_RENDERER, false)
+            InjectionBundle(contentRoot, lateHook, scriptAppends, internalResources, nwPolyfill, modHtml, legacyRenderer)
+        } catch (error: Throwable) {
+            Log.e(TAG, "build injection bundle failed", error)
+            failLaunch(getString(R.string.engine_rpgmaker_server_failed))
+            null
+        }
+    }
+
+    /** 启动本地 HTTP 服务器；失败时提示并保持 localServer 为 null（调用方据此中止）。 */
+    private fun startLocalServer(bundle: InjectionBundle) {
+        try {
             localServer = if (gameUsesAsar) {
                 RpgMakerLocalHttpServer(
-                    contentRoot, asarArchive, lateHook, injectBeforeBody, scriptAppends, modHtml, internalResources, nwPolyfill, v12Session,
+                    bundle.contentRoot, asarArchive, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session,
                 )
             } else {
                 RpgMakerLocalHttpServer(
-                    contentRoot, lateHook, injectBeforeBody, scriptAppends, modHtml, internalResources, nwPolyfill, v12Session,
+                    bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
             Log.e(TAG, "start local server failed", error)
-            failLaunch(getString(R.string.rpgmaker_server_failed))
-            return
+            failLaunch(getString(R.string.engine_rpgmaker_server_failed))
         }
+    }
+        setupGameUi(saves, bundle)
+    }
 
+    /** 创建 WebView 与各 JS 桥、按 legacy 开关拼 URL 并装载游戏页。 */
+    private fun setupGameUi(saves: File?, bundle: InjectionBundle) {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             layoutParams = ViewGroup.LayoutParams(-1, -1)
@@ -300,12 +349,11 @@ class RpgMakerActivity : Activity() {
                 RPG_MAKER_MOD_BRIDGE_NAME,
             )
         }
-        // PIXI legacy 兼容渲染（?android-legacy=1，__rpg__.js 的既定开关）：
+        // PIXI legacy 兼容渲染（?android-legacy=1，__rpg_v12.js 的既定开关）：
         // 由设置页开关经 rpgLegacyRenderer extra 控制，规避部分 Android GPU
         // 上 WebGL 正常初始化却整屏渲染为黑的问题；默认关闭不影响既有行为。
-        // 注意必须带 =1：__rpg__.js 的参数正则要求 key=value 格式，裸参数会被忽略
-        val useLegacyRenderer = intent.getBooleanExtra(EXTRA_RPG_LEGACY_RENDERER, false)
-        val url = if (useLegacyRenderer) {
+        // 注意必须带 =1：__rpg_v12.js 的参数正则要求 key=value 格式，裸参数会被忽略
+        val url = if (bundle.legacyRenderer) {
             "http://localhost:${requireNotNull(localServer).port}/index.html?android-legacy=1"
         } else {
             "http://localhost:${requireNotNull(localServer).port}/index.html"
@@ -497,9 +545,12 @@ class RpgMakerActivity : Activity() {
         uri.scheme.equals("blob", ignoreCase = true) ||
         uri.scheme.equals("about", ignoreCase = true)
 
-    private fun blockedResponse() = WebResourceResponse(
+    private fun blockedResponse(): WebResourceResponse = WebResourceResponse(
         "text/plain",
         "UTF-8",
+        403,
+        "Forbidden",
+        mapOf("Content-Length" to "0"),
         ByteArrayInputStream(ByteArray(0)),
     )
 
@@ -620,6 +671,7 @@ class RpgMakerActivity : Activity() {
     }
 
     override fun onDestroy() {
+        EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_RPGMAKER)
         DoubleBackExit.clear(this)
         runCatching {
             webView?.stopLoading()
