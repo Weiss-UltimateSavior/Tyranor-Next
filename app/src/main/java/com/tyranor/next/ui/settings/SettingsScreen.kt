@@ -72,6 +72,7 @@ import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
+import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -553,28 +554,17 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             containerColor = MiuixTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                Column(modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.background)) {
-                    Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                engineSettingsKindTitle(kind),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MiuixTheme.colorScheme.onBackground,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
-                                saveAll()
-                                android.widget.Toast.makeText(ctx, engineSettingsSavedMessage, android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                AppTopBar(
+                    title = engineSettingsKindTitle(kind),
+                    background = MiuixTheme.colorScheme.background,
+                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    trailing = {
+                        TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
+                            saveAll()
+                            android.widget.Toast.makeText(ctx, engineSettingsSavedMessage, android.widget.Toast.LENGTH_SHORT).show()
                         }
-                    }
-                }
+                    },
+                )
             },
         ) { innerPadding ->
             LazyListPlaceholder(
@@ -635,19 +625,14 @@ private fun SettingsItemIcon(@DrawableRes iconRes: Int) {
     )
 }
 
-/** 顶部栏：遵守全局规范（Column + 页面背景色 + statusBarsPadding + 64dp 标题区，沉浸式）。 */
+/** 顶部栏：统一复用 AppTopBar（Miuix 页面背景取色）。 */
 @Composable
 private fun SettingsTopBar(title: String) {
-    Column(modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.background)) {
-        Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MiuixTheme.colorScheme.onBackground, modifier = Modifier.weight(1f))
-            }
-        }
-    }
+    AppTopBar(
+        title = title,
+        background = MiuixTheme.colorScheme.background,
+        contentColor = MiuixTheme.colorScheme.onBackground,
+    )
 }
 
 /** 列表底部占位：避让系统导航栏。 */

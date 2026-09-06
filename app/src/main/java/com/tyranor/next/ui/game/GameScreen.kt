@@ -118,6 +118,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
+import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
@@ -399,47 +400,10 @@ private fun GameLibraryContent(
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
     Column(modifier.fillMaxSize()) {
-        // ===== 顶部栏：页面背景色，标题居左 + 右侧四个图标按钮 =====
-        Column(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-            Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        stringResource(R.string.game_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
-                        showSearch = !showSearch
-                        if (!showSearch) query = ""
-                    }
-                    if (scrapingCovers) {
-                        Box(
-                            modifier = Modifier.padding(start = 2.dp).size(34.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .semantics { contentDescription = scrapingCoversDescription },
-                                color = MaterialTheme.colorScheme.primary,
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                    } else {
-                        TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
-                            syncMissingCovers()
-                        }
-                    }
-                    TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
-                        refreshGames()
-                    }
-                }
-                // 搜索框：点击搜索按钮后出现在顶部栏下方
+        // ===== 顶部栏：统一 AppTopBar（标题居左 + 右侧图标 + 折叠搜索框） =====
+        AppTopBar(
+            title = stringResource(R.string.game_title),
+            underTitle = {
                 if (showSearch) {
                     AppSearchField(
                         query = query,
@@ -447,8 +411,35 @@ private fun GameLibraryContent(
                         modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
                     )
                 }
-            }
-        }
+            },
+            trailing = {
+                TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
+                    showSearch = !showSearch
+                    if (!showSearch) query = ""
+                }
+                if (scrapingCovers) {
+                    Box(
+                        modifier = Modifier.padding(start = 2.dp).size(34.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .semantics { contentDescription = scrapingCoversDescription },
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                } else {
+                    TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
+                        syncMissingCovers()
+                    }
+                }
+                TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
+                    refreshGames()
+                }
+            },
+        )
 
         // ===== 内容区 =====
         Box(Modifier.fillMaxSize()) {

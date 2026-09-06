@@ -84,8 +84,19 @@
 
 ## 页面顶部栏统一规范
 
-所有页面（首页 / 游戏 / 书库 / 设置）的顶部栏必须统一，规则如下。当前已由统一入口
-`com.tyranor.next.ui.common.PlaceholderPage` 实现，新页面应复用或遵循同等效果。
+所有页面（首页 / 游戏 / 书库 / 设置）的顶部栏必须统一。**一律使用统一组件
+`com.tyranor.next.ui.common.AppTopBar`**，禁止任何页面手写该结构；占位页可复用
+`com.tyranor.next.ui.common.PlaceholderPage`（内部同样走 AppTopBar）。
+
+### 0. 统一入口（AppTopBar）
+
+- 页面顶部栏必须调用 `AppTopBar(title, ...)`；标题、结构、取色由组件兜底。
+- 参数约定：
+  - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `colorScheme.background` / `colorScheme.onBackground`。
+  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = MiuixTheme.colorScheme.background`、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
+  - 需要「色调切换」参与取色的页面：传 `background = PageGrey`、`contentColor = TextColor`。
+  - 右侧图标用 `trailing` 槽传入 `TopBarIcon`；标题下方的折叠内容（如游戏页搜索框）用 `underTitle` 槽。
+- 新页面/组件禁止再书写「背景层 + statusBarsPadding + 64dp + titleLarge Bold」结构。
 
 ### 1. 结构
 

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.WithoutPressIndication
@@ -102,24 +103,11 @@ internal fun EngineSettingsMenuScreen() {
             containerColor = MiuixTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
-                Column(modifier = Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.background)) {
-                    Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                stringResource(R.string.settings_engine_settings),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MiuixTheme.colorScheme.onBackground,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
+                AppTopBar(
+                    title = stringResource(R.string.settings_engine_settings),
+                    background = MiuixTheme.colorScheme.background,
+                    contentColor = MiuixTheme.colorScheme.onBackground,
+                )
             },
         ) { innerPadding ->
             LazyColumn(

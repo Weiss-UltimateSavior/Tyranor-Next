@@ -69,6 +69,7 @@ import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.game.GameActionsSheet
@@ -130,16 +131,7 @@ fun HomeScreen(
     }
 
     Column(modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-            Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(stringResource(R.string.nav_home), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                }
-            }
-        }
+        AppTopBar(title = stringResource(R.string.nav_home))
 
         // ===== 快捷启动卡与最近打开列表合并为同一个滚动列表 =====
         // 水平内边距统一由 contentPadding 提供（覆盖快捷启动区与列表行）
