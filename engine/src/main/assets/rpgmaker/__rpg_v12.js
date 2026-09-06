@@ -216,10 +216,13 @@ StorageManager.restoreWebStorageBackup = function(savefileId) {
     try {
         var d = LZString ? LZString.decompressFromBase64(window.saveDataManager.Load(bak)) : window.saveDataManager.Load(bak);
         if (!d) return;
-        // 仅在恢复写回成功后才删除备份；失败保留备份避免存档丢失（PR review 意见）
+        // 仅在恢复写回成功后才删除备份；失败保留备份避免存档丢失（PR review 意见）。
+        // 桥与 localStorage 两个回退路径必须写入同一压缩形态：loadFromWebStorage 读取
+        // 后统一 decompress，回退写原文会被解压成 null 造成存档不可读（PR review 意见）
+        var payload = LZString ? LZString.compressToBase64(d) : d;
         var writeOk = false;
-        try { writeOk = window.saveDataManager.Save(key, LZString ? LZString.compressToBase64(d) : d) === true; } catch (e2) {}
-        if (!writeOk) { try { localStorage.setItem(key, d); writeOk = true; } catch (e3) {} }
+        try { writeOk = window.saveDataManager.Save(key, payload) === true; } catch (e2) {}
+        if (!writeOk) { try { localStorage.setItem(key, payload); writeOk = true; } catch (e3) {} }
         if (writeOk) {
             try { window.saveDataManager.Remove(bak); } catch (e4) {}
             try { localStorage.removeItem(bak); } catch (e5) {}

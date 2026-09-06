@@ -84,9 +84,8 @@ class RpgMakerHtmlInjectionTest {
         // 后缀超出文件长度 → 仍为 206 全量
         val tailOver = parseRangeHeader("bytes=-5000", 1000L)!!
         assertTrue(tailOver.partial && tailOver.start == 0L && tailOver.end == 999L)
-        // 多段 Range 只取第一段（避免 "," 进入 toLong 抛异常）
-        val multi = parseRangeHeader("bytes=0-1,4-5", 1000L)!!
-        assertTrue(multi.partial && multi.start == 0L && multi.end == 1L)
+        // 多段 Range 不支持：返回 null 让调用方按全量 200 响应（单段 206 会是非法响应）
+        assertTrue(parseRangeHeader("bytes=0-1,4-5", 1000L) == null)
         // 越界起点回退全量 200（避免 Content-Length: 0 卡死媒体）
         val over = parseRangeHeader("bytes=999999-", 1000L)!!
         assertTrue(!over.partial && over.start == 0L && over.end == 999L)

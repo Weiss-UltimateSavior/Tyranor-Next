@@ -54,6 +54,9 @@
                             btn.textContent = "Retry";
                             btn.style.cssText = "padding:10px 28px;font-size:16px;cursor:pointer;background:#000;color:#fff;border:1px solid #888;border-radius:6px;";
                             btn.addEventListener("click", function () {
+                                // 点击后先移除容器：固定定位会持续遮挡画面底部并拦截触摸，
+                                // 且 id 去重检查会让后续失败无法再显示重试入口（PR review 意见）
+                                try { if (box.parentNode) box.parentNode.removeChild(box); } catch (eRm) {}
                                 try {
                                     if (window.ResourceHandler && typeof window.ResourceHandler.retry === "function") { window.ResourceHandler.retry(); return; }
                                 } catch (eR) {}

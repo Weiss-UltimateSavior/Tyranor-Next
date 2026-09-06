@@ -48,6 +48,11 @@ internal class RpgMakerLocalHttpServer(
     private var running = true
     private val clients: ThreadPoolExecutor
 
+    // 每实例随机鉴权 token：绑定 127.0.0.1 不限制同设备其他应用，端口扫描可读取
+    // 游戏目录内文件（含存档，PR review 意见）。index 页为引导入口无条件下发
+    // Set-Cookie，其余请求必须携带匹配 token 的 Cookie，否则 403。
+    private val authToken: String = newAuthToken()
+
     init {
         this.root = root.canonicalFile
         this.asar = asar
@@ -103,11 +108,18 @@ internal class RpgMakerLocalHttpServer(
 
     companion object {
         private const val TAG = "YukiRpgMaker"
+        private const val AUTH_COOKIE_NAME = "tyranorRpgMakerAuth"
 
         // 请求行/头有界读取上限（防本地恶意客户端 OOM，PR review 意见）
         private const val MAX_REQUEST_LINE_CHARS = 8 * 1024
         private const val MAX_HEADER_LINE_CHARS = 16 * 1024
         private const val MAX_HEADER_COUNT = 100
+
+        private fun newAuthToken(): String {
+            val bytes = ByteArray(16)
+            java.security.SecureRandom().nextBytes(bytes)
+            return bytes.joinToString("") { "%02x".format(it) }
+        }
     }
 
     private class ResolvedFile(
@@ -168,11 +180,26 @@ internal class RpgMakerLocalHttpServer(
             if (uri == "/") uri = "/index.html"
             while (uri.startsWith("/")) uri = uri.substring(1)
             val normalizedLookup = uri.replace(Regex("""/\./"""), "/").replace(Regex("""//+"""), "/").lowercase(Locale.ROOT)
+            // 鉴权门：仅 index 页作为引导入口豁免（响应下发 Set-Cookie），其余请求
+            // 必须携带匹配 token 的 Cookie；同设备其他应用无 Cookie 一律 403
+            val isEntryPage = uri.equals("index.html", ignoreCase = true) || uri.equals("index.htm", ignoreCase = true)
+            if (!isEntryPage && !hasValidAuth(headers)) {
+                Log.w(TAG, "403 unauthorized uri=$uri")
+                sendText(socket, 403, "Forbidden", "forbidden")
+                return
+            }
             internalResources[normalizedLookup]?.let { resource ->
                 sendBytes(socket, resource, uri, method.equals("HEAD", true))
                 return
             }
             val resolved = resolveRequestedFile(uri)
+            // ASAR 大条目（>256KiB，媒体为主）流式分支必须在 404 判空之前：
+            // 流式结果 file/data 均为 null，放在后面会被判 404 且泄漏已打开的文件句柄
+            // （PR review Critical 意见）
+            if (resolved != null && resolved.stream != null) {
+                sendStream(socket, resolved.stream, resolved.streamLen, uri, headers["range"], method.equals("HEAD", true))
+                return
+            }
             if (resolved == null || (resolved.file == null && resolved.data == null)) {
                 Log.w(TAG, "404 uri=$uri")
                 sendText(socket, 404, "Not Found", "not found: $uri")
@@ -182,11 +209,6 @@ internal class RpgMakerLocalHttpServer(
                 if (isIndexHtml(uri)) sendInjectedIndex(socket, resolved.data, method.equals("HEAD", true))
                 else if (hasScriptAppend(uri)) sendAppendedBytes(socket, resolved.data, uri, method.equals("HEAD", true))
                 else sendBytes(socket, resolved.data, uri, method.equals("HEAD", true))
-                return
-            }
-            if (resolved.stream != null) {
-                // ASAR 大条目（>256KiB，媒体为主）流式响应：支持 Range/seek，避免整段进堆
-                sendStream(socket, resolved.stream, resolved.streamLen, uri, headers["range"], method.equals("HEAD", true))
                 return
             }
             if (isIndexHtml(uri, resolved.file)) {
@@ -334,6 +356,13 @@ internal class RpgMakerLocalHttpServer(
         sendInjectedIndex(socket, text, headOnly)
     }
 
+    // 引导入口响应附带 Set-Cookie：后续同源资源请求由 WebView 自动携带
+    private fun authCookieHeader(): String =
+        "Set-Cookie: $AUTH_COOKIE_NAME=$authToken; Path=/; HttpOnly\r\n"
+
+    private fun hasValidAuth(headers: Map<String, String>): Boolean =
+        headers["cookie"]?.contains("$AUTH_COOKIE_NAME=$authToken") == true
+
     private fun sendInjectedIndex(socket: Socket, html: String?, headOnly: Boolean) {
         val data = if (earlyHook != null && earlyHook.isNotEmpty()) {
             buildInjectedHtmlTwoPhase(
@@ -344,7 +373,7 @@ internal class RpgMakerLocalHttpServer(
         }
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size}")
         val out = BufferedOutputStream(socket.getOutputStream())
-        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
+        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\n" + authCookieHeader() + "Content-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
         if (!headOnly) out.write(data)
         out.flush()
     }
@@ -607,7 +636,10 @@ internal fun parseRangeHeader(rangeHeader: String?, fileLen: Long): RangeSpec? {
     var partial = false
     try {
         if (!rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) return null
-        val range = rangeHeader.substring(6).trim().split(",")[0].trim()
+        // 多段 Range（bytes=0-1,4-5）：本服务只支持单段，静默截取首段会返回非法的
+        // 单段 206——检测到逗号直接返回 null，让调用方按全量 200 响应（PR review 意见）
+        if (rangeHeader.substring(6).indexOf(',') >= 0) return null
+        val range = rangeHeader.substring(6).trim()
         val dash = range.indexOf('-')
         if (dash >= 0) {
             val a = range.substring(0, dash).trim()
