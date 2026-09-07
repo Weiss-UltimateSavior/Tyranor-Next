@@ -10,7 +10,7 @@
 
 企鹅群：364439133
 
-感谢 [@Hatsune](https://www.pixiv.net/users/8182248) 为本项目绘画的logo娘！
+感谢 [@安音](https://www.pixiv.net/users/8182248) 为本项目绘画的logo娘！
 
 ## 支持范围
 
