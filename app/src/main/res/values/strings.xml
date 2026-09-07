@@ -82,6 +82,7 @@
     <string name="update_notification_big_text">%1$s\n点击查看 GitHub 发布详情并下载新版本。</string>
     <string name="update_network_failed">网络请求失败</string>
     <string name="update_github_request_failed">GitHub Releases 请求失败：HTTP %1$d</string>
+    <string name="update_open_releases">前往 GitHub Releases</string>
 
     <string name="engine_list_title">%1$s 引擎列表</string>
     <string name="engine_module_missing_title">模块未安装</string>

@@ -82,6 +82,7 @@
     <string name="update_notification_big_text">%1$s\nOpen the GitHub release details and download the new version.</string>
     <string name="update_network_failed">Network request failed</string>
     <string name="update_github_request_failed">GitHub Releases request failed: HTTP %1$d</string>
+    <string name="update_open_releases">Open GitHub Releases</string>
 
     <string name="engine_list_title">%1$s Engine List</string>
     <string name="engine_module_missing_title">Module not installed</string>

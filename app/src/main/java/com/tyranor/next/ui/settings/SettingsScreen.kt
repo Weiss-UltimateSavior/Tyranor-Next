@@ -562,6 +562,23 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                     },
                                 )
                             }
+                            // 跳转浏览器查看全部 Releases（外部跳转属执行动作，不显示右箭头）
+                            AppNavItem(
+                                title = stringResource(R.string.update_open_releases),
+                                leadingIcon = R.drawable.ic_update_github,
+                                containerColor = PageGrey,
+                                showArrow = false,
+                                onClick = {
+                                    runCatching {
+                                        ctx.startActivity(
+                                            Intent(
+                                                Intent.ACTION_VIEW,
+                                                Uri.parse("https://github.com/Weiss-UltimateSavior/Tyranor-Next/releases"),
+                                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                        )
+                                    }
+                                },
+                            )
                         }
                     }
                     is UpdateDownloadPhase.Downloading -> {

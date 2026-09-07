@@ -82,6 +82,7 @@
     <string name="update_notification_big_text">%1$s\nGitHub のリリース詳細を開いて新しいバージョンをダウンロードします。</string>
     <string name="update_network_failed">ネットワーク要求に失敗しました</string>
     <string name="update_github_request_failed">GitHub Releases の要求に失敗しました：HTTP %1$d</string>
+    <string name="update_open_releases">GitHub Releases を開く</string>
 
     <string name="engine_list_title">%1$s エンジンリスト</string>
     <string name="engine_module_missing_title">モジュール未インストール</string>
