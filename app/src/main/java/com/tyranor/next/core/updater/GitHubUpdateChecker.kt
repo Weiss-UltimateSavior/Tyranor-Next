@@ -15,6 +15,9 @@ object GitHubUpdateChecker {
     private const val RELEASES_API =
         "https://api.github.com/repos/Weiss-UltimateSavior/Tyranor-Next/releases"
 
+    /** 更新弹窗列表最多展示的版本数。 */
+    private const val MAX_CANDIDATES = 3
+
     suspend fun check(context: Context): UpdateCheckResult = withContext(Dispatchers.IO) {
         runCatching {
             val app = context.applicationContext
@@ -26,33 +29,59 @@ object GitHubUpdateChecker {
                 .asSequence()
                 .mapNotNull { index -> releases.optJSONObject(index) }
                 .filterNot { it.optBoolean("draft", false) }
-                .map {
+                .map { json ->
                     GitHubRelease(
-                        tagName = it.optString("tag_name"),
-                        name = it.optString("name"),
-                        htmlUrl = it.optString("html_url"),
-                        prerelease = it.optBoolean("prerelease", false),
+                        tagName = json.optString("tag_name"),
+                        name = json.optString("name"),
+                        htmlUrl = json.optString("html_url"),
+                        prerelease = json.optBoolean("prerelease", false),
+                        assets = json.optJSONArray("assets")
+                            ?.let { assets ->
+                                (0 until assets.length()).asSequence()
+                                    .mapNotNull { index -> assets.optJSONObject(index) }
+                                    .mapNotNull { asset ->
+                                        val downloadUrl = asset.optString("browser_download_url")
+                                        if (downloadUrl.isBlank()) return@mapNotNull null
+                                        UpdateAsset(
+                                            name = asset.optString("name"),
+                                            downloadUrl = downloadUrl,
+                                            size = asset.optLong("size", 0L),
+                                            digest = asset.optString("digest").takeIf { it.isNotBlank() },
+                                        )
+                                    }
+                                    .toList()
+                            }
+                            ?: emptyList(),
                     )
                 }
                 .filter { it.htmlUrl.isNotBlank() }
                 .toList()
 
-            // 优先正式版；仅当没有更新的正式版时才考虑 prerelease（beta）。
-            val latest = available.firstOrNull { release ->
+            // 弹窗列表固定展示最新三个版本（仓库发布顺序，新→旧，不按新旧过滤）；
+            // 是否有更新与通知口径则严格取「比当前版本新」的 release，正式版优先。
+            val toCandidate: (GitHubRelease) -> UpdateCandidate = { release ->
+                UpdateCandidate(
+                    latestVersion = versionFromRelease(release),
+                    releaseName = release.name.ifBlank { release.tagName },
+                    releaseUrl = release.htmlUrl,
+                    apkAsset = selectApkAsset(release.assets),
+                )
+            }
+            val newerStable = available.filter { release ->
                 !release.prerelease && compareVersions(versionFromRelease(release), currentVersion) > 0
-            } ?: available.firstOrNull { release ->
+            }
+            val newerPre = available.filter { release ->
                 release.prerelease && compareVersions(versionFromRelease(release), currentVersion) > 0
             }
 
-            if (latest == null) {
+            if (newerStable.isEmpty() && newerPre.isEmpty()) {
                 UpdateCheckResult.UpToDate(currentVersion)
             } else {
                 UpdateCheckResult.UpdateAvailable(
                     currentVersion = currentVersion,
-                    latestVersion = versionFromRelease(latest),
-                    releaseName = latest.name.ifBlank { latest.tagName },
-                    releaseUrl = latest.htmlUrl,
-                    prerelease = latest.prerelease,
+                    // 通知等单版本场景用 primary：最新的新正式版，无则最新的新 prerelease
+                    primary = (newerStable.firstOrNull() ?: newerPre.first()).let(toCandidate),
+                    candidates = available.take(MAX_CANDIDATES).map(toCandidate),
                 )
             }
         }.getOrElse { error ->
@@ -116,11 +145,25 @@ object GitHubUpdateChecker {
         return 0
     }
 
+    /**
+     * 从 release 的资产列表中选出适合当前设备的 APK：
+     * 过滤 .apk → 优先文件名包含设备主 ABI → 次选 universal → 仅剩一个则直接使用。
+     */
+    private fun selectApkAsset(assets: List<UpdateAsset>): UpdateAsset? {
+        val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) && it.size > 0 }
+        if (apks.isEmpty()) return null
+        val primaryAbi = Build.SUPPORTED_ABIS.firstOrNull() ?: return apks.singleOrNull()
+        return apks.firstOrNull { it.name.contains(primaryAbi, ignoreCase = true) }
+            ?: apks.firstOrNull { it.name.contains("universal", ignoreCase = true) }
+            ?: apks.singleOrNull()
+    }
+
     private data class GitHubRelease(
         val tagName: String,
         val name: String,
         val htmlUrl: String,
         val prerelease: Boolean,
+        val assets: List<UpdateAsset>,
     )
 }
 
@@ -129,11 +172,29 @@ sealed interface UpdateCheckResult {
 
     data class UpdateAvailable(
         val currentVersion: String,
-        val latestVersion: String,
-        val releaseName: String,
-        val releaseUrl: String,
-        val prerelease: Boolean,
+        /** 通知等单版本场景使用的首选候选：最新的新正式版，无新正式版时为最新的新 prerelease。 */
+        val primary: UpdateCandidate,
+        /** 弹窗列表展示的候选版本（仓库发布顺序，新→旧），固定取最新 [GitHubUpdateChecker.MAX_CANDIDATES] 个。 */
+        val candidates: List<UpdateCandidate>,
     ) : UpdateCheckResult
 
     data class Failed(val message: String) : UpdateCheckResult
 }
+
+/** 更新弹窗列表的单个候选版本。 */
+data class UpdateCandidate(
+    val latestVersion: String,
+    val releaseName: String,
+    val releaseUrl: String,
+    /** 适合当前设备的 APK 资产；null 表示没有可用的 APK 资产，只能跳转浏览器下载。 */
+    val apkAsset: UpdateAsset?,
+)
+
+/** GitHub Release 的单个资产文件（APK 下载所需的最小信息）。 */
+data class UpdateAsset(
+    val name: String,
+    val downloadUrl: String,
+    val size: Long,
+    /** GitHub 提供的摘要，形如 "sha256:xxxx"，可能为 null。 */
+    val digest: String?,
+)

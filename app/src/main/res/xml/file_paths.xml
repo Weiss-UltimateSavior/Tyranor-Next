@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 应用内更新下载的 APK 存放目录：优先 getExternalFilesDir/updates，外置存储不可用时回退 filesDir/updates -->
+    <external-files-path
+        name="update_apks"
+        path="updates/" />
+    <files-path
+        name="update_apks_internal"
+        path="updates/" />
+</paths>

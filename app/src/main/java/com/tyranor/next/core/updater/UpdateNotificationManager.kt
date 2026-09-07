@@ -36,29 +36,29 @@ object UpdateNotificationManager {
     }
 
     /** 同一版本只发一次；没有通知权限时不记录版本，授权后仍可在下次后台检查时提醒。 */
-    fun notifyIfNeeded(context: Context, update: UpdateCheckResult.UpdateAvailable): Boolean {
+    fun notifyIfNeeded(context: Context, candidate: UpdateCandidate): Boolean {
         val appContext = context.applicationContext
         if (!canPostNotifications(appContext)) return false
 
         val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val lastVersion = prefs.getString(KEY_LAST_NOTIFIED_VERSION, null)
-        if (!shouldNotifyUpdate(update.latestVersion, lastVersion)) return false
+        if (!shouldNotifyUpdate(candidate.latestVersion, lastVersion)) return false
 
-        val releaseIntent = Intent(Intent.ACTION_VIEW, Uri.parse(update.releaseUrl)).apply {
+        val releaseIntent = Intent(Intent.ACTION_VIEW, Uri.parse(candidate.releaseUrl)).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         val contentIntent = PendingIntent.getActivity(
             appContext,
-            update.latestVersion.hashCode(),
+            candidate.latestVersion.hashCode(),
             releaseIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val localizedContext = AppLocaleController.wrap(appContext)
         val fallbackText = localizedContext.getString(R.string.update_notification_fallback_text)
-        val releaseName = update.releaseName.ifBlank { fallbackText }
+        val releaseName = candidate.releaseName.ifBlank { fallbackText }
         val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_refresh)
-            .setContentTitle(localizedContext.getString(R.string.update_notification_title, update.latestVersion))
+            .setContentTitle(localizedContext.getString(R.string.update_notification_title, candidate.latestVersion))
             .setContentText(releaseName)
             .setStyle(
                 NotificationCompat.BigTextStyle().bigText(
@@ -85,7 +85,7 @@ object UpdateNotificationManager {
                 return@runCatching false
             }
             NotificationManagerCompat.from(appContext).notify(NOTIFICATION_ID, notification)
-            prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, update.latestVersion).apply()
+            prefs.edit().putString(KEY_LAST_NOTIFIED_VERSION, candidate.latestVersion).apply()
             true
         }.getOrDefault(false)
     }
