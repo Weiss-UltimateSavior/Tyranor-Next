@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppThemeColors
@@ -62,6 +63,7 @@ fun AppNavItem(
     summary: String? = null,
     @DrawableRes leadingIcon: Int? = null,
     containerColor: Color = NavWhite,
+    verticalPadding: Dp = 12.dp,
     showArrow: Boolean = true,
     leadingIconTint: Color? = null,
     titleColor: Color? = null,
@@ -75,7 +77,7 @@ fun AppNavItem(
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = { onClick?.invoke() })
             .background(containerColor)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(

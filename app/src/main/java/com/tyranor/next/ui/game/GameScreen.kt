@@ -654,6 +654,7 @@ internal fun GameActionsSheet(
                     title = stringResource(R.string.game_launch_action),
                     leadingIcon = R.drawable.ic_sheet_launch,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = {
@@ -674,6 +675,7 @@ internal fun GameActionsSheet(
                         summary = game.launchFile ?: stringResource(R.string.game_launch_file_auto_summary),
                         leadingIcon = R.drawable.ic_sheet_launch_file,
                         containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                         showArrow = false,
                         leadingIconTint = MaterialTheme.colorScheme.primary,
                         onClick = { showLaunchFilePicker = true },
@@ -685,6 +687,7 @@ internal fun GameActionsSheet(
                     title = if (quickLaunched) stringResource(R.string.game_remove_quick_launch) else stringResource(R.string.game_add_quick_launch),
                     leadingIcon = R.drawable.ic_home,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = {
@@ -701,6 +704,7 @@ internal fun GameActionsSheet(
                     title = stringResource(R.string.game_add_desktop_shortcut),
                     leadingIcon = R.drawable.ic_sheet_desktop_shortcut,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = { if (!shortcutRequestInFlight) openShortcutCrop() },
@@ -711,6 +715,7 @@ internal fun GameActionsSheet(
                     title = stringResource(R.string.game_search_cover),
                     leadingIcon = R.drawable.ic_sheet_search_cover,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = { if (!isBatchScrapingActive()) showCoverSourcePicker = true },
@@ -721,6 +726,7 @@ internal fun GameActionsSheet(
                     title = stringResource(R.string.game_edit_cover),
                     leadingIcon = R.drawable.ic_sheet_edit_cover,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = { if (!isBatchScrapingActive()) imagePicker.launch("image/*") },
@@ -731,6 +737,7 @@ internal fun GameActionsSheet(
                     title = stringResource(R.string.game_rename),
                     leadingIcon = R.drawable.ic_sheet_rename,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = { showRenameDialog = true },
@@ -742,6 +749,7 @@ internal fun GameActionsSheet(
                         title = stringResource(R.string.game_save_management),
                         leadingIcon = R.drawable.ic_sheet_saves,
                         containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                         leadingIconTint = MaterialTheme.colorScheme.primary,
                         onClick = {
                             startActivityWithPageTransition(context, SaveManagementActivity.createIntent(context, game))
@@ -756,6 +764,7 @@ internal fun GameActionsSheet(
                         title = stringResource(R.string.game_online_patch),
                         leadingIcon = R.drawable.ic_sheet_patch,
                         containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                         leadingIconTint = MaterialTheme.colorScheme.primary,
                         onClick = {
                             startActivityWithPageTransition(context, KrkrOnlinePatchActivity.createIntent(context, game))
@@ -769,6 +778,7 @@ internal fun GameActionsSheet(
                     title = stringResource(R.string.settings_engine_settings),
                     leadingIcon = R.drawable.ic_sheet_settings,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = onEngineSettings,
                 )
@@ -778,6 +788,7 @@ internal fun GameActionsSheet(
                     title = stringResource(R.string.game_delete_title),
                     leadingIcon = R.drawable.ic_sheet_delete,
                     containerColor = NavWhite,
+                        verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.error,
                     titleColor = MaterialTheme.colorScheme.error,

@@ -257,6 +257,8 @@ Column(fillMaxSize)                                // 页面根
 
 - `showArrow`：是否显示右侧跳转箭头。**「进入下一级」的跳转条目必须 `true`（默认）**；「执行动作」的条目（如启动游戏、删除等不产生跳转的动作）传 `false` 隐藏箭头，避免误导为可跳转。
 
+- `verticalPadding`（高度豁免条款）：条目纵向内边距默认 **12dp**。**豁免**：底部抽屉面板（`ModalBottomSheet`）内展示的条目可使用更大纵向内边距（当前游戏操作抽屉取 17dp，条目总高 +10dp），仅限抽屉内条目；`AppAlertDialog` 弹窗内条目一律保持默认 12dp。
+
 - `leadingIconTint` / `titleColor`：显式覆盖左侧图标与标题颜色（如游戏操作面板用主题色 `MaterialTheme.colorScheme.primary` 统一图标、危险条目用 `colorScheme.error` 上色）。传 `null`（默认）时使用面板默认行为（深色染白、浅色原图 / `TextColor`）。
 
 - 深色模式适配：左侧图标（PNG drawable）与右侧箭头在深色模式下自动染色为 `Color.White`，浅色模式保持原色不变；不可点击状态（`onClick = null`）保留 `contentAlpha` 衰减。这一适配由组件内部完成，调用方无需处理。
