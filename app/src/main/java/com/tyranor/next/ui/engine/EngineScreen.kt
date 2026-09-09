@@ -52,6 +52,7 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.settings.artVersionOptions
 import android.widget.Toast
@@ -76,17 +77,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     }
 
     Column(modifier.fillMaxSize()) {
-        // 顶部栏：页面背景色，标题居左
-        Column(modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
-            Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(stringResource(R.string.nav_engine), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                }
-            }
-        }
+        AppTopBar(title = stringResource(R.string.nav_engine))
 
         // 引擎列表
         LazyColumn(

@@ -22,8 +22,8 @@ class BackgroundUpdateWorker(
     override suspend fun doWork(): Result {
         return when (val update = GitHubUpdateChecker.check(applicationContext)) {
             is UpdateCheckResult.UpdateAvailable -> {
-                val notified = UpdateNotificationManager.notifyIfNeeded(applicationContext, update)
-                Log.d(TAG, "Background update check found ${update.latestVersion}; notified=$notified")
+                val notified = UpdateNotificationManager.notifyIfNeeded(applicationContext, update.primary)
+                Log.d(TAG, "Background update check found ${update.primary.latestVersion}; notified=$notified")
                 Result.success()
             }
 

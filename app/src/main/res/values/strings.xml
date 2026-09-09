@@ -61,10 +61,20 @@
     <string name="settings_qq_group">企鹅群聊</string>
     <string name="settings_telegram_channel">飞机频道</string>
     <string name="update_found_title">发现新版本</string>
-    <string name="update_current_version">当前版本：%1$s</string>
-    <string name="update_latest_version">最新版本：%1$s</string>
-    <string name="update_open_github_message">是否跳转到 GitHub 发布页下载新版本？</string>
-    <string name="update_go_download">去下载</string>
+    <string name="update_version_item">TyranorNext：%1$s</string>
+    <string name="update_download_cancel">取消下载</string>
+    <string name="update_downloading_status">正在下载：%1$s / %2$s（%3$d%%）</string>
+    <string name="update_download_completed_title">下载完成</string>
+    <string name="update_download_completed_message">已下载 %1$s，是否立即安装？</string>
+    <string name="update_install">安装</string>
+    <string name="update_retry">重试</string>
+    <string name="update_download_failed_title">下载失败</string>
+    <string name="update_download_failed_generic">下载失败，请检查网络后重试</string>
+    <string name="update_download_insufficient_space">存储空间不足，无法下载更新</string>
+    <string name="update_download_checksum_failed">安装包校验失败，请重试下载</string>
+    <string name="update_download_move_failed">安装包保存失败，请重试下载</string>
+    <string name="update_download_http_failed">下载失败（HTTP %1$d），请稍后重试</string>
+    <string name="update_install_failed">无法启动安装程序</string>
     <string name="update_channel_name">版本更新</string>
     <string name="update_channel_description">发现 Tyranor Next 新版本时提醒</string>
     <string name="update_notification_title">发现新版本 %1$s</string>
@@ -72,6 +82,7 @@
     <string name="update_notification_big_text">%1$s\n点击查看 GitHub 发布详情并下载新版本。</string>
     <string name="update_network_failed">网络请求失败</string>
     <string name="update_github_request_failed">GitHub Releases 请求失败：HTTP %1$d</string>
+    <string name="update_open_releases">前往 GitHub Releases</string>
 
     <string name="engine_list_title">%1$s 引擎列表</string>
     <string name="engine_module_missing_title">模块未安装</string>

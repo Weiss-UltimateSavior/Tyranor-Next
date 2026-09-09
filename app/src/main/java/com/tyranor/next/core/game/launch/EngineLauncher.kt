@@ -38,8 +38,9 @@ import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.core.theme.ThemeColorPayload
+import com.tyranor.next.core.theme.ThemeColorPayloadStore
 import com.tyranor.next.core.unpack.ArtemisPfsUnpacker
-import com.tyranor.next.theme.AppThemeColors
 import com.yuri.onscripter.ONScripter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -339,16 +340,16 @@ object EngineLauncher {
             }
         }
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
-        // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿，
-        // 这里同时写 primaryColor（EngineThemeColors）与 themeColorPrimary（KrDialogStyle）两套 key。
-        val dark = AppThemeColors.isDark
-        intent.putExtra("darkMode", dark)
-        intent.putExtra("primaryColor", AppThemeColors.primaryArgb)
-        intent.putExtra("themeColorPrimary", AppThemeColors.primaryArgb)
-        intent.putExtra("themeColorOnPrimary", 0xFFFFFFFF.toInt())
-        intent.putExtra("themeColorCard", (if (dark) 0xFF1E1F1F else 0xFFFFFFFF).toInt())
-        intent.putExtra("themeColorText", (if (dark) 0xFFF0F0F0 else 0xFF14221B).toInt())
-        intent.putExtra("themeColorTextMuted", (if (dark) 0xFF9A9A9A else 0xFF82908A).toInt())
+        // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
+        // 主题色来自 ui 层写入的纯数据快照（ThemeColorPayloadStore），core 不反向依赖 theme。
+        val theme = ThemeColorPayloadStore.current ?: ThemeColorPayload.DEFAULT
+        intent.putExtra("darkMode", theme.darkMode)
+        intent.putExtra("primaryColor", theme.primaryArgb)
+        intent.putExtra("themeColorPrimary", theme.primaryArgb)
+        intent.putExtra("themeColorOnPrimary", theme.onPrimaryArgb)
+        intent.putExtra("themeColorCard", theme.cardArgb)
+        intent.putExtra("themeColorText", theme.textArgb)
+        intent.putExtra("themeColorTextMuted", theme.mutedArgb)
         return intent
     }
 

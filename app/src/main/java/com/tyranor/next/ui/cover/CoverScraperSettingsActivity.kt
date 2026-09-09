@@ -55,6 +55,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
@@ -332,22 +333,11 @@ private fun CoverSourceRow(
 
 @Composable
 private fun CoverScraperTopBar() {
-    Column(modifier = Modifier.fillMaxWidth().background(PageGrey)) {
-        Column(modifier = Modifier.fillMaxWidth().statusBarsPadding()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.settings_cover_scraper),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = TextColor,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
+    AppTopBar(
+        title = stringResource(R.string.settings_cover_scraper),
+        background = PageGrey,
+        contentColor = TextColor,
+    )
 }
 
 @Composable

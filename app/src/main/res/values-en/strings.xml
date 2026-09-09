@@ -61,10 +61,20 @@
     <string name="settings_qq_group">QQ group</string>
     <string name="settings_telegram_channel">Telegram channel</string>
     <string name="update_found_title">New version available</string>
-    <string name="update_current_version">Current version: %1$s</string>
-    <string name="update_latest_version">Latest version: %1$s</string>
-    <string name="update_open_github_message">Open the GitHub release page to download the new version?</string>
-    <string name="update_go_download">Download</string>
+    <string name="update_version_item">TyranorNext: %1$s</string>
+    <string name="update_download_cancel">Cancel download</string>
+    <string name="update_downloading_status">Downloading: %1$s / %2$s (%3$d%%)</string>
+    <string name="update_download_completed_title">Download complete</string>
+    <string name="update_download_completed_message">%1$s downloaded. Install now?</string>
+    <string name="update_install">Install</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_download_failed_title">Download failed</string>
+    <string name="update_download_failed_generic">Download failed. Check your network and try again</string>
+    <string name="update_download_insufficient_space">Not enough storage space to download the update</string>
+    <string name="update_download_checksum_failed">Package verification failed. Please download again</string>
+    <string name="update_download_move_failed">Failed to save the package. Please try again</string>
+    <string name="update_download_http_failed">Download failed (HTTP %1$d). Please try again later</string>
+    <string name="update_install_failed">Unable to start the installer</string>
     <string name="update_channel_name">Version updates</string>
     <string name="update_channel_description">Notify when a new Tyranor Next version is available</string>
     <string name="update_notification_title">New version %1$s available</string>
@@ -72,6 +82,7 @@
     <string name="update_notification_big_text">%1$s\nOpen the GitHub release details and download the new version.</string>
     <string name="update_network_failed">Network request failed</string>
     <string name="update_github_request_failed">GitHub Releases request failed: HTTP %1$d</string>
+    <string name="update_open_releases">Open GitHub Releases</string>
 
     <string name="engine_list_title">%1$s Engine List</string>
     <string name="engine_module_missing_title">Module not installed</string>

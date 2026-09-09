@@ -7,6 +7,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.theme.ThemeColorPayload
+import com.tyranor.next.core.theme.ThemeColorPayloadStore
 
 /**
  * 全局主题色：读写 AppSettingsStore，变化时通过 snapshot state 通知所有已组合页面
@@ -43,6 +45,16 @@ object AppThemeColors {
         primary = parseColorHex(AppSettingsStore.getThemeColorHex(context))
         isDark = AppSettingsStore.isDarkEffective(context)
         toneSwitchEnabled = AppSettingsStore.isToneSwitchEnabled(context)
+        // 同步主题色快照给 core 启动编排（EngineLauncher 注入引擎 Intent 用），
+        // 维持 core 层不反向依赖 theme 的依赖方向。
+        ThemeColorPayloadStore.current = ThemeColorPayload(
+            darkMode = isDark,
+            primaryArgb = primaryArgb,
+            onPrimaryArgb = 0xFFFFFFFF.toInt(),
+            cardArgb = (if (isDark) 0xFF1E1F1F else 0xFFFFFFFF).toInt(),
+            textArgb = (if (isDark) 0xFFF0F0F0 else 0xFF14221B).toInt(),
+            mutedArgb = (if (isDark) 0xFF9A9A9A else 0xFF82908A).toInt(),
+        )
     }
 }
 
