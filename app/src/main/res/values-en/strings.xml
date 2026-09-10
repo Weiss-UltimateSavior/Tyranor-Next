@@ -388,6 +388,7 @@
     <string name="patch_progress_writing">Writing %1$s</string>
     <string name="patch_index_fetch_failed_http">Patch index fetch failed: HTTP %1$d</string>
     <string name="patch_download_failed_http">Patch download failed: HTTP %1$d</string>
+    <string name="patch_download_too_large">Patch file is too large; download stopped</string>
     <string name="patch_error_open_write_stream">Unable to open the patch write stream</string>
     <string name="patch_error_write_game_dir">Unable to write to the game directory. Add the game folder again and grant write permission</string>
 </resources>

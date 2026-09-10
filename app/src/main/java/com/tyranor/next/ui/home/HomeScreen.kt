@@ -68,6 +68,7 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
@@ -366,7 +367,7 @@ private fun QuickLaunchCard(
         modifier = modifier
             .height(172.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(QuickLaunchFallbackBackground),
+            .background(QuickLaunchFallback),
     ) {
         val engineName = if (game.engine == EngineType.UNKNOWN) {
             stringResource(R.string.engine_name_unknown)
@@ -466,9 +467,6 @@ private fun QuickLaunchCard(
         }
     }
 }
-
-/** 快捷启动卡无封面/封面加载中时的中性兜底底色。 */
-private val QuickLaunchFallbackBackground = Color(0xFF303338)
 
 /** 快捷启动空状态：尚未设置任何快捷启动时显示整张白色卡片 + 加号。 */
 @Composable

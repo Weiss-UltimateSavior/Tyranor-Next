@@ -56,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -163,7 +164,7 @@ fun GameScreen(
     var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
 
     val gridState = rememberLazyGridState()
-    val scrapeTaskState = CoverScrapeTaskManager.state.value
+    val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
 
     LaunchedEffect(libraryState.loaded, games, selectedGameUri) {
         val uri = selectedGameUri ?: return@LaunchedEffect
@@ -381,7 +382,7 @@ private fun GameLibraryContent(
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    val gameSort = AppSettingsStore.gameSortState.value
+    val gameSort by AppSettingsStore.gameSortState.collectAsState()
     val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
     val fallbackFiltered = remember(sortedGames, query) {
         val q = query.trim()
@@ -603,7 +604,13 @@ internal fun GameActionsSheet(
         scope.launch {
             launchError = settingCoverMessage
             val updated = withContext(Dispatchers.IO) {
-                runCatching { VndbCoverService.saveCustomCover(context, game, uri) }.getOrNull()
+                try {
+                    VndbCoverService.saveCustomCover(context, game, uri)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    null
+                }
             }
             if (updated != null) {
                 onGameUpdated(updated)
@@ -867,7 +874,13 @@ internal fun GameActionsSheet(
                     coverBindError = null
                     scope.launch {
                         val updated = withContext(Dispatchers.IO) {
-                            runCatching { CoverScraperService.bindCoverCandidate(context, game, candidate) }.getOrNull()
+                            try {
+                                CoverScraperService.bindCoverCandidate(context, game, candidate)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Throwable) {
+                                null
+                            }
                         }
                         coverBinding = false
                         if (updated != null) {
@@ -970,8 +983,9 @@ private fun CoverSourcePickerDialog(
     onSelect: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val authVersion = HikarinagiAuthStore.statusVersion.value
-    val sources = remember(AppSettingsStore.coverScraperSettingsVersion.value) {
+    val authVersion by HikarinagiAuthStore.statusVersion.collectAsState()
+    val scraperSettingsVersion by AppSettingsStore.coverScraperSettingsVersion.collectAsState()
+    val sources = remember(scraperSettingsVersion) {
         AppSettingsStore.getCoverScraperSourceOrder(context)
     }
     val authStatus = remember(authVersion) { HikarinagiAuthStore.getStatus(context) }
@@ -1203,6 +1217,8 @@ private fun encodeCoverSearchCandidate(candidate: CoverSearchCandidate): String 
         .put("detail", candidate.detail)
         .put("score", candidate.score)
         .put("coverUrl", candidate.coverUrl)
+        .put("vndbId", candidate.vndbId)
+        .put("metadataTitle", candidate.metadataTitle)
         .toString()
 
 private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? = runCatching {
@@ -1215,6 +1231,8 @@ private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? =
         detail = json.optString("detail"),
         score = if (json.has("score") && !json.isNull("score")) json.optInt("score") else null,
         coverUrl = json.optString("coverUrl"),
+        vndbId = json.optString("vndbId").takeIf { it.isNotBlank() && !json.isNull("vndbId") },
+        metadataTitle = json.optString("metadataTitle").takeIf { it.isNotBlank() && !json.isNull("metadataTitle") },
     )
 }.getOrNull()
 

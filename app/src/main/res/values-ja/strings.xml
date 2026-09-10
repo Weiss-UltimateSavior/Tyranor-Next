@@ -388,6 +388,7 @@
     <string name="patch_progress_writing">%1$s を書き込み中</string>
     <string name="patch_index_fetch_failed_http">パッチ索引の取得に失敗しました：HTTP %1$d</string>
     <string name="patch_download_failed_http">パッチのダウンロードに失敗しました：HTTP %1$d</string>
+    <string name="patch_download_too_large">パッチファイルが大きすぎるためダウンロードを中止しました</string>
     <string name="patch_error_open_write_stream">パッチ書き込みストリームを開けません</string>
     <string name="patch_error_write_game_dir">ゲームフォルダへ書き込めません。ゲームフォルダを追加し直して書き込み権限を付与してください</string>
 </resources>

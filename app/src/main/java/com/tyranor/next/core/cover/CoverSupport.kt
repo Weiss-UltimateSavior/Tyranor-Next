@@ -116,8 +116,11 @@ internal fun cleanTitle(s: String): String {
     val cleaned = s.replace("""\[[^\]]*\]|【[^】]*】""".toRegex(), " ")
         .replace("[\\[\\]【】]".toRegex(), " ")
         .replace("[（）()].*".toRegex(), " ")
-        .replace("(?i)complete|$localizedEditionWords|trial|patch".toRegex(), " ")
+        // 英文版本词必须整词匹配，避免“Dispatch”命中“patch”被误截断（中文词无词边界）
+        .replace("(?i)\\b(complete|trial|patch)\\b|$localizedEditionWords".toRegex(), " ")
         .replace('_', ' ')
+        // 清理后可能留下连续空格（如 "Game Complete Edition"），统一折叠
+        .replace("\\s+".toRegex(), " ")
         .trim()
     return cleaned.ifEmpty { s.trim() }
 }

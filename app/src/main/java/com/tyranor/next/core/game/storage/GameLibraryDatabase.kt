@@ -8,10 +8,15 @@ import androidx.room.RoomDatabase
 /**
  * 游戏库 Room 数据库单例。主进程专用；引擎子进程不访问本库。
  * v2 新增 game_overrides / engine_detection_cache（迁移方案阶段 4/5）。
- * 缺失迁移路径时破坏性重建是安全的：games/scan_roots/quick_launch 由 prefs 镜像 +
- * 启动修复导入恢复，game_overrides 由 syncFromPrefs 恢复；engine_detection_cache 为
- * 可重建缓存，Artemis 记忆丢失后经一次特征识别 + 一次成功启动自动重学（已知取舍）。
- * 后续版本升级时必须同时启用 exportSchema 并配置 schema 目录以编写 Migration。
+ * 降级（用户回滚旧版本后再次升级）无迁移路径可走时破坏性重建是安全的：games/scan_roots/
+ * quick_launch 由 prefs 镜像 + 启动修复导入恢复，game_overrides 由 syncFromPrefs 恢复；
+ * engine_detection_cache 为可重建缓存，Artemis 记忆丢失后经一次特征识别 + 一次成功启动
+ * 自动重学（已知取舍）。
+ *
+ * 升级路径（m7）：已启用 exportSchema 并导出到 `app/schemas`。破坏性升级**仅对 v1→v2 历史
+ * 过渡开放**（`.fallbackToDestructiveMigrationFrom(1)`，老安装直升 v2 时仍可安全重建）；
+ * 未来任何 version+n 变更必须注册显式 Migration，缺失时启动即抛异常（在开发/CI 阶段暴露），
+ * 不再静默清空整库。
  */
 @Database(
     entities = [
@@ -22,7 +27,7 @@ import androidx.room.RoomDatabase
         EngineDetectionEntity::class,
     ],
     version = 2,
-    exportSchema = false,
+    exportSchema = true,
 )
 internal abstract class GameLibraryDatabase : RoomDatabase() {
 
@@ -40,10 +45,10 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
                 GameLibraryDatabase::class.java,
                 DB_NAME,
             )
-                // 用户回滚到旧版本后再次升级时，无迁移路径可走则重建（旧数据可从 prefs 重新导入）。
+                // 用户回滚到旧版本后再次升级（降级→升级）时，无迁移路径可走则重建（数据可从 prefs 恢复）。
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
-                // v1→v2 无迁移路径：破坏性重建，库数据经启动修复从 prefs 镜像恢复。
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                // 仅 v1→v2 历史过渡允许破坏性重建；未来版本缺 Migration 必须显式暴露（m7）。
+                .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)
                 .build()
                 .also { instance = it }
         }

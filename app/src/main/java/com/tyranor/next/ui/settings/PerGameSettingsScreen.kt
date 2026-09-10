@@ -3,7 +3,6 @@ package com.tyranor.next.ui.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,7 +29,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -39,13 +36,11 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -107,7 +102,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val p = copyFontToPrivate(ctx, uri)
+            val p = FontImport.importToPrivate(ctx, uri)
             if (p != null) krFont = p
         }
     }
@@ -349,7 +344,18 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 SectionCard(stringResource(R.string.engine_settings_font)) {
                                     // 「跟随全局」必须删除覆盖键（null），存 "" 会被引擎当作
                                     // 显式内置字体覆盖，导致全局字体设置对该游戏永久失效
-                                    OverrideFont(stringResource(R.string.engine_settings_default_font), globalKrFont, krFont, onReset = { krFont = null }, onPick = { fontLauncher.launch("*/*") })
+                                    FontPreference(
+                                        label = stringResource(R.string.engine_settings_default_font),
+                                        value = krFont?.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }
+                                            ?: stringResource(
+                                                R.string.engine_settings_follow_global_font,
+                                                globalKrFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) },
+                                            ),
+                                        followLabel = stringResource(R.string.engine_settings_follow_global),
+                                        onFollow = { krFont = null },
+                                        onPick = { fontLauncher.launch("*/*") },
+                                        valueInSummary = true,
+                                    )
                                     if (effVersion != EngineSettingsStore.KR_126) {
                                         OverrideSwitch(stringResource(R.string.engine_settings_force_default_font_short), globalForce, krForceFont) { krForceFont = it }
                                     }
@@ -495,43 +501,7 @@ private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, o
     )
 }
 
-/** 覆盖版字体行：Miuix ArrowPreference，点击弹窗选择（跟随全局 / 选择字体文件）。 */
-@Composable
-private fun OverrideFont(label: String, global: String, override: String?, onReset: () -> Unit, onPick: () -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    val following = override == null
-    val builtInFont = stringResource(R.string.engine_settings_builtin_font)
-    val summary = if (following) {
-        stringResource(R.string.engine_settings_follow_global_font, global.ifEmpty { builtInFont })
-    } else {
-        override.ifEmpty { builtInFont }
-    }
-    ArrowPreference(title = label, summary = summary, onClick = { open = true })
-    if (open) {
-        AppAlertDialog(
-            onDismissRequest = { open = false },
-            title = { Text(label, style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Column {
-                    Row(Modifier.fillMaxWidth().clickable { onReset(); open = false }.padding(vertical = 8.dp)) { Text(stringResource(R.string.engine_settings_follow_global), style = MaterialTheme.typography.bodyMedium) }
-                    Row(Modifier.fillMaxWidth().clickable { open = false; onPick() }.padding(vertical = 8.dp)) { Text(stringResource(R.string.engine_settings_select_font_file), style = MaterialTheme.typography.bodyMedium) }
-                }
-            },
-            confirmButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.common_cancel)) } },
-        )
-    }
-}
-
 private fun labelOf(v: String, map: Map<String, String>, emptyLabel: String): String = map[v] ?: v.ifEmpty { emptyLabel }
-
-private fun copyFontToPrivate(ctx: android.content.Context, uri: android.net.Uri): String? = try {
-    val name = (uri.lastPathSegment ?: "font.ttf").substringAfterLast('/').substringAfterLast('\\')
-    val dir = java.io.File(ctx.filesDir, "fonts")
-    if (!dir.isDirectory && !dir.mkdirs()) return null
-    val target = java.io.File(dir, name)
-    ctx.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { out -> input.copyTo(out) } } ?: return null
-    target.absolutePath
-} catch (t: Throwable) { null }
 
 private fun onsBool(o: JSONObject, key: String): Boolean? = if (o.has(key)) o.optBoolean(key) else null
 private fun onsStr(o: JSONObject, key: String, def: String): String? = if (o.has(key)) o.optString(key, def) else null

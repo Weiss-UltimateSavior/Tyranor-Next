@@ -58,6 +58,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -104,7 +105,13 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
             loading = true
             message = null
             val result = withContext(Dispatchers.IO) {
-                runCatching { KrkrOnlinePatchService.fetchPatchIndex(context) }
+                try {
+                    Result.success(KrkrOnlinePatchService.fetchPatchIndex(context))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (t: Throwable) {
+                    Result.failure(t)
+                }
             }
             entries = result.getOrDefault(emptyList())
             message = result.exceptionOrNull()?.message
@@ -183,10 +190,16 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                         scope.launch {
                             installing = true
                             message = null
-                            val result = runCatching {
-                                KrkrOnlinePatchService.downloadAndInstall(context, game, selected) {
-                                    message = it
-                                }
+                            val result = try {
+                                Result.success(
+                                    KrkrOnlinePatchService.downloadAndInstall(context, game, selected) {
+                                        message = it
+                                    },
+                                )
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (t: Throwable) {
+                                Result.failure(t)
                             }
                             result.onSuccess {
                                 Toast.makeText(context, patchInstalledCountFormat.format(it.installed.size), Toast.LENGTH_LONG).show()

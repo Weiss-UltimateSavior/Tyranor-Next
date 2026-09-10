@@ -236,6 +236,16 @@ object GameLibraryFacade {
         }
     }
 
+    /**
+     * 快捷启动的原子「读-改-写」：加载、变换、保存同一把缓存锁内完成，
+     * 避免并发路径（设置页直写 vs VM 命令队列）互相丢失更新。
+     */
+    internal fun updateQuickLaunch(context: Context, transform: (List<ScanGame>) -> List<ScanGame>) {
+        synchronized(cacheLock) {
+            saveQuickLaunch(context, transform(loadQuickLaunch(context)))
+        }
+    }
+
     // ============ 扫描根目录 ============
 
     fun saveRoot(context: Context, uri: Uri): List<String> = saveRoot(context, uri.toString())
@@ -285,7 +295,7 @@ object GameLibraryFacade {
         synchronized(cacheLock) {
             recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
         }
-        saveQuickLaunch(context, loadQuickLaunch(context).filterNot { it.uri in removedUris })
+        updateQuickLaunch(context) { list -> list.filterNot { it.uri in removedUris } }
         _libraryRevision.value++
     }
 

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.TyranorNextTheme
+import com.tyranor.next.theme.WithoutPressIndication
 
 /**
  * 二级页面统一宿主（P1-4）：收敛各 Activity 重复的

@@ -55,14 +55,8 @@
 
 - 职责：游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新。
 
-- 规则：可以依赖 `engine` 模块；不得依赖 Compose UI 组件；不得把页面类作为普通业务依赖。
-
-- Compose 依赖豁免划界（2026-09，架构优化 P2-10）：
-  - **禁止** `androidx.compose.ui.*`、`androidx.compose.foundation.*`、`androidx.compose.material*` 等 UI 组件与修饰符；
-  - **过渡期豁免** `androidx.compose.runtime` 的可观察状态（`MutableState` / `mutableStateOf` / `State`）与 `@Immutable` 注解，仅限下表存量点；这些点须保持「无 Context 可构造 / 单例持有」的最小用法，
-    新增 core 状态优先用 `StateFlow` 或纯数据载荷（`ThemeColorPayload` 模式），不得扩大豁免面。
-  - 现有豁免清单：`AppSettingsStore`（languageState/navStyleState/gameSortState/coverScraperSettingsVersion）、
-    `HikarinagiAuthStore.statusVersion`、`CoverScrapeTaskManager.state`、`ScanGame`（`@Immutable`）。
+- 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
+  全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
 - 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/settings`、`core/auth`、`core/updater` 等包。
 
@@ -203,6 +197,8 @@ Column(fillMaxSize)                                // 页面根
 
 - 组件统一圆角数值为 **8dp**；列表项卡片、功能项卡片、弹窗等圆角组件都应使用 `RoundedCornerShape(8.dp)`。
 
+- **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
+
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 
 ## 页面内容文字尺寸规范
@@ -278,6 +274,8 @@ Column(fillMaxSize)                                // 页面根
 - 标题用 `MaterialTheme.typography.bodyMedium`、颜色取 `TextColor`；摘要可选，用 `bodySmall` + 半透明辅助色。均不依赖 `colorScheme.surface*`（遵循「组件背景色统一规范」）。
 
 - `leadingIcon`：左侧图标 drawable；未提供时组件自动使用**默认占位图标** `DEFAULT_LEADING_ICON`，不允许调用方在不该出现空图标时留白。
+
+- `showLeadingIcon`：是否展示左侧图标，默认 `true`。**纯动作条目**（如存档导出/导入/删除等无图标的动作项）可传 `false` 隐藏图标位，此时标题顶格排列；不得为隐藏图标而乱传占位图。
 
 - `onClick`：点击回调；传 `null` 表示不可用（整条变灰且不可点击）。
 

@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,7 +55,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
-import com.tyranor.next.ui.common.WithoutPressIndication
+import com.tyranor.next.theme.WithoutPressIndication
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.basic.Switch
@@ -79,9 +80,9 @@ class CoverScraperSettingsActivity : AppScreenActivity() {
 internal fun CoverScraperSettingsScreen() {
     val ctx = LocalContext.current
     val activity = AppLocaleController.findActivity(ctx) as? ComponentActivity
-    val authVersion = HikarinagiAuthStore.statusVersion.value
-    val settingsVersion = AppSettingsStore.coverScraperSettingsVersion.value
-    val scrapeTaskState = CoverScrapeTaskManager.state.value
+    val authVersion by HikarinagiAuthStore.statusVersion.collectAsState()
+    val settingsVersion by AppSettingsStore.coverScraperSettingsVersion.collectAsState()
+    val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
     var sources by remember(settingsVersion) { mutableStateOf(AppSettingsStore.getCoverScraperSourceOrder(ctx)) }
     var onlyMissing by remember(settingsVersion) { mutableStateOf(AppSettingsStore.isCoverScraperOnlyMissing(ctx)) }
     val scraping = scrapeTaskState.running

@@ -2,7 +2,6 @@ package com.tyranor.next.ui.main
 
 import android.app.Application
 import android.util.Log
-import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tyranor.next.R
@@ -95,7 +94,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         // 刮削任务属于应用级长任务，即使 GameScreen 已离开组合，也要立即发布给首页与游戏页。
         viewModelScope.launch {
             var handledEventId = 0L
-            snapshotFlow { CoverScrapeTaskManager.state.value }.collect { task ->
+            CoverScrapeTaskManager.state.collect { task ->
                 if (task.running || task.eventId == 0L || task.eventId == handledEventId) return@collect
                 handledEventId = task.eventId
                 val result = task.result
@@ -114,7 +113,8 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 } else {
                     _uiState.update { it.copy(scrapeEventId = task.eventId, scrapeMessage = message) }
                 }
-                CoverScrapeTaskManager.clearFinished(task.eventId)
+                // 不在此清空任务态：刮削页/游戏页各自展示完成后经 acknowledgeScrapeEvent 清空，
+                // 避免 Main.immediate 收集器先于 UI 帧清空导致页面结果提示被吞（H1）。
             }
         }
         refreshFromStorage()
@@ -156,12 +156,9 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                     if (it.uri == persisted.uri) persisted.copy(openTime = it.openTime) else it
                 }
             }
-            GameLibraryFacade.saveQuickLaunch(
-                appContext,
-                GameLibraryFacade.loadQuickLaunch(appContext).map {
-                    if (it.uri == persisted.uri) persisted else it
-                },
-            )
+            GameLibraryFacade.updateQuickLaunch(appContext) { quick ->
+                quick.map { if (it.uri == persisted.uri) persisted else it }
+            }
         }
     }
 
@@ -215,6 +212,8 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         _uiState.update { state ->
             if (state.scrapeEventId == eventId) state.copy(scrapeMessage = null) else state
         }
+        // 主界面已展示结果：清空共享任务态，避免后续进入刮削页重复弹同一结果
+        CoverScrapeTaskManager.clearFinished(eventId)
     }
 
     /**

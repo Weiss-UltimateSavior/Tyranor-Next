@@ -97,6 +97,11 @@ val syncSharedEngineAssets by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/assets/engine"))
 }
 
+// Room schema 导出（m7）：app/schemas 随版本提交，后续 schema 变更必须编写显式 Migration。
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 val checkHardcodedUiStrings by tasks.registering(Exec::class) {
     group = "verification"
     description = "Checks localized string resource parity and blocks visible CJK string literals in Kotlin UI/core code."

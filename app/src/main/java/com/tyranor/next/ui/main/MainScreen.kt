@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateOf
@@ -55,7 +56,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
-import com.tyranor.next.ui.common.WithoutPressIndication
+import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.home.HomeScreen
@@ -95,7 +96,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
     libraryViewModel.refreshFromStorage()
   }
-  val liquidGlass = AppSettingsStore.navStyleState.value == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
+  val navStyle by AppSettingsStore.navStyleState.collectAsState()
+  val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
   val tabLabels = tabItems.map { stringResource(it.labelRes) }
   val liquidGlassTabItems = tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
 

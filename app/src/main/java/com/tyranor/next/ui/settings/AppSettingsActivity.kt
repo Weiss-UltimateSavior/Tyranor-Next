@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -67,6 +69,7 @@ class AppSettingsActivity : AppScreenActivity() {
 @Composable
 internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
+    val navStyle by AppSettingsStore.navStyleState.collectAsState()
     var showColorPicker by remember { mutableStateOf(false) }
 
     MiuixSettingsTheme {
@@ -185,7 +188,7 @@ internal fun AppSettingsScreen() {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_liquid_glass_nav),
-                                checked = AppSettingsStore.navStyleState.value == AppSettingsStore.NAV_STYLE_LIQUID_GLASS,
+                                checked = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setNavStyle(
                                         ctx,
@@ -265,10 +268,4 @@ private fun ComposeColor.toHex(): String {
         ((green * 255f).roundToInt() shl 8) or
         (blue * 255f).roundToInt()
     return String.format("#%06X", argb and 0xFFFFFF)
-}
-
-/** 列表底部占位：避让系统导航栏。 */
-@Composable
-private fun BottomInsetSpacer() {
-    Box(Modifier.fillMaxWidth().height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
 }

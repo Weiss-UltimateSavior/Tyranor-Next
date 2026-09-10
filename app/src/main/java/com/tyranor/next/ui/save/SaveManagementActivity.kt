@@ -8,35 +8,26 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -48,9 +39,12 @@ import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.BottomInsetSpacer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,15 +81,23 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveImportedCountFormat = stringResource(R.string.save_imported_count)
     val saveDeletedCountFormat = stringResource(R.string.save_deleted_count)
     val manager = remember { GameSaveManager(context) }
-    var location by remember { mutableStateOf(manager.resolveSaveLocation(game)) }
-    var fileCount by remember { mutableStateOf(manager.listSaveFiles(game).size) }
+    var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
+    var fileCount by remember { mutableStateOf(0) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
     var taskRunning by remember { mutableStateOf(false) }
 
-    fun refresh() {
-        location = manager.resolveSaveLocation(game)
-        fileCount = manager.listSaveFiles(game).size
+    // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
+    suspend fun refresh() {
+        val snapshot = withContext(Dispatchers.IO) {
+            manager.resolveSaveLocation(game) to manager.listSaveFiles(game).size
+        }
+        location = snapshot.first
+        fileCount = snapshot.second
+    }
+
+    LaunchedEffect(game) {
+        refresh()
     }
 
     fun runSaveTask(block: suspend () -> String) {
@@ -104,7 +106,13 @@ private fun SaveManagementScreen(game: ScanGame) {
             taskRunning = true
             try {
                 val message = withContext(Dispatchers.IO) {
-                    runCatching { block() }.getOrElse { it.toSaveErrorMessage(context, saveOperationFailedMessage) }
+                    try {
+                        block()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (t: Throwable) {
+                        t.toSaveErrorMessage(context, saveOperationFailedMessage)
+                    }
                 }
                 refresh()
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
@@ -150,38 +158,46 @@ private fun SaveManagementScreen(game: ScanGame) {
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            location.description,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                        Text(
-                            if (location.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp),
-                        )
+                        location?.let { loadedLocation ->
+                            Text(
+                                loadedLocation.description,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                            Text(
+                                if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
                 }
             }
 
             item {
-                SaveActionCard(stringResource(R.string.save_export_zip)) {
-                    exportLauncher.launch(defaultArchiveName(game))
-                }
+                AppNavItem(
+                    title = stringResource(R.string.save_export_zip),
+                    showLeadingIcon = false,
+                    onClick = { exportLauncher.launch(defaultArchiveName(game)) },
+                )
             }
             item {
-                SaveActionCard(stringResource(R.string.save_import_zip)) {
-                    importLauncher.launch("application/zip")
-                }
+                AppNavItem(
+                    title = stringResource(R.string.save_import_zip),
+                    showLeadingIcon = false,
+                    onClick = { importLauncher.launch("application/zip") },
+                )
             }
             item {
-                SaveActionCard(stringResource(R.string.save_delete_title)) {
-                    showDeleteConfirm = true
-                }
+                AppNavItem(
+                    title = stringResource(R.string.save_delete_title),
+                    showLeadingIcon = false,
+                    onClick = { showDeleteConfirm = true },
+                )
             }
-            item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(12.dp)) }
+            item { BottomInsetSpacer() }
         }
     }
 
@@ -205,28 +221,6 @@ private fun SaveManagementScreen(game: ScanGame) {
                 TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
-    }
-}
-
-@Composable
-private fun SaveActionCard(title: String, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
-        shape = RoundedCornerShape(8.dp),
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.5.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Icon(
-                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 

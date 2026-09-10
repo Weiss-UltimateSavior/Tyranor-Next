@@ -2,8 +2,7 @@ package com.tyranor.next.core.auth
 
 import android.content.Context
 import android.util.Log
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.flow.MutableStateFlow
 
 data class HikarinagiAuthStatus(
     val authorized: Boolean,
@@ -29,7 +28,7 @@ object HikarinagiAuthStore {
     /** Keystore 加密失败时置入 last_error，令 UI 走重新授权路径而非静默登出。 */
     private const val SECURE_STORAGE_ERROR = "secure storage unavailable"
 
-    val statusVersion: MutableState<Int> = mutableStateOf(0)
+    val statusVersion: MutableStateFlow<Int> = MutableStateFlow(0)
 
     @Volatile
     private var migrationDone = false
@@ -63,7 +62,15 @@ object HikarinagiAuthStore {
                     // ⇒ 同一令牌的续迁：落回主流程完整重加密；不一致 ⇒ 迁移失败后用户
                     // 已重新登录，压制旧明文（否则陈旧令牌会覆盖新登录态）。
                     val legacyAccess = legacy.getString(KEY_ACCESS_TOKEN, "").orEmpty()
+                    val accessCipher = secure.getString(SecureAuthStore.FIELD_ACCESS_TOKEN, null)
                     val secureAccess = SecureAuthStore.decryptField(context, SecureAuthStore.FIELD_ACCESS_TOKEN)
+                    val accessDecryptable = !accessCipher.isNullOrBlank() && secureAccess.isNotBlank()
+                    if (!accessDecryptable && legacyAccess.isNotBlank()) {
+                        // 密文缺失或解密瞬时失败（冷启动早期 Keystore 未就绪）：无法确认
+                        // 「已重新登录」，保留 legacy 明文下次重试，避免不可逆丢失登录态。
+                        Log.w(TAG, "Secure access token unavailable, legacy prefs kept for retry")
+                        return
+                    }
                     if (!(legacyAccess.isNotBlank() && legacyAccess == secureAccess)) {
                         legacy.edit().clear().apply()
                         secure.edit().putBoolean(SecureAuthStore.FIELD_MIGRATED, true).apply()

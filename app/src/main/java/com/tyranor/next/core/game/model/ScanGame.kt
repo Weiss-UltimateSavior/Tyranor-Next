@@ -2,11 +2,9 @@ package com.tyranor.next.core.game.model
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.runtime.Immutable
 import com.tyranor.next.core.engine.EngineType
 
 /** 扫描产出的游戏候选。 */
-@Immutable
 data class ScanGame(
     val title: String,
     val uri: String,

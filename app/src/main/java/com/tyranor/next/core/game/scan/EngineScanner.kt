@@ -98,10 +98,9 @@ object EngineScanner {
         GameLibraryFacade.updateRecentGames(context) { current ->
             current.filter { it.uri in validUris }
         }
-        GameLibraryFacade.saveQuickLaunch(
-            context,
-            GameLibraryFacade.loadQuickLaunch(context).filter { it.uri in validUris },
-        )
+        GameLibraryFacade.updateQuickLaunch(context) { list ->
+            list.filter { it.uri in validUris }
+        }
         // 扫描识别结果入缓存（迁移方案阶段 5）：Ren'Py 版本建议与 RPGM 子运行时。
         GameLibraryRepository.post(context) { EngineDetectionRepository.recordScanDetections(it, refreshed) }
         refreshed
