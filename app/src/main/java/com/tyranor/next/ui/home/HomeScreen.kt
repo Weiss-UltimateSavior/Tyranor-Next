@@ -72,6 +72,7 @@ import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
+import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.game.GameActionsSheet
@@ -377,12 +378,27 @@ private fun QuickLaunchCard(
         val cardMaxWidth = maxWidth
         val coverBitmap by rememberCoverBitmap(game.coverUri)
         coverBitmap?.let { bmp ->
-            // 封面先缩到 40px 再拉伸铺满，全版本都有柔化效果；API 31+ 叠加真高斯模糊
-            val blurred = remember(bmp) {
+            // 封面缩到 40px 再拉伸铺满：API 31+ 由 Modifier.blur（RenderEffect）做真高斯；
+            // API 26-30 无 RenderEffect，若只放大 40px 会呈马赛克（issue #76），
+            // 因此对小图先做 CPU 盒式模糊（3 轮近似高斯）再拉伸，保证低版本同样柔和。
+            val blurSupported = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+            val blurred = remember(bmp, blurSupported) {
                 val src = bmp.asAndroidBitmap()
                 val width = 40
                 val height = (src.height * width / src.width).coerceAtLeast(1)
-                android.graphics.Bitmap.createScaledBitmap(src, width, height, true).asImageBitmap()
+                val scaled = android.graphics.Bitmap.createScaledBitmap(src, width, height, true)
+                if (blurSupported) {
+                    scaled.asImageBitmap()
+                } else {
+                    val smallWidth = scaled.width
+                    val smallHeight = scaled.height
+                    val pixels = IntArray(smallWidth * smallHeight)
+                    scaled.getPixels(pixels, 0, smallWidth, 0, 0, smallWidth, smallHeight)
+                    boxBlurArgb(pixels, smallWidth, smallHeight, radius = 3)
+                    android.graphics.Bitmap
+                        .createBitmap(pixels, smallWidth, smallHeight, android.graphics.Bitmap.Config.ARGB_8888)
+                        .asImageBitmap()
+                }
             }
             Image(
                 bitmap = blurred,
