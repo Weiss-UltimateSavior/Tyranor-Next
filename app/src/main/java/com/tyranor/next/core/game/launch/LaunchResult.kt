@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.launch
 
+import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 
 /**
@@ -38,8 +39,8 @@ sealed interface LaunchResult {
         /** KRKR 可移动存储镜像内部的 savedata 目录创建失败。 */
         data class KrkrMirrorSaveDirFailed(val path: String) : Failure
 
-        /** 外置 APK 引擎模块启动失败；[message] 为模块层已生成的文案（可为空）。 */
-        data class ExternalModuleFailed(val moduleName: String, val message: String?) : Failure
+        /** 外置 APK 引擎模块启动失败；携带模块层类型化错误（文案由 UI 映射）。 */
+        data class ExternalModuleFailed(val result: ExternalEngineLaunchResult) : Failure
 
         /** startActivity 抛出异常（[detail] 可为空）。 */
         data class StartFailed(val detail: String?) : Failure

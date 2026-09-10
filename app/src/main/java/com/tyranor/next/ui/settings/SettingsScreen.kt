@@ -102,7 +102,7 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** 更新弹窗的下载阶段；null 表示停留在"发现新版本"阶段，四个阶段复用同一个 AppAlertDialog。 */
+/** 更新弹窗的下载阶段；null 表示停留在“发现新版本”阶段，四个阶段复用同一个 AppAlertDialog。 */
 private sealed interface UpdateDownloadPhase {
     data class Downloading(val downloadedBytes: Long, val totalBytes: Long) : UpdateDownloadPhase
 
@@ -222,7 +222,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val settingsUpdateInstallFailedMessage = stringResource(R.string.update_install_failed)
     fun installUpdateApk(file: File) {
         if (!ctx.packageManager.canRequestPackageInstalls()) {
-            // 未授权"安装未知应用"：先跳系统授权页，授权后用户再次点击安装即可
+            // 未授权“安装未知应用”：先跳系统授权页，授权后用户再次点击安装即可
             runCatching {
                 ctx.startActivity(
                     Intent(

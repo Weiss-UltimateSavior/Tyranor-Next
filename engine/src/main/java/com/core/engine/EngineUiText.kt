@@ -15,7 +15,7 @@ object EngineUiText {
         return try {
             if (context is Activity) {
                 val intent = context.intent
-                if (intent != null) languageTag = intent.getStringExtra("uiLanguageTag")
+                if (intent != null) languageTag = intent.getStringExtra(LaunchContract.UI_LANGUAGE_TAG)
             }
             if (languageTag == null || languageTag.trim().isEmpty()) {
                 return context.getString(resourceId)

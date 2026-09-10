@@ -66,11 +66,19 @@ _Avoid_: 排序方式（与 GAME_SORT_* 枚举混用）
 扫描后对磁盘上已不存在的游戏库记录执行移除的清理动作。
 _Avoid_: 删除、清理
 
+**游戏库门面（GameLibraryFacade）**:
+从 EngineScanner 拆出的游戏库集成门面：持有游戏/最近/快捷/扫描根的内存缓存与修订号，提供同步「缓存先行、落库排队」写；EngineScanner 只保留扫描与引擎识别。
+_Avoid_: Scanner 缓存、图库仓库（Repository 指落库层）
+
 ## 设置体系
 
 **应用/引擎/单游戏三级设置**:
 设置按作用域分三层：应用设置（AppSettingsStore，全局）、引擎设置（EngineSettingsStore，按引擎家族）、单游戏设置（PerGameSettingsStore，按游戏覆盖）；启动时单游戏覆盖先于全局生效。
 _Avoid_: 设置优先级、全局设置
+
+**生效设置解析（EngineSettingsResolver / EffectiveEngineSettings）**:
+三级设置的统一解析入口：Resolver 从两个 Store 读取全局与单游戏覆盖，纯函数层 EffectiveEngineSettings 做白名单/内核回退等合并规则，启动与存档只消费 ResolvedEngineSettings 结果。
+_Avoid_: 设置合并、覆盖层
 
 **引擎设置种类（EngineSettingsKind）**:
 引擎设置页的分类入口（KRKR / ONS / ARTEMIS / RPG_MAKER / TYRANO / RENPY），各自提供该引擎族专属参数项。
@@ -148,6 +156,18 @@ _Avoid_: 平铺包、循环依赖
 UI 弹窗强制使用的组件（Material3 AlertDialog 封装），禁止直接使用原生 AlertDialog。
 _Avoid_: AlertDialog、Dialog
 
+**启动契约（LaunchContract）**:
+engine 模块定义的 App → 引擎宿主 Intent extras 键与固定取值的唯一常量源；App 侧 EngineLauncher 与引擎侧宿主 Activity 必须双侧引用，禁止裸字符串。
+_Avoid_: extras 约定、Intent 协议
+
+**启动结果（LaunchResult）**:
+引擎启动的统一 sealed 结果（Success / 类型化 Failure）；core 只给错误类型，本地化文案由 UI 层映射，异常场景用带错误码的 GameSaveException 类协议。
+_Avoid_: 错误字符串、返回值文案
+
+**页面宿主（AppScreenActivity / AppScreenScaffold）**:
+二级页面统一宿主：收敛主题包裹（ProvideAppLocale → TyranorNextTheme → Surface）、边到边与透明系统栏、退出转场；页面正文经 setAppScreenContent 提供。
+_Avoid_: BaseActivity、Scaffold 壳
+
 **FIFO 持久化命令队列**:
-MainLibraryViewModel 用单线程 FIFO 协程队列串行化所有持久化命令（扫描/删除/搜索等），避免组合期磁盘读写与后发覆盖先发。
+两道串行队列：MainLibraryViewModel 的 Channel 队列串行化 UI 发起的游戏库命令（扫描/删除/搜索等），避免组合期磁盘读写与后发覆盖先发；GameLibraryRepository.writeScope 单线程写队列是所有持久化写（含 GameLibraryFacade 的同步门面写）的唯一落库串行化保证点。
 _Avoid_: 线程池、异步竞态

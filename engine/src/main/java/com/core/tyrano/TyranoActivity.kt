@@ -34,6 +34,7 @@ import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineThemeColors
+import com.core.engine.LaunchContract
 import com.core.engine.R
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -86,10 +87,10 @@ class TyranoActivity : Activity() {
     /** 影响引擎行为的 Intent extras 摘要，用于判断单游戏重启是否需要重建。 */
     private fun behaviorSignature(intent: Intent): String = listOf(
         resolveGameDir(intent),
-        intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false).toString(),
-        intent.getStringExtra(EXTRA_SCOPED_SAVE_ROOT),
-        intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true).toString(),
-        intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID),
+        intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false).toString(),
+        intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT),
+        intent.getBooleanExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, true).toString(),
+        intent.getStringExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID),
     ).joinToString("\u0000")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,10 +137,10 @@ class TyranoActivity : Activity() {
                 return
             }
         }
-        webGameType = detectWebGameType(intent.getStringExtra("type"), contentRoot, asarArchive)
-        rpgMakerModEnabled = intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true) &&
+        webGameType = detectWebGameType(intent.getStringExtra(LaunchContract.TYPE), contentRoot, asarArchive)
+        rpgMakerModEnabled = intent.getBooleanExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, true) &&
             (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ)
-        rpgMakerModGameId = intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID)
+        rpgMakerModGameId = intent.getStringExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID)
             ?.takeIf(String::isNotBlank)
             ?: resolvedGameDir
         Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} asar=$asarPath contentRoot=${contentRoot.absolutePath}")
@@ -151,7 +152,7 @@ class TyranoActivity : Activity() {
             failLaunch(getString(R.string.engine_tyrano_unwritable_save_directory))
             return
         }
-        Log.i(TAG, "save directory=${saves?.absolutePath ?: "none"} scoped=${intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false)}")
+        Log.i(TAG, "save directory=${saves?.absolutePath ?: "none"} scoped=${intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)}")
 
         try {
             val hookAsset = when (webGameType) {
@@ -471,11 +472,11 @@ class TyranoActivity : Activity() {
         source ?: return null
         val path = uriToFilePath(
             firstNonEmpty(
-                source.getStringExtra("path"),
-                source.getStringExtra("gamePath"),
-                source.getStringExtra("projectRoot"),
-                source.getStringExtra("gamedir"),
-                source.getStringExtra("rootUri"),
+                source.getStringExtra(LaunchContract.PATH),
+                source.getStringExtra(LaunchContract.GAME_PATH),
+                source.getStringExtra(LaunchContract.PROJECT_ROOT),
+                source.getStringExtra(LaunchContract.GAME_DIR),
+                source.getStringExtra(LaunchContract.ROOT_URI),
             ),
         ) ?: return null
         val file = File(path).let { if (it.isFile) it.parentFile else it }
@@ -650,8 +651,8 @@ class TyranoActivity : Activity() {
     }
 
     private fun resolveSaveDirectory(source: Intent?, gameRoot: File?): File? {
-        if (source?.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false) == true) {
-            val explicit = source.getStringExtra(EXTRA_SCOPED_SAVE_ROOT)?.takeIf(String::isNotBlank)
+        if (source?.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false) == true) {
+            val explicit = source.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT)?.takeIf(String::isNotBlank)
                 ?: return null
             return try {
                 val external = getExternalFilesDir(null) ?: return null
@@ -985,10 +986,6 @@ class TyranoActivity : Activity() {
         private const val RPG_MAKER_MOD_BRIDGE_NAME = "TyranorModNative"
         private const val TOUCH_PAD_BRIDGE_NAME = "TyranorTouchPadNative"
         private const val RPG_MV_SAVE_EXTENSION = ".bin"
-        private const val EXTRA_SCOPED_SAVE_DIR = "scopedSaveDir"
-        private const val EXTRA_SCOPED_SAVE_ROOT = "scopedSaveRoot"
-        private const val EXTRA_RPG_MAKER_MOD_ENABLED = "rpgMakerModEnabled"
-        private const val EXTRA_RPG_MAKER_MOD_GAME_ID = "rpgMakerModGameId"
         private const val RPG_MAKER_MOD_PREFS = "tyranor_rpgmaker_mod_state"
         private const val PER_GAME_TOUCH_PAD_KEY = "touch_pad_config"
         private const val PER_GAME_TOUCH_PAD_PRESETS_KEY = "touch_pad_presets"

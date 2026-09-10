@@ -18,9 +18,9 @@ class OnsSettings {
 
     companion object {
         const val PREF_NAME = "onsyuri"
+
+        /** 共享偏好中的 ONS 配置 JSON 键（与 Intent extra gameargs 同名字段的历史沿用）。 */
         const val EXTRA_GAME_ARGS = "gameargs"
-        const val EXTRA_GAME_URI = "gameuri"
-        const val EXTRA_IGNORE_CUTOUT = "ignorecutout"
         private const val TAG = "OnsSettings"
         private const val KEY_ENCODING_MIGRATED_GBK = "encoding_migrated_gbk_v2"
 

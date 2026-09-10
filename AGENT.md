@@ -57,6 +57,13 @@
 
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose UI 组件；不得把页面类作为普通业务依赖。
 
+- Compose 依赖豁免划界（2026-09，架构优化 P2-10）：
+  - **禁止** `androidx.compose.ui.*`、`androidx.compose.foundation.*`、`androidx.compose.material*` 等 UI 组件与修饰符；
+  - **过渡期豁免** `androidx.compose.runtime` 的可观察状态（`MutableState` / `mutableStateOf` / `State`）与 `@Immutable` 注解，仅限下表存量点；这些点须保持「无 Context 可构造 / 单例持有」的最小用法，
+    新增 core 状态优先用 `StateFlow` 或纯数据载荷（`ThemeColorPayload` 模式），不得扩大豁免面。
+  - 现有豁免清单：`AppSettingsStore`（languageState/navStyleState/gameSortState/coverScraperSettingsVersion）、
+    `HikarinagiAuthStore.statusVersion`、`CoverScrapeTaskManager.state`、`ScanGame`（`@Immutable`）。
+
 - 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/settings`、`core/auth`、`core/updater` 等包。
 
 ### 3. 界面 UI 交互层

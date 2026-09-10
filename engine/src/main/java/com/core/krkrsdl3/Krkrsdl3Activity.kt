@@ -11,6 +11,7 @@ import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import com.core.engine.EngineThemeColors
+import com.core.engine.LaunchContract
 import org.libsdl3.app.SDLActivity
 import org.tvp.krkrsdl3.KRKRActivity
 import java.util.Locale
@@ -60,7 +61,7 @@ class Krkrsdl3Activity : KRKRActivity() {
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
-        val forceFocus = intent?.getStringExtra("focus")?.toBoolean() ?: false
+        val forceFocus = intent?.getStringExtra(LaunchContract.FOCUS)?.toBoolean() ?: false
         super.onWindowFocusChanged(hasFocus || forceFocus)
         if (hasFocus || forceFocus) applySystemUiVisibility()
     }
@@ -120,7 +121,7 @@ class Krkrsdl3Activity : KRKRActivity() {
     }
 
     private fun currentEngineRequestedOrientation(): Int {
-        val requested = intent?.getIntExtra("orientation", 6) ?: 6
+        val requested = intent?.getIntExtra(LaunchContract.ORIENTATION, 6) ?: 6
         if (!launchOrientationGuardEnabled) return requested
         // 加载期冻结 180° 传感器翻转：固定到请求方向对应的单一横屏
         return if (requested == ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
@@ -214,7 +215,7 @@ class Krkrsdl3Activity : KRKRActivity() {
         window.decorView.systemUiVisibility = flags
     }
 
-    private fun isLauncherDarkMode(): Boolean = intent?.getBooleanExtra("darkMode", false) ?: false
+    private fun isLauncherDarkMode(): Boolean = intent?.getBooleanExtra(LaunchContract.DARK_MODE, false) ?: false
 
     override fun attachBaseContext(newBase: Context) {
         // 引擎壳层与启动器显示语言解耦：KRKRActivity 原生 shell 仅含 zh-CN 场景资源，

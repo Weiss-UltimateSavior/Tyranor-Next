@@ -2,6 +2,7 @@ package com.tyranor.next.ui.common
 
 import android.content.Context
 import com.tyranor.next.R
+import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.launch.LaunchResult
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -37,7 +38,7 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         }
 
         is LaunchResult.Failure.KrkrMirrorPrepareFailed ->
-            localized.getString(R.string.launch_prepare_krkr_sd_mirror_failed)
+            detail ?: localized.getString(R.string.launch_prepare_krkr_sd_mirror_failed)
 
         is LaunchResult.Failure.KrkrSavePathNotDirectory ->
             localized.getString(R.string.launch_krkr_save_path_not_dir, path)
@@ -52,8 +53,31 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         is LaunchResult.Failure.KrkrMirrorSaveDirFailed ->
             localized.getString(R.string.launch_create_krkr_mirror_save_failed)
 
-        is LaunchResult.Failure.ExternalModuleFailed ->
-            message ?: localized.getString(R.string.launch_external_module_failed, moduleName)
+        is LaunchResult.Failure.ExternalModuleFailed -> {
+            val moduleName = result.moduleNameRes?.let { localized.getString(it) }
+                ?: result.moduleNameFallback.orEmpty()
+            when (result.error) {
+                ExternalEngineErrorCode.INVALID_GAME_PATH ->
+                    localized.getString(R.string.external_engine_resolve_dir_failed, result.engineName.orEmpty())
+
+                ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED ->
+                    localized.getString(R.string.external_engine_module_missing, moduleName)
+
+                ExternalEngineErrorCode.PREPARE_FAILED ->
+                    result.messageRes?.let { localized.getString(it) }
+                        ?: result.detail
+                        ?: localized.getString(R.string.external_engine_launch_failed, moduleName)
+
+                ExternalEngineErrorCode.ACTIVITY_NOT_FOUND ->
+                    localized.getString(R.string.external_engine_no_activity, moduleName)
+
+                ExternalEngineErrorCode.SECURITY_EXCEPTION ->
+                    localized.getString(R.string.external_engine_denied, moduleName)
+
+                ExternalEngineErrorCode.LAUNCH_EXCEPTION, null ->
+                    result.detail ?: localized.getString(R.string.external_engine_launch_failed, moduleName)
+            }
+        }
 
         is LaunchResult.Failure.StartFailed ->
             detail ?: localized.getString(R.string.launch_failed)

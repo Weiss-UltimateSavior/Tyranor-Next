@@ -199,37 +199,41 @@ object GameLibraryFacade {
         loadQuickLaunch(context).any { it.uri == uri }
 
     /** 加入快捷启动。已存在视为成功；槽位满（MAX_QUICK_LAUNCH=3）返回 false。 */
-    fun addQuickLaunch(context: Context, game: ScanGame): Boolean {
+    fun addQuickLaunch(context: Context, game: ScanGame): Boolean = synchronized(cacheLock) {
         val current = loadQuickLaunch(context)
-        if (current.any { it.uri == game.uri }) return true
-        if (current.size >= GameLibraryDao.MAX_QUICK_LAUNCH) return false
+        if (current.any { it.uri == game.uri }) return@synchronized true
+        if (current.size >= GameLibraryDao.MAX_QUICK_LAUNCH) return@synchronized false
         saveQuickLaunch(context, current + game)
-        return true
+        true
     }
 
     fun removeQuickLaunch(context: Context, uri: String) {
-        saveQuickLaunch(context, loadQuickLaunch(context).filterNot { it.uri == uri })
+        synchronized(cacheLock) {
+            saveQuickLaunch(context, loadQuickLaunch(context).filterNot { it.uri == uri })
+        }
     }
 
     /**
      * 用主游戏库最新数据刷新快捷启动快照（游戏页修改封面等后首页实时同步），并回写存储。
      * 快捷启动为 games 的关联视图（JOIN），标题/封面更新自动生效；不存在孤儿快照。
      */
-    fun refreshQuickLaunch(context: Context): List<ScanGame> {
+    fun refreshQuickLaunch(context: Context): List<ScanGame> = synchronized(cacheLock) {
         val library = loadGames(context).associateBy { it.uri }
         val current = loadQuickLaunch(context)
         val refreshed = current.mapNotNull { library[it.uri] ?: it }
         if (refreshed != current) saveQuickLaunch(context, refreshed)
-        return refreshed
+        refreshed
     }
 
     internal fun saveQuickLaunch(context: Context, games: List<ScanGame>) {
-        val snapshot = games.toList()
-        quickLaunchCache = snapshot
-        GameLibraryRepository.post(context) {
-            GameLibraryRepository.replaceQuickLaunch(it, snapshot.map { game -> game.uri })
+        synchronized(cacheLock) {
+            val snapshot = games.toList()
+            quickLaunchCache = snapshot
+            GameLibraryRepository.post(context) {
+                GameLibraryRepository.replaceQuickLaunch(it, snapshot.map { game -> game.uri })
+            }
+            _quickLaunchRevision.value++
         }
-        _quickLaunchRevision.value++
     }
 
     // ============ 扫描根目录 ============

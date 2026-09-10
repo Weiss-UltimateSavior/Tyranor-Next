@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import android.widget.Toast
+import com.core.engine.LaunchContract
 import com.core.engine.R
 
 open class ArtemisActivity : NativeActivity() {
@@ -104,8 +105,8 @@ open class ArtemisActivity : NativeActivity() {
         super.onNewIntent(intent)
         val old = this.intent
         if (old == null || intent == null) return
-        val oldPath = old.getStringExtra("path")
-        val newPath = intent.getStringExtra("path")
+        val oldPath = old.getStringExtra(LaunchContract.PATH)
+        val newPath = intent.getStringExtra(LaunchContract.PATH)
         if (oldPath == null || oldPath == newPath || newPath == null) return
         Toast.makeText(this, getString(R.string.engine_another_game_running), Toast.LENGTH_SHORT).show()
     }

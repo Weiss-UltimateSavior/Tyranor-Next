@@ -24,6 +24,8 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.core.engine.LaunchContract;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -95,10 +97,10 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public void onCreate(Bundle bundle) {
-        launchOrientationGuardEnabled = !getIntent().getBooleanExtra("originMode", false);
+        launchOrientationGuardEnabled = !getIntent().getBooleanExtra(LaunchContract.ORIGIN_MODE, false);
         applyKrkrRequestedOrientation();
         doSetSystemUiVisibility();
-        NativeBridge.configureSafMirror(getIntent().getStringExtra("safMirrorIndex"));
+        NativeBridge.configureSafMirror(getIntent().getStringExtra(LaunchContract.SAF_MIRROR_INDEX));
         // Anime4K 后处理：必须在 super.onCreate（GL SurfaceView 构造，EGL 版本定型）前配置
         com.core.gl.Anime4kRuntime.configure(this, getIntent().getStringExtra(com.core.gl.Anime4kRuntime.EXTRA_MODE));
         // Must run before super.onCreate (native library loading and preference singleton construction).
@@ -109,7 +111,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         // KR2 宿主不是 SDLActivity（SDL.setContext 从未被调用），须显式注册耳机
         // 热插拔监听，否则游戏中插拔耳机后静态 AudioTrack 失联、永久静音。
         org.libsdl.app.AudioRouteWatcher.ensureRegistered(this);
-        if (getIntent().getBooleanExtra("originMode", false)) {
+        if (getIntent().getBooleanExtra(LaunchContract.ORIGIN_MODE, false)) {
             return;
         }
         int primaryColor = launcherPrimaryColor();
@@ -178,7 +180,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         this.loadingSpinner = spinner;
         this.mFrameLayout.addView(launchMask);
         NativeBridge.setKrkrGameReadyListener(this::revealGame);
-        String path = getIntent().getStringExtra("path");
+        String path = getIntent().getStringExtra(LaunchContract.PATH);
         if (path != null && path.length() != 0) {
             requestGameLaunch(path, false);
         } else {
@@ -221,9 +223,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         }
         File gameFile = gamePreferenceFile();
         // Keys fail independently: a read-only game directory must not block the other key.
-        if (intent.hasExtra("default_font")) {
+        if (intent.hasExtra(LaunchContract.DEFAULT_FONT)) {
             try {
-                String font = safeTrim(intent.getStringExtra("default_font"));
+                String font = safeTrim(intent.getStringExtra(LaunchContract.DEFAULT_FONT));
                 File target = fontTarget(intent, "font_scope_default", gameFile, globalFile);
                 boolean changed = applyPreferenceItem(
                         target, "default_font", markerFor("default_font"), font.isEmpty() ? null : font);
@@ -234,9 +236,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                 Log.w(TAG, "apply default_font failed", error);
             }
         }
-        if (intent.hasExtra("force_default_font")) {
+        if (intent.hasExtra(LaunchContract.FORCE_DEFAULT_FONT)) {
             try {
-                boolean force = intent.getBooleanExtra("force_default_font", false);
+                boolean force = intent.getBooleanExtra(LaunchContract.FORCE_DEFAULT_FONT, false);
                 File target = fontTarget(intent, "font_scope_force", gameFile, globalFile);
                 boolean changed = applyPreferenceItem(
                         target, "force_default_font", markerFor("force_default_font"), force ? "1" : "0");
@@ -261,7 +263,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private void applyEnginePreferences() {
         Intent intent = getIntent();
         if (intent == null) return;
-        String enginePrefsJson = intent.getStringExtra("krkr_engine_prefs");
+        String enginePrefsJson = intent.getStringExtra(LaunchContract.KR_ENGINE_PREFS);
         if (enginePrefsJson == null || enginePrefsJson.isEmpty()) return;
         File globalFile = globalPreferenceFile();
         if (globalFile == null) {
@@ -338,7 +340,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private String gameRootDir() {
         Intent intent = getIntent();
         if (intent == null) return "";
-        String root = safeTrim(intent.getStringExtra("projectRoot"));
+        String root = safeTrim(intent.getStringExtra(LaunchContract.PROJECT_ROOT));
         if (root.isEmpty() || root.startsWith("content://")) return "";
         return root;
     }
@@ -501,14 +503,14 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         // leave the KRKR shell above an otherwise running game.
         Log.i(TAG, "direct game launch waits for native scene transition so=" + gameLibrary);
         Intent intent = getIntent();
-        boolean scopedSaveDir = intent != null && intent.getBooleanExtra("scopedSaveDir", false);
-        boolean safFileFallback = intent != null && intent.getBooleanExtra("safFileFallback", false);
-        String patchOverlayTarget = intent == null ? null : intent.getStringExtra("krPatchOverlayTarget");
-        String patchOverlayPath = intent == null ? null : intent.getStringExtra("krPatchOverlayPath");
+        boolean scopedSaveDir = intent != null && intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false);
+        boolean safFileFallback = intent != null && intent.getBooleanExtra(LaunchContract.SAF_FILE_FALLBACK, false);
+        String patchOverlayTarget = intent == null ? null : intent.getStringExtra(LaunchContract.KR_PATCH_OVERLAY_TARGET);
+        String patchOverlayPath = intent == null ? null : intent.getStringExtra(LaunchContract.KR_PATCH_OVERLAY_PATH);
         boolean patchOverlay = patchOverlayTarget != null && !patchOverlayTarget.trim().isEmpty()
                 && patchOverlayPath != null && !patchOverlayPath.trim().isEmpty();
-        String steamConfigOverlayTarget = intent == null ? null : intent.getStringExtra("krSteamConfigOverlayTarget");
-        String steamConfigOverlayPath = intent == null ? null : intent.getStringExtra("krSteamConfigOverlayPath");
+        String steamConfigOverlayTarget = intent == null ? null : intent.getStringExtra(LaunchContract.KR_STEAM_CONFIG_OVERLAY_TARGET);
+        String steamConfigOverlayPath = intent == null ? null : intent.getStringExtra(LaunchContract.KR_STEAM_CONFIG_OVERLAY_PATH);
         boolean steamConfigOverlay = steamConfigOverlayTarget != null && !steamConfigOverlayTarget.trim().isEmpty()
                 && steamConfigOverlayPath != null && !steamConfigOverlayPath.trim().isEmpty();
         if (intent == null) {
@@ -525,16 +527,16 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         }
         String prefix = null;
         try {
-            String rawPath = intent.getStringExtra("projectRoot");
-            if (rawPath == null || rawPath.trim().isEmpty()) rawPath = intent.getStringExtra("gamedir");
-            if (rawPath == null || rawPath.trim().isEmpty()) rawPath = intent.getStringExtra("path");
+            String rawPath = intent.getStringExtra(LaunchContract.PROJECT_ROOT);
+            if (rawPath == null || rawPath.trim().isEmpty()) rawPath = intent.getStringExtra(LaunchContract.GAME_DIR);
+            if (rawPath == null || rawPath.trim().isEmpty()) rawPath = intent.getStringExtra(LaunchContract.PATH);
             if (rawPath != null && !rawPath.trim().isEmpty()) {
                 String resolved = normalizeKrPath(rawPath);
                 File root = new File(resolved);
                 if (root.isFile()) root = root.getParentFile();
                 if (root != null) {
                     if (scopedSaveDir) {
-                        String explicitSaveRoot = normalizeKrPath(intent.getStringExtra("scopedSaveRoot"));
+                        String explicitSaveRoot = normalizeKrPath(intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT));
                         File saveRoot = explicitSaveRoot.isEmpty() ? null : new File(explicitSaveRoot);
                         if (saveRoot == null || (!saveRoot.isDirectory() && !saveRoot.mkdirs())) {
                             Log.e(TAG, "KRKR scoped save directory unavailable: " + explicitSaveRoot);
@@ -546,7 +548,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                     // calls. A mixed-case game directory therefore cannot be matched by an
                     // exact savedata prefix. Hook the stable volume root and let KrPathUtils
                     // redirect only savedata paths to the app-scoped directory.
-                    String mirrorRoot = normalizeKrPath(intent.getStringExtra("safMirrorRoot"));
+                    String mirrorRoot = normalizeKrPath(intent.getStringExtra(LaunchContract.SAF_MIRROR_ROOT));
                     prefix = mirrorRoot.isEmpty()
                             ? storagePrefix(root.getAbsolutePath())
                             : mirrorRoot.toLowerCase(Locale.ROOT);
@@ -705,8 +707,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     private int launcherPrimaryColor() {
         Intent intent = getIntent();
-        if (intent != null && intent.hasExtra("primaryColor")) {
-            return intent.getIntExtra("primaryColor", Color.rgb(24, 185, 120));
+        if (intent != null && intent.hasExtra(LaunchContract.PRIMARY_COLOR)) {
+            return intent.getIntExtra(LaunchContract.PRIMARY_COLOR, Color.rgb(24, 185, 120));
         }
         // Deprecated reflection fallback: com.apps should pass "primaryColor" via Intent extra.
         // TODO: remove reflection once com.apps migration is complete.
@@ -747,7 +749,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     }
 
     private String uiString(int resourceId) {
-        String languageTag = getIntent() == null ? null : getIntent().getStringExtra("uiLanguageTag");
+        String languageTag = getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.UI_LANGUAGE_TAG);
         if (languageTag == null || languageTag.trim().isEmpty()) return getString(resourceId);
         try {
             Configuration configuration = new Configuration(getResources().getConfiguration());
@@ -760,8 +762,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     private boolean isLauncherDarkMode() {
         Intent intent = getIntent();
-        if (intent != null && intent.hasExtra("darkMode")) {
-            return intent.getBooleanExtra("darkMode", false);
+        if (intent != null && intent.hasExtra(LaunchContract.DARK_MODE)) {
+            return intent.getBooleanExtra(LaunchContract.DARK_MODE, false);
         }
         // Deprecated reflection fallback: com.apps should pass "darkMode" via Intent extra.
         try {
@@ -805,8 +807,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         super.onNewIntent(intent);
         Intent oldIntent = getIntent();
         if (oldIntent == null || intent == null) return;
-        String oldPath = oldIntent.getStringExtra("path");
-        String newPath = intent.getStringExtra("path");
+        String oldPath = oldIntent.getStringExtra(LaunchContract.PATH);
+        String newPath = intent.getStringExtra(LaunchContract.PATH);
         if (newPath != null && !newPath.equals(oldPath)) {
             Toast.makeText(this, uiString(R.string.engine_another_game_running), Toast.LENGTH_SHORT).show();
         }
@@ -827,7 +829,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
-        String focus = getIntent().getStringExtra("focus");
+        String focus = getIntent().getStringExtra(LaunchContract.FOCUS);
         boolean forceFocus = focus != null && Boolean.parseBoolean(focus);
         super.onWindowFocusChanged(hasFocus || forceFocus);
         if (hasFocus || forceFocus) doSetSystemUiVisibility();
@@ -867,7 +869,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private int currentKrkrRequestedOrientation() {
         int requested = getIntent() == null
                 ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                : getIntent().getIntExtra("orientation", ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                : getIntent().getIntExtra(LaunchContract.ORIENTATION, ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
         if (!launchOrientationGuardEnabled) return requested;
         // Kirikiroid2/Cocos is fragile while startupFrom/doStartup is still loading XP3/TJS.
         // During the launch mask, always use a concrete landscape orientation.  Do not use

@@ -31,6 +31,7 @@ import android.view.ViewGroup;
 import org.libsdl.app.SDLActivity;
 
 import com.core.engine.DoubleBackExit;
+import com.core.engine.LaunchContract;
 import com.core.engine.R;
 import com.core.ons.OnsLibLoader;
 import com.core.ons.OnsSettings;
@@ -84,15 +85,15 @@ public class ONScripter extends SDLActivity {
 
     @Override public void onCreate(Bundle savedInstanceState) {
         gameRoot = firstNonEmpty(
-                getIntent().getStringExtra("path"),
-                getIntent().getStringExtra("gamePath"),
-                getIntent().getStringExtra("rootUri"),
-                getIntent().getStringExtra(OnsSettings.EXTRA_GAME_URI));
+                getIntent().getStringExtra(LaunchContract.PATH),
+                getIntent().getStringExtra(LaunchContract.GAME_PATH),
+                getIntent().getStringExtra(LaunchContract.ROOT_URI),
+                getIntent().getStringExtra(LaunchContract.GAME_URI));
         gameRoot = normalizeRootPath(gameRoot);
-        onsArgs = getIntent().getStringArrayListExtra(OnsSettings.EXTRA_GAME_ARGS);
+        onsArgs = getIntent().getStringArrayListExtra(LaunchContract.GAME_ARGS);
         OnsSettings settings = OnsSettings.load(this);
         if (onsArgs == null) onsArgs = settings.buildArgs(this, gameRoot);
-        ignoreCutout = getIntent().getBooleanExtra(OnsSettings.EXTRA_IGNORE_CUTOUT, settings.ignoreCutout);
+        ignoreCutout = getIntent().getBooleanExtra(LaunchContract.IGNORE_CUTOUT, settings.ignoreCutout);
         // 提前加载/释放 assets：确保 libonsyuri 与内置 DroidSansFallback.ttf 在 SDLActivity 启动前可用。
         OnsLibLoader.load(this);
         ensureDefaultFont();

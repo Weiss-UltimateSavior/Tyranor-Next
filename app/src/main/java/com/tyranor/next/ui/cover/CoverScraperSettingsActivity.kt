@@ -2,12 +2,9 @@ package com.tyranor.next.ui.cover
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,9 +51,8 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.ProvideAppLocale
-import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
 import com.tyranor.next.ui.common.WithoutPressIndication
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -66,36 +61,12 @@ import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-class CoverScraperSettingsActivity : ComponentActivity() {
+class CoverScraperSettingsActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val darkMode = AppSettingsStore.isDarkEffective(this)
-        enableEdgeToEdge(
-            statusBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-        )
-
-        setContent {
-            ProvideAppLocale {
-                TyranorNextTheme {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background,
-                    ) {
-                        WithoutPressIndication {
-                            CoverScraperSettingsScreen()
-                        }
-                    }
-                }
-            }
+        setAppScreenContent {
+            CoverScraperSettingsScreen()
         }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun finish() {
-        super.finish()
-        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
     }
 
     companion object {

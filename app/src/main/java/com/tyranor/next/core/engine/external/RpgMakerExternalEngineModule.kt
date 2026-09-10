@@ -6,7 +6,6 @@ import android.os.Environment
 import android.util.Log
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.scan.EngineScanner
 import java.io.File
 import java.io.FileOutputStream
@@ -48,8 +47,8 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         val folder = resolveGameFolder(request)
         if (folder.isBlank()) {
             return ExternalEngineLaunchResult.failure(
-                AppLocaleController.wrap(context).getString(R.string.external_rpgm_resolve_dir_failed),
-                "invalid_game_path",
+                ExternalEngineErrorCode.PREPARE_FAILED,
+                messageRes = R.string.external_rpgm_resolve_dir_failed,
             )
         }
         ensureRtpEnvironment(context.applicationContext, gameType)
@@ -62,11 +61,11 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
     override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent {
         val gameType = resolveGameType(request)
         return Intent(actionForGameType(gameType)).setPackage(packageName).apply {
-            putExtra("game", buildGameJson(request))
-            putExtra("settings", buildSettingsJson(gameType))
-            putExtra("orientation", 6)
-            putExtra("rootUri", request.game.uri)
-            putExtra("launchTarget", request.launchTarget)
+            putExtra(ExternalEngineContract.GAME, buildGameJson(request))
+            putExtra(ExternalEngineContract.SETTINGS, buildSettingsJson(gameType))
+            putExtra(ExternalEngineContract.ORIENTATION, 6)
+            putExtra(ExternalEngineContract.ROOT_URI, request.game.uri)
+            putExtra(ExternalEngineContract.LAUNCH_TARGET, request.launchTarget)
         }
     }
 

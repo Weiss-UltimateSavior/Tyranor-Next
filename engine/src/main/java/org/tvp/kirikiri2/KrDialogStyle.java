@@ -16,6 +16,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import bridge.KrPathUtils;
 import com.core.engine.EngineUiText;
+import com.core.engine.LaunchContract;
 
 /**
  * 统一弹窗样式 — KRKR / Artemis 共用。
@@ -200,11 +201,11 @@ public final class KrDialogStyle {
                 if (kr != null) intent = kr.getIntent();
             }
             if (hasThemeExtras(intent)) {
-                c.card       = intent.getIntExtra("themeColorCard", c.card);
-                c.primary    = intent.getIntExtra("themeColorPrimary", c.primary);
-                c.onPrimary  = intent.getIntExtra("themeColorOnPrimary", c.onPrimary);
-                c.text       = intent.getIntExtra("themeColorText", c.text);
-                c.textMuted  = intent.getIntExtra("themeColorTextMuted", c.textMuted);
+                c.card       = intent.getIntExtra(LaunchContract.THEME_COLOR_CARD, c.card);
+                c.primary    = intent.getIntExtra(LaunchContract.THEME_COLOR_PRIMARY, c.primary);
+                c.onPrimary  = intent.getIntExtra(LaunchContract.THEME_COLOR_ON_PRIMARY, c.onPrimary);
+                c.text       = intent.getIntExtra(LaunchContract.THEME_COLOR_TEXT, c.text);
+                c.textMuted  = intent.getIntExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, c.textMuted);
                 c.inputBg    = darken(c.card, 0.12f);
                 c.inputText  = c.text;
                 c.inputHint  = c.textMuted;
@@ -214,7 +215,7 @@ public final class KrDialogStyle {
     }
 
     private static boolean hasThemeExtras(Intent intent) {
-        return intent != null && intent.hasExtra("themeColorPrimary");
+        return intent != null && intent.hasExtra(LaunchContract.THEME_COLOR_PRIMARY);
     }
 
     private static int darken(int color, float amount) {

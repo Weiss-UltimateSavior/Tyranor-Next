@@ -2,13 +2,9 @@ package com.tyranor.next.ui.save
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -32,7 +28,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,26 +47,17 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
-import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.ProvideAppLocale
-import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.AppAlertDialog
-import com.tyranor.next.ui.common.WithoutPressIndication
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class SaveManagementActivity : ComponentActivity() {
+class SaveManagementActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val darkMode = AppSettingsStore.isDarkEffective(this)
-        enableEdgeToEdge(
-            statusBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-        )
 
         val game = intent.readScanGame()
         if (game == null) {
@@ -79,23 +65,9 @@ class SaveManagementActivity : ComponentActivity() {
             return
         }
 
-        setContent {
-            ProvideAppLocale {
-                TyranorNextTheme {
-                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        WithoutPressIndication {
-                            SaveManagementScreen(game = game)
-                        }
-                    }
-                }
-            }
+        setAppScreenContent {
+            SaveManagementScreen(game = game)
         }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun finish() {
-        super.finish()
-        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
     }
 
     companion object {

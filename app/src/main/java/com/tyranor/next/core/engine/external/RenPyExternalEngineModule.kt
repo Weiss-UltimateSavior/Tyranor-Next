@@ -25,11 +25,11 @@ abstract class RenPyRuntimeModule(
 
     override fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent =
         Intent(action).setPackage(packageName).apply {
-            putExtra("game", buildGameJson(request))
-            putExtra("settings", "{}")
-            putExtra("orientation", 6)
-            putExtra("rootUri", request.game.uri)
-            putExtra("launchTarget", request.launchTarget)
+            putExtra(ExternalEngineContract.GAME, buildGameJson(request))
+            putExtra(ExternalEngineContract.SETTINGS, "{}")
+            putExtra(ExternalEngineContract.ORIENTATION, 6)
+            putExtra(ExternalEngineContract.ROOT_URI, request.game.uri)
+            putExtra(ExternalEngineContract.LAUNCH_TARGET, request.launchTarget)
         }
 
     internal fun buildGameJson(request: ExternalEngineLaunchRequest): String {

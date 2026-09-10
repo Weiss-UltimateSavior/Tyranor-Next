@@ -9,8 +9,8 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.core.settings.PerGameSettingsStore
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -34,6 +34,8 @@ class GameSaveManager(private val context: Context) {
     fun resolveSaveLocation(game: ScanGame): SaveLocation {
         val root = resolveGameDirectory(game)
             ?: return SaveLocation(null, text(R.string.save_error_resolve_game_dir), false)
+        // 三级设置统一解析（应用级 + 单游戏覆盖），避免本类重复逐字段合并（P0-3）
+        val settings = EngineSettingsResolver.resolve(appContext, game, root)
 
         return when (game.engine) {
             EngineType.KIRIKIRI -> {
@@ -46,10 +48,8 @@ class GameSaveManager(private val context: Context) {
                         true,
                     )
                 }
-                val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_SCOPED_SAVE_DIR)
-                    ?: EngineSettingsStore.isKrScopedSaveDir(appContext)
-                if (scoped) {
-                    if (effectiveKrKernel(game, root) == EngineSettingsStore.KERNEL_KRKRSDL3) {
+                if (settings.krScopedSaveDir) {
+                    if (settings.krKernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
                         val external = appContext.getExternalFilesDir(null)
                             ?: return SaveLocation(null, text(R.string.save_error_krkr_sdl3_external_unavailable), false)
                         SaveLocation(
@@ -71,8 +71,7 @@ class GameSaveManager(private val context: Context) {
                 }
             }
             EngineType.ONS -> {
-                val scoped = effectiveOnsScoped(game)
-                if (scoped) {
+                if (settings.ons.scopedSaveDir) {
                     val external = appContext.getExternalFilesDir(null)
                         ?: return SaveLocation(null, text(R.string.save_error_ons_external_unavailable), false)
                     SaveLocation(File(File(external, "save"), File(root).name), text(R.string.save_location_ons_scoped), true)
@@ -84,9 +83,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.RPG_MV,
             EngineType.RPG_MZ -> {
                 // Tyrano 与 RPG Maker Web 共用 TyranoActivity，存档目录开关保持同一套配置。
-                val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_TY_SCOPED)
-                    ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
-                if (scoped) {
+                if (settings.webScopedSaveDir) {
                     val external = appContext.getExternalFilesDir(null)
                         ?: return SaveLocation(null, text(R.string.save_error_tyrano_external_unavailable), false)
                     SaveLocation(
@@ -283,24 +280,6 @@ class GameSaveManager(private val context: Context) {
             }
         } catch (_: Exception) {
             null
-        }
-    }
-
-    private fun effectiveOnsScoped(game: ScanGame): Boolean {
-        var ons = EngineSettingsStore.loadOns(appContext)
-        PerGameSettingsStore.loadOnsOverride(appContext, game.uri)?.let { override ->
-            if (override.has("scopedsavedir")) ons = ons.copy(scopedSaveDir = override.optBoolean("scopedsavedir"))
-        }
-        return ons.scopedSaveDir
-    }
-
-    private fun effectiveKrKernel(game: ScanGame, root: String): String {
-        val requested = PerGameSettingsStore.getStr(appContext, game.uri, PerGameSettingsStore.F_ENGINE_KERNEL)
-            ?: EngineSettingsStore.getKrKernel(appContext)
-        return if (GamePathUtils.isRemovableStoragePath(root) && requested == EngineSettingsStore.KERNEL_KRKRSDL3) {
-            EngineSettingsStore.KERNEL_KIRIKIRI2
-        } else {
-            requested
         }
     }
 

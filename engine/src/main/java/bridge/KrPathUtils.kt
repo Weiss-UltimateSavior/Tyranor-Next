@@ -3,6 +3,7 @@ package bridge
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import com.core.engine.LaunchContract
 import org.tvp.kirikiri2.KR2Activity
 import java.io.File
 import java.util.Locale
@@ -37,10 +38,10 @@ object KrPathUtils {
             if (appExternal != null) result = replacePrefixIgnoreCase(result, appExternal.absolutePath)
             val intent = activity.intent
             if (intent != null) {
-                result = replacePrefixIgnoreCase(result, normalizeFilePath(intent.getStringExtra("projectRoot")))
-                result = replacePrefixIgnoreCase(result, normalizeFilePath(intent.getStringExtra("gamedir")))
-                result = replacePrefixIgnoreCase(result, normalizeFilePath(intent.getStringExtra("rootUri")))
-                val gamePath = normalizeFilePath(intent.getStringExtra("gamePath"))
+                result = replacePrefixIgnoreCase(result, normalizeFilePath(intent.getStringExtra(LaunchContract.PROJECT_ROOT)))
+                result = replacePrefixIgnoreCase(result, normalizeFilePath(intent.getStringExtra(LaunchContract.GAME_DIR)))
+                result = replacePrefixIgnoreCase(result, normalizeFilePath(intent.getStringExtra(LaunchContract.ROOT_URI)))
+                val gamePath = normalizeFilePath(intent.getStringExtra(LaunchContract.GAME_PATH))
                 if (gamePath != null && gamePath.isNotEmpty()) {
                     val game = File(gamePath)
                     val root = if (game.isFile) game.parentFile else game
@@ -71,7 +72,7 @@ object KrPathUtils {
         return try {
             val activity = currentActivity()
             if (activity == null || activity.intent == null) return null
-            if (!activity.intent.getBooleanExtra("scopedSaveDir", false)) return null
+            if (!activity.intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) return null
             if (path == null || path.trim().isEmpty()) return null
             val p = normalizeFilePath(path)!!
             val lower = p.lowercase(Locale.ROOT)
@@ -85,7 +86,7 @@ object KrPathUtils {
                 }
             } else "/savedata/".length
             val rel = if (p.length > idx + len) p.substring(idx + len) else ""
-            var root = normalizeFilePath(activity.intent.getStringExtra("scopedSaveRoot"))
+            var root = normalizeFilePath(activity.intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT))
             if (root != null && root.trim().isNotEmpty() && root.startsWith("/")) {
                 val dir = File(root)
                 val out = if (rel.isEmpty()) dir else File(dir, rel)
@@ -94,8 +95,8 @@ object KrPathUtils {
                 Log.i(TAG, "redirect KR save $p -> ${out.absolutePath}")
                 return out.absolutePath
             }
-            root = normalizeFilePath(activity.intent.getStringExtra("projectRoot"))
-            if (root == null || root.trim().isEmpty()) root = normalizeFilePath(activity.intent.getStringExtra("gamedir"))
+            root = normalizeFilePath(activity.intent.getStringExtra(LaunchContract.PROJECT_ROOT))
+            if (root == null || root.trim().isEmpty()) root = normalizeFilePath(activity.intent.getStringExtra(LaunchContract.GAME_DIR))
             if (root == null || root.trim().isEmpty() || !root.startsWith("/")) return null
             val dir = File(root, "savedata")
             val out = if (rel.isEmpty()) dir else File(dir, rel)

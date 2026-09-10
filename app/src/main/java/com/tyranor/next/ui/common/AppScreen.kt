@@ -1,0 +1,79 @@
+package com.tyranor.next.ui.common
+
+import android.graphics.Color
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import com.tyranor.next.R
+import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.TyranorNextTheme
+
+/**
+ * 二级页面统一宿主（P1-4）：收敛各 Activity 重复的
+ * 「isDarkEffective → enableEdgeToEdge → 透明系统栏 → 主题包裹 → finish 转场」样板。
+ *
+ * 用法：Activity 继承 [AppScreenActivity]，在 `onCreate` 中校验入参后调用
+ * [setAppScreenContent] 提供正文；页面自身需要的 Miuix 子主题照常在正文内声明。
+ */
+abstract class AppScreenActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val darkMode = AppSettingsStore.isDarkEffective(this)
+        enableEdgeToEdge(
+            statusBarStyle = if (darkMode) {
+                SystemBarStyle.dark(Color.TRANSPARENT)
+            } else {
+                SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+            },
+            navigationBarStyle = if (darkMode) {
+                SystemBarStyle.dark(Color.TRANSPARENT)
+            } else {
+                SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+            },
+        )
+    }
+
+    /** 统一主题包裹并提供页面正文。 */
+    protected fun setAppScreenContent(content: @Composable () -> Unit) {
+        setContent {
+            AppScreenScaffold(content = content)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun finish() {
+        super.finish()
+        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
+    }
+}
+
+/**
+ * 二级页面统一内容壳：ProvideAppLocale → TyranorNextTheme → 页面背景 Surface →
+ * 去除按压指示；正文即页面根内容。
+ */
+@Composable
+fun AppScreenScaffold(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    ProvideAppLocale {
+        TyranorNextTheme {
+            Surface(
+                modifier = modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+            ) {
+                WithoutPressIndication {
+                    content()
+                }
+            }
+        }
+    }
+}

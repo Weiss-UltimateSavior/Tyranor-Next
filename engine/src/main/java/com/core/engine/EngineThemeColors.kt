@@ -31,7 +31,7 @@ object EngineThemeColors {
     @JvmStatic
     fun fromIntent(intent: Intent?): Palette {
         val extras = intent?.extras
-        val dark = extras?.getBoolean("darkMode", false) ?: false
+        val dark = extras?.getBoolean(LaunchContract.DARK_MODE, false) ?: false
         // 缺失 Intent extras 时按 darkMode 回落到 Launcher 默认色值
         val primary = if (dark) 0xFF22D88E.toInt() else 0xFF18B978.toInt()
         val onPrimary = if (dark) 0xFF06120D.toInt() else 0xFFFFFFFF.toInt()
@@ -39,11 +39,11 @@ object EngineThemeColors {
         val text = if (dark) 0xFFF0F0F0.toInt() else 0xFF14221B.toInt()
         val textMuted = if (dark) 0xFF9A9A9A.toInt() else 0xFF82908A.toInt()
         return Palette(
-            primary = extras?.getInt("primaryColor", primary) ?: primary,
-            onPrimary = extras?.getInt("themeColorOnPrimary", onPrimary) ?: onPrimary,
-            card = extras?.getInt("themeColorCard", card) ?: card,
-            text = extras?.getInt("themeColorText", text) ?: text,
-            textMuted = extras?.getInt("themeColorTextMuted", textMuted) ?: textMuted,
+            primary = extras?.getInt(LaunchContract.PRIMARY_COLOR, primary) ?: primary,
+            onPrimary = extras?.getInt(LaunchContract.THEME_COLOR_ON_PRIMARY, onPrimary) ?: onPrimary,
+            card = extras?.getInt(LaunchContract.THEME_COLOR_CARD, card) ?: card,
+            text = extras?.getInt(LaunchContract.THEME_COLOR_TEXT, text) ?: text,
+            textMuted = extras?.getInt(LaunchContract.THEME_COLOR_TEXT_MUTED, textMuted) ?: textMuted,
         )
     }
 }

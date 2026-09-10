@@ -21,6 +21,7 @@ import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.KrkrStartupDialogPolicy
+import com.core.engine.LaunchContract
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.rpgmaker.RpgMakerActivity
 import com.core.tyrano.TyranoActivity
@@ -33,11 +34,13 @@ import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.core.game.scan.GameDirFingerprint
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
-import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.settings.EffectiveEngineSettings
+import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.core.settings.ResolvedEngineSettings
 import com.tyranor.next.core.theme.ThemeColorPayload
 import com.tyranor.next.core.theme.ThemeColorPayloadStore
 import com.tyranor.next.core.unpack.ArtemisPfsUnpacker
@@ -62,10 +65,6 @@ object EngineLauncher {
     private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
-    private const val EXTRA_ARTEMIS_CURRENT_VERSION = "artemisCurrentVersion"
-    private const val EXTRA_ARTEMIS_FALLBACK_VERSIONS = "artemisFallbackVersions"
-    private const val EXTRA_ARTEMIS_FALLBACK_INDEX = "artemisFallbackIndex"
-    private const val EXTRA_ARTEMIS_AUTO_PLAN_REASON = "artemisAutoPlanReason"
     private val ARTEMIS_DEFAULT_FALLBACK_CHAIN = listOf(
         EngineSettingsStore.ART_ENGINE_V2,
         EngineSettingsStore.ART_ENGINE_V1,
@@ -101,15 +100,12 @@ object EngineLauncher {
 
     private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
         val path = resolveGameDirectory(context, game)
+        // 三级设置（应用级 + 单游戏覆盖）一次性解析，后续 Intent 组装只消费生效值（P0-3）
+        val settings = EngineSettingsResolver.resolve(context, game, path)
         ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
             val module = ExternalEngineModuleRegistry.resolveModule(
                 game.engine,
-                if (game.engine == EngineType.RENPY) {
-                    PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RENPY_VERSION)
-                        ?: EngineSettingsStore.getRenpyVersion(context)
-                } else {
-                    null
-                },
+                if (game.engine == EngineType.RENPY) settings.renpyVersion else null,
                 detectedRenpyVersion = game.detectedRenpyVersion,
             ) ?: defaultModule
             if (module.requiresGameDirectoryPath && path == null) {
@@ -135,10 +131,7 @@ object EngineLauncher {
                 GameLibraryFacade.recordRecentGame(context, game)
                 return LaunchResult.Success
             }
-            return LaunchResult.Failure.ExternalModuleFailed(
-                moduleName = module.displayName(AppLocaleController.wrap(context)),
-                message = result.message,
-            )
+            return LaunchResult.Failure.ExternalModuleFailed(result)
         }
         if (path == null) {
             return LaunchResult.Failure.GameDirUnresolved
@@ -170,7 +163,7 @@ object EngineLauncher {
                     return LaunchResult.Failure.KrkrMirrorSaveDirFailed(saveDir.absolutePath)
                 }
             } else {
-                ensureKrSaveDir(context, game, path)?.let { return it }
+                ensureKrSaveDir(context, game, path, settings)?.let { return it }
             }
         }
         // “总是/不再”持久化为全局补丁策略；“本次”不落盘，仅本次按 auto 生效
@@ -186,7 +179,7 @@ object EngineLauncher {
         // 阻塞准备（镜像/overlay/PFS）完成后统一检查取消：已取消则不执行任何启动副作用
         currentCoroutineContext().ensureActive()
         return try {
-            val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror)
+            val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings)
             // Intent 组装后、真正拉起引擎前最后一次确认，取消后不 startActivity
             currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -210,9 +203,7 @@ object EngineLauncher {
         withContext(Dispatchers.IO) {
             if (game.engine != EngineType.ARTEMIS) return@withContext false
             // 单游戏覆盖值走白名单校验：损坏/历史遗留的非法值回退全局，防止静默改变补丁行为
-            val override = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_ART_PATCH)
-            val strategy = override?.trim()?.takeIf { it in EngineSettingsStore.ART_PATCHES }
-                ?: EngineSettingsStore.getArtAutoPatch(context)
+            val strategy = EngineSettingsResolver.resolve(context, game, null).artAutoPatch
             if (strategy != EngineSettingsStore.AUTO_PATCH_ASK) return@withContext false
             val path = resolveGameDirectory(context, game) ?: return@withContext false
             ArtemisPfsUnpacker.needsBasePatch(path)
@@ -271,23 +262,14 @@ object EngineLauncher {
         game: ScanGame,
         patchChoice: ArtemisPatchChoice? = null,
         krSafMirror: KrSafMirror.Prepared? = null,
+        settings: ResolvedEngineSettings,
     ): Intent {
         val intent = when (engine) {
             EngineType.KIRIKIRI ->
-                buildKirikiriIntent(context, path, game, krSafMirror)
+                buildKirikiriIntent(context, path, game, krSafMirror, settings)
 
             EngineType.ONS -> {
-                var ons = EngineSettingsStore.loadOns(context)
-                val o = PerGameSettingsStore.loadOnsOverride(context, game.uri)
-                if (o != null) {
-                    if (o.has("scopedsavedir")) ons = ons.copy(scopedSaveDir = o.optBoolean("scopedsavedir"))
-                    if (o.has("strechfull")) ons = ons.copy(stretchFull = o.optBoolean("strechfull"))
-                    if (o.has("ignorecutout")) ons = ons.copy(ignoreCutout = o.optBoolean("ignorecutout"))
-                    if (o.has("disablevideo")) ons = ons.copy(disableVideo = o.optBoolean("disablevideo"))
-                    if (o.has("sharpness")) ons = ons.copy(sharpness = o.optBoolean("sharpness"))
-                    if (o.has("sharpness_value")) ons = ons.copy(sharpnessValue = o.optString("sharpness_value", "2"))
-                    if (o.has("encoding")) ons = ons.copy(encoding = EngineSettingsStore.normalizeEncoding(o.optString("encoding")))
-                }
+                val ons = settings.ons
                 val args = ArrayList<String>()
                 args.add("--root")
                 args.add(path)
@@ -316,14 +298,14 @@ object EngineLauncher {
                     args.add(safeSharpnessValue(ons.sharpnessValue))
                 }
                 Intent(context, ONScripter::class.java).apply {
-                    putStringArrayListExtra("gameargs", args)
-                    putExtra("gameuri", Uri.fromFile(java.io.File(path)).toString())
-                    putExtra("path", path)
-                    putExtra("gamePath", path)
-                    putExtra("rootUri", game.uri)
-                    putExtra("launchTarget", game.launchTarget)
-                    putExtra("launchMode", "internal.ons")
-                    putExtra("ignorecutout", ons.ignoreCutout)
+                    putStringArrayListExtra(LaunchContract.GAME_ARGS, args)
+                    putExtra(LaunchContract.GAME_URI, Uri.fromFile(java.io.File(path)).toString())
+                    putExtra(LaunchContract.PATH, path)
+                    putExtra(LaunchContract.GAME_PATH, path)
+                    putExtra(LaunchContract.ROOT_URI, game.uri)
+                    putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+                    putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ONS)
+                    putExtra(LaunchContract.IGNORE_CUTOUT, ons.ignoreCutout)
                 }
             }
 
@@ -331,32 +313,32 @@ object EngineLauncher {
             EngineType.RPG_MV,
             EngineType.RPG_MZ,
             EngineType.VN,
-            EngineType.WEB_OTHER -> buildWebIntent(context, path, game)
+            EngineType.WEB_OTHER -> buildWebIntent(context, path, game, settings)
 
-            EngineType.ARTEMIS -> buildArtemisIntent(context, path, game, patchChoice)
+            EngineType.ARTEMIS -> buildArtemisIntent(context, path, game, patchChoice, settings)
 
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
 
             EngineType.UNKNOWN -> Intent(context, TyranoActivity::class.java).apply {
-                putExtra("path", path)
-                putExtra("gamePath", path)
-                putExtra("rootUri", game.uri)
-                putExtra("launchTarget", game.launchTarget)
-                putExtra("type", "Tyrano")
+                putExtra(LaunchContract.PATH, path)
+                putExtra(LaunchContract.GAME_PATH, path)
+                putExtra(LaunchContract.ROOT_URI, game.uri)
+                putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+                putExtra(LaunchContract.TYPE, "Tyrano")
             }
         }
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
         // 主题色来自 ui 层写入的纯数据快照（ThemeColorPayloadStore），core 不反向依赖 theme。
         val theme = ThemeColorPayloadStore.current ?: ThemeColorPayload.DEFAULT
-        intent.putExtra("darkMode", theme.darkMode)
-        intent.putExtra("primaryColor", theme.primaryArgb)
-        intent.putExtra("themeColorPrimary", theme.primaryArgb)
-        intent.putExtra("themeColorOnPrimary", theme.onPrimaryArgb)
-        intent.putExtra("themeColorCard", theme.cardArgb)
-        intent.putExtra("themeColorText", theme.textArgb)
-        intent.putExtra("themeColorTextMuted", theme.mutedArgb)
+        intent.putExtra(LaunchContract.DARK_MODE, theme.darkMode)
+        intent.putExtra(LaunchContract.PRIMARY_COLOR, theme.primaryArgb)
+        intent.putExtra(LaunchContract.THEME_COLOR_PRIMARY, theme.primaryArgb)
+        intent.putExtra(LaunchContract.THEME_COLOR_ON_PRIMARY, theme.onPrimaryArgb)
+        intent.putExtra(LaunchContract.THEME_COLOR_CARD, theme.cardArgb)
+        intent.putExtra(LaunchContract.THEME_COLOR_TEXT, theme.textArgb)
+        intent.putExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, theme.mutedArgb)
         return intent
     }
 
@@ -369,88 +351,83 @@ object EngineLauncher {
         path: String,
         game: ScanGame,
         safMirror: KrSafMirror.Prepared?,
+        settings: ResolvedEngineSettings,
     ): Intent {
         val gid = game.uri
-        fun <T> or(override: T?, global: T): T = override ?: global
         val needsSafFallback = GamePathUtils.isRemovableStoragePath(path)
-        val kernel = effectiveKrKernel(context, gid, path)
-        val skipStartupDialogs = PerGameSettingsStore.getBool(
-            context,
-            gid,
-            PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS,
-        ) ?: EngineSettingsStore.isKrSkipStartupDialogs(context)
+        val kernel = settings.krKernel
+        val skipStartupDialogs = settings.krSkipStartupDialogs
         val engineRoot = safMirror?.mirrorRoot?.absolutePath ?: path
         val pickedLaunchEntry = pickKrActivateEntry(engineRoot, game)
         if (kernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
-            val args = buildKrkrsdl3Args(context, gid, path, pickedLaunchEntry)
+            val args = buildKrkrsdl3Args(context, path, pickedLaunchEntry, settings)
             Log.i(TAG, "krkrsdl3 launch root=$path entry=$pickedLaunchEntry args=$args")
             // krkrsdl3 内核：gameargs 首项为启动文件绝对路径，后续为 TVP 命令行参数
             return Intent(context, Krkrsdl3Activity::class.java).apply {
-                putStringArrayListExtra("gameargs", args)
-                putExtra("path", path)
-                putExtra("gamePath", pickedLaunchEntry)
-                putExtra("projectRoot", path)
-                putExtra("gamedir", path)
-                putExtra("rootUri", game.uri)
-                putExtra("launchTarget", game.launchTarget)
-                putExtra("launchMode", "internal.krkrsdl3")
+                putStringArrayListExtra(LaunchContract.GAME_ARGS, args)
+                putExtra(LaunchContract.PATH, path)
+                putExtra(LaunchContract.GAME_PATH, pickedLaunchEntry)
+                putExtra(LaunchContract.PROJECT_ROOT, path)
+                putExtra(LaunchContract.GAME_DIR, path)
+                putExtra(LaunchContract.ROOT_URI, game.uri)
+                putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+                putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_KRKRSDL3)
                 putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
-                putExtra("orientation", 6)
-                putExtra("focus", "true")
+                putExtra(LaunchContract.ORIENTATION, 6)
+                putExtra(LaunchContract.FOCUS, "true")
             }
         }
-        val version = or(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ENGINE_VERSION), EngineSettingsStore.getKrEngineVersion(context))
+        val version = settings.krEngineVersion
         val activity = when (version) {
             EngineSettingsStore.KR_134 -> Kirikiroid134::class.java
             EngineSettingsStore.KR_126 -> Kirikiroid126::class.java
             else -> Kirikiroid139::class.java
         }
         val launchEntry = pickedLaunchEntry
-        val scoped = effectiveKrScopedSaveDir(context, gid)
+        val scoped = settings.krScopedSaveDir
         val actualSaveRoot = safMirror?.let { File(it.mirrorRoot, "savedata") }
             ?: resolveKrSaveDir(context, path, kernel, scoped)
         val effectiveScoped = scoped || safMirror != null
-        val defaultFont = PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_DEFAULT_FONT)
-            ?: EngineSettingsStore.getKrDefaultFont(context)
-        val forceFont = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT), EngineSettingsStore.isKrForceDefaultFont(context))
-        val patchOverlay = prepareKrPatchOverlay(context, gid, engineRoot)
-        val steamConfigOverlay = prepareKrSteamConfigOverlay(context, gid, engineRoot)
+        val defaultFont = settings.krDefaultFont
+        val forceFont = settings.krForceDefaultFont
+        val patchOverlay = prepareKrPatchOverlay(context, engineRoot, settings.krPatchOverlayMode)
+        val steamConfigOverlay = prepareKrSteamConfigOverlay(context, engineRoot, settings.krPatchOverlayMode)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
-            putExtra("path", launchEntry)
-            putExtra("gamePath", launchEntry)
-            putExtra("projectRoot", engineRoot)
-            putExtra("gamedir", engineRoot)
-            putExtra("originalProjectRoot", path)
-            putExtra("gameSaveRoot", actualSaveRoot.absolutePath)
-            putExtra("rootUri", game.uri)
-            putExtra("launchTarget", game.launchTarget)
-            putExtra("launchMode", "internal.kirikiroid2")
+            putExtra(LaunchContract.PATH, launchEntry)
+            putExtra(LaunchContract.GAME_PATH, launchEntry)
+            putExtra(LaunchContract.PROJECT_ROOT, engineRoot)
+            putExtra(LaunchContract.GAME_DIR, engineRoot)
+            putExtra(LaunchContract.ORIGINAL_PROJECT_ROOT, path)
+            putExtra(LaunchContract.GAME_SAVE_ROOT, actualSaveRoot.absolutePath)
+            putExtra(LaunchContract.ROOT_URI, game.uri)
+            putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+            putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_KIRIKIROID2)
             putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
-            putExtra("safFileFallback", needsSafFallback)
+            putExtra(LaunchContract.SAF_FILE_FALLBACK, needsSafFallback)
             patchOverlay?.let {
-                putExtra("krPatchOverlayTarget", it.targetPatch.absolutePath)
-                putExtra("krPatchOverlayPath", it.overlayPatch.absolutePath)
-                putExtra("krPatchOverlayMode", it.mode)
+                putExtra(LaunchContract.KR_PATCH_OVERLAY_TARGET, it.targetPatch.absolutePath)
+                putExtra(LaunchContract.KR_PATCH_OVERLAY_PATH, it.overlayPatch.absolutePath)
+                putExtra(LaunchContract.KR_PATCH_OVERLAY_MODE, it.mode)
             }
             steamConfigOverlay?.let {
-                putExtra("krSteamConfigOverlayTarget", it.targetConfig.absolutePath)
-                putExtra("krSteamConfigOverlayPath", it.overlayConfig.absolutePath)
+                putExtra(LaunchContract.KR_STEAM_CONFIG_OVERLAY_TARGET, it.targetConfig.absolutePath)
+                putExtra(LaunchContract.KR_STEAM_CONFIG_OVERLAY_PATH, it.overlayConfig.absolutePath)
             }
             safMirror?.let {
-                putExtra("baseDoc", game.uri)
-                putExtra("safMirrorRoot", it.mirrorRoot.absolutePath)
-                putExtra("safMirrorIndex", it.indexFile.absolutePath)
-                putExtra("safMirrorFiles", it.fileCount)
+                putExtra(LaunchContract.BASE_DOC, game.uri)
+                putExtra(LaunchContract.SAF_MIRROR_ROOT, it.mirrorRoot.absolutePath)
+                putExtra(LaunchContract.SAF_MIRROR_INDEX, it.indexFile.absolutePath)
+                putExtra(LaunchContract.SAF_MIRROR_FILES, it.fileCount)
             }
-            putExtra("orientation", 6)
-            putExtra("scopedSaveDir", effectiveScoped)
+            putExtra(LaunchContract.ORIENTATION, 6)
+            putExtra(LaunchContract.SCOPED_SAVE_DIR, effectiveScoped)
             if (effectiveScoped) {
-                putExtra("scopedSaveRoot", actualSaveRoot.absolutePath)
+                putExtra(LaunchContract.SCOPED_SAVE_ROOT, actualSaveRoot.absolutePath)
             }
-            putExtra("focus", "true")
+            putExtra(LaunchContract.FOCUS, "true")
             // 引擎版本
-            putExtra("krEngineVersion", when (version) {
+            putExtra(LaunchContract.KR_ENGINE_VERSION, when (version) {
                 EngineSettingsStore.KR_134 -> "1.3.4"
                 EngineSettingsStore.KR_126 -> "1.2.6"
                 else -> "1.3.9"
@@ -459,26 +436,14 @@ object EngineLauncher {
             // hasExtra 时执行写入/按所有权标记清理——若仅在非空/为真时注入，用户关闭
             // 强制或清空字体后引擎 XML 里的旧值会永久残留（issue #74「换字体无法生效」
             // 的根因：残留的 force_default_font=1 一直压住新设置的字体）。
-            putExtra("default_font", defaultFont)
-            putExtra("force_default_font", forceFont)
+            putExtra(LaunchContract.DEFAULT_FONT, defaultFont)
+            putExtra(LaunchContract.FORCE_DEFAULT_FONT, forceFont)
             // Anime4K 画面超分（单游戏覆盖 > 全局；仅 kirikiri2 内核路径支持）
-            val anime4kMode = or(
-                PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ANIME4K_MODE)
-                    ?.takeIf { it in EngineSettingsStore.ANIME4K_MODES },
-                EngineSettingsStore.getKrAnime4kMode(context),
-            )
-            putExtra(com.core.gl.Anime4kRuntime.EXTRA_MODE, anime4kMode)
-            // 渲染/内存偏好 JSON：单游戏覆盖 与 全局 逐键合并
-            // 注意：buildKrEnginePrefsJson 遍历的是全局键（kr_renderer 等），
-            // 而单游戏覆盖以 PerGameSettingsStore.KR_FIELDS（renderer 等）存储，需做键名映射。
+            putExtra(com.core.gl.Anime4kRuntime.EXTRA_MODE, settings.krAnime4kMode)
+            // 渲染/内存偏好 JSON：单游戏覆盖 与 全局 逐键合并；字段映射由 KrRenderPrefs 单一来源提供
             runCatching {
-                check(EngineSettingsStore.KR_RENDER_PREF_KEYS.size == PerGameSettingsStore.KR_FIELDS.size) {
-                    "KR pref keys / fields size mismatch"
-                }
-                val renderKeyMap = EngineSettingsStore.KR_RENDER_PREF_KEYS
-                    .zip(PerGameSettingsStore.KR_FIELDS).toMap()
-                putExtra("krkr_engine_prefs", EngineSettingsStore.buildKrEnginePrefsJson(context) { globalKey ->
-                    renderKeyMap[globalKey]?.let { PerGameSettingsStore.getStr(context, gid, it)?.trim() }
+                putExtra(LaunchContract.KR_ENGINE_PREFS, EngineSettingsStore.buildKrEnginePrefsJson(context) { pref ->
+                    PerGameSettingsStore.getStr(context, gid, pref.overrideField)?.trim()
                 })
             }.onFailure { android.util.Log.w("EngineLauncher", "build krkr_engine_prefs failed", it) }
         }
@@ -486,40 +451,17 @@ object EngineLauncher {
 
     private fun buildKrkrsdl3Args(
         context: Context,
-        gid: String,
         path: String,
         launchEntry: String,
+        settings: ResolvedEngineSettings,
     ): ArrayList<String> {
-        fun <T> or(override: T?, global: T): T = override ?: global
         val args = arrayListOf(launchEntry)
-        val renderer = normalizeKrkrsdl3Renderer(
-            or(
-                PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_RENDERER),
-                EngineSettingsStore.getKrRenderer(context),
-            ),
-        )
-        args.add("-render=$renderer")
-
-        val scoped = effectiveKrScopedSaveDir(context, gid)
-        val saveDir = resolveKrSaveDir(context, path, EngineSettingsStore.KERNEL_KRKRSDL3, scoped)
+        args.add("-render=${normalizeKrkrsdl3Renderer(settings.krRenderer)}")
+        val saveDir = resolveKrSaveDir(context, path, EngineSettingsStore.KERNEL_KRKRSDL3, settings.krScopedSaveDir)
         if (saveDir.exists() || saveDir.mkdirs()) {
             args.add("-savedir=${saveDir.absolutePath}")
         }
         return args
-    }
-
-    private fun effectiveKrScopedSaveDir(context: Context, gid: String): Boolean =
-        PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR)
-            ?: EngineSettingsStore.isKrScopedSaveDir(context)
-
-    private fun effectiveKrKernel(context: Context, gid: String, path: String): String {
-        val requested = PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ENGINE_KERNEL)
-            ?: EngineSettingsStore.getKrKernel(context)
-        return if (GamePathUtils.isRemovableStoragePath(path) && requested == EngineSettingsStore.KERNEL_KRKRSDL3) {
-            EngineSettingsStore.KERNEL_KIRIKIRI2
-        } else {
-            requested
-        }
     }
 
     private fun resolveKrSaveDir(context: Context, path: String, kernel: String, scoped: Boolean): File {
@@ -532,9 +474,14 @@ object EngineLauncher {
         }
     }
 
-    private fun ensureKrSaveDir(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
-        val scoped = effectiveKrScopedSaveDir(context, game.uri)
-        val kernel = effectiveKrKernel(context, game.uri, path)
+    private fun ensureKrSaveDir(
+        context: Context,
+        game: ScanGame,
+        path: String,
+        settings: ResolvedEngineSettings,
+    ): LaunchResult.Failure? {
+        val scoped = settings.krScopedSaveDir
+        val kernel = settings.krKernel
         val saveDir = resolveKrSaveDir(context, path, kernel, scoped)
         if (saveDir.isDirectory) return null
         if (saveDir.exists()) return LaunchResult.Failure.KrkrSavePathNotDirectory(saveDir.absolutePath)
@@ -624,23 +571,18 @@ object EngineLauncher {
         path: String,
         game: ScanGame,
         patchChoice: ArtemisPatchChoice? = null,
+        settings: ResolvedEngineSettings,
     ): Intent {
-        val gid = game.uri
-        fun <T> or(override: T?, global: T): T = override ?: global
-        fun artString(override: String?, global: String, allowed: Set<String>): String {
-            val value = override?.trim()?.takeIf { it in allowed } ?: global.trim()
-            return value.takeIf { it in allowed } ?: ""
-        }
-        // 版本/补丁策略的覆盖值同样走白名单（artString），非法持久化值回退全局
-        var version = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(context), EngineSettingsStore.ART_VERSIONS)
-        val rotate = or(PerGameSettingsStore.getBool(context, gid, PerGameSettingsStore.F_ART_ROTATE), EngineSettingsStore.isArtRotateScreen(context))
-        var autoPatch = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_PATCH), EngineSettingsStore.getArtAutoPatch(context), EngineSettingsStore.ART_PATCHES)
+        // 版本/补丁策略的覆盖值已在解析器内走白名单，非法持久化值回退全局（P0-3）
+        var version = settings.artVersion
+        val rotate = settings.artRotate
+        var autoPatch = settings.artAutoPatch
         val androidSettings = ArtemisPfsUnpacker.AndroidSettings(
-            resolution = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_RESOLUTION), EngineSettingsStore.getArtResolution(context), EngineSettingsStore.ART_RESOLUTIONS),
-            sideCut = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SIDE_CUT), EngineSettingsStore.getArtSideCut(context), EngineSettingsStore.ART_TOGGLES),
-            surfaceCacheSize = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_SURFACE_CACHE_SIZE), EngineSettingsStore.getArtSurfaceCacheSize(context), EngineSettingsStore.ART_SURFACE_CACHES),
-            fontCacheSize = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE), EngineSettingsStore.getArtFontCacheSize(context), EngineSettingsStore.ART_FONT_CACHES),
-            powerSaving = artString(PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ART_POWER_SAVING), EngineSettingsStore.getArtPowerSaving(context), EngineSettingsStore.ART_TOGGLES),
+            resolution = settings.artResolution,
+            sideCut = settings.artSideCut,
+            surfaceCacheSize = settings.artSurfaceCacheSize,
+            fontCacheSize = settings.artFontCacheSize,
+            powerSaving = settings.artPowerSaving,
         )
         when (patchChoice) {
             ArtemisPatchChoice.ONCE, ArtemisPatchChoice.ALWAYS -> autoPatch = EngineSettingsStore.AUTO_PATCH_AUTO
@@ -680,21 +622,21 @@ object EngineLauncher {
         val (activity, libName) = artemisActivityAndLib(version)
         val fallbackIndex = fallbackVersions.indexOf(version).coerceAtLeast(0)
         return Intent(context, activity).apply {
-            putExtra("path", path)
-            putExtra("gamePath", path)
-            putExtra("rootUri", game.uri)
-            putExtra("launchTarget", game.launchTarget)
-            putExtra("launchMode", "internal.artemis")
-            putExtra("orientation", if (rotate) 8 else 6)
-            putExtra("scopedSaveDir", false)
+            putExtra(LaunchContract.PATH, path)
+            putExtra(LaunchContract.GAME_PATH, path)
+            putExtra(LaunchContract.ROOT_URI, game.uri)
+            putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+            putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
+            putExtra(LaunchContract.ORIENTATION, if (rotate) 8 else 6)
+            putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
             // artemis_loader 按 "lib<engineLibName>.so" 拼路径，需传库名（不带 lib 前缀）
-            putExtra("engineLibName", libName)
-            putExtra("artemisAutoFallback", auto)
-            putExtra("artemisFallbackStage", stage)
-            putExtra(EXTRA_ARTEMIS_CURRENT_VERSION, version)
-            putExtra(EXTRA_ARTEMIS_FALLBACK_VERSIONS, fallbackVersions.joinToString(","))
-            putExtra(EXTRA_ARTEMIS_FALLBACK_INDEX, fallbackIndex)
-            putExtra(EXTRA_ARTEMIS_AUTO_PLAN_REASON, planReason)
+            putExtra(LaunchContract.ENGINE_LIB_NAME, libName)
+            putExtra(LaunchContract.ARTEMIS_AUTO_FALLBACK, auto)
+            putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, stage)
+            putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, version)
+            putExtra(LaunchContract.ARTEMIS_FALLBACK_VERSIONS, fallbackVersions.joinToString(","))
+            putExtra(LaunchContract.ARTEMIS_FALLBACK_INDEX, fallbackIndex)
+            putExtra(LaunchContract.ARTEMIS_AUTO_PLAN_REASON, planReason)
         }
     }
 
@@ -719,15 +661,15 @@ object EngineLauncher {
             else -> ArtemisActivityV1::class.java to "artemis"
         }
 
-    private fun buildWebIntent(context: Context, path: String, game: ScanGame): Intent {
+    private fun buildWebIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent {
         // Tyrano 与 RPG Maker Web 共用同一组 WebView 宿主设置。
-        val scoped = PerGameSettingsStore.getBool(context, game.uri, "ty_scoped")
-            ?: EngineSettingsStore.isTyranoScopedSaveDir(context)
-        val rpgMakerModEnabled = effectiveRpgMakerModEnabled(
-            game.engine,
-            PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED),
-            EngineSettingsStore.isRpgMakerModEnabled(context),
-        )
+        val scoped = settings.webScopedSaveDir
+        val rpgMakerModEnabled = settings.rpgMakerModEnabled
         val scopedSaveRoot = if (scoped) {
             context.getExternalFilesDir(null)?.let { external ->
                 File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(path)).absolutePath
@@ -739,13 +681,12 @@ object EngineLauncher {
         // 沿用原 tyrano 宿主的 v0 链路，不传版本 extras，行为与历史版本完全一致。
         // 版本/legacy 读取仅在 RPG 会话进行，Tyrano/VN/WebOther 启动路径零新增开销。
         val rpgSession = game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ
-        val rpgMakerVersion = if (rpgSession) effectiveRpgMakerVersion(context, game) else null
-        val rpgLegacyRenderer = if (rpgSession) {
-            PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_LEGACY_RENDERER)
-                ?: EngineSettingsStore.isRpgLegacyRenderer(context)
-        } else {
-            false
+        val rpgMakerVersion = when (game.engine) {
+            EngineType.RPG_MV -> settings.rpgMvVersion
+            EngineType.RPG_MZ -> settings.rpgMzVersion
+            else -> null
         }
+        val rpgLegacyRenderer = if (rpgSession) settings.rpgLegacyRenderer else false
         val useRpgMakerRuntime = when (game.engine) {
             EngineType.RPG_MV -> rpgMakerVersion == EngineSettingsStore.RPG_MV_V1 ||
                 rpgMakerVersion == EngineSettingsStore.RPG_MV_V2
@@ -759,12 +700,12 @@ object EngineLauncher {
         }
         val target = if (useRpgMakerRuntime) RpgMakerActivity::class.java else TyranoActivity::class.java
         return Intent(context, target).apply {
-            putExtra("path", path)
-            putExtra("gamePath", path)
-            putExtra("projectRoot", path)
-            putExtra("gamedir", path)
-            putExtra("rootUri", game.uri)
-            putExtra("launchTarget", game.launchTarget)
+            putExtra(LaunchContract.PATH, path)
+            putExtra(LaunchContract.GAME_PATH, path)
+            putExtra(LaunchContract.PROJECT_ROOT, path)
+            putExtra(LaunchContract.GAME_DIR, path)
+            putExtra(LaunchContract.ROOT_URI, game.uri)
+            putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
             val webType = when (game.engine) {
                 EngineType.RPG_MV -> "RPG"
                 EngineType.RPG_MZ -> "RMMZ"
@@ -772,16 +713,16 @@ object EngineLauncher {
                 EngineType.WEB_OTHER -> "WebOther"
                 else -> "Tyrano"
             }
-            putExtra("type", webType)
-            putExtra("launchMode", "internal.${webType.lowercase()}")
-            putExtra("orientation", 6)
-            putExtra("scopedSaveDir", scoped)
-            scopedSaveRoot?.let { putExtra("scopedSaveRoot", it) }
-            putExtra("rpgMakerModEnabled", rpgMakerModEnabled)
-            putExtra("rpgMakerModGameId", game.uri)
+            putExtra(LaunchContract.TYPE, webType)
+            putExtra(LaunchContract.LAUNCH_MODE, "internal.${webType.lowercase()}")
+            putExtra(LaunchContract.ORIENTATION, 6)
+            putExtra(LaunchContract.SCOPED_SAVE_DIR, scoped)
+            scopedSaveRoot?.let { putExtra(LaunchContract.SCOPED_SAVE_ROOT, it) }
+            putExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, rpgMakerModEnabled)
+            putExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID, game.uri)
             if (useRpgMakerRuntime) {
-                rpgMakerVersion?.let { putExtra("rpgMakerVersion", it) }
-                putExtra("rpgLegacyRenderer", rpgLegacyRenderer)
+                rpgMakerVersion?.let { putExtra(LaunchContract.RPG_MAKER_VERSION, it) }
+                putExtra(LaunchContract.RPG_LEGACY_RENDERER, rpgLegacyRenderer)
             }
         }
     }
@@ -896,13 +837,9 @@ object EngineLauncher {
      * 不再直接向用户游戏目录写入兼容脚本；只在 app 私有目录生成合成 patch.tjs，
      * 再由 KRKR 文件 hook 在读取游戏 patch.tjs 时做只读重定向。
      */
-    private fun prepareKrPatchOverlay(context: Context, gid: String, engineRoot: String): KrPatchOverlay? {
+    private fun prepareKrPatchOverlay(context: Context, engineRoot: String, mode: String): KrPatchOverlay? {
         val root = File(engineRoot)
         if (!root.isDirectory || engineRoot.startsWith("content://")) return null
-        val mode = EngineSettingsStore.normalizeKrPatchOverlayMode(
-            PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)
-                ?: EngineSettingsStore.getKrPatchOverlayMode(context),
-        )
         val cleanup = cleanupTyranorManagedKrPatchScript(root)
         if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
 
@@ -955,13 +892,9 @@ object EngineLauncher {
      * 部分 Windows Steam 版 KRKR 移植包会带 ds.ini，并用 Language=xxx 决定 UI 语言。
      * 不直接修改用户游戏目录，只在 app 私有目录生成 schinese 版本并由 NativeBridge 只读映射。
      */
-    private fun prepareKrSteamConfigOverlay(context: Context, gid: String, engineRoot: String): KrSteamConfigOverlay? {
+    private fun prepareKrSteamConfigOverlay(context: Context, engineRoot: String, mode: String): KrSteamConfigOverlay? {
         val root = File(engineRoot)
         if (!root.isDirectory || engineRoot.startsWith("content://") || !rootContainsFbfSteamPlugin(root)) return null
-        val mode = EngineSettingsStore.normalizeKrPatchOverlayMode(
-            PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)
-                ?: EngineSettingsStore.getKrPatchOverlayMode(context),
-        )
         if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
 
         val config = File(root, "ds.ini")
@@ -1247,23 +1180,4 @@ internal fun effectiveRpgMakerModEnabled(
     engine: EngineType,
     perGameOverride: Boolean?,
     globalDefault: Boolean,
-): Boolean = engine in setOf(EngineType.RPG_MV, EngineType.RPG_MZ) &&
-    (perGameOverride ?: globalDefault)
-
-internal fun effectiveRpgMakerVersion(context: Context, game: ScanGame): String? = when (game.engine) {
-    EngineType.RPG_MV -> {
-        val raw = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MV_VERSION)
-        val override = raw?.trim()?.lowercase()?.let { v ->
-            if (v == EngineSettingsStore.RPG_MV_V0 || v == EngineSettingsStore.RPG_MV_V1 || v == EngineSettingsStore.RPG_MV_V2) v else null
-        }
-        override ?: EngineSettingsStore.getRpgMvEngineVersion(context)
-    }
-    EngineType.RPG_MZ -> {
-        val raw = PerGameSettingsStore.getStr(context, game.uri, PerGameSettingsStore.F_RPG_MZ_VERSION)
-        val override = raw?.trim()?.lowercase()?.let { v ->
-            if (v == EngineSettingsStore.RPG_MZ_V0 || v == EngineSettingsStore.RPG_MZ_V1 || v == EngineSettingsStore.RPG_MZ_V2) v else null
-        }
-        override ?: EngineSettingsStore.getRpgMzEngineVersion(context)
-    }
-    else -> null
-}
+): Boolean = EffectiveEngineSettings.resolveRpgMakerModEnabled(engine, perGameOverride, globalDefault)
