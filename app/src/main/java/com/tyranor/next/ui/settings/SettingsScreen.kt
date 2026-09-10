@@ -65,7 +65,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
@@ -134,14 +134,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var updateDownloadJob by remember { mutableStateOf<Job?>(null) }
     var showGroupDialog by remember { mutableStateOf(false) }
     var showScanDirs by remember { mutableStateOf(false) }
-    var scanDirs by remember { mutableStateOf(EngineScanner.loadRoots(ctx)) }
+    var scanDirs by remember { mutableStateOf(GameLibraryFacade.loadRoots(ctx)) }
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
     val settingsUpdateFailedFormat = stringResource(R.string.settings_update_failed)
     LaunchedEffect(Unit) {
-        EngineScanner.rootsRevision.collect {
-            scanDirs = withContext(Dispatchers.IO) { EngineScanner.loadRoots(ctx) }
+        GameLibraryFacade.rootsRevision.collect {
+            scanDirs = withContext(Dispatchers.IO) { GameLibraryFacade.loadRoots(ctx) }
         }
     }
     val dirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -153,8 +153,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
             }
-            EngineScanner.saveRoot(ctx, u)
-            scanDirs = EngineScanner.loadRoots(ctx)
+            GameLibraryFacade.saveRoot(ctx, u)
+            scanDirs = GameLibraryFacade.loadRoots(ctx)
         }
     }
 
@@ -410,8 +410,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             )
                             TextButton(
                                 onClick = {
-                                    EngineScanner.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                    scanDirs = EngineScanner.loadRoots(ctx)
+                                    GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
+                                    scanDirs = GameLibraryFacade.loadRoots(ctx)
                                 },
                             ) {
                                 Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
@@ -455,7 +455,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     Toast.makeText(ctx, allFilesAccessMsg, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                EngineScanner.saveRoot(ctx, target.absolutePath)
+                GameLibraryFacade.saveRoot(ctx, target.absolutePath)
                 showPathDialog = false
                 pathInput = ""
             }

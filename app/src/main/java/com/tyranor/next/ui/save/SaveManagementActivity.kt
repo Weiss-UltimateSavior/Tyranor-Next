@@ -132,7 +132,7 @@ private fun SaveManagementScreen(game: ScanGame) {
             taskRunning = true
             try {
                 val message = withContext(Dispatchers.IO) {
-                    runCatching { block() }.getOrElse { it.message ?: saveOperationFailedMessage }
+                    runCatching { block() }.getOrElse { it.toSaveErrorMessage(context, saveOperationFailedMessage) }
                 }
                 refresh()
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()

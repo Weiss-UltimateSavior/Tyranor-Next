@@ -72,6 +72,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.coverColor
 import com.tyranor.next.ui.game.rememberCoverBitmap
@@ -125,7 +126,7 @@ fun HomeScreen(
             if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                 patchLaunchTarget = game
             } else {
-                launchError = EngineLauncher.launch(context, game)
+                launchError = EngineLauncher.launch(context, game).userMessage(context)
             }
         }
     }
@@ -239,7 +240,7 @@ fun HomeScreen(
                     onClick = {
                         patchLaunchTarget = null
                         scope.launch {
-                            launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS)
+                            launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS).userMessage(context)
                         }
                     },
                 ) { Text(stringResource(R.string.game_patch_always)) }
@@ -250,7 +251,7 @@ fun HomeScreen(
                         onClick = {
                             patchLaunchTarget = null
                             scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER)
+                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER).userMessage(context)
                             }
                         },
                     ) { Text(stringResource(R.string.game_patch_never)) }
@@ -258,7 +259,7 @@ fun HomeScreen(
                         onClick = {
                             patchLaunchTarget = null
                             scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE)
+                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE).userMessage(context)
                             }
                         },
                     ) { Text(stringResource(R.string.game_patch_once)) }

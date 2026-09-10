@@ -6,8 +6,8 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.annotation.StringRes
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.i18n.AppLocaleController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -165,7 +165,7 @@ object KrkrOnlinePatchService {
     private fun resolveWritableGameFileDir(game: ScanGame): File? {
         val candidates = listOfNotNull(
             game.uri.takeIf { it.startsWith("/") },
-            EngineScanner.safUriToPath(game.uri),
+            GamePathUtils.safUriToPath(game.uri),
         ).distinct()
 
         return candidates

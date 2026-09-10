@@ -9,7 +9,6 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
-import androidx.annotation.StringRes
 import androidx.documentfile.provider.DocumentFile
 import bridge.KrSafMirror
 import com.akira.tyranoemu.remote.ArtemisActivityV1
@@ -25,14 +24,15 @@ import com.core.engine.KrkrStartupDialogPolicy
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.rpgmaker.RpgMakerActivity
 import com.core.tyrano.TyranoActivity
-import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.scan.GameDirFingerprint
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -92,14 +92,14 @@ object EngineLauncher {
      *  本次 = 仅当次应用；总是 = 记住为全局 auto；不再 = 记住为全局 off。 */
     enum class ArtemisPatchChoice { ONCE, ALWAYS, NEVER }
 
-    /** 尝试启动游戏。返回错误信息；null 表示成功发起。
+    /** 尝试启动游戏。返回类型化结果（P0-6）；[LaunchResult.Success] 表示成功发起。
      *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。
      *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
-    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): String? =
+    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
         withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
 
-    private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): String? {
+    private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
         val path = resolveGameDirectory(context, game)
         ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
             val module = ExternalEngineModuleRegistry.resolveModule(
@@ -113,7 +113,7 @@ object EngineLauncher {
                 detectedRenpyVersion = game.detectedRenpyVersion,
             ) ?: defaultModule
             if (module.requiresGameDirectoryPath && path == null) {
-                return text(context, R.string.launch_resolve_local_dir_failed)
+                return LaunchResult.Failure.GameDirUnresolved
             }
             // 需要目录解析的外置引擎同样要「所有文件访问」权限才能读取游戏目录（SAF 授权对外置 APK 无效）
             if (module.requiresGameDirectoryPath && path != null) {
@@ -132,18 +132,23 @@ object EngineLauncher {
             )
             if (result.success) {
                 currentCoroutineContext().ensureActive()
-                EngineScanner.recordRecentGame(context, game)
-                return null
+                GameLibraryFacade.recordRecentGame(context, game)
+                return LaunchResult.Success
             }
-            return result.message ?: text(context, R.string.launch_external_module_failed, module.displayName(AppLocaleController.wrap(context)))
+            return LaunchResult.Failure.ExternalModuleFailed(
+                moduleName = module.displayName(AppLocaleController.wrap(context)),
+                message = result.message,
+            )
         }
         if (path == null) {
-            return text(context, R.string.launch_resolve_local_dir_failed)
+            return LaunchResult.Failure.GameDirUnresolved
         }
         requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
-        EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let { return it }
+        EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let {
+            return LaunchResult.Failure.PluginBootstrapFailed(it)
+        }
         val krSafMirror = if (
-            game.engine == EngineType.KIRIKIRI && EngineScanner.isRemovableStoragePath(path)
+            game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)
         ) {
             try {
                 withContext(Dispatchers.IO) {
@@ -153,7 +158,7 @@ object EngineLauncher {
                 throw ce // 取消不是启动失败，原样传播给调用方
             } catch (t: Throwable) {
                 Log.e(TAG, "prepare KRKR SAF mirror failed uri=${game.uri}", t)
-                return t.message ?: text(context, R.string.launch_prepare_krkr_sd_mirror_failed)
+                return LaunchResult.Failure.KrkrMirrorPrepareFailed(t.message)
             }
         } else {
             null
@@ -161,7 +166,9 @@ object EngineLauncher {
         if (game.engine == EngineType.KIRIKIRI) {
             if (krSafMirror != null) {
                 val saveDir = File(krSafMirror.mirrorRoot, "savedata")
-                if (!saveDir.isDirectory && !saveDir.mkdirs()) return text(context, R.string.launch_create_krkr_mirror_save_failed)
+                if (!saveDir.isDirectory && !saveDir.mkdirs()) {
+                    return LaunchResult.Failure.KrkrMirrorSaveDirFailed(saveDir.absolutePath)
+                }
             } else {
                 ensureKrSaveDir(context, game, path)?.let { return it }
             }
@@ -184,12 +191,12 @@ object EngineLauncher {
             currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
-            EngineScanner.recordRecentGame(context, game)
-            null
+            GameLibraryFacade.recordRecentGame(context, game)
+            LaunchResult.Success
         } catch (ce: CancellationException) {
             throw ce // 取消不是启动失败，原样传播给调用方
         } catch (e: Exception) {
-            e.message ?: text(context, R.string.launch_failed)
+            LaunchResult.Failure.StartFailed(e.message)
         }
     }
 
@@ -215,10 +222,10 @@ object EngineLauncher {
      * Native engines receive a real /storage path, so SAF tree grants are not enough on Android 11+.
      * Match RinneMobile's requirement: ask the user to enable "Manage all files" before launching.
      */
-    private fun requestAllFilesAccessIfNeeded(context: Context, game: ScanGame, path: String): String? {
+    private fun requestAllFilesAccessIfNeeded(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         if (Environment.isExternalStorageManager()) return null
-        if (game.engine == EngineType.KIRIKIRI && EngineScanner.isRemovableStoragePath(path)) return null
+        if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)) return null
         if (!needsAllFilesAccess(path)) return null
 
         val app = context.applicationContext
@@ -236,9 +243,9 @@ object EngineLauncher {
         }.isSuccess
 
         return if (opened) {
-            text(context, R.string.launch_all_files_access_request)
+            LaunchResult.Failure.AllFilesAccessRequested
         } else {
-            text(context, R.string.launch_all_files_access_missing)
+            LaunchResult.Failure.AllFilesAccessMissing
         }
     }
 
@@ -249,7 +256,7 @@ object EngineLauncher {
             normalized.startsWith("/sdcard/") ||
             normalized == "/storage/emulated/0" ||
             normalized.startsWith("/storage/emulated/0/") ||
-            EngineScanner.isRemovableStoragePath(normalized)
+            GamePathUtils.isRemovableStoragePath(normalized)
     }
 
     /** 构建引擎 Intent；path 为真实文件路径。
@@ -365,7 +372,7 @@ object EngineLauncher {
     ): Intent {
         val gid = game.uri
         fun <T> or(override: T?, global: T): T = override ?: global
-        val needsSafFallback = EngineScanner.isRemovableStoragePath(path)
+        val needsSafFallback = GamePathUtils.isRemovableStoragePath(path)
         val kernel = effectiveKrKernel(context, gid, path)
         val skipStartupDialogs = PerGameSettingsStore.getBool(
             context,
@@ -508,7 +515,7 @@ object EngineLauncher {
     private fun effectiveKrKernel(context: Context, gid: String, path: String): String {
         val requested = PerGameSettingsStore.getStr(context, gid, PerGameSettingsStore.F_ENGINE_KERNEL)
             ?: EngineSettingsStore.getKrKernel(context)
-        return if (EngineScanner.isRemovableStoragePath(path) && requested == EngineSettingsStore.KERNEL_KRKRSDL3) {
+        return if (GamePathUtils.isRemovableStoragePath(path) && requested == EngineSettingsStore.KERNEL_KRKRSDL3) {
             EngineSettingsStore.KERNEL_KIRIKIRI2
         } else {
             requested
@@ -519,25 +526,21 @@ object EngineLauncher {
         if (!scoped) return File(path, "savedata")
         return if (kernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
             val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
-            File(File(baseDir, "save"), EngineScanner.safeSaveName(path))
+            File(File(baseDir, "save"), GamePathUtils.safeSaveName(path))
         } else {
-            File(File(File(context.filesDir, "krkr_mirror"), EngineScanner.safeSaveName(path)), "savedata")
+            File(File(File(context.filesDir, "krkr_mirror"), GamePathUtils.safeSaveName(path)), "savedata")
         }
     }
 
-    private fun ensureKrSaveDir(context: Context, game: ScanGame, path: String): String? {
+    private fun ensureKrSaveDir(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
         val scoped = effectiveKrScopedSaveDir(context, game.uri)
         val kernel = effectiveKrKernel(context, game.uri, path)
         val saveDir = resolveKrSaveDir(context, path, kernel, scoped)
         if (saveDir.isDirectory) return null
-        if (saveDir.exists()) return text(context, R.string.launch_krkr_save_path_not_dir, saveDir.absolutePath)
+        if (saveDir.exists()) return LaunchResult.Failure.KrkrSavePathNotDirectory(saveDir.absolutePath)
         if (saveDir.mkdirs() || saveDir.isDirectory) return null
         if (!scoped && ensureKrGameSaveDirViaSaf(context, game, path)) return null
-        return if (scoped) {
-            text(context, R.string.launch_create_krkr_scoped_save_failed, saveDir.absolutePath)
-        } else {
-            text(context, R.string.launch_create_krkr_save_failed, saveDir.absolutePath)
-        }
+        return LaunchResult.Failure.KrkrSaveDirUnavailable(saveDir.absolutePath, scoped)
     }
 
     private fun ensureKrGameSaveDirViaSaf(context: Context, game: ScanGame, path: String): Boolean {
@@ -727,7 +730,7 @@ object EngineLauncher {
         )
         val scopedSaveRoot = if (scoped) {
             context.getExternalFilesDir(null)?.let { external ->
-                File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(path)).absolutePath
+                File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(path)).absolutePath
             }
         } else {
             null
@@ -930,7 +933,7 @@ object EngineLauncher {
         }.toByteArray()
 
         return runCatching {
-            val overlayDir = File(File(context.filesDir, "krkr_patch_overlay"), EngineScanner.safeSaveName(engineRoot))
+            val overlayDir = File(File(context.filesDir, "krkr_patch_overlay"), GamePathUtils.safeSaveName(engineRoot))
             if (!overlayDir.isDirectory && !overlayDir.mkdirs()) {
                 Log.w(TAG, "KRKR patch overlay directory unavailable root=$engineRoot dir=${overlayDir.absolutePath}")
                 return null
@@ -976,7 +979,7 @@ object EngineLauncher {
                 text.trimEnd() + "\nLanguage=schinese\n"
             }
             if (patched == text) return null
-            val overlayDir = File(File(context.filesDir, "krkr_config_overlay"), EngineScanner.safeSaveName(engineRoot))
+            val overlayDir = File(File(context.filesDir, "krkr_config_overlay"), GamePathUtils.safeSaveName(engineRoot))
             if (!overlayDir.isDirectory && !overlayDir.mkdirs()) {
                 Log.w(TAG, "KRKR Steam config overlay directory unavailable root=$engineRoot dir=${overlayDir.absolutePath}")
                 return null
@@ -1203,10 +1206,10 @@ object EngineLauncher {
         val uriText = game.uri
 
         // 1) 首选 SAF documentId → 文件路径映射（兼容 child 子目录 document uri）
-        EngineScanner.safUriToPath(uriText)?.let { mapped ->
+        GamePathUtils.safUriToPath(uriText)?.let { mapped ->
             val f = java.io.File(mapped)
             if (f.isDirectory) return f.absolutePath
-            if (game.engine == EngineType.KIRIKIRI && EngineScanner.isRemovableStoragePath(mapped)) {
+            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(mapped)) {
                 val readableBySaf = runCatching {
                     DocumentFile.fromTreeUri(context.applicationContext, Uri.parse(uriText))?.isDirectory == true
                 }.getOrDefault(false)
@@ -1238,9 +1241,6 @@ object EngineLauncher {
             null
         }
     }
-
-    private fun text(context: Context, @StringRes id: Int, vararg args: Any): String =
-        AppLocaleController.wrap(context).getString(id, *args)
 }
 
 internal fun effectiveRpgMakerModEnabled(

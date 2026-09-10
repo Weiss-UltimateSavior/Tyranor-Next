@@ -6,7 +6,7 @@ import com.tyranor.next.core.i18n.AppLocaleController
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +44,7 @@ object CoverScrapeTaskManager {
             _state.value = CoverScrapeTaskState(running = true)
             job = scope.launch {
                 try {
-                    val input = games ?: EngineScanner.loadGames(appContext)
+                    val input = games ?: GameLibraryFacade.loadGames(appContext)
                     val result = CoverScraperService.scrapeLibraryCovers(appContext, input) { original, scraped ->
                         val persisted = withContext(NonCancellable + Dispatchers.IO) {
                             persistScrapedCover(appContext, original, scraped)
@@ -54,7 +54,7 @@ object CoverScrapeTaskManager {
                     // 每张封面已通过 updateGameCover 单行落库（迁移方案阶段 2），
                     // 这里只读最新库作为结果快照，不再触发整库重写。
                     val mergedGames = withContext(NonCancellable + Dispatchers.IO) {
-                        EngineScanner.loadGames(appContext)
+                        GameLibraryFacade.loadGames(appContext)
                     }
                     postFinished(result = result.copy(games = mergedGames), error = null)
                 } catch (e: CancellationException) {
@@ -80,7 +80,7 @@ object CoverScrapeTaskManager {
     }
 
     private fun persistScrapedCover(context: Context, original: ScanGame, scraped: ScanGame): ScanGame? =
-        EngineScanner.updateGameCover(context, original.uri) { current ->
+        GameLibraryFacade.updateGameCover(context, original.uri) { current ->
             mergeScrapedCover(current, original, scraped)
         }
 

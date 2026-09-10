@@ -6,8 +6,8 @@ import androidx.annotation.StringRes
 import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
@@ -39,7 +39,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.KIRIKIRI -> {
                 // 可移动存储上启动器强制走 KrSafMirror 镜像（与独立存档开关无关），
                 // 引擎实际读写的是镜像目录内的 savedata，存档管理必须指向同一处。
-                if (EngineScanner.isRemovableStoragePath(root)) {
+                if (GamePathUtils.isRemovableStoragePath(root)) {
                     return SaveLocation(
                         File(bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title), "savedata"),
                         text(R.string.save_location_krkr_sd_mirror),
@@ -53,7 +53,7 @@ class GameSaveManager(private val context: Context) {
                         val external = appContext.getExternalFilesDir(null)
                             ?: return SaveLocation(null, text(R.string.save_error_krkr_sdl3_external_unavailable), false)
                         SaveLocation(
-                            File(File(external, "save"), EngineScanner.safeSaveName(root)),
+                            File(File(external, "save"), GamePathUtils.safeSaveName(root)),
                             text(R.string.save_location_krkr_sdl3_scoped),
                             true,
                         )
@@ -61,7 +61,7 @@ class GameSaveManager(private val context: Context) {
                         val internal = appContext.filesDir
                             ?: return SaveLocation(null, text(R.string.save_error_app_internal_unavailable), false)
                         SaveLocation(
-                            File(File(File(internal, "krkr_mirror"), EngineScanner.safeSaveName(root)), "savedata"),
+                            File(File(File(internal, "krkr_mirror"), GamePathUtils.safeSaveName(root)), "savedata"),
                             text(R.string.save_location_krkr_scoped),
                             true,
                         )
@@ -90,7 +90,7 @@ class GameSaveManager(private val context: Context) {
                     val external = appContext.getExternalFilesDir(null)
                         ?: return SaveLocation(null, text(R.string.save_error_tyrano_external_unavailable), false)
                     SaveLocation(
-                        File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root)),
+                        File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root)),
                         text(R.string.save_location_engine_scoped, game.engine.displayName),
                         true,
                     )
@@ -120,21 +120,21 @@ class GameSaveManager(private val context: Context) {
     @Throws(IOException::class)
     fun exportToZip(game: ScanGame, destinationUri: Uri): Int {
         val location = resolveSaveLocation(game)
-        val source = location.directory ?: throw IOException(location.description)
-        if (!source.isDirectory) throw IOException(text(R.string.save_error_no_exportable_files))
+        val source = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        if (!source.isDirectory) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
         val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
-            ?: throw IOException(text(R.string.save_error_create_export_zip))
+            ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
         ZipOutputStream(output).use { zip ->
             val entries = mutableSetOf<String>()
             val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine))
-            if (count == 0) throw IOException(text(R.string.save_error_no_exportable_files))
+            if (count == 0) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
             return count
         }
     }
 
     @Throws(IOException::class)
     fun importFromZip(game: ScanGame, sourceUri: Uri): Int = synchronized(importLock) {
-        val destination = resolveSaveLocation(game).directory ?: throw IOException(text(R.string.save_error_resolve_actual_dir))
+        val destination = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
 
         // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
         // 提交阶段用两次 rename 原子交换（旧目录改名留作备份 → 暂存目录顶替），
@@ -151,35 +151,35 @@ class GameSaveManager(private val context: Context) {
         if (backup.isDirectory) {
             when {
                 !destination.exists() ->
-                    if (!backup.renameTo(destination)) throw IOException(text(R.string.save_error_save_dir_unavailable))
+                    if (!backup.renameTo(destination)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 game.engine == EngineType.ARTEMIS ->
                     restoreExcludedFromBackup(backup, destination, game.engine)
             }
         }
-        if (!destination.exists() && !destination.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
-        if (!destination.isDirectory) throw IOException(text(R.string.save_error_save_dir_unavailable))
+        if (!destination.exists() && !destination.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR)
+        if (!destination.isDirectory) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
         val temp = createTemporaryDirectory()
         var committed = false
         var backupConsumed = false
         try {
             val extracted = extractZip(sourceUri, temp)
-            if (extracted == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
+            if (extracted == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
             staging.deleteRecursively()
-            if (!staging.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
+            if (!staging.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR)
             // 过滤引擎资源后可能一件存档都没有（如纯资源 ZIP）：必须在交换前拦截，
             // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失
             val copied = copyDirectoryContents(temp, staging, excludeFor(game.engine))
-            if (copied == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
+            if (copied == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
             if (destination.exists()) {
                 // 走到这里备份必已被开头恢复步骤消费（只剩旧存档或不存在），可安全删除
                 if (backup.exists() && !backup.deleteRecursively()) {
-                    throw IOException(text(R.string.save_error_save_dir_unavailable))
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 }
-                if (!destination.renameTo(backup)) throw IOException(text(R.string.save_error_save_dir_unavailable))
+                if (!destination.renameTo(backup)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
             if (!staging.renameTo(destination)) {
                 if (backup.exists()) backup.renameTo(destination)
-                throw IOException(text(R.string.save_error_save_dir_unavailable))
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
             committed = true
             // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入，
@@ -199,7 +199,7 @@ class GameSaveManager(private val context: Context) {
 
     @Throws(IOException::class)
     fun deleteSaves(game: ScanGame): Int {
-        val directory = resolveSaveLocation(game).directory ?: throw IOException(text(R.string.save_error_resolve_actual_dir))
+        val directory = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
         if (!directory.isDirectory) return 0
         return clearSaveDirectory(directory, game.engine)
     }
@@ -214,12 +214,12 @@ class GameSaveManager(private val context: Context) {
             EngineType.KIRIKIRI -> {
                 val internal = appContext.filesDir ?: return
                 val targetList = mutableListOf(
-                    File(File(internal, "krkr_mirror"), EngineScanner.safeSaveName(root)),
+                    File(File(internal, "krkr_mirror"), GamePathUtils.safeSaveName(root)),
                 )
                 appContext.getExternalFilesDir(null)?.let { external ->
-                    targetList += File(File(external, "save"), EngineScanner.safeSaveName(root))
+                    targetList += File(File(external, "save"), GamePathUtils.safeSaveName(root))
                 }
-                if (EngineScanner.isRemovableStoragePath(root)) {
+                if (GamePathUtils.isRemovableStoragePath(root)) {
                     // 可移动存储走 KrSafMirror：清理镜像树与 SAF 索引，避免内部存储持续膨胀
                     targetList += bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title)
                     targetList += File(
@@ -237,7 +237,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.RPG_MV,
             EngineType.RPG_MZ -> {
                 val external = appContext.getExternalFilesDir(null) ?: return
-                listOf(File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root)))
+                listOf(File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root)))
             }
             else -> return
         }
@@ -256,11 +256,11 @@ class GameSaveManager(private val context: Context) {
     private fun resolveGameDirectory(game: ScanGame): String? {
         // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
         // 两边解析出不同路径会让存档管理/清理指向错误镜像。
-        EngineScanner.safUriToPath(game.uri)?.let { path ->
+        GamePathUtils.safUriToPath(game.uri)?.let { path ->
             val f = File(path)
             if (f.isDirectory) return f.absolutePath
             // 可移动存储上的 KRKR 允许仅 SAF 可读（启动器将以镜像模式运行），需解析出同一路径
-            if (game.engine == EngineType.KIRIKIRI && EngineScanner.isRemovableStoragePath(path)) {
+            if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)) {
                 val readableBySaf = runCatching {
                     DocumentFile.fromTreeUri(appContext, Uri.parse(game.uri))?.isDirectory == true
                 }.getOrDefault(false)
@@ -297,7 +297,7 @@ class GameSaveManager(private val context: Context) {
     private fun effectiveKrKernel(game: ScanGame, root: String): String {
         val requested = PerGameSettingsStore.getStr(appContext, game.uri, PerGameSettingsStore.F_ENGINE_KERNEL)
             ?: EngineSettingsStore.getKrKernel(appContext)
-        return if (EngineScanner.isRemovableStoragePath(root) && requested == EngineSettingsStore.KERNEL_KRKRSDL3) {
+        return if (GamePathUtils.isRemovableStoragePath(root) && requested == EngineSettingsStore.KERNEL_KRKRSDL3) {
             EngineSettingsStore.KERNEL_KIRIKIRI2
         } else {
             requested
@@ -348,29 +348,29 @@ class GameSaveManager(private val context: Context) {
         var extracted = 0
         var totalBytes = 0L
         val input = appContext.contentResolver.openInputStream(sourceUri)
-            ?: throw IOException(text(R.string.save_error_read_import_zip))
+            ?: throw GameSaveException(SaveErrorCode.READ_IMPORT_ZIP)
         ZipInputStream(input).use { zip ->
             var entry = zip.nextEntry
             val buffer = ByteArray(BUFFER_SIZE)
             while (entry != null) {
                 val name = safeZipEntryName(entry.name)
-                if (!entries.add(name)) throw IOException(text(R.string.save_error_duplicate_zip_entry, name))
-                if (entries.size > MAX_SAVE_ZIP_FILES) throw IOException(text(R.string.save_error_too_many_zip_files))
+                if (!entries.add(name)) throw GameSaveException(SaveErrorCode.DUPLICATE_ZIP_ENTRY, detail = name)
+                if (entries.size > MAX_SAVE_ZIP_FILES) throw GameSaveException(SaveErrorCode.TOO_MANY_ZIP_FILES)
                 val output = File(destination, name).canonicalFile
                 if (!output.path.startsWith(rootPath + File.separator)) {
-                    throw IOException(text(R.string.save_error_illegal_zip_path, entry.name))
+                    throw GameSaveException(SaveErrorCode.ILLEGAL_ZIP_PATH, detail = entry.name)
                 }
                 if (entry.isDirectory) {
-                    if (!output.exists() && !output.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, name))
+                    if (!output.exists() && !output.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = name)
                 } else {
                     output.parentFile?.let {
-                        if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, name))
+                        if (!it.exists() && !it.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = name)
                     }
                     FileOutputStream(output, false).use { out ->
                         var read = zip.read(buffer)
                         while (read != -1) {
                             totalBytes += read.toLong()
-                            if (totalBytes > MAX_SAVE_ZIP_BYTES) throw IOException(text(R.string.save_error_zip_too_large))
+                            if (totalBytes > MAX_SAVE_ZIP_BYTES) throw GameSaveException(SaveErrorCode.ZIP_TOO_LARGE)
                             out.write(buffer, 0, read)
                             read = zip.read(buffer)
                         }
@@ -392,11 +392,11 @@ class GameSaveManager(private val context: Context) {
             if (exclude(child.name)) return@forEach
             val target = File(destination, child.name)
             if (child.isDirectory) {
-                if (!target.exists() && !target.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                if (!target.exists() && !target.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name)
                 copied += copyDirectoryContents(child, target, exclude)
             } else if (child.isFile) {
                 target.parentFile?.let {
-                    if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                    if (!it.exists() && !it.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name)
                 }
                 child.copyTo(target, overwrite = true)
                 target.setLastModified(child.lastModified())
@@ -421,8 +421,8 @@ class GameSaveManager(private val context: Context) {
                 currentBackup.listFiles().orEmpty().forEach { child ->
                     if (exclude(child.name)) {
                         val target = File(currentDest, child.name)
-                        target.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir_named, child.name)) }
-                        if (!child.renameTo(target)) throw IOException(text(R.string.save_error_create_save_dir_named, child.name))
+                        target.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name) }
+                        if (!child.renameTo(target)) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name)
                         moved += child to target
                     } else if (child.isDirectory) {
                         val subDest = File(currentDest, child.name)
@@ -435,7 +435,7 @@ class GameSaveManager(private val context: Context) {
             moved.forEach { (backupFile, destinationFile) ->
                 runCatching { if (!destinationFile.renameTo(backupFile)) destinationFile.copyRecursively(backupFile, overwrite = true) }
             }
-            throw IOException(text(R.string.save_error_save_dir_unavailable), t)
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = t)
         }
         backup.deleteRecursively()
     }
@@ -454,7 +454,7 @@ class GameSaveManager(private val context: Context) {
     private fun safeZipEntryName(raw: String?): String {
         val name = raw?.replace('\\', '/')?.trim('/').orEmpty()
         if (name.isBlank() || name.startsWith("/") || name.contains("../")) {
-            throw IOException(text(R.string.save_error_illegal_zip_path, raw.orEmpty()))
+            throw GameSaveException(SaveErrorCode.ILLEGAL_ZIP_PATH, detail = raw.orEmpty())
         }
         return name
     }
@@ -475,10 +475,11 @@ class GameSaveManager(private val context: Context) {
     @Throws(IOException::class)
     private fun createTemporaryDirectory(): File {
         val directory = File.createTempFile("save_zip_", "", appContext.cacheDir)
-        if (!directory.delete() || !directory.mkdirs()) throw IOException(text(R.string.save_error_create_temp_dir))
+        if (!directory.delete() || !directory.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_TEMP_DIR)
         return directory
     }
 
+    /** 存档位置描述文案（UI 展示用，非异常协议；P0-5 后续收敛为错误码）。 */
     private fun text(@StringRes id: Int, vararg args: Any): String =
         localizedContext.getString(id, *args)
 

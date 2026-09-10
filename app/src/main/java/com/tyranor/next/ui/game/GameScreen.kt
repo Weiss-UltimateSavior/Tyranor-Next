@@ -97,7 +97,7 @@ import com.tyranor.next.core.cover.CoverSearchCandidate
 import com.tyranor.next.core.cover.CoverSearchResult
 import com.tyranor.next.core.cover.CoverScraperService
 import com.tyranor.next.core.game.launch.EngineLauncher
-import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
@@ -122,6 +122,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.cover.coverSourceTitle
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.patch.KrkrOnlinePatchActivity
@@ -207,7 +208,7 @@ fun GameScreen(
                 )
             }
             // 保存根目录后立即全量扫描
-            EngineScanner.saveRoot(context, u)
+            GameLibraryFacade.saveRoot(context, u)
             scanLibrary()
         }
     }
@@ -228,7 +229,7 @@ fun GameScreen(
                 if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                     patchLaunchTarget = game
                 } else {
-                    launchError = EngineLauncher.launch(context, game)
+                    launchError = EngineLauncher.launch(context, game).userMessage(context)
                 }
             }
         },
@@ -276,7 +277,7 @@ fun GameScreen(
                         onClick = {
                             patchLaunchTarget = null
                             scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS)
+                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS).userMessage(context)
                             }
                     },
                 ) { Text(stringResource(R.string.game_patch_always)) }
@@ -287,7 +288,7 @@ fun GameScreen(
                         onClick = {
                             patchLaunchTarget = null
                             scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER)
+                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER).userMessage(context)
                             }
                         },
                     ) { Text(stringResource(R.string.game_patch_never)) }
@@ -295,7 +296,7 @@ fun GameScreen(
                         onClick = {
                             patchLaunchTarget = null
                             scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE)
+                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE).userMessage(context)
                             }
                         },
                     ) { Text(stringResource(R.string.game_patch_once)) }
@@ -331,8 +332,8 @@ private fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
 /** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
 internal fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
     PerGameSettingsStore.clear(context, target.uri)
-    EngineScanner.removeRecentGame(context, target.uri)
-    EngineScanner.removeQuickLaunch(context, target.uri)
+    GameLibraryFacade.removeRecentGame(context, target.uri)
+    GameLibraryFacade.removeQuickLaunch(context, target.uri)
     deleteCoverFile(context, target.coverUri)
     GameSaveManager(context).cleanupAppData(target)
 }
@@ -533,7 +534,7 @@ internal fun GameActionsSheet(
     /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
         scope.launch {
-            launchError = EngineLauncher.launch(context, game, patchChoice)
+            launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
             if (launchError == null) onDismiss()
         }
     }

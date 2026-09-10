@@ -27,7 +27,7 @@ internal object LegacyGameLibraryImportPlan {
         now: Long,
         isGameUnderRoot: (rootUri: String, gameUri: String) -> Boolean,
     ): Plan {
-        // 与 EngineScanner.saveRoot 相同的规范化：去首尾空白与尾部「/」，避免
+        // 与 GameLibraryFacade.saveRoot 相同的规范化：去首尾空白与尾部「/」，避免
         // 旧数据里的「/games/」与用户重新添加的「/games」导入成两个根。
         val roots = rootsText.orEmpty()
             .split("\n")

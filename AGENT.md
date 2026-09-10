@@ -82,6 +82,27 @@
 
 ***
 
+## 错误处理协议（core → ui）
+
+功能抽象层（core）对 UI 的错误协议固定为以下三种，禁止再引入其它风格：
+
+1. **类型化失败结果**：可预期的业务失败返回 sealed Result / 类型化错误 DTO，由 UI 映射文案。
+   现有模板：`LaunchResult`（`core/game/launch/LaunchResult.kt`）、`ExternalEngineLaunchResult`、
+   `UpdateCheckResult`、`CoverScraperService` 的 sealed 结果。
+2. **抛类型化异常**：确实需要异常语义时，异常必须携带错误码而非文案（如
+   `GameSaveException(SaveErrorCode, detail)`），UI 层按错误码映射 string 资源。
+3. **无结果即 null / 空集合**；调用方容错自行 `runCatching`（仅限边角工具函数）。
+
+硬性约束：
+
+- **core 不得把本地化文案当错误消息/返回值**（禁止 `throw IOException(text(R.string...))`
+  或 `return text(R.string...)`）；需要提示时返回错误码，文案组装一律上移 UI
+  （映射文件放 `ui/<域>/` 或 `ui/common/`，如 `ui/common/LaunchErrorMessages.kt`）。
+- 新增错误分支时优先扩展已有 sealed 类型/错误码枚举，不新增并行协议。
+- 取消（`CancellationException`）不属于失败，必须原样向上传播。
+
+***
+
 ## 页面顶部栏统一规范
 
 所有页面（首页 / 游戏 / 书库 / 设置）的顶部栏必须统一。**一律使用统一组件
