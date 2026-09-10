@@ -67,19 +67,25 @@ import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.game.GameActionsSheet
+import com.tyranor.next.ui.game.RpgSaveFormatDialog
 import com.tyranor.next.ui.game.coverColor
+import com.tyranor.next.ui.game.dialogArgs
 import com.tyranor.next.ui.game.rememberCoverBitmap
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun HomeScreen(
@@ -97,6 +103,12 @@ fun HomeScreen(
     var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
     var launchError by remember { mutableStateOf<String?>(null) }
     var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
+    // MV/MZ 存档格式转化确认：待转化检测结果 + 目标游戏 + 已选补丁策略（Artemis 选择后串联）
+    var saveFormatTarget by remember { mutableStateOf<ScanGame?>(null) }
+    var saveFormatDetection by remember { mutableStateOf<RpgSaveFormat.Detection?>(null) }
+    var pendingPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
+    val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
+    val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
 
     LaunchedEffect(libraryState.games) {
         selectedGame = selectedGame?.let { selected ->
@@ -119,14 +131,55 @@ fun HomeScreen(
         onRecentRemoved(target)
     }
 
+    /** Artemis 选择（或无需补丁）后，再检查 MV/MZ 存档格式；有标准存档则弹窗，否则直接启动。 */
+    fun launchWithSaveFormatGate(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
+        scope.launch {
+            val pending = EngineLauncher.rpgSaveFormatPending(context, game)
+            if (pending != null) {
+                saveFormatTarget = game
+                saveFormatDetection = pending
+                pendingPatchChoice = patchChoice
+            } else {
+                launchError = EngineLauncher.launch(context, game, patchChoice)
+            }
+        }
+    }
+
     // 点按直接启动游戏；Artemis 按既有策略弹出补丁确认（与游戏页长按启动一致）。
     fun launchGame(game: ScanGame) {
         scope.launch {
             if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                 patchLaunchTarget = game
             } else {
-                launchError = EngineLauncher.launch(context, game)
+                launchWithSaveFormatGate(game, null)
             }
+        }
+    }
+
+    /** 用户确认转化后执行转化（best-effort），随后按既定策略启动。 */
+    fun resolveSaveFormat(target: ScanGame, convert: Boolean) {
+        val detection = saveFormatDetection
+        val patchChoice = pendingPatchChoice
+        saveFormatTarget = null
+        saveFormatDetection = null
+        pendingPatchChoice = null
+        scope.launch {
+            if (convert && detection != null) {
+                val converted = try {
+                    withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, target) }
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (_: Throwable) {
+                    null
+                }
+                val message = if (converted != null) {
+                    saveFormatConvertedFormat.format(converted.converted)
+                } else {
+                    saveFormatConvertFailedMessage
+                }
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            }
+            launchError = EngineLauncher.launch(context, target, patchChoice)
         }
     }
 
@@ -237,10 +290,9 @@ fun HomeScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
+                        val target = patchLaunchTarget
                         patchLaunchTarget = null
-                        scope.launch {
-                            launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS)
-                        }
+                        target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.ALWAYS) }
                     },
                 ) { Text(stringResource(R.string.game_patch_always)) }
             },
@@ -248,23 +300,33 @@ fun HomeScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(
                         onClick = {
+                            val target = patchLaunchTarget
                             patchLaunchTarget = null
-                            scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER)
-                            }
+                            target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.NEVER) }
                         },
                     ) { Text(stringResource(R.string.game_patch_never)) }
                     TextButton(
                         onClick = {
+                            val target = patchLaunchTarget
                             patchLaunchTarget = null
-                            scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE)
-                            }
+                            target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.ONCE) }
                         },
                     ) { Text(stringResource(R.string.game_patch_once)) }
                 }
             },
         )
+    }
+
+    // ===== MV/MZ 存档格式转化确认（标准 → Tyranor）；点遮罩 = 保持原样启动 =====
+    saveFormatTarget?.let { target ->
+        saveFormatDetection?.let { detection ->
+            val (standardCount, hashedCount) = detection.dialogArgs()
+            RpgSaveFormatDialog(
+                standardCount = standardCount,
+                hashedCount = hashedCount,
+                onChoice = { convert -> resolveSaveFormat(target, convert) },
+            )
+        }
     }
 
     launchError?.let { message ->

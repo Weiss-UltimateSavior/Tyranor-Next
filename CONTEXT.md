@@ -120,6 +120,14 @@ _Avoid_: 存档路径
 将游戏存档目录导出 / 导入为 zip 的备份能力（exportToZip / importFromZip），含文件数与体积上限保护。
 _Avoid_: 备份、云同步
 
+**标准存档格式 / Tyranor 存档格式（RPG Maker MV/MZ）**:
+同一份存档内容的两种文件名形态：标准格式（JoiPlay/PC 兼容，`global|config|fileN` + `.rpgsave`/`.rmmzsave`）与 Tyranor 格式（MV 为 `RPG Global.bin` 等、MZ 为 `global.bin` 等）；二者字节级一致，仅文件名不同。
+_Avoid_: 存档版本、编码
+
+**存档格式转化（RPG Maker MV/MZ）**:
+启动 MV/MZ 时若在存档目录（`<内容根>/save`）检测到标准格式存档，询问用户后按文件名映射纯改名（不重编码）为 Tyranor 格式；目标已存在则跳过不覆盖，源文件移入 `save/original/` 留底，`key_<sha256>.bin` 哈希存档只报告不转化。
+_Avoid_: 转码、迁移（迁移专指目录位置变更）
+
 ## 界面规范
 
 **功能跳转条目（AppNavItem）**:

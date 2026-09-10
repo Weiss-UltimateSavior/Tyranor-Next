@@ -29,6 +29,7 @@ import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineThemeColors
 import com.core.engine.R
+import com.core.engine.WebGameEntryLocator
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.Locale
@@ -131,12 +132,12 @@ class RpgMakerActivity : Activity() {
 
         val gameRoot = File(resolvedGameDir)
 
-        val entry = findGameEntry(gameRoot, 0)
+        val entry = WebGameEntryLocator.locate(gameRoot)
         if (entry == null) {
             val rootAsar = File(gameRoot, "app.asar")
             val resourcesAsar = File(File(gameRoot, "resources"), "app.asar")
             val index = File(gameRoot, "index.html")
-            Log.e(TAG, "entry not found index=${index.absolutePath} app.asar=${rootAsar.absolutePath} resources/app.asar=${resourcesAsar.absolutePath} (searched subdirs: ${WEB_ENTRY_SUBDIRS.joinToString()})")
+            Log.e(TAG, "entry not found index=${index.absolutePath} app.asar=${rootAsar.absolutePath} resources/app.asar=${resourcesAsar.absolutePath} (searched subdirs: ${WebGameEntryLocator.searchSubdirs.joinToString()})")
             failLaunch(getString(R.string.engine_rpgmaker_entry_not_found))
             return
         }
@@ -162,7 +163,9 @@ class RpgMakerActivity : Activity() {
             ?: resolvedGameDir
         rpgMakerVersion = intent.getStringExtra(EXTRA_RPG_MAKER_VERSION)?.takeIf(String::isNotBlank)
         Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} rpgMakerVersion=$rpgMakerVersion asar=$asarPath contentRoot=${contentRoot.absolutePath}")
-        val saves = resolveSaveDirectory(intent, gameRoot)
+        // 存档目录与 MV/MZ 自身 StorageManager 一致：contentRoot/save（contentRoot 可能因
+        // 游戏位于 www/ 子目录而与 gameRoot 不同）。scoped 分支仍为应用独立存档目录。
+        val saves = resolveSaveDirectory(intent, contentRoot)
         saveDirectory = saves
         if (!ensureWritableSaveDirectory(saves)) {
             failLaunch(getString(R.string.engine_rpgmaker_unwritable_save_directory))
@@ -701,7 +704,7 @@ class RpgMakerActivity : Activity() {
         runCatching { window.decorView.systemUiVisibility = flags }
     }
 
-    private fun resolveSaveDirectory(source: Intent?, gameRoot: File?): File? {
+    private fun resolveSaveDirectory(source: Intent?, contentRoot: File?): File? {
         if (source?.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false) == true) {
             val explicit = source.getStringExtra(EXTRA_SCOPED_SAVE_ROOT)?.takeIf(String::isNotBlank)
                 ?: return null
@@ -716,7 +719,9 @@ class RpgMakerActivity : Activity() {
                 null
             }
         }
-        return gameRoot?.let { File(it, "savedata") }
+        // MV/MZ 的 PC/网页版存档目录是 <游戏内容根>/save（与 JoiPlay 一致），
+        // 而非 Tyrano 的 <游戏根>/savedata。
+        return contentRoot?.let { File(it, "save") }
     }
 
     /** RPG Maker MV/MZ 的 StorageManager 兼容桥，接口名与旧项目保持一致。 */
@@ -820,52 +825,6 @@ class RpgMakerActivity : Activity() {
         }
     }
 
-    /**
-     * 游戏入口定位结果。
-     *
-     * @property contentRoot 包含 index.html 或 app.asar 的目录，将作为本地 HTTP 服务器的 root。
-     * @property asarPath 命中的 app.asar 绝对路径；非空表示 asar 模式，空表示散文件模式。
-     */
-    private class GameEntry(val contentRoot: File, val asarPath: String?)
-
-    /**
-     * 递归查找游戏入口（index.html 或 app.asar）。
-     *
-     * 根目录优先匹配 app.asar / resources/app.asar / index.html；未命中时按
-     * [WEB_ENTRY_SUBDIRS] 列表递归搜索子目录，与启动器侧的引擎特征探测子目录保持一致，
-     * 避免扫描器识别成功但启动器找不到入口而闪退。
-     *
-     * @param dir 当前搜索目录。
-     * @param depth 当前递归深度，根目录传入 0。
-     * @return 入口定位结果；未找到返回 null。
-     */
-    private fun findGameEntry(dir: File, depth: Int): GameEntry? {
-        // 当前目录的入口文件（保持原逻辑：asar 优先于 index.html）
-        dir.resolve("app.asar").takeIf { it.isFile }?.let {
-            return GameEntry(dir, it.absolutePath)
-        }
-        dir.resolve("resources/app.asar").takeIf { it.isFile }?.let {
-            return GameEntry(dir, it.absolutePath)
-        }
-        dir.resolve("app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
-            return GameEntry(it, null)
-        }
-        dir.resolve("resources/app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
-            return GameEntry(it, null)
-        }
-        dir.resolve("index.html").takeIf { it.isFile }?.let {
-            return GameEntry(dir, null)
-        }
-        // 达到最大深度后不再递归
-        if (depth >= MAX_ENTRY_SEARCH_DEPTH) return null
-        for (name in WEB_ENTRY_SUBDIRS) {
-            val sub = dir.resolve(name)
-            if (!sub.isDirectory) continue
-            findGameEntry(sub, depth + 1)?.let { return it }
-        }
-        return null
-    }
-
     private enum class WebGameType(val intentValue: String) {
         RPG_MV("RPG"),
         RPG_MZ("RMMZ");
@@ -954,8 +913,6 @@ class RpgMakerActivity : Activity() {
             "godMode", "oneHit", "alwaysCrit", "noclip", "eventSpeed", "msgSkip",
         )
         private const val PROCESS_EXIT_DELAY_MS = 500L
-        private const val MAX_ENTRY_SEARCH_DEPTH = 2
-        private val WEB_ENTRY_SUBDIRS = arrayOf("www", "resources", "app.asar", "app", "tyrano", "data", "scenario", "system", "game")
 
         private const val KEY_UI_FONT_SCALE = "ui_font_scale"
         private const val KEY_UI_SCALE = "ui_scale"

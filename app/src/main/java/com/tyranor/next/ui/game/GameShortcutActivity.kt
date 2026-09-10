@@ -59,6 +59,29 @@ class GameShortcutActivity : ComponentActivity() {
                     null
                 }
 
+                // MV/MZ：检测到标准格式存档时确认是否转化为 Tyranor 格式
+                val pending = withContext(Dispatchers.IO) {
+                    EngineLauncher.rpgSaveFormatPending(applicationContext, game)
+                }
+                if (pending != null) {
+                    val convert = awaitRpgSaveFormatChoice(pending.convertibleCount, pending.hashedCount)
+                    if (convert) {
+                        val converted = try {
+                            EngineLauncher.convertRpgSaveFormat(applicationContext, game)
+                        } catch (ce: CancellationException) {
+                            throw ce
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        val message = if (converted != null) {
+                            localizedContext.getString(R.string.save_format_converted_count, converted.converted)
+                        } else {
+                            localizedContext.getString(R.string.save_format_convert_failed)
+                        }
+                        Toast.makeText(localizedContext, message, Toast.LENGTH_LONG).show()
+                    }
+                }
+
                 val error = EngineLauncher.launch(this@GameShortcutActivity, game, patchChoice)
                 if (error != null) {
                     Toast.makeText(localizedContext, error, Toast.LENGTH_LONG).show()

@@ -83,7 +83,8 @@ class GameSaveManager(private val context: Context) {
             EngineType.TYRANO,
             EngineType.RPG_MV,
             EngineType.RPG_MZ -> {
-                // Tyrano 与 RPG Maker Web 共用 TyranoActivity，存档目录开关保持同一套配置。
+                // Tyrano 与 RPG Maker Web 共用宿主与「独立存档目录」开关；
+                // 非独立存档时 RPG Maker MV/MZ 使用 <内容根>/save（与引擎写入端同源），Tyrano 仍为 <游戏根>/savedata。
                 val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_TY_SCOPED)
                     ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
                 if (scoped) {
@@ -92,6 +93,12 @@ class GameSaveManager(private val context: Context) {
                     SaveLocation(
                         File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root)),
                         text(R.string.save_location_engine_scoped, game.engine.displayName),
+                        true,
+                    )
+                } else if (RpgSaveFormat.isRpgWebEngine(game.engine)) {
+                    SaveLocation(
+                        RpgSaveFormat.resolveSaveDirectory(File(root), game.engine),
+                        text(R.string.save_location_engine_game_dir, game.engine.displayName),
                         true,
                     )
                 } else {
@@ -117,19 +124,32 @@ class GameSaveManager(private val context: Context) {
         }
     }
 
+    /** 存档导出格式：Tyranor 原生 / JoiPlay+PC 标准（仅 RPG Maker MV/MZ 可选，内容字节一致仅换名）。 */
+    enum class ExportFormat { TYRANOR, STANDARD }
+
     @Throws(IOException::class)
-    fun exportToZip(game: ScanGame, destinationUri: Uri): Int {
+    fun exportToZip(game: ScanGame, destinationUri: Uri, format: ExportFormat = ExportFormat.TYRANOR): Int {
         val location = resolveSaveLocation(game)
         val source = location.directory ?: throw IOException(location.description)
         if (!source.isDirectory) throw IOException(text(R.string.save_error_no_exportable_files))
+        val rename = exportRename(game.engine, format)
         val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
             ?: throw IOException(text(R.string.save_error_create_export_zip))
         ZipOutputStream(output).use { zip ->
             val entries = mutableSetOf<String>()
-            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine))
+            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename)
             if (count == 0) throw IOException(text(R.string.save_error_no_exportable_files))
             return count
         }
+    }
+
+    /**
+     * 导出时的条目重命名规则：仅 RPG Maker MV/MZ 在「标准模式」下把 Tyranor 名换成标准名；
+     * 无法映射的文件（哈希存档等）保留原名。其余引擎与 Tyranor 模式返回 null（不改名）。
+     */
+    private fun exportRename(engine: EngineType, format: ExportFormat): ((String) -> String)? {
+        if (format != ExportFormat.STANDARD || !RpgSaveFormat.isRpgWebEngine(engine)) return null
+        return { name -> RpgSaveFormat.tyranorToStandard(name, engine) ?: name }
     }
 
     @Throws(IOException::class)
@@ -152,7 +172,7 @@ class GameSaveManager(private val context: Context) {
             when {
                 !destination.exists() ->
                     if (!backup.renameTo(destination)) throw IOException(text(R.string.save_error_save_dir_unavailable))
-                game.engine == EngineType.ARTEMIS ->
+                restoresExcludedFromBackup(game.engine) ->
                     restoreExcludedFromBackup(backup, destination, game.engine)
             }
         }
@@ -182,9 +202,10 @@ class GameSaveManager(private val context: Context) {
                 throw IOException(text(R.string.save_error_save_dir_unavailable))
             }
             committed = true
-            // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入，
-            // 交换后从备份移回；全部移回前备份绝不清理，失败可再次恢复
-            if (game.engine == EngineType.ARTEMIS) {
+            // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入；
+            // MV/MZ 存档目录内的 original/（格式转化留底）同样被排除。二者都在交换后从备份移回；
+            // 全部移回前备份绝不清理，失败可再次恢复
+            if (restoresExcludedFromBackup(game.engine)) {
                 restoreExcludedFromBackup(backup, destination, game.engine)
             }
             backupConsumed = true
@@ -321,16 +342,28 @@ class GameSaveManager(private val context: Context) {
         zip: ZipOutputStream,
         entries: MutableSet<String>,
         exclude: (String) -> Boolean,
+        rename: ((String) -> String)? = null,
     ): Int {
         var written = 0
         directory.listFiles().orEmpty().forEach { child ->
             if (exclude(child.name)) return@forEach
             if (child.isDirectory) {
-                written += writeZipContents(root, child, zip, entries, exclude)
+                written += writeZipContents(root, child, zip, entries, exclude, rename)
             } else if (child.isFile) {
                 val relative = root.toPath().relativize(child.toPath()).toString()
                     .replace(File.separatorChar, '/')
-                val safeName = safeZipEntryName(relative)
+                val renamed = rename?.let { fn ->
+                    val parts = relative.split('/')
+                    parts.dropLast(1).plus(fn(parts.last())).joinToString("/")
+                }
+                val renamedName = renamed?.let { safeZipEntryName(it) }
+                // 换名后若与已有条目重名（如同目录同时存在 RPG Global.bin 与 global.rpgsave），
+                // 回退原名，避免整条备份被静默丢弃
+                val safeName = if (renamedName != null && renamedName !in entries) {
+                    renamedName
+                } else {
+                    safeZipEntryName(relative)
+                }
                 if (!entries.add(safeName)) return@forEach
                 zip.putNextEntry(ZipEntry(safeName).apply { time = child.lastModified() })
                 FileInputStream(child).use { input -> input.copyTo(zip) }
@@ -406,11 +439,15 @@ class GameSaveManager(private val context: Context) {
         return copied
     }
 
+    /** 导入交换后需要从备份移回「被排除项」的引擎：Artemis 的引擎资源、MV/MZ 的 original/ 留底。 */
+    private fun restoresExcludedFromBackup(engine: EngineType): Boolean =
+        engine == EngineType.ARTEMIS || RpgSaveFormat.isRpgWebEngine(engine)
+
     /**
-     * 把备份目录中不参与导入的 Artemis 引擎资源（system/、*.pfs 等）逐个 rename 回目标目录；
-     * 按相对路径递归遍历，嵌套资源如 foo/data.pfs 亦能恢复（copyDirectoryContents 每层均过滤）。
-     * 全部成功后清理备份并返回，任一失败先把已移回的资源搬回备份、保留备份再抛出，
-     * 保证任何时刻备份都保有完整的引擎资源副本。
+     * 把备份目录中不参与导入的（Artemis 引擎资源 system/、*.pfs 等；MV/MZ 的 original/ 留底）
+     * 逐个 rename 回目标目录；按相对路径递归遍历，嵌套资源如 foo/data.pfs 亦能恢复
+     * （copyDirectoryContents 每层均过滤）。全部成功后清理备份并返回，任一失败先把已移回的搬回备份、
+     * 保留备份再抛出，保证任何时刻备份都保有完整的被排除副本。
      */
     @Throws(IOException::class)
     private fun restoreExcludedFromBackup(backup: File, destination: File, engine: EngineType) {
@@ -460,7 +497,10 @@ class GameSaveManager(private val context: Context) {
     }
 
     private fun excludeFor(engine: EngineType): (String) -> Boolean = { name ->
-        engine == EngineType.ARTEMIS && isArtemisResourceName(name)
+        val lower = name.lowercase(Locale.ROOT)
+        // MV/MZ 存档目录内的 original/ 是格式转化留底，不参与列表计数/导出/导入/删除
+        (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
+            (engine == EngineType.ARTEMIS && isArtemisResourceName(name))
     }
 
     private fun isArtemisResourceName(name: String?): Boolean {
