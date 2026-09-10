@@ -84,35 +84,82 @@ object EnginePluginBootstrap {
         }
     }
 
-    @Synchronized
+    /** 单飞锁：并发触发（快速重建/双入口）时仅一个线程执行解压与状态写入，避免同目录交错写坏插件 */
+    private val provisionLock = Any()
+
     private fun provisionEngineIfNeeded(app: Context, spec: EngineSpec, requireEnabled: Boolean): Boolean {
+        // 锁外快速路径：纯读，不修改任何状态。若在此写 enabledKey，启动线程（requireEnabled=true）
+        // 与 MainActivity 后台预热线程（requireEnabled=false）并发时会互相覆盖标记（CodeRabbit 意见）
+        if (isInstalledReadOnly(app, spec, requireEnabled)) return true
+        synchronized(provisionLock) {
+            // 锁内完整路径：状态刷新 + 安装，写操作全部在锁内原子完成
+            return if (resolveAlreadyInstalled(app, spec, requireEnabled)) {
+                true
+            } else {
+                installNow(app, spec)
+            }
+        }
+    }
+
+    /** 纯读快速检查：已装且满足启用要求即视为就绪。不修改任何标记（写操作统一在锁内完成）。 */
+    private fun isInstalledReadOnly(app: Context, spec: EngineSpec, requireEnabled: Boolean): Boolean {
+        return when (installState(app, spec.engineId)) {
+            NativePluginInstallState.INSTALLED_ENABLED -> true
+            NativePluginInstallState.INSTALLED_DISABLED -> !requireEnabled
+            else -> false
+        }
+    }
+
+    /** 已安装则按需刷新启用标记并返回 true。 */
+    private fun resolveAlreadyInstalled(app: Context, spec: EngineSpec, requireEnabled: Boolean): Boolean {
         val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
-        val state = installState(app, spec.engineId)
-        if (state == NativePluginInstallState.INSTALLED_ENABLED) {
-            markInstalled(prefs, spec, enabled = true)
-            return true
+        when (installState(app, spec.engineId)) {
+            NativePluginInstallState.INSTALLED_ENABLED -> {
+                markInstalled(prefs, spec, enabled = true)
+                return true
+            }
+            NativePluginInstallState.INSTALLED_DISABLED -> {
+                if (!requireEnabled) {
+                    markInstalled(prefs, spec, enabled = false)
+                    return true
+                }
+                markInstalled(prefs, spec, enabled = true)
+                return isReady(app, spec.engineId)
+            }
+            else -> return false
         }
-        if (!requireEnabled && state == NativePluginInstallState.INSTALLED_DISABLED) {
-            markInstalled(prefs, spec, enabled = false)
-            return true
-        }
-        if (requireEnabled && state == NativePluginInstallState.INSTALLED_DISABLED) {
-            markInstalled(prefs, spec, enabled = true)
-            return isReady(app, spec.engineId)
-        }
+    }
+
+    private fun installNow(app: Context, spec: EngineSpec): Boolean {
+        val prefs = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
         return try {
             val target = currentDirFor(app, spec.engineId)
-            if (target.exists()) target.deleteRecursively()
-            extractPluginZip(app, spec.engineId, target)
-            markInstalled(prefs, spec, enabled = true)
-            val ready = isReady(app, spec.engineId)
-            if (ready) {
-                android.util.Log.i(TAG, "provisioned native plugin: ${spec.engineId}")
-            } else {
-                android.util.Log.w(TAG, "provision ${spec.engineId} finished but validation failed")
+            if (target.exists() && !target.deleteRecursively()) {
+                // 删除失败（可能部分删除）：中止安装，避免旧残留与解压产物混杂（CodeRabbit 意见）
+                throw IllegalStateException("cleanup failed for ${spec.engineId}")
             }
-            ready
+            extractPluginZip(app, spec.engineId, target)
+            // 先写标记再校验：installState 的 ENABLED 判定依赖 enabled 标记，须先标记才能读到就绪；
+            // 目录缺必需文件会返回 INVALID（与标记无关），据此兜底回滚
+            markInstalled(prefs, spec, enabled = true)
+            if (!isReady(app, spec.engineId)) {
+                // 解压产物校验失败：回滚标记并清理目录，避免残留“已安装”元数据（CodeRabbit 意见）
+                clearInstalled(prefs, spec)
+                if (target.exists()) target.deleteRecursively()
+                android.util.Log.w(TAG, "provision ${spec.engineId} validation failed, rolled back")
+                return false
+            }
+            android.util.Log.i(TAG, "provisioned native plugin: ${spec.engineId}")
+            true
         } catch (t: Throwable) {
+            // 解压/清理中途异常：回滚元数据并清理残留目录，保证下次可干净重装（CodeRabbit 意见）
+            try {
+                clearInstalled(prefs, spec)
+                val target = currentDirFor(app, spec.engineId)
+                if (target.exists()) target.deleteRecursively()
+            } catch (_: Throwable) {
+                // 清理失败仅记录在日志，不覆盖原始异常
+            }
             android.util.Log.w(TAG, "provision ${spec.engineId} failed", t)
             false
         }
@@ -136,6 +183,13 @@ object EnginePluginBootstrap {
         prefs.edit()
             .putBoolean(spec.installedKey, true)
             .putBoolean(spec.enabledKey, enabled)
+            .apply()
+    }
+
+    private fun clearInstalled(prefs: SharedPreferences, spec: EngineSpec) {
+        prefs.edit()
+            .remove(spec.installedKey)
+            .remove(spec.enabledKey)
             .apply()
     }
 
