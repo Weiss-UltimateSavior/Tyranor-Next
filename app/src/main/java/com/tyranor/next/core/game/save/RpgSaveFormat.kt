@@ -114,22 +114,34 @@ object RpgSaveFormat {
     }
 
     /**
-     * 同时探测 `save/` 与 `Save/` 两个大小写目录，任一命中即视为需要转化。
-     * 大小写不敏感文件系统（Android 共享存储）上二者可能是同一目录，按规范化路径去重避免重复计数。
+     * 汇总探测所有候选存档目录：`save/`、历史大写 `Save/`，以及冗余包装的 `save/save/`
+     * （导入带单层文件夹的备份包时会出现该形态）。按规范化路径去重，避免大小写不敏感文件系统
+     * 上同一目录被重复计数。转化始终写回 `save/` 根，因此命中的嵌套文件会被归位。
      */
     fun detectAny(saveDir: File, engine: EngineType): Detection {
-        val primary = detect(saveDir, engine)
-        val legacy = legacyCaseSaveDirectory(saveDir)
-        if (!legacy.isDirectory) return primary
-        val primaryPath = runCatching { saveDir.canonicalPath.lowercase(Locale.ROOT) }.getOrNull()
-        val legacyPath = runCatching { legacy.canonicalPath.lowercase(Locale.ROOT) }.getOrNull()
-        if (primaryPath != null && primaryPath == legacyPath) return primary
-        val legacyDetection = detect(legacy, engine)
-        return Detection(
-            standardFiles = primary.standardFiles + legacyDetection.standardFiles,
-            hashedCount = primary.hashedCount + legacyDetection.hashedCount,
-        )
+        if (standardExtension(engine) == null) return Detection(emptyList(), 0)
+        val seen = mutableSetOf<String>()
+        val files = mutableListOf<File>()
+        var hashed = 0
+        candidateSaveDirs(saveDir).forEach { root ->
+            if (!seen.add(pathKey(root))) return@forEach
+            val detection = detect(root, engine)
+            files += detection.standardFiles
+            hashed += detection.hashedCount
+        }
+        return Detection(files, hashed)
     }
+
+    /** 候选存档目录：本体、历史大写、以及冗余 `save/save`（低风险自愈形态）。 */
+    private fun candidateSaveDirs(saveDir: File): List<File> = listOf(
+        saveDir,
+        legacyCaseSaveDirectory(saveDir),
+        File(saveDir, "save"),
+        File(saveDir, "Save"),
+    )
+
+    private fun pathKey(file: File): String =
+        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath).lowercase(Locale.ROOT)
 
     /** 标准文件名判定（`global|config|fileN` + 引擎扩展名 + MV 可带 `.bak`）。 */
     fun isStandardName(name: String, engine: EngineType): Boolean {

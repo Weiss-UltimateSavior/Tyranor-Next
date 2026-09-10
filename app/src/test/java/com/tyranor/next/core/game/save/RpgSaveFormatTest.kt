@@ -134,6 +134,21 @@ class RpgSaveFormatTest {
     }
 
     @Test
+    fun detectAnyFindsRedundantNestedSaveDirectory() {
+        // 导入带单层文件夹的备份包后可能落成 save/save/：检测需自愈命中，转化回写到 save/ 根
+        val save = temporaryFolder.newFolder("www", "save")
+        val nested = save.resolve("save").apply { mkdirs() }
+        nested.resolve("global.rpgsave").writeText("a")
+
+        val detection = RpgSaveFormat.detectAny(save, EngineType.RPG_MV)
+        assertEquals(1, detection.convertibleCount)
+
+        val result = RpgSaveFormatConverter.convert(save, EngineType.RPG_MV)
+        assertEquals(1, result.converted)
+        assertTrue(save.resolve("RPG Global.bin").isFile)
+    }
+
+    @Test
     fun resolveSaveDirectoryUsesContentRootUnderWww() {
         val gameRoot = temporaryFolder.newFolder("Locked and Wagered")
         val www = gameRoot.resolve("www")
