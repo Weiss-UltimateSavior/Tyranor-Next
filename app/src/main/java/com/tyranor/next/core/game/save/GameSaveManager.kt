@@ -84,7 +84,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.RPG_MV,
             EngineType.RPG_MZ -> {
                 // Tyrano 与 RPG Maker Web 共用宿主与「独立存档目录」开关；
-                // 非独立存档时 RPG Maker MV/MZ 使用 <内容根>/save（与引擎写入端同源），Tyrano 仍为 <游戏根>/savedata。
+                // 非独立存档时同为引擎宿主的 <游戏根>/savedata（与 engine resolveSaveDirectory 一致）。
                 val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_TY_SCOPED)
                     ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
                 if (scoped) {
@@ -93,12 +93,6 @@ class GameSaveManager(private val context: Context) {
                     SaveLocation(
                         File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root)),
                         text(R.string.save_location_engine_scoped, game.engine.displayName),
-                        true,
-                    )
-                } else if (RpgSaveFormat.isRpgWebEngine(game.engine)) {
-                    SaveLocation(
-                        RpgSaveFormat.resolveSaveDirectory(File(root), game.engine),
-                        text(R.string.save_location_engine_game_dir, game.engine.displayName),
                         true,
                     )
                 } else {
@@ -144,12 +138,17 @@ class GameSaveManager(private val context: Context) {
     }
 
     /**
-     * 导出时的条目重命名规则：仅 RPG Maker MV/MZ 在「标准模式」下把 Tyranor 名换成标准名；
-     * 无法映射的文件（哈希存档等）保留原名。其余引擎与 Tyranor 模式返回 null（不改名）。
+     * 导出时的条目重命名规则：仅 RPG Maker MV/MZ 在「标准模式」下把 Tyranor 名换成标准名。
+     * 同时反解引擎写入的哈希名（`key_<sha256>.bin`，如 slot 3 的 `RPG File3` → `file3.rpgsave`）；
+     * 无法映射的文件（插件自定义键等）保留原名。
      */
     private fun exportRename(engine: EngineType, format: ExportFormat): ((String) -> String)? {
         if (format != ExportFormat.STANDARD || !RpgSaveFormat.isRpgWebEngine(engine)) return null
-        return { name -> RpgSaveFormat.tyranorToStandard(name, engine) ?: name }
+        return { name ->
+            RpgSaveFormat.tyranorToStandard(name, engine)
+                ?: RpgSaveFormat.hashedToStandardName(name, engine)
+                ?: name
+        }
     }
 
     @Throws(IOException::class)
@@ -187,10 +186,8 @@ class GameSaveManager(private val context: Context) {
             staging.deleteRecursively()
             if (!staging.mkdirs()) throw IOException(text(R.string.save_error_create_save_dir))
             // 过滤引擎资源后可能一件存档都没有（如纯资源 ZIP）：必须在交换前拦截，
-            // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失。
-            // 解压根需先剥掉「单一顶层文件夹」包装（外部备份包常整包为 save/ 目录），
-            // 否则会落成 save/save/... 导致引擎读不到、格式检测也不命中。
-            val copied = copyDirectoryContents(unwrapSingleTopLevelDir(temp), staging, excludeFor(game.engine))
+            // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失
+            val copied = copyDirectoryContents(temp, staging, excludeFor(game.engine))
             if (copied == 0) throw IOException(text(R.string.save_error_no_files_in_zip))
             if (destination.exists()) {
                 // 走到这里备份必已被开头恢复步骤消费（只剩旧存档或不存在），可安全删除
@@ -532,17 +529,5 @@ class GameSaveManager(private val context: Context) {
         // 导入互斥锁：UI 层的 taskRunning 守卫会随 Activity 重建丢失（旋转屏幕时
         // 旧协程的阻塞 IO 仍在后台跑完），进程级锁保证不会对同一存档并发导入
         private val importLock = Any()
-
-        /**
-         * 剥掉导入包「单一顶层文件夹」包装：外部存档备份常整包为一个目录（如 `save/` 或
-         * `savedata/`），直接解压到存档目录会多套一层（`save/save/`）导致引擎读不到。
-         * 仅当顶层恰好只有一个目录项时才下钻一层；顶层有多个条目（含散文件）时视为已是
-         * 内容根，原样返回。下钻后若无可复制内容，由调用方以 `copied == 0` 拦截，
-         * 不会用空目录顶替旧存档。
-         */
-        internal fun unwrapSingleTopLevelDir(extracted: File): File {
-            val only = extracted.listFiles().orEmpty().singleOrNull() ?: return extracted
-            return if (only.isDirectory) only else extracted
-        }
     }
 }

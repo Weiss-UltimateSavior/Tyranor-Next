@@ -117,7 +117,7 @@ class TyranoActivity : Activity() {
             val rootAsar = File(gameRoot, "app.asar")
             val resourcesAsar = File(File(gameRoot, "resources"), "app.asar")
             val index = File(gameRoot, "index.html")
-            Log.e(TAG, "entry not found index=${index.absolutePath} app.asar=${rootAsar.absolutePath} resources/app.asar=${resourcesAsar.absolutePath} (searched subdirs: ${com.core.engine.WebGameEntryLocator.searchSubdirs.joinToString()})")
+            Log.e(TAG, "entry not found index=${index.absolutePath} app.asar=${rootAsar.absolutePath} resources/app.asar=${resourcesAsar.absolutePath} (searched subdirs: ${WEB_ENTRY_SUBDIRS.joinToString()})")
             failLaunch(getString(R.string.engine_tyrano_entry_not_found))
             return
         }
@@ -145,7 +145,7 @@ class TyranoActivity : Activity() {
         Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} asar=$asarPath contentRoot=${contentRoot.absolutePath}")
         val needsSaveBridge = webGameType == WebGameType.TYRANO ||
             webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
-        val saves = if (needsSaveBridge) resolveSaveDirectory(intent, gameRoot, contentRoot, webGameType) else null
+        val saves = if (needsSaveBridge) resolveSaveDirectory(intent, gameRoot) else null
         saveDirectory = saves
         if (needsSaveBridge && !ensureWritableSaveDirectory(saves)) {
             failLaunch(getString(R.string.engine_tyrano_unwritable_save_directory))
@@ -649,12 +649,7 @@ class TyranoActivity : Activity() {
         runCatching { window.decorView.systemUiVisibility = flags }
     }
 
-    private fun resolveSaveDirectory(
-        source: Intent?,
-        gameRoot: File?,
-        contentRoot: File?,
-        webGameType: WebGameType,
-    ): File? {
+    private fun resolveSaveDirectory(source: Intent?, gameRoot: File?): File? {
         if (source?.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false) == true) {
             val explicit = source.getStringExtra(EXTRA_SCOPED_SAVE_ROOT)?.takeIf(String::isNotBlank)
                 ?: return null
@@ -669,12 +664,7 @@ class TyranoActivity : Activity() {
                 null
             }
         }
-        // Tyrano 保持 <游戏根>/savedata；RPG Maker MV/MZ 走自身 StorageManager 的
-        // <内容根>/save（内容根可能因游戏位于 www/ 子目录而与游戏根不同）。
-        return when (webGameType) {
-            WebGameType.RPG_MV, WebGameType.RPG_MZ -> contentRoot?.let { File(it, "save") }
-            WebGameType.TYRANO, WebGameType.VN, WebGameType.WEB_OTHER -> gameRoot?.let { File(it, "savedata") }
-        }
+        return gameRoot?.let { File(it, "savedata") }
     }
 
     /**
@@ -796,7 +786,7 @@ class TyranoActivity : Activity() {
     }
 
     /**
-     * 游戏入口定位结果。
+     * Tyrano 游戏入口定位结果。
      *
      * @property contentRoot 包含 index.html 或 app.asar 的目录，将作为本地 HTTP 服务器的 root。
      * @property asarPath 命中的 app.asar 绝对路径；非空表示 asar 模式，空表示散文件模式。
@@ -806,12 +796,39 @@ class TyranoActivity : Activity() {
     /**
      * 递归查找 Tyrano 游戏入口（index.html 或 app.asar）。
      *
-     * 入口定位实现已收敛到 [com.core.engine.WebGameEntryLocator]（与 RPG Maker 宿主共用同一份，
-     * 避免两处漂移），此处仅做类型转换到本宿主的 [TyranoEntry]。
+     * 根目录优先匹配 app.asar / resources/app.asar / index.html；未命中时按
+     * [WEB_ENTRY_SUBDIRS] 列表递归搜索子目录，与启动器侧的引擎特征探测子目录保持一致，
+     * 避免扫描器识别成功但启动器找不到入口而闪退。
+     *
+     * @param dir 当前搜索目录。
+     * @param depth 当前递归深度，根目录传入 0。
+     * @return 入口定位结果；未找到返回 null。
      */
     private fun findTyranoEntry(dir: File, depth: Int): TyranoEntry? {
-        val entry = com.core.engine.WebGameEntryLocator.locate(dir, depth) ?: return null
-        return TyranoEntry(entry.contentRoot, entry.asarPath)
+        // 当前目录的入口文件（保持原逻辑：asar 优先于 index.html）
+        dir.resolve("app.asar").takeIf { it.isFile }?.let {
+            return TyranoEntry(dir, it.absolutePath)
+        }
+        dir.resolve("resources/app.asar").takeIf { it.isFile }?.let {
+            return TyranoEntry(dir, it.absolutePath)
+        }
+        dir.resolve("app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
+            return TyranoEntry(it, null)
+        }
+        dir.resolve("resources/app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let {
+            return TyranoEntry(it, null)
+        }
+        dir.resolve("index.html").takeIf { it.isFile }?.let {
+            return TyranoEntry(dir, null)
+        }
+        // 达到最大深度后不再递归
+        if (depth >= MAX_ENTRY_SEARCH_DEPTH) return null
+        for (name in WEB_ENTRY_SUBDIRS) {
+            val sub = dir.resolve(name)
+            if (!sub.isDirectory) continue
+            findTyranoEntry(sub, depth + 1)?.let { return it }
+        }
+        return null
     }
 
     inner class TyranoJsBridge(private val saveDirectory: File?) {
@@ -988,6 +1005,8 @@ class TyranoActivity : Activity() {
             "godMode", "oneHit", "alwaysCrit", "noclip", "eventSpeed", "msgSkip",
         )
         private const val PROCESS_EXIT_DELAY_MS = 500L
+        private const val MAX_ENTRY_SEARCH_DEPTH = 2
+        private val WEB_ENTRY_SUBDIRS = arrayOf("www", "resources", "app.asar", "app", "tyrano", "data", "scenario", "system", "game")
 
         private const val KEY_UI_FONT_SCALE = "ui_font_scale"
         private const val KEY_UI_SCALE = "ui_scale"

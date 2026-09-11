@@ -13,110 +13,119 @@ class RpgSaveFormatConverterTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
+    private fun mvGameRoot(name: String = "Game"): java.io.File {
+        val gameRoot = temporaryFolder.newFolder(name)
+        gameRoot.resolve("www/js").mkdirs()
+        gameRoot.resolve("www/index.html").writeText("<html></html>")
+        gameRoot.resolve("www/js/rpg_core.js").writeText("// MV")
+        return gameRoot
+    }
+
     @Test
-    fun convertsMvStandardSavesIncludingBackupsAndKeepsByteContent() {
-        val save = temporaryFolder.newFolder("save")
+    fun convertsMvStandardSavesFromSavedataIncludingBackups() {
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
         val globalBytes = "GLOBAL-DATA".toByteArray()
         val file1Bytes = "FILE1-DATA".toByteArray()
         val bakBytes = "BAK-DATA".toByteArray()
-        save.resolve("global.rpgsave").writeBytes(globalBytes)
-        save.resolve("file1.rpgsave").writeBytes(file1Bytes)
-        save.resolve("file1.rpgsave.bak").writeBytes(bakBytes)
+        savedata.resolve("global.rpgsave").writeBytes(globalBytes)
+        savedata.resolve("file1.rpgsave").writeBytes(file1Bytes)
+        savedata.resolve("file1.rpgsave.bak").writeBytes(bakBytes)
 
-        val result = RpgSaveFormatConverter.convert(save, EngineType.RPG_MV)
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
 
         assertEquals(3, result.converted)
         assertEquals(0, result.skipped)
         assertEquals(0, result.failed)
-        assertArrayEquals(globalBytes, save.resolve("RPG Global.bin").readBytes())
-        assertArrayEquals(file1Bytes, save.resolve("RPG File1.bin").readBytes())
-        assertArrayEquals(bakBytes, save.resolve("RPG File1bak.bin").readBytes())
-        // 源文件已移入 original/ 留底
-        assertFalse(save.resolve("global.rpgsave").exists())
-        assertTrue(save.resolve("original/global.rpgsave").isFile)
-        assertTrue(save.resolve("original/file1.rpgsave.bak").isFile)
+        assertArrayEquals(globalBytes, savedata.resolve("RPG Global.bin").readBytes())
+        assertArrayEquals(file1Bytes, savedata.resolve("RPG File1.bin").readBytes())
+        assertArrayEquals(bakBytes, savedata.resolve("RPG File1bak.bin").readBytes())
+        assertFalse(savedata.resolve("global.rpgsave").exists())
+        assertTrue(savedata.resolve("original/global.rpgsave").isFile)
     }
 
     @Test
-    fun convertsMzSavesWithoutExtensionCase() {
-        val save = temporaryFolder.newFolder("save")
-        save.resolve("global.rmmzsave").writeBytes("G".toByteArray())
-        save.resolve("config.rmmzsave").writeBytes("C".toByteArray())
+    fun pcSaveDirectorySourcesAreConvertedIntoEngineSaveDirectory() {
+        // JoiPlay/PC 标准存档位于 <内容根>/save，转化后写入 <游戏根>/savedata（引擎读取处）
+        val gameRoot = mvGameRoot()
+        val pcSave = gameRoot.resolve("www/save").apply { mkdirs() }
+        pcSave.resolve("file2.rpgsave").writeText("PC-SAVE")
 
-        val result = RpgSaveFormatConverter.convert(save, EngineType.RPG_MZ)
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
+
+        assertEquals(1, result.converted)
+        assertEquals("PC-SAVE", gameRoot.resolve("savedata/RPG File2.bin").readText())
+        // 源文件在 PC 存档目录内留底
+        assertTrue(pcSave.resolve("original/file2.rpgsave").isFile)
+    }
+
+    @Test
+    fun convertsMzSaves() {
+        val gameRoot = mvGameRoot("Mz Game")
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        savedata.resolve("global.rmmzsave").writeBytes("G".toByteArray())
+        savedata.resolve("config.rmmzsave").writeBytes("C".toByteArray())
+
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MZ)
 
         assertEquals(2, result.converted)
-        assertTrue(save.resolve("global.bin").isFile)
-        assertTrue(save.resolve("config.bin").isFile)
-        assertTrue(save.resolve("original/global.rmmzsave").isFile)
+        assertTrue(savedata.resolve("global.bin").isFile)
+        assertTrue(savedata.resolve("config.bin").isFile)
     }
 
     @Test
-    fun skipsWhenTargetAlreadyExistsAndMovesSourceToOriginal() {
-        val save = temporaryFolder.newFolder("save")
+    fun skipsWhenTargetAlreadyExists() {
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
         val existing = "EXISTING-TYRANOR".toByteArray()
-        save.resolve("RPG Global.bin").writeBytes(existing)
-        save.resolve("global.rpgsave").writeBytes("STANDARD".toByteArray())
+        savedata.resolve("RPG Global.bin").writeBytes(existing)
+        savedata.resolve("global.rpgsave").writeBytes("STANDARD".toByteArray())
 
-        val result = RpgSaveFormatConverter.convert(save, EngineType.RPG_MV)
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
 
         assertEquals(0, result.converted)
         assertEquals(1, result.skipped)
-        assertEquals(0, result.failed)
-        // 不覆盖已有 Tyranor 存档
-        assertArrayEquals(existing, save.resolve("RPG Global.bin").readBytes())
-        // 源文件仍留底，避免重复提示
-        assertTrue(save.resolve("original/global.rpgsave").isFile)
+        assertArrayEquals(existing, savedata.resolve("RPG Global.bin").readBytes())
+        assertTrue(savedata.resolve("original/global.rpgsave").isFile)
     }
 
     @Test
     fun originalNameCollisionGetsSuffix() {
-        val save = temporaryFolder.newFolder("save")
-        val original = save.resolve("original").apply { mkdirs() }
-        original.resolve("global.rpgsave").writeText("OLD-BACKUP")
-        save.resolve("global.rpgsave").writeText("NEW")
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        savedata.resolve("original").mkdirs()
+        savedata.resolve("original/global.rpgsave").writeText("OLD")
+        savedata.resolve("global.rpgsave").writeText("NEW")
 
-        val result = RpgSaveFormatConverter.convert(save, EngineType.RPG_MV)
-
-        assertEquals(1, result.converted)
-        assertEquals("OLD-BACKUP", save.resolve("original/global.rpgsave").readText())
-        assertEquals("NEW", save.resolve("original/global_1.rpgsave").readText())
-    }
-
-    @Test
-    fun legacyUppercaseSaveDirectoryIsConvertedIntoLowercaseSave() {
-        val parent = temporaryFolder.newFolder("www")
-        val lower = parent.resolve("save").apply { mkdirs() }
-        val upper = parent.resolve("Save").apply { mkdirs() }
-        upper.resolve("file2.rpgsave").writeText("UPPER")
-
-        val result = RpgSaveFormatConverter.convert(lower, EngineType.RPG_MV)
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
 
         assertEquals(1, result.converted)
-        assertTrue(lower.resolve("RPG File2.bin").isFile)
-        assertEquals("UPPER", lower.resolve("RPG File2.bin").readText())
+        assertEquals("OLD", savedata.resolve("original/global.rpgsave").readText())
+        assertEquals("NEW", savedata.resolve("original/global_1.rpgsave").readText())
     }
 
     @Test
     fun hashedSavesAreReportedButNotConverted() {
-        val save = temporaryFolder.newFolder("save")
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
         val hashed = "key_" + "c".repeat(64) + ".bin"
-        save.resolve(hashed).writeText("hashed")
-        save.resolve("global.rpgsave").writeText("std")
+        savedata.resolve(hashed).writeText("hashed")
+        savedata.resolve("global.rpgsave").writeText("std")
 
-        val result = RpgSaveFormatConverter.convert(save, EngineType.RPG_MV)
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
 
         assertEquals(1, result.converted)
         assertEquals(1, result.hashedCount)
-        assertTrue(save.resolve(hashed).isFile)
+        assertTrue(savedata.resolve(hashed).isFile)
     }
 
     @Test
     fun nothingToConvertReturnsZero() {
-        val save = temporaryFolder.newFolder("save")
-        save.resolve("RPG Global.bin").writeText("tyranor")
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        savedata.resolve("RPG Global.bin").writeText("tyranor")
 
-        val result = RpgSaveFormatConverter.convert(save, EngineType.RPG_MV)
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
         assertEquals(0, result.converted)
         assertEquals(0, result.skipped)
         assertEquals(0, result.failed)
@@ -124,10 +133,11 @@ class RpgSaveFormatConverterTest {
 
     @Test
     fun nonRpgEngineIsNoOp() {
-        val save = temporaryFolder.newFolder("save")
-        save.resolve("global.rpgsave").writeText("std")
-        val result = RpgSaveFormatConverter.convert(save, EngineType.TYRANO)
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        savedata.resolve("global.rpgsave").writeText("std")
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.TYRANO)
         assertEquals(0, result.converted)
-        assertTrue(save.resolve("global.rpgsave").isFile)
+        assertTrue(savedata.resolve("global.rpgsave").isFile)
     }
 }

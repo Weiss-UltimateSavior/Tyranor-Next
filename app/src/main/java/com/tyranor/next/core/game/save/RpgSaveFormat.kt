@@ -1,16 +1,16 @@
 package com.tyranor.next.core.game.save
 
-import com.core.engine.WebGameEntryLocator
 import com.tyranor.next.core.engine.EngineType
 import java.io.File
+import java.security.MessageDigest
 import java.util.Locale
 
 /**
- * RPG Maker MV/MZ 存档文件名在「Tyranor 格式」与「JoiPlay/PC 标准格式」之间的映射与检测。
+ * RPG Maker MV/MZ 存档文件名在「Tyranor 格式」与「JoiPlay/PC 标准格式」之间的映射、检测与路径解析。
  *
- * 两种格式内容字节级一致，仅文件名不同；因此转化是纯改名（不重编码），导出/导入按需换名即可。
+ * 两种格式内容字节级一致，仅文件名不同；转化是纯改名（不重编码）。
  *
- * MV（引擎经 webStorageKey 派生 `RPG ...` 键，桥按 legacy 文件名落盘）：
+ * MV（引擎经 webStorageKey 派生 `RPG ...` 键，含空格 → 桥按 legacy 文件名落盘或哈希）：
  * | Tyranor 格式        | 标准格式（JoiPlay/PC） |
  * | ------------------ | --------------------- |
  * | RPG Global.bin     | global.rpgsave        |
@@ -20,19 +20,20 @@ import java.util.Locale
  * | RPG Configbak.bin  | config.rpgsave.bak    |
  * | RPG FileNbak.bin   | fileN.rpgsave.bak     |
  *
- * MZ（hook 以 `global`/`config`/`fileN` 为键直接落盘，核心不带备份）：
+ * MZ（键为 `global`/`config`/`fileN`，核心不带备份）：
  * | global.bin / config.bin / fileN.bin | global.rmmzsave / config.rmmzsave / fileN.rmmzsave |
  *
- * `key_<sha256>.bin` 形态是 TyranorStorage 对含空格/非 ASCII 键的确定性哈希映射（键不可逆），
- * 只报告不转化。
+ * 含空格的 MV 键经 RpgMakerStorage 的确定性哈希映射落成 `key_<sha256(key)>.bin`。该形态**不是**
+ * 可读的 Tyranor 名字（引擎读档时按 legacy 文件名找，哈希名只是写入落点），因此导出为「标准模式」
+ * 时需要把哈希名反解回标准名——键空间有限（见 [hashedToStandardName]），可枚举还原。
  */
 object RpgSaveFormat {
 
     /** 标准存档扫描结果。 */
     data class Detection(
-        /** 可转化的标准存档文件（含 `.bak`）。 */
+        /** 可转化的标准存档文件（含 `.bak`），绝对路径。 */
         val standardFiles: List<File>,
-        /** 检测到但不可转化的 Tyranor 哈希存档数量（key_<sha256>.bin）。 */
+        /** 检测到但不可转化的哈希存档数量（key_<sha256>.bin）。 */
         val hashedCount: Int,
     ) {
         val convertibleCount: Int get() = standardFiles.size
@@ -50,19 +51,22 @@ object RpgSaveFormat {
         val hashedCount: Int,
     )
 
-    /** 转化时源文件留底的子目录名（位于存档目录内，不参与列表/导出/删除）。 */
+    /** 转化时源文件留底的子目录名（位于源存档目录内，不参与列表/导出/删除）。 */
     const val ORIGINAL_DIR = "original"
 
-    /** MV 的 Tyranor 文件名：`RPG Global.bin` / `RPG File1bak.bin` 等（键含空格，走 legacy 文件名）。 */
+    /** MV 的 Tyranor 文件名：`RPG Global.bin` / `RPG File1bak.bin` 等。 */
     private val MV_TYRANOR_NAME = Regex("^rpg (global|config|file(\\d+))(bak)?\\.bin$", RegexOption.IGNORE_CASE)
 
-    /** MZ 的 Tyranor 文件名：`global.bin` / `file1.bin` 等（键为纯 ASCII，直接落盘）。 */
+    /** MZ 的 Tyranor 文件名：`global.bin` / `file1.bin` 等。 */
     private val MZ_TYRANOR_NAME = Regex("^(global|config|file(\\d+))(bak)?\\.bin$", RegexOption.IGNORE_CASE)
 
-    private val HASHED_KEY_NAME = Regex("^key_[0-9a-f]{64}\\.bin$", RegexOption.IGNORE_CASE)
+    private val HASHED_KEY_NAME = Regex("^key_([0-9a-f]{64})\\.bin$", RegexOption.IGNORE_CASE)
 
     private const val MV_EXT = ".rpgsave"
     private const val MZ_EXT = ".rmmzsave"
+
+    /** 枚举哈希反解时的最大存档位（覆盖常见 MV/MZ 存档位，超出则保留原名）。 */
+    private const val MAX_SAVE_SLOT = 999
 
     fun isRpgWebEngine(engine: EngineType): Boolean =
         engine == EngineType.RPG_MV || engine == EngineType.RPG_MZ
@@ -82,23 +86,75 @@ object RpgSaveFormat {
     /** MV 才有存档备份（MZ 核心不含 backup）。 */
     private fun supportsBackup(engine: EngineType): Boolean = engine == EngineType.RPG_MV
 
+    // ===== 路径解析 =====
+
     /**
-     * 存档目录：`<内容根>/save`（内容根 = 含 index.html / app.asar 的目录）。定位失败时回退
-     * `<游戏根>/save`。与引擎宿主写入端（WebGameEntryLocator + contentRoot/save）同源。
+     * 引擎宿主实际读写存档的目录。engine 侧 resolveSaveDirectory 对 MV/MZ 非独立存档使用
+     * `<游戏根>/savedata`（与 Tyrano 一致），转化输出必须落在同一处引擎才读得到。
      */
-    fun resolveSaveDirectory(gameRoot: File, engine: EngineType): File {
-        val contentRoot = WebGameEntryLocator.locate(gameRoot)?.contentRoot ?: gameRoot
+    fun engineSaveDirectory(gameRoot: File): File = File(gameRoot, "savedata")
+
+    /**
+     * JoiPlay/PC 版默认存档目录：`<内容根>/save`（内容根 = 含 index.html / app.asar 的目录，
+     * 如 `.../Game/www`）。用于发现外部标准存档；存储位置解析失败时回退 `<游戏根>/save`。
+     */
+    fun pcSaveDirectory(gameRoot: File): File {
+        val contentRoot = locateContentRoot(gameRoot) ?: return File(gameRoot, "save")
         return File(contentRoot, "save")
     }
 
-    /** 备选存档目录（历史大小写 `Save/`）：仅用于读取检测；转化统一写入小写 `save/`。 */
-    fun legacyCaseSaveDirectory(saveDir: File): File = File(saveDir.parentFile, "Save")
+    /** 递归定位游戏内容根（含 index.html / app.asar 的目录），与引擎入口探测同序。 */
+    private fun locateContentRoot(dir: File, depth: Int = 0): File? {
+        if (!dir.isDirectory) return null
+        dir.resolve("app.asar").takeIf { it.isFile }?.let { return dir }
+        dir.resolve("resources/app.asar").takeIf { it.isFile }?.let { return dir }
+        dir.resolve("app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let { return it }
+        dir.resolve("resources/app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let { return it }
+        dir.resolve("index.html").takeIf { it.isFile }?.let { return dir }
+        if (depth >= MAX_ENTRY_SEARCH_DEPTH) return null
+        for (name in WEB_ENTRY_SUBDIRS) {
+            val sub = dir.resolve(name)
+            if (!sub.isDirectory) continue
+            locateContentRoot(sub, depth + 1)?.let { return it }
+        }
+        return null
+    }
+
+    // ===== 检测 =====
 
     /**
-     * 在存档目录直接子文件中检测标准格式存档与哈希存档。
-     * 仅扫描给定目录本身（不递归），因此 `original/` 内的留底不会重复触发提示。
+     * 汇总探测引擎存档目录与 JoiPlay/PC 存档目录（含各自大小写变体）下的标准存档。
+     * 仅扫各目录直接子文件（不递归），因此 `original/` 留底不会重复触发；按规范化路径去重。
      */
-    fun detect(saveDir: File, engine: EngineType): Detection {
+    fun detect(gameRoot: File, engine: EngineType): Detection {
+        if (standardExtension(engine) == null) return Detection(emptyList(), 0)
+        val seen = mutableSetOf<String>()
+        val files = mutableListOf<File>()
+        var hashed = 0
+        candidateSaveDirs(gameRoot).forEach { root ->
+            if (!seen.add(pathKey(root))) return@forEach
+            val detection = detectIn(root, engine)
+            files += detection.standardFiles
+            hashed += detection.hashedCount
+        }
+        files.sortBy { it.absolutePath.lowercase(Locale.ROOT) }
+        return Detection(files, hashed)
+    }
+
+    /** 候选存档目录：引擎存档目录、PC 存档目录，以及二者的大写变体。 */
+    private fun candidateSaveDirs(gameRoot: File): List<File> {
+        val engineDir = engineSaveDirectory(gameRoot)
+        val pcDir = pcSaveDirectory(gameRoot)
+        return listOf(
+            engineDir,
+            File(gameRoot, "Savedata"),
+            pcDir,
+            File(pcDir.parentFile, "Save"),
+        )
+    }
+
+    /** 在单个目录直接子文件中检测标准格式存档与哈希存档。 */
+    fun detectIn(saveDir: File, engine: EngineType): Detection {
         if (standardExtension(engine) == null || !saveDir.isDirectory) return Detection(emptyList(), 0)
         val standard = mutableListOf<File>()
         var hashed = 0
@@ -113,42 +169,16 @@ object RpgSaveFormat {
         return Detection(standard, hashed)
     }
 
-    /**
-     * 汇总探测所有候选存档目录：`save/`、历史大写 `Save/`，以及冗余包装的 `save/save/`
-     * （导入带单层文件夹的备份包时会出现该形态）。按规范化路径去重，避免大小写不敏感文件系统
-     * 上同一目录被重复计数。转化始终写回 `save/` 根，因此命中的嵌套文件会被归位。
-     */
-    fun detectAny(saveDir: File, engine: EngineType): Detection {
-        if (standardExtension(engine) == null) return Detection(emptyList(), 0)
-        val seen = mutableSetOf<String>()
-        val files = mutableListOf<File>()
-        var hashed = 0
-        candidateSaveDirs(saveDir).forEach { root ->
-            if (!seen.add(pathKey(root))) return@forEach
-            val detection = detect(root, engine)
-            files += detection.standardFiles
-            hashed += detection.hashedCount
-        }
-        return Detection(files, hashed)
-    }
-
-    /** 候选存档目录：本体、历史大写、以及冗余 `save/save`（低风险自愈形态）。 */
-    private fun candidateSaveDirs(saveDir: File): List<File> = listOf(
-        saveDir,
-        legacyCaseSaveDirectory(saveDir),
-        File(saveDir, "save"),
-        File(saveDir, "Save"),
-    )
-
     private fun pathKey(file: File): String =
         runCatching { file.canonicalPath }.getOrDefault(file.absolutePath).lowercase(Locale.ROOT)
+
+    // ===== 名称映射 =====
 
     /** 标准文件名判定（`global|config|fileN` + 引擎扩展名 + MV 可带 `.bak`）。 */
     fun isStandardName(name: String, engine: EngineType): Boolean {
         val ext = standardExtension(engine) ?: return false
         val lower = name.lowercase(Locale.ROOT)
         val backupSuffix = "$ext.bak"
-        // 必须先判定 .bak 后缀：扩展名判定对 "global.rpgsave.bak" 不成立（结尾是 .bak）
         if (lower.endsWith(backupSuffix)) {
             if (!supportsBackup(engine)) return false
             return isStandardStem(lower.removeSuffix(backupSuffix))
@@ -173,14 +203,7 @@ object RpgSaveFormat {
             else -> return null
         }
         if (!isStandardStem(stem)) return null
-        val base = when {
-            stem == "global" -> if (engine == EngineType.RPG_MV) "RPG Global" else "global"
-            stem == "config" -> if (engine == EngineType.RPG_MV) "RPG Config" else "config"
-            else -> {
-                val id = stem.removePrefix("file")
-                if (engine == EngineType.RPG_MV) "RPG File$id" else "file$id"
-            }
-        }
+        val base = tyranorBase(stem, engine) ?: return null
         return base + (if (isBackup) "bak" else "") + ".bin"
     }
 
@@ -200,6 +223,56 @@ object RpgSaveFormat {
         return stem + ext + (if (isBackup) ".bak" else "")
     }
 
-    /** 哈希存档名（key_<sha256>.bin）判定，供 UI 报告。 */
+    private fun tyranorBase(standardStem: String, engine: EngineType): String? {
+        val mv = engine == EngineType.RPG_MV
+        return when {
+            standardStem == "global" -> if (mv) "RPG Global" else "global"
+            standardStem == "config" -> if (mv) "RPG Config" else "config"
+            standardStem.startsWith("file") -> {
+                val id = standardStem.removePrefix("file")
+                if (mv) "RPG File$id" else "file$id"
+            }
+            else -> null
+        }
+    }
+
+    /** 哈希存档名（key_<sha256>.bin）判定。 */
     fun isHashedTyranorName(name: String): Boolean = HASHED_KEY_NAME.matches(name)
+
+    /**
+     * 哈希存档名反解为标准文件名：枚举引擎可能用到的键（`RPG Global`/`RPG FileN`/…+bak 及 MZ 变体）
+     * 逐个 sha256 比对，命中即返回标准名；无法还原（插件自定义键）返回 null。
+     */
+    fun hashedToStandardName(name: String, engine: EngineType): String? {
+        val hash = HASHED_KEY_NAME.matchEntire(name)?.groupValues?.get(1)?.lowercase(Locale.ROOT) ?: return null
+        val ext = standardExtension(engine) ?: return null
+        val mv = engine == EngineType.RPG_MV
+        val candidates = buildList {
+            add((if (mv) "RPG Global" else "global") to "global")
+            add((if (mv) "RPG Config" else "config") to "config")
+            if (mv) {
+                add("RPG Globalbak" to "global")
+                add("RPG Configbak" to "config")
+            }
+            for (slot in 1..MAX_SAVE_SLOT) {
+                add((if (mv) "RPG File$slot" else "file$slot") to "file$slot")
+                if (mv) add("RPG File${slot}bak" to "file$slot")
+            }
+        }
+        for ((key, stem) in candidates) {
+            if (sha256(key) != hash) continue
+            val isBackup = key.endsWith("bak")
+            return stem + ext + (if (isBackup) ".bak" else "")
+        }
+        return null
+    }
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+
+    private const val MAX_ENTRY_SEARCH_DEPTH = 2
+    private val WEB_ENTRY_SUBDIRS = arrayOf(
+        "www", "resources", "app.asar", "app", "tyrano", "data", "scenario", "system", "game",
+    )
 }

@@ -32,7 +32,6 @@ import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.RpgSaveFormatConverter
 import com.tyranor.next.core.game.scan.EngineScanner
@@ -215,35 +214,33 @@ object EngineLauncher {
         }
 
     /**
-     * RPG Maker MV/MZ 存档格式确认弹窗的触发条件：有效存档目录内存在 JoiPlay/PC 标准格式存档
-     * （`global.rpgsave` / `fileN.rpgsave` / MZ `.rmmzsave` 及 MV 的 `.bak`）时，
-     * 返回检测结果（供弹窗展示可转化数与哈希存档数）；无待转化项返回 null。
-     * UI 层据此弹窗，用户选择经 [convertRpgSaveFormat] 执行。含目录枚举的 IO，切 IO 执行。
+     * RPG Maker MV/MZ 存档格式确认弹窗的触发条件：引擎存档目录（`<游戏根>/savedata`）或
+     * JoiPlay/PC 存档目录（`<内容根>/save`）内存在标准格式存档（`global.rpgsave` /
+     * `fileN.rpgsave` / MZ `.rmmzsave` 及 MV 的 `.bak`）时，返回检测结果供弹窗展示；
+     * 无待转化项返回 null。UI 层据此弹窗，用户选择经 [convertRpgSaveFormat] 执行。
+     * 含目录枚举的 IO，切 IO 执行。
      */
     suspend fun rpgSaveFormatPending(context: Context, game: ScanGame): RpgSaveFormat.Detection? =
         withContext(Dispatchers.IO) {
-            val saveDir = effectiveRpgSaveDirectory(context, game) ?: return@withContext null
-            RpgSaveFormat.detectAny(saveDir, game.engine).takeIf { it.convertibleCount > 0 }
+            val gameDir = effectiveRpgGameDirectory(context, game) ?: return@withContext null
+            RpgSaveFormat.detect(gameDir, game.engine).takeIf { it.convertibleCount > 0 }
         }
 
     /**
-     * 执行 MV/MZ 存档格式转化（标准 → Tyranor）。返回转化计数供 UI 提示；
+     * 执行 MV/MZ 存档格式转化（标准 → Tyranor），输出到引擎存档目录。返回转化计数供 UI 提示；
      * 存档目录不可用等异常向上抛出由调用方处理。
      */
     suspend fun convertRpgSaveFormat(context: Context, game: ScanGame): RpgSaveFormat.ConvertResult =
         withContext(Dispatchers.IO) {
-            val saveDir = effectiveRpgSaveDirectory(context, game)
-                ?: throw java.io.IOException("cannot resolve save directory for ${game.uri}")
-            RpgSaveFormatConverter.convert(saveDir, game.engine)
+            val gameDir = effectiveRpgGameDirectory(context, game)
+                ?: throw java.io.IOException("cannot resolve game directory for ${game.uri}")
+            RpgSaveFormatConverter.convert(gameDir, game.engine)
         }
 
-    /**
-     * MV/MZ 的有效存档目录（含「独立存档」开关）：与存档管理的 [GameSaveManager.resolveSaveLocation]
-     * 同源，保证检测/转化/导出/列表指向同一处。非 RPG 引擎或目录不可解析时返回 null。
-     */
-    private fun effectiveRpgSaveDirectory(context: Context, game: ScanGame): File? {
+    /** MV/MZ 的游戏本地目录；非 RPG 引擎或无法解析时返回 null。 */
+    private fun effectiveRpgGameDirectory(context: Context, game: ScanGame): File? {
         if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return null
-        return GameSaveManager(context).resolveSaveLocation(game).directory
+        return resolveGameDirectory(context, game)?.let(::File)
     }
 
     /**
