@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tyranor.next.R
+import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.ui.common.LiquidGlassNavItem
@@ -61,6 +63,7 @@ import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.settings.SettingsScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 // 底部导航栏 Tab 定义
@@ -83,6 +86,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
   var selectedIndex by rememberSaveable { mutableStateOf(0) }
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
+  val interactScope = rememberCoroutineScope()
   val unselectedColor = UnselectedGrey
   // 导航栏样式：应用设置 → 默认 / 圆角液态玻璃（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
@@ -94,6 +98,11 @@ fun MainScreen(modifier: Modifier = Modifier) {
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
     libraryViewModel.refreshFromStorage()
+    // 存档互通前台兜底：对已退出会话的待回写游戏补一次 Tyranor→标准同步
+    // （引擎退出后 500ms 强杀、无回调，故在应用回到前台时补齐）。
+    interactScope.launch {
+      runCatching { EngineLauncher.flushPendingSaveSync(context) }
+    }
   }
   val liquidGlass = AppSettingsStore.navStyleState.value == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
   val tabLabels = tabItems.map { stringResource(it.labelRes) }

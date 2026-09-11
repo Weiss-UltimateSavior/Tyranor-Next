@@ -52,6 +52,7 @@ object EngineSettingsStore {
     const val KEY_TYRANO_SCOPED_SAVE_DIR = "tyrano_scoped_save_dir"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
     const val KEY_RPG_LEGACY_RENDERER = "rpg_legacy_renderer"
+    const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val KEY_RPG_MV_ENGINE_VERSION = "rpg_mv_engine_version"
     const val KEY_RPG_MZ_ENGINE_VERSION = "rpg_mz_engine_version"
 
@@ -440,6 +441,8 @@ object EngineSettingsStore {
     fun setRpgMakerModEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_MAKER_MOD_ENABLED, b).apply()
     fun isRpgLegacyRenderer(c: Context): Boolean = prefs(c).getBoolean(KEY_RPG_LEGACY_RENDERER, false)
     fun setRpgLegacyRenderer(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_LEGACY_RENDERER, b).apply()
+    fun isRpgSaveInterop(c: Context): Boolean = prefs(c).getBoolean(KEY_RPG_SAVE_INTEROP, false)
+    fun setRpgSaveInterop(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_SAVE_INTEROP, b).apply()
 
     // ---------- RPG Maker MV / MZ ----------
     fun getRpgMvEngineVersion(c: Context): String =

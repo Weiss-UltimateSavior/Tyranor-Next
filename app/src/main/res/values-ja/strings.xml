@@ -220,6 +220,11 @@
     <string name="engine_settings_external_network">外部ネットワークを許可</string>
     <string name="engine_settings_game_modifier">ゲーム改造ツール</string>
     <string name="engine_settings_legacy_renderer">PIXI 互換レンダリング（TynMVエンジン セッションのみ有効）</string>
+    <string name="engine_settings_save_interop">セーブ相互運用（MV/MZ）</string>
+    <string name="save_sync_now">セーブを今すぐ同期</string>
+    <string name="save_sync_result">同期完了：取込 %1$d、書出 %2$d、上書 %3$d、削除退避 %4$d</string>
+    <string name="save_sync_result_no_change">同期完了：両側のセーブは一致しています</string>
+    <string name="save_sync_unmapped">識別できないセーブ %1$d 件は同期されません</string>
     <string name="engine_settings_engine_version_mv">エンジンバージョン - MV</string>
     <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。モジュールのインストール後は既定で有効です。</string>

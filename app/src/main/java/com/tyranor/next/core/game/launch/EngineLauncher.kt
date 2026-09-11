@@ -32,8 +32,12 @@ import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.RpgSaveFormatConverter
+import com.tyranor.next.core.game.save.RpgSavePendingStore
+import com.tyranor.next.core.game.save.RpgSaveSync
+import com.tyranor.next.core.game.save.RpgSaveSyncState
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.scan.GameDirFingerprint
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
@@ -144,6 +148,20 @@ object EngineLauncher {
         }
         requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
         EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let { return it }
+        // MV/MZ 存档互通开启时，启动前先同步一次（补上次回写 + 本次导入），并登记待回写。
+        // 登记与同步结果无关（即使本次同步失败，退出后仍要回写本次会话的新存档）；
+        // 同步失败不阻断启动（best-effort，下次启动/前台兜底会重试）。
+        if (isRpgSaveInteropEnabled(context, game)) {
+            recordPendingSaveSync(context, game.uri)
+            try {
+                val result = syncRpgSavesForDirectory(context, game.uri, File(path), game.engine)
+                Log.i(TAG, "rpg save interop sync uri=${game.uri} imported=${result.imported} exported=${result.exported} toTyranor=${result.toTyranor} toStandard=${result.toStandard} deleted=${result.movedToDeleted} failed=${result.failed}")
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Log.w(TAG, "rpg save interop sync failed uri=${game.uri}", t)
+            }
+        }
         val krSafMirror = if (
             game.engine == EngineType.KIRIKIRI && EngineScanner.isRemovableStoragePath(path)
         ) {
@@ -240,6 +258,107 @@ object EngineLauncher {
     private fun effectiveRpgGameDirectory(context: Context, game: ScanGame): File? {
         if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return null
         return resolveGameDirectory(context, game)?.let(::File)
+    }
+
+    /**
+     * MV/MZ 存档互通生效值：单游戏覆盖优先，否则全局；非 RPG 引擎恒为 false。
+     * 读取单游戏覆盖会命中 DB，可能阻塞——UI 侧请在协程/IO 线程调用。
+     */
+    fun isRpgSaveInteropEnabled(context: Context, game: ScanGame): Boolean =
+        RpgSaveFormat.isRpgWebEngine(game.engine) &&
+            (PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_SAVE_INTEROP)
+                ?: EngineSettingsStore.isRpgSaveInterop(context))
+
+    /** 互通开关生效值（按 gameId/engine，不依赖 ScanGame），供前台兜底复用。 */
+    private fun isRpgSaveInteropEnabled(context: Context, gameUri: String, engine: EngineType): Boolean =
+        RpgSaveFormat.isRpgWebEngine(engine) &&
+            (PerGameSettingsStore.getBool(context, gameUri, PerGameSettingsStore.F_RPG_SAVE_INTEROP)
+                ?: EngineSettingsStore.isRpgSaveInterop(context))
+
+    /**
+     * 执行一次 MV/MZ 存档互通双向同步（标准侧 `<内容根>/save` ⇄ Tyranor 侧有效存档目录）。
+     * 返回同步结果供 UI 提示；非 RPG 引擎返回空结果。含文件 IO，切 IO 执行。
+     */
+    suspend fun syncRpgSaves(context: Context, game: ScanGame): RpgSaveSync.Result =
+        withContext(Dispatchers.IO) {
+            if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return@withContext RpgSaveSync.Result()
+            val gameDir = resolveGameDirectory(context, game)?.let(::File)
+                ?: throw java.io.IOException("cannot resolve game directory for ${game.uri}")
+            syncRpgSavesForDirectory(context, game.uri, gameDir, game.engine)
+        }
+
+    /** 同步核心（无 Context 依赖游戏解析）：供启动/前台兜底/手动入口共用。 */
+    private fun syncRpgSavesForDirectory(
+        context: Context,
+        gameUri: String,
+        gameDir: File,
+        engine: EngineType,
+    ): RpgSaveSync.Result {
+        val standardDir = RpgSaveFormat.standardSaveDirectory(gameDir)
+        val tyranorDir = GameSaveManager(context).effectiveTyranoFamilySaveDirectory(gameUri, gameDir.absolutePath)
+            ?: gameDir.resolve("savedata")
+        return RpgSaveSync.sync(
+            standardDir = standardDir,
+            tyranorDir = tyranorDir,
+            engine = engine,
+            stateStore = RpgSaveSyncState.forContext(context),
+            gameKey = gameUri,
+        )
+    }
+
+    /** 记录待回写的游戏（应用回到前台时对已退出会话补一次同步）。 */
+    fun recordPendingSaveSync(context: Context, gameUri: String) {
+        if (gameUri.isBlank()) return
+        RpgSavePendingStore.add(context, gameUri)
+    }
+
+    /**
+     * 应用回到前台时调用：对每个待回写游戏，若其引擎会话进程已退出，则补一次同步并清除记录。
+     * 只处理「确认已退出」的游戏，避免与运行中的引擎并发读写。
+     */
+    suspend fun flushPendingSaveSync(context: Context): Int = withContext(Dispatchers.IO) {
+        val pending = RpgSavePendingStore.all(context)
+        if (pending.isEmpty()) return@withContext 0
+        var synced = 0
+        pending.forEach { gameUri ->
+            val game = runCatching {
+                EngineScanner.loadGames(context).firstOrNull { it.uri == gameUri }
+            }.getOrNull()
+            if (game == null || !RpgSaveFormat.isRpgWebEngine(game.engine)) {
+                RpgSavePendingStore.remove(context, gameUri)
+                return@forEach
+            }
+            // 开关关闭后不再回写（也可能是本次登记后用户关掉了互通）
+            if (!isRpgSaveInteropEnabled(context, game.uri, game.engine)) {
+                RpgSavePendingStore.remove(context, gameUri)
+                return@forEach
+            }
+            if (isEngineSessionRunning(context, game)) return@forEach
+            val gameDir = runCatching { resolveGameDirectory(context, game)?.let(::File) }.getOrNull()
+            if (gameDir == null) {
+                RpgSavePendingStore.remove(context, gameUri)
+                return@forEach
+            }
+            runCatching {
+                syncRpgSavesForDirectory(context, gameUri, gameDir, game.engine)
+            }.onSuccess {
+                synced++
+                RpgSavePendingStore.remove(context, gameUri)
+            }
+        }
+        synced
+    }
+
+    /** 对应 host 进程是否仍在运行（`:tyrano` / `:rpgmaker`），用于判断会话是否已结束。 */
+    private fun isEngineSessionRunning(context: Context, game: ScanGame): Boolean {
+        val suffix = if (game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ) {
+            // v1/v2 跑在 :rpgmaker，v0 跑在 :tyrano；两者任一在跑都视为运行中
+            listOf(":rpgmaker", ":tyrano")
+        } else {
+            listOf(":tyrano")
+        }
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+        return am.runningAppProcesses.orEmpty().any { proc -> suffix.any { proc.processName.endsWith(it) } }
     }
 
     /**

@@ -38,6 +38,7 @@ internal object GameOverridePartitions {
     const val KEY_ART_PATCH = "art_auto_patch"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
     const val KEY_RPG_LEGACY_RENDERER = "rpg_legacy_renderer"
+    const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val KEY_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val KEY_RPG_MZ_VERSION = "rpg_mz_engine_version"
     const val KEY_TY_SCOPED = "ty_scoped"
@@ -56,7 +57,7 @@ internal object GameOverridePartitions {
     // v0 宿主与 v1/v2 宿主的逐游戏覆盖都在这一条 blob 里，显式建模，
     // 不依赖“未识别键兜底归入 tyrano”的 else 路径，防止未来收紧分区时丢键
     val TYRANO_KEYS: Set<String> = setOf(
-        KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED,
+        KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED, KEY_RPG_SAVE_INTEROP,
         KEY_RPG_LEGACY_RENDERER, KEY_RPG_MV_VERSION, KEY_RPG_MZ_VERSION,
     )
     val RENPY_KEYS: Set<String> = setOf(KEY_RENPY_VERSION)

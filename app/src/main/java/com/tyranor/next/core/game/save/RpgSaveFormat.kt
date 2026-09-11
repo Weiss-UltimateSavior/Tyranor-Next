@@ -92,10 +92,37 @@ object RpgSaveFormat {
     // ===== 路径解析 =====
 
     /**
-     * MV/MZ 存档目录（与 Tyrano 一致）：`<游戏根>/savedata`，即 engine 宿主 resolveSaveDirectory
-     * 读写的位置。检测、转化、导出、列表全部以本函数为唯一来源，避免多套路径漂移。
+     * Tyranor 侧存档目录（engine 宿主 resolveSaveDirectory 读写处）：`<游戏根>/savedata`。
+     * 检测、转化、导出、列表以本函数为唯一来源，避免多套路径漂移。
      */
     fun saveDirectory(gameRoot: File): File = File(gameRoot, "savedata")
+
+    /**
+     * 标准侧（JoiPlay/PC）存档目录：`<内容根>/save`。内容根 = 含 `index.html` / `app.asar`
+     * 的目录，与 engine 入口探测同序——MV 常见 `.../Game/www` ⇒ `.../Game/www/save`；
+     * 根目录布局（含 MZ 无 www）⇒ `<游戏根>/save`。定位失败回退 `<游戏根>/save`。
+     */
+    fun standardSaveDirectory(gameRoot: File): File {
+        val contentRoot = locateContentRoot(gameRoot) ?: return File(gameRoot, "save")
+        return File(contentRoot, "save")
+    }
+
+    /** 递归定位游戏内容根（含 index.html / app.asar 的目录），与 engine 入口探测同序。 */
+    private fun locateContentRoot(dir: File, depth: Int = 0): File? {
+        if (!dir.isDirectory) return null
+        dir.resolve("app.asar").takeIf { it.isFile }?.let { return dir }
+        dir.resolve("resources/app.asar").takeIf { it.isFile }?.let { return dir }
+        dir.resolve("app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let { return it }
+        dir.resolve("resources/app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let { return it }
+        dir.resolve("index.html").takeIf { it.isFile }?.let { return dir }
+        if (depth >= MAX_ENTRY_SEARCH_DEPTH) return null
+        for (name in WEB_ENTRY_SUBDIRS) {
+            val sub = dir.resolve(name)
+            if (!sub.isDirectory) continue
+            locateContentRoot(sub, depth + 1)?.let { return it }
+        }
+        return null
+    }
 
     // ===== 检测 =====
 
@@ -201,6 +228,54 @@ object RpgSaveFormat {
         }
     }
 
+    // ===== 槽位键（同步用）=====
+    // 槽位键 = 归一化存档位标识：`global` / `config` / `fileN`，MV 备份追加 `.bak`。
+    // 两侧文件名都可映射到同一槽位键，便于判断「同一个存档位」是否两边都存在。
+
+    private fun normalizeSlotStem(stem: String): String? =
+        if (stem == "global" || stem == "config" || Regex("^file\\d+$").matches(stem)) stem else null
+
+    /** 标准文件名 → 槽位键；不匹配返回 null。 */
+    fun standardSlot(name: String, engine: EngineType): String? {
+        val ext = standardExtension(engine) ?: return null
+        val lower = name.lowercase(Locale.ROOT)
+        val backupSuffix = "$ext.bak"
+        val isBackup = lower.endsWith(backupSuffix)
+        if (isBackup && !supportsBackup(engine)) return null
+        val stem = when {
+            isBackup -> lower.removeSuffix(backupSuffix)
+            lower.endsWith(ext) -> lower.removeSuffix(ext)
+            else -> return null
+        }
+        if (normalizeSlotStem(stem) == null) return null
+        return stem + (if (isBackup) ".bak" else "")
+    }
+
+    /** Tyranor 文件名（含哈希名反解）→ 槽位键；无法还原返回 null。 */
+    fun tyranorSlot(name: String, engine: EngineType): String? {
+        val standard = tyranorToStandard(name, engine) ?: hashedToStandardName(name, engine) ?: return null
+        return standardSlot(standard, engine)
+    }
+
+    /** 槽位键 → 标准文件名。 */
+    fun standardNameForSlot(slot: String, engine: EngineType): String? {
+        val ext = standardExtension(engine) ?: return null
+        val isBackup = slot.endsWith(".bak")
+        if (isBackup && !supportsBackup(engine)) return null
+        val stem = if (isBackup) slot.removeSuffix(".bak") else slot
+        if (normalizeSlotStem(stem) == null) return null
+        return stem + ext + (if (isBackup) ".bak" else "")
+    }
+
+    /** 槽位键 → Tyranor 文件名。 */
+    fun tyranorNameForSlot(slot: String, engine: EngineType): String? {
+        val isBackup = slot.endsWith(".bak")
+        if (isBackup && !supportsBackup(engine)) return null
+        val stem = if (isBackup) slot.removeSuffix(".bak") else slot
+        val base = tyranorBase(stem, engine) ?: return null
+        return base + (if (isBackup) "bak" else "") + ".bin"
+    }
+
     /** 哈希存档名（key_<sha256>.bin）判定。 */
     fun isHashedTyranorName(name: String): Boolean = HASHED_KEY_NAME.matches(name)
 
@@ -235,4 +310,9 @@ object RpgSaveFormat {
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
+
+    private const val MAX_ENTRY_SEARCH_DEPTH = 2
+    private val WEB_ENTRY_SUBDIRS = arrayOf(
+        "www", "resources", "app.asar", "app", "tyrano", "data", "scenario", "system", "game",
+    )
 }

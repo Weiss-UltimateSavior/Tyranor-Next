@@ -220,6 +220,11 @@
     <string name="engine_settings_external_network">Allow external network</string>
     <string name="engine_settings_game_modifier">Game modifier</string>
     <string name="engine_settings_legacy_renderer">PIXI legacy renderer (only applies to TynMV engine sessions)</string>
+    <string name="engine_settings_save_interop">Save interop (MV/MZ)</string>
+    <string name="save_sync_now">Sync saves now</string>
+    <string name="save_sync_result">Sync done: imported %1$d, exported %2$d, overwritten %3$d, deleted %4$d</string>
+    <string name="save_sync_result_no_change">Sync done: both sides already match</string>
+    <string name="save_sync_unmapped">%1$d unrecognized save files were not synced</string>
     <string name="engine_settings_engine_version_mv">Engine version - MV</string>
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py uses an external APK engine module and opens the plugin matching the selected version. Modules are enabled by default once installed.</string>

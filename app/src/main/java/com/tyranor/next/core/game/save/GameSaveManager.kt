@@ -85,24 +85,17 @@ class GameSaveManager(private val context: Context) {
             EngineType.RPG_MZ -> {
                 // Tyrano 与 RPG Maker Web 共用宿主与「独立存档目录」开关；
                 // 非独立存档时同为引擎宿主的 <游戏根>/savedata（与 engine resolveSaveDirectory 一致）。
-                val scoped = PerGameSettingsStore.getBool(appContext, game.uri, PerGameSettingsStore.F_TY_SCOPED)
-                    ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
-                if (scoped) {
-                    val external = appContext.getExternalFilesDir(null)
-                        ?: return SaveLocation(null, text(R.string.save_error_tyrano_external_unavailable), false)
-                    SaveLocation(
-                        File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root)),
-                        text(R.string.save_location_engine_scoped, game.engine.displayName),
-                        true,
-                    )
-                } else {
-                    // Tyrano 与 MV/MZ 同为引擎宿主的 <游戏根>/savedata（RpgSaveFormat.saveDirectory 同值）
-                    SaveLocation(
-                        File(root, "savedata"),
-                        text(R.string.save_location_engine_game_dir, game.engine.displayName),
-                        true,
-                    )
-                }
+                val dir = effectiveTyranoFamilySaveDirectory(game, root)
+                    ?: return SaveLocation(null, text(R.string.save_error_tyrano_external_unavailable), false)
+                val scoped = isTyranoFamilyScoped(game.uri)
+                SaveLocation(
+                    dir,
+                    text(
+                        if (scoped) R.string.save_location_engine_scoped else R.string.save_location_engine_game_dir,
+                        game.engine.displayName,
+                    ),
+                    true,
+                )
             }
             EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY ->
                 SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
@@ -110,6 +103,26 @@ class GameSaveManager(private val context: Context) {
             EngineType.UNKNOWN -> SaveLocation(null, text(R.string.save_location_unknown_unsupported), false)
         }
     }
+
+    /**
+     * Tyrano 家族（Tyrano/MV/MZ）的有效存档目录：独立存档开关开启时为外部私有目录
+     * （需要外部存储可用，不可用时返回 null），否则 `<游戏根>/savedata`。
+     * 与 engine 宿主 resolveSaveDirectory 语义一致；同步/列表/导出共用，避免路径漂移。
+     */
+    fun effectiveTyranoFamilySaveDirectory(game: ScanGame, root: String): File? =
+        effectiveTyranoFamilySaveDirectory(game.uri, root)
+
+    /** 同上，按 gameId（uri）而非 ScanGame 调用，供同步等仅有 uri 的场景复用。 */
+    fun effectiveTyranoFamilySaveDirectory(gameId: String, root: String): File? {
+        if (!isTyranoFamilyScoped(gameId)) return File(root, "savedata")
+        val external = appContext.getExternalFilesDir(null) ?: return null
+        return File(File(File(external, "save"), "tyrano"), EngineScanner.safeSaveName(root))
+    }
+
+    /** Tyrano 家族独立存档开关：单游戏覆盖优先，否则全局。 */
+    fun isTyranoFamilyScoped(gameId: String): Boolean =
+        PerGameSettingsStore.getBool(appContext, gameId, PerGameSettingsStore.F_TY_SCOPED)
+            ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
 
     fun listSaveFiles(game: ScanGame): List<File> {
         val directory = resolveSaveLocation(game).directory ?: return emptyList()

@@ -52,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
+import com.tyranor.next.core.game.save.RpgSaveSync
+import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -118,6 +120,9 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveExportedCountFormat = stringResource(R.string.save_exported_count)
     val saveImportedCountFormat = stringResource(R.string.save_imported_count)
     val saveDeletedCountFormat = stringResource(R.string.save_deleted_count)
+    val saveSyncResultFormat = stringResource(R.string.save_sync_result)
+    val saveSyncNoChangeMessage = stringResource(R.string.save_sync_result_no_change)
+    val saveSyncUnmappedFormat = stringResource(R.string.save_sync_unmapped)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf(manager.resolveSaveLocation(game)) }
     var fileCount by remember { mutableStateOf(manager.listSaveFiles(game).size) }
@@ -133,6 +138,17 @@ private fun SaveManagementScreen(game: ScanGame) {
     fun refresh() {
         location = manager.resolveSaveLocation(game)
         fileCount = manager.listSaveFiles(game).size
+    }
+
+    /** 把同步结果格式化成用户可读文案：无变化提示、有变化给明细、无法识别的追加说明。 */
+    fun formatSyncResult(result: RpgSaveSync.Result): String {
+        val base = if (result.changed == 0) {
+            saveSyncNoChangeMessage
+        } else {
+            val overwritten = result.toTyranor + result.toStandard
+            saveSyncResultFormat.format(result.imported, result.exported, overwritten, result.movedToDeleted)
+        }
+        return if (result.unmapped > 0) "$base\n${saveSyncUnmappedFormat.format(result.unmapped)}" else base
     }
 
     fun runSaveTask(block: suspend () -> String) {
@@ -210,6 +226,16 @@ private fun SaveManagementScreen(game: ScanGame) {
                     } else {
                         exportFormat = GameSaveManager.ExportFormat.TYRANOR
                         exportLauncher.launch(defaultArchiveName(game))
+                    }
+                }
+            }
+            if (rpgWebGame) {
+                item {
+                    SaveActionCard(stringResource(R.string.save_sync_now)) {
+                        runSaveTask {
+                            val result = EngineLauncher.syncRpgSaves(context, game)
+                            formatSyncResult(result)
+                        }
                     }
                 }
             }

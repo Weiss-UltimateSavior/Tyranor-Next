@@ -131,9 +131,14 @@ fun HomeScreen(
         onRecentRemoved(target)
     }
 
-    /** Artemis 选择（或无需补丁）后，再检查 MV/MZ 存档格式；有标准存档则弹窗，否则直接启动。 */
+    /** Artemis 选择（或无需补丁）后，再检查 MV/MZ 存档格式；有标准存档则弹窗，否则直接启动。
+     *  开启存档互通时跳过弹窗——启动前同步已覆盖其语义。 */
     fun launchWithSaveFormatGate(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
         scope.launch {
+            if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
+                launchError = EngineLauncher.launch(context, game, patchChoice)
+                return@launch
+            }
             val pending = EngineLauncher.rpgSaveFormatPending(context, game)
             if (pending != null) {
                 saveFormatTarget = game

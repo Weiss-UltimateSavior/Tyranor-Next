@@ -695,6 +695,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var tyScoped by remember { mutableStateOf(EngineSettingsStore.isTyranoScopedSaveDir(ctx)) }
     var rpgMakerMod by remember { mutableStateOf(EngineSettingsStore.isRpgMakerModEnabled(ctx)) }
     var rpgLegacyRenderer by remember { mutableStateOf(EngineSettingsStore.isRpgLegacyRenderer(ctx)) }
+    var rpgSaveInterop by remember { mutableStateOf(EngineSettingsStore.isRpgSaveInterop(ctx)) }
     var rpgMvVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMvEngineVersion(ctx)) }
     var rpgMzVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMzEngineVersion(ctx)) }
     var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
@@ -744,6 +745,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setTyranoScopedSaveDir(ctx, tyScoped)
         EngineSettingsStore.setRpgMakerModEnabled(ctx, rpgMakerMod)
         EngineSettingsStore.setRpgLegacyRenderer(ctx, rpgLegacyRenderer)
+        EngineSettingsStore.setRpgSaveInterop(ctx, rpgSaveInterop)
         EngineSettingsStore.setRpgMvEngineVersion(ctx, rpgMvVersion)
         EngineSettingsStore.setRpgMzEngineVersion(ctx, rpgMzVersion)
         EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
@@ -774,7 +776,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
-                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgMvVersion, rpgMzVersion, renpyVersion, fontLauncher,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, renpyVersion, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -807,6 +809,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onTyScoped = { tyScoped = it },
                 onRpgMakerMod = { rpgMakerMod = it },
                 onRpgLegacyRenderer = { rpgLegacyRenderer = it },
+                onRpgSaveInterop = { rpgSaveInterop = it },
                 onRpgMvVersion = { rpgMvVersion = it },
                 onRpgMzVersion = { rpgMzVersion = it },
                 onRenpyVersion = { renpyVersion = it },
@@ -859,7 +862,7 @@ private fun LazyListPlaceholder(
     ons: EngineSettingsStore.Ons, artVersion: String, artRotate: Boolean, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
-    rpgLegacyRenderer: Boolean, rpgMvVersion: String, rpgMzVersion: String,
+    rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
     renpyVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
@@ -875,7 +878,7 @@ private fun LazyListPlaceholder(
     onArtSurfaceCache: (String) -> Unit, onArtFontCache: (String) -> Unit,
     onArtPowerSaving: (String) -> Unit,
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
-    onRpgLegacyRenderer: (Boolean) -> Unit, onRpgMvVersion: (String) -> Unit, onRpgMzVersion: (String) -> Unit,
+    onRpgLegacyRenderer: (Boolean) -> Unit, onRpgSaveInterop: (Boolean) -> Unit, onRpgMvVersion: (String) -> Unit, onRpgMzVersion: (String) -> Unit,
     onRenpyVersion: (String) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
@@ -1021,6 +1024,7 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = tyScoped, onCheckedChange = onTyScoped)
                 SwitchPreference(title = stringResource(R.string.engine_settings_game_modifier), checked = rpgMakerMod, onCheckedChange = onRpgMakerMod)
                 SwitchPreference(title = stringResource(R.string.engine_settings_legacy_renderer), checked = rpgLegacyRenderer, onCheckedChange = onRpgLegacyRenderer)
+                SwitchPreference(title = stringResource(R.string.engine_settings_save_interop), checked = rpgSaveInterop, onCheckedChange = onRpgSaveInterop)
                 DropdownRow(stringResource(R.string.engine_settings_engine_version_mv), rpgMvVersionOptions(), rpgMvVersion, onRpgMvVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_version_mz), rpgMzVersionOptions(), rpgMzVersion, onRpgMzVersion)
             }

@@ -220,6 +220,11 @@
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>
     <string name="engine_settings_legacy_renderer">PIXI 兼容渲染（仅 TynMV引擎 会话生效）</string>
+    <string name="engine_settings_save_interop">存档互通（MV/MZ）</string>
+    <string name="save_sync_now">立即同步存档</string>
+    <string name="save_sync_result">同步完成：导入 %1$d，导出 %2$d，覆盖 %3$d，删除归置 %4$d</string>
+    <string name="save_sync_result_no_change">同步完成：两侧存档已一致，无变化</string>
+    <string name="save_sync_unmapped">另有 %1$d 个无法识别的存档未互通</string>
     <string name="engine_settings_engine_version_mv">引擎版本 - MV</string>
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。</string>
