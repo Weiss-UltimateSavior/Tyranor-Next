@@ -214,11 +214,10 @@ object EngineLauncher {
         }
 
     /**
-     * RPG Maker MV/MZ 存档格式确认弹窗的触发条件：引擎存档目录（`<游戏根>/savedata`）或
-     * JoiPlay/PC 存档目录（`<内容根>/save`）内存在标准格式存档（`global.rpgsave` /
-     * `fileN.rpgsave` / MZ `.rmmzsave` 及 MV 的 `.bak`）时，返回检测结果供弹窗展示；
-     * 无待转化项返回 null。UI 层据此弹窗，用户选择经 [convertRpgSaveFormat] 执行。
-     * 含目录枚举的 IO，切 IO 执行。
+     * RPG Maker MV/MZ 存档格式确认弹窗的触发条件：存档目录（`<游戏根>/savedata`）内存在
+     * 标准格式存档（`global.rpgsave` / `fileN.rpgsave` / MZ `.rmmzsave` 及 MV 的 `.bak`）时，
+     * 返回检测结果供弹窗展示；无待转化项返回 null。UI 层据此弹窗，用户选择经
+     * [convertRpgSaveFormat] 执行。含目录枚举的 IO，切 IO 执行。
      */
     suspend fun rpgSaveFormatPending(context: Context, game: ScanGame): RpgSaveFormat.Detection? =
         withContext(Dispatchers.IO) {

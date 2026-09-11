@@ -150,31 +150,28 @@ class RpgSaveFormatTest {
     }
 
     @Test
-    fun detectFindsStandardSavesInPcSaveDirectory() {
-        // JoiPlay/PC 版放在 <内容根>/save（www/save），也要被发现
+    fun detectFindsStandardSavesInSaveDirectory() {
         val gameRoot = mvGameRoot()
-        val pcSave = gameRoot.resolve("www/save").apply { mkdirs() }
-        pcSave.resolve("global.rpgsave").writeText("a")
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        savedata.resolve("global.rpgsave").writeText("a")
 
         val detection = RpgSaveFormat.detect(gameRoot, EngineType.RPG_MV)
         assertEquals(1, detection.convertibleCount)
     }
 
     @Test
-    fun engineSaveDirectoryIsGameRootSavedata() {
+    fun detectToleratesLegacyUppercaseSavedata() {
         val gameRoot = mvGameRoot()
-        assertEquals(gameRoot.resolve("savedata").absolutePath, RpgSaveFormat.engineSaveDirectory(gameRoot).absolutePath)
+        val upper = gameRoot.resolve("Savedata").apply { mkdirs() }
+        upper.resolve("file1.rpgsave").writeText("a")
+
+        val detection = RpgSaveFormat.detect(gameRoot, EngineType.RPG_MV)
+        assertEquals(1, detection.convertibleCount)
     }
 
     @Test
-    fun pcSaveDirectoryUsesContentRootUnderWww() {
+    fun saveDirectoryIsGameRootSavedata() {
         val gameRoot = mvGameRoot()
-        assertEquals(gameRoot.resolve("www/save").absolutePath, RpgSaveFormat.pcSaveDirectory(gameRoot).absolutePath)
-    }
-
-    @Test
-    fun pcSaveDirectoryFallsBackToGameRootWithoutEntry() {
-        val gameRoot = temporaryFolder.newFolder("No Entry")
-        assertEquals(gameRoot.resolve("save").absolutePath, RpgSaveFormat.pcSaveDirectory(gameRoot).absolutePath)
+        assertEquals(gameRoot.resolve("savedata").absolutePath, RpgSaveFormat.saveDirectory(gameRoot).absolutePath)
     }
 }

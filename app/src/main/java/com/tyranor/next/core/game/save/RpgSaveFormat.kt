@@ -10,6 +10,9 @@ import java.util.Locale
  *
  * 两种格式内容字节级一致，仅文件名不同；转化是纯改名（不重编码）。
  *
+ * 存档目录统一为 `<游戏根>/savedata`（与 Tyrano 相同，engine 宿主读写处），检测/转化/导出/列表
+ * 均以 [saveDirectory] 为唯一来源。
+ *
  * MV（引擎经 webStorageKey 派生 `RPG ...` 键，含空格 → 桥按 legacy 文件名落盘或哈希）：
  * | Tyranor 格式        | 标准格式（JoiPlay/PC） |
  * | ------------------ | --------------------- |
@@ -89,41 +92,15 @@ object RpgSaveFormat {
     // ===== 路径解析 =====
 
     /**
-     * 引擎宿主实际读写存档的目录。engine 侧 resolveSaveDirectory 对 MV/MZ 非独立存档使用
-     * `<游戏根>/savedata`（与 Tyrano 一致），转化输出必须落在同一处引擎才读得到。
+     * MV/MZ 存档目录（与 Tyrano 一致）：`<游戏根>/savedata`，即 engine 宿主 resolveSaveDirectory
+     * 读写的位置。检测、转化、导出、列表全部以本函数为唯一来源，避免多套路径漂移。
      */
-    fun engineSaveDirectory(gameRoot: File): File = File(gameRoot, "savedata")
-
-    /**
-     * JoiPlay/PC 版默认存档目录：`<内容根>/save`（内容根 = 含 index.html / app.asar 的目录，
-     * 如 `.../Game/www`）。用于发现外部标准存档；存储位置解析失败时回退 `<游戏根>/save`。
-     */
-    fun pcSaveDirectory(gameRoot: File): File {
-        val contentRoot = locateContentRoot(gameRoot) ?: return File(gameRoot, "save")
-        return File(contentRoot, "save")
-    }
-
-    /** 递归定位游戏内容根（含 index.html / app.asar 的目录），与引擎入口探测同序。 */
-    private fun locateContentRoot(dir: File, depth: Int = 0): File? {
-        if (!dir.isDirectory) return null
-        dir.resolve("app.asar").takeIf { it.isFile }?.let { return dir }
-        dir.resolve("resources/app.asar").takeIf { it.isFile }?.let { return dir }
-        dir.resolve("app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let { return it }
-        dir.resolve("resources/app.asar").takeIf { it.isDirectory && it.resolve("index.html").isFile }?.let { return it }
-        dir.resolve("index.html").takeIf { it.isFile }?.let { return dir }
-        if (depth >= MAX_ENTRY_SEARCH_DEPTH) return null
-        for (name in WEB_ENTRY_SUBDIRS) {
-            val sub = dir.resolve(name)
-            if (!sub.isDirectory) continue
-            locateContentRoot(sub, depth + 1)?.let { return it }
-        }
-        return null
-    }
+    fun saveDirectory(gameRoot: File): File = File(gameRoot, "savedata")
 
     // ===== 检测 =====
 
     /**
-     * 汇总探测引擎存档目录与 JoiPlay/PC 存档目录（含各自大小写变体）下的标准存档。
+     * 探测存档目录下的标准格式存档与哈希存档（容忍历史大小写 `Savedata`）。
      * 仅扫各目录直接子文件（不递归），因此 `original/` 留底不会重复触发；按规范化路径去重。
      */
     fun detect(gameRoot: File, engine: EngineType): Detection {
@@ -131,7 +108,7 @@ object RpgSaveFormat {
         val seen = mutableSetOf<String>()
         val files = mutableListOf<File>()
         var hashed = 0
-        candidateSaveDirs(gameRoot).forEach { root ->
+        listOf(saveDirectory(gameRoot), File(gameRoot, "Savedata")).forEach { root ->
             if (!seen.add(pathKey(root))) return@forEach
             val detection = detectIn(root, engine)
             files += detection.standardFiles
@@ -139,18 +116,6 @@ object RpgSaveFormat {
         }
         files.sortBy { it.absolutePath.lowercase(Locale.ROOT) }
         return Detection(files, hashed)
-    }
-
-    /** 候选存档目录：引擎存档目录、PC 存档目录，以及二者的大写变体。 */
-    private fun candidateSaveDirs(gameRoot: File): List<File> {
-        val engineDir = engineSaveDirectory(gameRoot)
-        val pcDir = pcSaveDirectory(gameRoot)
-        return listOf(
-            engineDir,
-            File(gameRoot, "Savedata"),
-            pcDir,
-            File(pcDir.parentFile, "Save"),
-        )
     }
 
     /** 在单个目录直接子文件中检测标准格式存档与哈希存档。 */
@@ -270,9 +235,4 @@ object RpgSaveFormat {
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
-
-    private const val MAX_ENTRY_SEARCH_DEPTH = 2
-    private val WEB_ENTRY_SUBDIRS = arrayOf(
-        "www", "resources", "app.asar", "app", "tyrano", "data", "scenario", "system", "game",
-    )
 }

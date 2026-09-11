@@ -22,8 +22,7 @@ class RpgSaveFormatConverterTest {
     }
 
     @Test
-    fun convertsMvStandardSavesFromSavedataIncludingBackups() {
-        val gameRoot = mvGameRoot()
+    fun convertsMvStandardSavesFromSavedataIncludingBackups() {        val gameRoot = mvGameRoot()
         val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
         val globalBytes = "GLOBAL-DATA".toByteArray()
         val file1Bytes = "FILE1-DATA".toByteArray()
@@ -42,21 +41,6 @@ class RpgSaveFormatConverterTest {
         assertArrayEquals(bakBytes, savedata.resolve("RPG File1bak.bin").readBytes())
         assertFalse(savedata.resolve("global.rpgsave").exists())
         assertTrue(savedata.resolve("original/global.rpgsave").isFile)
-    }
-
-    @Test
-    fun pcSaveDirectorySourcesAreConvertedIntoEngineSaveDirectory() {
-        // JoiPlay/PC 标准存档位于 <内容根>/save，转化后写入 <游戏根>/savedata（引擎读取处）
-        val gameRoot = mvGameRoot()
-        val pcSave = gameRoot.resolve("www/save").apply { mkdirs() }
-        pcSave.resolve("file2.rpgsave").writeText("PC-SAVE")
-
-        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
-
-        assertEquals(1, result.converted)
-        assertEquals("PC-SAVE", gameRoot.resolve("savedata/RPG File2.bin").readText())
-        // 源文件在 PC 存档目录内留底
-        assertTrue(pcSave.resolve("original/file2.rpgsave").isFile)
     }
 
     @Test

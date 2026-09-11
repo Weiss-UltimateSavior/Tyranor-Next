@@ -96,6 +96,7 @@ class GameSaveManager(private val context: Context) {
                         true,
                     )
                 } else {
+                    // Tyrano 与 MV/MZ 同为引擎宿主的 <游戏根>/savedata（RpgSaveFormat.saveDirectory 同值）
                     SaveLocation(
                         File(root, "savedata"),
                         text(R.string.save_location_engine_game_dir, game.engine.displayName),
