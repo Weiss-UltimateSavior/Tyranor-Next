@@ -249,6 +249,11 @@ class GameSaveManager(private val context: Context) {
      * 仅触碰应用专属存储，绝不删除游戏目录内的任何文件。
      */
     fun cleanupAppData(game: ScanGame) {
+        // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
+        // 为键。若随游戏删除留下旧清单，同一 uri 的游戏被重新添加后，标准侧存档会被误判为
+        // 「Tyranor 侧已删除」而移入 deleted/；待回写记录则会在下次前台时指向已删除的游戏。
+        RpgSaveSyncState.forContext(appContext).clear(game.uri)
+        RpgSavePendingStore.remove(appContext, game.uri)
         val root = resolveGameDirectory(game) ?: return
         val targets = when (game.engine) {
             EngineType.KIRIKIRI -> {

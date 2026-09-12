@@ -26,6 +26,14 @@ object RpgSaveSync {
     /** 删除归置子目录（位于标准存档目录内）。 */
     const val DELETED_DIR = "deleted"
 
+    /**
+     * 进程级互斥：启动前同步、前台兜底回写、存档管理页「立即同步」可能并发触发，
+     * 交错复制会破坏「较新者胜」的 mtime 判定并让同步清单互相覆盖。所有同步入口在此
+     * 串行化，并与 [RpgSaveSyncState] 的清单读写共用同一把锁（删除游戏时的 clear 也走它）。
+     * 调用方均在 IO 线程，锁内是阻塞文件 IO，串行不会阻塞主线程。
+     */
+    private val syncLock: Any = RpgSaveSyncState.INTEROP_LOCK
+
     data class Result(
         /** 新 PC 存档导入到 Tyranor 的文件数。 */
         val imported: Int = 0,
@@ -73,6 +81,17 @@ object RpgSaveSync {
         engine: EngineType,
         stateStore: RpgSaveSyncState,
         gameKey: String,
+    ): Result = synchronized(syncLock) {
+        syncLocked(standardDirs, tyranorDir, engine, stateStore, gameKey)
+    }
+
+    /** [sync] 的实际实现；进入前已持有 [syncLock]，故可安全读写清单与两侧文件。 */
+    private fun syncLocked(
+        standardDirs: List<File>,
+        tyranorDir: File,
+        engine: EngineType,
+        stateStore: RpgSaveSyncState,
+        gameKey: String,
     ): Result {
         if (!RpgSaveFormat.isRpgWebEngine(engine)) return Result()
         if (standardDirs.isEmpty()) return Result()
@@ -111,12 +130,19 @@ object RpgSaveSync {
                         when {
                             s == t -> skipped++
                             s > t -> {
-                                // 首次同步该槽位时较旧的一方无历史记录，先留底再覆盖，避免误删唯一副本
-                                if (!hadPrevious) preserveLoser(tyr, tyranorDir, standardSide = false)
+                                // 首次同步该槽位时较旧一方无历史记录，先留底再覆盖，避免误删唯一副本；
+                                // 留底失败则中止本次覆盖（两侧原样保留、计入 failed、下轮重试），绝不先毁后写
+                                if (!hadPrevious && !preserveLoser(tyr, tyranorDir, standardSide = false)) {
+                                    throw IOException("cannot preserve ${tyr.absolutePath} before overwrite")
+                                }
                                 copyOverwrite(std, tyr); toTyranor++; tyrMtime = s
                             }
                             else -> {
-                                if (!hadPrevious) preserveLoser(std, std.parentFile ?: preferredStandardDir, standardSide = true)
+                                if (!hadPrevious &&
+                                    !preserveLoser(std, std.parentFile ?: preferredStandardDir, standardSide = true)
+                                ) {
+                                    throw IOException("cannot preserve ${std.absolutePath} before overwrite")
+                                }
                                 copyOverwrite(tyr, std); toStandard++; stdMtime = t
                             }
                         }
@@ -233,6 +259,7 @@ object RpgSaveSync {
             throw IOException("cannot create ${parent.absolutePath}")
         }
         val tmp = File(parent, target.name + ".sync_tmp." + System.nanoTime())
+        var committed = false
         try {
             source.inputStream().buffered().use { input ->
                 FileOutputStream(tmp).use { out ->
@@ -240,11 +267,19 @@ object RpgSaveSync {
                     out.fd.sync()
                 }
             }
-            if (!tmp.renameTo(target)) {
-                // rename 失败（目标被占用等）：删除目标后重试一次；仍失败则抛错（调用方保留清单、下轮重试）
+            if (tmp.renameTo(target)) {
+                committed = true
+            } else {
+                // rename 失败（目标被占用等）：删除目标后重试一次
                 target.delete()
-                if (!tmp.renameTo(target)) {
-                    throw IOException("cannot replace ${target.absolutePath}")
+                if (tmp.renameTo(target)) {
+                    committed = true
+                } else {
+                    // 两次 rename 都失败：目标刚被删、源仍在。此时若按常规在 finally 删掉 tmp，
+                    // 该槽位将同时没有目标与临时副本（源虽在，但调用方记录为失败后不会立刻重试）。
+                    // 故保留 tmp 并抛错：`.sync_tmp` 后缀不匹配任何存档名，不会被列表/导出/同步误认，
+                    // 下一次同步因目标缺失会从完好的源重新复制，数据不丢。
+                    throw IOException("cannot replace ${target.absolutePath}; kept ${tmp.absolutePath}")
                 }
             }
             // mtime 同步：失败会使目标 mtime 变成「现在」，可能引发下一轮反向覆盖（乒乓）。
@@ -254,19 +289,22 @@ object RpgSaveSync {
                 if (actual > 0L) source.setLastModified(actual)
             }
         } finally {
-            if (tmp.exists()) tmp.delete()
+            // 仅在已提交后清理（rename 成功后 tmp 已不存在）；失败路径刻意保留 tmp
+            if (committed && tmp.exists()) tmp.delete()
         }
     }
 
     /**
      * 首次同步某槽位、需要覆盖较旧一方前，把较旧文件留底，避免因标准侧 mtime 被复制/导入
      * 刷新成「较新」而误删唯一的手机存档。standardSide=true 归入 `<标准侧>/deleted/`，
-     * 否则归入 Tyranor 侧 `original/`。留底失败不阻断（后续覆盖照常，但会如实计数为失败）。
+     * 否则归入 Tyranor 侧 `original/`。
+     *
+     * @return 是否已成功留底；false 时调用方中止覆盖并计入 failed，绝不覆盖未留底的较旧副本。
      */
-    private fun preserveLoser(loser: File, sideDir: File, standardSide: Boolean) {
-        if (!loser.exists()) return
+    private fun preserveLoser(loser: File, sideDir: File, standardSide: Boolean): Boolean {
+        if (!loser.exists()) return true
         val dir = if (standardSide) File(sideDir, DELETED_DIR) else File(sideDir, RpgSaveFormat.ORIGINAL_DIR)
-        if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return
+        if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
         var target = File(dir, loser.name)
         var index = 1
         while (target.exists()) {
@@ -275,9 +313,12 @@ object RpgSaveSync {
             target = File(dir, if (dot > 0) name.substring(0, dot) + "_" + index + name.substring(dot) else name + "_" + index)
             index++
         }
-        if (!loser.renameTo(target)) {
-            runCatching { loser.copyTo(target, overwrite = false) }
-        }
+        if (loser.renameTo(target)) return true
+        // 跨设备/被占用时退回复制；必须确认副本完整落盘（存在且字节数一致）才算成功
+        return runCatching {
+            loser.copyTo(target, overwrite = false)
+            target.isFile && target.length() == loser.length()
+        }.getOrDefault(false)
     }
 
     /** 把标准文件移入 `<standardDir>/deleted/`；重名追加 `_1`/`_2`…。仅当源确实已移走才算成功。 */

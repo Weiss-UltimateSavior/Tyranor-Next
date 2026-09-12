@@ -275,6 +275,23 @@ class RpgSaveSyncTest {
     }
 
     @Test
+    fun preserveFailureAbortsOverwriteAndKeepsBothCopies() {
+        // 留底（original/）创建失败时不得继续覆盖：否则较旧的唯一手机存档会在没有留底的情况下被抹掉
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "PC-NEW", 9_000)
+        tyranor.writeAt("RPG Global.bin", "PHONE-OLD", 1_000)
+        // 用同名文件占位 original/，迫使 preserveLoser 无法创建留底目录
+        tyranor.resolve("original").writeText("block")
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
+
+        assertEquals(1, result.failed)
+        assertEquals(0, result.toTyranor)
+        assertEquals("PHONE-OLD", tyranor.resolve("RPG Global.bin").readText())
+        assertEquals("PC-NEW", standard.resolve("global.rpgsave").readText())
+    }
+
+    @Test
     fun nonRpgEngineIsNoOp() {        val (standard, tyranor) = dirs()
         standard.writeAt("global.rpgsave", "X", 1_000)
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.TYRANO, store(), "g")

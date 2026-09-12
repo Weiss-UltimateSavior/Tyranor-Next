@@ -269,18 +269,21 @@ object EngineLauncher {
 
     /**
      * MV/MZ 存档互通生效值：单游戏覆盖优先，否则全局；非 RPG 引擎恒为 false。
-     * 读取单游戏覆盖会命中 DB，可能阻塞——UI 侧请在协程/IO 线程调用。
+     * 单游戏覆盖读取会命中 DB（[PerGameSettingsStore.getBool] → loadRowBlocking 内含
+     * runBlocking，首次还要回灌 SharedPreferences），故本函数挂起并在 IO 线程读取，
+     * 避免 UI 主线程协程被阻塞。
      */
-    fun isRpgSaveInteropEnabled(context: Context, game: ScanGame): Boolean =
-        RpgSaveFormat.isRpgWebEngine(game.engine) &&
-            (PerGameSettingsStore.getBool(context, game.uri, PerGameSettingsStore.F_RPG_SAVE_INTEROP)
-                ?: EngineSettingsStore.isRpgSaveInterop(context))
+    suspend fun isRpgSaveInteropEnabled(context: Context, game: ScanGame): Boolean =
+        isRpgSaveInteropEnabled(context, game.uri, game.engine)
 
     /** 互通开关生效值（按 gameId/engine，不依赖 ScanGame），供前台兜底复用。 */
-    private fun isRpgSaveInteropEnabled(context: Context, gameUri: String, engine: EngineType): Boolean =
-        RpgSaveFormat.isRpgWebEngine(engine) &&
-            (PerGameSettingsStore.getBool(context, gameUri, PerGameSettingsStore.F_RPG_SAVE_INTEROP)
-                ?: EngineSettingsStore.isRpgSaveInterop(context))
+    private suspend fun isRpgSaveInteropEnabled(context: Context, gameUri: String, engine: EngineType): Boolean {
+        if (!RpgSaveFormat.isRpgWebEngine(engine)) return false
+        return withContext(Dispatchers.IO) {
+            PerGameSettingsStore.getBool(context, gameUri, PerGameSettingsStore.F_RPG_SAVE_INTEROP)
+                ?: EngineSettingsStore.isRpgSaveInterop(context)
+        }
+    }
 
     /**
      * 执行一次 MV/MZ 存档互通双向同步（标准侧 `<内容根>/save` ⇄ Tyranor 侧有效存档目录）。
