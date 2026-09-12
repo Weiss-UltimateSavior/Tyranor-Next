@@ -231,8 +231,51 @@ class RpgSaveSyncTest {
     }
 
     @Test
-    fun nonRpgEngineIsNoOp() {
-        val (standard, tyranor) = dirs()
+    fun uppercaseSaveDirectoryIsSyncedAndWrittenInPlace() {
+        // 兼容 Save/：槽位已在 Save/ 中存在时就地更新（大小写不敏感文件系统上 save==Save）
+        val parent = temporaryFolder.newFolder("www")
+        val lower = parent.resolve("save")
+        val upper = parent.resolve("Save").apply { mkdirs() }
+        val tyranor = temporaryFolder.newFolder("savedata")
+        upper.writeAt("global.rpgsave", "FROM-UPPER", 1_000)
+        val store = store()
+
+        val result = RpgSaveSync.sync(
+            standardDirs = listOf(lower, upper),
+            tyranorDir = tyranor,
+            engine = EngineType.RPG_MV,
+            stateStore = store,
+            gameKey = "g",
+        )
+
+        assertEquals(1, result.imported)
+        assertEquals("FROM-UPPER", tyranor.resolve("RPG Global.bin").readText())
+        // 回写应落在该已存在的标准目录内（不另造目录）
+        tyranor.resolve("RPG Global.bin").apply { writeText("NEW"); setLastModified(9_000) }
+        val second = RpgSaveSync.sync(listOf(lower, upper), tyranor, EngineType.RPG_MV, store, "g")
+        assertEquals(1, second.toStandard)
+        assertEquals("NEW", upper.resolve("global.rpgsave").readText())
+        assertEquals(1, parent.listFiles().orEmpty().count { it.name.equals("save", ignoreCase = true) })
+    }
+
+    @Test
+    fun uppercaseSaveIsWrittenWhenItIsTheOnlyExistingDir() {
+        // 只有 Save/ 存在时，无槽位的新导出应写入该目录（首选=已存在目录）
+        val parent = temporaryFolder.newFolder("www")
+        val lower = parent.resolve("save")
+        val upper = parent.resolve("Save").apply { mkdirs() }
+        val tyranor = temporaryFolder.newFolder("savedata")
+        tyranor.writeAt("RPG File1.bin", "PHONE", 1_000)
+
+        val result = RpgSaveSync.sync(listOf(lower, upper), tyranor, EngineType.RPG_MV, store(), "g")
+
+        assertEquals(1, result.exported)
+        assertEquals("PHONE", upper.resolve("file1.rpgsave").readText())
+        assertEquals(1, parent.listFiles().orEmpty().count { it.name.equals("save", ignoreCase = true) })
+    }
+
+    @Test
+    fun nonRpgEngineIsNoOp() {        val (standard, tyranor) = dirs()
         standard.writeAt("global.rpgsave", "X", 1_000)
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.TYRANO, store(), "g")
         assertEquals(0, result.changed)

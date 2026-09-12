@@ -107,6 +107,28 @@ object RpgSaveFormat {
         return File(contentRoot, "save")
     }
 
+    /**
+     * 标准侧存档目录候选（兼容大小写 `save` / `Save`，按大小写不敏感去重）：
+     * 第一个为默认写入目录（优先已存在的小写 `save`，否则已存在的大写 `Save`，都没有则小写）。
+     * 供同步枚举与导入归位使用，避免只认一种拼写而漏掉另一侧。
+     */
+    fun standardSaveDirectories(gameRoot: File): List<File> {
+        val lower = standardSaveDirectory(gameRoot)
+        val upper = File(lower.parentFile, "Save")
+        val lowerExists = lower.isDirectory
+        val upperExists = upper.isDirectory
+        val ordered = when {
+            lowerExists -> listOf(lower, upper)
+            upperExists -> listOf(upper, lower)
+            else -> listOf(lower, upper)
+        }
+        val seen = mutableSetOf<String>()
+        return ordered.filter { dir -> seen.add(pathKey(dir)) }
+    }
+
+    private fun pathKey(file: File): String =
+        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath).lowercase(Locale.ROOT)
+
     /** 递归定位游戏内容根（含 index.html / app.asar 的目录），与 engine 入口探测同序。 */
     private fun locateContentRoot(dir: File, depth: Int = 0): File? {
         if (!dir.isDirectory) return null
@@ -160,9 +182,6 @@ object RpgSaveFormat {
         standard.sortBy { it.name.lowercase(Locale.ROOT) }
         return Detection(standard, hashed)
     }
-
-    private fun pathKey(file: File): String =
-        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath).lowercase(Locale.ROOT)
 
     // ===== 名称映射 =====
 

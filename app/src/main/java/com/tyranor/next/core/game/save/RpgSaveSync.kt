@@ -61,12 +61,30 @@ object RpgSaveSync {
         engine: EngineType,
         stateStore: RpgSaveSyncState,
         gameKey: String,
+    ): Result = sync(listOf(standardDir), tyranorDir, engine, stateStore, gameKey)
+
+    /**
+     * @param standardDirs 标准侧候选目录，第一个为默认写入目录（兼容 `save` / `Save`）；
+     *   某个槽位若已存在于非首选目录，则就地更新，避免产生重复文件。
+     */
+    fun sync(
+        standardDirs: List<File>,
+        tyranorDir: File,
+        engine: EngineType,
+        stateStore: RpgSaveSyncState,
+        gameKey: String,
     ): Result {
         if (!RpgSaveFormat.isRpgWebEngine(engine)) return Result()
+        if (standardDirs.isEmpty()) return Result()
 
-        val standardFiles = collectStandard(standardDir, engine)
+        val preferredStandardDir = standardDirs.first()
+        val standardFiles = collectStandard(standardDirs, engine)
         val tyranorFiles = collectTyranor(tyranorDir, engine)
         val previous = stateStore.load(gameKey)
+
+        // 槽位已存在的标准文件所在目录（就地更新），否则用首选目录
+        fun standardParentFor(slot: String): File =
+            standardFiles[slot]?.parentFile ?: preferredStandardDir
 
         var imported = 0
         var exported = 0
@@ -98,7 +116,7 @@ object RpgSaveSync {
                                 copyOverwrite(std, tyr); toTyranor++; tyrMtime = s
                             }
                             else -> {
-                                if (!hadPrevious) preserveLoser(std, standardDir, standardSide = true)
+                                if (!hadPrevious) preserveLoser(std, std.parentFile ?: preferredStandardDir, standardSide = true)
                                 copyOverwrite(tyr, std); toStandard++; stdMtime = t
                             }
                         }
@@ -106,7 +124,7 @@ object RpgSaveSync {
                     std != null -> {
                         if (existedOnTyranor) {
                             // Tyranor 侧已删除该槽位 → 标准文件归入 deleted/，不再导回
-                            if (moveToDeleted(std, standardDir)) {
+                            if (moveToDeleted(std, std.parentFile ?: preferredStandardDir)) {
                                 movedToDeleted++; stdMtime = 0L
                             } else {
                                 failed++; record = false
@@ -126,8 +144,8 @@ object RpgSaveSync {
                         if (name == null) {
                             failed++; record = false
                         } else {
-                            // 标准侧缺失：无论外部删除还是 Tyranor 新建，都导出到标准侧
-                            val target = File(standardDir, name)
+                            // 标准侧缺失：无论外部删除还是 Tyranor 新建，都导出到标准侧（首选目录）
+                            val target = File(preferredStandardDir, name)
                             copyOverwrite(tyr, target); exported++; stdMtime = tyrMtime
                         }
                     }
@@ -160,13 +178,17 @@ object RpgSaveSync {
         )
     }
 
-    private fun collectStandard(dir: File, engine: EngineType): Map<String, File> {
-        if (!dir.isDirectory) return emptyMap()
+    /** 枚举多个标准侧目录（`save`/`Save`）；同槽位多个文件时优先首选目录（列表靠前者）。 */
+    private fun collectStandard(dirs: List<File>, engine: EngineType): Map<String, File> {
         val out = mutableMapOf<String, File>()
-        dir.listFiles().orEmpty().forEach { file ->
-            if (!file.isFile) return@forEach
-            val slot = RpgSaveFormat.standardSlot(file.name, engine) ?: return@forEach
-            out.putIfAbsent(slot, file)
+        dirs.forEach { dir ->
+            if (!dir.isDirectory) return@forEach
+            dir.listFiles().orEmpty().forEach { file ->
+                if (!file.isFile) return@forEach
+                val slot = RpgSaveFormat.standardSlot(file.name, engine) ?: return@forEach
+                // 首选目录在前，putIfAbsent 使先出现者胜
+                out.putIfAbsent(slot, file)
+            }
         }
         return out
     }

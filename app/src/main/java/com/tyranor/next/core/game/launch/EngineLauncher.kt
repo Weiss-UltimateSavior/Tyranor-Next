@@ -51,6 +51,7 @@ import com.yuri.onscripter.ONScripter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -72,6 +73,10 @@ object EngineLauncher {
     private const val EXTRA_ARTEMIS_FALLBACK_VERSIONS = "artemisFallbackVersions"
     private const val EXTRA_ARTEMIS_FALLBACK_INDEX = "artemisFallbackIndex"
     private const val EXTRA_ARTEMIS_AUTO_PLAN_REASON = "artemisAutoPlanReason"
+
+    // 前台兜底回写：引擎 finish 后约 500ms 才杀进程，轮询等待其退出的间隔与上限
+    private const val SESSION_EXIT_POLL_MS = 400L
+    private const val SESSION_EXIT_MAX_ATTEMPTS = 8
     private val ARTEMIS_DEFAULT_FALLBACK_CHAIN = listOf(
         EngineSettingsStore.ART_ENGINE_V2,
         EngineSettingsStore.ART_ENGINE_V1,
@@ -294,11 +299,12 @@ object EngineLauncher {
         gameDir: File,
         engine: EngineType,
     ): RpgSaveSync.Result {
-        val standardDir = RpgSaveFormat.standardSaveDirectory(gameDir)
+        // 标准侧兼容 save / Save 两种拼写；首选写入目录为已存在的小写 save（默认）
+        val standardDirs = RpgSaveFormat.standardSaveDirectories(gameDir)
         val tyranorDir = GameSaveManager(context).effectiveTyranoFamilySaveDirectory(gameUri, gameDir.absolutePath)
             ?: gameDir.resolve("savedata")
         return RpgSaveSync.sync(
-            standardDir = standardDir,
+            standardDirs = standardDirs,
             tyranorDir = tyranorDir,
             engine = engine,
             stateStore = RpgSaveSyncState.forContext(context),
@@ -313,8 +319,11 @@ object EngineLauncher {
     }
 
     /**
-     * 应用回到前台时调用：对每个待回写游戏，若其引擎会话进程已退出，则补一次同步并清除记录。
-     * 只处理「确认已退出」的游戏，避免与运行中的引擎并发读写。
+     * 应用回到前台时调用：对每个待回写游戏，等待其引擎会话进程退出后补一次同步并清除记录。
+     *
+     * 引擎 finish 后约 500ms 才 killProcess（且强杀无回调），回到前台时进程往往仍在，
+     * 因此这里按 [SESSION_EXIT_POLL_MS] 轮询等待其退出（上限 [SESSION_EXIT_MAX_ATTEMPTS] 次）；
+     * 超时仍存活视为「后台会话」本次不回写，避免与运行中的引擎并发读写。
      */
     suspend fun flushPendingSaveSync(context: Context): Int = withContext(Dispatchers.IO) {
         val pending = RpgSavePendingStore.all(context)
@@ -332,6 +341,11 @@ object EngineLauncher {
             if (!isRpgSaveInteropEnabled(context, game.uri, game.engine)) {
                 RpgSavePendingStore.remove(context, gameUri)
                 return@forEach
+            }
+            var attempts = 0
+            while (isEngineSessionRunning(context, game) && attempts < SESSION_EXIT_MAX_ATTEMPTS) {
+                delay(SESSION_EXIT_POLL_MS)
+                attempts++
             }
             if (isEngineSessionRunning(context, game)) return@forEach
             val gameDir = runCatching { resolveGameDirectory(context, game)?.let(::File) }.getOrNull()

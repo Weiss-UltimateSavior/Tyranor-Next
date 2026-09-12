@@ -547,14 +547,26 @@ class GameSaveManager(private val context: Context) {
         private val importLock = Any()
 
         /**
-         * 剥掉导入包的「单一顶层文件夹」包装：外部存档备份常整包为一个目录（如 `save/`、
-         * `savedata/`），直接复制到存档目录会多套一层（`savedata/save/`）导致引擎读不到。
-         * 仅当顶层恰好只有一个目录项时才下钻一层；顶层为散文件或多个条目时视为已是内容根，
-         * 原样返回。下钻后若无可复制内容，由调用方以 `copied == 0` 拦截，不会清空旧存档。
+         * 剥掉导入包的「外层文件夹」包装：外部存档备份常整包为一层或多层目录
+         * （如 `save/`、`Save/`、`savedata/`，或 `www/save/`），直接复制到存档目录会多套
+         * 一层（`savedata/save/`）导致引擎读不到。
+         *
+         * 规则：只要当前目录「仅含一个子目录」就继续下钻（上限 [MAX_UNWRAP_DEPTH] 层），
+         * 顶层含散文件或多个条目时视为已是内容根、原样返回。下钻后若无可复制内容，
+         * 由调用方以 `copied == 0` 拦截，不会清空旧存档。
          */
         internal fun unwrapSingleTopLevelDir(extracted: File): File {
-            val only = extracted.listFiles().orEmpty().singleOrNull() ?: return extracted
-            return if (only.isDirectory) only else extracted
+            var current = extracted
+            var depth = 0
+            while (depth < MAX_UNWRAP_DEPTH) {
+                val only = current.listFiles().orEmpty().singleOrNull() ?: return current
+                if (!only.isDirectory) return current
+                current = only
+                depth++
+            }
+            return current
         }
+
+        private const val MAX_UNWRAP_DEPTH = 3
     }
 }

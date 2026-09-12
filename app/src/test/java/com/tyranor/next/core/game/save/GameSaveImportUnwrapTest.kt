@@ -46,4 +46,26 @@ class GameSaveImportUnwrapTest {
         assertEquals(extracted.absolutePath, root.absolutePath)
         assertTrue(root.listFiles().isNullOrEmpty())
     }
+
+    @Test
+    fun unwrapsMultipleNestedWrapperDirs() {
+        // www/save/ 这类多层包装也要剥到内容根
+        val extracted = temporaryFolder.newFolder("extracted")
+        val inner = extracted.resolve("www/save").apply { mkdirs() }
+        inner.resolve("global.rpgsave").writeText("a")
+
+        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        assertEquals(inner.absolutePath, root.absolutePath)
+    }
+
+    @Test
+    fun stopsUnwrappingWhenSiblingPresent() {
+        val extracted = temporaryFolder.newFolder("extracted")
+        val save = extracted.resolve("save").apply { mkdirs() }
+        save.resolve("global.rpgsave").writeText("a")
+        extracted.resolve("readme.txt").writeText("x")
+
+        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        assertEquals(extracted.absolutePath, root.absolutePath)
+    }
 }
