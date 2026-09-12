@@ -224,7 +224,7 @@
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；模块安装后默认启用。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。</string>
-    <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z 使用外置 APK 引擎模块，模块安装后默认启用；当前没有可由主应用覆盖的单游戏设置。</string>
+    <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z 通过外置 RPGM 模块启动，以下设置默认跟随全局，可按游戏单独覆盖。</string>
     <string name="engine_settings_follow_global">跟随全局</string>
     <string name="engine_settings_follow_global_with_value">跟随全局 · %1$s</string>
     <string name="engine_settings_follow_global_bool">跟随全局（%1$s）</string>

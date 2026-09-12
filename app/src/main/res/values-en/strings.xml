@@ -224,7 +224,7 @@
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py uses an external APK engine module and opens the plugin matching the selected version. Modules are enabled by default once installed.</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py uses an external APK engine module and opens the plugin matching the selected version.</string>
-    <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z uses an external APK engine module. Modules are enabled by default once installed. There are currently no per-game settings that the main app can override.</string>
+    <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z runs through the external RPGM module. The options below follow the global values by default and can be overridden per game.</string>
     <string name="engine_settings_follow_global">Follow global</string>
     <string name="engine_settings_follow_global_with_value">Follow global · %1$s</string>
     <string name="engine_settings_follow_global_bool">Follow global (%1$s)</string>

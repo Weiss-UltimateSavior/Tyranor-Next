@@ -224,7 +224,7 @@
     <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。モジュールのインストール後は既定で有効です。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。</string>
-    <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z は外部 APK エンジンモジュールを使用します。モジュールのインストール後は既定で有効です。現在、メインアプリから上書きできる個別ゲーム設定はありません。</string>
+    <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z は外部 RPGM モジュールで起動します。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>
     <string name="engine_settings_follow_global">全体設定に従う</string>
     <string name="engine_settings_follow_global_with_value">全体設定に従う · %1$s</string>
     <string name="engine_settings_follow_global_bool">全体設定に従う（%1$s）</string>
