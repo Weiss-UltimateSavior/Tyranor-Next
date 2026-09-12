@@ -26,6 +26,7 @@ import bridge.NativeBridge;
 import bridge.KrPathUtils;
 import com.core.engine.DoubleBackExit;
 import com.core.engine.KrkrStartupDialogPolicy;
+import com.core.engine.LaunchContract;
 import com.core.nativeplugin.NativeLibraryLoader;
 import java.util.Locale;
 import org.cocos2dx.lib.Cocos2dxActivity;
@@ -257,7 +258,7 @@ public class KR2Activity extends Cocos2dxActivity {
     private static boolean isSafFallbackEnabled() {
         try {
             Intent intent = sInstance != null ? sInstance.getIntent() : null;
-            return intent != null && intent.getBooleanExtra("safFileFallback", false);
+            return intent != null && intent.getBooleanExtra(LaunchContract.SAF_FILE_FALLBACK, false);
         } catch (Throwable ignored) {
             return false;
         }
@@ -284,12 +285,12 @@ public class KR2Activity extends Cocos2dxActivity {
 
     private static File scopedSaveDirectory(Intent intent) {
         if (sInstance == null || intent == null) return null;
-        String explicit = KrPathUtils.normalizeFilePath(intent.getStringExtra("scopedSaveRoot"));
+        String explicit = KrPathUtils.normalizeFilePath(intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT));
         if (explicit != null && !explicit.trim().isEmpty() && explicit.startsWith("/")) {
             return new File(explicit);
         }
-        String root = KrPathUtils.normalizeFilePath(intent.getStringExtra("projectRoot"));
-        if (root == null || root.trim().isEmpty()) root = KrPathUtils.normalizeFilePath(intent.getStringExtra("gamedir"));
+        String root = KrPathUtils.normalizeFilePath(intent.getStringExtra(LaunchContract.PROJECT_ROOT));
+        if (root == null || root.trim().isEmpty()) root = KrPathUtils.normalizeFilePath(intent.getStringExtra(LaunchContract.GAME_DIR));
         if (root == null || root.trim().isEmpty() || !root.startsWith("/")) return null;
         return new File(root, "savedata");
     }
@@ -499,7 +500,7 @@ public class KR2Activity extends Cocos2dxActivity {
         try {
             Intent intent = getIntent();
             if (intent != null) {
-                File dir = intent.getBooleanExtra("scopedSaveDir", false)
+                File dir = intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)
                         ? scopedSaveDirectory(intent)
                         : gameSaveDirectory(intent);
                 if (dir != null) {
@@ -534,12 +535,12 @@ public class KR2Activity extends Cocos2dxActivity {
 
     private static File gameSaveDirectory(Intent intent) {
         if (intent == null) return null;
-        String explicit = KrPathUtils.normalizeFilePath(intent.getStringExtra("gameSaveRoot"));
+        String explicit = KrPathUtils.normalizeFilePath(intent.getStringExtra(LaunchContract.GAME_SAVE_ROOT));
         if (explicit != null && !explicit.trim().isEmpty() && explicit.startsWith("/")) {
             return new File(explicit);
         }
-        String root = KrPathUtils.normalizeFilePath(intent.getStringExtra("projectRoot"));
-        if (root == null || root.trim().isEmpty()) root = KrPathUtils.normalizeFilePath(intent.getStringExtra("gamedir"));
+        String root = KrPathUtils.normalizeFilePath(intent.getStringExtra(LaunchContract.PROJECT_ROOT));
+        if (root == null || root.trim().isEmpty()) root = KrPathUtils.normalizeFilePath(intent.getStringExtra(LaunchContract.GAME_DIR));
         if (root == null || root.trim().isEmpty() || !root.startsWith("/")) return null;
         return new File(root, "savedata");
     }

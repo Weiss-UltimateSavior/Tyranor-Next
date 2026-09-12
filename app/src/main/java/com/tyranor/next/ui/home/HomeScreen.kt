@@ -69,10 +69,13 @@ import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
+import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.RpgSaveFormatDialog
 import com.tyranor.next.ui.game.coverColor
@@ -136,7 +139,7 @@ fun HomeScreen(
     fun launchWithSaveFormatGate(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
         scope.launch {
             if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                launchError = EngineLauncher.launch(context, game, patchChoice)
+                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
                 return@launch
             }
             val pending = EngineLauncher.rpgSaveFormatPending(context, game)
@@ -145,7 +148,7 @@ fun HomeScreen(
                 saveFormatDetection = pending
                 pendingPatchChoice = patchChoice
             } else {
-                launchError = EngineLauncher.launch(context, game, patchChoice)
+                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
             }
         }
     }
@@ -184,7 +187,7 @@ fun HomeScreen(
                 }
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
-            launchError = EngineLauncher.launch(context, target, patchChoice)
+            launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)
         }
     }
 
@@ -432,7 +435,7 @@ private fun QuickLaunchCard(
         modifier = modifier
             .height(172.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(QuickLaunchFallbackBackground),
+            .background(QuickLaunchFallback),
     ) {
         val engineName = if (game.engine == EngineType.UNKNOWN) {
             stringResource(R.string.engine_name_unknown)
@@ -442,12 +445,27 @@ private fun QuickLaunchCard(
         val cardMaxWidth = maxWidth
         val coverBitmap by rememberCoverBitmap(game.coverUri)
         coverBitmap?.let { bmp ->
-            // 封面先缩到 40px 再拉伸铺满，全版本都有柔化效果；API 31+ 叠加真高斯模糊
-            val blurred = remember(bmp) {
+            // 封面缩到 40px 再拉伸铺满：API 31+ 由 Modifier.blur（RenderEffect）做真高斯；
+            // API 26-30 无 RenderEffect，若只放大 40px 会呈马赛克（issue #76），
+            // 因此对小图先做 CPU 盒式模糊（3 轮近似高斯）再拉伸，保证低版本同样柔和。
+            val blurSupported = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+            val blurred = remember(bmp, blurSupported) {
                 val src = bmp.asAndroidBitmap()
                 val width = 40
                 val height = (src.height * width / src.width).coerceAtLeast(1)
-                android.graphics.Bitmap.createScaledBitmap(src, width, height, true).asImageBitmap()
+                val scaled = android.graphics.Bitmap.createScaledBitmap(src, width, height, true)
+                if (blurSupported) {
+                    scaled.asImageBitmap()
+                } else {
+                    val smallWidth = scaled.width
+                    val smallHeight = scaled.height
+                    val pixels = IntArray(smallWidth * smallHeight)
+                    scaled.getPixels(pixels, 0, smallWidth, 0, 0, smallWidth, smallHeight)
+                    boxBlurArgb(pixels, smallWidth, smallHeight, radius = 3)
+                    android.graphics.Bitmap
+                        .createBitmap(pixels, smallWidth, smallHeight, android.graphics.Bitmap.Config.ARGB_8888)
+                        .asImageBitmap()
+                }
             }
             Image(
                 bitmap = blurred,
@@ -532,9 +550,6 @@ private fun QuickLaunchCard(
         }
     }
 }
-
-/** 快捷启动卡无封面/封面加载中时的中性兜底底色。 */
-private val QuickLaunchFallbackBackground = Color(0xFF303338)
 
 /** 快捷启动空状态：尚未设置任何快捷启动时显示整张白色卡片 + 加号。 */
 @Composable

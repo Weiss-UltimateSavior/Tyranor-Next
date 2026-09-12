@@ -16,7 +16,7 @@ class GameSaveImportUnwrapTest {
         val wrapper = extracted.resolve("save").apply { mkdirs() }
         wrapper.resolve("global.rpgsave").writeText("a")
 
-        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        val root = GameSaveManager.unwrapOuterDirs(extracted)
         assertEquals(wrapper.absolutePath, root.absolutePath)
     }
 
@@ -26,7 +26,7 @@ class GameSaveImportUnwrapTest {
         extracted.resolve("global.rpgsave").writeText("a")
         extracted.resolve("file1.rpgsave").writeText("b")
 
-        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        val root = GameSaveManager.unwrapOuterDirs(extracted)
         assertEquals(extracted.absolutePath, root.absolutePath)
     }
 
@@ -35,14 +35,14 @@ class GameSaveImportUnwrapTest {
         val extracted = temporaryFolder.newFolder("extracted")
         extracted.resolve("global.rpgsave").writeText("a")
 
-        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        val root = GameSaveManager.unwrapOuterDirs(extracted)
         assertEquals(extracted.absolutePath, root.absolutePath)
     }
 
     @Test
     fun keepsEmptyRoot() {
         val extracted = temporaryFolder.newFolder("extracted")
-        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        val root = GameSaveManager.unwrapOuterDirs(extracted)
         assertEquals(extracted.absolutePath, root.absolutePath)
         assertTrue(root.listFiles().isNullOrEmpty())
     }
@@ -54,7 +54,7 @@ class GameSaveImportUnwrapTest {
         val inner = extracted.resolve("www/save").apply { mkdirs() }
         inner.resolve("global.rpgsave").writeText("a")
 
-        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        val root = GameSaveManager.unwrapOuterDirs(extracted)
         assertEquals(inner.absolutePath, root.absolutePath)
     }
 
@@ -65,7 +65,7 @@ class GameSaveImportUnwrapTest {
         save.resolve("global.rpgsave").writeText("a")
         extracted.resolve("readme.txt").writeText("x")
 
-        val root = GameSaveManager.unwrapSingleTopLevelDir(extracted)
+        val root = GameSaveManager.unwrapOuterDirs(extracted)
         assertEquals(extracted.absolutePath, root.absolutePath)
     }
 }

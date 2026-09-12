@@ -6,9 +6,7 @@ import com.core.engine.EnginePrefs
 import com.core.nativeplugin.NativePluginConstants
 import com.core.nativeplugin.NativePluginInstallState
 import com.core.nativeplugin.NativePluginManager
-import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.i18n.AppLocaleController
 import java.io.File
 import java.util.zip.ZipInputStream
 
@@ -49,6 +47,13 @@ object EnginePluginBootstrap {
         ),
     )
 
+    /** 启动前插件保障失败原因（P0-6）：核心层只给类型，UI 层映射本地化文案。 */
+    sealed interface Failure {
+        data class UnknownEngine(val engineId: String) : Failure
+
+        data object InstallFailed : Failure
+    }
+
     /** 幂等：仅对尚未安装的引擎执行一次复制。每次应用启动调用开销极低。 */
     @JvmStatic
     fun provisionIfNeeded(context: Context) {
@@ -60,7 +65,7 @@ object EnginePluginBootstrap {
 
     /** 启动前同步保障：对应引擎插件必须已安装、已启用且文件完整。 */
     @JvmStatic
-    fun ensureForLaunch(context: Context, engine: EngineType): String? {
+    fun ensureForLaunch(context: Context, engine: EngineType): Failure? {
         val engineId = when (engine) {
             EngineType.KIRIKIRI -> NativePluginConstants.ENGINE_KIRIKIROID2
             EngineType.ONS -> NativePluginConstants.ENGINE_ONS
@@ -76,11 +81,11 @@ object EnginePluginBootstrap {
         }
         val app = context.applicationContext
         val spec = engines.firstOrNull { it.engineId == engineId }
-            ?: return text(context, R.string.plugin_unknown_engine, engineId)
+            ?: return Failure.UnknownEngine(engineId)
         return if (provisionEngineIfNeeded(app, spec, requireEnabled = true)) {
             null
         } else {
-            text(context, R.string.plugin_install_failed)
+            Failure.InstallFailed
         }
     }
 
@@ -175,7 +180,4 @@ object EnginePluginBootstrap {
             "native plugin extraction produced no directory: $engineId"
         }
     }
-
-    private fun text(context: Context, id: Int, vararg args: Any): String =
-        AppLocaleController.wrap(context).getString(id, *args)
 }

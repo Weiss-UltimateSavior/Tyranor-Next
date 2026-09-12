@@ -39,11 +39,8 @@ object PerGameSettingsStore {
     const val F_VCURSOR_SCALE = "vcursor_scale"
     const val F_MENU_HANDLER_OPA = "menu_handler_opa"
     const val F_ANIME4K_MODE = "anime4k_mode"
-    val KR_FIELDS = listOf(
-        F_RENDERER, F_SOFTWARE_DRAW_THREAD, F_SOFTWARE_COMPRESS_TEX, F_OGL_COMPRESS_TEX,
-        F_MEM_USAGE, F_OGL_MAX_TEXSIZE, F_OGL_ACCURATE_RENDER, F_FPS_LIMIT,
-        F_VCURSOR_SCALE, F_MENU_HANDLER_OPA,
-    )
+    /** KR 渲染偏好覆盖字段清单（由 [KrRenderPrefs] 派生，与全局键一一对应）。 */
+    val KR_FIELDS: List<String> = KrRenderPrefs.ALL.map { it.overrideField }
 
     // Artemis
     const val F_ART_VERSION = "art_engine_version"
@@ -119,6 +116,20 @@ object PerGameSettingsStore {
     fun loadOnsOverride(context: Context, gameId: String): JSONObject? {
         val j = load(context, gameId)
         return if (j.has(ONS_KEY)) j.optJSONObject(ONS_KEY) else null
+    }
+
+    /** ONS 覆盖 JSON → 类型化模型（缺失字段=跟随全局，供 [EffectiveEngineSettings.mergeOns] 使用）。 */
+    fun toOnsOverride(json: JSONObject?): OnsOverride? {
+        if (json == null) return null
+        return OnsOverride(
+            scopedSaveDir = if (json.has("scopedsavedir")) json.optBoolean("scopedsavedir") else null,
+            stretchFull = if (json.has("strechfull")) json.optBoolean("strechfull") else null,
+            ignoreCutout = if (json.has("ignorecutout")) json.optBoolean("ignorecutout") else null,
+            disableVideo = if (json.has("disablevideo")) json.optBoolean("disablevideo") else null,
+            sharpness = if (json.has("sharpness")) json.optBoolean("sharpness") else null,
+            sharpnessValue = if (json.has("sharpness_value")) json.optString("sharpness_value") else null,
+            encoding = if (json.has("encoding")) json.optString("encoding") else null,
+        )
     }
 
     /** 保存 ONS 覆盖子对象。 */

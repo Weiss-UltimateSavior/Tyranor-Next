@@ -28,6 +28,7 @@ import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineThemeColors
+import com.core.engine.LaunchContract
 import com.core.engine.R
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -41,7 +42,7 @@ import org.json.JSONObject
  * 由 tyrano 运行时的 v0 宿主（engine 模块 TyranoActivity）复制而来并按本运行时
  * 的需要裁剪：仅承载 RPG Maker MV/MZ 会话，v0 仍由 engine 模块的 tyrano 宿主
  * 承载（行为保持不变）。v1/v2 的 NW.js 兼容层（polyfill、rpgmv-v1 核心覆盖、
- * PC 存档兜底、屏幕方向回退等）在此按 [EXTRA_RPG_MAKER_VERSION] 版本门控注入，
+ * PC 存档兜底、屏幕方向回退等）在此按 [LaunchContract.RPG_MAKER_VERSION] 版本门控注入，
  * 不影响 v0 路径。
  *
  * 本 Activity 位于 engine 模块的 com.core.rpgmaker 独立运行时包（不依赖 app 层），
@@ -98,12 +99,12 @@ class RpgMakerActivity : Activity() {
     /** 影响引擎行为的 Intent extras 摘要，用于判断单游戏重启是否需要重建。 */
     private fun behaviorSignature(intent: Intent): String = listOf(
         resolveGameDir(intent),
-        intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false).toString(),
-        intent.getStringExtra(EXTRA_SCOPED_SAVE_ROOT),
-        intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true).toString(),
-        intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID),
-        intent.getStringExtra(EXTRA_RPG_MAKER_VERSION),
-        intent.getBooleanExtra(EXTRA_RPG_LEGACY_RENDERER, false).toString(),
+        intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false).toString(),
+        intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT),
+        intent.getBooleanExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, true).toString(),
+        intent.getStringExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID),
+        intent.getStringExtra(LaunchContract.RPG_MAKER_VERSION),
+        intent.getBooleanExtra(LaunchContract.RPG_LEGACY_RENDERER, false).toString(),
     ).joinToString("\u0000")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -155,12 +156,12 @@ class RpgMakerActivity : Activity() {
                 return
             }
         }
-        webGameType = detectWebGameType(intent.getStringExtra("type"), contentRoot, asarArchive)
-        rpgMakerModEnabled = intent.getBooleanExtra(EXTRA_RPG_MAKER_MOD_ENABLED, true)
-        rpgMakerModGameId = intent.getStringExtra(EXTRA_RPG_MAKER_MOD_GAME_ID)
+        webGameType = detectWebGameType(intent.getStringExtra(LaunchContract.TYPE), contentRoot, asarArchive)
+        rpgMakerModEnabled = intent.getBooleanExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, true)
+        rpgMakerModGameId = intent.getStringExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID)
             ?.takeIf(String::isNotBlank)
             ?: resolvedGameDir
-        rpgMakerVersion = intent.getStringExtra(EXTRA_RPG_MAKER_VERSION)?.takeIf(String::isNotBlank)
+        rpgMakerVersion = intent.getStringExtra(LaunchContract.RPG_MAKER_VERSION)?.takeIf(String::isNotBlank)
         Log.i(TAG, "entry mode=${if (gameUsesAsar) "asar" else "dir"} type=${webGameType.intentValue} rpgMakerVersion=$rpgMakerVersion asar=$asarPath contentRoot=${contentRoot.absolutePath}")
         val saves = resolveSaveDirectory(intent, gameRoot)
         saveDirectory = saves
@@ -168,7 +169,7 @@ class RpgMakerActivity : Activity() {
             failLaunch(getString(R.string.engine_rpgmaker_unwritable_save_directory))
             return
         }
-        Log.i(TAG, "save directory=${saves?.absolutePath ?: "none"} scoped=${intent.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false)}")
+        Log.i(TAG, "save directory=${saves?.absolutePath ?: "none"} scoped=${intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)}")
 
         val bundle = buildInjectionBundle(contentRoot) ?: return
         startLocalServer(bundle)
@@ -288,7 +289,7 @@ class RpgMakerActivity : Activity() {
             }
             val internalResources = modResources + v1Overlay
             Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} early=${nwPolyfill?.size ?: 0} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
-            val legacyRenderer = intent.getBooleanExtra(EXTRA_RPG_LEGACY_RENDERER, false)
+            val legacyRenderer = intent.getBooleanExtra(LaunchContract.RPG_LEGACY_RENDERER, false)
             InjectionBundle(contentRoot, lateHook, scriptAppends, internalResources, nwPolyfill, modHtml, legacyRenderer)
         } catch (error: Throwable) {
             Log.e(TAG, "build injection bundle failed", error)
@@ -569,11 +570,11 @@ class RpgMakerActivity : Activity() {
         source ?: return null
         val path = uriToFilePath(
             firstNonEmpty(
-                source.getStringExtra("path"),
-                source.getStringExtra("gamePath"),
-                source.getStringExtra("projectRoot"),
-                source.getStringExtra("gamedir"),
-                source.getStringExtra("rootUri"),
+                source.getStringExtra(LaunchContract.PATH),
+                source.getStringExtra(LaunchContract.GAME_PATH),
+                source.getStringExtra(LaunchContract.PROJECT_ROOT),
+                source.getStringExtra(LaunchContract.GAME_DIR),
+                source.getStringExtra(LaunchContract.ROOT_URI),
             ),
         ) ?: return null
         val file = File(path).let { if (it.isFile) it.parentFile else it }
@@ -702,8 +703,8 @@ class RpgMakerActivity : Activity() {
     }
 
     private fun resolveSaveDirectory(source: Intent?, gameRoot: File?): File? {
-        if (source?.getBooleanExtra(EXTRA_SCOPED_SAVE_DIR, false) == true) {
-            val explicit = source.getStringExtra(EXTRA_SCOPED_SAVE_ROOT)?.takeIf(String::isNotBlank)
+        if (source?.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false) == true) {
+            val explicit = source.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT)?.takeIf(String::isNotBlank)
                 ?: return null
             return try {
                 val external = getExternalFilesDir(null) ?: return null
@@ -893,12 +894,6 @@ class RpgMakerActivity : Activity() {
         private const val RPG_MAKER_MOD_BRIDGE_NAME = "TyranorModNative"
         private const val TOUCH_PAD_BRIDGE_NAME = "TyranorTouchPadNative"
         private const val RPG_MV_SAVE_EXTENSION = ".bin"
-        private const val EXTRA_SCOPED_SAVE_DIR = "scopedSaveDir"
-        private const val EXTRA_SCOPED_SAVE_ROOT = "scopedSaveRoot"
-        private const val EXTRA_RPG_MAKER_MOD_ENABLED = "rpgMakerModEnabled"
-        private const val EXTRA_RPG_MAKER_MOD_GAME_ID = "rpgMakerModGameId"
-        private const val EXTRA_RPG_MAKER_VERSION = "rpgMakerVersion"
-        private const val EXTRA_RPG_LEGACY_RENDERER = "rpgLegacyRenderer"
         private const val RPG_MAKER_MOD_PREFS = "tyranor_rpgmaker_mod_state"
         private const val PER_GAME_TOUCH_PAD_KEY = "touch_pad_config"
         private const val PER_GAME_TOUCH_PAD_PRESETS_KEY = "touch_pad_presets"

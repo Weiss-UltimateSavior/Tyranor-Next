@@ -56,6 +56,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -97,7 +98,7 @@ import com.tyranor.next.core.cover.CoverSearchCandidate
 import com.tyranor.next.core.cover.CoverSearchResult
 import com.tyranor.next.core.cover.CoverScraperService
 import com.tyranor.next.core.game.launch.EngineLauncher
-import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
@@ -123,6 +124,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.cover.coverSourceTitle
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.patch.KrkrOnlinePatchActivity
@@ -169,7 +171,7 @@ fun GameScreen(
     var longPressPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
 
     val gridState = rememberLazyGridState()
-    val scrapeTaskState = CoverScrapeTaskManager.state.value
+    val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
 
     LaunchedEffect(libraryState.loaded, games, selectedGameUri) {
         val uri = selectedGameUri ?: return@LaunchedEffect
@@ -196,7 +198,7 @@ fun GameScreen(
     fun launchLongPress(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
         scope.launch {
             if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                launchError = EngineLauncher.launch(context, game, patchChoice)
+                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
                 return@launch
             }
             val pending = EngineLauncher.rpgSaveFormatPending(context, game)
@@ -205,7 +207,7 @@ fun GameScreen(
                 longPressSaveDetection = pending
                 longPressPatchChoice = patchChoice
             } else {
-                launchError = EngineLauncher.launch(context, game, patchChoice)
+                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
             }
         }
     }
@@ -233,7 +235,7 @@ fun GameScreen(
                 )
             }
             // 保存根目录后立即全量扫描
-            EngineScanner.saveRoot(context, u)
+            GameLibraryFacade.saveRoot(context, u)
             scanLibrary()
         }
     }
@@ -356,7 +358,7 @@ fun GameScreen(
                             }
                             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                         }
-                        launchError = EngineLauncher.launch(context, target, patchChoice)
+                        launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)
                     }
                 }
             },
@@ -390,8 +392,8 @@ private fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
 /** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
 internal fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
     PerGameSettingsStore.clear(context, target.uri)
-    EngineScanner.removeRecentGame(context, target.uri)
-    EngineScanner.removeQuickLaunch(context, target.uri)
+    GameLibraryFacade.removeRecentGame(context, target.uri)
+    GameLibraryFacade.removeQuickLaunch(context, target.uri)
     deleteCoverFile(context, target.coverUri)
     GameSaveManager(context).cleanupAppData(target)
 }
@@ -439,7 +441,7 @@ private fun GameLibraryContent(
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    val gameSort = AppSettingsStore.gameSortState.value
+    val gameSort by AppSettingsStore.gameSortState.collectAsState()
     val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
     val fallbackFiltered = remember(sortedGames, query) {
         val q = query.trim()
@@ -597,7 +599,7 @@ internal fun GameActionsSheet(
     /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
         scope.launch {
-            launchError = EngineLauncher.launch(context, game, patchChoice)
+            launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
             if (launchError == null) onDismiss()
         }
     }
@@ -721,7 +723,13 @@ internal fun GameActionsSheet(
         scope.launch {
             launchError = settingCoverMessage
             val updated = withContext(Dispatchers.IO) {
-                runCatching { VndbCoverService.saveCustomCover(context, game, uri) }.getOrNull()
+                try {
+                    VndbCoverService.saveCustomCover(context, game, uri)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    null
+                }
             }
             if (updated != null) {
                 onGameUpdated(updated)
@@ -987,7 +995,13 @@ internal fun GameActionsSheet(
                     coverBindError = null
                     scope.launch {
                         val updated = withContext(Dispatchers.IO) {
-                            runCatching { CoverScraperService.bindCoverCandidate(context, game, candidate) }.getOrNull()
+                            try {
+                                CoverScraperService.bindCoverCandidate(context, game, candidate)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Throwable) {
+                                null
+                            }
                         }
                         coverBinding = false
                         if (updated != null) {
@@ -1090,8 +1104,9 @@ private fun CoverSourcePickerDialog(
     onSelect: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    val authVersion = HikarinagiAuthStore.statusVersion.value
-    val sources = remember(AppSettingsStore.coverScraperSettingsVersion.value) {
+    val authVersion by HikarinagiAuthStore.statusVersion.collectAsState()
+    val scraperSettingsVersion by AppSettingsStore.coverScraperSettingsVersion.collectAsState()
+    val sources = remember(scraperSettingsVersion) {
         AppSettingsStore.getCoverScraperSourceOrder(context)
     }
     val authStatus = remember(authVersion) { HikarinagiAuthStore.getStatus(context) }
@@ -1323,6 +1338,8 @@ private fun encodeCoverSearchCandidate(candidate: CoverSearchCandidate): String 
         .put("detail", candidate.detail)
         .put("score", candidate.score)
         .put("coverUrl", candidate.coverUrl)
+        .put("vndbId", candidate.vndbId)
+        .put("metadataTitle", candidate.metadataTitle)
         .toString()
 
 private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? = runCatching {
@@ -1335,6 +1352,8 @@ private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? =
         detail = json.optString("detail"),
         score = if (json.has("score") && !json.isNull("score")) json.optInt("score") else null,
         coverUrl = json.optString("coverUrl"),
+        vndbId = json.optString("vndbId").takeIf { it.isNotBlank() && !json.isNull("vndbId") },
+        metadataTitle = json.optString("metadataTitle").takeIf { it.isNotBlank() && !json.isNull("metadataTitle") },
     )
 }.getOrNull()
 

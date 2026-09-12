@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +57,7 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.DarkGrey
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -84,7 +86,7 @@ fun LiquidGlassNavigationBar(
 ) {
     val density = LocalDensity.current
     // 玻璃表面色随外观模式：深色模式用深色表面
-    val surfaceColor = if (AppThemeColors.isDark) Color(0xFF17191C) else Color.White
+    val surfaceColor = if (AppThemeColors.isDark) DarkGrey else Color.White
     val mutedColor = unselectedColor
     // 统一圆角（AGENT.md）：圆角组件一律 8dp；液态玻璃导航在 8dp 基础上加大 8dp，视觉更圆润
     val shape = RoundedCornerShape(16.dp)
@@ -265,7 +267,8 @@ private fun LiquidGlassNavItemView(
  */
 @Composable
 fun glassNavBottomInset(): Dp {
-    return if (AppSettingsStore.navStyleState.value == AppSettingsStore.NAV_STYLE_LIQUID_GLASS) {
+    val navStyle by AppSettingsStore.navStyleState.collectAsState()
+    return if (navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS) {
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
     } else {
         0.dp

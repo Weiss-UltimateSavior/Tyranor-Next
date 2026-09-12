@@ -9,9 +9,10 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
-import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.ui.common.userMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -42,7 +43,7 @@ class GameShortcutActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val game = withContext(Dispatchers.IO) {
-                    EngineScanner.loadGames(applicationContext)
+                    GameLibraryFacade.loadGames(applicationContext)
                         .firstOrNull { GameShortcutManager.shortcutId(it.uri) == shortcutId }
                 }
                 if (game == null) {
@@ -87,6 +88,7 @@ class GameShortcutActivity : ComponentActivity() {
                 }
 
                 val error = EngineLauncher.launch(this@GameShortcutActivity, game, patchChoice)
+                    .userMessage(localizedContext)
                 if (error != null) {
                     Toast.makeText(localizedContext, error, Toast.LENGTH_LONG).show()
                 }

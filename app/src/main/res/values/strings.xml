@@ -405,6 +405,7 @@
     <string name="patch_progress_writing">正在写入 %1$s</string>
     <string name="patch_index_fetch_failed_http">补丁索引获取失败：HTTP %1$d</string>
     <string name="patch_download_failed_http">补丁下载失败：HTTP %1$d</string>
+    <string name="patch_download_too_large">补丁文件过大，已停止下载</string>
     <string name="patch_error_open_write_stream">无法打开补丁写入流</string>
     <string name="patch_error_write_game_dir">无法写入游戏目录，请重新添加游戏目录并授予写入权限</string>
 </resources>

@@ -2,12 +2,8 @@ package com.tyranor.next.ui.patch
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -34,7 +30,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,28 +52,20 @@ import com.tyranor.next.core.patch.KrkrOnlinePatchService
 import com.tyranor.next.core.patch.KrkrPatchEntry
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
-import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.ProvideAppLocale
-import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
-import com.tyranor.next.ui.common.WithoutPressIndication
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class KrkrOnlinePatchActivity : ComponentActivity() {
+class KrkrOnlinePatchActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val darkMode = AppSettingsStore.isDarkEffective(this)
-        enableEdgeToEdge(
-            statusBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-        )
 
         val game = intent.readScanGame()
         if (game == null) {
@@ -86,23 +73,9 @@ class KrkrOnlinePatchActivity : ComponentActivity() {
             return
         }
 
-        setContent {
-            ProvideAppLocale {
-                TyranorNextTheme {
-                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        WithoutPressIndication {
-                            KrkrOnlinePatchScreen(game = game)
-                        }
-                    }
-                }
-            }
+        setAppScreenContent {
+            KrkrOnlinePatchScreen(game = game)
         }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun finish() {
-        super.finish()
-        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
     }
 
     companion object {
@@ -132,7 +105,13 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
             loading = true
             message = null
             val result = withContext(Dispatchers.IO) {
-                runCatching { KrkrOnlinePatchService.fetchPatchIndex(context) }
+                try {
+                    Result.success(KrkrOnlinePatchService.fetchPatchIndex(context))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (t: Throwable) {
+                    Result.failure(t)
+                }
             }
             entries = result.getOrDefault(emptyList())
             message = result.exceptionOrNull()?.message
@@ -211,10 +190,16 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                         scope.launch {
                             installing = true
                             message = null
-                            val result = runCatching {
-                                KrkrOnlinePatchService.downloadAndInstall(context, game, selected) {
-                                    message = it
-                                }
+                            val result = try {
+                                Result.success(
+                                    KrkrOnlinePatchService.downloadAndInstall(context, game, selected) {
+                                        message = it
+                                    },
+                                )
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (t: Throwable) {
+                                Result.failure(t)
                             }
                             result.onSuccess {
                                 Toast.makeText(context, patchInstalledCountFormat.format(it.installed.size), Toast.LENGTH_LONG).show()

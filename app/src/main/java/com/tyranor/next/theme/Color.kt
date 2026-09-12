@@ -15,9 +15,12 @@ private val UnselectedGreyLight = Color(0xFF8A8F98) // 导航栏未选中图标/
 
 // 深色模式对应色
 private val LighterDark = Color(0xFF222529)
-private val DarkGrey = Color(0xFF17191C)
+val DarkGrey = Color(0xFF17191C)
 private val TextColorDark = Color(0xFFE3E4E6)
 private val UnselectedGreyDark = Color(0xFF7A8087)
+
+/** 快捷启动卡无封面/封面加载中时的中性兜底底色。 */
+val QuickLaunchFallback = Color(0xFF303338)
 
 // 页面背景：随深色模式取深/浅
 val PageGrey: Color

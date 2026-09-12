@@ -6,9 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import androidx.annotation.StringRes
-import com.tyranor.next.R
-import com.tyranor.next.core.i18n.AppLocaleController
 
 /** 外置 APK 引擎启动与安装状态检查。 */
 object ExternalEngineLauncher {
@@ -27,18 +24,17 @@ object ExternalEngineLauncher {
         }
 
     fun launch(context: Context, module: ExternalEngineModule, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult {
-        val localized = AppLocaleController.wrap(context)
-        val moduleName = module.displayName(localized)
         if (module.requiresGameDirectoryPath && request.gameDirectoryPath.isBlank()) {
             return ExternalEngineLaunchResult.failure(
-                localized.text(R.string.external_engine_resolve_dir_failed, request.game.engine.displayName),
-                "invalid_game_path",
+                ExternalEngineErrorCode.INVALID_GAME_PATH,
+                engineName = request.game.engine.displayName,
             )
         }
         if (!isPackageInstalled(context, module)) {
             return ExternalEngineLaunchResult.failure(
-                localized.text(R.string.external_engine_module_missing, moduleName),
-                "package_not_installed",
+                ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED,
+                moduleNameRes = module.displayNameRes,
+                moduleNameFallback = module.displayName,
             )
         }
         module.prepareForLaunch(context, request)?.let { return it }
@@ -53,18 +49,22 @@ object ExternalEngineLauncher {
             ExternalEngineLaunchResult.success()
         } catch (_: ActivityNotFoundException) {
             ExternalEngineLaunchResult.failure(
-                localized.text(R.string.external_engine_no_activity, moduleName),
-                "activity_not_found",
+                ExternalEngineErrorCode.ACTIVITY_NOT_FOUND,
+                moduleNameRes = module.displayNameRes,
+                moduleNameFallback = module.displayName,
             )
-        } catch (t: SecurityException) {
+        } catch (_: SecurityException) {
             ExternalEngineLaunchResult.failure(
-                localized.text(R.string.external_engine_denied, moduleName),
-                "security_exception",
+                ExternalEngineErrorCode.SECURITY_EXCEPTION,
+                moduleNameRes = module.displayNameRes,
+                moduleNameFallback = module.displayName,
             )
         } catch (t: Throwable) {
             ExternalEngineLaunchResult.failure(
-                t.message ?: localized.text(R.string.external_engine_launch_failed, moduleName),
-                "launch_exception",
+                ExternalEngineErrorCode.LAUNCH_EXCEPTION,
+                moduleNameRes = module.displayNameRes,
+                moduleNameFallback = module.displayName,
+                detail = t.message,
             )
         }
     }
@@ -82,7 +82,4 @@ object ExternalEngineLauncher {
             false
         }
     }
-
-    private fun Context.text(@StringRes id: Int, vararg args: Any): String =
-        getString(id, *args)
 }

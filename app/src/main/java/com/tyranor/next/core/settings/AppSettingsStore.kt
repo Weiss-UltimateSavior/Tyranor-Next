@@ -2,8 +2,7 @@ package com.tyranor.next.core.settings
 
 import android.content.Context
 import android.content.res.Configuration
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * 应用设置存储层：与引擎无关的应用级偏好（如主题色、导航栏样式）。
@@ -52,7 +51,7 @@ object AppSettingsStore {
     const val LANGUAGE_EN = "en"
 
     /** App 语言内存态：设置页切换后根 Composable 可即时重组。 */
-    val languageState: MutableState<String> = mutableStateOf(LANGUAGE_ZH)
+    val languageState: MutableStateFlow<String> = MutableStateFlow(LANGUAGE_ZH)
 
     /** 外观模式：浅色。 */
     const val THEME_MODE_LIGHT = "light"
@@ -82,13 +81,13 @@ object AppSettingsStore {
     const val NAV_STYLE_LIQUID_GLASS = "liquid_glass"
 
     /** 导航栏样式内存态：随设置页切换即时广播，供 MainScreen 重组切换样式。 */
-    val navStyleState: MutableState<String> = mutableStateOf(NAV_STYLE_DEFAULT)
+    val navStyleState: MutableStateFlow<String> = MutableStateFlow(NAV_STYLE_DEFAULT)
 
     /** 游戏排序内存态：设置页切换后游戏页可随重组读取。 */
-    val gameSortState: MutableState<String> = mutableStateOf(GAME_SORT_ALPHA)
+    val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
 
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
-    val coverScraperSettingsVersion: MutableState<Int> = mutableStateOf(0)
+    val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
 
     /** 首次组合时从持久化加载导航栏样式到内存态（幂等，重复调用仅重新读一次）。 */
     fun initNavStyle(c: Context) {

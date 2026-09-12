@@ -9,6 +9,7 @@ import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.settings.AppSettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import org.json.JSONArray
 import org.json.JSONObject
@@ -33,6 +34,9 @@ data class CoverSearchCandidate(
     val detail: String,
     val score: Int? = null,
     val coverUrl: String,
+    /** VNDB 候选携带的元数据（绑定后可写入游戏库；其他来源为 null）。 */
+    val vndbId: String? = null,
+    val metadataTitle: String? = null,
 )
 
 sealed interface CoverSearchResult {
@@ -56,7 +60,7 @@ object CoverScraperService {
 
         val updatedGames = games.map { game ->
             coroutineContext.ensureActive()
-            val local = runCatching { EngineScanner.applyLocalCover(context, game) }.getOrDefault(game)
+            val local = runCatchingCancellable { EngineScanner.applyLocalCover(context, game) }.getOrDefault(game)
             val updated = if (onlyMissing && !local.coverUri.isNullOrBlank()) {
                 if (local.coverUri != game.coverUri) updatedCount++ else skippedCount++
                 local
@@ -64,7 +68,7 @@ object CoverScraperService {
                 val searchBase = if (onlyMissing) local else local.copy(coverUri = null)
                 val scraped = sources.firstNotNullOfOrNull { source ->
                     coroutineContext.ensureActive()
-                    runCatching { scrapeWithSource(context, searchBase, source) }.getOrNull()
+                    runCatchingCancellable { scrapeWithSource(context, searchBase, source) }.getOrNull()
                         ?.asCoverOnlyUpdateFrom(local)
                 }
                 if (scraped != null && !scraped.coverUri.isNullOrBlank()) {
@@ -81,7 +85,10 @@ object CoverScraperService {
                     local
                 }
             }
-            if (updated.coverUri != game.coverUri || updated.coverSource != game.coverSource) {
+            // 封面或 VNDB 元数据任一变化都要回调持久化（仅元数据变化时封面 URI 可能不变）
+            if (updated.coverUri != game.coverUri || updated.coverSource != game.coverSource ||
+                updated.vndbId != game.vndbId || updated.metadataTitle != game.metadataTitle
+            ) {
                 onCoverUpdated(game, updated)
             }
             updated
@@ -129,6 +136,9 @@ object CoverScraperService {
             game.copy(
                 coverUri = it,
                 coverSource = candidate.source,
+                // VNDB 手动绑定同时落库元数据；其他来源保留原值
+                vndbId = candidate.vndbId ?: game.vndbId,
+                metadataTitle = candidate.metadataTitle ?: game.metadataTitle,
             )
         }
     }
@@ -160,6 +170,8 @@ object CoverScraperService {
                     subtitle = it.originalTitle,
                     detail = detailText("VNDB", it.id, it.released, it.developer),
                     coverUrl = it.coverUrl,
+                    vndbId = it.id.takeIf { id -> id.isNotBlank() },
+                    metadataTitle = it.title.ifBlank { it.originalTitle }.trim().ifBlank { null },
                 )
             }
             else -> emptyList()
@@ -357,10 +369,23 @@ private data class CoverCandidate(
     val score: Int,
 )
 
+/** 协程内 runCatching：透传取消信号，避免取消被当作来源/IO 失败吞掉（m9 同类修复）。 */
+private inline fun <T> runCatchingCancellable(block: () -> T): Result<T> =
+    try {
+        Result.success(block())
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (t: Throwable) {
+        Result.failure(t)
+    }
+
 private fun ScanGame.asCoverOnlyUpdateFrom(base: ScanGame): ScanGame =
     base.copy(
         coverUri = coverUri,
         coverSource = coverSource,
+        // 批量刮削：来源带出的 VNDB 元数据必须随封面一起保留（非空才覆盖，避免清掉已有值）
+        vndbId = vndbId?.takeIf { it.isNotBlank() } ?: base.vndbId,
+        metadataTitle = metadataTitle?.takeIf { it.isNotBlank() } ?: base.metadataTitle,
     )
 
 private fun httpJson(

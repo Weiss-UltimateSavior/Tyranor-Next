@@ -2,47 +2,29 @@ package com.tyranor.next.ui.settings
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
-import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.ProvideAppLocale
-import com.tyranor.next.theme.TyranorNextTheme
-import com.tyranor.next.ui.common.WithoutPressIndication
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
@@ -50,40 +32,12 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 引擎设置入口页 Activity：由设置页「引擎设置」条目进入，聚合各引擎细分设置入口。 */
-class EngineSettingsMenuActivity : ComponentActivity() {
+class EngineSettingsMenuActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val darkMode = AppSettingsStore.isDarkEffective(this)
-        enableEdgeToEdge(
-            statusBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-        )
-        @Suppress("DEPRECATION")
-        window.statusBarColor = Color.TRANSPARENT
-        @Suppress("DEPRECATION")
-        window.navigationBarColor = Color.TRANSPARENT
-
-        setContent {
-            ProvideAppLocale {
-                TyranorNextTheme {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background,
-                    ) {
-                        WithoutPressIndication {
-                            EngineSettingsMenuScreen()
-                        }
-                    }
-                }
-            }
+        setAppScreenContent {
+            EngineSettingsMenuScreen()
         }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun finish() {
-        super.finish()
-        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
     }
 
     companion object {

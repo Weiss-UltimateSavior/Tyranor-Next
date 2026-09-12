@@ -89,11 +89,6 @@ object EngineSettingsStore {
     // 与 libgame.so 内 IndividualConfigManager 读取的键一致，键名不可改。
     const val ENGINE_VCURSOR_SCALE = "vcursor_scale"
     const val ENGINE_MENU_HANDLER_OPA = "menu_handler_opa"
-    // 供 krkr_engine_prefs JSON 写入引擎 XML 时的键名映射（prefs 键 → 引擎 Item 键）
-    private val KR_ENGINE_PREF_KEY_MAP = mapOf(
-        KEY_KR_VCURSOR_SCALE to ENGINE_VCURSOR_SCALE,
-        KEY_KR_MENU_HANDLER_OPA to ENGINE_MENU_HANDLER_OPA,
-    )
     // 虚拟鼠标缩放比（0.01..1.50，引擎默认 1.00；0.50 与原版 Ty 一致，两位小数）
     val KR_VCURSOR_SCALE_MIN = 0.01f
     val KR_VCURSOR_SCALE_MAX = 1.50f
@@ -167,12 +162,8 @@ object EngineSettingsStore {
     const val RENPY_85 = "8.5"
     const val RENPY_77 = "7.7.1"
 
-    val KR_RENDER_PREF_KEYS = listOf(
-        KEY_KR_RENDERER, KEY_KR_SOFTWARE_DRAW_THREAD, KEY_KR_SOFTWARE_COMPRESS_TEX,
-        KEY_KR_OGL_COMPRESS_TEX, KEY_KR_MEM_USAGE, KEY_KR_OGL_MAX_TEXSIZE,
-        KEY_KR_OGL_ACCURATE_RENDER, KEY_KR_FPS_LIMIT,
-        KEY_KR_VCURSOR_SCALE, KEY_KR_MENU_HANDLER_OPA,
-    )
+    /** KR 渲染/内存偏好字段清单（由 [KrRenderPrefs] 派生，保证与单游戏覆盖字段一一对应）。 */
+    val KR_RENDER_PREF_KEYS: List<String> = KrRenderPrefs.ALL.map { it.globalKey }
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
@@ -281,11 +272,12 @@ object EngineSettingsStore {
     fun getKrMenuHandlerOpa(c: Context): String { val v = krPref(c, KEY_KR_MENU_HANDLER_OPA).trim(); return if (v in KR_MENU_HANDLER_OPAS) v else "" }
     fun setKrMenuHandlerOpa(c: Context, v: String) { val t = v.trim(); if (t.isEmpty() || t in KR_MENU_HANDLER_OPAS) setKrPref(c, KEY_KR_MENU_HANDLER_OPA, t) }
 
-    /** 组装 krkr_engine_prefs JSON：{<引擎键>:{v, s}}。overrideGetter 返回某键的单游戏覆盖（null=跟随全局）。 */
-    fun buildKrEnginePrefsJson(c: Context, overrideGetter: (String) -> String? = { null }): String {
+    /** 组装 krkr_engine_prefs JSON：{<引擎键>:{v, s}}。overrideGetter 返回某偏好的单游戏覆盖（null=跟随全局）。 */
+    fun buildKrEnginePrefsJson(c: Context, overrideGetter: (KrRenderPref) -> String? = { null }): String {
         val json = JSONObject()
-        KR_RENDER_PREF_KEYS.forEach { key ->
-            val rawOverride = overrideGetter(key)
+        KrRenderPrefs.ALL.forEach { pref ->
+            val key = pref.globalKey
+            val rawOverride = overrideGetter(pref)
             val override = rawOverride?.trim()?.takeIf { it.isNotEmpty() || rawOverride == "" }
             // 仅保留合法值或显式空串（引擎默认），非法值按跟随全局处理；vcursor 支持旧整型兼容
             val sanitizedOverride = when (key) {
@@ -315,8 +307,7 @@ object EngineSettingsStore {
                 }
                 else -> rawValue
             }
-            val engineKey = KR_ENGINE_PREF_KEY_MAP[key] ?: key
-            json.put(engineKey, JSONObject().put("v", value).put("s", if (sanitizedOverride != null) "game" else "global"))
+            json.put(pref.engineKey, JSONObject().put("v", value).put("s", if (sanitizedOverride != null) "game" else "global"))
         }
         return json.toString()
     }

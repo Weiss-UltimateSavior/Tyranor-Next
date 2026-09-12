@@ -1,0 +1,387 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "4e0b9494daafa4a8dbbe26bbfc4a60e7",
+    "entities": [
+      {
+        "tableName": "games",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uri` TEXT NOT NULL, `root_uri` TEXT, `title` TEXT NOT NULL, `engine` TEXT NOT NULL, `launch_target` TEXT NOT NULL, `launch_file` TEXT, `cover_uri` TEXT, `cover_source` TEXT, `vndb_id` TEXT, `metadata_title` TEXT, `external_module_alias` TEXT, `detected_renpy_version` TEXT, `last_opened_at` INTEGER NOT NULL, `discovered_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, `sort_title` TEXT NOT NULL, `sort_tag` TEXT NOT NULL, PRIMARY KEY(`uri`))",
+        "fields": [
+          {
+            "fieldPath": "uri",
+            "columnName": "uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rootUri",
+            "columnName": "root_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "engine",
+            "columnName": "engine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "launchTarget",
+            "columnName": "launch_target",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "launchFile",
+            "columnName": "launch_file",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "coverUri",
+            "columnName": "cover_uri",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "coverSource",
+            "columnName": "cover_source",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "vndbId",
+            "columnName": "vndb_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "metadataTitle",
+            "columnName": "metadata_title",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "externalModuleAlias",
+            "columnName": "external_module_alias",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "detectedRenpyVersion",
+            "columnName": "detected_renpy_version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastOpenedAt",
+            "columnName": "last_opened_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "discoveredAt",
+            "columnName": "discovered_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortTitle",
+            "columnName": "sort_title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortTag",
+            "columnName": "sort_tag",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uri"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_games_root_uri",
+            "unique": false,
+            "columnNames": [
+              "root_uri"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_games_root_uri` ON `${TABLE_NAME}` (`root_uri`)"
+          },
+          {
+            "name": "index_games_engine",
+            "unique": false,
+            "columnNames": [
+              "engine"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_games_engine` ON `${TABLE_NAME}` (`engine`)"
+          },
+          {
+            "name": "index_games_sort_title",
+            "unique": false,
+            "columnNames": [
+              "sort_title"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_games_sort_title` ON `${TABLE_NAME}` (`sort_title`)"
+          },
+          {
+            "name": "index_games_last_opened_at",
+            "unique": false,
+            "columnNames": [
+              "last_opened_at"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_games_last_opened_at` ON `${TABLE_NAME}` (`last_opened_at`)"
+          }
+        ]
+      },
+      {
+        "tableName": "scan_roots",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`uri` TEXT NOT NULL, `display_name` TEXT, `added_at` INTEGER NOT NULL, `scan_depth` INTEGER, `last_scanned_at` INTEGER NOT NULL, PRIMARY KEY(`uri`))",
+        "fields": [
+          {
+            "fieldPath": "uri",
+            "columnName": "uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "display_name",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "addedAt",
+            "columnName": "added_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scanDepth",
+            "columnName": "scan_depth",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastScannedAt",
+            "columnName": "last_scanned_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "uri"
+          ]
+        }
+      },
+      {
+        "tableName": "quick_launch",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`game_uri` TEXT NOT NULL, `slot_index` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`game_uri`), FOREIGN KEY(`game_uri`) REFERENCES `games`(`uri`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "gameUri",
+            "columnName": "game_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slotIndex",
+            "columnName": "slot_index",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "game_uri"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_quick_launch_slot_index",
+            "unique": true,
+            "columnNames": [
+              "slot_index"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_quick_launch_slot_index` ON `${TABLE_NAME}` (`slot_index`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "games",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "game_uri"
+            ],
+            "referencedColumns": [
+              "uri"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "game_overrides",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`game_uri` TEXT NOT NULL, `kr_json` TEXT, `artemis_json` TEXT, `ons_json` TEXT, `tyrano_json` TEXT, `renpy_json` TEXT, `touchpad_json` TEXT, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`game_uri`))",
+        "fields": [
+          {
+            "fieldPath": "gameUri",
+            "columnName": "game_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "krJson",
+            "columnName": "kr_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artemisJson",
+            "columnName": "artemis_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "onsJson",
+            "columnName": "ons_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tyranoJson",
+            "columnName": "tyrano_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "renpyJson",
+            "columnName": "renpy_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "touchpadJson",
+            "columnName": "touchpad_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "game_uri"
+          ]
+        }
+      },
+      {
+        "tableName": "engine_detection_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`game_uri` TEXT NOT NULL, `engine` TEXT NOT NULL, `fingerprint_hash` TEXT, `artemis_version` TEXT, `artemis_success_version` TEXT, `renpy_version` TEXT, `rpgm_runtime` TEXT, `mkxpz_supported` INTEGER, `confidence` INTEGER NOT NULL, `reason` TEXT, `updated_at` INTEGER NOT NULL, PRIMARY KEY(`game_uri`))",
+        "fields": [
+          {
+            "fieldPath": "gameUri",
+            "columnName": "game_uri",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "engine",
+            "columnName": "engine",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprintHash",
+            "columnName": "fingerprint_hash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artemisVersion",
+            "columnName": "artemis_version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "artemisSuccessVersion",
+            "columnName": "artemis_success_version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "renpyVersion",
+            "columnName": "renpy_version",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "rpgmRuntime",
+            "columnName": "rpgm_runtime",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mkxpzSupported",
+            "columnName": "mkxpz_supported",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "confidence",
+            "columnName": "confidence",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reason",
+            "columnName": "reason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAt",
+            "columnName": "updated_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "game_uri"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_engine_detection_cache_engine",
+            "unique": false,
+            "columnNames": [
+              "engine"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_engine_detection_cache_engine` ON `${TABLE_NAME}` (`engine`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '4e0b9494daafa4a8dbbe26bbfc4a60e7')"
+    ]
+  }
+}

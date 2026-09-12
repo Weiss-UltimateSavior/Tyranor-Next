@@ -8,7 +8,6 @@ import android.os.Process
 import android.util.Log
 import androidx.room.withTransaction
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.scan.GameRecordCodec
 import com.tyranor.next.core.game.scan.GameRootMatcher
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -32,7 +31,7 @@ import java.util.concurrent.Executors
  * 标记在库之外：若恢复备份后出现「标记在但库为空」的快照不一致（WAL 未入备份），
  * 启动时会按旧镜像幂等重导入兜底。
  *
- * 线程模型：所有挂起 API 供 IO 线程调用；EngineScanner 同步 API 的写入经 [post]
+ * 线程模型：所有挂起 API 供 IO 线程调用；GameLibraryFacade 同步 API 的写入经 [post]
  * （单线程 FIFO 调度 + 写互斥）串行落库，保证先发写不被后发写覆盖；镜像写回排在同一队列之后。
  */
 object GameLibraryRepository {
@@ -70,7 +69,7 @@ object GameLibraryRepository {
     @Volatile
     private var migrationDone = false
 
-    /** 应用启动预热（仅主进程）：旧数据迁移检查 + 单游戏覆盖 prefs 同步 + EngineScanner
+    /** 应用启动预热（仅主进程）：旧数据迁移检查 + 单游戏覆盖 prefs 同步 + GameLibraryFacade
      * 同步门面缓存回填，避免主线程首次读库阻塞。引擎子进程直接跳过。 */
     fun init(context: Context) {
         if (!isMainProcess(context)) return
@@ -87,7 +86,7 @@ object GameLibraryRepository {
                 Log.e(TAG, "Game overrides sync failed", t)
             }
             try {
-                EngineScanner.prewarmCaches(app)
+                GameLibraryFacade.prewarmCaches(app)
             } catch (t: Throwable) {
                 Log.e(TAG, "Game library prewarm failed", t)
             }
@@ -268,7 +267,7 @@ object GameLibraryRepository {
         dao(context).getRoots().map { it.uri }
     }
 
-    /** 幂等新增扫描根；返回是否新增（供 EngineScanner 决定是否广播修订号）。 */
+    /** 幂等新增扫描根；返回是否新增（供 GameLibraryFacade 决定是否广播修订号）。 */
     suspend fun saveRoot(context: Context, rootKey: String): Boolean = withContext(Dispatchers.IO) {
         ensureMigrated(context)
         val dao = dao(context)
@@ -340,7 +339,7 @@ object GameLibraryRepository {
     // ============ 缓存门面接入 ============
 
     /** 持久化写失败回调：缓存先行更新后落库失败会让内存缓存与 DB（事实源）分叉，
-     *  注册方（EngineScanner）借此丢弃内存缓存，下次读取回源 DB 自愈。 */
+     *  注册方（GameLibraryFacade）借此丢弃内存缓存，下次读取回源 DB 自愈。 */
     @Volatile
     var onPersistFailure: (() -> Unit)? = null
 

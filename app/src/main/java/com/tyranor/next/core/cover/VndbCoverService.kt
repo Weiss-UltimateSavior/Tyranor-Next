@@ -43,8 +43,9 @@ object VndbCoverService {
         return game.copy(
             coverUri = cover,
             coverSource = AppSettingsStore.COVER_SOURCE_VNDB,
-            vndbId = candidate.id,
-            metadataTitle = candidate.displayTitle(),
+            // 空串不得覆盖库中已有元数据（异常响应可能给出空 id/标题）
+            vndbId = candidate.id.takeIf { it.isNotBlank() } ?: game.vndbId,
+            metadataTitle = candidate.displayTitle().takeIf { it.isNotBlank() } ?: game.metadataTitle,
         )
     }
 
@@ -59,8 +60,8 @@ object VndbCoverService {
         return game.copy(
             coverUri = cover,
             coverSource = AppSettingsStore.COVER_SOURCE_VNDB,
-            vndbId = candidate.id,
-            metadataTitle = candidate.displayTitle(),
+            vndbId = candidate.id.takeIf { it.isNotBlank() } ?: game.vndbId,
+            metadataTitle = candidate.displayTitle().takeIf { it.isNotBlank() } ?: game.metadataTitle,
         )
     }
 

@@ -6,14 +6,15 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.annotation.StringRes
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.i18n.AppLocaleController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLDecoder
@@ -35,6 +36,9 @@ data class KrkrPatchInstallResult(
 object KrkrOnlinePatchService {
     private const val INDEX_URL = "https://zeas2.github.io/Kirikiroid2_patch/patch/alldata.js"
     private const val PATCH_BASE_URL = "https://zeas2.github.io/Kirikiroid2_patch/patch/"
+    /** 单个补丁下载体积上限（200MB）：索引异常或 URL 指向超大资源时防止写满存储。 */
+    private const val MAX_PATCH_BYTES = 200L * 1024 * 1024
+    private const val DOWNLOAD_BUFFER_SIZE = 16 * 1024
     private val indexRegex = Regex("""\[(\d+), "(.+?)", "(.+?)", "(.+?)", \[(.+)]],?""")
 
     // 安装互斥锁：UI 层的 installing 守卫会随 Activity 重建丢失（旋转屏幕时旧协程的阻塞 IO
@@ -133,7 +137,19 @@ object KrkrOnlinePatchService {
         connection.use {
             if (responseCode !in 200..299) error(text(context, R.string.patch_download_failed_http, responseCode))
             inputStream.use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
+                target.outputStream().use { output ->
+                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
+                    var total = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        if (total > MAX_PATCH_BYTES) {
+                            throw IOException(text(context, R.string.patch_download_too_large))
+                        }
+                        output.write(buffer, 0, read)
+                    }
+                }
             }
         }
     }
@@ -165,7 +181,7 @@ object KrkrOnlinePatchService {
     private fun resolveWritableGameFileDir(game: ScanGame): File? {
         val candidates = listOfNotNull(
             game.uri.takeIf { it.startsWith("/") },
-            EngineScanner.safUriToPath(game.uri),
+            GamePathUtils.safUriToPath(game.uri),
         ).distinct()
 
         return candidates

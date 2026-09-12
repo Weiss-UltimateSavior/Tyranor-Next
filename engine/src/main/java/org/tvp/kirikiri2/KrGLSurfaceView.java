@@ -4,6 +4,7 @@ import android.content.Context;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import bridge.KrPathUtils;
+import com.core.engine.LaunchContract;
 import org.cocos2dx.lib.Cocos2dxGLSurfaceView;
 
 public final class KrGLSurfaceView extends Cocos2dxGLSurfaceView {
@@ -15,7 +16,7 @@ public final class KrGLSurfaceView extends Cocos2dxGLSurfaceView {
             KR2Activity activity = KrPathUtils.currentActivity();
             if (activity == null) return false;
             String version = activity.getIntent() == null ? null
-                    : activity.getIntent().getStringExtra("krEngineVersion");
+                    : activity.getIntent().getStringExtra(LaunchContract.KR_ENGINE_VERSION);
             // 1.2.6 与 1.3.4 走相同的旧版 KR2Activity JNI 触摸回调路径，需使用 Cocos 管线。
             return "1.3.4".equals(version)
                     || "1.2.6".equals(version)

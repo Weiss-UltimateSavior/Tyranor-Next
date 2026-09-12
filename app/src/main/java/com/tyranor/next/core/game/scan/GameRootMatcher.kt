@@ -2,15 +2,16 @@ package com.tyranor.next.core.game.scan
 
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.tyranor.next.core.game.model.GamePathUtils
 
 /**
- * 扫描根归属判定：先按真实路径前缀匹配（SAF URI 经 [EngineScanner.safUriToPath] 映射），
- * 再按 SAF documentId 前缀匹配兜底。EngineScanner 删除目录与存储迁移导入共用。
+ * 扫描根归属判定：先按真实路径前缀匹配（SAF URI 经 [GamePathUtils.safUriToPath] 映射），
+ * 再按 SAF documentId 前缀匹配兜底。删除扫描目录与存储迁移导入共用。
  */
 internal object GameRootMatcher {
 
     fun isGameUnderRoot(rootUriText: String, gameUriText: String): Boolean {
-        val rootPath = normalizePath(EngineScanner.safUriToPath(rootUriText))
+        val rootPath = normalizePath(GamePathUtils.safUriToPath(rootUriText))
         val gamePath = normalizePath(safUriToPath(gameUriText) ?: uriFilePath(gameUriText))
         if (rootPath != null && gamePath != null && isSameOrChildPath(rootPath, gamePath)) return true
 
@@ -19,7 +20,7 @@ internal object GameRootMatcher {
         return gameDocId == rootDocId || gameDocId.startsWith("${rootDocId.trimEnd('/')}/")
     }
 
-    private fun safUriToPath(uriText: String): String? = EngineScanner.safUriToPath(uriText)
+    private fun safUriToPath(uriText: String): String? = GamePathUtils.safUriToPath(uriText)
 
     private fun documentId(uriText: String): String? = runCatching {
         DocumentsContract.getDocumentId(Uri.parse(uriText))

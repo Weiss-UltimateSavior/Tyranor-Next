@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
-import android.provider.OpenableColumns
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,7 +64,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
@@ -75,6 +74,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -102,7 +102,7 @@ import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-/** 更新弹窗的下载阶段；null 表示停留在"发现新版本"阶段，四个阶段复用同一个 AppAlertDialog。 */
+/** 更新弹窗的下载阶段；null 表示停留在“发现新版本”阶段，四个阶段复用同一个 AppAlertDialog。 */
 private sealed interface UpdateDownloadPhase {
     data class Downloading(val downloadedBytes: Long, val totalBytes: Long) : UpdateDownloadPhase
 
@@ -134,14 +134,14 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     var updateDownloadJob by remember { mutableStateOf<Job?>(null) }
     var showGroupDialog by remember { mutableStateOf(false) }
     var showScanDirs by remember { mutableStateOf(false) }
-    var scanDirs by remember { mutableStateOf(EngineScanner.loadRoots(ctx)) }
+    var scanDirs by remember { mutableStateOf(GameLibraryFacade.loadRoots(ctx)) }
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
     val settingsUpdateFailedFormat = stringResource(R.string.settings_update_failed)
     LaunchedEffect(Unit) {
-        EngineScanner.rootsRevision.collect {
-            scanDirs = withContext(Dispatchers.IO) { EngineScanner.loadRoots(ctx) }
+        GameLibraryFacade.rootsRevision.collect {
+            scanDirs = withContext(Dispatchers.IO) { GameLibraryFacade.loadRoots(ctx) }
         }
     }
     val dirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -153,8 +153,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
             }
-            EngineScanner.saveRoot(ctx, u)
-            scanDirs = EngineScanner.loadRoots(ctx)
+            GameLibraryFacade.saveRoot(ctx, u)
+            scanDirs = GameLibraryFacade.loadRoots(ctx)
         }
     }
 
@@ -222,7 +222,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     val settingsUpdateInstallFailedMessage = stringResource(R.string.update_install_failed)
     fun installUpdateApk(file: File) {
         if (!ctx.packageManager.canRequestPackageInstalls()) {
-            // 未授权"安装未知应用"：先跳系统授权页，授权后用户再次点击安装即可
+            // 未授权“安装未知应用”：先跳系统授权页，授权后用户再次点击安装即可
             runCatching {
                 ctx.startActivity(
                     Intent(
@@ -410,8 +410,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             )
                             TextButton(
                                 onClick = {
-                                    EngineScanner.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                    scanDirs = EngineScanner.loadRoots(ctx)
+                                    GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
+                                    scanDirs = GameLibraryFacade.loadRoots(ctx)
                                 },
                             ) {
                                 Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
@@ -455,7 +455,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     Toast.makeText(ctx, allFilesAccessMsg, Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                EngineScanner.saveRoot(ctx, target.absolutePath)
+                GameLibraryFacade.saveRoot(ctx, target.absolutePath)
                 showPathDialog = false
                 pathInput = ""
             }
@@ -702,7 +702,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val path = importFont(ctx, uri)
+            val path = FontImport.importToPrivate(ctx, uri)
             if (path != null) {
                 krFont = path
             }
@@ -839,12 +839,6 @@ private fun SettingsTopBar(title: String) {
     )
 }
 
-/** 列表底部占位：避让系统导航栏。 */
-@Composable
-private fun BottomInsetSpacer() {
-    Box(Modifier.fillMaxWidth().height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
-}
-
 private typealias FontPickerLauncher = androidx.activity.compose.ManagedActivityResultLauncher<String, Uri?>
 
 /** 引擎设置详情页的滚动列表内容：按 [kind] 渲染对应引擎的设置卡片。
@@ -928,7 +922,7 @@ private fun LazyListPlaceholder(
             EngineCard(stringResource(R.string.engine_settings_render)) {
                 if (!isSdl3) {
                     SwitchPreference(title = stringResource(R.string.engine_settings_opengl_accurate_render), checked = krAccurate == "1", onCheckedChange = { b -> onKrAccurate(if (b) "1" else "0") })
-                    EnumSliderRow(stringResource(R.string.engine_settings_memory_usage), krMemMap, krMem, onKrMem)
+                    SliderRow(stringResource(R.string.engine_settings_memory_usage), krMemMap, krMem, onSelect = onKrMem)
                     // Anime4K 后处理仅 kirikiri2 内核路径支持（GLSurfaceView 注入），krkrsdl3 不提供
                     DropdownRow(stringResource(R.string.engine_settings_anime4k), krAnime4kOptions(), krAnime4k, onKrAnime4k)
                 }
@@ -942,22 +936,28 @@ private fun LazyListPlaceholder(
                     onKrRenderer(if (!isSdl3 && it == "default") "" else it)
                 }
                 if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_SOFTWARE)) {
-                    EnumSliderRow(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, krDrawThread, onKrDrawThread)
+                    SliderRow(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, krDrawThread, onSelect = onKrDrawThread)
                     DropdownRow(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, krSwCompress, onKrSwCompress)
                 }
                 if (!isSdl3 && !krIs134126) {
-                    EnumSliderRow(stringResource(R.string.engine_settings_fps_limit), krFpsMap, krFps, onKrFps)
+                    SliderRow(stringResource(R.string.engine_settings_fps_limit), krFpsMap, krFps, onSelect = onKrFps)
                 }
                 if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_OPENGL)) {
                     DropdownRow(stringResource(R.string.engine_settings_opengl_texture_compression), krOglCompressMap, krOglCompress, onKrOglCompress)
-                    EnumSliderRow(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, krTexsize, onKrTexsize)
+                    SliderRow(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, krTexsize, onSelect = onKrTexsize)
                 }
             }
         }
 
         if (kind == EngineSettingsKind.KRKR && !isSdl3) item {
             EngineCard(stringResource(R.string.engine_settings_font)) {
-                FontRow(stringResource(R.string.engine_settings_default_font), krFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) }, onResetKrFont, { fontLauncher.launch("*/*") })
+                FontPreference(
+                    label = stringResource(R.string.engine_settings_default_font),
+                    value = krFont.ifEmpty { stringResource(R.string.engine_settings_builtin_font) },
+                    followLabel = stringResource(R.string.engine_settings_use_builtin_font),
+                    onFollow = onResetKrFont,
+                    onPick = { fontLauncher.launch("*/*") },
+                )
                 if (krVersion != EngineSettingsStore.KR_126) {
                     SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
                     Text(
@@ -974,8 +974,8 @@ private fun LazyListPlaceholder(
             EngineCard(stringResource(R.string.engine_settings_operation)) {
                 // 仅 kirikiri2 内核（libgame.so）读取这两项偏好，krkrsdl3 走命令行参数不生效
                 // 虚拟鼠标 1..150%（50% 即原版 Ty 的 0.5），菜单不透明度 1..100%
-                ContinuousSliderRow(stringResource(R.string.engine_settings_vcursor_scale), krkrVcursorOptions(), krVCursorScale, onKrVCursorScale)
-                ContinuousSliderRow(stringResource(R.string.engine_settings_menu_handler_opa), krkrPercentOptions(), krMenuOpa, onKrMenuOpa)
+                SliderRow(stringResource(R.string.engine_settings_vcursor_scale), krkrVcursorOptions(), krVCursorScale, discrete = false, onSelect = onKrVCursorScale)
+                SliderRow(stringResource(R.string.engine_settings_menu_handler_opa), krkrPercentOptions(), krMenuOpa, discrete = false, onSelect = onKrMenuOpa)
             }
         }
 
@@ -987,7 +987,7 @@ private fun LazyListPlaceholder(
                 SwitchPreference(title = stringResource(R.string.engine_settings_disable_video), checked = ons.disableVideo, onCheckedChange = { b -> onOns(ons.copy(disableVideo = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_sharpness), checked = ons.sharpness, onCheckedChange = { b -> onOns(ons.copy(sharpness = b)) })
                 if (ons.sharpness) {
-                    EnumSliderRow(stringResource(R.string.engine_settings_sharpness_strength), onsSharpnessMap, ons.sharpnessValue) {
+                    SliderRow(stringResource(R.string.engine_settings_sharpness_strength), onsSharpnessMap, ons.sharpnessValue) {
                         onOns(ons.copy(sharpnessValue = it))
                     }
                 }
@@ -1080,15 +1080,16 @@ private fun DropdownRow(
 }
 
 /**
- * 档次/数字滑杆行：复刻参考项目「界面缩放」交互 —— ArrowPreference 底部内嵌 Slider，
- * 档位映射为整数索引并开启 keyPoints 磁吸 + Step 震动反馈；右侧实时显示当前档位文本。
- * 拖拽只更新本地状态，松手（onValueChangeFinished）才回调写盘，避免拖动过程中频繁 IO。
+ * 档次/数字滑杆行：ArrowPreference 底部内嵌 Slider，档位映射为整数索引；
+ * [discrete] 控制是否开启 keyPoints 磁吸 + Step 震动反馈（枚举档位 true，连续档位 false）。
+ * 右侧实时显示当前档位文本；拖拽只更新本地状态，松手（onValueChangeFinished）才回调写盘。
  */
 @Composable
-private fun EnumSliderRow(
+private fun SliderRow(
     label: String,
     options: List<Pair<String, String>>,
     current: String,
+    discrete: Boolean = true,
     onSelect: (String) -> Unit,
 ) {
     val initIndex = options.indexOfFirst { it.first == current }.takeIf { it >= 0 } ?: 0
@@ -1104,116 +1105,27 @@ private fun EnumSliderRow(
         },
         onClick = { },
         bottomAction = {
-            Slider(
-                value = sliderIndex.toFloat(),
-                onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
-                onValueChangeFinished = { onSelect(options[sliderIndex].first) },
-                valueRange = 0f..(options.size - 1).toFloat(),
-                showKeyPoints = true,
-                keyPoints = (0 until options.size).map { it.toFloat() },
-                magnetThreshold = 0.25f,
-                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
-            )
+            if (discrete) {
+                Slider(
+                    value = sliderIndex.toFloat(),
+                    onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
+                    onValueChangeFinished = { onSelect(options[sliderIndex].first) },
+                    valueRange = 0f..(options.size - 1).toFloat(),
+                    showKeyPoints = true,
+                    keyPoints = (0 until options.size).map { it.toFloat() },
+                    magnetThreshold = 0.25f,
+                    hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                )
+            } else {
+                Slider(
+                    value = sliderIndex.toFloat(),
+                    onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
+                    onValueChangeFinished = { onSelect(options[sliderIndex].first) },
+                    valueRange = 0f..(options.size - 1).toFloat(),
+                )
+            }
         },
     )
-}
-
-@Composable
-private fun ContinuousSliderRow(
-    label: String,
-    options: List<Pair<String, String>>,
-    current: String,
-    onSelect: (String) -> Unit,
-) {
-    val initIndex = options.indexOfFirst { it.first == current }.takeIf { it >= 0 } ?: 0
-    var sliderIndex by remember(current) { mutableIntStateOf(initIndex) }
-    ArrowPreference(
-        title = label,
-        endActions = {
-            Text(
-                options[sliderIndex].second,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        onClick = { },
-        bottomAction = {
-            Slider(
-                value = sliderIndex.toFloat(),
-                onValueChange = { sliderIndex = it.roundToInt().coerceIn(0, options.size - 1) },
-                onValueChangeFinished = { onSelect(options[sliderIndex].first) },
-                valueRange = 0f..(options.size - 1).toFloat(),
-            )
-        },
-    )
-}
-
-/** 字体行：Miuix ArrowPreference，右侧展示当前字体；点击弹出「内置字体 / 选择字体文件」。 */
-@Composable
-private fun FontRow(label: String, value: String, onReset: () -> Unit, onPick: () -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    ArrowPreference(
-        title = label,
-        endActions = {
-            Text(
-                value,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        onClick = { open = true },
-    )
-    if (open) {
-        AppAlertDialog(
-            onDismissRequest = { open = false },
-            title = { Text(label, style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    AppNavItem(
-                        title = stringResource(R.string.engine_settings_use_builtin_font),
-                        leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = PageGrey,
-                    ) {
-                        onReset()
-                        open = false
-                    }
-                    AppNavItem(
-                        title = stringResource(R.string.engine_settings_select_font_file),
-                        leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = PageGrey,
-                    ) {
-                        open = false
-                        onPick()
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.common_cancel)) } },
-        )
-    }
-}
-
-private fun importFont(ctx: android.content.Context, uri: Uri): String? = try {
-    val displayName = runCatching {
-        ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-            if (c.moveToFirst()) c.getString(0) else null
-        }
-    }.getOrNull() ?: uri.lastPathSegment
-    val name = (displayName ?: "font.ttf").substringAfterLast('/').substringAfterLast('\\')
-    if (!listOf(".ttf", ".ttc", ".otf", ".otc").any { name.lowercase().endsWith(it) }) return null
-    val dir = File(ctx.filesDir, "fonts")
-    if (!dir.isDirectory && !dir.mkdirs()) return null
-    val target = File(dir, name)
-    ctx.contentResolver.openInputStream(uri)?.use { input ->
-        target.outputStream().use { out -> input.copyTo(out) }
-    } ?: return null
-    target.absolutePath
-} catch (t: Throwable) {
-    null
 }
 
 /** KRKR 百分比选项：""（引擎默认）+ 1..100%，供全局滑杆与单游戏下拉共用；顶层 val 取不到 stringResource，故封装为函数。 */

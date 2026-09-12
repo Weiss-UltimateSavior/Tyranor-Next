@@ -55,7 +55,8 @@
 
 - 职责：游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新。
 
-- 规则：可以依赖 `engine` 模块；不得依赖 Compose UI 组件；不得把页面类作为普通业务依赖。
+- 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
+  全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
 - 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/settings`、`core/auth`、`core/updater` 等包。
 
@@ -79,6 +80,27 @@
 - `app/src/main/nativeplugins`：插件 manifest 与 app-only 插件源头。
 
 - 禁止在 app 与 engine 两边手工维护同一份二进制或共享脚本；构建脚本会检查重复源文件。
+
+***
+
+## 错误处理协议（core → ui）
+
+功能抽象层（core）对 UI 的错误协议固定为以下三种，禁止再引入其它风格：
+
+1. **类型化失败结果**：可预期的业务失败返回 sealed Result / 类型化错误 DTO，由 UI 映射文案。
+   现有模板：`LaunchResult`（`core/game/launch/LaunchResult.kt`）、`ExternalEngineLaunchResult`、
+   `UpdateCheckResult`、`CoverScraperService` 的 sealed 结果。
+2. **抛类型化异常**：确实需要异常语义时，异常必须携带错误码而非文案（如
+   `GameSaveException(SaveErrorCode, detail)`），UI 层按错误码映射 string 资源。
+3. **无结果即 null / 空集合**；调用方容错自行 `runCatching`（仅限边角工具函数）。
+
+硬性约束：
+
+- **core 不得把本地化文案当错误消息/返回值**（禁止 `throw IOException(text(R.string...))`
+  或 `return text(R.string...)`）；需要提示时返回错误码，文案组装一律上移 UI
+  （映射文件放 `ui/<域>/` 或 `ui/common/`，如 `ui/common/LaunchErrorMessages.kt`）。
+- 新增错误分支时优先扩展已有 sealed 类型/错误码枚举，不新增并行协议。
+- 取消（`CancellationException`）不属于失败，必须原样向上传播。
 
 ***
 
@@ -175,6 +197,8 @@ Column(fillMaxSize)                                // 页面根
 
 - 组件统一圆角数值为 **8dp**；列表项卡片、功能项卡片、弹窗等圆角组件都应使用 `RoundedCornerShape(8.dp)`。
 
+- **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
+
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 
 ## 页面内容文字尺寸规范
@@ -250,6 +274,8 @@ Column(fillMaxSize)                                // 页面根
 - 标题用 `MaterialTheme.typography.bodyMedium`、颜色取 `TextColor`；摘要可选，用 `bodySmall` + 半透明辅助色。均不依赖 `colorScheme.surface*`（遵循「组件背景色统一规范」）。
 
 - `leadingIcon`：左侧图标 drawable；未提供时组件自动使用**默认占位图标** `DEFAULT_LEADING_ICON`，不允许调用方在不该出现空图标时留白。
+
+- `showLeadingIcon`：是否展示左侧图标，默认 `true`。**纯动作条目**（如存档导出/导入/删除等无图标的动作项）可传 `false` 隐藏图标位，此时标题顶格排列；不得为隐藏图标而乱传占位图。
 
 - `onClick`：点击回调；传 `null` 表示不可用（整条变灰且不可点击）。
 
@@ -387,4 +413,8 @@ Column(fillMaxSize)                                // 页面根
 - 构建命令：`./gradlew assembleDebug --no-daemon`
 
 - 使用 Android CLI（`--sdk=/tmp/androidsdk`）安装到实机。
+
+- 发版规则（issue #79）：只修改 `app/build.gradle.kts` 的 `appVersionName`；`versionCode` 由 `versionCodeOf()` 自动推导
+  （`major*1_000_000 + minor*1_000 + patch`，minor/patch 必须 < 1000），禁止手写或回退 `versionCode`。
+  beta-release workflow 会前置校验 versionCode 严格递增，并在构建后核对 APK 实际 versionCode（不一致即失败）。
 

@@ -2,16 +2,15 @@ package com.tyranor.next.ui.main
 
 import android.app.Application
 import android.util.Log
-import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tyranor.next.R
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.storage.GameLibraryDao
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.game.cleanupDeletedGame
 import java.util.concurrent.atomic.AtomicLong
@@ -88,14 +87,14 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         // 设置页删除扫描目录时会同步清理该目录下的持久游戏缓存；
         // 主库订阅 core 层修订号，避免跨 Tab 常驻组合下游戏页仍显示旧游戏。
         viewModelScope.launch {
-            EngineScanner.libraryRevision.drop(1).collect {
+            GameLibraryFacade.libraryRevision.drop(1).collect {
                 refreshFromStorage()
             }
         }
         // 刮削任务属于应用级长任务，即使 GameScreen 已离开组合，也要立即发布给首页与游戏页。
         viewModelScope.launch {
             var handledEventId = 0L
-            snapshotFlow { CoverScrapeTaskManager.state.value }.collect { task ->
+            CoverScrapeTaskManager.state.collect { task ->
                 if (task.running || task.eventId == 0L || task.eventId == handledEventId) return@collect
                 handledEventId = task.eventId
                 val result = task.result
@@ -114,7 +113,8 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 } else {
                     _uiState.update { it.copy(scrapeEventId = task.eventId, scrapeMessage = message) }
                 }
-                CoverScrapeTaskManager.clearFinished(task.eventId)
+                // 不在此清空任务态：刮削页/游戏页各自展示完成后经 acknowledgeScrapeEvent 清空，
+                // 避免 Main.immediate 收集器先于 UI 帧清空导致页面结果提示被吞（H1）。
             }
         }
         refreshFromStorage()
@@ -142,7 +142,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         _uiState.update { MainLibraryStateReducer.replaceGame(it, updated) }
         enqueuePersistence(revision) {
             var persisted = updated
-            EngineScanner.updateGames(appContext) { games ->
+            GameLibraryFacade.updateGames(appContext) { games ->
                 games.map { current ->
                     if (current.uri == updated.uri) {
                         mergeChangedGameFields(current, before, updated).also { persisted = it }
@@ -151,17 +151,14 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                     }
                 }
             }
-            EngineScanner.updateRecentGames(appContext) { recent ->
+            GameLibraryFacade.updateRecentGames(appContext) { recent ->
                 recent.map {
                     if (it.uri == persisted.uri) persisted.copy(openTime = it.openTime) else it
                 }
             }
-            EngineScanner.saveQuickLaunch(
-                appContext,
-                EngineScanner.loadQuickLaunch(appContext).map {
-                    if (it.uri == persisted.uri) persisted else it
-                },
-            )
+            GameLibraryFacade.updateQuickLaunch(appContext) { quick ->
+                quick.map { if (it.uri == persisted.uri) persisted else it }
+            }
         }
     }
 
@@ -169,7 +166,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.deleteGame(it, target.uri) }
         enqueuePersistence(revision) {
-            EngineScanner.removeGame(appContext, target.uri)
+            GameLibraryFacade.removeGame(appContext, target.uri)
             cleanupDeletedGame(appContext, target)
         }
     }
@@ -178,7 +175,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.removeRecent(it, target.uri) }
         enqueuePersistence(revision) {
-            EngineScanner.removeRecentGame(appContext, target.uri)
+            GameLibraryFacade.removeRecentGame(appContext, target.uri)
         }
     }
 
@@ -186,14 +183,14 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     fun toggleQuickLaunch(game: ScanGame): Boolean {
         val current = _uiState.value
         val shouldAdd = current.quickLaunch.none { it.uri == game.uri }
-        if (shouldAdd && current.quickLaunch.size >= GameLibraryDao.MAX_QUICK_LAUNCH) return false
+        if (shouldAdd && current.quickLaunch.size >= GameLibraryFacade.MAX_QUICK_LAUNCH) return false
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.toggleQuickLaunch(it, game) }
         enqueuePersistence(revision) {
             if (shouldAdd) {
-                EngineScanner.addQuickLaunch(appContext, game)
+                GameLibraryFacade.addQuickLaunch(appContext, game)
             } else {
-                EngineScanner.removeQuickLaunch(appContext, game.uri)
+                GameLibraryFacade.removeQuickLaunch(appContext, game.uri)
             }
         }
         return true
@@ -205,7 +202,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         val revision = stateRevision.incrementAndGet()
         _uiState.update { it.copy(scanning = true) }
         enqueuePersistence(revision = revision, finishesScan = true) {
-            if (EngineScanner.loadRoots(appContext).isNotEmpty()) {
+            if (GameLibraryFacade.loadRoots(appContext).isNotEmpty()) {
                 EngineScanner.rescanLibrary(appContext)
             }
         }
@@ -215,6 +212,8 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         _uiState.update { state ->
             if (state.scrapeEventId == eventId) state.copy(scrapeMessage = null) else state
         }
+        // 主界面已展示结果：清空共享任务态，避免后续进入刮削页重复弹同一结果
+        CoverScrapeTaskManager.clearFinished(eventId)
     }
 
     /**
@@ -244,14 +243,14 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     private suspend fun publishStorageSnapshot(commandRevision: Long, finishesScan: Boolean) {
-        val games = EngineScanner.loadGames(appContext)
+        val games = GameLibraryFacade.loadGames(appContext)
         val byUri = games.associateBy { it.uri }
-        val storedQuick = EngineScanner.loadQuickLaunch(appContext)
-        val normalizedRecent = EngineScanner.updateRecentGames(appContext) { current ->
+        val storedQuick = GameLibraryFacade.loadQuickLaunch(appContext)
+        val normalizedRecent = GameLibraryFacade.updateRecentGames(appContext) { current ->
             current.mapNotNull { stored -> byUri[stored.uri]?.copy(openTime = stored.openTime) }
         }
-        val quick = storedQuick.mapNotNull { stored -> byUri[stored.uri] }.take(GameLibraryDao.MAX_QUICK_LAUNCH)
-        if (quick != storedQuick) EngineScanner.saveQuickLaunch(appContext, quick)
+        val quick = storedQuick.mapNotNull { stored -> byUri[stored.uri] }.take(GameLibraryFacade.MAX_QUICK_LAUNCH)
+        if (quick != storedQuick) GameLibraryFacade.saveQuickLaunch(appContext, quick)
 
         _uiState.update { current ->
             if (commandRevision == stateRevision.get()) {

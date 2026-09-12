@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.system.OsConstants
 import android.util.Log
+import com.core.engine.LaunchContract
 import org.tvp.kirikiri2.KR2Activity
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
@@ -224,7 +225,7 @@ object NativeBridge {
         return try {
             val activity = KrPathUtils.currentActivity()
             val intent = activity?.intent
-            intent != null && intent.getBooleanExtra("safFileFallback", false)
+            intent != null && intent.getBooleanExtra(LaunchContract.SAF_FILE_FALLBACK, false)
         } catch (_: Throwable) {
             false
         }

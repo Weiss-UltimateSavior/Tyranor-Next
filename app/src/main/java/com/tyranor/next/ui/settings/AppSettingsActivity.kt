@@ -2,11 +2,7 @@ package com.tyranor.next.ui.settings
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,35 +16,31 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.ProvideAppLocale
+import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.AppAlertDialog
-import com.tyranor.next.ui.common.WithoutPressIndication
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker
@@ -59,40 +51,12 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 应用设置页 Activity：入口见设置页「应用设置」项。 */
-class AppSettingsActivity : ComponentActivity() {
+class AppSettingsActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val darkMode = AppSettingsStore.isDarkEffective(this)
-        enableEdgeToEdge(
-            statusBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-            navigationBarStyle = if (darkMode) androidx.activity.SystemBarStyle.dark(Color.TRANSPARENT) else androidx.activity.SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
-        )
-        @Suppress("DEPRECATION")
-        window.statusBarColor = Color.TRANSPARENT
-        @Suppress("DEPRECATION")
-        window.navigationBarColor = Color.TRANSPARENT
-
-        setContent {
-            ProvideAppLocale {
-                TyranorNextTheme {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.background,
-                    ) {
-                        WithoutPressIndication {
-                            AppSettingsScreen()
-                        }
-                    }
-                }
-            }
+        setAppScreenContent {
+            AppSettingsScreen()
         }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun finish() {
-        super.finish()
-        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
     }
 
     companion object {
@@ -105,6 +69,7 @@ class AppSettingsActivity : ComponentActivity() {
 @Composable
 internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
+    val navStyle by AppSettingsStore.navStyleState.collectAsState()
     var showColorPicker by remember { mutableStateOf(false) }
 
     MiuixSettingsTheme {
@@ -223,7 +188,7 @@ internal fun AppSettingsScreen() {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_liquid_glass_nav),
-                                checked = AppSettingsStore.navStyleState.value == AppSettingsStore.NAV_STYLE_LIQUID_GLASS,
+                                checked = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setNavStyle(
                                         ctx,
@@ -303,10 +268,4 @@ private fun ComposeColor.toHex(): String {
         ((green * 255f).roundToInt() shl 8) or
         (blue * 255f).roundToInt()
     return String.format("#%06X", argb and 0xFFFFFF)
-}
-
-/** 列表底部占位：避让系统导航栏。 */
-@Composable
-private fun BottomInsetSpacer() {
-    Box(Modifier.fillMaxWidth().height(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()))
 }

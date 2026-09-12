@@ -3,10 +3,8 @@ package com.tyranor.next.core.cover
 import android.content.Context
 import com.tyranor.next.R
 import com.tyranor.next.core.i18n.AppLocaleController
-import androidx.compose.runtime.State
-import androidx.compose.runtime.mutableStateOf
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,8 +13,11 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 
 data class CoverScrapeTaskState(
@@ -27,8 +28,8 @@ data class CoverScrapeTaskState(
 )
 
 object CoverScrapeTaskManager {
-    private val _state = mutableStateOf(CoverScrapeTaskState())
-    val state: State<CoverScrapeTaskState> = _state
+    private val _state = MutableStateFlow(CoverScrapeTaskState())
+    val state: StateFlow<CoverScrapeTaskState> = _state.asStateFlow()
     private val _gameUpdates = MutableSharedFlow<ScanGame>()
     val gameUpdates: SharedFlow<ScanGame> = _gameUpdates.asSharedFlow()
 
@@ -44,7 +45,7 @@ object CoverScrapeTaskManager {
             _state.value = CoverScrapeTaskState(running = true)
             job = scope.launch {
                 try {
-                    val input = games ?: EngineScanner.loadGames(appContext)
+                    val input = games ?: GameLibraryFacade.loadGames(appContext)
                     val result = CoverScraperService.scrapeLibraryCovers(appContext, input) { original, scraped ->
                         val persisted = withContext(NonCancellable + Dispatchers.IO) {
                             persistScrapedCover(appContext, original, scraped)
@@ -54,7 +55,7 @@ object CoverScrapeTaskManager {
                     // 每张封面已通过 updateGameCover 单行落库（迁移方案阶段 2），
                     // 这里只读最新库作为结果快照，不再触发整库重写。
                     val mergedGames = withContext(NonCancellable + Dispatchers.IO) {
-                        EngineScanner.loadGames(appContext)
+                        GameLibraryFacade.loadGames(appContext)
                     }
                     postFinished(result = result.copy(games = mergedGames), error = null)
                 } catch (e: CancellationException) {
@@ -80,7 +81,7 @@ object CoverScrapeTaskManager {
     }
 
     private fun persistScrapedCover(context: Context, original: ScanGame, scraped: ScanGame): ScanGame? =
-        EngineScanner.updateGameCover(context, original.uri) { current ->
+        GameLibraryFacade.updateGameCover(context, original.uri) { current ->
             mergeScrapedCover(current, original, scraped)
         }
 
@@ -89,7 +90,8 @@ object CoverScrapeTaskManager {
             nextEventId += 1
             nextEventId
         }
-        withContext(Dispatchers.Main.immediate) {
+        // NonCancellable：取消路径也要把终态写入，否则 running 永久停留在 true
+        withContext(NonCancellable + Dispatchers.Main.immediate) {
             _state.value = CoverScrapeTaskState(
                 running = false,
                 result = result,
@@ -106,6 +108,9 @@ internal fun mergeScrapedCover(current: ScanGame, original: ScanGame, scraped: S
         current.copy(
             coverUri = scraped.coverUri,
             coverSource = scraped.coverSource,
+            // VNDB 元数据随封面结果一并合并（空串不得覆盖已有值）
+            vndbId = scraped.vndbId?.takeIf { it.isNotBlank() } ?: current.vndbId,
+            metadataTitle = scraped.metadataTitle?.takeIf { it.isNotBlank() } ?: current.metadataTitle,
         )
     } else {
         current
