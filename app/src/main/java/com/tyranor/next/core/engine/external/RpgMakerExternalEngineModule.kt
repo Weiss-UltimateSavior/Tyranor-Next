@@ -7,6 +7,8 @@ import android.util.Log
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.settings.EngineSettingsStore
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -51,9 +53,14 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
                 messageRes = R.string.external_rpgm_resolve_dir_failed,
             )
         }
+        val settings = request.resolvedSettings?.rpg ?: EngineSettingsStore.RpgMaker()
         ensureRtpEnvironment(context.applicationContext, gameType)
         if (gameType == TYPE_RPGMXP) {
-            ensureGameConfiguration(folder, gameIdFor(folder, request.game.title), gameType)
+            syncGameConfiguration(
+                gameFolder = folder,
+                gameId = gameIdFor(folder, request.game.title),
+                useRuby18 = settings.useRuby18,
+            )
         }
         return null
     }
@@ -62,7 +69,10 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         val gameType = resolveGameType(request)
         return Intent(actionForGameType(gameType)).setPackage(packageName).apply {
             putExtra(ExternalEngineContract.GAME, buildGameJson(request))
-            putExtra(ExternalEngineContract.SETTINGS, buildSettingsJson(gameType))
+            putExtra(
+                ExternalEngineContract.SETTINGS,
+                buildSettingsJson(gameType, request.resolvedSettings?.rpg),
+            )
             putExtra(ExternalEngineContract.ORIENTATION, 6)
             putExtra(ExternalEngineContract.ROOT_URI, request.game.uri)
             putExtra(ExternalEngineContract.LAUNCH_TARGET, request.launchTarget)
@@ -90,9 +100,45 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         }
     }
 
-    internal fun buildSettingsJson(gameType: String): String {
-        if (gameType != TYPE_RPGMXP) return "{}"
-        return "{\"rpg\":{\"useRuby18\":{\"boolean\":true}}}"
+    /**
+     * 构造 JoiPlay 协议的嵌套 settings JSON：`{"app":..., "rpg":{<key>:{"boolean"|"string": value}}}`。
+     *
+     * 键集以 RPGM 插件 `MKXPConfigurationParser.parse(String)` 实际解析的字段为准：
+     * - `rpg`：useRuby18 / windowSize / fontScale / speedUp / customFont / verticalScreenAlign /
+     *   enablePostloadScripts / pathCache / prebuiltPathCache / fastPathEnum / smoothScaling /
+     *   vsync / frameSkip / solidFonts / copyText / debug / useCJKFont；
+     * - `app`：cheats（插件只从 app.cheats 读取金手指开关）。
+     *
+     * [settings] 为三级合并结果；为空时按默认值下发，其中 XP 的 useRuby18 默认 true，
+     * 保证 RGSS1 脚本交给 Ruby 1.8 解析；非 XP 子类型不做强制改写。
+     */
+    internal fun buildSettingsJson(
+        gameType: String,
+        settings: EngineSettingsStore.RpgMaker? = null,
+    ): String {
+        val s = settings ?: EngineSettingsStore.RpgMaker()
+        val useRuby18 = if (gameType == TYPE_RPGMXP && settings == null) true else s.useRuby18
+        val app = JSONObject()
+            .put("cheats", JSONObject().put("boolean", s.cheats))
+        val rpg = JSONObject()
+            .put("useRuby18", JSONObject().put("boolean", useRuby18))
+            .put("debug", JSONObject().put("boolean", s.debug))
+            .put("smoothScaling", JSONObject().put("boolean", s.smoothScaling))
+            .put("vsync", JSONObject().put("boolean", s.vsync))
+            .put("frameSkip", JSONObject().put("boolean", s.frameSkip))
+            .put("solidFonts", JSONObject().put("boolean", s.solidFonts))
+            .put("pathCache", JSONObject().put("boolean", s.pathCache))
+            .put("prebuiltPathCache", JSONObject().put("boolean", s.prebuiltPathCache))
+            .put("fastPathEnum", JSONObject().put("boolean", s.fastPathEnum))
+            .put("copyText", JSONObject().put("boolean", s.copyText))
+            .put("useCJKFont", JSONObject().put("boolean", s.useCJKFont))
+            .put("enablePostloadScripts", JSONObject().put("boolean", s.enablePostloadScripts))
+            .put("customFont", JSONObject().put("string", s.customFont))
+            .put("verticalScreenAlign", JSONObject().put("string", s.verticalScreenAlign))
+            .put("windowSize", JSONObject().put("string", s.windowSize))
+            .put("speedUp", JSONObject().put("string", s.speedUp))
+            .put("fontScale", JSONObject().put("string", s.fontScale))
+        return JSONObject().put("app", app).put("rpg", rpg).toString()
     }
 
     internal fun resolveGameType(request: ExternalEngineLaunchRequest): String {
@@ -170,8 +216,13 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
         }
     }
 
-    private fun ensureGameConfiguration(gameFolder: String, gameId: String, gameType: String) {
-        if (gameType != TYPE_RPGMXP) return
+    /**
+     * 同步 XP 的扁平 configuration.json（插件 `loadFromFile()` 读取），与生效 useRuby18 联动：
+     * - 文件不存在：创建 `{"useRuby18":<value>}`；
+     * - 文件已是 JSON 对象：仅更新 useRuby18（保留用户其余键）；
+     * - 文件存在但非 JSON：跳过，不覆盖用户文件。
+     */
+    private fun syncGameConfiguration(gameFolder: String, gameId: String, useRuby18: Boolean) {
         runCatching {
             val externalRoot = Environment.getExternalStorageDirectory()
             val candidates = buildList {
@@ -187,15 +238,35 @@ object RpgMakerExternalEngineModule : ExternalEngineModule {
                 )
             }
             for (configFile in candidates.distinctBy { it.absolutePath }) {
-                if (configFile.exists()) continue
-                configFile.parentFile?.let { parent ->
-                    if (!parent.exists()) parent.mkdirs()
-                }
-                configFile.writeText("{\"useRuby18\":true}")
+                syncFlatConfigurationFile(configFile, useRuby18)
             }
         }.onFailure { error ->
-            Log.w(TAG, "ensureGameConfiguration failed (non-fatal)", error)
+            Log.w(TAG, "syncGameConfiguration failed (non-fatal)", error)
         }
+    }
+
+    private fun syncFlatConfigurationFile(configFile: File, useRuby18: Boolean) {
+        val exists = configFile.exists()
+        val existing = if (exists) {
+            runCatching { JSONObject(configFile.readText()) }.getOrNull()
+        } else {
+            null
+        }
+        if (exists && existing == null) {
+            Log.w(TAG, "skip non-JSON configuration file: ${configFile.absolutePath}")
+            return
+        }
+        if (existing != null && existing.has("useRuby18") &&
+            existing.optBoolean("useRuby18") == useRuby18
+        ) {
+            return
+        }
+        val json = existing ?: JSONObject()
+        json.put("useRuby18", useRuby18)
+        configFile.parentFile?.let { parent ->
+            if (!parent.exists()) parent.mkdirs()
+        }
+        configFile.writeText(json.toString())
     }
 
     private fun copyAssetToFile(context: Context, assetPath: String, destination: File) {

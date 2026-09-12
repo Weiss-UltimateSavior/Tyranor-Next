@@ -80,7 +80,81 @@ object EffectiveEngineSettings {
             encoding = override.encoding?.let { EngineSettingsStore.normalizeEncoding(it) } ?: global.encoding,
         )
     }
+
+    /**
+     * RPG Maker RGSS 外置模块全局设置 + 单游戏覆盖合并：
+     * 布尔字段「覆盖 ?: 全局」；字符串字段经白名单校验，非法覆盖回退全局。
+     * useRuby18 不做强制改写，由 RpgMakerExternalEngineModule 按 XP 子类型兜底（默认 true）。
+     */
+    fun mergeRpgMaker(
+        global: EngineSettingsStore.RpgMaker,
+        override: RpgMakerOverride?,
+    ): EngineSettingsStore.RpgMaker {
+        if (override == null) return global
+        return global.copy(
+            useRuby18 = resolveBool(override.useRuby18, global.useRuby18),
+            debug = resolveBool(override.debug, global.debug),
+            smoothScaling = resolveBool(override.smoothScaling, global.smoothScaling),
+            vsync = resolveBool(override.vsync, global.vsync),
+            frameSkip = resolveBool(override.frameSkip, global.frameSkip),
+            solidFonts = resolveBool(override.solidFonts, global.solidFonts),
+            pathCache = resolveBool(override.pathCache, global.pathCache),
+            prebuiltPathCache = resolveBool(override.prebuiltPathCache, global.prebuiltPathCache),
+            fastPathEnum = resolveBool(override.fastPathEnum, global.fastPathEnum),
+            copyText = resolveBool(override.copyText, global.copyText),
+            cheats = resolveBool(override.cheats, global.cheats),
+            useCJKFont = resolveBool(override.useCJKFont, global.useCJKFont),
+            enablePostloadScripts = resolveBool(override.enablePostloadScripts, global.enablePostloadScripts),
+            customFont = resolve(override.customFont, global.customFont),
+            verticalScreenAlign = resolveAllowed(
+                override.verticalScreenAlign,
+                global.verticalScreenAlign,
+                EngineSettingsStore.RPG_VERTICAL_ALIGNS,
+                EngineSettingsStore.RPG_VERTICAL_ALIGN_DEFAULT,
+            ),
+            windowSize = resolveAllowed(
+                override.windowSize,
+                global.windowSize,
+                EngineSettingsStore.RPG_WINDOW_SIZES,
+                EngineSettingsStore.RPG_WINDOW_SIZE_DEFAULT,
+            ),
+            speedUp = resolveAllowed(
+                override.speedUp,
+                global.speedUp,
+                EngineSettingsStore.RPG_SPEED_UPS,
+                EngineSettingsStore.RPG_SPEED_UP_DEFAULT,
+            ),
+            fontScale = resolveAllowed(
+                override.fontScale,
+                global.fontScale,
+                EngineSettingsStore.RPG_FONT_SCALES,
+                EngineSettingsStore.RPG_FONT_SCALE_DEFAULT,
+            ),
+        )
+    }
 }
+
+/** RPG Maker RGSS 外置模块单游戏覆盖字段（null = 跟随全局）。 */
+data class RpgMakerOverride(
+    val useRuby18: Boolean? = null,
+    val debug: Boolean? = null,
+    val smoothScaling: Boolean? = null,
+    val vsync: Boolean? = null,
+    val frameSkip: Boolean? = null,
+    val solidFonts: Boolean? = null,
+    val pathCache: Boolean? = null,
+    val prebuiltPathCache: Boolean? = null,
+    val fastPathEnum: Boolean? = null,
+    val copyText: Boolean? = null,
+    val cheats: Boolean? = null,
+    val useCJKFont: Boolean? = null,
+    val enablePostloadScripts: Boolean? = null,
+    val customFont: String? = null,
+    val verticalScreenAlign: String? = null,
+    val windowSize: String? = null,
+    val speedUp: String? = null,
+    val fontScale: String? = null,
+)
 
 /** ONS 单游戏覆盖字段（null = 跟随全局）。 */
 data class OnsOverride(

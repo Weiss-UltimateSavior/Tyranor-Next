@@ -239,3 +239,40 @@ internal fun artSurfaceCacheOptionsMap(): Map<String, String> = artSurfaceCacheO
 
 @Composable
 internal fun artFontCacheOptionsMap(): Map<String, String> = artFontCacheOptions().toMap()
+
+// ───────────────────────── RPG Maker RGSS 外置模块 ─────────────────────────
+
+/** 窗口尺寸全为尺寸字面量，无需本地化。 */
+@Composable
+internal fun rpgWindowSizeOptions(): List<Pair<String, String>> =
+    EngineSettingsStore.RPG_WINDOW_SIZES.map { it to it }
+
+/** 加速倍率 1..9（显示为 Nx，数值本身无语言差异）。 */
+@Composable
+internal fun rpgSpeedUpOptions(): List<Pair<String, String>> =
+    EngineSettingsStore.RPG_SPEED_UPS.map { it to "${it}x" }
+
+/** 字体缩放档位（0.25..2.00）。 */
+@Composable
+internal fun rpgFontScaleOptions(): List<Pair<String, String>> =
+    EngineSettingsStore.RPG_FONT_SCALES.map { it to it }
+
+/** 竖屏对齐（插件 MKXPConfiguration 的 verticalScreenAlign 取值）。 */
+@Composable
+internal fun rpgVerticalAlignOptions(): List<Pair<String, String>> = listOf(
+    "top" to stringResource(R.string.engine_settings_rpgm_valign_top),
+    "top-center" to stringResource(R.string.engine_settings_rpgm_valign_top_center),
+    "center" to stringResource(R.string.engine_settings_rpgm_valign_center),
+)
+
+@Composable
+internal fun rpgWindowSizeOptionsMap(): Map<String, String> = rpgWindowSizeOptions().toMap()
+
+@Composable
+internal fun rpgSpeedUpOptionsMap(): Map<String, String> = rpgSpeedUpOptions().toMap()
+
+@Composable
+internal fun rpgFontScaleOptionsMap(): Map<String, String> = rpgFontScaleOptions().toMap()
+
+@Composable
+internal fun rpgVerticalAlignOptionsMap(): Map<String, String> = rpgVerticalAlignOptions().toMap()

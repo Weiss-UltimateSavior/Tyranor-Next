@@ -125,4 +125,71 @@ class EffectiveEngineSettingsTest {
         assertFalse(merged.stretchFull)
         assertTrue(merged.ignoreCutout)
     }
+
+    @Test
+    fun mergeRpgMakerFollowsGlobalWhenNoOverride() {
+        val global = EngineSettingsStore.RpgMaker(vsync = true, windowSize = "1280x720")
+        assertEquals(global, EffectiveEngineSettings.mergeRpgMaker(global, null))
+        assertEquals(global, EffectiveEngineSettings.mergeRpgMaker(global, RpgMakerOverride()))
+    }
+
+    @Test
+    fun mergeRpgMakerAppliesFieldOverridesOnly() {
+        val global = EngineSettingsStore.RpgMaker(
+            useRuby18 = true,
+            vsync = false,
+            smoothScaling = true,
+            windowSize = "640x480",
+            speedUp = "1",
+            fontScale = "0.75",
+            customFont = "/global/font.ttf",
+        )
+        val merged = EffectiveEngineSettings.mergeRpgMaker(
+            global,
+            RpgMakerOverride(
+                useRuby18 = false,
+                vsync = true,
+                windowSize = "1920x1080",
+                speedUp = "5",
+                customFont = "/game/font.ttf",
+            ),
+        )
+
+        assertFalse(merged.useRuby18)
+        assertTrue(merged.vsync)
+        assertEquals("1920x1080", merged.windowSize)
+        assertEquals("5", merged.speedUp)
+        assertEquals("/game/font.ttf", merged.customFont)
+        // 未覆盖字段保持全局
+        assertTrue(merged.smoothScaling)
+        assertEquals("0.75", merged.fontScale)
+    }
+
+    @Test
+    fun mergeRpgMakerRejectsIllegalWhitelistValues() {
+        val global = EngineSettingsStore.RpgMaker(
+            windowSize = "800x600",
+            speedUp = "2",
+            fontScale = "1.00",
+        )
+        val merged = EffectiveEngineSettings.mergeRpgMaker(
+            global,
+            RpgMakerOverride(
+                windowSize = "bogus",
+                speedUp = "42",
+                fontScale = "",
+            ),
+        )
+
+        assertEquals("800x600", merged.windowSize)
+        assertEquals("2", merged.speedUp)
+        assertEquals("1.00", merged.fontScale)
+    }
+
+    @Test
+    fun mergeRpgMakerAllowsExplicitEmptyCustomFont() {
+        val global = EngineSettingsStore.RpgMaker(customFont = "/global/font.ttf")
+        val merged = EffectiveEngineSettings.mergeRpgMaker(global, RpgMakerOverride(customFont = ""))
+        assertEquals("", merged.customFont)
+    }
 }
