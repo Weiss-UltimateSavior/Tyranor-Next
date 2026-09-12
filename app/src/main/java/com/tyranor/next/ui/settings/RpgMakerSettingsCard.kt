@@ -34,7 +34,7 @@ import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.RpgMakerExternalEngineModule
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.theme.PageGrey
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import kotlinx.coroutines.Dispatchers
@@ -324,14 +324,14 @@ internal fun RpgMakerRgssSettingsCard(
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AppNavItem(
                         title = stringResource(R.string.engine_settings_rpgm_rtp_from_zip),
-                        containerColor = PageGrey,
+                        containerColor = DialogItemSurface,
                     ) {
                         showRtpSourceDialog = false
                         zipLauncher.launch("*/*")
                     }
                     AppNavItem(
                         title = stringResource(R.string.engine_settings_rpgm_rtp_from_dir),
-                        containerColor = PageGrey,
+                        containerColor = DialogItemSurface,
                     ) {
                         showRtpSourceDialog = false
                         treeLauncher.launch(null)

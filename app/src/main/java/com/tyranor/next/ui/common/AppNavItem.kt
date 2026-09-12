@@ -30,6 +30,7 @@ import com.tyranor.next.R
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.theme.glassBorder
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -79,6 +80,7 @@ fun AppNavItem(
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = { onClick?.invoke() })
             .background(containerColor)
+            .glassBorder()
             .padding(horizontal = 16.dp, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {

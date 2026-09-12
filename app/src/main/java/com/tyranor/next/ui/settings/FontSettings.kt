@@ -19,7 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
-import com.tyranor.next.theme.PageGrey
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -98,7 +98,7 @@ internal fun FontPreference(
                     AppNavItem(
                         title = followLabel,
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = PageGrey,
+                        containerColor = DialogItemSurface,
                     ) {
                         onFollow()
                         open = false
@@ -106,7 +106,7 @@ internal fun FontPreference(
                     AppNavItem(
                         title = stringResource(R.string.engine_settings_select_font_file),
                         leadingIcon = R.drawable.ic_font_bookmark,
-                        containerColor = PageGrey,
+                        containerColor = DialogItemSurface,
                     ) {
                         open = false
                         onPick()

@@ -269,7 +269,7 @@ Column(fillMaxSize)                                // 页面根
 
 - 排版固定：圆角 `RoundedCornerShape(8.dp)` + 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
 
-- 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = PageGrey`（弹窗背景 `NavWhite` → 白底灰卡），保证条目与弹窗背景反色、层次分明。「色调切换」开启时 `NavWhite`/`PageGrey` 同步互换，反差关系不变。
+- 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明。「色调切换」开启时 `NavWhite`/`PageGrey` 同步互换，反差关系不变；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
 
 - 标题用 `MaterialTheme.typography.bodyMedium`、颜色取 `TextColor`；摘要可选，用 `bodySmall` + 半透明辅助色。均不依赖 `colorScheme.surface*`（遵循「组件背景色统一规范」）。
 
@@ -372,7 +372,14 @@ Column(fillMaxSize)                                // 页面根
 
 - 卡片/导航栏/组件容器（含弹窗背景） → `NavWhite`
 
-- 弹窗内的条目容器（如 `AppNavItem` 传 `containerColor = PageGrey`、手写条目行） → `PageGrey`，与弹窗白色背景形成对偶反差
+- 弹窗内的条目容器（如 `AppNavItem` 传 `containerColor = DialogItemSurface`、手写条目行用
+  `DialogItemSurface`） → 与弹窗背景形成对偶反差
+
+- **玻璃外观风格（应用设置 → 外观风格 = 玻璃）**：页面背景固定黑灰渐变（`GlassBackground`），
+  `PageGrey` 透明、`NavWhite` = `GlassSurface`、`TextColor` 恒浅色；卡片/条目/弹窗/输入框统一
+  0.5dp 发丝描边（`Modifier.glassBorder()`），弹窗/抽屉面板用 `GlassPanel`。此模式下「外观模式」
+  与「色调切换」不可用（置灰），色调轮盘保持可用。新增组件必须走上述动态常量与 `glassBorder`，
+  不得硬编码玻璃色值。
 
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
 

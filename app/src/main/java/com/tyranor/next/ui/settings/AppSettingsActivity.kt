@@ -40,6 +40,7 @@ import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppAlertDialog
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -70,6 +71,7 @@ class AppSettingsActivity : AppScreenActivity() {
 internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
+    val glass = AppThemeColors.isGlass
     var showColorPicker by remember { mutableStateOf(false) }
 
     MiuixSettingsTheme {
@@ -91,7 +93,7 @@ internal fun AppSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             var language by remember { mutableStateOf(AppSettingsStore.getLanguage(ctx)) }
                             val languageModes = listOf(
@@ -117,7 +119,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_color_wheel),
@@ -143,7 +145,30 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // 外观风格：默认 / 玻璃（切换即时全 App 生效并持久化）
+                            val appearanceModes = listOf(
+                                AppSettingsStore.APPEARANCE_STYLE_DEFAULT to stringResource(R.string.settings_appearance_style_default),
+                                AppSettingsStore.APPEARANCE_STYLE_GLASS to stringResource(R.string.settings_appearance_style_glass),
+                            )
+                            val appearanceIndex = if (glass) 1 else 0
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_appearance_style),
+                                items = appearanceModes.map { it.second },
+                                selectedIndex = appearanceIndex,
+                                onSelectedIndexChange = { index ->
+                                    appearanceModes.getOrNull(index)?.first?.let { style ->
+                                        AppSettingsStore.setAppearanceStyle(ctx, style)
+                                        AppThemeColors.refresh(ctx)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 状态驱动选中项：跟随系统时系统深浅不变也不会漏刷新下拉展示
                             var themeMode by remember { mutableStateOf(AppSettingsStore.getThemeMode(ctx)) }
@@ -156,8 +181,10 @@ internal fun AppSettingsScreen() {
                                 .let { if (it < 0) 1 else it } // 未知存量值回退浅色
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_theme_mode),
+                                summary = if (glass) stringResource(R.string.settings_disabled_in_glass_style) else null,
                                 items = themeModes.map { it.second },
                                 selectedIndex = modeIndex,
+                                enabled = !glass,
                                 onSelectedIndexChange = { index ->
                                     themeModes.getOrNull(index)?.first?.let { mode ->
                                         themeMode = mode
@@ -170,11 +197,13 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_tone_switch),
+                                summary = if (glass) stringResource(R.string.settings_disabled_in_glass_style) else null,
                                 checked = AppThemeColors.toneSwitchEnabled,
+                                enabled = !glass,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setToneSwitchEnabled(ctx, checked)
                                     AppThemeColors.refresh(ctx)
@@ -184,7 +213,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_liquid_glass_nav),

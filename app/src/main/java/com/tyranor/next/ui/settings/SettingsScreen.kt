@@ -66,10 +66,11 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
-import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
@@ -259,7 +260,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_add_game_dir),
@@ -315,7 +316,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_engine_settings),
@@ -326,7 +327,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_app_title),
@@ -386,7 +387,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(PageGrey)
+                                // 弹窗内条目底色：玻璃风格用亮玻璃面
+                                .background(DialogItemSurface)
                                 .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -504,11 +506,11 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    AppNavItem(stringResource(R.string.settings_qq_group), leadingIcon = R.drawable.ic_group_qq, containerColor = PageGrey) {
+                    AppNavItem(stringResource(R.string.settings_qq_group), leadingIcon = R.drawable.ic_group_qq, containerColor = DialogItemSurface) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://qm.qq.com/q/M9JH8A9Yys")))
                     }
-                    AppNavItem(stringResource(R.string.settings_telegram_channel), leadingIcon = R.drawable.ic_group_telegram, containerColor = PageGrey) {
+                    AppNavItem(stringResource(R.string.settings_telegram_channel), leadingIcon = R.drawable.ic_group_telegram, containerColor = DialogItemSurface) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/tyranornext")))
                     }
@@ -546,7 +548,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 AppNavItem(
                                     title = stringResource(R.string.update_version_item, candidate.latestVersion),
                                     leadingIcon = R.drawable.ic_update_download,
-                                    containerColor = PageGrey,
+                                    containerColor = DialogItemSurface,
                                     onClick = {
                                         if (candidate.apkAsset != null) {
                                             startApkDownload(candidate)
@@ -566,7 +568,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             AppNavItem(
                                 title = stringResource(R.string.update_open_releases),
                                 leadingIcon = R.drawable.ic_update_github,
-                                containerColor = PageGrey,
+                                containerColor = DialogItemSurface,
                                 showArrow = false,
                                 onClick = {
                                     runCatching {
@@ -1053,7 +1055,7 @@ private fun LazyListPlaceholder(
 
 @Composable
 internal fun EngineCard(header: String, content: @Composable () -> Unit) {
-    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Text(
                 header,

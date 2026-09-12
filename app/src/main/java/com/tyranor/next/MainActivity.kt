@@ -8,14 +8,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.Modifier
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.GlassBackground
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.core.updater.UpdateNotificationManager
 
@@ -62,7 +59,7 @@ class MainActivity : ComponentActivity() {
               )
             }
           }
-          Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MainNavigation() }
+          GlassBackground { MainNavigation() }
         }
       }
     }

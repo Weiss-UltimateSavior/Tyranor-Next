@@ -67,8 +67,11 @@ import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.QuickLaunchFallback
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
@@ -368,7 +371,8 @@ private fun QuickLaunchCard(
         modifier = modifier
             .height(172.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(QuickLaunchFallback),
+            .background(QuickLaunchFallback)
+            .glassBorder(),
     ) {
         val engineName = if (game.engine == EngineType.UNKNOWN) {
             stringResource(R.string.engine_name_unknown)
@@ -491,7 +495,8 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
         modifier = modifier
             .height(172.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(NavWhite),
+            .background(NavWhite)
+            .glassBorder(),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -534,26 +539,31 @@ private fun RecentGameRow(
         val formattedOpenTime = remember(game.openTime) { TimeFormats.formatDateTime(game.openTime) }
         // 统一裁切圆角：红色删除层与白色内容层圆角一致，内容左移越界部分被裁掉
         Box(Modifier.clip(RoundedCornerShape(8.dp))) {
-            // 删除层：主题色背景 + 白色删除图标，仅滑出约 1/6 时露出右侧「删除」区域
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable(onClick = onSwipeDelete),
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
+            // 删除层：仅滑出约 1/6 时露出右侧「删除」区域；玻璃风格固定用亮玻璃面（避免主题色半透明），
+            // 默认风格保持主题色底。仅在滑出（offset < 0）时渲染
+            if (offset < 0f) {
+                Box(
                     modifier = Modifier
-                        .fillMaxHeight()
-                        .width(with(LocalDensity.current) { revealPx.toDp() })
-                        .align(Alignment.CenterEnd),
+                        .matchParentSize()
+                        .background(
+                            if (AppThemeColors.isGlass) GlassSurfaceHigh else MaterialTheme.colorScheme.primary,
+                        )
+                        .clickable(onClick = onSwipeDelete),
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = stringResource(R.string.common_delete),
-                        tint = Color.White,
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(with(LocalDensity.current) { revealPx.toDp() })
+                            .align(Alignment.CenterEnd),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = stringResource(R.string.common_delete),
+                            tint = Color.White,
+                        )
+                    }
                 }
             }
             Row(
@@ -561,6 +571,7 @@ private fun RecentGameRow(
                     .offset { IntOffset(offset.roundToInt(), 0) }
                     .fillMaxWidth()
                     .background(NavWhite)
+                    .glassBorder()
                     .combinedClickable(
                         onClick = {
                             if (offset != 0f) {

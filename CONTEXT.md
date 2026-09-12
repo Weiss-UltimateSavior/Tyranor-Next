@@ -88,6 +88,10 @@ _Avoid_: 引擎设置 Tab
 底部导航的两种形态：「默认」（Material3 NavigationBar）与「圆角液态玻璃」（LiquidGlassNavigationBar）；内存态即时切换。
 _Avoid_: 底部栏外观、主题
 
+**外观风格（Appearance Style）**:
+应用设置的视觉风格选择：「默认」与「玻璃」；玻璃风格使用固定黑灰渐变背景、半透明毛玻璃容器与 0.5dp 描边，并禁用外观模式/色调切换（色调轮盘可用），以 `AppThemeColors.isGlass` 为唯一事实源。
+_Avoid_: 玻璃主题、Theme（与导航样式/外观模式混用）
+
 **外观模式（Appearance）**:
 明/暗/跟随系统的主题选择；实际生效值以 `AppSettingsStore.isDarkEffective()` 为唯一事实源。
 _Avoid_: 深色模式（仅指其一）

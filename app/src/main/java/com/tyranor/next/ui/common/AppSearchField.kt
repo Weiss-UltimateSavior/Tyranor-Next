@@ -3,6 +3,7 @@ package com.tyranor.next.ui.common
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -13,6 +14,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassBorder
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
 import top.yukonga.miuix.kmp.basic.SearchBarDefaults
@@ -72,7 +74,9 @@ fun AppSearchField(
                             contentDescription = resolvedIconContentDescription,
                         )
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    // 描边必须画在 InputField 上：SearchBar 外层还包着 insideMargin 等布局，
+                    // 挂在外层会把描边画到胶囊之外（等于圈住外面一层组件）
+                    modifier = Modifier.fillMaxWidth().glassBorder(CircleShape),
                 )
             },
             expanded = false,

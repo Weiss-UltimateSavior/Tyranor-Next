@@ -23,6 +23,10 @@ object AppThemeColors {
     var isDark by mutableStateOf(false)
         private set
 
+    /** 外观风格是否为玻璃；变化时全 App 重组（背景/容器/文字随之切换）。 */
+    var isGlass by mutableStateOf(false)
+        private set
+
     /** 色调切换：控制页面背景色与组件色是否互换。 */
     var toneSwitchEnabled by mutableStateOf(AppSettingsStore.DEFAULT_TONE_SWITCH_ENABLED)
         private set
@@ -40,20 +44,34 @@ object AppThemeColors {
         }
     }
 
-    /** 从存储重读主题色与外观模式并广播变更（system 模式按系统当前深/浅解析）。 */
+    /** 从存储重读主题色与外观模式并广播变更（system 模式按系统当前深/浅解析）。
+     *  玻璃风格下强制深色、禁用色调切换（背景固定黑灰渐变）。 */
     fun refresh(context: Context) {
+        isGlass = AppSettingsStore.getAppearanceStyle(context) == AppSettingsStore.APPEARANCE_STYLE_GLASS
         primary = parseColorHex(AppSettingsStore.getThemeColorHex(context))
-        isDark = AppSettingsStore.isDarkEffective(context)
-        toneSwitchEnabled = AppSettingsStore.isToneSwitchEnabled(context)
+        isDark = isGlass || AppSettingsStore.isDarkEffective(context)
+        toneSwitchEnabled = !isGlass && AppSettingsStore.isToneSwitchEnabled(context)
         // 同步主题色快照给 core 启动编排（EngineLauncher 注入引擎 Intent 用），
         // 维持 core 层不反向依赖 theme 的依赖方向。
         ThemeColorPayloadStore.current = ThemeColorPayload(
             darkMode = isDark,
             primaryArgb = primaryArgb,
             onPrimaryArgb = 0xFFFFFFFF.toInt(),
-            cardArgb = (if (isDark) 0xFF1E1F1F else 0xFFFFFFFF).toInt(),
-            textArgb = (if (isDark) 0xFFF0F0F0 else 0xFF14221B).toInt(),
-            mutedArgb = (if (isDark) 0xFF9A9A9A else 0xFF82908A).toInt(),
+            cardArgb = when {
+                isGlass -> GlassPanel.toArgb()
+                isDark -> 0xFF1E1F1F.toInt()
+                else -> 0xFFFFFFFF.toInt()
+            },
+            textArgb = when {
+                isGlass -> GlassText.toArgb()
+                isDark -> 0xFFF0F0F0.toInt()
+                else -> 0xFF14221B.toInt()
+            },
+            mutedArgb = when {
+                isGlass -> GlassTextSecondary.toArgb()
+                isDark -> 0xFF9A9A9A.toInt()
+                else -> 0xFF82908A.toInt()
+            },
         )
     }
 }

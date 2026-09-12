@@ -48,10 +48,12 @@ import com.tyranor.next.core.auth.HikarinagiAuthService
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
@@ -129,7 +131,7 @@ internal fun CoverScraperSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.background(NavWhite).padding(vertical = 4.dp)) {
                             sources.forEachIndexed { index, source ->
                                 CoverSourceRow(
@@ -171,7 +173,7 @@ internal fun CoverScraperSettingsScreen() {
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(Modifier.background(NavWhite).padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.cover_only_missing_title),
@@ -187,7 +189,7 @@ internal fun CoverScraperSettingsScreen() {
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
                         Column(
                             modifier = Modifier.background(NavWhite).padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -253,7 +255,8 @@ private fun CoverSourceRow(
             modifier = Modifier
                 .size(28.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(PageGrey),
+                // 序号徽标底色：玻璃风格用亮玻璃面，避免透明不可见
+                .background(DialogItemSurface),
             contentAlignment = Alignment.Center,
         ) {
             Text(

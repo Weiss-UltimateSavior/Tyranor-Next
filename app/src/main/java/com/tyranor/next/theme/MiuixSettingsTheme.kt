@@ -37,7 +37,8 @@ fun MiuixSettingsTheme(
     // 使设置类页面与其余页面同步跟随主题色。
     val primary = primaryColor ?: AppThemeColors.primary
     val dark = AppThemeColors.isDark
-    val colors = if (dark) {
+    val glass = AppThemeColors.isGlass
+    val baseColors = if (dark) {
         darkColorScheme(
             primary = primary,
             background = PageGrey,
@@ -59,6 +60,26 @@ fun MiuixSettingsTheme(
             onSurfaceContainer = TextColor,
             sliderKeyPointForeground = Color.White,
         )
+    }
+    // 玻璃外观风格：输入框/浮层/分割线/遮罩改用玻璃色板；
+    // 卡片底色（surfaceContainer）与文字（onSurface*）已由动态色常量自动覆盖。
+    val colors = if (glass) {
+        baseColors.copy(
+            surfaceContainerHigh = GlassSurfaceHigh,
+            surfaceContainerHighest = GlassSurfaceHigh,
+            secondaryContainer = GlassSurfaceHigh,
+            onSecondaryContainer = TextColor,
+            onSurfaceContainerVariant = GlassTextSecondary,
+            onBackgroundVariant = GlassTextSecondary,
+            onSurfaceSecondary = GlassTextSecondary,
+            onSurfaceVariantSummary = GlassTextSecondary,
+            onSurfaceVariantActions = GlassTextSecondary.copy(alpha = 0.6f),
+            outline = GlassBorder,
+            dividerLine = GlassBorder,
+            windowDimming = Color.Black.copy(alpha = 0.6f),
+        )
+    } else {
+        baseColors
     }
     MiuixTheme(
         colors = colors,

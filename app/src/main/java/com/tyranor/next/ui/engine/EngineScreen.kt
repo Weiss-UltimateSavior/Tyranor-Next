@@ -48,8 +48,9 @@ import com.tyranor.next.core.engine.external.ExternalEngineModule
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.NavWhite
-import com.tyranor.next.theme.PageGrey
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
@@ -126,7 +127,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         AppNavItem(
                             title = entry.title,
                             summary = stringResource(entry.summaryRes),
-                            containerColor = PageGrey,
+                            containerColor = DialogItemSurface,
                         ) {
                             if (!entry.installed && entry.installUrl != null) {
                                 val opened = ExternalEngineLauncher.openInstallPage(context, entry.installUrl)
@@ -156,7 +157,8 @@ private fun EngineRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick)
+            .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),
         shape = RoundedCornerShape(8.dp),

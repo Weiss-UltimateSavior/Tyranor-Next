@@ -12,6 +12,7 @@ object AppSettingsStore {
 
     const val KEY_THEME_COLOR = "theme_color"
     const val KEY_NAV_STYLE = "nav_style"
+    const val KEY_APPEARANCE_STYLE = "appearance_style"
     const val KEY_SCAN_DEPTH = "scan_depth"
     const val KEY_LANGUAGE = "language"
     const val KEY_THEME_MODE = "theme_mode"
@@ -80,6 +81,12 @@ object AppSettingsStore {
     /** 底部导航栏样式：圆角液态玻璃（流体玻璃）。 */
     const val NAV_STYLE_LIQUID_GLASS = "liquid_glass"
 
+    /** 外观风格：默认（现有主题）。 */
+    const val APPEARANCE_STYLE_DEFAULT = "default"
+
+    /** 外观风格：玻璃（固定黑灰渐变背景 + 毛玻璃组件）。 */
+    const val APPEARANCE_STYLE_GLASS = "glass"
+
     /** 导航栏样式内存态：随设置页切换即时广播，供 MainScreen 重组切换样式。 */
     val navStyleState: MutableStateFlow<String> = MutableStateFlow(NAV_STYLE_DEFAULT)
 
@@ -128,6 +135,19 @@ object AppSettingsStore {
     fun setNavStyle(c: Context, style: String) {
         prefs(c).edit().putString(KEY_NAV_STYLE, style).apply()
         navStyleState.value = style
+    }
+
+    /** 当前外观风格（默认 / 玻璃）。 */
+    fun getAppearanceStyle(c: Context): String =
+        if (prefs(c).getString(KEY_APPEARANCE_STYLE, APPEARANCE_STYLE_DEFAULT) == APPEARANCE_STYLE_GLASS) {
+            APPEARANCE_STYLE_GLASS
+        } else {
+            APPEARANCE_STYLE_DEFAULT
+        }
+
+    fun setAppearanceStyle(c: Context, style: String) {
+        val normalized = if (style == APPEARANCE_STYLE_GLASS) APPEARANCE_STYLE_GLASS else APPEARANCE_STYLE_DEFAULT
+        prefs(c).edit().putString(KEY_APPEARANCE_STYLE, normalized).apply()
     }
 
     /** 文件夹扫描深度（1..5，默认 3）。 */

@@ -24,6 +24,10 @@
     <string name="settings_language_ja">日本語</string>
     <string name="settings_language_en">English</string>
     <string name="settings_color_wheel">色調ホイール</string>
+    <string name="settings_appearance_style">外観スタイル</string>
+    <string name="settings_appearance_style_default">デフォルト</string>
+    <string name="settings_appearance_style_glass">ガラス</string>
+    <string name="settings_disabled_in_glass_style">ガラススタイルでは使用できません</string>
     <string name="settings_theme_mode">外観モード</string>
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>

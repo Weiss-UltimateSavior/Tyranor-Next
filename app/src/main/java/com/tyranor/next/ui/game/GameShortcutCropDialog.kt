@@ -56,7 +56,10 @@ import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.decodeShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.initialCropTransform
 import com.tyranor.next.core.game.shortcut.writeShortcutCropBitmap
+import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.glassBorder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -173,8 +176,11 @@ private fun CropDialogCard(
     onConfirm: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 420.dp).imePadding(),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        modifier = Modifier.fillMaxWidth().widthIn(max = 420.dp).imePadding().glassBorder(),
+        colors = CardDefaults.cardColors(
+            // 玻璃风格用高不透明度玻璃面板保证浮层内文字可读
+            containerColor = if (AppThemeColors.isGlass) GlassPanel else NavWhite,
+        ),
         shape = RoundedCornerShape(8.dp),
     ) {
         Column(

@@ -39,6 +39,7 @@ import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.Dispatchers
@@ -582,7 +583,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
     MiuixCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().glassBorder(),
         cornerRadius = 8.dp,
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {
