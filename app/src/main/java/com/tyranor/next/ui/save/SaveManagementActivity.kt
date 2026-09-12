@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -36,9 +37,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.game.save.GameSaveManager
+import com.tyranor.next.core.game.save.RpgSaveFormat
+import com.tyranor.next.core.game.save.RpgSaveSync
+import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageGrey
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppScreenActivity
@@ -80,10 +85,19 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveExportedCountFormat = stringResource(R.string.save_exported_count)
     val saveImportedCountFormat = stringResource(R.string.save_imported_count)
     val saveDeletedCountFormat = stringResource(R.string.save_deleted_count)
+    val saveSyncResultFormat = stringResource(R.string.save_sync_result)
+    val saveSyncNoChangeMessage = stringResource(R.string.save_sync_result_no_change)
+    val saveSyncFailedFormat = stringResource(R.string.save_sync_result_failed)
+    val saveSyncUnmappedFormat = stringResource(R.string.save_sync_unmapped)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    // MV/MZ 导出格式选择（标准模式 / Tyranor 模式）；其他引擎直接导出。
+    // 用 rememberSaveable：CreateDocument 系统页期间进程重建后仍按用户所选格式导出。
+    var showExportFormatPicker by remember { mutableStateOf(false) }
+    var exportFormat by rememberSaveable { mutableStateOf(GameSaveManager.ExportFormat.TYRANOR) }
+    val rpgWebGame = RpgSaveFormat.isRpgWebEngine(game.engine)
     // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
     var taskRunning by remember { mutableStateOf(false) }
 
@@ -98,6 +112,20 @@ private fun SaveManagementScreen(game: ScanGame) {
 
     LaunchedEffect(game) {
         refresh()
+    }
+
+    /** 把同步结果格式化成用户可读文案：无变化提示、有变化给明细、失败与无法识别的追加说明。 */
+    fun formatSyncResult(result: RpgSaveSync.Result): String {
+        // failed > 0 时不能只看 changed==0 就说「两侧一致」——可能是处理失败什么都没做成
+        val base = when {
+            result.failed > 0 -> saveSyncFailedFormat.format(result.failed)
+            result.changed == 0 -> saveSyncNoChangeMessage
+            else -> {
+                val overwritten = result.toTyranor + result.toStandard
+                saveSyncResultFormat.format(result.imported, result.exported, overwritten, result.movedToDeleted)
+            }
+        }
+        return if (result.unmapped > 0) "$base\n${saveSyncUnmappedFormat.format(result.unmapped)}" else base
     }
 
     fun runSaveTask(block: suspend () -> String) {
@@ -127,7 +155,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     ) { uri: Uri? ->
         if (uri != null) {
             runSaveTask {
-                val count = manager.exportToZip(game, uri)
+                val count = manager.exportToZip(game, uri, exportFormat)
                 saveExportedCountFormat.format(count)
             }
         }
@@ -180,8 +208,29 @@ private fun SaveManagementScreen(game: ScanGame) {
                 AppNavItem(
                     title = stringResource(R.string.save_export_zip),
                     showLeadingIcon = false,
-                    onClick = { exportLauncher.launch(defaultArchiveName(game)) },
+                    onClick = {
+                        if (rpgWebGame) {
+                            showExportFormatPicker = true
+                        } else {
+                            exportFormat = GameSaveManager.ExportFormat.TYRANOR
+                            exportLauncher.launch(defaultArchiveName(game))
+                        }
+                    },
                 )
+            }
+            if (rpgWebGame) {
+                item {
+                    AppNavItem(
+                        title = stringResource(R.string.save_sync_now),
+                        showLeadingIcon = false,
+                        onClick = {
+                            runSaveTask {
+                                val result = EngineLauncher.syncRpgSaves(context, game)
+                                formatSyncResult(result)
+                            }
+                        },
+                    )
+                }
             }
             item {
                 AppNavItem(
@@ -199,6 +248,43 @@ private fun SaveManagementScreen(game: ScanGame) {
             }
             item { BottomInsetSpacer() }
         }
+    }
+
+    // MV/MZ 导出格式选择：标准模式（JoiPlay/PC 兼容）/ Tyranor 模式；选项用 AppNavItem（弹窗内反色）
+    if (showExportFormatPicker) {
+        AppAlertDialog(
+            onDismissRequest = { showExportFormatPicker = false },
+            title = { Text(stringResource(R.string.save_export_format_title), style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AppNavItem(
+                        title = stringResource(R.string.save_export_format_standard),
+                        summary = stringResource(R.string.save_export_format_standard_summary),
+                        leadingIcon = R.drawable.ic_sheet_folder,
+                        containerColor = PageGrey,
+                        showArrow = false,
+                        onClick = {
+                            showExportFormatPicker = false
+                            exportFormat = GameSaveManager.ExportFormat.STANDARD
+                            exportLauncher.launch(defaultArchiveName(game))
+                        },
+                    )
+                    AppNavItem(
+                        title = stringResource(R.string.save_export_format_tyranor),
+                        summary = stringResource(R.string.save_export_format_tyranor_summary),
+                        leadingIcon = R.drawable.ic_sheet_saves,
+                        containerColor = PageGrey,
+                        showArrow = false,
+                        onClick = {
+                            showExportFormatPicker = false
+                            exportFormat = GameSaveManager.ExportFormat.TYRANOR
+                            exportLauncher.launch(defaultArchiveName(game))
+                        },
+                    )
+                }
+            },
+            confirmButton = {},
+        )
     }
 
     if (showDeleteConfirm) {

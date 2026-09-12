@@ -128,6 +128,18 @@ _Avoid_: 存档路径
 将游戏存档目录导出 / 导入为 zip 的备份能力（exportToZip / importFromZip），含文件数与体积上限保护。
 _Avoid_: 备份、云同步
 
+**标准存档格式 / Tyranor 存档格式（RPG Maker MV/MZ）**:
+同一份存档内容的两种文件名形态：标准格式（JoiPlay/PC 兼容，`global|config|fileN` + `.rpgsave`/`.rmmzsave`）与 Tyranor 格式（MV 为 `RPG Global.bin` 等、MZ 为 `global.bin` 等）；二者字节级一致，仅文件名不同。引擎写入的 `key_<sha256(key)>.bin` 哈希名是 Tyranor 写入落点（键空间有限，导出时可反解回标准名）。
+_Avoid_: 存档版本、编码
+
+**存档格式转化（RPG Maker MV/MZ）**:
+启动 MV/MZ 时若在存档目录（`<游戏根>/savedata`，与 Tyrano 相同）检测到标准格式存档，询问用户后按文件名映射纯改名（不重编码）为 Tyranor 格式并写回同目录；目标已存在则跳过不覆盖，源文件移入 `savedata/original/` 留底，不可反解的哈希存档保留原名。仅在应用层实现（engine 保持 `savedata` 读写不变）。
+_Avoid_: 转码、迁移（迁移专指目录位置变更）
+
+**存档互通（Save Interop）**:
+开启后 MV/MZ 的存档在「标准侧 `<内容根>/save`」与「Tyranor 侧有效存档目录」间双向自动同步：启动前与回到前台各同步一次（退出后 500ms 强杀进程、无回调，故以前台兜底并等待会话进程退出）。标准侧兼容 `save` / `Save` 两种拼写（槽位已在某目录则就地更新，默认写小写 `save`）；导入压缩包会剥掉外层文件夹包装。逐槽位按修改时间较新者胜；Tyranor 侧已删除的槽位把标准侧对应文件移入 `<标准侧>/deleted/`；标准侧缺失则重新导出。以应用私有同步清单区分「新建」与「已删除」。由全局/单游戏开关控制，默认关。
+_Avoid_: 云同步、备份（与存档镜像不同）
+
 ## 界面规范
 
 **功能跳转条目（AppNavItem）**:

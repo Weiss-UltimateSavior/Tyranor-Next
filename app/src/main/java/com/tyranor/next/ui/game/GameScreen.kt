@@ -104,6 +104,7 @@ import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
+import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.model.GameSortKeys
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.cover.VndbCoverService
@@ -154,6 +155,9 @@ fun GameScreen(
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
+    val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
+    val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
+    val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
     val scope = rememberCoroutineScope()
     val games = libraryState.games
     var selectedGameUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -162,6 +166,10 @@ fun GameScreen(
     }
     var launchError by remember { mutableStateOf<String?>(null) }
     var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
+    // 网格长按启动路径的 MV/MZ 存档格式确认状态（与抽屉内 sheet 的同名状态各自独立）
+    var longPressSaveTarget by remember { mutableStateOf<ScanGame?>(null) }
+    var longPressSaveDetection by remember { mutableStateOf<RpgSaveFormat.Detection?>(null) }
+    var longPressPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
 
     val gridState = rememberLazyGridState()
     val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
@@ -184,6 +192,25 @@ fun GameScreen(
     fun deleteGame(target: ScanGame) {
         if (selectedGameUri == target.uri) selectedGameUri = null
         onGameDeleted(target)
+    }
+
+    /** 网格长按启动的统一门：Artemis 选择（或无需补丁）后，再检查 MV/MZ 存档格式，最后拉起。
+     *  开启存档互通时跳过弹窗——启动前同步已覆盖其语义。 */
+    fun launchLongPress(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
+        scope.launch {
+            if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
+                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+                return@launch
+            }
+            val pending = EngineLauncher.rpgSaveFormatPending(context, game)
+            if (pending != null) {
+                longPressSaveTarget = game
+                longPressSaveDetection = pending
+                longPressPatchChoice = patchChoice
+            } else {
+                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+            }
+        }
     }
 
     fun syncMissingCovers() {
@@ -230,7 +257,7 @@ fun GameScreen(
                 if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                     patchLaunchTarget = game
                 } else {
-                    launchError = EngineLauncher.launch(context, game).userMessage(context)
+                    launchLongPress(game, null)
                 }
             }
         },
@@ -276,10 +303,9 @@ fun GameScreen(
             confirmButton = {
                 TextButton(
                         onClick = {
+                            val target = patchLaunchTarget
                             patchLaunchTarget = null
-                            scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ALWAYS).userMessage(context)
-                            }
+                            target?.let { launchLongPress(it, EngineLauncher.ArtemisPatchChoice.ALWAYS) }
                     },
                 ) { Text(stringResource(R.string.game_patch_always)) }
             },
@@ -287,20 +313,55 @@ fun GameScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(
                         onClick = {
+                            val target = patchLaunchTarget
                             patchLaunchTarget = null
-                            scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.NEVER).userMessage(context)
-                            }
+                            target?.let { launchLongPress(it, EngineLauncher.ArtemisPatchChoice.NEVER) }
                         },
                     ) { Text(stringResource(R.string.game_patch_never)) }
                     TextButton(
                         onClick = {
+                            val target = patchLaunchTarget
                             patchLaunchTarget = null
-                            scope.launch {
-                                launchError = EngineLauncher.launch(context, game, EngineLauncher.ArtemisPatchChoice.ONCE).userMessage(context)
-                            }
+                            target?.let { launchLongPress(it, EngineLauncher.ArtemisPatchChoice.ONCE) }
                         },
                     ) { Text(stringResource(R.string.game_patch_once)) }
+                }
+            },
+        )
+    }
+
+    // 网格长按启动：MV/MZ 存档格式转化确认（标准 → Tyranor）
+    longPressSaveDetection?.let { detection ->
+        val (standardCount, hashedCount) = detection.dialogArgs()
+        RpgSaveFormatDialog(
+            standardCount = standardCount,
+            hashedCount = hashedCount,
+            onChoice = { convert ->
+                val target = longPressSaveTarget
+                val patchChoice = longPressPatchChoice
+                longPressSaveDetection = null
+                longPressSaveTarget = null
+                longPressPatchChoice = null
+                if (target != null) {
+                    scope.launch {
+                        if (convert) {
+                            val converted = try {
+                                withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, target) }
+                            } catch (ce: CancellationException) {
+                                throw ce
+                            } catch (_: Throwable) {
+                                null
+                            }
+                            val message = rpgConvertResultMessage(
+                                converted,
+                                saveFormatConvertedFormat,
+                                saveFormatConvertedWithFailuresFormat,
+                                saveFormatConvertFailedMessage,
+                            )
+                            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                        launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)
+                    }
                 }
             },
         )
@@ -511,6 +572,9 @@ internal fun GameActionsSheet(
     var showLaunchFilePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showRenameDialog by rememberSaveable(game.uri) { mutableStateOf(false) }
     var showPatchConfirm by rememberSaveable(game.uri) { mutableStateOf(false) }
+    // MV/MZ 存档格式转化确认：待转化检测结果 + 已选定的 Artemis 补丁策略（两弹窗串联时保留）
+    var rpgSaveDetection by remember(game.uri) { mutableStateOf<RpgSaveFormat.Detection?>(null) }
+    var pendingPatchChoice by remember(game.uri) { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
     var shortcutRequestInFlight by remember(game.uri) { mutableStateOf(false) }
     var shortcutCropUriText by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var shortcutPickerForNoCover by rememberSaveable(game.uri) { mutableStateOf(false) }
@@ -523,6 +587,9 @@ internal fun GameActionsSheet(
     val shortcutUpdatedMessage = stringResource(R.string.game_desktop_shortcut_updated)
     val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
     val shortcutFailedMessage = stringResource(R.string.game_desktop_shortcut_failed)
+    val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
+    val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
+    val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
 
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
@@ -537,6 +604,62 @@ internal fun GameActionsSheet(
         scope.launch {
             launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
             if (launchError == null) onDismiss()
+        }
+    }
+
+    /** Artemis 选择落地后，再检查 MV/MZ 存档格式；有标准存档则弹窗，否则直接启动。
+     *  开启存档互通时跳过弹窗——启动前同步已覆盖其语义。 */
+    fun launchWithSaveFormatGate(patchChoice: EngineLauncher.ArtemisPatchChoice?) {
+        scope.launch {
+            if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
+                startLaunch(patchChoice)
+                return@launch
+            }
+            val pending = EngineLauncher.rpgSaveFormatPending(context, game)
+            if (pending != null) {
+                pendingPatchChoice = patchChoice
+                rpgSaveDetection = pending
+            } else {
+                startLaunch(patchChoice)
+            }
+        }
+    }
+
+    /** 启动前统一门：先 Artemis 补丁确认，再 MV/MZ 存档格式确认，最后才真正拉起。 */
+    fun beginLaunch() {
+        scope.launch {
+            if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
+                showPatchConfirm = true
+            } else {
+                launchWithSaveFormatGate(null)
+            }
+        }
+    }
+
+    /** 用户确认转化后执行转化（best-effort），随后按既定策略启动。 */
+    fun resolveSaveFormat(convert: Boolean) {
+        val detection = rpgSaveDetection
+        rpgSaveDetection = null
+        val patchChoice = pendingPatchChoice
+        pendingPatchChoice = null
+        scope.launch {
+            if (convert && detection != null) {
+                val converted = try {
+                    withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, game) }
+                } catch (ce: CancellationException) {
+                    throw ce
+                } catch (_: Throwable) {
+                    null
+                }
+                val message = rpgConvertResultMessage(
+                    converted,
+                    saveFormatConvertedFormat,
+                    saveFormatConvertedWithFailuresFormat,
+                    saveFormatConvertFailedMessage,
+                )
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+            }
+            startLaunch(patchChoice)
         }
     }
 
@@ -665,15 +788,7 @@ internal fun GameActionsSheet(
                         verticalPadding = 17.dp,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
-                    onClick = {
-                        scope.launch {
-                            if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-                                showPatchConfirm = true
-                            } else {
-                                startLaunch()
-                            }
-                        }
-                    },
+                    onClick = { beginLaunch() },
                 )
             }
             if (game.engine == EngineType.KIRIKIRI) {
@@ -843,8 +958,18 @@ internal fun GameActionsSheet(
             game = game,
             onChoice = { choice ->
                 showPatchConfirm = false
-                if (choice != null) startLaunch(choice)
+                if (choice != null) launchWithSaveFormatGate(choice)
             },
+        )
+    }
+
+    // ===== MV/MZ 存档格式转化确认（标准 → Tyranor）；点遮罩 = 保持原样启动 =====
+    rpgSaveDetection?.let { detection ->
+        val (standardCount, hashedCount) = detection.dialogArgs()
+        RpgSaveFormatDialog(
+            standardCount = standardCount,
+            hashedCount = hashedCount,
+            onChoice = { convert -> resolveSaveFormat(convert) },
         )
     }
 

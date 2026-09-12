@@ -32,6 +32,12 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveManager
+import com.tyranor.next.core.game.save.RpgSaveFormat
+import com.tyranor.next.core.game.save.RpgSaveFormatConverter
+import com.tyranor.next.core.game.save.RpgSavePendingStore
+import com.tyranor.next.core.game.save.RpgSaveSync
+import com.tyranor.next.core.game.save.RpgSaveSyncState
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
@@ -48,6 +54,7 @@ import com.yuri.onscripter.ONScripter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -65,6 +72,10 @@ object EngineLauncher {
     private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
+
+    // 前台兜底回写：引擎 finish 后约 500ms 才杀进程，轮询等待其退出的间隔与上限
+    private const val SESSION_EXIT_POLL_MS = 400L
+    private const val SESSION_EXIT_MAX_ATTEMPTS = 8
     private val ARTEMIS_DEFAULT_FALLBACK_CHAIN = listOf(
         EngineSettingsStore.ART_ENGINE_V2,
         EngineSettingsStore.ART_ENGINE_V1,
@@ -141,6 +152,29 @@ object EngineLauncher {
         EnginePluginBootstrap.ensureForLaunch(context, game.engine)?.let {
             return LaunchResult.Failure.PluginBootstrapFailed(it)
         }
+        // MV/MZ 存档互通开启时：登记待回写，并在同一游戏的引擎会话未运行时先同步一次
+        // （补上次回写 + 本次导入）。登记与同步结果无关——即使本次同步失败/推迟，退出后仍要回写。
+        if (isRpgSaveInteropEnabled(context, game)) {
+            recordPendingSaveSync(context, game.uri)
+            try {
+                // 同一游戏的旧会话仍在写入 savedata 时绝不复制（进程内锁约束不了独立引擎进程），
+                // 半写入文件会被当成有效存档。此时保留 pending，交给前台兜底在会话退出后同步。
+                if (isEngineSessionRunning(context, game, path)) {
+                    Log.i(TAG, "rpg save interop sync deferred (session running) uri=${game.uri}")
+                } else {
+                    val result = syncRpgSavesForDirectory(context, game.uri, File(path), game.engine)
+                    Log.i(
+                        TAG,
+                        "rpg save interop sync uri=${game.uri} imported=${result.imported} exported=${result.exported} " +
+                            "toTyranor=${result.toTyranor} toStandard=${result.toStandard} deleted=${result.movedToDeleted} failed=${result.failed}",
+                    )
+                }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Log.w(TAG, "rpg save interop sync failed uri=${game.uri}", t)
+            }
+        }
         val krSafMirror = if (
             game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)
         ) {
@@ -209,6 +243,193 @@ object EngineLauncher {
             val path = resolveGameDirectory(context, game) ?: return@withContext false
             ArtemisPfsUnpacker.needsBasePatch(path)
         }
+
+    /**
+     * RPG Maker MV/MZ 存档格式确认弹窗的触发条件：存档目录（`<游戏根>/savedata`）内存在
+     * 标准格式存档（`global.rpgsave` / `fileN.rpgsave` / MZ `.rmmzsave` 及 MV 的 `.bak`）时，
+     * 返回检测结果供弹窗展示；无待转化项返回 null。UI 层据此弹窗，用户选择经
+     * [convertRpgSaveFormat] 执行。含目录枚举的 IO，切 IO 执行。
+     */
+    suspend fun rpgSaveFormatPending(context: Context, game: ScanGame): RpgSaveFormat.Detection? =
+        withContext(Dispatchers.IO) {
+            val gameDir = effectiveRpgGameDirectory(context, game) ?: return@withContext null
+            RpgSaveFormat.detect(gameDir, game.engine).takeIf { it.convertibleCount > 0 }
+        }
+
+    /**
+     * 执行 MV/MZ 存档格式转化（标准 → Tyranor），输出到引擎存档目录。返回转化计数供 UI 提示；
+     * 存档目录不可用等异常向上抛出由调用方处理。
+     */
+    suspend fun convertRpgSaveFormat(context: Context, game: ScanGame): RpgSaveFormat.ConvertResult =
+        withContext(Dispatchers.IO) {
+            val gameDir = effectiveRpgGameDirectory(context, game)
+                ?: throw java.io.IOException("cannot resolve game directory for ${game.uri}")
+            RpgSaveFormatConverter.convert(gameDir, game.engine)
+        }
+
+    /** MV/MZ 的游戏本地目录；非 RPG 引擎或无法解析时返回 null。 */
+    private fun effectiveRpgGameDirectory(context: Context, game: ScanGame): File? {
+        if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return null
+        return resolveGameDirectory(context, game)?.let(::File)
+    }
+
+    /**
+     * MV/MZ 存档互通生效值：单游戏覆盖优先，否则全局；非 RPG 引擎恒为 false。
+     * 单游戏覆盖读取会命中 DB（[PerGameSettingsStore.getBool] → loadRowBlocking 内含
+     * runBlocking，首次还要回灌 SharedPreferences），故本函数挂起并在 IO 线程读取，
+     * 避免 UI 主线程协程被阻塞。
+     */
+    suspend fun isRpgSaveInteropEnabled(context: Context, game: ScanGame): Boolean =
+        isRpgSaveInteropEnabled(context, game.uri, game.engine)
+
+    /** 互通开关生效值（按 gameId/engine，不依赖 ScanGame），供前台兜底复用。 */
+    private suspend fun isRpgSaveInteropEnabled(context: Context, gameUri: String, engine: EngineType): Boolean {
+        if (!RpgSaveFormat.isRpgWebEngine(engine)) return false
+        return withContext(Dispatchers.IO) {
+            PerGameSettingsStore.getBool(context, gameUri, PerGameSettingsStore.F_RPG_SAVE_INTEROP)
+                ?: EngineSettingsStore.isRpgSaveInterop(context)
+        }
+    }
+
+    /**
+     * 执行一次 MV/MZ 存档互通双向同步（标准侧 `<内容根>/save` ⇄ Tyranor 侧有效存档目录）。
+     * 返回同步结果供 UI 提示；非 RPG 引擎返回空结果。含文件 IO，切 IO 执行。
+     */
+    suspend fun syncRpgSaves(context: Context, game: ScanGame): RpgSaveSync.Result =
+        withContext(Dispatchers.IO) {
+            if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return@withContext RpgSaveSync.Result()
+            val gameDir = resolveGameDirectory(context, game)?.let(::File)
+                ?: throw java.io.IOException("cannot resolve game directory for ${game.uri}")
+            syncRpgSavesForDirectory(context, game.uri, gameDir, game.engine)
+        }
+
+    /** 同步核心（无 Context 依赖游戏解析）：供启动/前台兜底/手动入口共用。 */
+    private fun syncRpgSavesForDirectory(
+        context: Context,
+        gameUri: String,
+        gameDir: File,
+        engine: EngineType,
+    ): RpgSaveSync.Result {
+        // 标准侧兼容 save / Save 两种拼写；首选写入目录为已存在的小写 save（默认）
+        val standardDirs = RpgSaveFormat.standardSaveDirectories(gameDir)
+        val saveManager = GameSaveManager(context)
+        val scoped = saveManager.isTyranoFamilyScoped(gameUri)
+        val tyranorDir = saveManager.effectiveTyranoFamilySaveDirectory(gameUri, gameDir.absolutePath, scoped)
+            ?: gameDir.resolve("savedata")
+        return RpgSaveSync.sync(
+            standardDirs = standardDirs,
+            tyranorDir = tyranorDir,
+            engine = engine,
+            stateStore = RpgSaveSyncState.forContext(context),
+            gameKey = gameUri,
+        )
+    }
+
+    /** 记录待回写的游戏（应用回到前台时对已退出会话补一次同步）。 */
+    fun recordPendingSaveSync(context: Context, gameUri: String) {
+        if (gameUri.isBlank()) return
+        RpgSavePendingStore.add(context, gameUri)
+    }
+
+    /**
+     * 应用回到前台时调用：对每个待回写游戏，等待其引擎会话进程退出后补一次同步并清除记录。
+     *
+     * 引擎 finish 后约 500ms 才 killProcess（且强杀无回调），回到前台时进程往往仍在，
+     * 因此这里按 [SESSION_EXIT_POLL_MS] 轮询等待其退出（上限 [SESSION_EXIT_MAX_ATTEMPTS] 次）；
+     * 超时仍存活视为「后台会话」本次不回写，避免与运行中的引擎并发读写。
+     *
+     * 只有「确认游戏已从库中删除」「不再是 RPG 引擎」「互通开关已关闭」或「本次同步成功」
+     * 才移除 pending；临时性失败（游戏库读取异常、SAF 权限失效、存储未挂载导致目录解析失败、
+     * 同步抛错）一律保留记录，留待下次前台重试。
+     */
+    suspend fun flushPendingSaveSync(context: Context): Int = withContext(Dispatchers.IO) {
+        val pending = RpgSavePendingStore.all(context)
+        if (pending.isEmpty()) return@withContext 0
+        var synced = 0
+        pending.forEach { gameUri ->
+            // 读取游戏库失败（IO/DB 异常）不改变 pending：无法区分「已删除」与「暂时读不到」
+            val games = try {
+                GameLibraryFacade.loadGames(context)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Log.w(TAG, "rpg save interop flush: loadGames failed, keep pending uri=$gameUri", t)
+                return@forEach
+            }
+            val game = games.firstOrNull { it.uri == gameUri }
+            if (game == null || !RpgSaveFormat.isRpgWebEngine(game.engine)) {
+                // 已确认游戏不存在或非 RPG 引擎：记录无意义，移除
+                RpgSavePendingStore.remove(context, gameUri)
+                return@forEach
+            }
+            // 开关关闭后不再回写（也可能是本次登记后用户关掉了互通）
+            if (!isRpgSaveInteropEnabled(context, game.uri, game.engine)) {
+                RpgSavePendingStore.remove(context, gameUri)
+                return@forEach
+            }
+            // 目录暂时解析不到（SAF 权限失效/存储未挂载/IO 异常）：保留记录待下次重试
+            val gameDir = try {
+                resolveGameDirectory(context, game)?.let(::File)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Log.w(TAG, "rpg save interop flush: resolve dir failed, keep pending uri=$gameUri", t)
+                return@forEach
+            }
+            if (gameDir == null) {
+                Log.i(TAG, "rpg save interop flush: game dir unavailable, keep pending uri=$gameUri")
+                return@forEach
+            }
+            val gameDirPath = gameDir.absolutePath
+            var attempts = 0
+            while (isEngineSessionRunning(context, game, gameDirPath) && attempts < SESSION_EXIT_MAX_ATTEMPTS) {
+                delay(SESSION_EXIT_POLL_MS)
+                attempts++
+            }
+            if (isEngineSessionRunning(context, game, gameDirPath)) return@forEach
+            try {
+                syncRpgSavesForDirectory(context, gameUri, gameDir, game.engine)
+                synced++
+                RpgSavePendingStore.remove(context, gameUri)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                // 同步失败保留 pending，下次前台重试
+                Log.w(TAG, "rpg save interop flush failed, keep pending uri=$gameUri", t)
+            }
+        }
+        synced
+    }
+
+    /**
+     * 对应 host 进程是否正运行**同一游戏**的会话。仅按进程后缀判断会把「任意后台
+     * Tyrano 游戏」误判为本游戏在跑，导致本游戏的回写被永久跳过；故先看
+     * [EngineSessionRegistry] 登记的当前游戏目录是否与本游戏一致，再用进程存活兜底
+     * （登记在宿主被强杀时可能残留，进程不在了就不算运行）。
+     */
+    private fun isEngineSessionRunning(context: Context, game: ScanGame, gameDirPath: String?): Boolean {
+        if (gameDirPath.isNullOrBlank()) return false
+        val hosts = if (game.engine == EngineType.RPG_MV || game.engine == EngineType.RPG_MZ) {
+            // v1/v2 跑在 :rpgmaker，v0 跑在 :tyrano；两者任一在跑同一游戏都视为运行中
+            listOf(EngineSessionRegistry.HOST_RPGMAKER to ":rpgmaker", EngineSessionRegistry.HOST_TYRANO to ":tyrano")
+        } else {
+            listOf(EngineSessionRegistry.HOST_TYRANO to ":tyrano")
+        }
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+        val running = am.runningAppProcesses.orEmpty()
+        return hosts.any { (host, suffix) ->
+            if (running.none { proc -> proc.processName.endsWith(suffix) }) return@any false
+            val registered = EngineSessionRegistry.currentGame(context, host) ?: return@any false
+            samePath(registered, gameDirPath)
+        }
+    }
+
+    /** 目录等价判定：优先 canonicalPath，失败退回字符串比较（与 stopOppositeRpgHost 同策略）。 */
+    private fun samePath(a: String, b: String): Boolean = try {
+        File(a).canonicalPath == File(b).canonicalPath
+    } catch (_: Throwable) {
+        a == b
+    }
 
     /**
      * Native engines receive a real /storage path, so SAF tree grants are not enough on Android 11+.

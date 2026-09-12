@@ -10,6 +10,7 @@ import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsResolver
+import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import java.io.File
 import java.io.FileInputStream
@@ -106,6 +107,22 @@ class GameSaveManager(private val context: Context) {
         }
     }
 
+    /**
+     * Tyrano 家族（Tyrano/MV/MZ）的有效存档目录：独立存档开关开启时为外部私有目录
+     * （需要外部存储可用，不可用时返回 null），否则 `<游戏根>/savedata`。
+     * 与 engine 宿主 resolveSaveDirectory 语义一致；存档互通同步复用，避免路径漂移。
+     */
+    fun effectiveTyranoFamilySaveDirectory(gameId: String, root: String, scoped: Boolean): File? {
+        if (!scoped) return File(root, "savedata")
+        val external = appContext.getExternalFilesDir(null) ?: return null
+        return File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root))
+    }
+
+    /** Tyrano 家族独立存档开关：单游戏覆盖优先，否则全局。 */
+    fun isTyranoFamilyScoped(gameId: String): Boolean =
+        PerGameSettingsStore.getBool(appContext, gameId, PerGameSettingsStore.F_TY_SCOPED)
+            ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
+
     fun listSaveFiles(game: ScanGame): List<File> {
         val directory = resolveSaveLocation(game).directory ?: return emptyList()
         if (!directory.isDirectory) return emptyList()
@@ -114,18 +131,39 @@ class GameSaveManager(private val context: Context) {
         }
     }
 
+    /** 存档导出格式：Tyranor 原生 / JoiPlay+PC 标准（仅 RPG Maker MV/MZ 可选，内容字节一致仅换名）。 */
+    enum class ExportFormat { TYRANOR, STANDARD }
+
     @Throws(IOException::class)
-    fun exportToZip(game: ScanGame, destinationUri: Uri): Int {
+    fun exportToZip(
+        game: ScanGame,
+        destinationUri: Uri,
+        format: ExportFormat = ExportFormat.TYRANOR,
+    ): Int {
         val location = resolveSaveLocation(game)
         val source = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
         if (!source.isDirectory) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
+        val rename = exportRename(game.engine, format)
         val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
             ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
         ZipOutputStream(output).use { zip ->
             val entries = mutableSetOf<String>()
-            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine))
+            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename)
             if (count == 0) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
             return count
+        }
+    }
+
+    /**
+     * 导出时的条目重命名规则：仅 RPG Maker MV/MZ 在「标准模式」下把 Tyranor 名换成标准名。
+     * 同时反解引擎写入的哈希名（`key_<sha256>.bin`）；无法映射的文件保留原名。
+     */
+    private fun exportRename(engine: EngineType, format: ExportFormat): ((String) -> String)? {
+        if (format != ExportFormat.STANDARD || !RpgSaveFormat.isRpgWebEngine(engine)) return null
+        return { name ->
+            RpgSaveFormat.tyranorToStandard(name, engine)
+                ?: RpgSaveFormat.hashedToStandardName(name, engine)
+                ?: name
         }
     }
 
@@ -149,7 +187,7 @@ class GameSaveManager(private val context: Context) {
             when {
                 !destination.exists() ->
                     if (!backup.renameTo(destination)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-                game.engine == EngineType.ARTEMIS ->
+                restoresExcludedFromBackup(game.engine) ->
                     restoreExcludedFromBackup(backup, destination, game.engine)
             }
         }
@@ -165,7 +203,11 @@ class GameSaveManager(private val context: Context) {
             if (!staging.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR)
             // 过滤引擎资源后可能一件存档都没有（如纯资源 ZIP）：必须在交换前拦截，
             // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失
-            val copied = copyDirectoryContents(temp, staging, excludeFor(game.engine))
+            // 外部备份包常整包为多层外层文件夹（save/、Save/、www/save/ 等），
+            // 需先剥掉再复制，否则会落成 savedata/save/... 多套一层导致引擎读不到。
+            // 仅 RPG Maker MV/MZ 生效（见 unwrapOuterDirs，其它引擎原样返回）。
+            val source = unwrapOuterDirs(temp, game.engine)
+            val copied = copyDirectoryContents(source, staging, excludeFor(game.engine))
             if (copied == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
             if (destination.exists()) {
                 // 走到这里备份必已被开头恢复步骤消费（只剩旧存档或不存在），可安全删除
@@ -181,7 +223,9 @@ class GameSaveManager(private val context: Context) {
             committed = true
             // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入，
             // 交换后从备份移回；全部移回前备份绝不清理，失败可再次恢复
-            if (game.engine == EngineType.ARTEMIS) {
+            // Artemis 引擎资源、MV/MZ 的 original/（互通留底）被排除在导入之外，
+            // 交换后从备份移回；全部移回前备份绝不清理，失败可再次恢复
+            if (restoresExcludedFromBackup(game.engine)) {
                 restoreExcludedFromBackup(backup, destination, game.engine)
             }
             backupConsumed = true
@@ -206,6 +250,11 @@ class GameSaveManager(private val context: Context) {
      * 仅触碰应用专属存储，绝不删除游戏目录内的任何文件。
      */
     fun cleanupAppData(game: ScanGame) {
+        // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
+        // 为键。若随游戏删除留下旧清单，同一 uri 的游戏被重新添加后，标准侧存档会被误判为
+        // 「Tyranor 侧已删除」而移入 deleted/；待回写记录则会在下次前台时指向已删除的游戏。
+        RpgSaveSyncState.forContext(appContext).clear(game.uri)
+        RpgSavePendingStore.remove(appContext, game.uri)
         val root = resolveGameDirectory(game) ?: return
         val targets = when (game.engine) {
             EngineType.KIRIKIRI -> {
@@ -300,16 +349,22 @@ class GameSaveManager(private val context: Context) {
         zip: ZipOutputStream,
         entries: MutableSet<String>,
         exclude: (String) -> Boolean,
+        rename: ((String) -> String)? = null,
     ): Int {
         var written = 0
         directory.listFiles().orEmpty().forEach { child ->
             if (exclude(child.name)) return@forEach
             if (child.isDirectory) {
-                written += writeZipContents(root, child, zip, entries, exclude)
+                written += writeZipContents(root, child, zip, entries, exclude, rename)
             } else if (child.isFile) {
                 val relative = root.toPath().relativize(child.toPath()).toString()
                     .replace(File.separatorChar, '/')
-                val safeName = safeZipEntryName(relative)
+                val renamedName = rename?.let { fn ->
+                    val parts = relative.split('/')
+                    safeZipEntryName(parts.dropLast(1).plus(fn(parts.last())).joinToString("/"))
+                }
+                // 换名后若与已有条目重名，回退原名，避免整条备份被静默丢弃
+                val safeName = if (renamedName != null && renamedName !in entries) renamedName else safeZipEntryName(relative)
                 if (!entries.add(safeName)) return@forEach
                 zip.putNextEntry(ZipEntry(safeName).apply { time = child.lastModified() })
                 FileInputStream(child).use { input -> input.copyTo(zip) }
@@ -439,8 +494,15 @@ class GameSaveManager(private val context: Context) {
     }
 
     private fun excludeFor(engine: EngineType): (String) -> Boolean = { name ->
-        engine == EngineType.ARTEMIS && isArtemisResourceName(name)
+        val lower = name.lowercase(Locale.ROOT)
+        // MV/MZ 存档目录内的 original/ 是格式转化/互通留底，不参与列表计数/导出/导入/删除
+        (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
+            (engine == EngineType.ARTEMIS && isArtemisResourceName(name))
     }
+
+    /** 导入交换后需要从备份移回「被排除项」的引擎：Artemis 引擎资源、MV/MZ 的 original/ 留底。 */
+    private fun restoresExcludedFromBackup(engine: EngineType): Boolean =
+        engine == EngineType.ARTEMIS || RpgSaveFormat.isRpgWebEngine(engine)
 
     private fun isArtemisResourceName(name: String?): Boolean {
         val normalized = name?.trim()?.lowercase(Locale.ROOT) ?: return false
@@ -470,5 +532,30 @@ class GameSaveManager(private val context: Context) {
         // 导入互斥锁：UI 层的 taskRunning 守卫会随 Activity 重建丢失（旋转屏幕时
         // 旧协程的阻塞 IO 仍在后台跑完），进程级锁保证不会对同一存档并发导入
         private val importLock = Any()
+
+        /**
+         * 剥掉导入包的「外层文件夹」包装：外部存档备份常整包为一层或多层目录
+         * （如 `save/`、`Save/`、`savedata/`，或 `www/save/`），直接复制到存档目录会多套
+         * 一层（`savedata/save/`）导致引擎读不到。只要当前目录「仅含一个子目录」就继续
+         * 下钻（上限 [MAX_UNWRAP_DEPTH] 层）；含散文件或多个条目时视为已是内容根、原样返回。
+         * 下钻后若无可复制内容，由调用方以 `copied == 0` 拦截，不会清空旧存档。
+         *
+         * 仅对 RPG Maker MV/MZ 生效：其它引擎的顶层目录（如 `system/`、插件数据目录）可能
+         * 带语义，剥离会改变文件结构；非 RPG 引擎原样返回 [extracted]。
+         */
+        internal fun unwrapOuterDirs(extracted: File, engine: EngineType): File {
+            if (!RpgSaveFormat.isRpgWebEngine(engine)) return extracted
+            var current = extracted
+            var depth = 0
+            while (depth < MAX_UNWRAP_DEPTH) {
+                val only = current.listFiles().orEmpty().singleOrNull() ?: return current
+                if (!only.isDirectory) return current
+                current = only
+                depth++
+            }
+            return current
+        }
+
+        private const val MAX_UNWRAP_DEPTH = 3
     }
 }
