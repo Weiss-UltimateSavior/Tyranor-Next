@@ -9,12 +9,19 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
@@ -53,7 +61,11 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.GlassNavSurface
+import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.UnselectedGrey
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.theme.WithoutPressIndication
@@ -98,6 +110,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()
   val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
+  // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
+  val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass
   val tabLabels = tabItems.map { stringResource(it.labelRes) }
   val liquidGlassTabItems = tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
 
@@ -191,73 +205,13 @@ fun MainScreen(modifier: Modifier = Modifier) {
           }
         }
       }
-      if (!liquidGlass) {
-        // 去掉点击 ripple（material3 1.4 起 ripple 读取 LocalRippleConfiguration，置 null 全局禁用）
-        CompositionLocalProvider(LocalRippleConfiguration provides null) {
-        NavigationBar(
-          containerColor = com.tyranor.next.theme.NavWhite,
-          contentColor = androidx.compose.material3.LocalContentColor.current,
-        ) {
-          tabItems.forEachIndexed { index, tab ->
-            val label = tabLabels[index]
-            val selected = selectedIndex == index
-            val itemColor = if (selected) MaterialTheme.colorScheme.primary else unselectedColor
-            NavigationBarItem(
-              selected = selected,
-              onClick = { selectPage(index) },
-              icon = {
-                // 选中态染色动画：底层铺未选中灰，上层主题色图标用渐变遮罩自下而上填充
-                // （fill 0→1 时遮罩分界线从底边升到顶边），取消选中时自上而下退色。
-                val fill by animateFloatAsState(
-                  targetValue = if (selected) 1f else 0f,
-                  animationSpec = tween(durationMillis = 700),
-                  label = "navIconFill$index",
-                )
-                Box(Modifier.size(28.dp)) {
-                  Image(
-                    painter = painterResource(tab.iconRes),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    colorFilter = ColorFilter.tint(unselectedColor),
-                  )
-                  Image(
-                    painter = painterResource(tab.iconRes),
-                    contentDescription = label,
-                    modifier = Modifier
-                      .fillMaxSize()
-                      .graphicsLayer {
-                        // 离屏合成，保证 DstIn 遮罩只作用于本层图标
-                        compositingStrategy = CompositingStrategy.Offscreen
-                        clip = true
-                      }
-                      .drawWithCache {
-                        onDrawWithContent {
-                          // fill=0 → 分界线在底边（全隐藏）；fill=1 → 分界线在顶边（全显示）
-                          val edge = 1f - fill
-                          val mask = Brush.verticalGradient(
-                            colorStops = arrayOf(edge to Color.Transparent, edge to Color.White),
-                          )
-                          drawContent()
-                          drawRect(brush = mask, blendMode = BlendMode.DstIn)
-                        }
-                      },
-                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-                  )
-                }
-              },
-              label = { Text(label) },
-              // 去掉选中高亮：仅图标颜色填充动画与文字颜色区分选中态
-              colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
-                selectedIconColor = MaterialTheme.colorScheme.primary,
-                selectedTextColor = MaterialTheme.colorScheme.primary,
-                indicatorColor = Color.Transparent,
-                unselectedIconColor = unselectedColor,
-                unselectedTextColor = unselectedColor,
-              ),
-            )
-          }
-        }
-        }
+      if (!liquidGlass && !floatingDefaultNav) {
+        DefaultBottomNavigationBar(
+          selectedIndex = selectedIndex,
+          tabLabels = tabLabels,
+          unselectedColor = unselectedColor,
+          onSelectPage = { selectPage(it) },
+        )
       }
     }
 
@@ -272,6 +226,121 @@ fun MainScreen(modifier: Modifier = Modifier) {
         onItemClick = { selectPage(it) },
         modifier = Modifier.align(Alignment.BottomCenter),
       )
+    }
+
+    // 玻璃外观风格下的默认导航栏：悬浮圆角玻璃条（玻璃底 + 0.5dp 描边 + 16dp 圆角），
+    // 内容可从其下方滚过，列表底部留白由 glassNavBottomInset() 统一提供
+    if (floatingDefaultNav) {
+      Box(
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .fillMaxWidth()
+          .navigationBarsPadding()
+          .padding(horizontal = 12.dp, vertical = 12.dp),
+      ) {
+        DefaultBottomNavigationBar(
+          selectedIndex = selectedIndex,
+          tabLabels = tabLabels,
+          unselectedColor = unselectedColor,
+          onSelectPage = { selectPage(it) },
+          modifier = Modifier
+            .fillMaxWidth()
+            // 无文字后按图标高度收窄导航条（64dp）；圆角 32dp（半高），呈全圆角胶囊观感
+            .height(64.dp)
+            .clip(RoundedCornerShape(32.dp))
+            .glassBorder(RoundedCornerShape(32.dp)),
+          windowInsets = WindowInsets(0.dp),
+          // 玻璃风格：更实的玻璃底 + 只显示图标（不显示文字）
+          containerColor = GlassNavSurface,
+          showLabels = false,
+        )
+      }
+    }
+  }
+}
+
+/**
+ * 默认底部导航栏（Material3 NavigationBar，含选中态图标填充动画）。
+ * 玻璃外观风格下由调用方包一层圆角玻璃容器悬浮显示，并传 `windowInsets = WindowInsets(0.dp)`
+ * 由外层统一处理系统栏避让。
+ */
+@Composable
+private fun DefaultBottomNavigationBar(
+  selectedIndex: Int,
+  tabLabels: List<String>,
+  unselectedColor: Color,
+  onSelectPage: (Int) -> Unit,
+  modifier: Modifier = Modifier,
+  windowInsets: WindowInsets = NavigationBarDefaults.windowInsets,
+  containerColor: Color = NavWhite,
+  showLabels: Boolean = true,
+) {
+  // 去掉点击 ripple（material3 1.4 起 ripple 读取 LocalRippleConfiguration，置 null 全局禁用）
+  CompositionLocalProvider(LocalRippleConfiguration provides null) {
+    NavigationBar(
+      modifier = modifier,
+      containerColor = containerColor,
+      contentColor = LocalContentColor.current,
+      windowInsets = windowInsets,
+    ) {
+      tabItems.forEachIndexed { index, tab ->
+        val label = tabLabels[index]
+        val selected = selectedIndex == index
+        val itemColor = if (selected) MaterialTheme.colorScheme.primary else unselectedColor
+        NavigationBarItem(
+          selected = selected,
+          onClick = { onSelectPage(index) },
+          icon = {
+            // 选中态染色动画：底层铺未选中灰，上层主题色图标用渐变遮罩自下而上填充
+            // （fill 0→1 时遮罩分界线从底边升到顶边），取消选中时自上而下退色。
+            val fill by animateFloatAsState(
+              targetValue = if (selected) 1f else 0f,
+              animationSpec = tween(durationMillis = 700),
+              label = "navIconFill$index",
+            )
+            Box(Modifier.size(28.dp)) {
+              Image(
+                painter = painterResource(tab.iconRes),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                colorFilter = ColorFilter.tint(unselectedColor),
+              )
+              Image(
+                painter = painterResource(tab.iconRes),
+                contentDescription = label,
+                modifier = Modifier
+                  .fillMaxSize()
+                  .graphicsLayer {
+                    // 离屏合成，保证 DstIn 遮罩只作用于本层图标
+                    compositingStrategy = CompositingStrategy.Offscreen
+                    clip = true
+                  }
+                  .drawWithCache {
+                    onDrawWithContent {
+                      // fill=0 → 分界线在底边（全隐藏）；fill=1 → 分界线在顶边（全显示）
+                      val edge = 1f - fill
+                      val mask = Brush.verticalGradient(
+                        colorStops = arrayOf(edge to Color.Transparent, edge to Color.White),
+                      )
+                      drawContent()
+                      drawRect(brush = mask, blendMode = BlendMode.DstIn)
+                    }
+                  },
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+              )
+            }
+          },
+          label = if (showLabels) { { Text(label) } } else null,
+          // 去掉选中高亮：仅图标颜色填充动画与文字颜色区分选中态
+          colors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+            selectedIconColor = MaterialTheme.colorScheme.primary,
+            selectedTextColor = MaterialTheme.colorScheme.primary,
+            indicatorColor = Color.Transparent,
+            unselectedIconColor = unselectedColor,
+            unselectedTextColor = unselectedColor,
+          ),
+        )
+      }
     }
   }
 }

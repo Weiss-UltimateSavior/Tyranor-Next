@@ -261,17 +261,21 @@ private fun LiquidGlassNavItemView(
 }
 
 /**
- * 液态玻璃导航悬浮时的列表底部滚动留白：
- * 内容可滚动经过玻璃后面（沉浸），但列表尾部预留导航高度（64+12*2+系统导航条），
- * 保证滚动到底时最后一项完全露出不被遮挡。非液态玻璃模式返回 0。
+ * 悬浮导航栏的列表底部滚动留白：
+ * 内容可滚动经过玻璃后面（沉浸），但列表尾部预留导航高度，保证滚动到底时最后一项完全露出不被遮挡。
+ * - 圆角液态玻璃导航：栏高 64 + 上下各 12 外边距；
+ * - 玻璃外观风格下的悬浮默认导航条：无文字后栏高收窄至 64 + 上下各 12 外边距；
+ * - 其余情况返回 0（导航栏占布局高度）。
  */
 @Composable
 fun glassNavBottomInset(): Dp {
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
-    return if (navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS) {
-        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
-    } else {
-        0.dp
+    return when {
+        navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
+            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
+        AppThemeColors.isGlass ->
+            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 88.dp
+        else -> 0.dp
     }
 }
 
