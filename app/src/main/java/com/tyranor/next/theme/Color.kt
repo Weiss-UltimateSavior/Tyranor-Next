@@ -33,6 +33,9 @@ val GlassBgMid = Color(0xFF17191D)
 /** 玻璃风格页面渐变背景：终点（近黑）。 */
 val GlassBgBottom = Color(0xFF0A0B0D)
 
+/** 玻璃风格顶部栏实色底：与渐变顶部同色。顶栏内容可能被滚动内容从下方穿过，必须不透明。 */
+val GlassTopBarSurface = Color(0xFF24262B)
+
 /** 玻璃风格顶部环境光晕：低透明度白色径向渐变（4% 白），只做微弱层次不做提亮。 */
 val GlassBgGlow = Color(0x0AFFFFFF)
 
