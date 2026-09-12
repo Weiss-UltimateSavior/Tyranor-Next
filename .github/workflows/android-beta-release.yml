@@ -38,20 +38,58 @@ jobs:
             before="${after}^"
           fi
 
-          old_version="$(git show "${before}:app/build.gradle.kts" 2>/dev/null | grep -E 'version(Name|Code)[[:space:]]*=' || true)"
-          new_version="$(grep -E 'version(Name|Code)[[:space:]]*=' app/build.gradle.kts || true)"
+          # 与 app/build.gradle.kts 的 versionCodeOf 保持同一映射（CI 侧用于前置校验；
+          # 构建后另有 “Verify APK versionCode” 步骤核对，兜底两处公式漂移）：
+          # major*1_000_000 + minor*1_000 + patch
+          code_of() {
+            local cleaned major=0 minor=0 patch=0 _
+            cleaned="$(printf '%s' "$1" | sed -E 's/^[^0-9]*//; s/[^0-9.].*$//')"
+            IFS=. read -r major minor patch _ <<< "${cleaned}"
+            echo $(( ${major:-0} * 1000000 + ${minor:-0} * 1000 + ${patch:-0} ))
+          }
 
-          if [[ "${old_version}" == "${new_version}" ]]; then
-            echo "changed=false" >> "${GITHUB_OUTPUT}"
-            exit 0
+          # 兼容旧格式：优先 val appVersionName，其次 versionName = "x"
+          extract_name() {
+            local content="$1" name=""
+            if [[ -n "${content}" ]]; then
+              name="$(printf '%s\n' "${content}" | grep -E '^[[:space:]]*val appVersionName[[:space:]]*=' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')"
+              if [[ -z "${name}" ]]; then
+                name="$(printf '%s\n' "${content}" | grep -E '^[[:space:]]*versionName[[:space:]]*=' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')"
+              fi
+            fi
+            printf '%s' "${name}"
+          }
+
+          old_file="$(git show "${before}:app/build.gradle.kts" 2>/dev/null || true)"
+          new_file="$(cat app/build.gradle.kts)"
+          old_name="$(extract_name "${old_file}")"
+          new_name="$(extract_name "${new_file}")"
+
+          if [[ -z "${new_name}" ]]; then
+            echo "::error::无法从 app/build.gradle.kts 解析版本号（缺少 val appVersionName）"
+            exit 1
           fi
 
-          version_name="$(grep -E 'versionName[[:space:]]*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')"
-          version_code="$(grep -E 'versionCode[[:space:]]*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/')"
+          if [[ -z "${old_name}" ]]; then
+            # 首次提交 / force-push 读取不到旧版本：无法程序化校验，仅提示
+            echo "::warning::无法读取旧版本号（首次提交或 force-push），跳过 versionCode 递增校验"
+          elif [[ "${old_name}" == "${new_name}" ]]; then
+            echo "changed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          else
+            old_code="$(code_of "${old_name}")"
+            new_code="$(code_of "${new_name}")"
+            if (( new_code <= old_code )); then
+              echo "::error::versionCode 必须严格递增：${old_name}(${old_code}) -> ${new_name}(${new_code})"
+              echo "::error::请提升 app/build.gradle.kts 的 appVersionName（versionCode 会自动推导）"
+              exit 1
+            fi
+            echo "versionName ${old_name} -> ${new_name}, versionCode ${old_code} -> ${new_code}"
+          fi
 
           echo "changed=true" >> "${GITHUB_OUTPUT}"
-          echo "version_name=${version_name}" >> "${GITHUB_OUTPUT}"
-          echo "version_code=${version_code}" >> "${GITHUB_OUTPUT}"
+          echo "version_name=${new_name}" >> "${GITHUB_OUTPUT}"
+          echo "version_code=$(code_of "${new_name}")" >> "${GITHUB_OUTPUT}"
 
   release-beta:
     name: Release Beta APK
@@ -118,6 +156,22 @@ jobs:
 
       - name: Assemble release APK
         run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify APK versionCode
+        run: |
+          expected="${{ needs.detect-version-change.outputs.version_code }}"
+          apk="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          if [[ -z "${apk}" ]]; then
+            echo "::error::No release APK found." >&2
+            exit 1
+          fi
+          aapt2="${ANDROID_HOME}/build-tools/37.0.0/aapt2"
+          actual="$("${aapt2}" dump badging "${apk}" | sed -nE "s/.*versionCode='([0-9]+)'.*/\1/p" | head -n 1)"
+          if [[ "${actual}" != "${expected}" ]]; then
+            echo "::error::APK versionCode=${actual} 与 CI 期望=${expected} 不一致（Gradle 推导与 CI 映射漂移）"
+            exit 1
+          fi
+          echo "APK versionCode=${actual} verified (versionName=${{ needs.detect-version-change.outputs.version_name }})."
 
       - name: Prepare release metadata
         id: meta

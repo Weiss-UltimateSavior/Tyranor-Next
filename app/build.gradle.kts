@@ -1,6 +1,10 @@
+import org.gradle.api.DefaultTask
 import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.bundling.Zip
 import java.util.Properties
 
@@ -24,6 +28,52 @@ fun configValue(name: String): String =
         ?: ""
 fun String.asBuildConfigString(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+/**
+ * 应用版本名：发版唯一需要手改的版本字段（issue #79）。
+ * versionCode 由它推导，杜绝“只改 versionName、忘记递增 versionCode”。
+ */
+val appVersionName = "1.35"
+
+/**
+ * versionName -> versionCode 映射：major*1_000_000 + minor*1_000 + patch。
+ * 例：1.35 -> 1_035_000；2.0.1 -> 2_000_001。
+ * 非法值直接构建失败，避免问题版本流出。
+ */
+fun versionCodeOf(name: String): Int {
+    val parts = Regex("\\d+").findAll(name).map { it.value.toInt() }.toList()
+    require(parts.size >= 2) { "versionName must be major.minor[.patch]: $name" }
+    val major = parts[0]
+    val minor = parts.getOrElse(1) { 0 }
+    val patch = parts.getOrElse(2) { 0 }
+    require(minor in 0..999 && patch in 0..999) { "versionName minor/patch must be < 1000: $name" }
+    val code = major * 1_000_000 + minor * 1_000 + patch
+    require(code in 1..2_100_000_000) { "versionCode out of Android range: $code" }
+    return code
+}
+
+val appVersionCode = versionCodeOf(appVersionName)
+
+/** 供 CI 与本地核对：输出 "versionName versionCode"。 */
+abstract class PrintAppVersionTask : DefaultTask() {
+    @get:Input
+    abstract val versionName: Property<String>
+
+    @get:Input
+    abstract val versionCode: Property<Int>
+
+    @TaskAction
+    fun print() {
+        println("${versionName.get()} ${versionCode.get()}")
+    }
+}
+
+tasks.register<PrintAppVersionTask>("printAppVersion") {
+    group = "help"
+    description = "Prints appVersionName and the derived appVersionCode."
+    versionName.set(appVersionName)
+    versionCode.set(appVersionCode)
+}
 
 val appNativePluginSourceDir = layout.projectDirectory.dir("src/main/nativeplugins")
 val engineNativePluginSourceDir = rootProject.layout.projectDirectory.dir("engine/src/main/nativeplugins")
@@ -137,8 +187,8 @@ android {
         applicationId = tyranorApplicationId
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.35"
+        versionCode = appVersionCode
+        versionName = appVersionName
         buildConfigField("String", "HIKARINAGI_CLIENT_ID", hikarinagiClientId.asBuildConfigString())
     }
 

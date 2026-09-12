@@ -414,3 +414,7 @@ Column(fillMaxSize)                                // 页面根
 
 - 使用 Android CLI（`--sdk=/tmp/androidsdk`）安装到实机。
 
+- 发版规则（issue #79）：只修改 `app/build.gradle.kts` 的 `appVersionName`；`versionCode` 由 `versionCodeOf()` 自动推导
+  （`major*1_000_000 + minor*1_000 + patch`，minor/patch 必须 < 1000），禁止手写或回退 `versionCode`。
+  beta-release workflow 会前置校验 versionCode 严格递增，并在构建后核对 APK 实际 versionCode（不一致即失败）。
+
