@@ -126,8 +126,13 @@ object RpgSaveFormat {
         return ordered.filter { dir -> seen.add(pathKey(dir)) }
     }
 
+    /**
+     * 路径去重键：用精确规范路径，**不做大小写归一**。在区分大小写的文件系统上
+     * `save` 与 `Save` 是两个不同目录，小写归一会把它们合并、导致漏检/漏同步；
+     * 在大小写不敏感的文件系统上 `canonicalPath` 本就返回同一路径，自然去重。
+     */
     private fun pathKey(file: File): String =
-        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath).lowercase(Locale.ROOT)
+        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
 
     /** 递归定位游戏内容根（含 index.html / app.asar 的目录），与 engine 入口探测同序。 */
     private fun locateContentRoot(dir: File, depth: Int = 0): File? {

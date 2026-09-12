@@ -81,6 +81,7 @@ import com.tyranor.next.ui.game.RpgSaveFormatDialog
 import com.tyranor.next.ui.game.coverColor
 import com.tyranor.next.ui.game.dialogArgs
 import com.tyranor.next.ui.game.rememberCoverBitmap
+import com.tyranor.next.ui.game.rpgConvertResultMessage
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
@@ -111,6 +112,7 @@ fun HomeScreen(
     var saveFormatDetection by remember { mutableStateOf<RpgSaveFormat.Detection?>(null) }
     var pendingPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
     val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
+    val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
 
     LaunchedEffect(libraryState.games) {
@@ -180,11 +182,12 @@ fun HomeScreen(
                 } catch (_: Throwable) {
                     null
                 }
-                val message = if (converted != null) {
-                    saveFormatConvertedFormat.format(converted.converted)
-                } else {
-                    saveFormatConvertFailedMessage
-                }
+                val message = rpgConvertResultMessage(
+                    converted,
+                    saveFormatConvertedFormat,
+                    saveFormatConvertedWithFailuresFormat,
+                    saveFormatConvertFailedMessage,
+                )
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
             launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)

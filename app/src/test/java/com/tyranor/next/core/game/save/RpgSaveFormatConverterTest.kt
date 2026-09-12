@@ -104,6 +104,21 @@ class RpgSaveFormatConverterTest {
     }
 
     @Test
+    fun preserveFailureIsReportedAsFailedNotConverted() {
+        // original/ 无法创建时不能报告转化成功：源文件仍在活动目录，下次检测会重复提示转化
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        savedata.resolve("global.rpgsave").writeText("std")
+        // 用同名文件占位 original/，迫使留底目录创建失败
+        savedata.resolve("original").writeText("block")
+
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
+
+        assertEquals(0, result.converted)
+        assertEquals(1, result.failed)
+    }
+
+    @Test
     fun nothingToConvertReturnsZero() {
         val gameRoot = mvGameRoot()
         val savedata = gameRoot.resolve("savedata").apply { mkdirs() }

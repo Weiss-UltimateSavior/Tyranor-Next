@@ -108,3 +108,19 @@ suspend fun ComponentActivity.awaitRpgSaveFormatChoice(
  */
 internal fun RpgSaveFormat.Detection.dialogArgs(): Pair<Int, Int> =
     convertibleCount to hashedCount
+
+/**
+ * 转化结果文案：非空结果不代表全部成功——[RpgSaveFormat.ConvertResult.failed] > 0 时必须
+ * 如实报告，避免把「部分失败」显示为成功（`result == null` 表示转化过程整体抛错）。
+ */
+internal fun rpgConvertResultMessage(
+    result: RpgSaveFormat.ConvertResult?,
+    convertedFormat: String,
+    withFailuresFormat: String,
+    failedMessage: String,
+): String = when {
+    result == null -> failedMessage
+    result.failed == 0 -> convertedFormat.format(result.converted)
+    result.converted > 0 -> withFailuresFormat.format(result.converted, result.failed)
+    else -> failedMessage
+}

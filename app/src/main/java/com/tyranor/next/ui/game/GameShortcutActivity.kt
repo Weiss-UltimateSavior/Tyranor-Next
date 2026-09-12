@@ -77,11 +77,12 @@ class GameShortcutActivity : ComponentActivity() {
                             } catch (_: Throwable) {
                                 null
                             }
-                            val message = if (converted != null) {
-                                localizedContext.getString(R.string.save_format_converted_count, converted.converted)
-                            } else {
-                                localizedContext.getString(R.string.save_format_convert_failed)
-                            }
+                            val message = rpgConvertResultMessage(
+                                converted,
+                                localizedContext.getString(R.string.save_format_converted_count),
+                                localizedContext.getString(R.string.save_format_converted_with_failures),
+                                localizedContext.getString(R.string.save_format_convert_failed),
+                            )
                             Toast.makeText(localizedContext, message, Toast.LENGTH_LONG).show()
                         }
                     }

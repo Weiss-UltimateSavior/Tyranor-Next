@@ -1,9 +1,11 @@
 package com.tyranor.next.core.game.save
 
 import com.tyranor.next.core.engine.EngineType
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 
 /**
  * MV/MZ 存档互通：在「标准侧」与「Tyranor 侧」之间双向同步存档。
@@ -34,6 +36,9 @@ object RpgSaveSync {
      */
     private val syncLock: Any = RpgSaveSyncState.INTEROP_LOCK
 
+    /** 内容比对时的读取缓冲（64 KiB）。 */
+    private const val SYNC_HASH_BUFFER_BYTES = 64 * 1024
+
     data class Result(
         /** 新 PC 存档导入到 Tyranor 的文件数。 */
         val imported: Int = 0,
@@ -54,6 +59,23 @@ object RpgSaveSync {
     ) {
         val changed: Int get() = imported + exported + toTyranor + toStandard + movedToDeleted
     }
+
+    /** 单个槽位同步后的落盘状态（存在标记 + mtime + size），见 [RpgSaveSyncState.SlotState]。 */
+    private fun slotState(
+        std: File?,
+        tyr: File?,
+        stdMtime: Long,
+        tyrMtime: Long,
+        stdExists: Boolean,
+        tyrExists: Boolean,
+    ): RpgSaveSyncState.SlotState = RpgSaveSyncState.SlotState(
+        standardMtime = stdMtime,
+        tyranorMtime = tyrMtime,
+        standardExists = stdExists,
+        tyranorExists = tyrExists,
+        standardSize = if (stdExists) (std?.length() ?: 0L) else 0L,
+        tyranorSize = if (tyrExists) (tyr?.length() ?: 0L) else 0L,
+    )
 
     /**
      * 执行一次双向同步。
@@ -118,9 +140,14 @@ object RpgSaveSync {
             val std = standardFiles[slot]
             val tyr = tyranorFiles[slot]
             val hadPrevious = previous.containsKey(slot)
-            val existedOnTyranor = (previous[slot]?.tyranorMtime ?: 0L) > 0L
+            // 显式存在标记（而非 mtime>0 反推）：mtime 为 0 的存档不应被当成「从未存在」
+            val existedOnTyranor = previous[slot]?.tyranorExists == true
             var stdMtime = std?.lastModified() ?: 0L
             var tyrMtime = tyr?.lastModified() ?: 0L
+            // 显式存在标记：不能用 mtime>0 反推（mtime 为 0 的存档会被误判为不存在）。
+            // 注意必须随分支更新——导入/导出后对侧文件是新建的，不能沿用同步前的引用判断。
+            var stdExistsNow = std != null
+            var tyrExistsNow = tyr != null
             var record = true
             try {
                 when {
@@ -128,7 +155,25 @@ object RpgSaveSync {
                         val s = std.lastModified()
                         val t = tyr.lastModified()
                         when {
-                            s == t -> skipped++
+                            s == t -> {
+                                // mtime 相同：先看 (mtime,size) 是否都与上次同步后一致——
+                                // 两侧都未变动才能免去内容哈希（否则每轮都要哈希全部存档）
+                                val metaUnchanged = previous[slot]?.let { prev ->
+                                    prev.standardExists == stdExistsNow && prev.tyranorExists == tyrExistsNow &&
+                                        prev.standardMtime == s && prev.tyranorMtime == t &&
+                                        prev.standardSize == std.length() && prev.tyranorSize == tyr.length()
+                                } == true
+                                if (metaUnchanged || sameContent(std, tyr)) {
+                                    skipped++
+                                } else {
+                                    // 无法判定新旧：以标准侧为准，且**无条件**把 Tyranor 侧留底——
+                                    // 平局下较旧一方未知，留底才能保证不丢任何一份
+                                    if (!preserveLoser(tyr, tyranorDir, standardSide = false)) {
+                                        throw IOException("cannot preserve ${tyr.absolutePath} before tie-break overwrite")
+                                    }
+                                    copyOverwrite(std, tyr); toTyranor++; tyrMtime = s
+                                }
+                            }
                             s > t -> {
                                 // 首次同步该槽位时较旧一方无历史记录，先留底再覆盖，避免误删唯一副本；
                                 // 留底失败则中止本次覆盖（两侧原样保留、计入 failed、下轮重试），绝不先毁后写
@@ -151,7 +196,7 @@ object RpgSaveSync {
                         if (existedOnTyranor) {
                             // Tyranor 侧已删除该槽位 → 标准文件归入 deleted/，不再导回
                             if (moveToDeleted(std, std.parentFile ?: preferredStandardDir)) {
-                                movedToDeleted++; stdMtime = 0L
+                                movedToDeleted++; stdMtime = 0L; stdExistsNow = false
                             } else {
                                 failed++; record = false
                             }
@@ -162,6 +207,7 @@ object RpgSaveSync {
                             } else {
                                 val target = File(tyranorDir, name)
                                 copyOverwrite(std, target); imported++; tyrMtime = stdMtime
+                                tyrExistsNow = true
                             }
                         }
                     }
@@ -173,25 +219,32 @@ object RpgSaveSync {
                             // 标准侧缺失：无论外部删除还是 Tyranor 新建，都导出到标准侧（首选目录）
                             val target = File(preferredStandardDir, name)
                             copyOverwrite(tyr, target); exported++; stdMtime = tyrMtime
+                            stdExistsNow = true
                         }
                     }
                 }
-            } catch (_: Throwable) {
-                // 失败不丢历史：沿用上一次的清单条目，避免「已删除」被误判为「新建」而复活
+            } catch (cancelled: CancellationException) {
+                // 取消必须原样传播，不能被当作单个槽位失败吞掉
+                throw cancelled
+            } catch (_: IOException) {
+                // 仅收敛预期的文件异常：失败不丢历史，沿用上一次的清单条目，
+                // 避免「已删除」被误判为「新建」而复活
                 failed++
                 record = false
                 previous[slot]?.let { nextState[slot] = it }
             }
             if (record) {
-                // 只要有任一侧仍存在就记录（mtime 不可用记 0，仍能识别后续删除）
-                val stillExists = std?.exists() == true || tyr?.exists() == true
-                if (stillExists) {
-                    nextState[slot] = RpgSaveSyncState.SlotState(stdMtime, tyrMtime)
+                // 两侧都不存在的槽位不记录，避免「删档后被再次导入」
+                if (stdExistsNow || tyrExistsNow) {
+                    nextState[slot] = slotState(std, tyr, stdMtime, tyrMtime, stdExistsNow, tyrExistsNow)
                 }
             }
         }
 
-        stateStore.save(gameKey, nextState)
+        // 清单提交失败必须如实上报：否则「同步成功」却丢了下一次的新建/已删除判定依据
+        if (!stateStore.save(gameKey, nextState)) {
+            failed++
+        }
         return Result(
             imported = imported,
             exported = exported,
@@ -245,6 +298,27 @@ object RpgSaveSync {
             file.isFile && RpgSaveFormat.isHashedTyranorName(file.name) &&
                 RpgSaveFormat.tyranorSlot(file.name, engine) == null
         }
+    }
+
+    /**
+     * mtime 相同时判断两侧内容是否一致：先比长度（廉价，能挡掉多数差异），长度相同再比 SHA-256。
+     * 读取失败时返回 false（视为不同）——后续走原子复制，不会截断损坏任一副本。
+     */
+    private fun sameContent(a: File, b: File): Boolean = runCatching {
+        a.length() == b.length() && sha256(a) == sha256(b)
+    }.getOrDefault(false)
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().buffered().use { input ->
+            val buffer = ByteArray(SYNC_HASH_BUFFER_BYTES)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     /**

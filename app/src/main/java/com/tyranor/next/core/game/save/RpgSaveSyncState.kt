@@ -17,8 +17,25 @@ import java.security.MessageDigest
  */
 class RpgSaveSyncState(private val storeDir: File) {
 
-    /** 单个槽位在两侧最后一次同步后的修改时间；0 表示该侧当时不存在。 */
-    data class SlotState(val standardMtime: Long, val tyranorMtime: Long)
+    /**
+     * 单个槽位在两侧最后一次同步后的状态。
+     *
+     * [standardExists]/[tyranorExists] 显式记录该侧当时是否存在——不能用 `mtime > 0` 反推：
+     * mtime 为 0（时间戳不可用/纪元时间）的文件会被误判为「不存在」，进而把「已删除」当成
+     * 「新建」而复写。默认值由 mtime 推导，兼容本次改动前写入的旧清单（缺少这两个字段）。
+     *
+     * [standardSize]/[tyranorSize] 供 mtime 相同时做廉价的「是否自上次同步后都未变动」判定：
+     * 两侧 (mtime,size) 都与清单一致即可免去内容哈希（同步后两侧 mtime 必然相等，否则每轮
+     * 都要哈希全部存档）。任一不符才退到内容哈希。
+     */
+    data class SlotState(
+        val standardMtime: Long,
+        val tyranorMtime: Long,
+        val standardExists: Boolean = standardMtime > 0L,
+        val tyranorExists: Boolean = tyranorMtime > 0L,
+        val standardSize: Long = 0L,
+        val tyranorSize: Long = 0L,
+    )
 
     fun load(gameKey: String): Map<String, SlotState> = synchronized(INTEROP_LOCK) {
         val file = fileFor(gameKey)
@@ -29,11 +46,18 @@ class RpgSaveSyncState(private val storeDir: File) {
             buildMap {
                 slots.keys().forEach { slot ->
                     val entry = slots.optJSONObject(slot) ?: return@forEach
+                    val stdMtime = entry.optLong(KEY_STANDARD, 0L)
+                    val tyrMtime = entry.optLong(KEY_TYRANOR, 0L)
                     put(
                         slot,
                         SlotState(
-                            standardMtime = entry.optLong(KEY_STANDARD, 0L),
-                            tyranorMtime = entry.optLong(KEY_TYRANOR, 0L),
+                            standardMtime = stdMtime,
+                            tyranorMtime = tyrMtime,
+                            // 旧清单无显式标记：按 mtime>0 推导
+                            standardExists = entry.optBoolean(KEY_STANDARD_EXISTS, stdMtime > 0L),
+                            tyranorExists = entry.optBoolean(KEY_TYRANOR_EXISTS, tyrMtime > 0L),
+                            standardSize = entry.optLong(KEY_STANDARD_SIZE, 0L),
+                            tyranorSize = entry.optLong(KEY_TYRANOR_SIZE, 0L),
                         ),
                     )
                 }
@@ -41,35 +65,42 @@ class RpgSaveSyncState(private val storeDir: File) {
         }.getOrDefault(emptyMap())
     }
 
-    fun save(gameKey: String, slots: Map<String, SlotState>) = synchronized(INTEROP_LOCK) {
+    /**
+     * 原子写入清单。
+     *
+     * @return 是否已成功提交；false 表示写入/替换失败，此时**保留旧清单**（绝不截断重写，
+     *   否则半截 JSON 会被 [load] 当作空清单，使已删除的存档被当新存档复活），由调用方报告失败。
+     */
+    fun save(gameKey: String, slots: Map<String, SlotState>): Boolean = synchronized(INTEROP_LOCK) {
         runCatching {
             val file = fileFor(gameKey)
-            val dir = file.parentFile
-            if (dir != null && !dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return@runCatching
+            val dir = file.parentFile ?: return@runCatching false
+            if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return@runCatching false
             val encoded = JSONObject()
             slots.forEach { (slot, state) ->
                 encoded.put(
                     slot,
                     JSONObject()
                         .put(KEY_STANDARD, state.standardMtime)
-                        .put(KEY_TYRANOR, state.tyranorMtime),
+                        .put(KEY_TYRANOR, state.tyranorMtime)
+                        .put(KEY_STANDARD_EXISTS, state.standardExists)
+                        .put(KEY_TYRANOR_EXISTS, state.tyranorExists)
+                        .put(KEY_STANDARD_SIZE, state.standardSize)
+                        .put(KEY_TYRANOR_SIZE, state.tyranorSize),
                 )
             }
             val root = JSONObject().put(KEY_SLOTS, encoded)
-            // 原子写：先写同目录临时文件再 rename。整文件 writeText 期间若进程被杀或被并发
-            // 读取，会读到半截 JSON（load 兜底成空清单，进而把「已删除」误判为「新建」而复活）。
-            val tmp = if (dir == null) null else File(dir, file.name + ".tmp." + System.nanoTime())
-            if (tmp != null) {
-                tmp.writeText(root.toString(), Charsets.UTF_8)
-                if (!tmp.renameTo(file)) {
-                    file.writeText(root.toString(), Charsets.UTF_8)
-                    tmp.delete()
-                }
+            val json = root.toString()
+            val tmp = File(dir, file.name + ".tmp." + System.nanoTime())
+            tmp.writeText(json, Charsets.UTF_8)
+            if (tmp.renameTo(file)) {
+                true
             } else {
-                file.writeText(root.toString(), Charsets.UTF_8)
+                // 替换失败：保留旧清单、清理临时文件
+                tmp.delete()
+                false
             }
-        }
-        Unit
+        }.getOrDefault(false)
     }
 
     fun clear(gameKey: String) = synchronized(INTEROP_LOCK) {
@@ -94,6 +125,10 @@ class RpgSaveSyncState(private val storeDir: File) {
         private const val KEY_SLOTS = "slots"
         private const val KEY_STANDARD = "std"
         private const val KEY_TYRANOR = "tyr"
+        private const val KEY_STANDARD_EXISTS = "std_x"
+        private const val KEY_TYRANOR_EXISTS = "tyr_x"
+        private const val KEY_STANDARD_SIZE = "std_sz"
+        private const val KEY_TYRANOR_SIZE = "tyr_sz"
 
         /** 应用私有目录：`filesDir/rpg_save_sync/`。 */
         fun forContext(context: Context): RpgSaveSyncState =

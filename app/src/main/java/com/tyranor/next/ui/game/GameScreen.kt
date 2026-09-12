@@ -156,6 +156,7 @@ fun GameScreen(
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
     val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
+    val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
     val scope = rememberCoroutineScope()
     val games = libraryState.games
@@ -351,11 +352,12 @@ fun GameScreen(
                             } catch (_: Throwable) {
                                 null
                             }
-                            val message = if (converted != null) {
-                                saveFormatConvertedFormat.format(converted.converted)
-                            } else {
-                                saveFormatConvertFailedMessage
-                            }
+                            val message = rpgConvertResultMessage(
+                                converted,
+                                saveFormatConvertedFormat,
+                                saveFormatConvertedWithFailuresFormat,
+                                saveFormatConvertFailedMessage,
+                            )
                             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                         }
                         launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)
@@ -586,6 +588,7 @@ internal fun GameActionsSheet(
     val shortcutUnsupportedMessage = stringResource(R.string.game_desktop_shortcut_unsupported)
     val shortcutFailedMessage = stringResource(R.string.game_desktop_shortcut_failed)
     val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
+    val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
 
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
@@ -648,11 +651,12 @@ internal fun GameActionsSheet(
                 } catch (_: Throwable) {
                     null
                 }
-                val message = if (converted != null) {
-                    saveFormatConvertedFormat.format(converted.converted)
-                } else {
-                    saveFormatConvertFailedMessage
-                }
+                val message = rpgConvertResultMessage(
+                    converted,
+                    saveFormatConvertedFormat,
+                    saveFormatConvertedWithFailuresFormat,
+                    saveFormatConvertFailedMessage,
+                )
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
             startLaunch(patchChoice)

@@ -161,6 +161,24 @@ class RpgSaveFormatTest {
         assertEquals(1, detection.convertibleCount)
     }
 
+    // ===== 路径去重（大小写敏感文件系统） =====
+
+    @Test
+    fun saveAndSaveAreDistinctDirectoriesWhenBothExist() {
+        // 大小写敏感的文件系统上 save 与 Save 是两个目录，去重不能按小写归一而丢弃其一
+        val gameRoot = mvGameRoot()
+        val lower = gameRoot.resolve("www/save").apply { mkdirs() }
+        val upper = gameRoot.resolve("www/Save").apply { mkdirs() }
+        lower.resolve("global.rpgsave").writeText("a")
+        upper.resolve("file1.rpgsave").writeText("b")
+
+        val dirs = RpgSaveFormat.standardSaveDirectories(gameRoot)
+        // 只要文件系统把两者视作不同目录（Linux 测试环境），就必须都保留
+        if (lower.canonicalPath != upper.canonicalPath) {
+            assertEquals(2, dirs.size)
+        }
+    }
+
     @Test
     fun detectToleratesLegacyUppercaseSavedata() {
         val gameRoot = mvGameRoot()

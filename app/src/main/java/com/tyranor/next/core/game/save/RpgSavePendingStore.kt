@@ -43,8 +43,18 @@ object RpgSavePendingStore {
         val f = file(context)
         if (uris.isEmpty()) {
             f.delete()
-        } else {
-            f.writeText(uris.joinToString("\n"), Charsets.UTF_8)
+            return
         }
+        // 原子写：先写同目录临时文件再 rename。直接 writeText 会先截断目标，进程终止或 I/O
+        // 失败会留下空/半截文件，而 all() 把损坏结果当空集合——待回写记录会永久丢失。
+        val dir = f.parentFile ?: return
+        val tmp = File(dir, f.name + ".tmp." + System.nanoTime())
+        runCatching {
+            tmp.writeText(uris.joinToString("\n"), Charsets.UTF_8)
+            if (!tmp.renameTo(f)) {
+                // rename 失败保留旧文件（不截断重写），放弃本次写入；下次 add/remove 会重试
+                tmp.delete()
+            }
+        }.onFailure { tmp.delete() }
     }
 }

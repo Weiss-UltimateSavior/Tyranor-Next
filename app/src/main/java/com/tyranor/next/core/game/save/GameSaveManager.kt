@@ -205,7 +205,8 @@ class GameSaveManager(private val context: Context) {
             // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失
             // 外部备份包常整包为多层外层文件夹（save/、Save/、www/save/ 等），
             // 需先剥掉再复制，否则会落成 savedata/save/... 多套一层导致引擎读不到。
-            val source = unwrapOuterDirs(temp)
+            // 仅 RPG Maker MV/MZ 生效（见 unwrapOuterDirs，其它引擎原样返回）。
+            val source = unwrapOuterDirs(temp, game.engine)
             val copied = copyDirectoryContents(source, staging, excludeFor(game.engine))
             if (copied == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
             if (destination.exists()) {
@@ -538,8 +539,12 @@ class GameSaveManager(private val context: Context) {
          * 一层（`savedata/save/`）导致引擎读不到。只要当前目录「仅含一个子目录」就继续
          * 下钻（上限 [MAX_UNWRAP_DEPTH] 层）；含散文件或多个条目时视为已是内容根、原样返回。
          * 下钻后若无可复制内容，由调用方以 `copied == 0` 拦截，不会清空旧存档。
+         *
+         * 仅对 RPG Maker MV/MZ 生效：其它引擎的顶层目录（如 `system/`、插件数据目录）可能
+         * 带语义，剥离会改变文件结构；非 RPG 引擎原样返回 [extracted]。
          */
-        internal fun unwrapOuterDirs(extracted: File): File {
+        internal fun unwrapOuterDirs(extracted: File, engine: EngineType): File {
+            if (!RpgSaveFormat.isRpgWebEngine(engine)) return extracted
             var current = extracted
             var depth = 0
             while (depth < MAX_UNWRAP_DEPTH) {

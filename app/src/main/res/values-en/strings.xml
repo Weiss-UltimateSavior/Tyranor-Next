@@ -224,6 +224,7 @@
     <string name="save_sync_now">Sync saves now</string>
     <string name="save_sync_result">Sync done: imported %1$d, exported %2$d, overwritten %3$d, deleted %4$d</string>
     <string name="save_sync_result_no_change">Sync done: both sides already match</string>
+    <string name="save_sync_result_failed">Sync finished, but %1$d save files failed</string>
     <string name="save_sync_unmapped">%1$d unrecognized save files were not synced</string>
     <string name="engine_settings_engine_version_mv">Engine version - MV</string>
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
@@ -302,6 +303,7 @@
     <string name="save_format_convert_confirm">Convert to Tyranor format</string>
     <string name="save_format_convert_keep">Launch as-is</string>
     <string name="save_format_converted_count">Converted %1$d save files</string>
+    <string name="save_format_converted_with_failures">Converted %1$d, %2$d failed</string>
     <string name="save_format_convert_failed">Save format conversion failed</string>
     <string name="save_export_format_title">Choose export format</string>
     <string name="save_export_format_standard">Standard mode</string>

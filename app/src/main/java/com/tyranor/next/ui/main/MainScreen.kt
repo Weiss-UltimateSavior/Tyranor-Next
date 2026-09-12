@@ -63,6 +63,7 @@ import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.settings.SettingsScreen
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -102,7 +103,14 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 存档互通前台兜底：对已退出会话的待回写游戏补一次 Tyranor→标准同步
     // （引擎退出后 500ms 强杀、无回调，故在应用回到前台时补齐）。
     interactScope.launch {
-      runCatching { EngineLauncher.flushPendingSaveSync(context) }
+      // runCatching 会把协程取消也当作失败吞掉，故显式区分：取消原样传播，其余仅记日志
+      try {
+        EngineLauncher.flushPendingSaveSync(context)
+      } catch (ce: CancellationException) {
+        throw ce
+      } catch (t: Throwable) {
+        android.util.Log.w("MainScreen", "pending RPG save sync failed", t)
+      }
     }
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()

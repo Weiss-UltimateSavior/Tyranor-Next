@@ -87,6 +87,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveDeletedCountFormat = stringResource(R.string.save_deleted_count)
     val saveSyncResultFormat = stringResource(R.string.save_sync_result)
     val saveSyncNoChangeMessage = stringResource(R.string.save_sync_result_no_change)
+    val saveSyncFailedFormat = stringResource(R.string.save_sync_result_failed)
     val saveSyncUnmappedFormat = stringResource(R.string.save_sync_unmapped)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
@@ -113,13 +114,16 @@ private fun SaveManagementScreen(game: ScanGame) {
         refresh()
     }
 
-    /** 把同步结果格式化成用户可读文案：无变化提示、有变化给明细、无法识别的追加说明。 */
+    /** 把同步结果格式化成用户可读文案：无变化提示、有变化给明细、失败与无法识别的追加说明。 */
     fun formatSyncResult(result: RpgSaveSync.Result): String {
-        val base = if (result.changed == 0) {
-            saveSyncNoChangeMessage
-        } else {
-            val overwritten = result.toTyranor + result.toStandard
-            saveSyncResultFormat.format(result.imported, result.exported, overwritten, result.movedToDeleted)
+        // failed > 0 时不能只看 changed==0 就说「两侧一致」——可能是处理失败什么都没做成
+        val base = when {
+            result.failed > 0 -> saveSyncFailedFormat.format(result.failed)
+            result.changed == 0 -> saveSyncNoChangeMessage
+            else -> {
+                val overwritten = result.toTyranor + result.toStandard
+                saveSyncResultFormat.format(result.imported, result.exported, overwritten, result.movedToDeleted)
+            }
         }
         return if (result.unmapped > 0) "$base\n${saveSyncUnmappedFormat.format(result.unmapped)}" else base
     }

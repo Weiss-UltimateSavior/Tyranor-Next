@@ -292,6 +292,53 @@ class RpgSaveSyncTest {
     }
 
     @Test
+    fun sameMtimeDifferentContentIsNotSkipped() {
+        // mtime 相同但内容不同（保留时间戳的复制/恢复）不能判为一致而跳过
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "PC-CONTENT", 5_000)
+        tyranor.writeAt("RPG Global.bin", "PHONE-DIFFERENT", 5_000)
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
+
+        assertEquals(0, result.skipped)
+        assertEquals(1, result.toTyranor + result.toStandard)
+        // 平局以标准侧为准，且较旧一方须留底（平局下新旧未知）
+        assertEquals("PC-CONTENT", tyranor.resolve("RPG Global.bin").readText())
+        assertTrue(tyranor.resolve("original/RPG Global.bin").isFile)
+    }
+
+    @Test
+    fun sameMtimeSameContentIsSkipped() {
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "IDENTICAL", 5_000)
+        tyranor.writeAt("RPG Global.bin", "IDENTICAL", 5_000)
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
+
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.changed)
+    }
+
+    @Test
+    fun zeroMtimeSlotIsStillTrackedAsPresent() {
+        // mtime 为 0 是合法时间戳：不能被当成「该侧不存在」，否则删除语义错乱
+        val (standard, tyranor) = dirs()
+        val store = store()
+        val std = standard.resolve("file7.rpgsave").apply { writeText("S") }
+        std.setLastModified(0L)
+
+        val first = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+        assertEquals(1, first.imported)
+        assertTrue(tyranor.resolve("RPG File7.bin").isFile)
+
+        // Tyranor 侧删除后，第二轮应识别为「已删除」而非「新建」而复活
+        tyranor.resolve("RPG File7.bin").delete()
+        val second = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+        assertEquals(1, second.movedToDeleted)
+        assertFalse(standard.resolve("file7.rpgsave").exists())
+    }
+
+    @Test
     fun nonRpgEngineIsNoOp() {        val (standard, tyranor) = dirs()
         standard.writeAt("global.rpgsave", "X", 1_000)
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.TYRANO, store(), "g")

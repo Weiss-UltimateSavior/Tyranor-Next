@@ -1,6 +1,7 @@
 package com.tyranor.next.core.game.save
 
 import com.tyranor.next.core.engine.EngineType
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -51,20 +52,29 @@ object RpgSaveFormatConverter {
             try {
                 if (target.exists()) {
                     // 目标已有 Tyranor 存档：跳过不覆盖，仅把源文件留底
+                    if (!moveToOriginal(source)) {
+                        failed++
+                        return@forEach
+                    }
                     skipped++
                 } else {
                     copyAtomically(source, target)
                     copied = true
+                    // 留底失败不算转化成功：源文件仍在活动目录，下次检测会再次提示转化
+                    if (!moveToOriginal(source)) {
+                        throw IOException("cannot preserve ${source.absolutePath}")
+                    }
                     converted++
                 }
-                moveToOriginal(source)
+            } catch (cancelled: CancellationException) {
+                // 取消必须原样传播（AGENT.md：取消不得被吞掉），且不计入 failed
+                throw cancelled
             } catch (_: Throwable) {
                 // 单文件失败不影响其它文件。复制阶段失败时目标可能是半成品，而源文件仍在原位；
                 // 清掉半成品目标以便下次重试——否则残缺目标会被判为「已存在」而跳过，源文件被
                 // 移入 original/ 后永久读不到。
                 if (copied && source.exists()) {
                     runCatching { target.delete() }
-                    converted--
                 }
                 failed++
             }
@@ -98,11 +108,16 @@ object RpgSaveFormatConverter {
         }
     }
 
-    /** 源文件移入其所在目录的 `original/`；重名追加 `_1`/`_2`… 避免覆盖既有留底。 */
-    private fun moveToOriginal(source: File) {
-        if (!source.exists()) return
+    /**
+     * 源文件移入其所在目录的 `original/`；重名追加 `_1`/`_2`… 避免覆盖既有留底。
+     *
+     * @return 源文件是否已成功留底（不在活动目录）。false 时调用方必须记为失败：
+     *   否则结果会报告成功、但标准源文件仍在活动目录，下次检测重复提示转化。
+     */
+    private fun moveToOriginal(source: File): Boolean {
+        if (!source.exists()) return true
         val originalDir = File(source.parentFile, RpgSaveFormat.ORIGINAL_DIR)
-        if (!originalDir.isDirectory && !originalDir.mkdirs() && !originalDir.isDirectory) return
+        if (!originalDir.isDirectory && !originalDir.mkdirs() && !originalDir.isDirectory) return false
         var target = File(originalDir, source.name)
         var index = 1
         while (target.exists()) {
@@ -116,12 +131,12 @@ object RpgSaveFormatConverter {
             target = File(originalDir, candidate)
             index++
         }
-        if (!source.renameTo(target)) {
-            // rename 跨设备/被占用时退回复制+删除
-            runCatching {
-                source.copyTo(target, overwrite = false)
-                source.delete()
-            }
+        if (source.renameTo(target)) return true
+        // rename 跨设备/被占用时退回复制+删除；必须确认源已移走才算成功
+        runCatching {
+            source.copyTo(target, overwrite = false)
+            source.delete()
         }
+        return !source.exists()
     }
 }

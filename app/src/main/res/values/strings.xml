@@ -224,6 +224,7 @@
     <string name="save_sync_now">立即同步存档</string>
     <string name="save_sync_result">同步完成：导入 %1$d，导出 %2$d，覆盖 %3$d，删除归置 %4$d</string>
     <string name="save_sync_result_no_change">同步完成：两侧存档已一致，无变化</string>
+    <string name="save_sync_result_failed">同步完成，但有 %1$d 个存档处理失败</string>
     <string name="save_sync_unmapped">另有 %1$d 个无法识别的存档未互通</string>
     <string name="engine_settings_engine_version_mv">引擎版本 - MV</string>
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
@@ -302,6 +303,7 @@
     <string name="save_format_convert_confirm">转换为 Tyranor 格式</string>
     <string name="save_format_convert_keep">保持原样启动</string>
     <string name="save_format_converted_count">已转换 %1$d 个存档文件</string>
+    <string name="save_format_converted_with_failures">已转换 %1$d 个，%2$d 个失败</string>
     <string name="save_format_convert_failed">存档格式转化失败</string>
     <string name="save_export_format_title">选择导出格式</string>
     <string name="save_export_format_standard">标准模式</string>
