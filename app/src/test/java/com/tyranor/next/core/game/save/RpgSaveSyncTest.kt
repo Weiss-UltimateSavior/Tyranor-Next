@@ -293,10 +293,10 @@ class RpgSaveSyncTest {
 
     @Test
     fun sameMtimeDifferentContentIsNotSkipped() {
-        // mtime 相同但内容不同（保留时间戳的复制/恢复）不能判为一致而跳过
+        // mtime 相同、长度也相同（长度校验挡不住）但内容不同：必须靠内容哈希识别，不能跳过
         val (standard, tyranor) = dirs()
         standard.writeAt("global.rpgsave", "PC-CONTENT", 5_000)
-        tyranor.writeAt("RPG Global.bin", "PHONE-DIFFERENT", 5_000)
+        tyranor.writeAt("RPG Global.bin", "PHONE-DIFF", 5_000)
 
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
 

@@ -148,6 +148,9 @@ object RpgSaveSync {
             // 注意必须随分支更新——导入/导出后对侧文件是新建的，不能沿用同步前的引用判断。
             var stdExistsNow = std != null
             var tyrExistsNow = tyr != null
+            // 同步后实际落点：导入/导出会把文件建到新路径，清单需按新落点取 size
+            var stdFile = std
+            var tyrFile = tyr
             var record = true
             try {
                 when {
@@ -196,7 +199,7 @@ object RpgSaveSync {
                         if (existedOnTyranor) {
                             // Tyranor 侧已删除该槽位 → 标准文件归入 deleted/，不再导回
                             if (moveToDeleted(std, std.parentFile ?: preferredStandardDir)) {
-                                movedToDeleted++; stdMtime = 0L; stdExistsNow = false
+                                movedToDeleted++; stdMtime = 0L; stdExistsNow = false; stdFile = null
                             } else {
                                 failed++; record = false
                             }
@@ -207,7 +210,7 @@ object RpgSaveSync {
                             } else {
                                 val target = File(tyranorDir, name)
                                 copyOverwrite(std, target); imported++; tyrMtime = stdMtime
-                                tyrExistsNow = true
+                                tyrExistsNow = true; tyrFile = target
                             }
                         }
                     }
@@ -219,7 +222,7 @@ object RpgSaveSync {
                             // 标准侧缺失：无论外部删除还是 Tyranor 新建，都导出到标准侧（首选目录）
                             val target = File(preferredStandardDir, name)
                             copyOverwrite(tyr, target); exported++; stdMtime = tyrMtime
-                            stdExistsNow = true
+                            stdExistsNow = true; stdFile = target
                         }
                     }
                 }
@@ -236,7 +239,7 @@ object RpgSaveSync {
             if (record) {
                 // 两侧都不存在的槽位不记录，避免「删档后被再次导入」
                 if (stdExistsNow || tyrExistsNow) {
-                    nextState[slot] = slotState(std, tyr, stdMtime, tyrMtime, stdExistsNow, tyrExistsNow)
+                    nextState[slot] = slotState(stdFile, tyrFile, stdMtime, tyrMtime, stdExistsNow, tyrExistsNow)
                 }
             }
         }
