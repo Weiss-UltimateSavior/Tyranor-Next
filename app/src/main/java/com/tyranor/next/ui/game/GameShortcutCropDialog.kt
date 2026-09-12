@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -60,6 +59,7 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -181,7 +181,7 @@ private fun CropDialogCard(
             // 玻璃风格用高不透明度玻璃面板保证浮层内文字可读
             containerColor = if (AppThemeColors.isGlass) GlassPanel else NavWhite,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = AppComponentShape,
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
@@ -318,7 +318,7 @@ private fun CropPreview(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(AppComponentShape)
             .background(Color.Black)
             .onSizeChanged(onViewportSizeChanged)
             .pointerInput(bitmap, metrics) {

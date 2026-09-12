@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.game.startActivityWithPageTransition
@@ -75,7 +76,7 @@ internal fun EngineSettingsMenuScreen() {
             ) {
                 EngineSettingsKind.entries.forEach { kind ->
                     item {
-                        MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                        MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                             Column(Modifier.padding(vertical = 4.dp)) {
                                 val title = engineSettingsKindTitle(kind)
                                 ArrowPreference(

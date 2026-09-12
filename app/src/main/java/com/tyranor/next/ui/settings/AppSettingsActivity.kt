@@ -41,6 +41,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppAlertDialog
 import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -93,7 +94,7 @@ internal fun AppSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             var language by remember { mutableStateOf(AppSettingsStore.getLanguage(ctx)) }
                             val languageModes = listOf(
@@ -119,7 +120,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_color_wheel),
@@ -145,7 +146,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 外观风格：默认 / 玻璃（切换即时全 App 生效并持久化）
                             val appearanceModes = listOf(
@@ -168,7 +169,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 状态驱动选中项：跟随系统时系统深浅不变也不会漏刷新下拉展示
                             var themeMode by remember { mutableStateOf(AppSettingsStore.getThemeMode(ctx)) }
@@ -197,7 +198,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_tone_switch),
@@ -213,7 +214,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_liquid_glass_nav),

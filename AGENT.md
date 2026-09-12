@@ -195,7 +195,9 @@ Column(fillMaxSize)                                // 页面根
 
 - 页面切换动画必须保持统一：主 Screen 四个 Tab 间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
 
-- 组件统一圆角数值为 **8dp**；列表项卡片、功能项卡片、弹窗等圆角组件都应使用 `RoundedCornerShape(8.dp)`。
+- 组件统一圆角数值为 **8dp**；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
+  `AppComponentShape`（默认 8dp / 玻璃外观风格与悬浮导航一致 32dp）、Miuix 组件用 `AppComponentCornerRadius`、
+  抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。
 
 - **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
 
@@ -267,7 +269,7 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态与参数
 
-- 排版固定：圆角 `RoundedCornerShape(8.dp)` + 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
+- 排版固定：圆角 `AppComponentShape`（默认 8dp / 玻璃风格 32dp，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
 
 - 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明。「色调切换」开启时 `NavWhite`/`PageGrey` 同步互换，反差关系不变；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
 

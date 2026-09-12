@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +57,8 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
 import com.tyranor.next.theme.WithoutPressIndication
+import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.AppComponentCornerRadius
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.basic.Switch
@@ -131,7 +132,7 @@ internal fun CoverScraperSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.background(NavWhite).padding(vertical = 4.dp)) {
                             sources.forEachIndexed { index, source ->
                                 CoverSourceRow(
@@ -173,7 +174,7 @@ internal fun CoverScraperSettingsScreen() {
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.background(NavWhite).padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.cover_only_missing_title),
@@ -189,7 +190,7 @@ internal fun CoverScraperSettingsScreen() {
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(
                             modifier = Modifier.background(NavWhite).padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -211,7 +212,7 @@ internal fun CoverScraperSettingsScreen() {
                                     enabled = !scraping,
                                     onClick = { startBatchScrape() },
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = AppComponentShape,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = MaterialTheme.colorScheme.primary,
                                         disabledContainerColor = MaterialTheme.colorScheme.primary,
@@ -254,7 +255,7 @@ private fun CoverSourceRow(
         Box(
             modifier = Modifier
                 .size(28.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(AppComponentShape)
                 // 序号徽标底色：玻璃风格用亮玻璃面，避免透明不可见
                 .background(DialogItemSurface),
             contentAlignment = Alignment.Center,

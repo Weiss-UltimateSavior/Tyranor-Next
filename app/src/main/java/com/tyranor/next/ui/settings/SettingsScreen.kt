@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Folder
@@ -71,6 +70,8 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
@@ -260,7 +261,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_add_game_dir),
@@ -316,7 +317,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_engine_settings),
@@ -327,7 +328,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_app_title),
@@ -386,7 +387,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                .clip(AppComponentShape)
                                 // 弹窗内条目底色：玻璃风格用亮玻璃面
                                 .background(DialogItemSurface)
                                 .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
@@ -1055,7 +1056,7 @@ private fun LazyListPlaceholder(
 
 @Composable
 internal fun EngineCard(header: String, content: @Composable () -> Unit) {
-    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = 8.dp) {
+    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Text(
                 header,

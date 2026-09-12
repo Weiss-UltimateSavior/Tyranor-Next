@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -72,6 +71,7 @@ import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
@@ -370,7 +370,7 @@ private fun QuickLaunchCard(
     BoxWithConstraints(
         modifier = modifier
             .height(172.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(AppComponentShape)
             .background(QuickLaunchFallback)
             .glassBorder(),
     ) {
@@ -452,7 +452,7 @@ private fun QuickLaunchCard(
                         modifier = Modifier
                             .width(coverWidth)
                             .height(coverWidth * 4f / 3f)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(AppComponentShape)
                             .background(Color.White.copy(alpha = 0.18f)),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -494,7 +494,7 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .height(172.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(AppComponentShape)
             .background(NavWhite)
             .glassBorder(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -538,7 +538,7 @@ private fun RecentGameRow(
         }
         val formattedOpenTime = remember(game.openTime) { TimeFormats.formatDateTime(game.openTime) }
         // 统一裁切圆角：红色删除层与白色内容层圆角一致，内容左移越界部分被裁掉
-        Box(Modifier.clip(RoundedCornerShape(8.dp))) {
+        Box(Modifier.clip(AppComponentShape)) {
             // 删除层：仅滑出约 1/6 时露出右侧「删除」区域；玻璃风格固定用亮玻璃面（避免主题色半透明），
             // 默认风格保持主题色底。仅在滑出（offset < 0）时渲染
             if (offset < 0f) {

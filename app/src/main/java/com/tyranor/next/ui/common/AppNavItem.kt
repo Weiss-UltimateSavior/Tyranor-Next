@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -31,6 +30,7 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentShape
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -39,7 +39,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 统一规范（详见 AGENT.md「功能跳转条目统一规范」）：
  * - 所有「功能跳转列」（点击后进入/跳转/打开下一级的条目，如封面来源列表、群聊/频道项等）
  *   必须使用本组件，禁止用手写 Row/Column 拼装、禁止混用 Material 的 ListItem 等。
- * - 排版：圆角 8dp + 背景 [containerColor]（默认 [NavWhite]）+ 内边距（纵向 12dp / 横向 16dp）+ 左侧图标 24dp + 右侧箭头，
+ * - 排版：圆角统一用 [com.tyranor.next.theme.AppComponentShape]（默认 8dp / 玻璃风格 32dp）+ 背景 [containerColor]（默认 [NavWhite]）+ 内边距（纵向 12dp / 横向 16dp）+ 左侧图标 24dp + 右侧箭头，
  *   标题用 [TextColor]、摘要用半透明辅助色；进入跳转的 icon 一律 `KeyboardArrowRight`。
  * - 背景色约定：页面上条目默认 [NavWhite]（页面背景 PageGrey 灰底白卡）；弹窗内条目传 `PageGrey`（弹窗背景 NavWhite 白底灰卡），
  *   与弹窗背景形成反色反差。两者互为对偶，且「色调切换」时同步互换，层次关系不变。
@@ -77,7 +77,7 @@ fun AppNavItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(AppComponentShape)
             .clickable(enabled = enabled, onClick = { onClick?.invoke() })
             .background(containerColor)
             .glassBorder()

@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +68,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.theme.WithoutPressIndication
+import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.home.HomeScreen
@@ -247,8 +247,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
             .fillMaxWidth()
             // 无文字后按图标高度收窄导航条（64dp）；圆角 32dp（半高），呈全圆角胶囊观感
             .height(64.dp)
-            .clip(RoundedCornerShape(32.dp))
-            .glassBorder(RoundedCornerShape(32.dp)),
+            .clip(AppComponentShape)
+            .glassBorder(AppComponentShape),
           windowInsets = WindowInsets(0.dp),
           // 玻璃风格：更实的玻璃底 + 只显示图标（不显示文字）
           containerColor = GlassNavSurface,

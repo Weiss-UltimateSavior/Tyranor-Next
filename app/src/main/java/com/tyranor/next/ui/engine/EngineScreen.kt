@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -51,6 +50,7 @@ import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
@@ -161,7 +161,7 @@ private fun EngineRow(
             .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),
-        shape = RoundedCornerShape(8.dp),
+        shape = AppComponentShape,
     ) {
         androidx.compose.foundation.layout.Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),

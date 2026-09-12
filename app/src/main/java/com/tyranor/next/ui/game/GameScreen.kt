@@ -45,7 +45,6 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -123,6 +122,8 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
@@ -646,7 +647,7 @@ internal fun GameActionsSheet(
         scrimColor = if (AppThemeColors.isGlass) Color.Black.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.32f),
         contentWindowInsets = { WindowInsets(0.dp) },
         // 顶部圆角与弹窗内条目圆角（AppNavItem 8dp）保持一致
-        shape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp),
+        shape = AppSheetTopShape,
         // 玻璃描边只能画在抽屉真实顶边（dragHandle 槽首位）；不能挂 Surface 外层 modifier，
         // 否则描边会按未偏移的布局位置落到背景里形成一条白线
         dragHandle = {
@@ -1128,7 +1129,7 @@ private fun CoverSearchDialog(
                         .fillMaxWidth()
                         .widthIn(max = CoverSearchDialogMaxWidth)
                         .then(dialogHeightModifier)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(AppComponentShape)
                         // 玻璃风格用高不透明度玻璃面板，保证覆盖在暗化内容上的可读性
                         .background(if (AppThemeColors.isGlass) GlassPanel else NavWhite)
                         .glassBorder()
@@ -1276,7 +1277,7 @@ private fun CoverCandidateCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(AppComponentShape)
                 // 占位底色：默认风格 PageGrey，玻璃风格亮玻璃面（避免透明占位不可见）
                 .background(DialogItemSurface),
             contentAlignment = Alignment.Center,
@@ -1328,7 +1329,7 @@ private fun CoverCandidateOverlay(candidate: CoverSearchCandidate) {
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(AppComponentShape)
                     .background(NavWhite.copy(alpha = 0.9f))
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
@@ -1339,7 +1340,7 @@ private fun CoverCandidateOverlay(candidate: CoverSearchCandidate) {
                     color = NavWhite,
                     maxLines = 1,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(AppComponentShape)
                         .background(TextColor.copy(alpha = 0.56f))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
@@ -1352,7 +1353,7 @@ private fun CoverCandidateOverlay(candidate: CoverSearchCandidate) {
             maxLines = 1,
             modifier = Modifier
                 .align(Alignment.End)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(AppComponentShape)
                 .background(TextColor.copy(alpha = 0.56f))
                 .padding(horizontal = 8.dp, vertical = 3.dp),
         )
@@ -1415,7 +1416,7 @@ private fun LaunchFileDialog(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
+                                    .clip(AppComponentShape)
                                     // 弹窗内条目底色：默认风格 PageGrey，玻璃风格亮玻璃面
                                     .background(DialogItemSurface)
                                     .clickable { selected = name }
@@ -1525,7 +1526,7 @@ internal fun GameCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(AppComponentShape)
                 .background(game.engine.coverColor())
                 .glassBorder()
                 .then(pressModifier),

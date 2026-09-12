@@ -3,7 +3,6 @@ package com.tyranor.next.theme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -18,9 +17,6 @@ import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-
-/** 玻璃外观风格统一圆角（与 AGENT.md 的 8dp 规范一致）。 */
-private val GlassCornerShape = RoundedCornerShape(8.dp)
 
 /**
  * 应用根背景统一组件：玻璃外观风格为黑灰渐变 + 顶部环境光晕（三档竖向渐变：
@@ -73,7 +69,7 @@ fun GlassBackground(
  * 用 drawWithContent 在内容之后绘制，保证描边盖在卡片/条目背景之上。
  */
 fun Modifier.glassBorder(
-    shape: Shape = GlassCornerShape,
+    shape: Shape = AppComponentShape,
     width: Dp = 0.5.dp,
     color: Color = GlassBorder,
 ): Modifier =
