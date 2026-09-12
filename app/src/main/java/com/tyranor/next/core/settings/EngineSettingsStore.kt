@@ -56,6 +56,26 @@ object EngineSettingsStore {
     const val KEY_RPG_MV_ENGINE_VERSION = "rpg_mv_engine_version"
     const val KEY_RPG_MZ_ENGINE_VERSION = "rpg_mz_engine_version"
 
+    // RPG Maker RGSS 外置模块（settings extra 的 rpg 节，键名与 RPGM 插件 MKXPConfigurationParser 一致）
+    const val KEY_RPG_USE_RUBY18 = "rpg_use_ruby18"
+    const val KEY_RPG_DEBUG = "rpg_debug"
+    const val KEY_RPG_SMOOTH_SCALING = "rpg_smooth_scaling"
+    const val KEY_RPG_VSYNC = "rpg_vsync"
+    const val KEY_RPG_FRAME_SKIP = "rpg_frame_skip"
+    const val KEY_RPG_SOLID_FONTS = "rpg_solid_fonts"
+    const val KEY_RPG_PATH_CACHE = "rpg_path_cache"
+    const val KEY_RPG_PREBUILT_PATH_CACHE = "rpg_prebuilt_path_cache"
+    const val KEY_RPG_FAST_PATH_ENUM = "rpg_fast_path_enum"
+    const val KEY_RPG_COPY_TEXT = "rpg_copy_text"
+    const val KEY_RPG_CHEATS = "rpg_cheats"
+    const val KEY_RPG_USE_CJK_FONT = "rpg_use_cjk_font"
+    const val KEY_RPG_ENABLE_POSTLOAD_SCRIPTS = "rpg_enable_postload_scripts"
+    const val KEY_RPG_CUSTOM_FONT = "rpg_custom_font"
+    const val KEY_RPG_VERTICAL_SCREEN_ALIGN = "rpg_vertical_screen_align"
+    const val KEY_RPG_WINDOW_SIZE = "rpg_window_size"
+    const val KEY_RPG_SPEED_UP = "rpg_speed_up"
+    const val KEY_RPG_FONT_SCALE = "rpg_font_scale"
+
     // 取值常量
     const val KR_AUTO = "auto"
     const val KR_139 = "1.3.9"
@@ -161,6 +181,20 @@ object EngineSettingsStore {
     const val RENPY_AUTO = "auto"
     const val RENPY_85 = "8.5"
     const val RENPY_77 = "7.7.1"
+
+    // RPG Maker RGSS 外置模块取值域（对齐 JoiPlay utilities/f.java；verticalAlign 对齐插件默认）
+    const val RPG_WINDOW_SIZE_DEFAULT = "640x480"
+    const val RPG_SPEED_UP_DEFAULT = "1"
+    const val RPG_FONT_SCALE_DEFAULT = "0.75"
+    const val RPG_VERTICAL_ALIGN_DEFAULT = "top-center"
+    val RPG_WINDOW_SIZES: Set<String> = linkedSetOf(
+        "512x384", "512x768", "544x416", "640x480", "800x600",
+        "1024x768", "1280x720", "1280x960", "1920x1080",
+    )
+    val RPG_SPEED_UPS: Set<String> = (1..9).map { it.toString() }.toSet()
+    val RPG_FONT_SCALES: Set<String> =
+        setOf("0.25", "0.50", "0.75", "1.00", "1.25", "1.50", "1.75", "2.00")
+    val RPG_VERTICAL_ALIGNS: Set<String> = setOf("top", "top-center", "center")
 
     /** KR 渲染/内存偏好字段清单（由 [KrRenderPrefs] 派生，保证与单游戏覆盖字段一一对应）。 */
     val KR_RENDER_PREF_KEYS: List<String> = KrRenderPrefs.ALL.map { it.globalKey }
@@ -457,5 +491,120 @@ object EngineSettingsStore {
         RPG_MZ_V2 -> RPG_MZ_V2
         RPG_MZ_V0 -> RPG_MZ_V0
         else -> RPG_MZ_V0
+    }
+
+    // ---------- RPG Maker RGSS 外置模块 ----------
+
+    /**
+     * RGSS/mkxp 外置模块的 rpg 配置节。默认值对齐 JoiPlay `SettingsFactory.loadDefault`：
+     * useRuby18/smoothScaling/prebuiltPathCache/cheats 默认开，其余默认关。
+     * 仅保留 RPGM 插件 `MKXPConfigurationParser` 实际解析的键。
+     */
+    data class RpgMaker(
+        var useRuby18: Boolean = true,
+        var debug: Boolean = false,
+        var smoothScaling: Boolean = true,
+        var vsync: Boolean = false,
+        var frameSkip: Boolean = false,
+        var solidFonts: Boolean = false,
+        var pathCache: Boolean = false,
+        var prebuiltPathCache: Boolean = true,
+        var fastPathEnum: Boolean = true,
+        var copyText: Boolean = false,
+        var cheats: Boolean = true,
+        var useCJKFont: Boolean = false,
+        var enablePostloadScripts: Boolean = false,
+        var customFont: String = "",
+        var verticalScreenAlign: String = RPG_VERTICAL_ALIGN_DEFAULT,
+        var windowSize: String = RPG_WINDOW_SIZE_DEFAULT,
+        var speedUp: String = RPG_SPEED_UP_DEFAULT,
+        var fontScale: String = RPG_FONT_SCALE_DEFAULT,
+    )
+
+    private val RPG_MAKER_BOOL_KEYS = listOf(
+        KEY_RPG_USE_RUBY18, KEY_RPG_DEBUG, KEY_RPG_SMOOTH_SCALING,
+        KEY_RPG_VSYNC, KEY_RPG_FRAME_SKIP, KEY_RPG_SOLID_FONTS, KEY_RPG_PATH_CACHE,
+        KEY_RPG_PREBUILT_PATH_CACHE, KEY_RPG_FAST_PATH_ENUM, KEY_RPG_COPY_TEXT,
+        KEY_RPG_CHEATS, KEY_RPG_USE_CJK_FONT, KEY_RPG_ENABLE_POSTLOAD_SCRIPTS,
+    )
+    private val RPG_MAKER_STRING_KEYS = listOf(
+        KEY_RPG_CUSTOM_FONT, KEY_RPG_VERTICAL_SCREEN_ALIGN,
+        KEY_RPG_WINDOW_SIZE, KEY_RPG_SPEED_UP, KEY_RPG_FONT_SCALE,
+    )
+
+    fun loadRpgMaker(c: Context): RpgMaker {
+        val p = prefs(c)
+        val d = RpgMaker()
+        return RpgMaker(
+            useRuby18 = p.getBoolean(KEY_RPG_USE_RUBY18, d.useRuby18),
+            debug = p.getBoolean(KEY_RPG_DEBUG, d.debug),
+            smoothScaling = p.getBoolean(KEY_RPG_SMOOTH_SCALING, d.smoothScaling),
+            vsync = p.getBoolean(KEY_RPG_VSYNC, d.vsync),
+            frameSkip = p.getBoolean(KEY_RPG_FRAME_SKIP, d.frameSkip),
+            solidFonts = p.getBoolean(KEY_RPG_SOLID_FONTS, d.solidFonts),
+            pathCache = p.getBoolean(KEY_RPG_PATH_CACHE, d.pathCache),
+            prebuiltPathCache = p.getBoolean(KEY_RPG_PREBUILT_PATH_CACHE, d.prebuiltPathCache),
+            fastPathEnum = p.getBoolean(KEY_RPG_FAST_PATH_ENUM, d.fastPathEnum),
+            copyText = p.getBoolean(KEY_RPG_COPY_TEXT, d.copyText),
+            cheats = p.getBoolean(KEY_RPG_CHEATS, d.cheats),
+            useCJKFont = p.getBoolean(KEY_RPG_USE_CJK_FONT, d.useCJKFont),
+            enablePostloadScripts = p.getBoolean(KEY_RPG_ENABLE_POSTLOAD_SCRIPTS, d.enablePostloadScripts),
+            customFont = p.getString(KEY_RPG_CUSTOM_FONT, d.customFont).orEmpty(),
+            verticalScreenAlign = normalizeRpgVerticalAlign(p.getString(KEY_RPG_VERTICAL_SCREEN_ALIGN, d.verticalScreenAlign)),
+            windowSize = normalizeRpgWindowSize(p.getString(KEY_RPG_WINDOW_SIZE, d.windowSize)),
+            speedUp = normalizeRpgSpeedUp(p.getString(KEY_RPG_SPEED_UP, d.speedUp)),
+            fontScale = normalizeRpgFontScale(p.getString(KEY_RPG_FONT_SCALE, d.fontScale)),
+        )
+    }
+
+    fun saveRpgMaker(c: Context, r: RpgMaker) {
+        prefs(c).edit().apply {
+            putBoolean(KEY_RPG_USE_RUBY18, r.useRuby18)
+            putBoolean(KEY_RPG_DEBUG, r.debug)
+            putBoolean(KEY_RPG_SMOOTH_SCALING, r.smoothScaling)
+            putBoolean(KEY_RPG_VSYNC, r.vsync)
+            putBoolean(KEY_RPG_FRAME_SKIP, r.frameSkip)
+            putBoolean(KEY_RPG_SOLID_FONTS, r.solidFonts)
+            putBoolean(KEY_RPG_PATH_CACHE, r.pathCache)
+            putBoolean(KEY_RPG_PREBUILT_PATH_CACHE, r.prebuiltPathCache)
+            putBoolean(KEY_RPG_FAST_PATH_ENUM, r.fastPathEnum)
+            putBoolean(KEY_RPG_COPY_TEXT, r.copyText)
+            putBoolean(KEY_RPG_CHEATS, r.cheats)
+            putBoolean(KEY_RPG_USE_CJK_FONT, r.useCJKFont)
+            putBoolean(KEY_RPG_ENABLE_POSTLOAD_SCRIPTS, r.enablePostloadScripts)
+            putString(KEY_RPG_CUSTOM_FONT, r.customFont.trim())
+            putString(KEY_RPG_VERTICAL_SCREEN_ALIGN, normalizeRpgVerticalAlign(r.verticalScreenAlign))
+            putString(KEY_RPG_WINDOW_SIZE, normalizeRpgWindowSize(r.windowSize))
+            putString(KEY_RPG_SPEED_UP, normalizeRpgSpeedUp(r.speedUp))
+            putString(KEY_RPG_FONT_SCALE, normalizeRpgFontScale(r.fontScale))
+        }.apply()
+    }
+
+    /** 仅重置 rpg 节，其余引擎设置不动（对齐 JoiPlay resetSettingsButton 的作用域）。 */
+    fun resetRpgMaker(c: Context) {
+        val editor = prefs(c).edit()
+        RPG_MAKER_BOOL_KEYS.forEach(editor::remove)
+        RPG_MAKER_STRING_KEYS.forEach(editor::remove)
+        editor.apply()
+    }
+
+    fun normalizeRpgWindowSize(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return if (t in RPG_WINDOW_SIZES) t else RPG_WINDOW_SIZE_DEFAULT
+    }
+
+    fun normalizeRpgSpeedUp(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return if (t in RPG_SPEED_UPS) t else RPG_SPEED_UP_DEFAULT
+    }
+
+    fun normalizeRpgFontScale(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return if (t in RPG_FONT_SCALES) t else RPG_FONT_SCALE_DEFAULT
+    }
+
+    fun normalizeRpgVerticalAlign(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return if (t in RPG_VERTICAL_ALIGNS) t else RPG_VERTICAL_ALIGN_DEFAULT
     }
 }

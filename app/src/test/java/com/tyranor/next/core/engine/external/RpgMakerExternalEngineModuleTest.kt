@@ -2,6 +2,8 @@ package com.tyranor.next.core.engine.external
 
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.settings.EngineSettingsStore
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -44,14 +46,64 @@ class RpgMakerExternalEngineModuleTest {
     }
 
     @Test
-    fun usesNestedSettingsForRpgMakerXpOnly() {
-        assertEquals(
-            "{\"rpg\":{\"useRuby18\":{\"boolean\":true}}}",
-            RpgMakerExternalEngineModule.buildSettingsJson("rpgmxp"),
+    fun buildsNestedRpgSettingsWithTypeWrappers() {
+        val json = JSONObject(RpgMakerExternalEngineModule.buildSettingsJson("rpgmvxace"))
+        val app = json.getJSONObject("app")
+        val rpg = json.getJSONObject("rpg")
+        assertTrue(app.getJSONObject("cheats").getBoolean("boolean"))
+        assertTrue(rpg.getJSONObject("useRuby18").getBoolean("boolean"))
+        assertTrue(rpg.getJSONObject("smoothScaling").getBoolean("boolean"))
+        assertTrue(rpg.getJSONObject("prebuiltPathCache").getBoolean("boolean"))
+        assertTrue(rpg.getJSONObject("fastPathEnum").getBoolean("boolean"))
+        assertEquals(false, rpg.getJSONObject("vsync").getBoolean("boolean"))
+        assertEquals(false, rpg.getJSONObject("useCJKFont").getBoolean("boolean"))
+        assertEquals("top-center", rpg.getJSONObject("verticalScreenAlign").getString("string"))
+        assertEquals("640x480", rpg.getJSONObject("windowSize").getString("string"))
+        assertEquals("1", rpg.getJSONObject("speedUp").getString("string"))
+        assertEquals("0.75", rpg.getJSONObject("fontScale").getString("string"))
+    }
+
+    @Test
+    fun xpDefaultsToRuby18WhenSettingsMissing() {
+        val rpg = JSONObject(RpgMakerExternalEngineModule.buildSettingsJson("rpgmxp"))
+            .getJSONObject("rpg")
+        assertTrue(rpg.getJSONObject("useRuby18").getBoolean("boolean"))
+    }
+
+    @Test
+    fun explicitUseRuby18OverrideIsNotForcedBack() {
+        val disabled = EngineSettingsStore.RpgMaker(useRuby18 = false)
+
+        val xp = JSONObject(RpgMakerExternalEngineModule.buildSettingsJson("rpgmxp", disabled))
+            .getJSONObject("rpg")
+        val vx = JSONObject(RpgMakerExternalEngineModule.buildSettingsJson("rpgmvx", disabled))
+            .getJSONObject("rpg")
+
+        assertEquals(false, xp.getJSONObject("useRuby18").getBoolean("boolean"))
+        assertEquals(false, vx.getJSONObject("useRuby18").getBoolean("boolean"))
+    }
+
+    @Test
+    fun passesResolvedSettingsIntoPayload() {
+        val settings = EngineSettingsStore.RpgMaker(
+            vsync = true,
+            customFont = "/data/user/0/com.tyranor.next/files/fonts/demo.ttf",
+            windowSize = "1280x720",
+            speedUp = "3",
+            fontScale = "1.25",
         )
-        assertEquals("{}", RpgMakerExternalEngineModule.buildSettingsJson("rpgmvx"))
-        assertEquals("{}", RpgMakerExternalEngineModule.buildSettingsJson("rpgmvxace"))
-        assertEquals("{}", RpgMakerExternalEngineModule.buildSettingsJson("mkxp-z"))
+
+        val rpg = JSONObject(RpgMakerExternalEngineModule.buildSettingsJson("mkxp-z", settings))
+            .getJSONObject("rpg")
+
+        assertTrue(rpg.getJSONObject("vsync").getBoolean("boolean"))
+        assertEquals("1280x720", rpg.getJSONObject("windowSize").getString("string"))
+        assertEquals("3", rpg.getJSONObject("speedUp").getString("string"))
+        assertEquals("1.25", rpg.getJSONObject("fontScale").getString("string"))
+        assertEquals(
+            "/data/user/0/com.tyranor.next/files/fonts/demo.ttf",
+            rpg.getJSONObject("customFont").getString("string"),
+        )
     }
 
     @Test

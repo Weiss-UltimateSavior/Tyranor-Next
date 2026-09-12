@@ -143,6 +143,10 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_RENPY_VERSION),
                 EngineSettingsStore.getRenpyVersion(app),
             ),
+            rpg = EffectiveEngineSettings.mergeRpgMaker(
+                EngineSettingsStore.loadRpgMaker(app),
+                PerGameSettingsStore.toRpgMakerOverride(override),
+            ),
         )
     }
 
@@ -184,4 +188,6 @@ data class ResolvedEngineSettings(
     val rpgMvVersion: String,
     val rpgMzVersion: String,
     val renpyVersion: String,
+    /** RPG Maker RGSS 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
+    val rpg: EngineSettingsStore.RpgMaker,
 )

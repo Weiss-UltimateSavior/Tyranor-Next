@@ -59,6 +59,26 @@ object PerGameSettingsStore {
     const val F_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val F_RPG_MZ_VERSION = "rpg_mz_engine_version"
 
+    // RPG Maker RGSS 外置模块（settings extra 的 rpg 节，null=跟随全局）
+    const val F_RPG_USE_RUBY18 = "rpg_use_ruby18"
+    const val F_RPG_DEBUG = "rpg_debug"
+    const val F_RPG_SMOOTH_SCALING = "rpg_smooth_scaling"
+    const val F_RPG_VSYNC = "rpg_vsync"
+    const val F_RPG_FRAME_SKIP = "rpg_frame_skip"
+    const val F_RPG_SOLID_FONTS = "rpg_solid_fonts"
+    const val F_RPG_PATH_CACHE = "rpg_path_cache"
+    const val F_RPG_PREBUILT_PATH_CACHE = "rpg_prebuilt_path_cache"
+    const val F_RPG_FAST_PATH_ENUM = "rpg_fast_path_enum"
+    const val F_RPG_COPY_TEXT = "rpg_copy_text"
+    const val F_RPG_CHEATS = "rpg_cheats"
+    const val F_RPG_USE_CJK_FONT = "rpg_use_cjk_font"
+    const val F_RPG_ENABLE_POSTLOAD_SCRIPTS = "rpg_enable_postload_scripts"
+    const val F_RPG_CUSTOM_FONT = "rpg_custom_font"
+    const val F_RPG_VERTICAL_SCREEN_ALIGN = "rpg_vertical_screen_align"
+    const val F_RPG_WINDOW_SIZE = "rpg_window_size"
+    const val F_RPG_SPEED_UP = "rpg_speed_up"
+    const val F_RPG_FONT_SCALE = "rpg_font_scale"
+
     // Tyrano 与 RPG Maker Web 共用的存档目录开关（GameSaveManager 按此键读取）
     const val F_TY_SCOPED = "ty_scoped"
 
@@ -138,6 +158,37 @@ object PerGameSettingsStore {
         val j = load(context, gameId)
         j.put(ONS_KEY, ons)
         persist(context, gameId, j)
+    }
+
+    /**
+     * RPG Maker RGSS 外置模块覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeRpgMaker] 使用）。
+     */
+    fun toRpgMakerOverride(json: JSONObject?): RpgMakerOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        fun strOrNull(key: String): String? = if (json.has(key)) json.optString(key) else null
+        val override = RpgMakerOverride(
+            useRuby18 = boolOrNull(F_RPG_USE_RUBY18),
+            debug = boolOrNull(F_RPG_DEBUG),
+            smoothScaling = boolOrNull(F_RPG_SMOOTH_SCALING),
+            vsync = boolOrNull(F_RPG_VSYNC),
+            frameSkip = boolOrNull(F_RPG_FRAME_SKIP),
+            solidFonts = boolOrNull(F_RPG_SOLID_FONTS),
+            pathCache = boolOrNull(F_RPG_PATH_CACHE),
+            prebuiltPathCache = boolOrNull(F_RPG_PREBUILT_PATH_CACHE),
+            fastPathEnum = boolOrNull(F_RPG_FAST_PATH_ENUM),
+            copyText = boolOrNull(F_RPG_COPY_TEXT),
+            cheats = boolOrNull(F_RPG_CHEATS),
+            useCJKFont = boolOrNull(F_RPG_USE_CJK_FONT),
+            enablePostloadScripts = boolOrNull(F_RPG_ENABLE_POSTLOAD_SCRIPTS),
+            customFont = strOrNull(F_RPG_CUSTOM_FONT),
+            verticalScreenAlign = strOrNull(F_RPG_VERTICAL_SCREEN_ALIGN),
+            windowSize = strOrNull(F_RPG_WINDOW_SIZE),
+            speedUp = strOrNull(F_RPG_SPEED_UP),
+            fontScale = strOrNull(F_RPG_FONT_SCALE),
+        )
+        return override.takeIf { it != RpgMakerOverride() }
     }
 
     /** 清除某游戏全部覆盖，回退到全局默认。 */

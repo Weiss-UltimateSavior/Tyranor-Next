@@ -135,6 +135,7 @@ object EngineLauncher {
                     game = game,
                     gameDirectoryPath = path.orEmpty(),
                     launchTarget = game.launchTarget,
+                    resolvedSettings = settings,
                 ),
             )
             if (result.success) {

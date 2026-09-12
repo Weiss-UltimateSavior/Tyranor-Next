@@ -698,6 +698,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var rpgSaveInterop by remember { mutableStateOf(EngineSettingsStore.isRpgSaveInterop(ctx)) }
     var rpgMvVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMvEngineVersion(ctx)) }
     var rpgMzVersion by remember { mutableStateOf(EngineSettingsStore.getRpgMzEngineVersion(ctx)) }
+    var rpg by remember { mutableStateOf(EngineSettingsStore.loadRpgMaker(ctx)) }
     var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -748,6 +749,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setRpgSaveInterop(ctx, rpgSaveInterop)
         EngineSettingsStore.setRpgMvEngineVersion(ctx, rpgMvVersion)
         EngineSettingsStore.setRpgMzEngineVersion(ctx, rpgMzVersion)
+        EngineSettingsStore.saveRpgMaker(ctx, rpg)
         EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
     }
 
@@ -776,7 +778,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
-                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, renpyVersion, fontLauncher,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -812,6 +814,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onRpgSaveInterop = { rpgSaveInterop = it },
                 onRpgMvVersion = { rpgMvVersion = it },
                 onRpgMzVersion = { rpgMzVersion = it },
+                onRpg = { rpg = it },
                 onRenpyVersion = { renpyVersion = it },
             )
         }
@@ -857,6 +860,7 @@ private fun LazyListPlaceholder(
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
+    rpg: EngineSettingsStore.RpgMaker,
     renpyVersion: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
@@ -873,6 +877,7 @@ private fun LazyListPlaceholder(
     onArtPowerSaving: (String) -> Unit,
     onTyExternal: (Boolean) -> Unit, onTyScoped: (Boolean) -> Unit, onRpgMakerMod: (Boolean) -> Unit,
     onRpgLegacyRenderer: (Boolean) -> Unit, onRpgSaveInterop: (Boolean) -> Unit, onRpgMvVersion: (String) -> Unit, onRpgMzVersion: (String) -> Unit,
+    onRpg: (EngineSettingsStore.RpgMaker) -> Unit,
     onRenpyVersion: (String) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
@@ -1030,6 +1035,10 @@ private fun LazyListPlaceholder(
             }
         }
 
+        if (kind == EngineSettingsKind.RPG_MAKER) item {
+            RpgMakerRgssSettingsCard(settings = rpg, onSettings = onRpg)
+        }
+
         if (kind == EngineSettingsKind.RENPY) item {
             EngineCard("Ren'Py") {
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), renpyVersionMap, renpyVersion, onRenpyVersion)
@@ -1047,7 +1056,7 @@ private fun LazyListPlaceholder(
 }
 
 @Composable
-private fun EngineCard(header: String, content: @Composable () -> Unit) {
+internal fun EngineCard(header: String, content: @Composable () -> Unit) {
     MiuixCard(modifier = Modifier.fillMaxWidth(), cornerRadius = 8.dp) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Text(
@@ -1062,7 +1071,7 @@ private fun EngineCard(header: String, content: @Composable () -> Unit) {
 
 /** 单选下拉行：Miuix OverlayDropdownPreference，点击展开覆盖式选项浮层，选中即回填。 */
 @Composable
-private fun DropdownRow(
+internal fun DropdownRow(
     label: String,
     options: List<Pair<String, String>>,
     current: String,

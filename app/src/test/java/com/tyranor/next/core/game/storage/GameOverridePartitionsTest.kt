@@ -128,4 +128,41 @@ class GameOverridePartitionsTest {
             assertTrue("KR 分区缺少字段 $field", field in GameOverridePartitions.KR_KEYS)
         }
     }
+
+    @Test
+    fun rpgMakerRgssKeysArePartitionedIntoTyrano() {
+        val pairs = listOf(
+            GameOverridePartitions.KEY_RPG_USE_RUBY18 to PerGameSettingsStore.F_RPG_USE_RUBY18,
+            GameOverridePartitions.KEY_RPG_DEBUG to PerGameSettingsStore.F_RPG_DEBUG,
+            GameOverridePartitions.KEY_RPG_SMOOTH_SCALING to PerGameSettingsStore.F_RPG_SMOOTH_SCALING,
+            GameOverridePartitions.KEY_RPG_VSYNC to PerGameSettingsStore.F_RPG_VSYNC,
+            GameOverridePartitions.KEY_RPG_FRAME_SKIP to PerGameSettingsStore.F_RPG_FRAME_SKIP,
+            GameOverridePartitions.KEY_RPG_SOLID_FONTS to PerGameSettingsStore.F_RPG_SOLID_FONTS,
+            GameOverridePartitions.KEY_RPG_PATH_CACHE to PerGameSettingsStore.F_RPG_PATH_CACHE,
+            GameOverridePartitions.KEY_RPG_PREBUILT_PATH_CACHE to PerGameSettingsStore.F_RPG_PREBUILT_PATH_CACHE,
+            GameOverridePartitions.KEY_RPG_FAST_PATH_ENUM to PerGameSettingsStore.F_RPG_FAST_PATH_ENUM,
+            GameOverridePartitions.KEY_RPG_COPY_TEXT to PerGameSettingsStore.F_RPG_COPY_TEXT,
+            GameOverridePartitions.KEY_RPG_CHEATS to PerGameSettingsStore.F_RPG_CHEATS,
+            GameOverridePartitions.KEY_RPG_USE_CJK_FONT to PerGameSettingsStore.F_RPG_USE_CJK_FONT,
+            GameOverridePartitions.KEY_RPG_ENABLE_POSTLOAD_SCRIPTS to PerGameSettingsStore.F_RPG_ENABLE_POSTLOAD_SCRIPTS,
+            GameOverridePartitions.KEY_RPG_CUSTOM_FONT to PerGameSettingsStore.F_RPG_CUSTOM_FONT,
+            GameOverridePartitions.KEY_RPG_VERTICAL_SCREEN_ALIGN to PerGameSettingsStore.F_RPG_VERTICAL_SCREEN_ALIGN,
+            GameOverridePartitions.KEY_RPG_WINDOW_SIZE to PerGameSettingsStore.F_RPG_WINDOW_SIZE,
+            GameOverridePartitions.KEY_RPG_SPEED_UP to PerGameSettingsStore.F_RPG_SPEED_UP,
+            GameOverridePartitions.KEY_RPG_FONT_SCALE to PerGameSettingsStore.F_RPG_FONT_SCALE,
+        )
+        val blob = JSONObject()
+        pairs.forEach { (partitionKey, perGameKey) ->
+            assertEquals(perGameKey, partitionKey)
+            assertTrue("RPG 分区缺少字段 $perGameKey", perGameKey in GameOverridePartitions.TYRANO_KEYS)
+            blob.put(perGameKey, true)
+        }
+
+        val row = GameOverridePartitions.split("/games/rpgm", blob, 1L)
+        val tyranoPartition = JSONObject(row.tyranoJson!!)
+        pairs.forEach { (_, perGameKey) ->
+            assertTrue(tyranoPartition.has(perGameKey))
+        }
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+    }
 }
