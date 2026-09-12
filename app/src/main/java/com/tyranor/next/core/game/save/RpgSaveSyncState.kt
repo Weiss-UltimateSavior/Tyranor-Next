@@ -20,10 +20,10 @@ class RpgSaveSyncState(private val storeDir: File) {
     /** 单个槽位在两侧最后一次同步后的修改时间；0 表示该侧当时不存在。 */
     data class SlotState(val standardMtime: Long, val tyranorMtime: Long)
 
-    fun load(gameKey: String): Map<String, SlotState> {
+    fun load(gameKey: String): Map<String, SlotState> = synchronized(INTEROP_LOCK) {
         val file = fileFor(gameKey)
-        if (!file.isFile) return emptyMap()
-        return runCatching {
+        if (!file.isFile) return@synchronized emptyMap()
+        runCatching {
             val root = JSONObject(file.readText(Charsets.UTF_8))
             val slots = root.optJSONObject(KEY_SLOTS) ?: return@runCatching emptyMap()
             buildMap {
@@ -41,11 +41,11 @@ class RpgSaveSyncState(private val storeDir: File) {
         }.getOrDefault(emptyMap())
     }
 
-    fun save(gameKey: String, slots: Map<String, SlotState>) {
+    fun save(gameKey: String, slots: Map<String, SlotState>) = synchronized(INTEROP_LOCK) {
         runCatching {
             val file = fileFor(gameKey)
-            file.parentFile?.let { if (!it.isDirectory) it.mkdirs() }
-            val root = JSONObject()
+            val dir = file.parentFile
+            if (dir != null && !dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return@runCatching
             val encoded = JSONObject()
             slots.forEach { (slot, state) ->
                 encoded.put(
@@ -55,13 +55,26 @@ class RpgSaveSyncState(private val storeDir: File) {
                         .put(KEY_TYRANOR, state.tyranorMtime),
                 )
             }
-            root.put(KEY_SLOTS, encoded)
-            file.writeText(root.toString(), Charsets.UTF_8)
+            val root = JSONObject().put(KEY_SLOTS, encoded)
+            // 原子写：先写同目录临时文件再 rename。整文件 writeText 期间若进程被杀或被并发
+            // 读取，会读到半截 JSON（load 兜底成空清单，进而把「已删除」误判为「新建」而复活）。
+            val tmp = if (dir == null) null else File(dir, file.name + ".tmp." + System.nanoTime())
+            if (tmp != null) {
+                tmp.writeText(root.toString(), Charsets.UTF_8)
+                if (!tmp.renameTo(file)) {
+                    file.writeText(root.toString(), Charsets.UTF_8)
+                    tmp.delete()
+                }
+            } else {
+                file.writeText(root.toString(), Charsets.UTF_8)
+            }
         }
+        Unit
     }
 
-    fun clear(gameKey: String) {
+    fun clear(gameKey: String) = synchronized(INTEROP_LOCK) {
         runCatching { fileFor(gameKey).delete() }
+        Unit
     }
 
     private fun fileFor(gameKey: String): File = File(storeDir, sha1(gameKey) + ".json")
@@ -71,6 +84,13 @@ class RpgSaveSyncState(private val storeDir: File) {
         .joinToString("") { "%02x".format(it) }
 
     companion object {
+        /**
+         * 存档互通全局互斥：[RpgSaveSync.sync] 与清单读写共用同一把锁，串行化可能并发的
+         * 同步入口（启动前 / 前台兜底 / 存档页手动）与删除游戏时的清单清理。可重入，
+         * 故 sync 持锁期间调用 load/save 不会死锁。
+         */
+        internal val INTEROP_LOCK = Any()
+
         private const val KEY_SLOTS = "slots"
         private const val KEY_STANDARD = "std"
         private const val KEY_TYRANOR = "tyr"

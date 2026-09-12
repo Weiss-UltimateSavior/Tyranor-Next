@@ -299,31 +299,47 @@ object RpgSaveFormat {
     fun isHashedTyranorName(name: String): Boolean = HASHED_KEY_NAME.matches(name)
 
     /**
-     * 哈希存档名反解为标准文件名：枚举引擎可能用到的键（`RPG Global`/`RPG FileN`/…+bak 及 MZ 变体）
-     * 逐个 sha256 比对，命中即返回标准名；无法还原（插件自定义键）返回 null。
+     * 哈希存档名反解为标准文件名：查预建的「sha256(键) → 标准名」索引（键空间有限，
+     * 见 [buildHashedIndex]）。命中即返回标准名；无法还原（插件自定义键）返回 null。
      */
     fun hashedToStandardName(name: String, engine: EngineType): String? {
         val hash = HASHED_KEY_NAME.matchEntire(name)?.groupValues?.get(1)?.lowercase(Locale.ROOT) ?: return null
-        val ext = standardExtension(engine) ?: return null
+        return when (engine) {
+            EngineType.RPG_MV -> mvHashedIndex[hash]
+            EngineType.RPG_MZ -> mzHashedIndex[hash]
+            else -> null
+        }
+    }
+
+    /** MV 哈希键索引，首次使用时构建（`by lazy` 线程安全）。 */
+    private val mvHashedIndex: Map<String, String> by lazy { buildHashedIndex(EngineType.RPG_MV) }
+
+    /** MZ 哈希键索引，首次使用时构建。 */
+    private val mzHashedIndex: Map<String, String> by lazy { buildHashedIndex(EngineType.RPG_MZ) }
+
+    /**
+     * 枚举引擎可能用到的存档键（`global`/`config`/`fileN`，MV 另含 `bak`）并预计算其
+     * `sha256(键) → 标准文件名` 映射。索引只建一次，避免每次导出为「标准模式」都逐文件
+     * 重算约 2000 次哈希（n 个哈希存档 ⇒ O(n×2000)）。
+     */
+    private fun buildHashedIndex(engine: EngineType): Map<String, String> {
+        val ext = standardExtension(engine) ?: return emptyMap()
         val mv = engine == EngineType.RPG_MV
-        val candidates = buildList {
-            add((if (mv) "RPG Global" else "global") to "global")
-            add((if (mv) "RPG Config" else "config") to "config")
-            if (mv) {
-                add("RPG Globalbak" to "global")
-                add("RPG Configbak" to "config")
-            }
-            for (slot in 1..MAX_SAVE_SLOT) {
-                add((if (mv) "RPG File$slot" else "file$slot") to "file$slot")
-                if (mv) add("RPG File${slot}bak" to "file$slot")
-            }
+        val index = HashMap<String, String>((MAX_SAVE_SLOT + 2) * 2)
+        fun put(key: String, stem: String, backup: Boolean) {
+            index[sha256(key)] = stem + ext + (if (backup) ".bak" else "")
         }
-        for ((key, stem) in candidates) {
-            if (sha256(key) != hash) continue
-            val isBackup = key.endsWith("bak")
-            return stem + ext + (if (isBackup) ".bak" else "")
+        put(if (mv) "RPG Global" else "global", "global", backup = false)
+        put(if (mv) "RPG Config" else "config", "config", backup = false)
+        if (mv) {
+            put("RPG Globalbak", "global", backup = true)
+            put("RPG Configbak", "config", backup = true)
         }
-        return null
+        for (slot in 1..MAX_SAVE_SLOT) {
+            put(if (mv) "RPG File$slot" else "file$slot", "file$slot", backup = false)
+            if (mv) put("RPG File${slot}bak", "file$slot", backup = true)
+        }
+        return index
     }
 
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")

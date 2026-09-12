@@ -120,6 +120,8 @@ class RpgSaveFormatTest {
         assertNull(RpgSaveFormat.hashedToStandardName("key_" + "0".repeat(64) + ".bin", EngineType.RPG_MV))
         assertNull(RpgSaveFormat.hashedToStandardName("RPG File3.bin", EngineType.RPG_MV))
         assertNull(RpgSaveFormat.hashedToStandardName("key_abc.bin", EngineType.RPG_MV))
+        // 非 RPG 引擎无反解空间
+        assertNull(RpgSaveFormat.hashedToStandardName("key_" + "a".repeat(64) + ".bin", EngineType.TYRANO))
     }
 
     @Test
