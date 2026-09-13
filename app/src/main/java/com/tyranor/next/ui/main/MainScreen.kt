@@ -109,7 +109,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
   val unselectedColor = UnselectedGrey
   // 导航栏样式：应用设置 → 默认 / 圆角液态玻璃（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
-    // initNavStyle 一并加载「液态玻璃增强」（保持单一加载入口，避免多处重复解析 prefs）
+    // initNavStyle 是幂等的（设置页也会调用一次），这里与游戏排序一起在 IO 线程读一次 prefs
     val gameSort = withContext(Dispatchers.IO) {
       AppSettingsStore.initNavStyle(context)
       AppSettingsStore.getGameSort(context)
@@ -264,7 +264,9 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 圆角液态玻璃导航：悬浮在内容之上。
     // 增强档（应用设置 → 液态玻璃增强）改用三层采样 + 折射透镜实现，默认关闭走原实现。
     if (liquidGlass) {
-      if (enhanceLiquidGlass) {
+      // 增强档必须要有可用采样层（backdropAvailable 已含 API 门槛与液态玻璃条件）；
+      // 万一不满足则退回经典档，而不是拿未挂载的 backdrop 渲染（组件契约要求）
+      if (enhanceLiquidGlass && backdropAvailable) {
         EnhancedLiquidGlassNavigationBar(
           backdrop = backdrop,
           selectedIndex = selectedIndex,

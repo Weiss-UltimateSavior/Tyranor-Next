@@ -78,8 +78,8 @@ internal fun AppSettingsScreen() {
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
     val glass = AppThemeColors.isGlass
     var showColorPicker by remember { mutableStateOf(false) }
-    // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：确保两个开关读到持久化值，
-    // 否则会出现「持久化为开、界面显示关」的错位
+    // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
+    // 否则下拉会显示成默认档（与磁盘上的真实取值不一致）
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(ctx) }
     }
@@ -228,8 +228,8 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 底部导航栏：默认 / 液态玻璃 / 液态玻璃增强 三选一。
-                            // 增强档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
+                            // 导航栏样式：默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜 三选一。
+                            // 「透镜」档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
                             val navStyleOptions = buildList {
                                 add(
                                     AppSettingsStore.NAV_STYLE_DEFAULT to

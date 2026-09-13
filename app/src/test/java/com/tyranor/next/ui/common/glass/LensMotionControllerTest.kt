@@ -81,6 +81,28 @@ class LensMotionControllerTest {
         }
     }
 
+    /**
+     * 回归：掉帧/30Hz 下积分器必须仍然收敛。
+     *
+     * 半隐式欧拉对 k=1000 的位置/按压弹簧稳定上限约 26ms，早期实现把「本帧时长」直接当步长、
+     * 上限又放到 1/30s，导致 33ms 的帧会让弹簧发散：透镜来回乱跳且帧循环永不退出。
+     * 现在改为固定子步长积分，这里用 40ms 的「卡顿帧」验证仍能收敛并收起。
+     */
+    @Test
+    fun jankyFrames_stillConverge() = runBlocking {
+        withController(frameNanos = JankFrameNanos) { controller ->
+            controller.beginPress()
+            controller.dragBy(1.6f)
+            controller.settleAt(2f, pulse = false)
+            awaitSettled(controller)
+
+            assertEquals(2f, controller.index, 1e-3f)
+            assertTrue("卡顿帧后材质也必须收起", controller.pressure < 0.05f)
+            assertTrue("输出必须有限", controller.index.isFinite() && controller.pressure.isFinite())
+            assertTrue("动画结束后不应继续占用帧循环", !controller.isAnimating)
+        }
+    }
+
     @Test
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
@@ -92,21 +114,23 @@ class LensMotionControllerTest {
         }
     }
 
-    /** 人工帧时钟：每次 `withFrameNanos` 前进一帧，让积分器以最快速度跑完动画。 */
-    private class ManualFrameClock : MonotonicFrameClock {
+    /** 人工帧时钟：每次 `withFrameNanos` 前进 [frameNanos]，让积分器以最快速度跑完动画。 */
+    private class ManualFrameClock(private val frameNanos: Long = FrameNanos) : MonotonicFrameClock {
         private var nanos = 0L
 
         override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R {
             // 让出事件循环，测试才能观察到动画的中间状态
             delay(1)
-            nanos += FrameNanos
+            nanos += frameNanos
             return onFrame(nanos)
         }
     }
 
-    private suspend fun withController(block: suspend (LensMotionController) -> Unit) =
-        coroutineScope {
-            val scope = CoroutineScope(coroutineContext + ManualFrameClock())
+    private suspend fun withController(
+        frameNanos: Long = FrameNanos,
+        block: suspend (LensMotionController) -> Unit,
+    ) = coroutineScope {
+            val scope = CoroutineScope(coroutineContext + ManualFrameClock(frameNanos))
             val controller = LensMotionController(
                 scope = scope,
                 initialIndex = 0f,
@@ -125,6 +149,9 @@ class LensMotionControllerTest {
 
     private companion object {
         const val FrameNanos = 16_000_000L
+
+        /** 40ms 一帧（约 25fps）：曾会让积分器发散的卡顿区间。 */
+        const val JankFrameNanos = 40_000_000L
         const val SettleTimeoutMillis = 10_000L
     }
 }

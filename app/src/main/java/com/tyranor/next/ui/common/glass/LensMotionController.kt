@@ -62,7 +62,8 @@ internal class LensMotionController(
 
     // ---- 内部弹簧与积分状态 ----
     private val epsilon = spec.visibilityThreshold
-    private val positionSpring = Spring(initialIndex, 1000f, 1f, epsilon)
+    private val positionSpring =
+        Spring(initialIndex.coerceIn(indexRange), 1000f, 1f, epsilon)
     private val pressureSpring = Spring(0f, 1000f, 1f, epsilon)
     private val wideSpring = Spring(1f, 250f, 0.6f, epsilon)
     private val tallSpring = Spring(1f, 250f, 0.7f, epsilon)
@@ -88,6 +89,7 @@ internal class LensMotionController(
 
     /** 拖动：按「索引增量」移动目标位置（像素→索引由调用方按槽宽换算）。 */
     fun dragBy(indexDelta: Float) {
+        if (!indexDelta.isFinite()) return
         targetIndex = (targetIndex + indexDelta).coerceIn(indexRange)
         positionSpring.target = targetIndex
         ensureFrameLoop()
@@ -98,6 +100,8 @@ internal class LensMotionController(
      * [pulse] 为真时顺带做一次按压—回落，让点击也有「被按过」的质感。
      */
     fun settleAt(target: Float, pulse: Boolean = true) {
+        // 目标值必须有限：否则弹簧永远「未收敛」，帧循环会一直跑下去
+        if (!target.isFinite()) return
         targetIndex = target.coerceIn(indexRange)
         positionSpring.target = targetIndex
         if (pulse) {
@@ -109,8 +113,28 @@ internal class LensMotionController(
         ensureFrameLoop()
     }
 
-    /** 每帧推进：积分五个弹簧，同步输出状态，并在满足条件时结束循环。 */
+    /**
+     * 每帧推进：把这一帧的真实时长切成若干个**固定子步长**再积分。
+     *
+     * 半隐式欧拉并非无条件稳定：对 `k`、阻尼比 ζ，稳定上限约 `dt < 2/√k`。本控制器的
+     * 位置/按压弹簧 `k=1000`（√k≈31.6）时临界步长约 **26ms**——若直接用「本帧时长」积分，
+     * 一次 30fps 的帧或一次明显卡顿就会让数值发散（透镜来回乱跳且帧循环永不退出）。
+     * 因此：
+     * 1. 子步长固定为 [SubStepSeconds]（1/240s），远小于临界值；
+     * 2. 单帧补偿的总时长限幅到 [MaxCompensatedSeconds]（1/15s），避免卡顿后一次补太多时间。
+     */
     private fun step(dt: Float) {
+        if (!dt.isFinite() || dt <= 0f) return
+        var remaining = dt.coerceIn(0f, MaxCompensatedSeconds)
+        while (remaining > 0f) {
+            val sub = if (remaining > SubStepSeconds) SubStepSeconds else remaining
+            integrate(sub)
+            remaining -= sub
+        }
+    }
+
+    /** 单个子步的积分：推进六个弹簧并同步对外输出。 */
+    private fun integrate(dt: Float) {
         positionSpring.step(dt)
         index = positionSpring.value.coerceIn(indexRange)
 
@@ -160,9 +184,7 @@ internal class LensMotionController(
                 var previous = withFrameNanos { it }
                 while (isActive) {
                     val now = withFrameNanos { it }
-                    // dt 夹取：后台回来或掉帧时不让积分步长炸掉
-                    val dt = ((now - previous) / 1_000_000_000f)
-                        .coerceIn(MinFrameSeconds, MaxFrameSeconds)
+                    val dt = (now - previous) / 1_000_000_000f
                     previous = now
                     step(dt)
                     if (allSettled()) break
@@ -192,6 +214,11 @@ internal class LensMotionController(
             val accel = -stiffness * (value - target) - 2f * dampingRatio * sqrt(stiffness) * speed
             speed += accel * dt
             value += speed * dt
+            // 兜底：任何非有限值都直接回到目标（同时让 settled 成立，帧循环不会卡死）
+            if (!value.isFinite() || !speed.isFinite()) {
+                value = target
+                speed = 0f
+            }
         }
 
         val settled: Boolean
@@ -199,7 +226,9 @@ internal class LensMotionController(
     }
 
     private companion object {
-        const val MinFrameSeconds = 1f / 240f
-        const val MaxFrameSeconds = 1f / 30f
+        /** 固定积分子步长：远小于 k=1000 时的稳定上限（约 26ms）。 */
+        const val SubStepSeconds = 1f / 240f
+        /** 单帧最多补偿的真实时长，避免卡顿后一次推进过多（螺旋死亡）。 */
+        const val MaxCompensatedSeconds = 1f / 15f
     }
 }

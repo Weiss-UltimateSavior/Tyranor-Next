@@ -78,6 +78,7 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.theme.AppNavCapsuleShape
 import com.tyranor.next.ui.common.LiquidGlassNavItem
+import com.tyranor.next.ui.common.isWideScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -136,20 +137,22 @@ fun EnhancedLiquidGlassNavigationBar(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val scope = rememberCoroutineScope()
 
-    // 宽度：参考单槽宽 × N 居中收窄；窗口放不下时夹取，再窄就直接不渲染（避免留一条残片）
     // 触觉反馈：用 View.performHapticFeedback（无需 VIBRATE 权限，且自动遵循系统「触感反馈」开关）。
     // 兜底：设备没有马达（或查询异常）时**完全不触发**，不做无意义的调用。
     val hapticView = LocalView.current
     val hapticSupported = remember(hapticView) {
-        val context = hapticView.context
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)
-                ?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        }
-        runCatching { vibrator?.hasVibrator() == true }.getOrDefault(false)
+        // 整段探测都包在 runCatching 里：没有马达、服务缺失、厂商实现抛异常都按「不支持」处理
+        runCatching {
+            val context = hapticView.context
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)
+                    ?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+            }
+            vibrator?.hasVibrator() == true
+        }.getOrDefault(false)
     }
     val tapTick = remember(hapticView, hapticSupported) {
         if (hapticSupported) {
@@ -166,18 +169,23 @@ fun EnhancedLiquidGlassNavigationBar(
         }
     }
     val currentTapTick by rememberUpdatedState(tapTick)
+    val currentReleaseTick by rememberUpdatedState(releaseTick)
 
+    // 宽度：参考单槽宽 × N 居中收窄；窗口放不下时夹取，再窄就直接不渲染（避免留一条残片）
     val configuration = LocalConfiguration.current
     val windowWidthDp = with(density) {
         LocalWindowInfo.current.containerSize.width.toDp()
     }.takeIf { it > 0.dp } ?: configuration.screenWidthDp.dp
-    // 平板等宽屏拉伸铺满（与原版液态玻璃导航一致），手机保持参考单槽宽度居中
-    val stretchBar = configuration.screenWidthDp >= WideScreenWidthDp
+    // 平板/横屏拉伸铺满（与原版液态玻璃导航一致）：复用项目既有的宽屏判定，
+    // 避免这里再维护一套阈值（横屏或宽度 ≥600dp 都算宽屏）
+    val stretchBar = isWideScreen()
     val barWidth = spec.clampedBarWidth(tabs, windowWidthDp, stretch = stretchBar)
     if (barWidth <= spec.minRenderableBarWidth) return
 
-    val blurEnabled = capabilities.supportsBlur
-    val refractionEnabled = capabilities.supportsBlur && capabilities.supportsRefraction
+    // 平台能力是权威：调用方传入的能力标记只能「再降一级」，不能把低版本设备抬进高能力分支
+    val platformCaps = remember { GlassBottomBarCapabilities.of(Build.VERSION.SDK_INT) }
+    val blurEnabled = capabilities.supportsBlur && platformCaps.supportsBlur
+    val refractionEnabled = capabilities.supportsRefraction && platformCaps.supportsRefraction
 
     var tabWidthPx by remember { mutableFloatStateOf(0f) }
     var barWidthPx by remember { mutableFloatStateOf(0f) }
@@ -198,7 +206,7 @@ fun EnhancedLiquidGlassNavigationBar(
         }
     }
 
-    val controller = remember(scope, tabs, density, isLtr, spec) {
+    val controller = remember(scope, tabs, spec) {
         LensMotionController(
             scope = scope,
             initialIndex = selectedIndex.toFloat(),
@@ -216,39 +224,51 @@ fun EnhancedLiquidGlassNavigationBar(
     // 拖动释放已经落到目标槽位；用显式标记判重，避免 settleAt 再补一次按压脉冲
     var indexCommittedByDrag by remember { mutableStateOf<Int?>(null) }
 
-    val commitIndex: (Float) -> Unit = remember(controller, scope, tabs) {
+    val commitIndex: (Float) -> Unit = remember(controller, scope, tabs, spec) {
         { target ->
             val index = target.fastRoundToInt().fastCoerceIn(0, tabs - 1)
             // 松手立即反馈：拖动与纯按住一致，不做延迟（延迟会让「按下已选项」显得迟钝）
-            releaseTick()
+            currentReleaseTick()
             // 吸附到四舍五入后的槽位，并收起材质；pulse=false 表示不再补一次按压脉冲
             controller.settleAt(index.toFloat(), pulse = false)
             indexCommittedByDrag = index
             if (index != currentSelectedIndex) currentOnItemClick(index)
-            scope.launch { panelShiftAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
+            with(spec) {
+                scope.launch {
+                    panelShiftAnimation.animateTo(
+                        0f,
+                        spring(panelRecenterDamping, panelRecenterStiffness, panelRecenterThreshold),
+                    )
+                }
+            }
         }
     }
 
-    // 点击图标：已覆盖的立即反馈；未覆盖的等滑块快滑到位再反馈（更跟手）
+    // 点击图标：未覆盖的等滑块快滑到位再反馈（更跟手）。命中测试是「最上层兄弟独占」，
+    // 覆盖中的那个 Tab 由透镜自己接管（其松手反馈在 commitIndex 里给），这里只处理未被覆盖的
+    // 到位等待的会话号：连续点不同图标时，只有最后一次点击的等待有效，
+    // 避免旧 waiter 对「滑块只是路过」的槽位误触发反馈
+    var tapSession by remember { mutableStateOf(0) }
     val onTabSelected: (Int) -> Unit = remember(controller, scope, tabs, spec) {
         { index ->
             if (index == currentSelectedIndex) {
                 currentTapTick()
             } else {
                 currentOnItemClick(index)
+                val session = ++tapSession
                 scope.launch {
                     val arrived = withTimeoutOrNull(ArriveTimeoutMillis) {
                         snapshotFlow { controller.index }
                             .first { abs(it - index) < spec.tapArriveThreshold }
                     } != null
-                    if (arrived) currentTapTick()
+                    if (arrived && session == tapSession) currentTapTick()
                 }
             }
         }
     }
 
     val dragModifier = remember(controller, commitIndex, scope, paddingPx) {
-        Modifier.pointerInput(controller) {
+        Modifier.pointerInput(controller, commitIndex) {
             detectLensPressDrag(
                 onPress = { controller.beginPress() },
                 onDrag = { position, previous, delta ->
@@ -264,7 +284,11 @@ fun EnhancedLiquidGlassNavigationBar(
                         }
                         if (base + position.x in 0f..barWidthPx && base + previous.x in 0f..barWidthPx) {
                             controller.dragBy(delta.x / tab * (if (currentIsLtr) 1f else -1f))
-                            scope.launch { panelShiftAnimation.snapTo(panelShiftAnimation.value + delta.x) }
+                            // 累加值本身也夹取：否则手指一直拖到边界外会让它无限增长，
+                            // 回弹时要跑的距离越来越离谱（可视化偏移早已被 derived 夹住）
+                            val next = (panelShiftAnimation.value + delta.x)
+                                .coerceIn(-barWidthPx, barWidthPx)
+                            scope.launch { panelShiftAnimation.snapTo(next) }
                         }
                     }
                 },
@@ -272,7 +296,14 @@ fun EnhancedLiquidGlassNavigationBar(
                 onCancel = {
                     // 取消不提交：回到当前选中项（正式产品语义，见文档 §6 D3）
                     controller.settleAt(currentSelectedIndex.toFloat(), pulse = false)
-                    scope.launch { panelShiftAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
+                    with(spec) {
+                        scope.launch {
+                            panelShiftAnimation.animateTo(
+                                0f,
+                                spring(panelRecenterDamping, panelRecenterStiffness, panelRecenterThreshold),
+                            )
+                        }
+                    }
                 },
             )
         }
@@ -324,7 +355,7 @@ fun EnhancedLiquidGlassNavigationBar(
                 center = { size ->
                     val fromStart = paddingPx + (controller.index + 0.5f) * currentTabWidthPx
                     Offset(
-                        x = if (isLtr) fromStart else size.width - fromStart,
+                        x = if (currentIsLtr) fromStart else size.width - fromStart,
                         y = size.height / 2f,
                     )
                 },
@@ -386,8 +417,9 @@ fun EnhancedLiquidGlassNavigationBar(
                     tabWidthPx = (barWidthPx - paddingPx * 2) / tabs
                 }
                 .graphicsLayer { translationX = panelShift }
-                // 悬浮栏整体归导航所有：栏内不属于任何 Tab 的残余手势在此吞掉（Main 阶段，
-                // 子项先处理自己的点击），不落到宿主的手势处理上
+                // 悬浮栏整体归导航所有（与参考实现一致，属前向兼容）：命中测试默认「最上层兄弟独占」，
+                // 下层页面本就收不到栏内的触摸，这里额外吞掉未被任何 Tab 处理的残余事件，
+                // 避免将来出现「共享命中」时落到宿主的手势处理上
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
@@ -522,9 +554,12 @@ fun EnhancedLiquidGlassNavigationBar(
             // 按压缩放与速度形变都是纯图层变换：各 API 版本都保留（低版本无折射但有体积反馈）
             val lensLayer: GraphicsLayerScope.() -> Unit = remember(spec, controller) {
                 {
-                    val indexVelocity = controller.velocity / 10f
-                    scaleX = controller.scaleX / (1f - (indexVelocity * 0.75f).fastCoerceIn(-0.2f, 0.2f))
-                    scaleY = controller.scaleY * (1f - (indexVelocity * 0.25f).fastCoerceIn(-0.2f, 0.2f))
+                    val indexVelocity = controller.velocity / spec.velocityScaleDivisor
+                    val clamp = spec.velocityClamp
+                    scaleX = controller.scaleX /
+                        (1f - (indexVelocity * spec.velocityWideFactor).fastCoerceIn(-clamp, clamp))
+                    scaleY = controller.scaleY *
+                        (1f - (indexVelocity * spec.velocityTallFactor).fastCoerceIn(-clamp, clamp))
                 }
             }
             val lensCover: DrawScope.() -> Unit = remember(refractionEnabled, colors, spec, controller) {
@@ -576,9 +611,6 @@ fun EnhancedLiquidGlassNavigationBar(
         }
     }
 }
-
-/** 宽屏判定阈值（dp）：与项目既有 `isWideScreen()` 保持一致，宽屏时底栏拉伸铺满。 */
-private const val WideScreenWidthDp = 600
 
 /** 点击后等待滑块到位的上限：超时就不再补反馈（例如用户在滑动途中又点了别处）。 */
 private const val ArriveTimeoutMillis = 600L

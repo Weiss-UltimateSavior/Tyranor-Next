@@ -82,6 +82,16 @@ data class GlassBottomBarSpec(
     /** 释放等待阈值（索引单位）：参考公式为 `(N − 1) × 0.025`，五项为 0.10（四项适配参数）。 */
     val releaseThreshold: Float = 0.10f,
     val visibilityThreshold: Float = 0.001f,
+    // ---- 整栏归位与速度形变（原先散落在组件里的字面量，收口到这里）----
+    /** 拖动松手后整栏归位弹簧（阻尼比 / 刚度 / 阈值）。 */
+    val panelRecenterDamping: Float = 1f,
+    val panelRecenterStiffness: Float = 300f,
+    val panelRecenterThreshold: Float = 0.5f,
+    /** 速度形变系数：`scaleX / (1 − clamp(v/10 × 0.75))`、`scaleY × (1 − clamp(v/10 × 0.25))`。 */
+    val velocityScaleDivisor: Float = 10f,
+    val velocityWideFactor: Float = 0.75f,
+    val velocityTallFactor: Float = 0.25f,
+    val velocityClamp: Float = 0.2f,
 ) {
     /** 自然宽度：N 个参考单槽 + 左右内边距（报告 §8.5 公式 `N·w + 8dp`）。 */
     fun naturalBarWidth(tabsCount: Int): Dp =

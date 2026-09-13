@@ -329,7 +329,8 @@ Column(fillMaxSize)                                // 页面根
 | 场景                                   | 位置                                                | 组件                 |
 | ------------------------------------ | ------------------------------------------------- | ------------------ |
 | 设置清单开关（KRKR/ONS/Artemis/RPG Maker 等） | `SettingsScreen.kt`                               | `SwitchPreference` |
-| 应用设置开关（色调切换 / 圆角导航等）                 | `AppSettingsActivity.kt`                          | `SwitchPreference` |
+| 应用设置开关（色调切换等）                        | `AppSettingsActivity.kt`                          | `SwitchPreference` |
+| 应用设置「导航栏样式」三选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
 | 封面来源启用开关（行内）                         | `CoverScraperSettingsActivity.kt`（CoverSourceRow） | `Switch`           |
 
 ### 3. 例外

@@ -51,6 +51,9 @@ internal class PressGlowHighlight(
         """,
     )
 
+    /** Brush 与 shader 一起缓存：`drawWithContent` 每帧都会执行，不能在里面新建对象。 */
+    private val brush by lazy { ShaderBrush(shader) }
+
     val modifier: Modifier = Modifier.drawWithContent {
         val p = progress()
         if (p > 0f) {
@@ -65,7 +68,7 @@ internal class PressGlowHighlight(
                     spot.y.finiteIn(0f, size.height),
                 )
             }
-            drawRect(ShaderBrush(shader), blendMode = BlendMode.Plus)
+            drawRect(brush, blendMode = BlendMode.Plus)
         }
         drawContent()
     }

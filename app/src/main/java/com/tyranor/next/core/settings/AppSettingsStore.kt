@@ -126,14 +126,11 @@ object AppSettingsStore {
         val p = prefs(c)
         if (!p.getBoolean(KEY_LIQUID_GLASS_ENHANCE, false)) return
         val stored = p.getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT)
-        p.edit()
-            .remove(KEY_LIQUID_GLASS_ENHANCE)
-            .apply {
-                if (stored == NAV_STYLE_LIQUID_GLASS) {
-                    putString(KEY_NAV_STYLE, NAV_STYLE_LIQUID_GLASS_ENHANCED)
-                }
-            }
-            .apply()
+        val editor = p.edit().remove(KEY_LIQUID_GLASS_ENHANCE)
+        if (stored == NAV_STYLE_LIQUID_GLASS) {
+            editor.putString(KEY_NAV_STYLE, NAV_STYLE_LIQUID_GLASS_ENHANCED)
+        }
+        editor.apply()
     }
 
     fun initLanguage(c: Context) {

@@ -56,6 +56,7 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DarkGrey
 import kotlin.math.abs
@@ -263,8 +264,8 @@ private fun LiquidGlassNavItemView(
 /**
  * 悬浮导航栏的列表底部滚动留白：
  * 内容可滚动经过玻璃后面（沉浸），但列表尾部预留导航高度，保证滚动到底时最后一项完全露出不被遮挡。
- * - 圆角液态玻璃导航（普通档）：栏高 64 + 上下各 12 外边距 = 88dp；
- * - 圆角液态玻璃导航（增强档）：栏高 64 + 底部 12 外边距 = 76dp（无上边距）；
+ * - 液态玻璃 · 经典：栏高 64 + 上下各 12 外边距 = 88dp；
+ * - 液态玻璃 · 透镜：栏高 64 + 底部 12 外边距 = 76dp（无上边距）；
  * - 玻璃外观风格下的悬浮默认导航条：无文字后栏高收窄至 64 + 上下各 12 外边距；
  * - 其余情况返回 0（导航栏占布局高度）。
  */
@@ -273,8 +274,11 @@ fun glassNavBottomInset(): Dp {
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     return when (navStyle) {
-        // 增强档栏体自身占 64dp，宿主只再加底部 12dp
-        AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED -> navBarInset + 76.dp
+        // 透镜档：栏高 + 底部留白直接取自参数契约，避免两处各写一份数字后漂移
+        AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
+            navBarInset + GlassBottomBarSpec.Default.barHeight +
+                GlassBottomBarSpec.Default.hostBottomPadding
+        // 经典档：栏高 64 + 上下各 12
         AppSettingsStore.NAV_STYLE_LIQUID_GLASS -> navBarInset + 88.dp
         else -> if (AppThemeColors.isGlass) navBarInset + 88.dp else 0.dp
     }
