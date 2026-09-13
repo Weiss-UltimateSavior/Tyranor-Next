@@ -68,6 +68,13 @@ data class GlassBottomBarSpec(
     /** 点击未覆盖图标时，判定「滑块快到位」的索引距离阈值（用于触觉反馈时机，见 §6 D16）。 */
     val tapArriveThreshold: Float = 0.12f,
     /**
+     * 判定按压「已经看得见」的压力阈值。
+     *
+     * `settleAt(pulse = true)` 在目标本来就已到位时，若第一帧就把压力目标改回 0，
+     * 这一下按压等于没发生；因此收货时机要等到压力涨过该阈值之后（见 §6 D20）。
+     */
+    val pulseVisibleThreshold: Float = 0.5f,
+    /**
      * 透镜视觉宽度上限（见 §6 D19）。
      *
      * 手机上一个槽位就是 76dp，透镜即整槽；但平板/横屏拉伸后单槽会被拉到 200dp 以上，

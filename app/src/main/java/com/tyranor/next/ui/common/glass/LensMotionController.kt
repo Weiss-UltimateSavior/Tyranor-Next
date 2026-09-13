@@ -77,9 +77,11 @@ internal class LensMotionController(
     private var shrinkWhenSettled = false
     private var lastIndex = initialIndex
     private var loopActive = false
+    private var pulsePending = false
 
     /** 手指按下：进入按压形态，并取消上一轮尚未完成的收材质。 */
     fun beginPress() {
+        pulsePending = false
         pressureSpring.target = 1f
         wideSpring.target = spec.pressedScale
         tallSpring.target = spec.pressedScale
@@ -104,6 +106,7 @@ internal class LensMotionController(
         if (!target.isFinite()) return
         targetIndex = target.coerceIn(indexRange)
         positionSpring.target = targetIndex
+        pulsePending = pulse
         if (pulse) {
             pressureSpring.target = 1f
             wideSpring.target = spec.pressedScale
@@ -145,8 +148,12 @@ internal class LensMotionController(
         speedSpring.step(dt)
         velocity = speedSpring.value
 
+        // 本次还欠一个「按压脉冲」时，先等压力涨到可见阈值再收（目标本来就在位也能看见按压）
+        if (pulsePending && pressureSpring.value >= spec.pulseVisibleThreshold) {
+            pulsePending = false
+        }
         // 松手后：位置足够接近目标才收材质，避免「还没吸附就缩回去」
-        if (shrinkWhenSettled && abs(index - targetIndex) < spec.releaseThreshold) {
+        if (shrinkWhenSettled && !pulsePending && abs(index - targetIndex) < spec.releaseThreshold) {
             pressureSpring.target = 0f
             wideSpring.target = 1f
             tallSpring.target = 1f

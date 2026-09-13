@@ -112,10 +112,20 @@ object AppSettingsStore {
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
     val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
 
-    /** 首次组合时从持久化加载导航栏样式到内存态（幂等）。 */
+    /** 导航样式读写的串行锁：迁移的读改写与用户写入必须互斥（见 [initNavStyle]）。 */
+    private val navStyleLock = Any()
+
+    /**
+     * 首次组合时从持久化加载导航栏样式到内存态（幂等）。
+     *
+     * 与 [setNavStyle] 共用 [navStyleLock]：设置页在 IO 线程调用本方法的同时，下拉仍可交互，
+     * 若不加锁，迁移的「读—改—写」可能覆盖用户在这一窗口内刚选择的样式。
+     */
     fun initNavStyle(c: Context) {
-        migrateLegacyEnhanceFlag(c)
-        navStyleState.value = getNavStyle(c)
+        synchronized(navStyleLock) {
+            migrateLegacyEnhanceFlag(c)
+            navStyleState.value = getNavStyle(c)
+        }
     }
 
     /**
@@ -124,10 +134,12 @@ object AppSettingsStore {
      */
     private fun migrateLegacyEnhanceFlag(c: Context) {
         val p = prefs(c)
-        if (!p.getBoolean(KEY_LIQUID_GLASS_ENHANCE, false)) return
+        // 用 contains 而不是 getBoolean：旧键存在但值为 false 时也要清掉，否则它永远留在磁盘上
+        if (!p.contains(KEY_LIQUID_GLASS_ENHANCE)) return
+        val legacyEnhanced = p.getBoolean(KEY_LIQUID_GLASS_ENHANCE, false)
         val stored = p.getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT)
         val editor = p.edit().remove(KEY_LIQUID_GLASS_ENHANCE)
-        if (stored == NAV_STYLE_LIQUID_GLASS) {
+        if (legacyEnhanced && stored == NAV_STYLE_LIQUID_GLASS) {
             editor.putString(KEY_NAV_STYLE, NAV_STYLE_LIQUID_GLASS_ENHANCED)
         }
         editor.apply()
@@ -165,17 +177,21 @@ object AppSettingsStore {
         languageState.value = normalized
     }
 
-    /** 当前底部导航栏样式（默认 / 液态玻璃 / 液态玻璃增强）。 */
+    /** 当前底部导航栏样式（默认 / 经典 / 透镜）。 */
     fun getNavStyle(c: Context): String =
-        normalizeNavStyle(
-            stored = prefs(c).getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT),
-            enhancedSupported = supportsLiquidGlassEnhanced,
-        )
+        synchronized(navStyleLock) {
+            normalizeNavStyle(
+                stored = prefs(c).getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT),
+                enhancedSupported = supportsLiquidGlassEnhanced,
+            )
+        }
 
     fun setNavStyle(c: Context, style: String) {
         val normalized = normalizeNavStyle(style, supportsLiquidGlassEnhanced)
-        prefs(c).edit().putString(KEY_NAV_STYLE, normalized).apply()
-        navStyleState.value = normalized
+        synchronized(navStyleLock) {
+            prefs(c).edit().putString(KEY_NAV_STYLE, normalized).apply()
+            navStyleState.value = normalized
+        }
     }
 
     /**

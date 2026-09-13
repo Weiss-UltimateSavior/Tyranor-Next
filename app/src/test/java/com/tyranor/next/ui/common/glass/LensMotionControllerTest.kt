@@ -103,6 +103,26 @@ class LensMotionControllerTest {
         }
     }
 
+    /**
+     * 回归：目标索引本来就在位时，`settleAt(pulse = true)` 仍必须产生可见按压。
+     * 早期实现在第一帧就把压力目标改回 0（目标已足够接近），这次脉冲完全看不见。
+     */
+    @Test
+    fun settleAtWithPulse_onAlreadyNearTarget_stillShowsPress() = runBlocking {
+        withController { controller ->
+            controller.settleAt(0f) // 目标 = 当前位置，且 pulse 默认为 true
+            var peak = 0f
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    peak = maxOf(peak, controller.pressure)
+                    delay(1)
+                }
+            }
+            assertTrue("近目标也必须出现可见按压，实测峰值 $peak", peak > 0.5f)
+            assertTrue("收完后材质要归零", controller.pressure < 0.05f)
+        }
+    }
+
     @Test
     fun idleController_staysStill() = runBlocking {
         withController { controller ->

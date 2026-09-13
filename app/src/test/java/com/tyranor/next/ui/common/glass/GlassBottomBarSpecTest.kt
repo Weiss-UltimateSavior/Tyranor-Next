@@ -88,6 +88,12 @@ class GlassBottomBarSpecTest {
     }
 
     @Test
+    fun pulseVisibleThreshold_isPinned() {
+        // 近目标按压的可见性判定阈值（见 §6 D20）
+        assertEquals(0.5f, spec.pulseVisibleThreshold, 1e-6f)
+    }
+
+    @Test
     fun lensWidthCap_matchesReferenceSlotWidth() {
         // 宽屏拉伸后单槽会变宽，透镜视觉宽度以参考单槽宽封顶（手机单槽＝76dp，等于不设限）
         assertEquals(76.dp, spec.lensMaxWidth)
