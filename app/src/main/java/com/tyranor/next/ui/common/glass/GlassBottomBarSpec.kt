@@ -65,17 +65,7 @@ data class GlassBottomBarSpec(
     val barPressScaleDelta: Dp = 16.dp,
     /** 整栏按压缩放增量的上限，避免极窄窗口下 `1 + 16dp/宽度` 被放大成畸形尺寸。 */
     val barPressScaleDeltaMax: Float = 0.05f,
-    // ---- 长按膨胀与覆盖度反馈（本方案新增，见文档 §6 D17）----
-    /** 按住不动多久后开始膨胀（毫秒）。 */
-    val holdDelayMillis: Long = 180L,
-    /** 按住膨胀时透镜的横向 / 纵向缩放倍率（挤压变大：横向明显大于纵向）。 */
-    val holdLensWide: Float = 1.75f,
-    val holdLensTall: Float = 1.30f,
-    /** 按住膨胀时被覆盖图标的额外放大比例。 */
-    val holdIconGrow: Float = 0.35f,
-    /** 松手回弹（Q 弹）在图标的缩放上叠加的幅度。 */
-    val iconBounceAmount: Float = 0.18f,
-    /** 点击未覆盖图标时，判定「滑块快到位」的索引距离阈值。 */
+    /** 点击未覆盖图标时，判定「滑块快到位」的索引距离阈值（用于触觉反馈时机，见 §6 D16）。 */
     val tapArriveThreshold: Float = 0.12f,
     val panelOffsetMax: Dp = 4.dp,
     /** 速度归一化跨度：参考公式为 `N − 1`，此处固定为五项参考值 4（四项适配参数）。 */

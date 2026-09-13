@@ -82,44 +82,6 @@ class LensMotionControllerTest {
     }
 
     @Test
-    fun holdWithoutDrag_growsThenRelaxesWithBounce() = runBlocking {
-        withController { controller ->
-            controller.beginPress()
-            // 按住不动：超过阈值后开始膨胀
-            withTimeout(SettleTimeoutMillis) {
-                while (controller.hold < 0.5f) delay(1)
-            }
-            assertTrue("按住不动应膨胀", controller.hold > 0.5f)
-
-            // 松手：等回弹结束，过程中弹性量必须冲过 0（Q 弹）
-            controller.settleAt(0f, pulse = false)
-            var minElastic = 1f
-            withTimeout(SettleTimeoutMillis) {
-                while (controller.isAnimating) {
-                    minElastic = minOf(minElastic, controller.elastic)
-                    delay(1)
-                }
-            }
-            assertTrue("回弹应冲过目标（Q 弹），实测最低 $minElastic", minElastic < -0.01f)
-            assertTrue("松手后不应仍处于膨胀", controller.hold < 0.05f)
-        }
-    }
-
-    @Test
-    fun draggingCancelsHoldGrowth() = runBlocking {
-        withController { controller ->
-            controller.beginPress()
-            controller.dragBy(0.5f)
-            // 超过长按阈值的时间
-            delay(HoldDelayMillis + 120L)
-            assertTrue("一旦开始拖动就不应触发长按膨胀", controller.hold < 0.05f)
-            assertTrue(controller.hasDragged)
-            controller.settleAt(1f, pulse = false)
-            awaitSettled(controller)
-        }
-    }
-
-    @Test
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
             delay(20)
@@ -164,7 +126,5 @@ class LensMotionControllerTest {
     private companion object {
         const val FrameNanos = 16_000_000L
         const val SettleTimeoutMillis = 10_000L
-        /** 长按膨胀阈值：取参数默认值，避免测试与实现脱节。 */
-        val HoldDelayMillis = GlassBottomBarSpec.Default.holdDelayMillis
     }
 }
