@@ -139,4 +139,43 @@ class RpgSaveFormatConverterTest {
         assertEquals(0, result.converted)
         assertTrue(savedata.resolve("global.rpgsave").isFile)
     }
+
+    @Test
+    fun convertsIntoEffectiveSaveDirectory() {
+        // B1 回归：独立存档开启时引擎读外部目录——检测与转化必须消费传入的生效目录，
+        // 而不是写死 <游戏根>/savedata（默认配置下写死会让转化结果永远不被引擎读取）
+        val external = temporaryFolder.newFolder("external/tyrano/G1")
+        external.resolve("global.rpgsave").writeText("G")
+        external.resolve("file2.rpgsave").writeText("F2")
+
+        val result = RpgSaveFormatConverter.convert(
+            outputDir = external,
+            sourceDirs = listOf(external),
+            engine = EngineType.RPG_MV,
+        )
+
+        assertEquals(2, result.converted)
+        assertEquals("G", external.resolve("RPG Global.bin").readText())
+        assertEquals("F2", external.resolve("RPG File2.bin").readText())
+        assertTrue(external.resolve("original/global.rpgsave").isFile)
+    }
+
+    @Test
+    fun convertsFromLegacySavedataIntoEffectiveDirectory() {
+        // 非独立存档布局：历史 Savedata/ 里的标准存档也要被搬进生效目录转化
+        val gameRoot = mvGameRoot()
+        val legacy = gameRoot.resolve("Savedata").apply { mkdirs() }
+        legacy.resolve("file1.rpgsave").writeText("LEGACY")
+
+        val result = RpgSaveFormatConverter.convert(
+            outputDir = gameRoot.resolve("savedata"),
+            sourceDirs = listOf(gameRoot.resolve("savedata"), legacy),
+            engine = EngineType.RPG_MV,
+        )
+
+        assertEquals(1, result.converted)
+        assertEquals("LEGACY", gameRoot.resolve("savedata/RPG File1.bin").readText())
+        assertTrue(legacy.resolve("original/file1.rpgsave").isFile)
+        assertFalse(gameRoot.resolve("Savedata/file1.rpgsave").exists())
+    }
 }

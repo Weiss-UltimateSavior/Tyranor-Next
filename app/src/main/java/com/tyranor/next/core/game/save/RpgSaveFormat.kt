@@ -10,8 +10,10 @@ import java.util.Locale
  *
  * 两种格式内容字节级一致，仅文件名不同；转化是纯改名（不重编码）。
  *
- * 存档目录统一为 `<游戏根>/savedata`（与 Tyrano 相同，engine 宿主读写处），检测/转化/导出/列表
- * 均以 [saveDirectory] 为唯一来源。
+ * 引擎实际读写的存档目录由「独立存档」开关决定（GameSaveManager.resolveSaveLocation /
+ * effectiveTyranoFamilySaveDirectory）：关闭时为 `<游戏根>/savedata`，开启时为应用外部目录
+ * `<external>/save/tyrano/<safeName>`。检测/转化必须消费**生效目录**（与引擎一致），
+ * [saveDirectory] 仅是非独立存档时的默认路径，不是唯一来源。
  *
  * MV（引擎经 webStorageKey 派生 `RPG ...` 键，含空格 → 桥按 legacy 文件名落盘或哈希）：
  * | Tyranor 格式        | 标准格式（JoiPlay/PC） |
@@ -154,15 +156,24 @@ object RpgSaveFormat {
     // ===== 检测 =====
 
     /**
-     * 探测存档目录下的标准格式存档与哈希存档（容忍历史大小写 `Savedata`）。
+     * 探测游戏根下的标准格式存档与哈希存档（非独立存档布局，容忍历史大小写 `Savedata`）。
      * 仅扫各目录直接子文件（不递归），因此 `original/` 留底不会重复触发；按规范化路径去重。
+     *
+     * 注意：独立存档开启时引擎实际读写外部目录，检测/转化应改用 [detectInDirs] 传入生效目录。
      */
-    fun detect(gameRoot: File, engine: EngineType): Detection {
+    fun detect(gameRoot: File, engine: EngineType): Detection =
+        detectInDirs(listOf(saveDirectory(gameRoot), File(gameRoot, "Savedata")), engine)
+
+    /**
+     * 跨多个候选存档目录检测标准格式存档与哈希存档，按规范化路径去重、路径排序。
+     * 第一个目录应为引擎生效的存档目录（独立存档开关决定），其余为兼容扫描目录。
+     */
+    fun detectInDirs(dirs: List<File>, engine: EngineType): Detection {
         if (standardExtension(engine) == null) return Detection(emptyList(), 0)
         val seen = mutableSetOf<String>()
         val files = mutableListOf<File>()
         var hashed = 0
-        listOf(saveDirectory(gameRoot), File(gameRoot, "Savedata")).forEach { root ->
+        dirs.forEach { root ->
             if (!seen.add(pathKey(root))) return@forEach
             val detection = detectIn(root, engine)
             files += detection.standardFiles

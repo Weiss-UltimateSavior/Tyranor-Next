@@ -10,7 +10,6 @@ import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsResolver
-import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import java.io.File
 import java.io.FileInputStream
@@ -109,19 +108,15 @@ class GameSaveManager(private val context: Context) {
 
     /**
      * Tyrano 家族（Tyrano/MV/MZ）的有效存档目录：独立存档开关开启时为外部私有目录
-     * （需要外部存储可用，不可用时返回 null），否则 `<游戏根>/savedata`。
-     * 与 engine 宿主 resolveSaveDirectory 语义一致；存档互通同步复用，避免路径漂移。
+     * （需要外部存储可用，不可用时返回 null，调用方应跳过而非回退游戏根），否则
+     * `<游戏根>/savedata`。与 engine 宿主 resolveSaveDirectory 语义一致；
+     * 开关生效值统一经 [EngineSettingsResolver] 的 webScopedSaveDir 获取（单一事实源）。
      */
     fun effectiveTyranoFamilySaveDirectory(gameId: String, root: String, scoped: Boolean): File? {
         if (!scoped) return File(root, "savedata")
         val external = appContext.getExternalFilesDir(null) ?: return null
         return File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root))
     }
-
-    /** Tyrano 家族独立存档开关：单游戏覆盖优先，否则全局。 */
-    fun isTyranoFamilyScoped(gameId: String): Boolean =
-        PerGameSettingsStore.getBool(appContext, gameId, PerGameSettingsStore.F_TY_SCOPED)
-            ?: EngineSettingsStore.isTyranoScopedSaveDir(appContext)
 
     fun listSaveFiles(game: ScanGame): List<File> {
         val directory = resolveSaveLocation(game).directory ?: return emptyList()
@@ -169,6 +164,16 @@ class GameSaveManager(private val context: Context) {
 
     @Throws(IOException::class)
     fun importFromZip(game: ScanGame, sourceUri: Uri): Int = synchronized(importLock) {
+        // 与存档互通同步共享 INTEROP_LOCK（H3）：导入的提交阶段会把整个存档目录 rename 走再换入
+        // staging，若并发 sync 正在复制/写清单，其文件会随旧目录一起被丢弃，清单却记「存在」——
+        // 下轮同步将误触删除语义。锁序恒为 importLock → INTEROP_LOCK（sync 只取后者），无死锁环。
+        synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+            importFromZipLocked(game, sourceUri)
+        }
+    }
+
+    @Throws(IOException::class)
+    private fun importFromZipLocked(game: ScanGame, sourceUri: Uri): Int {
         val destination = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
 
         // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
@@ -239,7 +244,8 @@ class GameSaveManager(private val context: Context) {
     }
 
     @Throws(IOException::class)
-    fun deleteSaves(game: ScanGame): Int {
+    fun deleteSaves(game: ScanGame): Int = synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+        // 与存档互通同步互斥（H3）：删除与并发同步交错会产生半删状态
         val directory = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
         if (!directory.isDirectory) return 0
         return clearSaveDirectory(directory, game.engine)
@@ -249,7 +255,9 @@ class GameSaveManager(private val context: Context) {
      * 删除游戏时清理应用内数据（独立/镜像存档目录），
      * 仅触碰应用专属存储，绝不删除游戏目录内的任何文件。
      */
-    fun cleanupAppData(game: ScanGame) {
+    fun cleanupAppData(game: ScanGame) = synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+        // 与存档互通同步互斥（H3）：删除独立存档目录与并发同步交错会让同步复制进一个
+        // 正被删除的目录。clear/remove 内部同锁，可重入。
         // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
         // 为键。若随游戏删除留下旧清单，同一 uri 的游戏被重新添加后，标准侧存档会被误判为
         // 「Tyranor 侧已删除」而移入 deleted/；待回写记录则会在下次前台时指向已删除的游戏。
@@ -497,8 +505,13 @@ class GameSaveManager(private val context: Context) {
         val lower = name.lowercase(Locale.ROOT)
         // MV/MZ 存档目录内的 original/ 是格式转化/互通留底，不参与列表计数/导出/导入/删除
         (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
+            isTransientTmpName(lower) ||
             (engine == EngineType.ARTEMIS && isArtemisResourceName(name))
     }
+
+    /** 同步/转化的半成品临时文件（`<名>.sync_tmp.<nano>` / `<名>.fmt_tmp.<nano>`），不参与列表/导出/导入。 */
+    private fun isTransientTmpName(lower: String): Boolean =
+        ".sync_tmp." in lower || ".fmt_tmp." in lower
 
     /** 导入交换后需要从备份移回「被排除项」的引擎：Artemis 引擎资源、MV/MZ 的 original/ 留底。 */
     private fun restoresExcludedFromBackup(engine: EngineType): Boolean =

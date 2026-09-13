@@ -62,8 +62,6 @@ object RpgSaveSync {
 
     /** 单个槽位同步后的落盘状态（存在标记 + mtime），见 [RpgSaveSyncState.SlotState]。 */
     private fun slotState(
-        stdFile: File?,
-        tyrFile: File?,
         stdMtime: Long,
         tyrMtime: Long,
         stdExists: Boolean,
@@ -131,10 +129,6 @@ object RpgSaveSync {
         val (standardFiles, quarantinedDuplicates) = collectStandard(standardDirs, engine)
         val tyranorFiles = collectTyranor(tyranorDir, engine)
 
-        // 槽位已存在的标准文件所在目录（就地更新），否则用首选目录
-        fun standardParentFor(slot: String): File =
-            standardFiles[slot]?.parentFile ?: preferredStandardDir
-
         var imported = 0
         var exported = 0
         var toTyranor = 0
@@ -143,6 +137,11 @@ object RpgSaveSync {
         var skipped = 0
         var failed = 0
         val nextState = mutableMapOf<String, RpgSaveSyncState.SlotState>()
+
+        /** 槽位处理失败（内联或异常）：沿用上一次的清单条目，避免「已删除」被误判为「新建」而复活。 */
+        fun keepPrevious(slot: String) {
+            previous[slot]?.let { nextState[slot] = it }
+        }
 
         for (slot in (standardFiles.keys + tyranorFiles.keys).sorted()) {
             val std = standardFiles[slot]
@@ -156,9 +155,6 @@ object RpgSaveSync {
             // 注意必须随分支更新——导入/导出后对侧文件是新建的，不能沿用同步前的引用判断。
             var stdExistsNow = std != null
             var tyrExistsNow = tyr != null
-            // 同步后实际落点：导入/导出会把文件建到新路径，清单需按新落点取 size
-            var stdFile = std
-            var tyrFile = tyr
             var record = true
             try {
                 when {
@@ -202,30 +198,30 @@ object RpgSaveSync {
                         if (existedOnTyranor) {
                             // Tyranor 侧已删除该槽位 → 标准文件归入 deleted/，不再导回
                             if (moveToDeleted(std, std.parentFile ?: preferredStandardDir)) {
-                                movedToDeleted++; stdMtime = 0L; stdExistsNow = false; stdFile = null
+                                movedToDeleted++; stdMtime = 0L; stdExistsNow = false
                             } else {
-                                failed++; record = false
+                                failed++; record = false; keepPrevious(slot)
                             }
                         } else {
                             val name = RpgSaveFormat.tyranorNameForSlot(slot, engine)
                             if (name == null) {
-                                failed++; record = false
+                                failed++; record = false; keepPrevious(slot)
                             } else {
                                 val target = File(tyranorDir, name)
                                 copyOverwrite(std, target); imported++; tyrMtime = stdMtime
-                                tyrExistsNow = true; tyrFile = target
+                                tyrExistsNow = true
                             }
                         }
                     }
                     tyr != null -> {
                         val name = RpgSaveFormat.standardNameForSlot(slot, engine)
                         if (name == null) {
-                            failed++; record = false
+                            failed++; record = false; keepPrevious(slot)
                         } else {
                             // 标准侧缺失：无论外部删除还是 Tyranor 新建，都导出到标准侧（首选目录）
                             val target = File(preferredStandardDir, name)
                             copyOverwrite(tyr, target); exported++; stdMtime = tyrMtime
-                            stdExistsNow = true; stdFile = target
+                            stdExistsNow = true
                         }
                     }
                 }
@@ -233,16 +229,20 @@ object RpgSaveSync {
                 // 取消必须原样传播，不能被当作单个槽位失败吞掉
                 throw cancelled
             } catch (_: IOException) {
-                // 仅收敛预期的文件异常：失败不丢历史，沿用上一次的清单条目，
-                // 避免「已删除」被误判为「新建」而复活
+                // 仅收敛预期的文件异常（IO/权限）：失败不丢历史，沿用上一次的清单条目
                 failed++
                 record = false
-                previous[slot]?.let { nextState[slot] = it }
+                keepPrevious(slot)
+            } catch (_: SecurityException) {
+                // SAF 权限中途失效等：同样按单槽位失败处理，不得中断整轮（审查 M5）
+                failed++
+                record = false
+                keepPrevious(slot)
             }
             if (record) {
                 // 两侧都不存在的槽位不记录，避免「删档后被再次导入」
                 if (stdExistsNow || tyrExistsNow) {
-                    nextState[slot] = slotState(stdFile, tyrFile, stdMtime, tyrMtime, stdExistsNow, tyrExistsNow)
+                    nextState[slot] = slotState(stdMtime, tyrMtime, stdExistsNow, tyrExistsNow)
                 }
             }
         }
@@ -365,7 +365,9 @@ object RpgSaveSync {
             throw IOException("cannot create ${parent.absolutePath}")
         }
         val tmp = File(parent, target.name + ".sync_tmp." + System.nanoTime())
-        var committed = false
+        // 仅「两次 rename 都失败」的保底路径刻意保留临时副本（数据恢复用，见下）；
+        // 其余失败（复制中断等）临时文件只是半成品垃圾，必须清理（审查 L4）
+        var keepTmp = false
         try {
             source.inputStream().buffered().use { input ->
                 FileOutputStream(tmp).use { out ->
@@ -374,17 +376,16 @@ object RpgSaveSync {
                 }
             }
             if (tmp.renameTo(target)) {
-                committed = true
+                // rename 成功后 tmp 已不存在
             } else {
                 // rename 失败（目标被占用等）：删除目标后重试一次
                 target.delete()
-                if (tmp.renameTo(target)) {
-                    committed = true
-                } else {
-                    // 两次 rename 都失败：目标刚被删、源仍在。此时若按常规在 finally 删掉 tmp，
+                if (!tmp.renameTo(target)) {
+                    // 两次 rename 都失败：目标刚被删、源仍在。此时若删掉 tmp，
                     // 该槽位将同时没有目标与临时副本（源虽在，但调用方记录为失败后不会立刻重试）。
-                    // 故保留 tmp 并抛错：`.sync_tmp` 后缀不匹配任何存档名，不会被列表/导出/同步误认，
-                    // 下一次同步因目标缺失会从完好的源重新复制，数据不丢。
+                    // 故保留 tmp 并抛错：`.sync_tmp` 后缀不匹配任何存档名（excludeFor 已排除），
+                    // 不会被列表/导出/同步误认，下一次同步因目标缺失会从完好的源重新复制，数据不丢。
+                    keepTmp = true
                     throw IOException("cannot replace ${target.absolutePath}; kept ${tmp.absolutePath}")
                 }
             }
@@ -395,8 +396,7 @@ object RpgSaveSync {
                 if (actual > 0L) source.setLastModified(actual)
             }
         } finally {
-            // 仅在已提交后清理（rename 成功后 tmp 已不存在）；失败路径刻意保留 tmp
-            if (committed && tmp.exists()) tmp.delete()
+            if (!keepTmp && tmp.exists()) tmp.delete()
         }
     }
 

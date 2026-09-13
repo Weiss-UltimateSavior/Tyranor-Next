@@ -468,4 +468,37 @@ class RpgSaveSyncTest {
         assertEquals(1, result.failed)
         assertEquals(0, result.changed)
     }
+
+    @Test
+    fun inlineFailureKeepsManifestHistoryForDeletionSemantics() {
+        // H2 回归：moveToDeleted 失败的内联分支也必须回填清单历史——否则该槽位从清单消失，
+        // 下一轮 existedOnTyranor==false 会把「Tyranor 侧已删除」误判为「新建」而复活
+        val (standard, tyranor) = dirs()
+        val store = store()
+        standard.writeAt("file7.rpgsave", "S", 1_000)
+        tyranor.writeAt("RPG File7.bin", "S", 1_000)
+        RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        // 用同名文件占位 deleted/，迫使 moveToDeleted 失败
+        standard.resolve("deleted").writeText("block")
+        tyranor.resolve("RPG File7.bin").delete()
+        val failedRound = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        assertEquals(1, failedRound.failed)
+        assertEquals(0, failedRound.movedToDeleted)
+        // 关键断言：清单仍记录该槽位曾在 Tyranor 存在
+        val state = when (val loaded = store.load("g")) {
+            is RpgSaveSyncState.LoadResult.Loaded -> loaded.slots
+            else -> error("manifest must still be readable")
+        }
+        assertEquals(true, state["file7"]?.tyranorExists)
+
+        // 清除占位后重试：应走「已删除」分支，而不是把标准文件当新存档导入
+        standard.resolve("deleted").delete()
+        val retry = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        assertEquals(1, retry.movedToDeleted)
+        assertEquals(0, retry.imported)
+        assertFalse(tyranor.resolve("RPG File7.bin").exists())
+    }
 }

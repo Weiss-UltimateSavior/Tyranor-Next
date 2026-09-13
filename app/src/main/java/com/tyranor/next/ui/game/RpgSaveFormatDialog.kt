@@ -18,14 +18,15 @@ import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.ProvideAppLocale
-import com.tyranor.next.theme.PageGrey
+import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.TyranorNextTheme
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /**
  * RPG Maker MV/MZ 启动前存档格式确认弹窗：检测到 JoiPlay/PC 标准格式存档时询问是否转化。
  *
- * 选项统一使用 [AppNavItem]（弹窗内传 [PageGrey] 反色 + 图标），不使用文字按钮。
+ * 选项统一使用 [AppNavItem]（弹窗内传 [DialogItemSurface] + 图标），不使用文字按钮。
  * 「转换为 Tyranor 格式」→ 转化后启动；「保持原样启动」→ 不转化直接启动（下次再问）；
  * 点遮罩/返回（onDismissRequest）等价于「保持原样启动」。
  *
@@ -58,7 +59,7 @@ internal fun RpgSaveFormatDialog(
                 AppNavItem(
                     title = stringResource(R.string.save_format_convert_confirm),
                     leadingIcon = R.drawable.ic_sheet_saves,
-                    containerColor = PageGrey,
+                    containerColor = DialogItemSurface,
                     showArrow = false,
                     leadingIconTint = MaterialTheme.colorScheme.primary,
                     onClick = { onChoice(true) },
@@ -66,7 +67,7 @@ internal fun RpgSaveFormatDialog(
                 AppNavItem(
                     title = stringResource(R.string.save_format_convert_keep),
                     leadingIcon = R.drawable.ic_sheet_launch,
-                    containerColor = PageGrey,
+                    containerColor = DialogItemSurface,
                     showArrow = false,
                     onClick = { onChoice(false) },
                 )
@@ -86,17 +87,20 @@ suspend fun ComponentActivity.awaitRpgSaveFormatChoice(
     hashedCount: Int,
 ): Boolean = suspendCancellableCoroutine { continuation ->
     setContent {
-        ProvideAppLocale {
-            var showDialog by remember { mutableStateOf(true) }
-            if (showDialog) {
-                RpgSaveFormatDialog(
-                    standardCount = standardCount,
-                    hashedCount = hashedCount,
-                    onChoice = { convert ->
-                        showDialog = false
-                        if (continuation.isActive) continuation.resume(convert)
-                    },
-                )
+        // 主题最外层（AGENT.md 界面规范）：透明蹦 trampoline 也必须挂主题，否则 typography/primary 回落默认
+        TyranorNextTheme {
+            ProvideAppLocale {
+                var showDialog by remember { mutableStateOf(true) }
+                if (showDialog) {
+                    RpgSaveFormatDialog(
+                        standardCount = standardCount,
+                        hashedCount = hashedCount,
+                        onChoice = { convert ->
+                            showDialog = false
+                            if (continuation.isActive) continuation.resume(convert)
+                        },
+                    )
+                }
             }
         }
     }

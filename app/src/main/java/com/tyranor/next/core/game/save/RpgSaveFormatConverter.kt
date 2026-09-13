@@ -9,7 +9,9 @@ import java.io.IOException
 /**
  * RPG Maker MV/MZ 标准存档（JoiPlay/PC）→ Tyranor 格式的转化：纯改名，不重编码。
  *
- * 源与目标都在唯一的存档目录 `<游戏根>/savedata`（引擎读写处）；标准存档经导入或外部放入后，
+ * 源与目标都在引擎实际读写的生效存档目录（独立存档开启时为外部目录，否则 `<游戏根>/savedata`）；
+ * 标准存档经导入或外部放入后，转化在生效目录内按文件名映射生成 Tyranor 命名文件，源文件移入
+ * `original/` 留底。
  * 转化在同目录内按文件名映射生成 Tyranor 命名文件，源文件移入 `<savedata>/original/` 留底。
  *
  * 规则：
@@ -21,22 +23,44 @@ import java.io.IOException
 object RpgSaveFormatConverter {
 
     /**
-     * 把 [gameRoot]/savedata 下检测到的标准存档转化为 Tyranor 格式（同目录内）。
+     * 把 [gameRoot] 下的标准存档转化为 Tyranor 格式（非独立存档布局的兼容入口）：
+     * 扫描 `<游戏根>/savedata` 与历史 `Savedata/`，输出到引擎读写的 `savedata`。
+     *
+     * 独立存档开启时引擎实际读写外部目录，调用方应改用 [convert] 传入生效目录。
      *
      * @throws IOException 存档目录无法创建时抛出（调用方据此提示启动失败）。
      */
     @Throws(IOException::class)
-    fun convert(gameRoot: File, engine: EngineType): RpgSaveFormat.ConvertResult {
+    fun convert(gameRoot: File, engine: EngineType): RpgSaveFormat.ConvertResult =
+        convert(
+            outputDir = RpgSaveFormat.saveDirectory(gameRoot),
+            sourceDirs = listOf(RpgSaveFormat.saveDirectory(gameRoot), File(gameRoot, "Savedata")),
+            engine = engine,
+        )
+
+    /**
+     * 把 [sourceDirs] 中检测到的标准存档转化为 Tyranor 格式，输出到 [outputDir]
+     * （引擎实际读写的生效存档目录，与同步侧一致）。
+     *
+     * 规则：
+     * - 逐文件「复制源内容到目标名 → 源文件移入其所在目录的 `original/` 留底」，内容字节级一致。
+     * - 目标文件已存在时**跳过不覆盖**（记为 skipped），源文件同样移入 `original/`。
+     * - 单文件失败只影响该文件：源文件原样保留、清理半成品目标，计入 failed。
+     * - `key_<sha256>.bin` 哈希存档是 Tyranor 自身写入形态（引擎可按 legacy 名读到），只统计不处理。
+     *
+     * @throws IOException [outputDir] 无法创建时抛出（调用方据此提示启动失败）。
+     */
+    @Throws(IOException::class)
+    fun convert(outputDir: File, sourceDirs: List<File>, engine: EngineType): RpgSaveFormat.ConvertResult {
         if (!RpgSaveFormat.isRpgWebEngine(engine)) {
             return RpgSaveFormat.ConvertResult(0, 0, 0, 0)
         }
-        val detection = RpgSaveFormat.detect(gameRoot, engine)
+        val detection = RpgSaveFormat.detectInDirs(sourceDirs, engine)
         if (detection.standardFiles.isEmpty()) {
             return RpgSaveFormat.ConvertResult(0, 0, 0, detection.hashedCount)
         }
-        val outputDir = RpgSaveFormat.saveDirectory(gameRoot)
         if (!outputDir.exists() && !outputDir.mkdirs() && !outputDir.isDirectory) {
-            throw IOException("save directory unavailable: ${outputDir.absolutePath}")
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, detail = outputDir.absolutePath)
         }
         var converted = 0
         var skipped = 0

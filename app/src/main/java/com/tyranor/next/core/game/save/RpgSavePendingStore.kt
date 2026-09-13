@@ -44,23 +44,33 @@ object RpgSavePendingStore {
         if (uris.isEmpty()) {
             return runCatching { f.delete() && true || !f.exists() }.getOrDefault(false)
         }
-        // 原子写：先写同目录临时文件再 rename。直接 writeText 会先截断目标，进程终止或 I/O
+        // 原子写：先写同目录临时文件再替换。直接 writeText 会先截断目标，进程终止或 I/O
         // 失败会留下空/半截文件，而 all() 把损坏结果当空集合——待回写记录会永久丢失。
+        // 用 Files.move(REPLACE_EXISTING)：File.renameTo 在 Windows 上不能替换已存在目标。
         val dir = f.parentFile ?: return false
         val tmp = File(dir, f.name + ".tmp." + System.nanoTime())
         return try {
             tmp.writeText(uris.joinToString("\n"), Charsets.UTF_8)
-            val ok = tmp.renameTo(f)
-            if (ok) {
-                true
-            } else {
-                // rename 失败保留旧文件（不截断重写），报告失败；下次 add/remove 会重试
-                tmp.delete()
-                false
+            try {
+                java.nio.file.Files.move(
+                    tmp.toPath(),
+                    f.toPath(),
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                java.nio.file.Files.move(
+                    tmp.toPath(),
+                    f.toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                )
             }
+            true
         } catch (_: Throwable) {
-            runCatching { tmp.delete() }
             false
+        } finally {
+            // 替换成功后 tmp 已不存在；失败/异常路径清理半成品
+            if (tmp.exists()) tmp.delete()
         }
     }
 }

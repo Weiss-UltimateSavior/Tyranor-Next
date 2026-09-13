@@ -42,7 +42,7 @@ import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.theme.NavWhite
-import com.tyranor.next.theme.PageGrey
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -90,6 +90,8 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveSyncNoChangeMessage = stringResource(R.string.save_sync_result_no_change)
     val saveSyncFailedFormat = stringResource(R.string.save_sync_result_failed)
     val saveSyncUnmappedFormat = stringResource(R.string.save_sync_unmapped)
+    // 独立存档目录不可用（scoped 目录返回 null）时的同步提示，与存档位置解析共用同一文案
+    val saveDirUnavailableMessage = stringResource(R.string.save_error_tyrano_external_unavailable)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
@@ -99,6 +101,9 @@ private fun SaveManagementScreen(game: ScanGame) {
     var showExportFormatPicker by remember { mutableStateOf(false) }
     var exportFormat by rememberSaveable { mutableStateOf(GameSaveManager.ExportFormat.TYRANOR) }
     val rpgWebGame = RpgSaveFormat.isRpgWebEngine(game.engine)
+    // 存档互通生效值（单游戏覆盖 > 全局）：L7——关闭时隐藏「立即同步」，
+    // 避免用户在功能未开启时触发出人意料的删除归置语义
+    var saveInteropEnabled by remember { mutableStateOf(false) }
     // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
     var taskRunning by remember { mutableStateOf(false) }
 
@@ -113,6 +118,8 @@ private fun SaveManagementScreen(game: ScanGame) {
 
     LaunchedEffect(game) {
         refresh()
+        // 互通开关读取命中 DB：挂起在 IO 线程取生效值
+        saveInteropEnabled = EngineLauncher.isRpgSaveInteropEnabled(context, game)
     }
 
     /** 把同步结果格式化成用户可读文案：无变化提示、有变化给明细、失败与无法识别的追加说明。 */
@@ -209,6 +216,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                 AppNavItem(
                     title = stringResource(R.string.save_export_zip),
                     showLeadingIcon = false,
+                    showArrow = false,
                     onClick = {
                         if (rpgWebGame) {
                             showExportFormatPicker = true
@@ -219,15 +227,21 @@ private fun SaveManagementScreen(game: ScanGame) {
                     },
                 )
             }
-            if (rpgWebGame) {
+            if (rpgWebGame && saveInteropEnabled) {
                 item {
                     AppNavItem(
                         title = stringResource(R.string.save_sync_now),
                         showLeadingIcon = false,
+                        showArrow = false,
                         onClick = {
                             runSaveTask {
                                 val result = EngineLauncher.syncRpgSaves(context, game)
-                                formatSyncResult(result)
+                                if (result == null) {
+                                    // 独立存档目录不可用：如实报告，绝不能显示「同步完成」
+                                    saveDirUnavailableMessage
+                                } else {
+                                    formatSyncResult(result)
+                                }
                             }
                         },
                     )
@@ -237,6 +251,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                 AppNavItem(
                     title = stringResource(R.string.save_import_zip),
                     showLeadingIcon = false,
+                    showArrow = false,
                     onClick = { importLauncher.launch("application/zip") },
                 )
             }
@@ -244,6 +259,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                 AppNavItem(
                     title = stringResource(R.string.save_delete_title),
                     showLeadingIcon = false,
+                    showArrow = false,
                     onClick = { showDeleteConfirm = true },
                 )
             }
@@ -262,7 +278,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         title = stringResource(R.string.save_export_format_standard),
                         summary = stringResource(R.string.save_export_format_standard_summary),
                         leadingIcon = R.drawable.ic_sheet_folder,
-                        containerColor = PageGrey,
+                        containerColor = DialogItemSurface,
                         showArrow = false,
                         onClick = {
                             showExportFormatPicker = false
@@ -274,7 +290,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         title = stringResource(R.string.save_export_format_tyranor),
                         summary = stringResource(R.string.save_export_format_tyranor_summary),
                         leadingIcon = R.drawable.ic_sheet_saves,
-                        containerColor = PageGrey,
+                        containerColor = DialogItemSurface,
                         showArrow = false,
                         onClick = {
                             showExportFormatPicker = false

@@ -106,13 +106,30 @@ class RpgSaveSyncState(private val storeDir: File) {
             val root = JSONObject().put(KEY_SLOTS, encoded)
             val json = root.toString()
             val tmp = File(dir, file.name + ".tmp." + System.nanoTime())
-            tmp.writeText(json, Charsets.UTF_8)
-            if (tmp.renameTo(file)) {
+            try {
+                tmp.writeText(json, Charsets.UTF_8)
+                // 必须用 Files.move(REPLACE_EXISTING)：File.renameTo 在 Windows 上不能替换
+                // 已存在的目标文件，第二次及以后的清单提交会全部失败（审查中发现）。
+                // ATOMIC_MOVE 优先，不支持原子替换的文件系统退回普通替换。
+                val target = file.toPath()
+                try {
+                    java.nio.file.Files.move(
+                        tmp.toPath(),
+                        target,
+                        java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    )
+                } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                    java.nio.file.Files.move(
+                        tmp.toPath(),
+                        target,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    )
+                }
                 true
-            } else {
-                // 替换失败：保留旧清单、清理临时文件
-                tmp.delete()
-                false
+            } finally {
+                // 替换成功后 tmp 已不存在；写入异常/替换失败时清理半成品，不残留私有目录（审查 L4）
+                if (tmp.exists()) tmp.delete()
             }
         }.getOrDefault(false)
     }
