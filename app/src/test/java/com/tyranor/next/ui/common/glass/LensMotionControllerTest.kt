@@ -157,12 +157,6 @@ class LensMotionControllerTest {
         }
     }
 
-    /**
-     * 回归：滑动途中「轻点一下」不能被手指抖动判成拖动。
-     *
-     * 起手重定基准（D22）只应在真的拖动时生效；若 1px 抖动就重定基准，
-     * 滑动途中的一次轻点会把透镜停在半路、松手后提交到相邻槽位。
-     */
 
     /**
      * 回归：纯点击松手（未拖动）必须收回按压材质，且**不得改动位置目标**。
@@ -287,9 +281,14 @@ class LensMotionControllerTest {
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
             delay(20)
-            assertTrue("静止时不应维持帧循环", !controller.isAnimating)
-            assertTrue("材质应为 0", controller.pressure < 1e-3f)
-            assertTrue("速度应为 0", abs(controller.velocity) < 1e-3f)
+            assertTrue("刚构造时不应有帧循环", !controller.isAnimating)
+            // 反向确认：一旦有输入就必须真的起循环，且收敛后自己停掉（避免断言同义反复）
+            controller.beginPress()
+            assertTrue("按下后帧循环应当启动", controller.isAnimating)
+            controller.settleAt(0f, pulse = false) // 松手
+            awaitSettled(controller)
+            assertTrue("收敛后帧循环应当自行退出", !controller.isAnimating)
+            assertTrue("松手后材质归零", controller.pressure < 0.05f)
             assertEquals(0f, controller.index, 1e-4f)
             assertEquals(0f, controller.pressure, 1e-4f)
             assertEquals(1f, controller.scaleX, 1e-4f)

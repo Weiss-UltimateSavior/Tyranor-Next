@@ -6,7 +6,7 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import android.view.ViewConfiguration
-import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
@@ -81,6 +81,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.theme.AppNavCapsuleShape
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.isWideScreen
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -195,21 +196,35 @@ fun EnhancedLiquidGlassNavigationBar(
     val paddingPx = remember(density, spec) { with(density) { spec.barInnerPadding.toPx() } }
 
     // 整栏横向跟随：拖动距离经 EaseOut 映射后最多 ±spec.panelOffsetMax（参考公式）
-    val panelShiftAnimation = remember { Animatable(0f) }
-    // 归位弹簧参数兜底：NaN 经 animateTo 写进 Animatable 后，之后所有读数都会是 NaN
+    // 整栏跟随的位移（同步累加：同一帧多次拖动事件不会互相覆盖）。
+    // 刻意不用 Animatable + snapshotFlow：归位动画与在途的 snapTo 会抢同一个 mutator，
+    // 可能把归位动画取消掉、跳过收尾清零，留下微量偏移（评审指出的间歇性竞态）。
+    var panelShiftAccum by remember { mutableFloatStateOf(0f) }
+    var panelRecenterJob by remember { mutableStateOf<Job?>(null) }
+    // 归位弹簧参数兜底：NaN 经 animate/spring 写进跟随位移后，之后所有读数都会是 NaN
     val recenterDamping = spec.panelRecenterDamping
         .safeMotionValue(0.05f, 5f, GlassBottomBarSpec.Default.panelRecenterDamping)
     val recenterStiffness = spec.panelRecenterStiffness
         .safeMotionValue(1f, 10_000f, GlassBottomBarSpec.Default.panelRecenterStiffness)
     val recenterThreshold = spec.panelRecenterThreshold
         .safeMotionValue(0.01f, 10f, GlassBottomBarSpec.Default.panelRecenterThreshold)
-
-    // 整栏横向跟随的累加器：拖动事件在同一帧内可能来多次，若每次都「读 Animatable → 加 → snapTo」，
-    // 只有最后一次生效（前几次读到同一个旧值，位移被丢掉）。改为同步累加 + 单消费者落盘。
-    var panelShiftAccum by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(panelShiftAnimation) {
-        snapshotFlow { panelShiftAccum }.collect { panelShiftAnimation.snapTo(it) }
+    // 归位：把累加器弹回 0。取消上一次动画后再启动，避免两段动画互相覆盖。
+    val recenterPanel: () -> Unit = remember(scope, recenterDamping, recenterStiffness, recenterThreshold) {
+        {
+            panelRecenterJob?.cancel()
+            val from = panelShiftAccum
+            if (from != 0f) {
+                panelRecenterJob = scope.launch {
+                    animate(
+                        initialValue = from,
+                        targetValue = 0f,
+                        animationSpec = spring(recenterDamping, recenterStiffness, recenterThreshold),
+                    ) { value, _ -> panelShiftAccum = value }
+                }
+            }
+        }
     }
+
     // 整栏跟随幅度：负值/非有限会让平移方向反转或 NaN，这里兜底一次
     val panelOffsetMaxPx = remember(density, spec) {
         with(density) {
@@ -224,7 +239,7 @@ fun EnhancedLiquidGlassNavigationBar(
             if (barWidthPx == 0f) {
                 0f
             } else {
-                val fraction = (panelShiftAnimation.value / barWidthPx).fastCoerceIn(-1f, 1f)
+                val fraction = (panelShiftAccum / barWidthPx).fastCoerceIn(-1f, 1f)
                 with(density) {
                     panelOffsetMaxPx * fraction.sign * EaseOut.transform(abs(fraction))
                 }
@@ -259,14 +274,7 @@ fun EnhancedLiquidGlassNavigationBar(
             controller.settleAt(index.toFloat(), pulse = false)
             indexCommittedByDrag = index
             if (index != currentSelectedIndex) currentOnItemClick(index)
-            scope.launch {
-                panelShiftAnimation.animateTo(
-                    0f,
-                    spring(recenterDamping, recenterStiffness, recenterThreshold),
-                )
-                // 归位完成后再清累加器：否则清空会立刻触发一次 snapTo，与归位动画打架
-                panelShiftAccum = 0f
-            }
+            recenterPanel()
         }
     }
 
@@ -316,6 +324,7 @@ fun EnhancedLiquidGlassNavigationBar(
                         if (base + position.x in 0f..barWidthPx && base + previous.x in 0f..barWidthPx) {
                             controller.dragBy(delta.x / tab * (if (currentIsLtr) 1f else -1f))
                             // 同步累加（不丢同帧的多次位移），并夹取避免越界拖拽下无限增长
+                            panelRecenterJob?.cancel()
                             panelShiftAccum = (panelShiftAccum + delta.x)
                                 .coerceIn(-barWidthPx, barWidthPx)
                         }
@@ -335,13 +344,7 @@ fun EnhancedLiquidGlassNavigationBar(
                 onCancel = {
                     // 取消不提交：回到当前选中项（正式产品语义，见文档 §6 D3）
                     controller.settleAt(currentSelectedIndex.toFloat(), pulse = false)
-                    scope.launch {
-                        panelShiftAnimation.animateTo(
-                            0f,
-                            spring(recenterDamping, recenterStiffness, recenterThreshold),
-                        )
-                        panelShiftAccum = 0f
-                    }
+                    recenterPanel()
                 },
             )
         }
