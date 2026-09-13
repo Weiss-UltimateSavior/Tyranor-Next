@@ -92,6 +92,8 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveSyncUnmappedFormat = stringResource(R.string.save_sync_unmapped)
     // 独立存档目录不可用（scoped 目录返回 null）时的同步提示，与存档位置解析共用同一文案
     val saveDirUnavailableMessage = stringResource(R.string.save_error_tyrano_external_unavailable)
+    // 会话运行中/启动中：手动同步被拒绝的提示
+    val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
@@ -235,12 +237,12 @@ private fun SaveManagementScreen(game: ScanGame) {
                         showArrow = false,
                         onClick = {
                             runSaveTask {
-                                val result = EngineLauncher.syncRpgSaves(context, game)
-                                if (result == null) {
+                                when (val op = EngineLauncher.syncRpgSaves(context, game)) {
+                                    is EngineLauncher.RpgSaveOpResult.Done -> formatSyncResult(op.value)
+                                    // 会话运行中/启动中：未触碰存档，提示先退出游戏
+                                    EngineLauncher.RpgSaveOpResult.Busy -> saveBusyEngineRunningMessage
                                     // 独立存档目录不可用：如实报告，绝不能显示「同步完成」
-                                    saveDirUnavailableMessage
-                                } else {
-                                    formatSyncResult(result)
+                                    EngineLauncher.RpgSaveOpResult.SaveDirUnavailable -> saveDirUnavailableMessage
                                 }
                             }
                         },

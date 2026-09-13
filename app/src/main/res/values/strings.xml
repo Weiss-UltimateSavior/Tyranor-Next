@@ -230,6 +230,7 @@
     <string name="save_sync_result_no_change">同步完成：两侧存档已一致，无变化</string>
     <string name="save_sync_result_failed">同步完成，但有 %1$d 个存档处理失败</string>
     <string name="save_sync_unmapped">另有 %1$d 个无法识别的存档未互通</string>
+    <string name="save_busy_engine_running">游戏正在运行，请先退出游戏后再操作存档</string>
     <string name="engine_settings_engine_version_mv">引擎版本 - MV</string>
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；以下设置默认跟随全局，可按游戏单独覆盖。</string>

@@ -230,6 +230,7 @@
     <string name="save_sync_result_no_change">Sync done: both sides already match</string>
     <string name="save_sync_result_failed">Sync finished, but %1$d save files failed</string>
     <string name="save_sync_unmapped">%1$d unrecognized save files were not synced</string>
+    <string name="save_busy_engine_running">The game is still running. Exit the game before managing saves.</string>
     <string name="engine_settings_engine_version_mv">Engine version - MV</string>
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py uses an external APK engine module and opens the plugin matching the selected version. The options below follow the global values by default and can be overridden per game.</string>

@@ -117,6 +117,7 @@ fun HomeScreen(
     val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
     val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
+    val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
 
     LaunchedEffect(libraryState.games) {
         selectedGame = selectedGame?.let { selected ->
@@ -178,7 +179,7 @@ fun HomeScreen(
         pendingPatchChoice = null
         scope.launch {
             if (convert && detection != null) {
-                val converted = try {
+                val op = try {
                     withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, target) }
                 } catch (ce: CancellationException) {
                     throw ce
@@ -186,10 +187,11 @@ fun HomeScreen(
                     null
                 }
                 val message = rpgConvertResultMessage(
-                    converted,
+                    op,
                     saveFormatConvertedFormat,
                     saveFormatConvertedWithFailuresFormat,
                     saveFormatConvertFailedMessage,
+                    saveBusyEngineRunningMessage,
                 )
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }

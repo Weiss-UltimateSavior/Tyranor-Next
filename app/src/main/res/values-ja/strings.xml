@@ -230,6 +230,7 @@
     <string name="save_sync_result_no_change">同期完了：両側のセーブは一致しています</string>
     <string name="save_sync_result_failed">同期は完了しましたが、%1$d 件のセーブ処理に失敗しました</string>
     <string name="save_sync_unmapped">識別できないセーブ %1$d 件は同期されません</string>
+    <string name="save_busy_engine_running">ゲームが実行中です。セーブを操作する前にゲームを終了してください</string>
     <string name="engine_settings_engine_version_mv">エンジンバージョン - MV</string>
     <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>

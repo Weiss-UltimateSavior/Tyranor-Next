@@ -509,9 +509,16 @@ class GameSaveManager(private val context: Context) {
             (engine == EngineType.ARTEMIS && isArtemisResourceName(name))
     }
 
-    /** 同步/转化的半成品临时文件（`<名>.sync_tmp.<nano>` / `<名>.fmt_tmp.<nano>`），不参与列表/导出/导入。 */
+    /**
+     * 同步/转化的半成品临时文件（`<名>.sync_tmp.<nano>` / `<名>.fmt_tmp.<nano>`），不参与列表/导出/导入。
+     * 仅当标记后跟纯数字后缀（System.nanoTime 形态）才判定为临时文件，避免误伤名称中
+     * 恰好包含这些子串的合法存档（审查意见：导入时被跳过的合法文件会随目录交换丢失）。
+     */
     private fun isTransientTmpName(lower: String): Boolean =
-        ".sync_tmp." in lower || ".fmt_tmp." in lower
+        listOf(".sync_tmp.", ".fmt_tmp.").any { marker ->
+            val suffix = lower.substringAfterLast(marker, "")
+            suffix.isNotEmpty() && suffix.all(Char::isDigit)
+        }
 
     /** 导入交换后需要从备份移回「被排除项」的引擎：Artemis 引擎资源、MV/MZ 的 original/ 留底。 */
     private fun restoresExcludedFromBackup(engine: EngineType): Boolean =

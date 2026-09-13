@@ -170,27 +170,37 @@ object RpgSaveSync {
                                 } else {
                                     // 无法判定新旧：以标准侧为准，且**无条件**把 Tyranor 侧留底——
                                     // 平局下较旧一方未知，留底才能保证不丢任何一份
-                                    if (!preserveLoser(tyr, tyranorDir, standardSide = false)) {
-                                        throw IOException("cannot preserve ${tyr.absolutePath} before tie-break overwrite")
-                                    }
-                                    copyOverwrite(std, tyr); toTyranor++; tyrMtime = s
+                                    overwriteWithPreserve(
+                                        winner = std,
+                                        loser = tyr,
+                                        loserDir = tyranorDir,
+                                        preserveLoserSide = false,
+                                        mustPreserve = true,
+                                    )
+                                    toTyranor++; tyrMtime = s
                                 }
                             }
                             s > t -> {
                                 // 首次同步该槽位时较旧一方无历史记录，先留底再覆盖，避免误删唯一副本；
                                 // 留底失败则中止本次覆盖（两侧原样保留、计入 failed、下轮重试），绝不先毁后写
-                                if (!hadPrevious && !preserveLoser(tyr, tyranorDir, standardSide = false)) {
-                                    throw IOException("cannot preserve ${tyr.absolutePath} before overwrite")
-                                }
-                                copyOverwrite(std, tyr); toTyranor++; tyrMtime = s
+                                overwriteWithPreserve(
+                                    winner = std,
+                                    loser = tyr,
+                                    loserDir = tyranorDir,
+                                    preserveLoserSide = false,
+                                    mustPreserve = !hadPrevious,
+                                )
+                                toTyranor++; tyrMtime = s
                             }
                             else -> {
-                                if (!hadPrevious &&
-                                    !preserveLoser(std, std.parentFile ?: preferredStandardDir, standardSide = true)
-                                ) {
-                                    throw IOException("cannot preserve ${std.absolutePath} before overwrite")
-                                }
-                                copyOverwrite(tyr, std); toStandard++; stdMtime = t
+                                overwriteWithPreserve(
+                                    winner = tyr,
+                                    loser = std,
+                                    loserDir = std.parentFile ?: preferredStandardDir,
+                                    preserveLoserSide = true,
+                                    mustPreserve = !hadPrevious,
+                                )
+                                toStandard++; stdMtime = t
                             }
                         }
                     }
@@ -354,20 +364,44 @@ object RpgSaveSync {
     }
 
     /**
-     * 复制覆盖目标；先写同目录临时文件再 rename，并把目标 mtime 设为源 mtime。
-     * 绝不就地覆盖目标：即使 rename 失败也重试（先删目标再 rename），避免留下比源更新的
-     * 截断文件——否则下一轮「较新者胜」会用残缺内容覆盖完好的源，造成数据丢失。
+     * 覆盖较旧一方：**先**把赢家内容写入目标同目录临时文件，**再**留底输家，**最后**原子替换。
+     *
+     * 顺序即安全性（PR 审查：失败路径绝不允许出现「目标缺失」）：
+     * - 临时文件写入失败 → 输家与目标都原样保留；
+     * - 留底失败（[mustPreserve] 时抛错）→ 临时文件清理、目标原样保留；
+     * - 原子替换失败 → 输家已留底（安全），目标仍是旧内容（完好），下一轮基于完好两侧重试。
+     * 任何失败路径下两侧目录 + 留底目录都保有完整数据，由调用方 keepPrevious 保住清单历史。
      */
     @Throws(IOException::class)
-    private fun copyOverwrite(source: File, target: File) {
+    private fun overwriteWithPreserve(
+        winner: File,
+        loser: File,
+        loserDir: File,
+        preserveLoserSide: Boolean,
+        mustPreserve: Boolean,
+    ) {
+        // 1. 先写临时文件（此刻还未碰输家与目标）
+        val tmp = writeTmpCopy(winner, loser)
+        try {
+            // 2. 留底输家（失败且必须留底时中止，目标原样保留）
+            if (mustPreserve && !preserveLoser(loser, loserDir, standardSide = preserveLoserSide)) {
+                throw IOException("cannot preserve ${loser.absolutePath} before overwrite")
+            }
+            // 3. 原子替换（绝不先删目标；失败时目标保持旧内容）
+            replaceAtomically(tmp, loser, winner)
+        } finally {
+            discardTmp(tmp)
+        }
+    }
+
+    /** 把源内容写入目标同目录临时文件并 fsync；失败时清理半成品后原样抛出。 */
+    @Throws(IOException::class)
+    private fun writeTmpCopy(source: File, target: File): File {
         val parent = target.parentFile ?: throw IOException("no parent for ${target.absolutePath}")
         if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) {
             throw IOException("cannot create ${parent.absolutePath}")
         }
         val tmp = File(parent, target.name + ".sync_tmp." + System.nanoTime())
-        // 仅「两次 rename 都失败」的保底路径刻意保留临时副本（数据恢复用，见下）；
-        // 其余失败（复制中断等）临时文件只是半成品垃圾，必须清理（审查 L4）
-        var keepTmp = false
         try {
             source.inputStream().buffered().use { input ->
                 FileOutputStream(tmp).use { out ->
@@ -375,28 +409,57 @@ object RpgSaveSync {
                     out.fd.sync()
                 }
             }
-            if (tmp.renameTo(target)) {
-                // rename 成功后 tmp 已不存在
-            } else {
-                // rename 失败（目标被占用等）：删除目标后重试一次
-                target.delete()
-                if (!tmp.renameTo(target)) {
-                    // 两次 rename 都失败：目标刚被删、源仍在。此时若删掉 tmp，
-                    // 该槽位将同时没有目标与临时副本（源虽在，但调用方记录为失败后不会立刻重试）。
-                    // 故保留 tmp 并抛错：`.sync_tmp` 后缀不匹配任何存档名（excludeFor 已排除），
-                    // 不会被列表/导出/同步误认，下一次同步因目标缺失会从完好的源重新复制，数据不丢。
-                    keepTmp = true
-                    throw IOException("cannot replace ${target.absolutePath}; kept ${tmp.absolutePath}")
-                }
-            }
-            // mtime 同步：失败会使目标 mtime 变成「现在」，可能引发下一轮反向覆盖（乒乓）。
-            // 失败时把源 mtime 对齐到目标实际值，保持两侧一致、避免乒乓。
-            if (!target.setLastModified(source.lastModified())) {
-                val actual = target.lastModified()
-                if (actual > 0L) source.setLastModified(actual)
-            }
+        } catch (t: Throwable) {
+            runCatching { tmp.delete() }
+            throw t
+        }
+        return tmp
+    }
+
+    /**
+     * 原子替换目标并同步 mtime：Files.move(REPLACE_EXISTING)，ATOMIC_MOVE 优先。
+     * 绝不先删目标——替换失败时目标保持旧内容，源与留底均完好，不存在「两侧都丢」的窗口。
+     * （不能用 File.renameTo：Windows 上它不能替换已存在目标。）
+     */
+    @Throws(IOException::class)
+    private fun replaceAtomically(tmp: File, target: File, source: File) {
+        try {
+            java.nio.file.Files.move(
+                tmp.toPath(),
+                target.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+            java.nio.file.Files.move(
+                tmp.toPath(),
+                target.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+        // mtime 同步：失败会使目标 mtime 变成「现在」，可能引发下一轮反向覆盖（乒乓）。
+        // 失败时把源 mtime 对齐到目标实际值，保持两侧一致、避免乒乓。
+        if (!target.setLastModified(source.lastModified())) {
+            val actual = target.lastModified()
+            if (actual > 0L) source.setLastModified(actual)
+        }
+    }
+
+    /** 清理临时文件（替换成功后已不存在）；仅删除匹配临时名模式的文件，防误删。 */
+    private fun discardTmp(tmp: File) {
+        if (tmp.exists() && tmp.name.contains(".sync_tmp.")) tmp.delete()
+    }
+
+    /**
+     * 复制覆盖目标（无留底需求的新建/导出路径）：临时文件 + 原子替换，失败时目标原样保留。
+     */
+    @Throws(IOException::class)
+    private fun copyOverwrite(source: File, target: File) {
+        val tmp = writeTmpCopy(source, target)
+        try {
+            replaceAtomically(tmp, target, source)
         } finally {
-            if (!keepTmp && tmp.exists()) tmp.delete()
+            discardTmp(tmp)
         }
     }
 

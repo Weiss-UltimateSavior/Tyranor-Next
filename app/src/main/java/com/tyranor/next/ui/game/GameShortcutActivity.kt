@@ -70,7 +70,7 @@ class GameShortcutActivity : ComponentActivity() {
                     if (pending != null) {
                         val convert = awaitRpgSaveFormatChoice(pending.convertibleCount, pending.hashedCount)
                         if (convert) {
-                            val converted = try {
+                            val op = try {
                                 EngineLauncher.convertRpgSaveFormat(applicationContext, game)
                             } catch (ce: CancellationException) {
                                 throw ce
@@ -78,10 +78,11 @@ class GameShortcutActivity : ComponentActivity() {
                                 null
                             }
                             val message = rpgConvertResultMessage(
-                                converted,
+                                op,
                                 localizedContext.getString(R.string.save_format_converted_count),
                                 localizedContext.getString(R.string.save_format_converted_with_failures),
                                 localizedContext.getString(R.string.save_format_convert_failed),
+                                localizedContext.getString(R.string.save_busy_engine_running),
                             )
                             Toast.makeText(localizedContext, message, Toast.LENGTH_LONG).show()
                         }

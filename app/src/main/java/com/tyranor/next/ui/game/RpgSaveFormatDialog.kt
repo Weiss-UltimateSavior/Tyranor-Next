@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
@@ -115,16 +116,22 @@ internal fun RpgSaveFormat.Detection.dialogArgs(): Pair<Int, Int> =
 
 /**
  * 转化结果文案：非空结果不代表全部成功——[RpgSaveFormat.ConvertResult.failed] > 0 时必须
- * 如实报告，避免把「部分失败」显示为成功（`result == null` 表示转化过程整体抛错）。
+ * 如实报告，避免把「部分失败」显示为成功（`op == null` 表示转化过程整体抛错；
+ * [EngineLauncher.RpgSaveOpResult.Busy] 表示游戏仍在运行，未触碰存档）。
  */
 internal fun rpgConvertResultMessage(
-    result: RpgSaveFormat.ConvertResult?,
+    op: EngineLauncher.RpgSaveOpResult<RpgSaveFormat.ConvertResult>?,
     convertedFormat: String,
     withFailuresFormat: String,
     failedMessage: String,
-): String = when {
-    result == null -> failedMessage
-    result.failed == 0 -> convertedFormat.format(result.converted)
-    result.converted > 0 -> withFailuresFormat.format(result.converted, result.failed)
-    else -> failedMessage
+    busyMessage: String,
+): String = when (op) {
+    null -> failedMessage
+    EngineLauncher.RpgSaveOpResult.Busy -> busyMessage
+    EngineLauncher.RpgSaveOpResult.SaveDirUnavailable -> failedMessage
+    is EngineLauncher.RpgSaveOpResult.Done -> when {
+        op.value.failed == 0 -> convertedFormat.format(op.value.converted)
+        op.value.converted > 0 -> withFailuresFormat.format(op.value.converted, op.value.failed)
+        else -> failedMessage
+    }
 }

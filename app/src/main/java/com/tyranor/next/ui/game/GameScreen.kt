@@ -166,6 +166,7 @@ fun GameScreen(
     val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
     val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
+    val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
     val scope = rememberCoroutineScope()
     val games = libraryState.games
     var selectedGameUri by rememberSaveable { mutableStateOf<String?>(null) }
@@ -353,7 +354,7 @@ fun GameScreen(
                 if (target != null) {
                     scope.launch {
                         if (convert) {
-                            val converted = try {
+                            val op = try {
                                 withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, target) }
                             } catch (ce: CancellationException) {
                                 throw ce
@@ -361,10 +362,11 @@ fun GameScreen(
                                 null
                             }
                             val message = rpgConvertResultMessage(
-                                converted,
+                                op,
                                 saveFormatConvertedFormat,
                                 saveFormatConvertedWithFailuresFormat,
                                 saveFormatConvertFailedMessage,
+                                saveBusyEngineRunningMessage,
                             )
                             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                         }
@@ -598,6 +600,7 @@ internal fun GameActionsSheet(
     val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
     val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
+    val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
 
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
@@ -652,7 +655,7 @@ internal fun GameActionsSheet(
         pendingPatchChoice = null
         scope.launch {
             if (convert && detection != null) {
-                val converted = try {
+                val op = try {
                     withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, game) }
                 } catch (ce: CancellationException) {
                     throw ce
@@ -660,10 +663,11 @@ internal fun GameActionsSheet(
                     null
                 }
                 val message = rpgConvertResultMessage(
-                    converted,
+                    op,
                     saveFormatConvertedFormat,
                     saveFormatConvertedWithFailuresFormat,
                     saveFormatConvertFailedMessage,
+                    saveBusyEngineRunningMessage,
                 )
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
