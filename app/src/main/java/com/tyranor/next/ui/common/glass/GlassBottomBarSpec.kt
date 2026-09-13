@@ -105,6 +105,19 @@ data class GlassBottomBarSpec(
         tabMinWidth * tabsCount + barInnerPadding * 2
 
     /**
+     * 给定窗口宽度下组件是否会真的渲染。
+     *
+     * 宿主据此决定要不要预留底部留白：两侧读同一份契约，窗口极窄时不会出现
+     * 「组件不渲染、却仍空出一条」。等价于组件内部的
+     * `clampedBarWidth(...) > minRenderableBarWidth`（自然宽度 ≥ 84dp 恒大于 8dp，
+     * 因此两种模式都退化为「可用宽度是否够」）。
+     */
+    fun canRender(windowWidth: Dp): Boolean {
+        val available = (windowWidth - hostHorizontalPadding * 2).coerceAtLeast(0.dp)
+        return available > minRenderableBarWidth
+    }
+
+    /**
      * 宿主需要为底栏预留的底部留白（不含系统导航栏 inset）。
      *
      * 由组件对外暴露，宿主不必自己把 [barHeight] 与 [hostBottomPadding] 相加（避免两处漂移）。
@@ -157,3 +170,12 @@ data class GlassBottomBarCapabilities(
         val current: GlassBottomBarCapabilities by lazy { of(Build.VERSION.SDK_INT) }
     }
 }
+
+/**
+ * 参数兜底：非有限值回退到 [fallback]，有限值夹取到 `[min, max]`。
+ *
+ * 公共组件接受外部传入的参数契约，不能让 NaN/±Inf/0 这类值把帧循环钉死
+ * （收敛判定永不成立）、让 `graphicsLayer` 变换变成 NaN，或让整栏缩放归零。
+ */
+internal fun Float.safeMotionValue(min: Float, max: Float, fallback: Float): Float =
+    if (isFinite()) coerceIn(min, max) else fallback

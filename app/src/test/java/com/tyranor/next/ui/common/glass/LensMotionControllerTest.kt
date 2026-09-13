@@ -118,7 +118,10 @@ class LensMotionControllerTest {
                     delay(1)
                 }
             }
-            assertTrue("近目标也必须出现可见按压，实测峰值 $peak", peak > 0.5f)
+            assertTrue(
+                "近目标也必须出现可见按压，实测峰值 $peak",
+                peak >= GlassBottomBarSpec.Default.pulseVisibleThreshold,
+            )
             assertTrue("收完后材质要归零", controller.pressure < 0.05f)
         }
     }
@@ -153,6 +156,13 @@ class LensMotionControllerTest {
             awaitSettled(controller)
         }
     }
+
+    /**
+     * 回归：滑动途中「轻点一下」不能被手指抖动判成拖动。
+     *
+     * 起手重定基准（D22）只应在真的拖动时生效；若 1px 抖动就重定基准，
+     * 滑动途中的一次轻点会把透镜停在半路、松手后提交到相邻槽位。
+     */
 
     /**
      * 回归：非法运动参数不得把帧循环钉死。
@@ -247,8 +257,7 @@ class LensMotionControllerTest {
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
             delay(20)
-            // 帧循环已退出（awaitSettled 的权威判据）后再确认所有输出都在静止值上
-            assertTrue("位置应停在初值", abs(controller.index - 0f) < 1e-3f)
+            assertTrue("静止时不应维持帧循环", !controller.isAnimating)
             assertTrue("材质应为 0", controller.pressure < 1e-3f)
             assertTrue("速度应为 0", abs(controller.velocity) < 1e-3f)
             assertEquals(0f, controller.index, 1e-4f)

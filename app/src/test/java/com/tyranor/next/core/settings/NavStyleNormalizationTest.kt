@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 导航样式归一化的纯 JVM 测试：三态取值、未知值回退、以及「增强档需要 Android 13+」的门槛。
+ * 导航样式归一化的纯 JVM 测试：三态取值、未知值回退、以及「透镜档需要 Android 13+」的门槛。
  * 这层规则决定旧版本与从新版备份恢复的数据会不会落到降级画面，属于必须钉住的行为。
  */
 class NavStyleNormalizationTest {

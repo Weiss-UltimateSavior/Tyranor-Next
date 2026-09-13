@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 增强档底栏参数契约的纯 JVM 测试：钉住「参考默认值」与宽度夹取规则，
+ * 透镜档底栏参数契约的纯 JVM 测试：钉住「参考默认值」与宽度夹取规则，
  * 避免后续调参时悄悄改变参考实现的既定参数（分析报告 §6.3）或窄屏行为（报告 §9）。
  */
 class GlassBottomBarSpecTest {
@@ -85,6 +85,16 @@ class GlassBottomBarSpecTest {
         assertEquals(768.dp, spec.clampedBarWidth(tabsCount = 4, windowWidth = 800.dp, stretch = true))
         // 手机：保持参考单槽宽度居中收窄
         assertEquals(312.dp, spec.clampedBarWidth(tabsCount = 4, windowWidth = 800.dp, stretch = false))
+    }
+
+
+    @Test
+    fun canRender_matchesTheComponentsEarlyReturn() {
+        // 可用宽度 = 窗口 − 左右留白；≤ 最小可渲染宽度时不渲染（宿主因此也不留白）
+        assertEquals(false, spec.canRender(40.dp))
+        assertEquals(false, spec.canRender(16.dp))
+        assertEquals(true, spec.canRender(360.dp))
+        assertEquals(true, spec.canRender(800.dp))
     }
 
     @Test

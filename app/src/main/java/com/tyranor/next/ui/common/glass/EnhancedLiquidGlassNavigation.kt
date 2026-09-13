@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
+import android.view.ViewConfiguration
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
@@ -52,6 +53,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -137,6 +139,7 @@ fun EnhancedLiquidGlassNavigationBar(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val scope = rememberCoroutineScope()
 
+    val context = LocalContext.current
     // 触觉反馈：用 View.performHapticFeedback（无需 VIBRATE 权限，且自动遵循系统「触感反馈」开关）。
     // 兜底：设备没有马达（或查询异常）时**完全不触发**，不做无意义的调用。
     val hapticView = LocalView.current
@@ -183,7 +186,6 @@ fun EnhancedLiquidGlassNavigationBar(
     if (barWidth <= spec.minRenderableBarWidth) return
 
     // 平台能力是权威：调用方传入的能力标记只能「再降一级」，不能把低版本设备抬进高能力分支
-    // 平台能力是权威（组件契约：入参只能再降一级，不能把低版本抬进高能力分支）
     val platformCaps = GlassBottomBarCapabilities.current
     val blurEnabled = capabilities.supportsBlur && platformCaps.supportsBlur
     val refractionEnabled = capabilities.supportsRefraction && platformCaps.supportsRefraction
@@ -194,6 +196,29 @@ fun EnhancedLiquidGlassNavigationBar(
 
     // 整栏横向跟随：拖动距离经 EaseOut 映射后最多 ±spec.panelOffsetMax（参考公式）
     val panelShiftAnimation = remember { Animatable(0f) }
+    // 归位弹簧参数兜底：NaN 经 animateTo 写进 Animatable 后，之后所有读数都会是 NaN
+    val recenterDamping = spec.panelRecenterDamping
+        .safeMotionValue(0.05f, 5f, GlassBottomBarSpec.Default.panelRecenterDamping)
+    val recenterStiffness = spec.panelRecenterStiffness
+        .safeMotionValue(1f, 10_000f, GlassBottomBarSpec.Default.panelRecenterStiffness)
+    val recenterThreshold = spec.panelRecenterThreshold
+        .safeMotionValue(0.01f, 10f, GlassBottomBarSpec.Default.panelRecenterThreshold)
+
+    // 整栏横向跟随的累加器：拖动事件在同一帧内可能来多次，若每次都「读 Animatable → 加 → snapTo」，
+    // 只有最后一次生效（前几次读到同一个旧值，位移被丢掉）。改为同步累加 + 单消费者落盘。
+    var panelShiftAccum by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(panelShiftAnimation) {
+        snapshotFlow { panelShiftAccum }.collect { panelShiftAnimation.snapTo(it) }
+    }
+    // 整栏跟随幅度：负值/非有限会让平移方向反转或 NaN，这里兜底一次
+    val panelOffsetMaxPx = remember(density, spec) {
+        with(density) {
+            spec.panelOffsetMax
+                .takeIf { it.value.isFinite() && it > 0.dp }
+                ?.toPx()
+                ?: GlassBottomBarSpec.Default.panelOffsetMax.toPx()
+        }
+    }
     val panelShift by remember(density, spec) {
         derivedStateOf {
             if (barWidthPx == 0f) {
@@ -201,7 +226,7 @@ fun EnhancedLiquidGlassNavigationBar(
             } else {
                 val fraction = (panelShiftAnimation.value / barWidthPx).fastCoerceIn(-1f, 1f)
                 with(density) {
-                    spec.panelOffsetMax.toPx() * fraction.sign * EaseOut.transform(abs(fraction))
+                    panelOffsetMaxPx * fraction.sign * EaseOut.transform(abs(fraction))
                 }
             }
         }
@@ -234,13 +259,13 @@ fun EnhancedLiquidGlassNavigationBar(
             controller.settleAt(index.toFloat(), pulse = false)
             indexCommittedByDrag = index
             if (index != currentSelectedIndex) currentOnItemClick(index)
-            with(spec) {
-                scope.launch {
-                    panelShiftAnimation.animateTo(
-                        0f,
-                        spring(panelRecenterDamping, panelRecenterStiffness, panelRecenterThreshold),
-                    )
-                }
+            scope.launch {
+                panelShiftAnimation.animateTo(
+                    0f,
+                    spring(recenterDamping, recenterStiffness, recenterThreshold),
+                )
+                // 归位完成后再清累加器：否则清空会立刻触发一次 snapTo，与归位动画打架
+                panelShiftAccum = 0f
             }
         }
     }
@@ -268,9 +293,14 @@ fun EnhancedLiquidGlassNavigationBar(
         }
     }
 
-    val dragModifier = remember(controller, commitIndex, scope, paddingPx) {
+    // 平台触摸 slop：拖动识别器用它区分「真拖动」与「点击时的手指抖动」
+    val touchSlopPx = remember(context) {
+        ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    }
+    val dragModifier = remember(controller, commitIndex, scope, paddingPx, touchSlopPx) {
         Modifier.pointerInput(controller, commitIndex) {
             detectLensPressDrag(
+                touchSlopPx = touchSlopPx,
                 onPress = { controller.beginPress() },
                 onDrag = { position, previous, delta ->
                     val tab = currentTabWidthPx
@@ -285,25 +315,26 @@ fun EnhancedLiquidGlassNavigationBar(
                         }
                         if (base + position.x in 0f..barWidthPx && base + previous.x in 0f..barWidthPx) {
                             controller.dragBy(delta.x / tab * (if (currentIsLtr) 1f else -1f))
-                            // 累加值本身也夹取：否则手指一直拖到边界外会让它无限增长，
-                            // 回弹时要跑的距离越来越离谱（可视化偏移早已被 derived 夹住）
-                            val next = (panelShiftAnimation.value + delta.x)
+                            // 同步累加（不丢同帧的多次位移），并夹取避免越界拖拽下无限增长
+                            panelShiftAccum = (panelShiftAccum + delta.x)
                                 .coerceIn(-barWidthPx, barWidthPx)
-                            scope.launch { panelShiftAnimation.snapTo(next) }
                         }
                     }
                 },
-                onRelease = { commitIndex(controller.targetIndex) },
+                // 只有真的拖动过才提交：纯点击（含滑动途中轻点）不改变选中项，
+                // 否则会把正在滑动的透镜截停并提交到它当时路过的槽位
+                onRelease = { dragged ->
+                    if (dragged) commitIndex(controller.targetIndex)
+                },
                 onCancel = {
                     // 取消不提交：回到当前选中项（正式产品语义，见文档 §6 D3）
                     controller.settleAt(currentSelectedIndex.toFloat(), pulse = false)
-                    with(spec) {
-                        scope.launch {
-                            panelShiftAnimation.animateTo(
-                                0f,
-                                spring(panelRecenterDamping, panelRecenterStiffness, panelRecenterThreshold),
-                            )
-                        }
+                    scope.launch {
+                        panelShiftAnimation.animateTo(
+                            0f,
+                            spring(recenterDamping, recenterStiffness, recenterThreshold),
+                        )
+                        panelShiftAccum = 0f
                     }
                 },
             )
@@ -387,8 +418,8 @@ fun EnhancedLiquidGlassNavigationBar(
         // 边缘高光：参考实现直接使用 Highlight.Default（自带 50% 白），本实现只取其一部分（文档 §6 D12）
         val barHighlight: (() -> Highlight?)? = remember(blurEnabled, highlightAlpha) {
             if (blurEnabled) {
-                // 压力为 0 时必须返回 null：Backdrop 只在入参为 null（Highlight 另加 width<=0）时
-                // 早退，alpha=0 的对象仍会录制一层透明离屏内容
+                // 注意这是常量（0.18 / 0.42），只有调用方传入 0 时才会走到 null 分支；
+                // 压力相关的那几处才是真正的逐帧判断（Backdrop 只在入参为 null 时早退）
                 { if (highlightAlpha <= 0f) null else Highlight.Default.copy(alpha = highlightAlpha) }
             } else {
                 null
@@ -398,8 +429,15 @@ fun EnhancedLiquidGlassNavigationBar(
             { drawRect(containerColor) }
         }
         // 整栏按压：纯图层缩放，任何 API 版本都保留
-        val pressDeltaPx = with(density) { spec.barPressScaleDelta.toPx() }
+        // 负的按压增量会让整栏 scale 变成 0（整栏消失）；上限夹到 0.5 免得窗口极窄时被放大到畸形
+        val pressDeltaPx = with(density) {
+            spec.barPressScaleDelta
+                .takeIf { it.value.isFinite() && it > 0.dp }
+                ?.toPx()
+                ?: GlassBottomBarSpec.Default.barPressScaleDelta.toPx()
+        }
         val pressDeltaMax = spec.barPressScaleDeltaMax
+            .safeMotionValue(0f, 0.5f, GlassBottomBarSpec.Default.barPressScaleDeltaMax)
         val barPressLayer: GraphicsLayerScope.() -> Unit =
             remember(pressDeltaPx, pressDeltaMax, controller) {
                 {
@@ -482,14 +520,17 @@ fun EnhancedLiquidGlassNavigationBar(
                 // 与透镜一致：压力为 0 时返回 null，Backdrop 才会跳过这层透明高光的离屏处理
                 {
                     val p = controller.pressure
-                    if (p <= 0f) null else Highlight.Default.copy(alpha = p)
+                    if (p < MotionVisiblePressure) null else Highlight.Default.copy(alpha = p)
                 }
             } else {
                 null
             }
         }
         val iconScale = remember(spec, controller) {
-            { lerp(1f, spec.iconScaleOnPress, controller.pressure) }
+            val onPress = spec.iconScaleOnPress
+                .safeMotionValue(1f, 3f, GlassBottomBarSpec.Default.iconScaleOnPress)
+            val scale = { lerp(1f, onPress, controller.pressure) }
+            scale
         }
         CompositionLocalProvider(
             LocalGlassIconScale provides iconScale,
@@ -537,7 +578,7 @@ fun EnhancedLiquidGlassNavigationBar(
                 if (refractionEnabled) {
                     {
                         val p = controller.pressure
-                        if (p <= 0f) null else Highlight.Default.copy(alpha = p)
+                        if (p < MotionVisiblePressure) null else Highlight.Default.copy(alpha = p)
                     }
                 } else {
                     null
@@ -547,7 +588,7 @@ fun EnhancedLiquidGlassNavigationBar(
                 if (refractionEnabled) {
                     {
                         val p = controller.pressure
-                        if (p <= 0f) null else Shadow(alpha = p)
+                        if (p < MotionVisiblePressure) null else Shadow(alpha = p)
                     }
                 } else {
                     null
@@ -557,7 +598,7 @@ fun EnhancedLiquidGlassNavigationBar(
                 if (refractionEnabled) {
                     {
                         val p = controller.pressure
-                        if (p <= 0f) {
+                        if (p < MotionVisiblePressure) {
                             null
                         } else {
                             InnerShadow(
@@ -573,12 +614,21 @@ fun EnhancedLiquidGlassNavigationBar(
             // 按压缩放与速度形变都是纯图层变换：各 API 版本都保留（低版本无折射但有体积反馈）
             val lensLayer: GraphicsLayerScope.() -> Unit = remember(spec, controller) {
                 {
-                    val indexVelocity = controller.velocity / spec.velocityScaleDivisor
+                    // 除数为 0 会得到 NaN/±Inf 并直接写进 graphicsLayer（画面整层异常）；
+                    // 夹取上限 0.9 是为了让分母 1−clamp 不落到 0
+                    val divisor = spec.velocityScaleDivisor
+                        .safeMotionValue(0.01f, 1_000f, GlassBottomBarSpec.Default.velocityScaleDivisor)
+                    val wideFactor = spec.velocityWideFactor
+                        .safeMotionValue(0f, 1f, GlassBottomBarSpec.Default.velocityWideFactor)
+                    val tallFactor = spec.velocityTallFactor
+                        .safeMotionValue(0f, 1f, GlassBottomBarSpec.Default.velocityTallFactor)
                     val clamp = spec.velocityClamp
+                        .safeMotionValue(0f, 0.9f, GlassBottomBarSpec.Default.velocityClamp)
+                    val indexVelocity = controller.velocity / divisor
                     scaleX = controller.scaleX /
-                        (1f - (indexVelocity * spec.velocityWideFactor).fastCoerceIn(-clamp, clamp))
+                        (1f - (indexVelocity * wideFactor).fastCoerceIn(-clamp, clamp))
                     scaleY = controller.scaleY *
-                        (1f - (indexVelocity * spec.velocityTallFactor).fastCoerceIn(-clamp, clamp))
+                        (1f - (indexVelocity * tallFactor).fastCoerceIn(-clamp, clamp))
                 }
             }
             val lensCover: DrawScope.() -> Unit = remember(refractionEnabled, colors, spec, controller) {
@@ -702,3 +752,11 @@ private fun TabIcon(
         colorFilter = ColorFilter.tint(tint),
     )
 }
+
+/**
+ * 「压力小到看不见」的判定阈值。
+ *
+ * 压力弹簧没有 snap-to-target，帧循环停下时它会停在 `(0, epsilon]` 区间而**不会精确归零**，
+ * 用 `<= 0f` 判断会让这些透明高光层在首次按压后一直录制下去。
+ */
+private const val MotionVisiblePressure = 1e-3f

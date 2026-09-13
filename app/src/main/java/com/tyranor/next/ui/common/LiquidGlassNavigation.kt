@@ -1,6 +1,5 @@
 package com.tyranor.next.ui.common
 
-import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.animateFloatAsState
@@ -282,12 +281,10 @@ fun glassNavBottomInset(): Dp {
             val windowWidthDp = with(density) {
                 LocalWindowInfo.current.containerSize.width.toDp()
             }.takeIf { it > 0.dp } ?: LocalConfiguration.current.screenWidthDp.dp
-            if (spec.clampedBarWidth(tabsCount = 1, windowWidth = windowWidthDp) <=
-                spec.minRenderableBarWidth
-            ) {
-                0.dp
-            } else {
+            if (spec.canRender(windowWidthDp)) {
                 navBarInset + spec.hostBottomInset()
+            } else {
+                0.dp
             }
         }
         // 经典档：栏高 64 + 上下各 12

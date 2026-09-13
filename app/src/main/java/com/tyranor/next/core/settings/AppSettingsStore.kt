@@ -87,7 +87,7 @@ object AppSettingsStore {
     /** 底部导航栏样式：液态玻璃 · 透镜（三层采样 + 折射透镜，Android 13+ 才有完整效果）。 */
     const val NAV_STYLE_LIQUID_GLASS_ENHANCED = "liquid_glass_enhanced"
 
-    /** 增强档需要 Android 13（API 33）的 RuntimeShader 折射能力；更低版本不提供该选项。 */
+    /** 透镜档需要 Android 13（API 33）的 RuntimeShader 折射能力；更低版本不提供该选项。 */
     val supportsLiquidGlassEnhanced: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
@@ -129,7 +129,7 @@ object AppSettingsStore {
     }
 
     /**
-     * 迁移：早期实现把「增强档」存成独立的 `liquid_glass_enhance` 布尔开关，
+     * 迁移：早期实现把「透镜档」存成独立的 `liquid_glass_enhance` 布尔开关，
      * 现已合并进 [KEY_NAV_STYLE] 的三态取值。这里做一次性升级并清掉旧键。
      */
     private fun migrateLegacyEnhanceFlag(c: Context) {
@@ -140,7 +140,11 @@ object AppSettingsStore {
         val stored = p.getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT)
         val editor = p.edit().remove(KEY_LIQUID_GLASS_ENHANCE)
         if (legacyEnhanced && stored == NAV_STYLE_LIQUID_GLASS) {
-            editor.putString(KEY_NAV_STYLE, NAV_STYLE_LIQUID_GLASS_ENHANCED)
+            // 与 setNavStyle 一致地归一化：低版本设备读到备份里的透镜档时降为经典档
+            editor.putString(
+                KEY_NAV_STYLE,
+                normalizeNavStyle(NAV_STYLE_LIQUID_GLASS_ENHANCED, supportsLiquidGlassEnhanced),
+            )
         }
         editor.apply()
     }
@@ -196,7 +200,7 @@ object AppSettingsStore {
 
     /**
      * 导航样式归一化（纯函数，便于单元测试）：
-     * 未知值回退默认；增强档在不支持的版本（< Android 13）回退普通档——
+     * 未知值回退默认；透镜档在不支持的版本（< Android 13）回退普通档——
      * 这样即使从更新的设备备份恢复数据，旧设备也只会得到普通档而不是降级画面。
      */
     fun normalizeNavStyle(stored: String?, enhancedSupported: Boolean): String =

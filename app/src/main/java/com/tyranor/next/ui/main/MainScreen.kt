@@ -149,7 +149,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
   fun selectPage(index: Int) {
     if (index == selectedIndex) return
-    // 增强档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
+    // 透镜档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
     // 默认路径保持原有守卫，避免把这一行为变更带给未开启该选项的用户（报告 §8.7）。
     if (!enhanceLiquidGlass && pageTransition.isRunning) return
     selectedIndex = index
@@ -163,7 +163,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 放在外层（Surface/Column 背景）的内容不会被采样，玻璃会采到透明而漏出文字。
     val backdrop = rememberLayerBackdrop()
     // 采样修复（报告 §5.3 / §8.4 第 1 条）：玻璃外观风格下 PageGrey 透明，根部背景在采样层之外，
-    // 增强档把同一份背景画进被采样内容，保证透镜采样源含完整背景且坐标同源。
+    // 透镜档把同一份背景画进被采样内容，保证透镜采样源含完整背景且坐标同源。
     // remember：MainScreen 在切页动画期间每帧重组，复用同一 Modifier 才不会每帧重建绘制缓存。
     val accent = AppThemeColors.primary
     val pageBackground = remember(accent) { Modifier.glassPageBackground(accent) }
@@ -264,7 +264,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 液态玻璃 · 经典：悬浮在内容之上。
     // 透镜档（应用设置 → 导航栏样式 → 液态玻璃 · 透镜）改用三层采样 + 折射透镜；默认与经典档走原实现。
     if (liquidGlass) {
-      // 增强档必须要有可用采样层（backdropAvailable 已含 API 门槛与液态玻璃条件）；
+      // 透镜档必须要有可用采样层（backdropAvailable 已含 API 门槛与液态玻璃条件）；
       // 万一不满足则退回经典档，而不是拿未挂载的 backdrop 渲染（组件契约要求）
       if (enhanceLiquidGlass && backdropAvailable) {
         EnhancedLiquidGlassNavigationBar(

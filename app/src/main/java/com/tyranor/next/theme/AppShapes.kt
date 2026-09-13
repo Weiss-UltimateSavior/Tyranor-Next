@@ -20,7 +20,7 @@ val AppComponentShape: Shape
  *
  * 源实现使用 capsule 库的 `ContinuousCapsule`；本项目锁定 Backdrop 1.0.2，其 `lens` 只接受
  * `CornerBasedShape`，因此用标准胶囊等价替代（分析报告 §7.2 路线 B 的已记录差异 D1）。
- * 该豁免仅适用于增强档底栏的「栏体 / 副本行 / 移动透镜」三处，其余组件不得援引。
+ * 该豁免仅适用于透镜档底栏的「栏体 / 副本行 / 移动透镜」三处，其余组件不得援引。
  */
 val AppNavCapsuleShape: Shape = RoundedCornerShape(percent = 50)
 

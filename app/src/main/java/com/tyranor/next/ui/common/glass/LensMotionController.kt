@@ -93,19 +93,17 @@ internal class LensMotionController(
 
     // ---- 内部弹簧与积分状态 ----
     private val epsilon =
-        spec.visibilityThreshold.safeMotionValue(1e-5f, 1f, GlassBottomBarSpec.Default.visibilityThreshold)
+        spec.visibilityThreshold.safeMotionValue(1e-5f, 0.5f, GlassBottomBarSpec.Default.visibilityThreshold)
 
     /**
      * 「位置已足够接近目标」的收起阈值。
      *
-     * 必须 **≥ [epsilon]**：位置弹簧在 `|value − target| < epsilon` 时就判定自己已静止，
-     * 若收起阈值比它还小（例如 0），弹簧静止后 `|index − target| < releaseThreshold` 依然不成立，
-     * 收起分支永远等不到 → `allSettled()` 恒为 false → 帧循环不再退出。
+     * 下限取 1e-5 而不是 0：收起条件是**严格小于**，等于 0 会永远不成立，帧循环便不再退出。
+     * 这里刻意不取 `max(阈值, epsilon)`——那会让收起提前到「离目标还有 epsilon」时发生，
+     * 而 epsilon 同时是弹簧的静止判据，等于让透镜停在半路。
      */
-    private val releaseThreshold = max(
-        spec.releaseThreshold.safeMotionValue(1e-5f, 10f, GlassBottomBarSpec.Default.releaseThreshold),
-        epsilon,
-    )
+    private val releaseThreshold =
+        spec.releaseThreshold.safeMotionValue(1e-5f, 10f, GlassBottomBarSpec.Default.releaseThreshold)
     private val positionSpring = Spring(startIndex, 1000f, 1f, epsilon)
     private val pressureSpring = Spring(0f, 1000f, 1f, epsilon)
     private val wideSpring = Spring(1f, 250f, 0.6f, epsilon)
@@ -143,9 +141,10 @@ internal class LensMotionController(
     fun dragBy(indexDelta: Float) {
         if (!indexDelta.isFinite()) return
         if (!dragging) {
-            // 拖动起手：把目标基准对齐到**当前视觉位置**。否则「动画途中抓住透镜再拖」时，
-            // 位移会累加在上一轮的目标上（例如 0→3 途中在 1.5 处抓住并左拖一格会提交到 2，
-            // 而不是跟手语义期望的 0.5 → 吸附到 1）
+            // 拖动起手：把基准对齐到**当前视觉位置**。否则「动画途中抓住透镜再拖」时位移会累加在
+            // 上一轮目标上（0→3 途中在 1.5 处抓住左拖一格会提交到 2，而非跟手的 0.5 → 吸附到 1）。
+            // 「是否算拖动」由手势层按平台 touch slop 把关（见 detectLensPressDrag），
+            // 因此这里收到的第一条位移就是真拖动。
             dragging = true
             targetIndex = index.coerceIn(safeRange)
             positionSpring.target = targetIndex
@@ -299,11 +298,3 @@ internal class LensMotionController(
     }
 }
 
-/**
- * 运动参数兜底：非有限值回退到调用方给出的默认值，有限值夹取到 `[min, max]`。
- *
- * 公共组件接受外部传入的 [GlassBottomBarSpec]，不能让 NaN/±Inf/0 这类阈值把帧循环钉死
- * （收敛判定永远不成立）或让输出变成 NaN。
- */
-private fun Float.safeMotionValue(min: Float, max: Float, fallback: Float): Float =
-    if (isFinite()) coerceIn(min, max) else fallback
