@@ -107,7 +107,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()
   val unselectedColor = UnselectedGrey
-  // 导航栏样式：应用设置 → 默认 / 圆角液态玻璃（内存态，设置页切换即时生效）
+  // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
     // initNavStyle 是幂等的（设置页也会调用一次），这里与游戏排序一起在 IO 线程读一次 prefs
     val gameSort = withContext(Dispatchers.IO) {
@@ -261,8 +261,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
       }
     }
 
-    // 圆角液态玻璃导航：悬浮在内容之上。
-    // 增强档（应用设置 → 液态玻璃增强）改用三层采样 + 折射透镜实现，默认关闭走原实现。
+    // 液态玻璃 · 经典：悬浮在内容之上。
+    // 透镜档（应用设置 → 导航栏样式 → 液态玻璃 · 透镜）改用三层采样 + 折射透镜；默认与经典档走原实现。
     if (liquidGlass) {
       // 增强档必须要有可用采样层（backdropAvailable 已含 API 门槛与液态玻璃条件）；
       // 万一不满足则退回经典档，而不是拿未挂载的 backdrop 渲染（组件契约要求）

@@ -124,6 +124,37 @@ class LensMotionControllerTest {
     }
 
     /**
+     * 回归（M1）：动画途中抓住透镜再拖动时，位移必须从**视觉位置**起算。
+     *
+     * 早期实现把位移累加在上一轮的目标上：0→3 的滑动途中在 1.5 处抓住并左拖一格，
+     * 会得到目标 2（提交到错误槽位），而跟手语义应为 0.5（吸附到 1）。
+     */
+    @Test
+    fun dragDuringGlide_rebaselinesToVisualPosition() = runBlocking {
+        withController { controller ->
+            controller.settleAt(3f, pulse = false)
+            // 等动画滑过第一格，落在 (1, 2) 之间时「抓住」
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.index < 1.2f) delay(1)
+            }
+            val grabbed = controller.index
+            assertTrue("应停在滑动途中，实测 $grabbed", grabbed in 1.2f..2.6f)
+
+            controller.beginPress()
+            controller.dragBy(-1f)
+
+            assertEquals(
+                "拖动基准应对齐视觉位置（$grabbed − 1）",
+                grabbed - 1f,
+                controller.targetIndex,
+                0.3f,
+            )
+            controller.settleAt(controller.targetIndex, pulse = false)
+            awaitSettled(controller)
+        }
+    }
+
+    /**
      * 回归：非法运动参数不得把帧循环钉死。
      *
      * `pulseVisibleThreshold` 若为 NaN/±Inf/>1，`pressure >= threshold` 永远不成立，
@@ -182,7 +213,10 @@ class LensMotionControllerTest {
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
             delay(20)
-            assertTrue("静止时不应维持帧循环", !controller.isAnimating)
+            // 帧循环已退出（awaitSettled 的权威判据）后再确认所有输出都在静止值上
+            assertTrue("位置应停在初值", abs(controller.index - 0f) < 1e-3f)
+            assertTrue("材质应为 0", controller.pressure < 1e-3f)
+            assertTrue("速度应为 0", abs(controller.velocity) < 1e-3f)
             assertEquals(0f, controller.index, 1e-4f)
             assertEquals(0f, controller.pressure, 1e-4f)
             assertEquals(1f, controller.scaleX, 1e-4f)

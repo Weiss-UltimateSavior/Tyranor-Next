@@ -94,7 +94,12 @@ internal class LensMotionController(
     private val speedSpring = Spring(0f, 300f, 0.5f, epsilon * 10f)
     private val glowSpring = Spring(0f, 300f, 0.5f, epsilon)
 
-    /** 是否仍在推进动画（静止后帧循环自动退出）：供宿主与测试判断当前是否需要等待。 */
+    /**
+     * 是否仍在推进动画（静止后帧循环自动退出）。
+     *
+     * 这是控制器的对外状态：本仓库的控制器测试用它作为「已收敛」的权威判据，
+     * 宿主也可据此判断当前是否需要等待（生产代码目前不依赖它，属有意保留的公共契约）。
+     */
     var isAnimating by mutableStateOf(false)
         private set
 
@@ -102,10 +107,12 @@ internal class LensMotionController(
     private var lastIndex = initialIndex
     private var loopActive = false
     private var pulsePending = false
+    private var dragging = false
 
     /** 手指按下：进入按压形态，并取消上一轮尚未完成的收材质。 */
     fun beginPress() {
         pulsePending = false
+        dragging = false
         pressureSpring.target = 1f
         wideSpring.target = pressedScale
         tallSpring.target = pressedScale
@@ -116,6 +123,14 @@ internal class LensMotionController(
     /** 拖动：按「索引增量」移动目标位置（像素→索引由调用方按槽宽换算）。 */
     fun dragBy(indexDelta: Float) {
         if (!indexDelta.isFinite()) return
+        if (!dragging) {
+            // 拖动起手：把目标基准对齐到**当前视觉位置**。否则「动画途中抓住透镜再拖」时，
+            // 位移会累加在上一轮的目标上（例如 0→3 途中在 1.5 处抓住并左拖一格会提交到 2，
+            // 而不是跟手语义期望的 0.5 → 吸附到 1）
+            dragging = true
+            targetIndex = index.coerceIn(indexRange)
+            positionSpring.target = targetIndex
+        }
         targetIndex = (targetIndex + indexDelta).coerceIn(indexRange)
         positionSpring.target = targetIndex
         ensureFrameLoop()
@@ -131,6 +146,7 @@ internal class LensMotionController(
         targetIndex = target.coerceIn(indexRange)
         positionSpring.target = targetIndex
         pulsePending = pulse
+        dragging = false
         if (pulse) {
             pressureSpring.target = 1f
             wideSpring.target = pressedScale

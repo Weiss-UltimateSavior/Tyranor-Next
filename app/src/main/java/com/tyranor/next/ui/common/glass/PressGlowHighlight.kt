@@ -9,6 +9,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.toArgb
@@ -36,30 +37,36 @@ internal class PressGlowHighlight(
     private val glowAlpha: Float,
     private val tint: Color,
 ) {
+    // 着色器编译/构造失败（个别 ROM 的 AGSL 实现异常）不能让整个主界面崩溃：失败即静默降级为无光斑
     @SuppressLint("NewApi")
-    private val shader = RuntimeShader(
-        """
-        layout(color) uniform half4 color;
-        uniform float radius;
-        uniform float2 position;
+    private val shader: RuntimeShader? = runCatching {
+        RuntimeShader(
+            """
+            layout(color) uniform half4 color;
+            uniform float radius;
+            uniform float2 position;
 
-        half4 main(float2 coord) {
-            float d = distance(coord, position);
-            float falloff = 1.0 - smoothstep(radius * 0.5, radius, d);
-            return color * falloff;
-        }
-        """,
-    )
+            half4 main(float2 coord) {
+                float d = distance(coord, position);
+                float falloff = 1.0 - smoothstep(radius * 0.5, radius, d);
+                return color * falloff;
+            }
+            """,
+        )
+    }.getOrNull()
 
     /** Brush 与 shader 一起缓存：`drawWithContent` 每帧都会执行，不能在里面新建对象。 */
-    private val brush by lazy { ShaderBrush(shader) }
+    private val brush: Brush? = shader?.let { ShaderBrush(it) }
 
     val modifier: Modifier = Modifier.drawWithContent {
         val p = progress()
-        if (p > 0f) {
+        val activeShader = shader
+        val activeBrush = brush
+        // shader 不可用（构造失败）时整块跳过，只剩内容绘制，不抛异常
+        if (p > 0f && activeShader != null && activeBrush != null) {
             drawRect(tint.copy(alpha = veilAlpha * p), blendMode = BlendMode.Plus)
             val spot = center(size)
-            shader.apply {
+            activeShader.apply {
                 setColorUniform("color", tint.copy(alpha = glowAlpha * p).toArgb())
                 setFloatUniform("radius", (size.minDimension * 1.2f).coerceAtLeast(MinRadiusPx))
                 setFloatUniform(
@@ -68,7 +75,7 @@ internal class PressGlowHighlight(
                     spot.y.finiteIn(0f, size.height),
                 )
             }
-            drawRect(brush, blendMode = BlendMode.Plus)
+            drawRect(activeBrush, blendMode = BlendMode.Plus)
         }
         drawContent()
     }

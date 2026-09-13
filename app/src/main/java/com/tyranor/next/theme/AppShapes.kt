@@ -9,13 +9,13 @@ import androidx.compose.ui.unit.dp
  * 组件圆角统一入口：默认风格 8dp；玻璃外观风格与玻璃悬浮导航条一致（32dp）。
  * 所有卡片/条目/弹窗/抽屉等「组件级」圆角必须引用本文件，不再散落字面量。
  * 例外：顶栏图标 6dp（TopBarIcon）、搜索框胶囊（CircleShape）、液态玻璃导航 16dp（规范豁免）、
- * 液态玻璃增强底栏胶囊（[AppNavCapsuleShape]）。
+ * 液态玻璃 · 透镜底栏胶囊（[AppNavCapsuleShape]）。
  */
 val AppComponentShape: Shape
     get() = if (AppThemeColors.isGlass) GlassComponentShape else DefaultComponentShape
 
 /**
- * 液态玻璃增强底栏（`ui/common/glass/`）的胶囊轮廓：圆角 = 半高
+ * 液态玻璃 · 透镜底栏（`ui/common/glass/`）的胶囊轮廓：圆角 = 半高
  * （64dp 栏体 → 32dp，56dp 透镜 → 28dp）。
  *
  * 源实现使用 capsule 库的 `ContinuousCapsule`；本项目锁定 Backdrop 1.0.2，其 `lens` 只接受

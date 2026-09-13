@@ -1,8 +1,8 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
-import android.os.Build
 import android.content.res.Configuration
+import android.os.Build
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -84,7 +84,7 @@ object AppSettingsStore {
     /** 底部导航栏样式：液态玻璃（圆角玻璃栏，Android 12+ 生效）。 */
     const val NAV_STYLE_LIQUID_GLASS = "liquid_glass"
 
-    /** 底部导航栏样式：液态玻璃增强（三层采样 + 折射透镜，Android 13+ 才有完整效果）。 */
+    /** 底部导航栏样式：液态玻璃 · 透镜（三层采样 + 折射透镜，Android 13+ 才有完整效果）。 */
     const val NAV_STYLE_LIQUID_GLASS_ENHANCED = "liquid_glass_enhanced"
 
     /** 增强档需要 Android 13（API 33）的 RuntimeShader 折射能力；更低版本不提供该选项。 */

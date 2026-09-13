@@ -89,7 +89,7 @@ import kotlin.math.sign
 private val LocalGlassIconScale = staticCompositionLocalOf { { 1f } }
 
 /**
- * 「液态玻璃增强」底部导航栏（本项目独立实现；设计记录见
+ * 「液态玻璃 · 透镜」底部导航栏（本项目独立实现；设计记录见
  * `docs/液态玻璃增强计划方案.md`，参数来源见 [GlassBottomBarSpec] 注释）。
  *
  * 三层采样结构——这是让透镜能折射出**图标**、而不是只放大一块颜色的关键：
@@ -183,7 +183,8 @@ fun EnhancedLiquidGlassNavigationBar(
     if (barWidth <= spec.minRenderableBarWidth) return
 
     // 平台能力是权威：调用方传入的能力标记只能「再降一级」，不能把低版本设备抬进高能力分支
-    val platformCaps = remember { GlassBottomBarCapabilities.of(Build.VERSION.SDK_INT) }
+    // 平台能力是权威（组件契约：入参只能再降一级，不能把低版本抬进高能力分支）
+    val platformCaps = GlassBottomBarCapabilities.current
     val blurEnabled = capabilities.supportsBlur && platformCaps.supportsBlur
     val refractionEnabled = capabilities.supportsRefraction && platformCaps.supportsRefraction
 
@@ -349,7 +350,8 @@ fun EnhancedLiquidGlassNavigationBar(
 
     // 按压光斑：中心直接取透镜位置（栏体局部坐标，含 4dp 内边距；整栏偏移由图层负责）
     val pressGlow = if (refractionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        remember(controller, spec, colors, paddingPx, currentTabWidthPx) {
+        // key 不含宽度：中心点在绘制期读取 updated-state，首帧/旋转无需重建 shader
+        remember(controller, spec, colors, paddingPx) {
             PressGlowHighlight(
                 progress = { controller.glow },
                 center = { size ->
@@ -385,7 +387,9 @@ fun EnhancedLiquidGlassNavigationBar(
         // 边缘高光：参考实现直接使用 Highlight.Default（自带 50% 白），本实现只取其一部分（文档 §6 D12）
         val barHighlight: (() -> Highlight?)? = remember(blurEnabled, highlightAlpha) {
             if (blurEnabled) {
-                { Highlight.Default.copy(alpha = highlightAlpha) }
+                // 压力为 0 时必须返回 null：Backdrop 只在入参为 null（Highlight 另加 width<=0）时
+                // 早退，alpha=0 的对象仍会录制一层透明离屏内容
+                { if (highlightAlpha <= 0f) null else Highlight.Default.copy(alpha = highlightAlpha) }
             } else {
                 null
             }
@@ -527,14 +531,20 @@ fun EnhancedLiquidGlassNavigationBar(
             }
             val lensHighlight: (() -> Highlight?)? = remember(refractionEnabled, controller) {
                 if (refractionEnabled) {
-                    { Highlight.Default.copy(alpha = controller.pressure) }
+                    {
+                        val p = controller.pressure
+                        if (p <= 0f) null else Highlight.Default.copy(alpha = p)
+                    }
                 } else {
                     null
                 }
             }
             val lensShadow: (() -> Shadow?)? = remember(refractionEnabled, controller) {
                 if (refractionEnabled) {
-                    { Shadow(alpha = controller.pressure) }
+                    {
+                        val p = controller.pressure
+                        if (p <= 0f) null else Shadow(alpha = p)
+                    }
                 } else {
                     null
                 }
@@ -542,10 +552,15 @@ fun EnhancedLiquidGlassNavigationBar(
             val lensInnerShadow: (() -> InnerShadow?)? = remember(refractionEnabled, spec, controller) {
                 if (refractionEnabled) {
                     {
-                        InnerShadow(
-                            radius = spec.lensInnerShadowRadius * controller.pressure,
-                            alpha = controller.pressure,
-                        )
+                        val p = controller.pressure
+                        if (p <= 0f) {
+                            null
+                        } else {
+                            InnerShadow(
+                                radius = spec.lensInnerShadowRadius * p,
+                                alpha = p,
+                            )
+                        }
                     }
                 } else {
                     null

@@ -155,7 +155,7 @@ _Avoid_: ListItem、手写条目
 _Avoid_: 随意字号、item 用 title
 
 **液态玻璃导航（LiquidGlassNavigationBar）**:
-悬浮于内容之上、采样页面内容做背景模糊的圆角导航形态（Android 12+，通过 backdrop 录制内容层）；为「圆角液态玻璃」导航样式的普通档。
+悬浮于内容之上、采样页面内容做背景模糊的圆角导航形态（Android 12+，通过 backdrop 录制内容层）；为「液态玻璃 · 经典」档。
 _Avoid_: 毛玻璃、透明导航
 
 **液态玻璃 · 透镜（Liquid Glass · Lens）**:

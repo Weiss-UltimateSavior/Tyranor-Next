@@ -6,7 +6,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * 「液态玻璃增强」底栏的光学 / 运动 / 尺寸参数契约（单一来源）。
+ * 「液态玻璃 · 透镜」底栏的光学 / 运动 / 尺寸参数契约（单一来源）。
  *
  * 数值取自分析报告《Tyranor-Next × Legado：液态玻璃底栏对比与高保真复刻方案》§6.3 记录的
  * 参考实现默认档（blur 8dp / 表面 alpha 40% / 栏体透镜 24dp），全部保持默认值，
@@ -103,6 +103,13 @@ data class GlassBottomBarSpec(
     /** 自然宽度：N 个参考单槽 + 左右内边距（报告 §8.5 公式 `N·w + 8dp`）。 */
     fun naturalBarWidth(tabsCount: Int): Dp =
         tabMinWidth * tabsCount + barInnerPadding * 2
+
+    /**
+     * 宿主需要为底栏预留的底部留白（不含系统导航栏 inset）。
+     *
+     * 由组件对外暴露，宿主不必自己把 [barHeight] 与 [hostBottomPadding] 相加（避免两处漂移）。
+     */
+    fun hostBottomInset(): Dp = barHeight + hostBottomPadding
 
     /**
      * 实际渲染宽度（纯函数，便于单元测试）：

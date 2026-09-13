@@ -45,6 +45,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -70,7 +71,7 @@ data class LiquidGlassNavItem(
 )
 
 /**
- * 圆角液态玻璃底部导航栏（参考 RinneMobile 流体玻璃导航样式）：
+ * 液态玻璃 · 经典底栏（参考 RinneMobile 流体玻璃导航样式）：
  * 通过 [com.kyant.backdrop] 对页面内容做 vibrancy + blur 采样，呈现“看穿”的毛玻璃质感；
  * 选中项有跟随的主题色玻璃焦点胶囊；支持长按后左右拖动切换页面（移植自 RinneMobile）。
  * 悬浮于内容之上，圆角 16dp。
@@ -274,21 +275,23 @@ fun glassNavBottomInset(): Dp {
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     return when (navStyle) {
-        // 透镜档：栏高 + 底部留白直接取自参数契约，避免两处各写一份数字后漂移
-        AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
-            navBarInset + GlassBottomBarSpec.Default.barHeight +
-                GlassBottomBarSpec.Default.hostBottomPadding
+        AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED -> {
+            // 窗口窄到组件自己不渲染时不能留白，否则底部会空出一条
+            val spec = GlassBottomBarSpec.Default
+            val density = LocalDensity.current
+            val windowWidthDp = with(density) {
+                LocalWindowInfo.current.containerSize.width.toDp()
+            }.takeIf { it > 0.dp } ?: LocalConfiguration.current.screenWidthDp.dp
+            if (spec.clampedBarWidth(tabsCount = 1, windowWidth = windowWidthDp) <=
+                spec.minRenderableBarWidth
+            ) {
+                0.dp
+            } else {
+                navBarInset + spec.hostBottomInset()
+            }
+        }
         // 经典档：栏高 64 + 上下各 12
         AppSettingsStore.NAV_STYLE_LIQUID_GLASS -> navBarInset + 88.dp
         else -> if (AppThemeColors.isGlass) navBarInset + 88.dp else 0.dp
     }
-}
-
-/** 宽屏判定：横屏或宽设备（screenWidthDp / smallestScreenWidthDp ≥ 600），用于大屏布局适配（如游戏页 6 列网格）。 */
-@Composable
-fun isWideScreen(): Boolean {
-    val configuration = LocalConfiguration.current
-    return configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
-        configuration.screenWidthDp >= 600 ||
-        configuration.smallestScreenWidthDp >= 600
 }
