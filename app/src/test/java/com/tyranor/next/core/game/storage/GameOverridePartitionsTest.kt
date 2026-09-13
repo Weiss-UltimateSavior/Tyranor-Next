@@ -22,6 +22,7 @@ class GameOverridePartitionsTest {
         .put(PerGameSettingsStore.F_TY_SCOPED, false)
         .put(PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED, true)
         .put(PerGameSettingsStore.F_RPG_LEGACY_RENDERER, true)
+        .put(PerGameSettingsStore.F_RPG_SAVE_INTEROP, true)
         .put(PerGameSettingsStore.F_RPG_MV_VERSION, "v2")
         .put(PerGameSettingsStore.F_RPG_MZ_VERSION, "v2")
         .put(PerGameSettingsStore.F_RENPY_VERSION, "8.5")
@@ -70,6 +71,7 @@ class GameOverridePartitionsTest {
         assertEquals("keep-me", JSONObject(row.tyranoJson!!).getString("future_engine_key"))
         val tyranoPartition = JSONObject(row.tyranoJson!!)
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_LEGACY_RENDERER))
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_SAVE_INTEROP))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_MV_VERSION))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_MZ_VERSION))
     }
@@ -115,6 +117,7 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_ART_PATCH, GameOverridePartitions.KEY_ART_PATCH)
         assertEquals(PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED, GameOverridePartitions.KEY_RPG_MAKER_MOD_ENABLED)
         assertEquals(PerGameSettingsStore.F_RPG_LEGACY_RENDERER, GameOverridePartitions.KEY_RPG_LEGACY_RENDERER)
+        assertEquals(PerGameSettingsStore.F_RPG_SAVE_INTEROP, GameOverridePartitions.KEY_RPG_SAVE_INTEROP)
         assertEquals(PerGameSettingsStore.F_RPG_MV_VERSION, GameOverridePartitions.KEY_RPG_MV_VERSION)
         assertEquals(PerGameSettingsStore.F_RPG_MZ_VERSION, GameOverridePartitions.KEY_RPG_MZ_VERSION)
         assertEquals(PerGameSettingsStore.F_TY_SCOPED, GameOverridePartitions.KEY_TY_SCOPED)

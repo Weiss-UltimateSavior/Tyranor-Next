@@ -127,6 +127,10 @@ object EngineSettingsResolver {
                 bool(PerGameSettingsStore.F_RPG_LEGACY_RENDERER),
                 EngineSettingsStore.isRpgLegacyRenderer(app),
             ),
+            rpgSaveInterop = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_RPG_SAVE_INTEROP),
+                EngineSettingsStore.isRpgSaveInterop(app),
+            ),
             rpgMvVersion = EffectiveEngineSettings.resolveRpgVersion(
                 str(PerGameSettingsStore.F_RPG_MV_VERSION),
                 EngineSettingsStore.getRpgMvEngineVersion(app),
@@ -189,6 +193,8 @@ data class ResolvedEngineSettings(
     val webScopedSaveDir: Boolean,
     val rpgMakerModEnabled: Boolean,
     val rpgLegacyRenderer: Boolean,
+    /** MV/MZ 存档互通生效值（单游戏覆盖 > 全局）。合并值不区分引擎，消费方须以引擎类型门控。 */
+    val rpgSaveInterop: Boolean,
     val rpgMvVersion: String,
     val rpgMzVersion: String,
     val renpyVersion: String,

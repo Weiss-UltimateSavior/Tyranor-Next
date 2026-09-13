@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
@@ -41,8 +42,8 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  *   必须使用本组件，禁止用手写 Row/Column 拼装、禁止混用 Material 的 ListItem 等。
  * - 排版：圆角统一用 [com.tyranor.next.theme.AppComponentShape]（默认 8dp / 玻璃风格 32dp）+ 背景 [containerColor]（默认 [NavWhite]）+ 内边距（纵向 12dp / 横向 16dp）+ 左侧图标 24dp + 右侧箭头，
  *   标题用 [TextColor]、摘要用半透明辅助色；进入跳转的 icon 一律 `KeyboardArrowRight`。
- * - 背景色约定：页面上条目默认 [NavWhite]（页面背景 PageGrey 灰底白卡）；弹窗内条目传 `PageGrey`（弹窗背景 NavWhite 白底灰卡），
- *   与弹窗背景形成反色反差。两者互为对偶，且「色调切换」时同步互换，层次关系不变。
+ * - 背景色约定：页面上条目默认 [NavWhite]（页面背景 PageGrey 灰底白卡）；弹窗内条目传 [DialogItemSurface]，
+ *   与弹窗背景形成层次反差（AGENT.md 界面规范，勿回退 PageGrey——玻璃外观下 PageGrey 透明会丢失卡片层次）。
  * - 「色调切换」遵循统一规范：背景引用 `theme/Color.kt` 常量，前景取 [TextColor]，
  *   不依赖 `colorScheme.surface*`，保证弹窗作用域内外一致。
  *
@@ -52,7 +53,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param summary 可选摘要
  * @param leadingIcon 左侧图标 drawable；null 时使用默认占位图标 [DEFAULT_LEADING_ICON]
  * @param showLeadingIcon 是否展示左侧图标；纯动作条目（如存档导出/导入/删除）可传 false 隐藏图标位
- * @param containerColor 条目容器背景色；默认 [NavWhite]（页面灰底上的白卡），弹窗内应传 `PageGrey` 与白底弹窗形成反差
+ * @param containerColor 条目容器背景色；默认 [NavWhite]（页面灰底上的白卡），弹窗内应传 [DialogItemSurface]
  * @param showArrow 是否显示右侧跳转箭头；「进入下一级」的跳转条目保持 true，「执行动作」条目传 false
  * @param leadingIconTint 显式覆盖左侧图标颜色（如主题色 [MaterialTheme.colorScheme.primary] / 危险色 error）；
  *   null 时保持默认行为（深色染白、浅色用原图）
