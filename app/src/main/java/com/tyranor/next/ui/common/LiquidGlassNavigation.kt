@@ -59,6 +59,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DarkGrey
+import com.tyranor.next.theme.glassEdgeStroke
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -142,6 +143,14 @@ fun LiquidGlassNavigationBar(
         Modifier.clip(shape).background(surfaceColor.copy(alpha = 0.96f))
     }
 
+    // 浅色档：半透明白表面压在纯白/浅灰页面上几乎看不见边界，补一条中性色发丝描边勾出悬浮轮廓
+    // （深色档不加：深底本身有对比，栏体自带高光与投影）
+    val edgeStrokeModifier = if (AppThemeColors.isDark) {
+        Modifier
+    } else {
+        Modifier.glassEdgeStroke(shape)
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -149,6 +158,7 @@ fun LiquidGlassNavigationBar(
             .padding(horizontal = 12.dp, vertical = 12.dp)
             .height(64.dp)
             .then(navigationSurfaceModifier)
+            .then(edgeStrokeModifier)
             .onSizeChanged { if (navWidth != it.width) navWidth = it.width }
             .pointerInput(itemWidth, items.size) {
                 detectDragGesturesAfterLongPress(

@@ -165,6 +165,36 @@ class LensMotionControllerTest {
      */
 
     /**
+     * 回归：纯点击松手（未拖动）必须收回按压材质，且**不得改动位置目标**。
+     *
+     * 早期实现把「收回材质」和「提交」绑在一起，于是纯点击不提交 = 也不收材质，
+     * 滑块会永久停在按下放大的状态（用户实测）。同时它也不能把正在滑动的透镜截停。
+     */
+    /**
+     * 回归：纯点击松手（未拖动）必须收回按压材质，且**不得改动位置目标**。
+     *
+     * 早期实现把「收回材质」和「提交」绑在一起，于是纯点击不提交 = 也不收材质，
+     * 滑块会永久停在按下放大的状态（用户实测）。同时它也不能把正在滑动的透镜截停。
+     */
+    @Test
+    fun releasePress_withoutDrag_collapsesButKeepsGlidingTarget() = runBlocking {
+        withController { controller ->
+            controller.settleAt(3f, pulse = false)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.index < 1.2f) delay(1)
+            }
+            controller.beginPress()
+            controller.releasePress()
+
+            assertEquals("位置目标不得被改动", 3f, controller.targetIndex, 1e-3f)
+            awaitSettled(controller)
+            assertTrue("按压材质必须收回", controller.pressure < 0.05f)
+            assertTrue("体积必须回到 1", abs(controller.scaleX - 1f) < 0.05f)
+            assertEquals("仍应滑到原目标", 3f, controller.index, 1e-3f)
+        }
+    }
+
+    /**
      * 回归：非法运动参数不得把帧循环钉死。
      *
      * `pulseVisibleThreshold` 若为 NaN/±Inf/>1，`pressure >= threshold` 永远不成立，

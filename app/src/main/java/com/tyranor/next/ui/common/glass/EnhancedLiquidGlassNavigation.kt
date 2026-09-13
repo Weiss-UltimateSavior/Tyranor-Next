@@ -322,9 +322,15 @@ fun EnhancedLiquidGlassNavigationBar(
                     }
                 },
                 // 只有真的拖动过才提交：纯点击（含滑动途中轻点）不改变选中项，
-                // 否则会把正在滑动的透镜截停并提交到它当时路过的槽位
+                // 否则会把正在滑动的透镜截停并提交到它当时路过的槽位。
+                // 但**无论是否提交都必须收回按压材质**，否则滑块会永久停在按下状态。
                 onRelease = { dragged ->
-                    if (dragged) commitIndex(controller.targetIndex)
+                    if (dragged) {
+                        commitIndex(controller.targetIndex)
+                    } else {
+                        controller.releasePress()
+                        currentReleaseTick()
+                    }
                 },
                 onCancel = {
                     // 取消不提交：回到当前选中项（正式产品语义，见文档 §6 D3）
@@ -474,10 +480,10 @@ fun EnhancedLiquidGlassNavigationBar(
                     shape = { AppNavCapsuleShape },
                     effects = barEffects,
                     highlight = barHighlight,
-                    // **必须显式传 null**：Backdrop 的 shadow 默认值是 Shadow.Default
-                    // （24dp 模糊、下移 4dp、黑 10%，且无 API 门槛），漏传就会在栏体周围
-                    // 出现一圈暗色轮廓。本项目不使用栏体投影（文档 §6 D11）。
-                    shadow = null,
+                    // 阴影与经典档（`LiquidGlassNavigationBar` 的 `Shadow.Default.copy(alpha = 0.8f)`，
+                    // 等效约 8% 黑）**完全一致**，两档观感统一（§6 D26）。参考实现那套
+                    // 「浅色 10% / 深色 20% 黑、24dp 模糊、下移 4dp」强 2.5 倍，仍不采用（§6 D11）。
+                    shadow = { Shadow.Default.copy(alpha = 0.8f) },
                     layerBlock = barPressLayer,
                     onDrawSurface = barSurface,
                 )

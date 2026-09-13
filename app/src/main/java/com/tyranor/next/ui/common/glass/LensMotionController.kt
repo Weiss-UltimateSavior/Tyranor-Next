@@ -137,6 +137,23 @@ internal class LensMotionController(
         ensureFrameLoop()
     }
 
+    /**
+     * 松手但**不提交**（纯点击，或滑动途中轻点）：
+     *
+     * 只把按压材质收回去，**不动位置目标**——否则会把正在滑动的透镜截停。
+     * 与 [settleAt] 的区别：后者既改目标、又要等位置到位才收材质；这里立即收，
+     * 位置该滑到哪还滑到哪。
+     */
+    fun releasePress() {
+        pulsePending = false
+        dragging = false
+        shrinkWhenSettled = false
+        pressureSpring.target = 0f
+        wideSpring.target = 1f
+        tallSpring.target = 1f
+        ensureFrameLoop()
+    }
+
     /** 拖动：按「索引增量」移动目标位置（像素→索引由调用方按槽宽换算）。 */
     fun dragBy(indexDelta: Float) {
         if (!indexDelta.isFinite()) return
