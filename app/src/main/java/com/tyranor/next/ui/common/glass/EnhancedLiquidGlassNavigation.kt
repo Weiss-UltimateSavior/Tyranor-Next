@@ -1,6 +1,9 @@
 package com.tyranor.next.ui.common.glass
 
+import android.content.Context
 import android.os.Build
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
@@ -134,13 +137,33 @@ fun EnhancedLiquidGlassNavigationBar(
     val scope = rememberCoroutineScope()
 
     // 宽度：参考单槽宽 × N 居中收窄；窗口放不下时夹取，再窄就直接不渲染（避免留一条残片）
-    // 触觉反馈：用 View.performHapticFeedback（无需 VIBRATE 权限，且自动遵循系统「触感反馈」开关）
+    // 触觉反馈：用 View.performHapticFeedback（无需 VIBRATE 权限，且自动遵循系统「触感反馈」开关）。
+    // 兜底：设备没有马达（或查询异常）时**完全不触发**，不做无意义的调用。
     val hapticView = LocalView.current
-    val tapTick = remember(hapticView) {
-        { hapticView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
+    val hapticSupported = remember(hapticView) {
+        val context = hapticView.context
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)
+                ?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+        runCatching { vibrator?.hasVibrator() == true }.getOrDefault(false)
     }
-    val releaseTick = remember(hapticView) {
-        { hapticView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) }
+    val tapTick = remember(hapticView, hapticSupported) {
+        if (hapticSupported) {
+            { hapticView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
+        } else {
+            {}
+        }
+    }
+    val releaseTick = remember(hapticView, hapticSupported) {
+        if (hapticSupported) {
+            { hapticView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) }
+        } else {
+            {}
+        }
     }
     val currentTapTick by rememberUpdatedState(tapTick)
 
@@ -148,7 +171,9 @@ fun EnhancedLiquidGlassNavigationBar(
     val windowWidthDp = with(density) {
         LocalWindowInfo.current.containerSize.width.toDp()
     }.takeIf { it > 0.dp } ?: configuration.screenWidthDp.dp
-    val barWidth = spec.clampedBarWidth(tabs, windowWidthDp)
+    // 平板等宽屏拉伸铺满（与原版液态玻璃导航一致），手机保持参考单槽宽度居中
+    val stretchBar = configuration.screenWidthDp >= WideScreenWidthDp
+    val barWidth = spec.clampedBarWidth(tabs, windowWidthDp, stretch = stretchBar)
     if (barWidth <= spec.minRenderableBarWidth) return
 
     val blurEnabled = capabilities.supportsBlur
@@ -191,24 +216,11 @@ fun EnhancedLiquidGlassNavigationBar(
     // 拖动释放已经落到目标槽位；用显式标记判重，避免 settleAt 再补一次按压脉冲
     var indexCommittedByDrag by remember { mutableStateOf<Int?>(null) }
 
-    // 纯按住（未拖动）松手：等回弹动画结束再给一次短震动
-    var pendingHoldReleaseTick by remember { mutableStateOf(false) }
-    LaunchedEffect(controller.isAnimating) {
-        if (!controller.isAnimating && pendingHoldReleaseTick) {
-            pendingHoldReleaseTick = false
-            releaseTick()
-        }
-    }
-
     val commitIndex: (Float) -> Unit = remember(controller, scope, tabs) {
         { target ->
             val index = target.fastRoundToInt().fastCoerceIn(0, tabs - 1)
-            if (controller.hasDragged) {
-                // 拖动松手：材质回落的同时给反馈
-                releaseTick()
-            } else {
-                pendingHoldReleaseTick = true
-            }
+            // 松手立即反馈：拖动与纯按住一致，不做延迟（延迟会让「按下已选项」显得迟钝）
+            releaseTick()
             // 吸附到四舍五入后的槽位，并收起材质；pulse=false 表示不再补一次按压脉冲
             controller.settleAt(index.toFloat(), pulse = false)
             indexCommittedByDrag = index
@@ -554,6 +566,9 @@ fun EnhancedLiquidGlassNavigationBar(
         }
     }
 }
+
+/** 宽屏判定阈值（dp）：与项目既有 `isWideScreen()` 保持一致，宽屏时底栏拉伸铺满。 */
+private const val WideScreenWidthDp = 600
 
 /** 点击后等待滑块到位的上限：超时就不再补反馈（例如用户在滑动途中又点了别处）。 */
 private const val ArriveTimeoutMillis = 600L

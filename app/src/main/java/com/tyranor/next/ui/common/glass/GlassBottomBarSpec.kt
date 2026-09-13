@@ -79,12 +79,15 @@ data class GlassBottomBarSpec(
         tabMinWidth * tabsCount + barInnerPadding * 2
 
     /**
-     * 实际渲染宽度：自然宽度与可用窗口宽度取小，保证窗口再窄也不溢出（报告 §9 窄屏风险）。
-     * 纯函数，便于单元测试。
+     * 实际渲染宽度（纯函数，便于单元测试）：
+     * - 手机（[stretch] = false）：自然宽度与可用宽度取小，保持参考单槽比例并居中收窄；
+     * - 平板等宽屏（[stretch] = true）：拉伸铺满可用宽度，与原版「液态玻璃」导航一致，
+     *   避免在宽屏上缩成一条居中的短栏。
+     * 两种情况都不会超过可用宽度（报告 §9 窄屏风险）。
      */
-    fun clampedBarWidth(tabsCount: Int, windowWidth: Dp): Dp {
+    fun clampedBarWidth(tabsCount: Int, windowWidth: Dp, stretch: Boolean = false): Dp {
         val available = (windowWidth - hostHorizontalPadding * 2).coerceAtLeast(0.dp)
-        return minOf(naturalBarWidth(tabsCount), available)
+        return if (stretch) available else minOf(naturalBarWidth(tabsCount), available)
     }
 
     /** 可渲染下限：比这更窄时连左右内边距都放不下，调用方应放弃渲染而不是留一条残片。 */

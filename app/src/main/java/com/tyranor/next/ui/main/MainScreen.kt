@@ -133,10 +133,10 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()
-  val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
-  // 液态玻璃增强：只依赖父开关（圆角液态玻璃导航），任意外观风格下都生效
-  val liquidGlassEnhance by AppSettingsStore.liquidGlassEnhanceState.collectAsState()
-  val enhanceLiquidGlass = liquidGlass && liquidGlassEnhance
+  // 液态玻璃两档共用同一套宿主准备（录制采样层、转场重定向、底部留白）
+  val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS ||
+    navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED
+  val enhanceLiquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass
   val tabLabels = tabItems.map { stringResource(it.labelRes) }

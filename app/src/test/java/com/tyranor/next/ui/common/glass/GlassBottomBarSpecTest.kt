@@ -80,6 +80,14 @@ class GlassBottomBarSpecTest {
     }
 
     @Test
+    fun clampedBarWidth_stretchesOnWideScreens() {
+        // 平板/横屏：拉伸铺满可用宽度（与项目原有液态玻璃导航一致），不再缩成居中短栏
+        assertEquals(768.dp, spec.clampedBarWidth(tabsCount = 4, windowWidth = 800.dp, stretch = true))
+        // 手机：保持参考单槽宽度居中收窄
+        assertEquals(312.dp, spec.clampedBarWidth(tabsCount = 4, windowWidth = 800.dp, stretch = false))
+    }
+
+    @Test
     fun lightModeReadabilityDefaults_arePinned() {
         // 浅色档可读性适配（文档 §6 D15）：浅底上必须比深色档更实、描边更明确
         assertEquals(0.40f, spec.surfaceAlpha, 1e-6f)

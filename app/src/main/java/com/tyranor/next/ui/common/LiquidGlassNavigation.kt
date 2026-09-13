@@ -271,15 +271,12 @@ private fun LiquidGlassNavItemView(
 @Composable
 fun glassNavBottomInset(): Dp {
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
-    val enhanceLiquidGlass by AppSettingsStore.liquidGlassEnhanceState.collectAsState()
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
-    return when {
+    return when (navStyle) {
         // 增强档栏体自身占 64dp，宿主只再加底部 12dp
-        liquidGlass && enhanceLiquidGlass -> navBarInset + 76.dp
-        liquidGlass -> navBarInset + 88.dp
-        AppThemeColors.isGlass -> navBarInset + 88.dp
-        else -> 0.dp
+        AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED -> navBarInset + 76.dp
+        AppSettingsStore.NAV_STYLE_LIQUID_GLASS -> navBarInset + 88.dp
+        else -> if (AppThemeColors.isGlass) navBarInset + 88.dp else 0.dp
     }
 }
 

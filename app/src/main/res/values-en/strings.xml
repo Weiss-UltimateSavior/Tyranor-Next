@@ -32,10 +32,14 @@
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
     <string name="settings_tone_switch">Tone switch</string>
-    <string name="settings_liquid_glass_nav">Rounded liquid glass navigation</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
-    <string name="settings_liquid_glass_enhance">Liquid glass enhancement</string>
-    <string name="settings_liquid_glass_enhance_summary">Refraction lens with press and drag response (full effect on Android 13+)</string>
+    <string name="settings_nav_bar_title">Bottom navigation bar</string>
+    <string name="settings_nav_bar_default">Default</string>
+    <string name="settings_nav_bar_liquid_glass">Liquid glass</string>
+    <string name="settings_nav_bar_liquid_glass_enhanced">Liquid glass enhanced</string>
+    <string name="settings_nav_bar_desc_default">Material 3 navigation bar, takes layout height</string>
+    <string name="settings_nav_bar_desc_liquid_glass">Rounded glass surface, effective on Android 12 and above</string>
+    <string name="settings_nav_bar_desc_enhanced">Refraction lens with press and drag response (Android 13 and above only)</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>
 
     <string name="settings_update_latest">You are on the latest version</string>

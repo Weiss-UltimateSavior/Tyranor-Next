@@ -1,6 +1,7 @@
 package com.tyranor.next.core.settings
 
 import android.content.Context
+import android.os.Build
 import android.content.res.Configuration
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -77,11 +78,18 @@ object AppSettingsStore {
     /** 游戏排序：按标题中 【】/[] 标签内容分组。 */
     const val GAME_SORT_BRACKET_TAG = "bracket_tag"
 
-    /** 底部导航栏样式：默认。 */
+    /** 底部导航栏样式：默认（Material3 导航栏）。 */
     const val NAV_STYLE_DEFAULT = "default"
 
-    /** 底部导航栏样式：圆角液态玻璃（流体玻璃）。 */
+    /** 底部导航栏样式：液态玻璃（圆角玻璃栏，Android 12+ 生效）。 */
     const val NAV_STYLE_LIQUID_GLASS = "liquid_glass"
+
+    /** 底部导航栏样式：液态玻璃增强（三层采样 + 折射透镜，Android 13+ 才有完整效果）。 */
+    const val NAV_STYLE_LIQUID_GLASS_ENHANCED = "liquid_glass_enhanced"
+
+    /** 增强档需要 Android 13（API 33）的 RuntimeShader 折射能力；更低版本不提供该选项。 */
+    val supportsLiquidGlassEnhanced: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
     /** 外观风格：默认（现有主题）。 */
     const val APPEARANCE_STYLE_DEFAULT = "default"
@@ -97,11 +105,6 @@ object AppSettingsStore {
 
     /** 引擎页分类显示内存态：设置页切换后引擎页即时重组。 */
     val engineTabsState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_TABS_ENABLED)
-    /**
-     * 液态玻璃增强内存态：仅在 [NAV_STYLE_LIQUID_GLASS] 下有意义。
-     * 默认关闭（新选项默认隐藏、默认不启用），父开关关闭时由 [setNavStyle] 复位为 false。
-     */
-    val liquidGlassEnhanceState: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     /** 游戏排序内存态：设置页切换后游戏页可随重组读取。 */
     val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
@@ -109,19 +112,28 @@ object AppSettingsStore {
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
     val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
 
-    /** 首次组合时从持久化加载导航栏样式与液态玻璃增强到内存态（幂等）。 */
+    /** 首次组合时从持久化加载导航栏样式到内存态（幂等）。 */
     fun initNavStyle(c: Context) {
-        val style = getNavStyle(c)
-        navStyleState.value = style
-        // 增强档只在液态玻璃底栏下有意义：读取时归一化，避免「父项已关、子项仍为 true」的
-        // 历史状态在下次打开父项时被静默启用（同时消除冷启动瞬间两个 StateFlow 不同步）。
-        // 归一化结果同时写回磁盘（仅在不一致时写一次），使持久化值与界面状态始终一致。
-        val stored = getLiquidGlassEnhance(c)
-        val effective = stored && style == NAV_STYLE_LIQUID_GLASS
-        liquidGlassEnhanceState.value = effective
-        if (stored != effective) {
-            prefs(c).edit().putBoolean(KEY_LIQUID_GLASS_ENHANCE, effective).apply()
-        }
+        migrateLegacyEnhanceFlag(c)
+        navStyleState.value = getNavStyle(c)
+    }
+
+    /**
+     * 迁移：早期实现把「增强档」存成独立的 `liquid_glass_enhance` 布尔开关，
+     * 现已合并进 [KEY_NAV_STYLE] 的三态取值。这里做一次性升级并清掉旧键。
+     */
+    private fun migrateLegacyEnhanceFlag(c: Context) {
+        val p = prefs(c)
+        if (!p.getBoolean(KEY_LIQUID_GLASS_ENHANCE, false)) return
+        val stored = p.getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT)
+        p.edit()
+            .remove(KEY_LIQUID_GLASS_ENHANCE)
+            .apply {
+                if (stored == NAV_STYLE_LIQUID_GLASS) {
+                    putString(KEY_NAV_STYLE, NAV_STYLE_LIQUID_GLASS_ENHANCED)
+                }
+            }
+            .apply()
     }
 
     fun initLanguage(c: Context) {
@@ -156,37 +168,31 @@ object AppSettingsStore {
         languageState.value = normalized
     }
 
-    /** 当前底部导航栏样式（默认 / 液态玻璃）。 */
+    /** 当前底部导航栏样式（默认 / 液态玻璃 / 液态玻璃增强）。 */
     fun getNavStyle(c: Context): String =
-        prefs(c).getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT) ?: NAV_STYLE_DEFAULT
+        normalizeNavStyle(
+            stored = prefs(c).getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT),
+            enhancedSupported = supportsLiquidGlassEnhanced,
+        )
 
     fun setNavStyle(c: Context, style: String) {
-        // 「液态玻璃增强」只有在液态玻璃底栏开关打开时才具备开启条件：切回默认样式时一并
-        // 复位。两个 key 在**同一次** edit 事务里写入，避免进程在两次写之间被杀导致
-        // 「父项已关、子项仍为 true」的中间态落盘。
-        val resetEnhance = style != NAV_STYLE_LIQUID_GLASS
-        val editor = prefs(c).edit().putString(KEY_NAV_STYLE, style)
-        if (resetEnhance) {
-            editor.putBoolean(KEY_LIQUID_GLASS_ENHANCE, false)
-        }
-        editor.apply()
-        navStyleState.value = style
-        if (resetEnhance) {
-            liquidGlassEnhanceState.value = false
-        }
+        val normalized = normalizeNavStyle(style, supportsLiquidGlassEnhanced)
+        prefs(c).edit().putString(KEY_NAV_STYLE, normalized).apply()
+        navStyleState.value = normalized
     }
 
     /**
-     * 当前是否开启「液态玻璃增强」（默认 false）。
-     * 该值只描述用户选择；是否真正生效由调用方与 [getNavStyle] 共同判定。
+     * 导航样式归一化（纯函数，便于单元测试）：
+     * 未知值回退默认；增强档在不支持的版本（< Android 13）回退普通档——
+     * 这样即使从更新的设备备份恢复数据，旧设备也只会得到普通档而不是降级画面。
      */
-    fun getLiquidGlassEnhance(c: Context): Boolean =
-        prefs(c).getBoolean(KEY_LIQUID_GLASS_ENHANCE, false)
-
-    fun setLiquidGlassEnhance(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_LIQUID_GLASS_ENHANCE, enabled).apply()
-        liquidGlassEnhanceState.value = enabled
-    }
+    fun normalizeNavStyle(stored: String?, enhancedSupported: Boolean): String =
+        when (stored) {
+            NAV_STYLE_LIQUID_GLASS -> NAV_STYLE_LIQUID_GLASS
+            NAV_STYLE_LIQUID_GLASS_ENHANCED ->
+                if (enhancedSupported) NAV_STYLE_LIQUID_GLASS_ENHANCED else NAV_STYLE_LIQUID_GLASS
+            else -> NAV_STYLE_DEFAULT
+        }
 
     /** 当前外观风格（默认 / 玻璃）。 */
     fun getAppearanceStyle(c: Context): String =

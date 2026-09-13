@@ -69,23 +69,16 @@ internal class LensMotionController(
     private val speedSpring = Spring(0f, 300f, 0.5f, epsilon * 10f)
     private val glowSpring = Spring(0f, 300f, 0.5f, epsilon)
 
-    /** 本次按压是否发生过拖动（宿主据此决定触觉反馈时机：拖动松手立即反馈，纯按住等回弹结束）。 */
-    val hasDragged: Boolean get() = dragged
-
-    /** 是否仍在推进动画：静止后帧循环自动退出（宿主据此在回弹结束时给反馈）。 */
+    /** 是否仍在推进动画（静止后帧循环自动退出）：供宿主与测试判断当前是否需要等待。 */
     var isAnimating by mutableStateOf(false)
         private set
 
     private var shrinkWhenSettled = false
     private var lastIndex = initialIndex
     private var loopActive = false
-    private var pressed = false
-    private var dragged = false
 
     /** 手指按下：进入按压形态，并取消上一轮尚未完成的收材质。 */
     fun beginPress() {
-        pressed = true
-        dragged = false
         pressureSpring.target = 1f
         wideSpring.target = spec.pressedScale
         tallSpring.target = spec.pressedScale
@@ -95,7 +88,6 @@ internal class LensMotionController(
 
     /** 拖动：按「索引增量」移动目标位置（像素→索引由调用方按槽宽换算）。 */
     fun dragBy(indexDelta: Float) {
-        dragged = true
         targetIndex = (targetIndex + indexDelta).coerceIn(indexRange)
         positionSpring.target = targetIndex
         ensureFrameLoop()
