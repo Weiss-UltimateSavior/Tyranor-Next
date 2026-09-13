@@ -208,8 +208,8 @@ Column(fillMaxSize)                                // 页面根
 
 - **圆角豁免（液态玻璃 · 透镜底栏）**：应用设置「导航栏样式」选到「液态玻璃 · 透镜」后挂载的
   `ui/common/glass/EnhancedLiquidGlassNavigation.kt`（栏体 / 图标副本行 / 移动透镜三处）使用
-  `theme/AppShapes.kt` 的 `AppNavCapsuleShape`（胶囊，圆角 = 半高），复刻参考实现的连续胶囊轮廓
-  （用 `RoundedCornerShape(percent = 50)` 等价替代，原因见该常量注释），为有意设计。该豁免仅限该组件，其余组件不得援引。
+  `theme/AppShapes.kt` 的 `AppNavCapsuleShape`（胶囊，圆角 = 半高），复刻参考实现的连续胶囊轮廓，为有意设计。
+  **该组件内也必须统一引用 `AppNavCapsuleShape`，不得就地新建等价的圆角形状**；该豁免仅限该组件，其余组件不得援引。
 
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 

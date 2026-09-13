@@ -479,7 +479,11 @@ fun EnhancedLiquidGlassNavigationBar(
         }
         val copyHighlight: (() -> Highlight?)? = remember(blurEnabled, controller) {
             if (blurEnabled) {
-                { Highlight.Default.copy(alpha = controller.pressure) }
+                // 与透镜一致：压力为 0 时返回 null，Backdrop 才会跳过这层透明高光的离屏处理
+                {
+                    val p = controller.pressure
+                    if (p <= 0f) null else Highlight.Default.copy(alpha = p)
+                }
             } else {
                 null
             }

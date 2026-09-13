@@ -38,11 +38,31 @@ import kotlin.math.sqrt
 internal class LensMotionController(
     private val scope: CoroutineScope,
     initialIndex: Float,
-    private val indexRange: ClosedRange<Float>,
+    indexRange: ClosedRange<Float>,
     private val spec: GlassBottomBarSpec,
 ) {
+    /**
+     * 构造边界归一化后的索引范围：起止必须有限且有序。
+     *
+     * 逆序或含 NaN 的范围会让 `coerceIn` 直接抛 `IllegalArgumentException`，
+     * 因此这里退回单点范围而不是把非法值带进运行期。
+     */
+    private val safeRange: ClosedRange<Float> =
+        indexRange.takeIf {
+            it.start.isFinite() && it.endInclusive.isFinite() && it.start <= it.endInclusive
+        } ?: 0f..0f
+
+    /**
+     * 归一化后的初始索引：非有限值退回范围起点，越界值夹进范围。
+     *
+     * 若放任非有限初值进入 [lastIndex] 与速度链路，`rawSpeed` 会变成 NaN、
+     * 速度弹簧的目标也变成 NaN，`settled` 便永远不成立（帧循环不再结束）。
+     */
+    private val startIndex: Float =
+        if (initialIndex.isFinite()) initialIndex.coerceIn(safeRange) else safeRange.start
+
     // ---- 对外输出（Compose 快照态，供绘制/手势阶段读取）----
-    var index by mutableFloatStateOf(initialIndex)
+    var index by mutableFloatStateOf(startIndex)
         private set
     var pressure by mutableFloatStateOf(0f)
         private set
@@ -58,7 +78,7 @@ internal class LensMotionController(
         private set
 
     /** 目标索引：拖动过程中是「连续索引」，松手后四舍五入提交。 */
-    var targetIndex by mutableFloatStateOf(initialIndex)
+    var targetIndex by mutableFloatStateOf(startIndex)
         private set
 
     // ---- 运动参数兜底 ----
@@ -86,8 +106,7 @@ internal class LensMotionController(
         spec.releaseThreshold.safeMotionValue(1e-5f, 10f, GlassBottomBarSpec.Default.releaseThreshold),
         epsilon,
     )
-    private val positionSpring =
-        Spring(initialIndex.coerceIn(indexRange), 1000f, 1f, epsilon)
+    private val positionSpring = Spring(startIndex, 1000f, 1f, epsilon)
     private val pressureSpring = Spring(0f, 1000f, 1f, epsilon)
     private val wideSpring = Spring(1f, 250f, 0.6f, epsilon)
     private val tallSpring = Spring(1f, 250f, 0.7f, epsilon)
@@ -104,7 +123,7 @@ internal class LensMotionController(
         private set
 
     private var shrinkWhenSettled = false
-    private var lastIndex = initialIndex
+    private var lastIndex = startIndex
     private var loopActive = false
     private var pulsePending = false
     private var dragging = false
@@ -128,10 +147,10 @@ internal class LensMotionController(
             // 位移会累加在上一轮的目标上（例如 0→3 途中在 1.5 处抓住并左拖一格会提交到 2，
             // 而不是跟手语义期望的 0.5 → 吸附到 1）
             dragging = true
-            targetIndex = index.coerceIn(indexRange)
+            targetIndex = index.coerceIn(safeRange)
             positionSpring.target = targetIndex
         }
-        targetIndex = (targetIndex + indexDelta).coerceIn(indexRange)
+        targetIndex = (targetIndex + indexDelta).coerceIn(safeRange)
         positionSpring.target = targetIndex
         ensureFrameLoop()
     }
@@ -143,7 +162,7 @@ internal class LensMotionController(
     fun settleAt(target: Float, pulse: Boolean = true) {
         // 目标值必须有限：否则弹簧永远「未收敛」，帧循环会一直跑下去
         if (!target.isFinite()) return
-        targetIndex = target.coerceIn(indexRange)
+        targetIndex = target.coerceIn(safeRange)
         positionSpring.target = targetIndex
         pulsePending = pulse
         dragging = false
@@ -179,7 +198,7 @@ internal class LensMotionController(
     /** 单个子步的积分：推进六个弹簧并同步对外输出。 */
     private fun integrate(dt: Float) {
         positionSpring.step(dt)
-        index = positionSpring.value.coerceIn(indexRange)
+        index = positionSpring.value.coerceIn(safeRange)
 
         // 速度 = 位置每帧增量 / 时间，再除以归一化跨度（与参考实现的观感一致）
         val rawSpeed = ((index - lastIndex) / dt) / velocitySpan

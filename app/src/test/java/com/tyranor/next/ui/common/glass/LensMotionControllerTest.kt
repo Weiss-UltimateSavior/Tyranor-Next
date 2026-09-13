@@ -209,6 +209,40 @@ class LensMotionControllerTest {
         }
     }
 
+    /**
+     * 回归：构造参数本身非法时也不能把控制器带坏。
+     *
+     * - 逆序 / 含 NaN 的范围会让 `coerceIn` 抛异常；
+     * - 非有限的初值会污染 `lastIndex` → `rawSpeed` 变 NaN → 速度弹簧永不收敛，帧循环不结束。
+     */
+    @Test
+    fun malformedConstructorArgs_areNormalized() = runBlocking {
+        val cases = listOf(
+            0f to (0f..3f),
+            Float.NaN to (0f..3f),
+            Float.POSITIVE_INFINITY to (0f..3f),
+            -5f to (0f..3f),
+            9f to (0f..3f),
+            1f to (Float.NaN..3f),
+            1f to (3f..0f),
+            Float.NaN to (Float.NaN..Float.NaN),
+        )
+        for ((initial, range) in cases) {
+            withController(initialIndex = initial, indexRange = range) { controller ->
+                assertTrue(
+                    "初值 $initial / 范围 $range 归一化后必须有限",
+                    controller.index.isFinite() && controller.targetIndex.isFinite(),
+                )
+                controller.beginPress()
+                controller.dragBy(1f)
+                controller.settleAt(controller.targetIndex, pulse = false)
+                awaitSettled(controller)
+                assertTrue("输出必须有限", controller.index.isFinite() && controller.velocity.isFinite())
+                assertTrue("材质必须收起", controller.pressure < 0.05f)
+            }
+        }
+    }
+
     @Test
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
@@ -238,13 +272,15 @@ class LensMotionControllerTest {
     private suspend fun withController(
         frameNanos: Long = FrameNanos,
         spec: GlassBottomBarSpec = GlassBottomBarSpec.Default,
+        initialIndex: Float = 0f,
+        indexRange: ClosedRange<Float> = 0f..3f,
         block: suspend (LensMotionController) -> Unit,
     ) = coroutineScope {
             val scope = CoroutineScope(coroutineContext + ManualFrameClock(frameNanos))
             val controller = LensMotionController(
                 scope = scope,
-                initialIndex = 0f,
-                indexRange = 0f..3f,
+                initialIndex = initialIndex,
+                indexRange = indexRange,
                 spec = spec,
             )
             block(controller)
