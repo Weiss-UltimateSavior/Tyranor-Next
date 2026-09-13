@@ -366,11 +366,13 @@ object RpgSaveSync {
     /**
      * 覆盖较旧一方：**先**把赢家内容写入目标同目录临时文件，**再**留底输家，**最后**原子替换。
      *
-     * 顺序即安全性（PR 审查：失败路径绝不允许出现「目标缺失」）：
+     * 顺序即安全性（PR 审查：失败路径绝不允许出现无法恢复的「目标缺失」）：
      * - 临时文件写入失败 → 输家与目标都原样保留；
      * - 留底失败（[mustPreserve] 时抛错）→ 临时文件清理、目标原样保留；
-     * - 原子替换失败 → 输家已留底（安全），目标仍是旧内容（完好），下一轮基于完好两侧重试。
-     * 任何失败路径下两侧目录 + 留底目录都保有完整数据，由调用方 keepPrevious 保住清单历史。
+     * - 原子替换失败 → 留底**回滚**（备份移回原位，恢复「目标在原位」的不变量；
+     *   回滚也失败时数据仍在留底目录，配合调用方 keepPrevious 保住清单历史，下一轮重试）。
+     * 注意留底之后、替换成功之前，输家数据在留底目录而非目标路径——故替换失败必须回滚，
+     * 不能假定目标路径仍有旧内容（审查跟进 #5）。
      */
     @Throws(IOException::class)
     private fun overwriteWithPreserve(
@@ -384,11 +386,22 @@ object RpgSaveSync {
         val tmp = writeTmpCopy(winner, loser)
         try {
             // 2. 留底输家（失败且必须留底时中止，目标原样保留）
-            if (mustPreserve && !preserveLoser(loser, loserDir, standardSide = preserveLoserSide)) {
-                throw IOException("cannot preserve ${loser.absolutePath} before overwrite")
+            val backup = if (mustPreserve) preserveLoser(loser, loserDir, standardSide = preserveLoserSide) else null
+            try {
+                // 3. 原子替换（绝不先删目标）
+                replaceAtomically(tmp, loser, winner)
+            } catch (t: Throwable) {
+                // 替换失败：把留底放回原位，恢复「目标在原位」的不变量（此时输家原路径为空）
+                if (backup != null) {
+                    runCatching {
+                        if (!backup.renameTo(loser)) {
+                            backup.copyTo(loser, overwrite = true)
+                            backup.delete()
+                        }
+                    }
+                }
+                throw t
             }
-            // 3. 原子替换（绝不先删目标；失败时目标保持旧内容）
-            replaceAtomically(tmp, loser, winner)
         } finally {
             discardTmp(tmp)
         }
@@ -468,12 +481,16 @@ object RpgSaveSync {
      * 刷新成「较新」而误删唯一的手机存档。standardSide=true 归入 `<标准侧>/deleted/`，
      * 否则归入 Tyranor 侧 `original/`。
      *
-     * @return 是否已成功留底；false 时调用方中止覆盖并计入 failed，绝不覆盖未留底的较旧副本。
+     * @return 留底文件（供替换失败时回滚）；输家不存在（无留底必要）返回 null；
+     *   留底失败抛 [IOException]，由调用方中止覆盖——绝不覆盖未留底的较旧副本。
      */
-    private fun preserveLoser(loser: File, sideDir: File, standardSide: Boolean): Boolean {
-        if (!loser.exists()) return true
+    @Throws(IOException::class)
+    private fun preserveLoser(loser: File, sideDir: File, standardSide: Boolean): File? {
+        if (!loser.exists()) return null
         val dir = if (standardSide) File(sideDir, DELETED_DIR) else File(sideDir, RpgSaveFormat.ORIGINAL_DIR)
-        if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
+        if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) {
+            throw IOException("cannot create backup dir ${dir.absolutePath}")
+        }
         var target = File(dir, loser.name)
         var index = 1
         while (target.exists()) {
@@ -482,12 +499,17 @@ object RpgSaveSync {
             target = File(dir, if (dot > 0) name.substring(0, dot) + "_" + index + name.substring(dot) else name + "_" + index)
             index++
         }
-        if (loser.renameTo(target)) return true
-        // 跨设备/被占用时退回复制；必须确认副本完整落盘（存在且字节数一致）才算成功
-        return runCatching {
+        if (loser.renameTo(target)) return target
+        // 跨设备/被占用时退回复制；必须确认副本完整落盘（存在且字节数一致）且源已移走才算成功
+        val copied = runCatching {
             loser.copyTo(target, overwrite = false)
-            target.isFile && target.length() == loser.length()
+            target.isFile && target.length() == loser.length() && loser.delete()
         }.getOrDefault(false)
+        if (!copied) {
+            runCatching { target.delete() }
+            throw IOException("cannot preserve ${loser.absolutePath} into ${dir.absolutePath}")
+        }
+        return target
     }
 
     /** 把标准文件移入 `<standardDir>/deleted/`；重名追加 `_1`/`_2`…。仅当源确实已移走才算成功。 */

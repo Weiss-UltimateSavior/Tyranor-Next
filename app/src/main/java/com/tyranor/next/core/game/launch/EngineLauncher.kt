@@ -309,6 +309,9 @@ object EngineLauncher {
      */
     private val perGameLocks = ConcurrentHashMap<String, Any>()
 
+    // 不做淘汰（审查跟进 #3）：锁对象被占用时移除会导致同一 URI 出现两把锁、互斥失效；
+    // 条目数以游戏库规模为上界（每条仅一个空对象引用），内存代价可忽略，常驻换取正确性。
+
     private fun perGameLock(gameUri: String): Any = perGameLocks.computeIfAbsent(gameUri) { Any() }
 
     /** 该游戏当前是否忙碌（引擎会话运行中或启动流程进行中）；忙碌时禁止一切存档修改。 */
@@ -338,8 +341,11 @@ object EngineLauncher {
 
     /**
      * MV/MZ 检测/转化的目录组：首选引擎生效存档目录（独立存档开关决定，与同步侧一致，
-     * GameSaveManager.resolveSaveLocation 同源），非独立存档时附加历史 `Savedata/` 兼容扫描。
-     * 独立存档开启但外部目录不可用（存储未挂载）时返回 null——绝不能回退游戏根目录：
+     * GameSaveManager.resolveSaveLocation 同源），并附加兼容扫描目录：
+     * - 非独立存档：历史 `Savedata/`；
+     * - 独立存档：游戏根 `savedata/` + `Savedata/`（用户从非独立切到独立后，旧标准档
+     *   仍能被检测/转化进生效目录——引擎只读外部目录，转化是唯一的迁移通道）。
+     * 独立存档开启但外部目录不可用（存储未挂载）时返回 null——绝不能把游戏根当生效目录：
      * 引擎根本不读那里，转化会写进永远不被读取的位置（PR 审查 B1）。
      */
     private fun effectiveRpgSaveScanDirs(context: Context, game: ScanGame, rootPath: String): List<File>? {
@@ -351,7 +357,7 @@ object EngineLauncher {
             settings.webScopedSaveDir,
         ) ?: return null
         return if (settings.webScopedSaveDir) {
-            listOf(effective)
+            listOf(effective, File(rootPath, "savedata"), File(rootPath, "Savedata"))
         } else {
             listOf(effective, File(rootPath, "Savedata"))
         }

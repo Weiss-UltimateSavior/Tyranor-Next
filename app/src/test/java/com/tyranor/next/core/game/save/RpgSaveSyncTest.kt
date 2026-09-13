@@ -452,6 +452,25 @@ class RpgSaveSyncTest {
     }
 
     @Test
+    fun manifestWithNonBooleanExistsFlagAbortsSync() {
+        // 审查跟进 #1：std_x/tyr_x 字段存在但类型不是 Boolean 属于损坏清单——
+        // 静默回退会让 tyr_x 误成 false，把「已删除」当「新建」而复活
+        val (standard, tyranor) = dirs()
+        val stateDir = temporaryFolder.newFolder("state")
+        val store = RpgSaveSyncState(stateDir)
+        standard.writeAt("file1.rpgsave", "V1", 1_000)
+        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        overwriteManifest(stateDir, """{"slots":{"file1":{"std":1000,"tyr":1000,"tyr_x":"yes"}}}""")
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        assertEquals(1, result.failed)
+        assertEquals(0, result.changed)
+    }
+
+    @Test
     fun manifestWithMissingRequiredFieldAbortsSync() {
         // 槽位条目缺 std/tyr 必需字段：视为损坏，中止同步
         val (standard, tyranor) = dirs()

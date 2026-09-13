@@ -62,14 +62,25 @@ class RpgSaveSyncState(private val storeDir: File) {
                         if (!entry.has(KEY_STANDARD) || !entry.has(KEY_TYRANOR)) {
                             return@runCatching LoadResult.Unreadable
                         }
+                        // 存在标记：字段缺失（旧清单）按 mtime>0 推导；字段存在但类型不是
+                        // Boolean 属于损坏清单——静默回退会让 tyr_x 误成 false，把「已删除」
+                        // 当「新建」而复活（审查跟进 #1），必须中止同步
+                        fun existsFlag(key: String, mtime: Long): Boolean {
+                            if (!entry.has(key)) return mtime > 0L
+                            return when (val v = entry.get(key)) {
+                                is Boolean -> v
+                                else -> throw org.json.JSONException("manifest slot flag $key has non-boolean type: $v")
+                            }
+                        }
+                        val stdMtime = entry.getLong(KEY_STANDARD)
+                        val tyrMtime = entry.getLong(KEY_TYRANOR)
                         put(
                             slot,
                             SlotState(
-                                standardMtime = entry.getLong(KEY_STANDARD),
-                                tyranorMtime = entry.getLong(KEY_TYRANOR),
-                                // 旧清单无显式标记：按 mtime>0 推导
-                                standardExists = entry.optBoolean(KEY_STANDARD_EXISTS, entry.getLong(KEY_STANDARD) > 0L),
-                                tyranorExists = entry.optBoolean(KEY_TYRANOR_EXISTS, entry.getLong(KEY_TYRANOR) > 0L),
+                                standardMtime = stdMtime,
+                                tyranorMtime = tyrMtime,
+                                standardExists = existsFlag(KEY_STANDARD_EXISTS, stdMtime),
+                                tyranorExists = existsFlag(KEY_TYRANOR_EXISTS, tyrMtime),
                             ),
                         )
                     }

@@ -88,7 +88,7 @@ suspend fun ComponentActivity.awaitRpgSaveFormatChoice(
     hashedCount: Int,
 ): Boolean = suspendCancellableCoroutine { continuation ->
     setContent {
-        // 主题最外层（AGENT.md 界面规范）：透明蹦 trampoline 也必须挂主题，否则 typography/primary 回落默认
+        // 主题最外层（AGENT.md 界面规范）：透明蹦床 trampoline 也必须挂主题，否则 typography/primary 回落默认
         TyranorNextTheme {
             ProvideAppLocale {
                 var showDialog by remember { mutableStateOf(true) }

@@ -255,55 +255,59 @@ class GameSaveManager(private val context: Context) {
      * 删除游戏时清理应用内数据（独立/镜像存档目录），
      * 仅触碰应用专属存储，绝不删除游戏目录内的任何文件。
      */
-    fun cleanupAppData(game: ScanGame) = synchronized(RpgSaveSyncState.INTEROP_LOCK) {
-        // 与存档互通同步互斥（H3）：删除独立存档目录与并发同步交错会让同步复制进一个
-        // 正被删除的目录。clear/remove 内部同锁，可重入。
-        // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
-        // 为键。若随游戏删除留下旧清单，同一 uri 的游戏被重新添加后，标准侧存档会被误判为
-        // 「Tyranor 侧已删除」而移入 deleted/；待回写记录则会在下次前台时指向已删除的游戏。
-        RpgSaveSyncState.forContext(appContext).clear(game.uri)
-        RpgSavePendingStore.remove(appContext, game.uri)
-        val root = resolveGameDirectory(game) ?: return
-        val targets = when (game.engine) {
-            EngineType.KIRIKIRI -> {
-                val internal = appContext.filesDir ?: return
-                val targetList = mutableListOf(
-                    File(File(internal, "krkr_mirror"), GamePathUtils.safeSaveName(root)),
-                )
-                appContext.getExternalFilesDir(null)?.let { external ->
-                    targetList += File(File(external, "save"), GamePathUtils.safeSaveName(root))
-                }
-                if (GamePathUtils.isRemovableStoragePath(root)) {
-                    // 可移动存储走 KrSafMirror：清理镜像树与 SAF 索引，避免内部存储持续膨胀
-                    targetList += bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title)
-                    targetList += File(
-                        File(appContext.noBackupFilesDir, "krkr_saf_index"),
-                        "${bridge.KrSafMirror.mirrorKey(game.uri, root)}.idx",
+    fun cleanupAppData(game: ScanGame) {
+        // 块体（审查跟进 #2）：表达式体 + 内部 return 会触发 KTLC-288 前向兼容告警，
+        // Kotlin 2.5 起将变为错误
+        synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+            // 与存档互通同步互斥（H3）：删除独立存档目录与并发同步交错会让同步复制进一个
+            // 正被删除的目录。clear/remove 内部同锁，可重入。
+            // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
+            // 为键。若随游戏删除留下旧清单，同一 uri 的游戏被重新添加后，标准侧存档会被误判为
+            // 「Tyranor 侧已删除」而移入 deleted/；待回写记录则会在下次前台时指向已删除的游戏。
+            RpgSaveSyncState.forContext(appContext).clear(game.uri)
+            RpgSavePendingStore.remove(appContext, game.uri)
+            val root = resolveGameDirectory(game) ?: return
+            val targets = when (game.engine) {
+                EngineType.KIRIKIRI -> {
+                    val internal = appContext.filesDir ?: return
+                    val targetList = mutableListOf(
+                        File(File(internal, "krkr_mirror"), GamePathUtils.safeSaveName(root)),
                     )
+                    appContext.getExternalFilesDir(null)?.let { external ->
+                        targetList += File(File(external, "save"), GamePathUtils.safeSaveName(root))
+                    }
+                    if (GamePathUtils.isRemovableStoragePath(root)) {
+                        // 可移动存储走 KrSafMirror：清理镜像树与 SAF 索引，避免内部存储持续膨胀
+                        targetList += bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root, game.title)
+                        targetList += File(
+                            File(appContext.noBackupFilesDir, "krkr_saf_index"),
+                            "${bridge.KrSafMirror.mirrorKey(game.uri, root)}.idx",
+                        )
+                    }
+                    targetList
                 }
-                targetList
+                EngineType.ONS -> {
+                    val external = appContext.getExternalFilesDir(null) ?: return
+                    listOf(File(File(external, "save"), File(root).name))
+                }
+                EngineType.TYRANO,
+                EngineType.RPG_MV,
+                EngineType.RPG_MZ -> {
+                    val external = appContext.getExternalFilesDir(null) ?: return
+                    listOf(File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root)))
+                }
+                else -> return
             }
-            EngineType.ONS -> {
-                val external = appContext.getExternalFilesDir(null) ?: return
-                listOf(File(File(external, "save"), File(root).name))
+            val appInternal = appContext.filesDir.canonicalPath + File.separator
+            // KrSafMirror 镜像根（games/）与 SAF 索引（no_backup/）位于 filesDir 的父目录（应用数据根）下
+            val appDataRoot = appContext.filesDir.parentFile?.canonicalPath?.let { it + File.separator }
+            val appExternal = appContext.getExternalFilesDir(null)?.canonicalPath
+            targets.forEach { target ->
+                val inAppStorage = target.canonicalPath.startsWith(appInternal) ||
+                    (appDataRoot != null && target.canonicalPath.startsWith(appDataRoot)) ||
+                    (appExternal != null && target.canonicalPath.startsWith(appExternal + File.separator))
+                if (inAppStorage) target.deleteRecursively()
             }
-            EngineType.TYRANO,
-            EngineType.RPG_MV,
-            EngineType.RPG_MZ -> {
-                val external = appContext.getExternalFilesDir(null) ?: return
-                listOf(File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root)))
-            }
-            else -> return
-        }
-        val appInternal = appContext.filesDir.canonicalPath + File.separator
-        // KrSafMirror 镜像根（games/）与 SAF 索引（no_backup/）位于 filesDir 的父目录（应用数据根）下
-        val appDataRoot = appContext.filesDir.parentFile?.canonicalPath?.let { it + File.separator }
-        val appExternal = appContext.getExternalFilesDir(null)?.canonicalPath
-        targets.forEach { target ->
-            val inAppStorage = target.canonicalPath.startsWith(appInternal) ||
-                (appDataRoot != null && target.canonicalPath.startsWith(appDataRoot)) ||
-                (appExternal != null && target.canonicalPath.startsWith(appExternal + File.separator))
-            if (inAppStorage) target.deleteRecursively()
         }
     }
 
