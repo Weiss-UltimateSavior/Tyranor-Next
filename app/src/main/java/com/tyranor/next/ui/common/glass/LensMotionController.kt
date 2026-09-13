@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
@@ -60,8 +61,31 @@ internal class LensMotionController(
     var targetIndex by mutableFloatStateOf(initialIndex)
         private set
 
+    // ---- 运动参数兜底 ----
+    // 这几个值直接参与「是否已收敛」的判定或充当除数：一旦是 NaN/±Inf/0，收敛判定永远不成立
+    // （帧循环永不退出）或输出直接变成 NaN，因此在控制器初始化时统一归一化为合法值。
+    private val pulseVisibleThreshold =
+        spec.pulseVisibleThreshold.safeMotionValue(0f, 0.99f, GlassBottomBarSpec.Default.pulseVisibleThreshold)
+    private val velocitySpan =
+        spec.velocityNormalizationSpan.safeMotionValue(0.01f, 1_000f, GlassBottomBarSpec.Default.velocityNormalizationSpan)
+    private val pressedScale =
+        spec.pressedScale.safeMotionValue(1f, 10f, GlassBottomBarSpec.Default.pressedScale)
+
     // ---- 内部弹簧与积分状态 ----
-    private val epsilon = spec.visibilityThreshold
+    private val epsilon =
+        spec.visibilityThreshold.safeMotionValue(1e-5f, 1f, GlassBottomBarSpec.Default.visibilityThreshold)
+
+    /**
+     * 「位置已足够接近目标」的收起阈值。
+     *
+     * 必须 **≥ [epsilon]**：位置弹簧在 `|value − target| < epsilon` 时就判定自己已静止，
+     * 若收起阈值比它还小（例如 0），弹簧静止后 `|index − target| < releaseThreshold` 依然不成立，
+     * 收起分支永远等不到 → `allSettled()` 恒为 false → 帧循环不再退出。
+     */
+    private val releaseThreshold = max(
+        spec.releaseThreshold.safeMotionValue(1e-5f, 10f, GlassBottomBarSpec.Default.releaseThreshold),
+        epsilon,
+    )
     private val positionSpring =
         Spring(initialIndex.coerceIn(indexRange), 1000f, 1f, epsilon)
     private val pressureSpring = Spring(0f, 1000f, 1f, epsilon)
@@ -83,8 +107,8 @@ internal class LensMotionController(
     fun beginPress() {
         pulsePending = false
         pressureSpring.target = 1f
-        wideSpring.target = spec.pressedScale
-        tallSpring.target = spec.pressedScale
+        wideSpring.target = pressedScale
+        tallSpring.target = pressedScale
         shrinkWhenSettled = false
         ensureFrameLoop()
     }
@@ -109,8 +133,8 @@ internal class LensMotionController(
         pulsePending = pulse
         if (pulse) {
             pressureSpring.target = 1f
-            wideSpring.target = spec.pressedScale
-            tallSpring.target = spec.pressedScale
+            wideSpring.target = pressedScale
+            tallSpring.target = pressedScale
         }
         shrinkWhenSettled = true
         ensureFrameLoop()
@@ -142,18 +166,18 @@ internal class LensMotionController(
         index = positionSpring.value.coerceIn(indexRange)
 
         // 速度 = 位置每帧增量 / 时间，再除以归一化跨度（与参考实现的观感一致）
-        val rawSpeed = ((index - lastIndex) / dt) / spec.velocityNormalizationSpan
+        val rawSpeed = ((index - lastIndex) / dt) / velocitySpan
         lastIndex = index
         speedSpring.target = rawSpeed
         speedSpring.step(dt)
         velocity = speedSpring.value
 
         // 本次还欠一个「按压脉冲」时，先等压力涨到可见阈值再收（目标本来就在位也能看见按压）
-        if (pulsePending && pressureSpring.value >= spec.pulseVisibleThreshold) {
+        if (pulsePending && pressureSpring.value >= pulseVisibleThreshold) {
             pulsePending = false
         }
         // 松手后：位置足够接近目标才收材质，避免「还没吸附就缩回去」
-        if (shrinkWhenSettled && !pulsePending && abs(index - targetIndex) < spec.releaseThreshold) {
+        if (shrinkWhenSettled && !pulsePending && abs(index - targetIndex) < releaseThreshold) {
             pressureSpring.target = 0f
             wideSpring.target = 1f
             tallSpring.target = 1f
@@ -239,3 +263,12 @@ internal class LensMotionController(
         const val MaxCompensatedSeconds = 1f / 15f
     }
 }
+
+/**
+ * 运动参数兜底：非有限值回退到调用方给出的默认值，有限值夹取到 `[min, max]`。
+ *
+ * 公共组件接受外部传入的 [GlassBottomBarSpec]，不能让 NaN/±Inf/0 这类阈值把帧循环钉死
+ * （收敛判定永远不成立）或让输出变成 NaN。
+ */
+private fun Float.safeMotionValue(min: Float, max: Float, fallback: Float): Float =
+    if (isFinite()) coerceIn(min, max) else fallback

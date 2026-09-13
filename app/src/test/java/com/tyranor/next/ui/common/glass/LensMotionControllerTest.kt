@@ -123,6 +123,61 @@ class LensMotionControllerTest {
         }
     }
 
+    /**
+     * 回归：非法运动参数不得把帧循环钉死。
+     *
+     * `pulseVisibleThreshold` 若为 NaN/±Inf/>1，`pressure >= threshold` 永远不成立，
+     * `pulsePending` 与 `shrinkWhenSettled` 就永远清不掉，`allSettled()` 恒为 false
+     * → 帧循环一直跑下去。控制器初始化时必须把这些值归一化。
+     */
+    @Test
+    fun malformedPulseThreshold_stillSettles() = runBlocking {
+        val bad = listOf(
+            Float.NaN,
+            Float.POSITIVE_INFINITY,
+            Float.NEGATIVE_INFINITY,
+            1f,
+            2f,
+            -1f,
+        )
+        for (value in bad) {
+            withController(spec = GlassBottomBarSpec.Default.copy(pulseVisibleThreshold = value)) { controller ->
+                controller.settleAt(0f) // 目标已在位 + 需要脉冲：最容易卡住的组合
+                awaitSettled(controller)
+                assertTrue(
+                    "阈值 $value 下材质必须收起",
+                    controller.pressure < 0.05f,
+                )
+                assertTrue("输出必须有限（阈值 $value）", controller.index.isFinite())
+            }
+        }
+    }
+
+    /** 回归：其它参与收敛判定/作除数的运动参数同样要兜底。 */
+    @Test
+    fun malformedMotionParams_stillSettle() = runBlocking {
+        val specs = listOf(
+            GlassBottomBarSpec.Default.copy(visibilityThreshold = Float.NaN),
+            GlassBottomBarSpec.Default.copy(visibilityThreshold = 0f),
+            GlassBottomBarSpec.Default.copy(releaseThreshold = Float.NaN),
+            GlassBottomBarSpec.Default.copy(releaseThreshold = -1f),
+            GlassBottomBarSpec.Default.copy(velocityNormalizationSpan = 0f),
+            GlassBottomBarSpec.Default.copy(velocityNormalizationSpan = Float.NaN),
+            GlassBottomBarSpec.Default.copy(pressedScale = Float.NaN),
+            GlassBottomBarSpec.Default.copy(pressedScale = Float.POSITIVE_INFINITY),
+        )
+        for (spec in specs) {
+            withController(spec = spec) { controller ->
+                controller.beginPress()
+                controller.dragBy(1.5f)
+                controller.settleAt(2f, pulse = false)
+                awaitSettled(controller)
+                assertTrue("输出必须有限", controller.index.isFinite() && controller.pressure.isFinite())
+                assertTrue("材质必须收起", controller.pressure < 0.05f)
+            }
+        }
+    }
+
     @Test
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
@@ -148,6 +203,7 @@ class LensMotionControllerTest {
 
     private suspend fun withController(
         frameNanos: Long = FrameNanos,
+        spec: GlassBottomBarSpec = GlassBottomBarSpec.Default,
         block: suspend (LensMotionController) -> Unit,
     ) = coroutineScope {
             val scope = CoroutineScope(coroutineContext + ManualFrameClock(frameNanos))
@@ -155,7 +211,7 @@ class LensMotionControllerTest {
                 scope = scope,
                 initialIndex = 0f,
                 indexRange = 0f..3f,
-                spec = GlassBottomBarSpec.Default,
+                spec = spec,
             )
             block(controller)
         }
