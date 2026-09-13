@@ -2,10 +2,13 @@ package com.tyranor.next.ui.common.glass
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -29,6 +32,8 @@ import kotlin.math.sqrt
  * | [scaleX] / [scaleY] | 按压体积（横向先起、纵向略慢） | 250 / 0.6、250 / 0.7 |
  * | [velocity] | 索引速度估计（带符号），驱动形变 | 300 / 0.5 |
  * | [glow] | 按压光斑亮度（比体积略滞后） | 300 / 0.5 |
+ * | [hold] | 长按膨胀进度（按住不动后爬升） | 380 / 0.85 |
+ * | [elastic] | 按压弹性量（松手回弹，ζ<1 形成 Q 弹） | 380 / 0.42 |
  *
  * 速度不是手指 px/s，而是**位置每帧增量的平滑值**再按 [GlassBottomBarSpec.velocityNormalizationSpan]
  * 归一化——与参考实现的观感一致（快速往返时先拉长再收缩，左右方向形变不对称）。
@@ -55,6 +60,14 @@ internal class LensMotionController(
     var glow by mutableFloatStateOf(0f)
         private set
 
+    /** 长按膨胀进度 0..1：按住不动 [GlassBottomBarSpec.holdDelayMillis] 后开始爬升。 */
+    var hold by mutableFloatStateOf(0f)
+        private set
+
+    /** 按压弹性量：按住为 1，松手用欠阻尼弹簧回到 0（回弹时会短暂冲过 0，形成 Q 弹）。 */
+    var elastic by mutableFloatStateOf(0f)
+        private set
+
     /** 目标索引：拖动过程中是「连续索引」，松手后四舍五入提交。 */
     var targetIndex by mutableFloatStateOf(initialIndex)
         private set
@@ -67,25 +80,63 @@ internal class LensMotionController(
     private val tallSpring = Spring(1f, 250f, 0.7f, epsilon)
     private val speedSpring = Spring(0f, 300f, 0.5f, epsilon * 10f)
     private val glowSpring = Spring(0f, 300f, 0.5f, epsilon)
+    private val holdSpring = Spring(0f, 380f, 0.85f, epsilon)
+    // 欠阻尼（ζ<1）：松手后会冲过目标再回来，即「Q 弹」
+    private val elasticSpring = Spring(0f, 380f, 0.42f, epsilon)
 
-    /** 是否仍在推进动画：静止后帧循环自动退出（宿主可据此判断是否需要等待）。 */
-    val isAnimating: Boolean get() = loopActive
+    /** 本次按压是否发生过拖动（宿主据此决定反馈时机：拖动松手立即反馈，纯按住等回弹结束）。 */
+    val hasDragged: Boolean get() = dragged
+
+    /** 是否仍在推进动画：静止后帧循环自动退出（宿主据此在回弹结束时给反馈）。 */
+    var isAnimating by mutableStateOf(false)
+        private set
 
     private var shrinkWhenSettled = false
     private var lastIndex = initialIndex
     private var loopActive = false
+    private var pressed = false
+    private var dragged = false
+    private var holdJob: Job? = null
 
     /** 手指按下：进入按压形态，并取消上一轮尚未完成的收材质。 */
     fun beginPress() {
+        pressed = true
+        dragged = false
         pressureSpring.target = 1f
         wideSpring.target = spec.pressedScale
         tallSpring.target = spec.pressedScale
+        elasticSpring.target = 1f
         shrinkWhenSettled = false
+        ensureFrameLoop()
+        // 按住不动到阈值后开始膨胀；一旦开始拖动就取消（拖动不改手感）
+        holdJob?.cancel()
+        holdJob = scope.launch {
+            delay(spec.holdDelayMillis)
+            if (pressed && !dragged) {
+                holdSpring.target = 1f
+                ensureFrameLoop()
+            }
+        }
+    }
+
+    /** 松手：取消长按膨胀并让弹性量回弹。 */
+    private fun endPress() {
+        pressed = false
+        holdJob?.cancel()
+        holdJob = null
+        holdSpring.target = 0f
+        elasticSpring.target = 0f
         ensureFrameLoop()
     }
 
     /** 拖动：按「索引增量」移动目标位置（像素→索引由调用方按槽宽换算）。 */
     fun dragBy(indexDelta: Float) {
+        if (!dragged) {
+            dragged = true
+            holdJob?.cancel()
+            holdJob = null
+            holdSpring.target = 0f
+        }
         targetIndex = (targetIndex + indexDelta).coerceIn(indexRange)
         positionSpring.target = targetIndex
         ensureFrameLoop()
@@ -102,7 +153,12 @@ internal class LensMotionController(
             pressureSpring.target = 1f
             wideSpring.target = spec.pressedScale
             tallSpring.target = spec.pressedScale
+            elasticSpring.target = 1f
         }
+        holdJob?.cancel()
+        holdJob = null
+        holdSpring.target = 0f
+        elasticSpring.target = 0f
         shrinkWhenSettled = true
         ensureFrameLoop()
     }
@@ -125,6 +181,7 @@ internal class LensMotionController(
             wideSpring.target = 1f
             tallSpring.target = 1f
             shrinkWhenSettled = false
+            if (pressed) endPress()
         }
         pressureSpring.step(dt)
         wideSpring.step(dt)
@@ -132,9 +189,13 @@ internal class LensMotionController(
         // 光斑跟随按压的目标值，但用自己的弹簧推进（因此略滞后于体积）
         glowSpring.target = pressureSpring.target
         glowSpring.step(dt)
+        holdSpring.step(dt)
+        elasticSpring.step(dt)
 
         glow = glowSpring.value.coerceIn(0f, 1f)
         pressure = pressureSpring.value.coerceIn(0f, 1f)
+        hold = holdSpring.value.coerceIn(0f, 1f)
+        elastic = elasticSpring.value
         scaleX = wideSpring.value
         scaleY = tallSpring.value
     }
@@ -147,11 +208,14 @@ internal class LensMotionController(
             wideSpring.settled &&
             tallSpring.settled &&
             speedSpring.settled &&
-            glowSpring.settled
+            glowSpring.settled &&
+            holdSpring.settled &&
+            elasticSpring.settled
 
     private fun ensureFrameLoop() {
         if (loopActive) return
         loopActive = true
+        isAnimating = true
         scope.launch {
             try {
                 var previous = withFrameNanos { it }
@@ -166,6 +230,7 @@ internal class LensMotionController(
                 }
             } finally {
                 loopActive = false
+                isAnimating = false
             }
         }
     }

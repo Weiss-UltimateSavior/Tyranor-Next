@@ -1,6 +1,8 @@
 package com.tyranor.next.ui.common.glass
 
 import android.os.Build
+import android.view.HapticFeedbackConstants
+import android.view.View
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
@@ -28,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +51,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -72,12 +76,17 @@ import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.theme.AppNavCapsuleShape
 import com.tyranor.next.ui.common.LiquidGlassNavItem
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.sign
 
-/** 采样副本行的图标缩放：可见行固定 1f，副本行随按压 `1 → iconScaleOnPress`。 */
-private val LocalGlassIconScale = staticCompositionLocalOf { { 1f } }
+/**
+ * 采样副本行的图标缩放（按槽位索引取值）：可见行固定 1f，副本行按「被滑块覆盖的比例」
+ * 放大——完全覆盖最大、离开覆盖范围回到 1，从而在滑块滑动时呈现图标被推开／收拢的观感。
+ */
+private val LocalGlassIconScale = staticCompositionLocalOf { { _: Int -> 1f } }
 
 /**
  * 「液态玻璃增强」底部导航栏（本项目独立实现；设计记录见
@@ -129,6 +138,16 @@ fun EnhancedLiquidGlassNavigationBar(
     val scope = rememberCoroutineScope()
 
     // 宽度：参考单槽宽 × N 居中收窄；窗口放不下时夹取，再窄就直接不渲染（避免留一条残片）
+    // 触觉反馈：用 View.performHapticFeedback（无需权限，且自动遵循系统「触感反馈」开关）
+    val hapticView = LocalView.current
+    val tapTick = remember(hapticView) {
+        { hapticView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
+    }
+    val releaseTick = remember(hapticView) {
+        { hapticView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) }
+    }
+    val currentTapTick by rememberUpdatedState(tapTick)
+
     val configuration = LocalConfiguration.current
     val windowWidthDp = with(density) {
         LocalWindowInfo.current.containerSize.width.toDp()
@@ -176,14 +195,47 @@ fun EnhancedLiquidGlassNavigationBar(
     // 拖动释放已经落到目标槽位；用显式标记判重，避免 settleAt 再补一次按压脉冲
     var indexCommittedByDrag by remember { mutableStateOf<Int?>(null) }
 
+    // 按住不动后松手：等回弹动画结束再给一次短震动（拖动松手则立即给，见下）
+    var pendingHoldReleaseTick by remember { mutableStateOf(false) }
+    LaunchedEffect(controller.isAnimating) {
+        if (!controller.isAnimating && pendingHoldReleaseTick) {
+            pendingHoldReleaseTick = false
+            releaseTick()
+        }
+    }
+
     val commitIndex: (Float) -> Unit = remember(controller, scope, tabs) {
         { target ->
             val index = target.fastRoundToInt().fastCoerceIn(0, tabs - 1)
+            if (controller.hasDragged) {
+                // 拖动松手：图标 Q 弹回弹的同时给反馈
+                releaseTick()
+            } else {
+                pendingHoldReleaseTick = true
+            }
             // 吸附到四舍五入后的槽位，并收起材质；pulse=false 表示不再补一次按压脉冲
             controller.settleAt(index.toFloat(), pulse = false)
             indexCommittedByDrag = index
             if (index != currentSelectedIndex) currentOnItemClick(index)
             scope.launch { panelShiftAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
+        }
+    }
+
+    // 点击图标：已覆盖的立即反馈；未覆盖的等滑块快滑到位再反馈（更跟手）
+    val onTabSelected: (Int) -> Unit = remember(controller, scope, tabs, spec) {
+        { index ->
+            if (index == currentSelectedIndex) {
+                currentTapTick()
+            } else {
+                currentOnItemClick(index)
+                scope.launch {
+                    val arrived = withTimeoutOrNull(ArriveTimeoutMillis) {
+                        snapshotFlow { controller.index }
+                            .first { abs(it - index) < spec.tapArriveThreshold }
+                    } != null
+                    if (arrived) currentTapTick()
+                }
+            }
         }
     }
 
@@ -359,7 +411,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     selected = index == selectedIndex,
                     colors = colors,
                     iconSize = spec.iconSize,
-                    onClick = { if (index != selectedIndex) onItemClick(index) },
+                    onClick = { onTabSelected(index) },
                 )
             }
         }
@@ -381,6 +433,16 @@ fun EnhancedLiquidGlassNavigationBar(
                 }
             }
         }
+        // 每个槽位的图标缩放：覆盖度（滑块与槽位的重合比例）× 按压/长按放大 + 回弹量
+        val iconScaleOf: (Int) -> Float = remember(controller, spec) {
+            { tabIndex ->
+                val coverage = (1f - abs(controller.index - tabIndex)).fastCoerceIn(0f, 1f)
+                val grow = 1f +
+                    coverage * ((spec.iconScaleOnPress - 1f) + controller.hold * spec.holdIconGrow) +
+                    controller.elastic * spec.iconBounceAmount
+                grow.coerceAtLeast(0.6f)
+            }
+        }
         val copyHighlight: (() -> Highlight?)? = remember(blurEnabled, controller) {
             if (blurEnabled) {
                 { Highlight.Default.copy(alpha = controller.pressure) }
@@ -388,11 +450,8 @@ fun EnhancedLiquidGlassNavigationBar(
                 null
             }
         }
-        val iconScale = remember(spec, controller) {
-            { lerp(1f, spec.iconScaleOnPress, controller.pressure) }
-        }
         CompositionLocalProvider(
-            LocalGlassIconScale provides iconScale,
+            LocalGlassIconScale provides iconScaleOf,
         ) {
             Row(
                 Modifier
@@ -413,8 +472,13 @@ fun EnhancedLiquidGlassNavigationBar(
                     .padding(horizontal = spec.barInnerPadding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                items.forEach { item ->
-                    SamplingTab(item = item, colors = colors, iconSize = spec.iconSize)
+                items.forEachIndexed { index, item ->
+                    SamplingTab(
+                        item = item,
+                        tabIndex = index,
+                        colors = colors,
+                        iconSize = spec.iconSize,
+                    )
                 }
             }
         }
@@ -462,9 +526,14 @@ fun EnhancedLiquidGlassNavigationBar(
             // 按压缩放与速度形变都是纯图层变换：各 API 版本都保留（低版本无折射但有体积反馈）
             val lensLayer: GraphicsLayerScope.() -> Unit = remember(spec, controller) {
                 {
+                    // 长按膨胀：横向明显大于纵向，呈「挤压变大」
+                    val holdWide = lerp(1f, spec.holdLensWide, controller.hold)
+                    val holdTall = lerp(1f, spec.holdLensTall, controller.hold)
                     val indexVelocity = controller.velocity / 10f
-                    scaleX = controller.scaleX / (1f - (indexVelocity * 0.75f).fastCoerceIn(-0.2f, 0.2f))
-                    scaleY = controller.scaleY * (1f - (indexVelocity * 0.25f).fastCoerceIn(-0.2f, 0.2f))
+                    scaleX = controller.scaleX * holdWide /
+                        (1f - (indexVelocity * 0.75f).fastCoerceIn(-0.2f, 0.2f))
+                    scaleY = controller.scaleY * holdTall *
+                        (1f - (indexVelocity * 0.25f).fastCoerceIn(-0.2f, 0.2f))
                 }
             }
             val lensCover: DrawScope.() -> Unit = remember(refractionEnabled, colors, spec, controller) {
@@ -507,6 +576,9 @@ fun EnhancedLiquidGlassNavigationBar(
     }
 }
 
+/** 点击后等待滑块到位的上限：超时就不再补反馈（例如用户在滑动途中又点了别处）。 */
+private const val ArriveTimeoutMillis = 600L
+
 /** 可见导航项：承担全部语义与点击（Role.Tab + selected），图标保持清晰不参与模糊。 */
 @Composable
 private fun RowScope.VisibleTab(
@@ -542,16 +614,17 @@ private fun RowScope.VisibleTab(
 @Composable
 private fun RowScope.SamplingTab(
     item: LiquidGlassNavItem,
+    tabIndex: Int,
     colors: GlassBottomBarColors,
     iconSize: Dp,
 ) {
-    val scale = LocalGlassIconScale.current
+    val scaleOf = LocalGlassIconScale.current
     Box(
         modifier = Modifier
             .fillMaxHeight()
             .weight(1f)
             .graphicsLayer {
-                val current = scale()
+                val current = scaleOf(tabIndex)
                 scaleX = current
                 scaleY = current
             },
