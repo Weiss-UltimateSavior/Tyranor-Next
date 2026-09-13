@@ -116,11 +116,8 @@ object RpgSaveSync {
         if (!RpgSaveFormat.isRpgWebEngine(engine)) return Result()
         if (standardDirs.isEmpty()) return Result()
 
-        val preferredStandardDir = standardDirs.first()
-        val (standardFiles, quarantinedDuplicates) = collectStandard(standardDirs, engine)
-        val tyranorFiles = collectTyranor(tyranorDir, engine)
-        // 清单读取失败必须中止本轮同步：清单里的「已删除」记录丢失后，继续同步会把
-        // 已删除的存档当成新存档重新导入。中止 = 不做任何文件改动 + 如实报告失败。
+        // 清单验证必须先行：collectStandard 的冲突隔离会移动文件，「失败不做任何文件改动」
+        // 的契约要求清单 Unreadable 时在任何文件操作前中止本轮同步
         val previous: Map<String, RpgSaveSyncState.SlotState> = when (val loaded = stateStore.load(gameKey)) {
             is RpgSaveSyncState.LoadResult.Loaded -> loaded.slots
             is RpgSaveSyncState.LoadResult.Missing -> emptyMap()
@@ -129,6 +126,10 @@ object RpgSaveSync {
                 return Result(failed = 1)
             }
         }
+
+        val preferredStandardDir = standardDirs.first()
+        val (standardFiles, quarantinedDuplicates) = collectStandard(standardDirs, engine)
+        val tyranorFiles = collectTyranor(tyranorDir, engine)
 
         // 槽位已存在的标准文件所在目录（就地更新），否则用首选目录
         fun standardParentFor(slot: String): File =

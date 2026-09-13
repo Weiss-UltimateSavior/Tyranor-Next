@@ -391,13 +391,81 @@ class RpgSaveSyncTest {
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         stateDir.listFiles().orEmpty().forEach { it.writeText("{corrupt") }
+        // 清单损坏时，同槽位冲突副本也不得被隔离——隔离必须发生在清单验证成功之后
+        val alt = temporaryFolder.newFolder("save_alt")
+        standard.writeAt("global.rpgsave", "PREFERRED", 2_000)
+        alt.writeAt("global.rpgsave", "DIVERGED", 3_000)
         standard.writeAt("file2.rpgsave", "V2", 2_000)
 
-        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+        val result = RpgSaveSync.sync(listOf(standard, alt), tyranor, EngineType.RPG_MV, store, "g")
 
         assertEquals(1, result.failed)
         assertEquals(0, result.imported)
         assertEquals(0, result.changed)
         assertFalse(tyranor.resolve("RPG File2.bin").exists())
+        // 冲突副本原位保留：清单验证失败前不做任何文件改动
+        assertTrue(alt.resolve("global.rpgsave").isFile)
+        assertFalse(alt.resolve("deleted").exists())
+    }
+
+    /** 在 [stateDir] 里写入一份指定内容的清单（覆盖首个 .json 文件；无则跳过）。 */
+    private fun overwriteManifest(stateDir: File, json: String) {
+        val files = stateDir.listFiles().orEmpty().filter { it.isFile }
+        if (files.isEmpty()) error("manifest file not found in ${stateDir.absolutePath}")
+        files.forEach { it.writeText(json) }
+    }
+
+    @Test
+    fun manifestWithoutSlotsObjectAbortsSync() {
+        // 缺 slots 键的清单是损坏形态：绝不能当成空清单（首次同步）继续
+        val (standard, tyranor) = dirs()
+        val stateDir = temporaryFolder.newFolder("state")
+        val store = RpgSaveSyncState(stateDir)
+        standard.writeAt("file1.rpgsave", "V1", 1_000)
+        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        overwriteManifest(stateDir, """{"other":{}}""")
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        assertEquals(1, result.failed)
+        assertEquals(0, result.changed)
+    }
+
+    @Test
+    fun manifestWithNonObjectSlotEntryAbortsSync() {
+        // 槽位值不是对象（或缺 std/tyr 字段）同样是损坏清单：静默跳过会丢该槽位的删除历史
+        val (standard, tyranor) = dirs()
+        val stateDir = temporaryFolder.newFolder("state")
+        val store = RpgSaveSyncState(stateDir)
+        standard.writeAt("file1.rpgsave", "V1", 1_000)
+        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        overwriteManifest(stateDir, """{"slots":{"file1":"bogus"}}""")
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        assertEquals(1, result.failed)
+        assertEquals(0, result.changed)
+    }
+
+    @Test
+    fun manifestWithMissingRequiredFieldAbortsSync() {
+        // 槽位条目缺 std/tyr 必需字段：视为损坏，中止同步
+        val (standard, tyranor) = dirs()
+        val stateDir = temporaryFolder.newFolder("state")
+        val store = RpgSaveSyncState(stateDir)
+        standard.writeAt("file1.rpgsave", "V1", 1_000)
+        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        overwriteManifest(stateDir, """{"slots":{"file1":{"std":1000}}}""")
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        assertEquals(1, result.failed)
+        assertEquals(0, result.changed)
     }
 }

@@ -51,21 +51,25 @@ class RpgSaveSyncState(private val storeDir: File) {
         if (!file.isFile) return@synchronized LoadResult.Missing
         runCatching {
             val root = JSONObject(file.readText(Charsets.UTF_8))
-            val slots = root.optJSONObject(KEY_SLOTS) ?: return@runCatching LoadResult.Loaded(emptyMap())
+            // 形状校验：缺 slots 或任一槽位条目不是对象/缺必需字段，都是损坏清单——
+            // 静默跳过会丢掉该槽位的「已删除」历史，导致已删存档被当新存档导入
+            val slots = root.optJSONObject(KEY_SLOTS) ?: return@runCatching LoadResult.Unreadable
             LoadResult.Loaded(
                 buildMap {
                     slots.keys().forEach { slot ->
-                        val entry = slots.optJSONObject(slot) ?: return@forEach
-                        val stdMtime = entry.optLong(KEY_STANDARD, 0L)
-                        val tyrMtime = entry.optLong(KEY_TYRANOR, 0L)
+                        val entry = slots.optJSONObject(slot)
+                            ?: return@runCatching LoadResult.Unreadable
+                        if (!entry.has(KEY_STANDARD) || !entry.has(KEY_TYRANOR)) {
+                            return@runCatching LoadResult.Unreadable
+                        }
                         put(
                             slot,
                             SlotState(
-                                standardMtime = stdMtime,
-                                tyranorMtime = tyrMtime,
+                                standardMtime = entry.getLong(KEY_STANDARD),
+                                tyranorMtime = entry.getLong(KEY_TYRANOR),
                                 // 旧清单无显式标记：按 mtime>0 推导
-                                standardExists = entry.optBoolean(KEY_STANDARD_EXISTS, stdMtime > 0L),
-                                tyranorExists = entry.optBoolean(KEY_TYRANOR_EXISTS, tyrMtime > 0L),
+                                standardExists = entry.optBoolean(KEY_STANDARD_EXISTS, entry.getLong(KEY_STANDARD) > 0L),
+                                tyranorExists = entry.optBoolean(KEY_TYRANOR_EXISTS, entry.getLong(KEY_TYRANOR) > 0L),
                             ),
                         )
                     }
