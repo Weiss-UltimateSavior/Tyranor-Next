@@ -67,8 +67,12 @@ import com.tyranor.next.theme.GlassNavSurface
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.glassPageBackground
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
+import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
+import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
+import com.tyranor.next.ui.common.glass.rememberGlassBottomBarColors
 import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.engine.EngineScreen
@@ -104,11 +108,12 @@ fun MainScreen(modifier: Modifier = Modifier) {
   val unselectedColor = UnselectedGrey
   // 导航栏样式：应用设置 → 默认 / 圆角液态玻璃（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
-    val stored = withContext(Dispatchers.IO) {
-      AppSettingsStore.getNavStyle(context) to AppSettingsStore.getGameSort(context)
+    // initNavStyle 一并加载「液态玻璃增强」（保持单一加载入口，避免多处重复解析 prefs）
+    val gameSort = withContext(Dispatchers.IO) {
+      AppSettingsStore.initNavStyle(context)
+      AppSettingsStore.getGameSort(context)
     }
-    AppSettingsStore.navStyleState.value = stored.first
-    AppSettingsStore.gameSortState.value = stored.second
+    AppSettingsStore.gameSortState.value = gameSort
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -128,6 +133,9 @@ fun MainScreen(modifier: Modifier = Modifier) {
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()
   val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
+  // 液态玻璃增强：只依赖父开关（圆角液态玻璃导航），任意外观风格下都生效
+  val liquidGlassEnhance by AppSettingsStore.liquidGlassEnhanceState.collectAsState()
+  val enhanceLiquidGlass = liquidGlass && liquidGlassEnhance
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass
   val tabLabels = tabItems.map { stringResource(it.labelRes) }
@@ -135,8 +143,9 @@ fun MainScreen(modifier: Modifier = Modifier) {
 
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
   fun selectPage(index: Int) {
-    // 动画期拒绝二次切换，保证起点/终点动画完成后再接收下一次导航。
-    if (index == selectedIndex || pageTransition.isRunning) return
+    // 转场期间接受新目标：updateTransition 会从当前显示状态重定向到新目标。
+    // 不再用 isRunning 丢弃输入——否则「液态玻璃增强」的透镜已经响应，页面却不动（报告 §8.7）。
+    if (index == selectedIndex) return
     selectedIndex = index
   }
   val backdropAvailable = liquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -151,6 +160,17 @@ fun MainScreen(modifier: Modifier = Modifier) {
       .fillMaxSize()
       // source 节点常驻，避免切页结束时重新挂载玻璃录制层。
       .then(if (backdropAvailable) Modifier.layerBackdrop(backdrop) else Modifier)
+      // 采样修复（报告 §5.3 / §8.4 第 1 条）：玻璃外观风格下 PageGrey 透明，根部渐变在采样层之外，
+      // 增强档会把同一份渐变画进被采样内容，保证透镜采样源包含完整背景且坐标同源。
+      .then(
+        // 仅玻璃外观风格需要（该模式下 PageGrey 透明、根部背景在采样层之外）；
+        // accent 在组合期读取，保证色调轮盘换色后采样层内的背景同步刷新
+        if (backdropAvailable && enhanceLiquidGlass && AppThemeColors.isGlass) {
+          Modifier.glassPageBackground(AppThemeColors.primary)
+        } else {
+          Modifier
+        },
+      )
       .background(MaterialTheme.colorScheme.background)
     Column(contentModifier) {
       Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
@@ -233,17 +253,32 @@ fun MainScreen(modifier: Modifier = Modifier) {
       }
     }
 
-    // 圆角液态玻璃导航：悬浮在内容之上
+    // 圆角液态玻璃导航：悬浮在内容之上。
+    // 增强档（应用设置 → 液态玻璃增强）改用 Legado 三层采样 + 折射透镜实现，默认关闭走原实现。
     if (liquidGlass) {
-      LiquidGlassNavigationBar(
-        backdrop = backdrop,
-        selectedIndex = selectedIndex,
-        primaryColor = MaterialTheme.colorScheme.primary,
-        unselectedColor = unselectedColor,
-        items = liquidGlassTabItems,
-        onItemClick = { selectPage(it) },
-        modifier = Modifier.align(Alignment.BottomCenter),
-      )
+      if (enhanceLiquidGlass) {
+        EnhancedLiquidGlassNavigationBar(
+          backdrop = backdrop,
+          selectedIndex = selectedIndex,
+          colors = rememberGlassBottomBarColors(unselectedColor),
+          items = liquidGlassTabItems,
+          onItemClick = { selectPage(it) },
+          modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .padding(bottom = GlassBottomBarSpec.Default.hostBottomPadding),
+        )
+      } else {
+        LiquidGlassNavigationBar(
+          backdrop = backdrop,
+          selectedIndex = selectedIndex,
+          primaryColor = MaterialTheme.colorScheme.primary,
+          unselectedColor = unselectedColor,
+          items = liquidGlassTabItems,
+          onItemClick = { selectPage(it) },
+          modifier = Modifier.align(Alignment.BottomCenter),
+        )
+      }
     }
 
     // 玻璃外观风格下的默认导航栏：悬浮圆角玻璃条（玻璃底 + 0.5dp 描边 + 16dp 圆角），

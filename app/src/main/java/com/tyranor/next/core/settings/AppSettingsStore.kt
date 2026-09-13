@@ -12,6 +12,7 @@ object AppSettingsStore {
 
     const val KEY_THEME_COLOR = "theme_color"
     const val KEY_NAV_STYLE = "nav_style"
+    const val KEY_LIQUID_GLASS_ENHANCE = "liquid_glass_enhance"
     const val KEY_APPEARANCE_STYLE = "appearance_style"
     const val KEY_SCAN_DEPTH = "scan_depth"
     const val KEY_LANGUAGE = "language"
@@ -96,6 +97,11 @@ object AppSettingsStore {
 
     /** 引擎页分类显示内存态：设置页切换后引擎页即时重组。 */
     val engineTabsState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_TABS_ENABLED)
+    /**
+     * 液态玻璃增强内存态：仅在 [NAV_STYLE_LIQUID_GLASS] 下有意义。
+     * 默认关闭（新选项默认隐藏、默认不启用），父开关关闭时由 [setNavStyle] 复位为 false。
+     */
+    val liquidGlassEnhanceState: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     /** 游戏排序内存态：设置页切换后游戏页可随重组读取。 */
     val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
@@ -106,6 +112,7 @@ object AppSettingsStore {
     /** 首次组合时从持久化加载导航栏样式到内存态（幂等，重复调用仅重新读一次）。 */
     fun initNavStyle(c: Context) {
         navStyleState.value = getNavStyle(c)
+        liquidGlassEnhanceState.value = getLiquidGlassEnhance(c)
     }
 
     fun initLanguage(c: Context) {
@@ -147,6 +154,24 @@ object AppSettingsStore {
     fun setNavStyle(c: Context, style: String) {
         prefs(c).edit().putString(KEY_NAV_STYLE, style).apply()
         navStyleState.value = style
+        // 「液态玻璃增强」只有在液态玻璃底栏开关打开时才具备开启条件：
+        // 切回默认样式时无条件复位并持久化（不依赖内存态是否已加载），
+        // 避免隐藏项残留开启态 —— 用户重新打开父开关时被“静默”改变外观。
+        if (style != NAV_STYLE_LIQUID_GLASS) {
+            setLiquidGlassEnhance(c, false)
+        }
+    }
+
+    /**
+     * 当前是否开启「液态玻璃增强」（默认 false）。
+     * 该值只描述用户选择；是否真正生效由调用方与 [getNavStyle] 共同判定。
+     */
+    fun getLiquidGlassEnhance(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_LIQUID_GLASS_ENHANCE, false)
+
+    fun setLiquidGlassEnhance(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_LIQUID_GLASS_ENHANCE, enabled).apply()
+        liquidGlassEnhanceState.value = enabled
     }
 
     /** 当前外观风格（默认 / 玻璃）。 */

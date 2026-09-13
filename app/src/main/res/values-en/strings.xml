@@ -34,6 +34,8 @@
     <string name="settings_tone_switch">Tone switch</string>
     <string name="settings_liquid_glass_nav">Rounded liquid glass navigation</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
+    <string name="settings_liquid_glass_enhance">Liquid glass enhancement</string>
+    <string name="settings_liquid_glass_enhance_summary">Refraction lens with press and drag response (full effect on Android 13+)</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>
 
     <string name="settings_update_latest">You are on the latest version</string>

@@ -73,6 +73,9 @@ internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
+    // 液态玻璃增强只描述用户选择；是否可见由父开关（液态玻璃底栏）决定
+    val liquidGlassEnhance by AppSettingsStore.liquidGlassEnhanceState.collectAsState()
+    val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
     val glass = AppThemeColors.isGlass
     var showColorPicker by remember { mutableStateOf(false) }
 
@@ -222,7 +225,7 @@ internal fun AppSettingsScreen() {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_liquid_glass_nav),
-                                checked = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS,
+                                checked = liquidGlass,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setNavStyle(
                                         ctx,
@@ -230,6 +233,18 @@ internal fun AppSettingsScreen() {
                                     )
                                 },
                             )
+                            // 液态玻璃增强：父开关（圆角液态玻璃导航）打开时才出现（默认隐藏），
+                            // 不限外观风格；关闭父开关时 setNavStyle 会同步复位本项。
+                            if (liquidGlass) {
+                                SwitchPreference(
+                                    title = stringResource(R.string.settings_liquid_glass_enhance),
+                                    summary = stringResource(R.string.settings_liquid_glass_enhance_summary),
+                                    checked = liquidGlassEnhance,
+                                    onCheckedChange = { checked ->
+                                        AppSettingsStore.setLiquidGlassEnhance(ctx, checked)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
