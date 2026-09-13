@@ -29,13 +29,28 @@ data class GlassBottomBarSpec(
     val iconSize: Dp = 26.dp,
     // ---- 光学（参考默认：blur 8dp / 表面 alpha 40% / 栏体透镜 24dp / 透镜 10dp×p、14dp×p）----
     val blurRadius: Dp = 8.dp,
+    /** 深色档表面不透明度（参考默认档）。 */
     val surfaceAlpha: Float = 0.40f,
+    /**
+     * 浅色档表面不透明度。
+     *
+     * 浅色页面底色本身很浅，40% 白叠上去几乎与背景同色（只有底栏后面有内容时才看得见轮廓）。
+     * 这里按报告 §8.10 的「增强可读性」策略提高覆盖强度：既让栏体成为可辨认的一层，
+     * 又保留「透出模糊内容」的玻璃质感。深色档不受影响（仍为 0.40）。
+     */
+    val surfaceAlphaLight: Float = 0.62f,
     val barLensRadius: Dp = 24.dp,
     val lensRefractionHeight: Dp = 10.dp,
     val lensRefractionAmount: Dp = 14.dp,
     val lensInnerShadowRadius: Dp = 8.dp,
-    /** 栏体边缘高光强度（乘在 Highlight.Default 的 50% 白上）；参考值为 1f，本实现降到「微浅」。 */
+    /** 深色档栏体边缘高光强度（乘在 Highlight.Default 的 50% 白上）；参考值为 1f，本实现降到「微浅」。 */
     val barHighlightAlpha: Float = 0.18f,
+    /** 浅色档边缘高光强度：浅底上白光只有更强才能形成玻璃亮边。 */
+    val barHighlightAlphaLight: Float = 0.42f,
+    /** 浅色档栏体发丝描边不透明度（暗色描边，浅底上勾勒轮廓）。 */
+    val edgeStrokeAlpha: Float = 0.10f,
+    /** 发丝描边宽度。 */
+    val edgeStrokeWidth: Dp = 0.5.dp,
     /** 静止透镜覆盖：浅色黑 / 深色白 10%，乘 (1 − p)。 */
     val staticLensCoverAlpha: Float = 0.10f,
     /** 按压透镜覆盖：黑 3% × p。 */

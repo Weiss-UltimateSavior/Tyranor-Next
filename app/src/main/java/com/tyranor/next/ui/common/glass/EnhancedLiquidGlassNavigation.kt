@@ -32,11 +32,14 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -229,8 +232,28 @@ fun EnhancedLiquidGlassNavigationBar(
     }
 
     val tabsBackdrop = rememberLayerBackdrop()
-    val containerColor = remember(blurEnabled, colors, spec) {
-        if (blurEnabled) colors.surfaceTint.copy(alpha = spec.surfaceAlpha) else colors.fallbackSurface
+    // 浅色档用更高的表面不透明度与更强的边缘高光（否则浅底上栏体几乎不可辨，见 D15）
+    val surfaceAlpha = if (colors.isDark) spec.surfaceAlpha else spec.surfaceAlphaLight
+    val highlightAlpha = if (colors.isDark) spec.barHighlightAlpha else spec.barHighlightAlphaLight
+    val containerColor = remember(blurEnabled, colors, spec, surfaceAlpha) {
+        if (blurEnabled) colors.surfaceTint.copy(alpha = surfaceAlpha) else colors.fallbackSurface
+    }
+    // 浅色档补一条暗色发丝描边勾勒胶囊轮廓；深色档 edgeStroke 为透明即不描边
+    val edgeStroke: Modifier = remember(colors, spec, density) {
+        if (colors.edgeStroke.alpha == 0f) {
+            Modifier
+        } else {
+            val strokeColor = colors.edgeStroke.copy(alpha = spec.edgeStrokeAlpha)
+            val strokeWidth = with(density) { spec.edgeStrokeWidth.toPx() }
+            Modifier.drawWithContent {
+                drawContent()
+                drawOutline(
+                    outline = AppNavCapsuleShape.createOutline(size, layoutDirection, this),
+                    color = strokeColor,
+                    style = Stroke(width = strokeWidth),
+                )
+            }
+        }
     }
 
     // 按压光斑：中心直接取透镜位置（栏体局部坐标，含 4dp 内边距；整栏偏移由图层负责）
@@ -269,9 +292,9 @@ fun EnhancedLiquidGlassNavigationBar(
             }
         }
         // 边缘高光：参考实现直接使用 Highlight.Default（自带 50% 白），本实现只取其一部分（文档 §6 D12）
-        val barHighlight: (() -> Highlight?)? = remember(blurEnabled, spec) {
+        val barHighlight: (() -> Highlight?)? = remember(blurEnabled, highlightAlpha) {
             if (blurEnabled) {
-                { Highlight.Default.copy(alpha = spec.barHighlightAlpha) }
+                { Highlight.Default.copy(alpha = highlightAlpha) }
             } else {
                 null
             }
@@ -324,6 +347,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     layerBlock = barPressLayer,
                     onDrawSurface = barSurface,
                 )
+                .then(edgeStroke)
                 .then(pressGlow?.modifier ?: Modifier)
                 .height(spec.barHeight)
                 .padding(spec.barInnerPadding),

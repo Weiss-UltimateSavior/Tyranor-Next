@@ -33,4 +33,11 @@ data class GlassBottomBarColors(
     val staticLensCover: Color,
     /** 按住时透镜的轻微压暗覆盖色（恒黑）。 */
     val pressedLensCover: Color,
+    /**
+     * 栏体发丝描边的底色：浅色档用中性黑（浅底上白描边不可见），深色档传 [Color.Transparent]
+     * 表示不描边、只靠 [edgeHighlight] 亮边。
+     */
+    val edgeStroke: Color,
+    /** 已解析主题是否为深色：决定表面不透明度、高光强度与是否描边。 */
+    val isDark: Boolean,
 )

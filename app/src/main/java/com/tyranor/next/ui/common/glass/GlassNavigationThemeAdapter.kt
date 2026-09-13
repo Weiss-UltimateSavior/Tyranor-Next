@@ -44,6 +44,9 @@ fun rememberGlassBottomBarColors(
             edgeHighlight = GlassOpticalWhite,
             staticLensCover = if (isDark) GlassOpticalWhite else GlassOpticalBlack,
             pressedLensCover = GlassOpticalBlack,
+            // 浅色档才描边：浅底上需要暗色发丝线勾勒轮廓
+            edgeStroke = if (isDark) Color.Transparent else GlassOpticalBlack,
+            isDark = isDark,
         )
     }
 }

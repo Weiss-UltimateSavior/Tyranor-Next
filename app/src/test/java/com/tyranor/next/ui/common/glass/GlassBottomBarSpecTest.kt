@@ -78,4 +78,16 @@ class GlassBottomBarSpecTest {
         assertEquals(0.06f, spec.pressVeilAlpha, 1e-6f)
         assertEquals(0.12f, spec.pressGlowAlpha, 1e-6f)
     }
+
+    @Test
+    fun lightModeReadabilityDefaults_arePinned() {
+        // 浅色档可读性适配（文档 §6 D15）：浅底上必须比深色档更实、描边更明确
+        assertEquals(0.40f, spec.surfaceAlpha, 1e-6f)
+        assertEquals(0.62f, spec.surfaceAlphaLight, 1e-6f)
+        assertEquals(0.18f, spec.barHighlightAlpha, 1e-6f)
+        assertEquals(0.42f, spec.barHighlightAlphaLight, 1e-6f)
+        assertEquals(0.10f, spec.edgeStrokeAlpha, 1e-6f)
+        assertEquals(0.5.dp, spec.edgeStrokeWidth)
+        assertTrue("浅色档表面必须比深色档更实", spec.surfaceAlphaLight > spec.surfaceAlpha)
+    }
 }
