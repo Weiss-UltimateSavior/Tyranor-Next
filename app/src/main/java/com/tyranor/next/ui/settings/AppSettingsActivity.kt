@@ -251,21 +251,14 @@ internal fun AppSettingsScreen() {
                                 .coerceAtLeast(0)
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_nav_bar_title),
-                                // 「默认」档在两种外观风格下渲染不同（M3 导航栏 / 悬浮玻璃条），
-                                // 说明文案必须跟着外观风格走，不能一句通用描述
-                                summary = stringResource(
-                                    when (navStyle) {
-                                        AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
-                                            R.string.settings_nav_bar_desc_liquid_glass
-                                        AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
-                                            R.string.settings_nav_bar_desc_enhanced
-                                        else -> if (glass) {
-                                            R.string.settings_nav_bar_desc_default_glass
-                                        } else {
-                                            R.string.settings_nav_bar_desc_default
-                                        }
-                                    },
-                                ),
+                                // 说明只保留「安卓版本提醒」：默认档无需提醒（任何版本可用）
+                                summary = when (navStyle) {
+                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
+                                        stringResource(R.string.settings_nav_bar_desc_liquid_glass)
+                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
+                                        stringResource(R.string.settings_nav_bar_desc_enhanced)
+                                    else -> null
+                                },
                                 items = navStyleOptions.map { it.second },
                                 selectedIndex = navStyleIndex,
                                 onSelectedIndexChange = { index ->

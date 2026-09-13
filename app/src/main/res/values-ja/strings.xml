@@ -37,10 +37,8 @@
     <string name="settings_nav_bar_default">デフォルト</string>
     <string name="settings_nav_bar_liquid_glass">リキッドグラス · クラシック</string>
     <string name="settings_nav_bar_liquid_glass_enhanced">リキッドグラス · レンズ</string>
-    <string name="settings_nav_bar_desc_default">Material 3 ナビゲーションバー（レイアウト高さを占有）</string>
-    <string name="settings_nav_bar_desc_default_glass">浮遊する角丸ガラスバー（ガラススタイル）</string>
-    <string name="settings_nav_bar_desc_liquid_glass">角丸スクエアのガラスバー＋背景ブラー（Android 12 以上で有効）</string>
-    <string name="settings_nav_bar_desc_enhanced">カプセル輪郭＋屈折レンズと押下・ドラッグ操作（Android 13 以上のみ対応）</string>
+    <string name="settings_nav_bar_desc_liquid_glass">Android 12 以上で有効</string>
+    <string name="settings_nav_bar_desc_enhanced">Android 13 以上のみ対応</string>
     <string name="settings_invalid_theme_color">透明色、白黒、グレーは使用できません</string>
 
     <string name="settings_update_latest">最新バージョンです</string>
