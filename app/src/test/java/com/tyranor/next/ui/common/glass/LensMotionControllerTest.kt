@@ -1,0 +1,130 @@
+package com.tyranor.next.ui.common.glass
+
+import androidx.compose.runtime.MonotonicFrameClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.math.abs
+
+/**
+ * 运动控制器的行为测试：用人工帧时钟驱动自写的弹簧积分器，验证最容易出错的那条链路。
+ *
+ * 覆盖点：
+ * 1. 松手后必须**吸附**到四舍五入后的槽位（而不是停在手指松开的小数位置）；
+ * 2. 同一次输入批次里的多次位移要累加；
+ * 3. 拖动目标被限制在索引范围内；
+ * 4. 材质只在位置靠近目标后收起，最终所有输出收敛（帧循环能退出）。
+ */
+class LensMotionControllerTest {
+
+    @Test
+    fun dragThenRelease_snapsToRoundedSlot() = runBlocking {
+        withController { controller ->
+            controller.beginPress()
+            controller.dragBy(1.6f)
+            // 松手：吸附到四舍五入后的槽位 2，并收起材质（不额外脉冲）
+            controller.settleAt(2f, pulse = false)
+            awaitSettled(controller)
+
+            assertEquals(2f, controller.index, 1e-3f)
+            assertEquals(2f, controller.targetIndex, 1e-3f)
+            assertTrue("松手后材质应收起", controller.pressure < 0.05f)
+            assertTrue("体积应回到 1", abs(controller.scaleX - 1f) < 0.05f)
+        }
+    }
+
+    @Test
+    fun batchedDrags_accumulateBeforeRelease() = runBlocking {
+        withController { controller ->
+            controller.beginPress()
+            // 同一次输入批次里的两次位移必须都算进去（不能被动画目标值吃掉）
+            controller.dragBy(0.4f)
+            controller.dragBy(0.4f)
+            assertEquals(0.8f, controller.targetIndex, 1e-4f)
+            controller.settleAt(1f, pulse = false)
+            awaitSettled(controller)
+            assertEquals(1f, controller.index, 1e-3f)
+        }
+    }
+
+    @Test
+    fun dragIsClampedToIndexRange() = runBlocking {
+        withController { controller ->
+            controller.beginPress()
+            controller.dragBy(99f)
+            assertEquals(3f, controller.targetIndex, 1e-4f)
+            controller.dragBy(-99f)
+            assertEquals(0f, controller.targetIndex, 1e-4f)
+        }
+    }
+
+    @Test
+    fun settleAtWithPulse_pressesThenCollapses() = runBlocking {
+        withController { controller ->
+            controller.settleAt(2f)
+            // 采样整个动画过程：必须出现一次明显按压，然后收起
+            var peakPressure = 0f
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    peakPressure = maxOf(peakPressure, controller.pressure)
+                    delay(1)
+                }
+            }
+            assertEquals(2f, controller.index, 1e-3f)
+            assertTrue("点击应有一次按压脉冲，实测峰值 $peakPressure", peakPressure > 0.3f)
+            assertTrue(controller.pressure < 0.05f)
+        }
+    }
+
+    @Test
+    fun idleController_staysStill() = runBlocking {
+        withController { controller ->
+            delay(20)
+            assertTrue("静止时不应维持帧循环", !controller.isAnimating)
+            assertEquals(0f, controller.index, 1e-4f)
+            assertEquals(0f, controller.pressure, 1e-4f)
+            assertEquals(1f, controller.scaleX, 1e-4f)
+        }
+    }
+
+    /** 人工帧时钟：每次 `withFrameNanos` 前进一帧，让积分器以最快速度跑完动画。 */
+    private class ManualFrameClock : MonotonicFrameClock {
+        private var nanos = 0L
+
+        override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R {
+            // 让出事件循环，测试才能观察到动画的中间状态
+            delay(1)
+            nanos += FrameNanos
+            return onFrame(nanos)
+        }
+    }
+
+    private suspend fun withController(block: suspend (LensMotionController) -> Unit) =
+        coroutineScope {
+            val scope = CoroutineScope(coroutineContext + ManualFrameClock())
+            val controller = LensMotionController(
+                scope = scope,
+                initialIndex = 0f,
+                indexRange = 0f..3f,
+                spec = GlassBottomBarSpec.Default,
+            )
+            block(controller)
+        }
+
+    /** 等到帧循环自己结束：这正是「动画已收敛」的权威条件。 */
+    private suspend fun awaitSettled(controller: LensMotionController) {
+        withTimeout(SettleTimeoutMillis) {
+            while (controller.isAnimating) delay(1)
+        }
+    }
+
+    private companion object {
+        const val FrameNanos = 16_000_000L
+        const val SettleTimeoutMillis = 10_000L
+    }
+}

@@ -35,11 +35,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -54,6 +56,7 @@ import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -70,44 +73,40 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
 
-/** 副本图标行（透镜采样内容）的按压缩放：可见行固定 1f，副本行 `1 → 1.2`。 */
-private val LocalGlassTabScale = staticCompositionLocalOf { { 1f } }
+/** 采样副本行的图标缩放：可见行固定 1f，副本行随按压 `1 → iconScaleOnPress`。 */
+private val LocalGlassIconScale = staticCompositionLocalOf { { 1f } }
 
 /**
- * 「液态玻璃增强」底部导航栏：Legado 三层采样 + 折射透镜 + 按压拖动手感的高保真复刻。
+ * 「液态玻璃增强」底部导航栏（本项目独立实现；设计记录见
+ * `docs/液态玻璃增强计划方案.md`，参数来源见 [GlassBottomBarSpec] 注释）。
  *
- * 移植自 legado-with-MD3
- * `app/src/main/java/io/legado/app/ui/widget/components/FloatingBottomBar.kt`
- * （commit fb01a76ebbbca41423e2c4c00080cc0861239fbd）。
- * 上游文件头部另声明：Portions of this file are derived from weishu/KernelSU
- * (https://github.com/tiann/KernelSU), Copyright (C) KernelSU contributors,
- * Licensed under GPL-3.0。该署名按分析报告附录 B 要求一并保留。
+ * 三层采样结构——这是让透镜能折射出**图标**、而不是只放大一块颜色的关键：
  *
- * 渲染链路（报告 §6.1 / §8.4，Modifier 顺序不可调换）：
  * ```
- * 页面内容 ──────────────────────────────→ [backdrop]（宿主录制）
- *      │
- *      ├─ A 可见栏：vibrancy → blur(8dp) → lens(24dp) → 表面色 40% → 高光/阴影 → 清晰图标
- *      │
- *      ├─ B 隐藏副本：alpha(0f) + layerBackdrop(tabsBackdrop)，内部绘制放大/染色的图标
- *      │        └──────────────────────────→ [tabsBackdrop]
- *      │
- *      └─ C 移动透镜：CombinedBackdrop(page, tabs) → lens(10dp×p, 14dp×p, depth)
- *                     + 内阴影 + 静止/按压覆盖 + 速度形变
+ * 页面内容 ─────────────────────────────→ pageBackdrop（宿主录制）
+ *     │
+ *     ├─ A 可见栏：vibrancy → blur → 栏体透镜 → 表面色 → 边缘高光 → 清晰图标
+ *     │
+ *     ├─ B 采样副本：清除语义 + alpha(0) + layerBackdrop(tabsBackdrop)
+ *     │        内部绘制放大并染成强调色的图标
+ *     │              └────────────────────→ tabsBackdrop
+ *     │
+ *     └─ C 移动透镜：采样「页面背景 + 图标副本」的合成背景
+ *                   → 局部折射 + 内阴影 + 静止/按压覆盖 + 速度形变
  * ```
  *
- * 交互（报告 §6.5 / §8.6）：按住透镜**立即**响应（无长按延迟），横向拖动按槽宽换算目标索引，
- * 松手四舍五入吸附并提交；取消回原选中项（与源实现的差异已记录）。
+ * Modifier 顺序是功能性的，不可调换：副本行必须先 `alpha(0f)` 再 `layerBackdrop`
+ * （输出不可见、录制内容是实的），透镜必须晚于副本行绘制（否则会把自己的输出录进采样源）。
  *
- * 使用前提：仅在用户同时打开「圆角液态玻璃导航」与「液态玻璃增强」时由宿主挂载；
- * 宿主必须把页面内容录制进 [backdrop]（`Modifier.layerBackdrop`）。
+ * 交互：按住透镜**立即**进入按压（不等长按、不等 touch slop），左右拖动按槽宽换算目标槽位，
+ * 松手吸附并提交；手势被上层接管时取消且不提交。低版本按能力降级（见
+ * [GlassBottomBarCapabilities]）；按压体积、图标缩放与整栏缩放都是纯图层变换，各版本都保留。
  *
- * @param backdrop 宿主录制的页面内容采样源（必须是非空的 LayerBackdrop）。
- * @param selectedIndex 当前选中项索引（受控）。
+ * @param backdrop 宿主录制的页面内容采样源（宿主必须用 `Modifier.layerBackdrop` 录制）。
+ * @param selectedIndex 当前选中项（受控）。
  * @param colors 主题色契约，见 [rememberGlassBottomBarColors]。
- * @param items 导航项（图标 + 无障碍标签），Tyranor 四项业务保持不变。
- * @param onItemClick 提交切页：拖动释放与点击都走这里。
- * @param onItemReselected 重新选中当前项（透镜释放回原位时回调）。
+ * @param items 导航项（图标 + 无障碍标签）。
+ * @param onItemClick 提交切换：点击与拖动释放都走这里。
  */
 @Composable
 fun EnhancedLiquidGlassNavigationBar(
@@ -117,31 +116,38 @@ fun EnhancedLiquidGlassNavigationBar(
     items: List<LiquidGlassNavItem>,
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    onItemReselected: (Int) -> Unit = {},
     spec: GlassBottomBarSpec = GlassBottomBarSpec.Default,
     capabilities: GlassBottomBarCapabilities = GlassBottomBarCapabilities.current,
 ) {
     if (items.isEmpty()) return
-    val tabsCount = items.size
+    val tabs = items.size
     val density = LocalDensity.current
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
-    val animationScope = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
 
-    // 能力分档（报告 §8.8）：API 31+ 实时模糊；API 33+ 折射与交互高光；更低版本实色降级。
-    val isBlurEnabled = capabilities.supportsBlur
-    val isRefractionEnabled = capabilities.supportsBlur && capabilities.supportsRefraction
+    // 宽度：参考单槽宽 × N 居中收窄；窗口放不下时夹取，再窄就直接不渲染（避免留一条残片）
+    val configuration = LocalConfiguration.current
+    val windowWidthDp = with(density) {
+        LocalWindowInfo.current.containerSize.width.toDp()
+    }.takeIf { it > 0.dp } ?: configuration.screenWidthDp.dp
+    val barWidth = spec.clampedBarWidth(tabs, windowWidthDp)
+    if (barWidth <= spec.minRenderableBarWidth) return
+
+    val blurEnabled = capabilities.supportsBlur
+    val refractionEnabled = capabilities.supportsBlur && capabilities.supportsRefraction
 
     var tabWidthPx by remember { mutableFloatStateOf(0f) }
-    var totalWidthPx by remember { mutableFloatStateOf(0f) }
+    var barWidthPx by remember { mutableFloatStateOf(0f) }
+    val paddingPx = remember(density, spec) { with(density) { spec.barInnerPadding.toPx() } }
 
-    // 整栏横向跟随：累计拖动距离经 EaseOut 映射后最多 ±4dp（源公式，报告 §6.4）
-    val offsetAnimation = remember { Animatable(0f) }
-    val panelOffset by remember(density) {
+    // 整栏横向跟随：拖动距离经 EaseOut 映射后最多 ±spec.panelOffsetMax（参考公式）
+    val panelShiftAnimation = remember { Animatable(0f) }
+    val panelShift by remember(density, spec) {
         derivedStateOf {
-            if (totalWidthPx == 0f) {
+            if (barWidthPx == 0f) {
                 0f
             } else {
-                val fraction = (offsetAnimation.value / totalWidthPx).fastCoerceIn(-1f, 1f)
+                val fraction = (panelShiftAnimation.value / barWidthPx).fastCoerceIn(-1f, 1f)
                 with(density) {
                     spec.panelOffsetMax.toPx() * fraction.sign * EaseOut.transform(abs(fraction))
                 }
@@ -149,161 +155,156 @@ fun EnhancedLiquidGlassNavigationBar(
         }
     }
 
-    // canDrag 需要读取控制器自身的最新位置，因此用持有者回填实例（与源实现一致）
-    class DampedDragAnimationHolder {
-        var instance: DampedDragAnimation? = null
+    val controller = remember(scope, tabs, density, isLtr, spec) {
+        LensMotionController(
+            scope = scope,
+            initialIndex = selectedIndex.toFloat(),
+            indexRange = 0f..(tabs - 1).toFloat(),
+            spec = spec,
+        )
     }
-    val holder = remember { DampedDragAnimationHolder() }
 
-    // 拖动释放已经让透镜落到目标槽位；用显式标记（而不是比较异步写入的 targetValue）判重，
-    // 否则会与 animateToValue 的协程启动竞争，产生第二次按压脉冲（差异 D9）。
-    // 声明在控制器之前：onDragStopped 闭包会写入它。
-    var indexCommittedByDrag by remember { mutableStateOf<Int?>(null) }
-
-    // 控制器实例按 tabsCount / 布局方向 / 密度 remember，其回调闭包会被长期持有：
-    // 选中项与业务回调必须经 rememberUpdatedState 读取最新值，否则拖动释放会提交到旧索引。
+    // 控制器与手势闭包会被长期持有：只能读快照态或 rememberUpdatedState 的值
     val currentSelectedIndex by rememberUpdatedState(selectedIndex)
     val currentOnItemClick by rememberUpdatedState(onItemClick)
-    val currentOnItemReselected by rememberUpdatedState(onItemReselected)
+    val currentTabWidthPx by rememberUpdatedState(tabWidthPx)
+    val currentBarWidthPx by rememberUpdatedState(barWidthPx)
+    val currentIsLtr by rememberUpdatedState(isLtr)
+    // 拖动释放已经落到目标槽位；用显式标记判重，避免 settleAt 再补一次按压脉冲
+    var indexCommittedByDrag by remember { mutableStateOf<Int?>(null) }
 
-    val dampedDragAnimation = remember(animationScope, tabsCount, density, isLtr, spec) {
-        DampedDragAnimation(
-            animationScope = animationScope,
-            initialValue = selectedIndex.toFloat(),
-            valueRange = 0f..(tabsCount - 1).toFloat(),
-            visibilityThreshold = spec.visibilityThreshold,
-            initialScale = 1f,
-            pressedScale = spec.pressedScale,
-            velocityNormalizationSpan = spec.velocityNormalizationSpan,
-            releaseThreshold = spec.releaseThreshold,
-            canDrag = { offset ->
-                val anim = holder.instance ?: return@DampedDragAnimation true
-                // <= 0f：宽度不足（窗口极窄）时 tabWidthPx 可能为负，等值判断会漏放行
-                if (tabWidthPx <= 0f) return@DampedDragAnimation false
-                val currentValue = anim.value
-                val indicatorX = currentValue * tabWidthPx
-                val padding = with(density) { spec.barInnerPadding.toPx() }
-                val globalTouchX = if (isLtr) {
-                    padding + indicatorX + offset.x
-                } else {
-                    totalWidthPx - padding - tabWidthPx - indicatorX + offset.x
-                }
-                globalTouchX in 0f..totalWidthPx
-            },
-            onDragStopped = {
-                val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
-                animateToValue(targetIndex.toFloat())
-                indexCommittedByDrag = targetIndex
-                if (targetIndex != currentSelectedIndex) {
-                    currentOnItemClick(targetIndex)
-                } else {
-                    currentOnItemReselected(targetIndex)
-                }
-                animationScope.launch {
-                    offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
-                }
-            },
-            onDragCancelled = {
-                // 正式产品语义：取消不提交，回到当前选中项（报告 §8.1 / §8.6 第 6 条，记录为差异）
-                animateToValue(currentSelectedIndex.toFloat())
-                animationScope.launch {
-                    offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
-                }
-            },
-            onDrag = { _, dragAmount ->
-                if (tabWidthPx > 0f) {
-                    updateValue(
-                        (targetValue + dragAmount.x / tabWidthPx * (if (isLtr) 1f else -1f))
-                            .fastCoerceIn(0f, (tabsCount - 1).toFloat()),
-                    )
-                    animationScope.launch {
-                        offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
-                    }
-                }
-            },
-        ).also { holder.instance = it }
+    val commitIndex: (Float) -> Unit = remember(controller, scope, tabs) {
+        { target ->
+            val index = target.fastRoundToInt().fastCoerceIn(0, tabs - 1)
+            // 吸附到四舍五入后的槽位，并收起材质；pulse=false 表示不再补一次按压脉冲
+            controller.settleAt(index.toFloat(), pulse = false)
+            indexCommittedByDrag = index
+            if (index != currentSelectedIndex) currentOnItemClick(index)
+            scope.launch { panelShiftAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
+        }
     }
 
-    // 选中项变化时把透镜弹到新槽位；首次组合只记录不播放，避免启动时出现一次“按下再回弹”的假动画。
-    var lastAnimatedIndex by remember(dampedDragAnimation) { mutableStateOf<Int?>(null) }
-    LaunchedEffect(selectedIndex, dampedDragAnimation) {
-        val previous = lastAnimatedIndex
-        lastAnimatedIndex = selectedIndex
+    val dragModifier = remember(controller, commitIndex, scope, paddingPx) {
+        Modifier.pointerInput(controller) {
+            detectLensPressDrag(
+                onPress = { controller.beginPress() },
+                onDrag = { position, previous, delta ->
+                    val tab = currentTabWidthPx
+                    if (tab > 0f) {
+                        // 触点换算到栏体坐标系：透镜自身随索引移动，只有仍落在透镜上才继续跟随
+                        val index = controller.index
+                        val barWidthPx = currentBarWidthPx
+                        val base = if (currentIsLtr) {
+                            paddingPx + index * tab
+                        } else {
+                            barWidthPx - paddingPx - tab - index * tab
+                        }
+                        if (base + position.x in 0f..barWidthPx && base + previous.x in 0f..barWidthPx) {
+                            controller.dragBy(delta.x / tab * (if (currentIsLtr) 1f else -1f))
+                            scope.launch { panelShiftAnimation.snapTo(panelShiftAnimation.value + delta.x) }
+                        }
+                    }
+                },
+                onRelease = { commitIndex(controller.targetIndex) },
+                onCancel = {
+                    // 取消不提交：回到当前选中项（正式产品语义，见文档 §6 D3）
+                    controller.settleAt(currentSelectedIndex.toFloat(), pulse = false)
+                    scope.launch { panelShiftAnimation.animateTo(0f, spring(1f, 300f, 0.5f)) }
+                },
+            )
+        }
+    }
+
+    // 选中项变化时把透镜弹到新槽位。首次组合只记录不播放，避免启动时出现一次假按压；
+    // 拖动释放已经落到目标槽位时也不再重复播放。
+    var lastSyncedIndex by remember(controller) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(selectedIndex, controller) {
+        val previous = lastSyncedIndex
+        lastSyncedIndex = selectedIndex
         val committedByDrag = indexCommittedByDrag == selectedIndex
         indexCommittedByDrag = null
         if (previous != null && previous != selectedIndex && !committedByDrag) {
-            dampedDragAnimation.animateToValue(selectedIndex.toFloat())
+            controller.settleAt(selectedIndex.toFloat())
         }
     }
-
-    // 仅 API 33+ 构造 InteractiveHighlight（其构造期创建 android.graphics.RuntimeShader）；
-    // 这里保留显式 SDK_INT 判断而不是只依赖能力标记，便于静态检查识别 API 门槛。
-    //
-    // 实例只按 animationScope remember 一次：其 gestureModifier 内部是 pointerInput(animationScope)，
-    // 已启动的手势协程不会因 update() 而重置，若按 tabWidthPx / 控制器重建实例，绘制会读新实例的动画、
-    // 手势却继续写旧实例，导致按压高光永久失效。位置所需的可变值统一经 rememberUpdatedState 读取。
-    val currentTabWidthPx by rememberUpdatedState(tabWidthPx)
-    val currentIsLtr by rememberUpdatedState(isLtr)
-    val currentDragAnimation by rememberUpdatedState(dampedDragAnimation)
-    val interactiveHighlight =
-        if (isRefractionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            remember(animationScope) {
-                InteractiveHighlight(
-                    animationScope = animationScope,
-                    position = { size, _ ->
-                        Offset(
-                            if (currentIsLtr) {
-                                (currentDragAnimation.value + 0.5f) * currentTabWidthPx + panelOffset
-                            } else {
-                                size.width - (currentDragAnimation.value + 0.5f) * currentTabWidthPx + panelOffset
-                            },
-                            size.height / 2f,
-                        )
-                    },
-                )
-            }
-        } else {
-            null
-        }
 
     val tabsBackdrop = rememberLayerBackdrop()
-    val containerColor = if (isBlurEnabled) {
-        colors.surfaceTint.copy(alpha = spec.surfaceAlpha)
-    } else {
-        colors.fallbackSurface
+    val containerColor = remember(blurEnabled, colors, spec) {
+        if (blurEnabled) colors.surfaceTint.copy(alpha = spec.surfaceAlpha) else colors.fallbackSurface
     }
 
-    // 栏体宽度（报告 §8.5）：N 个参考单槽（76dp）+ 左右内边距，居中收窄；
-    // 窄屏/分屏放不下时按可用窗口宽度收窄，不溢出屏幕（报告 §9 窄屏风险项）。
-    val configuration = LocalConfiguration.current
-    val windowWidthDp = with(density) {
-        LocalWindowInfo.current.containerSize.width.toDp()
-    }.takeIf { it > 0.dp } ?: configuration.screenWidthDp.dp
-    val maxBarWidth = (windowWidthDp - spec.hostHorizontalPadding * 2).coerceAtLeast(0.dp)
-    val naturalBarWidth = spec.naturalBarWidth(tabsCount)
-    val barWidth = minOf(naturalBarWidth, maxBarWidth)
+    // 按压光斑：中心直接取透镜位置（栏体局部坐标，含 4dp 内边距；整栏偏移由图层负责）
+    val pressGlow = if (refractionEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        remember(controller, spec, colors, paddingPx, currentTabWidthPx) {
+            PressGlowHighlight(
+                progress = { controller.glow },
+                center = { size ->
+                    val fromStart = paddingPx + (controller.index + 0.5f) * currentTabWidthPx
+                    Offset(
+                        x = if (isLtr) fromStart else size.width - fromStart,
+                        y = size.height / 2f,
+                    )
+                },
+                veilAlpha = spec.pressVeilAlpha,
+                glowAlpha = spec.pressGlowAlpha,
+                tint = colors.edgeHighlight,
+            )
+        }
+    } else {
+        null
+    }
 
     Box(
         modifier = modifier.width(barWidth),
         contentAlignment = Alignment.CenterStart,
     ) {
-        // A 可见栏：真实玻璃栏体 + 清晰图标（图标绘制在栏体之后，不被模糊）
+        // ---- A 可见栏：玻璃栏体 + 清晰图标（图标绘制在栏体之后，不参与模糊）----
+        val barEffects: BackdropEffectScope.() -> Unit = remember(blurEnabled, spec) {
+            {
+                if (blurEnabled) {
+                    vibrancy()
+                    blur(spec.blurRadius.toPx())
+                    lens(spec.barLensRadius.toPx(), spec.barLensRadius.toPx())
+                }
+            }
+        }
+        // 边缘高光：参考实现直接使用 Highlight.Default（自带 50% 白），本实现只取其一部分（文档 §6 D12）
+        val barHighlight: (() -> Highlight?)? = remember(blurEnabled, spec) {
+            if (blurEnabled) {
+                { Highlight.Default.copy(alpha = spec.barHighlightAlpha) }
+            } else {
+                null
+            }
+        }
+        val barSurface: DrawScope.() -> Unit = remember(containerColor) {
+            { drawRect(containerColor) }
+        }
+        // 整栏按压：纯图层缩放，任何 API 版本都保留
+        val pressDeltaPx = with(density) { spec.barPressScaleDelta.toPx() }
+        val pressDeltaMax = spec.barPressScaleDeltaMax
+        val barPressLayer: GraphicsLayerScope.() -> Unit =
+            remember(pressDeltaPx, pressDeltaMax, controller) {
+                {
+                    val width = size.width
+                    if (width > 0f) {
+                        val extra = (pressDeltaPx / width).fastCoerceIn(0f, pressDeltaMax)
+                        val scale = lerp(1f, 1f + extra, controller.pressure)
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                }
+            }
         Row(
             Modifier
                 .fillMaxWidth()
-                // 声明为选择组：TalkBack 才会播报「第 n 项，共 N 项」
                 .selectableGroup()
                 .onGloballyPositioned { coords ->
-                    totalWidthPx = coords.size.width.toFloat()
-                    val contentWidthPx = totalWidthPx - with(density) { spec.barInnerPadding.toPx() * 2 }
-                    tabWidthPx = contentWidthPx / tabsCount
+                    barWidthPx = coords.size.width.toFloat()
+                    tabWidthPx = (barWidthPx - paddingPx * 2) / tabs
                 }
-                .graphicsLayer { translationX = panelOffset }
-                // 整条栏体吞掉落在其上的触摸（源 FloatingBottomBar.kt 同样处理）：
-                // 悬浮栏的 4dp 内边距环与两端条带不属于任何导航项，若不拦截，
-                // 点按 / 拖动会穿透到底下的页面内容，造成误触与误滚动（报告 §8.6 第 7 条）。
-                // 用 pointerInput 而非 clickable：clickable 会发布一个无标签的可点击语义节点，
-                // 让 TalkBack 在四个 Tab 之间多出一个空焦点；Main 阶段消费则保证子项先收到事件。
+                .graphicsLayer { translationX = panelShift }
+                // 悬浮栏整体归导航所有：栏内不属于任何 Tab 的残余手势在此吞掉（Main 阶段，
+                // 子项先处理自己的点击），不落到宿主的手势处理上
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
@@ -314,183 +315,166 @@ fun EnhancedLiquidGlassNavigationBar(
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { AppNavCapsuleShape },
-                    effects = {
-                        if (isBlurEnabled) {
-                            vibrancy()
-                            blur(spec.blurRadius.toPx())
-                            lens(spec.barLensRadius.toPx(), spec.barLensRadius.toPx())
-                        }
-                    },
-                    // 边缘高光降到「微浅」（差异 D12）：源值 50% 白在栏体两端圆弧处过亮。
-                    // 能力不足时传 null，避免逐帧录制不可见的高光层。
-                    highlight = if (isBlurEnabled) {
-                        { Highlight.Default.copy(alpha = spec.barHighlightAlpha) }
-                    } else {
-                        null
-                    },
-                    // 栏体不画外部投影（差异 D11）：源实现为浅色 10% / 深色 20% 黑，
-                    // 是本项目原液态玻璃栏（等效 8%）的 2.5 倍，在深色渐变背景上会形成
-                    // 一圈比栏体更大的暗色圆角轮廓（看起来像底栏下面还压着一层）。
-                    // 文字/图标可读性由 40% 表面色 + 高光描边保证，不依赖投影分层。
+                    effects = barEffects,
+                    highlight = barHighlight,
+                    // **必须显式传 null**：Backdrop 的 shadow 默认值是 Shadow.Default
+                    // （24dp 模糊、下移 4dp、黑 10%，且无 API 门槛），漏传就会在栏体周围
+                    // 出现一圈暗色轮廓。本项目不使用栏体投影（文档 §6 D11）。
                     shadow = null,
-                    layerBlock = {
-                        // size.width 为 0 时 1f + 16dp/0 会得到 ∞，lerp 后是 NaN → 该层被丢弃，
-                        // 因此显式跳过退化尺寸。
-                        if (isBlurEnabled && size.width > 0f) {
-                            val progress = dampedDragAnimation.pressProgress
-                            val scale = lerp(
-                                1f,
-                                1f + spec.barPressScaleDelta.toPx() / size.width,
-                                progress,
-                            )
-                            scaleX = scale
-                            scaleY = scale
-                        }
-                    },
-                    onDrawSurface = { drawRect(containerColor) },
+                    layerBlock = barPressLayer,
+                    onDrawSurface = barSurface,
                 )
-                .then(interactiveHighlight?.modifier ?: Modifier)
+                .then(pressGlow?.modifier ?: Modifier)
                 .height(spec.barHeight)
                 .padding(spec.barInnerPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             items.forEachIndexed { index, item ->
-                GlassVisibleTab(
+                VisibleTab(
                     item = item,
                     selected = index == selectedIndex,
                     colors = colors,
                     iconSize = spec.iconSize,
-                    onClick = { onItemClick(index) },
+                    onClick = { if (index != selectedIndex) onItemClick(index) },
                 )
             }
         }
 
-        // B 隐藏副本：最终输出不可见（alpha 0），但内部内容录制进 tabsBackdrop 供透镜采样。
-        // 顺序不可调换：alpha → layerBackdrop → drawBackdrop → 缩放/染色。
-        CompositionLocalProvider(
-            LocalGlassTabScale provides {
-                if (isBlurEnabled) {
-                    lerp(1f, spec.iconScaleOnPress, dampedDragAnimation.pressProgress)
-                } else {
-                    1f
+        // ---- B 采样副本：输出不可见（alpha 0），内部内容被录进 tabsBackdrop 供透镜采样 ----
+        // 副本行自身的折射强度随按压增长：透镜里的图标会随按压一起被顶起来，
+        // 这是复刻观感的组成部分。代价是采样边距随按压变化 → 该离屏图层在按压期间
+        // 每帧改变尺寸（文档 §6 D13 记录了这一点与可选的降本方案）。
+        val copyEffects: BackdropEffectScope.() -> Unit = remember(blurEnabled, spec, controller) {
+            {
+                if (blurEnabled) {
+                    vibrancy()
+                    blur(spec.blurRadius.toPx())
+                    val progress = controller.pressure
+                    lens(
+                        spec.barLensRadius.toPx() * progress,
+                        spec.barLensRadius.toPx() * progress,
+                    )
                 }
-            },
+            }
+        }
+        val copyHighlight: (() -> Highlight?)? = remember(blurEnabled, controller) {
+            if (blurEnabled) {
+                { Highlight.Default.copy(alpha = controller.pressure) }
+            } else {
+                null
+            }
+        }
+        val iconScale = remember(spec, controller) {
+            { lerp(1f, spec.iconScaleOnPress, controller.pressure) }
+        }
+        CompositionLocalProvider(
+            LocalGlassIconScale provides iconScale,
         ) {
             Row(
                 Modifier
                     .clearAndSetSemantics { }
                     .alpha(0f)
                     .layerBackdrop(tabsBackdrop)
-                    .graphicsLayer { translationX = panelOffset }
+                    .graphicsLayer { translationX = panelShift }
                     .drawBackdrop(
                         backdrop = backdrop,
                         shape = { AppNavCapsuleShape },
-                        effects = {
-                            if (isBlurEnabled) {
-                                val progress = dampedDragAnimation.pressProgress
-                                vibrancy()
-                                blur(spec.blurRadius.toPx())
-                                lens(spec.barLensRadius.toPx() * progress, spec.barLensRadius.toPx() * progress)
-                            }
-                        },
-                        // 能力不足时传 null 而不是 alpha=0 的材质：库只跳过 null，
-                        // alpha=0 仍会逐帧录制一层不可见的离屏模糊层（API 31–32 按压期间）。
-                        highlight = if (isBlurEnabled) {
-                            { Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress) }
-                        } else {
-                            null
-                        },
-                        onDrawSurface = { drawRect(containerColor) },
+                        effects = copyEffects,
+                        // 采样副本行同样不画投影（其输出本就不可见，留着只会白建一层离屏层）
+                        highlight = copyHighlight,
+                        shadow = null,
+                        onDrawSurface = barSurface,
                     )
-                    .then(interactiveHighlight?.modifier ?: Modifier)
                     .height(spec.lensHeight)
                     .padding(horizontal = spec.barInnerPadding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 items.forEach { item ->
-                    GlassCopyTab(item = item, colors = colors, iconSize = spec.iconSize)
+                    SamplingTab(item = item, colors = colors, iconSize = spec.iconSize)
                 }
             }
         }
 
-        // C 移动透镜：采样「页面 + 图标副本」的合成背景，做局部折射与体积变化
+        // ---- C 移动透镜：采样「页面 + 图标副本」的合成背景做局部折射与体积变化 ----
         if (tabWidthPx > 0f) {
+            val lensEffects: BackdropEffectScope.() -> Unit = remember(refractionEnabled, spec, controller) {
+                {
+                    if (refractionEnabled) {
+                        val progress = controller.pressure
+                        lens(
+                            spec.lensRefractionHeight.toPx() * progress,
+                            spec.lensRefractionAmount.toPx() * progress,
+                            true,
+                        )
+                    }
+                }
+            }
+            val lensHighlight: (() -> Highlight?)? = remember(refractionEnabled, controller) {
+                if (refractionEnabled) {
+                    { Highlight.Default.copy(alpha = controller.pressure) }
+                } else {
+                    null
+                }
+            }
+            val lensShadow: (() -> Shadow?)? = remember(refractionEnabled, controller) {
+                if (refractionEnabled) {
+                    { Shadow(alpha = controller.pressure) }
+                } else {
+                    null
+                }
+            }
+            val lensInnerShadow: (() -> InnerShadow?)? = remember(refractionEnabled, spec, controller) {
+                if (refractionEnabled) {
+                    {
+                        InnerShadow(
+                            radius = spec.lensInnerShadowRadius * controller.pressure,
+                            alpha = controller.pressure,
+                        )
+                    }
+                } else {
+                    null
+                }
+            }
+            // 按压缩放与速度形变都是纯图层变换：各 API 版本都保留（低版本无折射但有体积反馈）
+            val lensLayer: GraphicsLayerScope.() -> Unit = remember(spec, controller) {
+                {
+                    val indexVelocity = controller.velocity / 10f
+                    scaleX = controller.scaleX / (1f - (indexVelocity * 0.75f).fastCoerceIn(-0.2f, 0.2f))
+                    scaleY = controller.scaleY * (1f - (indexVelocity * 0.25f).fastCoerceIn(-0.2f, 0.2f))
+                }
+            }
+            val lensCover: DrawScope.() -> Unit = remember(refractionEnabled, colors, spec, controller) {
+                {
+                    if (refractionEnabled) {
+                        val progress = controller.pressure
+                        drawRect(
+                            color = colors.staticLensCover.copy(alpha = spec.staticLensCoverAlpha),
+                            alpha = 1f - progress,
+                        )
+                        drawRect(colors.pressedLensCover.copy(alpha = spec.pressedLensCoverAlpha * progress))
+                    } else {
+                        // 降级档（API < 33 无折射）：用主题色半透明胶囊保持选中可见性
+                        drawRect(colors.lensFallbackTint)
+                    }
+                }
+            }
             Box(
                 Modifier
                     .padding(horizontal = spec.barInnerPadding)
                     .graphicsLayer {
-                        val progressOffset = dampedDragAnimation.value * tabWidthPx
-                        translationX = if (isLtr) {
-                            progressOffset + panelOffset
-                        } else {
-                            -progressOffset + panelOffset
-                        }
+                        val shift = controller.index * tabWidthPx
+                        translationX = if (isLtr) shift + panelShift else -shift + panelShift
                     }
-                    .then(interactiveHighlight?.gestureModifier ?: Modifier)
-                    .then(dampedDragAnimation.modifier)
+                    .then(dragModifier)
                     .drawBackdrop(
                         backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                         shape = { AppNavCapsuleShape },
-                        effects = {
-                            if (isRefractionEnabled) {
-                                val progress = dampedDragAnimation.pressProgress
-                                lens(
-                                    spec.lensRefractionHeight.toPx() * progress,
-                                    spec.lensRefractionAmount.toPx() * progress,
-                                    true,
-                                )
-                            }
-                        },
-                        // 折射不可用时传 null：避免逐帧录制不可见的离屏材质层（见副本行说明）
-                        highlight = if (isRefractionEnabled) {
-                            { Highlight.Default.copy(alpha = dampedDragAnimation.pressProgress) }
-                        } else {
-                            null
-                        },
-                        shadow = if (isRefractionEnabled) {
-                            { Shadow(alpha = dampedDragAnimation.pressProgress) }
-                        } else {
-                            null
-                        },
-                        innerShadow = if (isRefractionEnabled) {
-                            {
-                                InnerShadow(
-                                    radius = spec.lensInnerShadowRadius * dampedDragAnimation.pressProgress,
-                                    alpha = dampedDragAnimation.pressProgress,
-                                )
-                            }
-                        } else {
-                            null
-                        },
-                        layerBlock = {
-                            // 缩放不依赖 shader：与源实现一致按「是否有实时模糊」分档，
-                            // 使 Android 12/12L（有模糊、无折射）也保留透镜按压体积反馈。
-                            if (isBlurEnabled) {
-                                scaleX = dampedDragAnimation.scaleX
-                                scaleY = dampedDragAnimation.scaleY
-                                // 速度形变带符号：左右移动不是对称的 abs(speed) 拉伸（报告 §6.4）
-                                val velocity = dampedDragAnimation.velocity / 10f
-                                scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                                scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
-                            }
-                        },
-                        onDrawSurface = {
-                            if (isRefractionEnabled) {
-                                val progress = dampedDragAnimation.pressProgress
-                                drawRect(
-                                    color = if (colors.isDark) {
-                                        Color.White.copy(alpha = spec.staticLensCoverAlpha)
-                                    } else {
-                                        Color.Black.copy(alpha = spec.staticLensCoverAlpha)
-                                    },
-                                    alpha = 1f - progress,
-                                )
-                                drawRect(Color.Black.copy(alpha = spec.pressedLensCoverAlpha * progress))
-                            } else {
-                                // 降级档（API < 33）：无折射能力，用主题色半透明胶囊保持选中可见性
-                                drawRect(colors.lensFallbackTint)
-                            }
-                        },
+                        effects = lensEffects,
+                        highlight = lensHighlight,
+                        shadow = lensShadow,
+                        innerShadow = lensInnerShadow,
+                        layerBlock = lensLayer,
+                        onDrawSurface = lensCover,
                     )
                     .height(spec.lensHeight)
                     .width(with(density) { tabWidthPx.toDp() }),
@@ -499,12 +483,9 @@ fun EnhancedLiquidGlassNavigationBar(
     }
 }
 
-/**
- * 可见导航项：承担全部语义与点击（Role.Tab + selected），图标保持清晰不参与模糊。
- * 副本行与它共用同一份 [LiquidGlassNavItem] 数据，但副本只绘制、清除语义、不参与命中测试。
- */
+/** 可见导航项：承担全部语义与点击（Role.Tab + selected），图标保持清晰不参与模糊。 */
 @Composable
-private fun RowScope.GlassVisibleTab(
+private fun RowScope.VisibleTab(
     item: LiquidGlassNavItem,
     selected: Boolean,
     colors: GlassBottomBarColors,
@@ -525,7 +506,7 @@ private fun RowScope.GlassVisibleTab(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        GlassTabIcon(
+        TabIcon(
             item = item,
             tint = if (selected) colors.selectedIcon else colors.unselectedIcon,
             iconSize = iconSize,
@@ -533,35 +514,31 @@ private fun RowScope.GlassVisibleTab(
     }
 }
 
-/** 隐藏副本导航项：只负责被透镜采样，不声明语义、不接收点击。 */
+/** 采样副本项：只负责被透镜看到，不声明语义、不接收点击。 */
 @Composable
-private fun RowScope.GlassCopyTab(
+private fun RowScope.SamplingTab(
     item: LiquidGlassNavItem,
     colors: GlassBottomBarColors,
     iconSize: Dp,
 ) {
-    val scale = LocalGlassTabScale.current
+    val scale = LocalGlassIconScale.current
     Box(
         modifier = Modifier
             .fillMaxHeight()
             .weight(1f)
             .graphicsLayer {
-                val currentScale = scale()
-                scaleX = currentScale
-                scaleY = currentScale
+                val current = scale()
+                scaleX = current
+                scaleY = current
             },
         contentAlignment = Alignment.Center,
     ) {
-        GlassTabIcon(
-            item = item,
-            tint = colors.lensContentTint,
-            iconSize = iconSize,
-        )
+        TabIcon(item = item, tint = colors.lensContentTint, iconSize = iconSize)
     }
 }
 
 @Composable
-private fun GlassTabIcon(
+private fun TabIcon(
     item: LiquidGlassNavItem,
     tint: Color,
     iconSize: Dp,

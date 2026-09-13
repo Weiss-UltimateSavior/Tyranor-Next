@@ -109,10 +109,19 @@ object AppSettingsStore {
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
     val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
 
-    /** 首次组合时从持久化加载导航栏样式到内存态（幂等，重复调用仅重新读一次）。 */
+    /** 首次组合时从持久化加载导航栏样式与液态玻璃增强到内存态（幂等）。 */
     fun initNavStyle(c: Context) {
-        navStyleState.value = getNavStyle(c)
-        liquidGlassEnhanceState.value = getLiquidGlassEnhance(c)
+        val style = getNavStyle(c)
+        navStyleState.value = style
+        // 增强档只在液态玻璃底栏下有意义：读取时归一化，避免「父项已关、子项仍为 true」的
+        // 历史状态在下次打开父项时被静默启用（同时消除冷启动瞬间两个 StateFlow 不同步）。
+        // 归一化结果同时写回磁盘（仅在不一致时写一次），使持久化值与界面状态始终一致。
+        val stored = getLiquidGlassEnhance(c)
+        val effective = stored && style == NAV_STYLE_LIQUID_GLASS
+        liquidGlassEnhanceState.value = effective
+        if (stored != effective) {
+            prefs(c).edit().putBoolean(KEY_LIQUID_GLASS_ENHANCE, effective).apply()
+        }
     }
 
     fun initLanguage(c: Context) {
@@ -152,13 +161,18 @@ object AppSettingsStore {
         prefs(c).getString(KEY_NAV_STYLE, NAV_STYLE_DEFAULT) ?: NAV_STYLE_DEFAULT
 
     fun setNavStyle(c: Context, style: String) {
-        prefs(c).edit().putString(KEY_NAV_STYLE, style).apply()
+        // 「液态玻璃增强」只有在液态玻璃底栏开关打开时才具备开启条件：切回默认样式时一并
+        // 复位。两个 key 在**同一次** edit 事务里写入，避免进程在两次写之间被杀导致
+        // 「父项已关、子项仍为 true」的中间态落盘。
+        val resetEnhance = style != NAV_STYLE_LIQUID_GLASS
+        val editor = prefs(c).edit().putString(KEY_NAV_STYLE, style)
+        if (resetEnhance) {
+            editor.putBoolean(KEY_LIQUID_GLASS_ENHANCE, false)
+        }
+        editor.apply()
         navStyleState.value = style
-        // 「液态玻璃增强」只有在液态玻璃底栏开关打开时才具备开启条件：
-        // 切回默认样式时无条件复位并持久化（不依赖内存态是否已加载），
-        // 避免隐藏项残留开启态 —— 用户重新打开父开关时被“静默”改变外观。
-        if (style != NAV_STYLE_LIQUID_GLASS) {
-            setLiquidGlassEnhance(c, false)
+        if (resetEnhance) {
+            liquidGlassEnhanceState.value = false
         }
     }
 

@@ -7,6 +7,8 @@ import androidx.compose.ui.graphics.Color
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DarkGrey
 import com.tyranor.next.theme.GlassNavSurface
+import com.tyranor.next.theme.GlassOpticalBlack
+import com.tyranor.next.theme.GlassOpticalWhite
 import com.tyranor.next.theme.GlassSurfaceSolid
 
 /**
@@ -15,7 +17,7 @@ import com.tyranor.next.theme.GlassSurfaceSolid
  * 当前阶段把 Tyranor 现有主题语义映射到 [GlassBottomBarColors]；未来接入 MD3 动态取色时，
  * 只需要把这里的输入换成根部统一的 `MaterialTheme.colorScheme`，玻璃渲染核心与交互参数不动。
  *
- * 说明：报告 §8.2 建议把本文件放在 `theme/`，但项目 `theme/` 当前不依赖 `ui/`
+ * 说明：报告 §8.2 建议把本文件放在 `theme/`，但项目 `theme/` 不依赖 `ui/`
  * （AGENT.md 三层架构与依赖方向纪律），因此适配器与颜色契约同置于 `ui/common/glass/`，
  * 保持依赖方向为 `ui → theme`，取色职责仍收口在单一函数内。
  *
@@ -32,14 +34,16 @@ fun rememberGlassBottomBarColors(
     return remember(primary, unselectedColor, isDark, isGlass) {
         GlassBottomBarColors(
             // 栏体着色：玻璃外观风格沿用悬浮导航的深色玻璃面，其余跟随深浅中性面
-            surfaceTint = if (isGlass) GlassNavSurface else if (isDark) DarkGrey else Color.White,
-            fallbackSurface = if (isGlass) GlassSurfaceSolid else if (isDark) DarkGrey else Color.White,
+            surfaceTint = if (isGlass) GlassNavSurface else if (isDark) DarkGrey else GlassOpticalWhite,
+            fallbackSurface = if (isGlass) GlassSurfaceSolid else if (isDark) DarkGrey else GlassOpticalWhite,
             selectedIcon = primary,
             unselectedIcon = unselectedColor,
             lensContentTint = primary,
             // 降级档（API < 33 无折射）：用主题色半透明胶囊维持选中可见性
             lensFallbackTint = primary.copy(alpha = 0.32f),
-            isDark = isDark,
+            edgeHighlight = GlassOpticalWhite,
+            staticLensCover = if (isDark) GlassOpticalWhite else GlassOpticalBlack,
+            pressedLensCover = GlassOpticalBlack,
         )
     }
 }

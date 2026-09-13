@@ -66,6 +66,17 @@ val GlassTextSecondary = Color(0xFFA6AAB0)
 /** 玻璃导航栏未选中灰。 */
 val GlassUnselected = Color(0xFF7F858D)
 
+// ===== 液态玻璃增强档的光学中性色（不随主题色 / 色调切换变化）=====
+
+/**
+ * 光学高光与覆盖用的纯白：增强档栏体边缘高光、透镜静止覆盖（深色档）、交互光斑底色。
+ * 属于「光学材质」中性色，参考实现同样用白光/黑影，不参与主题取色。
+ */
+val GlassOpticalWhite = Color(0xFFFFFFFF)
+
+/** 光学阴影与覆盖用的纯黑：增强档透镜按压覆盖、按住时的高光/阴影本体。 */
+val GlassOpticalBlack = Color(0xFF000000)
+
 // 页面背景：随深色模式取深/浅；玻璃风格透明（露出根部渐变）
 val PageGrey: Color
     get() = when {

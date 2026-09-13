@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -139,13 +140,18 @@ fun MainScreen(modifier: Modifier = Modifier) {
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass
   val tabLabels = tabItems.map { stringResource(it.labelRes) }
-  val liquidGlassTabItems = tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
+  // remember(tabLabels)：labels 内容不变时复用同一份 items，避免每次重组都给增强栏传新 List
+  // （增强栏据此跳过重组，进而避免 drawBackdrop 元素被判不等而重建 RenderEffect 管线）
+  val liquidGlassTabItems = remember(tabLabels) {
+    tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
+  }
 
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
   fun selectPage(index: Int) {
-    // 转场期间接受新目标：updateTransition 会从当前显示状态重定向到新目标。
-    // 不再用 isRunning 丢弃输入——否则「液态玻璃增强」的透镜已经响应，页面却不动（报告 §8.7）。
     if (index == selectedIndex) return
+    // 增强档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
+    // 默认路径保持原有守卫，避免把这一行为变更带给未开启该选项的用户（报告 §8.7）。
+    if (!enhanceLiquidGlass && pageTransition.isRunning) return
     selectedIndex = index
   }
   val backdropAvailable = liquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -156,17 +162,19 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 关键：背景必须在 layerBackdrop 之后（内层）——layerBackdrop 只录制它之后的内容，
     // 放在外层（Surface/Column 背景）的内容不会被采样，玻璃会采到透明而漏出文字。
     val backdrop = rememberLayerBackdrop()
+    // 采样修复（报告 §5.3 / §8.4 第 1 条）：玻璃外观风格下 PageGrey 透明，根部背景在采样层之外，
+    // 增强档把同一份背景画进被采样内容，保证透镜采样源含完整背景且坐标同源。
+    // remember：MainScreen 在切页动画期间每帧重组，复用同一 Modifier 才不会每帧重建绘制缓存。
+    val accent = AppThemeColors.primary
+    val pageBackground = remember(accent) { Modifier.glassPageBackground(accent) }
     val contentModifier = Modifier
       .fillMaxSize()
       // source 节点常驻，避免切页结束时重新挂载玻璃录制层。
       .then(if (backdropAvailable) Modifier.layerBackdrop(backdrop) else Modifier)
-      // 采样修复（报告 §5.3 / §8.4 第 1 条）：玻璃外观风格下 PageGrey 透明，根部渐变在采样层之外，
-      // 增强档会把同一份渐变画进被采样内容，保证透镜采样源包含完整背景且坐标同源。
       .then(
-        // 仅玻璃外观风格需要（该模式下 PageGrey 透明、根部背景在采样层之外）；
-        // accent 在组合期读取，保证色调轮盘换色后采样层内的背景同步刷新
+        // 仅玻璃外观风格需要（该模式下 PageGrey 透明、根部背景在采样层之外）
         if (backdropAvailable && enhanceLiquidGlass && AppThemeColors.isGlass) {
-          Modifier.glassPageBackground(AppThemeColors.primary)
+          pageBackground
         } else {
           Modifier
         },
@@ -254,7 +262,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
 
     // 圆角液态玻璃导航：悬浮在内容之上。
-    // 增强档（应用设置 → 液态玻璃增强）改用 Legado 三层采样 + 折射透镜实现，默认关闭走原实现。
+    // 增强档（应用设置 → 液态玻璃增强）改用三层采样 + 折射透镜实现，默认关闭走原实现。
     if (liquidGlass) {
       if (enhanceLiquidGlass) {
         EnhancedLiquidGlassNavigationBar(

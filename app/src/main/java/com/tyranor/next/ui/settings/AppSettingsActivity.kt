@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,8 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppAlertDialog
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
@@ -78,6 +81,11 @@ internal fun AppSettingsScreen() {
     val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
     val glass = AppThemeColors.isGlass
     var showColorPicker by remember { mutableStateOf(false) }
+    // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：确保两个开关读到持久化值，
+    // 否则会出现「持久化为开、界面显示关」的错位
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(ctx) }
+    }
 
     MiuixSettingsTheme {
         MiuixScaffold(
