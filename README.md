@@ -17,6 +17,12 @@ iOS版本计划中...
 
 感谢 [@安音](https://www.pixiv.net/users/8182248) 为本项目绘画的logo娘！
 
+## 贡献者
+
+<a href="https://github.com/Weiss-UltimateSavior/Tyranor-Next/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Weiss-UltimateSavior/Tyranor-Next" />
+</a>
+
 ## 支持范围
 
 ### 引擎与游戏类型
