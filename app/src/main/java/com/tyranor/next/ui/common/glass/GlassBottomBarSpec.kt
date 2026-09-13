@@ -67,6 +67,15 @@ data class GlassBottomBarSpec(
     val barPressScaleDeltaMax: Float = 0.05f,
     /** 点击未覆盖图标时，判定「滑块快到位」的索引距离阈值（用于触觉反馈时机，见 §6 D16）。 */
     val tapArriveThreshold: Float = 0.12f,
+    /**
+     * 透镜视觉宽度上限（见 §6 D19）。
+     *
+     * 手机上一个槽位就是 76dp，透镜即整槽；但平板/横屏拉伸后单槽会被拉到 200dp 以上，
+     * 若透镜仍等于整槽，按压时会膨胀成一块巨大胶囊（实测违和感强烈）。原版液态玻璃导航的
+     * 焦点胶囊始终是固定 76dp，这里同样以**参考单槽宽度**封顶：手机不受影响，宽屏下透镜
+     * 变成居中的 76dp 胶囊，与图标大小成比例。
+     */
+    val lensMaxWidth: Dp = 76.dp,
     val panelOffsetMax: Dp = 4.dp,
     /** 速度归一化跨度：参考公式为 `N − 1`，此处固定为五项参考值 4（四项适配参数）。 */
     val velocityNormalizationSpan: Float = 4f,

@@ -38,6 +38,7 @@
     <string name="settings_nav_bar_liquid_glass">液态玻璃 · 经典</string>
     <string name="settings_nav_bar_liquid_glass_enhanced">液态玻璃 · 透镜</string>
     <string name="settings_nav_bar_desc_default">Material 3 导航栏，占布局高度</string>
+    <string name="settings_nav_bar_desc_default_glass">悬浮圆角玻璃条（玻璃风格）</string>
     <string name="settings_nav_bar_desc_liquid_glass">小圆角方形玻璃栏 + 背景模糊（Android 12 及以上生效）</string>
     <string name="settings_nav_bar_desc_enhanced">胶囊轮廓 + 折射透镜与按压拖动手感（仅 Android 13 及以上支持）</string>
     <string name="settings_invalid_theme_color">不支持透明色或黑白灰色</string>

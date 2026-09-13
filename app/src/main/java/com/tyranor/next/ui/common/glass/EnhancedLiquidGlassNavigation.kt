@@ -542,6 +542,8 @@ fun EnhancedLiquidGlassNavigationBar(
                     }
                 }
             }
+            // 外层：整槽宽度的**手势热区**（宽屏拉伸后单槽很宽，热区保持整槽才好按）；
+            // 内层：视觉透镜，宽度按 spec.lensMaxWidth 封顶并居中，避免变成巨大胶囊
             Box(
                 Modifier
                     .padding(horizontal = spec.barInnerPadding)
@@ -550,19 +552,27 @@ fun EnhancedLiquidGlassNavigationBar(
                         translationX = if (isLtr) shift + panelShift else -shift + panelShift
                     }
                     .then(dragModifier)
-                    .drawBackdrop(
-                        backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                        shape = { AppNavCapsuleShape },
-                        effects = lensEffects,
-                        highlight = lensHighlight,
-                        shadow = lensShadow,
-                        innerShadow = lensInnerShadow,
-                        layerBlock = lensLayer,
-                        onDrawSurface = lensCover,
-                    )
                     .height(spec.lensHeight)
                     .width(with(density) { tabWidthPx.toDp() }),
-            )
+                contentAlignment = Alignment.Center,
+            ) {
+                val lensWidth = minOf(with(density) { tabWidthPx.toDp() }, spec.lensMaxWidth)
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .width(lensWidth)
+                        .drawBackdrop(
+                            backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
+                            shape = { AppNavCapsuleShape },
+                            effects = lensEffects,
+                            highlight = lensHighlight,
+                            shadow = lensShadow,
+                            innerShadow = lensInnerShadow,
+                            layerBlock = lensLayer,
+                            onDrawSurface = lensCover,
+                        ),
+                )
+            }
         }
     }
 }

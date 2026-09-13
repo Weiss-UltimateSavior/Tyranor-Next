@@ -38,6 +38,7 @@
     <string name="settings_nav_bar_liquid_glass">Liquid glass · Classic</string>
     <string name="settings_nav_bar_liquid_glass_enhanced">Liquid glass · Lens</string>
     <string name="settings_nav_bar_desc_default">Material 3 navigation bar, takes layout height</string>
+    <string name="settings_nav_bar_desc_default_glass">Floating rounded glass bar (Glass style)</string>
     <string name="settings_nav_bar_desc_liquid_glass">Rounded-square glass bar with background blur (Android 12 and above)</string>
     <string name="settings_nav_bar_desc_enhanced">Capsule outline with refraction lens, press and drag (Android 13 and above only)</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>

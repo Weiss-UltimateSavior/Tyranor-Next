@@ -88,6 +88,13 @@ class GlassBottomBarSpecTest {
     }
 
     @Test
+    fun lensWidthCap_matchesReferenceSlotWidth() {
+        // 宽屏拉伸后单槽会变宽，透镜视觉宽度以参考单槽宽封顶（手机单槽＝76dp，等于不设限）
+        assertEquals(76.dp, spec.lensMaxWidth)
+        assertEquals(spec.tabMinWidth, spec.lensMaxWidth)
+    }
+
+    @Test
     fun lightModeReadabilityDefaults_arePinned() {
         // 浅色档可读性适配（文档 §6 D15）：浅底上必须比深色档更实、描边更明确
         assertEquals(0.40f, spec.surfaceAlpha, 1e-6f)
