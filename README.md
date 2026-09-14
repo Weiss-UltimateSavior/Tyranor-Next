@@ -179,7 +179,6 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - **Tyranor 模拟器**：本项目引擎运行时与核心架构的逆向重写基础
 - [Artemis-Compat](https://github.com/Weiss-UltimateSavior/artemis-compat)：自研兼容内核
 - **RinneMobile**：游戏扫描识别/SAF路径映射逻辑/独立存档映射/krkrsdl3 等多个功能的参考与实现
-- **[legado-with-MD3](https://github.com/HapeLee/legado-with-MD3)**：「液态玻璃 · 透镜」底栏的光学参数与交互设计的参考实现（仅参考其光学参数与交互设计，代码为本项目独立实现）
 - [Miuix](https://github.com/compose-miuix-ui/miuix)：设置界面组件库
 - [Anime4K](https://github.com/bloc97/Anime4K):（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）
 - [OnscripterYuri](https://github.com/YuriSizuku/OnscripterYuri): ONS引擎
