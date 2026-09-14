@@ -36,6 +36,7 @@ object EngineSettingsStore {
 
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
+    const val KEY_ARTEMIS_KERNEL = "artemis_kernel"
     const val KEY_ARTEMIS_ROTATE_SCREEN = "artemis_rotate_screen"
     const val KEY_ARTEMIS_AUTO_PATCH = "artemis_auto_patch"
     const val KEY_ARTEMIS_RESOLUTION = "artemis_resolution"
@@ -138,6 +139,10 @@ object EngineSettingsStore {
     const val ART_ENGINE_V3 = "3"
     const val ART_ENGINE_V4 = "4"
     const val ART_ENGINE_V5 = "5"
+    /** Artemis 内核：官方多 revision 运行库 / 自研 clean-room 兼容内核。 */
+    const val ART_KERNEL_OFFICIAL = "official"
+    const val ART_KERNEL_CLEAN = "clean"
+    val ART_KERNELS = setOf(ART_KERNEL_OFFICIAL, ART_KERNEL_CLEAN)
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
@@ -430,6 +435,10 @@ object EngineSettingsStore {
         ) v else ART_ENGINE_AUTO
     }
     fun setArtEngineVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_ENGINE_VERSION, v).apply()
+    fun getArtKernel(c: Context): String = normalizeArtKernel(prefs(c).getString(KEY_ARTEMIS_KERNEL, ART_KERNEL_OFFICIAL))
+    fun setArtKernel(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_KERNEL, normalizeArtKernel(v)).apply()
+    fun normalizeArtKernel(v: String?): String =
+        if (v?.trim() == ART_KERNEL_CLEAN) ART_KERNEL_CLEAN else ART_KERNEL_OFFICIAL
     fun isArtRotateScreen(c: Context): Boolean = prefs(c).getBoolean(KEY_ARTEMIS_ROTATE_SCREEN, false)
     fun setArtRotateScreen(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_ARTEMIS_ROTATE_SCREEN, b).apply()
     fun getArtAutoPatch(c: Context): String {

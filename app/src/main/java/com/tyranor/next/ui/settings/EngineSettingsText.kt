@@ -113,6 +113,13 @@ internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_V5 to "V3（TyranorNext/Rev.3288）",
 )
 
+/** Artemis 内核选项：官方多 revision 运行库 / 自研 clean-room 兼容内核（单库无版本）。 */
+@Composable
+internal fun artKernelOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.ART_KERNEL_OFFICIAL to stringResource(R.string.engine_option_art_kernel_official),
+    EngineSettingsStore.ART_KERNEL_CLEAN to stringResource(R.string.engine_option_art_kernel_clean),
+)
+
 @Composable
 internal fun renpyVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.RENPY_AUTO to stringResource(R.string.common_auto),
@@ -201,6 +208,9 @@ internal fun onsEncodingOptionsMap(): Map<String, String> = onsEncodingOptions()
 
 @Composable
 internal fun artVersionOptionsMap(): Map<String, String> = artVersionOptions().toMap()
+
+@Composable
+internal fun artKernelOptionsMap(): Map<String, String> = artKernelOptions().toMap()
 
 @Composable
 internal fun renpyVersionOptionsMap(): Map<String, String> = renpyVersionOptions().toMap()

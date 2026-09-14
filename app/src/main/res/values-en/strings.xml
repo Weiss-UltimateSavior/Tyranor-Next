@@ -220,6 +220,7 @@
     <string name="engine_settings_artemis_surface_cache">Surface cache</string>
     <string name="engine_settings_artemis_font_cache">Font cache</string>
     <string name="engine_settings_artemis_power_saving">Power-saving rendering</string>
+    <string name="engine_settings_artemis_clean_hint">The clean-room kernel reads resources and config directly from the game pack; official version/patch/display options do not apply.</string>
     <string name="engine_settings_external_network_resources">Allow external network resources</string>
     <string name="engine_settings_external_network">Allow external network</string>
     <string name="engine_settings_game_modifier">Game modifier</string>
@@ -255,6 +256,8 @@
     <string name="engine_option_low">Low</string>
     <string name="engine_option_threads">%1$d threads</string>
     <string name="engine_option_auto_patch_ask">Ask on launch</string>
+    <string name="engine_option_art_kernel_official">Official kernel</string>
+    <string name="engine_option_art_kernel_clean">Clean-room kernel</string>
     <string name="engine_option_force_enable">Force enable</string>
     <string name="engine_option_off">Off</string>
     <string name="engine_option_rpg_mv_v0">Tyranor-2.3.4</string>

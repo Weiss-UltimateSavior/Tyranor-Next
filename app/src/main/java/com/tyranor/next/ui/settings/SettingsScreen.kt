@@ -688,6 +688,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
 
     var ons by remember { mutableStateOf(EngineSettingsStore.loadOns(ctx)) }
 
+    var artKernel by remember { mutableStateOf(EngineSettingsStore.getArtKernel(ctx)) }
     var artVersion by remember { mutableStateOf(EngineSettingsStore.getArtEngineVersion(ctx)) }
     var artRotate by remember { mutableStateOf(EngineSettingsStore.isArtRotateScreen(ctx)) }
     var artPatch by remember { mutableStateOf(EngineSettingsStore.getArtAutoPatch(ctx)) }
@@ -741,6 +742,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrMenuHandlerOpa(ctx, krMenuOpa)
         EngineSettingsStore.setKrAnime4kMode(ctx, krAnime4k)
         EngineSettingsStore.saveOns(ctx, ons)
+        EngineSettingsStore.setArtKernel(ctx, artKernel)
         EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
         EngineSettingsStore.setArtRotateScreen(ctx, artRotate)
         EngineSettingsStore.setArtAutoPatch(ctx, artPatch)
@@ -785,7 +787,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
-                ons, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
+                ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
@@ -807,6 +809,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrAnime4k = { krAnime4k = it },
                 onResetKrFont = { krFont = "" },
                 onOns = { ons = it },
+                onArtKernel = { artKernel = it },
                 onArtVersion = { artVersion = it },
                 onArtRotate = { artRotate = it },
                 onArtPatch = { artPatch = it },
@@ -865,7 +868,7 @@ private fun LazyListPlaceholder(
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
     krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String, krAnime4k: String,
-    ons: EngineSettingsStore.Ons, artVersion: String, artRotate: Boolean, artPatch: String,
+    ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artRotate: Boolean, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
@@ -880,6 +883,7 @@ private fun LazyListPlaceholder(
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
     onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit, onKrAnime4k: (String) -> Unit,
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
+    onArtKernel: (String) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
     onArtResolution: (String) -> Unit, onArtSideCut: (String) -> Unit,
     onArtSurfaceCache: (String) -> Unit, onArtFontCache: (String) -> Unit,
@@ -903,6 +907,7 @@ private fun LazyListPlaceholder(
     val krFpsMap = krFpsOptions()
     val onsSharpnessMap = onsSharpnessOptions()
     val onsEncodingMap = onsEncodingOptions()
+    val artKernelSelect = artKernelOptions()
     val artVersionMap = artVersionOptions()
     val renpyVersionMap = renpyVersionOptions()
     val artPatchMap = artPatchOptions()
@@ -1017,14 +1022,25 @@ private fun LazyListPlaceholder(
 
         if (kind == EngineSettingsKind.ARTEMIS) item {
             EngineCard("Artemis") {
-                DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
+                DropdownRow(stringResource(R.string.engine_settings_engine_kernel), artKernelSelect, artKernel, onArtKernel)
                 SwitchPreference(title = stringResource(R.string.engine_settings_rotate_screen), checked = artRotate, onCheckedChange = onArtRotate)
-                DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)
-                DropdownRow(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, artResolution, onArtResolution)
-                DropdownRow(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, artSideCut, onArtSideCut)
-                DropdownRow(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, artSurfaceCache, onArtSurfaceCache)
-                DropdownRow(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, artFontCache, onArtFontCache)
-                DropdownRow(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, artPowerSaving, onArtPowerSaving)
+                if (artKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                    DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
+                    DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)
+                    DropdownRow(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, artResolution, onArtResolution)
+                    DropdownRow(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, artSideCut, onArtSideCut)
+                    DropdownRow(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, artSurfaceCache, onArtSurfaceCache)
+                    DropdownRow(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, artFontCache, onArtFontCache)
+                    DropdownRow(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, artPowerSaving, onArtPowerSaving)
+                } else {
+                    // 自研内核直接读游戏包内配置，官方专属项（版本/补丁/显示注入）不适用
+                    Text(
+                        stringResource(R.string.engine_settings_artemis_clean_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
             }
         }
 

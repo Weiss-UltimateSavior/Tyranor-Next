@@ -74,6 +74,12 @@ object EngineSettingsResolver {
                 EngineSettingsStore.ART_VERSIONS,
                 EngineSettingsStore.ART_ENGINE_AUTO,
             ),
+            artKernel = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_ART_KERNEL),
+                EngineSettingsStore.getArtKernel(app),
+                EngineSettingsStore.ART_KERNELS,
+                EngineSettingsStore.ART_KERNEL_OFFICIAL,
+            ),
             artRotate = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_ART_ROTATE),
                 EngineSettingsStore.isArtRotateScreen(app),
@@ -183,6 +189,8 @@ data class ResolvedEngineSettings(
     val krAnime4kMode: String,
     val krRenderer: String,
     val artVersion: String,
+    /** Artemis 内核生效值（官方多 revision / 自研 clean-room）。 */
+    val artKernel: String,
     val artRotate: Boolean,
     val artAutoPatch: String,
     val artResolution: String,

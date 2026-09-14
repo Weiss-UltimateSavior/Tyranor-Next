@@ -34,6 +34,7 @@ internal object GameOverridePartitions {
     const val KEY_VCURSOR_SCALE = "vcursor_scale"
     const val KEY_MENU_HANDLER_OPA = "menu_handler_opa"
     const val KEY_ART_VERSION = "art_engine_version"
+    const val KEY_ART_KERNEL = "artemis_kernel"
     const val KEY_ART_ROTATE = "art_rotate_screen"
     const val KEY_ART_PATCH = "art_auto_patch"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
@@ -81,7 +82,7 @@ internal object GameOverridePartitions {
         KEY_OGL_ACCURATE_RENDER, KEY_FPS_LIMIT, KEY_VCURSOR_SCALE, KEY_MENU_HANDLER_OPA,
         KEY_SKIP_STARTUP_DIALOGS,
     )
-    val ARTEMIS_KEYS: Set<String> = setOf(KEY_ART_VERSION, KEY_ART_ROTATE, KEY_ART_PATCH)
+    val ARTEMIS_KEYS: Set<String> = setOf(KEY_ART_VERSION, KEY_ART_KERNEL, KEY_ART_ROTATE, KEY_ART_PATCH)
     // RPG Maker 会话键（legacy 渲染、MV/MZ 运行时版本、RGSS 外置模块配置）与 tyrano 共用分区：
     // v0 宿主与 v1/v2 宿主的逐游戏覆盖都在这一条 blob 里，显式建模，
     // 不依赖“未识别键兜底归入 tyrano”的 else 路径，防止未来收紧分区时丢键
