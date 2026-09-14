@@ -108,6 +108,10 @@
     <string name="engine_desc_nintendo_switch">Nintendo Switch games run through the external Eden</string>
     <string name="engine_external_jump_title">External emulator support</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden</string>
+    <string name="engine_tab_rpgm">RPGM</string>
+    <string name="engine_tab_gal">GAL</string>
+    <string name="engine_tab_console">Handheld</string>
+    <string name="engine_tab_web">Web</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
     <string name="engine_emulator_eden">Eden</string>
     <string name="engine_emulator_installed">Installed</string>

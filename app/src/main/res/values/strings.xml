@@ -108,6 +108,10 @@
     <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
     <string name="engine_external_jump_title">外置跳转支持</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden</string>
+    <string name="engine_tab_rpgm">RPGM</string>
+    <string name="engine_tab_gal">GAL</string>
+    <string name="engine_tab_console">主机</string>
+    <string name="engine_tab_web">网页</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
     <string name="engine_emulator_eden">Eden</string>
     <string name="engine_emulator_installed">已安装</string>

@@ -104,6 +104,9 @@ object EngineLauncher {
         EngineType.WEB_OTHER,
         EngineType.ARTEMIS,
         EngineType.RENPY,
+        // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
+        EngineType.PSP,
+        EngineType.NINTENDO_SWITCH,
     ).sortedByDescending { it.displayName.length }
 
     /** Artemis 补丁确认弹窗的用户选择：
