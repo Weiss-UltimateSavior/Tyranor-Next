@@ -102,6 +102,7 @@ import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
@@ -1632,10 +1633,11 @@ internal fun GameCard(
     scrolling: Boolean = false,
 ) {
     Column(modifier) {
-        val engineName = if (game.engine == EngineType.UNKNOWN) {
-            stringResource(R.string.engine_name_unknown)
-        } else {
-            game.engine.displayName
+        val engineName = when (game.engine) {
+            EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
+            // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
+            EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
+            else -> game.engine.displayName
         }
         val coverBitmap by rememberCoverBitmap(game.coverUri, scrolling)
         val pressModifier = if (onLongClick != null) {
@@ -1829,8 +1831,11 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.WEB_OTHER -> Color(0xFF546E7A)
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
     EngineType.RENPY -> Color(0xFFE35B84)
+    EngineType.PSP -> Color(0xFF6D4C9F)
+    EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
     EngineType.UNKNOWN -> Color(0xFF607D8B)
 }
 
 internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
-    !ExternalEngineModuleRegistry.isExternalEngine(engine)
+    !ExternalEngineModuleRegistry.isExternalEngine(engine) &&
+        ExternalEmulatorRegistry.forEngine(engine) == null

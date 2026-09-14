@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,6 +43,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
+import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModule
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -70,11 +73,16 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     var moduleStates by remember {
         mutableStateOf(refreshModuleStates(context))
     }
+    var emulatorInstallStates by remember {
+        mutableStateOf(refreshEmulatorInstallStates(context))
+    }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
+    var showExternalJumpDialog by remember { mutableStateOf(false) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         externalInstallStates = refreshExternalInstallStates(context, engines)
         moduleStates = refreshModuleStates(context)
+        emulatorInstallStates = refreshEmulatorInstallStates(context)
     }
 
     Column(modifier.fillMaxSize()) {
@@ -100,6 +108,14 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     // 外置引擎与 Tyrano / WebOther/VN（内置版本条目）：点击弹出版本模块列表
                     enabled = module != null || engine in dialogOnlyEngines,
                     onClick = { moduleDialogEngine = engine },
+                )
+            }
+
+            // 外置主机模拟器跳转：PPSSPP / Eden（不属于内置引擎，单独一个展示项）
+            item(key = "external-jump", contentType = "external-jump") {
+                ExternalJumpRow(
+                    installedCount = emulatorInstallStates.values.count { it },
+                    onClick = { showExternalJumpDialog = true },
                 )
             }
         }
@@ -141,6 +157,49 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                 }
             },
             // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
+            confirmButton = {},
+        )
+    }
+
+    // 外置跳转支持弹窗：列 PPSSPP / Eden，未安装点击跳下载页，已安装点击打开模拟器主界面
+    if (showExternalJumpDialog) {
+        AppAlertDialog(
+            onDismissRequest = { showExternalJumpDialog = false },
+            title = {
+                Text(
+                    stringResource(R.string.engine_external_jump_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ExternalEmulatorRegistry.targets.forEach { target ->
+                        val installed = emulatorInstallStates[target.packageName] == true
+                        AppNavItem(
+                            title = stringResource(target.displayNameRes),
+                            summary = stringResource(
+                                if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
+                            ),
+                            containerColor = DialogItemSurface,
+                        ) {
+                            if (installed) {
+                                ExternalEmulatorLauncher.openHome(context, target)
+                            } else {
+                                val opened = ExternalEngineLauncher.openInstallPage(context, target.installUrl)
+                                if (!opened) {
+                                    Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            showExternalJumpDialog = false
+                        }
+                    }
+                }
+            },
             confirmButton = {},
         )
     }
@@ -208,6 +267,62 @@ private fun EngineRow(
     }
 }
 
+/** 外置跳转支持行：与引擎行同视觉，右侧按“是否至少装了一个模拟器”显示状态。 */
+@Composable
+private fun ExternalJumpRow(
+    installedCount: Int,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .glassBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        shape = AppComponentShape,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_engine_icon),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.size(28.dp),
+            )
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(
+                    stringResource(R.string.engine_external_jump_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    stringResource(R.string.engine_external_jump_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Icon(
+                if (installedCount > 0) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                contentDescription = stringResource(R.string.engine_external_jump_summary),
+                tint = if (installedCount > 0) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
 /** 列表展示名：RPG Maker MV 与 MZ、WebOther 与 VN 各合并为一项。 */
 private fun engineDisplayName(engine: EngineType): String = when (engine) {
     EngineType.RPG_MV, EngineType.RPG_MZ -> "RPG Maker MV/MZ"
@@ -225,6 +340,8 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
     EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
+    EngineType.PSP -> stringResource(R.string.engine_desc_psp)
+    EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)
     EngineType.UNKNOWN -> stringResource(R.string.engine_desc_unknown)
 }
 
@@ -335,4 +452,10 @@ private fun artemisDialogTitle(label: String): String =
 private fun refreshModuleStates(context: android.content.Context): Map<String, Boolean> =
     ExternalEngineModuleRegistry.modules.associate { module ->
         module.id to ExternalEngineLauncher.isPackageInstalled(context, module)
+    }
+
+/** 外置主机模拟器安装状态（按包名）。 */
+private fun refreshEmulatorInstallStates(context: android.content.Context): Map<String, Boolean> =
+    ExternalEmulatorRegistry.targets.associate { target ->
+        target.packageName to ExternalEmulatorLauncher.isInstalled(context, target)
     }

@@ -645,6 +645,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             }
                         }
                     }
+                    EngineType.PSP, EngineType.NINTENDO_SWITCH -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_external_emulator_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
                 }
 
                 item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(12.dp)) }

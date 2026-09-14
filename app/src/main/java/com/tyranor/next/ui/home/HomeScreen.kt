@@ -446,10 +446,11 @@ private fun QuickLaunchCard(
             .background(QuickLaunchFallback)
             .glassBorder(),
     ) {
-        val engineName = if (game.engine == EngineType.UNKNOWN) {
-            stringResource(R.string.engine_name_unknown)
-        } else {
-            game.engine.displayName
+        val engineName = when (game.engine) {
+            EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
+            // 卡片用短名「Switch」，避免「Nintendo Switch」过长
+            EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
+            else -> game.engine.displayName
         }
         val cardMaxWidth = maxWidth
         val coverBitmap by rememberCoverBitmap(game.coverUri)

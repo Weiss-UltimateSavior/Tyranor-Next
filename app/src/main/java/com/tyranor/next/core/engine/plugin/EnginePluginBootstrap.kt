@@ -86,6 +86,8 @@ object EnginePluginBootstrap {
             EngineType.WEB_OTHER,
             EngineType.RPGMAKER,
             EngineType.RENPY,
+            EngineType.PSP,
+            EngineType.NINTENDO_SWITCH,
             EngineType.UNKNOWN -> return null
         }
         val app = context.applicationContext

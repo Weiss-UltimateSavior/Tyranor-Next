@@ -104,7 +104,21 @@
     <string name="engine_desc_artemis">Artemis games using system.ini and .pfs archives</string>
     <string name="engine_desc_renpy">Ren’Py external APK module, launched after install-state detection</string>
     <string name="engine_desc_unknown">Unknown engine</string>
+    <string name="engine_desc_psp">PSP games run through the external PPSSPP</string>
+    <string name="engine_desc_nintendo_switch">Nintendo Switch games run through the external Eden</string>
+    <string name="engine_external_jump_title">External emulator support</string>
+    <string name="engine_external_jump_summary">PPSSPP / Eden</string>
+    <string name="engine_emulator_ppsspp">PPSSPP</string>
+    <string name="engine_emulator_eden">Eden</string>
+    <string name="engine_emulator_installed">Installed</string>
+    <string name="engine_emulator_not_installed">Not installed</string>
+    <string name="engine_settings_external_emulator_hint">This game runs in an external emulator; settings and saves are managed by the emulator.</string>
+    <string name="launch_emulator_missing">%1$s is not installed. Download it from “External emulator support”</string>
+    <string name="launch_emulator_no_activity">%1$s does not provide an entry to receive games</string>
+    <string name="launch_emulator_denied">%1$s launch was denied by the system</string>
+    <string name="launch_emulator_failed">%1$s failed to launch</string>
     <string name="engine_name_unknown">Unknown engine</string>
+    <string name="engine_name_switch">Switch</string>
     <string name="engine_name_web">Web game</string>
 
     <string name="game_title">Games</string>

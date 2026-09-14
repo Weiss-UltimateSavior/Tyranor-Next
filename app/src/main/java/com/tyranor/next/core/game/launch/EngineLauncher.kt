@@ -28,6 +28,8 @@ import com.core.nativeplugin.NativePluginConstants
 import com.core.rpgmaker.RpgMakerActivity
 import com.core.tyrano.TyranoActivity
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
+import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -134,6 +136,16 @@ object EngineLauncher {
     }
 
     private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
+        // 外置主机模拟器（PSP / Switch）：ROM 文件型游戏不解析目录、不走内置引擎与外置 APK 模块链路
+        ExternalEmulatorRegistry.forEngine(game.engine)?.let { target ->
+            currentCoroutineContext().ensureActive()
+            val result = ExternalEmulatorLauncher.launch(context, target, game.uri)
+            if (result.success) {
+                GameLibraryFacade.recordRecentGame(context, game)
+                return LaunchResult.Success
+            }
+            return LaunchResult.Failure.ExternalEmulatorFailed(result)
+        }
         val path = resolveGameDirectory(context, game)
         // 三级设置（应用级 + 单游戏覆盖）一次性解析，后续 Intent 组装只消费生效值（P0-3）
         val settings = EngineSettingsResolver.resolve(context, game, path)
@@ -672,6 +684,10 @@ object EngineLauncher {
 
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
+
+            // PSP / Switch 由外置模拟器跳转承载，在 launchInternalChecked 前置分流，不会走到这里
+            EngineType.PSP,
+            EngineType.NINTENDO_SWITCH -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
 
             EngineType.UNKNOWN -> Intent(context, TyranoActivity::class.java).apply {
                 putExtra(LaunchContract.PATH, path)

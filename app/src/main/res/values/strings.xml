@@ -104,7 +104,21 @@
     <string name="engine_desc_artemis">Artemis，system.ini 与 .pfs 归档游戏</string>
     <string name="engine_desc_renpy">Ren’Py 外置 APK 模块，检测安装状态后启动</string>
     <string name="engine_desc_unknown">未知引擎</string>
+    <string name="engine_desc_psp">PSP 游戏通过外置 PPSSPP 运行</string>
+    <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
+    <string name="engine_external_jump_title">外置跳转支持</string>
+    <string name="engine_external_jump_summary">PPSSPP / Eden</string>
+    <string name="engine_emulator_ppsspp">PPSSPP</string>
+    <string name="engine_emulator_eden">Eden</string>
+    <string name="engine_emulator_installed">已安装</string>
+    <string name="engine_emulator_not_installed">未安装</string>
+    <string name="engine_settings_external_emulator_hint">该游戏由外置模拟器运行，设置与存档由模拟器管理。</string>
+    <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
+    <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
+    <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
+    <string name="launch_emulator_failed">%1$s 启动失败</string>
     <string name="engine_name_unknown">未知引擎</string>
+    <string name="engine_name_switch">Switch</string>
     <string name="engine_name_web">Web 游戏</string>
 
     <string name="game_title">游戏</string>

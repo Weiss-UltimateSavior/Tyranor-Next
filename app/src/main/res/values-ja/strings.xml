@@ -104,7 +104,21 @@
     <string name="engine_desc_artemis">Artemis、system.ini と .pfs アーカイブのゲーム</string>
     <string name="engine_desc_renpy">Ren’Py 外部 APK モジュール。インストール状態を確認して起動</string>
     <string name="engine_desc_unknown">不明なエンジン</string>
+    <string name="engine_desc_psp">PSP ゲームは外部 PPSSPP で実行します</string>
+    <string name="engine_desc_nintendo_switch">Nintendo Switch ゲームは外部 Eden で実行します</string>
+    <string name="engine_external_jump_title">外部エミュレータ連携</string>
+    <string name="engine_external_jump_summary">PPSSPP / Eden</string>
+    <string name="engine_emulator_ppsspp">PPSSPP</string>
+    <string name="engine_emulator_eden">Eden</string>
+    <string name="engine_emulator_installed">インストール済み</string>
+    <string name="engine_emulator_not_installed">未インストール</string>
+    <string name="engine_settings_external_emulator_hint">このゲームは外部エミュレータで実行されます。設定とセーブはエミュレータ側で管理されます。</string>
+    <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
+    <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
+    <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
+    <string name="launch_emulator_failed">%1$s の起動に失敗しました</string>
     <string name="engine_name_unknown">不明なエンジン</string>
+    <string name="engine_name_switch">Switch</string>
     <string name="engine_name_web">Web ゲーム</string>
 
     <string name="game_title">ゲーム</string>

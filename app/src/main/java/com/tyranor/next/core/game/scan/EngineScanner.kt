@@ -165,6 +165,8 @@ object EngineScanner {
             )
             return
         }
+        // 未识别引擎：按 ROM 文件逐条入库（已存在的 ROM uri 由 known 剪枝），再递归子目录
+        out.addAll(romGamesForSaf(children, findLocalCoverUri(children), known))
         for (child in children) {
             if (child.isDirectory) {
                 scanRootIncremental(context, session, child, level + 1, maxDepth, known, out)
@@ -226,7 +228,10 @@ object EngineScanner {
             return
         }
 
-        // 2) 否则递归子目录
+        // 2) 未识别引擎：按 ROM 文件逐条入库（PSP / Switch），再递归子目录
+        out.addAll(romGamesForSaf(children, findLocalCoverUri(children)))
+
+        // 3) 否则递归子目录
         for (child in children) {
             if (child.isDirectory) {
                 traverseDirectories(context, session, child, level + 1, maxDepth, out)
@@ -324,7 +329,10 @@ object EngineScanner {
 
     fun applyLocalCover(context: Context, game: ScanGame): ScanGame {
         if (!game.coverUri.isNullOrBlank()) return game
-        val dir = DocumentFile.fromTreeUri(context.applicationContext, Uri.parse(game.uri)) ?: return game
+        // ROM 文件型游戏（PPSSPP / Eden）的 uri 是文件或真实路径，不是 SAF tree，跳过目录封面探测
+        val uri = runCatching { Uri.parse(game.uri) }.getOrNull() ?: return game
+        if (!DocumentsContract.isTreeUri(uri)) return game
+        val dir = DocumentFile.fromTreeUri(context.applicationContext, uri) ?: return game
         val coverUri = findLocalCoverUri(dir.listFiles())
         return if (coverUri.isNullOrBlank()) game else game.copy(
             coverUri = coverUri,
@@ -345,6 +353,73 @@ object EngineScanner {
             children.firstOrNull { child ->
                 !child.isDirectory && child.name.equals(expected, ignoreCase = true)
             }?.uri?.toString()
+        }
+    }
+
+    // ============ ROM 文件型游戏（PSP / Nintendo Switch） ============
+    // 一 ROM 一条游戏：uri = ROM 文件自身（SAF document URI / 真实路径），launchTarget = 文件名。
+    // uri 作为游戏库主键天然唯一；目录归属由 GameRootMatcher 的 documentId 前缀匹配兜住。
+
+    private val PSP_ROM_EXTENSIONS = setOf("pbp", "cso", "iso", "chd")
+    private val SWITCH_ROM_EXTENSIONS = setOf("nsp", "xci", "nca", "nro")
+
+    internal fun romEngineOf(name: String): EngineType? {
+        val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
+        return when (ext) {
+            in PSP_ROM_EXTENSIONS -> EngineType.PSP
+            in SWITCH_ROM_EXTENSIONS -> EngineType.NINTENDO_SWITCH
+            else -> null
+        }
+    }
+
+    private fun romTitle(name: String): String =
+        name.substringBeforeLast('.').takeIf { it.isNotBlank() } ?: name
+
+    private fun romGamesForSaf(
+        children: List<SafNode>,
+        coverUri: String?,
+        known: Set<String>? = null,
+    ): List<ScanGame> {
+        val roms = children.filter { child ->
+            !child.isDirectory &&
+                romEngineOf(child.name) != null &&
+                (known == null || child.uri.toString() !in known)
+        }
+        if (roms.isEmpty()) return emptyList()
+        val singleCover = if (roms.size == 1) coverUri else null
+        return roms.map { node ->
+            ScanGame(
+                title = romTitle(node.name),
+                uri = node.uri.toString(),
+                engine = romEngineOf(node.name)!!,
+                launchTarget = node.name,
+                coverUri = singleCover,
+                coverSource = if (singleCover.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
+            )
+        }
+    }
+
+    internal fun romGamesForFile(
+        children: Array<File>,
+        coverUri: String?,
+        known: Set<String>? = null,
+    ): List<ScanGame> {
+        val roms = children.filter { child ->
+            child.isFile &&
+                romEngineOf(child.name) != null &&
+                (known == null || child.absolutePath !in known)
+        }
+        if (roms.isEmpty()) return emptyList()
+        val singleCover = if (roms.size == 1) coverUri else null
+        return roms.map { rom ->
+            ScanGame(
+                title = romTitle(rom.name),
+                uri = rom.absolutePath,
+                engine = romEngineOf(rom.name)!!,
+                launchTarget = rom.name,
+                coverUri = singleCover,
+                coverSource = if (singleCover.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
+            )
         }
     }
 
@@ -411,6 +486,7 @@ object EngineScanner {
             )
             return
         }
+        out.addAll(romGamesForFile(children, findLocalCoverUri(children), known))
         children.filter { it.isDirectory }.forEach { child ->
             scanRootIncrementalFile(context, session, child, level + 1, maxDepth, known, out)
         }
@@ -444,6 +520,7 @@ object EngineScanner {
             )
             return
         }
+        out.addAll(romGamesForFile(children, findLocalCoverUri(children)))
         children.filter { it.isDirectory }.forEach { child ->
             traverseFileDirectories(context, session, child, level + 1, maxDepth, out)
         }

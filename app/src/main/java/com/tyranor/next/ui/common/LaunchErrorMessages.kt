@@ -79,6 +79,23 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
             }
         }
 
+        is LaunchResult.Failure.ExternalEmulatorFailed -> {
+            val targetName = localized.getString(result.target.displayNameRes)
+            when (result.code) {
+                "package_not_installed" ->
+                    localized.getString(R.string.launch_emulator_missing, targetName)
+
+                "activity_not_found" ->
+                    localized.getString(R.string.launch_emulator_no_activity, targetName)
+
+                "security_exception" ->
+                    localized.getString(R.string.launch_emulator_denied, targetName)
+
+                else ->
+                    localized.getString(R.string.launch_emulator_failed, targetName)
+            }
+        }
+
         is LaunchResult.Failure.StartFailed ->
             detail ?: localized.getString(R.string.launch_failed)
     }

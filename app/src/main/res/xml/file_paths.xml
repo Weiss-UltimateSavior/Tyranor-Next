@@ -7,4 +7,11 @@
     <files-path
         name="update_apks_internal"
         path="updates/" />
+    <!-- 外置模拟器跳转：File 回退路径（无法走 SAF 的真实路径 ROM）转 content URI 共享 -->
+    <external-path
+        name="external_roms"
+        path="." />
+    <root-path
+        name="root_roms"
+        path="/" />
 </paths>

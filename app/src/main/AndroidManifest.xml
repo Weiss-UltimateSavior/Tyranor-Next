@@ -13,6 +13,9 @@
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
         <package android:name="cyou.joiplay.runtime.renpy.v8d4d1" />
         <package android:name="cyou.joiplay.runtime.renpy.v7d7d1" />
+        <!-- 外置主机模拟器跳转目标（安装探测 + 显式组件启动） -->
+        <package android:name="org.ppsspp.ppsspp" />
+        <package android:name="dev.eden.eden_emulator" />
     </queries>
 
     <application
