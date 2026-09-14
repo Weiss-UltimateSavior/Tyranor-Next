@@ -72,6 +72,7 @@ class AppSettingsActivity : AppScreenActivity() {
 internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
+    val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
     val glass = AppThemeColors.isGlass
     var showColorPicker by remember { mutableStateOf(false) }
 
@@ -227,6 +228,19 @@ internal fun AppSettingsScreen() {
                                         ctx,
                                         if (checked) AppSettingsStore.NAV_STYLE_LIQUID_GLASS else AppSettingsStore.NAV_STYLE_DEFAULT,
                                     )
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_engine_tabs),
+                                checked = engineTabs,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setEngineTabsEnabled(ctx, checked)
                                 },
                             )
                         }

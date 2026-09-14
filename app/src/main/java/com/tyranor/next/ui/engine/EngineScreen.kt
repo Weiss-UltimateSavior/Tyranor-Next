@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,7 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.AppThemeColors
@@ -107,39 +109,44 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.nav_engine))
 
-        // 顶部分页：按引擎大类切换，避免单页列表过长（Miuix TabRow）
+        // 顶部分页（可在应用设置中关闭）：关闭时平铺展示全部引擎项
+        val categorizeEngines by AppSettingsStore.engineTabsState.collectAsState()
         var selectedTab by remember { mutableIntStateOf(0) }
-        val tabs = listOf(
-            stringResource(R.string.engine_tab_gal),
-            stringResource(R.string.engine_tab_rpgm),
-            stringResource(R.string.engine_tab_console),
-            stringResource(R.string.engine_tab_web),
-        )
-        MiuixSettingsTheme {
-            val tabModifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
-            if (AppThemeColors.isGlass) {
-                // 玻璃外观：Miuix TabRow 不支持指示器描边，改用自绘玻璃指示器（亮卡 + 0.5dp 描边）
-                GlassTabRow(
-                    tabs = tabs,
-                    selectedTabIndex = selectedTab,
-                    onTabSelected = { selectedTab = it },
-                    modifier = tabModifier,
-                )
-            } else {
-                TabRow(
-                    tabs = tabs,
-                    selectedTabIndex = selectedTab,
-                    onTabSelected = { selectedTab = it },
-                    // 圆角与组件统一入口同源：默认 8dp
-                    cornerRadius = AppComponentCornerRadius,
-                    modifier = tabModifier,
-                )
+        if (categorizeEngines) {
+            val tabs = listOf(
+                stringResource(R.string.engine_tab_gal),
+                stringResource(R.string.engine_tab_rpgm),
+                stringResource(R.string.engine_tab_console),
+                stringResource(R.string.engine_tab_web),
+            )
+            MiuixSettingsTheme {
+                val tabModifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
+                if (AppThemeColors.isGlass) {
+                    // 玻璃外观：Miuix TabRow 不支持指示器描边，改用自绘玻璃指示器（亮卡 + 0.5dp 描边）
+                    GlassTabRow(
+                        tabs = tabs,
+                        selectedTabIndex = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        modifier = tabModifier,
+                    )
+                } else {
+                    TabRow(
+                        tabs = tabs,
+                        selectedTabIndex = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        // 圆角与组件统一入口同源：默认 8dp
+                        cornerRadius = AppComponentCornerRadius,
+                        modifier = tabModifier,
+                    )
+                }
             }
         }
 
-        val tabEngines = engines
-            .filter { engineTabOf(it) == EngineTab.entries[selectedTab] }
-            .distinctBy { engineDisplayName(it) }
+        val tabEngines = (if (categorizeEngines) {
+            engines.filter { engineTabOf(it) == EngineTab.entries[selectedTab] }
+        } else {
+            engines
+        }).distinctBy { engineDisplayName(it) }
 
         // 引擎列表
         LazyColumn(
@@ -184,8 +191,8 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                 )
             }
 
-            // 主机系列：外置跳转支持（PPSSPP / Eden 聚合入口）
-            if (selectedTab == EngineTab.CONSOLE.ordinal) {
+            // 外置跳转支持（PPSSPP / Eden 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
+            if (!categorizeEngines || selectedTab == EngineTab.CONSOLE.ordinal) {
                 item(key = "external-jump", contentType = "external-jump") {
                     ExternalJumpRow(
                         installedCount = emulatorInstallStates.values.count { it },

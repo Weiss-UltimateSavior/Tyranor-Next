@@ -18,6 +18,7 @@ object AppSettingsStore {
     const val KEY_THEME_MODE = "theme_mode"
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
+    const val KEY_ENGINE_TABS = "engine_tabs"
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
     const val KEY_COVER_SCRAPER_SOURCE_ORDER = "cover_scraper_source_order"
     private const val KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX = "cover_scraper_source_enabled_"
@@ -90,6 +91,12 @@ object AppSettingsStore {
     /** 导航栏样式内存态：随设置页切换即时广播，供 MainScreen 重组切换样式。 */
     val navStyleState: MutableStateFlow<String> = MutableStateFlow(NAV_STYLE_DEFAULT)
 
+    /** 引擎页分类显示默认关闭：关闭时平铺展示全部引擎项，开启后按 GAL/RPGM/主机/网页 分页。 */
+    const val DEFAULT_ENGINE_TABS_ENABLED = false
+
+    /** 引擎页分类显示内存态：设置页切换后引擎页即时重组。 */
+    val engineTabsState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_TABS_ENABLED)
+
     /** 游戏排序内存态：设置页切换后游戏页可随重组读取。 */
     val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
 
@@ -107,6 +114,11 @@ object AppSettingsStore {
 
     fun initGameSort(c: Context) {
         gameSortState.value = getGameSort(c)
+    }
+
+    /** 首次组合时从持久化加载引擎页分类显示开关到内存态（幂等）。 */
+    fun initEngineTabs(c: Context) {
+        engineTabsState.value = isEngineTabsEnabled(c)
     }
 
     private fun prefs(context: Context) =
@@ -170,6 +182,15 @@ object AppSettingsStore {
         }
         prefs(c).edit().putString(KEY_GAME_SORT, normalized).apply()
         gameSortState.value = normalized
+    }
+
+    /** 引擎页是否按分类（GAL / RPGM / 主机 / 网页）分页展示。 */
+    fun isEngineTabsEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_ENGINE_TABS, DEFAULT_ENGINE_TABS_ENABLED)
+
+    fun setEngineTabsEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_ENGINE_TABS, enabled).apply()
+        engineTabsState.value = enabled
     }
 
     fun isCoverScraperOnlyMissing(c: Context): Boolean =

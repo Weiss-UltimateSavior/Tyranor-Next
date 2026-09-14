@@ -33,6 +33,7 @@
     <string name="settings_theme_mode_dark">深色</string>
     <string name="settings_tone_switch">色调切换</string>
     <string name="settings_liquid_glass_nav">圆角液态玻璃导航</string>
+    <string name="settings_engine_tabs">引擎页分类显示</string>
     <string name="settings_invalid_theme_color">不支持透明色或黑白灰色</string>
 
     <string name="settings_update_latest">已经是最新版本</string>
