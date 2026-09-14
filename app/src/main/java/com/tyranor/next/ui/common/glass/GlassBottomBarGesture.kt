@@ -16,7 +16,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
  * 1. 物理触摸只进入这一层（D 层 Overlay），A 层 Tab 仅保留无障碍语义；
  * 2. **DOWN 同帧**回调 [onDown]（用于触觉与赴按起跳），不等 touch slop、不等长按；
  * 3. MOVE 回调**绝对坐标**（不是 delta），避免累计误差；
- * 4. UP 回调**最后一个位置**并进入严格一次（once）的终态；
+ * 4. UP 回调**最后一个位置**与「是否真的拖动过」并进入严格一次（once）的终态；
  * 5. CANCEL / 事件被上层消费 / 指针消失 → 走 [onCancel]，**不提交、不补震**；
  * 6. 首指独占：其余手指一律忽略，首指 UP 即结束会话；
  * 7. touch slop 只用于判断「是否算拖动」（装饰性 panelShift / dragged 标记），
@@ -30,7 +30,7 @@ internal suspend fun PointerInputScope.detectBottomBarPress(
     isGestureEnabled: () -> Boolean = { true },
     onDown: (position: Offset) -> Unit,
     onDrag: (position: Offset) -> Unit,
-    onUp: (position: Offset) -> Unit,
+    onUp: (position: Offset, dragged: Boolean) -> Unit,
     onCancel: () -> Unit,
 ) {
     awaitEachGesture {
@@ -92,6 +92,6 @@ internal suspend fun PointerInputScope.detectBottomBarPress(
         }
 
         // 严格 once：无论走哪条分支都只回调一次终态
-        if (finished) onUp(lastPosition) else onCancel()
+        if (finished) onUp(lastPosition, dragged) else onCancel()
     }
 }

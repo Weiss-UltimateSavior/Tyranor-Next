@@ -60,10 +60,14 @@ class GlassBottomBarSpecTest {
     @Test
     fun translucentBarMaterial_lightAndDarkPairs_arePinned() {
         // 改造方案 §栏体参数：浅色高透乳白 / 深色烟黑，成对切换；改值必须在文档 §6 记录
-        assertEquals(18.dp, spec.barBlurRadiusLight)
-        assertEquals(16.dp, spec.barBlurRadiusDark)
-        assertEquals(0.26f, spec.barSurfaceAlphaLight, 1e-6f)
-        assertEquals(0.52f, spec.barSurfaceAlphaDark, 1e-6f)
+        // 实测目标：轻微模糊（4dp）+ 轻微遮罩（0.34）+ 可见的内部折射（折射量保持不变）
+        assertEquals(4.dp, spec.barBlurRadiusLight)
+        assertEquals(4.dp, spec.barBlurRadiusDark)
+        assertEquals(0.34f, spec.barSurfaceAlphaLight, 1e-6f)
+        assertEquals(0.34f, spec.barSurfaceAlphaDark, 1e-6f)
+        assertEquals(12.dp, spec.barLensHeight)
+        assertEquals(8.dp, spec.barLensAmount)
+        assertTrue("栏体做色散：上下边缘的连贯彩虹带", spec.barLensChromatic)
         assertEquals(0.03f, spec.barBrightnessLight, 1e-6f)
         assertEquals(-0.03f, spec.barBrightnessDark, 1e-6f)
         assertEquals(0.92f, spec.barContrastLight, 1e-6f)
@@ -72,7 +76,7 @@ class GlassBottomBarSpecTest {
         assertEquals(1.10f, spec.barSaturationDark, 1e-6f)
         assertEquals(0.70f, spec.barHighlightAlphaLight, 1e-6f)
         assertEquals(0.30f, spec.barHighlightAlphaDark, 1e-6f)
-        assertFalse("整栏整栏 lens 默认关闭：折射只交给移动透镜", spec.barBaseLensEnabled)
+        assertTrue("栏体应保留克制的内部折射（液态玻璃质感）", spec.barLensHeight > 0.dp)
     }
 
     @Test
@@ -90,6 +94,7 @@ class GlassBottomBarSpecTest {
         assertEquals(0.75f, spec.lensInnerShadowAlphaPressed, 1e-6f)
         assertEquals(0.12f, spec.lensShadowAlphaRest, 1e-6f)
         assertEquals(0.45f, spec.lensShadowAlphaPressed, 1e-6f)
+        assertTrue("滑块必须有色散：碰到左右图标时要有彩边", spec.movingLensChromatic)
         assertEquals(0.05f, spec.staticLensCoverAlpha, 1e-6f)
         assertEquals(0.02f, spec.pressedLensCoverAlpha, 1e-6f)
     }

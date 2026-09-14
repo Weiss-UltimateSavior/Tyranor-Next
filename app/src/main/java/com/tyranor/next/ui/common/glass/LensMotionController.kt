@@ -214,27 +214,47 @@ internal class LensMotionController(
     /**
      * 松手：吸附到 [destinationIndex] 并收起材质。
      *
-     * 若松手发生在赴按到位**之前**，则以正常尺寸吸附——绝不允许「晚到的到位逻辑」再把它膨胀起来。
+     * [pulse] = true 表示这是一次**轻点**（未拖动且目标与当前选中项不同），语义与 PR 81
+     * 最新版的 `settleAt(target, pulse = true)` **完全一致**：立刻把压力/体积弹簧推到按压值，
+     * 于是滑块**边飞边变大**，到位（且压力可见）后再收回正常大小；整栏随同一个压力放大再回落。
+     *
+     * [pulse] = false 表示拖动途中松手：以当前尺寸吸附，绝不允许晚到的到位逻辑再把它膨胀起来。
+     *
+     * 注意：这与**按下**路径的「先移动后放大」不冲突——按下走 [beginPressAt]（赴按阶段保持
+     * 正常尺寸，到位后才膨胀），轻点走本分支（与已提交版本一致，立刻起胀）。
      */
-    fun endPress(destinationIndex: Int) {
+    fun endPress(destinationIndex: Int, pulse: Boolean = false) {
         sessionId++
-        pulsePending = false
         val destination = destinationIndex.toFloat().coerceIn(safeRange)
         targetIndex = destination
         positionSpring.setDynamics(SettleStiffness, SettleDamping)
         positionSpring.target = destination
-        if (state == LensInteractionState.PressedTracking) {
+        when {
             // 已进入按压形态：沿用「接近目标后再收材质」的既有手感
-            shrinkWhenSettled = true
-        } else {
-            // 赴按途中松手：保持正常尺寸直接吸附
-            pressureSpring.target = 0f
-            wideSpring.target = 1f
-            tallSpring.target = 1f
-            glowSpring.target = 0f
-            shrinkWhenSettled = false
+            state == LensInteractionState.PressedTracking -> {
+                pulsePending = false
+                shrinkWhenSettled = true
+            }
+            // 轻点：与 PR 81 最新版一致 —— 立刻起胀，边飞边变大，到位 + 压力可见后收回
+            pulse -> {
+                pulsePending = true
+                pressureSpring.target = 1f
+                wideSpring.target = pressedScaleX
+                tallSpring.target = pressedScaleY
+                shrinkWhenSettled = true
+                state = LensInteractionState.Settling
+            }
+            // 拖动途中松手：保持正常尺寸直接吸附
+            else -> {
+                pulsePending = false
+                pressureSpring.target = 0f
+                wideSpring.target = 1f
+                tallSpring.target = 1f
+                glowSpring.target = 0f
+                shrinkWhenSettled = false
+                state = LensInteractionState.Settling
+            }
         }
-        state = LensInteractionState.Settling
         ensureFrameLoop()
     }
 

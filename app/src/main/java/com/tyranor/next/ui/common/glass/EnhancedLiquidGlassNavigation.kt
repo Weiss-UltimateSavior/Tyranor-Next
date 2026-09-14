@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -72,7 +73,7 @@ import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.colorControls
+import com.kyant.backdrop.effects.colorFilter
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
@@ -340,10 +341,16 @@ fun EnhancedLiquidGlassNavigationBar(
                             .coerceIn(-currentBarWidthPx, currentBarWidthPx)
                     }
                 },
-                onUp = { position ->
+                onUp = { position, dragged ->
                     val index = pointerXToIndex(position.x).fastRoundToInt()
                         .fastCoerceIn(0, tabs - 1)
-                    controller.endPress(index)
+                    // 轻点（未拖动）且落在别的槽位：走「飞过去 → 挤压一下 → 缩回」的点击反馈，
+                    // 同时整栏随压力放大再回落（与已提交版本一致）。
+                    // 拖动途中松手则不补膨胀，避免「松手后又被撑大」的竞态。
+                    controller.endPress(
+                        index,
+                        pulse = !dragged && index != currentSelectedIndex,
+                    )
                     recenterPanel()
                     requestSelection(index)
                 },
@@ -364,8 +371,10 @@ fun EnhancedLiquidGlassNavigationBar(
         pendingRequestedIndex = null
         when {
             previous == null -> Unit // 首次组合只记录，避免启动时一次假按压
-            requested -> Unit        // 由本次手势驱动，透镜已在目标上
-            else -> controller.syncSelection(selectedIndex.toFloat())
+            requested -> Unit        // 由本次手势驱动，脉冲已在 endPress 里给过
+            // 外部（非本组件手势）驱动的选中变化：与 PR 81 最新版一致，走带脉冲的 settleAt ——
+            // 滑块飞到新槽位的过程中就挤压变大，到位后收回
+            else -> controller.settleAt(selectedIndex.toFloat())
         }
     }
 
@@ -379,6 +388,14 @@ fun EnhancedLiquidGlassNavigationBar(
     val barSaturation = if (isDark) spec.barSaturationDark else spec.barSaturationLight
     val highlightAlpha = if (isDark) spec.barHighlightAlphaDark else spec.barHighlightAlphaLight
     // surfaceTint 是主题选择后的不透明中性色，alpha 只在 onDrawSurface 应用一次（不叠两层 surface）
+    // ---- 主题自适应色彩控制：**一次性构建** ColorFilter 并复用 ----
+    // 不能在 effects lambda 里调用 colorControls(...)：Backdrop 1.0.2 的实现每次都会新建
+    // 一个 android.graphics.ColorFilter，而 Backdrop 会在读取到「变化的值」时重建
+    // RenderEffect 管线——结果是内容滚动时逐帧重建，表现为底栏内部异常闪烁。
+    // 这里改为 remember 一个 android.graphics.ColorMatrixColorFilter 实例，管线保持稳定。
+    val barColorFilter = remember(barBrightness, barContrast, barSaturation) {
+        buildBarColorFilter(barBrightness, barContrast, barSaturation)
+    }
     val containerColor = remember(blurEnabled, colors, spec, barSurfaceAlpha) {
         if (blurEnabled) colors.surfaceTint.copy(alpha = barSurfaceAlpha) else colors.fallbackSurface
     }
@@ -428,14 +445,25 @@ fun EnhancedLiquidGlassNavigationBar(
         contentAlignment = Alignment.CenterStart,
     ) {
         // ---- A 可见栏：玻璃栏体 + 清晰图标（图标绘制在栏体之后，不参与模糊）----
-        // A/B 栏体材料：colorControls 分主题 + 主题 blur；**默认不做整栏 lens**
-        // （整栏 24dp 透镜会造成横向涂抹，折射只交给 C 层移动透镜，见方案 §移除 B 层重复折射）
+        // A/B 栏体材料：轻微模糊 + 轻微遮罩 + **克制的内部折射**（液态玻璃质感）。
+        // 折射单独受 refractionEnabled 门控（API 33 以下不得创建 RuntimeShader）。
+        val barLensHeightPx = with(density) { spec.barLensHeight.toPx() }
+        val barLensAmountPx = with(density) { spec.barLensAmount.toPx() }
         val barEffects: BackdropEffectScope.() -> Unit =
-            remember(blurEnabled, spec, barBlurRadius, barBrightness, barContrast, barSaturation) {
+            remember(blurEnabled, refractionEnabled, spec, barBlurRadius, barColorFilter) {
                 {
                     if (blurEnabled) {
-                        colorControls(barBrightness, barContrast, barSaturation)
+                        colorFilter(barColorFilter)
                         blur(barBlurRadius.toPx())
+                    }
+                    if (refractionEnabled) {
+                        // 栏体：折射 + 色散 —— 上下边缘那条**连贯自然**的彩虹带就是这里来的
+                        lens(
+                            refractionHeight = barLensHeightPx,
+                            refractionAmount = barLensAmountPx,
+                            depthEffect = false,
+                            chromaticAberration = spec.barLensChromatic,
+                        )
                     }
                 }
             }
@@ -525,11 +553,21 @@ fun EnhancedLiquidGlassNavigationBar(
         // 图标的折射只在 C 层发生一次，避免二次折射把蓝色图标拉出尖刺。
         // 同时这也消除了「采样边距随按压逐帧变化 → 离屏层逐帧改尺寸」的旧成本（旧 D13）。
         val copyEffects: BackdropEffectScope.() -> Unit =
-            remember(blurEnabled, spec, barBlurRadius, barBrightness, barContrast, barSaturation) {
+            remember(blurEnabled, refractionEnabled, spec, barBlurRadius, barColorFilter) {
                 {
                     if (blurEnabled) {
-                        colorControls(barBrightness, barContrast, barSaturation)
+                        colorFilter(barColorFilter)
                         blur(barBlurRadius.toPx())
+                    }
+                    if (refractionEnabled) {
+                        // 栏体：保留厚度折射，但**不做色散**（色散会让栏体上下边缘与左右两端
+                        // 出现彩虹弧；参考图里栏体边缘是干净的）
+                        lens(
+                            refractionHeight = barLensHeightPx,
+                            refractionAmount = barLensAmountPx,
+                            depthEffect = false,
+                            chromaticAberration = spec.barLensChromatic,
+                        )
                     }
                 }
             }
@@ -601,7 +639,8 @@ fun EnhancedLiquidGlassNavigationBar(
                                 p,
                             ),
                             depthEffect = false,
-                            chromaticAberration = true,
+                            // 滑块不做色散：它只有一槽宽，色散会断成上下两段弧并波及左右两端
+                            chromaticAberration = spec.movingLensChromatic,
                         )
                     }
                 }
@@ -797,6 +836,33 @@ private fun TabIcon(
         contentScale = ContentScale.Fit,
         colorFilter = ColorFilter.tint(tint),
     )
+}
+
+/**
+ * 构建「亮度 / 对比度 / 饱和度」色彩矩阵滤镜（独立实现）。
+ *
+ * 饱和度用标准亮度权重组合，对比度以中灰为轴缩放，亮度为线性偏移；
+ * 结果一次性构造成 [android.graphics.ColorMatrixColorFilter]，由调用方 remember 复用。
+ */
+private fun buildBarColorFilter(brightness: Float, contrast: Float, saturation: Float): ColorFilter {
+    val b = brightness.safeMotionValue(-1f, 1f, 0f)
+    val c = contrast.safeMotionValue(0f, 4f, 1f)
+    val s = saturation.safeMotionValue(0f, 4f, 1f)
+    val lumR = 0.213f
+    val lumG = 0.715f
+    val lumB = 0.072f
+    val sr = (1f - s) * lumR
+    val sg = (1f - s) * lumG
+    val sb = (1f - s) * lumB
+    // 对比度以 0.5 为轴，亮度为平移；ColorMatrix 的偏移列按 0..255 计
+    val offset = ((1f - c) * 0.5f + b) * 255f
+    val values = floatArrayOf(
+        (sr + s) * c, sg * c, sb * c, 0f, offset,
+        sr * c, (sg + s) * c, sb * c, 0f, offset,
+        sr * c, sg * c, (sb + s) * c, 0f, offset,
+        0f, 0f, 0f, 1f, 0f,
+    )
+    return ColorFilter.colorMatrix(ColorMatrix(values))
 }
 
 /**

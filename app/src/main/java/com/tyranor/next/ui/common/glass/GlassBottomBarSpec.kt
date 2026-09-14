@@ -31,19 +31,26 @@ data class GlassBottomBarSpec(
     /**
      * 栏体模糊半径（浅色 / 深色分档）。
      *
-     * 原实现沿用参考档 8dp，仍会留下局部硬细节（方案「目标材料拆解」）：改为浅色 18dp / 深色 16dp，
-     * 达到「轮廓可辨、文字与纹理不可辨」的磨砂雾化。
+     * 方案给的起点为浅色 18dp / 深色 16dp，实测会把背景糊成一块平板、观感「毫无玻璃感」。
+     * 按用户实测目标逐步下调：方案起点 18/16dp → 9dp → 6dp → **4dp**。
+     * 4dp 只做「轻微模糊」：背景文字仍可辨认，玻璃感主要交给折射与边缘高光承担。
      */
-    val barBlurRadiusLight: Dp = 18.dp,
-    val barBlurRadiusDark: Dp = 16.dp,
-    /** 深色档表面不透明度：烟黑遮罩，压低亮度但保留背景色渗透。 */
-    val barSurfaceAlphaDark: Float = 0.52f,
+    val barBlurRadiusLight: Dp = 4.dp,
+    val barBlurRadiusDark: Dp = 4.dp,
+    /**
+     * 深色档表面不透明度：烟黑遮罩，压低亮度但**必须仍能透出背景内容**。
+     *
+     * 首版按方案取 0.52，实测把模糊内容压没了、观感退化成一块平板（用户实测反馈），
+     * 收到「轻微遮罩」档 0.34。
+     */
+    val barSurfaceAlphaDark: Float = 0.34f,
     /**
      * 浅色档表面不透明度：高透乳白。
      *
-     * 原 0.62 偏实（像实心白胶囊），方案目标为「背景颜色与分区仍可辨认」→ 降到 0.26。
+     * 原 0.62 偏实（像实心白胶囊），方案目标为「背景颜色与分区仍可辨认」；
+     * 实测目标为「轻微浅色遮罩」→ 0.34（与深色档同档位，两侧观感一致）。
      */
-    val barSurfaceAlphaLight: Float = 0.26f,
+    val barSurfaceAlphaLight: Float = 0.34f,
     /** 栏体 colorControls：亮度 / 对比度 / 饱和度（浅深成对，替代固定 vibrancy 1.5）。 */
     val barBrightnessLight: Float = 0.03f,
     val barBrightnessDark: Float = -0.03f,
@@ -59,12 +66,45 @@ data class GlassBottomBarSpec(
      */
     val barOuterRimAlphaLight: Float = 0.06f,
     val barOuterRimAlphaDark: Float = 0.18f,
-    /** 栏体是否启用整栏 lens：默认关闭（消除横向涂抹，折射只交给移动透镜）。 */
-    val barBaseLensEnabled: Boolean = false,
+    /**
+     * 栏体内部折射（液态玻璃质感）。
+     *
+     * 方案文档曾要求「A 层默认取消整栏 lens」以消除横向涂抹；但用户实测目标明确要求
+     * 「轻微模糊 + 轻微遮罩 + **内部折射**」，因此保留一档**克制**的整栏折射：
+     * 高度取 [barLensHeight]、位移取 [barLensAmount]：既要看得见（首版 3dp 实测「折射完全丢失」），
+     * 又不能过大（24dp 会整栏横向涂抹）。当前 12dp/8dp 用于形成上下边缘那条连贯彩虹带。
+     */
+    val barLensHeight: Dp = 12.dp,
+    val barLensAmount: Dp = 8.dp,
+    /**
+     * 栏体是否启用色散（**开启**）。
+     *
+     * 目标观感（用户提供的参考图）：上下边缘有一条**连贯、自然**的彩虹带。
+     * 色散必须挂在**整条栏体**上——栏体又宽又矮，上下边缘是长直边，色散沿边连续铺开；
+     * 反之挂在滑块那颗小胶囊上只会得到上下两段孤立圆弧、外加左右两端各一道，
+     * 观感是「异常彩虹纹」（用户实测反馈）。
+     */
+    val barLensChromatic: Boolean = true,
     // ---- 移动透镜：静止端点与按压端点分离（方案 §静止与按压光学分离）----
-    /** 静止态折射：未按压也有可见曲面。 */
+    /**
+     * 静止态折射：未按压也有可见曲面。
+     *
+     * 滑块**不做色散**（见 [GlassBottomBarSpec.movingLensChromatic]）：它只有一槽宽，
+     * 色散在它身上会断成上下两段弧并波及左右两端，与参考图不符。
+     */
     val restRefractionHeight: Dp = 6.dp,
     val restRefractionAmount: Dp = 8.dp,
+    /**
+     * 移动滑块是否启用色散：**开启**。
+     *
+     * 用户要求「滑块碰到左右图标时必须有色散」（参考图二：被覆盖图标的边缘有彩边）。
+     * 与栏体那条「上下边缘的连贯长带」分工不同：
+     * - 栏体（又宽又矮的长直边）→ 上下连贯彩虹带，见 [barLensChromatic]；
+     * - 滑块（一槽宽小胶囊）→ 图标附近局部的色散。
+     * 两者都开不会互相打断——前提是滑块的折射量保持在本档位（6/8 → 按压 10/12），
+     * 早前一版把滑块拉到 9/11 → 14/16 时弧线过粗，才会出现「怪且中间断」的观感。
+     */
+    val movingLensChromatic: Boolean = true,
     /** 按压态折射：加厚。 */
     val pressedRefractionHeight: Dp = 10.dp,
     val pressedRefractionAmount: Dp = 12.dp,

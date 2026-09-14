@@ -137,6 +137,55 @@ class LensMotionControllerTest {
         }
     }
 
+    /**
+     * 回归：**轻点**别的槽位必须与 PR 81 最新版的 `settleAt(pulse = true)` 行为一致 ——
+     * **边飞边变大**（膨胀早于到位），到位 + 压力可见后收回正常大小，整栏随压力放大再回落。
+     */
+    @Test
+    fun tapOnOtherSlot_pulsesWhileFlying_likePr81() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            controller.endPress(3, pulse = true) // 快速轻点：UP 早于到位
+            // 飞行途中压力就应该已经起来（PR81 的时序：不是等到位才膨胀）
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.pressure < 0.5f) delay(1)
+            }
+            assertTrue(
+                "膨胀必须早于到位（与 PR81 一致），此时 index=${controller.index}",
+                abs(controller.index - 3f) > 0.2f,
+            )
+            var peakScale = 1f
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    peakScale = maxOf(peakScale, controller.scaleX)
+                    delay(1)
+                }
+            }
+            assertTrue("体积必须被推起过，实测峰值 $peakScale", peakScale > 1.05f)
+            assertEquals("最终必须落在目标槽位", 3f, controller.index, 1e-2f)
+            assertTrue("最后必须缩回正常大小", controller.pressure < 0.05f)
+            assertEquals("体积回到 1", 1f, controller.scaleX, 1e-2f)
+        }
+    }
+
+    /** 回归：拖动途中松手**不得**补膨胀（避免「松手后又被撑大」）。 */
+    @Test
+    fun dragReleaseBeforeArrival_doesNotPulse() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            controller.endPress(3, pulse = false)
+            var peakPressure = 0f
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    peakPressure = maxOf(peakPressure, controller.pressure)
+                    delay(1)
+                }
+            }
+            assertTrue("拖动松手不应补膨胀，实测峰值 $peakPressure", peakPressure < 0.5f)
+            assertEquals(3f, controller.index, 1e-2f)
+        }
+    }
+
     @Test
     fun upBeforeArrival_neverExpandsLate() = runBlocking {
         withController { controller ->
