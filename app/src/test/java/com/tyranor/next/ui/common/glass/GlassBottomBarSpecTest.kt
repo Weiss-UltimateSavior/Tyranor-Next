@@ -2,6 +2,7 @@ package com.tyranor.next.ui.common.glass
 
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,21 +46,62 @@ class GlassBottomBarSpecTest {
     }
 
     @Test
-    fun referenceOpticalAndMotionDefaults_arePinned() {
-        // 这些数值来自分析报告 §6.3 的参考实现默认档；改动即为偏离参考，必须在文档 §6 记录
+    fun referenceGeometryDefaults_arePinned() {
+        // 几何沿用参考实现 §6.3 默认档；光学已按改造方案改为浅深分档（见下一个用例）
         assertEquals(64.dp, spec.barHeight)
         assertEquals(4.dp, spec.barInnerPadding)
         assertEquals(56.dp, spec.lensHeight)
         assertEquals(76.dp, spec.tabMinWidth)
-        assertEquals(8.dp, spec.blurRadius)
-        assertEquals(24.dp, spec.barLensRadius)
-        assertEquals(10.dp, spec.lensRefractionHeight)
-        assertEquals(14.dp, spec.lensRefractionAmount)
-        assertEquals(0.40f, spec.surfaceAlpha, 1e-6f)
-        assertEquals(78f / 56f, spec.pressedScale, 1e-6f)
         assertEquals(1.2f, spec.iconScaleOnPress, 1e-6f)
-        assertEquals(0.10f, spec.staticLensCoverAlpha, 1e-6f)
-        assertEquals(0.03f, spec.pressedLensCoverAlpha, 1e-6f)
+        assertEquals(78f / 56f, spec.pressedScaleX, 1e-6f)
+        assertEquals(78f / 56f, spec.pressedScaleY, 1e-6f)
+    }
+
+    @Test
+    fun translucentBarMaterial_lightAndDarkPairs_arePinned() {
+        // 改造方案 §栏体参数：浅色高透乳白 / 深色烟黑，成对切换；改值必须在文档 §6 记录
+        assertEquals(18.dp, spec.barBlurRadiusLight)
+        assertEquals(16.dp, spec.barBlurRadiusDark)
+        assertEquals(0.26f, spec.barSurfaceAlphaLight, 1e-6f)
+        assertEquals(0.52f, spec.barSurfaceAlphaDark, 1e-6f)
+        assertEquals(0.03f, spec.barBrightnessLight, 1e-6f)
+        assertEquals(-0.03f, spec.barBrightnessDark, 1e-6f)
+        assertEquals(0.92f, spec.barContrastLight, 1e-6f)
+        assertEquals(0.88f, spec.barContrastDark, 1e-6f)
+        assertEquals(1.18f, spec.barSaturationLight, 1e-6f)
+        assertEquals(1.10f, spec.barSaturationDark, 1e-6f)
+        assertEquals(0.70f, spec.barHighlightAlphaLight, 1e-6f)
+        assertEquals(0.30f, spec.barHighlightAlphaDark, 1e-6f)
+        assertFalse("整栏整栏 lens 默认关闭：折射只交给移动透镜", spec.barBaseLensEnabled)
+    }
+
+    @Test
+    fun movingLensRestAndPressedEndpoints_arePinned() {
+        // 方案 §静止与按压光学分离：未按压也有真实折射与轻虹彩
+        assertEquals(6.dp, spec.restRefractionHeight)
+        assertEquals(8.dp, spec.restRefractionAmount)
+        assertEquals(10.dp, spec.pressedRefractionHeight)
+        assertEquals(12.dp, spec.pressedRefractionAmount)
+        assertEquals(0.28f, spec.lensHighlightAlphaRest, 1e-6f)
+        assertEquals(0.80f, spec.lensHighlightAlphaPressed, 1e-6f)
+        assertEquals(2.dp, spec.lensInnerShadowRadiusRest)
+        assertEquals(8.dp, spec.lensInnerShadowRadiusPressed)
+        assertEquals(0.18f, spec.lensInnerShadowAlphaRest, 1e-6f)
+        assertEquals(0.75f, spec.lensInnerShadowAlphaPressed, 1e-6f)
+        assertEquals(0.12f, spec.lensShadowAlphaRest, 1e-6f)
+        assertEquals(0.45f, spec.lensShadowAlphaPressed, 1e-6f)
+        assertEquals(0.05f, spec.staticLensCoverAlpha, 1e-6f)
+        assertEquals(0.02f, spec.pressedLensCoverAlpha, 1e-6f)
+    }
+
+    @Test
+    fun pressMotionDynamics_arePinned() {
+        // 方案 §运动参数与时序：赴按 6000/1.0、跟手 2400/1.0、到位阈值 0.08 index
+        assertEquals(6_000f, spec.pressJumpStiffness, 1e-3f)
+        assertEquals(1.0f, spec.pressJumpDampingRatio, 1e-3f)
+        assertEquals(2_400f, spec.pressTrackingStiffness, 1e-3f)
+        assertEquals(1.0f, spec.pressTrackingDampingRatio, 1e-3f)
+        assertEquals(0.08f, spec.pressArriveThreshold, 1e-6f)
     }
 
     @Test
@@ -73,7 +115,7 @@ class GlassBottomBarSpecTest {
     @Test
     fun enhancementOnlyDefaults_arePinned() {
         // 本方案新增/调整过的参数同样钉值：改动即偏离当前设计，必须在文档 §6 记录
-        assertEquals(0.18f, spec.barHighlightAlpha, 1e-6f)
+        assertEquals(0.30f, spec.barHighlightAlphaDark, 1e-6f)
         assertEquals(0.05f, spec.barPressScaleDeltaMax, 1e-6f)
         assertEquals(0.06f, spec.pressVeilAlpha, 1e-6f)
         assertEquals(0.12f, spec.pressGlowAlpha, 1e-6f)
@@ -111,14 +153,43 @@ class GlassBottomBarSpecTest {
     }
 
     @Test
+    fun pointerXToIndex_mapsEdgesAndCenterExactly() {
+        // 四槽、单槽 100px、左右内边距 4px：槽心 = padding + (i + 0.5) × tab
+        val bar = 408f
+        val pad = 4f
+        val tab = 100f
+        fun at(x: Float, ltr: Boolean = true) =
+            spec.pointerXToIndex(x, bar, pad, tab, tabsCount = 4, isLtr = ltr)
+        // 每槽中心 → 整数索引
+        assertEquals(0f, at(pad + 50f), 1e-4f)
+        assertEquals(1f, at(pad + 150f), 1e-4f)
+        assertEquals(3f, at(pad + 350f), 1e-4f)
+        // 槽边界（半槽处）→ 半整数
+        assertEquals(0.5f, at(pad + 100f), 1e-4f)
+        // 越界夹取
+        assertEquals(0f, at(-500f), 1e-4f)
+        assertEquals(3f, at(9999f), 1e-4f)
+        // RTL 完全镜像
+        assertEquals(at(pad + 150f), at(bar - (pad + 150f), ltr = false), 1e-4f)
+        // tabWidth 非法时退回 0，不产生 NaN
+        assertEquals(0f, spec.pointerXToIndex(50f, bar, pad, 0f, 4, true), 1e-6f)
+    }
+
+    @Test
+    fun canRenderLens_requiresUsableSlotWidth() {
+        // 40dp 与 40.1dp 级别：像素上只剩内边距时不渲染（否则宿主会留出错误空白）
+        // 单槽最小可点宽度 24px：四槽需要 content ≥ 96px
+        assertEquals(false, spec.canRenderLens(8f, 4f, tabsCount = 4, minTabWidthPx = 24f))
+        assertEquals(false, spec.canRenderLens(8.1f, 4f, tabsCount = 4, minTabWidthPx = 24f))
+        assertEquals(false, spec.canRenderLens(100f, 4f, tabsCount = 4, minTabWidthPx = 24f))
+        assertEquals(true, spec.canRenderLens(312f, 4f, tabsCount = 4, minTabWidthPx = 24f))
+    }
+
+    @Test
     fun lightModeReadabilityDefaults_arePinned() {
-        // 浅色档可读性适配（文档 §6 D15）：浅底上必须比深色档更实、描边更明确
-        assertEquals(0.40f, spec.surfaceAlpha, 1e-6f)
-        assertEquals(0.62f, spec.surfaceAlphaLight, 1e-6f)
-        assertEquals(0.18f, spec.barHighlightAlpha, 1e-6f)
-        assertEquals(0.42f, spec.barHighlightAlphaLight, 1e-6f)
-        assertEquals(0.10f, spec.edgeStrokeAlpha, 1e-6f)
-        assertEquals(0.5.dp, spec.edgeStrokeWidth)
-        assertTrue("浅色档表面必须比深色档更实", spec.surfaceAlphaLight > spec.surfaceAlpha)
+        // 浅色档可读性（文档 §6 D15/D25）：浅色描边用 theme 共享常量，栏体材料见上面的分档用例
+        assertEquals(0.5.dp, com.tyranor.next.theme.GlassEdgeStrokeWidth)
+        assertEquals(0.10f, com.tyranor.next.theme.GlassEdgeStrokeAlpha, 1e-6f)
+        assertTrue("浅色档高光必须比深色档强", spec.barHighlightAlphaLight > spec.barHighlightAlphaDark)
     }
 }

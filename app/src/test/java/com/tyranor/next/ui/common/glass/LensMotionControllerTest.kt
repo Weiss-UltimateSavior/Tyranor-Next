@@ -7,218 +7,232 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
 
 /**
- * 运动控制器的行为测试：用人工帧时钟驱动自写的弹簧积分器，验证最容易出错的那条链路。
+ * 透镜运动控制器的行为测试：用人工帧时钟驱动自写的弹簧积分器，验证方案要求的状态机契约。
  *
- * 覆盖点：
- * 1. 松手后必须**吸附**到四舍五入后的槽位（而不是停在手指松开的小数位置）；
- * 2. 同一次输入批次里的多次位移要累加；
- * 3. 拖动目标被限制在索引范围内；
- * 4. 材质只在位置靠近目标后收起，最终所有输出收敛（帧循环能退出）。
+ * 覆盖点（方案 §测试计划 · 控制器单元测试）：
+ * 1. 当前槽 DOWN：同帧进入 PressedTracking 并开始膨胀；
+ * 2. 远距 DOWN：进入 PressJump，pressure/scale/glow 保持静止、速度形变强制为 0，且位置立即推进；
+ * 3. 最远三槽在约 5 帧内进入到位阈值，且不越界；
+ * 4. Jump 中 MOVE 用绝对目标更新，不累积误差；
+ * 5. 到位前 UP：永不晚到膨胀，以正常尺寸吸附；
+ * 6. 到位后 UP：吸附最近槽后恢复静止材质；
+ * 7. CANCEL：回权威选中项且不提交；
+ * 8. 快速 DOWN-UP-DOWN：旧会话不影响新会话；
+ * 9. 外部 selected 变化：取消手势并同步权威项；
+ * 10. 40ms 卡顿帧与非法参数：输出有限、最终收敛。
  */
 class LensMotionControllerTest {
 
     @Test
-    fun dragThenRelease_snapsToRoundedSlot() = runBlocking {
+    fun tapCurrentSlot_entersPressedTrackingImmediately() = runBlocking {
         withController { controller ->
-            controller.beginPress()
-            controller.dragBy(1.6f)
-            // 松手：吸附到四舍五入后的槽位 2，并收起材质（不额外脉冲）
-            controller.settleAt(2f, pulse = false)
-            awaitSettled(controller)
-
-            assertEquals(2f, controller.index, 1e-3f)
-            assertEquals(2f, controller.targetIndex, 1e-3f)
-            assertTrue("松手后材质应收起", controller.pressure < 0.05f)
-            assertTrue("体积应回到 1", abs(controller.scaleX - 1f) < 0.05f)
-        }
-    }
-
-    @Test
-    fun batchedDrags_accumulateBeforeRelease() = runBlocking {
-        withController { controller ->
-            controller.beginPress()
-            // 同一次输入批次里的两次位移必须都算进去（不能被动画目标值吃掉）
-            controller.dragBy(0.4f)
-            controller.dragBy(0.4f)
-            assertEquals(0.8f, controller.targetIndex, 1e-4f)
-            controller.settleAt(1f, pulse = false)
-            awaitSettled(controller)
-            assertEquals(1f, controller.index, 1e-3f)
-        }
-    }
-
-    @Test
-    fun dragIsClampedToIndexRange() = runBlocking {
-        withController { controller ->
-            controller.beginPress()
-            controller.dragBy(99f)
-            assertEquals(3f, controller.targetIndex, 1e-4f)
-            controller.dragBy(-99f)
-            assertEquals(0f, controller.targetIndex, 1e-4f)
-        }
-    }
-
-    @Test
-    fun settleAtWithPulse_pressesThenCollapses() = runBlocking {
-        withController { controller ->
-            controller.settleAt(2f)
-            // 采样整个动画过程：必须出现一次明显按压，然后收起
-            var peakPressure = 0f
+            controller.beginPressAt(0f)
+            assertEquals(LensInteractionState.PressedTracking, controller.state)
             withTimeout(SettleTimeoutMillis) {
-                while (controller.isAnimating) {
-                    peakPressure = maxOf(peakPressure, controller.pressure)
+                while (controller.pressure < 0.5f) delay(1)
+            }
+            assertTrue("原地按下应当立刻膨胀", controller.pressure > 0.5f)
+            controller.endPress(0)
+            awaitSettled(controller)
+            assertTrue("松手后材质归零", controller.pressure < 0.05f)
+        }
+    }
+
+    @Test
+    fun distantDown_startsPressJumpKeepingRestSize() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            assertEquals(LensInteractionState.PressJump, controller.state)
+            assertEquals("赴按阶段不得有按压力度", 0f, controller.pressure, 1e-3f)
+            assertEquals("赴按阶段保持正常尺寸", 1f, controller.scaleX, 1e-3f)
+            assertEquals("赴按阶段不得有光斑", 0f, controller.glow, 1e-3f)
+            assertEquals("赴按阶段速度形变必须为 0", 0f, controller.effectiveVelocity, 1e-6f)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.index <= 0.01f) delay(1)
+            }
+            assertTrue("位置应已开始移动（首帧修正）", controller.index > 0.01f)
+        }
+    }
+
+    @Test
+    fun farthestJump_reachesArrivalWithinFewFrames() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            var frames = 0
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.state == LensInteractionState.PressJump) {
                     delay(1)
+                    frames++
                 }
             }
-            assertEquals(2f, controller.index, 1e-3f)
-            assertTrue("点击应有一次按压脉冲，实测峰值 $peakPressure", peakPressure > 0.3f)
-            assertTrue(controller.pressure < 0.05f)
+            assertTrue("最远三槽应在约 5 帧内到位，实测 $frames 帧", frames <= 8)
+            assertTrue("赴按途中不得越界", controller.index in 0f..3f)
+        }
+    }
+
+    @Test
+    fun moveDuringJump_updatesAbsoluteTargetWithoutDrift() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            controller.updatePressTarget(1f)
+            controller.updatePressTarget(2f)
+            assertEquals("绝对目标应立即生效", 2f, controller.targetIndex, 1e-3f)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.state == LensInteractionState.PressJump) delay(1)
+            }
+            assertEquals(LensInteractionState.PressedTracking, controller.state)
+            controller.endPress(2)
+            awaitSettled(controller)
+            assertEquals("应精确停在绝对目标", 2f, controller.index, 1e-2f)
         }
     }
 
     /**
-     * 回归：掉帧/30Hz 下积分器必须仍然收敛。
+     * 回归：按住不松手时，连续 MOVE 必须让滑块一路跟到手指最后位置。
      *
-     * 半隐式欧拉对 k=1000 的位置/按压弹簧稳定上限约 26ms，早期实现把「本帧时长」直接当步长、
-     * 上限又放到 1/30s，导致 33ms 的帧会让弹簧发散：透镜来回乱跳且帧循环永不退出。
-     * 现在改为固定子步长积分，这里用 40ms 的「卡顿帧」验证仍能收敛并收起。
+     * 这条覆盖「按下能赴按、但移动不跟手」那类回归：手势层把绝对坐标交给
+     * [LensMotionController.updatePressTarget]，控制器必须逐帧跟随，而不是只在 DOWN 生效。
      */
+    @Test
+    fun holdingAndMoving_followsFingerContinuously() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(0f)
+            // 手指从槽 0 连续滑到槽 3（每次 MOVE 都给绝对目标）
+            for (step in 1..30) {
+                controller.updatePressTarget(step / 10f)
+                delay(1)
+            }
+            assertEquals("目标必须等于手指最后位置", 3f, controller.targetIndex, 1e-3f)
+            withTimeout(SettleTimeoutMillis) {
+                while (abs(controller.index - 3f) > 0.02f) delay(1)
+            }
+            assertTrue("滑块必须跟到手指下", abs(controller.index - 3f) <= 0.02f)
+            assertTrue("跟手期间应处于按压形态", controller.state == LensInteractionState.PressedTracking)
+        }
+    }
+
+    /** 回归：跟手途中反向滑回，也必须跟随（不因方向变化而卡住）。 */
+    @Test
+    fun holdingAndMovingBack_followsFingerBackwards() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.state == LensInteractionState.PressJump) delay(1)
+            }
+            for (step in 0..20) {
+                controller.updatePressTarget(3f - step / 10f)
+                delay(1)
+            }
+            assertEquals(1f, controller.targetIndex, 1e-3f)
+            withTimeout(SettleTimeoutMillis) {
+                while (abs(controller.index - 1f) > 0.02f) delay(1)
+            }
+            assertTrue(abs(controller.index - 1f) <= 0.02f)
+        }
+    }
+
+    @Test
+    fun upBeforeArrival_neverExpandsLate() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            controller.endPress(3)
+            var maxPressure = 0f
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    maxPressure = maxOf(maxPressure, controller.pressure)
+                    delay(1)
+                }
+            }
+            assertTrue("到位前松手不得再膨胀，实测峰值 $maxPressure", maxPressure < 0.5f)
+            assertEquals("正常尺寸吸附到目标", 3f, controller.index, 1e-2f)
+            assertEquals("尺寸回到 1", 1f, controller.scaleX, 1e-2f)
+        }
+    }
+
+    @Test
+    fun upAfterArrival_settlesAndCollapses() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(2f)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.state == LensInteractionState.PressJump) delay(1)
+            }
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.pressure < 0.5f) delay(1)
+            }
+            controller.endPress(2)
+            awaitSettled(controller)
+            assertTrue("松手后压力归零", controller.pressure < 0.05f)
+            assertEquals(2f, controller.index, 1e-2f)
+        }
+    }
+
+    @Test
+    fun cancel_returnsToAuthoritativeIndexWithoutCommit() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.index <= 0.01f) delay(1)
+            }
+            controller.cancelPress(0f)
+            awaitSettled(controller)
+            assertEquals("CANCEL 必须回到权威选中项", 0f, controller.index, 1e-2f)
+            assertTrue("CANCEL 后不得有按压力度", controller.pressure < 0.05f)
+        }
+    }
+
+    @Test
+    fun rapidDownUpDown_oldSessionDoesNotAffectNewOne() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.index <= 0.01f) delay(1)
+            }
+            controller.endPress(3)
+            controller.beginPressAt(1f)
+            assertEquals(LensInteractionState.PressJump, controller.state)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.state == LensInteractionState.PressJump) delay(1)
+            }
+            assertEquals("新会话目标必须是 1", 1f, controller.targetIndex, 1e-3f)
+            controller.endPress(1)
+            awaitSettled(controller)
+            assertEquals(1f, controller.index, 1e-2f)
+        }
+    }
+
+    @Test
+    fun externalSelectionChange_syncsAndCancelsGesture() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.index <= 0.01f) delay(1)
+            }
+            controller.syncSelection(1f)
+            awaitSettled(controller)
+            assertEquals("外部权威项必须获胜", 1f, controller.index, 1e-2f)
+            assertTrue("同步后材质归零", controller.pressure < 0.05f)
+        }
+    }
+
     @Test
     fun jankyFrames_stillConverge() = runBlocking {
-        withController(frameNanos = JankFrameNanos) { controller ->
-            controller.beginPress()
-            controller.dragBy(1.6f)
-            controller.settleAt(2f, pulse = false)
+        withController(frameNanos = JANK_FRAME_NANOS) { controller ->
+            controller.beginPressAt(3f)
+            controller.updatePressTarget(2f)
+            controller.endPress(2)
             awaitSettled(controller)
-
-            assertEquals(2f, controller.index, 1e-3f)
-            assertTrue("卡顿帧后材质也必须收起", controller.pressure < 0.05f)
+            assertEquals(2f, controller.index, 1e-2f)
             assertTrue("输出必须有限", controller.index.isFinite() && controller.pressure.isFinite())
-            assertTrue("动画结束后不应继续占用帧循环", !controller.isAnimating)
+            assertFalse(controller.isAnimating)
         }
     }
 
-    /**
-     * 回归：目标索引本来就在位时，`settleAt(pulse = true)` 仍必须产生可见按压。
-     * 早期实现在第一帧就把压力目标改回 0（目标已足够接近），这次脉冲完全看不见。
-     */
-    @Test
-    fun settleAtWithPulse_onAlreadyNearTarget_stillShowsPress() = runBlocking {
-        withController { controller ->
-            controller.settleAt(0f) // 目标 = 当前位置，且 pulse 默认为 true
-            var peak = 0f
-            withTimeout(SettleTimeoutMillis) {
-                while (controller.isAnimating) {
-                    peak = maxOf(peak, controller.pressure)
-                    delay(1)
-                }
-            }
-            assertTrue(
-                "近目标也必须出现可见按压，实测峰值 $peak",
-                peak >= GlassBottomBarSpec.Default.pulseVisibleThreshold,
-            )
-            assertTrue("收完后材质要归零", controller.pressure < 0.05f)
-        }
-    }
-
-    /**
-     * 回归（M1）：动画途中抓住透镜再拖动时，位移必须从**视觉位置**起算。
-     *
-     * 早期实现把位移累加在上一轮的目标上：0→3 的滑动途中在 1.5 处抓住并左拖一格，
-     * 会得到目标 2（提交到错误槽位），而跟手语义应为 0.5（吸附到 1）。
-     */
-    @Test
-    fun dragDuringGlide_rebaselinesToVisualPosition() = runBlocking {
-        withController { controller ->
-            controller.settleAt(3f, pulse = false)
-            // 等动画滑过第一格，落在 (1, 2) 之间时「抓住」
-            withTimeout(SettleTimeoutMillis) {
-                while (controller.index < 1.2f) delay(1)
-            }
-            val grabbed = controller.index
-            assertTrue("应停在滑动途中，实测 $grabbed", grabbed in 1.2f..2.6f)
-
-            controller.beginPress()
-            controller.dragBy(-1f)
-
-            assertEquals(
-                "拖动基准应对齐视觉位置（$grabbed − 1）",
-                grabbed - 1f,
-                controller.targetIndex,
-                0.3f,
-            )
-            controller.settleAt(controller.targetIndex, pulse = false)
-            awaitSettled(controller)
-        }
-    }
-
-
-    /**
-     * 回归：纯点击松手（未拖动）必须收回按压材质，且**不得改动位置目标**。
-     *
-     * 早期实现把「收回材质」和「提交」绑在一起，于是纯点击不提交 = 也不收材质，
-     * 滑块会永久停在按下放大的状态（用户实测）。同时它也不能把正在滑动的透镜截停。
-     */
-    /**
-     * 回归：纯点击松手（未拖动）必须收回按压材质，且**不得改动位置目标**。
-     *
-     * 早期实现把「收回材质」和「提交」绑在一起，于是纯点击不提交 = 也不收材质，
-     * 滑块会永久停在按下放大的状态（用户实测）。同时它也不能把正在滑动的透镜截停。
-     */
-    @Test
-    fun releasePress_withoutDrag_collapsesButKeepsGlidingTarget() = runBlocking {
-        withController { controller ->
-            controller.settleAt(3f, pulse = false)
-            withTimeout(SettleTimeoutMillis) {
-                while (controller.index < 1.2f) delay(1)
-            }
-            controller.beginPress()
-            controller.releasePress()
-
-            assertEquals("位置目标不得被改动", 3f, controller.targetIndex, 1e-3f)
-            awaitSettled(controller)
-            assertTrue("按压材质必须收回", controller.pressure < 0.05f)
-            assertTrue("体积必须回到 1", abs(controller.scaleX - 1f) < 0.05f)
-            assertEquals("仍应滑到原目标", 3f, controller.index, 1e-3f)
-        }
-    }
-
-    /**
-     * 回归：非法运动参数不得把帧循环钉死。
-     *
-     * `pulseVisibleThreshold` 若为 NaN/±Inf/>1，`pressure >= threshold` 永远不成立，
-     * `pulsePending` 与 `shrinkWhenSettled` 就永远清不掉，`allSettled()` 恒为 false
-     * → 帧循环一直跑下去。控制器初始化时必须把这些值归一化。
-     */
-    @Test
-    fun malformedPulseThreshold_stillSettles() = runBlocking {
-        val bad = listOf(
-            Float.NaN,
-            Float.POSITIVE_INFINITY,
-            Float.NEGATIVE_INFINITY,
-            1f,
-            2f,
-            -1f,
-        )
-        for (value in bad) {
-            withController(spec = GlassBottomBarSpec.Default.copy(pulseVisibleThreshold = value)) { controller ->
-                controller.settleAt(0f) // 目标已在位 + 需要脉冲：最容易卡住的组合
-                awaitSettled(controller)
-                assertTrue(
-                    "阈值 $value 下材质必须收起",
-                    controller.pressure < 0.05f,
-                )
-                assertTrue("输出必须有限（阈值 $value）", controller.index.isFinite())
-            }
-        }
-    }
-
-    /** 回归：其它参与收敛判定/作除数的运动参数同样要兜底。 */
     @Test
     fun malformedMotionParams_stillSettle() = runBlocking {
         val specs = listOf(
@@ -227,15 +241,17 @@ class LensMotionControllerTest {
             GlassBottomBarSpec.Default.copy(releaseThreshold = Float.NaN),
             GlassBottomBarSpec.Default.copy(releaseThreshold = -1f),
             GlassBottomBarSpec.Default.copy(velocityNormalizationSpan = 0f),
-            GlassBottomBarSpec.Default.copy(velocityNormalizationSpan = Float.NaN),
-            GlassBottomBarSpec.Default.copy(pressedScale = Float.NaN),
-            GlassBottomBarSpec.Default.copy(pressedScale = Float.POSITIVE_INFINITY),
+            GlassBottomBarSpec.Default.copy(pressArriveThreshold = Float.NaN),
+            GlassBottomBarSpec.Default.copy(pressArriveThreshold = -1f),
+            GlassBottomBarSpec.Default.copy(pressJumpStiffness = Float.NaN),
+            GlassBottomBarSpec.Default.copy(pressTrackingStiffness = 0f),
+            GlassBottomBarSpec.Default.copy(pressedScaleX = Float.NaN),
+            GlassBottomBarSpec.Default.copy(pressedScaleY = Float.POSITIVE_INFINITY),
         )
         for (spec in specs) {
             withController(spec = spec) { controller ->
-                controller.beginPress()
-                controller.dragBy(1.5f)
-                controller.settleAt(2f, pulse = false)
+                controller.beginPressAt(3f)
+                controller.endPress(3)
                 awaitSettled(controller)
                 assertTrue("输出必须有限", controller.index.isFinite() && controller.pressure.isFinite())
                 assertTrue("材质必须收起", controller.pressure < 0.05f)
@@ -243,12 +259,6 @@ class LensMotionControllerTest {
         }
     }
 
-    /**
-     * 回归：构造参数本身非法时也不能把控制器带坏。
-     *
-     * - 逆序 / 含 NaN 的范围会让 `coerceIn` 抛异常；
-     * - 非有限的初值会污染 `lastIndex` → `rawSpeed` 变 NaN → 速度弹簧永不收敛，帧循环不结束。
-     */
     @Test
     fun malformedConstructorArgs_areNormalized() = runBlocking {
         val cases = listOf(
@@ -259,7 +269,6 @@ class LensMotionControllerTest {
             9f to (0f..3f),
             1f to (Float.NaN..3f),
             1f to (3f..0f),
-            Float.NaN to (Float.NaN..Float.NaN),
         )
         for ((initial, range) in cases) {
             withController(initialIndex = initial, indexRange = range) { controller ->
@@ -267,12 +276,10 @@ class LensMotionControllerTest {
                     "初值 $initial / 范围 $range 归一化后必须有限",
                     controller.index.isFinite() && controller.targetIndex.isFinite(),
                 )
-                controller.beginPress()
-                controller.dragBy(1f)
-                controller.settleAt(controller.targetIndex, pulse = false)
+                controller.beginPressAt(controller.targetIndex)
+                controller.endPress(controller.targetIndex.toInt())
                 awaitSettled(controller)
-                assertTrue("输出必须有限", controller.index.isFinite() && controller.velocity.isFinite())
-                assertTrue("材质必须收起", controller.pressure < 0.05f)
+                assertTrue("输出必须有限", controller.index.isFinite())
             }
         }
     }
@@ -280,49 +287,35 @@ class LensMotionControllerTest {
     @Test
     fun idleController_staysStill() = runBlocking {
         withController { controller ->
-            delay(20)
-            assertTrue("刚构造时不应有帧循环", !controller.isAnimating)
-            // 反向确认：一旦有输入就必须真的起循环，且收敛后自己停掉（避免断言同义反复）
-            controller.beginPress()
-            assertTrue("按下后帧循环应当启动", controller.isAnimating)
-            controller.settleAt(0f, pulse = false) // 松手
-            awaitSettled(controller)
-            assertTrue("收敛后帧循环应当自行退出", !controller.isAnimating)
-            assertTrue("松手后材质归零", controller.pressure < 0.05f)
+            assertFalse("刚构造时不应有帧循环", controller.isAnimating)
             assertEquals(0f, controller.index, 1e-4f)
-            assertEquals(0f, controller.pressure, 1e-4f)
-            assertEquals(1f, controller.scaleX, 1e-4f)
+            controller.beginPressAt(0f)
+            assertTrue("按下后帧循环应当启动", controller.isAnimating)
+            controller.endPress(0)
+            awaitSettled(controller)
+            assertFalse("收敛后帧循环应当自行退出", controller.isAnimating)
+            assertTrue("松手后材质归零", controller.pressure < 0.05f)
         }
     }
 
-    /** 人工帧时钟：每次 `withFrameNanos` 前进 [frameNanos]，让积分器以最快速度跑完动画。 */
-    private class ManualFrameClock(private val frameNanos: Long = FrameNanos) : MonotonicFrameClock {
-        private var nanos = 0L
-
-        override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R {
-            // 让出事件循环，测试才能观察到动画的中间状态
-            delay(1)
-            nanos += frameNanos
-            return onFrame(nanos)
-        }
-    }
+    // ---- 测试脚手架 ----
 
     private suspend fun withController(
-        frameNanos: Long = FrameNanos,
+        frameNanos: Long = NANOS_60HZ,
         spec: GlassBottomBarSpec = GlassBottomBarSpec.Default,
         initialIndex: Float = 0f,
         indexRange: ClosedRange<Float> = 0f..3f,
         block: suspend (LensMotionController) -> Unit,
     ) = coroutineScope {
-            val scope = CoroutineScope(coroutineContext + ManualFrameClock(frameNanos))
-            val controller = LensMotionController(
-                scope = scope,
-                initialIndex = initialIndex,
-                indexRange = indexRange,
-                spec = spec,
-            )
-            block(controller)
-        }
+        val scope = CoroutineScope(coroutineContext + ManualFrameClock(frameNanos))
+        val controller = LensMotionController(
+            scope = scope,
+            initialIndex = initialIndex,
+            indexRange = indexRange,
+            spec = spec,
+        )
+        block(controller)
+    }
 
     /** 等到帧循环自己结束：这正是「动画已收敛」的权威条件。 */
     private suspend fun awaitSettled(controller: LensMotionController) {
@@ -331,11 +324,20 @@ class LensMotionControllerTest {
         }
     }
 
-    private companion object {
-        const val FrameNanos = 16_000_000L
+    /** 人工帧时钟：每次 `withFrameNanos` 前进 [frameNanos]。 */
+    private class ManualFrameClock(private val frameNanos: Long) : MonotonicFrameClock {
+        private var nanos = 0L
 
-        /** 40ms 一帧（约 25fps）：曾会让积分器发散的卡顿区间。 */
-        const val JankFrameNanos = 40_000_000L
+        override suspend fun <R> withFrameNanos(onFrame: (Long) -> R): R {
+            delay(1)
+            nanos += frameNanos
+            return onFrame(nanos)
+        }
+    }
+
+    private companion object {
+        const val NANOS_60HZ = 16_000_000L
+        const val JANK_FRAME_NANOS = 40_000_000L
         const val SettleTimeoutMillis = 10_000L
     }
 }

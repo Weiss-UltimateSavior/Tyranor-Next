@@ -33,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,18 +72,19 @@ import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.theme.AppNavCapsuleShape
+import com.tyranor.next.theme.GlassEdgeStrokeAlpha
+import com.tyranor.next.theme.GlassEdgeStrokeWidth
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.isWideScreen
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -158,22 +158,22 @@ fun EnhancedLiquidGlassNavigationBar(
             vibrator?.hasVibrator() == true
         }.getOrDefault(false)
     }
-    val tapTick = remember(hapticView, hapticSupported) {
+    /**
+     * 每次物理会话只在 DOWN 触发一次（方案 §触觉与提交一致性）。
+     *
+     * 不再有「到位后补震」与「松手重震」两套物理触觉，避免同一次操作震两下或反馈滞后。
+     */
+    val pressTick = remember(hapticView, hapticSupported) {
         if (hapticSupported) {
             { hapticView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
         } else {
             {}
         }
     }
-    val releaseTick = remember(hapticView, hapticSupported) {
-        if (hapticSupported) {
-            { hapticView.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK) }
-        } else {
-            {}
-        }
-    }
-    val currentTapTick by rememberUpdatedState(tapTick)
-    val currentReleaseTick by rememberUpdatedState(releaseTick)
+    /** 无障碍语义激活（TalkBack / 键盘）没有物理 DOWN，单独给一次可感知反馈。 */
+    val semanticTick = pressTick
+    val currentPressTick by rememberUpdatedState(pressTick)
+    val currentSemanticTick by rememberUpdatedState(semanticTick)
 
     // 宽度：参考单槽宽 × N 居中收窄；窗口放不下时夹取，再窄就直接不渲染（避免留一条残片）
     val configuration = LocalConfiguration.current
@@ -184,7 +184,16 @@ fun EnhancedLiquidGlassNavigationBar(
     // 避免这里再维护一套阈值（横屏或宽度 ≥600dp 都算宽屏）
     val stretchBar = isWideScreen()
     val barWidth = spec.clampedBarWidth(tabs, windowWidthDp, stretch = stretchBar)
-    if (barWidth <= spec.minRenderableBarWidth) return
+    // 窄窗判定基于**最终像素**并要求单槽可点：dp 转 px 后可能正好只剩左右内边距，
+    // 这时 tabWidthPx = 0（透镜不画但宿主仍留白）。宿主侧的 canRender() 用同一套判定。
+    val renderWidthPx = with(density) { barWidth.toPx() }
+    val innerPaddingPx = with(density) { spec.barInnerPadding.toPx() }
+    val minTabWidthPx = with(density) { spec.minTabWidth.toPx() }
+    if (barWidth <= spec.minRenderableBarWidth ||
+        !spec.canRenderLens(renderWidthPx, innerPaddingPx, tabs, minTabWidthPx)
+    ) {
+        return
+    }
 
     // 平台能力是权威：调用方传入的能力标记只能「再降一级」，不能把低版本设备抬进高能力分支
     val platformCaps = GlassBottomBarCapabilities.current
@@ -262,121 +271,125 @@ fun EnhancedLiquidGlassNavigationBar(
     val currentTabWidthPx by rememberUpdatedState(tabWidthPx)
     val currentBarWidthPx by rememberUpdatedState(barWidthPx)
     val currentIsLtr by rememberUpdatedState(isLtr)
-    // 拖动释放已经落到目标槽位；用显式标记判重，避免 settleAt 再补一次按压脉冲
-    var indexCommittedByDrag by remember { mutableStateOf<Int?>(null) }
 
-    val commitIndex: (Float) -> Unit = remember(controller, scope, tabs, spec) {
-        { target ->
-            val index = target.fastRoundToInt().fastCoerceIn(0, tabs - 1)
-            // 松手立即反馈：拖动与纯按住一致，不做延迟（延迟会让「按下已选项」显得迟钝）
-            currentReleaseTick()
-            // 吸附到四舍五入后的槽位，并收起材质；pulse=false 表示不再补一次按压脉冲
-            controller.settleAt(index.toFloat(), pulse = false)
-            indexCommittedByDrag = index
-            if (index != currentSelectedIndex) currentOnItemClick(index)
-            recenterPanel()
-        }
-    }
-
-    // 点击图标：未覆盖的等滑块快滑到位再反馈（更跟手）。命中测试是「最上层兄弟独占」，
-    // 覆盖中的那个 Tab 由透镜自己接管（其松手反馈在 commitIndex 里给），这里只处理未被覆盖的
-    // 到位等待的会话号：连续点不同图标时，只有最后一次点击的等待有效，
-    // 避免旧 waiter 对「滑块只是路过」的槽位误触发反馈
-    var tapSession by remember { mutableStateOf(0) }
-    val onTabSelected: (Int) -> Unit = remember(controller, scope, tabs, spec) {
+    /**
+     * 受控选中：本组件只**请求**切页，权威值永远来自宿主的 [selectedIndex]。
+     *
+     * 方案 §受控选中状态：请求去重；宿主若拒绝或改写请求，透镜最终回到外部权威选中项，
+     * 不让内部目标长期冒充已选页面。
+     */
+    var pendingRequestedIndex by remember { mutableStateOf<Int?>(null) }
+    val requestSelection: (Int) -> Unit = remember(tabs) {
         { index ->
-            if (index == currentSelectedIndex) {
-                currentTapTick()
-            } else {
-                currentOnItemClick(index)
-                val session = ++tapSession
-                scope.launch {
-                    val arrived = withTimeoutOrNull(ArriveTimeoutMillis) {
-                        snapshotFlow { controller.index }
-                            .first { abs(it - index) < spec.tapArriveThreshold }
-                    } != null
-                    if (arrived && session == tapSession) currentTapTick()
+            if (index in 0 until tabs) {
+                if (pendingRequestedIndex != index) {
+                    pendingRequestedIndex = index
+                    currentOnItemClick(index)
                 }
             }
         }
     }
 
-    // 平台触摸 slop：拖动识别器用它区分「真拖动」与「点击时的手指抖动」
+    /**
+     * 指针 x → 连续索引（固定栏体坐标，不把 panelShift 反向写回命中计算，避免反馈环）。
+     */
+    val pointerXToIndex: (Float) -> Float = remember(paddingPx, spec, tabs) {
+        { x ->
+            spec.pointerXToIndex(
+                x = x,
+                barWidthPx = currentBarWidthPx,
+                paddingPx = paddingPx,
+                tabWidthPx = currentTabWidthPx,
+                tabsCount = tabs,
+                isLtr = currentIsLtr,
+            )
+        }
+    }
+
+    // 平台触摸 slop：只用于判断「是否算拖动」，不决定是否开始反馈、也不决定是否提交
     val touchSlopPx = remember(context) {
         ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     }
-    val dragModifier = remember(controller, commitIndex, scope, paddingPx, touchSlopPx) {
-        Modifier.pointerInput(controller, commitIndex) {
-            detectLensPressDrag(
+
+    /**
+     * D 层：全栏物理输入（唯一 pointer owner）。
+     *
+     * - DOWN 同帧：一次短震 + 以绝对目标启动赴按；
+     * - MOVE：绝对坐标更新目标（不累加位移），并按位移累加装饰性整栏跟随；
+     * - UP：四舍五入最近槽、请求一次选择、吸附；
+     * - CANCEL：回权威选中项，不提交、不补震。
+     */
+    val gestureModifier = remember(controller, requestSelection, paddingPx, touchSlopPx) {
+        Modifier.pointerInput(controller, requestSelection) {
+            detectBottomBarPress(
                 touchSlopPx = touchSlopPx,
-                onPress = { controller.beginPress() },
-                onDrag = { position, previous, delta ->
+                // 尺寸未就绪时不接管手势，避免用错误的槽宽换算
+                isGestureEnabled = { currentTabWidthPx > 0f },
+                onDown = { position ->
+                    currentPressTick()
+                    controller.beginPressAt(pointerXToIndex(position.x))
+                },
+                onDrag = { position ->
+                    controller.updatePressTarget(pointerXToIndex(position.x))
                     val tab = currentTabWidthPx
                     if (tab > 0f) {
-                        // 触点换算到栏体坐标系：透镜自身随索引移动，只有仍落在透镜上才继续跟随
-                        val index = controller.index
-                        val barWidthPx = currentBarWidthPx
-                        val base = if (currentIsLtr) {
-                            paddingPx + index * tab
-                        } else {
-                            barWidthPx - paddingPx - tab - index * tab
-                        }
-                        if (base + position.x in 0f..barWidthPx && base + previous.x in 0f..barWidthPx) {
-                            controller.dragBy(delta.x / tab * (if (currentIsLtr) 1f else -1f))
-                            // 同步累加（不丢同帧的多次位移），并夹取避免越界拖拽下无限增长
-                            panelRecenterJob?.cancel()
-                            panelShiftAccum = (panelShiftAccum + delta.x)
-                                .coerceIn(-barWidthPx, barWidthPx)
-                        }
+                        val dx = pointerXToIndex(position.x) - controller.targetIndex
+                        // 装饰性整栏跟随：按绝对位置差累加，夹取避免越界拖拽下无限增长
+                        panelRecenterJob?.cancel()
+                        panelShiftAccum = (panelShiftAccum + dx * tab)
+                            .coerceIn(-currentBarWidthPx, currentBarWidthPx)
                     }
                 },
-                // 只有真的拖动过才提交：纯点击（含滑动途中轻点）不改变选中项，
-                // 否则会把正在滑动的透镜截停并提交到它当时路过的槽位。
-                // 但**无论是否提交都必须收回按压材质**，否则滑块会永久停在按下状态。
-                onRelease = { dragged ->
-                    if (dragged) {
-                        commitIndex(controller.targetIndex)
-                    } else {
-                        controller.releasePress()
-                        currentReleaseTick()
-                    }
+                onUp = { position ->
+                    val index = pointerXToIndex(position.x).fastRoundToInt()
+                        .fastCoerceIn(0, tabs - 1)
+                    controller.endPress(index)
+                    recenterPanel()
+                    requestSelection(index)
                 },
                 onCancel = {
-                    // 取消不提交：回到当前选中项（正式产品语义，见文档 §6 D3）
-                    controller.settleAt(currentSelectedIndex.toFloat(), pulse = false)
+                    controller.cancelPress(currentSelectedIndex.toFloat())
                     recenterPanel()
                 },
             )
         }
     }
 
-    // 选中项变化时把透镜弹到新槽位。首次组合只记录不播放，避免启动时出现一次假按压；
-    // 拖动释放已经落到目标槽位时也不再重复播放。
+    // 外部权威选中项变化：同步控制器；若变化正是本次手势请求的结果，则不再补一次按压脉冲
     var lastSyncedIndex by remember(controller) { mutableStateOf<Int?>(null) }
     LaunchedEffect(selectedIndex, controller) {
         val previous = lastSyncedIndex
         lastSyncedIndex = selectedIndex
-        val committedByDrag = indexCommittedByDrag == selectedIndex
-        indexCommittedByDrag = null
-        if (previous != null && previous != selectedIndex && !committedByDrag) {
-            controller.settleAt(selectedIndex.toFloat())
+        val requested = pendingRequestedIndex == selectedIndex
+        pendingRequestedIndex = null
+        when {
+            previous == null -> Unit // 首次组合只记录，避免启动时一次假按压
+            requested -> Unit        // 由本次手势驱动，透镜已在目标上
+            else -> controller.syncSelection(selectedIndex.toFloat())
         }
     }
 
     val tabsBackdrop = rememberLayerBackdrop()
-    // 浅色档用更高的表面不透明度与更强的边缘高光（否则浅底上栏体几乎不可辨，见 D15）
-    val surfaceAlpha = if (colors.isDark) spec.surfaceAlpha else spec.surfaceAlphaLight
-    val highlightAlpha = if (colors.isDark) spec.barHighlightAlpha else spec.barHighlightAlphaLight
-    val containerColor = remember(blurEnabled, colors, spec, surfaceAlpha) {
-        if (blurEnabled) colors.surfaceTint.copy(alpha = surfaceAlpha) else colors.fallbackSurface
+    // ---- 栏体通透材料（方案 §栏体参数）：浅色高透乳白 / 深色烟黑，成对切换 ----
+    val isDark = colors.isDark
+    val barBlurRadius = if (isDark) spec.barBlurRadiusDark else spec.barBlurRadiusLight
+    val barSurfaceAlpha = if (isDark) spec.barSurfaceAlphaDark else spec.barSurfaceAlphaLight
+    val barBrightness = if (isDark) spec.barBrightnessDark else spec.barBrightnessLight
+    val barContrast = if (isDark) spec.barContrastDark else spec.barContrastLight
+    val barSaturation = if (isDark) spec.barSaturationDark else spec.barSaturationLight
+    val highlightAlpha = if (isDark) spec.barHighlightAlphaDark else spec.barHighlightAlphaLight
+    // surfaceTint 是主题选择后的不透明中性色，alpha 只在 onDrawSurface 应用一次（不叠两层 surface）
+    val containerColor = remember(blurEnabled, colors, spec, barSurfaceAlpha) {
+        if (blurEnabled) colors.surfaceTint.copy(alpha = barSurfaceAlpha) else colors.fallbackSurface
     }
-    // 浅色档补一条暗色发丝描边勾勒胶囊轮廓；深色档 edgeStroke 为透明即不描边
-    val edgeStroke: Modifier = remember(colors, spec, density) {
+    // 浅色档补一条暗色发丝描边勾勒胶囊轮廓；深色档 edgeStroke 为透明即不描边。
+    // 宽度/不透明度用 theme 里的共享常量，与经典档描边保持同一套数值。
+    val edgeStroke: Modifier = remember(colors, density) {
         if (colors.edgeStroke.alpha == 0f) {
             Modifier
         } else {
-            val strokeColor = colors.edgeStroke.copy(alpha = spec.edgeStrokeAlpha)
-            val strokeWidth = with(density) { spec.edgeStrokeWidth.toPx() }
+            val strokeColor = colors.edgeStroke.copy(alpha = GlassEdgeStrokeAlpha)
+            val strokeWidth = with(density) { GlassEdgeStrokeWidth.toPx() }
             Modifier.drawWithContent {
                 drawContent()
                 drawOutline(
@@ -415,15 +428,17 @@ fun EnhancedLiquidGlassNavigationBar(
         contentAlignment = Alignment.CenterStart,
     ) {
         // ---- A 可见栏：玻璃栏体 + 清晰图标（图标绘制在栏体之后，不参与模糊）----
-        val barEffects: BackdropEffectScope.() -> Unit = remember(blurEnabled, spec) {
-            {
-                if (blurEnabled) {
-                    vibrancy()
-                    blur(spec.blurRadius.toPx())
-                    lens(spec.barLensRadius.toPx(), spec.barLensRadius.toPx())
+        // A/B 栏体材料：colorControls 分主题 + 主题 blur；**默认不做整栏 lens**
+        // （整栏 24dp 透镜会造成横向涂抹，折射只交给 C 层移动透镜，见方案 §移除 B 层重复折射）
+        val barEffects: BackdropEffectScope.() -> Unit =
+            remember(blurEnabled, spec, barBlurRadius, barBrightness, barContrast, barSaturation) {
+                {
+                    if (blurEnabled) {
+                        colorControls(barBrightness, barContrast, barSaturation)
+                        blur(barBlurRadius.toPx())
+                    }
                 }
             }
-        }
         // 边缘高光：参考实现直接使用 Highlight.Default（自带 50% 白），本实现只取其一部分（文档 §6 D12）
         val barHighlight: (() -> Highlight?)? = remember(blurEnabled, highlightAlpha) {
             if (blurEnabled) {
@@ -468,16 +483,10 @@ fun EnhancedLiquidGlassNavigationBar(
                     tabWidthPx = (barWidthPx - paddingPx * 2) / tabs
                 }
                 .graphicsLayer { translationX = panelShift }
-                // 悬浮栏整体归导航所有（与参考实现一致，属前向兼容）：命中测试默认「最上层兄弟独占」，
-                // 下层页面本就收不到栏内的触摸，这里额外吞掉未被任何 Tab 处理的残余事件，
-                // 避免将来出现「共享命中」时落到宿主的手势处理上
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent(PointerEventPass.Main).changes.forEach { it.consume() }
-                        }
-                    }
-                }
+                // 注意：这里**不再**放任何 pointerInput。
+                // 物理指针由 D 层 Overlay 独占（方案 §单一物理输入层）；此前这里的「吞掉全部事件」
+                // 节点会把 MOVE 全部消费掉，导致 D 层识别器一移动就判定被接管而中止，
+                // 表现为「按下能赴按、但无法拖动跟手」。
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { AppNavCapsuleShape },
@@ -502,34 +511,36 @@ fun EnhancedLiquidGlassNavigationBar(
                     selected = index == selectedIndex,
                     colors = colors,
                     iconSize = spec.iconSize,
-                    onClick = { onTabSelected(index) },
+                    // A 层不再承担物理触摸（D 层独占）；这里的 onClick 只由无障碍语义触发
+                    onClick = {
+                        currentSemanticTick()
+                        requestSelection(index)
+                    },
                 )
             }
         }
 
         // ---- B 采样副本：输出不可见（alpha 0），内部内容被录进 tabsBackdrop 供透镜采样 ----
-        // 副本行自身的折射强度随按压增长：透镜里的图标会随按压一起被顶起来，
-        // 这是复刻观感的组成部分。代价是采样边距随按压变化 → 该离屏图层在按压期间
-        // 每帧改变尺寸（文档 §6 D13 记录了这一点与可选的降本方案）。
-        val copyEffects: BackdropEffectScope.() -> Unit = remember(blurEnabled, spec, controller) {
-            {
-                if (blurEnabled) {
-                    vibrancy()
-                    blur(spec.blurRadius.toPx())
-                    val progress = controller.pressure
-                    lens(
-                        spec.barLensRadius.toPx() * progress,
-                        spec.barLensRadius.toPx() * progress,
-                    )
+        // 与 A 层**同一套材料**（方案 §移除 B 层重复折射）：B 不再做任何 lens，
+        // 图标的折射只在 C 层发生一次，避免二次折射把蓝色图标拉出尖刺。
+        // 同时这也消除了「采样边距随按压逐帧变化 → 离屏层逐帧改尺寸」的旧成本（旧 D13）。
+        val copyEffects: BackdropEffectScope.() -> Unit =
+            remember(blurEnabled, spec, barBlurRadius, barBrightness, barContrast, barSaturation) {
+                {
+                    if (blurEnabled) {
+                        colorControls(barBrightness, barContrast, barSaturation)
+                        blur(barBlurRadius.toPx())
+                    }
                 }
             }
-        }
-        val copyHighlight: (() -> Highlight?)? = remember(blurEnabled, controller) {
+        // 采样副本的高光按压力插值（静止也保留一点，保证 C 层静止折射时有合理底衬）
+        val copyHighlight: (() -> Highlight?)? = remember(blurEnabled, spec, controller) {
             if (blurEnabled) {
-                // 与透镜一致：压力为 0 时返回 null，Backdrop 才会跳过这层透明高光的离屏处理
                 {
-                    val p = controller.pressure
-                    if (p < MotionVisiblePressure) null else Highlight.Default.copy(alpha = p)
+                    val p = controller.pressure.coerceIn(0f, 1f)
+                    Highlight.Default.copy(
+                        alpha = lerp(spec.lensHighlightAlphaRest, spec.lensHighlightAlphaPressed, p),
+                    )
                 }
             } else {
                 null
@@ -571,50 +582,71 @@ fun EnhancedLiquidGlassNavigationBar(
 
         // ---- C 移动透镜：采样「页面 + 图标副本」的合成背景做局部折射与体积变化 ----
         if (tabWidthPx > 0f) {
+            // 静止端点 ↔ 按压端点插值：未按压也有真实折射与轻虹彩（方案 §静止与按压光学分离）。
+            // 命名参数显式写清 depthEffect / chromaticAberration——旧代码第三个位置参数
+            // 写 `true` 实际打开的是 depthEffect 而非色散（Backdrop 1.0.2 签名）。
             val lensEffects: BackdropEffectScope.() -> Unit = remember(refractionEnabled, spec, controller) {
                 {
                     if (refractionEnabled) {
-                        val progress = controller.pressure
+                        val p = controller.pressure.coerceIn(0f, 1f)
                         lens(
-                            spec.lensRefractionHeight.toPx() * progress,
-                            spec.lensRefractionAmount.toPx() * progress,
-                            true,
+                            refractionHeight = lerp(
+                                spec.restRefractionHeight.toPx(),
+                                spec.pressedRefractionHeight.toPx(),
+                                p,
+                            ),
+                            refractionAmount = lerp(
+                                spec.restRefractionAmount.toPx(),
+                                spec.pressedRefractionAmount.toPx(),
+                                p,
+                            ),
+                            depthEffect = false,
+                            chromaticAberration = true,
                         )
                     }
                 }
             }
-            val lensHighlight: (() -> Highlight?)? = remember(refractionEnabled, controller) {
+            // 静止也保留低强度高光（不再在 MotionVisiblePressure 以下返回 null）
+            val lensHighlight: (() -> Highlight?)? = remember(refractionEnabled, spec, controller) {
                 if (refractionEnabled) {
                     {
-                        val p = controller.pressure
-                        if (p < MotionVisiblePressure) null else Highlight.Default.copy(alpha = p)
+                        val p = controller.pressure.coerceIn(0f, 1f)
+                        Highlight.Default.copy(
+                            alpha = lerp(spec.lensHighlightAlphaRest, spec.lensHighlightAlphaPressed, p),
+                        )
                     }
                 } else {
                     null
                 }
             }
-            val lensShadow: (() -> Shadow?)? = remember(refractionEnabled, controller) {
+            val lensShadow: (() -> Shadow?)? = remember(refractionEnabled, spec, controller) {
                 if (refractionEnabled) {
                     {
-                        val p = controller.pressure
-                        if (p < MotionVisiblePressure) null else Shadow(alpha = p)
+                        val p = controller.pressure.coerceIn(0f, 1f)
+                        Shadow(alpha = lerp(spec.lensShadowAlphaRest, spec.lensShadowAlphaPressed, p))
                     }
                 } else {
                     null
                 }
             }
-            val lensInnerShadow: (() -> InnerShadow?)? = remember(refractionEnabled, spec, controller) {
+            val lensInnerShadow: (() -> InnerShadow?)? =
+                remember(refractionEnabled, spec, controller) {
                 if (refractionEnabled) {
                     {
-                        val p = controller.pressure
-                        if (p < MotionVisiblePressure) {
-                            null
-                        } else {
-                            InnerShadow(
-                                radius = spec.lensInnerShadowRadius * p,
-                                alpha = p,
-                            )
-                        }
+                        val p = controller.pressure.coerceIn(0f, 1f)
+                        InnerShadow(
+                            // radius 是 Dp 类型（Backdrop 1.0.2 的内联类）：用 Dp.lerp 插值
+                            radius = androidx.compose.ui.unit.lerp(
+                                spec.lensInnerShadowRadiusRest,
+                                spec.lensInnerShadowRadiusPressed,
+                                p,
+                            ),
+                            alpha = lerp(
+                                spec.lensInnerShadowAlphaRest,
+                                spec.lensInnerShadowAlphaPressed,
+                                p,
+                            ),
+                        )
                     }
                 } else {
                     null
@@ -633,7 +665,7 @@ fun EnhancedLiquidGlassNavigationBar(
                         .safeMotionValue(0f, 1f, GlassBottomBarSpec.Default.velocityTallFactor)
                     val clamp = spec.velocityClamp
                         .safeMotionValue(0f, 0.9f, GlassBottomBarSpec.Default.velocityClamp)
-                    val indexVelocity = controller.velocity / divisor
+                    val indexVelocity = controller.effectiveVelocity / divisor
                     scaleX = controller.scaleX /
                         (1f - (indexVelocity * wideFactor).fastCoerceIn(-clamp, clamp))
                     scaleY = controller.scaleY *
@@ -643,7 +675,7 @@ fun EnhancedLiquidGlassNavigationBar(
             val lensCover: DrawScope.() -> Unit = remember(refractionEnabled, colors, spec, controller) {
                 {
                     if (refractionEnabled) {
-                        val progress = controller.pressure
+                        val progress = controller.pressure.coerceIn(0f, 1f)
                         drawRect(
                             color = colors.staticLensCover.copy(alpha = spec.staticLensCoverAlpha),
                             alpha = 1f - progress,
@@ -664,7 +696,6 @@ fun EnhancedLiquidGlassNavigationBar(
                         val shift = controller.index * tabWidthPx
                         translationX = if (isLtr) shift + panelShift else -shift + panelShift
                     }
-                    .then(dragModifier)
                     .height(spec.lensHeight)
                     .width(with(density) { tabWidthPx.toDp() }),
                 contentAlignment = Alignment.Center,
@@ -687,11 +718,17 @@ fun EnhancedLiquidGlassNavigationBar(
                 )
             }
         }
+
+        // ---- D 全栏物理输入层（方案 §单一物理输入层）----
+        // 最后绘制 = 命中测试最优先；固定覆盖整栏、**不随**透镜与 panelShift 平移；
+        // 不声明任何 semantics（避免遮蔽 A 层 Tab 的无障碍节点），只承担物理指针。
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .then(gestureModifier),
+        )
     }
 }
-
-/** 点击后等待滑块到位的上限：超时就不再补反馈（例如用户在滑动途中又点了别处）。 */
-private const val ArriveTimeoutMillis = 600L
 
 /** 可见导航项：承担全部语义与点击（Role.Tab + selected），图标保持清晰不参与模糊。 */
 @Composable

@@ -1,6 +1,7 @@
 package com.tyranor.next.ui.common.glass
 
 import android.annotation.SuppressLint
+import android.util.Log
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -37,23 +38,31 @@ internal class PressGlowHighlight(
     private val glowAlpha: Float,
     private val tint: Color,
 ) {
-    // 着色器编译/构造失败（个别 ROM 的 AGSL 实现异常）不能让整个主界面崩溃：失败即静默降级为无光斑
+    // 着色器编译/构造失败（个别 ROM 的 AGSL 实现异常）不能让整个主界面崩溃：失败即降级为无光斑，
+    // 并做**进程级熔断**（只尝试一次、只记一次日志），避免每帧/每次重组都重试。
     @SuppressLint("NewApi")
-    private val shader: RuntimeShader? = runCatching {
-        RuntimeShader(
-            """
-            layout(color) uniform half4 color;
-            uniform float radius;
-            uniform float2 position;
+    private val shader: RuntimeShader? = if (glowDisabled) {
+        null
+    } else {
+        runCatching {
+            RuntimeShader(
+                """
+                layout(color) uniform half4 color;
+                uniform float radius;
+                uniform float2 position;
 
-            half4 main(float2 coord) {
-                float d = distance(coord, position);
-                float falloff = 1.0 - smoothstep(radius * 0.5, radius, d);
-                return color * falloff;
-            }
-            """,
-        )
-    }.getOrNull()
+                half4 main(float2 coord) {
+                    float d = distance(coord, position);
+                    float falloff = 1.0 - smoothstep(radius * 0.5, radius, d);
+                    return color * falloff;
+                }
+                """,
+            )
+        }.onFailure { error ->
+            glowDisabled = true
+            Log.w(TAG, "Press glow shader unavailable; disabled for this process", error)
+        }.getOrNull()
+    }
 
     /** Brush 与 shader 一起缓存：`drawWithContent` 每帧都会执行，不能在里面新建对象。 */
     private val brush: Brush? = shader?.let { ShaderBrush(it) }
@@ -89,3 +98,9 @@ internal class PressGlowHighlight(
 /** NaN / ±Inf 一律回落到 0，再夹到区间内：着色器 uniform 不接受非有限值。 */
 private fun Float.finiteIn(min: Float, max: Float): Float =
     if (isFinite()) fastCoerceIn(min, max) else 0f
+
+/** 熔断与日志的进程级状态：AGSL 出问题的 ROM 上不必反复重试。 */
+private const val TAG = "PressGlowHighlight"
+
+@Volatile
+private var glowDisabled = false

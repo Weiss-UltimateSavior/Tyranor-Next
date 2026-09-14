@@ -148,6 +148,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
 
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
   fun selectPage(index: Int) {
+    // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
+    if (index !in tabItems.indices) return
     if (index == selectedIndex) return
     // 透镜档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
     // 默认路径保持原有守卫，避免把这一行为变更带给未开启该选项的用户（报告 §8.7）。
@@ -269,7 +271,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
       if (enhanceLiquidGlass && backdropAvailable) {
         EnhancedLiquidGlassNavigationBar(
           backdrop = backdrop,
-          selectedIndex = selectedIndex,
+          // 权威选中值先夹取到合法槽位，避免越界值把透镜放到栏外（组件内部也会再夹一次）
+          selectedIndex = selectedIndex.coerceIn(liquidGlassTabItems.indices),
           colors = rememberGlassBottomBarColors(unselectedColor),
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },

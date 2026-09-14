@@ -33,8 +33,10 @@ fun rememberGlassBottomBarColors(
     val isGlass = AppThemeColors.isGlass
     return remember(primary, unselectedColor, isDark, isGlass) {
         GlassBottomBarColors(
-            // 栏体着色：玻璃外观风格沿用悬浮导航的深色玻璃面，其余跟随深浅中性面
-            surfaceTint = if (isGlass) GlassNavSurface else if (isDark) DarkGrey else GlassOpticalWhite,
+            // 栏体着色（方案 §栏体通透材质目标）：**严格按 isDark 选中性色**——
+            // 玻璃外观风格不再固定使用深色 GlassNavSurface，否则浅色档会退化成深色实心面。
+            // surfaceTint 必须是不透明中性色，alpha 由渲染核心的 onDrawSurface 应用一次。
+            surfaceTint = if (isDark) DarkGrey else GlassOpticalWhite,
             fallbackSurface = if (isGlass) GlassSurfaceSolid else if (isDark) DarkGrey else GlassOpticalWhite,
             selectedIcon = primary,
             unselectedIcon = unselectedColor,
