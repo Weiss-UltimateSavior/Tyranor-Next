@@ -38,13 +38,12 @@ internal enum class LensInteractionState { Idle, PressJump, PressedTracking, Set
  * | [index] | 连续索引位置，决定透镜槽位 | 赴按 6000 / 跟手 2400 / 吸附 1000，阻尼比均为 1.0 |
  * | [pressure] | 按压进度 0..1，驱动折射、高光与覆盖 | 1000 / 1.0 |
  * | [scaleX] / [scaleY] | 按压体积（横向先起、纵向略慢） | 250 / 0.6、250 / 0.7 |
- * | [velocity] | 索引速度估计（带符号），驱动形变 | 300 / 0.5 |
  * | [glow] | 按压光斑亮度（比体积略滞后） | 300 / 0.5 |
  *
- * 速度不是手指 px/s，而是**位置每帧增量的平滑值**再按 [GlassBottomBarSpec.velocityNormalizationSpan]
- * 归一化——与参考实现的观感一致（快速往返时先拉长再收缩，左右方向形变不对称）。
- * [LensInteractionState.PressJump] 阶段速度形变强制为 0（见 [effectiveVelocity]），
- * 保证快速赴按时滑块保持正常尺寸与正常轮廓。
+ * **本实现不做任何速度拉伸**（用户要求：无论点击哪个图标，形变必须一致，只保留「手指按压放大」）。
+ * 参考实现的速度形变 `scaleX / (1 − clamp(v/10 × 0.75))` 有方向性——索引增大被横向拉长、
+ * 减小则相反，导致「点左边正常扩大、点右边左右拉伸」的不统一观感，因此整条速度链路已移除，
+ * 形变只由按压弹簧（[pressure] / [scaleX] / [scaleY]）产生。
  */
 internal class LensMotionController(
     private val scope: CoroutineScope,
@@ -66,8 +65,7 @@ internal class LensMotionController(
     /**
      * 归一化后的初始索引：非有限值退回范围起点，越界值夹进范围。
      *
-     * 若放任非有限初值进入 [lastIndex] 与速度链路，`rawSpeed` 会变成 NaN、
-     * 速度弹簧的目标也变成 NaN，`settled` 便永远不成立（帧循环不再结束）。
+     * 若放任非有限初值进入位置链路，`settled` 便永远不成立（帧循环不再结束）。
      */
     private val startIndex: Float =
         if (initialIndex.isFinite()) initialIndex.coerceIn(safeRange) else safeRange.start
@@ -81,9 +79,6 @@ internal class LensMotionController(
         private set
     var scaleY by mutableFloatStateOf(1f)
         private set
-    var velocity by mutableFloatStateOf(0f)
-        private set
-
     /** 按压光斑亮度：比体积弹簧更慢一档，复刻参考实现「光斑略滞后于形变」的观感。 */
     var glow by mutableFloatStateOf(0f)
         private set
@@ -96,21 +91,11 @@ internal class LensMotionController(
     var state by mutableStateOf(LensInteractionState.Idle)
         private set
 
-    /**
-     * 绘制用速度：赴按阶段恒为 0。
-     *
-     * 方案硬性要求：PressJump 期间 scale = 1、速度形变 = 0，避免高速移动时被拉成畸形轮廓。
-     */
-    val effectiveVelocity: Float
-        get() = if (state == LensInteractionState.PressJump) 0f else velocity
-
     // ---- 运动参数兜底 ----
     // 这几个值直接参与「是否已收敛」的判定或充当除数：一旦是 NaN/±Inf/0，收敛判定永远不成立
     // （帧循环永不退出）或输出直接变成 NaN，因此在控制器初始化时统一归一化为合法值。
     private val pulseVisibleThreshold =
         spec.pulseVisibleThreshold.safeMotionValue(0f, 0.99f, GlassBottomBarSpec.Default.pulseVisibleThreshold)
-    private val velocitySpan =
-        spec.velocityNormalizationSpan.safeMotionValue(0.01f, 1_000f, GlassBottomBarSpec.Default.velocityNormalizationSpan)
     private val pressedScaleX =
         spec.pressedScaleX.safeMotionValue(1f, 10f, GlassBottomBarSpec.Default.pressedScaleX)
     private val pressedScaleY =
@@ -143,7 +128,6 @@ internal class LensMotionController(
     private val pressureSpring = Spring(0f, 1000f, 1f, epsilon)
     private val wideSpring = Spring(1f, 250f, 0.6f, epsilon)
     private val tallSpring = Spring(1f, 250f, 0.7f, epsilon)
-    private val speedSpring = Spring(0f, 300f, 0.5f, epsilon * 10f)
     private val glowSpring = Spring(0f, 300f, 0.5f, epsilon)
 
     /**
@@ -156,16 +140,8 @@ internal class LensMotionController(
         private set
 
     private var shrinkWhenSettled = false
-    private var lastIndex = startIndex
     private var loopActive = false
     private var pulsePending = false
-
-    /**
-     * 会话编号：每次按下 / 松手 / 取消 / 外部同步都递增。
-     *
-     * 用于丢弃「上一轮会话的收尾意图」——例如松手瞬间的到位判定不得再让滑块膨胀。
-     */
-    private var sessionId = 0
 
     /**
      * 按下并用**绝对目标**启动一次会话（方案 §开始按压）。
@@ -177,7 +153,6 @@ internal class LensMotionController(
     fun beginPressAt(target: Float) {
         if (!target.isFinite()) return
         val clamped = target.coerceIn(safeRange)
-        sessionId++
         pulsePending = false
         shrinkWhenSettled = false
         targetIndex = clamped
@@ -224,10 +199,14 @@ internal class LensMotionController(
      * 正常尺寸，到位后才膨胀），轻点走本分支（与已提交版本一致，立刻起胀）。
      */
     fun endPress(destinationIndex: Int, pulse: Boolean = false) {
-        sessionId++
         val destination = destinationIndex.toFloat().coerceIn(safeRange)
         targetIndex = destination
         positionSpring.setDynamics(SettleStiffness, SettleDamping)
+        // 清零速度：PR81 只有一个 k=1000 的位置弹簧，不存在「带着赴按高速切进吸附」的路径。
+        // 真实差别出现在**松手点已经越过目标**时（例如手指拖到 1.37 再吸附到槽 1）：带着
+        // k=6000 的残余速度会一路冲到近 2 才被拉回（明显过冲）；清零后从松手点平滑收敛。
+        // 目标在松手点前方时两种做法结果相同（都是单调逼近），这里统一取「从静止开始吸附」。
+        positionSpring.resetVelocity()
         positionSpring.target = destination
         when {
             // 已进入按压形态：沿用「接近目标后再收材质」的既有手感
@@ -263,26 +242,17 @@ internal class LensMotionController(
      */
     fun cancelPress(authoritativeIndex: Float) {
         if (!authoritativeIndex.isFinite()) return
-        sessionId++
         pulsePending = false
-        shrinkWhenSettled = false
         val authoritative = authoritativeIndex.coerceIn(safeRange)
         targetIndex = authoritative
         positionSpring.setDynamics(SettleStiffness, SettleDamping)
+        positionSpring.resetVelocity()
         positionSpring.target = authoritative
-        pressureSpring.target = 0f
-        wideSpring.target = 1f
-        tallSpring.target = 1f
-        glowSpring.target = 0f
+        // 与 PR 81 一致：**不立刻收材质**，而是等回到权威槽位后再收
+        // （PR81 的 onCancel → settleAt(authoritative, pulse = false)，压力目标保持不动）
+        shrinkWhenSettled = true
         state = LensInteractionState.Settling
         ensureFrameLoop()
-    }
-
-    /**
-     * 外部权威选中项变化：取消当前手势并同步过去，避免 `LaunchedEffect` 与手指争夺位置。
-     */
-    fun syncSelection(authoritativeIndex: Float) {
-        cancelPress(authoritativeIndex)
     }
 
     /**
@@ -292,9 +262,11 @@ internal class LensMotionController(
     fun settleAt(target: Float, pulse: Boolean = true) {
         // 目标值必须有限：否则弹簧永远「未收敛」，帧循环会一直跑下去
         if (!target.isFinite()) return
-        sessionId++
         targetIndex = target.coerceIn(safeRange)
         positionSpring.setDynamics(SettleStiffness, SettleDamping)
+        // 刻意**不清速度**：与 PR81 对齐——它全程只有一根 k=1000 的弹簧，连续点按时动量自然
+        // 衔接、观感更顺；清零会让每次点击都从静止重新起步（这正是「不如 PR81 流畅」的一个来源）。
+        // 注意与 [endPress] 的区别：那条路径是从 k=6000 的赴按高速切进来，必须清零。
         positionSpring.target = targetIndex
         pulsePending = pulse
         if (pulse) {
@@ -341,13 +313,6 @@ internal class LensMotionController(
         positionSpring.step(dt)
         index = positionSpring.value.coerceIn(safeRange)
 
-        // 速度 = 位置每帧增量 / 时间，再除以归一化跨度（与参考实现的观感一致）
-        val rawSpeed = ((index - lastIndex) / dt) / velocitySpan
-        lastIndex = index
-        speedSpring.target = rawSpeed
-        speedSpring.step(dt)
-        velocity = speedSpring.value
-
         // 赴按到位：切换为按压形态并开始膨胀（在帧循环内判定，不用 delay 或独立到位协程）
         if (state == LensInteractionState.PressJump && abs(index - targetIndex) <= arriveThreshold) {
             enterPressedTracking()
@@ -385,7 +350,6 @@ internal class LensMotionController(
             pressureSpring.settled &&
             wideSpring.settled &&
             tallSpring.settled &&
-            speedSpring.settled &&
             glowSpring.settled
 
     private fun ensureFrameLoop() {

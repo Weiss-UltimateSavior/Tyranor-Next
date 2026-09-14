@@ -14,8 +14,12 @@ import androidx.compose.ui.unit.dp
  * 参数与算法；实现差异逐条记录在 `docs/液态玻璃增强计划方案.md` §6。
  *
  * 四项适配（同上文档 §6 D4，报告 §8.5 要求逐项记录）：
- * [velocityNormalizationSpan] 与 [releaseThreshold] 固定为**五项参考布局**的取值（4 与 0.10），
- * 而不是本应用四项时的 `N − 1 = 3` 与 `0.075`，以保持参考手感。
+ * [releaseThreshold] 固定为**五项参考布局**的取值（0.10），而不是本应用四项时的 `0.075`，
+ * 以保持参考手感。
+ *
+ * **不含速度形变参数**：参考实现那套 `scaleX / (1 − clamp(v/10 × 0.75))` 有方向性
+ * （索引增大被横向拉长、减小则相反），会造成「点左边正常扩大、点右边左右拉伸」的不统一观感，
+ * 已按用户要求整条移除——形变只保留「手指按压放大」。
  */
 @Immutable
 data class GlassBottomBarSpec(
@@ -32,11 +36,11 @@ data class GlassBottomBarSpec(
      * 栏体模糊半径（浅色 / 深色分档）。
      *
      * 方案给的起点为浅色 18dp / 深色 16dp，实测会把背景糊成一块平板、观感「毫无玻璃感」。
-     * 按用户实测目标逐步下调：方案起点 18/16dp → 9dp → 6dp → **4dp**。
-     * 4dp 只做「轻微模糊」：背景文字仍可辨认，玻璃感主要交给折射与边缘高光承担。
+     * 按用户实测目标逐步下调：方案起点 18/16dp → 9dp → 6dp → 4dp → **3dp**（全局）。
+     * 低模糊不仅更通透，也让图标边缘保留高频对比——色散（RGB 采样偏移）才有东西可分离。
      */
-    val barBlurRadiusLight: Dp = 4.dp,
-    val barBlurRadiusDark: Dp = 4.dp,
+    val barBlurRadiusLight: Dp = 3.dp,
+    val barBlurRadiusDark: Dp = 3.dp,
     /**
      * 深色档表面不透明度：烟黑遮罩，压低亮度但**必须仍能透出背景内容**。
      *
@@ -54,18 +58,29 @@ data class GlassBottomBarSpec(
     /** 栏体 colorControls：亮度 / 对比度 / 饱和度（浅深成对，替代固定 vibrancy 1.5）。 */
     val barBrightnessLight: Float = 0.03f,
     val barBrightnessDark: Float = -0.03f,
-    val barContrastLight: Float = 0.92f,
+    val barContrastLight: Float = 0.96f,
     val barContrastDark: Float = 0.88f,
     val barSaturationLight: Float = 1.18f,
     val barSaturationDark: Float = 1.10f,
-    /** 栏体边缘高光强度（浅 / 深）。 */
-    val barHighlightAlphaLight: Float = 0.70f,
+    /**
+     * 栏体边缘高光强度（浅 / 深）。
+     *
+     * 浅色档**不能太高**：高光画在最外侧几 dp，而色散彩虹带也在边缘——0.70 会把彩虹带盖住
+     * （用户实测「浅色模式色散像没了」）。收到 0.42 后亮边仍在，但不遮色散。
+     */
+
+    val barHighlightAlphaLight: Float = 0.42f,
     val barHighlightAlphaDark: Float = 0.30f,
     /**
-     * 极弱暗色外沿（浅 / 深）：给通透栏体一点外部轮廓分离，不能形成粗描边。
+     * 栏体内阴影（**浅色档专属**）：上下边缘那圈「玻璃厚度」。
+     *
+     * 浅色档栏体是白底 + 白色高光，白光压白底等于看不见——参考图里上下边缘之所以有效果，
+     * 靠的是贴着边缘一道柔和的内暗边。深色档不需要（深底本身有对比），因此 alpha 为 0。
      */
-    val barOuterRimAlphaLight: Float = 0.06f,
-    val barOuterRimAlphaDark: Float = 0.18f,
+    val barInnerShadowRadiusLight: Dp = 10.dp,
+    val barInnerShadowAlphaLight: Float = 0.12f,
+    /** 浅色档栏体发丝描边不透明度（比经典档略强，用于勾出上下轮廓）。 */
+    val barEdgeStrokeAlphaLight: Float = 0.14f,
     /**
      * 栏体内部折射（液态玻璃质感）。
      *
@@ -94,6 +109,17 @@ data class GlassBottomBarSpec(
      */
     val restRefractionHeight: Dp = 6.dp,
     val restRefractionAmount: Dp = 8.dp,
+    /**
+     * **浅色档专属**的色散增强系数（深色档恒为 1，不受影响）。
+     *
+     * 浅底上图标的明暗对比本来就低，再叠一层浅色遮罩后，色散（RGB 采样偏移）几乎没有可分离的
+     * 细节——实测「浅色档滑块压到别的图标时看不到彩色分离、上下色散带也太淡」。
+     * 因此浅色档把**栏体**折射的高度与位移整体放大这一档，深色档完全不动。
+     *
+     * **只作用于栏体（上下色散带），不作用于移动滑块**：滑块只有一槽宽，放大后图标会被拉出
+     * 明显的彩色拖影（用户实测「用力过猛」），滑块保持基准折射量即可。
+     */
+    val lightDispersionBoost: Float = 1.4f,
     /**
      * 移动滑块是否启用色散：**开启**。
      *
@@ -143,12 +169,20 @@ data class GlassBottomBarSpec(
     val pressTrackingDampingRatio: Float = 1.0f,
     /** 到位阈值（索引单位）：进入该距离才把材质推到按压态。 */
     val pressArriveThreshold: Float = 0.08f,
+    /**
+     * 按在滑块**以外**时，按住多久才把滑块「抓」到手指下（毫秒）。
+     *
+     * 这不是 Compose 的长按判定，也不参与任何反馈时机：触觉与选择仍即时发生。
+     * 它只决定「滑块要不要跑过来」——
+     * - **轻点**（未到阈值就松手）→ 完全走 PR81 的路径：`settleAt(pulse = true)`，
+     *   起胀与滑行同时开始的单相运动，最顺；
+     * - **按住不放**或**开始拖动** → 立刻把滑块抓到手指出（用户要求的「按下即跟随」）。
+     */
+    val grabDelayMillis: Long = 110L,
     val iconScaleOnPress: Float = 1.2f,
     val barPressScaleDelta: Dp = 16.dp,
     /** 整栏按压缩放增量的上限，避免极窄窗口下 `1 + 16dp/宽度` 被放大成畸形尺寸。 */
     val barPressScaleDeltaMax: Float = 0.05f,
-    /** 点击未覆盖图标时，判定「滑块快到位」的索引距离阈值（用于触觉反馈时机，见 §6 D16）。 */
-    val tapArriveThreshold: Float = 0.12f,
     /**
      * 判定按压「已经看得见」的压力阈值。
      *
@@ -171,21 +205,14 @@ data class GlassBottomBarSpec(
      */
     val minTabWidth: Dp = 24.dp,
     val panelOffsetMax: Dp = 4.dp,
-    /** 速度归一化跨度：参考公式为 `N − 1`，此处固定为五项参考值 4（四项适配参数）。 */
-    val velocityNormalizationSpan: Float = 4f,
     /** 释放等待阈值（索引单位）：参考公式为 `(N − 1) × 0.025`，五项为 0.10（四项适配参数）。 */
     val releaseThreshold: Float = 0.10f,
     val visibilityThreshold: Float = 0.001f,
-    // ---- 整栏归位与速度形变（原先散落在组件里的字面量，收口到这里）----
+    // ---- 整栏归位（原先散落在组件里的字面量，收口到这里）----
     /** 拖动松手后整栏归位弹簧（阻尼比 / 刚度 / 阈值）。 */
     val panelRecenterDamping: Float = 1f,
     val panelRecenterStiffness: Float = 300f,
     val panelRecenterThreshold: Float = 0.5f,
-    /** 速度形变系数：`scaleX / (1 − clamp(v/10 × 0.75))`、`scaleY × (1 − clamp(v/10 × 0.25))`。 */
-    val velocityScaleDivisor: Float = 10f,
-    val velocityWideFactor: Float = 0.75f,
-    val velocityTallFactor: Float = 0.25f,
-    val velocityClamp: Float = 0.2f,
 ) {
     /** 自然宽度：N 个参考单槽 + 左右内边距（报告 §8.5 公式 `N·w + 8dp`）。 */
     fun naturalBarWidth(tabsCount: Int): Dp =
@@ -250,6 +277,27 @@ data class GlassBottomBarSpec(
         val fromStart = if (isLtr) x else barWidthPx - x
         return ((fromStart - paddingPx) / tabWidthPx - 0.5f)
             .coerceIn(0f, (tabsCount - 1).toFloat())
+    }
+
+    /**
+     * 按点是否落在滑块矩形内（纯函数，便于 LTR/RTL 与边界单测）。
+     *
+     * 只判水平方向：栏体高度方向刻意宽松，方便按到边缘。
+     */
+    fun isInsideLens(
+        x: Float,
+        barWidthPx: Float,
+        paddingPx: Float,
+        tabWidthPx: Float,
+        lensIndex: Float,
+        lensMaxWidthPx: Float,
+        isLtr: Boolean,
+    ): Boolean {
+        if (tabWidthPx <= 0f) return false
+        val lensHalfPx = minOf(tabWidthPx, lensMaxWidthPx) / 2f
+        val fromStart = if (isLtr) x else barWidthPx - x
+        val lensCenter = paddingPx + (lensIndex + 0.5f) * tabWidthPx
+        return kotlin.math.abs(fromStart - lensCenter) <= lensHalfPx
     }
 
     /**

@@ -19,8 +19,9 @@ import androidx.compose.foundation.gestures.awaitFirstDown
  * 4. UP 回调**最后一个位置**与「是否真的拖动过」并进入严格一次（once）的终态；
  * 5. CANCEL / 事件被上层消费 / 指针消失 → 走 [onCancel]，**不提交、不补震**；
  * 6. 首指独占：其余手指一律忽略，首指 UP 即结束会话；
- * 7. touch slop 只用于判断「是否算拖动」（装饰性 panelShift / dragged 标记），
- *    不决定是否开始反馈，也不决定是否提交——快速轻点即使没过 slop 也是一次有效选择。
+ * 7. **touch slop 通过 [onDrag] 的 `dragged` 标记交给调用方**：调用方据此区分「真拖动」与
+ *    「点击时的手指抖动」（1~3px 抖动不得被判成拖动），但不决定是否提交——
+ *    快速轻点即使没过 slop 也是一次有效选择。
  *
  * 之所以不用 `detectDragGestures`：它会消费事件且自带 slop 与长按变体，与本组件
  * 「DOWN 即时反馈 + 绝对坐标 + 严格 once 终态」的要求冲突。
@@ -29,7 +30,7 @@ internal suspend fun PointerInputScope.detectBottomBarPress(
     touchSlopPx: Float,
     isGestureEnabled: () -> Boolean = { true },
     onDown: (position: Offset) -> Unit,
-    onDrag: (position: Offset) -> Unit,
+    onDrag: (position: Offset, dragged: Boolean) -> Unit,
     onUp: (position: Offset, dragged: Boolean) -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -76,18 +77,16 @@ internal suspend fun PointerInputScope.detectBottomBarPress(
                 break
             }
             // 位置变了就一定要上报（即使位移恰好被系统折算为 0，也不能丢掉这一帧的跟随）
-            if (position != lastReportedPosition) {
-                onDrag(position)
-                lastReportedPosition = position
-            }
-            if (delta == Offset.Zero) continue
-            if (!dragged) {
+            if (delta != Offset.Zero && !dragged) {
                 accumulated += delta
-                if (accumulated.getDistance() < touchSlopPx) {
-                    // 未过 slop：位置已在上面上报，这里只累积判定用的位移
-                    continue
-                }
-                dragged = true
+                if (accumulated.getDistance() >= touchSlopPx) dragged = true
+            }
+            // 未过 slop 的位移也要上报（位置信息有用），但**必须带上 dragged 标记**：
+            // 调用方据此区分「真拖动」与「点击时的手指抖动」——否则 1~3px 抖动会被当成拖动，
+            // 轻点就会走成拖动路径（丢失点击脉冲）。手指未动时无需上报。
+            if (position != lastReportedPosition && (dragged || delta != Offset.Zero)) {
+                onDrag(position, dragged)
+                lastReportedPosition = position
             }
         }
 

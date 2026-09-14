@@ -60,21 +60,28 @@ class GlassBottomBarSpecTest {
     @Test
     fun translucentBarMaterial_lightAndDarkPairs_arePinned() {
         // 改造方案 §栏体参数：浅色高透乳白 / 深色烟黑，成对切换；改值必须在文档 §6 记录
-        // 实测目标：轻微模糊（4dp）+ 轻微遮罩（0.34）+ 可见的内部折射（折射量保持不变）
-        assertEquals(4.dp, spec.barBlurRadiusLight)
-        assertEquals(4.dp, spec.barBlurRadiusDark)
+        // 实测目标：轻微模糊（3dp，全局）+ 轻微遮罩（0.34）+ 可见的内部折射
+        assertEquals(3.dp, spec.barBlurRadiusLight)
+        assertEquals(3.dp, spec.barBlurRadiusDark)
         assertEquals(0.34f, spec.barSurfaceAlphaLight, 1e-6f)
         assertEquals(0.34f, spec.barSurfaceAlphaDark, 1e-6f)
         assertEquals(12.dp, spec.barLensHeight)
         assertEquals(8.dp, spec.barLensAmount)
         assertTrue("栏体做色散：上下边缘的连贯彩虹带", spec.barLensChromatic)
+        // 浅色档专属增强（只作用于栏体的上下色散带；滑块保持基准折射量）
+        assertEquals(1.4f, spec.lightDispersionBoost, 1e-6f)
+        // 浅色档上下边缘的「玻璃厚度」：内阴影 + 稍强发丝边
+        assertEquals(10.dp, spec.barInnerShadowRadiusLight)
+        assertEquals(0.12f, spec.barInnerShadowAlphaLight, 1e-6f)
+        assertEquals(0.14f, spec.barEdgeStrokeAlphaLight, 1e-6f)
         assertEquals(0.03f, spec.barBrightnessLight, 1e-6f)
         assertEquals(-0.03f, spec.barBrightnessDark, 1e-6f)
-        assertEquals(0.92f, spec.barContrastLight, 1e-6f)
+        assertEquals(0.96f, spec.barContrastLight, 1e-6f)
         assertEquals(0.88f, spec.barContrastDark, 1e-6f)
         assertEquals(1.18f, spec.barSaturationLight, 1e-6f)
         assertEquals(1.10f, spec.barSaturationDark, 1e-6f)
-        assertEquals(0.70f, spec.barHighlightAlphaLight, 1e-6f)
+        // 浅色档高光必须低到不遮住边缘色散带（曾取 0.70，实测把色散洗掉）
+        assertEquals(0.42f, spec.barHighlightAlphaLight, 1e-6f)
         assertEquals(0.30f, spec.barHighlightAlphaDark, 1e-6f)
         assertTrue("栏体应保留克制的内部折射（液态玻璃质感）", spec.barLensHeight > 0.dp)
     }
@@ -111,9 +118,8 @@ class GlassBottomBarSpecTest {
 
     @Test
     fun fourTabAdaptationSpans_arePinnedToTheFiveSlotReference() {
-        // 四项适配（文档 §6 D4）：速度归一化跨度与释放阈值固定为五项参考值，
-        // 而不是本应用四项时的 3 / 0.075
-        assertEquals(4f, spec.velocityNormalizationSpan, 1e-6f)
+        // 四项适配（文档 §6 D4）：释放阈值固定为五项参考值 0.10，而不是本应用四项时的 0.075。
+        // （速度归一化跨度随速度形变一起移除，见 §6 D29。）
         assertEquals(0.10f, spec.releaseThreshold, 1e-6f)
     }
 
@@ -178,6 +184,30 @@ class GlassBottomBarSpecTest {
         assertEquals(at(pad + 150f), at(bar - (pad + 150f), ltr = false), 1e-4f)
         // tabWidth 非法时退回 0，不产生 NaN
         assertEquals(0f, spec.pointerXToIndex(50f, bar, pad, 0f, 4, true), 1e-6f)
+    }
+
+    @Test
+    fun isInsideLens_coversEdgesAndRtl() {
+        // 四槽、单槽 100px、内边距 4px、滑块 100px 宽（=整槽）
+        val bar = 408f
+        val pad = 4f
+        val tab = 100f
+        fun hit(x: Float, index: Float, ltr: Boolean = true) =
+            spec.isInsideLens(x, bar, pad, tab, index, lensMaxWidthPx = 100f, isLtr = ltr)
+        // 槽 2 中心 = 4 + 2.5×100 = 254
+        assertEquals(true, hit(254f, 2f))
+        assertEquals(true, hit(204f, 2f))   // 左边界
+        assertEquals(true, hit(304f, 2f))   // 右边界
+        assertEquals(false, hit(203f, 2f))  // 左边界外
+        assertEquals(false, hit(305f, 2f))  // 右边界外
+        // 滑块比槽窄（宽屏 76px 滑块 / 200px 槽）：只在中心 ±38 内命中
+        assertEquals(true, spec.isInsideLens(100f, 808f, 4f, 200f, 0f, 76f, true))
+        // 中心 = 4 + 0.5×200 = 104，半宽 = 76/2 = 38 → 145 已在滑块外
+        assertEquals(false, spec.isInsideLens(145f, 808f, 4f, 200f, 0f, 76f, true))
+        // RTL 完全镜像
+        assertEquals(hit(254f, 2f), hit(bar - 254f, 2f, ltr = false))
+        // 非法槽宽不得命中（也不得抛异常）
+        assertEquals(false, hit(254f, 2f).let { spec.isInsideLens(254f, bar, pad, 0f, 2f, 100f, true) })
     }
 
     @Test

@@ -52,7 +52,6 @@ class LensMotionControllerTest {
             assertEquals("赴按阶段不得有按压力度", 0f, controller.pressure, 1e-3f)
             assertEquals("赴按阶段保持正常尺寸", 1f, controller.scaleX, 1e-3f)
             assertEquals("赴按阶段不得有光斑", 0f, controller.glow, 1e-3f)
-            assertEquals("赴按阶段速度形变必须为 0", 0f, controller.effectiveVelocity, 1e-6f)
             withTimeout(SettleTimeoutMillis) {
                 while (controller.index <= 0.01f) delay(1)
             }
@@ -61,7 +60,7 @@ class LensMotionControllerTest {
     }
 
     @Test
-    fun farthestJump_reachesArrivalWithinFewFrames() = runBlocking {
+    fun farthestJump_reachesArrivalQuickly() = runBlocking {
         withController { controller ->
             controller.beginPressAt(3f)
             var frames = 0
@@ -71,7 +70,7 @@ class LensMotionControllerTest {
                     frames++
                 }
             }
-            assertTrue("最远三槽应在约 5 帧内到位，实测 $frames 帧", frames <= 8)
+            assertTrue("最远三槽应很快到位（此处计的是 1ms 轮询次数，非渲染帧数），实测 $frames 次", frames <= 8)
             assertTrue("赴按途中不得越界", controller.index in 0f..3f)
         }
     }
@@ -168,6 +167,75 @@ class LensMotionControllerTest {
         }
     }
 
+    /**
+     * 回归：切换动力学时必须清零位置速度。
+     *
+     * 必须让**目标落在松手点之前**才能暴露过冲：此时若带着 k=6000 的残余速度继续，
+     * 滑块会越过目标再被拉回（仿真约 1.97），清零后从松手点平滑收敛（约 1.37）。
+     * 注意：目标在松手点**前方**时两种做法结果相同，不能用来判定。
+     */
+    @Test
+    fun releaseWithTargetBehind_doesNotOvershoot() = runBlocking {
+        withController { controller ->
+            controller.beginPressAt(3f)
+            // 飞到 1.37 附近（松手点），目标是它之前的槽 1
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.index < 1.37f) delay(1)
+            }
+            val releaseIndex = controller.index
+            controller.endPress(1)
+            var peak = releaseIndex
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    peak = maxOf(peak, controller.index)
+                    delay(1)
+                }
+            }
+            assertTrue(
+                "目标在松手点之前时不得过冲（松手 $releaseIndex → 峰值 $peak，目标 1）",
+                peak < releaseIndex + 0.15f,
+            )
+            assertEquals("最终停在目标槽位", 1f, controller.index, 1e-2f)
+        }
+    }
+
+    /**
+     * 回归：点击反馈**不做任何拉伸**，只有与手指按压同幅度的放大（用户要求）。
+     *
+     * 早前速度形变公式有方向性（索引增大被横向拉长），导致「点左边正常扩大、点右边左右拉伸」。
+     * 现在形变只由按压弹簧产生：静止为 1，按压后为 spec 的按压缩放（两轴相同）。
+     */
+    @Test
+    fun clickFeedback_enlargesLikeFingerPress_withoutStretch() = runBlocking {
+        withController { controller ->
+            assertEquals("静止时两轴都是 1", 1f, controller.scaleX, 1e-4f)
+            assertEquals(1f, controller.scaleY, 1e-4f)
+            controller.beginPressAt(3f)
+            controller.endPress(3, pulse = true)
+            var peakX = 1f
+            var peakY = 1f
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    peakX = maxOf(peakX, controller.scaleX)
+                    peakY = maxOf(peakY, controller.scaleY)
+                    delay(1)
+                }
+            }
+            // 与手指按压同一档：0.78/0.56 ≈ 1.393（允许弹簧略有过冲前的差值）
+            assertTrue("两轴都应按压放大，实测 X=$peakX Y=$peakY", peakX > 1.2f && peakY > 1.2f)
+            // 关键：两轴比例必须接近 1（速度形变会让 X 远大于 Y；这里测得出拉伸）。
+            // 容差 0.05：wide(250/0.6) 与 tall(250/0.7) 阻尼不同，峰值本就略有差异（PR81 原生特性）。
+            assertEquals(
+                "两轴不得出现拉伸差（X=$peakX Y=$peakY）",
+                1f,
+                peakX / peakY,
+                0.05f,
+            )
+            assertEquals("扩大后两轴必须回到 1", 1f, controller.scaleX, 1e-2f)
+            assertEquals(1f, controller.scaleY, 1e-2f)
+        }
+    }
+
     /** 回归：拖动途中松手**不得**补膨胀（避免「松手后又被撑大」）。 */
     @Test
     fun dragReleaseBeforeArrival_doesNotPulse() = runBlocking {
@@ -255,17 +323,27 @@ class LensMotionControllerTest {
         }
     }
 
+    /**
+     * 外部权威选中项变化：走与 PR81 一致的 `settleAt`（带脉冲），权威值必须获胜。
+     */
     @Test
-    fun externalSelectionChange_syncsAndCancelsGesture() = runBlocking {
+    fun externalSelectionChange_winsAndPulses() = runBlocking {
         withController { controller ->
             controller.beginPressAt(3f)
             withTimeout(SettleTimeoutMillis) {
                 while (controller.index <= 0.01f) delay(1)
             }
-            controller.syncSelection(1f)
-            awaitSettled(controller)
+            controller.settleAt(1f) // 外部（宿主）驱动的选中变化
+            var peak = 0f
+            withTimeout(SettleTimeoutMillis) {
+                while (controller.isAnimating) {
+                    peak = maxOf(peak, controller.pressure)
+                    delay(1)
+                }
+            }
             assertEquals("外部权威项必须获胜", 1f, controller.index, 1e-2f)
-            assertTrue("同步后材质归零", controller.pressure < 0.05f)
+            assertTrue("外部变化同样带脉冲（与 PR81 一致），实测峰值 $peak", peak > 0.5f)
+            assertTrue("最终材质归零", controller.pressure < 0.05f)
         }
     }
 
@@ -289,7 +367,6 @@ class LensMotionControllerTest {
             GlassBottomBarSpec.Default.copy(visibilityThreshold = 0f),
             GlassBottomBarSpec.Default.copy(releaseThreshold = Float.NaN),
             GlassBottomBarSpec.Default.copy(releaseThreshold = -1f),
-            GlassBottomBarSpec.Default.copy(velocityNormalizationSpan = 0f),
             GlassBottomBarSpec.Default.copy(pressArriveThreshold = Float.NaN),
             GlassBottomBarSpec.Default.copy(pressArriveThreshold = -1f),
             GlassBottomBarSpec.Default.copy(pressJumpStiffness = Float.NaN),

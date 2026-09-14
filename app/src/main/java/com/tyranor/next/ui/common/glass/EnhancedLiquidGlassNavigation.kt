@@ -63,6 +63,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
@@ -85,6 +86,7 @@ import com.tyranor.next.theme.GlassEdgeStrokeWidth
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.isWideScreen
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
@@ -108,7 +110,7 @@ private val LocalGlassIconScale = staticCompositionLocalOf { { 1f } }
  *     │              └────────────────────→ tabsBackdrop
  *     │
  *     └─ C 移动透镜：采样「页面背景 + 图标副本」的合成背景
- *                   → 局部折射 + 内阴影 + 静止/按压覆盖 + 速度形变
+ *                   → 局部折射（含色散）+ 内阴影 + 静止/按压覆盖（无速度形变，见 §6 D29）
  * ```
  *
  * Modifier 顺序是功能性的，不可调换：副本行必须先 `alpha(0f)` 再 `layerBackdrop`
@@ -171,10 +173,9 @@ fun EnhancedLiquidGlassNavigationBar(
             {}
         }
     }
-    /** 无障碍语义激活（TalkBack / 键盘）没有物理 DOWN，单独给一次可感知反馈。 */
-    val semanticTick = pressTick
+    // 同一次反馈既服务于物理 DOWN，也服务于无障碍语义激活（TalkBack / 键盘没有物理 DOWN，
+    // 但仍应给一次可感知反馈）——两者共用同一个 tick，不另设可调参数。
     val currentPressTick by rememberUpdatedState(pressTick)
-    val currentSemanticTick by rememberUpdatedState(semanticTick)
 
     // 宽度：参考单槽宽 × N 居中收窄；窗口放不下时夹取，再窄就直接不渲染（避免留一条残片）
     val configuration = LocalConfiguration.current
@@ -294,6 +295,7 @@ fun EnhancedLiquidGlassNavigationBar(
     /**
      * 指针 x → 连续索引（固定栏体坐标，不把 panelShift 反向写回命中计算，避免反馈环）。
      */
+    val lensMaxWidthPx = with(density) { spec.lensMaxWidth.toPx() }
     val pointerXToIndex: (Float) -> Float = remember(paddingPx, spec, tabs) {
         { x ->
             spec.pointerXToIndex(
@@ -320,7 +322,31 @@ fun EnhancedLiquidGlassNavigationBar(
      * - UP：四舍五入最近槽、请求一次选择、吸附；
      * - CANCEL：回权威选中项，不提交、不补震。
      */
-    val gestureModifier = remember(controller, requestSelection, paddingPx, touchSlopPx) {
+    // 会话状态：本次按下是否已经进入「按下/抓取」（决定了松手走 PR81 的点击路径还是吸附路径）
+    var grabJob by remember { mutableStateOf<Job?>(null) }
+    var pointerIndex by remember { mutableFloatStateOf(0f) }
+    var sessionGrabbed by remember { mutableStateOf(false) }
+    var sessionActive by remember { mutableStateOf(false) }
+    var lastPointerX by remember { mutableFloatStateOf(0f) }
+
+    /**
+     * 按点是否落在滑块矩形内。
+     *
+     * 几何判定收口在契约的纯函数 [GlassBottomBarSpec.isInsideLens]（便于 LTR/RTL 与边界单测），
+     * 这里只负责把当前布局参数喂进去。
+     */
+    fun isInsideLens(x: Float): Boolean =
+        spec.isInsideLens(
+            x = x,
+            barWidthPx = currentBarWidthPx,
+            paddingPx = paddingPx,
+            tabWidthPx = currentTabWidthPx,
+            lensIndex = controller.index,
+            lensMaxWidthPx = lensMaxWidthPx,
+            isLtr = currentIsLtr,
+        )
+
+    val gestureModifier = remember(controller, requestSelection, paddingPx, touchSlopPx, spec) {
         Modifier.pointerInput(controller, requestSelection) {
             detectBottomBarPress(
                 touchSlopPx = touchSlopPx,
@@ -328,34 +354,77 @@ fun EnhancedLiquidGlassNavigationBar(
                 isGestureEnabled = { currentTabWidthPx > 0f },
                 onDown = { position ->
                     currentPressTick()
-                    controller.beginPressAt(pointerXToIndex(position.x))
+                    sessionActive = true
+                    sessionGrabbed = false
+                    lastPointerX = position.x
+                    pointerIndex = pointerXToIndex(position.x)
+                    if (isInsideLens(position.x)) {
+                        // 按在滑块上：立即原地按压（与 PR81 的 beginPress() 一致），无需等待
+                        sessionGrabbed = true
+                        controller.beginPressAt(controller.index)
+                    } else {
+                        // 按在滑块以外：先不移动滑块
+                        // · 轻点 → 松手后走 PR81 的 settleAt(pulse = true)（单相、最顺）
+                        // · 按住不放 / 开始拖动 → 到阈值后把滑块抓到手指出（用户要求的跟随）
+                        grabJob?.cancel()
+                        grabJob = scope.launch {
+                            delay(spec.grabDelayMillis)
+                            if (sessionActive && !sessionGrabbed) {
+                                sessionGrabbed = true
+                                controller.beginPressAt(pointerIndex)
+                            }
+                        }
+                    }
                 },
-                onDrag = { position ->
-                    controller.updatePressTarget(pointerXToIndex(position.x))
-                    val tab = currentTabWidthPx
-                    if (tab > 0f) {
-                        val dx = pointerXToIndex(position.x) - controller.targetIndex
-                        // 装饰性整栏跟随：按绝对位置差累加，夹取避免越界拖拽下无限增长
+                onDrag = { position, dragged ->
+                    // F2（评审发现）：未过 slop 的位移一律忽略——否则 1~3px 手指抖动会被判成拖动，
+                    // 轻点就会走成抓取路径（滑块飞走、且松手没有点击脉冲）。
+                    if (!dragged) return@detectBottomBarPress
+                    val deltaX = position.x - lastPointerX
+                    lastPointerX = position.x
+                    pointerIndex = pointerXToIndex(position.x)
+                    if (!sessionGrabbed) {
+                        // 一开始拖动就立刻抓取（跟手），并取消「轻点」判定
+                        grabJob?.cancel()
+                        sessionGrabbed = true
+                        controller.beginPressAt(pointerIndex)
+                    }
+                    controller.updatePressTarget(pointerIndex)
+                    // 装饰性整栏跟随：按**指针位移**累加（同步累加不丢同帧多次位移）
+                    if (currentTabWidthPx > 0f) {
                         panelRecenterJob?.cancel()
-                        panelShiftAccum = (panelShiftAccum + dx * tab)
+                        panelShiftAccum = (panelShiftAccum + deltaX)
                             .coerceIn(-currentBarWidthPx, currentBarWidthPx)
                     }
                 },
                 onUp = { position, dragged ->
-                    val index = pointerXToIndex(position.x).fastRoundToInt()
-                        .fastCoerceIn(0, tabs - 1)
-                    // 轻点（未拖动）且落在别的槽位：走「飞过去 → 挤压一下 → 缩回」的点击反馈，
-                    // 同时整栏随压力放大再回落（与已提交版本一致）。
-                    // 拖动途中松手则不补膨胀，避免「松手后又被撑大」的竞态。
-                    controller.endPress(
-                        index,
-                        pulse = !dragged && index != currentSelectedIndex,
-                    )
+                    grabJob?.cancel()
+                    sessionActive = false
+                    pointerIndex = pointerXToIndex(position.x)
+                    val index = pointerIndex.fastRoundToInt().fastCoerceIn(0, tabs - 1)
+                    if (sessionGrabbed) {
+                        // 已经抓取过：正常尺寸吸附 + 收回材质（不再补膨胀，避免「松手后被撑大」）
+                        controller.endPress(index, pulse = false)
+                    } else {
+                        // 全程未抓取 = 一次轻点：**完全走 PR81 的点击路径** ——
+                        // settleAt(pulse = true)：起胀与滑行同时开始的单相运动，最顺滑。
+                        // 目标是当前选中项时不必起胀（滑块本来就在那里）。
+                        controller.settleAt(
+                            index.toFloat(),
+                            pulse = index != currentSelectedIndex,
+                        )
+                    }
+                    sessionGrabbed = false
                     recenterPanel()
                     requestSelection(index)
                 },
                 onCancel = {
-                    controller.cancelPress(currentSelectedIndex.toFloat())
+                    grabJob?.cancel()
+                    sessionActive = false
+                    if (sessionGrabbed) {
+                        controller.cancelPress(currentSelectedIndex.toFloat())
+                    }
+                    sessionGrabbed = false
                     recenterPanel()
                 },
             )
@@ -387,6 +456,9 @@ fun EnhancedLiquidGlassNavigationBar(
     val barContrast = if (isDark) spec.barContrastDark else spec.barContrastLight
     val barSaturation = if (isDark) spec.barSaturationDark else spec.barSaturationLight
     val highlightAlpha = if (isDark) spec.barHighlightAlphaDark else spec.barHighlightAlphaLight
+    // **浅色档专属**色散增强：浅底对比低，折射量需要放大才有可见的彩色分离；深色档恒为 1
+    val dispersionBoost =
+        if (isDark) 1f else spec.lightDispersionBoost.safeMotionValue(1f, 3f, 1f)
     // surfaceTint 是主题选择后的不透明中性色，alpha 只在 onDrawSurface 应用一次（不叠两层 surface）
     // ---- 主题自适应色彩控制：**一次性构建** ColorFilter 并复用 ----
     // 不能在 effects lambda 里调用 colorControls(...)：Backdrop 1.0.2 的实现每次都会新建
@@ -401,11 +473,13 @@ fun EnhancedLiquidGlassNavigationBar(
     }
     // 浅色档补一条暗色发丝描边勾勒胶囊轮廓；深色档 edgeStroke 为透明即不描边。
     // 宽度/不透明度用 theme 里的共享常量，与经典档描边保持同一套数值。
-    val edgeStroke: Modifier = remember(colors, density) {
+    // 浅色档栏体发丝边：比经典档略强，勾出上下轮廓（深色档仍走 colors.edgeStroke 的规则）
+    val enhancedEdgeAlpha = if (isDark) GlassEdgeStrokeAlpha else spec.barEdgeStrokeAlphaLight
+    val edgeStroke: Modifier = remember(colors, density, enhancedEdgeAlpha) {
         if (colors.edgeStroke.alpha == 0f) {
             Modifier
         } else {
-            val strokeColor = colors.edgeStroke.copy(alpha = GlassEdgeStrokeAlpha)
+            val strokeColor = colors.edgeStroke.copy(alpha = enhancedEdgeAlpha)
             val strokeWidth = with(density) { GlassEdgeStrokeWidth.toPx() }
             Modifier.drawWithContent {
                 drawContent()
@@ -447,8 +521,8 @@ fun EnhancedLiquidGlassNavigationBar(
         // ---- A 可见栏：玻璃栏体 + 清晰图标（图标绘制在栏体之后，不参与模糊）----
         // A/B 栏体材料：轻微模糊 + 轻微遮罩 + **克制的内部折射**（液态玻璃质感）。
         // 折射单独受 refractionEnabled 门控（API 33 以下不得创建 RuntimeShader）。
-        val barLensHeightPx = with(density) { spec.barLensHeight.toPx() }
-        val barLensAmountPx = with(density) { spec.barLensAmount.toPx() }
+        val barLensHeightPx = with(density) { spec.barLensHeight.toPx() } * dispersionBoost
+        val barLensAmountPx = with(density) { spec.barLensAmount.toPx() } * dispersionBoost
         val barEffects: BackdropEffectScope.() -> Unit =
             remember(blurEnabled, refractionEnabled, spec, barBlurRadius, barColorFilter) {
                 {
@@ -475,6 +549,16 @@ fun EnhancedLiquidGlassNavigationBar(
                 { if (highlightAlpha <= 0f) null else Highlight.Default.copy(alpha = highlightAlpha) }
             } else {
                 null
+            }
+        }
+        // 栏体内阴影：浅色档给非零 alpha，深色档为 0（不产生多余离屏层开销）
+        val barInnerRadius = spec.barInnerShadowRadiusLight
+        val barInnerAlpha = if (isDark) 0f else spec.barInnerShadowAlphaLight
+        val barInnerShadow: (() -> InnerShadow?)? = remember(barInnerRadius, barInnerAlpha) {
+            if (barInnerAlpha <= 0f) {
+                null
+            } else {
+                { InnerShadow(radius = barInnerRadius, alpha = barInnerAlpha) }
             }
         }
         val barSurface: DrawScope.() -> Unit = remember(containerColor) {
@@ -524,6 +608,8 @@ fun EnhancedLiquidGlassNavigationBar(
                     // 等效约 8% 黑）**完全一致**，两档观感统一（§6 D26）。参考实现那套
                     // 「浅色 10% / 深色 20% 黑、24dp 模糊、下移 4dp」强 2.5 倍，仍不采用（§6 D11）。
                     shadow = { Shadow.Default.copy(alpha = 0.8f) },
+                    // 浅色档：贴着上下边缘的柔和内暗边，形成参考图那种「玻璃厚度」
+                    innerShadow = barInnerShadow,
                     layerBlock = barPressLayer,
                     onDrawSurface = barSurface,
                 )
@@ -541,7 +627,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     iconSize = spec.iconSize,
                     // A 层不再承担物理触摸（D 层独占）；这里的 onClick 只由无障碍语义触发
                     onClick = {
-                        currentSemanticTick()
+                        currentPressTick()
                         requestSelection(index)
                     },
                 )
@@ -675,7 +761,7 @@ fun EnhancedLiquidGlassNavigationBar(
                         val p = controller.pressure.coerceIn(0f, 1f)
                         InnerShadow(
                             // radius 是 Dp 类型（Backdrop 1.0.2 的内联类）：用 Dp.lerp 插值
-                            radius = androidx.compose.ui.unit.lerp(
+                            radius = lerp(
                                 spec.lensInnerShadowRadiusRest,
                                 spec.lensInnerShadowRadiusPressed,
                                 p,
@@ -691,24 +777,12 @@ fun EnhancedLiquidGlassNavigationBar(
                     null
                 }
             }
-            // 按压缩放与速度形变都是纯图层变换：各 API 版本都保留（低版本无折射但有体积反馈）
-            val lensLayer: GraphicsLayerScope.() -> Unit = remember(spec, controller) {
+            // 透镜图层：**只做手指按压放大**，不做任何速度拉伸
+            // （用户要求：无论点击哪个图标，形变效果都要一致，与 PR81 相同）
+            val lensLayer: GraphicsLayerScope.() -> Unit = remember(controller) {
                 {
-                    // 除数为 0 会得到 NaN/±Inf 并直接写进 graphicsLayer（画面整层异常）；
-                    // 夹取上限 0.9 是为了让分母 1−clamp 不落到 0
-                    val divisor = spec.velocityScaleDivisor
-                        .safeMotionValue(0.01f, 1_000f, GlassBottomBarSpec.Default.velocityScaleDivisor)
-                    val wideFactor = spec.velocityWideFactor
-                        .safeMotionValue(0f, 1f, GlassBottomBarSpec.Default.velocityWideFactor)
-                    val tallFactor = spec.velocityTallFactor
-                        .safeMotionValue(0f, 1f, GlassBottomBarSpec.Default.velocityTallFactor)
-                    val clamp = spec.velocityClamp
-                        .safeMotionValue(0f, 0.9f, GlassBottomBarSpec.Default.velocityClamp)
-                    val indexVelocity = controller.effectiveVelocity / divisor
-                    scaleX = controller.scaleX /
-                        (1f - (indexVelocity * wideFactor).fastCoerceIn(-clamp, clamp))
-                    scaleY = controller.scaleY *
-                        (1f - (indexVelocity * tallFactor).fastCoerceIn(-clamp, clamp))
+                    scaleX = controller.scaleX
+                    scaleY = controller.scaleY
                 }
             }
             val lensCover: DrawScope.() -> Unit = remember(refractionEnabled, colors, spec, controller) {
