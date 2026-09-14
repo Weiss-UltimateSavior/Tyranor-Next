@@ -171,7 +171,7 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
 
 ## 致谢
-
+- [Kirikiroid2](https://github.com/zeas2/Kirikiroid2): Kirikiroid2引擎
 - **Tyranor 模拟器**：本项目引擎运行时与核心架构的逆向重写基础
 - [Artemis-Compat](https://github.com/Weiss-UltimateSavior/artemis-compat)：自研兼容内核
 - **RinneMobile**：游戏扫描识别/SAF路径映射逻辑/独立存档映射/krkrsdl3 等多个功能的参考与实现
