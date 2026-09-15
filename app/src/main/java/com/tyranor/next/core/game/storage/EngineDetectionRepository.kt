@@ -35,6 +35,7 @@ object EngineDetectionRepository {
             EngineSettingsStore.ART_ENGINE_V3, "internal.artemis.compat.v2" -> EngineSettingsStore.ART_ENGINE_V3
             EngineSettingsStore.ART_ENGINE_V4, "internal.artemis.v4" -> EngineSettingsStore.ART_ENGINE_V4
             EngineSettingsStore.ART_ENGINE_V5, "internal.artemis.v5" -> EngineSettingsStore.ART_ENGINE_V5
+            EngineSettingsStore.ART_ENGINE_V6, "internal.artemis.v6" -> EngineSettingsStore.ART_ENGINE_V6
             else -> null
         }
 

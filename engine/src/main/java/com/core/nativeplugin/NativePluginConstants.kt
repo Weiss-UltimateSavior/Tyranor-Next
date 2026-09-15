@@ -32,6 +32,8 @@ object NativePluginConstants {
     const val LIB_ARTEMIS_COMPATIBLE_V2 = "libartemis-compatible-v2.so"
     const val LIB_ARTEMIS_V4 = "libartemis-v4.so"
     const val LIB_ARTEMIS_V5 = "libartemis-v5.so"
+    /** 官方拆解 Rev.3294（含 E-mote）运行库。 */
+    const val LIB_ARTEMIS_V6 = "libartemis-v6.so"
     /** 自研 clean-room 兼容内核（artemis-compat 仓库构建产物）。 */
     const val LIB_ARTEMIS_CLEAN = "libartemis-clean.so"
     /** artemis_loader 消费的库名（无 lib 前缀/扩展名），与 artemis_loader.cpp 白名单一致。 */
@@ -72,6 +74,7 @@ object NativePluginConstants {
         LIB_ARTEMIS_COMPATIBLE_V2,
         LIB_ARTEMIS_V4,
         LIB_ARTEMIS_V5,
+        LIB_ARTEMIS_V6,
         LIB_ARTEMIS_CLEAN,
     )
 }

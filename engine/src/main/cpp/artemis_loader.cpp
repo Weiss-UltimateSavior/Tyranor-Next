@@ -108,6 +108,7 @@ bool isAllowedEngineLibName(const std::string& name) {
         || name == "artemis-compatible-v2"
         || name == "artemis-v4"
         || name == "artemis-v5"
+        || name == "artemis-v6"
         || name == "artemis-clean";
 }
 

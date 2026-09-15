@@ -111,6 +111,7 @@ internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_V3 to "v3（Tyranor/Rev.3201/emote）",
     EngineSettingsStore.ART_ENGINE_V4 to "V1（TyranorNext/Rev.2958）",
     EngineSettingsStore.ART_ENGINE_V5 to "V3（TyranorNext/Rev.3288）",
+    EngineSettingsStore.ART_ENGINE_V6 to "V4（TyranorNext/Rev.3294/emote）",
 )
 
 /** Artemis 内核选项：官方多 revision 运行库 / 自研 clean-room 兼容内核（单库无版本）。 */

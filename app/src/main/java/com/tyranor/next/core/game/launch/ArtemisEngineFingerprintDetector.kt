@@ -43,6 +43,7 @@ object ArtemisEngineFingerprintDetector {
     private val EMOTE_TEXT_HINTS = listOf("D3DEMOTE", "IEMOTE", "EMOTECREATE", "CEMOTEPLAYER")
 
     private val EMOTE_CHAIN = listOf(
+        EngineSettingsStore.ART_ENGINE_V6,
         EngineSettingsStore.ART_ENGINE_V3,
         EngineSettingsStore.ART_ENGINE_V1,
         EngineSettingsStore.ART_ENGINE_V2,
