@@ -13,6 +13,13 @@ class RpgSaveFormatConverterTest {
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
+    // 引擎 MV 侧实际落盘名 = key_<sha256(legacy 键)>.bin（下面由真实键算出，可复核）
+    private val mvGlobal = "key_215007509301dd409efc2827bcef990f603bba0b5f3deceed8e025c3b67392eb.bin"
+    private val mvFile1 = "key_a7fccfa2378924192142c2ab1c361c0a2c005a332478e0668c371f6107eb18d2.bin"
+    private val mvFile2 = "key_5dac4a9edf2025cfe97652d03fb468ca8a9b5c2d7b75480c5edefd0870f0fb9a.bin"
+    private val mvFile1bak = "key_3f32fc82424f2dfbfd3025ba06953d159794c744f4d9adb789ae307af21bf40f.bin"
+    private val mvGlobalbak = "key_4ae7448b065f23ae346c44c97189f5f9b7f0dbf0c2a0c892468d4dd20600cfbb.bin"
+
     private fun mvGameRoot(name: String = "Game"): java.io.File {
         val gameRoot = temporaryFolder.newFolder(name)
         gameRoot.resolve("www/js").mkdirs()
@@ -36,9 +43,9 @@ class RpgSaveFormatConverterTest {
         assertEquals(3, result.converted)
         assertEquals(0, result.skipped)
         assertEquals(0, result.failed)
-        assertArrayEquals(globalBytes, savedata.resolve("RPG Global.bin").readBytes())
-        assertArrayEquals(file1Bytes, savedata.resolve("RPG File1.bin").readBytes())
-        assertArrayEquals(bakBytes, savedata.resolve("RPG File1bak.bin").readBytes())
+        assertArrayEquals(globalBytes, savedata.resolve(mvGlobal).readBytes())
+        assertArrayEquals(file1Bytes, savedata.resolve(mvFile1).readBytes())
+        assertArrayEquals(bakBytes, savedata.resolve(mvFile1bak).readBytes())
         assertFalse(savedata.resolve("global.rpgsave").exists())
         assertTrue(savedata.resolve("original/global.rpgsave").isFile)
     }
@@ -62,14 +69,14 @@ class RpgSaveFormatConverterTest {
         val gameRoot = mvGameRoot()
         val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
         val existing = "EXISTING-TYRANOR".toByteArray()
-        savedata.resolve("RPG Global.bin").writeBytes(existing)
+        savedata.resolve(mvGlobal).writeBytes(existing)
         savedata.resolve("global.rpgsave").writeBytes("STANDARD".toByteArray())
 
         val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
 
         assertEquals(0, result.converted)
         assertEquals(1, result.skipped)
-        assertArrayEquals(existing, savedata.resolve("RPG Global.bin").readBytes())
+        assertArrayEquals(existing, savedata.resolve(mvGlobal).readBytes())
         assertTrue(savedata.resolve("original/global.rpgsave").isFile)
     }
 
@@ -119,10 +126,28 @@ class RpgSaveFormatConverterTest {
     }
 
     @Test
+    fun legacyNamedTyranorSaveBlocksConversionAndIsNotDuplicated() {
+        // 引擎优先读 legacy 名：该槽位已有 legacy 即视为「目标已存在」——跳过不覆盖，
+        // 不得再写一份哈希文件（否则同槽位两份且被 legacy 遮蔽）
+        val gameRoot = mvGameRoot()
+        val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
+        savedata.resolve("RPG Global.bin").writeText("LEGACY")
+        savedata.resolve("global.rpgsave").writeText("STANDARD")
+
+        val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
+
+        assertEquals(0, result.converted)
+        assertEquals(1, result.skipped)
+        assertEquals("LEGACY", savedata.resolve("RPG Global.bin").readText())
+        assertFalse(savedata.resolve(mvGlobal).exists())
+        assertTrue(savedata.resolve("original/global.rpgsave").isFile)
+    }
+
+    @Test
     fun nothingToConvertReturnsZero() {
         val gameRoot = mvGameRoot()
         val savedata = gameRoot.resolve("savedata").apply { mkdirs() }
-        savedata.resolve("RPG Global.bin").writeText("tyranor")
+        savedata.resolve(mvGlobal).writeText("tyranor")
 
         val result = RpgSaveFormatConverter.convert(gameRoot, EngineType.RPG_MV)
         assertEquals(0, result.converted)
@@ -155,8 +180,8 @@ class RpgSaveFormatConverterTest {
         )
 
         assertEquals(2, result.converted)
-        assertEquals("G", external.resolve("RPG Global.bin").readText())
-        assertEquals("F2", external.resolve("RPG File2.bin").readText())
+        assertEquals("G", external.resolve(mvGlobal).readText())
+        assertEquals("F2", external.resolve(mvFile2).readText())
         assertTrue(external.resolve("original/global.rpgsave").isFile)
     }
 
@@ -174,7 +199,7 @@ class RpgSaveFormatConverterTest {
         )
 
         assertEquals(1, result.converted)
-        assertEquals("LEGACY", gameRoot.resolve("savedata/RPG File1.bin").readText())
+        assertEquals("LEGACY", gameRoot.resolve("savedata").resolve(mvFile1).readText())
         assertTrue(legacy.resolve("original/file1.rpgsave").isFile)
         assertFalse(gameRoot.resolve("Savedata/file1.rpgsave").exists())
     }

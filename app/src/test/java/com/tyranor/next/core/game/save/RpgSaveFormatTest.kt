@@ -73,6 +73,44 @@ class RpgSaveFormatTest {
     }
 
     @Test
+    fun mvConversionAppliesHashedFileName() {
+        // 转化后引擎实际落盘名 = key_<sha256(legacy 键)>.bin（引擎读到的正是该文件）
+        assertEquals(
+            "key_215007509301dd409efc2827bcef990f603bba0b5f3deceed8e025c3b67392eb.bin",
+            RpgSaveFormat.tyranorFileNameForStandard("global.rpgsave", EngineType.RPG_MV),
+        )
+        // 真实观测值：Tyranor 内第 3 存档位落盘 key_938e37…，即 sha256("RPG File3")
+        assertEquals(
+            "key_938e37cbcee031a9bc044e6e784523ae2ee39d0cc30a060d16aedd0da815c8e5.bin",
+            RpgSaveFormat.tyranorFileNameForStandard("file3.rpgsave", EngineType.RPG_MV),
+        )
+    }
+
+    @Test
+    fun mzConversionKeepsPlainName() {
+        // MZ 键为纯 ASCII，引擎固定读写原名；改哈希名会永远读不到
+        assertEquals("global.bin", RpgSaveFormat.tyranorFileNameForStandard("global.rmmzsave", EngineType.RPG_MZ))
+        assertEquals("file9.bin", RpgSaveFormat.tyranorFileNameForStandard("file9.rmmzsave", EngineType.RPG_MZ))
+    }
+
+    @Test
+    fun slotNameAppliesHashedNameForMvOnly() {
+        assertEquals(
+            "key_938e37cbcee031a9bc044e6e784523ae2ee39d0cc30a060d16aedd0da815c8e5.bin",
+            RpgSaveFormat.tyranorNameForSlot("file3", EngineType.RPG_MV),
+        )
+        assertEquals("file3.bin", RpgSaveFormat.tyranorNameForSlot("file3", EngineType.RPG_MZ))
+        // 哈希名仍可反解回槽位与标准名（导出/互通识别闭环）
+        assertEquals(
+            "file3",
+            RpgSaveFormat.tyranorSlot(
+                "key_938e37cbcee031a9bc044e6e784523ae2ee39d0cc30a060d16aedd0da815c8e5.bin",
+                EngineType.RPG_MV,
+            ),
+        )
+    }
+
+    @Test
     fun mzStandardToTyranorMapping() {
         assertEquals("global.bin", RpgSaveFormat.standardToTyranor("global.rmmzsave", EngineType.RPG_MZ))
         assertEquals("config.bin", RpgSaveFormat.standardToTyranor("config.rmmzsave", EngineType.RPG_MZ))

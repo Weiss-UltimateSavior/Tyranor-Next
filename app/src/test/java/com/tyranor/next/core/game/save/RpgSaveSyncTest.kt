@@ -15,6 +15,10 @@ class RpgSaveSyncTest {
 
     private fun store(): RpgSaveSyncState = RpgSaveSyncState(temporaryFolder.newFolder("state"))
 
+    /** MV 转化/导入后的实际落盘名（key_<sha256(键)>.bin），与实现同源，避免手抄哈希。 */
+    private fun mvName(standardName: String): String =
+        requireNotNull(RpgSaveFormat.tyranorFileNameForStandard(standardName, EngineType.RPG_MV))
+
     /** 建一个两侧目录并返回 (standard, tyranor)。 */
     private fun dirs(): Pair<File, File> {
         val standard = temporaryFolder.newFolder("save")
@@ -37,7 +41,7 @@ class RpgSaveSyncTest {
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
 
         assertEquals(1, result.imported)
-        assertEquals("PC-SAVE", tyranor.resolve("RPG File1.bin").readText())
+        assertEquals("PC-SAVE", tyranor.resolve(mvName("file1.rpgsave")).readText())
         // 标准侧保留，供 PC 使用
         assertTrue(standard.resolve("file1.rpgsave").isFile)
     }
@@ -58,14 +62,14 @@ class RpgSaveSyncTest {
     fun newerStandardWinsAndPropagatesMtime() {
         val (standard, tyranor) = dirs()
         standard.writeAt("global.rpgsave", "NEW-PC", 5_000)
-        tyranor.writeAt("RPG Global.bin", "OLD-PHONE", 1_000)
+        tyranor.writeAt(mvName("global.rpgsave"), "OLD-PHONE", 1_000)
         val store = store()
 
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         assertEquals(1, result.toTyranor)
-        assertEquals("NEW-PC", tyranor.resolve("RPG Global.bin").readText())
-        assertEquals(5_000, tyranor.resolve("RPG Global.bin").lastModified())
+        assertEquals("NEW-PC", tyranor.resolve(mvName("global.rpgsave")).readText())
+        assertEquals(5_000, tyranor.resolve(mvName("global.rpgsave")).lastModified())
         // 幂等：再同步一次应为 skipped
         val second = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
         assertEquals(1, second.skipped)
@@ -76,7 +80,7 @@ class RpgSaveSyncTest {
     fun newerTyranorWinsAndPropagatesMtime() {
         val (standard, tyranor) = dirs()
         standard.writeAt("global.rpgsave", "OLD-PC", 1_000)
-        tyranor.writeAt("RPG Global.bin", "NEW-PHONE", 9_000)
+        tyranor.writeAt(mvName("global.rpgsave"), "NEW-PHONE", 9_000)
 
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
 
@@ -169,7 +173,7 @@ class RpgSaveSyncTest {
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
 
         assertEquals(1, result.imported)
-        assertEquals("BAK", tyranor.resolve("RPG File1bak.bin").readText())
+        assertEquals("BAK", tyranor.resolve(mvName("file1.rpgsave.bak")).readText())
     }
 
     @Test
@@ -196,7 +200,8 @@ class RpgSaveSyncTest {
         val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
 
         assertEquals(1, result.toTyranor)
-        assertEquals("PC", tyranor.resolve("RPG Global.bin").readText())
+        assertEquals("PC", tyranor.resolve(mvName("global.rpgsave")).readText())
+        // 同槽位旧 legacy 名必须让位（否则遮蔽新数据）：内容移入 original/，不丢
         assertTrue(tyranor.resolve("original/RPG Global.bin").isFile)
         assertEquals("PHONE", tyranor.resolve("original/RPG Global.bin").readText())
     }
@@ -224,10 +229,15 @@ class RpgSaveSyncTest {
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         standard.writeAt("global.rpgsave", "B", 5_000)
-        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+        val first = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+        assertEquals(1, first.toTyranor)
 
-        assertEquals(1, result.toTyranor)
-        assertFalse(tyranor.resolve("original/RPG Global.bin").exists())
+        standard.writeAt("global.rpgsave", "C", 9_000)
+        val second = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+        assertEquals(1, second.toTyranor)
+        assertEquals("C", tyranor.resolve(mvName("global.rpgsave")).readText())
+        // original/ 里没有累积副本（清单已建立，无需再留底）
+        assertFalse(tyranor.resolve("original").isDirectory)
     }
 
     @Test
@@ -249,9 +259,9 @@ class RpgSaveSyncTest {
         )
 
         assertEquals(1, result.imported)
-        assertEquals("FROM-UPPER", tyranor.resolve("RPG Global.bin").readText())
+        assertEquals("FROM-UPPER", tyranor.resolve(mvName("global.rpgsave")).readText())
         // 回写应落在该已存在的标准目录内（不另造目录）
-        tyranor.resolve("RPG Global.bin").apply { writeText("NEW"); setLastModified(9_000) }
+        tyranor.resolve(mvName("global.rpgsave")).apply { writeText("NEW"); setLastModified(9_000) }
         val second = RpgSaveSync.sync(listOf(lower, upper), tyranor, EngineType.RPG_MV, store, "g")
         assertEquals(1, second.toStandard)
         assertEquals("NEW", upper.resolve("global.rpgsave").readText())
@@ -303,7 +313,7 @@ class RpgSaveSyncTest {
         assertEquals(0, result.skipped)
         assertEquals(1, result.toTyranor + result.toStandard)
         // 平局以标准侧为准，且较旧一方须留底（平局下新旧未知）
-        assertEquals("PC-CONTENT", tyranor.resolve("RPG Global.bin").readText())
+        assertEquals("PC-CONTENT", tyranor.resolve(mvName("global.rpgsave")).readText())
         assertTrue(tyranor.resolve("original/RPG Global.bin").isFile)
     }
 
@@ -328,13 +338,38 @@ class RpgSaveSyncTest {
 
         val first = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
         assertEquals(1, first.imported)
-        assertTrue(tyranor.resolve("RPG File7.bin").isFile)
+        assertTrue(tyranor.resolve(mvName("file7.rpgsave")).isFile)
 
         // Tyranor 侧删除后，第二轮应识别为「已删除」而非「新建」而复活
-        tyranor.resolve("RPG File7.bin").delete()
+        tyranor.resolve(mvName("file7.rpgsave")).delete()
         val second = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
         assertEquals(1, second.movedToDeleted)
         assertFalse(standard.resolve("file7.rpgsave").exists())
+    }
+
+    @Test
+    fun legacyNamedTyranorSaveYieldsToCanonicalHashedName() {
+        // 引擎读档优先 legacy 名（RPG *.bin）：若同槽位保留 legacy，新写入的哈希文件会被遮蔽，
+        // 且同槽位出现两份（同步不再幂等）。覆盖时必须让位——内容移入 original/，规范名成为唯一落点。
+        val (standard, tyranor) = dirs()
+        val store = store()
+        tyranor.writeAt("RPG Global.bin", "LEGACY", 1_000)
+        standard.writeAt("global.rpgsave", "FROM-PC", 5_000)
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+
+        assertEquals(1, result.toTyranor)
+        assertEquals("FROM-PC", tyranor.resolve(mvName("global.rpgsave")).readText())
+        assertFalse(tyranor.resolve("RPG Global.bin").exists())
+        assertEquals("LEGACY", tyranor.resolve("original/RPG Global.bin").readText())
+        // 该槽位在 Tyranor 侧只应剩一个文件
+        assertEquals(
+            1,
+            tyranor.listFiles().orEmpty().count { it.isFile && RpgSaveFormat.tyranorSlot(it.name, EngineType.RPG_MV) == "global" },
+        )
+        // 幂等：再同步一次不应再产生变化
+        val second = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
+        assertEquals(0, second.changed)
     }
 
     @Test
@@ -360,7 +395,7 @@ class RpgSaveSyncTest {
         assertTrue(alt.resolve("deleted/global.rpgsave").isFile)
         assertEquals("DIVERGED", alt.resolve("deleted/global.rpgsave").readText())
         assertFalse(alt.resolve("global.rpgsave").exists())
-        assertEquals("PREFERRED", tyranor.resolve("RPG Global.bin").readText())
+        assertEquals("PREFERRED", tyranor.resolve(mvName("global.rpgsave")).readText())
     }
 
     @Test
@@ -387,7 +422,7 @@ class RpgSaveSyncTest {
         val stateDir = temporaryFolder.newFolder("state")
         val store = RpgSaveSyncState(stateDir)
         standard.writeAt("file1.rpgsave", "V1", 1_000)
-        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        tyranor.writeAt(mvName("file1.rpgsave"), "V1", 1_000)
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         stateDir.listFiles().orEmpty().forEach { it.writeText("{corrupt") }
@@ -402,7 +437,7 @@ class RpgSaveSyncTest {
         assertEquals(1, result.failed)
         assertEquals(0, result.imported)
         assertEquals(0, result.changed)
-        assertFalse(tyranor.resolve("RPG File2.bin").exists())
+        assertFalse(tyranor.resolve(mvName("file2.rpgsave")).exists())
         // 冲突副本原位保留：清单验证失败前不做任何文件改动
         assertTrue(alt.resolve("global.rpgsave").isFile)
         assertFalse(alt.resolve("deleted").exists())
@@ -422,7 +457,7 @@ class RpgSaveSyncTest {
         val stateDir = temporaryFolder.newFolder("state")
         val store = RpgSaveSyncState(stateDir)
         standard.writeAt("file1.rpgsave", "V1", 1_000)
-        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        tyranor.writeAt(mvName("file1.rpgsave"), "V1", 1_000)
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         overwriteManifest(stateDir, """{"other":{}}""")
@@ -440,7 +475,7 @@ class RpgSaveSyncTest {
         val stateDir = temporaryFolder.newFolder("state")
         val store = RpgSaveSyncState(stateDir)
         standard.writeAt("file1.rpgsave", "V1", 1_000)
-        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        tyranor.writeAt(mvName("file1.rpgsave"), "V1", 1_000)
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         overwriteManifest(stateDir, """{"slots":{"file1":"bogus"}}""")
@@ -459,7 +494,7 @@ class RpgSaveSyncTest {
         val stateDir = temporaryFolder.newFolder("state")
         val store = RpgSaveSyncState(stateDir)
         standard.writeAt("file1.rpgsave", "V1", 1_000)
-        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        tyranor.writeAt(mvName("file1.rpgsave"), "V1", 1_000)
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         overwriteManifest(stateDir, """{"slots":{"file1":{"std":1000,"tyr":1000,"tyr_x":"yes"}}}""")
@@ -477,7 +512,7 @@ class RpgSaveSyncTest {
         val stateDir = temporaryFolder.newFolder("state")
         val store = RpgSaveSyncState(stateDir)
         standard.writeAt("file1.rpgsave", "V1", 1_000)
-        tyranor.writeAt("RPG File1.bin", "V1", 1_000)
+        tyranor.writeAt(mvName("file1.rpgsave"), "V1", 1_000)
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         overwriteManifest(stateDir, """{"slots":{"file1":{"std":1000}}}""")
@@ -495,12 +530,12 @@ class RpgSaveSyncTest {
         val (standard, tyranor) = dirs()
         val store = store()
         standard.writeAt("file7.rpgsave", "S", 1_000)
-        tyranor.writeAt("RPG File7.bin", "S", 1_000)
+        tyranor.writeAt(mvName("file7.rpgsave"), "S", 1_000)
         RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         // 用同名文件占位 deleted/，迫使 moveToDeleted 失败
         standard.resolve("deleted").writeText("block")
-        tyranor.resolve("RPG File7.bin").delete()
+        tyranor.resolve(mvName("file7.rpgsave")).delete()
         val failedRound = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store, "g")
 
         assertEquals(1, failedRound.failed)
@@ -518,6 +553,6 @@ class RpgSaveSyncTest {
 
         assertEquals(1, retry.movedToDeleted)
         assertEquals(0, retry.imported)
-        assertFalse(tyranor.resolve("RPG File7.bin").exists())
+        assertFalse(tyranor.resolve(mvName("file7.rpgsave")).exists())
     }
 }

@@ -15,22 +15,23 @@ import java.util.Locale
  * `<external>/save/tyrano/<safeName>`。检测/转化必须消费**生效目录**（与引擎一致），
  * [saveDirectory] 仅是非独立存档时的默认路径，不是唯一来源。
  *
- * MV（引擎经 webStorageKey 派生 `RPG ...` 键，含空格 → 桥按 legacy 文件名落盘或哈希）：
- * | Tyranor 格式        | 标准格式（JoiPlay/PC） |
- * | ------------------ | --------------------- |
- * | RPG Global.bin     | global.rpgsave        |
- * | RPG Config.bin     | config.rpgsave        |
- * | RPG FileN.bin      | fileN.rpgsave         |
- * | RPG Globalbak.bin  | global.rpgsave.bak    |
- * | RPG Configbak.bin  | config.rpgsave.bak    |
- * | RPG FileNbak.bin   | fileN.rpgsave.bak     |
+ * MV（键形如 `RPG FileN`，含空格 → 引擎按确定性哈希命名）：
+ * | 转化后落盘名（key_<sha256>） | 标准格式（JoiPlay/PC） |
+ * | -------------------------- | --------------------- |
+ * | key_<sha256("RPG Global")>.bin    | global.rpgsave     |
+ * | key_<sha256("RPG Config")>.bin    | config.rpgsave     |
+ * | key_<sha256("RPG FileN")>.bin     | fileN.rpgsave      |
+ * | key_<sha256("RPG Globalbak")>.bin | global.rpgsave.bak |
+ * | key_<sha256("RPG FileNbak")>.bin  | fileN.rpgsave.bak  |
+ * 其中 `RPG *.bin`（不带 key_ 前缀）是原 Tyranor 的 legacy 名，引擎读取时优先 legacy、
+ * 否则回退哈希名；两种名字引擎都能读，本模块的转化与互通统一写入哈希名（见 [tyranorAppliedName]）。
  *
- * MZ（键为 `global`/`config`/`fileN`，核心不带备份）：
+ * MZ（键为 `global`/`config`/`fileN`，纯 ASCII 命中 directFileKey，核心不带备份）：
  * | global.bin / config.bin / fileN.bin | global.rmmzsave / config.rmmzsave / fileN.rmmzsave |
+ * MZ 不能改哈希名——引擎固定读写原名，改了就永远读不到。
  *
- * 含空格的 MV 键经 RpgMakerStorage 的确定性哈希映射落成 `key_<sha256(key)>.bin`。该形态**不是**
- * 可读的 Tyranor 名字（引擎读档时按 legacy 文件名找，哈希名只是写入落点），因此导出为「标准模式」
- * 时需要把哈希名反解回标准名——键空间有限（见 [hashedToStandardName]），可枚举还原。
+ * 哈希名反解回标准名依赖键空间有限（见 [hashedToStandardName]），可枚举还原；插件自定义键
+ * 无法还原，导出时保留原名并计入 unmapped。
  */
 object RpgSaveFormat {
 
@@ -263,6 +264,27 @@ object RpgSaveFormat {
         }
     }
 
+    /**
+     * 引擎 `RpgMakerStorage.resolveFile` 实际固定的落盘名（转化/互通导入时写入的名字）。
+     *
+     * - **MV**：键形如 `RPG File3`（含空格），不匹配 `directFileKey`，且 legacy 名通常不存在，
+     *   因此引擎统一按确定性哈希映射为 `key_<sha256(键)>.bin`。转化按此写入，引擎读到的正是该文件。
+     * - **MZ**：键形如 `file3`（纯 ASCII），匹配 `directFileKey`，引擎固定读写 `file3.bin`；
+     *   若改成哈希名引擎将永远读不到，故 MZ 保持原名。
+     */
+    private fun tyranorAppliedName(legacyName: String, engine: EngineType): String =
+        if (engine == EngineType.RPG_MV) {
+            "key_${sha256(legacyName.removeSuffix(".bin"))}.bin"
+        } else {
+            legacyName
+        }
+
+    /** 标准文件名 → 转化后实际落盘的 Tyranor 文件名；不匹配返回 null。 */
+    fun tyranorFileNameForStandard(standardName: String, engine: EngineType): String? {
+        val legacy = standardToTyranor(standardName, engine) ?: return null
+        return tyranorAppliedName(legacy, engine)
+    }
+
     // ===== 槽位键（同步用）=====
     // 槽位键 = 归一化存档位标识：`global` / `config` / `fileN`，MV 备份追加 `.bak`。
     // 两侧文件名都可映射到同一槽位键，便于判断「同一个存档位」是否两边都存在。
@@ -302,13 +324,14 @@ object RpgSaveFormat {
         return stem + ext + (if (isBackup) ".bak" else "")
     }
 
-    /** 槽位键 → Tyranor 文件名。 */
+    /** 槽位键 → 转化后实际落盘的 Tyranor 文件名（MV 为哈希名，MZ 为原名）。 */
     fun tyranorNameForSlot(slot: String, engine: EngineType): String? {
         val isBackup = slot.endsWith(".bak")
         if (isBackup && !supportsBackup(engine)) return null
         val stem = if (isBackup) slot.removeSuffix(".bak") else slot
         val base = tyranorBase(stem, engine) ?: return null
-        return base + (if (isBackup) "bak" else "") + ".bin"
+        val legacy = base + (if (isBackup) "bak" else "") + ".bin"
+        return tyranorAppliedName(legacy, engine)
     }
 
     /** 哈希存档名（key_<sha256>.bin）判定。 */

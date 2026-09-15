@@ -170,27 +170,29 @@ object RpgSaveSync {
                                 } else {
                                     // 无法判定新旧：以标准侧为准，且**无条件**把 Tyranor 侧留底——
                                     // 平局下较旧一方未知，留底才能保证不丢任何一份
-                                    overwriteWithPreserve(
+                                    writeTyranorSide(
                                         winner = std,
-                                        loser = tyr,
-                                        loserDir = tyranorDir,
-                                        preserveLoserSide = false,
-                                        mustPreserve = true,
+                                        existingTyranor = tyr,
+                                        slot = slot,
+                                        tyranorDir = tyranorDir,
+                                        engine = engine,
+                                        mustPreserveTarget = true,
                                     )
-                                    toTyranor++; tyrMtime = s
+                                    toTyranor++; tyrMtime = s; tyrExistsNow = true
                                 }
                             }
                             s > t -> {
                                 // 首次同步该槽位时较旧一方无历史记录，先留底再覆盖，避免误删唯一副本；
                                 // 留底失败则中止本次覆盖（两侧原样保留、计入 failed、下轮重试），绝不先毁后写
-                                overwriteWithPreserve(
+                                writeTyranorSide(
                                     winner = std,
-                                    loser = tyr,
-                                    loserDir = tyranorDir,
-                                    preserveLoserSide = false,
-                                    mustPreserve = !hadPrevious,
+                                    existingTyranor = tyr,
+                                    slot = slot,
+                                    tyranorDir = tyranorDir,
+                                    engine = engine,
+                                    mustPreserveTarget = !hadPrevious,
                                 )
-                                toTyranor++; tyrMtime = s
+                                toTyranor++; tyrMtime = s; tyrExistsNow = true
                             }
                             else -> {
                                 overwriteWithPreserve(
@@ -213,13 +215,18 @@ object RpgSaveSync {
                                 failed++; record = false; keepPrevious(slot)
                             }
                         } else {
-                            val name = RpgSaveFormat.tyranorNameForSlot(slot, engine)
-                            if (name == null) {
+                            if (RpgSaveFormat.tyranorNameForSlot(slot, engine) == null) {
                                 failed++; record = false; keepPrevious(slot)
                             } else {
-                                val target = File(tyranorDir, name)
-                                copyOverwrite(std, target); imported++; tyrMtime = stdMtime
-                                tyrExistsNow = true
+                                writeTyranorSide(
+                                    winner = std,
+                                    existingTyranor = null,
+                                    slot = slot,
+                                    tyranorDir = tyranorDir,
+                                    engine = engine,
+                                    mustPreserveTarget = false,
+                                )
+                                imported++; tyrMtime = stdMtime; tyrExistsNow = true
                             }
                         }
                     }
@@ -361,6 +368,41 @@ object RpgSaveSync {
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * 把标准侧文件 [winner] 写入 Tyranor 侧槽位的**规范落盘名**（MV 为 `key_<sha256(键)>.bin`，MZ 为原名），
+     * 并保证该槽位在 Tyranor 侧**只留一个文件**。
+     *
+     * 为何不能沿用「写进输家原路径」：MV 引擎读档时**优先 legacy 名**（`RPG *.bin`），若保留旧名文件，
+     * 新写入的哈希文件会被遮蔽、且同槽位出现两份（同步不再幂等）。因此：
+     * - 目标名与既有文件不同名 ⇒ 先把旧名文件移入 `original/`（内容不丢），再写规范名；
+     * - [mustPreserveTarget] 为真且规范名目标已存在 ⇒ 同样先留底（首次同步/平局，较旧一方未知）。
+     *
+     * 任一步失败即抛 [IOException]，由调用方按单槽位失败处理（两侧原样保留，下轮重试），绝不先毁后写。
+     */
+    @Throws(IOException::class)
+    private fun writeTyranorSide(
+        winner: File,
+        existingTyranor: File?,
+        slot: String,
+        tyranorDir: File,
+        engine: EngineType,
+        mustPreserveTarget: Boolean,
+    ) {
+        val name = RpgSaveFormat.tyranorNameForSlot(slot, engine)
+            ?: throw IOException("no tyranor name for slot $slot")
+        val target = File(tyranorDir, name)
+        val sameAsTarget = existingTyranor?.let { samePath(it, target) } ?: false
+        // 1) 同槽位不同名的旧文件（legacy）：必移入 original/，否则遮蔽新数据并造成重复槽位
+        if (existingTyranor != null && existingTyranor.exists() && !sameAsTarget) {
+            preserveLoser(existingTyranor, tyranorDir, standardSide = false)
+        }
+        // 2) 规范名目标已存在且需要留底时，先留底再覆盖
+        if (mustPreserveTarget && target.exists() && !sameAsTarget) {
+            preserveLoser(target, tyranorDir, standardSide = false)
+        }
+        copyOverwrite(winner, target)
     }
 
     /**
