@@ -1,6 +1,6 @@
 # SiglusEngine（siglus_rs）内置引擎接入方案
 
-> 状态：待评审（本文档为实施依据，评审通过后按「里程碑」逐步落地）
+> 状态：**已实施（M0–M5 完成）**；实现说明与偏差见文末「实施记录」
 > 关联上游：`Weiss-UltimateSavior/siglus_rs`（fork 自 `xmoezzz/siglus_rs`，MPL-2.0）
 > 结论摘要：**内置 host 路线**（engine 模块新增宿主 Activity）+ **jniLibs 直打包**；
 > 一期范围 = 核心可玩 + 文本输入/IME + 键盘映射 + 语言设置 + GAMENAME 标题回写（**不含封面**）。
@@ -351,7 +351,7 @@ target_link_libraries(siglus_bridge ${android-lib} ${log-lib} ${dl-lib})
 | `KEYCODE_ESCAPE` / `KEYCODE_BACK` | 0x1B | 取消/返回 |
 | `KEYCODE_ENTER` / `KEYCODE_NUMPAD_ENTER` | 0x0D | 确认 |
 | `KEYCODE_SPACE` | 0x20 | 推进 |
-| `KEYCODE_DEL` | 0x2E | 删除 |
+| `KEYCODE_DEL` | 0x08 | Backspace（编辑框退格） |
 | `KEYCODE_FORWARD_DEL` | 0x2E | Delete |
 | `KEYCODE_TAB` | 0x09 | |
 | `KEYCODE_SHIFT_LEFT/RIGHT` | 0x10 | |
@@ -563,3 +563,45 @@ git diff --check
 | `engine_settings_siglus_language_value_id` | 印尼语（ID） | インドネシア語（ID） | Indonesian (ID) |
 
 > 实际文案以项目三语言校对习惯为准；键名与数量以本表为基线，新增后必须通过 `tools/check-hardcoded-ui-strings.py`。
+
+---
+
+## 实施记录（M0–M5）
+
+### M0 fork 改动（`/Users/weiss/Desktop/sg/siglus_rs`，未提交）
+
+| 文件 | 改动 |
+|---|---|
+| `crates/siglus_scene_vm/src/host.rs` | 新增 `SiglusHost::key_event(code, text, is_repeat)`（桌面 KeyboardInput 语义：映射键去重、未映射键 `notify_wait_key`、editbox 直通文本）、`editbox_accepts_direct_text()`、`focused_editbox_ime_area()`、`notify_wait_key()` |
+| `crates/siglus_scene_vm/src/android_host.rs` | 新增导出 `siglus_android_key_event` / `siglus_android_ime_area`（复用 aspect-fit viewport 换算为 surface 像素）/ `siglus_android_editbox_accepts_direct_text` |
+| `crates/siglus_scene_vm/include/siglus.h`、`platform/android/app/src/main/cpp/include/siglus.h` | 同步新 ABI 声明 |
+
+构建与入库：
+
+```bash
+cd /Users/weiss/Desktop/sg/siglus_rs
+ANDROID_NDK_HOME=$HOME/Library/Android/sdk/ndk/28.0.13004108   cargo ndk -t arm64-v8a -o /tmp/siglus-android build --release --lib -p siglus_scene_vm
+cp /tmp/siglus-android/arm64-v8a/libsiglus_scene_vm.so    /Users/weiss/opencode/rma/TyranorNext/engine/src/main/jniLibs/arm64-v8a/libsiglus.so
+```
+
+实测：构建约 5 分钟；产物 20,484,936 B（与上游 20,493,704 B 同量级，仅依赖系统库）；`siglus_android_key_event/ime_area/editbox_accepts_direct_text` 已确认导出。
+
+### M1–M3 engine/app 改动
+
+- engine：`cpp/siglus_bridge.cpp`（自研 JNI shim：dlopen + JNI_OnLoad 缓存 JavaVM/NativeSiglus、`setenv("SIGLUS_LANGUAGE")`、消息框回调、IME/文本/元数据）、CMake 目标 `siglus_bridge`、`com/core/siglus/{NativeSiglus,SiglusActivity,SiglusTextInputView}.java`、Manifest `:siglus` 条目、`Theme.Siglus`、`LaunchContract`（`LAUNCH_MODE_SIGLUS`/`SIGLUS_LANGUAGE`/`SIGLUS_PATH_HASH`）、`EnginePrefs`（`siglus_title.`/`siglus_uri.`/`siglus_default_title.` 前缀）、engine 三语言文案（`engine_siglus_*` 3 键 ×3）。
+- app：`EngineType.SIGLUS`、`EngineScanner` 特征（`GAMEEXE_DAT_RE`/`GAMEEXE_INI_RE`/`scene.pck`/`select.ini`/`.g00`；评分 96/95/85/80）+ `EngineScannerSiglusTest`（6 例）、`EngineLauncher.buildSiglusIntent`（含标题回写登记）、`EnginePluginBootstrap` 分支、`GameSaveManager` SIGLUS → `<root>/savedata`、`EngineScreen`（GAL/描述）、`GameScreen` 占位色、`SiglusTitleFeedback`（库加载导入）+ `MainLibraryViewModel` 挂载、`strings.xml ×3`（13 键）。
+- 设置：`EngineSettingsStore`（`siglus_language` + 9 值白名单）、`EngineSettingsResolver`/`ResolvedEngineSettings.siglusLanguage`、`EngineSettingsText.siglusLanguageOptions(Map)`、`EngineSettingsKind.SIGLUS` + 全局卡片、`PerGameSettingsStore.F_SIGLUS_LANGUAGE` + 单游戏卡片、`GameOverridePartitions.KEY_SIGLUS_LANGUAGE`（随 tyrano 分区持久化）。
+
+### 与方案的偏差（已实现口径）
+
+1. 语言覆盖的分区：DB 无 SIGLUS 列，`siglus_language` 显式列入 `TYRANO_KEYS`（tyrano 分区即既有「剩余字段」分区），无 Room 迁移。
+2. 标题回写协议：App 启动前登记 `siglus_uri.<hash>` 与 `siglus_default_title.<hash>`，宿主仅写 `siglus_title.<hash>`；导入仅在「库标题 == 登记目录名」时覆盖，用户改名有保护。
+3. 导入时机：`MainLibraryViewModel` 初始化（库加载）消费，而非启动回调（宿主写入发生在启动之后）。
+4. IME 光标锚点已用 `CursorAnchorInfo` 实现（原方案列为可选）。
+5. 测试：`EngineScannerSiglusTest` 覆盖 dat/ini/本地化/Data-Scene/低置信/误判；`GameOverridePartitionsTest` 增补 SIGLUS 键断言。
+
+### 验证结果
+
+- `./gradlew :app:assembleDebug` 通过；APK 含 `lib/arm64-v8a/libsiglus.so`（20.5MB）与 `libsiglus_bridge.so`，合并 Manifest 含 `SiglusActivity`/`:siglus`。
+- `./gradlew :app:testDebugUnitTest` 通过；`python3 tools/check-hardcoded-ui-strings.py` 与 `git diff --check` 通过。
+- 真机验收（§9.2 十项）尚未执行，待安装设备后回归；Siglus 需 Android 9+（上游 minSdk 28）。

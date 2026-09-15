@@ -84,10 +84,19 @@ object LaunchContract {
     const val RPG_MAKER_VERSION = "rpgMakerVersion"
     const val RPG_LEGACY_RENDERER = "rpgLegacyRenderer"
 
+    // ---------- Siglus ----------
+
+    /** 游戏语言：引擎 GET_LANGUAGE 返回值（auto 时不传，保持引擎默认 JP）。 */
+    const val SIGLUS_LANGUAGE = "siglus_language"
+
+    /** 游戏根路径哈希（与 app 侧 `Integer.toHexString(path.hashCode())` 一致），标题回写定位用。 */
+    const val SIGLUS_PATH_HASH = "siglus_path_hash"
+
     // ---------- launchMode 固定取值 ----------
 
     const val LAUNCH_MODE_KRKRSDL3 = "internal.krkrsdl3"
     const val LAUNCH_MODE_KIRIKIROID2 = "internal.kirikiroid2"
     const val LAUNCH_MODE_ONS = "internal.ons"
     const val LAUNCH_MODE_ARTEMIS = "internal.artemis"
+    const val LAUNCH_MODE_SIGLUS = "internal.siglus"
 }

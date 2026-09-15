@@ -103,6 +103,11 @@ class GameSaveManager(private val context: Context) {
             EngineType.PSP, EngineType.NINTENDO_SWITCH ->
                 SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
             EngineType.ARTEMIS -> SaveLocation(File(root), text(R.string.save_location_artemis_game_dir), true)
+            EngineType.SIGLUS -> SaveLocation(
+                File(root, "savedata"),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
             EngineType.UNKNOWN -> SaveLocation(null, text(R.string.save_location_unknown_unsupported), false)
         }
     }

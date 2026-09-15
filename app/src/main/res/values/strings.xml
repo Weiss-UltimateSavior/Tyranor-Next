@@ -109,6 +109,7 @@
     <string name="engine_desc_web_other_vn">WebOther/VN，globalData.vndata 或通用 index.html 网页游戏</string>
     <string name="engine_desc_artemis">Artemis，system.ini 与 .pfs 归档游戏</string>
     <string name="engine_desc_renpy">Ren’Py 外置 APK 模块，检测安装状态后启动</string>
+    <string name="engine_desc_siglus">SiglusEngine（Key/VisualArts 系），Gameexe 与 Scene.pck 游戏</string>
     <string name="engine_desc_unknown">未知引擎</string>
     <string name="engine_desc_psp">PSP 游戏通过外置 PPSSPP 运行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
@@ -207,6 +208,18 @@
     <string name="engine_settings_rpg_maker_title">RPG Maker引擎设置</string>
     <string name="engine_settings_tyrano_title">Tyrano引擎设置</string>
     <string name="engine_settings_renpy_title">Ren’Py引擎设置</string>
+    <string name="engine_settings_siglus_title">Siglus引擎设置</string>
+    <string name="engine_settings_siglus_language_title">游戏语言</string>
+    <string name="engine_settings_siglus_language_auto">跟随引擎默认（JP）</string>
+    <string name="engine_settings_siglus_language_value_jp">日语（JP）</string>
+    <string name="engine_settings_siglus_language_value_en">英语（EN）</string>
+    <string name="engine_settings_siglus_language_value_zh">简体中文（ZH）</string>
+    <string name="engine_settings_siglus_language_value_zhtw">繁体中文（ZHTW）</string>
+    <string name="engine_settings_siglus_language_value_de">德语（DE）</string>
+    <string name="engine_settings_siglus_language_value_es">西班牙语（ES）</string>
+    <string name="engine_settings_siglus_language_value_fr">法语（FR）</string>
+    <string name="engine_settings_siglus_language_value_id">印尼语（ID）</string>
+    <string name="engine_settings_siglus_note">存档位于游戏目录 savedata/；首次启动会生成 key.toml，需开启所有文件访问权限。</string>
     <string name="engine_settings_scoped_save_dir">独立存档目录</string>
     <string name="engine_settings_skip_startup_dialogs">屏蔽游戏启动弹窗</string>
     <string name="engine_settings_skip_startup_dialogs_summary">屏蔽每次进入游戏前的重复弹窗，直接进入游戏</string>

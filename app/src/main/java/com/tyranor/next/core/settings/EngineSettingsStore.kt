@@ -48,6 +48,9 @@ object EngineSettingsStore {
     // Ren'Py 应用级默认（外置模块版本选择）
     const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
 
+    // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
+    const val KEY_SIGLUS_LANGUAGE = "siglus_language"
+
     // Ren'Py 外置模块（settings extra 的 renpy 节；cheats 发 app 节，键名与 RenPyConfigurationParser 一致）
     const val KEY_RENPY_CHEATS = "renpy_cheats"
     const val KEY_RENPY_HW_VIDEO = "renpy_hw_video"
@@ -198,6 +201,28 @@ object EngineSettingsStore {
     const val RENPY_AUTO = "auto"
     const val RENPY_85 = "8.5"
     const val RENPY_77 = "7.7.1"
+
+    // Siglus 语言取值常量（auto 不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）
+    const val SIGLUS_LANGUAGE_AUTO = "auto"
+    const val SIGLUS_LANGUAGE_JP = "JP"
+    const val SIGLUS_LANGUAGE_EN = "EN"
+    const val SIGLUS_LANGUAGE_ZH = "ZH"
+    const val SIGLUS_LANGUAGE_ZHTW = "ZHTW"
+    const val SIGLUS_LANGUAGE_DE = "DE"
+    const val SIGLUS_LANGUAGE_ES = "ES"
+    const val SIGLUS_LANGUAGE_FR = "FR"
+    const val SIGLUS_LANGUAGE_ID = "ID"
+    val SIGLUS_LANGUAGES: Set<String> = linkedSetOf(
+        SIGLUS_LANGUAGE_AUTO,
+        SIGLUS_LANGUAGE_JP,
+        SIGLUS_LANGUAGE_EN,
+        SIGLUS_LANGUAGE_ZH,
+        SIGLUS_LANGUAGE_ZHTW,
+        SIGLUS_LANGUAGE_DE,
+        SIGLUS_LANGUAGE_ES,
+        SIGLUS_LANGUAGE_FR,
+        SIGLUS_LANGUAGE_ID,
+    )
 
     // RPG Maker RGSS 外置模块取值域（对齐 JoiPlay utilities/f.java；verticalAlign 对齐插件默认）
     const val RPG_WINDOW_SIZE_DEFAULT = "640x480"
@@ -478,6 +503,14 @@ object EngineSettingsStore {
         }
     }
     fun setRenpyVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_RENPY_ENGINE_VERSION, v).apply()
+
+    // ---------- Siglus ----------
+    fun getSiglusLanguage(c: Context): String =
+        normalizeSiglusLanguage(prefs(c).getString(KEY_SIGLUS_LANGUAGE, SIGLUS_LANGUAGE_AUTO))
+    fun setSiglusLanguage(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_SIGLUS_LANGUAGE, normalizeSiglusLanguage(v)).apply()
+    fun normalizeSiglusLanguage(v: String?): String =
+        v?.trim()?.takeIf { it in SIGLUS_LANGUAGES } ?: SIGLUS_LANGUAGE_AUTO
 
     // ---------- Tyrano ----------
     fun isTyranoExternalNetwork(c: Context): Boolean = prefs(c).getBoolean(KEY_TYRANO_EXTERNAL_NETWORK, false)

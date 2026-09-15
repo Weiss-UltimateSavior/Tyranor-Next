@@ -10,6 +10,7 @@ import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.scan.SiglusTitleFeedback
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.game.cleanupDeletedGame
@@ -118,6 +119,11 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
         refreshFromStorage()
+        // Siglus 标题回写导入：引擎宿主首次启动成功后写入 GAMENAME，此处消费并差量落库
+        viewModelScope.launch(Dispatchers.IO) {
+            SiglusTitleFeedback.import(appContext)
+            refreshFromStorage()
+        }
     }
 
     fun refreshFromStorage() {

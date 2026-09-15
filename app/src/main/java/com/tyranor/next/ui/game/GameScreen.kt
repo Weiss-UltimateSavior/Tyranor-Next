@@ -1830,6 +1830,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.VN -> Color(0xFF8E5A9E)
     EngineType.WEB_OTHER -> Color(0xFF546E7A)
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
+    EngineType.SIGLUS -> Color(0xFF00838F)
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)

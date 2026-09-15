@@ -150,6 +150,19 @@
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
         </activity>
 
+        <!-- SiglusEngine（siglus_rs）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
+        <activity
+            android:name="com.core.siglus.SiglusActivity"
+            android:exported="false"
+            android:process=":siglus"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Siglus"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Siglus"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+        </activity>
+
         <!-- ONS（ons）SDL2 宿主 -->
         <activity
             android:name="com.yuri.onscripter.ONScripter"

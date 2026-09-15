@@ -470,7 +470,7 @@ private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
 
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
-    EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.RENPY -> EngineTab.GAL
+    EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.RENPY -> EngineTab.GAL
     EngineType.PSP, EngineType.NINTENDO_SWITCH -> EngineTab.CONSOLE
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
     EngineType.UNKNOWN -> EngineTab.WEB
@@ -492,6 +492,7 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.RPG_MV, EngineType.RPG_MZ -> stringResource(R.string.engine_desc_rpg_mv_mz)
     EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
     EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
+    EngineType.SIGLUS -> stringResource(R.string.engine_desc_siglus)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
     EngineType.PSP -> stringResource(R.string.engine_desc_psp)
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)

@@ -86,6 +86,9 @@ object PerGameSettingsStore {
     // Ren'Py（外置模块版本选择）
     const val F_RENPY_VERSION = "renpy_engine_version"
 
+    // Siglus（游戏语言覆盖；null=跟随全局）
+    const val F_SIGLUS_LANGUAGE = "siglus_language"
+
     // Ren'Py 外置模块配置（settings extra 的 renpy 节 + app.cheats，null=跟随全局）
     const val F_RENPY_CHEATS = "renpy_cheats"
     const val F_RENPY_HW_VIDEO = "renpy_hw_video"

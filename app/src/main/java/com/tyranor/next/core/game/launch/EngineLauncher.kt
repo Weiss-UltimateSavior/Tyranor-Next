@@ -21,12 +21,14 @@ import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.KrkrStartupDialogPolicy
 import com.core.engine.LaunchContract
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.nativeplugin.NativePluginConstants
 import com.core.rpgmaker.RpgMakerActivity
+import com.core.siglus.SiglusActivity
 import com.core.tyrano.TyranoActivity
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
@@ -105,6 +107,7 @@ object EngineLauncher {
         EngineType.VN,
         EngineType.WEB_OTHER,
         EngineType.ARTEMIS,
+        EngineType.SIGLUS,
         EngineType.RENPY,
         // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
         EngineType.PSP,
@@ -687,6 +690,8 @@ object EngineLauncher {
 
             EngineType.ARTEMIS -> buildArtemisIntent(context, path, game, patchChoice, settings)
 
+            EngineType.SIGLUS -> buildSiglusIntent(context, path, game, settings)
+
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
 
@@ -714,6 +719,38 @@ object EngineLauncher {
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT, theme.textArgb)
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, theme.mutedArgb)
         return intent
+    }
+
+    /**
+     * Siglus 启动：真实路径 + 语言覆盖 + 标题回写定位哈希。
+     * 存档目录由引擎固定为 `<游戏根>/savedata`（一期不支持独立存档）。
+     */
+    private fun buildSiglusIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent = Intent(context, SiglusActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_SIGLUS)
+        val language = settings.siglusLanguage
+        if (!language.isNullOrBlank() && language != EngineSettingsStore.SIGLUS_LANGUAGE_AUTO) {
+            putExtra(LaunchContract.SIGLUS_LANGUAGE, language)
+        }
+        val pathHash = Integer.toHexString(path.hashCode())
+        putExtra(LaunchContract.SIGLUS_PATH_HASH, pathHash)
+        // 标题回写登记：宿主写 GAMENAME，app 侧导入时需要 uri 与目录名（判断是否用户改过名）
+        context.applicationContext
+            .getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(EnginePrefs.KEY_SIGLUS_URI_PREFIX + pathHash, game.uri)
+            .putString(EnginePrefs.KEY_SIGLUS_DEFAULT_TITLE_PREFIX + pathHash, File(path).name)
+            .apply()
     }
 
     /**

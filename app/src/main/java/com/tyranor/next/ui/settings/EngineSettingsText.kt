@@ -128,6 +128,20 @@ internal fun renpyVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.RENPY_77 to "7.7.1",
 )
 
+/** Siglus 游戏语言（引擎 GET_LANGUAGE 返回值；auto 保持引擎默认 JP）。 */
+@Composable
+internal fun siglusLanguageOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.SIGLUS_LANGUAGE_AUTO to stringResource(R.string.engine_settings_siglus_language_auto),
+    EngineSettingsStore.SIGLUS_LANGUAGE_JP to stringResource(R.string.engine_settings_siglus_language_value_jp),
+    EngineSettingsStore.SIGLUS_LANGUAGE_EN to stringResource(R.string.engine_settings_siglus_language_value_en),
+    EngineSettingsStore.SIGLUS_LANGUAGE_ZH to stringResource(R.string.engine_settings_siglus_language_value_zh),
+    EngineSettingsStore.SIGLUS_LANGUAGE_ZHTW to stringResource(R.string.engine_settings_siglus_language_value_zhtw),
+    EngineSettingsStore.SIGLUS_LANGUAGE_DE to stringResource(R.string.engine_settings_siglus_language_value_de),
+    EngineSettingsStore.SIGLUS_LANGUAGE_ES to stringResource(R.string.engine_settings_siglus_language_value_es),
+    EngineSettingsStore.SIGLUS_LANGUAGE_FR to stringResource(R.string.engine_settings_siglus_language_value_fr),
+    EngineSettingsStore.SIGLUS_LANGUAGE_ID to stringResource(R.string.engine_settings_siglus_language_value_id),
+)
+
 @Composable
 internal fun artPatchOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.AUTO_PATCH_ASK to stringResource(R.string.engine_option_auto_patch_ask),
@@ -215,6 +229,9 @@ internal fun artKernelOptionsMap(): Map<String, String> = artKernelOptions().toM
 
 @Composable
 internal fun renpyVersionOptionsMap(): Map<String, String> = renpyVersionOptions().toMap()
+
+@Composable
+internal fun siglusLanguageOptionsMap(): Map<String, String> = siglusLanguageOptions().toMap()
 
 @Composable
 internal fun artPatchOptionsMap(): Map<String, String> = artPatchOptions().toMap()

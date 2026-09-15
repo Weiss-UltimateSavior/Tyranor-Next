@@ -153,6 +153,12 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_RENPY_VERSION),
                 EngineSettingsStore.getRenpyVersion(app),
             ),
+            siglusLanguage = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_SIGLUS_LANGUAGE),
+                EngineSettingsStore.getSiglusLanguage(app),
+                EngineSettingsStore.SIGLUS_LANGUAGES,
+                EngineSettingsStore.SIGLUS_LANGUAGE_AUTO,
+            ),
             rpg = EffectiveEngineSettings.mergeRpgMaker(
                 EngineSettingsStore.loadRpgMaker(app),
                 PerGameSettingsStore.toRpgMakerOverride(override),
@@ -206,6 +212,8 @@ data class ResolvedEngineSettings(
     val rpgMvVersion: String,
     val rpgMzVersion: String,
     val renpyVersion: String,
+    /** Siglus 生效语言（auto 表示不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）。 */
+    val siglusLanguage: String,
     /** RPG Maker RGSS 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val rpg: EngineSettingsStore.RpgMaker,
     /** Ren'Py 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */

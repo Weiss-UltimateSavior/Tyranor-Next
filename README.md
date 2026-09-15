@@ -4,7 +4,7 @@
   <img src="screenshots/index.png" alt="Tyranor Next" width="850" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis 四套引擎运行环境，并支持 Ren'Py、RPG Maker RGSS 外置 APK 引擎模块与 PSP / Nintendo Switch 外置模拟器跳转（PPSSPP / Eden），可识别和启动多类游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。
+基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis / Siglus 五套引擎运行环境，并支持 Ren'Py、RPG Maker RGSS 外置 APK 引擎模块与 PSP / Nintendo Switch 外置模拟器跳转（PPSSPP / Eden），可识别和启动多类游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。
 
 mac原生版本如下：
 
@@ -33,6 +33,7 @@ iOS版本计划中...
 | Kirikiri / Kirikiri2 | `.xp3`、`startup.tjs`                                                | Kirikiroid2 / krkrsdl3 原生运行时 |
 | ONScripter           | `nscript.dat`、`.nsa`                                                | ONScripter 原生运行时             |
 | Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
+| SiglusEngine         | `Gameexe.dat`/`Gameexe.ini`、`Scene.pck`（根或 `Data/`）                | Siglus 原生运行时（siglus_rs）      |
 | TyranoBuilder        | `index.html`、`tyrano/`                                              | 内置 Tyrano Web 运行环境           |
 | RPG Maker XP         | `.rgssad`、`Game.ini` + `Data/*.rxdata`                              | 外置 RPGM APK 模块               |
 | RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
@@ -74,7 +75,7 @@ PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 
 | 模块       | 职责                                                                                            |
 | -------- | --------------------------------------------------------------------------------------------- |
 | `app`    | Android 应用壳：Compose UI、功能抽象层、配置、封面、存档、授权、后台更新等应用侧能力                                           |
-| `engine` | 底层引擎运行时核心：SDL2/SDL3、Kirikiri TVP、krkrsdl3、ONScripter、Artemis、Tyrano、Native/JNI 与引擎宿主 Activity |
+| `engine` | 底层引擎运行时核心：SDL2/SDL3、Kirikiri TVP、krkrsdl3、ONScripter、Artemis、Siglus、Tyrano、Native/JNI 与引擎宿主 Activity |
 
 ### 三层目录架构
 
@@ -86,7 +87,7 @@ PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 
 
 | 层级        | 目录                                         | 职责                                                                                                     |
 | --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| 底层引擎层     | `engine/`                                  | KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Tyrano、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源与 Native 插件底层加载 |
+| 底层引擎层     | `engine/`                                  | KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Siglus、Tyrano、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源与 Native 插件底层加载 |
 | 功能抽象层     | `app/src/main/java/com/tyranor/next/core/` | 游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新                                                      |
 | 界面 UI 交互层 | `app/src/main/java/com/tyranor/next/ui/`   | Compose 页面、Activity 壳、弹窗、导航、顶部栏、搜索框、用户输入、加载态与错误态                                                       |
 
@@ -172,12 +173,14 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - `engine/` 引擎运行时基于 Tyranor 模拟器逆向重写，上游涉及 Kirikiroid2 / ONScripter 等 GPL-2.0 项目，因此整个项目以 GPL-2.0 授权分发
 - 基于本项目发布的衍生作品须遵循 GPL-2.0 条款，并随发行物提供完整源码
 - Miuix 等第三方依赖按各自许可证引入
+- Siglus 引擎运行库来自 [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0，SiglusEngine 的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
 - Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
 
 ## 致谢
 - [Kirikiroid2](https://github.com/zeas2/Kirikiroid2): Kirikiroid2引擎
 - **Tyranor 模拟器**：本项目引擎运行时与核心架构的逆向重写基础
 - [Artemis-Compat](https://github.com/Weiss-UltimateSavior/artemis-compat)：自研兼容内核
+- [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0）：SiglusEngine 的 Rust 重写与多平台移植，Siglus 运行时
 - **RinneMobile**：游戏扫描识别/SAF路径映射逻辑/独立存档映射/krkrsdl3 等多个功能的参考与实现
 - [Miuix](https://github.com/compose-miuix-ui/miuix)：设置界面组件库
 - [Anime4K](https://github.com/bloc97/Anime4K):（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）

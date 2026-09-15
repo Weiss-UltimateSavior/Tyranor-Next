@@ -109,6 +109,7 @@
     <string name="engine_desc_web_other_vn">WebOther/VN games using globalData.vndata or generic index.html pages</string>
     <string name="engine_desc_artemis">Artemis games using system.ini and .pfs archives</string>
     <string name="engine_desc_renpy">Ren’Py external APK module, launched after install-state detection</string>
+    <string name="engine_desc_siglus">SiglusEngine (Key / VisualArts), Gameexe and Scene.pck games</string>
     <string name="engine_desc_unknown">Unknown engine</string>
     <string name="engine_desc_psp">PSP games run through the external PPSSPP</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch games run through the external Eden</string>
@@ -207,6 +208,18 @@
     <string name="engine_settings_rpg_maker_title">RPG Maker engine settings</string>
     <string name="engine_settings_tyrano_title">Tyrano engine settings</string>
     <string name="engine_settings_renpy_title">Ren’Py engine settings</string>
+    <string name="engine_settings_siglus_title">Siglus engine settings</string>
+    <string name="engine_settings_siglus_language_title">Game language</string>
+    <string name="engine_settings_siglus_language_auto">Engine default (JP)</string>
+    <string name="engine_settings_siglus_language_value_jp">Japanese (JP)</string>
+    <string name="engine_settings_siglus_language_value_en">English (EN)</string>
+    <string name="engine_settings_siglus_language_value_zh">Simplified Chinese (ZH)</string>
+    <string name="engine_settings_siglus_language_value_zhtw">Traditional Chinese (ZHTW)</string>
+    <string name="engine_settings_siglus_language_value_de">German (DE)</string>
+    <string name="engine_settings_siglus_language_value_es">Spanish (ES)</string>
+    <string name="engine_settings_siglus_language_value_fr">French (FR)</string>
+    <string name="engine_settings_siglus_language_value_id">Indonesian (ID)</string>
+    <string name="engine_settings_siglus_note">Saves live in the game folder\'s savedata/. The first launch writes key.toml, so all-files access is required.</string>
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
     <string name="engine_settings_skip_startup_dialogs">Block game launch pop-ups</string>
     <string name="engine_settings_skip_startup_dialogs_summary">Block repeated pop-ups before each game launch and enter the game directly</string>

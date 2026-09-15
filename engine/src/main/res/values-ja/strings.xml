@@ -29,4 +29,7 @@
     <string name="engine_exit_game">ゲームを終了</string>
     <string name="engine_exit_game_message">現在のゲームを終了しますか？</string>
     <string name="engine_cancel">キャンセル</string>
+    <string name="engine_siglus_missing_game_dir">Siglus の起動に失敗しました：ゲームディレクトリがありません</string>
+    <string name="engine_siglus_init_failed">Siglus エンジンの初期化に失敗しました</string>
+    <string name="engine_siglus_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
 </resources>

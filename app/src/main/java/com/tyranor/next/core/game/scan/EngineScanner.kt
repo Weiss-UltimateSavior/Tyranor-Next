@@ -39,6 +39,10 @@ object EngineScanner {
     private val PFS_PATCH_NAME_RE = Regex("""^[^.]+\.pfs\.\d{3}$""")
     private val OBB_NAME_RE = Regex("""^(main|patch)\.\d+\..+\.obb$""")
 
+    /** Siglus Gameexe（含本地化变体，与引擎 GAMEEXE_CANDIDATES 对齐）。 */
+    private val GAMEEXE_DAT_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.dat$""")
+    private val GAMEEXE_INI_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.ini$""")
+
     // ============ 扫描游戏 ============
 
     /** 全量扫描所有根目录（结果以本次扫描为准，用于首次/无数据场景）。 */
@@ -607,6 +611,11 @@ object EngineScanner {
         var hasPatchPfs = false
         var hasAnyPfs = false
         var hasObbLikeFile = false
+        var hasGameexeDat = false
+        var hasGameexeIni = false
+        var hasScenePck = false
+        var hasSelectIni = false
+        var hasG00 = false
         var hasOnsScript = false
         var hasOnsArchive = false
         var hasRenpyDir = false
@@ -655,6 +664,11 @@ object EngineScanner {
                 lower == "root.pfs" || PFS_PATCH_NAME_RE.matches(lower) -> hasPatchPfs = hasPatchPfs || lower != "root.pfs"
                 lower.endsWith(".pfs") || PFS_PATCH_NAME_RE.matches(lower) -> hasAnyPfs = true
                 lower.endsWith(".obb") || OBB_NAME_RE.matches(lower) -> hasObbLikeFile = true
+                GAMEEXE_DAT_RE.matches(lower) -> hasGameexeDat = true
+                GAMEEXE_INI_RE.matches(lower) -> hasGameexeIni = true
+                lower == "scene.pck" -> hasScenePck = true
+                lower == "select.ini" -> hasSelectIni = true
+                lower.endsWith(".g00") -> hasG00 = true
                 lower == "0.txt" || lower == "00.txt" || lower == "nscript.dat" ||
                     lower == "onscript.nt2" || lower == "onscript.nt3" -> hasOnsScript = true
                 lower.endsWith(".nsa") || lower.endsWith(".sar") -> hasOnsArchive = true
@@ -682,6 +696,18 @@ object EngineScanner {
         }
         children.forEach { collect(it, "") }
 
+        if (hasGameexeDat && hasScenePck) {
+            return Detection(EngineType.SIGLUS, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeIni && hasScenePck) {
+            return Detection(EngineType.SIGLUS, 95, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeDat || hasGameexeIni) {
+            return Detection(EngineType.SIGLUS, 85, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasScenePck && hasSelectIni && hasG00) {
+            return Detection(EngineType.SIGLUS, 80, LAUNCH_TARGET_GAME_DIR)
+        }
         if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasPatchPfs || hasAnyPfs || (hasBootIni && hasObbLikeFile)) {
             return Detection(
                 EngineType.ARTEMIS,

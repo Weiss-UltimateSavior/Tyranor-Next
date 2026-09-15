@@ -708,6 +708,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var rpg by remember { mutableStateOf(EngineSettingsStore.loadRpgMaker(ctx)) }
     var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
     var renpy by remember { mutableStateOf(EngineSettingsStore.loadRenPy(ctx)) }
+    var siglusLanguage by remember { mutableStateOf(EngineSettingsStore.getSiglusLanguage(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -761,6 +762,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.saveRpgMaker(ctx, rpg)
         EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
         EngineSettingsStore.saveRenPy(ctx, renpy)
+        EngineSettingsStore.setSiglusLanguage(ctx, siglusLanguage)
     }
 
     MiuixSettingsTheme {
@@ -788,7 +790,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
-                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, fontLauncher,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -828,6 +830,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onRpg = { rpg = it },
                 onRenpyVersion = { renpyVersion = it },
                 onRenpy = { renpy = it },
+                onSiglusLanguage = { siglusLanguage = it },
             )
         }
     }
@@ -873,7 +876,7 @@ private fun LazyListPlaceholder(
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
     rpg: EngineSettingsStore.RpgMaker,
-    renpyVersion: String, renpy: EngineSettingsStore.RenPy, fontLauncher: FontPickerLauncher,
+    renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrSkipStartupDialogs: (Boolean) -> Unit,
@@ -893,6 +896,7 @@ private fun LazyListPlaceholder(
     onRpg: (EngineSettingsStore.RpgMaker) -> Unit,
     onRenpyVersion: (String) -> Unit,
     onRenpy: (EngineSettingsStore.RenPy) -> Unit,
+    onSiglusLanguage: (String) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -1082,6 +1086,23 @@ private fun LazyListPlaceholder(
 
         if (kind == EngineSettingsKind.RENPY) item {
             RenPySettingsCard(settings = renpy, onSettings = onRenpy)
+        }
+
+        if (kind == EngineSettingsKind.SIGLUS) item {
+            EngineCard("Siglus") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_siglus_language_title),
+                    siglusLanguageOptions(),
+                    siglusLanguage,
+                    onSiglusLanguage,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_siglus_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
         }
 
         item { BottomInsetSpacer() }
