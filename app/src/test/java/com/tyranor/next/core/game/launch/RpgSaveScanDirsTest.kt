@@ -1,6 +1,7 @@
 package com.tyranor.next.core.game.launch
 
 import com.tyranor.next.core.game.save.RpgSaveFormat
+import com.tyranor.next.core.game.save.RpgSaveFormatConverter
 import com.tyranor.next.core.engine.EngineType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -78,6 +79,33 @@ class RpgSaveScanDirsTest {
         val dirs = EngineLauncher.buildRpgSaveScanDirs(root.absolutePath, savedata, scoped = false)
         val keys = dirs.map { it.absolutePath.lowercase() }
         assertEquals(keys.size, keys.distinct().size)
+    }
+
+    @Test
+    fun endToEndConvertsStandardSavesFromWwwSaveIntoSavedata() {
+        // 用户场景端到端：标准档在 www/save，转化必须落到引擎读取的 <游戏根>/savedata，
+        // 且文件名为引擎实际落盘名（MV 为 key_<sha256(键)>.bin）
+        val root = mvGameRoot()
+        val savedata = root.resolve("savedata").apply { mkdirs() }
+        val wwwSave = root.resolve("www/save").apply { mkdirs() }
+        wwwSave.resolve("global.rpgsave").writeText("GLOBAL")
+        wwwSave.resolve("file21.rpgsave").writeText("FILE21")
+
+        val dirs = EngineLauncher.buildRpgSaveScanDirs(root.absolutePath, savedata, scoped = false)
+        val result = RpgSaveFormatConverter.convert(
+            outputDir = dirs.first(),
+            sourceDirs = dirs,
+            engine = EngineType.RPG_MV,
+        )
+
+        assertEquals(2, result.converted)
+        val globalName = requireNotNull(RpgSaveFormat.tyranorFileNameForStandard("global.rpgsave", EngineType.RPG_MV))
+        val file21Name = requireNotNull(RpgSaveFormat.tyranorFileNameForStandard("file21.rpgsave", EngineType.RPG_MV))
+        // 落点在引擎读取的 savedata，而不是标准目录
+        assertEquals("GLOBAL", savedata.resolve(globalName).readText())
+        assertEquals("FILE21", savedata.resolve(file21Name).readText())
+        // 标准侧源文件被留底（original/），不丢失
+        assertTrue(wwwSave.resolve("original/global.rpgsave").isFile)
     }
 
     @Test
