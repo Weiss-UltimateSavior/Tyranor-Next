@@ -87,16 +87,19 @@ fun LiquidGlassNavigationBar(
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     /**
-     * 本机 AGSL（`RuntimeShader`）是否可用。
+     * 是否允许传 `Highlight`（高光）。
      *
-     * `false` 时**不传** `Highlight`：库的 `HighlightStyle.Default.createShader` 在 API 33+ 也会
-     * `obtainRuntimeShader { RuntimeShader(...) }`，而高光由库节点在 attach/draw 期间自行构造、
-     * 调用方无法 catch。透镜档在探测失败时会回退到本档，若不掐掉这处 AGSL 依赖，兜底就等于
-     * 「从一个会崩的档退回另一个会崩的档」（见 `GlassShaderSupport`）。
+     * `false` 时本档不画高光。它只应在「**需要** AGSL 而 AGSL 不可用」时被传成 `false`：
+     * 库的 `HighlightStyle.Default` 在 API 33+ 会 `obtainRuntimeShader { RuntimeShader(...) }`，
+     * 而高光由库节点在 attach/draw 期间自行构造、调用方无法 catch——透镜档探测失败回退到本档时，
+     * 若不掐掉这处依赖，兜底就等于「从一个会崩的档退回另一个会崩的档」。
      *
-     * 正常设备保持默认值 `true`，本档画面与行为**一字不变**。
+     * 注意 **API 31–32 不是这种情况**：那里没有 `RuntimeShader`，库会走「描边 + `BlurMaskFilter`」，
+     * 高光本来就有、也不会崩，因此必须保持 `true`（调用方用
+     * `GlassShaderSupport.highlightAllowed` 计算，别直接用 `isRuntimeShaderUsable`）。
+     * 默认值 `true` 保证默认与正常设备上的画面、行为**一字不变**。
      */
-    runtimeShaderAvailable: Boolean = true,
+    highlightAvailable: Boolean = true,
 ) {
     val density = LocalDensity.current
     // 玻璃表面色随外观模式：深色模式用深色表面
@@ -145,7 +148,7 @@ fun LiquidGlassNavigationBar(
                 vibrancy()
                 blur(with(density) { 12.dp.toPx() })
             },
-            highlight = if (runtimeShaderAvailable) {
+            highlight = if (highlightAvailable) {
                 { Highlight.Default.copy(alpha = 0.85f) }
             } else {
                 null

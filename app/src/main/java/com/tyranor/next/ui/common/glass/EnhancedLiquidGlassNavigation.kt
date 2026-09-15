@@ -543,7 +543,7 @@ fun EnhancedLiquidGlassNavigationBar(
                                 depthEffect = false,
                                 chromaticAberration = spec.barLensChromatic,
                             )
-                        } catch (error: Throwable) {
+                        } catch (error: Exception) {
                             // 库的 RuntimeShader 就在本调用栈里构造：这里抛出的异常若冒泡到
                             // onAttach/updateEffects，崩的是整个主界面。就地熔断，退化为无折射。
                             GlassShaderSupport.onShaderWorkFailed("bar-lens", error)
@@ -556,7 +556,13 @@ fun EnhancedLiquidGlassNavigationBar(
             if (blurEnabled) {
                 // 注意这是常量（0.18 / 0.42），只有调用方传入 0 时才会走到 null 分支；
                 // 压力相关的那几处才是真正的逐帧判断（Backdrop 只在入参为 null 时早退）
-                { if (highlightAlpha <= 0f) null else Highlight.Default.copy(alpha = highlightAlpha) }
+                {
+                    if (highlightAlpha <= 0f || !GlassShaderSupport.highlightAllowed) {
+                        null
+                    } else {
+                        Highlight.Default.copy(alpha = highlightAlpha)
+                    }
+                }
             } else {
                 null
             }
@@ -666,7 +672,7 @@ fun EnhancedLiquidGlassNavigationBar(
                                 depthEffect = false,
                                 chromaticAberration = false,
                             )
-                        } catch (error: Throwable) {
+                        } catch (error: Exception) {
                             GlassShaderSupport.onShaderWorkFailed("copy-lens", error)
                         }
                     }
@@ -676,10 +682,14 @@ fun EnhancedLiquidGlassNavigationBar(
         val copyHighlight: (() -> Highlight?)? = remember(blurEnabled, spec, controller) {
             if (blurEnabled) {
                 {
-                    val p = controller.pressure.coerceIn(0f, 1f)
-                    Highlight.Default.copy(
-                        alpha = lerp(spec.lensHighlightAlphaRest, spec.lensHighlightAlphaPressed, p),
-                    )
+                    if (!GlassShaderSupport.highlightAllowed) {
+                        null
+                    } else {
+                        val p = controller.pressure.coerceIn(0f, 1f)
+                        Highlight.Default.copy(
+                            alpha = lerp(spec.lensHighlightAlphaRest, spec.lensHighlightAlphaPressed, p),
+                        )
+                    }
                 }
             } else {
                 null
@@ -745,20 +755,24 @@ fun EnhancedLiquidGlassNavigationBar(
                                 // 与 A 层栏体上下边缘的彩虹带分工不同，各自只做一次
                                 chromaticAberration = spec.movingLensChromatic,
                             )
-                        } catch (error: Throwable) {
+                        } catch (error: Exception) {
                             GlassShaderSupport.onShaderWorkFailed("lens-lens", error)
                         }
                     }
                 }
             }
-            // 静止也保留低强度高光（只在「折射能力不可用」时返回 null）
+            // 静止也保留低强度高光；返回 null 的条件是「折射能力不可用」或「本机高光不可用/已熔断」
             val lensHighlight: (() -> Highlight?)? = remember(refractionEnabled, spec, controller) {
                 if (refractionEnabled) {
                     {
-                        val p = controller.pressure.coerceIn(0f, 1f)
-                        Highlight.Default.copy(
-                            alpha = lerp(spec.lensHighlightAlphaRest, spec.lensHighlightAlphaPressed, p),
-                        )
+                        if (!GlassShaderSupport.highlightAllowed) {
+                            null
+                        } else {
+                            val p = controller.pressure.coerceIn(0f, 1f)
+                            Highlight.Default.copy(
+                                alpha = lerp(spec.lensHighlightAlphaRest, spec.lensHighlightAlphaPressed, p),
+                            )
+                        }
                     }
                 } else {
                     null

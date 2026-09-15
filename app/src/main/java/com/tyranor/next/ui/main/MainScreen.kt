@@ -297,9 +297,11 @@ fun MainScreen(modifier: Modifier = Modifier) {
           unselectedColor = unselectedColor,
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
-          // AGSL 不可用时经典档也不能传 Highlight（库的 HighlightStyle 同样构造 RuntimeShader），
-          // 否则「回退到经典档」这条兜底路径自己就会崩。正常设备为 true，本档画面一字不变。
-          runtimeShaderAvailable = GlassShaderSupport.isRuntimeShaderUsable,
+          // 仅在「需要 AGSL 而 AGSL 不可用」（API 33+ 探测失败）时掐掉高光：
+          // 库的 HighlightStyle 在 33+ 同样构造 RuntimeShader，不掐则回退路径自己会崩；
+          // 而 API 31–32 库走非 shader 的描边路径、本来有高光，必须保持 true
+          //（别用 isRuntimeShaderUsable——它在 33 以下恒为 false，会误删 Android 12 的高光）。
+          highlightAvailable = GlassShaderSupport.highlightAllowed,
           modifier = Modifier.align(Alignment.BottomCenter),
         )
       }

@@ -128,6 +128,25 @@ class GlassBottomBarGestureTest {
         }
     }
 
+    // ---- 高光 gate（第五轮审核抓到的 Android 12 回归）----
+
+    @Test
+    fun highlightGate_isAlwaysAllowedBelowApi33() {
+        // API 31–32：没有 RuntimeShader，库走「描边 + BlurMaskFilter」，高光本来就有、不会崩。
+        // 这里若返回 false，Android 12 经典档的高光会被无条件抹掉（正是上一版引入的回归）。
+        assertTrue("API 31 必须允许高光", highlightAllowedFor(sdkInt = 31, runtimeShaderUsable = false))
+        assertTrue("API 32 必须允许高光", highlightAllowedFor(sdkInt = 32, runtimeShaderUsable = false))
+    }
+
+    @Test
+    fun highlightGate_followsProbeFromApi33() {
+        // API 33+ 才有 RuntimeShader：探测失败就必须避让（否则回退到经典档也会崩）
+        assertTrue("API 33 探测可用 → 允许", highlightAllowedFor(sdkInt = 33, runtimeShaderUsable = true))
+        assertFalse("API 33 探测失败 → 避让", highlightAllowedFor(sdkInt = 33, runtimeShaderUsable = false))
+        assertFalse("API 34 探测失败 → 避让", highlightAllowedFor(sdkInt = 34, runtimeShaderUsable = false))
+        assertTrue("API 34 探测可用 → 允许", highlightAllowedFor(sdkInt = 34, runtimeShaderUsable = true))
+    }
+
     // ---- 脚手架 ----
 
     private suspend fun withController(
