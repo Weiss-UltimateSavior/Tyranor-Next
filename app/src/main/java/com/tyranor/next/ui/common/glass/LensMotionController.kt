@@ -24,14 +24,15 @@ internal enum class LensInteractionState { Idle, PressJump, PressedTracking, Set
 /**
  * 透镜运动控制器（本项目独立实现）。
  *
- * 结构：**一个帧循环 + 六个自积分弹簧**，没有 `Animatable`、没有互斥锁、没有 `snapshotFlow`、
+ * 结构：**一个帧循环 + 五个自积分弹簧**（位置 / 按压 / 体积宽 / 体积高 / 光斑），
+ * 没有 `Animatable`、没有互斥锁、没有 `snapshotFlow`、
  * 也没有 `VelocityTracker`。整块状态由自己按帧推进，好处是：
  * - 所有输出的时间基准一致（同一个 `withFrameNanos` 时钟），不会出现各属性各自动画导致的相位差；
  * - 「松手后先吸附、再收材质」变成循环里的一个普通条件，不需要挂起的等待流程，
- *   也就不存在旧释放流程抢在新按下之后把透镜缩回去的竞争（参考实现需要额外机制处理这一点）；
+ *   也就不存在「上一次释放流程抢在新按下之后把透镜缩回去」的竞争；
  * - 状态本身就是 Compose 快照态，绘制层直接读，动画期间不触发重组。
  *
- * 输出与弹簧参数（数值取自分析报告 §6.3 记录的参考默认档，见 [GlassBottomBarSpec]）：
+ * 输出与弹簧参数（默认值固化在 [GlassBottomBarSpec]，此处只列语义）：
  *
  * | 输出 | 含义 | 刚度 / 阻尼比 |
  * |---|---|---|
@@ -41,8 +42,8 @@ internal enum class LensInteractionState { Idle, PressJump, PressedTracking, Set
  * | [glow] | 按压光斑亮度（比体积略滞后） | 300 / 0.5 |
  *
  * **本实现不做任何速度拉伸**（用户要求：无论点击哪个图标，形变必须一致，只保留「手指按压放大」）。
- * 参考实现的速度形变 `scaleX / (1 − clamp(v/10 × 0.75))` 有方向性——索引增大被横向拉长、
- * 减小则相反，导致「点左边正常扩大、点右边左右拉伸」的不统一观感，因此整条速度链路已移除，
+ * 曾评估的 `scaleX / (1 − clamp(v/10 × 0.75))` 有方向性——索引增大被横向拉长、减小则相反，
+ * 会导致「点左边正常扩大、点右边左右拉伸」的不统一观感，因此整条速度链路已移除，
  * 形变只由按压弹簧（[pressure] / [scaleX] / [scaleY]）产生。
  */
 internal class LensMotionController(
@@ -79,7 +80,7 @@ internal class LensMotionController(
         private set
     var scaleY by mutableFloatStateOf(1f)
         private set
-    /** 按压光斑亮度：比体积弹簧更慢一档，复刻参考实现「光斑略滞后于形变」的观感。 */
+    /** 按压光斑亮度：比体积弹簧更慢一档，让光斑略滞后于形变的观感。 */
     var glow by mutableFloatStateOf(0f)
         private set
 
@@ -211,8 +212,11 @@ internal class LensMotionController(
         when {
             // 已进入按压形态：沿用「接近目标后再收材质」的既有手感
             state == LensInteractionState.PressedTracking -> {
+                // 松手即离开「跟手」语义：必须一起转到 Settling，否则状态机会停在
+                // PressedTracking（当前不可见，但后续任何按 state 分流的逻辑都会踩空）
                 pulsePending = false
                 shrinkWhenSettled = true
+                state = LensInteractionState.Settling
             }
             // 轻点：与 PR 81 最新版一致 —— 立刻起胀，边飞边变大，到位 + 压力可见后收回
             pulse -> {
@@ -308,7 +312,7 @@ internal class LensMotionController(
         }
     }
 
-    /** 单个子步的积分：推进六个弹簧并同步对外输出。 */
+    /** 单个子步的积分：推进五个弹簧并同步对外输出。 */
     private fun integrate(dt: Float) {
         positionSpring.step(dt)
         index = positionSpring.value.coerceIn(safeRange)
@@ -422,7 +426,7 @@ internal class LensMotionController(
     }
 
     private companion object {
-        /** 常规吸附弹簧（参考实现的手感）。 */
+        /** 常规吸附弹簧（吸附到整数槽位的既定手感）。 */
         const val SettleStiffness = 1000f
         const val SettleDamping = 1f
 

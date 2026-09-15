@@ -57,6 +57,7 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
+import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DarkGrey
 import com.tyranor.next.theme.glassEdgeStroke
@@ -291,10 +292,12 @@ fun glassNavBottomInset(): Dp {
             val windowWidthDp = with(density) {
                 LocalWindowInfo.current.containerSize.width.toDp()
             }.takeIf { it > 0.dp } ?: LocalConfiguration.current.screenWidthDp.dp
-            if (spec.canRender(windowWidthDp)) {
-                navBarInset + spec.hostBottomInset()
-            } else {
-                0.dp
+            when {
+                // 窗口窄到组件自己不渲染时不能留白，否则底部会空出一条
+                !spec.canRender(windowWidthDp) -> 0.dp
+                // 运行期 AGSL 不可用时 MainScreen 会退回经典档，留白必须跟着按经典档算
+                !GlassShaderSupport.isRuntimeShaderUsable -> navBarInset + 88.dp
+                else -> navBarInset + spec.hostBottomInset()
             }
         }
         // 经典档：栏高 64 + 上下各 12

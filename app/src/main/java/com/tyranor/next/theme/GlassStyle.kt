@@ -95,11 +95,6 @@ fun Modifier.glassPageBackground(accent: Color): Modifier = this.drawWithCache {
 }
 
 /**
- * 玻璃风格 0.5dp 发丝描边；默认风格原样返回。
- * 颜色/显隐由 [AppThemeColors] 快照驱动，风格切换自动重组刷新。
- * 用 drawWithContent 在内容之后绘制，保证描边盖在卡片/条目背景之上。
- */
-/**
  * 浅色档「悬浮玻璃」的边缘描边。
  *
  * 纯白/浅灰背景上，半透明玻璃表面与背景几乎同色，只剩内容透出时才看得见边界——需要一条
@@ -128,6 +123,11 @@ val GlassEdgeStrokeWidth: Dp = 0.5.dp
 /** 浅色档悬浮描边的统一不透明度（乘在中性黑上）。 */
 const val GlassEdgeStrokeAlpha: Float = 0.10f
 
+/**
+ * 玻璃风格 0.5dp 发丝描边；默认风格原样返回。
+ * 颜色/显隐由 [AppThemeColors] 快照驱动，风格切换自动重组刷新。
+ * 用 drawWithContent 在内容之后绘制，保证描边盖在卡片/条目背景之上。
+ */
 fun Modifier.glassBorder(
     shape: Shape = AppComponentShape,
     width: Dp = 0.5.dp,

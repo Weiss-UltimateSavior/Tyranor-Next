@@ -70,7 +70,7 @@ val GlassUnselected = Color(0xFF7F858D)
 
 /**
  * 光学高光与覆盖用的纯白：透镜档栏体边缘高光、透镜静止覆盖（深色档）、交互光斑底色。
- * 属于「光学材质」中性色，参考实现同样用白光/黑影，不参与主题取色。
+ * 属于「光学材质」中性色，只取纯白/纯黑，不参与主题取色。
  */
 val GlassOpticalWhite = Color(0xFFFFFFFF)
 

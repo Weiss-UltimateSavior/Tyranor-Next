@@ -6,7 +6,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DarkGrey
-import com.tyranor.next.theme.GlassNavSurface
 import com.tyranor.next.theme.GlassOpticalBlack
 import com.tyranor.next.theme.GlassOpticalWhite
 import com.tyranor.next.theme.GlassSurfaceSolid

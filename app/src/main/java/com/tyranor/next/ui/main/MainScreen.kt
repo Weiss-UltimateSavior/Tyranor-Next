@@ -72,6 +72,7 @@ import com.tyranor.next.theme.glassPageBackground
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
+import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
 import com.tyranor.next.ui.common.glass.rememberGlassBottomBarColors
 import com.tyranor.next.theme.WithoutPressIndication
@@ -157,6 +158,10 @@ fun MainScreen(modifier: Modifier = Modifier) {
     selectedIndex = index
   }
   val backdropAvailable = liquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+  // 透镜档**是否真的会渲染**：设置选了它 + 采样层可用 + 本机 AGSL 可用。
+  // 后者是运行期探测（见 GlassShaderSupport）：API 33+ 但 AGSL 编译异常的机器上，
+  // Backdrop 内部的 RuntimeShader 会在布局期抛出并崩掉整个主界面，此时退回经典档更安全。
+  val enhancedBarActive = enhanceLiquidGlass && backdropAvailable && GlassShaderSupport.isRuntimeShaderUsable
 
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
   Box(modifier.fillMaxSize()) {
@@ -175,7 +180,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       .then(if (backdropAvailable) Modifier.layerBackdrop(backdrop) else Modifier)
       .then(
         // 仅玻璃外观风格需要（该模式下 PageGrey 透明、根部背景在采样层之外）
-        if (backdropAvailable && enhanceLiquidGlass && AppThemeColors.isGlass) {
+        if (enhancedBarActive && AppThemeColors.isGlass) {
           pageBackground
         } else {
           Modifier
@@ -268,7 +273,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     if (liquidGlass) {
       // 透镜档必须要有可用采样层（backdropAvailable 已含 API 门槛与液态玻璃条件）；
       // 万一不满足则退回经典档，而不是拿未挂载的 backdrop 渲染（组件契约要求）
-      if (enhanceLiquidGlass && backdropAvailable) {
+      if (enhancedBarActive) {
         EnhancedLiquidGlassNavigationBar(
           backdrop = backdrop,
           // 权威选中值先夹取到合法槽位，避免越界值把透镜放到栏外（组件内部也会再夹一次）

@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * 透镜档底栏参数契约的纯 JVM 测试：钉住「参考默认值」与宽度夹取规则，
- * 避免后续调参时悄悄改变参考实现的既定参数（分析报告 §6.3）或窄屏行为（报告 §9）。
+ * 避免后续调参时悄悄改变已固化的既定参数或窄屏行为。
  */
 class GlassBottomBarSpecTest {
 
@@ -47,7 +47,7 @@ class GlassBottomBarSpecTest {
 
     @Test
     fun referenceGeometryDefaults_arePinned() {
-        // 几何沿用参考实现 §6.3 默认档；光学已按改造方案改为浅深分档（见下一个用例）
+        // 几何沿用既定默认档；光学已改为浅深分档（见下一个用例）
         assertEquals(64.dp, spec.barHeight)
         assertEquals(4.dp, spec.barInnerPadding)
         assertEquals(56.dp, spec.lensHeight)
@@ -218,6 +218,15 @@ class GlassBottomBarSpecTest {
         assertEquals(false, spec.canRenderLens(8.1f, 4f, tabsCount = 4, minTabWidthPx = 24f))
         assertEquals(false, spec.canRenderLens(100f, 4f, tabsCount = 4, minTabWidthPx = 24f))
         assertEquals(true, spec.canRenderLens(312f, 4f, tabsCount = 4, minTabWidthPx = 24f))
+    }
+
+    @Test
+    fun grabDelay_isClampedSoTheGrabTimerCannotStall() {
+        // 抓取延时按文档夹在 0…2000ms：脏 spec 不能让滑块立刻被抓走或长时间不跟手
+        assertEquals(0L, spec.copy(grabDelayMillis = -5L).safeGrabDelayMillis)
+        assertEquals(2_000L, spec.copy(grabDelayMillis = 9_999L).safeGrabDelayMillis)
+        assertEquals(110L, spec.copy(grabDelayMillis = 110L).safeGrabDelayMillis)
+        assertEquals(2_000L, GlassBottomBarSpec.MaxGrabDelayMillis)
     }
 
     @Test

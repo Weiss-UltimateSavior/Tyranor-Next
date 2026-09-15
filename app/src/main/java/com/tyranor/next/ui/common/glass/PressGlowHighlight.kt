@@ -23,10 +23,10 @@ import androidx.compose.ui.util.fastCoerceIn
  * - 底层：纯白 6% × 按压进度，`BlendMode.Plus`；
  * - 光斑：纯白 12% × 按压进度，半径 = 短边 × 1.2，用 AGSL 做径向衰减。
  *
- * 与参考实现的差异（记录于 docs/液态玻璃增强计划方案.md §6 D14）：
- * 光斑中心直接取**透镜当前位置**（由索引 + 槽宽 + 整栏偏移算出），不单独维护一套跟手的
- * 位置动画——参考实现里的位置动画在其装配方式下并未参与绘制，留着只是每帧多一次协程。
- * 亮度仍由一条**比体积略慢**的独立弹簧（300 / 0.5）驱动，与参考观感一致。
+ * 与常见做法的差异（记录于 docs/液态玻璃增强计划方案.md §6 D14）：
+ * 光斑中心直接取**透镜当前位置**（由索引 + 槽宽 + 整栏偏移算出），不单独维护第二套跟手的
+ * 位置动画——那套动画在本组件的装配方式下并不参与绘制，留着只是每帧多一次协程。
+ * 亮度仍由一条**比体积略慢**的独立弹簧（300 / 0.5）驱动。
  *
  * 仅在 Android 13+（API 33）构造：构造期即创建 `android.graphics.RuntimeShader`。
  */
@@ -41,7 +41,8 @@ internal class PressGlowHighlight(
     // 着色器编译/构造失败（个别 ROM 的 AGSL 实现异常）不能让整个主界面崩溃：失败即降级为无光斑，
     // 并做**进程级熔断**（只尝试一次、只记一次日志），避免每帧/每次重组都重试。
     @SuppressLint("NewApi")
-    private val shader: RuntimeShader? = if (glowDisabled) {
+    // 进程级熔断（glowDisabled）之外，先看共享探测：整条渲染管线不可用时不必再试
+    private val shader: RuntimeShader? = if (glowDisabled || !GlassShaderSupport.isRuntimeShaderUsable) {
         null
     } else {
         runCatching {

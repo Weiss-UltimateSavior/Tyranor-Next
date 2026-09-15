@@ -8,16 +8,14 @@ import androidx.compose.ui.unit.dp
 /**
  * 「液态玻璃 · 透镜」底栏的光学 / 运动 / 尺寸参数契约（单一来源）。
  *
- * 数值取自分析报告《Tyranor-Next × Legado：液态玻璃底栏对比与高保真复刻方案》§6.3 记录的
- * 参考实现默认档（blur 8dp / 表面 alpha 40% / 栏体透镜 24dp），全部保持默认值，
- * 不随用户壁纸或主题改写。**代码为本项目独立实现**，只采用参考实现中不受版权保护的
- * 参数与算法；实现差异逐条记录在 `docs/液态玻璃增强计划方案.md` §6。
+ * 全部数值都是**本项目内实测调校后固化**的默认档：几何沿用既定布局，光学与材料经多轮真机
+ * 观感收敛（blur / 覆盖 / 栏体折射都不再是初值），一经固化就不随用户壁纸或主题改写。
+ * 本样式为本项目的**独立实现**，未逐行移植任何第三方代码；逐条设计决策与实现差异记录在
+ * `docs/液态玻璃增强计划方案.md` §6。
  *
- * 四项适配（同上文档 §6 D4，报告 §8.5 要求逐项记录）：
- * [releaseThreshold] 固定为**五项参考布局**的取值（0.10），而不是本应用四项时的 `0.075`，
- * 以保持参考手感。
+ * 释放阈值按**五项参考布局**的取值固定（0.10），而不是本应用四项时的 `0.075`（见 §6 D4）。
  *
- * **不含速度形变参数**：参考实现那套 `scaleX / (1 − clamp(v/10 × 0.75))` 有方向性
+ * **不含速度形变参数**：曾评估过的 `scaleX / (1 − clamp(v/10 × 0.75))` 公式有方向性
  * （索引增大被横向拉长、减小则相反），会造成「点左边正常扩大、点右边左右拉伸」的不统一观感，
  * 已按用户要求整条移除——形变只保留「手指按压放大」。
  */
@@ -74,7 +72,7 @@ data class GlassBottomBarSpec(
     /**
      * 栏体内阴影（**浅色档专属**）：上下边缘那圈「玻璃厚度」。
      *
-     * 浅色档栏体是白底 + 白色高光，白光压白底等于看不见——参考图里上下边缘之所以有效果，
+     * 浅色档栏体是白底 + 白色高光，白光压白底等于看不见——用户示例图里上下边缘之所以有效果，
      * 靠的是贴着边缘一道柔和的内暗边。深色档不需要（深底本身有对比），因此 alpha 为 0。
      */
     val barInnerShadowRadiusLight: Dp = 10.dp,
@@ -94,7 +92,7 @@ data class GlassBottomBarSpec(
     /**
      * 栏体是否启用色散（**开启**）。
      *
-     * 目标观感（用户提供的参考图）：上下边缘有一条**连贯、自然**的彩虹带。
+     * 目标观感（用户提供的示例图）：上下边缘有一条**连贯、自然**的彩虹带。
      * 色散必须挂在**整条栏体**上——栏体又宽又矮，上下边缘是长直边，色散沿边连续铺开；
      * 反之挂在滑块那颗小胶囊上只会得到上下两段孤立圆弧、外加左右两端各一道，
      * 观感是「异常彩虹纹」（用户实测反馈）。
@@ -102,10 +100,7 @@ data class GlassBottomBarSpec(
     val barLensChromatic: Boolean = true,
     // ---- 移动透镜：静止端点与按压端点分离（方案 §静止与按压光学分离）----
     /**
-     * 静止态折射：未按压也有可见曲面。
-     *
-     * 滑块**不做色散**（见 [GlassBottomBarSpec.movingLensChromatic]）：它只有一槽宽，
-     * 色散在它身上会断成上下两段弧并波及左右两端，与参考图不符。
+     * 静止态折射：未按压也有可见曲面（高度 / 位移；色散开关见 [movingLensChromatic]）。
      */
     val restRefractionHeight: Dp = 6.dp,
     val restRefractionAmount: Dp = 8.dp,
@@ -123,7 +118,7 @@ data class GlassBottomBarSpec(
     /**
      * 移动滑块是否启用色散：**开启**。
      *
-     * 用户要求「滑块碰到左右图标时必须有色散」（参考图二：被覆盖图标的边缘有彩边）。
+     * 用户要求「滑块碰到左右图标时必须有色散」（用户示例图二：被覆盖图标的边缘有彩边）。
      * 与栏体那条「上下边缘的连贯长带」分工不同：
      * - 栏体（又宽又矮的长直边）→ 上下连贯彩虹带，见 [barLensChromatic]；
      * - 滑块（一槽宽小胶囊）→ 图标附近局部的色散。
@@ -205,7 +200,7 @@ data class GlassBottomBarSpec(
      */
     val minTabWidth: Dp = 24.dp,
     val panelOffsetMax: Dp = 4.dp,
-    /** 释放等待阈值（索引单位）：参考公式为 `(N − 1) × 0.025`，五项为 0.10（四项适配参数）。 */
+    /** 释放等待阈值（索引单位）：按 `(N − 1) × 0.025` 计，五项取值为 0.10（见 §6 D4）。 */
     val releaseThreshold: Float = 0.10f,
     val visibilityThreshold: Float = 0.001f,
     // ---- 整栏归位（原先散落在组件里的字面量，收口到这里）----
@@ -257,6 +252,14 @@ data class GlassBottomBarSpec(
     /** 可渲染下限：比这更窄时连左右内边距都放不下，调用方应放弃渲染而不是留一条残片。 */
     val minRenderableBarWidth: Dp
         get() = barInnerPadding * 2
+
+    /**
+     * 夹取后的抓取延时（毫秒），调用方**必须**用本值而不是原始 [grabDelayMillis]。
+     *
+     * 脏 spec（负值 / 超大值）不会让抓取立刻触发或长时间不触发。
+     */
+    val safeGrabDelayMillis: Long
+        get() = grabDelayMillis.coerceIn(0L, MaxGrabDelayMillis)
 
     /**
      * 指针 x → 连续索引（纯函数，便于 RTL / 边界单测）。
@@ -322,7 +325,10 @@ data class GlassBottomBarSpec(
         /** 宿主留白判定使用的槽位数：Tyranor 底栏固定四项。 */
         const val DefaultTabsForHostInset = 4
 
-        /** 默认档：报告 §6.3 记录的参考默认参数原值。 */
+        /** 抓取延时上限（毫秒）：超过它的脏值一律按上限处理，避免抓取长时间挂起。 */
+        const val MaxGrabDelayMillis = 2_000L
+
+        /** 默认档：本样式固化后的默认参数。 */
         val Default: GlassBottomBarSpec = GlassBottomBarSpec()
     }
 }

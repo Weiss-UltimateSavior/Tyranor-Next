@@ -5,7 +5,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastFirstOrNull
+import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 
@@ -92,5 +94,47 @@ internal suspend fun PointerInputScope.detectBottomBarPress(
 
         // 严格 once：无论走哪条分支都只回调一次终态
         if (finished) onUp(lastPosition, dragged) else onCancel()
+    }
+}
+
+/**
+ * 松手时的路径决策（纯函数 + 密封类型，便于回归测试）。
+ *
+ * 上一轮审核抓到的回归正出在这里：`beginPressAt` 已经把压力目标置为 1，而**只有**
+ * `settleAt` / `endPress` / `cancelPress` 会把压力收回——若「全程未抓取的轻点」被接到
+ * 「什么都不做」，滑块就会永久停在按下态。把「松手走哪条路、要不要起胀」收成一个可单测的
+ * 纯决策，接线错误就能在单测里暴露，而不是等到真机上手感不对。
+ */
+internal sealed interface GlassPressRelease {
+    /** 本次松手要请求选择的槽位（已夹取到合法范围）。 */
+    val index: Int
+
+    /** 抓取过（按住 / 拖动）：按正常尺寸吸附到最近槽位，**不再补膨胀**。 */
+    data class Commit(override val index: Int) : GlassPressRelease
+
+    /** 全程未抓取 = 一次轻点：走单相吸附路径；[pulse] 只在跨槽位时为真。 */
+    data class Tap(override val index: Int, val pulse: Boolean) : GlassPressRelease
+}
+
+/**
+ * 由「本次物理会话是否抓取过」决定松手路径。
+ *
+ * @param grabbed 按住到抓取阈值或真正拖动过
+ * @param pointerIndex 松手点的连续索引
+ * @param selectedIndex 当前权威选中槽位（轻点同槽不起胀，滑块本来就在那里）
+ * @param tabs 槽位数（索引一律夹取，脏输入不会把透镜放到栏外）
+ */
+internal fun glassPressRelease(
+    grabbed: Boolean,
+    pointerIndex: Float,
+    selectedIndex: Int,
+    tabs: Int,
+): GlassPressRelease {
+    val lastSlot = (tabs - 1).coerceAtLeast(0)
+    val index = pointerIndex.fastRoundToInt().fastCoerceIn(0, lastSlot)
+    return if (grabbed) {
+        GlassPressRelease.Commit(index)
+    } else {
+        GlassPressRelease.Tap(index, pulse = index != selectedIndex)
     }
 }

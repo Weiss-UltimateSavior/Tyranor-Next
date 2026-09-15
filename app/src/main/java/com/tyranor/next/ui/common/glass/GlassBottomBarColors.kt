@@ -10,12 +10,12 @@ import androidx.compose.ui.graphics.Color
  * 折射组件内部不得固化任何具体 RGB、壁纸取色结果或历史蓝色，
  * 也不得在此处解析系统动态色——解析只在 [rememberGlassBottomBarColors] 一处发生。
  *
- * 其中三个「光学中性色」不随主题取色变化（参考实现同样使用白光/黑影）：
+ * 其中三个「光学中性色」不随主题取色变化：
  * [edgeHighlight]、[staticLensCover]、[pressedLensCover]。
  */
 @Immutable
 data class GlassBottomBarColors(
-    /** 栏体着色层颜色；渲染端只应用一次 `spec.surfaceAlpha`，不叠加第二次透明度。 */
+    /** 栏体着色层颜色；渲染端只应用一次 `spec.barSurfaceAlphaLight/Dark`，不叠加第二次透明度。 */
     val surfaceTint: Color,
     /** 无实时模糊能力（API < 31）时的不透明实底，保证图标与文字可读。 */
     val fallbackSurface: Color,

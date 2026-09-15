@@ -45,9 +45,9 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -65,7 +65,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.fastCoerceIn
-import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.BackdropEffectScope
@@ -126,6 +125,9 @@ private val LocalGlassIconScale = staticCompositionLocalOf { { 1f } }
  * @param items 导航项（图标 + 无障碍标签）。
  * @param onItemClick 提交切换：点击与拖动释放都走这里。
  */
+/** 三层 backdrop 共用的胶囊形状提供者：`Function0<Shape>` 取稳定实例，避免重组时更换引用。 */
+private val NavCapsuleShape: () -> Shape = { AppNavCapsuleShape }
+
 @Composable
 fun EnhancedLiquidGlassNavigationBar(
     backdrop: Backdrop,
@@ -368,7 +370,7 @@ fun EnhancedLiquidGlassNavigationBar(
                         // · 按住不放 / 开始拖动 → 到阈值后把滑块抓到手指出（用户要求的跟随）
                         grabJob?.cancel()
                         grabJob = scope.launch {
-                            delay(spec.grabDelayMillis)
+                            delay(spec.safeGrabDelayMillis)
                             if (sessionActive && !sessionGrabbed) {
                                 sessionGrabbed = true
                                 controller.beginPressAt(pointerIndex)
@@ -397,26 +399,29 @@ fun EnhancedLiquidGlassNavigationBar(
                             .coerceIn(-currentBarWidthPx, currentBarWidthPx)
                     }
                 },
-                onUp = { position, dragged ->
+                onUp = { position, _ ->
                     grabJob?.cancel()
                     sessionActive = false
                     pointerIndex = pointerXToIndex(position.x)
-                    val index = pointerIndex.fastRoundToInt().fastCoerceIn(0, tabs - 1)
-                    if (sessionGrabbed) {
+                    // 路径分流交给纯函数（见 glassPressRelease）：两条路都必须把压力收回，
+                    // 「轻点什么都不做」会让滑块永久停在按下态（本轮回归的成因）。
+                    val release = glassPressRelease(
+                        grabbed = sessionGrabbed,
+                        pointerIndex = pointerIndex,
+                        selectedIndex = currentSelectedIndex,
+                        tabs = tabs,
+                    )
+                    when (release) {
                         // 已经抓取过：正常尺寸吸附 + 收回材质（不再补膨胀，避免「松手后被撑大」）
-                        controller.endPress(index, pulse = false)
-                    } else {
+                        is GlassPressRelease.Commit -> controller.endPress(release.index, pulse = false)
                         // 全程未抓取 = 一次轻点：**完全走 PR81 的点击路径** ——
                         // settleAt(pulse = true)：起胀与滑行同时开始的单相运动，最顺滑。
-                        // 目标是当前选中项时不必起胀（滑块本来就在那里）。
-                        controller.settleAt(
-                            index.toFloat(),
-                            pulse = index != currentSelectedIndex,
-                        )
+                        is GlassPressRelease.Tap ->
+                            controller.settleAt(release.index.toFloat(), pulse = release.pulse)
                     }
                     sessionGrabbed = false
                     recenterPanel()
-                    requestSelection(index)
+                    requestSelection(release.index)
                 },
                 onCancel = {
                     grabJob?.cancel()
@@ -541,7 +546,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     }
                 }
             }
-        // 边缘高光：参考实现直接使用 Highlight.Default（自带 50% 白），本实现只取其一部分（文档 §6 D12）
+        // 边缘高光：不使用 Highlight.Default 的满强度（自带 50% 白），只取其中一部分（文档 §6 D12）
         val barHighlight: (() -> Highlight?)? = remember(blurEnabled, highlightAlpha) {
             if (blurEnabled) {
                 // 注意这是常量（0.18 / 0.42），只有调用方传入 0 时才会走到 null 分支；
@@ -601,14 +606,14 @@ fun EnhancedLiquidGlassNavigationBar(
                 // 表现为「按下能赴按、但无法拖动跟手」。
                 .drawBackdrop(
                     backdrop = backdrop,
-                    shape = { AppNavCapsuleShape },
+                    shape = NavCapsuleShape,
                     effects = barEffects,
                     highlight = barHighlight,
                     // 阴影与经典档（`LiquidGlassNavigationBar` 的 `Shadow.Default.copy(alpha = 0.8f)`，
-                    // 等效约 8% 黑）**完全一致**，两档观感统一（§6 D26）。参考实现那套
-                    // 「浅色 10% / 深色 20% 黑、24dp 模糊、下移 4dp」强 2.5 倍，仍不采用（§6 D11）。
+                    // 等效约 8% 黑）**完全一致**，两档观感统一（§6 D26）。更强的投影方案
+                    // 「浅色 10% / 深色 20% 黑、24dp 模糊、下移 4dp」（强 2.5 倍）仍不采用（§6 D11）。
                     shadow = { Shadow.Default.copy(alpha = 0.8f) },
-                    // 浅色档：贴着上下边缘的柔和内暗边，形成参考图那种「玻璃厚度」
+                    // 浅色档：贴着上下边缘的柔和内暗边，形成「玻璃厚度」的观感
                     innerShadow = barInnerShadow,
                     layerBlock = barPressLayer,
                     onDrawSurface = barSurface,
@@ -635,9 +640,10 @@ fun EnhancedLiquidGlassNavigationBar(
         }
 
         // ---- B 采样副本：输出不可见（alpha 0），内部内容被录进 tabsBackdrop 供透镜采样 ----
-        // 与 A 层**同一套材料**（方案 §移除 B 层重复折射）：B 不再做任何 lens，
-        // 图标的折射只在 C 层发生一次，避免二次折射把蓝色图标拉出尖刺。
-        // 同时这也消除了「采样边距随按压逐帧变化 → 离屏层逐帧改尺寸」的旧成本（旧 D13）。
+        // 与 A 层同样做轻微模糊 + 遮罩，但**不做色散**：彩边只由 A（可见栏体上下边缘的彩虹带）
+        // 与 C（滑块压到图标时的一圈彩边）各承担一次。B 若也带色散，采样内容会先被染上彩边，
+        // 再被 C 折射一次，出现「二次色散把蓝色图标拉出尖刺」。
+        // B 的折射量也不随按压变化，采样边距因此固定，离屏层不再逐帧改尺寸（旧 D13 的成本已消）。
         val copyEffects: BackdropEffectScope.() -> Unit =
             remember(blurEnabled, refractionEnabled, spec, barBlurRadius, barColorFilter) {
                 {
@@ -646,13 +652,13 @@ fun EnhancedLiquidGlassNavigationBar(
                         blur(barBlurRadius.toPx())
                     }
                     if (refractionEnabled) {
-                        // 栏体：保留厚度折射，但**不做色散**（色散会让栏体上下边缘与左右两端
-                        // 出现彩虹弧；参考图里栏体边缘是干净的）
+                        // 采样副本：只保留轻微厚度折射，**不做色散**（显式传 false，不跟随
+                        // spec.barLensChromatic——那是给 A 层可见栏体的彩虹带用的）
                         lens(
                             refractionHeight = barLensHeightPx,
                             refractionAmount = barLensAmountPx,
                             depthEffect = false,
-                            chromaticAberration = spec.barLensChromatic,
+                            chromaticAberration = false,
                         )
                     }
                 }
@@ -687,7 +693,7 @@ fun EnhancedLiquidGlassNavigationBar(
                     .graphicsLayer { translationX = panelShift }
                     .drawBackdrop(
                         backdrop = backdrop,
-                        shape = { AppNavCapsuleShape },
+                        shape = NavCapsuleShape,
                         effects = copyEffects,
                         // 采样副本行同样不画投影（其输出本就不可见，留着只会白建一层离屏层）
                         highlight = copyHighlight,
@@ -725,7 +731,8 @@ fun EnhancedLiquidGlassNavigationBar(
                                 p,
                             ),
                             depthEffect = false,
-                            // 滑块不做色散：它只有一槽宽，色散会断成上下两段弧并波及左右两端
+                            // 滑块压到图标时给一圈彩边（用户要求的「覆盖图标时的彩边」）；
+                            // 与 A 层栏体上下边缘的彩虹带分工不同，各自只做一次
                             chromaticAberration = spec.movingLensChromatic,
                         )
                     }
@@ -820,7 +827,7 @@ fun EnhancedLiquidGlassNavigationBar(
                         .width(lensWidth)
                         .drawBackdrop(
                             backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
-                            shape = { AppNavCapsuleShape },
+                            shape = NavCapsuleShape,
                             effects = lensEffects,
                             highlight = lensHighlight,
                             shadow = lensShadow,
@@ -939,10 +946,3 @@ private fun buildBarColorFilter(brightness: Float, contrast: Float, saturation: 
     return ColorFilter.colorMatrix(ColorMatrix(values))
 }
 
-/**
- * 「压力小到看不见」的判定阈值。
- *
- * 压力弹簧没有 snap-to-target，帧循环停下时它会停在 `(0, epsilon]` 区间而**不会精确归零**，
- * 用 `<= 0f` 判断会让这些透明高光层在首次按压后一直录制下去。
- */
-private const val MotionVisiblePressure = 1e-3f
