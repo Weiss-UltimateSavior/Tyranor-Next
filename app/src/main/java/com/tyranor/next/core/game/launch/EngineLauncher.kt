@@ -16,6 +16,7 @@ import com.akira.tyranoemu.remote.ArtemisActivityV2
 import com.akira.tyranoemu.remote.ArtemisActivityV3
 import com.akira.tyranoemu.remote.ArtemisActivityV4
 import com.akira.tyranoemu.remote.ArtemisActivityV5
+import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
@@ -23,9 +24,12 @@ import com.core.engine.EngineSessionRegistry
 import com.core.engine.KrkrStartupDialogPolicy
 import com.core.engine.LaunchContract
 import com.core.krkrsdl3.Krkrsdl3Activity
+import com.core.nativeplugin.NativePluginConstants
 import com.core.rpgmaker.RpgMakerActivity
 import com.core.tyrano.TyranoActivity
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
+import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -100,6 +104,9 @@ object EngineLauncher {
         EngineType.WEB_OTHER,
         EngineType.ARTEMIS,
         EngineType.RENPY,
+        // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
+        EngineType.PSP,
+        EngineType.NINTENDO_SWITCH,
     ).sortedByDescending { it.displayName.length }
 
     /** Artemis 补丁确认弹窗的用户选择：
@@ -132,6 +139,16 @@ object EngineLauncher {
     }
 
     private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
+        // 外置主机模拟器（PSP / Switch）：ROM 文件型游戏不解析目录、不走内置引擎与外置 APK 模块链路
+        ExternalEmulatorRegistry.forEngine(game.engine)?.let { target ->
+            currentCoroutineContext().ensureActive()
+            val result = ExternalEmulatorLauncher.launch(context, target, game.uri)
+            if (result.success) {
+                GameLibraryFacade.recordRecentGame(context, game)
+                return LaunchResult.Success
+            }
+            return LaunchResult.Failure.ExternalEmulatorFailed(result)
+        }
         val path = resolveGameDirectory(context, game)
         // 三级设置（应用级 + 单游戏覆盖）一次性解析，后续 Intent 组装只消费生效值（P0-3）
         val settings = EngineSettingsResolver.resolve(context, game, path)
@@ -267,7 +284,10 @@ object EngineLauncher {
         withContext(Dispatchers.IO) {
             if (game.engine != EngineType.ARTEMIS) return@withContext false
             // 单游戏覆盖值走白名单校验：损坏/历史遗留的非法值回退全局，防止静默改变补丁行为
-            val strategy = EngineSettingsResolver.resolve(context, game, null).artAutoPatch
+            val settings = EngineSettingsResolver.resolve(context, game, null)
+            // 自研内核不做 PFS/system.ini 补丁，无需询问
+            if (settings.artKernel == EngineSettingsStore.ART_KERNEL_CLEAN) return@withContext false
+            val strategy = settings.artAutoPatch
             if (strategy != EngineSettingsStore.AUTO_PATCH_ASK) return@withContext false
             val path = resolveGameDirectory(context, game) ?: return@withContext false
             ArtemisPfsUnpacker.needsBasePatch(path)
@@ -668,6 +688,10 @@ object EngineLauncher {
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
 
+            // PSP / Switch 由外置模拟器跳转承载，在 launchInternalChecked 前置分流，不会走到这里
+            EngineType.PSP,
+            EngineType.NINTENDO_SWITCH -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
+
             EngineType.UNKNOWN -> Intent(context, TyranoActivity::class.java).apply {
                 putExtra(LaunchContract.PATH, path)
                 putExtra(LaunchContract.GAME_PATH, path)
@@ -913,6 +937,9 @@ object EngineLauncher {
      * 再由 ArtemisLauncherBaseActivity 在早退时跨进程尝试下一候选版本。
      * 策略为“启动时询问”时由 UI 层先弹窗确认（needsArtemisPatchConfirm）；
      * [patchChoice] 为弹窗选择，本次/总是按 auto、不再按 off 覆盖生效值（持久化在 launch() 完成）。
+     *
+     * 自研 clean-room 内核（[EngineSettingsStore.ART_KERNEL_CLEAN]）走独立分支：单库无版本、
+     * 不做 PFS/system.ini 补丁、不参与官方回退链（严格自研，失败即退出）。
      */
     private fun buildArtemisIntent(
         context: Context,
@@ -921,6 +948,9 @@ object EngineLauncher {
         patchChoice: ArtemisPatchChoice? = null,
         settings: ResolvedEngineSettings,
     ): Intent {
+        if (settings.artKernel == EngineSettingsStore.ART_KERNEL_CLEAN) {
+            return buildArtemisCleanIntent(context, path, game, settings)
+        }
         // 版本/补丁策略的覆盖值已在解析器内走白名单，非法持久化值回退全局（P0-3）
         var version = settings.artVersion
         val rotate = settings.artRotate
@@ -986,6 +1016,30 @@ object EngineLauncher {
             putExtra(LaunchContract.ARTEMIS_FALLBACK_INDEX, fallbackIndex)
             putExtra(LaunchContract.ARTEMIS_AUTO_PLAN_REASON, planReason)
         }
+    }
+
+    /**
+     * 自研内核启动 Intent：独立 Activity/进程 + `artemis-clean` 库名。
+     * 不写 PFS 基础补丁与 system.ini（该内核直接从游戏包内读取配置/资源，散装补丁无意义），
+     * 不传回退链（严格自研）。旋转设置仍然生效（由 launcher 基类消费 orientation extra）。
+     */
+    private fun buildArtemisCleanIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent = Intent(context, ArtemisActivityClean::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
+        putExtra(LaunchContract.ORIENTATION, if (settings.artRotate) 8 else 6)
+        putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
+        // artemis_loader 按 "lib<engineLibName>.so" 拼路径，需传库名（不带 lib 前缀）
+        putExtra(LaunchContract.ENGINE_LIB_NAME, NativePluginConstants.ARTEMIS_CLEAN_ENGINE_LIB_NAME)
+        putExtra(LaunchContract.ARTEMIS_AUTO_FALLBACK, false)
+        putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, "clean")
     }
 
     private fun fallbackChainStartingWith(version: String): List<String> =

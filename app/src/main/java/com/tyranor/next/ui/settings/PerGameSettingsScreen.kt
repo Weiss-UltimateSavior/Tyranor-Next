@@ -75,6 +75,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         remember(gid, field) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, field)) }
     }
 
+    var artKernel by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_KERNEL)) }
     var artVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION)) }
     var artRotate by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE)) }
     var artPatch by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH)) }
@@ -154,6 +155,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalForce = EngineSettingsStore.isKrForceDefaultFont(ctx)
     val configuredGlobalRenderer = EngineSettingsStore.getKrRenderer(ctx)
     val globalOns = remember { EngineSettingsStore.loadOns(ctx) }
+    val globalArtKernel = EngineSettingsStore.getArtKernel(ctx)
     val globalArtVersion = EngineSettingsStore.getArtEngineVersion(ctx)
     val globalArtRotate = EngineSettingsStore.isArtRotateScreen(ctx)
     val globalArtPatch = EngineSettingsStore.getArtAutoPatch(ctx)
@@ -187,6 +189,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val krTexsizeMap = krTexSizeOptionsMap()
     val krFpsMap = krFpsOptionsMap()
     val onsEncodingMap = onsEncodingOptionsMap()
+    val artKernelMap = artKernelOptionsMap()
     val artVersionMap = artVersionOptionsMap()
     val renpyVersionMap = renpyVersionOptionsMap()
     val artPatchMap = artPatchOptionsMap()
@@ -238,6 +241,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
             } else st.value
             PerGameSettingsStore.setStr(ctx, gid, field, v)
         }
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_KERNEL, artKernel)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_VERSION, artVersion)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_ART_ROTATE, artRotate)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_PATCH, artPatch)
@@ -455,14 +459,26 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                     EngineType.ARTEMIS -> item {
                         SectionCard("Artemis") {
-                            OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
+                            val effectiveArtKernel = artKernel ?: globalArtKernel
+                            OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
-                            OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
-                            OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
-                            OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
-                            OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
-                            OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
-                            OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
+                            if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                                OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
+                                OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
+                            } else {
+                                // 自研内核直接读游戏包内配置，官方专属项不适用
+                                Text(
+                                    stringResource(R.string.engine_settings_artemis_clean_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                )
+                            }
                         }
                     }
                     EngineType.RENPY -> item {
@@ -627,6 +643,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
                             }
+                        }
+                    }
+                    EngineType.PSP, EngineType.NINTENDO_SWITCH -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_external_emulator_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
                         }
                     }
                 }

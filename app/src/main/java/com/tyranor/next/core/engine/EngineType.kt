@@ -12,5 +12,7 @@ enum class EngineType(val displayName: String) {
     WEB_OTHER("WebOther"),
     ARTEMIS("Artemis"),
     RENPY("Ren'Py"),
+    PSP("PSP"),
+    NINTENDO_SWITCH("Nintendo Switch"),
     UNKNOWN("Unknown");
 }

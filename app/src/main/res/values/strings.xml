@@ -33,6 +33,7 @@
     <string name="settings_theme_mode_dark">深色</string>
     <string name="settings_tone_switch">色调切换</string>
     <string name="settings_liquid_glass_nav">圆角液态玻璃导航</string>
+    <string name="settings_engine_tabs">引擎页分类显示</string>
     <string name="settings_invalid_theme_color">不支持透明色或黑白灰色</string>
 
     <string name="settings_update_latest">已经是最新版本</string>
@@ -104,7 +105,25 @@
     <string name="engine_desc_artemis">Artemis，system.ini 与 .pfs 归档游戏</string>
     <string name="engine_desc_renpy">Ren’Py 外置 APK 模块，检测安装状态后启动</string>
     <string name="engine_desc_unknown">未知引擎</string>
+    <string name="engine_desc_psp">PSP 游戏通过外置 PPSSPP 运行</string>
+    <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
+    <string name="engine_external_jump_title">外置跳转支持</string>
+    <string name="engine_external_jump_summary">PPSSPP / Eden</string>
+    <string name="engine_tab_rpgm">RPGM</string>
+    <string name="engine_tab_gal">GAL</string>
+    <string name="engine_tab_console">主机</string>
+    <string name="engine_tab_web">网页</string>
+    <string name="engine_emulator_ppsspp">PPSSPP</string>
+    <string name="engine_emulator_eden">Eden</string>
+    <string name="engine_emulator_installed">已安装</string>
+    <string name="engine_emulator_not_installed">未安装</string>
+    <string name="engine_settings_external_emulator_hint">该游戏由外置模拟器运行，设置与存档由模拟器管理。</string>
+    <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
+    <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
+    <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
+    <string name="launch_emulator_failed">%1$s 启动失败</string>
     <string name="engine_name_unknown">未知引擎</string>
+    <string name="engine_name_switch">Switch</string>
     <string name="engine_name_web">Web 游戏</string>
 
     <string name="game_title">游戏</string>
@@ -220,6 +239,7 @@
     <string name="engine_settings_artemis_surface_cache">图像缓存</string>
     <string name="engine_settings_artemis_font_cache">字体缓存</string>
     <string name="engine_settings_artemis_power_saving">省电绘制</string>
+    <string name="engine_settings_artemis_clean_hint">自研内核直接从游戏包读取资源与配置，官方版本/补丁/显示注入项不适用。</string>
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>
@@ -255,6 +275,8 @@
     <string name="engine_option_low">低</string>
     <string name="engine_option_threads">%1$d 线程</string>
     <string name="engine_option_auto_patch_ask">启动时询问</string>
+    <string name="engine_option_art_kernel_official">官方内核</string>
+    <string name="engine_option_art_kernel_clean">自研内核</string>
     <string name="engine_option_force_enable">强制启用</string>
     <string name="engine_option_off">关闭</string>
     <string name="engine_option_rpg_mv_v0">Tyranor-2.3.4</string>

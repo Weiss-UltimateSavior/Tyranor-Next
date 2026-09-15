@@ -126,6 +126,18 @@
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
         </activity>
+        <!-- 自研 clean-room 兼容内核（artemis-compat）：独立进程，严格自研往返不参与官方回退链 -->
+        <activity
+            android:name="com.akira.tyranoemu.remote.ArtemisActivityClean"
+            android:exported="false"
+            android:process=":artemis.clean"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Artemis"
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
+        </activity>
 
         <!-- ONS（ons）SDL2 宿主 -->
         <activity

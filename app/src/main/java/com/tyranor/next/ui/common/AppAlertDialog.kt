@@ -60,7 +60,10 @@ internal fun AppAlertDialog(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    val windowHeightPx = with(density) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val configuration = LocalConfiguration.current
+    val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
+    // 正文区域高度上限随屏幕自适应：固定 420dp 会在长列表（如 Artemis 全版本）末条截断
+    val textMaxHeight = (configuration.screenHeightDp * 0.62f).dp.coerceIn(280.dp, 560.dp)
     val dimAlpha = remember { Animatable(0f) }
     val slideFraction = remember { Animatable(1f) }
     val dismissing = remember { mutableStateOf(false) }
@@ -116,7 +119,7 @@ internal fun AppAlertDialog(
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         title()
                     }
-                    Box(Modifier.fillMaxWidth().heightIn(max = 420.dp).padding(top = 14.dp)) {
+                    Box(Modifier.fillMaxWidth().heightIn(max = textMaxHeight).padding(top = 14.dp)) {
                         text()
                     }
                     Row(

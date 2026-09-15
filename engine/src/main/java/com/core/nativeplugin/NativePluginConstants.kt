@@ -32,6 +32,10 @@ object NativePluginConstants {
     const val LIB_ARTEMIS_COMPATIBLE_V2 = "libartemis-compatible-v2.so"
     const val LIB_ARTEMIS_V4 = "libartemis-v4.so"
     const val LIB_ARTEMIS_V5 = "libartemis-v5.so"
+    /** 自研 clean-room 兼容内核（artemis-compat 仓库构建产物）。 */
+    const val LIB_ARTEMIS_CLEAN = "libartemis-clean.so"
+    /** artemis_loader 消费的库名（无 lib 前缀/扩展名），与 artemis_loader.cpp 白名单一致。 */
+    const val ARTEMIS_CLEAN_ENGINE_LIB_NAME = "artemis-clean"
 
     const val LIB_SDL2_IMAGE = "libSDL2_image.so"
     const val LIB_SDL2_MIXER = "libSDL2_mixer.so"
@@ -61,12 +65,13 @@ object NativePluginConstants {
         LIB_ONSYURI,
     )
 
-    /** Artemis 外置插件必备 so：多套 revision 运行库，均只依赖系统库，互不依赖。 */
+    /** Artemis 外置插件必备 so：多套 revision 运行库 + 自研内核，均只依赖系统库，互不依赖。 */
     val ARTEMIS_REQUIRED_LIBS: List<String> = listOf(
         LIB_ARTEMIS,
         LIB_ARTEMIS_COMPATIBLE,
         LIB_ARTEMIS_COMPATIBLE_V2,
         LIB_ARTEMIS_V4,
         LIB_ARTEMIS_V5,
+        LIB_ARTEMIS_CLEAN,
     )
 }

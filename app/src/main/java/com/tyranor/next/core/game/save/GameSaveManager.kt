@@ -99,7 +99,8 @@ class GameSaveManager(private val context: Context) {
                     )
                 }
             }
-            EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY ->
+            EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
+            EngineType.PSP, EngineType.NINTENDO_SWITCH ->
                 SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
             EngineType.ARTEMIS -> SaveLocation(File(root), text(R.string.save_location_artemis_game_dir), true)
             EngineType.UNKNOWN -> SaveLocation(null, text(R.string.save_location_unknown_unsupported), false)

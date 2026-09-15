@@ -279,7 +279,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                     AppNavItem(
                         title = stringResource(R.string.save_export_format_standard),
                         summary = stringResource(R.string.save_export_format_standard_summary),
-                        leadingIcon = R.drawable.ic_sheet_folder,
+                        leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,
                         showArrow = false,
                         onClick = {
@@ -291,7 +291,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                     AppNavItem(
                         title = stringResource(R.string.save_export_format_tyranor),
                         summary = stringResource(R.string.save_export_format_tyranor_summary),
-                        leadingIcon = R.drawable.ic_sheet_saves,
+                        leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,
                         showArrow = false,
                         onClick = {

@@ -1,20 +1,32 @@
 package com.tyranor.next.ui.engine
 
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -24,12 +36,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -42,12 +57,20 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
+import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
-import com.tyranor.next.core.engine.external.ExternalEngineModule
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.GlassSurfaceHigh
+import com.tyranor.next.theme.GlassText
+import com.tyranor.next.theme.GlassTextSecondary
+import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -56,6 +79,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.settings.artVersionOptions
+import top.yukonga.miuix.kmp.basic.TabRow
 import android.widget.Toast
 
 /** 引擎页：列表行展示已集成的游戏引擎。 */
@@ -70,37 +94,111 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     var moduleStates by remember {
         mutableStateOf(refreshModuleStates(context))
     }
+    var emulatorInstallStates by remember {
+        mutableStateOf(refreshEmulatorInstallStates(context))
+    }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
+    var showExternalJumpDialog by remember { mutableStateOf(false) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         externalInstallStates = refreshExternalInstallStates(context, engines)
         moduleStates = refreshModuleStates(context)
+        emulatorInstallStates = refreshEmulatorInstallStates(context)
     }
 
     Column(modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.nav_engine))
 
+        // 顶部分页（可在应用设置中关闭）：关闭时平铺展示全部引擎项
+        val categorizeEngines by AppSettingsStore.engineTabsState.collectAsState()
+        var selectedTab by remember { mutableIntStateOf(0) }
+        if (categorizeEngines) {
+            val tabs = listOf(
+                stringResource(R.string.engine_tab_gal),
+                stringResource(R.string.engine_tab_rpgm),
+                stringResource(R.string.engine_tab_console),
+                stringResource(R.string.engine_tab_web),
+            )
+            MiuixSettingsTheme {
+                val tabModifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
+                if (AppThemeColors.isGlass) {
+                    // 玻璃外观：Miuix TabRow 不支持指示器描边，改用自绘玻璃指示器（亮卡 + 0.5dp 描边）
+                    GlassTabRow(
+                        tabs = tabs,
+                        selectedTabIndex = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        modifier = tabModifier,
+                    )
+                } else {
+                    TabRow(
+                        tabs = tabs,
+                        selectedTabIndex = selectedTab,
+                        onTabSelected = { selectedTab = it },
+                        // 圆角与组件统一入口同源：默认 8dp
+                        cornerRadius = AppComponentCornerRadius,
+                        modifier = tabModifier,
+                    )
+                }
+            }
+        }
+
+        val tabEngines = (if (categorizeEngines) {
+            engines.filter { engineTabOf(it) == EngineTab.entries[selectedTab] }
+        } else {
+            engines
+        }).distinctBy { engineDisplayName(it) }
+
         // 引擎列表
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + glassNavBottomInset()),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp + glassNavBottomInset()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(
-                items = engines.distinctBy { engineDisplayName(it) },
+                items = tabEngines,
                 key = { it.name },
                 contentType = { "engine" },
             ) { engine ->
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
-                val installed = module == null || externalInstallStates[engine] == true
+                val emulator = ExternalEmulatorRegistry.forEngine(engine)
+                val installed = when {
+                    module != null -> externalInstallStates[engine] == true
+                    emulator != null -> emulatorInstallStates[emulator.packageName] == true
+                    else -> true
+                }
+                val statusRes = when {
+                    module != null ->
+                        if (installed) R.string.engine_module_installed else R.string.engine_module_not_installed
+
+                    emulator != null ->
+                        if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed
+
+                    else -> R.string.engine_integrated
+                }
                 EngineRow(
                     engine = engine,
-                    module = module,
+                    statusTextRes = statusRes,
                     installed = installed,
-                    // 外置引擎与 Tyrano / WebOther/VN（内置版本条目）：点击弹出版本模块列表
-                    enabled = module != null || engine in dialogOnlyEngines,
-                    onClick = { moduleDialogEngine = engine },
+                    // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
+                    enabled = module != null || emulator != null || engine in dialogOnlyEngines,
+                    onClick = {
+                        if (emulator != null) {
+                            showExternalJumpDialog = true
+                        } else {
+                            moduleDialogEngine = engine
+                        }
+                    },
                 )
+            }
+
+            // 外置跳转支持（PPSSPP / Eden 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
+            if (!categorizeEngines || selectedTab == EngineTab.CONSOLE.ordinal) {
+                item(key = "external-jump", contentType = "external-jump") {
+                    ExternalJumpRow(
+                        installedCount = emulatorInstallStates.values.count { it },
+                        onClick = { showExternalJumpDialog = true },
+                    )
+                }
             }
         }
     }
@@ -120,7 +218,10 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
+                    // 条目较多（如 Artemis 全版本）时超出弹窗高度上限，需可滚动避免末条被截断
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     engineDialogEntries(context, moduleStates, dialogEngine).forEach { entry ->
@@ -144,12 +245,55 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             confirmButton = {},
         )
     }
+
+    // 外置跳转支持弹窗：列 PPSSPP / Eden，未安装点击跳下载页，已安装点击打开模拟器主界面
+    if (showExternalJumpDialog) {
+        AppAlertDialog(
+            onDismissRequest = { showExternalJumpDialog = false },
+            title = {
+                Text(
+                    stringResource(R.string.engine_external_jump_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ExternalEmulatorRegistry.targets.forEach { target ->
+                        val installed = emulatorInstallStates[target.packageName] == true
+                        AppNavItem(
+                            title = stringResource(target.displayNameRes),
+                            summary = stringResource(
+                                if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
+                            ),
+                            containerColor = DialogItemSurface,
+                        ) {
+                            if (installed) {
+                                ExternalEmulatorLauncher.openHome(context, target)
+                            } else {
+                                val opened = ExternalEngineLauncher.openInstallPage(context, target.installUrl)
+                                if (!opened) {
+                                    Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            showExternalJumpDialog = false
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+        )
+    }
 }
 
 @Composable
 private fun EngineRow(
     engine: EngineType,
-    module: ExternalEngineModule?,
+    @StringRes statusTextRes: Int,
     installed: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -192,11 +336,7 @@ private fun EngineRow(
             }
             Icon(
                 if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                contentDescription = when {
-                    module == null -> stringResource(R.string.engine_integrated)
-                    installed -> stringResource(R.string.engine_module_installed)
-                    else -> stringResource(R.string.engine_module_not_installed)
-                },
+                contentDescription = stringResource(statusTextRes),
                 tint = if (installed) {
                     MaterialTheme.colorScheme.primary
                 } else {
@@ -206,6 +346,134 @@ private fun EngineRow(
             )
         }
     }
+}
+
+/**
+ * 玻璃外观专用 TabRow：Miuix TabRow 的选中指示器不支持描边，
+ * 这里自绘「玻璃亮卡（GlassSurfaceHigh）+ 0.5dp 玻璃描边」指示器，
+ * 圆角与 [AppComponentCornerRadius] 同源。
+ */
+@Composable
+private fun GlassTabRow(
+    tabs: List<String>,
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (tabs.isEmpty()) return
+    val shape = RoundedCornerShape(AppComponentCornerRadius)
+    val spacing = 6.dp
+    BoxWithConstraints(modifier.fillMaxWidth().height(42.dp)) {
+        val tabWidth = (maxWidth - spacing * (tabs.size - 1)) / tabs.size
+        val indicatorOffset by animateDpAsState(
+            targetValue = (tabWidth + spacing) * selectedTabIndex,
+            animationSpec = tween(durationMillis = 200, easing = LinearEasing),
+            label = "glassTabIndicator",
+        )
+        // 指示器绘制在底层，文字行覆盖其上
+        Box(
+            Modifier
+                .offset(x = indicatorOffset)
+                .width(tabWidth)
+                .fillMaxHeight()
+                .clip(shape)
+                .background(GlassSurfaceHigh)
+                .glassBorder(shape = shape),
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEachIndexed { index, label ->
+                val selected = index == selectedTabIndex
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(shape)
+                        .clickable { onTabSelected(index) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = label,
+                        color = if (selected) GlassText else GlassTextSecondary,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 外置跳转支持行：与引擎行同视觉，右侧按“是否至少装了一个模拟器”显示状态。 */
+@Composable
+private fun ExternalJumpRow(
+    installedCount: Int,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .glassBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        shape = AppComponentShape,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_engine_icon),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                modifier = Modifier.size(28.dp),
+            )
+            Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                Text(
+                    stringResource(R.string.engine_external_jump_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    stringResource(R.string.engine_external_jump_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Icon(
+                if (installedCount > 0) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                contentDescription = stringResource(R.string.engine_external_jump_summary),
+                tint = if (installedCount > 0) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 主机 / 网页。 */
+private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
+
+private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
+    EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
+    EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.RENPY -> EngineTab.GAL
+    EngineType.PSP, EngineType.NINTENDO_SWITCH -> EngineTab.CONSOLE
+    EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
+    EngineType.UNKNOWN -> EngineTab.WEB
 }
 
 /** 列表展示名：RPG Maker MV 与 MZ、WebOther 与 VN 各合并为一项。 */
@@ -225,6 +493,8 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
     EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
+    EngineType.PSP -> stringResource(R.string.engine_desc_psp)
+    EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)
     EngineType.UNKNOWN -> stringResource(R.string.engine_desc_unknown)
 }
 
@@ -325,7 +595,13 @@ private fun artemisDialogEntries(): List<EngineDialogEntry> =
                 summaryRes = R.string.engine_integrated,
                 installed = true,
             )
-        }
+        } + EngineDialogEntry(
+            // 自研 clean-room 内核：随插件包内置，与官方 revision 同列为「已集成」
+            id = "artemis-${EngineSettingsStore.ART_KERNEL_CLEAN}",
+            title = "TyranorNext/artemis-compat",
+            summaryRes = R.string.engine_integrated,
+            installed = true,
+        )
 
 /** 「v1（Tyranor/Rev.2762）」→「Tyranor/Rev.2762」：去掉内部版本号与全角括号；不匹配时原样返回。 */
 private fun artemisDialogTitle(label: String): String =
@@ -335,4 +611,10 @@ private fun artemisDialogTitle(label: String): String =
 private fun refreshModuleStates(context: android.content.Context): Map<String, Boolean> =
     ExternalEngineModuleRegistry.modules.associate { module ->
         module.id to ExternalEngineLauncher.isPackageInstalled(context, module)
+    }
+
+/** 外置主机模拟器安装状态（按包名）。 */
+private fun refreshEmulatorInstallStates(context: android.content.Context): Map<String, Boolean> =
+    ExternalEmulatorRegistry.targets.associate { target ->
+        target.packageName to ExternalEmulatorLauncher.isInstalled(context, target)
     }

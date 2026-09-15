@@ -4,7 +4,13 @@
   <img src="screenshots/index.png" alt="Tyranor Next" width="850" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis 四套引擎运行环境，并支持 Ren'Py、RPG Maker RGSS 外置 APK 引擎模块，可识别和启动多类游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。
+基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis 四套引擎运行环境，并支持 Ren'Py、RPG Maker RGSS 外置 APK 引擎模块与 PSP / Nintendo Switch 外置模拟器跳转（PPSSPP / Eden），可识别和启动多类游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。
+
+mac原生版本如下：
+
+- [Tyranor Next for macOS](https://github.com/Weiss-UltimateSavior/Tyranor-Mac)
+
+iOS版本计划中...
 
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
 
@@ -12,28 +18,37 @@
 
 感谢 [@安音](https://www.pixiv.net/users/8182248) 为本项目绘画的logo娘！
 
+## 感谢各位贡献者们！一起成为光吧！
+
+<a href="https://github.com/Weiss-UltimateSavior/Tyranor-Next/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=Weiss-UltimateSavior/Tyranor-Next" />
+</a>
+
 ## 支持范围
 
 ### 引擎与游戏类型
 
-| 游戏类型 | 典型识别特征 | 运行环境 |
-| --- | --- | --- |
-| Kirikiri / Kirikiri2 | `.xp3`、`startup.tjs` | Kirikiroid2 / krkrsdl3 原生运行时 |
-| ONScripter | `nscript.dat`、`.nsa` | ONScripter 原生运行时 |
-| Artemis | `system.ini`、`.pfs` | Artemis 原生运行时 |
-| TyranoBuilder | `index.html`、`tyrano/` | 内置 Tyrano Web 运行环境 |
-| RPG Maker XP | `.rgssad`、`Game.ini` + `Data/*.rxdata` | 外置 RPGM APK 模块 |
-| RPG Maker VX | `.rgss2a`、`Game.ini` + `Data/*.rvdata` | 外置 RPGM APK 模块 |
-| RPG Maker VX Ace | `.rgss3a`、`Game.ini` + `Data/*.rvdata2` | 外置 RPGM APK 模块 |
-| mkxp-z | 用户选择/内部别名 `internal.mkxp-z` | 外置 RPGM APK 模块 |
-| RPG Maker MV | `www/`、`js/rpg_core.js` | 内置 Web 运行环境 |
-| RPG Maker MZ | `www/`、`js/rmmz_core.js` | 内置 Web 运行环境 |
-| VN | `globalData.vndata` | 内置 Web 运行环境 |
-| WebOther | 通用 `index.html` 网页游戏 | 内置 Web 运行环境 |
-| Ren'Py | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块 |
+| 游戏类型                 | 典型识别特征                                                              | 运行环境                         |
+| -------------------- | ------------------------------------------------------------------- | ---------------------------- |
+| Kirikiri / Kirikiri2 | `.xp3`、`startup.tjs`                                                | Kirikiroid2 / krkrsdl3 原生运行时 |
+| ONScripter           | `nscript.dat`、`.nsa`                                                | ONScripter 原生运行时             |
+| Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
+| TyranoBuilder        | `index.html`、`tyrano/`                                              | 内置 Tyrano Web 运行环境           |
+| RPG Maker XP         | `.rgssad`、`Game.ini` + `Data/*.rxdata`                              | 外置 RPGM APK 模块               |
+| RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
+| RPG Maker VX Ace     | `.rgss3a`、`Game.ini` + `Data/*.rvdata2`                             | 外置 RPGM APK 模块               |
+| mkxp-z               | 用户选择/内部别名 `internal.mkxp-z`                                         | 外置 RPGM APK 模块               |
+| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境                  |
+| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境                  |
+| VN                   | `globalData.vndata`                                                 | 内置 Web 运行环境                  |
+| WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
+| Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块              |
+| PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
+| Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
-内置 Web 运行环境同时支持部分以 `app.asar` 打包的 NW.js 游戏；启动时会根据归档内容进一步识别具体类型。
+内置 Web 运行环境同时支持部分以 `app.asar` 打包的 NW\.js 游戏；启动时会根据归档内容进一步识别具体类型。
 Ren'Py 与 RPG Maker XP/VX/VX Ace/mkxp-z 当前通过外置 APK 模块运行：Ren'Py 支持 8.5 / 7.7.1 版本，可在全局或单游戏设置中选择引擎版本；自动模式会读取 Ren'Py `script_version` 与 Python2 运行库特征，在 8.5 / 7.7.1 模块间匹配。主 App 默认启用该能力，仅在引擎页检查目标模块是否已安装；未安装时引擎 item 显示打叉并提示下载安装。RPG Maker MV/MZ 属于 Web runtime，继续使用内置 Web 运行环境。
+PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 扩展名识别并逐条入库（.iso/.cso/.pbp/.chd、.nsp/.xci/.nca/.nro），启动时按类型拉起已安装的 PPSSPP / Eden（显式组件 + 读取授权，使用 SAF 内容 URI；文件回退路径经 FileProvider 转换）。这两类游戏的存档与设置由模拟器自行管理，主 App 不接管；引擎页「外置跳转支持」入口可查看安装状态并跳转下载页。引擎页可在应用设置中开启「引擎页分类显示」，按 GAL / RPGM / 主机 / 网页 分页展示引擎项。
 
 ### 平台与文件要求
 
@@ -56,9 +71,9 @@ Ren'Py 与 RPG Maker XP/VX/VX Ace/mkxp-z 当前通过外置 APK 模块运行：R
 
 ### 模块划分
 
-| 模块 | 职责 |
-| --- | --- |
-| `app` | Android 应用壳：Compose UI、功能抽象层、配置、封面、存档、授权、后台更新等应用侧能力 |
+| 模块       | 职责                                                                                            |
+| -------- | --------------------------------------------------------------------------------------------- |
+| `app`    | Android 应用壳：Compose UI、功能抽象层、配置、封面、存档、授权、后台更新等应用侧能力                                           |
 | `engine` | 底层引擎运行时核心：SDL2/SDL3、Kirikiri TVP、krkrsdl3、ONScripter、Artemis、Tyrano、Native/JNI 与引擎宿主 Activity |
 
 ### 三层目录架构
@@ -69,11 +84,11 @@ Ren'Py 与 RPG Maker XP/VX/VX Ace/mkxp-z 当前通过外置 APK 模块运行：R
 界面 UI 交互层 -> 功能抽象层 -> 底层引擎层
 ```
 
-| 层级 | 目录 | 职责 |
-| --- | --- | --- |
-| 底层引擎层 | `engine/` | KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Tyrano、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源与 Native 插件底层加载 |
-| 功能抽象层 | `app/src/main/java/com/tyranor/next/core/` | 游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新 |
-| 界面 UI 交互层 | `app/src/main/java/com/tyranor/next/ui/` | Compose 页面、Activity 壳、弹窗、导航、顶部栏、搜索框、用户输入、加载态与错误态 |
+| 层级        | 目录                                         | 职责                                                                                                     |
+| --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| 底层引擎层     | `engine/`                                  | KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Tyrano、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源与 Native 插件底层加载 |
+| 功能抽象层     | `app/src/main/java/com/tyranor/next/core/` | 游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新                                                      |
+| 界面 UI 交互层 | `app/src/main/java/com/tyranor/next/ui/`   | Compose 页面、Activity 壳、弹窗、导航、顶部栏、搜索框、用户输入、加载态与错误态                                                       |
 
 功能抽象层按领域继续拆分：
 
@@ -115,6 +130,7 @@ UI 层按页面域继续拆分：
 - 共享 RPG Maker 注入脚本源头位于 `engine/src/main/assets`；app 侧只保留应用专属注入脚本，构建时由 Gradle 同步生成到 app assets，避免两边手工维护重复文件
 - `app` 模块通过 `core/game/launch/EngineLauncher` 将扫描结果映射到对应引擎 Activity 启动（SAF URI → 真实路径转换）
 - Ren'Py、RPG Maker RGSS 等外置 APK 引擎模块由 `core/engine/external` 统一注册、检测安装状态并按 intent 协议拉起；主 App 不维护手动启用开关，模块安装即视为可用
+- PSP / Nintendo Switch 由 `core/engine/external` 的 `ExternalEmulatorRegistry` / `ExternalEmulatorLauncher` 跳转外置 PPSSPP / Eden：扫描识别 ROM 后逐条入库（一 ROM 一条），运行时在目录解析前分流、按显式组件与读取授权启动；引擎页「外置跳转支持」项展示安装状态并可跳下载页，Manifest `<queries>` 已声明对应包名
 - Tyrano 运行环境内置本地 HTTP 服务器、Asar 归档解析与 JS 钩子脚本（`__tyrano__.js` 等），无需外部依赖即可运行网页式脚本游戏
 - 原生库仅提供 `arm64-v8a` 架构
 
@@ -159,9 +175,11 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
 
 ## 致谢
-
+- [Kirikiroid2](https://github.com/zeas2/Kirikiroid2): Kirikiroid2引擎
 - **Tyranor 模拟器**：本项目引擎运行时与核心架构的逆向重写基础
-- **RinneMobile**：游戏扫描识别/SAF路径映射逻辑/独立存档映射/krkrsdl3 等多个功能的参考实现
+- [Artemis-Compat](https://github.com/Weiss-UltimateSavior/artemis-compat)：自研兼容内核
+- **RinneMobile**：游戏扫描识别/SAF路径映射逻辑/独立存档映射/krkrsdl3 等多个功能的参考与实现
 - [Miuix](https://github.com/compose-miuix-ui/miuix)：设置界面组件库
-- [Anime4K](https://github.com/bloc97/Anime4K)（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）
+- [Anime4K](https://github.com/bloc97/Anime4K):（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）
+- [OnscripterYuri](https://github.com/YuriSizuku/OnscripterYuri): ONS引擎
 - 各引擎运行时均基于其开源许可引入

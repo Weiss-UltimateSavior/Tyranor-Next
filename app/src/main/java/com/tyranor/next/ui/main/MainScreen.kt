@@ -109,6 +109,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
     AppSettingsStore.navStyleState.value = stored.first
     AppSettingsStore.gameSortState.value = stored.second
+    withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
     libraryViewModel.refreshFromStorage()
