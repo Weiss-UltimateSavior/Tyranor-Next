@@ -120,10 +120,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # 必须显式覆盖 action 默认的 packages（`tools platform-tools`）：`tools` 已从
-          # Google SDK 仓库下架，安装会以 "Failed to find package 'tools'" 退出 1。
-          # 需要的 platforms / build-tools 由下一步按 canary 通道安装。
-          packages: 'platform-tools'
+          packages: platform-tools
 
       - name: Install Android SDK packages
         run: |

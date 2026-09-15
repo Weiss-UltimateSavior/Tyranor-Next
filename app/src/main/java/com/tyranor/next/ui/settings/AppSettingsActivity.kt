@@ -22,6 +22,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,8 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppAlertDialog
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
@@ -75,6 +78,11 @@ internal fun AppSettingsScreen() {
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
     val glass = AppThemeColors.isGlass
     var showColorPicker by remember { mutableStateOf(false) }
+    // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
+    // 否则下拉会显示成默认档（与磁盘上的真实取值不一致）
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(ctx) }
+    }
 
     MiuixSettingsTheme {
         MiuixScaffold(
@@ -220,14 +228,43 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            SwitchPreference(
-                                title = stringResource(R.string.settings_liquid_glass_nav),
-                                checked = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS,
-                                onCheckedChange = { checked ->
-                                    AppSettingsStore.setNavStyle(
-                                        ctx,
-                                        if (checked) AppSettingsStore.NAV_STYLE_LIQUID_GLASS else AppSettingsStore.NAV_STYLE_DEFAULT,
+                            // 导航栏样式：默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜 三选一。
+                            // 「透镜」档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
+                            val navStyleOptions = buildList {
+                                add(
+                                    AppSettingsStore.NAV_STYLE_DEFAULT to
+                                        stringResource(R.string.settings_nav_bar_default),
+                                )
+                                add(
+                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS to
+                                        stringResource(R.string.settings_nav_bar_liquid_glass),
+                                )
+                                if (AppSettingsStore.supportsLiquidGlassEnhanced) {
+                                    add(
+                                        AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED to
+                                            stringResource(R.string.settings_nav_bar_liquid_glass_enhanced),
                                     )
+                                }
+                            }
+                            val navStyleIndex = navStyleOptions
+                                .indexOfFirst { it.first == navStyle }
+                                .coerceAtLeast(0)
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_nav_bar_title),
+                                // 说明只保留「安卓版本提醒」：默认档无需提醒（任何版本可用）
+                                summary = when (navStyle) {
+                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
+                                        stringResource(R.string.settings_nav_bar_desc_liquid_glass)
+                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
+                                        stringResource(R.string.settings_nav_bar_desc_enhanced)
+                                    else -> null
+                                },
+                                items = navStyleOptions.map { it.second },
+                                selectedIndex = navStyleIndex,
+                                onSelectedIndexChange = { index ->
+                                    navStyleOptions.getOrNull(index)?.first?.let { style ->
+                                        AppSettingsStore.setNavStyle(ctx, style)
+                                    }
                                 },
                             )
                         }

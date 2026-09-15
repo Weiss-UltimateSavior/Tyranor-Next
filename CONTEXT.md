@@ -85,7 +85,7 @@ _Avoid_: 设置合并、覆盖层
 _Avoid_: 引擎设置 Tab
 
 **导航样式（Nav Style）**:
-底部导航的两种形态：「默认」（Material3 NavigationBar）与「圆角液态玻璃」（LiquidGlassNavigationBar）；内存态即时切换。
+底部导航栏样式的三档取值：「默认」（Material3 导航栏；玻璃外观风格下为悬浮圆角玻璃条）、「液态玻璃 · 经典」（原版小圆角方形玻璃栏 + 模糊）、「液态玻璃 · 透镜」（见下）；内存态即时切换。
 _Avoid_: 底部栏外观、主题
 
 **外观风格（Appearance Style）**:
@@ -155,8 +155,12 @@ _Avoid_: ListItem、手写条目
 _Avoid_: 随意字号、item 用 title
 
 **液态玻璃导航（LiquidGlassNavigationBar）**:
-悬浮于内容之上、采样页面内容做背景模糊的圆角导航形态（Android 12+，通过 backdrop 录制内容层）。
+悬浮于内容之上、采样页面内容做背景模糊的圆角导航形态（Android 12+，通过 backdrop 录制内容层）；为「液态玻璃 · 经典」档。
 _Avoid_: 毛玻璃、透明导航
+
+**液态玻璃 · 透镜（Liquid Glass · Lens）**:
+导航样式的第三档（旧称「液态玻璃增强」）：`ui/common/glass/` 下为本样式**独立实现**的三层采样 + 折射透镜 + 按压拖动，光学 / 运动参数经本项目实测调校后固化于 `GlassBottomBarSpec`；Android 13 以下不提供该选项，读取到该值时归一化为「液态玻璃 · 经典」。
+_Avoid_: 液态玻璃 2.0、高级玻璃
 
 **四页常驻组合**:
 主界面四个 Tab（首页 / 游戏 / 引擎 / 设置）常驻组合、隐藏页置 alpha=0 保留节点，切换仅做水平 alpha 动画避免重建列表。

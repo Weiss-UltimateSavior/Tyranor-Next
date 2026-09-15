@@ -16,6 +16,7 @@ import com.akira.tyranoemu.remote.ArtemisActivityV2
 import com.akira.tyranoemu.remote.ArtemisActivityV3
 import com.akira.tyranoemu.remote.ArtemisActivityV4
 import com.akira.tyranoemu.remote.ArtemisActivityV5
+import com.akira.tyranoemu.remote.ArtemisActivityV6
 import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
@@ -90,6 +91,7 @@ object EngineLauncher {
         EngineSettingsStore.ART_ENGINE_V3,
         EngineSettingsStore.ART_ENGINE_V4,
         EngineSettingsStore.ART_ENGINE_V5,
+        EngineSettingsStore.ART_ENGINE_V6,
     )
 
     /** 支持的引擎列表（用于引擎页展示）。按名称长度从大到小排列。 */
@@ -1051,6 +1053,7 @@ object EngineLauncher {
             EngineSettingsStore.ART_ENGINE_V3 -> 2
             EngineSettingsStore.ART_ENGINE_V4 -> 3
             EngineSettingsStore.ART_ENGINE_V5 -> 4
+            EngineSettingsStore.ART_ENGINE_V6 -> 5
             else -> 0
         }
 
@@ -1060,6 +1063,7 @@ object EngineLauncher {
             EngineSettingsStore.ART_ENGINE_V3 -> ArtemisActivityV3::class.java to "artemis-compatible-v2"
             EngineSettingsStore.ART_ENGINE_V4 -> ArtemisActivityV4::class.java to "artemis-v4"
             EngineSettingsStore.ART_ENGINE_V5 -> ArtemisActivityV5::class.java to "artemis-v5"
+            EngineSettingsStore.ART_ENGINE_V6 -> ArtemisActivityV6::class.java to "artemis-v6"
             else -> ArtemisActivityV1::class.java to "artemis"
         }
 

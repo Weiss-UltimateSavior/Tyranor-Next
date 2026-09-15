@@ -139,6 +139,7 @@ object EngineSettingsStore {
     const val ART_ENGINE_V3 = "3"
     const val ART_ENGINE_V4 = "4"
     const val ART_ENGINE_V5 = "5"
+    const val ART_ENGINE_V6 = "6"
     /** Artemis 内核：官方多 revision 运行库 / 自研 clean-room 兼容内核。 */
     const val ART_KERNEL_OFFICIAL = "official"
     const val ART_KERNEL_CLEAN = "clean"
@@ -147,7 +148,7 @@ object EngineSettingsStore {
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
     /** Artemis 引擎版本全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
-    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V3, ART_ENGINE_V4, ART_ENGINE_V5)
+    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V3, ART_ENGINE_V4, ART_ENGINE_V5, ART_ENGINE_V6)
     /** Artemis 补丁策略全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
     val ART_PATCHES = setOf(AUTO_PATCH_ASK, AUTO_PATCH_AUTO, AUTO_PATCH_OFF)
     const val ART_RESOLUTION_DEFAULT = ""
@@ -431,7 +432,8 @@ object EngineSettingsStore {
             v == ART_ENGINE_V2 ||
             v == ART_ENGINE_V3 ||
             v == ART_ENGINE_V4 ||
-            v == ART_ENGINE_V5
+            v == ART_ENGINE_V5 ||
+            v == ART_ENGINE_V6
         ) v else ART_ENGINE_AUTO
     }
     fun setArtEngineVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_ENGINE_VERSION, v).apply()

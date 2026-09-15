@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -67,8 +68,13 @@ import com.tyranor.next.theme.GlassNavSurface
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.glassPageBackground
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
+import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
+import com.tyranor.next.ui.common.glass.GlassShaderSupport
+import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
+import com.tyranor.next.ui.common.glass.rememberGlassBottomBarColors
 import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.engine.EngineScreen
@@ -102,13 +108,14 @@ fun MainScreen(modifier: Modifier = Modifier) {
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()
   val unselectedColor = UnselectedGrey
-  // 导航栏样式：应用设置 → 默认 / 圆角液态玻璃（内存态，设置页切换即时生效）
+  // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）
   LaunchedEffect(Unit) {
-    val stored = withContext(Dispatchers.IO) {
-      AppSettingsStore.getNavStyle(context) to AppSettingsStore.getGameSort(context)
+    // initNavStyle 是幂等的（设置页也会调用一次），这里与游戏排序一起在 IO 线程读一次 prefs
+    val gameSort = withContext(Dispatchers.IO) {
+      AppSettingsStore.initNavStyle(context)
+      AppSettingsStore.getGameSort(context)
     }
-    AppSettingsStore.navStyleState.value = stored.first
-    AppSettingsStore.gameSortState.value = stored.second
+    AppSettingsStore.gameSortState.value = gameSort
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -127,30 +134,61 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()
-  val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS
+  // 液态玻璃两档共用同一套宿主准备（录制采样层、转场重定向、底部留白）
+  val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS ||
+    navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED
+  val enhanceLiquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass
   val tabLabels = tabItems.map { stringResource(it.labelRes) }
-  val liquidGlassTabItems = tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
+  // remember(tabLabels)：labels 内容不变时复用同一份 items，避免每次重组都给增强栏传新 List
+  // （增强栏据此跳过重组，进而避免 drawBackdrop 元素被判不等而重建 RenderEffect 管线）
+  val liquidGlassTabItems = remember(tabLabels) {
+    tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
+  }
+
+  val backdropAvailable = liquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+  // 透镜档**是否真的会渲染**：设置选了它 + 采样层可用 + 本机 AGSL 可用。
+  // 后者是运行期探测（见 GlassShaderSupport）：API 33+ 但 AGSL 编译异常的机器上，
+  // Backdrop 内部的 RuntimeShader 会在布局期抛出并崩掉整个主界面，此时退回经典档更安全。
+  // 注意：回退时经典档也会被要求不传 Highlight，否则兜底路径自己仍依赖 RuntimeShader。
+  val enhancedBarActive = enhanceLiquidGlass && backdropAvailable && GlassShaderSupport.isRuntimeShaderUsable
 
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
   fun selectPage(index: Int) {
-    // 动画期拒绝二次切换，保证起点/终点动画完成后再接收下一次导航。
-    if (index == selectedIndex || pageTransition.isRunning) return
+    // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
+    if (index !in tabItems.indices) return
+    if (index == selectedIndex) return
+    // 透镜档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
+    // 这里判的是**实际生效的档**（enhancedBarActive）而不是设置值：AGSL 不可用时界面已回退成
+    // 经典档，转场语义必须跟着回退，否则会出现「看着是经典档、行为是透镜档」的错配。
+    // 默认路径保持原有守卫，避免把这一行为变更带给未开启该选项的用户（报告 §8.7）。
+    if (!enhancedBarActive && pageTransition.isRunning) return
     selectedIndex = index
   }
-  val backdropAvailable = liquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
   Box(modifier.fillMaxSize()) {
     // 内容层录制进 backdrop，供液态玻璃导航采样页面内容。
     // 关键：背景必须在 layerBackdrop 之后（内层）——layerBackdrop 只录制它之后的内容，
     // 放在外层（Surface/Column 背景）的内容不会被采样，玻璃会采到透明而漏出文字。
     val backdrop = rememberLayerBackdrop()
+    // 采样修复（报告 §5.3 / §8.4 第 1 条）：玻璃外观风格下 PageGrey 透明，根部背景在采样层之外，
+    // 透镜档把同一份背景画进被采样内容，保证透镜采样源含完整背景且坐标同源。
+    // remember：MainScreen 在切页动画期间每帧重组，复用同一 Modifier 才不会每帧重建绘制缓存。
+    val accent = AppThemeColors.primary
+    val pageBackground = remember(accent) { Modifier.glassPageBackground(accent) }
     val contentModifier = Modifier
       .fillMaxSize()
       // source 节点常驻，避免切页结束时重新挂载玻璃录制层。
       .then(if (backdropAvailable) Modifier.layerBackdrop(backdrop) else Modifier)
+      .then(
+        // 仅玻璃外观风格需要（该模式下 PageGrey 透明、根部背景在采样层之外）
+        if (enhancedBarActive && AppThemeColors.isGlass) {
+          pageBackground
+        } else {
+          Modifier
+        },
+      )
       .background(MaterialTheme.colorScheme.background)
     Column(contentModifier) {
       Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
@@ -233,17 +271,40 @@ fun MainScreen(modifier: Modifier = Modifier) {
       }
     }
 
-    // 圆角液态玻璃导航：悬浮在内容之上
+    // 液态玻璃 · 经典：悬浮在内容之上。
+    // 透镜档（应用设置 → 导航栏样式 → 液态玻璃 · 透镜）改用三层采样 + 折射透镜；默认与经典档走原实现。
     if (liquidGlass) {
-      LiquidGlassNavigationBar(
-        backdrop = backdrop,
-        selectedIndex = selectedIndex,
-        primaryColor = MaterialTheme.colorScheme.primary,
-        unselectedColor = unselectedColor,
-        items = liquidGlassTabItems,
-        onItemClick = { selectPage(it) },
-        modifier = Modifier.align(Alignment.BottomCenter),
-      )
+      // 透镜档必须要有可用采样层（backdropAvailable 已含 API 门槛与液态玻璃条件）；
+      // 万一不满足则退回经典档，而不是拿未挂载的 backdrop 渲染（组件契约要求）
+      if (enhancedBarActive) {
+        EnhancedLiquidGlassNavigationBar(
+          backdrop = backdrop,
+          // 权威选中值先夹取到合法槽位，避免越界值把透镜放到栏外（组件内部也会再夹一次）
+          selectedIndex = selectedIndex.coerceIn(liquidGlassTabItems.indices),
+          colors = rememberGlassBottomBarColors(unselectedColor),
+          items = liquidGlassTabItems,
+          onItemClick = { selectPage(it) },
+          modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .navigationBarsPadding()
+            .padding(bottom = GlassBottomBarSpec.Default.hostBottomPadding),
+        )
+      } else {
+        LiquidGlassNavigationBar(
+          backdrop = backdrop,
+          selectedIndex = selectedIndex,
+          primaryColor = MaterialTheme.colorScheme.primary,
+          unselectedColor = unselectedColor,
+          items = liquidGlassTabItems,
+          onItemClick = { selectPage(it) },
+          // 仅在「需要 AGSL 而 AGSL 不可用」（API 33+ 探测失败）时掐掉高光：
+          // 库的 HighlightStyle 在 33+ 同样构造 RuntimeShader，不掐则回退路径自己会崩；
+          // 而 API 31–32 库走非 shader 的描边路径、本来有高光，必须保持 true
+          //（别用 isRuntimeShaderUsable——它在 33 以下恒为 false，会误删 Android 12 的高光）。
+          highlightAvailable = GlassShaderSupport.highlightAllowed,
+          modifier = Modifier.align(Alignment.BottomCenter),
+        )
+      }
     }
 
     // 玻璃外观风格下的默认导航栏：悬浮圆角玻璃条（玻璃底 + 0.5dp 描边 + 16dp 圆角），

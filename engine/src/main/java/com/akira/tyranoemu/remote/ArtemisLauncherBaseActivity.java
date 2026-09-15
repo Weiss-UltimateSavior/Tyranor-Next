@@ -110,6 +110,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                 : stage == 1 ? "internal.artemis.compat.v2"
                 : stage == 2 ? "internal.artemis.v4"
                 : stage == 3 ? "internal.artemis.v5"
+                : stage == 4 ? "internal.artemis.v6"
                 : null;
         String path = source.getStringExtra(LaunchContract.PATH);
         if (nextPackage == null || path == null || path.trim().isEmpty()) return false;
@@ -119,7 +120,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                         : stage == 0 ? com.akira.tyranoemu.remote.ArtemisActivityV2.class
                         : stage == 1 ? com.akira.tyranoemu.remote.ArtemisActivityV3.class
                         : stage == 2 ? com.akira.tyranoemu.remote.ArtemisActivityV4.class
-                        : com.akira.tyranoemu.remote.ArtemisActivityV5.class);
+                        : stage == 3 ? com.akira.tyranoemu.remote.ArtemisActivityV5.class
+                        : com.akira.tyranoemu.remote.ArtemisActivityV6.class);
         retry.putExtras(source);
         retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, stage == FALLBACK_STAGE_V4_DIRECT ? 0 : stage + 1);
         // retry 到下一 revision 时，bootstrap loader 需加载对应的插件库名。
@@ -128,13 +130,15 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
                         : stage == 0 ? "artemis-compatible"
                         : stage == 1 ? "artemis-compatible-v2"
                         : stage == 2 ? "artemis-v4"
-                        : "artemis-v5");
+                        : stage == 3 ? "artemis-v5"
+                        : "artemis-v6");
         retry.putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION,
                 stage == FALLBACK_STAGE_V4_DIRECT ? "1"
                         : stage == 0 ? "2"
                         : stage == 1 ? "3"
                         : stage == 2 ? "4"
-                        : "5");
+                        : stage == 3 ? "5"
+                        : "6");
         retry.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Log.w("YukiArtemis", "Artemis exited during startup; retrying with " + nextPackage + " path=" + path);
         try {
@@ -208,6 +212,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if ("3".equals(v) || "internal.artemis.compat.v2".equals(v)) return "3";
         if ("4".equals(v) || "internal.artemis.v4".equals(v)) return "4";
         if ("5".equals(v) || "internal.artemis.v5".equals(v)) return "5";
+        if ("6".equals(v) || "internal.artemis.v6".equals(v)) return "6";
         return null;
     }
 
@@ -216,6 +221,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if ("3".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV3.class;
         if ("4".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV4.class;
         if ("5".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV5.class;
+        if ("6".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV6.class;
         if ("1".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV1.class;
         return null;
     }
@@ -225,6 +231,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if ("3".equals(version)) return "artemis-compatible-v2";
         if ("4".equals(version)) return "artemis-v4";
         if ("5".equals(version)) return "artemis-v5";
+        if ("6".equals(version)) return "artemis-v6";
         if ("1".equals(version)) return "artemis";
         return null;
     }
@@ -234,6 +241,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if ("3".equals(version)) return 2;
         if ("4".equals(version)) return 3;
         if ("5".equals(version)) return 4;
+        if ("6".equals(version)) return 5;
         return 0;
     }
 }

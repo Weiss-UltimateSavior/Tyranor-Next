@@ -206,6 +206,11 @@ Column(fillMaxSize)                                // 页面根
 
 - **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
 
+- **圆角豁免（液态玻璃 · 透镜底栏）**：应用设置「导航栏样式」选到「液态玻璃 · 透镜」后挂载的
+  `ui/common/glass/EnhancedLiquidGlassNavigation.kt`（栏体 / 图标副本行 / 移动透镜三处）使用
+  `theme/AppShapes.kt` 的 `AppNavCapsuleShape`（胶囊，圆角 = 半高），为本项目为该样式既定的连续胶囊轮廓，为有意设计。
+  **该组件内也必须统一引用 `AppNavCapsuleShape`，不得就地新建等价的圆角形状**；该豁免仅限该组件，其余组件不得援引。
+
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 
 ## 页面内容文字尺寸规范
@@ -324,7 +329,8 @@ Column(fillMaxSize)                                // 页面根
 | 场景                                   | 位置                                                | 组件                 |
 | ------------------------------------ | ------------------------------------------------- | ------------------ |
 | 设置清单开关（KRKR/ONS/Artemis/RPG Maker 等） | `SettingsScreen.kt`                               | `SwitchPreference` |
-| 应用设置开关（色调切换 / 圆角导航等）                 | `AppSettingsActivity.kt`                          | `SwitchPreference` |
+| 应用设置开关（色调切换等）                        | `AppSettingsActivity.kt`                          | `SwitchPreference` |
+| 应用设置「导航栏样式」三选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
 | 封面来源启用开关（行内）                         | `CoverScraperSettingsActivity.kt`（CoverSourceRow） | `Switch`           |
 
 ### 3. 例外
