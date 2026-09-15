@@ -537,6 +537,9 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
     EngineType.ONS to listOf(
         builtinEntry("ons-builtin", "ONScripter-0.7.6"),
     ),
+    EngineType.SIGLUS to listOf(
+        builtinEntry("siglus-rs", "siglus_rs-xmoezzz"),
+    ),
     EngineType.KIRIKIRI to listOf(
         builtinEntry("krkr-139", "Kirikiroid2-1.3.9"),
         builtinEntry("krkr-134", "Kirikiroid2-1.3.4"),
