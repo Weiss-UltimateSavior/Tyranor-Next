@@ -1,0 +1,158 @@
+package com.tyranor.next.ui.common.glass
+
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.util.fastCoerceIn
+import androidx.compose.ui.util.fastFirstOrNull
+import androidx.compose.ui.util.fastRoundToInt
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+
+/**
+ * 底栏的**全栏物理输入**识别器（本项目独立实现）。
+ *
+ * 方案约束（§手势契约）：
+ * 1. 物理触摸只进入这一层（D 层 Overlay），A 层 Tab 仅保留无障碍语义；
+ * 2. **DOWN 同帧**回调 [onDown]（用于触觉与赴按起跳），不等 touch slop、不等长按；
+ * 3. MOVE 回调**绝对坐标**（不是 delta），避免累计误差；
+ * 4. UP 回调**最后一个位置**与「是否真的拖动过」并进入严格一次（once）的终态；
+ * 5. CANCEL / 事件被上层消费 / 指针消失 → 走 [onCancel]，**不提交、不补震**；
+ * 6. 首指独占：其余手指一律忽略，首指 UP 即结束会话；
+ * 7. **touch slop 通过 [onDrag] 的 `dragged` 标记交给调用方**：调用方据此区分「真拖动」与
+ *    「点击时的手指抖动」（1~3px 抖动不得被判成拖动），但不决定是否提交——
+ *    快速轻点即使没过 slop 也是一次有效选择。
+ *
+ * 之所以不用 `detectDragGestures`：它会消费事件且自带 slop 与长按变体，与本组件
+ * 「DOWN 即时反馈 + 绝对坐标 + 严格 once 终态」的要求冲突。
+ */
+internal suspend fun PointerInputScope.detectBottomBarPress(
+    touchSlopPx: Float,
+    isGestureEnabled: () -> Boolean = { true },
+    onDown: (position: Offset) -> Unit,
+    onDrag: (position: Offset, dragged: Boolean) -> Unit,
+    onUp: (position: Offset, dragged: Boolean) -> Unit,
+    onCancel: () -> Unit,
+) {
+    awaitEachGesture {
+        // Initial 阶段取按下点：即使有上层在 Initial 阶段拦截，也仍能拿到真实按点
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        if (!isGestureEnabled()) return@awaitEachGesture
+        val activeId = down.id
+        // DOWN 同帧：先给触觉与赴按起跳，不做任何等待
+        onDown(down.position)
+
+        var lastPosition = down.position
+        var lastReportedPosition = down.position
+        var dragged = false
+        var accumulated = Offset.Zero
+        var finished = false
+        var cancelled = false
+
+        while (!finished && !cancelled) {
+            val event = awaitPointerEvent()
+            val change = event.changes.fastFirstOrNull { it.id == activeId }
+            if (change == null) {
+                // 指针从事件流消失：系统取消 / 窗口失焦
+                cancelled = true
+                break
+            }
+            if (change.isConsumed) {
+                // 被上层接管（滚动、系统手势）：本轮结束且不提交
+                cancelled = true
+                break
+            }
+
+            // ⚠️ 必须先读位置与位移，再 consume：`positionChange()` 在事件被消费后**恒为
+            // Offset.Zero**，先消费会导致位移永远为 0——表现为「按下能赴按，但完全无法拖动」。
+            val delta = change.positionChange()
+            val position = change.position
+            // 独占：这是唯一的物理输入层，消费掉避免语义层再处理一次
+            change.consume()
+
+            if (change.changedToUpIgnoreConsumed()) {
+                // UP 必须带上最后一个位置参与目标计算
+                lastPosition = position
+                finished = true
+                break
+            }
+            // 位置变了就一定要上报（即使位移恰好被系统折算为 0，也不能丢掉这一帧的跟随）
+            if (delta != Offset.Zero && !dragged) {
+                accumulated += delta
+                if (accumulated.getDistance() >= touchSlopPx) dragged = true
+            }
+            // 未过 slop 的位移也要上报（位置信息有用），但**必须带上 dragged 标记**：
+            // 调用方据此区分「真拖动」与「点击时的手指抖动」——否则 1~3px 抖动会被当成拖动，
+            // 轻点就会走成拖动路径（丢失点击脉冲）。手指未动时无需上报。
+            if (position != lastReportedPosition && (dragged || delta != Offset.Zero)) {
+                onDrag(position, dragged)
+                lastReportedPosition = position
+            }
+        }
+
+        // 严格 once：无论走哪条分支都只回调一次终态
+        if (finished) onUp(lastPosition, dragged) else onCancel()
+    }
+}
+
+/**
+ * 松手时的路径决策（纯函数 + 密封类型，便于回归测试）。
+ *
+ * 上一轮审核抓到的回归正出在这里：`beginPressAt` 已经把压力目标置为 1，而**只有**
+ * `settleAt` / `endPress` / `cancelPress` 会把压力收回——若「全程未抓取的轻点」被接到
+ * 「什么都不做」，滑块就会永久停在按下态。把「松手走哪条路、要不要起胀」收成一个可单测的
+ * 纯决策，接线错误就能在单测里暴露，而不是等到真机上手感不对。
+ */
+internal sealed interface GlassPressRelease {
+    /** 本次松手要请求选择的槽位（已夹取到合法范围）。 */
+    val index: Int
+
+    /** 抓取过（按住 / 拖动）：按正常尺寸吸附到最近槽位，**不再补膨胀**。 */
+    data class Commit(override val index: Int) : GlassPressRelease
+
+    /** 全程未抓取 = 一次轻点：走单相吸附路径；[pulse] 只在跨槽位时为真。 */
+    data class Tap(override val index: Int, val pulse: Boolean) : GlassPressRelease
+}
+
+/**
+ * 把松手决策落到控制器上——**这就是出过回归的那个接线点**。
+ *
+ * 抽成函数有两个目的：生产代码只此一处调用（不会出现「onUp 里忘了调控制器」这种漏接线），
+ * 且回归用例可以驱动**同一条**代码路径，而不是在测试里复述一遍 `when`。
+ * 注意它覆盖的是「决策 → 控制器」，**不覆盖** Compose 回调（`onUp` / `detectBottomBarPress`）
+ * 本身——那部分需要设备或 Compose 测试宿主。
+ */
+internal fun applyGlassPressRelease(controller: LensMotionController, release: GlassPressRelease) {
+    when (release) {
+        // 已经抓取过：正常尺寸吸附 + 收回材质（不再补膨胀，避免「松手后被撑大」）
+        is GlassPressRelease.Commit -> controller.endPress(release.index, pulse = false)
+        // 全程未抓取 = 一次轻点：**完全走 PR81 的点击路径** ——
+        // settleAt(pulse = true)：起胀与滑行同时开始的单相运动，最顺滑。
+        is GlassPressRelease.Tap -> controller.settleAt(release.index.toFloat(), pulse = release.pulse)
+    }
+}
+
+/**
+ * 由「本次物理会话是否抓取过」决定松手路径。
+ *
+ * @param grabbed 按住到抓取阈值或真正拖动过
+ * @param pointerIndex 松手点的连续索引
+ * @param selectedIndex 当前权威选中槽位（轻点同槽不起胀，滑块本来就在那里）
+ * @param tabs 槽位数（索引一律夹取，脏输入不会把透镜放到栏外）
+ */
+internal fun glassPressRelease(
+    grabbed: Boolean,
+    pointerIndex: Float,
+    selectedIndex: Int,
+    tabs: Int,
+): GlassPressRelease {
+    val lastSlot = (tabs - 1).coerceAtLeast(0)
+    val index = pointerIndex.fastRoundToInt().fastCoerceIn(0, lastSlot)
+    return if (grabbed) {
+        GlassPressRelease.Commit(index)
+    } else {
+        GlassPressRelease.Tap(index, pulse = index != selectedIndex)
+    }
+}

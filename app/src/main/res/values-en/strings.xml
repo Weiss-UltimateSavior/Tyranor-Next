@@ -32,8 +32,13 @@
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
     <string name="settings_tone_switch">Tone switch</string>
-    <string name="settings_liquid_glass_nav">Rounded liquid glass navigation</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
+    <string name="settings_nav_bar_title">Navigation bar style</string>
+    <string name="settings_nav_bar_default">Default</string>
+    <string name="settings_nav_bar_liquid_glass">Liquid glass · Classic</string>
+    <string name="settings_nav_bar_liquid_glass_enhanced">Liquid glass · Lens</string>
+    <string name="settings_nav_bar_desc_liquid_glass">Effective on Android 12 and above</string>
+    <string name="settings_nav_bar_desc_enhanced">Android 13 and above only</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>
 
     <string name="settings_update_latest">You are on the latest version</string>

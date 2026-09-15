@@ -32,8 +32,13 @@
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
     <string name="settings_tone_switch">色調切り替え</string>
-    <string name="settings_liquid_glass_nav">角丸リキッドグラスナビ</string>
     <string name="settings_engine_tabs">エンジンページを分類表示</string>
+    <string name="settings_nav_bar_title">ナビゲーションバーのスタイル</string>
+    <string name="settings_nav_bar_default">デフォルト</string>
+    <string name="settings_nav_bar_liquid_glass">リキッドグラス · クラシック</string>
+    <string name="settings_nav_bar_liquid_glass_enhanced">リキッドグラス · レンズ</string>
+    <string name="settings_nav_bar_desc_liquid_glass">Android 12 以上で有効</string>
+    <string name="settings_nav_bar_desc_enhanced">Android 13 以上のみ対応</string>
     <string name="settings_invalid_theme_color">透明色、白黒、グレーは使用できません</string>
 
     <string name="settings_update_latest">最新バージョンです</string>
