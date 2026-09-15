@@ -125,7 +125,13 @@ private val LocalGlassIconScale = staticCompositionLocalOf { { 1f } }
  * @param items 导航项（图标 + 无障碍标签）。
  * @param onItemClick 提交切换：点击与拖动释放都走这里。
  */
-/** 三层 backdrop 共用的胶囊形状提供者：`Function0<Shape>` 取稳定实例，避免重组时更换引用。 */
+/**
+ * 三层 backdrop 共用的胶囊形状提供者。
+ *
+ * 注意：这只是省掉每次重组新建一个 lambda；库内 `drawBackdrop` 仍会按引用比较并新建它自己的
+ * `ShapeProvider`，因此**不能**据此宣称「避免了管线重建」。真正的逐帧重建来自按压期间读取
+ * `controller.pressure` 的 `effects`（见文档 D13 / P2，已真机实测未超帧预算）。
+ */
 private val NavCapsuleShape: () -> Shape = { AppNavCapsuleShape }
 
 @Composable
@@ -411,14 +417,7 @@ fun EnhancedLiquidGlassNavigationBar(
                         selectedIndex = currentSelectedIndex,
                         tabs = tabs,
                     )
-                    when (release) {
-                        // 已经抓取过：正常尺寸吸附 + 收回材质（不再补膨胀，避免「松手后被撑大」）
-                        is GlassPressRelease.Commit -> controller.endPress(release.index, pulse = false)
-                        // 全程未抓取 = 一次轻点：**完全走 PR81 的点击路径** ——
-                        // settleAt(pulse = true)：起胀与滑行同时开始的单相运动，最顺滑。
-                        is GlassPressRelease.Tap ->
-                            controller.settleAt(release.index.toFloat(), pulse = release.pulse)
-                    }
+                    applyGlassPressRelease(controller, release)
                     sessionGrabbed = false
                     recenterPanel()
                     requestSelection(release.index)
@@ -535,14 +534,20 @@ fun EnhancedLiquidGlassNavigationBar(
                         colorFilter(barColorFilter)
                         blur(barBlurRadius.toPx())
                     }
-                    if (refractionEnabled) {
+                    if (refractionEnabled && GlassShaderSupport.allowShaderWork) {
                         // 栏体：折射 + 色散 —— 上下边缘那条**连贯自然**的彩虹带就是这里来的
-                        lens(
-                            refractionHeight = barLensHeightPx,
-                            refractionAmount = barLensAmountPx,
-                            depthEffect = false,
-                            chromaticAberration = spec.barLensChromatic,
-                        )
+                        try {
+                            lens(
+                                refractionHeight = barLensHeightPx,
+                                refractionAmount = barLensAmountPx,
+                                depthEffect = false,
+                                chromaticAberration = spec.barLensChromatic,
+                            )
+                        } catch (error: Throwable) {
+                            // 库的 RuntimeShader 就在本调用栈里构造：这里抛出的异常若冒泡到
+                            // onAttach/updateEffects，崩的是整个主界面。就地熔断，退化为无折射。
+                            GlassShaderSupport.onShaderWorkFailed("bar-lens", error)
+                        }
                     }
                 }
             }
@@ -651,15 +656,19 @@ fun EnhancedLiquidGlassNavigationBar(
                         colorFilter(barColorFilter)
                         blur(barBlurRadius.toPx())
                     }
-                    if (refractionEnabled) {
+                    if (refractionEnabled && GlassShaderSupport.allowShaderWork) {
                         // 采样副本：只保留轻微厚度折射，**不做色散**（显式传 false，不跟随
                         // spec.barLensChromatic——那是给 A 层可见栏体的彩虹带用的）
-                        lens(
-                            refractionHeight = barLensHeightPx,
-                            refractionAmount = barLensAmountPx,
-                            depthEffect = false,
-                            chromaticAberration = false,
-                        )
+                        try {
+                            lens(
+                                refractionHeight = barLensHeightPx,
+                                refractionAmount = barLensAmountPx,
+                                depthEffect = false,
+                                chromaticAberration = false,
+                            )
+                        } catch (error: Throwable) {
+                            GlassShaderSupport.onShaderWorkFailed("copy-lens", error)
+                        }
                     }
                 }
             }
@@ -717,28 +726,32 @@ fun EnhancedLiquidGlassNavigationBar(
             // 写 `true` 实际打开的是 depthEffect 而非色散（Backdrop 1.0.2 签名）。
             val lensEffects: BackdropEffectScope.() -> Unit = remember(refractionEnabled, spec, controller) {
                 {
-                    if (refractionEnabled) {
+                    if (refractionEnabled && GlassShaderSupport.allowShaderWork) {
                         val p = controller.pressure.coerceIn(0f, 1f)
-                        lens(
-                            refractionHeight = lerp(
-                                spec.restRefractionHeight.toPx(),
-                                spec.pressedRefractionHeight.toPx(),
-                                p,
-                            ),
-                            refractionAmount = lerp(
-                                spec.restRefractionAmount.toPx(),
-                                spec.pressedRefractionAmount.toPx(),
-                                p,
-                            ),
-                            depthEffect = false,
-                            // 滑块压到图标时给一圈彩边（用户要求的「覆盖图标时的彩边」）；
-                            // 与 A 层栏体上下边缘的彩虹带分工不同，各自只做一次
-                            chromaticAberration = spec.movingLensChromatic,
-                        )
+                        try {
+                            lens(
+                                refractionHeight = lerp(
+                                    spec.restRefractionHeight.toPx(),
+                                    spec.pressedRefractionHeight.toPx(),
+                                    p,
+                                ),
+                                refractionAmount = lerp(
+                                    spec.restRefractionAmount.toPx(),
+                                    spec.pressedRefractionAmount.toPx(),
+                                    p,
+                                ),
+                                depthEffect = false,
+                                // 滑块压到图标时给一圈彩边（用户要求的「覆盖图标时的彩边」）；
+                                // 与 A 层栏体上下边缘的彩虹带分工不同，各自只做一次
+                                chromaticAberration = spec.movingLensChromatic,
+                            )
+                        } catch (error: Throwable) {
+                            GlassShaderSupport.onShaderWorkFailed("lens-lens", error)
+                        }
                     }
                 }
             }
-            // 静止也保留低强度高光（不再在 MotionVisiblePressure 以下返回 null）
+            // 静止也保留低强度高光（只在「折射能力不可用」时返回 null）
             val lensHighlight: (() -> Highlight?)? = remember(refractionEnabled, spec, controller) {
                 if (refractionEnabled) {
                     {

@@ -86,6 +86,17 @@ fun LiquidGlassNavigationBar(
     items: List<LiquidGlassNavItem>,
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 本机 AGSL（`RuntimeShader`）是否可用。
+     *
+     * `false` 时**不传** `Highlight`：库的 `HighlightStyle.Default.createShader` 在 API 33+ 也会
+     * `obtainRuntimeShader { RuntimeShader(...) }`，而高光由库节点在 attach/draw 期间自行构造、
+     * 调用方无法 catch。透镜档在探测失败时会回退到本档，若不掐掉这处 AGSL 依赖，兜底就等于
+     * 「从一个会崩的档退回另一个会崩的档」（见 `GlassShaderSupport`）。
+     *
+     * 正常设备保持默认值 `true`，本档画面与行为**一字不变**。
+     */
+    runtimeShaderAvailable: Boolean = true,
 ) {
     val density = LocalDensity.current
     // 玻璃表面色随外观模式：深色模式用深色表面
@@ -134,7 +145,11 @@ fun LiquidGlassNavigationBar(
                 vibrancy()
                 blur(with(density) { 12.dp.toPx() })
             },
-            highlight = { Highlight.Default.copy(alpha = 0.85f) },
+            highlight = if (runtimeShaderAvailable) {
+                { Highlight.Default.copy(alpha = 0.85f) }
+            } else {
+                null
+            },
             shadow = { Shadow.Default.copy(alpha = 0.8f) },
             onDrawSurface = {
                 drawRect(surfaceColor.copy(alpha = glassSurfaceAlpha))

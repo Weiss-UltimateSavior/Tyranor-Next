@@ -12,14 +12,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 松手路径分流测试（上一轮审核的回归位点）。
+ * 松手路径分流测试。
  *
- * 为什么要单独测这一层：上一轮的 High 回归不是控制器算错，而是**接线**——`beginPressAt` 已经把
- * 压力目标置为 1，而只有 `settleAt` / `endPress` / `cancelPress` 会把它收回。控制器单测驱动不了
- * 调用方，发现不了「少调了一次」。所以这里既测纯决策 [glassPressRelease]，也把决策接回
- * **真实控制器**跑一遍，确保两条路径都能让压力收敛。
+ * 上一轮的 High 回归不是控制器算错，而是**接线**：`beginPressAt` 已把压力目标置为 1，只有
+ * `settleAt` / `endPress` / `cancelPress` 会把它收回。控制器单测驱动不了调用方，发现不了
+ * 「少调了一次」。
  *
- * 识别器本身（`detectBottomBarPress`）依赖 Compose 指针宿主，本环境无设备，未覆盖。
+ * **覆盖边界（如实说明）**：
+ * - 覆盖：纯决策 [glassPressRelease]（含脏输入与退化槽位），以及接线函数
+ *   [applyGlassPressRelease] → 真实控制器的效果——用例走的是**生产代码同一个函数**，
+ *   把它的分支删掉/改错，这些用例就会失败；
+ * - **不覆盖**：Compose 回调层（`onUp` / `onCancel` / `detectBottomBarPress`）本身。
+ *   如果有人在 `onUp` 里漏调 `applyGlassPressRelease`，本文件**测不出来**——那需要设备或
+ *   Compose 测试宿主（`androidx.compose.ui.test`），当前环境不具备。
  */
 class GlassBottomBarGestureTest {
 
@@ -85,8 +90,8 @@ class GlassBottomBarGestureTest {
             controller.beginPressAt(0f)
             awaitPressureAbove(controller, 0.5f)
             val release = glassPressRelease(grabbed = false, pointerIndex = 0f, selectedIndex = 0, tabs = 4)
-            val tap = release as GlassPressRelease.Tap
-            controller.settleAt(tap.index.toFloat(), pulse = tap.pulse)
+            // 走生产代码的接线函数（而不是在测试里复述 when），这样接线被改坏时用例会失败
+            applyGlassPressRelease(controller, release)
             awaitSettled(controller)
             assertTrue(
                 "轻点也必须把压力收回（少调一次就会永久停在按下态——上轮回归）",
@@ -102,8 +107,7 @@ class GlassBottomBarGestureTest {
             controller.beginPressAt(3f)
             awaitPressureAbove(controller, 0.5f)
             val release = glassPressRelease(grabbed = true, pointerIndex = 3f, selectedIndex = 0, tabs = 4)
-            val commit = release as GlassPressRelease.Commit
-            controller.endPress(commit.index, pulse = false)
+            applyGlassPressRelease(controller, release)
             awaitSettled(controller)
             assertTrue("抓取路径松手后材质必须收回", controller.pressure < 0.05f)
             assertEquals("吸附到整数槽位", 3f, controller.index, 0.02f)
@@ -117,8 +121,7 @@ class GlassBottomBarGestureTest {
             controller.beginPressAt(0f)
             awaitPressureAbove(controller, 0.5f)
             assertTrue("按下时应当已经膨胀", controller.scaleX > 1.05f)
-            val tap = glassPressRelease(false, 0f, 0, 4) as GlassPressRelease.Tap
-            controller.settleAt(tap.index.toFloat(), pulse = tap.pulse)
+            applyGlassPressRelease(controller, glassPressRelease(false, 0f, 0, 4))
             awaitSettled(controller)
             assertEquals("松手后横向尺寸回到静止值", 1f, controller.scaleX, 0.02f)
             assertEquals("松手后纵向尺寸回到静止值", 1f, controller.scaleY, 0.02f)

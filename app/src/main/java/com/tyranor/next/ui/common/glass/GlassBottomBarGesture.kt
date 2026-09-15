@@ -117,6 +117,24 @@ internal sealed interface GlassPressRelease {
 }
 
 /**
+ * 把松手决策落到控制器上——**这就是出过回归的那个接线点**。
+ *
+ * 抽成函数有两个目的：生产代码只此一处调用（不会出现「onUp 里忘了调控制器」这种漏接线），
+ * 且回归用例可以驱动**同一条**代码路径，而不是在测试里复述一遍 `when`。
+ * 注意它覆盖的是「决策 → 控制器」，**不覆盖** Compose 回调（`onUp` / `detectBottomBarPress`）
+ * 本身——那部分需要设备或 Compose 测试宿主。
+ */
+internal fun applyGlassPressRelease(controller: LensMotionController, release: GlassPressRelease) {
+    when (release) {
+        // 已经抓取过：正常尺寸吸附 + 收回材质（不再补膨胀，避免「松手后被撑大」）
+        is GlassPressRelease.Commit -> controller.endPress(release.index, pulse = false)
+        // 全程未抓取 = 一次轻点：**完全走 PR81 的点击路径** ——
+        // settleAt(pulse = true)：起胀与滑行同时开始的单相运动，最顺滑。
+        is GlassPressRelease.Tap -> controller.settleAt(release.index.toFloat(), pulse = release.pulse)
+    }
+}
+
+/**
  * 由「本次物理会话是否抓取过」决定松手路径。
  *
  * @param grabbed 按住到抓取阈值或真正拖动过

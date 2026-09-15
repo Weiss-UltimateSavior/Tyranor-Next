@@ -147,22 +147,25 @@ fun MainScreen(modifier: Modifier = Modifier) {
     tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
   }
 
+  val backdropAvailable = liquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+  // 透镜档**是否真的会渲染**：设置选了它 + 采样层可用 + 本机 AGSL 可用。
+  // 后者是运行期探测（见 GlassShaderSupport）：API 33+ 但 AGSL 编译异常的机器上，
+  // Backdrop 内部的 RuntimeShader 会在布局期抛出并崩掉整个主界面，此时退回经典档更安全。
+  // 注意：回退时经典档也会被要求不传 Highlight，否则兜底路径自己仍依赖 RuntimeShader。
+  val enhancedBarActive = enhanceLiquidGlass && backdropAvailable && GlassShaderSupport.isRuntimeShaderUsable
+
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
   fun selectPage(index: Int) {
     // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
     if (index !in tabItems.indices) return
     if (index == selectedIndex) return
     // 透镜档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
+    // 这里判的是**实际生效的档**（enhancedBarActive）而不是设置值：AGSL 不可用时界面已回退成
+    // 经典档，转场语义必须跟着回退，否则会出现「看着是经典档、行为是透镜档」的错配。
     // 默认路径保持原有守卫，避免把这一行为变更带给未开启该选项的用户（报告 §8.7）。
-    if (!enhanceLiquidGlass && pageTransition.isRunning) return
+    if (!enhancedBarActive && pageTransition.isRunning) return
     selectedIndex = index
   }
-  val backdropAvailable = liquidGlass && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-  // 透镜档**是否真的会渲染**：设置选了它 + 采样层可用 + 本机 AGSL 可用。
-  // 后者是运行期探测（见 GlassShaderSupport）：API 33+ 但 AGSL 编译异常的机器上，
-  // Backdrop 内部的 RuntimeShader 会在布局期抛出并崩掉整个主界面，此时退回经典档更安全。
-  val enhancedBarActive = enhanceLiquidGlass && backdropAvailable && GlassShaderSupport.isRuntimeShaderUsable
-
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
   Box(modifier.fillMaxSize()) {
     // 内容层录制进 backdrop，供液态玻璃导航采样页面内容。
@@ -294,6 +297,9 @@ fun MainScreen(modifier: Modifier = Modifier) {
           unselectedColor = unselectedColor,
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
+          // AGSL 不可用时经典档也不能传 Highlight（库的 HighlightStyle 同样构造 RuntimeShader），
+          // 否则「回退到经典档」这条兜底路径自己就会崩。正常设备为 true，本档画面一字不变。
+          runtimeShaderAvailable = GlassShaderSupport.isRuntimeShaderUsable,
           modifier = Modifier.align(Alignment.BottomCenter),
         )
       }
