@@ -91,14 +91,23 @@ object OnsLibLoader {
         copyAssetFile(app, "DroidSansFallback.ttf", File(app.filesDir, "DroidSansFallback.ttf"))
 
         val preferred = getSelectedVersion(app)
-        if (tryLoadVersion(app, preferred)) return
+        // 按「实际会尝试的顺序」展开候选：首选版本 + 其余版本（保持 ONS_AVAILABLE_VERSIONS 顺序）。
+        // 部分加载失败时要持久化的是「本次之后真正还会再试的那个版本」，不能用全局列表
+        // 顺序推导——首选版本可能就位于全局列表末尾，那样会把下一个候选算成 null。
+        val attemptOrder = ArrayList<String>(NativePluginConstants.ONS_AVAILABLE_VERSIONS.size + 1)
+        attemptOrder.add(preferred)
+        for (version in NativePluginConstants.ONS_AVAILABLE_VERSIONS) {
+            if (version != preferred) attemptOrder.add(version)
+        }
 
-        for (fallback in NativePluginConstants.ONS_AVAILABLE_VERSIONS) {
-            if (fallback == preferred) continue
-            Log.w(TAG, "fallback to engine version $fallback")
-            if (tryLoadVersion(app, fallback)) {
-                // 记住可用版本，下次直接用，不必每次都撞一遍失败的版本。
-                setSelectedVersion(app, fallback)
+        attemptOrder.forEachIndexed { index, version ->
+            val nextCandidate = attemptOrder.getOrNull(index + 1)
+            if (index > 0) Log.w(TAG, "fallback to engine version $version")
+            if (tryLoadVersion(app, version, nextCandidate)) {
+                if (version != preferred) {
+                    // 回退成功：记住可用版本，下次直接用，不必每次都撞一遍失败的版本。
+                    setSelectedVersion(app, version)
+                }
                 return
             }
         }
@@ -111,7 +120,7 @@ object OnsLibLoader {
      * 注意：System.load 无法卸载，所以某个版本一旦加载成功就不能再换另一个版本；
      * 这也是回退只在「加载失败」而不是「运行出错」时生效的原因。
      */
-    private fun tryLoadVersion(app: Context, version: String): Boolean {
+    private fun tryLoadVersion(app: Context, version: String, nextCandidate: String?): Boolean {
         return when (val result = NativeLibraryLoader.loadOns(app, version)) {
             is NativeLibraryLoader.OnsLoadResult.Success -> {
                 loadPatchIfCompatible(version)
@@ -131,29 +140,18 @@ object OnsLibLoader {
                 // 已载入部分 so，本进程不能再加载别的版本：System.load 无法卸载，
                 // 而各版本 so 的 DT_SONAME 相同，继续加载会让 DT_NEEDED 解析到先载入
                 // 的映像，形成混合版本的运行库。
-                // 改为记录下一个候选版本，交由**新的引擎进程**重试。
-                val next = nextVersionAfter(version)
-                if (next != null) {
+                // 改为持久化「本次之后真正还会再试的版本」，交由新的引擎进程重试。
+                if (nextCandidate != null) {
                     Log.w(
                         TAG,
                         "partial load of $version (${result.loadedLibs.size} libs); " +
-                            "switch to $next on next launch",
+                            "switch to $nextCandidate on next launch",
                     )
-                    setSelectedVersion(app, next)
+                    setSelectedVersion(app, nextCandidate)
                 }
-                throw IllegalStateException(
-                    "ONS engine $version partially loaded; retry in a new process",
-                    result.cause,
-                )
+                throw OnsEngineRetryRequiredException(version, result.loadedLibs.size, result.cause)
             }
         }
-    }
-
-    /** 加载顺序里 [current] 之后的下一个候选版本；没有则返回 null。 */
-    private fun nextVersionAfter(current: String): String? {
-        val index = NativePluginConstants.ONS_AVAILABLE_VERSIONS.indexOf(current)
-        if (index < 0) return null
-        return NativePluginConstants.ONS_AVAILABLE_VERSIONS.drop(index + 1).firstOrNull()
     }
 
     /**
@@ -216,5 +214,38 @@ object OnsLibLoader {
             throw RuntimeException("copy asset failed: $asset", t)
         }
         return out
+    }
+}
+
+/** ONS 引擎加载失败的稳定错误码前缀，供上层分支判断。 */
+private const val ONS_ENGINE_RETRY_ERROR_CODE = "ons_engine_retry_required"
+
+/**
+ * 需要在**新的引擎进程**中重试 ONS 引擎。
+ *
+ * 触发条件：本进程已经载入过部分 ONS so 之后加载失败。System.load 无法卸载，
+ * 且各版本 so 的 DT_SONAME 相同，继续在本进程加载其他版本会让 DT_NEEDED 解析到
+ * 先载入的映像，形成混合版本的运行库。
+ *
+ * 上层应依据异常类型或 [errorCode] 分支处理（并持久化下一个候选版本、重启引擎进程），
+ * 不要解析 message 文本。
+ */
+class OnsEngineRetryRequiredException(
+    /** 本次尝试并部分载入的引擎版本目录名。 */
+    val engineVersion: String,
+    /** 失败前已成功载入的 so 数量。 */
+    val loadedLibCount: Int,
+    cause: Throwable?,
+) : IllegalStateException(
+    "$ONS_ENGINE_RETRY_ERROR_CODE: ONS engine $engineVersion partially loaded " +
+        "($loadedLibCount libs)",
+    cause,
+) {
+    /** 稳定错误码，与 message 无关，可安全用于分支判断。 */
+    val errorCode: String get() = ONS_ENGINE_RETRY_ERROR_CODE
+
+    companion object {
+        /** 稳定错误码常量。 */
+        const val ERROR_CODE = ONS_ENGINE_RETRY_ERROR_CODE
     }
 }
