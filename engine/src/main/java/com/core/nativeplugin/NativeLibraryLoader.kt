@@ -13,6 +13,30 @@ object NativeLibraryLoader {
     private const val TAG = "NativeLibraryLoader"
     private val loadedPaths = LinkedHashSet<String>()
 
+    /**
+     * 本进程已加载过的 ONS 引擎 so（不论来自哪个版本目录）。
+     *
+     * 用于判断"能否在同一进程内换版本重试"：System.load 无法卸载，而各版本目录下的
+     * libSDL2.so / liblua.so / libonsyuri.so 使用相同的 DT_SONAME，一旦载入过其中任意
+     * 一个，再加载另一版本会让 DT_NEEDED 解析到先载入的映像，形成混合版本的运行库。
+     */
+    private val onsLoadedPaths = LinkedHashSet<String>()
+
+    /** ONS 引擎 so 的单次加载结果。 */
+    sealed class OnsLoadResult {
+        /** 全部 so 加载成功。 */
+        class Success(val mainSharedObject: String) : OnsLoadResult()
+
+        /** 本次一个 so 都没载入，调用方可以安全地在同进程内换版本重试。 */
+        class NothingLoaded(val reason: String) : OnsLoadResult()
+
+        /**
+         * 已载入部分 so 之后失败。此时**不可**在同进程内换版本重试，
+         * 必须换新的引擎进程（见 [OnsLibLoader.load]）。
+         */
+        class PartialLoad(val loadedLibs: List<String>, val cause: Throwable?) : OnsLoadResult()
+    }
+
     @JvmStatic
     fun loadKirikiroid139(context: Context): String? {
         val sdl2 = NativePluginManager.kirikiroid2LibPath(context, NativePluginConstants.LIB_SDL2) ?: return null
@@ -43,28 +67,54 @@ object NativeLibraryLoader {
     }
 
     @JvmStatic
-    fun loadOns(context: Context): String? = loadOns(context, null)
+    fun loadOns(context: Context): OnsLoadResult = loadOns(context, null)
 
     /**
      * 按版本加载 ONS 引擎 so。
      *
+     * 返回值区分「一个都没载入」与「载入了一半」，调用方据此决定能否在同进程内换版本：
+     * System.load 无法卸载，各版本 so 的 DT_SONAME 又相同，部分载入后再加载另一版本会
+     * 得到混合版本的运行库。
+     *
      * @param version 版本目录名（如 "v0.7.7"），null 表示基础版本。
-     * @return libonsyuri.so 的绝对路径；任一 so 缺失或加载失败时返回 null。
      */
     @JvmStatic
-    fun loadOns(context: Context, version: String?): String? {
-        // 先一次性预检全部 .so，任一缺失即整体失败，避免加载到一半无法回滚。
-        val paths = NativePluginConstants.ONS_REQUIRED_LIBS.map { lib ->
-            NativePluginManager.onsLibPath(context, lib, version) ?: return null
+    fun loadOns(context: Context, version: String?): OnsLoadResult {
+        // 先一次性预检全部 .so：任一缺失即整体失败。此时尚未执行任何 System.load，
+        // 是否可回退由 onsLoadedPaths 决定（可能已被更早的加载填充）。
+        val paths = ArrayList<String>(NativePluginConstants.ONS_REQUIRED_LIBS.size)
+        for (lib in NativePluginConstants.ONS_REQUIRED_LIBS) {
+            val path = NativePluginManager.onsLibPath(context, lib, version)
+                ?: return failureResult("missing $lib", null, emptyList())
+            paths.add(path)
         }
-        return try {
-            paths.forEach { loadPath(it) }
-            // ONS_REQUIRED_LIBS 末尾即 libonsyuri.so（主入口）。
-            paths.last()
-        } catch (t: Throwable) {
-            Log.w(TAG, "load ons engine $version failed", t)
-            null
+
+        val loadedNow = ArrayList<String>(paths.size)
+        for (path in paths) {
+            try {
+                loadOnsPath(path)
+            } catch (t: Throwable) {
+                Log.w(TAG, "load ons engine $version failed after ${loadedNow.size} libs", t)
+                return failureResult("System.load failed: ${t.message}", t, loadedNow)
+            }
+            loadedNow.add(path)
         }
+        // ONS_REQUIRED_LIBS 末尾即 libonsyuri.so（主入口）。
+        return OnsLoadResult.Success(paths.last())
+    }
+
+    /**
+     * 依据「本进程是否已经载入过任意 ONS so」决定失败语义。
+     * 只要载入过（本次或更早），就必须换新进程重试，否则会混版本。
+     */
+    private fun failureResult(
+        reason: String,
+        cause: Throwable?,
+        loadedNow: List<String>,
+    ): OnsLoadResult = if (onsLoadedPaths.isEmpty()) {
+        OnsLoadResult.NothingLoaded(reason)
+    } else {
+        OnsLoadResult.PartialLoad(loadedNow, cause)
     }
 
     @Synchronized
@@ -73,5 +123,13 @@ object NativeLibraryLoader {
             System.load(path)
             loadedPaths.add(path)
         }
+    }
+
+    /** ONS 专用加载：额外记录到 [onsLoadedPaths]，用于判断能否同进程换版本。 */
+    @Synchronized
+    private fun loadOnsPath(path: String) {
+        val alreadyLoaded = path in loadedPaths
+        loadPath(path)
+        if (!alreadyLoaded) onsLoadedPaths.add(path)
     }
 }

@@ -14,6 +14,9 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.RelativeLayout
 import android.widget.TextView
+
+import com.core.engine.R
+
 import java.io.File
 
 /**
@@ -34,6 +37,13 @@ import java.io.File
 class OnsVideoOverlay(private val host: Activity) {
 
     private val main = Handler(Looper.getMainLooper())
+
+    /**
+     * 跳过提示的淡出任务。
+     * 必须持有引用：方法引用 `::fadeOutSkipHint` 每次求值都生成新对象，
+     * `removeCallbacks(::fadeOutSkipHint)` 无法移除已入队的那个。
+     */
+    private val fadeOutRunnable = Runnable { fadeOutSkipHint() }
 
     private var container: FrameLayout? = null
     private var videoView: OnsIjkVideoView? = null
@@ -68,10 +78,6 @@ class OnsVideoOverlay(private val host: Activity) {
 
         this.skippable = skippable
         this.dismissed = false
-
-        // 播片期间申请音频焦点，让系统压低引擎 BGM。
-        // 上游引擎的 Android 分支不会自己停音乐（见 OnsAudioFocus 注释）。
-        OnsAudioFocus.acquire(host)
 
         return try {
             val root = FrameLayout(host).apply {
@@ -164,14 +170,19 @@ class OnsVideoOverlay(private val host: Activity) {
         videoView?.pausePlayback()
     }
 
+    /** 宿主回到前台时调用：恢复此前因切后台而暂停的播放。 */
+    fun onHostResume() {
+        videoView?.resumePlayback()
+    }
+
     /** 移除覆盖层并释放播放器，回到游戏画面。 */
     fun dismiss() {
         if (dismissed) return
         dismissed = true
 
-        // 无论正常播完、跳过还是启动失败，都要释放音频焦点让 BGM 恢复。
-        // dismiss 是所有退出路径的汇合点，放这里能保证不漏。
-        OnsAudioFocus.release()
+        // 取消挂起的淡出回调：脚本连播时，上一段遗留的回调会在新提示显示不足
+        // 3.5 秒时触发，把新提示提前淡掉。持有 Runnable 引用才能正确移除。
+        main.removeCallbacks(fadeOutRunnable)
 
         videoView?.let {
             try {
@@ -215,9 +226,9 @@ class OnsVideoOverlay(private val host: Activity) {
 
     private fun buildSkipHint(): TextView {
         val tv = TextView(host)
-        // 文案直接写在引擎层：tools/check-hardcoded-ui-strings.py 只校验 app 模块的
-        // Kotlin 源码与 app 的三份 strings.xml，engine 模块不在扫描范围内。
-        tv.text = "轻触画面跳过"
+        // 引擎模块同样维护 values / values-en / values-ja 三套文案，
+        // 不能在这里写死中文（英文/日文环境也要显示对应语言）。
+        tv.text = host.getString(R.string.ons_video_skip_hint)
         tv.setTextColor(Color.argb(200, 255, 255, 255))
         tv.textSize = 13f
         val padH = dp(12)
@@ -230,7 +241,7 @@ class OnsVideoOverlay(private val host: Activity) {
         tv.background = bg
         skipHint = tv
         // 播放几秒后淡出，避免一直压在画面上影响观看。
-        main.postDelayed(::fadeOutSkipHint, SKIP_HINT_FADE_DELAY_MS)
+        main.postDelayed(fadeOutRunnable, SKIP_HINT_FADE_DELAY_MS)
         return tv
     }
 

@@ -112,16 +112,48 @@ object OnsLibLoader {
      * 这也是回退只在「加载失败」而不是「运行出错」时生效的原因。
      */
     private fun tryLoadVersion(app: Context, version: String): Boolean {
-        val main = NativeLibraryLoader.loadOns(app, version)
-        if (main == null) {
-            Log.w(TAG, "engine version unavailable: $version")
-            return false
+        return when (val result = NativeLibraryLoader.loadOns(app, version)) {
+            is NativeLibraryLoader.OnsLoadResult.Success -> {
+                loadPatchIfCompatible(version)
+                loaded = true
+                loadedVersion = version
+                Log.i(TAG, "engine ready: $version (${result.mainSharedObject})")
+                true
+            }
+
+            is NativeLibraryLoader.OnsLoadResult.NothingLoaded -> {
+                // 一个 so 都没载入，本进程换版本重试是安全的。
+                Log.w(TAG, "engine version unavailable: $version (${result.reason})")
+                false
+            }
+
+            is NativeLibraryLoader.OnsLoadResult.PartialLoad -> {
+                // 已载入部分 so，本进程不能再加载别的版本：System.load 无法卸载，
+                // 而各版本 so 的 DT_SONAME 相同，继续加载会让 DT_NEEDED 解析到先载入
+                // 的映像，形成混合版本的运行库。
+                // 改为记录下一个候选版本，交由**新的引擎进程**重试。
+                val next = nextVersionAfter(version)
+                if (next != null) {
+                    Log.w(
+                        TAG,
+                        "partial load of $version (${result.loadedLibs.size} libs); " +
+                            "switch to $next on next launch",
+                    )
+                    setSelectedVersion(app, next)
+                }
+                throw IllegalStateException(
+                    "ONS engine $version partially loaded; retry in a new process",
+                    result.cause,
+                )
+            }
         }
-        loadPatchIfCompatible(version)
-        loaded = true
-        loadedVersion = version
-        Log.i(TAG, "engine ready: $version ($main)")
-        return true
+    }
+
+    /** 加载顺序里 [current] 之后的下一个候选版本；没有则返回 null。 */
+    private fun nextVersionAfter(current: String): String? {
+        val index = NativePluginConstants.ONS_AVAILABLE_VERSIONS.indexOf(current)
+        if (index < 0) return null
+        return NativePluginConstants.ONS_AVAILABLE_VERSIONS.drop(index + 1).firstOrNull()
     }
 
     /**

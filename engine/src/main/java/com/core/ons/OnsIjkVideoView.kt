@@ -52,6 +52,15 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
     private var released = false
     /** 保证回调只触发一次，避免上层被通知两次。 */
     private var notified = false
+    /**
+     * 宿主是否处于前台。解码线程（ijk 消息线程）与主线程都会读写，
+     * 因此用 @Volatile 而非普通字段。
+     */
+    @Volatile
+    private var hostForeground = true
+    /** 当前播放器是否已 prepared 完成，供 resumePlayback 判断能否 start。 */
+    @Volatile
+    private var prepared = false
     private var videoWidth = 0
     private var videoHeight = 0
 
@@ -153,9 +162,16 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
             val w = mp.videoWidth
             val h = mp.videoHeight
             Log.i(TAG, "ijk prepared ${w}x$h")
+            prepared = true
             // 回调来自 ijk 的消息线程，视图操作必须回主线程。
             post { applyVideoSize(w, h) }
-            mp.start()
+            // 宿主已切到后台时不启动：prepareAsync 的完成时机不可控，
+            // 无条件 start 会让视频在后台开始播放。等 resumePlayback 再恢复。
+            if (hostForeground) {
+                mp.start()
+            } else {
+                Log.i(TAG, "prepared while host is in background; defer start")
+            }
         } catch (t: Throwable) {
             Log.w(TAG, "start after prepared failed", t)
             notifyFailed(-3, 0)
@@ -187,13 +203,31 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
         requestLayout()
     }
 
-    /** 宿主进入后台时调用：暂停解码，避免无谓耗电与音频抢占。 */
+    /**
+     * 宿主进入后台：记录状态并暂停当前播放器。
+     * 若此时播放器还在 prepareAsync，preparedListener 会依据 hostForeground 延后 start。
+     */
     fun pausePlayback() {
+        hostForeground = false
         try {
             val p = player
             if (p != null && p.isPlaying) p.pause()
         } catch (t: Throwable) {
             Log.w(TAG, "pause failed", t)
+        }
+    }
+
+    /**
+     * 宿主回到前台：只恢复已经 prepared 完成的播放器。
+     * 未准备完成时不能 start，否则会被 ijk 忽略或抛异常；等 preparedListener 处理。
+     */
+    fun resumePlayback() {
+        hostForeground = true
+        try {
+            val p = player
+            if (prepared && p != null && !p.isPlaying) p.start()
+        } catch (t: Throwable) {
+            Log.w(TAG, "resume failed", t)
         }
     }
 
@@ -208,14 +242,15 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
         //   Fatal signal 6 (SIGABRT) in tid xxxxx (hwuiTask1)
         // 正确时机是 onSurfaceTextureDestroyed 回调——那时系统已保证渲染线程不再使用它。
         releasePlayer()
-        // 只解引用，不销毁底层对象。
-        surface = null
+        // 这里**不能**把 surface 置空：真正的释放发生在 onSurfaceTextureDestroyed，
+        // 置空会让该回调拿不到这个包装对象，只能等 GC 才释放 native 资源。
         surfaceReady = false
     }
 
     private fun releasePlayer() {
         val p = player
         player = null
+        prepared = false
         if (p == null) return
         try {
             p.setOnPreparedListener(null)

@@ -117,6 +117,8 @@ public class ONScripter extends SDLActivity {
     @Override public void onResume() {
         super.onResume();
         fullscreen();
+        // 播片期间切后台会暂停解码，回到前台必须恢复，否则视频停在暂停帧。
+        if (videoOverlay != null) videoOverlay.onHostResume();
     }
 
     @Override public void onPause() {
@@ -142,11 +144,13 @@ public class ONScripter extends SDLActivity {
                     || code == KeyEvent.KEYCODE_MUTE) {
                 return super.dispatchKeyEvent(event);
             }
-            if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-                return super.dispatchKeyEvent(event);
+            // BACK 不在此处吞掉：落到下方既有的双击退出 / ESC 透传分支。
+            // 交给 super 会绕过 ONScripter 自身的本地处理——鼠标侧键 BACK 不被静默消费，
+            // 普通 BACK 首按也不会透传 ESC 给游戏。
+            if (code != KeyEvent.KEYCODE_BACK) {
+                if (event.getAction() == KeyEvent.ACTION_UP) videoOverlay.skipByKey();
+                return true;
             }
-            if (event.getAction() == KeyEvent.ACTION_UP) videoOverlay.skipByKey();
-            return true;
         }
         // BACK 首按透传 ESC 给 ONS（游戏内取消/右键语义），2 秒内双击真正退出；
         // ESC 的 down+up 在 DOWN 时成对发送，UP 一律吞掉，避免重复/悬空事件。
