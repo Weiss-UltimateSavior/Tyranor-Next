@@ -193,6 +193,43 @@ object NativePluginManager {
         return if (file.isFile) file.absolutePath else null
     }
 
+    /**
+     * 按引擎版本取 so 路径。
+     *
+     * ONS 插件目录在 arm64-v8a 下按版本分子目录：
+     * - `arm64-v8a/` 根目录是随插件一起发布的基础版本（0.7.6），保持向后兼容；
+     * - `arm64-v8a/v0.7.7/` 这类子目录是可选的新版本。
+     *
+     * @param version 版本目录名（如 "v0.7.7"）；传 null 或基础版本时用根目录。
+     */
+    @JvmStatic
+    fun onsLibPath(context: Context, libName: String?, version: String?): String? {
+        val safeName = libName?.trim() ?: return null
+        if (!NativePluginConstants.ONS_REQUIRED_LIBS.contains(safeName)) return null
+        val abiDir = onsVersionDir(context, version)
+        val file = File(abiDir, safeName)
+        return if (file.isFile) file.absolutePath else null
+    }
+
+    /** 某个版本的 so 所在目录（不存在时不负责创建）。 */
+    @JvmStatic
+    fun onsVersionDir(context: Context, version: String?): File {
+        val abiDir = File(onsCurrentDir(context), NativePluginConstants.ABI_ARM64)
+        return if (version.isNullOrBlank() || version == NativePluginConstants.ONS_BASE_VERSION) {
+            abiDir
+        } else {
+            File(abiDir, version)
+        }
+    }
+
+    /** 该版本是否已随插件安装好（8 个 so 齐全）。 */
+    @JvmStatic
+    fun isOnsVersionAvailable(context: Context, version: String?): Boolean {
+        val dir = onsVersionDir(context, version)
+        if (!dir.isDirectory) return false
+        return NativePluginConstants.ONS_REQUIRED_LIBS.all { File(dir, it).isFile }
+    }
+
     @JvmStatic
     fun expectedOnsZipSha256(context: Context): String? {
         val override = overridePrefs(context).getString(

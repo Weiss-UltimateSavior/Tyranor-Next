@@ -67,6 +67,24 @@ object NativePluginConstants {
         LIB_ONSYURI,
     )
 
+    /**
+     * ONS 插件 arm64-v8a 根目录下的基础引擎版本目录名。
+     * 该目录同时是找不到子版本时的回退目标，
+     * 老插件 zip 里只有这一个目录，必须保持可用。
+     */
+    const val ONS_BASE_VERSION = "v0.7.6"
+    /** 随插件附带的可选新引擎版本目录名（位于 arm64-v8a 下）。 */
+    const val ONS_VERSION_0_7_7 = "v0.7.7"
+    /** 加载顺序即回退顺序，第一个是当前默认版本。 */
+    val ONS_AVAILABLE_VERSIONS: List<String> = listOf(ONS_VERSION_0_7_7, ONS_BASE_VERSION)
+    /**
+     * libONSPatch.so 经验证只与该版本匹配。
+     * 它靠硬编码偏移改写 libonsyuri.so 的指令——不依赖符号名，
+     * 版本不符时会把指令写到错误位置，后果是运行中随机崩溃且难以排查。
+     * 因此只在版本完全一致时才加载，其他版本一律跳过。
+     */
+    const val ONS_PATCH_COMPATIBLE_VERSION = ONS_BASE_VERSION
+
     /** Artemis 外置插件必备 so：多套 revision 运行库 + 自研内核，均只依赖系统库，互不依赖。 */
     val ARTEMIS_REQUIRED_LIBS: List<String> = listOf(
         LIB_ARTEMIS,

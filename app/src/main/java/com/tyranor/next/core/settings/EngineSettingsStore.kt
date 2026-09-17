@@ -2,6 +2,7 @@ package com.tyranor.next.core.settings
 
 import android.content.Context
 import com.core.engine.EnginePrefs
+import com.core.nativeplugin.NativePluginConstants
 import org.json.JSONObject
 
 /**
@@ -47,6 +48,9 @@ object EngineSettingsStore {
 
     // Ren'Py 应用级默认（外置模块版本选择）
     const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
+
+    // ONS 引擎版本（存 onsyuri prefs，与引擎进程 OnsLibLoader 共用键名，改动需同步）
+    const val KEY_ONS_ENGINE_VERSION = "engine_version"
 
     // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
@@ -410,6 +414,16 @@ object EngineSettingsStore {
         var sharpness: Boolean = false,
         var sharpnessValue: String = "2",
         var encoding: String = "gbk",
+        // ===== 以下为对齐 onsyuri 0.7.7 补全的参数（引擎侧 OnsSettings 同名键） =====
+        var noVsync: Boolean = false,
+        var fontCache: Boolean = false,
+        var renderFontOutline: Boolean = false,
+        var disableRescale: Boolean = false,
+        var forceButtonShortcut: Boolean = false,
+        var wheelDownAdvance: Boolean = false,
+        var debugLog: Boolean = false,
+        var forceWidth: Int = 0,
+        var forceHeight: Int = 0,
     ) {
         fun toJson(): String =
             JSONObject()
@@ -420,6 +434,15 @@ object EngineSettingsStore {
                 .put("sharpness", sharpness)
                 .put("sharpness_value", sharpnessValue)
                 .put("encoding", normalizeEncoding(encoding))
+                .put("novsync", noVsync)
+                .put("fontcache", fontCache)
+                .put("renderfontoutline", renderFontOutline)
+                .put("disablerescale", disableRescale)
+                .put("forcebuttonshortcut", forceButtonShortcut)
+                .put("wheeldownadvance", wheelDownAdvance)
+                .put("debuglog", debugLog)
+                .put("width", forceWidth)
+                .put("height", forceHeight)
                 .toString()
     }
 
@@ -435,10 +458,39 @@ object EngineSettingsStore {
             o.sharpness = j.optBoolean("sharpness", o.sharpness)
             o.sharpnessValue = j.optString("sharpness_value", o.sharpnessValue)
             o.encoding = normalizeEncoding(j.optString("encoding", o.encoding))
+            o.noVsync = j.optBoolean("novsync", o.noVsync)
+            o.fontCache = j.optBoolean("fontcache", o.fontCache)
+            o.renderFontOutline = j.optBoolean("renderfontoutline", o.renderFontOutline)
+            o.disableRescale = j.optBoolean("disablerescale", o.disableRescale)
+            o.forceButtonShortcut = j.optBoolean("forcebuttonshortcut", o.forceButtonShortcut)
+            o.wheelDownAdvance = j.optBoolean("wheeldownadvance", o.wheelDownAdvance)
+            o.debugLog = j.optBoolean("debuglog", o.debugLog)
+            o.forceWidth = j.optInt("width", o.forceWidth)
+            o.forceHeight = j.optInt("height", o.forceHeight)
         } catch (t: Throwable) {
             // 解析失败用默认值
         }
         return o
+    }
+
+    // ---------- ONS 引擎版本（存 onsyuri/engine_version，引擎进程 OnsLibLoader 直接读） ----------
+
+    /**
+     * 用户选择的 ONS 引擎版本目录名。
+     * 取值必须落在 [NativePluginConstants.ONS_AVAILABLE_VERSIONS] 内，非法值回退到默认版本。
+     */
+    fun getOnsEngineVersion(c: Context): String {
+        val v = onsPrefs(c).getString(KEY_ONS_ENGINE_VERSION, null)
+        return if (v != null && NativePluginConstants.ONS_AVAILABLE_VERSIONS.contains(v)) {
+            v
+        } else {
+            NativePluginConstants.ONS_AVAILABLE_VERSIONS.first()
+        }
+    }
+
+    fun setOnsEngineVersion(c: Context, v: String) {
+        if (!NativePluginConstants.ONS_AVAILABLE_VERSIONS.contains(v)) return
+        onsPrefs(c).edit().putString(KEY_ONS_ENGINE_VERSION, v).apply()
     }
 
     fun saveOns(c: Context, o: Ons) = onsPrefs(c).edit().putString("gameargs", o.toJson()).apply()

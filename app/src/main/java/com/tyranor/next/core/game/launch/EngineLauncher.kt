@@ -670,6 +670,21 @@ object EngineLauncher {
                     args.add("--sharpness")
                     args.add(safeSharpnessValue(ons.sharpnessValue))
                 }
+                // ===== onsyuri 0.7.7 支持的其余开关（与 OnsSettings.buildArgs 保持一致） =====
+                if (ons.noVsync) args.add("--no-vsync")
+                if (ons.fontCache) args.add("--fontcache")
+                if (ons.renderFontOutline) args.add("--render-font-outline")
+                if (ons.disableRescale) args.add("--disable-rescale")
+                if (ons.forceButtonShortcut) args.add("--force-button-shortcut")
+                if (ons.wheelDownAdvance) args.add("--enable-wheeldown-advance")
+                if (ons.debugLog) args.add("--debug:1")
+                // 宽高必须成对给出，只给一个会让引擎按默认值算另一边，反而更容易出错。
+                if (ons.forceWidth > 0 && ons.forceHeight > 0) {
+                    args.add("--width")
+                    args.add(ons.forceWidth.toString())
+                    args.add("--height")
+                    args.add(ons.forceHeight.toString())
+                }
                 Intent(context, ONScripter::class.java).apply {
                     putStringArrayListExtra(LaunchContract.GAME_ARGS, args)
                     putExtra(LaunchContract.GAME_URI, Uri.fromFile(java.io.File(path)).toString())

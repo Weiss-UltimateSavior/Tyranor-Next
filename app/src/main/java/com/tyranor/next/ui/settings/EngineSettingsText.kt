@@ -2,6 +2,7 @@ package com.tyranor.next.ui.settings
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
+import com.core.nativeplugin.NativePluginConstants
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.EngineSettingsStore
 
@@ -102,6 +103,20 @@ internal fun onsSharpnessOptions(): List<Pair<String, String>> =
 
 internal fun onsEncodingOptions(): List<Pair<String, String>> =
     listOf("gbk" to "GBK", "sjis" to "Shift-JIS", "utf8" to "UTF-8")
+
+/**
+ * ONS 引擎版本选项。目录名必须与 NativePluginConstants.ONS_AVAILABLE_VERSIONS 一致，
+ * 顺序也保持一致（第一个是默认版本）。
+ */
+@Composable
+internal fun onsEngineVersionOptions(): List<Pair<String, String>> =
+    NativePluginConstants.ONS_AVAILABLE_VERSIONS.map { version ->
+        version to when (version) {
+            NativePluginConstants.ONS_VERSION_0_7_7 -> stringResource(R.string.engine_settings_ons_version_077)
+            NativePluginConstants.ONS_BASE_VERSION -> stringResource(R.string.engine_settings_ons_version_076)
+            else -> version
+        }
+    }
 
 @Composable
 internal fun artVersionOptions(): List<Pair<String, String>> = listOf(

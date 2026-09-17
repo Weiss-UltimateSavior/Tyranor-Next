@@ -250,6 +250,16 @@
     <string name="engine_settings_sharpness">Image sharpening</string>
     <string name="engine_settings_sharpness_strength">Sharpness strength</string>
     <string name="engine_settings_text_encoding">Text encoding</string>
+    <string name="engine_settings_ons_version_076">0.7.6 (legacy · stable)</string>
+    <string name="engine_settings_ons_version_077">0.7.7 (latest)</string>
+    <string name="engine_settings_ons_engine_version_hint">Re-enter the game to apply. If the new version fails to load, it falls back to the legacy one automatically; ONSPatch only applies to 0.7.6 and is skipped on 0.7.7.</string>
+    <string name="engine_settings_ons_no_vsync">Disable vertical sync</string>
+    <string name="engine_settings_ons_font_cache">Cache default font</string>
+    <string name="engine_settings_ons_render_font_outline">Render text outline</string>
+    <string name="engine_settings_ons_disable_rescale">Disable image rescale</string>
+    <string name="engine_settings_ons_force_button_shortcut">Force button shortcuts</string>
+    <string name="engine_settings_ons_wheeldown_advance">Wheel down to advance</string>
+    <string name="engine_settings_ons_debug_log">Output engine debug log</string>
     <string name="engine_settings_rotate_screen">Rotate screen</string>
     <string name="engine_settings_auto_patch">Automatic patch</string>
     <string name="engine_settings_artemis_resolution">Stage resolution</string>

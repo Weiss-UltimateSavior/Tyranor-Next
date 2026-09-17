@@ -250,6 +250,16 @@
     <string name="engine_settings_sharpness">画面シャープ化</string>
     <string name="engine_settings_sharpness_strength">シャープ化強度</string>
     <string name="engine_settings_text_encoding">テキストエンコード</string>
+    <string name="engine_settings_ons_version_076">0.7.6（旧版・安定）</string>
+    <string name="engine_settings_ons_version_077">0.7.7（新版）</string>
+    <string name="engine_settings_ons_engine_version_hint">切り替え後はゲームを再起動してください。新版の読み込みに失敗した場合は旧版へ自動的にフォールバックします。ONSPatch は 0.7.6 のみ有効で、0.7.7 ではスキップされます。</string>
+    <string name="engine_settings_ons_no_vsync">垂直同期を無効化</string>
+    <string name="engine_settings_ons_font_cache">既定フォントをキャッシュ</string>
+    <string name="engine_settings_ons_render_font_outline">テキスト縁取り描画</string>
+    <string name="engine_settings_ons_disable_rescale">画像リサイズを無効化</string>
+    <string name="engine_settings_ons_force_button_shortcut">ボタンショートカットを強制</string>
+    <string name="engine_settings_ons_wheeldown_advance">ホイール下回しで進行</string>
+    <string name="engine_settings_ons_debug_log">エンジンデバッグログを出力</string>
     <string name="engine_settings_rotate_screen">画面を反転</string>
     <string name="engine_settings_auto_patch">自動パッチ</string>
     <string name="engine_settings_artemis_resolution">ステージ解像度</string>

@@ -687,6 +687,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krAnime4k by remember { mutableStateOf(EngineSettingsStore.getKrAnime4kMode(ctx)) }
 
     var ons by remember { mutableStateOf(EngineSettingsStore.loadOns(ctx)) }
+    var onsEngineVersion by remember { mutableStateOf(EngineSettingsStore.getOnsEngineVersion(ctx)) }
 
     var artKernel by remember { mutableStateOf(EngineSettingsStore.getArtKernel(ctx)) }
     var artVersion by remember { mutableStateOf(EngineSettingsStore.getArtEngineVersion(ctx)) }
@@ -743,6 +744,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrMenuHandlerOpa(ctx, krMenuOpa)
         EngineSettingsStore.setKrAnime4kMode(ctx, krAnime4k)
         EngineSettingsStore.saveOns(ctx, ons)
+        EngineSettingsStore.setOnsEngineVersion(ctx, onsEngineVersion)
         EngineSettingsStore.setArtKernel(ctx, artKernel)
         EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
         EngineSettingsStore.setArtRotateScreen(ctx, artRotate)
@@ -791,6 +793,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fontLauncher,
+                onsEngineVersion = onsEngineVersion,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -811,6 +814,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrAnime4k = { krAnime4k = it },
                 onResetKrFont = { krFont = "" },
                 onOns = { ons = it },
+                onOnsEngineVersion = { onsEngineVersion = it },
                 onArtKernel = { artKernel = it },
                 onArtVersion = { artVersion = it },
                 onArtRotate = { artRotate = it },
@@ -886,6 +890,8 @@ private fun LazyListPlaceholder(
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
     onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit, onKrAnime4k: (String) -> Unit,
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
+    onsEngineVersion: String = "",
+    onOnsEngineVersion: (String) -> Unit = {},
     onArtKernel: (String) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
     onArtResolution: (String) -> Unit, onArtSideCut: (String) -> Unit,
@@ -911,6 +917,7 @@ private fun LazyListPlaceholder(
     val krFpsMap = krFpsOptions()
     val onsSharpnessMap = onsSharpnessOptions()
     val onsEncodingMap = onsEncodingOptions()
+    val onsEngineVersionMap = onsEngineVersionOptions()
     val artKernelSelect = artKernelOptions()
     val artVersionMap = artVersionOptions()
     val renpyVersionMap = renpyVersionOptions()
@@ -1008,6 +1015,13 @@ private fun LazyListPlaceholder(
 
         if (kind == EngineSettingsKind.ONS) item {
             EngineCard("ONS") {
+                DropdownRow(stringResource(R.string.engine_settings_engine_version), onsEngineVersionMap, onsEngineVersion, onOnsEngineVersion)
+                Text(
+                    stringResource(R.string.engine_settings_ons_engine_version_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = ons.scopedSaveDir, onCheckedChange = { b -> onOns(ons.copy(scopedSaveDir = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_fullscreen_stretch), checked = ons.stretchFull, onCheckedChange = { b -> onOns(ons.copy(stretchFull = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_ignore_cutout), checked = ons.ignoreCutout, onCheckedChange = { b -> onOns(ons.copy(ignoreCutout = b)) })
@@ -1021,6 +1035,13 @@ private fun LazyListPlaceholder(
                 DropdownRow(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, EngineSettingsStore.normalizeEncoding(ons.encoding)) {
                     onOns(ons.copy(encoding = it))
                 }
+                SwitchPreference(title = stringResource(R.string.engine_settings_ons_no_vsync), checked = ons.noVsync, onCheckedChange = { b -> onOns(ons.copy(noVsync = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_ons_font_cache), checked = ons.fontCache, onCheckedChange = { b -> onOns(ons.copy(fontCache = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_ons_render_font_outline), checked = ons.renderFontOutline, onCheckedChange = { b -> onOns(ons.copy(renderFontOutline = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_ons_disable_rescale), checked = ons.disableRescale, onCheckedChange = { b -> onOns(ons.copy(disableRescale = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_ons_force_button_shortcut), checked = ons.forceButtonShortcut, onCheckedChange = { b -> onOns(ons.copy(forceButtonShortcut = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_ons_wheeldown_advance), checked = ons.wheelDownAdvance, onCheckedChange = { b -> onOns(ons.copy(wheelDownAdvance = b)) })
+                SwitchPreference(title = stringResource(R.string.engine_settings_ons_debug_log), checked = ons.debugLog, onCheckedChange = { b -> onOns(ons.copy(debugLog = b)) })
             }
         }
 

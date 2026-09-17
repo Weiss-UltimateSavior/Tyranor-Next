@@ -172,14 +172,6 @@
             android:taskAffinity="com.core.ONScripter"
             android:screenOrientation="sensorLandscape"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
-
-        <!-- 引擎内辅助播放 Activity -->
-        <activity
-            android:name="com.core.ons.OnsVideoActivity"
-            android:exported="false"
-            android:process=":ons"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
         <activity
             android:name="com.ies_net.artemis.VideoViewActivity"
             android:exported="false"

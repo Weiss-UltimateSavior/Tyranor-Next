@@ -1,6 +1,7 @@
 package com.core.nativeplugin
 
 import android.content.Context
+import android.util.Log
 
 /**
  * Loads Kirikiroid2 native libraries from the installed zip plugin directory.
@@ -9,6 +10,7 @@ import android.content.Context
  * NativeBridge so the C++ bridge can dlopen the same file.
  */
 object NativeLibraryLoader {
+    private const val TAG = "NativeLibraryLoader"
     private val loadedPaths = LinkedHashSet<String>()
 
     @JvmStatic
@@ -41,14 +43,28 @@ object NativeLibraryLoader {
     }
 
     @JvmStatic
-    fun loadOns(context: Context): String? {
+    fun loadOns(context: Context): String? = loadOns(context, null)
+
+    /**
+     * 按版本加载 ONS 引擎 so。
+     *
+     * @param version 版本目录名（如 "v0.7.7"），null 表示基础版本。
+     * @return libonsyuri.so 的绝对路径；任一 so 缺失或加载失败时返回 null。
+     */
+    @JvmStatic
+    fun loadOns(context: Context, version: String?): String? {
         // 先一次性预检全部 .so，任一缺失即整体失败，避免加载到一半无法回滚。
         val paths = NativePluginConstants.ONS_REQUIRED_LIBS.map { lib ->
-            NativePluginManager.onsLibPath(context, lib) ?: return null
+            NativePluginManager.onsLibPath(context, lib, version) ?: return null
         }
-        paths.forEach { loadPath(it) }
-        // ONS_REQUIRED_LIBS 末尾即 libonsyuri.so（主入口）。
-        return paths.last()
+        return try {
+            paths.forEach { loadPath(it) }
+            // ONS_REQUIRED_LIBS 末尾即 libonsyuri.so（主入口）。
+            paths.last()
+        } catch (t: Throwable) {
+            Log.w(TAG, "load ons engine $version failed", t)
+            null
+        }
     }
 
     @Synchronized

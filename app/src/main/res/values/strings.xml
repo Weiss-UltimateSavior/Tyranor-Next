@@ -250,6 +250,16 @@
     <string name="engine_settings_sharpness">画面锐化</string>
     <string name="engine_settings_sharpness_strength">锐化强度</string>
     <string name="engine_settings_text_encoding">文本编码</string>
+    <string name="engine_settings_ons_version_076">0.7.6（旧版·稳定）</string>
+    <string name="engine_settings_ons_version_077">0.7.7（新版）</string>
+    <string name="engine_settings_ons_engine_version_hint">切换后需重新进入游戏生效。新版加载失败会自动回退旧版；ONSPatch 补丁仅对 0.7.6 生效，0.7.7 下会自动跳过。</string>
+    <string name="engine_settings_ons_no_vsync">关闭垂直同步</string>
+    <string name="engine_settings_ons_font_cache">缓存默认字体</string>
+    <string name="engine_settings_ons_render_font_outline">文字描边渲染</string>
+    <string name="engine_settings_ons_disable_rescale">禁用图片缩放</string>
+    <string name="engine_settings_ons_force_button_shortcut">强制按键快捷操作</string>
+    <string name="engine_settings_ons_wheeldown_advance">滚轮下滚推进文本</string>
+    <string name="engine_settings_ons_debug_log">输出引擎调试日志</string>
     <string name="engine_settings_rotate_screen">画面反转</string>
     <string name="engine_settings_auto_patch">自动补丁</string>
     <string name="engine_settings_artemis_resolution">舞台分辨率</string>
