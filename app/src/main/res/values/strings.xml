@@ -114,6 +114,7 @@
     <string name="engine_desc_unknown">未知引擎</string>
     <string name="engine_desc_psp">PSP 游戏通过外置 PPSSPP 运行</string>
     <string name="engine_desc_yuris">YU-RIS，yscfg.dat 与 .ypf 封包（ysbin/.ymv）游戏，经外置 Winlator 运行</string>
+    <string name="engine_desc_pc">手动添加的 Windows PC 游戏，经外置 Winlator 运行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
     <string name="engine_external_jump_title">外置跳转支持</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
@@ -128,6 +129,7 @@
     <string name="engine_emulator_not_installed">未安装</string>
     <string name="engine_settings_external_emulator_hint">该游戏由外置模拟器运行，设置与存档由模拟器管理。</string>
     <string name="engine_settings_yuris_hint">该游戏由外置 Winlator 运行；启动程序可在游戏详情「启动文件」中调整。存档位于游戏目录 save/，已纳入统一存档管理；运行参数由 Winlator 管理。</string>
+    <string name="engine_settings_pc_hint">该游戏经外置 Winlator 运行；启动程序可在游戏详情「启动文件」中切换。无存档管理与引擎参数。</string>
     <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
     <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
     <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
@@ -537,4 +539,13 @@
     <string name="patch_download_too_large">补丁文件过大，已停止下载</string>
     <string name="patch_error_open_write_stream">无法打开补丁写入流</string>
     <string name="patch_error_write_game_dir">无法写入游戏目录，请重新添加游戏目录并授予写入权限</string>
+    <string name="game_add_pc_content_description">添加 PC 游戏</string>
+    <string name="pc_add_dialog_title">添加 PC 游戏</string>
+    <string name="pc_add_pick_directory">选择游戏目录</string>
+    <string name="pc_add_directory_empty">未选择目录</string>
+    <string name="pc_add_exe_label">启动程序</string>
+    <string name="pc_add_exe_empty">目录内未找到可启动的 .exe</string>
+    <string name="pc_add_loading">正在读取目录……</string>
+    <string name="pc_add_duplicate">该目录已在游戏库中</string>
+    <string name="pc_add_failed">添加失败，请重试</string>
 </resources>

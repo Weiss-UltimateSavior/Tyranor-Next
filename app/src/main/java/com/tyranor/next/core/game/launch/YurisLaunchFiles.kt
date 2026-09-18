@@ -5,28 +5,41 @@ import java.io.File
 import java.util.Locale
 
 /**
- * YU-RIS 主程序（.exe）解析。
+ * Windows 游戏主程序（.exe）解析（YU-RIS 自动挑选与手动添加的 PC 游戏共用）。
  *
- * YU-RIS 游戏目录根下通常只有主程序与 `settings.exe` 两个可执行文件（主程序体积明显更大），
- * 但没有固定命名。解析顺序：
+ * 目录根下通常只有主程序与 `settings.exe` 等少量可执行文件，主程序体积明显更大但没有固定命名。
+ * 解析顺序：
  * 1. 单游戏「启动文件」手动指定（[ScanGame.launchFile]，支持子目录相对路径）；
  * 2. 根目录 `.exe` 中排除 settings/unins/setup/install/update/patch/crack/keygen 等干扰项后，
  *    优先「文件名与目录名匹配」，其次「体积最大」，最后按名称排序；
  * 3. 若排除后为空，退回未过滤集合（仍按目录名匹配 → 体积最大排序）。
+ *
+ * [candidatesOf] 供 SAF 侧（PC 游戏添加弹窗）使用：只需要「名称 + 体积」两个字段。
  */
 object YurisLaunchFiles {
+
+    /** 候选 exe（名称 + 体积）。 */
+    data class ExeCandidate(val name: String, val size: Long)
 
     /** 干扰项关键词：出现在文件名任意位置即排除（不含扩展名）。 */
     private val EXCLUDED_KEYWORDS = listOf(
         "settings", "unins", "setup", "install", "update", "updater", "patch", "crack", "keygen",
     )
 
-    /** 根目录候选 exe（未过滤），按「目录名匹配 → 体积降序 → 名称」排序。 */
-    fun candidates(projectDir: File): List<File> {
-        val exes = projectDir.listFiles()?.filter { it.isFile && it.name.lowercase(Locale.ROOT).endsWith(".exe") }
+    /** 根目录候选 exe（已过滤干扰项并排序）。 */
+    fun candidates(projectDir: File): List<ExeCandidate> {
+        val entries = projectDir.listFiles()
+            ?.filter { it.isFile && it.name.lowercase(Locale.ROOT).endsWith(".exe") }
+            ?.map { ExeCandidate(it.name, it.length()) }
             ?: return emptyList()
+        return candidatesOf(entries, projectDir.name)
+    }
+
+    /** 候选 exe（文件名 + 体积）：过滤干扰项后按「目录名匹配 → 体积降序 → 名称」排序。 */
+    fun candidatesOf(entries: List<ExeCandidate>, dirName: String): List<ExeCandidate> {
+        val exes = entries.filter { it.name.lowercase(Locale.ROOT).endsWith(".exe") }
         val filtered = exes.filterNot { isExcluded(it.name) }
-        return sortCandidates(filtered.ifEmpty { exes }, projectDir.name)
+        return sortCandidates(filtered.ifEmpty { exes }, dirName)
     }
 
     /** 解析实际启动的 exe；返回 null 表示目录内没有可用 exe。 */
@@ -37,7 +50,7 @@ object YurisLaunchFiles {
             val candidate = File(projectDir, manual.trim())
             if (candidate.isFile && candidate.name.lowercase(Locale.ROOT).endsWith(".exe")) return candidate
         }
-        return candidates(projectDir).firstOrNull()
+        return candidates(projectDir).firstOrNull()?.let { File(projectDir, it.name) }
     }
 
     /** 解析出的 exe 文件名（相对游戏目录）；无可用 exe 返回 null。 */
@@ -52,17 +65,17 @@ object YurisLaunchFiles {
         return EXCLUDED_KEYWORDS.any { stem.contains(it) }
     }
 
-    private fun sortCandidates(exes: List<File>, dirName: String): List<File> {
+    private fun sortCandidates(exes: List<ExeCandidate>, dirName: String): List<ExeCandidate> {
         val normalizedDir = normalizeName(dirName)
         return exes.sortedWith(
-            compareBy<File> { file ->
-                val stem = normalizeName(file.name.substringBeforeLast('.'))
+            compareBy<ExeCandidate> { candidate ->
+                val stem = normalizeName(candidate.name.substringBeforeLast('.'))
                 when {
                     normalizedDir.isNotEmpty() && stem == normalizedDir -> 0
                     normalizedDir.isNotEmpty() && (stem.contains(normalizedDir) || normalizedDir.contains(stem)) -> 1
                     else -> 2
                 }
-            }.thenByDescending { it.length() }
+            }.thenByDescending { it.size }
                 .thenBy { it.name.lowercase(Locale.ROOT) },
         )
     }

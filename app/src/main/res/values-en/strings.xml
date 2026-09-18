@@ -114,6 +114,7 @@
     <string name="engine_desc_unknown">Unknown engine</string>
     <string name="engine_desc_psp">PSP games run through the external PPSSPP</string>
     <string name="engine_desc_yuris">YU-RIS (yscfg.dat with .ypf packages, ysbin/.ymv), runs via external Winlator</string>
+    <string name="engine_desc_pc">Manually added Windows PC games, run via external Winlator</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch games run through the external Eden</string>
     <string name="engine_external_jump_title">External emulator support</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
@@ -128,6 +129,7 @@
     <string name="engine_emulator_not_installed">Not installed</string>
     <string name="engine_settings_external_emulator_hint">This game runs in an external emulator; settings and saves are managed by the emulator.</string>
     <string name="engine_settings_yuris_hint">This game runs in external Winlator. The executable can be changed via "Launch file" in game details. Saves live in the game folder\'s save/ directory and are managed by the launcher; runtime options are managed by Winlator.</string>
+    <string name="engine_settings_pc_hint">Runs via external Winlator. Change the executable via "Launch file" in game details. No save management or engine options.</string>
     <string name="launch_emulator_missing">%1$s is not installed. Download it from “External emulator support”</string>
     <string name="launch_emulator_no_activity">%1$s does not provide an entry to receive games</string>
     <string name="launch_emulator_denied">%1$s launch was denied by the system</string>
@@ -537,4 +539,13 @@
     <string name="patch_download_too_large">Patch file is too large; download stopped</string>
     <string name="patch_error_open_write_stream">Unable to open the patch write stream</string>
     <string name="patch_error_write_game_dir">Unable to write to the game directory. Add the game folder again and grant write permission</string>
+    <string name="game_add_pc_content_description">Add PC game</string>
+    <string name="pc_add_dialog_title">Add PC game</string>
+    <string name="pc_add_pick_directory">Choose game folder</string>
+    <string name="pc_add_directory_empty">No folder selected</string>
+    <string name="pc_add_exe_label">Executable</string>
+    <string name="pc_add_exe_empty">No runnable .exe found in this folder</string>
+    <string name="pc_add_loading">Reading folder…</string>
+    <string name="pc_add_duplicate">This folder is already in the library</string>
+    <string name="pc_add_failed">Failed to add, please retry</string>
 </resources>

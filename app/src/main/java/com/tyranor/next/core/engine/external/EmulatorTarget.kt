@@ -19,7 +19,8 @@ enum class EmulatorLaunchStyle { VIEW_FILE, WINLATOR_EXTERNAL }
  * 模拟器 APK。主 App 只做识别、安装探测与显式组件跳转，不接管其存档与设置。
  */
 data class EmulatorTarget(
-    val engine: EngineType,
+    /** 该目标承载的引擎（一个 Winlator 目标同时服务 YU-RIS 与手动添加的 PC 游戏）。 */
+    val engines: List<EngineType>,
     @get:StringRes val displayNameRes: Int,
     val packageName: String,
     val activityName: String,
@@ -29,4 +30,27 @@ data class EmulatorTarget(
     val grantWrite: Boolean,
     val installUrl: String,
     val launchStyle: EmulatorLaunchStyle = EmulatorLaunchStyle.VIEW_FILE,
-)
+) {
+    /** 单个引擎目标的便捷构造（PPSSPP / Eden 等）。 */
+    constructor(
+        engine: EngineType,
+        displayNameRes: Int,
+        packageName: String,
+        activityName: String,
+        mime: String,
+        grantWrite: Boolean,
+        installUrl: String,
+        launchStyle: EmulatorLaunchStyle = EmulatorLaunchStyle.VIEW_FILE,
+    ) : this(
+        engines = listOf(engine),
+        displayNameRes = displayNameRes,
+        packageName = packageName,
+        activityName = activityName,
+        mime = mime,
+        grantWrite = grantWrite,
+        installUrl = installUrl,
+        launchStyle = launchStyle,
+    )
+
+    fun supports(engine: EngineType): Boolean = engine in engines
+}

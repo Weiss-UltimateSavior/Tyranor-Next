@@ -35,6 +35,7 @@ iOS版本计划中...
 | Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
 | SiglusEngine         | `Gameexe.dat`/`Gameexe.ini`、`Scene.pck`（根或 `Data/`）                | Siglus 原生运行时（siglus_rs）      |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
+| PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
 | TyranoBuilder        | `index.html`、`tyrano/`                                              | 内置 Tyrano Web 运行环境           |
 | RPG Maker XP         | `.rgssad`、`Game.ini` + `Data/*.rxdata`                              | 外置 RPGM APK 模块               |
 | RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
@@ -52,6 +53,8 @@ YU-RIS（Windows）游戏通过外置 Winlator（winlator-cn）运行：扫描�
 
 内置 Web 运行环境同时支持部分以 `app.asar` 打包的 NW\.js 游戏；启动时会根据归档内容进一步识别具体类型。
 Ren'Py 与 RPG Maker XP/VX/VX Ace/mkxp-z 当前通过外置 APK 模块运行：Ren'Py 支持 8.5 / 7.7.1 版本，可在全局或单游戏设置中选择引擎版本；自动模式会读取 Ren'Py `script_version` 与 Python2 运行库特征，在 8.5 / 7.7.1 模块间匹配。主 App 默认启用该能力，仅在引擎页检查目标模块是否已安装；未安装时引擎 item 显示打叉并提示下载安装。RPG Maker MV/MZ 属于 Web runtime，继续使用内置 Web 运行环境。
+PC 游戏（任意 Windows 程序）通过游戏页顶栏「添加 PC 游戏」手动入库（不参与扫描）：选择目录并从目录检索 exe、指定启动程序；启动经外置 Winlator，启动文件可在游戏详情中随时切换。PC 游戏不纳入存档管理与引擎参数配置。
+
 PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 扩展名识别并逐条入库（.iso/.cso/.pbp/.chd、.nsp/.xci/.nca/.nro），启动时按类型拉起已安装的 PPSSPP / Eden（显式组件 + 读取授权，使用 SAF 内容 URI；文件回退路径经 FileProvider 转换）。这两类游戏的存档与设置由模拟器自行管理，主 App 不接管；引擎页「外置跳转支持」入口可查看安装状态并跳转下载页。引擎页可在应用设置中开启「引擎页分类显示」，按 GAL / RPGM / 主机 / 网页 分页展示引擎项。
 
 ### 平台与文件要求

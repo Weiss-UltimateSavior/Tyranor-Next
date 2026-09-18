@@ -1,11 +1,11 @@
 # Tyranor Next — 领域上下文
 
-基于 Tyranor 模拟器逆向重写、面向 Android 的多引擎视觉小说（Galgame）聚合启动器：识别并启动 KiriKiri / ONScripter / Tyrano / Artemis / Siglus / YU-RIS / RPG Maker / Ren'Py 等多类引擎编排的游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节。本上下文定义该领域内约定成俗的核心术语。
+基于 Tyranor 模拟器逆向重写、面向 Android 的多引擎视觉小说（Galgame）聚合启动器：识别并启动 KiriKiri / ONScripter / Tyrano / Artemis / Siglus / YU-RIS / PC（手动添加）/ RPG Maker / Ren'Py 等多类引擎编排的游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节。本上下文定义该领域内约定成俗的核心术语。
 
 ## 引擎与运行时
 
 **引擎（EngineType）**:
-游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、RENPY、YURIS、UNKNOWN。
+游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、RENPY、YURIS、PC、UNKNOWN。
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:
@@ -15,6 +15,10 @@ _Avoid_: 预制引擎、捆绑引擎
 **外置 APK 引擎模块（External Engine Module）**:
 以独立 APK 形式分发、需用户安装/下载的引擎运行时（Ren'Py 8.5/7.7.1、RPG Maker XP/VX/VX Ace/mkxp-z），由注册表（ExternalEngineModuleRegistry）按引擎 + 版本解析目标模块，启动时通过 Intent 协议拉起。
 _Avoid_: 插件、引擎 DLC
+
+**PC 游戏（手动添加）**:
+不属于已识别引擎家族、由用户在游戏页顶栏「添加 PC 游戏」手动入库的 Windows 程序：选择目录 + 指定启动 exe（存 `launchFile`，可随时切换），启动经外置 Winlator；不参与扫描、不纳入存档管理与引擎配置。
+_Avoid_: 未知引擎、Winlator 游戏
 
 **外置模拟器跳转（External Emulator Jump）**:
 把游戏交给用户自行安装的独立模拟器/模拟器型运行时（PPSSPP、Eden、Winlator）运行；主 App 只做识别、安装探测与显式组件 Intent 跳转，不接管其存档与设置。YU-RIS 为「目录 + 主 exe」形态，经 Winlator 外置启动协议（`dir_path` + 相对 `exe_path`，自动空闲盘符临时挂载）拉起。

@@ -114,6 +114,7 @@
     <string name="engine_desc_unknown">不明なエンジン</string>
     <string name="engine_desc_psp">PSP ゲームは外部 PPSSPP で実行します</string>
     <string name="engine_desc_yuris">YU-RIS（yscfg.dat と .ypf パッケージ、ysbin/.ymv）。外部 Winlator で実行</string>
+    <string name="engine_desc_pc">手動追加の Windows PC ゲーム。外部 Winlator で実行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch ゲームは外部 Eden で実行します</string>
     <string name="engine_external_jump_title">外部エミュレータ連携</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
@@ -128,6 +129,7 @@
     <string name="engine_emulator_not_installed">未インストール</string>
     <string name="engine_settings_external_emulator_hint">このゲームは外部エミュレータで実行されます。設定とセーブはエミュレータ側で管理されます。</string>
     <string name="engine_settings_yuris_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブはゲームフォルダーの save/ に保存され、ランチャーの統一セーブ管理で扱えます。実行設定は Winlator が管理します。</string>
+    <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理とエンジン設定はありません。</string>
     <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
     <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
     <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
@@ -537,4 +539,13 @@
     <string name="patch_download_too_large">パッチファイルが大きすぎるためダウンロードを中止しました</string>
     <string name="patch_error_open_write_stream">パッチ書き込みストリームを開けません</string>
     <string name="patch_error_write_game_dir">ゲームフォルダへ書き込めません。ゲームフォルダを追加し直して書き込み権限を付与してください</string>
+    <string name="game_add_pc_content_description">PC ゲームを追加</string>
+    <string name="pc_add_dialog_title">PC ゲームを追加</string>
+    <string name="pc_add_pick_directory">ゲームフォルダーを選択</string>
+    <string name="pc_add_directory_empty">フォルダー未選択</string>
+    <string name="pc_add_exe_label">起動プログラム</string>
+    <string name="pc_add_exe_empty">起動可能な .exe が見つかりません</string>
+    <string name="pc_add_loading">フォルダーを読み込み中…</string>
+    <string name="pc_add_duplicate">このフォルダーは既に追加済みです</string>
+    <string name="pc_add_failed">追加に失敗しました。もう一度お試しください</string>
 </resources>

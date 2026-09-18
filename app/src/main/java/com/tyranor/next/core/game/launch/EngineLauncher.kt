@@ -111,8 +111,9 @@ object EngineLauncher {
         EngineType.ARTEMIS,
         EngineType.SIGLUS,
         EngineType.RENPY,
-        // YURIS 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入「外置跳转支持」弹窗
+        // YURIS / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
+        EngineType.PC,
         // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
         EngineType.PSP,
         EngineType.NINTENDO_SWITCH,
@@ -153,7 +154,7 @@ object EngineLauncher {
         ExternalEmulatorRegistry.forEngine(game.engine)?.let { target ->
             currentCoroutineContext().ensureActive()
             if (target.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL) {
-                return launchYurisViaWinlator(context, game, target)
+                return launchWindowsViaWinlator(context, game, target)
             }
             val result = ExternalEmulatorLauncher.launch(context, target, game.uri)
             if (result.success) {
@@ -703,8 +704,9 @@ object EngineLauncher {
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
 
-            // YURIS 由外置 Winlator 承载，在 launchInternalChecked 前置分流，不会走到这里
-            EngineType.YURIS -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
+            // YURIS / PC 由外置 Winlator 承载，在 launchInternalChecked 前置分流，不会走到这里
+            EngineType.YURIS,
+            EngineType.PC -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
 
             // PSP / Switch 由外置模拟器跳转承载，在 launchInternalChecked 前置分流，不会走到这里
             EngineType.PSP,
@@ -733,11 +735,11 @@ object EngineLauncher {
     }
 
     /**
-     * YURIS（Windows 游戏）经外置 Winlator 启动：解析游戏目录真实路径 → 解析主 exe →
-     * 交给 Winlator 挂载目录（自动空闲盘符）并按相对文件名启动。
-     * 存档与运行参数由 Winlator 管理，主 App 只负责识别与跳转。
+     * Windows 游戏（YU-RIS / 手动添加的 PC）经外置 Winlator 启动：解析游戏目录真实路径 →
+     * 解析主 exe（`launchFile` 优先）→ 交给 Winlator 挂载目录（自动空闲盘符）并按相对文件名启动。
+     * 运行参数由 Winlator 管理，主 App 只负责识别与跳转。
      */
-    private suspend fun launchYurisViaWinlator(
+    private suspend fun launchWindowsViaWinlator(
         context: Context,
         game: ScanGame,
         target: ExternalEmulatorTarget,
@@ -1620,7 +1622,8 @@ object EngineLauncher {
     internal fun listLaunchFiles(context: Context, game: ScanGame): List<String> {
         val path = resolveGameDirectory(context, game) ?: return emptyList()
         return when (game.engine) {
-            EngineType.YURIS -> YurisLaunchFiles.candidates(java.io.File(path)).map { it.name }
+            // YU-RIS 与手动添加的 PC 游戏共用 Windows exe 候选（过滤 settings/unins/setup 等并按可信度排序）
+            EngineType.YURIS, EngineType.PC -> YurisLaunchFiles.candidates(java.io.File(path)).map { it.name }
             else -> {
                 val files = java.io.File(path).listFiles()?.filter { it.isFile }.orEmpty()
                 val xp3 = files.filter { it.name.lowercase().endsWith(".xp3") }.sortedBy { it.name.lowercase() }.map { it.name }
@@ -1636,7 +1639,7 @@ object EngineLauncher {
      */
     internal fun currentLaunchFileName(context: Context, game: ScanGame): String? {
         val path = resolveGameDirectory(context, game) ?: return null
-        if (game.engine == EngineType.YURIS) {
+        if (game.engine == EngineType.YURIS || game.engine == EngineType.PC) {
             return YurisLaunchFiles.resolveExeName(game, path)
         }
         val entry = pickKrActivateEntry(path, game)

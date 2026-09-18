@@ -57,6 +57,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
@@ -185,8 +186,9 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     onClick = {
                         when {
-                            // YU-RIS：只展示本引擎的外置运行时（Winlator），标题「YU-RIS 引擎列表」
-                            engine == EngineType.YURIS && emulator != null -> emulatorDialogEngine = engine
+                            // Winlator 系（YU-RIS / 手动 PC）：只展示本引擎的外置运行时，标题「<引擎> 引擎列表」
+                            emulator != null && emulator.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL ->
+                                emulatorDialogEngine = engine
                             emulator != null -> showExternalJumpDialog = true
                             else -> moduleDialogEngine = engine
                         }
@@ -249,9 +251,9 @@ fun EngineScreen(modifier: Modifier = Modifier) {
         )
     }
 
-    // YU-RIS 引擎专属弹窗：只列该引擎的外置运行时（Winlator），未安装跳下载页、已安装打开主界面
+    // Winlator 系引擎专属弹窗：只列该引擎的外置运行时（Winlator），未安装跳下载页、已安装打开主界面
     emulatorDialogEngine?.let { dialogEngine ->
-        val entries = ExternalEmulatorRegistry.targets.filter { it.engine == dialogEngine }
+        val entries = ExternalEmulatorRegistry.targets.filter { it.supports(dialogEngine) }
         AppAlertDialog(
             onDismissRequest = { emulatorDialogEngine = null },
             title = {
@@ -519,7 +521,8 @@ private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.RENPY,
     EngineType.YURIS -> EngineTab.GAL
-    EngineType.PSP, EngineType.NINTENDO_SWITCH -> EngineTab.CONSOLE
+    // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
+    EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
     EngineType.UNKNOWN -> EngineTab.WEB
 }
@@ -541,7 +544,9 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
     EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
     EngineType.SIGLUS -> stringResource(R.string.engine_desc_siglus)
+
     EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
+    EngineType.PC -> stringResource(R.string.engine_desc_pc)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
     EngineType.PSP -> stringResource(R.string.engine_desc_psp)
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)

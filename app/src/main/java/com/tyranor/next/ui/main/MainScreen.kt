@@ -253,6 +253,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
                   onScanLibrary = libraryViewModel::scanLibrary,
                   onScrapeEventShown = libraryViewModel::acknowledgeScrapeEvent,
                   onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
+                  onAddManualGame = libraryViewModel::addManualGame,
                 )
                 2 -> EngineScreen(Modifier.fillMaxSize())
                 3 -> SettingsScreen(Modifier.fillMaxSize())

@@ -83,7 +83,7 @@ object EngineScanner {
         }
         val refreshed = GameLibraryFacade.updateGames(context) { currentGames ->
             val existingByUri = currentGames.associateBy { it.uri }
-            activeScanned.map { current ->
+            val scanned = activeScanned.map { current ->
                 existingByUri[current.uri]?.let { previous ->
                     current.copy(
                         coverUri = previous.coverUri ?: current.coverUri,
@@ -99,6 +99,7 @@ object EngineScanner {
                     )
                 } ?: current
             }
+            mergeScannedWithManual(currentGames, scanned)
         }
         val validUris = refreshed.mapTo(HashSet()) { it.uri }
         // 最近打开/快捷启动为 games 派生视图，消失的游戏行已随差量删除，这里同步内存缓存即可。
@@ -111,6 +112,16 @@ object EngineScanner {
         // 扫描识别结果入缓存（迁移方案阶段 5）：Ren'Py 版本建议与 RPGM 子运行时。
         GameLibraryRepository.post(context) { EngineDetectionRepository.recordScanDetections(it, refreshed) }
         refreshed
+    }
+
+    /**
+     * 重扫合并：手动添加的 PC 游戏不参与扫描（不依赖扫描根），重扫时必须原样保留；
+     * 同 uri 若被扫描命中则以扫描结果为准（避免重复条目）。
+     */
+    internal fun mergeScannedWithManual(current: List<ScanGame>, scanned: List<ScanGame>): List<ScanGame> {
+        val scannedUris = scanned.mapTo(HashSet()) { it.uri }
+        val manual = current.filter { it.engine == EngineType.PC && it.uri !in scannedUris }
+        return manual + scanned
     }
 
     /**

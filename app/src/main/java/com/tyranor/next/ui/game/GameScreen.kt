@@ -164,6 +164,7 @@ fun GameScreen(
     onScanLibrary: () -> Unit,
     onScrapeEventShown: (Long) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
+    onAddManualGame: (ScanGame) -> Boolean,
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
@@ -276,7 +277,8 @@ fun GameScreen(
         },
         dbSearchQuery = libraryState.searchQuery,
         dbSearchResults = libraryState.searchResults,
-        onSearchQueryChanged = onSearchQueryChanged,
+        onAddManualGame = onAddManualGame,
+                onSearchQueryChanged = onSearchQueryChanged,
     )
 
     // ===== 点击游戏卡片的底部抽屉栏 =====
@@ -447,8 +449,10 @@ private fun GameLibraryContent(
     dbSearchQuery: String,
     dbSearchResults: List<ScanGame>?,
     onSearchQueryChanged: (String) -> Unit,
+    onAddManualGame: (ScanGame) -> Boolean,
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
+    var showPcAddDialog by remember { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val gameSort by AppSettingsStore.gameSortState.collectAsState()
     val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
@@ -483,6 +487,11 @@ private fun GameLibraryContent(
                 }
             },
             trailing = {
+                TopBarIcon(
+                    painterResource(R.drawable.ic_game_add_pc),
+                    stringResource(R.string.game_add_pc_content_description),
+                    MaterialTheme.colorScheme.primary,
+                ) { showPcAddDialog = true }
                 TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
                     showSearch = !showSearch
                     if (!showSearch) query = ""
@@ -555,6 +564,14 @@ private fun GameLibraryContent(
             }
         }
     }
+
+    if (showPcAddDialog) {
+        PcGameAddDialog(
+            onDismiss = { showPcAddDialog = false },
+            onAdd = onAddManualGame,
+        )
+    }
+
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -820,7 +837,7 @@ internal fun GameActionsSheet(
                     onClick = { beginLaunch() },
                 )
             }
-            if (game.engine == EngineType.KIRIKIRI || game.engine == EngineType.YURIS) {
+            if (game.engine == EngineType.KIRIKIRI || game.engine == EngineType.YURIS || game.engine == EngineType.PC) {
                 item {
                     AppNavItem(
                         title = stringResource(R.string.game_launch_file),
@@ -1821,6 +1838,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
     EngineType.SIGLUS -> Color(0xFF00838F)
     EngineType.YURIS -> Color(0xFF558B2F)
+    EngineType.PC -> Color(0xFF455A64)
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
