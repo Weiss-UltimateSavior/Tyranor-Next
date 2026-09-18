@@ -30,9 +30,6 @@ class OnsSettings {
     @JvmField var wheelDownAdvance = false
     /** --debug:1：输出引擎调试日志，排查脚本问题时才需要开。 */
     @JvmField var debugLog = false
-    /** 自定义分辨率，0 表示不指定（--width / --height）。 */
-    @JvmField var forceWidth = 0
-    @JvmField var forceHeight = 0
 
     companion object {
         const val PREF_NAME = "onsyuri"
@@ -121,8 +118,6 @@ class OnsSettings {
         forceButtonShortcut = o.optBoolean("forcebuttonshortcut", forceButtonShortcut)
         wheelDownAdvance = o.optBoolean("wheeldownadvance", wheelDownAdvance)
         debugLog = o.optBoolean("debuglog", debugLog)
-        forceWidth = o.optInt("width", forceWidth)
-        forceHeight = o.optInt("height", forceHeight)
     }
 
     fun toJson(): JSONObject {
@@ -142,8 +137,6 @@ class OnsSettings {
         o.put("forcebuttonshortcut", forceButtonShortcut)
         o.put("wheeldownadvance", wheelDownAdvance)
         o.put("debuglog", debugLog)
-        o.put("width", forceWidth)
-        o.put("height", forceHeight)
         return o
     }
 
@@ -191,13 +184,6 @@ class OnsSettings {
         if (forceButtonShortcut) args.add("--force-button-shortcut")
         if (wheelDownAdvance) args.add("--enable-wheeldown-advance")
         if (debugLog) args.add("--debug:1")
-        // 宽高必须成对给出，只给一个会让引擎按默认值算另一边，反而更容易出错。
-        if (forceWidth > 0 && forceHeight > 0) {
-            args.add("--width")
-            args.add(forceWidth.toString())
-            args.add("--height")
-            args.add(forceHeight.toString())
-        }
         return args
     }
 

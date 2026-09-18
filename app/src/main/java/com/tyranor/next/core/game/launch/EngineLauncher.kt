@@ -678,13 +678,6 @@ object EngineLauncher {
                 if (ons.forceButtonShortcut) args.add("--force-button-shortcut")
                 if (ons.wheelDownAdvance) args.add("--enable-wheeldown-advance")
                 if (ons.debugLog) args.add("--debug:1")
-                // 宽高必须成对给出，只给一个会让引擎按默认值算另一边，反而更容易出错。
-                if (ons.forceWidth > 0 && ons.forceHeight > 0) {
-                    args.add("--width")
-                    args.add(ons.forceWidth.toString())
-                    args.add("--height")
-                    args.add(ons.forceHeight.toString())
-                }
                 Intent(context, ONScripter::class.java).apply {
                     putStringArrayListExtra(LaunchContract.GAME_ARGS, args)
                     putExtra(LaunchContract.GAME_URI, Uri.fromFile(java.io.File(path)).toString())

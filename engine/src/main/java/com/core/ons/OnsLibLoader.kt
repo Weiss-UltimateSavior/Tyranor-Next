@@ -29,7 +29,6 @@ object OnsLibLoader {
 
     /** 与 OnsSettings 共用同一份 prefs 文件，但键独立，互不覆盖。 */
     private const val PREF_NAME = OnsSettings.PREF_NAME
-    private const val KEY_ENGINE_VERSION = "engine_version"
 
     private var loaded = false
 
@@ -43,7 +42,7 @@ object OnsLibLoader {
     @JvmStatic
     fun getSelectedVersion(context: Context): String {
         return try {
-            val value = prefs(context).getString(KEY_ENGINE_VERSION, null)
+            val value = prefs(context).getString(NativePluginConstants.KEY_ONS_ENGINE_VERSION, null)
             if (value != null && NativePluginConstants.ONS_AVAILABLE_VERSIONS.contains(value)) {
                 value
             } else {
@@ -52,21 +51,6 @@ object OnsLibLoader {
         } catch (t: Throwable) {
             Log.w(TAG, "read engine version failed", t)
             NativePluginConstants.ONS_AVAILABLE_VERSIONS.first()
-        }
-    }
-
-    /** 写入用户选择的引擎版本；未知版本直接拒绝，避免把无效值写进 prefs。 */
-    @JvmStatic
-    fun setSelectedVersion(context: Context, version: String?) {
-        if (version.isNullOrBlank()) return
-        if (!NativePluginConstants.ONS_AVAILABLE_VERSIONS.contains(version)) {
-            Log.w(TAG, "reject unknown engine version: $version")
-            return
-        }
-        try {
-            prefs(context).edit().putString(KEY_ENGINE_VERSION, version).apply()
-        } catch (t: Throwable) {
-            Log.w(TAG, "save engine version failed", t)
         }
     }
 
@@ -81,6 +65,11 @@ object OnsLibLoader {
     /**
      * 加载用户选择的引擎版本；失败时按 [NativePluginConstants.ONS_AVAILABLE_VERSIONS]
      * 顺序回退，避免新版 so 在个别设备上加载失败时整个 ONS 功能不可用。
+     *
+     * 注意：引擎进程**不写回** prefs。「哪个版本可用」是用户的选择
+     * （[NativePluginConstants.KEY_ONS_ENGINE_VERSION]，只由 App 写入），
+     * 引擎擅自改写会被 App 进程的陈旧内存值反向覆盖，反而复活坏版本。
+     * 因此这里只做「本次启动内」的回退，不做跨启动的版本记忆。
      */
     @SuppressLint("UnsafeDynamicallyLoadedCode")
     @Synchronized
@@ -90,26 +79,18 @@ object OnsLibLoader {
         val app = context.applicationContext
         copyAssetFile(app, "DroidSansFallback.ttf", File(app.filesDir, "DroidSansFallback.ttf"))
 
+        // 尝试顺序：首选版本优先，其余版本按 ONS_AVAILABLE_VERSIONS 顺序回退。
         val preferred = getSelectedVersion(app)
-        // 按「实际会尝试的顺序」展开候选：首选版本 + 其余版本（保持 ONS_AVAILABLE_VERSIONS 顺序）。
-        // 部分加载失败时要持久化的是「本次之后真正还会再试的那个版本」，不能用全局列表
-        // 顺序推导——首选版本可能就位于全局列表末尾，那样会把下一个候选算成 null。
         val attemptOrder = ArrayList<String>(NativePluginConstants.ONS_AVAILABLE_VERSIONS.size + 1)
         attemptOrder.add(preferred)
         for (version in NativePluginConstants.ONS_AVAILABLE_VERSIONS) {
             if (version != preferred) attemptOrder.add(version)
         }
 
-        attemptOrder.forEachIndexed { index, version ->
-            val nextCandidate = attemptOrder.getOrNull(index + 1)
+        for (index in attemptOrder.indices) {
+            val version = attemptOrder[index]
             if (index > 0) Log.w(TAG, "fallback to engine version $version")
-            if (tryLoadVersion(app, version, nextCandidate)) {
-                if (version != preferred) {
-                    // 回退成功：记住可用版本，下次直接用，不必每次都撞一遍失败的版本。
-                    setSelectedVersion(app, version)
-                }
-                return
-            }
+            if (tryLoadVersion(app, version)) return
         }
         throw IllegalStateException("no usable onsyuri engine version")
     }
@@ -120,7 +101,7 @@ object OnsLibLoader {
      * 注意：System.load 无法卸载，所以某个版本一旦加载成功就不能再换另一个版本；
      * 这也是回退只在「加载失败」而不是「运行出错」时生效的原因。
      */
-    private fun tryLoadVersion(app: Context, version: String, nextCandidate: String?): Boolean {
+    private fun tryLoadVersion(app: Context, version: String): Boolean {
         return when (val result = NativeLibraryLoader.loadOns(app, version)) {
             is NativeLibraryLoader.OnsLoadResult.Success -> {
                 loadPatchIfCompatible(version)
@@ -139,16 +120,8 @@ object OnsLibLoader {
             is NativeLibraryLoader.OnsLoadResult.PartialLoad -> {
                 // 已载入部分 so，本进程不能再加载别的版本：System.load 无法卸载，
                 // 而各版本 so 的 DT_SONAME 相同，继续加载会让 DT_NEEDED 解析到先载入
-                // 的映像，形成混合版本的运行库。
-                // 改为持久化「本次之后真正还会再试的版本」，交由新的引擎进程重试。
-                if (nextCandidate != null) {
-                    Log.w(
-                        TAG,
-                        "partial load of $version (${result.loadedLibs.size} libs); " +
-                            "switch to $nextCandidate on next launch",
-                    )
-                    setSelectedVersion(app, nextCandidate)
-                }
+                // 的映像，形成混合版本的运行库。抛给上层走友好失败（SDLActivity 的
+                // 错误对话框），由用户改用其他引擎版本后重启游戏。
                 throw OnsEngineRetryRequiredException(version, result.loadedLibs.size, result.cause)
             }
         }

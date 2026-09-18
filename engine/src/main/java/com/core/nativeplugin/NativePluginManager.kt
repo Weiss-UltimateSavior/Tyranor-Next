@@ -185,14 +185,6 @@ object NativePluginManager {
         return deleted
     }
 
-    @JvmStatic
-    fun onsLibPath(context: Context, libName: String?): String? {
-        val safeName = libName?.trim() ?: return null
-        if (!NativePluginConstants.ONS_REQUIRED_LIBS.contains(safeName)) return null
-        val file = File(File(onsCurrentDir(context), NativePluginConstants.ABI_ARM64), safeName)
-        return if (file.isFile) file.absolutePath else null
-    }
-
     /**
      * 按引擎版本取 so 路径。
      *

@@ -53,6 +53,12 @@ class OnsVideoOverlay(private val host: Activity) {
     /** 防止重复清理。 */
     private var dismissed = false
 
+    /**
+     * 播放代次。每次 [play] 自增，异步回调（播完/失败）携带发起时的代次，
+     * 只有代次仍是最新的才允许收场——否则连播时上一段遗留的回调会把刚起的新视频拆掉。
+     */
+    private var generation = 0L
+
     /** 当前是否正在播放，供宿主决定按键/触摸事件是否该交给视频层。 */
     fun isPlaying(): Boolean = container != null && !dismissed
 
@@ -78,6 +84,8 @@ class OnsVideoOverlay(private val host: Activity) {
 
         this.skippable = skippable
         this.dismissed = false
+        generation += 1
+        val currentGeneration = generation
 
         return try {
             val root = FrameLayout(host).apply {
@@ -97,13 +105,13 @@ class OnsVideoOverlay(private val host: Activity) {
             view.setCallback(object : OnsIjkVideoView.Callback {
                 override fun onFinished() {
                     Log.i(TAG, "video finished")
-                    postDismiss()
+                    postDismiss(currentGeneration)
                 }
 
                 override fun onFailed(what: Int, extra: Int) {
                     // 播不了就直接收场回到游戏，绝不停在黑屏上。
                     Log.w(TAG, "video failed what=$what extra=$extra")
-                    postDismiss()
+                    postDismiss(currentGeneration)
                 }
             })
             root.addView(view, videoLp)
@@ -114,7 +122,7 @@ class OnsVideoOverlay(private val host: Activity) {
             root.setOnTouchListener { _: View, e: MotionEvent ->
                 if (this.skippable && e.action == MotionEvent.ACTION_DOWN) {
                     Log.i(TAG, "skipped by touch")
-                    postDismiss()
+                    postDismiss(generation)
                 }
                 true
             }
@@ -162,7 +170,7 @@ class OnsVideoOverlay(private val host: Activity) {
     fun skipByKey() {
         if (!isPlaying() || !skippable) return
         Log.i(TAG, "skipped by key")
-        postDismiss()
+        postDismiss(generation)
     }
 
     /** 宿主进入后台时调用：暂停解码，避免无谓耗电与音频抢占。 */
@@ -214,9 +222,16 @@ class OnsVideoOverlay(private val host: Activity) {
 
     /**
      * ijk 的回调可能来自解码线程，视图操作必须切回主线程。
+     *
+     * @param expectedGeneration 发起该回调时的播放代次；与当前代次不符说明
+     *   已被新一轮播放取代，此时必须放弃收场，否则会拆掉新视频。
      */
-    private fun postDismiss() {
+    private fun postDismiss(expectedGeneration: Long) {
         main.post {
+            if (expectedGeneration != generation) {
+                Log.i(TAG, "stale dismiss ignored (gen=$expectedGeneration, current=$generation)")
+                return@post
+            }
             if (host.isFinishing || host.isDestroyed) return@post
             dismiss()
         }

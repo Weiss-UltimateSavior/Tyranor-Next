@@ -45,7 +45,6 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
     private var surface: Surface? = null
     private var pendingFd: FileDescriptor? = null
     private var pendingPath: String? = null
-    private var volume = 1f
     /** surface 就绪前收到的播放请求要缓存，等 onSurfaceTextureAvailable 再开始。 */
     private var surfaceReady = false
     private var startRequested = false
@@ -74,16 +73,6 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
         callback = cb
     }
 
-    /** 音量，0f~1f。 */
-    fun setVolume(v: Float) {
-        volume = if (v < 0f) 0f else if (v > 1f) 1f else v
-        try {
-            player?.setVolume(volume, volume)
-        } catch (t: Throwable) {
-            Log.w(TAG, "setVolume failed", t)
-        }
-    }
-
     /** 用文件描述符播放，优先方式：不受 SAF / 作用域存储路径可见性影响。 */
     fun playFd(fd: FileDescriptor) {
         pendingFd = fd
@@ -108,8 +97,12 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
 
     private fun openPlayer() {
         releasePlayer()
+        // p 在 setDataSource 之后才交给 player 字段；此处保留局部引用，
+        // 保证任一步骤抛异常时能释放这个已构建的实例（否则只会释放 null）。
+        var created: IjkMediaPlayer? = null
         try {
             val p = IjkMediaPlayer()
+            created = p
 
             // 锁定 ffmpeg 软解：MPEG-1 等老容器硬解普遍不支持。
             p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 0L)
@@ -135,7 +128,7 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
             p.setOnVideoSizeChangedListener(videoSizeListener)
             if (surface != null) p.setSurface(surface)
             p.setScreenOnWhilePlaying(true)
-            p.setVolume(volume, volume)
+            p.setVolume(1f, 1f)
 
             when {
                 pendingFd != null -> p.setDataSource(pendingFd)
@@ -148,11 +141,13 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
             }
 
             player = p
+            // 所有权已转移给 player 字段，异常路径无需再单独释放。
+            created = null
             p.prepareAsync()
             Log.i(TAG, "ijk prepareAsync, fd=${pendingFd != null} path=$pendingPath")
         } catch (t: Throwable) {
             Log.e(TAG, "open ijk player failed", t)
-            releasePlayer()
+            releasePlayerInstance(created)
             notifyFailed(-2, 0)
         }
     }
@@ -251,6 +246,11 @@ class OnsIjkVideoView(context: Context) : TextureView(context), TextureView.Surf
         val p = player
         player = null
         prepared = false
+        releasePlayerInstance(p)
+    }
+
+    /** 释放指定实例（可能是尚未交给 [player] 字段的局部实例）。 */
+    private fun releasePlayerInstance(p: IjkMediaPlayer?) {
         if (p == null) return
         try {
             p.setOnPreparedListener(null)

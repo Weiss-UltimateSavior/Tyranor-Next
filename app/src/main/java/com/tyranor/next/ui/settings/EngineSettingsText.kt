@@ -2,7 +2,6 @@ package com.tyranor.next.ui.settings
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
-import com.core.nativeplugin.NativePluginConstants
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.EngineSettingsStore
 
@@ -105,15 +104,21 @@ internal fun onsEncodingOptions(): List<Pair<String, String>> =
     listOf("gbk" to "GBK", "sjis" to "Shift-JIS", "utf8" to "UTF-8")
 
 /**
- * ONS 引擎版本选项。目录名必须与 NativePluginConstants.ONS_AVAILABLE_VERSIONS 一致，
- * 顺序也保持一致（第一个是默认版本）。
+ * ONS 引擎版本选项。
+ *
+ * @param candidates 可选版本（由 core 层按插件实际安装情况过滤后传入）；
+ *   UI 层不直接依赖 engine 包。
  */
 @Composable
-internal fun onsEngineVersionOptions(): List<Pair<String, String>> =
-    NativePluginConstants.ONS_AVAILABLE_VERSIONS.map { version ->
+internal fun onsEngineVersionOptions(candidates: List<String>): List<Pair<String, String>> =
+    candidates.map { version ->
         version to when (version) {
-            NativePluginConstants.ONS_VERSION_0_7_7 -> stringResource(R.string.engine_settings_ons_version_077)
-            NativePluginConstants.ONS_BASE_VERSION -> stringResource(R.string.engine_settings_ons_version_076)
+            EngineSettingsStore.ONS_ENGINE_VERSION_LATEST ->
+                stringResource(R.string.engine_settings_ons_version_077)
+
+            EngineSettingsStore.ONS_ENGINE_VERSION_LEGACY ->
+                stringResource(R.string.engine_settings_ons_version_076)
+
             else -> version
         }
     }

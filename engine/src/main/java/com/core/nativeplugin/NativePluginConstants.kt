@@ -68,6 +68,13 @@ object NativePluginConstants {
     )
 
     /**
+     * 用户选择的引擎版本目录名（如 "v0.7.7"）。
+     * 只由 App 侧写入（`EngineSettingsStore.setOnsEngineVersion`），引擎进程**只读**：
+     * 引擎不再回写该键，避免跨进程 SharedPreferences 的陈旧值覆盖用户选择。
+     */
+    const val KEY_ONS_ENGINE_VERSION = "engine_version"
+
+    /**
      * ONS 插件 arm64-v8a 根目录下的基础引擎版本目录名。
      * 该目录同时是找不到子版本时的回退目标，
      * 老插件 zip 里只有这一个目录，必须保持可用。

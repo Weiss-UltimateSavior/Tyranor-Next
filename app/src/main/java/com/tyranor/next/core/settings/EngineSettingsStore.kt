@@ -3,6 +3,7 @@ package com.tyranor.next.core.settings
 import android.content.Context
 import com.core.engine.EnginePrefs
 import com.core.nativeplugin.NativePluginConstants
+import com.core.nativeplugin.NativePluginManager
 import org.json.JSONObject
 
 /**
@@ -49,8 +50,18 @@ object EngineSettingsStore {
     // Ren'Py 应用级默认（外置模块版本选择）
     const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
 
-    // ONS 引擎版本（存 onsyuri prefs，与引擎进程 OnsLibLoader 共用键名，改动需同步）
-    const val KEY_ONS_ENGINE_VERSION = "engine_version"
+    // ONS 引擎版本（存 onsyuri prefs，键名单一来源在 engine 侧）
+    const val KEY_ONS_ENGINE_VERSION = NativePluginConstants.KEY_ONS_ENGINE_VERSION
+
+    /** ONS 引擎版本目录名：最新（默认）与旧版（回退）。 */
+    val ONS_ENGINE_VERSION_LATEST = NativePluginConstants.ONS_VERSION_0_7_7
+    val ONS_ENGINE_VERSION_LEGACY = NativePluginConstants.ONS_BASE_VERSION
+
+    /**
+     * 全部候选引擎版本（顺序即引擎回退顺序）。
+     * UI 层经此访问，避免直接依赖 engine 包。
+     */
+    val ONS_ENGINE_VERSIONS: List<String> = NativePluginConstants.ONS_AVAILABLE_VERSIONS
 
     // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
@@ -422,8 +433,6 @@ object EngineSettingsStore {
         var forceButtonShortcut: Boolean = false,
         var wheelDownAdvance: Boolean = false,
         var debugLog: Boolean = false,
-        var forceWidth: Int = 0,
-        var forceHeight: Int = 0,
     ) {
         fun toJson(): String =
             JSONObject()
@@ -441,8 +450,6 @@ object EngineSettingsStore {
                 .put("forcebuttonshortcut", forceButtonShortcut)
                 .put("wheeldownadvance", wheelDownAdvance)
                 .put("debuglog", debugLog)
-                .put("width", forceWidth)
-                .put("height", forceHeight)
                 .toString()
     }
 
@@ -465,8 +472,6 @@ object EngineSettingsStore {
             o.forceButtonShortcut = j.optBoolean("forcebuttonshortcut", o.forceButtonShortcut)
             o.wheelDownAdvance = j.optBoolean("wheeldownadvance", o.wheelDownAdvance)
             o.debugLog = j.optBoolean("debuglog", o.debugLog)
-            o.forceWidth = j.optInt("width", o.forceWidth)
-            o.forceHeight = j.optInt("height", o.forceHeight)
         } catch (t: Throwable) {
             // 解析失败用默认值
         }
@@ -477,21 +482,43 @@ object EngineSettingsStore {
 
     /**
      * 用户选择的 ONS 引擎版本目录名。
-     * 取值必须落在 [NativePluginConstants.ONS_AVAILABLE_VERSIONS] 内，非法值回退到默认版本。
+     * 取值必须落在 [ONS_ENGINE_VERSIONS] 内，非法值回退到默认版本。
      */
     fun getOnsEngineVersion(c: Context): String {
         val v = onsPrefs(c).getString(KEY_ONS_ENGINE_VERSION, null)
-        return if (v != null && NativePluginConstants.ONS_AVAILABLE_VERSIONS.contains(v)) {
+        return if (v != null && ONS_ENGINE_VERSIONS.contains(v)) {
             v
         } else {
-            NativePluginConstants.ONS_AVAILABLE_VERSIONS.first()
+            ONS_ENGINE_VERSIONS.first()
         }
     }
 
+    /**
+     * 写入用户选择的 ONS 引擎版本。
+     *
+     * 用 commit() 同步落盘：引擎进程随后就会读这个键，apply() 的异步写可能还没刷盘，
+     * 导致引擎读到旧值（跨进程不会自动刷新）。
+     */
     fun setOnsEngineVersion(c: Context, v: String) {
-        if (!NativePluginConstants.ONS_AVAILABLE_VERSIONS.contains(v)) return
-        onsPrefs(c).edit().putString(KEY_ONS_ENGINE_VERSION, v).apply()
+        if (!ONS_ENGINE_VERSIONS.contains(v)) return
+        // 插件里没有这个版本就不写：避免用户选到实际不存在的目录。
+        if (!isOnsEngineVersionAvailable(c, v)) return
+        onsPrefs(c).edit().putString(KEY_ONS_ENGINE_VERSION, v).commit()
     }
+
+    /** 当前插件里实际可用的引擎版本目录（用于 UI 过滤，避免选到不存在的版本）。 */
+    fun onsAvailableEngineVersions(c: Context): List<String> {
+        val installed = ONS_ENGINE_VERSIONS.filter { isOnsEngineVersionAvailable(c, it) }
+        // 插件还没装好时不做过滤，保持列表非空（引擎侧会给出真实错误）。
+        return installed.ifEmpty { ONS_ENGINE_VERSIONS }
+    }
+
+    private fun isOnsEngineVersionAvailable(c: Context, version: String): Boolean =
+        try {
+            NativePluginManager.isOnsVersionAvailable(c.applicationContext, version)
+        } catch (t: Throwable) {
+            false
+        }
 
     fun saveOns(c: Context, o: Ons) = onsPrefs(c).edit().putString("gameargs", o.toJson()).apply()
 

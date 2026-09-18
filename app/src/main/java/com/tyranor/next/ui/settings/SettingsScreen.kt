@@ -688,6 +688,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
 
     var ons by remember { mutableStateOf(EngineSettingsStore.loadOns(ctx)) }
     var onsEngineVersion by remember { mutableStateOf(EngineSettingsStore.getOnsEngineVersion(ctx)) }
+    // 只列出插件里实际存在的版本，避免选到不存在的目录。
+    val onsVersionCandidates = remember { EngineSettingsStore.onsAvailableEngineVersions(ctx) }
 
     var artKernel by remember { mutableStateOf(EngineSettingsStore.getArtKernel(ctx)) }
     var artVersion by remember { mutableStateOf(EngineSettingsStore.getArtEngineVersion(ctx)) }
@@ -794,6 +796,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fontLauncher,
                 onsEngineVersion = onsEngineVersion,
+                onsVersionCandidates = onsVersionCandidates,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -890,8 +893,6 @@ private fun LazyListPlaceholder(
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
     onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit, onKrAnime4k: (String) -> Unit,
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
-    onsEngineVersion: String = "",
-    onOnsEngineVersion: (String) -> Unit = {},
     onArtKernel: (String) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
     onArtResolution: (String) -> Unit, onArtSideCut: (String) -> Unit,
@@ -903,6 +904,9 @@ private fun LazyListPlaceholder(
     onRenpyVersion: (String) -> Unit,
     onRenpy: (EngineSettingsStore.RenPy) -> Unit,
     onSiglusLanguage: (String) -> Unit,
+    onsEngineVersion: String = "",
+    onOnsEngineVersion: (String) -> Unit = {},
+    onsVersionCandidates: List<String> = emptyList(),
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -917,7 +921,7 @@ private fun LazyListPlaceholder(
     val krFpsMap = krFpsOptions()
     val onsSharpnessMap = onsSharpnessOptions()
     val onsEncodingMap = onsEncodingOptions()
-    val onsEngineVersionMap = onsEngineVersionOptions()
+    val onsEngineVersionMap = onsEngineVersionOptions(onsVersionCandidates)
     val artKernelSelect = artKernelOptions()
     val artVersionMap = artVersionOptions()
     val renpyVersionMap = renpyVersionOptions()

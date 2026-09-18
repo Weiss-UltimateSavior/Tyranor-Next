@@ -1,7 +1,6 @@
 package com.yuri.onscripter;
 
 import android.annotation.SuppressLint;
-import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -33,6 +32,7 @@ import org.libsdl.app.SDLActivity;
 import com.core.engine.DoubleBackExit;
 import com.core.engine.LaunchContract;
 import com.core.engine.R;
+import com.core.ons.OnsEngineRetryRequiredException;
 import com.core.ons.OnsLibLoader;
 import com.core.ons.OnsSettings;
 import com.core.ons.OnsVideoOverlay;
@@ -68,7 +68,17 @@ public class ONScripter extends SDLActivity {
     private native int nativeGetHeight();
 
     @Override public void loadLibraries() {
-        OnsLibLoader.load(this);
+        try {
+            OnsLibLoader.load(this);
+        } catch (OnsEngineRetryRequiredException e) {
+            // 部分加载失败：本进程已载入过部分 ONS so，不能再换版本重试（各版本 DT_SONAME
+            // 相同，会解析到先载入的映像）。这里显式消费该类型并向上抛出，
+            // 由 SDLActivity.onCreate 的 loadLibraries() try/catch 弹出错误提示，
+            // 用户退出后由 App 侧依据 errorCode 提示改用其他引擎版本。
+            Log.e(TAG, "ONS engine partially loaded: version=" + e.getEngineVersion()
+                    + " loadedLibs=" + e.getLoadedLibCount(), e);
+            throw e;
+        }
     }
 
     @Override public String[] getLibraries() {
@@ -104,10 +114,12 @@ public class ONScripter extends SDLActivity {
         OnsSettings settings = OnsSettings.load(this);
         if (onsArgs == null) onsArgs = settings.buildArgs(this, gameRoot);
         ignoreCutout = getIntent().getBooleanExtra(LaunchContract.IGNORE_CUTOUT, settings.ignoreCutout);
-        // 提前加载/释放 assets：确保 libonsyuri 与内置 DroidSansFallback.ttf 在 SDLActivity 启动前可用。
-        OnsLibLoader.load(this);
         ensureDefaultFont();
+        // 刻意不在这里提前 load 运行库：让加载失败落到 SDLActivity.onCreate 的
+        // loadLibraries() try/catch 里，由基类弹出错误提示并允许用户退出，
+        // 而不是在 super.onCreate 之前抛出、导致 :ons 进程硬崩。
         super.onCreate(savedInstanceState);
+        Log.i(TAG, "ONS engine version: " + getYuriVersion());
         fixSurfaceCentering();  // 修复平板设备上画面不居中的问题
         try { nativeInitJavaCallbacks(); } catch (Throwable t) { Log.w(TAG, "nativeInitJavaCallbacks failed", t); }
         setupVirtualControls();

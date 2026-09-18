@@ -66,9 +66,6 @@ object NativeLibraryLoader {
         return game
     }
 
-    @JvmStatic
-    fun loadOns(context: Context): OnsLoadResult = loadOns(context, null)
-
     /**
      * 按版本加载 ONS 引擎 so。
      *
