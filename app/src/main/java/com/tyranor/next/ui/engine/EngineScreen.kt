@@ -99,6 +99,8 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
     var showExternalJumpDialog by remember { mutableStateOf(false) }
+    // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
+    var emulatorDialogEngine by remember { mutableStateOf<EngineType?>(null) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         externalInstallStates = refreshExternalInstallStates(context, engines)
@@ -182,16 +184,17 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     onClick = {
-                        if (emulator != null) {
-                            showExternalJumpDialog = true
-                        } else {
-                            moduleDialogEngine = engine
+                        when {
+                            // YU-RIS：只展示本引擎的外置运行时（Winlator），标题「YU-RIS 引擎列表」
+                            engine == EngineType.YURIS && emulator != null -> emulatorDialogEngine = engine
+                            emulator != null -> showExternalJumpDialog = true
+                            else -> moduleDialogEngine = engine
                         }
                     },
                 )
             }
 
-            // 外置跳转支持（PPSSPP / Eden 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
+            // 外置跳转支持（PPSSPP / Eden / Winlator 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
             if (!categorizeEngines || selectedTab == EngineTab.CONSOLE.ordinal) {
                 item(key = "external-jump", contentType = "external-jump") {
                     ExternalJumpRow(
@@ -246,7 +249,51 @@ fun EngineScreen(modifier: Modifier = Modifier) {
         )
     }
 
-    // 外置跳转支持弹窗：列 PPSSPP / Eden，未安装点击跳下载页，已安装点击打开模拟器主界面
+    // YU-RIS 引擎专属弹窗：只列该引擎的外置运行时（Winlator），未安装跳下载页、已安装打开主界面
+    emulatorDialogEngine?.let { dialogEngine ->
+        val entries = ExternalEmulatorRegistry.targets.filter { it.engine == dialogEngine }
+        AppAlertDialog(
+            onDismissRequest = { emulatorDialogEngine = null },
+            title = {
+                Text(
+                    stringResource(R.string.engine_list_title, engineDisplayName(dialogEngine)),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    entries.forEach { target ->
+                        val installed = emulatorInstallStates[target.packageName] == true
+                        AppNavItem(
+                            title = stringResource(target.displayNameRes),
+                            summary = stringResource(
+                                if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
+                            ),
+                            containerColor = DialogItemSurface,
+                        ) {
+                            if (installed) {
+                                ExternalEmulatorLauncher.openHome(context, target)
+                            } else if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
+                                Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
+                            }
+                            emulatorDialogEngine = null
+                        }
+                    }
+                }
+            },
+            // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
+            confirmButton = {},
+        )
+    }
+
+    // 外置跳转支持弹窗：列 PPSSPP / Eden / Winlator，未安装点击跳下载页，已安装点击打开主界面
     if (showExternalJumpDialog) {
         AppAlertDialog(
             onDismissRequest = { showExternalJumpDialog = false },
@@ -470,7 +517,8 @@ private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
 
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
-    EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.RENPY -> EngineTab.GAL
+    EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.RENPY,
+    EngineType.YURIS -> EngineTab.GAL
     EngineType.PSP, EngineType.NINTENDO_SWITCH -> EngineTab.CONSOLE
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
     EngineType.UNKNOWN -> EngineTab.WEB
@@ -493,6 +541,7 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
     EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
     EngineType.SIGLUS -> stringResource(R.string.engine_desc_siglus)
+    EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
     EngineType.PSP -> stringResource(R.string.engine_desc_psp)
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)

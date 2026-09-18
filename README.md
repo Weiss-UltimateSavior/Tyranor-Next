@@ -34,6 +34,7 @@ iOS版本计划中...
 | ONScripter           | `nscript.dat`、`.nsa`                                                | ONScripter 原生运行时             |
 | Artemis              | `system.ini`、`.pfs`                                                 | Artemis 原生运行时                |
 | SiglusEngine         | `Gameexe.dat`/`Gameexe.ini`、`Scene.pck`（根或 `Data/`）                | Siglus 原生运行时（siglus_rs）      |
+| YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | TyranoBuilder        | `index.html`、`tyrano/`                                              | 内置 Tyrano Web 运行环境           |
 | RPG Maker XP         | `.rgssad`、`Game.ini` + `Data/*.rxdata`                              | 外置 RPGM APK 模块               |
 | RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
@@ -46,6 +47,8 @@ iOS版本计划中...
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块              |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
+
+YU-RIS（Windows）游戏通过外置 Winlator（winlator-cn）运行：扫描按 `yscfg.dat`、`pac/*.ypf`、引擎 DLL 与 `.ymv` 特征识别，启动时以「游戏目录 + 主程序 exe」经 Winlator 外置启动协议拉起（目录由 Winlator 自动分配空闲盘符临时挂载，`save=false` 不写回容器配置）；主程序自动选择，可在游戏详情「启动文件」手动覆盖。存档与运行参数由 Winlator 管理，主 App 不接管。
 
 内置 Web 运行环境同时支持部分以 `app.asar` 打包的 NW\.js 游戏；启动时会根据归档内容进一步识别具体类型。
 Ren'Py 与 RPG Maker XP/VX/VX Ace/mkxp-z 当前通过外置 APK 模块运行：Ren'Py 支持 8.5 / 7.7.1 版本，可在全局或单游戏设置中选择引擎版本；自动模式会读取 Ren'Py `script_version` 与 Python2 运行库特征，在 8.5 / 7.7.1 模块间匹配。主 App 默认启用该能力，仅在引擎页检查目标模块是否已安装；未安装时引擎 item 显示打叉并提示下载安装。RPG Maker MV/MZ 属于 Web runtime，继续使用内置 Web 运行环境。

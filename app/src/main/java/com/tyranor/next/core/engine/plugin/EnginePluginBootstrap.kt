@@ -85,6 +85,7 @@ object EnginePluginBootstrap {
             EngineType.VN,
             EngineType.WEB_OTHER,
             EngineType.SIGLUS,
+            EngineType.YURIS,
             EngineType.RPGMAKER,
             EngineType.RENPY,
             EngineType.PSP,

@@ -39,6 +39,9 @@ object EngineScanner {
     private val PFS_PATCH_NAME_RE = Regex("""^[^.]+\.pfs\.\d{3}$""")
     private val OBB_NAME_RE = Regex("""^(main|patch)\.\d+\..+\.obb$""")
 
+    /** YU-RIS 引擎 DLL（YSPNG/YSWBP/YSZLB/YSSNP/YSTCH 等，至少两个才作为弱特征）。 */
+    private val YS_DLL_NAME_RE = Regex("""^ys[a-z0-9]*\.dll$""")
+
     /** Siglus Gameexe（含本地化变体，与引擎 GAMEEXE_CANDIDATES 对齐）。 */
     private val GAMEEXE_DAT_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.dat$""")
     private val GAMEEXE_INI_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.ini$""")
@@ -613,6 +616,10 @@ object EngineScanner {
         var hasObbLikeFile = false
         var hasGameexeDat = false
         var hasGameexeIni = false
+        var hasYscfgDat = false
+        var hasYpf = false
+        var hasYmv = false
+        var ysDllCount = 0
         var hasScenePck = false
         var hasSelectIni = false
         var hasG00 = false
@@ -643,6 +650,15 @@ object EngineScanner {
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
                 if (lower == "app.asar" || childRel.endsWith("/app.asar")) hasAppAsar = true
+                if (lower == "pac") {
+                    // YU-RIS 封包目录：只为 YURIS 特征扫描（.ypf/.ymv），不进入通用目录白名单，
+                    // 避免把包内文件暴露给其它引擎的检测规则
+                    childrenOf(entry).forEach { child ->
+                        val childName = nameOf(child).lowercase(Locale.ROOT)
+                        if (childName.endsWith(".ypf")) hasYpf = true
+                        if (childName.endsWith(".ymv")) hasYmv = true
+                    }
+                }
                 if (lower in ENGINE_SEARCH_DIRECTORIES) {
                     childrenOf(entry).forEach { collect(it, childRel) }
                 }
@@ -669,6 +685,10 @@ object EngineScanner {
                 lower == "scene.pck" -> hasScenePck = true
                 lower == "select.ini" -> hasSelectIni = true
                 lower.endsWith(".g00") -> hasG00 = true
+                lower == "yscfg.dat" -> hasYscfgDat = true
+                lower.endsWith(".ypf") -> hasYpf = true
+                lower.endsWith(".ymv") -> hasYmv = true
+                YS_DLL_NAME_RE.matches(lower) -> ysDllCount++
                 lower == "0.txt" || lower == "00.txt" || lower == "nscript.dat" ||
                     lower == "onscript.nt2" || lower == "onscript.nt3" -> hasOnsScript = true
                 lower.endsWith(".nsa") || lower.endsWith(".sar") -> hasOnsArchive = true
@@ -707,6 +727,21 @@ object EngineScanner {
         }
         if (hasScenePck && hasSelectIni && hasG00) {
             return Detection(EngineType.SIGLUS, 80, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYscfgDat && hasYpf) {
+            return Detection(EngineType.YURIS, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYpf) {
+            return Detection(EngineType.YURIS, 90, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYscfgDat) {
+            return Detection(EngineType.YURIS, 85, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (ysDllCount >= 2) {
+            return Detection(EngineType.YURIS, 80, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYmv) {
+            return Detection(EngineType.YURIS, 75, LAUNCH_TARGET_GAME_DIR)
         }
         if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasPatchPfs || hasAnyPfs || (hasBootIni && hasObbLikeFile)) {
             return Detection(

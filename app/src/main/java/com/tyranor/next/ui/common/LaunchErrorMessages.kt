@@ -88,6 +88,10 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 "activity_not_found" ->
                     localized.getString(R.string.launch_emulator_no_activity, targetName)
 
+                // 已安装但不支持外置启动的旧版 Winlator（缺少导出入口）
+                "external_launch_unsupported" ->
+                    localized.getString(R.string.launch_emulator_unsupported, targetName)
+
                 "security_exception" ->
                     localized.getString(R.string.launch_emulator_denied, targetName)
 
@@ -95,6 +99,9 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                     localized.getString(R.string.launch_emulator_failed, targetName)
             }
         }
+
+        LaunchResult.Failure.YurisExeMissing ->
+            localized.getString(R.string.launch_yuris_exe_missing)
 
         is LaunchResult.Failure.StartFailed ->
             detail ?: localized.getString(R.string.launch_failed)

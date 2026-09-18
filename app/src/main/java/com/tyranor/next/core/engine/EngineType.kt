@@ -13,6 +13,7 @@ enum class EngineType(val displayName: String) {
     ARTEMIS("Artemis"),
     SIGLUS("Siglus"),
     RENPY("Ren'Py"),
+    YURIS("YU-RIS"),
     PSP("PSP"),
     NINTENDO_SWITCH("Nintendo Switch"),
     UNKNOWN("Unknown");

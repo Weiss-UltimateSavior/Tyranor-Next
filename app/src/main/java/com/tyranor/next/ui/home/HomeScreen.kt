@@ -78,6 +78,9 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.LaunchErrorDialog
+import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.RpgSaveFormatDialog
@@ -108,7 +111,7 @@ fun HomeScreen(
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
     var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
-    var launchError by remember { mutableStateOf<String?>(null) }
+    var launchError by remember { mutableStateOf<LaunchErrorState?>(null) }
     var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
     // MV/MZ 存档格式转化确认：待转化检测结果 + 目标游戏 + 已选补丁策略（Artemis 选择后串联）
     var saveFormatTarget by remember { mutableStateOf<ScanGame?>(null) }
@@ -145,7 +148,7 @@ fun HomeScreen(
     fun launchWithSaveFormatGate(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
         scope.launch {
             if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
                 return@launch
             }
             val pending = EngineLauncher.rpgSaveFormatPending(context, game)
@@ -154,7 +157,7 @@ fun HomeScreen(
                 saveFormatDetection = pending
                 pendingPatchChoice = patchChoice
             } else {
-                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
             }
         }
     }
@@ -195,7 +198,7 @@ fun HomeScreen(
                 )
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
-            launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)
+            launchError = EngineLauncher.launch(context, target, patchChoice).toErrorState(context)
         }
     }
 
@@ -345,15 +348,8 @@ fun HomeScreen(
         }
     }
 
-    launchError?.let { message ->
-        AppAlertDialog(
-            onDismissRequest = { launchError = null },
-            title = { Text(stringResource(R.string.game_launch_failed), style = MaterialTheme.typography.titleMedium) },
-            text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = {
-                TextButton(onClick = { launchError = null }) { Text(stringResource(R.string.common_confirm)) }
-            },
-        )
+    launchError?.let { state ->
+        LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 }
 

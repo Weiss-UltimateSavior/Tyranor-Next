@@ -26,8 +26,18 @@ object ExternalEmulatorRegistry {
             grantWrite = false,
             installUrl = "https://git.eden-emu.dev/eden-emu/eden/releases",
         ),
+        EmulatorTarget(
+            engine = EngineType.YURIS,
+            displayNameRes = R.string.engine_emulator_winlator,
+            packageName = WinlatorContract.PACKAGE_NAME,
+            activityName = WinlatorContract.ACTIVITY_NAME,
+            mime = "*/*",
+            grantWrite = false,
+            installUrl = "https://github.com/Weiss-UltimateSavior/winlator-cn",
+            launchStyle = EmulatorLaunchStyle.WINLATOR_EXTERNAL,
+        ),
     )
 
-    /** 该引擎是否由外置模拟器跳转承载（PSP / Switch）。 */
+    /** 该引擎是否由外置模拟器/模拟器跳转承载（PSP / Switch / YURIS）。 */
     fun forEngine(engine: EngineType): EmulatorTarget? = targets.firstOrNull { it.engine == engine }
 }

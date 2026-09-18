@@ -133,6 +133,9 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.common.LaunchErrorDialog
+import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.cover.coverSourceTitle
 import com.tyranor.next.ui.main.MainLibraryUiState
@@ -174,7 +177,7 @@ fun GameScreen(
     val selectedGame = remember(games, selectedGameUri) {
         selectedGameUri?.let { uri -> games.firstOrNull { it.uri == uri } }
     }
-    var launchError by remember { mutableStateOf<String?>(null) }
+    var launchError by remember { mutableStateOf<LaunchErrorState?>(null) }
     var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
     // 网格长按启动路径的 MV/MZ 存档格式确认状态（与抽屉内 sheet 的同名状态各自独立）
     var longPressSaveTarget by remember { mutableStateOf<ScanGame?>(null) }
@@ -209,7 +212,7 @@ fun GameScreen(
     fun launchLongPress(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
         scope.launch {
             if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
                 return@launch
             }
             val pending = EngineLauncher.rpgSaveFormatPending(context, game)
@@ -218,7 +221,7 @@ fun GameScreen(
                 longPressSaveDetection = pending
                 longPressPatchChoice = patchChoice
             } else {
-                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
             }
         }
     }
@@ -371,22 +374,15 @@ fun GameScreen(
                             )
                             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                         }
-                        launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)
+                        launchError = EngineLauncher.launch(context, target, patchChoice).toErrorState(context)
                     }
                 }
             },
         )
     }
 
-    launchError?.let { message ->
-        AppAlertDialog(
-            onDismissRequest = { launchError = null },
-            title = { Text(stringResource(R.string.game_launch_failed), style = MaterialTheme.typography.titleMedium) },
-            text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = {
-                TextButton(onClick = { launchError = null }) { Text(stringResource(R.string.common_confirm)) }
-            },
-        )
+    launchError?.let { state ->
+        LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 }
 
@@ -574,7 +570,7 @@ internal fun GameActionsSheet(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var launchError by remember(game.uri) { mutableStateOf<String?>(null) }
+    var launchError by remember(game.uri) { mutableStateOf<LaunchErrorState?>(null) }
     var showCoverSourcePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var coverSearchSource by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var coverBinding by remember { mutableStateOf(false) }
@@ -614,7 +610,7 @@ internal fun GameActionsSheet(
     /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
         scope.launch {
-            launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+            launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
             if (launchError == null) onDismiss()
         }
     }
@@ -738,7 +734,7 @@ internal fun GameActionsSheet(
         if (uri == null) return@rememberLauncherForActivityResult
         if (isBatchScrapingActive()) return@rememberLauncherForActivityResult
         scope.launch {
-            launchError = settingCoverMessage
+            launchError = LaunchErrorState(settingCoverMessage)
             val updated = withContext(Dispatchers.IO) {
                 try {
                     VndbCoverService.saveCustomCover(context, game, uri)
@@ -753,7 +749,7 @@ internal fun GameActionsSheet(
                 launchError = null
                 onDismiss()
             } else {
-                launchError = coverSetFailedMessage
+                launchError = LaunchErrorState(coverSetFailedMessage)
             }
         }
     }
@@ -824,7 +820,7 @@ internal fun GameActionsSheet(
                     onClick = { beginLaunch() },
                 )
             }
-            if (game.engine == EngineType.KIRIKIRI) {
+            if (game.engine == EngineType.KIRIKIRI || game.engine == EngineType.YURIS) {
                 item {
                     AppNavItem(
                         title = stringResource(R.string.game_launch_file),
@@ -952,17 +948,6 @@ internal fun GameActionsSheet(
                 )
             }
 
-            launchError?.let {
-                item {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-                    )
-                }
-            }
-
             // 底部安全区留白
             item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(16.dp)) }
         }
@@ -1074,6 +1059,10 @@ internal fun GameActionsSheet(
                 onGameUpdated(game.copy(launchFile = name))
             },
         )
+    }
+
+    launchError?.let { state ->
+        LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 
     if (showDeleteConfirm) {
@@ -1515,8 +1504,8 @@ private fun LaunchFileDialog(
 
     LaunchedEffect(game.uri) {
         val (names, current) = withContext(Dispatchers.IO) {
-            val names = EngineLauncher.listKrLaunchFiles(context, game)
-            val current = EngineLauncher.currentKrLaunchFileName(context, game)
+            val names = EngineLauncher.listLaunchFiles(context, game)
+            val current = EngineLauncher.currentLaunchFileName(context, game)
             names to current
         }
         files = names
@@ -1831,6 +1820,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.WEB_OTHER -> Color(0xFF546E7A)
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
     EngineType.SIGLUS -> Color(0xFF00838F)
+    EngineType.YURIS -> Color(0xFF558B2F)
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
