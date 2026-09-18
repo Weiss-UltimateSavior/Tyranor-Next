@@ -1,9 +1,9 @@
 package com.core.rpgmaker
 
-import android.util.Base64
 import android.util.Log
 import android.webkit.JavascriptInterface
 import java.io.File
+import java.util.Base64
 import java.nio.charset.StandardCharsets
 import org.json.JSONArray
 import org.json.JSONObject
@@ -71,7 +71,7 @@ internal class RpgMakerFsBridge(
             return null
         }
         return try {
-            Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+            Base64.getEncoder().encodeToString(file.readBytes())
         } catch (error: Throwable) {
             Log.w(TAG, "fs read(Buffer) failed: ${file.path}", error)
             null
@@ -113,7 +113,7 @@ internal class RpgMakerFsBridge(
     @JavascriptInterface
     fun writeBase64(path: String?, data: String?): Boolean {
         val bytes = try {
-            Base64.decode(data.orEmpty(), Base64.DEFAULT)
+            decodeBase64Lenient(data.orEmpty())
         } catch (error: Throwable) {
             Log.w(TAG, "fs write rejected (bad base64): $path", error)
             return false
@@ -143,6 +143,18 @@ internal class RpgMakerFsBridge(
             !file.exists() || file.delete()
         } catch (error: Throwable) {
             Log.w(TAG, "fs remove failed: ${file.path}", error)
+            false
+        }
+    }
+
+    /** utimesSync：Android 只能设 mtime（无 atime），够插件做「最近修改」判断。 */
+    @JavascriptInterface
+    fun setTimes(path: String?, mtimeMillis: Long): Boolean {
+        val file = resolve(path) ?: return false
+        return try {
+            file.setLastModified(mtimeMillis)
+        } catch (error: Throwable) {
+            Log.w(TAG, "fs utimes failed: ${file.path}", error)
             false
         }
     }
@@ -183,6 +195,10 @@ internal class RpgMakerFsBridge(
         }
         return canonical
     }
+
+    /** 宽松 base64 解码：容忍换行/空白（与原先 android.util.Base64.DEFAULT 一致）。 */
+    private fun decodeBase64Lenient(value: String): ByteArray =
+        Base64.getMimeDecoder().decode(value)
 
     companion object {
         private const val TAG = "YukiRpgMaker"

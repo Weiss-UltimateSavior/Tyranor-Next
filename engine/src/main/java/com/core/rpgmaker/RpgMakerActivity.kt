@@ -355,6 +355,9 @@ class RpgMakerActivity : Activity() {
                     RPG_MAKER_FS_BRIDGE_NAME,
                 )
             }
+            // 原生「计算」能力：哈希/HMAC/随机数/KDF/AES/zlib（纯 JS 复刻要么不可行，
+            // 要么容易写出静默错值），由 __nwjs_polyfill_v2.js 包装成 Node 模块
+            browser.addJavascriptInterface(RpgMakerEnvBridge(), RPG_MAKER_ENV_BRIDGE_NAME)
         }
         browser.addJavascriptInterface(
             TouchPadSaveBridge(rpgMakerModGameId),
@@ -909,6 +912,7 @@ class RpgMakerActivity : Activity() {
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"
         private const val RPG_MAKER_FS_BRIDGE_NAME = "TyranorFs"
+        private const val RPG_MAKER_ENV_BRIDGE_NAME = "TyranorEnv"
         private const val RPG_MAKER_MOD_BRIDGE_NAME = "TyranorModNative"
         private const val TOUCH_PAD_BRIDGE_NAME = "TyranorTouchPadNative"
         private const val RPG_MV_SAVE_EXTENSION = ".bin"

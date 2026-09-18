@@ -40,6 +40,14 @@ android {
         viewBinding false
     }
 
+    testOptions {
+        unitTests {
+            // 纯 JVM 单测不该被 android.util.Log 的「not mocked」阻断：
+            // 失败/边界分支里的日志会抛 RuntimeException，掩盖真正的断言。
+            returnDefaultValues = true
+        }
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging true
