@@ -1,11 +1,11 @@
 # Tyranor Next — 领域上下文
 
-基于 Tyranor 模拟器逆向重写、面向 Android 的多引擎视觉小说（Galgame）聚合启动器：识别并启动 KiriKiri / ONScripter / Tyrano / Artemis / Siglus / YU-RIS / PC（手动添加）/ RPG Maker / Ren'Py 等多类引擎编排的游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节。本上下文定义该领域内约定成俗的核心术语。
+基于 Tyranor 模拟器逆向重写、面向 Android 的多引擎视觉小说（Galgame）聚合启动器：识别并启动 KiriKiri / ONScripter / Tyrano / Artemis / Siglus / YU-RIS / CatSystem2 / PC（手动添加）/ RPG Maker / Ren'Py 等多类引擎编排的游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节。本上下文定义该领域内约定成俗的核心术语。
 
 ## 引擎与运行时
 
 **引擎（EngineType）**:
-游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、RENPY、YURIS、PC、UNKNOWN。
+游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、RENPY、YURIS、CATSYSTEM2、PC、UNKNOWN。
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:

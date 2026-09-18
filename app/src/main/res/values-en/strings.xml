@@ -115,6 +115,7 @@
     <string name="engine_desc_psp">PSP games run through the external PPSSPP</string>
     <string name="engine_desc_yuris">YU-RIS (yscfg.dat with .ypf packages, ysbin/.ymv), runs via external Winlator</string>
     <string name="engine_desc_pc">Manually added Windows PC games, run via external Winlator</string>
+    <string name="engine_desc_cs2">CatSystem2 (.int/.cst/.hg3 games), runs via external Winlator</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch games run through the external Eden</string>
     <string name="engine_external_jump_title">External emulator support</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>

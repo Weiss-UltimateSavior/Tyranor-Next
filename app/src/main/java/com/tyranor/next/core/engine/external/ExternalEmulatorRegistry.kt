@@ -27,7 +27,7 @@ object ExternalEmulatorRegistry {
             installUrl = "https://git.eden-emu.dev/eden-emu/eden/releases",
         ),
         EmulatorTarget(
-            engines = listOf(EngineType.YURIS, EngineType.PC),
+            engines = listOf(EngineType.YURIS, EngineType.CATSYSTEM2, EngineType.PC),
             displayNameRes = R.string.engine_emulator_winlator,
             packageName = WinlatorContract.PACKAGE_NAME,
             activityName = WinlatorContract.ACTIVITY_NAME,

@@ -233,6 +233,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         AppNavItem(
                             title = entry.title,
                             summary = stringResource(entry.summaryRes),
+                            leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
                         ) {
                             if (!entry.installed && entry.installUrl != null) {
@@ -278,6 +279,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                             summary = stringResource(
                                 if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
                             ),
+                            leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
                         ) {
                             if (installed) {
@@ -319,6 +321,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                             summary = stringResource(
                                 if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
                             ),
+                            leadingIcon = R.drawable.ic_engine_chip,
                             containerColor = DialogItemSurface,
                         ) {
                             if (installed) {
@@ -520,7 +523,7 @@ private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.RENPY,
-    EngineType.YURIS -> EngineTab.GAL
+    EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
@@ -546,6 +549,7 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.SIGLUS -> stringResource(R.string.engine_desc_siglus)
 
     EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
+    EngineType.CATSYSTEM2 -> stringResource(R.string.engine_desc_cs2)
     EngineType.PC -> stringResource(R.string.engine_desc_pc)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
     EngineType.PSP -> stringResource(R.string.engine_desc_psp)

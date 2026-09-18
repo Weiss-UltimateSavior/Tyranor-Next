@@ -38,5 +38,6 @@ class GameCardItemKeyTest {
         assertEquals(true, shouldShowSaveManagement(EngineType.YURIS))
         assertEquals(false, shouldShowSaveManagement(EngineType.NINTENDO_SWITCH))
         assertEquals(false, shouldShowSaveManagement(EngineType.PC))
+        assertEquals(false, shouldShowSaveManagement(EngineType.CATSYSTEM2))
     }
 }

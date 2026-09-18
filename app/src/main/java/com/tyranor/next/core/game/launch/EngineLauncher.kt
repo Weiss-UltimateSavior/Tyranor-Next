@@ -111,8 +111,9 @@ object EngineLauncher {
         EngineType.ARTEMIS,
         EngineType.SIGLUS,
         EngineType.RENPY,
-        // YURIS / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
+        // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
+        EngineType.CATSYSTEM2,
         EngineType.PC,
         // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
         EngineType.PSP,
@@ -704,8 +705,9 @@ object EngineLauncher {
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
 
-            // YURIS / PC 由外置 Winlator 承载，在 launchInternalChecked 前置分流，不会走到这里
+            // YURIS / CatSystem2 / PC 由外置 Winlator 承载，在 launchInternalChecked 前置分流，不会走到这里
             EngineType.YURIS,
+            EngineType.CATSYSTEM2,
             EngineType.PC -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
 
             // PSP / Switch 由外置模拟器跳转承载，在 launchInternalChecked 前置分流，不会走到这里
@@ -1622,8 +1624,14 @@ object EngineLauncher {
     internal fun listLaunchFiles(context: Context, game: ScanGame): List<String> {
         val path = resolveGameDirectory(context, game) ?: return emptyList()
         return when (game.engine) {
-            // YU-RIS 与手动添加的 PC 游戏共用 Windows exe 候选（过滤 settings/unins/setup 等并按可信度排序）
+            // YU-RIS / CatSystem2 / 手动添加的 PC 共用 Windows exe 候选（过滤干扰项并按可信度排序）；
+            // CatSystem2 额外接受 .bin（Runtime 可能被改名/改扩展名）并优先 cs2.exe
             EngineType.YURIS, EngineType.PC -> YurisLaunchFiles.candidates(java.io.File(path)).map { it.name }
+            EngineType.CATSYSTEM2 -> YurisLaunchFiles.candidates(
+                java.io.File(path),
+                allowBin = true,
+                preferCs2Runtime = true,
+            ).map { it.name }
             else -> {
                 val files = java.io.File(path).listFiles()?.filter { it.isFile }.orEmpty()
                 val xp3 = files.filter { it.name.lowercase().endsWith(".xp3") }.sortedBy { it.name.lowercase() }.map { it.name }
@@ -1639,7 +1647,7 @@ object EngineLauncher {
      */
     internal fun currentLaunchFileName(context: Context, game: ScanGame): String? {
         val path = resolveGameDirectory(context, game) ?: return null
-        if (game.engine == EngineType.YURIS || game.engine == EngineType.PC) {
+        if (game.engine == EngineType.YURIS || game.engine == EngineType.PC || game.engine == EngineType.CATSYSTEM2) {
             return YurisLaunchFiles.resolveExeName(game, path)
         }
         val entry = pickKrActivateEntry(path, game)

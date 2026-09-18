@@ -729,7 +729,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
-                    EngineType.PC -> item {
+                    EngineType.PC, EngineType.CATSYSTEM2 -> item {
                         SectionCard(game.engine.displayName) {
                             Text(
                                 stringResource(R.string.engine_settings_pc_hint),

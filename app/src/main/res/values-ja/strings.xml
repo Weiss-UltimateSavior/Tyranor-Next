@@ -115,6 +115,7 @@
     <string name="engine_desc_psp">PSP ゲームは外部 PPSSPP で実行します</string>
     <string name="engine_desc_yuris">YU-RIS（yscfg.dat と .ypf パッケージ、ysbin/.ymv）。外部 Winlator で実行</string>
     <string name="engine_desc_pc">手動追加の Windows PC ゲーム。外部 Winlator で実行</string>
+    <string name="engine_desc_cs2">CatSystem2（.int/.cst/.hg3 のゲーム）。外部 Winlator で実行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch ゲームは外部 Eden で実行します</string>
     <string name="engine_external_jump_title">外部エミュレータ連携</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>

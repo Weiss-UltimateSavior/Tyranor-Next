@@ -4,10 +4,13 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -16,9 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,10 +41,13 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.DialogItemSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.RadioButton
+import top.yukonga.miuix.kmp.theme.MiuixTheme as MiuixPreferenceTheme
 
 /**
  * PC 游戏添加弹窗（不参与扫描）：选择目录（SAF，持久授权）→ 检索根目录 exe（过滤干扰项并排序）
@@ -104,6 +109,7 @@ internal fun PcGameAddDialog(
                     title = stringResource(R.string.pc_add_pick_directory),
                     summary = dirName ?: stringResource(R.string.pc_add_directory_empty),
                     containerColor = DialogItemSurface,
+                    indication = null,
                 ) { dirPicker.launch(null) }
 
                 when {
@@ -126,26 +132,38 @@ internal fun PcGameAddDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 2.dp),
                         )
-                        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
-                            items(candidates, key = { it.name }) { candidate ->
-                                androidx.compose.foundation.layout.Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { selected = candidate.name }
-                                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Text(
-                                        candidate.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    RadioButton(
-                                        selected = selected == candidate.name,
-                                        onClick = { selected = candidate.name },
-                                    )
+                        MiuixPreferenceTheme {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(candidates, key = { it.name }) { candidate ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(AppComponentShape)
+                                            .background(DialogItemSurface)
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null,
+                                            ) { selected = candidate.name }
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            candidate.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        // 与「启动文件」弹窗同款选中标识：Miuix RadioButton 绘制的粗对勾；
+                                        // onClick = null 只负责显示（选择由整行处理，无任何点击/按压效果）
+                                        RadioButton(
+                                            selected = selected == candidate.name,
+                                            onClick = null,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -163,26 +181,56 @@ internal fun PcGameAddDialog(
             }
         },
         confirmButton = {
-            TextButton(
+            DialogTextButton(
+                text = stringResource(R.string.common_confirm),
                 enabled = !loading && dirUri != null && selected != null,
-                onClick = {
-                    val uri = dirUri ?: return@TextButton
-                    val exe = selected ?: return@TextButton
-                    val game = ScanGame(
-                        title = dirName ?: exe,
-                        uri = uri.toString(),
-                        engine = EngineType.PC,
-                        launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
-                        launchFile = exe,
-                    )
-                    val withCover = EngineScanner.applyLocalCover(context, game)
-                    if (onAdd(withCover)) onDismiss() else errorRes = R.string.pc_add_duplicate
-                },
-            ) { Text(stringResource(R.string.common_confirm)) }
+            ) {
+                val uri = dirUri ?: return@DialogTextButton
+                val exe = selected ?: return@DialogTextButton
+                val game = ScanGame(
+                    title = dirName ?: exe,
+                    uri = uri.toString(),
+                    engine = EngineType.PC,
+                    launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
+                    launchFile = exe,
+                )
+                val withCover = EngineScanner.applyLocalCover(context, game)
+                if (onAdd(withCover)) onDismiss() else errorRes = R.string.pc_add_duplicate
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            DialogTextButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss,
+            )
         },
+    )
+}
+
+/** 弹窗文本按钮：无涟漪/按压效果（indication = null），颜色随可用态变化。 */
+@Composable
+private fun DialogTextButton(
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = if (enabled) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        },
+        modifier = Modifier
+            .clip(AppComponentShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     )
 }
 

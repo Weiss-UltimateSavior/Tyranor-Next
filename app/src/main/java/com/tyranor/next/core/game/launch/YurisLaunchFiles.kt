@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.launch
 
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import java.io.File
 import java.util.Locale
@@ -26,31 +27,47 @@ object YurisLaunchFiles {
         "settings", "unins", "setup", "install", "update", "updater", "patch", "crack", "keygen",
     )
 
-    /** 根目录候选 exe（已过滤干扰项并排序）。 */
-    fun candidates(projectDir: File): List<ExeCandidate> {
+    /** 根目录候选（已过滤干扰项并排序）；[allowBin] 额外接受 `.bin`（CatSystem2 Runtime 可能改名/改扩展名）。 */
+    fun candidates(
+        projectDir: File,
+        allowBin: Boolean = false,
+        preferCs2Runtime: Boolean = false,
+    ): List<ExeCandidate> {
         val entries = projectDir.listFiles()
-            ?.filter { it.isFile && it.name.lowercase(Locale.ROOT).endsWith(".exe") }
+            ?.filter { it.isFile && isLaunchableName(it.name, allowBin) }
             ?.map { ExeCandidate(it.name, it.length()) }
             ?: return emptyList()
-        return candidatesOf(entries, projectDir.name)
+        return candidatesOf(entries, projectDir.name, allowBin, preferCs2Runtime)
     }
 
-    /** 候选 exe（文件名 + 体积）：过滤干扰项后按「目录名匹配 → 体积降序 → 名称」排序。 */
-    fun candidatesOf(entries: List<ExeCandidate>, dirName: String): List<ExeCandidate> {
-        val exes = entries.filter { it.name.lowercase(Locale.ROOT).endsWith(".exe") }
-        val filtered = exes.filterNot { isExcluded(it.name) }
-        return sortCandidates(filtered.ifEmpty { exes }, dirName)
+    /** 候选（文件名 + 体积）：过滤干扰项后按「cs2 Runtime → 目录名匹配 → 体积降序 → 名称」排序。 */
+    fun candidatesOf(
+        entries: List<ExeCandidate>,
+        dirName: String,
+        allowBin: Boolean = false,
+        preferCs2Runtime: Boolean = false,
+    ): List<ExeCandidate> {
+        val launchable = entries.filter { isLaunchableName(it.name, allowBin) }
+        val filtered = launchable.filterNot { isExcluded(it.name) }
+        return sortCandidates(filtered.ifEmpty { launchable }, dirName, preferCs2Runtime)
+    }
+
+    private fun isLaunchableName(name: String, allowBin: Boolean): Boolean {
+        val lower = name.lowercase(Locale.ROOT)
+        return lower.endsWith(".exe") || (allowBin && lower.endsWith(".bin"))
     }
 
     /** 解析实际启动的 exe；返回 null 表示目录内没有可用 exe。 */
     fun resolveExe(game: ScanGame, projectDirPath: String): File? {
         val projectDir = File(projectDirPath)
         if (!projectDir.isDirectory) return null
+        val allowBin = game.engine == EngineType.CATSYSTEM2
+        val preferCs2 = game.engine == EngineType.CATSYSTEM2
         game.launchFile?.takeIf { it.isNotBlank() }?.let { manual ->
             val candidate = File(projectDir, manual.trim())
-            if (candidate.isFile && candidate.name.lowercase(Locale.ROOT).endsWith(".exe")) return candidate
+            if (candidate.isFile && isLaunchableName(candidate.name, allowBin)) return candidate
         }
-        return candidates(projectDir).firstOrNull()?.let { File(projectDir, it.name) }
+        return candidates(projectDir, allowBin, preferCs2).firstOrNull()?.let { File(projectDir, it.name) }
     }
 
     /** 解析出的 exe 文件名（相对游戏目录）；无可用 exe 返回 null。 */
@@ -65,15 +82,20 @@ object YurisLaunchFiles {
         return EXCLUDED_KEYWORDS.any { stem.contains(it) }
     }
 
-    private fun sortCandidates(exes: List<ExeCandidate>, dirName: String): List<ExeCandidate> {
+    private fun sortCandidates(
+        exes: List<ExeCandidate>,
+        dirName: String,
+        preferCs2Runtime: Boolean,
+    ): List<ExeCandidate> {
         val normalizedDir = normalizeName(dirName)
         return exes.sortedWith(
             compareBy<ExeCandidate> { candidate ->
                 val stem = normalizeName(candidate.name.substringBeforeLast('.'))
                 when {
-                    normalizedDir.isNotEmpty() && stem == normalizedDir -> 0
-                    normalizedDir.isNotEmpty() && (stem.contains(normalizedDir) || normalizedDir.contains(stem)) -> 1
-                    else -> 2
+                    preferCs2Runtime && stem == "cs2" -> 0
+                    normalizedDir.isNotEmpty() && stem == normalizedDir -> 1
+                    normalizedDir.isNotEmpty() && (stem.contains(normalizedDir) || normalizedDir.contains(stem)) -> 2
+                    else -> 3
                 }
             }.thenByDescending { it.size }
                 .thenBy { it.name.lowercase(Locale.ROOT) },

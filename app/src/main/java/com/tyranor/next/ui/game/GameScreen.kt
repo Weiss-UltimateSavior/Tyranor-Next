@@ -1838,6 +1838,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
     EngineType.SIGLUS -> Color(0xFF00838F)
     EngineType.YURIS -> Color(0xFF558B2F)
+    EngineType.CATSYSTEM2 -> Color(0xFF6D4C41)
     EngineType.PC -> Color(0xFF455A64)
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.PSP -> Color(0xFF6D4C9F)

@@ -14,6 +14,7 @@ enum class EngineType(val displayName: String) {
     SIGLUS("Siglus"),
     RENPY("Ren'Py"),
     YURIS("YU-RIS"),
+    CATSYSTEM2("CatSystem2"),
     PC("PC"),
     PSP("PSP"),
     NINTENDO_SWITCH("Nintendo Switch"),

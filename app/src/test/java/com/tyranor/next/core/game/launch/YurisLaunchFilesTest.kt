@@ -86,6 +86,22 @@ class YurisLaunchFilesTest {
     }
 
     @Test
+    fun cs2AcceptsBinAndPrefersCs2Runtime() {
+        val dir = temporaryFolder.newFolder("CS2 Game")
+        file(dir, "game.bin", 900)
+        file(dir, "launcher.bin", 5000)
+        file(dir, "cs2.exe", 100)
+
+        // 默认（YU-RIS/PC）：只列 .exe
+        assertEquals(listOf("cs2.exe"), YurisLaunchFiles.candidates(dir).map { it.name })
+
+        // CatSystem2：接受 .bin，且 cs2.exe 优先
+        val cs2 = YurisLaunchFiles.candidates(dir, allowBin = true, preferCs2Runtime = true).map { it.name }
+        assertEquals("cs2.exe", cs2.first())
+        assertEquals(setOf("cs2.exe", "game.bin", "launcher.bin"), cs2.toSet())
+    }
+
+    @Test
     fun returnsNullWithoutExe() {
         val dir = temporaryFolder.newFolder("MyGame")
         file(dir, "readme.txt", 10)

@@ -115,6 +115,7 @@
     <string name="engine_desc_psp">PSP 游戏通过外置 PPSSPP 运行</string>
     <string name="engine_desc_yuris">YU-RIS，yscfg.dat 与 .ypf 封包（ysbin/.ymv）游戏，经外置 Winlator 运行</string>
     <string name="engine_desc_pc">手动添加的 Windows PC 游戏，经外置 Winlator 运行</string>
+    <string name="engine_desc_cs2">CatSystem2，.int/.cst/.hg3 资源游戏，经外置 Winlator 运行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
     <string name="engine_external_jump_title">外置跳转支持</string>
     <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
