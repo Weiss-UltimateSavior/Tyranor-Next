@@ -102,6 +102,7 @@ import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
@@ -837,7 +838,11 @@ internal fun GameActionsSheet(
                     onClick = { beginLaunch() },
                 )
             }
-            if (game.engine == EngineType.KIRIKIRI || game.engine == EngineType.YURIS || game.engine == EngineType.PC) {
+            // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换
+            if (
+                game.engine == EngineType.KIRIKIRI ||
+                ExternalEmulatorRegistry.forEngine(game.engine)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL
+            ) {
                 item {
                     AppNavItem(
                         title = stringResource(R.string.game_launch_file),

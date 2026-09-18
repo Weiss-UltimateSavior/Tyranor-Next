@@ -397,6 +397,7 @@ object EngineScanner {
     private fun cs2Score(
         hasStartupXml: Boolean,
         intCount: Int,
+        typicalIntCount: Int,
         hasCst: Boolean,
         hasHg3: Boolean,
         hasCstl: Boolean,
@@ -408,6 +409,8 @@ object EngineScanner {
         var score = 0
         if (hasStartupXml) score += 15
         if (intCount >= 2) score += 25 else if (intCount == 1) score += 10
+        // §11：典型 INT 文件名（scene/image/config/bgm/se/kcs）出现多个时明显提高可信度
+        if (typicalIntCount >= 3) score += 20 else if (typicalIntCount >= 1) score += 10
         if (hasCst) score += 15
         if (hasHg3) score += 10
         if (hasCstl) score += 5
@@ -662,6 +665,7 @@ object EngineScanner {
         var hasStartupXml = false
         var hasCs2Exe = false
         var intCount = 0
+        var typicalIntCount = 0
         var hasCst = false
         var hasCstl = false
         var hasHg3 = false
@@ -741,7 +745,10 @@ object EngineScanner {
                 lower.endsWith(".g00") -> hasG00 = true
                 lower == "yscfg.dat" -> hasYscfgDat = true
                 lower == "cs2.exe" -> hasCs2Exe = true
-                lower.endsWith(".int") -> intCount++
+                lower.endsWith(".int") -> {
+                    intCount++
+                    if (lower in CS2_TYPICAL_INT_NAMES) typicalIntCount++
+                }
                 lower.endsWith(".cst") -> hasCst = true
                 lower.endsWith(".cstl") -> hasCstl = true
                 lower.endsWith(".hg3") -> hasHg3 = true
@@ -811,6 +818,7 @@ object EngineScanner {
         val cs2Score = cs2Score(
             hasStartupXml = hasStartupXml,
             intCount = intCount,
+            typicalIntCount = typicalIntCount,
             hasCst = hasCst,
             hasHg3 = hasHg3,
             hasCstl = hasCstl,
@@ -889,8 +897,13 @@ object EngineScanner {
 
     const val LAUNCH_TARGET_GAME_DIR = "DIR"
 
-    /** CatSystem2 判定阈值（§15 评分：`startup.xml + 多个 .int + .cst/.hg3` 组合即达标）。 */
+    /** CatSystem2 判定阈值（§15 评分：`startup.xml + 多个 .int`（含典型名）即可达标）。 */
     private const val CS2_MIN_SCORE = 50
+
+    /** §11 典型 INT 文件名。 */
+    private val CS2_TYPICAL_INT_NAMES = setOf(
+        "scene.int", "image.int", "config.int", "bgm.int", "se.int", "kcs.int",
+    )
 
     private val UNKNOWN_DETECTION = Detection(EngineType.UNKNOWN, 0, "")
 
