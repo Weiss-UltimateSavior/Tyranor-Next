@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,14 +35,18 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
+import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +91,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var artPowerSaving by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
     var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
     var siglusLanguage by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_SIGLUS_LANGUAGE)) }
+    var artPatchRunning by remember(gid) { mutableStateOf(false) }
+    var artPatchResult by remember(gid) { mutableStateOf<EngineLauncher.ArtemisManualPatchResult?>(null) }
     var renpyOverride by remember(gid) {
         mutableStateOf(PerGameSettingsStore.toRenPyOverride(PerGameSettingsStore.load(ctx, gid)))
     }
@@ -461,29 +468,71 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, globalOns.encoding.decode(), onsEnc) { onsEnc = it }
                         }
                     }
-                    EngineType.ARTEMIS -> item {
-                        SectionCard("Artemis") {
-                            val effectiveArtKernel = artKernel ?: globalArtKernel
-                            OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
-                            OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
-                            if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
-                                OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
-                            } else {
-                                // 自研内核直接读游戏包内配置，官方专属项不适用
-                                Text(
-                                    stringResource(R.string.engine_settings_artemis_clean_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    EngineType.ARTEMIS -> {
+                        item {
+                            SectionCard("Artemis") {
+                                val effectiveArtKernel = artKernel ?: globalArtKernel
+                                OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
+                                OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
+                                if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                                    OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
+                                } else {
+                                    // 自研内核直接读游戏包内配置，官方专属项不适用
+                                    Text(
+                                        stringResource(R.string.engine_settings_artemis_clean_hint),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                    )
+                                }
+                        }
+                    }
+                    // 官方内核专属的手动补丁动作：与启动前自动补丁同源实现
+                    if ((artKernel ?: globalArtKernel) == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                val patchRunningSummary = stringResource(R.string.engine_settings_artemis_patch_running)
+                                AppNavItem(
+                                    title = stringResource(R.string.engine_settings_artemis_add_base_patch),
+                                    summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_base_patch_summary),
+                                    leadingIcon = R.drawable.ic_artemis_patch,
+                                    containerColor = NavWhite,
+                                    verticalPadding = 17.dp,
+                                    onClick = if (artPatchRunning) null else {
+                                        {
+                                            artPatchRunning = true
+                                            scope.launch {
+                                                artPatchResult = EngineLauncher.applyArtemisBasePatchManually(ctx, game)
+                                                artPatchRunning = false
+                                            }
+                                        }
+                                    },
+                                )
+                                AppNavItem(
+                                    title = stringResource(R.string.engine_settings_artemis_add_windows_env_patch),
+                                    summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_windows_env_patch_summary),
+                                    leadingIcon = R.drawable.ic_artemis_patch,
+                                    containerColor = NavWhite,
+                                    verticalPadding = 17.dp,
+                                    onClick = if (artPatchRunning) null else {
+                                        {
+                                            artPatchRunning = true
+                                            scope.launch {
+                                                artPatchResult = EngineLauncher.applyArtemisWindowsEnvPatchManually(ctx, game)
+                                                artPatchRunning = false
+                                            }
+                                        }
+                                    },
                                 )
                             }
                         }
+                    }
                     }
                     EngineType.RENPY -> item {
                         SectionCard("Ren'Py") {
@@ -685,6 +734,32 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(12.dp)) }
             }
         }
+    }
+
+    artPatchResult?.let { result ->
+        val message = when (result) {
+            EngineLauncher.ArtemisManualPatchResult.SUCCESS ->
+                stringResource(R.string.engine_settings_artemis_patch_success)
+            EngineLauncher.ArtemisManualPatchResult.FAILED ->
+                stringResource(R.string.engine_settings_artemis_patch_failed)
+            EngineLauncher.ArtemisManualPatchResult.GAME_DIR_UNRESOLVED ->
+                stringResource(R.string.engine_settings_artemis_patch_dir_unresolved)
+            EngineLauncher.ArtemisManualPatchResult.PERMISSION_REQUIRED ->
+                stringResource(R.string.engine_settings_artemis_patch_permission_required)
+        }
+        AppAlertDialog(
+            onDismissRequest = { artPatchResult = null },
+            title = {
+                Text(
+                    stringResource(R.string.engine_settings_artemis_patch_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                TextButton(onClick = { artPatchResult = null }) { Text(stringResource(R.string.common_confirm)) }
+            },
+        )
     }
 }
 

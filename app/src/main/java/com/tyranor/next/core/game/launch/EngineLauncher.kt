@@ -1237,6 +1237,35 @@ object EngineLauncher {
         }
     }
 
+    /** 单游戏手动补丁结果（UI 层映射本地化文案）。 */
+    enum class ArtemisManualPatchResult { SUCCESS, FAILED, GAME_DIR_UNRESOLVED, PERMISSION_REQUIRED }
+
+    /** 手动「添加基础补丁」：强制重新解出 system.ini 等启动文件并应用 Android 化改写。 */
+    suspend fun applyArtemisBasePatchManually(context: Context, game: ScanGame): ArtemisManualPatchResult =
+        applyArtemisPatchManually(context, game) { path ->
+            ArtemisPfsUnpacker.applyBasePatch(path, force = true)
+        }
+
+    /** 手动「添加Windows环境补丁」：解出 system.lua/init.lua 并把 game.os 强制为 windows。 */
+    suspend fun applyArtemisWindowsEnvPatchManually(context: Context, game: ScanGame): ArtemisManualPatchResult =
+        applyArtemisPatchManually(context, game) { path ->
+            ArtemisPfsUnpacker.applyWindowsEnvPatch(path)
+        }
+
+    private suspend fun applyArtemisPatchManually(
+        context: Context,
+        game: ScanGame,
+        action: (String) -> Boolean,
+    ): ArtemisManualPatchResult = withContext(Dispatchers.IO) {
+        if (game.engine != EngineType.ARTEMIS) return@withContext ArtemisManualPatchResult.FAILED
+        val path = resolveGameDirectory(context, game)
+            ?: return@withContext ArtemisManualPatchResult.GAME_DIR_UNRESOLVED
+        requestAllFilesAccessIfNeeded(context, game, path)?.let {
+            return@withContext ArtemisManualPatchResult.PERMISSION_REQUIRED
+        }
+        if (action(path)) ArtemisManualPatchResult.SUCCESS else ArtemisManualPatchResult.FAILED
+    }
+
     /**
      * RinneMobile 的 Artemis 启动链路会在启动前补齐部分 PFS 打包游戏所需的基础文件。
      * “启动时询问”策略已由 UI 层弹窗确认（needsArtemisPatchConfirm），到达这里时

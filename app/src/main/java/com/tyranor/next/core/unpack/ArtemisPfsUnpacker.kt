@@ -3,6 +3,7 @@ package com.tyranor.next.core.unpack
 import android.util.Log
 import java.io.EOFException
 import java.io.File
+import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.nio.charset.Charset
 import java.security.MessageDigest
@@ -19,11 +20,21 @@ import kotlin.text.Charsets.UTF_8
 object ArtemisPfsUnpacker {
     private const val TAG = "ArtemisPfsUnpacker"
 
+    /** 条目表长度上限（表本身很小，50MB 足够）。 */
     private const val MAX_ENTRY_BYTES = 50L * 1024 * 1024
-    private const val MAX_TOTAL_BYTES = 200L * 1024 * 1024
+
+    /** 单条目数据上限：原版补丁无上限，OP 视频常见 300MB~1GB；保留 3GB 兜底防损坏封包。 */
+    private const val MAX_ENTRY_DATA_BYTES = 3L * 1024 * 1024 * 1024
+
+    /** 单次补丁写出总量上限：视频全部解出可能到数 GB（原版无限制）。 */
+    private const val MAX_TOTAL_BYTES = 8L * 1024 * 1024 * 1024
     private const val MAX_ENTRY_COUNT = 10_000
     private const val MAX_NAME_BYTES = 4096
-    private const val MIN_ENCRYPTED_LEN = 8
+
+    /** 流式解包缓冲：大视频不再整块进内存，避免 OOM。 */
+    private const val COPY_BUFFER_BYTES = 1 * 1024 * 1024
+    private val GAME_OS_LINE_RE = Regex("""[\t\s]+?game\.os[\s\t]+?=[^=].+""")
+
     private const val MANAGED_BLOCK_BEGIN = "; TYRANOR_NEXT_ARTEMIS_SETTINGS_BEGIN"
     private const val MANAGED_BLOCK_END = "; TYRANOR_NEXT_ARTEMIS_SETTINGS_END"
     private val MANAGED_ANDROID_KEYS = setOf(
@@ -64,8 +75,8 @@ object ArtemisPfsUnpacker {
         return hasMissingStartupFile(dir, systemIni)
     }
 
-    fun applyBasePatch(rootPath: String?): Boolean {
-        if (!needsBasePatch(rootPath)) return true
+    fun applyBasePatch(rootPath: String?, force: Boolean = false): Boolean {
+        if (!force && !needsBasePatch(rootPath)) return true
         val dir = File(rootPath.orEmpty())
         var totalBytes = 0L
         return try {
@@ -81,6 +92,65 @@ object ArtemisPfsUnpacker {
             true
         } catch (error: Exception) {
             logWarn("apply base patch failed root=$rootPath", error)
+            false
+        }
+    }
+
+    /**
+     * Windows 环境补丁（对齐原版 Tyranor `F.K`）：从 PFS 解出 `system.lua`/`init.lua`，
+     * 并把其中 `game.os = ...` 行强制改写为 `game.os = "windows"`（幂等：已改写行不再命中）。
+     *
+     * 无 PFS 封包（已解包目录）时，对目录内既有的同名 lua 文件做兜底改写。
+     */
+    fun applyWindowsEnvPatch(rootPath: String?): Boolean {
+        if (rootPath.isNullOrBlank() || rootPath.startsWith("content://")) return false
+        val dir = File(rootPath)
+        if (!dir.isDirectory) return false
+        return try {
+            for (pfs in listPfsFiles(dir)) {
+                unpackPfs(dir, pfs, ::shouldExtractWindowsEnvEntry, rewriteWindowsEnv = true)
+            }
+            for (file in windowsEnvCandidateFiles(dir)) {
+                forceGameOsWindows(file)
+            }
+            true
+        } catch (error: Exception) {
+            logWarn("apply Windows env patch failed root=$rootPath", error)
+            false
+        }
+    }
+
+    private fun shouldExtractWindowsEnvEntry(relPath: String): Boolean {
+        val lower = relPath.lowercase(Locale.ROOT)
+        return lower.contains("system.lua") || lower.contains("init.lua")
+    }
+
+    /** 无封包场景的兜底位置（目录直放 / system 子目录）。 */
+    private fun windowsEnvCandidateFiles(dir: File): List<File> = listOf(
+        File(dir, "system.lua"),
+        File(dir, "init.lua"),
+        File(dir, "system/system.lua"),
+        File(dir, "system/init.lua"),
+    )
+
+    /** 原版正则：整行匹配 `[\t\s]+?game\.os[\s\t]+?=[^=].+`，命中即整行替换。 */
+    private fun forceGameOsWindows(file: File): Boolean {
+        if (!file.isFile) return false
+        return try {
+            val original = file.readText(Charsets.UTF_8)
+            val lines = original.split('\n')
+            val rewritten = buildString {
+                lines.forEachIndexed { index, line ->
+                    append(if (GAME_OS_LINE_RE.matches(line)) "game.os = \"windows\"" else line)
+                    if (index != lines.lastIndex) append('\n')
+                }
+            }
+            if (rewritten == original) return false
+            file.writeText(rewritten, Charsets.UTF_8)
+            logInfo("patched Windows env ${file.path}")
+            true
+        } catch (error: Exception) {
+            logWarn("patch Windows env failed ${file.path}", error)
             false
         }
     }
@@ -154,6 +224,7 @@ object ArtemisPfsUnpacker {
         gameDir: File,
         pfs: File,
         shouldExtractEntry: (String) -> Boolean = ::shouldExtract,
+        rewriteWindowsEnv: Boolean = false,
     ): Long {
         var written = 0L
         var entries = 0
@@ -161,7 +232,10 @@ object ArtemisPfsUnpacker {
             if (raf.read() != 0x70 || raf.read() != 0x66) {
                 return written
             }
-            raf.read()
+            // 第 3 字节是版本字符（'8' 等）：原版以版本号 >= 8 判定数据是否 XOR 加密
+            val versionChar = raf.read()
+            val version = if (versionChar in '0'.code..'9'.code) versionChar - '0'.code else 8
+            val encryptedData = version >= 8
             val tableLen = readM(raf)
             if (tableLen <= 0 || tableLen > MAX_ENTRY_BYTES) {
                 logWarn("invalid pfs table length $tableLen")
@@ -192,16 +266,15 @@ object ArtemisPfsUnpacker {
                 val dataLen = readM(raf).toLong()
                 val relPath = rawName.replace('\\', '/')
                 if (!shouldExtractEntry(relPath)) continue
-                if (offset < 0 || dataLen < 0 || offset + dataLen > fileLength || dataLen > MAX_ENTRY_BYTES) {
+                if (offset < 0 || dataLen < 0 || offset + dataLen > fileLength || dataLen > MAX_ENTRY_DATA_BYTES) {
                     logWarn("invalid pfs entry bounds name=$rawName offset=$offset len=$dataLen")
                     continue
                 }
                 val target = safeTarget(gameDir, relPath) ?: continue
-                val data = readEntryData(raf, offset, dataLen.toInt(), key) ?: return written
-                writeEntry(target, data)
-                written += data.size
+                val writtenBytes = writeEntryStream(raf, offset, dataLen, key, encryptedData, target) ?: continue
+                written += writtenBytes
                 entries++
-                postProcessEntry(target, relPath)
+                postProcessEntry(target, relPath, rewriteWindowsEnv)
             }
         }
         logInfo("unpacked ${pfs.name}: entries=$entries bytes=$written")
@@ -230,30 +303,54 @@ object ArtemisPfsUnpacker {
             lowerRelPath.endsWith(".txt")
     }
 
-    private fun readEntryData(raf: RandomAccessFile, offset: Long, dataLen: Int, key: ByteArray): ByteArray? {
+    /**
+     * 流式解出条目到目标文件：按 [COPY_BUFFER_BYTES] 分块读 + XOR（index 为条目内绝对偏移），
+     * 避免大视频（数百 MB）一次性分配内存导致 OOM。返回写出字节数；失败返回 null。
+     */
+    private fun writeEntryStream(
+        raf: RandomAccessFile,
+        offset: Long,
+        dataLen: Long,
+        key: ByteArray,
+        encrypted: Boolean,
+        target: File,
+    ): Long? {
+        val parent = target.parentFile ?: return null
+        if (!parent.exists() && !parent.mkdirs()) {
+            logWarn("cannot create directory ${parent.path}")
+            return null
+        }
         val saved = raf.filePointer
         return try {
             raf.seek(offset)
-            val data = ByteArray(dataLen)
-            raf.readFully(data)
-            if (dataLen >= MIN_ENCRYPTED_LEN) {
-                for (j in data.indices) {
-                    data[j] = (data[j].toInt() xor key[j % key.size].toInt()).toByte()
+            var remaining = dataLen
+            var index = 0L
+            FileOutputStream(target).use { out ->
+                val buffer = ByteArray(COPY_BUFFER_BYTES)
+                while (remaining > 0) {
+                    val toRead = minOf(remaining, buffer.size.toLong()).toInt()
+                    val read = raf.read(buffer, 0, toRead)
+                    if (read <= 0) {
+                        logWarn("unexpected EOF while extracting ${target.name}")
+                        return null
+                    }
+                    if (encrypted) {
+                        for (i in 0 until read) {
+                            buffer[i] = (buffer[i].toInt() xor key[((index + i) % key.size).toInt()].toInt()).toByte()
+                        }
+                    }
+                    out.write(buffer, 0, read)
+                    index += read
+                    remaining -= read
                 }
             }
-            data
+            dataLen
+        } catch (error: Exception) {
+            logWarn("write entry failed ${target.path}", error)
+            null
         } finally {
             raf.seek(saved)
         }
-    }
-
-    private fun writeEntry(target: File, data: ByteArray) {
-        val parent = target.parentFile ?: return
-        if (!parent.exists() && !parent.mkdirs()) {
-            logWarn("cannot create directory ${parent.path}")
-            return
-        }
-        target.writeBytes(data)
     }
 
     private fun safeTarget(gameDir: File, relPath: String): File? {
@@ -268,34 +365,74 @@ object ArtemisPfsUnpacker {
         return canonical
     }
 
-    private fun postProcessEntry(target: File, relPath: String) {
+    private fun postProcessEntry(target: File, relPath: String, rewriteWindowsEnv: Boolean) {
         val lower = relPath.lowercase(Locale.ROOT)
         when {
             lower.contains("system.ini") -> patchSystemIni(target)
             lower.contains("list_windows") -> renameListWindows(target)
+            rewriteWindowsEnv && (lower.contains("system.lua") || lower.contains("init.lua")) ->
+                forceGameOsWindows(target)
         }
     }
 
+    /**
+     * 基础补丁的 system.ini 处理：对齐原版 `F.J` —— **整体重写**为最小 `[ANDROID]` 段
+     * （丢弃原文件其余段与注释），WIDTH/HEIGHT 继承 `[WINDOWS]`（缺省 1280x720），
+     * 原文件出现过 CHARSET 才输出 `CHARSET = UTF-8`。
+     * 引擎设置中的分辨率/裁切等覆盖由启动链的 [applyAndroidSettings] 再次注入。
+     */
     private fun patchSystemIni(file: File) {
         try {
             val bytes = file.readBytes()
             val charset = detectSystemIniCharset(bytes)
             val text = String(bytes, charset)
-            val patched = ensureAndroidCompatibilityDefaults(text)
-            if (patched != text) {
-                file.writeText(patched, charset)
-                logInfo("patched Android system.ini defaults ${file.path}")
-            }
+            val rewritten = buildAndroidOnlySystemIni(text)
+            file.writeText(rewritten, Charsets.UTF_8)
+            logInfo("patched system.ini (Android-only) ${file.path}")
         } catch (error: Exception) {
             logWarn("patch system.ini failed ${file.path}", error)
         }
     }
 
+    private fun buildAndroidOnlySystemIni(text: String): String {
+        var hasCharset = false
+        var inWindowsSection = false
+        var widthLine = "WIDTH = 1280"
+        var heightLine = "HEIGHT = 720"
+        for (raw in text.split('\n')) {
+            val line = raw.trim()
+            if (line.isEmpty() || line.startsWith(";")) continue
+            if (line.startsWith("[") && line.endsWith("]")) {
+                inWindowsSection = line.substring(1, line.length - 1).trim().equals("WINDOWS", ignoreCase = true)
+                continue
+            }
+            if (line.contains("CHARSET", ignoreCase = true)) hasCharset = true
+            if (inWindowsSection) {
+                if (line.startsWith("WIDTH", ignoreCase = true)) widthLine = line
+                if (line.startsWith("HEIGHT", ignoreCase = true)) heightLine = line
+            }
+        }
+        return buildString {
+            append("[ANDROID]\n")
+            append(widthLine).append('\n')
+            append(heightLine).append('\n')
+            append("SIDECUT = 0\n")
+            append("BOOT = system/first.iet\n")
+            append("FONT_CACHE_SIZE = 8388608")
+            if (hasCharset) append("\nCHARSET = UTF-8")
+        }
+    }
+
+    /**
+     * 对齐原版：`list_windows*` → `list_android*`，目标已存在时**覆盖**（原版为 rename 覆盖语义）；
+     * 重命名后的 `list_android.tbl` 再翻转 tablet 开关。
+     */
     private fun renameListWindows(file: File) {
         try {
             val target = File(file.parentFile, file.name.replace("list_windows", "list_android"))
-            if (!target.exists() && file.exists() && file.renameTo(target)) {
-                logInfo("renamed ${file.name} -> ${target.name}")
+            if (target.exists()) target.delete()
+            if (file.exists() && file.renameTo(target)) {
+                logInfo("renamed ${file.name} -> ${target.name} (overwrite)")
                 if (target.name.equals("list_android.tbl", ignoreCase = true)) {
                     flipListAndroidTblConfig(target)
                 }

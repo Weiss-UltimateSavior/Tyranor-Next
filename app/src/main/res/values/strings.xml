@@ -263,6 +263,16 @@
     <string name="engine_settings_artemis_surface_cache">图像缓存</string>
     <string name="engine_settings_artemis_font_cache">字体缓存</string>
     <string name="engine_settings_artemis_power_saving">省电绘制</string>
+    <string name="engine_settings_artemis_add_base_patch">添加基础补丁</string>
+    <string name="engine_settings_artemis_add_base_patch_summary">从 PFS 解出 system.ini 等启动文件并做 Android 化改写</string>
+    <string name="engine_settings_artemis_add_windows_env_patch">添加Windows环境补丁</string>
+    <string name="engine_settings_artemis_add_windows_env_patch_summary">将 system.lua/init.lua 的 game.os 强制为 windows</string>
+    <string name="engine_settings_artemis_patch_title">Artemis 补丁</string>
+    <string name="engine_settings_artemis_patch_running">正在补丁……</string>
+    <string name="engine_settings_artemis_patch_success">补丁完成</string>
+    <string name="engine_settings_artemis_patch_failed">补丁失败：请确认游戏目录可写且包含 PFS 封包</string>
+    <string name="engine_settings_artemis_patch_dir_unresolved">无法解析游戏目录路径，请确认已导入可访问的目录</string>
+    <string name="engine_settings_artemis_patch_permission_required">需要「所有文件访问」权限，已尝试打开设置页</string>
     <string name="engine_settings_artemis_clean_hint">自研内核直接从游戏包读取资源与配置，官方版本/补丁/显示注入项不适用。</string>
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>

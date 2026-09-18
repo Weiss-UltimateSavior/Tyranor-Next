@@ -263,6 +263,16 @@
     <string name="engine_settings_artemis_surface_cache">Surface cache</string>
     <string name="engine_settings_artemis_font_cache">Font cache</string>
     <string name="engine_settings_artemis_power_saving">Power-saving rendering</string>
+    <string name="engine_settings_artemis_add_base_patch">Add base patch</string>
+    <string name="engine_settings_artemis_add_base_patch_summary">Extract startup files (system.ini etc.) from PFS and apply Android tweaks</string>
+    <string name="engine_settings_artemis_add_windows_env_patch">Patch as Windows env</string>
+    <string name="engine_settings_artemis_add_windows_env_patch_summary">Force game.os to "windows" in system.lua/init.lua</string>
+    <string name="engine_settings_artemis_patch_title">Artemis patch</string>
+    <string name="engine_settings_artemis_patch_running">Patching…</string>
+    <string name="engine_settings_artemis_patch_success">Patch applied</string>
+    <string name="engine_settings_artemis_patch_failed">Patch failed: make sure the game folder is writable and contains PFS archives</string>
+    <string name="engine_settings_artemis_patch_dir_unresolved">Cannot resolve the game folder path</string>
+    <string name="engine_settings_artemis_patch_permission_required">All-files access is required; the settings page was opened</string>
     <string name="engine_settings_artemis_clean_hint">The clean-room kernel reads resources and config directly from the game pack; official version/patch/display options do not apply.</string>
     <string name="engine_settings_external_network_resources">Allow external network resources</string>
     <string name="engine_settings_external_network">Allow external network</string>
