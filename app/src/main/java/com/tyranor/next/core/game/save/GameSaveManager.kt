@@ -100,11 +100,17 @@ class GameSaveManager(private val context: Context) {
                 }
             }
             EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
-            EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.YURIS ->
+            EngineType.PSP, EngineType.NINTENDO_SWITCH ->
                 SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
             EngineType.ARTEMIS -> SaveLocation(File(root), text(R.string.save_location_artemis_game_dir), true)
             EngineType.SIGLUS -> SaveLocation(
                 File(root, "savedata"),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
+            // YU-RIS：存档固定在游戏目录 save/（经 Winlator 运行但落盘在游戏目录，可纳入统一存档管理）
+            EngineType.YURIS -> SaveLocation(
+                File(root, "save"),
                 text(R.string.save_location_engine_game_dir, game.engine.displayName),
                 true,
             )

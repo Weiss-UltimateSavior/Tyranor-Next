@@ -1828,5 +1828,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
 }
 
 internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
-    !ExternalEngineModuleRegistry.isExternalEngine(engine) &&
-        ExternalEmulatorRegistry.forEngine(engine) == null
+    // YU-RIS 虽经外置 Winlator 启动，但存档落在游戏目录 save/，纳入统一存档管理
+    engine == EngineType.YURIS ||
+        (!ExternalEngineModuleRegistry.isExternalEngine(engine) &&
+            ExternalEmulatorRegistry.forEngine(engine) == null)
