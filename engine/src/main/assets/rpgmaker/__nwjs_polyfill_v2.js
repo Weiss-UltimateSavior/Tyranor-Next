@@ -766,6 +766,14 @@
         }
 
         // ---- fs：真读写 ----
+        // Node 的编码参数有两种形态：字符串（'utf8'）或 options 对象（{encoding:'utf8'}）。
+        // 插件两种写法都常见，必须统一解析——只认字符串会让 options 形态走进
+        // 「无编码」分支返回 Buffer，拼进字符串即得到 "ãã..." 这类乱码。
+        function pickEncoding(arg, fallback) {
+            if (typeof arg === "string") return arg;
+            if (arg && typeof arg === "object" && typeof arg.encoding === "string") return arg.encoding;
+            return fallback;
+        }
         function readTextOrThrow(p) {
             var v = bridge.readText(p);
             if (v === null || v === undefined) throw nodeErr("ENOENT", "ENOENT: no such file, readFileSync '" + p + "'");
@@ -796,18 +804,19 @@
             existsSync: function (p) { try { return bridge.exists(p) === true; } catch (e) { return false; } },
             exists: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(realFs.existsSync(p)); }, 0); },
             readFileSync: function (p, enc) {
-                // Node 语义：无编码 → Buffer；有编码 → 字符串（与 JoiPlay 的 \"\\b\\b\\b\" 抛错等价）
-                if (enc === undefined || enc === null || enc === "") return readBufferOrThrow(p);
-                var buf = readBufferOrThrow(p);
-                var e = String(enc).toLowerCase();
+                // Node 语义：无编码 → Buffer；有编码 → 字符串（与 JoiPlay 的 "\b\b\b" 抛错等价）
+                var encoding = pickEncoding(enc, undefined);
+                if (encoding === undefined || encoding === null || encoding === "") return readBufferOrThrow(p);
+                var e = String(encoding).toLowerCase();
                 if (e === "utf8" || e === "utf-8") return readTextOrThrow(p);
-                if (e === "base64") return bufferToBase64(buf);
-                return buf.toString(enc);
+                var soft = readBufferOrThrow(p);
+                if (e === "base64") return bufferToBase64(soft);
+                return soft.toString(encoding);
             },
             readFile: function (p, o, cb) {
-                if (typeof o === "function") { cb = o; }
+                if (typeof o === "function") { cb = o; o = undefined; }
                 if (typeof cb === "function") setTimeout(function () {
-                    try { cb(null, realFs.readFileSync(p, typeof o === "string" ? o : undefined)); }
+                    try { cb(null, realFs.readFileSync(p, o)); }
                     catch (err) { cb(err); }
                 }, 0);
                 return undefined;
@@ -815,7 +824,19 @@
             writeFileSync: function (p, data, enc) {
                 var b64 = bufferToBase64(data);
                 if (b64 !== null) { bridge.writeBase64(p, b64); return; }
-                bridge.writeText(p, typeof data === "string" ? data : String(data));
+                var encoding = pickEncoding(enc, "utf8");
+                var e = String(encoding || "utf8").toLowerCase();
+                // 非 utf8 文本编码：先按该编码转字节再落盘，避免写出与 Node 不同码点的文件
+                if (e === "utf8" || e === "utf-8" || e === "ascii" || e === "binary" || e === "latin1") {
+                    bridge.writeText(p, typeof data === "string" ? data : String(data));
+                } else {
+                    var tmp = window.Buffer ? window.Buffer.from(String(data), e) : null;
+                    if (tmp && typeof tmp._bin === "string") {
+                        try { bridge.writeBase64(p, btoa(tmp._bin)); } catch (e2) { bridge.writeText(p, String(data)); }
+                    } else {
+                        bridge.writeText(p, String(data));
+                    }
+                }
             },
             writeFile: function (p, data, o, cb) {
                 if (typeof o === "function") { cb = o; }
@@ -1042,6 +1063,124 @@
             window.require.cache = wrappedRequire.cache;
             if (typeof globalThis !== "undefined") globalThis.require = window.require;
         } catch (e5) {}
+
+        // ---- Buffer 实例方法补齐 ----
+        // 基础层的 Buffer 是「带 _bin 的普通对象」，只有 toString/length；
+        // 而 fs 现在返回真 Buffer，插件常见的二进制解析（readUInt8/readInt32LE/slice/
+        // indexOf/equals 等）与序列化（toJSON）全是 undefined，一调用即崩。
+        // 这里在保持 _bin 契约（isBuffer 依赖它）的前提下补齐常用实例方法。
+        (function () {
+            var B = window.Buffer;
+            if (!B || B.__tyranorBufferPatched) return;
+            B.__tyranorBufferPatched = true;
+
+            function bytesOf(buf) {
+                var s = buf && typeof buf._bin === "string" ? buf._bin : "";
+                var out = [];
+                for (var i = 0; i < s.length; i++) out.push(s.charCodeAt(i) & 0xff);
+                return out;
+            }
+            function wrap(bytes) {
+                var s = "";
+                for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i] & 0xff);
+                return B.from(s);
+            }
+            function attach(obj) {
+                obj._tBytes = null;
+                obj.slice = function (start, end) {
+                    var b = bytesOf(this);
+                    var n = b.length;
+                    var a = start === undefined ? 0 : (start < 0 ? Math.max(n + start, 0) : Math.min(start, n));
+                    var z = end === undefined ? n : (end < 0 ? Math.max(n + end, 0) : Math.min(end, n));
+                    if (z < a) z = a;
+                    return wrap(b.slice(a, z));
+                };
+                obj.subarray = function (a, b) { return this.slice(a, b); };
+                obj.toJSON = function () { return { type: "Buffer", data: bytesOf(this) }; };
+                obj.equals = function (other) {
+                    var a = bytesOf(this), c = bytesOf(other);
+                    if (a.length !== c.length) return false;
+                    for (var i = 0; i < a.length; i++) if (a[i] !== c[i]) return false;
+                    return true;
+                };
+                obj.compare = function (other) {
+                    var a = bytesOf(this), c = bytesOf(other);
+                    var n = Math.min(a.length, c.length);
+                    for (var i = 0; i < n; i++) { if (a[i] !== c[i]) return a[i] < c[i] ? -1 : 1; }
+                    return a.length === c.length ? 0 : (a.length < c.length ? -1 : 1);
+                };
+                obj.indexOf = function (needle, offset) {
+                    var hay = bytesOf(this);
+                    var pat;
+                    if (typeof needle === "number") {
+                        pat = [needle & 0xff];               // Node 允许传字节值
+                    } else if (typeof needle === "string") {
+                        pat = String(needle).split("").map(function (ch) { return ch.charCodeAt(0) & 0xff; });
+                    } else {
+                        pat = bytesOf(needle);
+                    }
+                    if (!pat.length) return -1;
+                    var from = offset && offset > 0 ? offset : 0;
+                    outer: for (var i = from; i <= hay.length - pat.length; i++) {
+                        for (var j = 0; j < pat.length; j++) if (hay[i + j] !== pat[j]) continue outer;
+                        return i;
+                    }
+                    return -1;
+                };
+                obj.includes = function (needle, offset) { return this.indexOf(needle, offset) >= 0; };
+                // 定长读取：LE/BE 与无符号/有符号，覆盖 RPG Maker 插件常见的二进制解析
+                // （小端=最低有效字节在前，故按 256^i 加权；大端则依次左移）
+                function reader(size, signed, little) {
+                    return function (offset) {
+                        var b = bytesOf(this);
+                        var off = offset || 0;
+                        if (off + size > b.length || off < 0) throw nodeErr("ERR_OUT_OF_RANGE", "Attempt to access memory outside buffer bounds");
+                        var v = 0;
+                        for (var i = 0; i < size; i++) {
+                            var idx = little ? (size - 1 - i) : i;
+                            v = v * 256 + b[off + idx];
+                        }
+                        if (signed) {
+                            var limit = Math.pow(2, size * 8 - 1);
+                            if (v >= limit) v -= Math.pow(2, size * 8);
+                        }
+                        return v;
+                    };
+                }
+                var readers = { readUInt8: [1, false, true], readInt8: [1, true, true],
+                    readUInt16LE: [2, false, true], readUInt16BE: [2, false, false],
+                    readInt16LE: [2, true, true], readInt16BE: [2, true, false],
+                    readUInt32LE: [4, false, true], readUInt32BE: [4, false, false],
+                    readInt32LE: [4, true, true], readInt32BE: [4, true, false] };
+                Object.keys(readers).forEach(function (name) {
+                    var cfg = readers[name];
+                    obj[name] = reader(cfg[0], cfg[1], cfg[2]);
+                    // Node 的别名写法（UInt 与 Uint 并存）
+                    if (name.indexOf("UInt") >= 0) obj[name.replace("UInt", "Uint")] = obj[name];
+                });
+                return obj;
+            }
+
+            var origFrom = B.from;
+            B.from = function () { return attach(origFrom.apply(B, arguments)); };
+            var origAlloc = B.alloc;
+            B.alloc = function () { return attach(origAlloc.apply(B, arguments)); };
+            B.allocUnsafe = B.alloc;
+            B.allocUnsafeSlow = B.alloc;
+            // 静态方法补齐
+            B.isBuffer = B.isBuffer || function (o) { return !!(o && typeof o === "object" && typeof o._bin === "string"); };
+            B.compare = function (a, b) { return B.from(a).compare(B.from(b)); };
+            // 兼容 base64 文本 → Buffer
+            try {
+                if (!window.__tyranorBufferSelfTest) {
+                    window.__tyranorBufferSelfTest = true;
+                    var probe = B.from("abc");
+                    if (typeof probe.readUInt8 !== "function") {
+                        console.warn("[nw-polyfill-v2] Buffer patch did not take effect");
+                    }
+                }
+            } catch (eProbe) {}
+        })();
 
         // ---- 环境路径：__dirname / process / nw.gui.App.dataPath ----
         try { window.__dirname = baseDir; } catch (e6) {}

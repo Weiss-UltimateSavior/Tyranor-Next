@@ -147,6 +147,22 @@ check('dirname 正确', p.dirname('/a/b/c.js') === '/a/b', p.dirname('/a/b/c.js'
 console.log('\n== 兼容层自证 ==');
 check('__tyranorFsState.real === true', window.__tyranorFsState && window.__tyranorFsState.real === true);
 
+console.log('\n== Node 调用形式兼容（options 对象 / 二进制解析）==');
+// readFileSync 的 options 对象形态（Node 常见写法；只认字符串会返回 Buffer 而乱码）
+check("readFileSync(p,'utf8') 取到文本", fsMod.readFileSync('data/utf8.txt', 'utf8') === '日本語テキスト');
+check("readFileSync(p,{encoding:'utf8'}) 取到文本", fsMod.readFileSync('data/utf8.txt', { encoding: 'utf8' }) === '日本語テキスト');
+check("readFileSync(p,{encoding:'utf8',flag:'r'})", fsMod.readFileSync('data/utf8.txt', { encoding: 'utf8', flag: 'r' }) === '日本語テキスト');
+// fs 返回的 Buffer 必须具备二进制解析能力
+const bin = fsMod.readFileSync('bin.dat');
+check('Buffer.slice 可用', typeof bin.slice === 'function' && bin.slice(1).length === 3, typeof bin.slice);
+check('Buffer.readUInt8 可用', typeof bin.readUInt8 === 'function' && bin.readUInt8(0) === 1, typeof bin.readUInt8);
+check('Buffer.readUInt8 取值正确', bin.readUInt8(3) === 250, bin.readUInt8 && bin.readUInt8(3));
+check('Buffer.readUInt16LE 正确', bin.readUInt16LE(0) === 0x0201, bin.readUInt16LE && bin.readUInt16LE(0));
+check('Buffer.toJSON 形态正确', JSON.stringify(bin.toJSON()) === '{"type":"Buffer","data":[1,2,3,250]}', JSON.stringify(bin.toJSON && bin.toJSON()));
+check('Buffer.equals 正确', bin.equals(fsMod.readFileSync('bin.dat')) === true);
+check('Buffer.indexOf 正确', bin.indexOf(3) === 2, bin.indexOf && bin.indexOf(3));
+check('Buffer 越界读抛错', (() => { try { bin.readUInt32LE(5); return false; } catch (e) { return true; } })());
+
 console.log('\n== 现象二端到端复现：插件读表 -> 渲染名字 ==');
 // 造一张插件要读的名字表
 fs.writeFileSync(nodePath.join(contentRoot, 'data', 'names.json'), JSON.stringify({ "1": "リリス" }));
