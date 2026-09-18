@@ -33,6 +33,7 @@ internal class RpgMakerLocalHttpServer(
     internalResources: Map<String, ByteArray> = emptyMap(),
     private val earlyHook: ByteArray? = null,
     private val v12Compat: Boolean = true,
+    private val fuzzyNames: Boolean = false,
 ) : Runnable {
     private val root: File
     private val asar: AsarArchive?
@@ -83,7 +84,8 @@ internal class RpgMakerLocalHttpServer(
         internalResources: Map<String, ByteArray> = emptyMap(),
         earlyHook: ByteArray? = null,
         v12Compat: Boolean = true,
-    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat)
+        fuzzyNames: Boolean = false,
+    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames)
 
     fun start() { thread.start() }
     val port: Int get() = serverSocket.localPort
@@ -291,7 +293,7 @@ internal class RpgMakerLocalHttpServer(
                 if (indexBytes != null) return ResolvedFile(null, indexBytes)
             }
         }
-        return ResolvedFile(resolveCaseInsensitive(uri), null)
+        return ResolvedFile(resolveByName(uri, allowWhitespaceTolerance = fuzzyNames), null)
     }
 
     private fun canonicalIfValid(uri: String?): File? {
@@ -305,25 +307,44 @@ internal class RpgMakerLocalHttpServer(
         return value.substring(0, value.length - oldSuffix.length) + newSuffix
     }
 
-    private fun resolveCaseInsensitive(uri: String?): File? {
+    /**
+     * 文件名回退解析。[allowWhitespaceTolerance] 为真（仅 v2 会话）时在大小写不敏感
+     * 之外再启用空白类别/尾随空白容忍，修「素材文件名被规范化后与 data 引用不一致」
+     * 导致的整批 404（见 [RpgMakerNameMatcher]）；为假时保持 v0/v1 的历史语义。
+     */
+    private fun resolveByName(uri: String?, allowWhitespaceTolerance: Boolean): File? {
         if (uri == null || uri.isEmpty() || uri.contains("..")) return null
         val parts = uri.split("/")
         var current: File = root
         for (part in parts) {
             if (part.isEmpty()) continue
-            val exact = File(current, part)
-            if (exact.exists()) { current = exact; continue }
-            val children = current.listFiles() ?: return null
-            var matched: File? = null
-            for (child in children) {
-                if (child.name.equals(part, ignoreCase = true)) { matched = child; break }
+            if (!allowWhitespaceTolerance) {
+                // v0/v1 历史路径：精确命中直接用；否则大小写不敏感取首个命中
+                val exact = File(current, part)
+                if (exact.exists()) { current = exact; continue }
+                val children = current.listFiles() ?: return null
+                var matched: File? = null
+                for (child in children) {
+                    if (child.name.equals(part, ignoreCase = true)) { matched = child; break }
+                }
+                if (matched == null) return null
+                current = matched
+                continue
             }
-            if (matched == null) return null
+            val children = current.listFiles() ?: return null
+            val matchedName = RpgMakerNameMatcher.match(children.map { it.name }, part) ?: return null
+            val matched = children.firstOrNull { it.name == matchedName } ?: return null
             current = matched
         }
         val target = current.canonicalFile
         if (!isInsideRoot(target) || !target.isFile) return null
-        Log.i(TAG, "resource fallback case-insensitive $uri -> ${target.path}")
+        if (target.name != parts.lastOrNull()) {
+            if (target.name.equals(parts.lastOrNull(), ignoreCase = true)) {
+                Log.i(TAG, "resource fallback case-insensitive $uri -> ${target.path}")
+            } else {
+                Log.i(TAG, "resource fallback loose-name $uri -> ${target.path}")
+            }
+        }
         return target
     }
 

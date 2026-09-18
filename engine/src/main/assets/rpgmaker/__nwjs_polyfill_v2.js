@@ -691,5 +691,386 @@
         setTimeout(function () { try { clearInterval(patchTimer); } catch (e) {} }, 10000);
     })();
 
+    // =====================================================================
+    // 真文件系统接管（仅 v2 会话）
+    //
+    // 背景：基础兼容层把 fs 桩成**静默**空实现（existsSync 恒 false、readFileSync
+    // 恒 ""、readdirSync 恒 []），且不产生任何日志。插件最典型的写法
+    //     if (fs.existsSync(p)) table = JSON.parse(fs.readFileSync(p));
+    // 在第一道门就落空：数据表没加载 → 后续查表得到 undefined → 被画进游戏文本
+    // （实测现象：对话名字渲染成 `xxx[001undefined]`），而日志里查不到任何线索。
+    //
+    // 语义对齐 JoiPlay 的原生桥：fs 真读写游戏目录、__dirname 指向网页根、
+    // nw.gui.App.dataPath 指向游戏目录下 AppData、require 能加载游戏目录内的
+    // 自己模块（相对/绝对路径 + .js/.json + 目录 index）。宿主在 v2 会话注册了
+    // window.TyranorFs 时本段生效；未注册（v0/v1）保持原空实现，行为不变。
+    // =====================================================================
+    (function () {
+        var bridge = null;
+        try { bridge = window.TyranorFs || null; } catch (e0) {}
+        if (!bridge) {
+            console.log("[nw-polyfill-v2] TyranorFs bridge absent; fs stays stubbed");
+            return;
+        }
+
+        var baseDir = "";
+        var dataDir = "";
+        try { baseDir = String(bridge.baseDir() || ""); } catch (e1) {}
+        try { dataDir = String(bridge.dataDir() || ""); } catch (e2) {}
+        // 基础兼容层的 require：内建模块桩（path/os/util/...）由它提供。
+        // 必须在任何包装之前捕获，否则拿到的是本段自己装的实现而形成自引用。
+        var baseRequire = null;
+        try { baseRequire = window.require; } catch (eBase) {}
+
+        // ---- 路径与文本编解码小工具 ----
+        function isBufferLike(v) { return !!(v && typeof v === "object" && typeof v._bin === "string"); }
+        function toBuffer(b64) {
+            try { return window.Buffer ? window.Buffer.from(b64 || "", "base64") : b64; } catch (e) { return b64; }
+        }
+        function bufferToBase64(buf) {
+            if (isBufferLike(buf)) {
+                try { return btoa(buf._bin); } catch (e) { return ""; }
+            }
+            return null;
+        }
+        function joinPath() {
+            var a = Array.prototype.slice.call(arguments).filter(function (x) { return x !== undefined && x !== null && x !== ""; });
+            return normalizeSlashes(a.join("/"));
+        }
+        // 折叠空段与 "." 段；保留 ".."（越界与否交给原生桥 canonical 校验）
+        function normalizeSlashes(raw) {
+            var s = String(raw === undefined || raw === null ? "" : raw).replace(/\\/g, "/");
+            var out = [];
+            s.split("/").forEach(function (seg) { if (seg !== "" && seg !== ".") out.push(seg); });
+            var prefix = s.charAt(0) === "/" ? "/" : "";
+            return prefix + out.join("/");
+        }
+        function dirOf(p) {
+            var s = normalizeSlashes(String(p || ""));
+            if (!s) return ".";
+            var i = s.lastIndexOf("/");
+            if (i > 0) return s.slice(0, i);
+            if (i === 0) return "/";
+            return ".";
+        }
+        function resolvePath(p, fromDir) {
+            var s = String(p === undefined || p === null ? "" : p).replace(/\\/g, "/");
+            if (!s) return normalizeSlashes(baseDir);
+            if (/^[a-zA-Z]:\//.test(s) || s.charAt(0) === "/") return normalizeSlashes(s);
+            return joinPath(fromDir || baseDir, s);
+        }
+        function nodeErr(code, msg) {
+            var e = new Error(msg);
+            e.code = code;
+            return e;
+        }
+
+        // ---- fs：真读写 ----
+        function readTextOrThrow(p) {
+            var v = bridge.readText(p);
+            if (v === null || v === undefined) throw nodeErr("ENOENT", "ENOENT: no such file, readFileSync '" + p + "'");
+            return v;
+        }
+        function readBufferOrThrow(p) {
+            var b64 = bridge.readBase64(p);
+            if (b64 === null || b64 === undefined) throw nodeErr("ENOENT", "ENOENT: no such file, readFileSync '" + p + "'");
+            return toBuffer(b64);
+        }
+        function statObject(p) {
+            var raw = bridge.stat(p);
+            if (!raw) return { isFile: function () { return false; }, isDirectory: function () { return false; }, isSymbolicLink: function () { return false; }, size: 0, mtime: new Date(0) };
+            var o = {};
+            try { o = JSON.parse(raw); } catch (e) { o = {}; }
+            var isF = !!o.file, isD = !!o.dir;
+            return {
+                isFile: function () { return isF; },
+                isDirectory: function () { return isD; },
+                isSymbolicLink: function () { return false; },
+                size: o.size || 0,
+                mtime: new Date(o.mtime || 0),
+                mtimeMs: o.mtime || 0
+            };
+        }
+
+        var realFs = {
+            existsSync: function (p) { try { return bridge.exists(p) === true; } catch (e) { return false; } },
+            exists: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(realFs.existsSync(p)); }, 0); },
+            readFileSync: function (p, enc) {
+                // Node 语义：无编码 → Buffer；有编码 → 字符串（与 JoiPlay 的 \"\\b\\b\\b\" 抛错等价）
+                if (enc === undefined || enc === null || enc === "") return readBufferOrThrow(p);
+                var buf = readBufferOrThrow(p);
+                var e = String(enc).toLowerCase();
+                if (e === "utf8" || e === "utf-8") return readTextOrThrow(p);
+                if (e === "base64") return bufferToBase64(buf);
+                return buf.toString(enc);
+            },
+            readFile: function (p, o, cb) {
+                if (typeof o === "function") { cb = o; }
+                if (typeof cb === "function") setTimeout(function () {
+                    try { cb(null, realFs.readFileSync(p, typeof o === "string" ? o : undefined)); }
+                    catch (err) { cb(err); }
+                }, 0);
+                return undefined;
+            },
+            writeFileSync: function (p, data, enc) {
+                var b64 = bufferToBase64(data);
+                if (b64 !== null) { bridge.writeBase64(p, b64); return; }
+                bridge.writeText(p, typeof data === "string" ? data : String(data));
+            },
+            writeFile: function (p, data, o, cb) {
+                if (typeof o === "function") { cb = o; }
+                if (typeof cb === "function") setTimeout(function () {
+                    try { realFs.writeFileSync(p, data); cb(null); } catch (err) { cb(err); }
+                }, 0);
+            },
+            appendFileSync: function (p, data, enc) {
+                var prev = "";
+                try { prev = realFs.existsSync(p) ? readTextOrThrow(p) : ""; } catch (e) { prev = ""; }
+                var add = isBufferLike(data) ? data.toString("utf8") : String(data);
+                bridge.writeText(p, prev + add);
+            },
+            appendFile: function (p, data, o, cb) {
+                if (typeof o === "function") { cb = o; }
+                if (typeof cb === "function") setTimeout(function () {
+                    try { realFs.appendFileSync(p, data); cb(null); } catch (err) { cb(err); }
+                }, 0);
+            },
+            readdirSync: function (p) {
+                var raw = bridge.readdir(p);
+                try { return JSON.parse(raw || "[]"); } catch (e) { return []; }
+            },
+            readdir: function (p, o, cb) {
+                if (typeof o === "function") { cb = o; }
+                if (typeof cb === "function") setTimeout(function () { cb(null, realFs.readdirSync(p)); }, 0);
+            },
+            mkdirSync: function (p) { bridge.makeDirs(p); },
+            mkdir: function (p, o, cb) {
+                if (typeof o === "function") { cb = o; }
+                if (typeof cb === "function") setTimeout(function () { try { bridge.makeDirs(p); cb(null); } catch (err) { cb(err); } }, 0);
+            },
+            unlinkSync: function (p) { bridge.remove(p); },
+            unlink: function (p, cb) { if (typeof cb === "function") setTimeout(function () { try { bridge.remove(p); cb(null); } catch (err) { cb(err); } }, 0); },
+            statSync: function (p) { return statObject(p); },
+            lstatSync: function (p) { return statObject(p); },
+            fstatSync: function (p) { return statObject(p); },
+            stat: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(null, statObject(p)); }, 0); },
+            lstat: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(null, statObject(p)); }, 0); },
+            realpathSync: function (p) { return resolvePath(p, baseDir); },
+            renameSync: function (from, to) {
+                var b64 = bridge.readBase64(from);
+                if (b64 === null) throw nodeErr("ENOENT", "ENOENT: no such file, renameSync '" + from + "'");
+                bridge.writeBase64(to, b64);
+                bridge.remove(from);
+            },
+            rename: function (from, to, cb) { if (typeof cb === "function") setTimeout(function () { try { realFs.renameSync(from, to); cb(null); } catch (e) { cb(e); } }, 0); },
+            copyFileSync: function (from, to) { var b64 = bridge.readBase64(from); if (b64 === null) throw nodeErr("ENOENT", "ENOENT: no such file, copyFileSync '" + from + "'"); bridge.writeBase64(to, b64); },
+            copyFile: function (from, to, cb) { if (typeof cb === "function") setTimeout(function () { try { realFs.copyFileSync(from, to); cb(null); } catch (e) { cb(e); } }, 0); },
+            chmodSync: function () {}, chownSync: function () {},
+            readlinkSync: function (p) { return p; },
+            truncateSync: function (p) { try { bridge.writeText(p, ""); } catch (e) {} },
+            // 流式接口保持桩：数据表类插件几乎不用，真实现成本高收益低
+            createReadStream: function () { return { on: function () { return this; }, once: function () { return this; }, pipe: function () { return this; }, read: function () {}, close: function () {} }; },
+            createWriteStream: function () { return { on: function () { return this; }, once: function () { return this; }, write: function () {}, end: function () {}, close: function () {} }; },
+            watch: function () { return { close: function () {}, on: function () { return this; } }; },
+            watchFile: function () {}, unwatchFile: function () {},
+            openSync: function () { return 0; },
+            open: function (p, f, m, cb) { if (typeof m === "function") { cb = m; } if (typeof cb === "function") setTimeout(function () { cb(null, 0); }, 0); },
+            closeSync: function () {}, close: function (fd, cb) { if (typeof cb === "function") setTimeout(function () { cb(null); }, 0); },
+            readSync: function () { return 0; }, writeSync: function () { return 0; },
+            promises: {
+                readFile: function (p, enc) { return new Promise(function (res, rej) { try { res(realFs.readFileSync(p, enc)); } catch (e) { rej(e); } }); },
+                writeFile: function (p, d) { return new Promise(function (res, rej) { try { realFs.writeFileSync(p, d); res(); } catch (e) { rej(e); } }); },
+                appendFile: function (p, d) { return new Promise(function (res, rej) { try { realFs.appendFileSync(p, d); res(); } catch (e) { rej(e); } }); },
+                readdir: function (p) { return new Promise(function (res) { res(realFs.readdirSync(p)); }); },
+                mkdir: function (p) { return new Promise(function (res) { bridge.makeDirs(p); res(); }); },
+                unlink: function (p) { return new Promise(function (res, rej) { try { bridge.remove(p); res(); } catch (e) { rej(e); } }); },
+                stat: function (p) { return new Promise(function (res) { res(statObject(p)); }); },
+                copyFile: function (a, b) { return new Promise(function (res, rej) { try { realFs.copyFileSync(a, b); res(); } catch (e) { rej(e); } }); }
+            }
+        };
+
+        // ---- path 语义修正（属同一族：文件定位会用到，且原桩静默给出错误结果）----
+        // 原桩 relative() 直接返回 to、normalize() 不折叠 ".."，插件据此拼出的路径会错位。
+        // 这里补齐 POSIX 语义（Node 行为），不改动其他成员。
+        (function () {
+            var pathMod = null;
+            try { pathMod = baseRequire ? baseRequire("path") : null; } catch (e) {}
+            if (!pathMod) return;
+            function segments(p) {
+                var s = String(p === undefined || p === null ? "" : p).replace(/\\/g, "/");
+                var abs = s.charAt(0) === "/";
+                var out = [];
+                s.split("/").forEach(function (part) {
+                    if (part === "" || part === ".") return;
+                    if (part === "..") { if (out.length && out[out.length - 1] !== "..") out.pop(); else if (!abs) out.push(".."); return; }
+                    out.push(part);
+                });
+                return { abs: abs, parts: out };
+            }
+            pathMod.normalize = function (p) {
+                var seg = segments(p);
+                var body = seg.parts.join("/");
+                if (seg.abs) return "/" + body;
+                return body || ".";
+            };
+            pathMod.resolve = function () {
+                var args = Array.prototype.slice.call(arguments).filter(function (x) { return x !== undefined && x !== null && x !== ""; });
+                var acc = "";
+                for (var i = args.length - 1; i >= 0; i--) {
+                    var s = String(args[i]).replace(/\\/g, "/");
+                    if (!s) continue;
+                    acc = acc ? (s.replace(/\/+$/, "") + "/" + acc) : s;
+                    if (s.charAt(0) === "/") { acc = "/" + acc.replace(/^\/+/, ""); break; }
+                }
+                if (acc.charAt(0) !== "/") acc = joinPath(baseDir, acc);
+                return pathMod.normalize(acc);
+            };
+            pathMod.relative = function (from, to) {
+                var a = segments(pathMod.resolve(from));
+                var b = segments(pathMod.resolve(to));
+                if (a.abs !== b.abs) return pathMod.resolve(to);
+                var i = 0;
+                while (i < a.parts.length && i < b.parts.length && a.parts[i] === b.parts[i]) i++;
+                var up = [];
+                for (var j = i; j < a.parts.length; j++) up.push("..");
+                var down = b.parts.slice(i);
+                var rel = up.concat(down).join("/");
+                return rel || "";
+            };
+            pathMod.dirname = function (p) {
+                var s = String(p === undefined || p === null ? "" : p).replace(/\\/g, "/");
+                if (!s) return ".";
+                s = s.replace(/\/+$/, "");
+                if (!s) return "/";
+                var i = s.lastIndexOf("/");
+                if (i < 0) return ".";
+                if (i === 0) return "/";
+                return s.slice(0, i);
+            };
+            pathMod.isAbsolute = function (p) {
+                var s = String(p === undefined || p === null ? "" : p);
+                return s.charAt(0) === "/" || /^[a-zA-Z]:[\\/]/.test(s);
+            };
+            pathMod.join = function () {
+                var a = Array.prototype.slice.call(arguments).filter(function (x) { return x !== undefined && x !== null && x !== ""; });
+                if (!a.length) return ".";
+                return pathMod.normalize(a.join("/"));
+            };
+        })();
+
+        // ---- 模块加载（require）：能加载游戏目录内的自己模块 ----
+        var moduleCache = {};
+        var dirStack = [baseDir];
+        function currentDir() { return dirStack.length ? dirStack[dirStack.length - 1] : baseDir; }
+        function stripBom(s) { return s && s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s; }
+        function tryLoad(absPath) {
+            return bridge.isFile(absPath) === true;
+        }
+        // 解析候选：精确 → .js → .json → .cjs → 目录 index
+        function resolveModulePath(spec, fromDir) {
+            var abs = resolvePath(spec, fromDir);
+            var cands = [abs, abs + ".js", abs + ".json", abs + ".cjs",
+                joinPath(abs, "index.js"), joinPath(abs, "index.json")];
+            for (var i = 0; i < cands.length; i++) { if (tryLoad(cands[i])) return cands[i]; }
+            return null;
+        }
+        function loadModule(absPath) {
+            if (moduleCache[absPath]) return moduleCache[absPath].exports;
+            var code = readTextOrThrow(absPath);
+            var mod = { exports: {}, id: absPath, filename: absPath, loaded: false, parent: null, children: [] };
+            moduleCache[absPath] = mod;  // 先入缓存，支持循环依赖（与 Node 一致）
+            var dir = dirOf(absPath);
+            dirStack.push(dir);
+            try {
+                if (/\.json$/i.test(absPath)) {
+                    mod.exports = JSON.parse(stripBom(code));
+                } else {
+                    var fn = new Function("exports", "require", "module", "__filename", "__dirname", stripBom(code));
+                    fn(mod.exports, makeRequire(dir), mod, absPath, dir);
+                }
+                mod.loaded = true;
+            } catch (e) {
+                delete moduleCache[absPath];  // 加载失败回滚，下次可重试
+                console.warn("[nw-polyfill-v2] require failed: " + absPath + " :: " + (e && e.message));
+                throw e;
+            } finally {
+                dirStack.pop();
+            }
+            return mod.exports;
+        }
+        function makeRequire(fromDir) {
+            var req = function (name) {
+                var n = String(name);
+                if (n === "fs") return realFs;
+                // 相对/绝对路径 → 真读游戏目录
+                if (n.charAt(0) === "." || n.charAt(0) === "/" || /^[a-zA-Z]:[\\/]/.test(n)) {
+                    var abs = resolveModulePath(n, fromDir);
+                    if (abs) return loadModule(abs);
+                    console.warn("[nw-polyfill-v2] require: module not found in game dir: " + n + " (from " + fromDir + ")");
+                    return {};
+                }
+                // 裸模块名交给内建桩（baseRequire）；未知名的告警在外层包装统一处理
+                if (baseRequire && baseRequire !== req) {
+                    try { return baseRequire(n); } catch (e) {}
+                }
+                return {};
+            };
+            req.resolve = function (name) {
+                var abs = resolveModulePath(String(name), fromDir);
+                return abs || String(name);
+            };
+            req.cache = moduleCache;
+            return req;
+        }
+
+        var KNOWN_BUILTINS = ["path", "os", "util", "events", "child_process", "crypto",
+            "url", "querystring", "nw.gui", "buffer", "nw", "gui", "http", "https", "zlib", "stream"];
+        try { window.require = makeRequire(baseDir); } catch (e3) {}
+        try { if (typeof globalThis !== "undefined") globalThis.require = window.require; } catch (e4) {}
+        // 未知裸模块名：基础层会静默返回 {}，这里显式记录，避免问题再次无声无息
+        try {
+            var wrappedRequire = window.require;
+            window.require = function (name) {
+                var n = String(name);
+                var isPathLike = n.charAt(0) === "." || n.charAt(0) === "/" || /^[a-zA-Z]:[\\/]/.test(n);
+                if (!isPathLike && n !== "fs" && KNOWN_BUILTINS.indexOf(n) < 0) {
+                    console.warn("[nw-polyfill-v2] require: '" + n + "' is not a game module nor a builtin; stubbed as {}");
+                }
+                return wrappedRequire(n);
+            };
+            window.require.resolve = wrappedRequire.resolve;
+            window.require.cache = wrappedRequire.cache;
+            if (typeof globalThis !== "undefined") globalThis.require = window.require;
+        } catch (e5) {}
+
+        // ---- 环境路径：__dirname / process / nw.gui.App.dataPath ----
+        try { window.__dirname = baseDir; } catch (e6) {}
+        try { window.__filename = joinPath(baseDir, "index.html"); } catch (e7) {}
+        try { if (window.process) {
+            window.process.cwd = function () { return baseDir; };
+            if (!window.process.mainModule) window.process.mainModule = {};
+            window.process.mainModule.filename = joinPath(baseDir, "index.html");
+        } } catch (e8) {}
+        try {
+            // 基础层只把 nw.gui 桩挂在 window.gui 上，而插件普遍写 `nw.gui.App.dataPath`
+            // （NW.js 里 nw 模块带 .gui 成员）。这里补齐别名并统一指向游戏目录下的 AppData，
+            // 让 require('nw.gui')、window.gui、window.nw.gui 三处取到同一对象。
+            var guiStub = null;
+            try { guiStub = (baseRequire ? baseRequire("nw.gui") : null) || window.gui || null; } catch (eGui) {}
+            if (guiStub) {
+                if (window.nw && !window.nw.gui) { try { window.nw.gui = guiStub; } catch (eAlias) {} }
+                if (window.nw && window.nw.gui && window.nw.gui.App) window.nw.gui.App.dataPath = dataDir;
+                if (window.gui && window.gui.App) window.gui.App.dataPath = dataDir;
+                if (guiStub.App) guiStub.App.dataPath = dataDir;
+            }
+        } catch (e9) {}
+
+        // 暴露给排查用：确认插件读到的是真实路径
+        try {
+            window.__tyranorFsState = { baseDir: baseDir, dataDir: dataDir, real: true };
+            console.log("[nw-polyfill-v2] real fs bridge installed (__dirname=" + baseDir + ", dataPath=" + dataDir + ")");
+        } catch (e10) {}
+    })();
+
     console.log("[nw-polyfill-v2] compat installed (webgl shims + screen orientation + json rehydrate)");
 })();
