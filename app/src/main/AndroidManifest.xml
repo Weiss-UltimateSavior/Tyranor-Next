@@ -16,8 +16,8 @@
         <!-- 外置主机模拟器跳转目标（安装探测 + 显式组件启动） -->
         <package android:name="org.ppsspp.ppsspp" />
         <package android:name="dev.eden.eden_emulator" />
-        <!-- YU-RIS 经外置 Winlator（winlator-cn 外置启动协议；应用 id 为 com.tyranor.next.win） -->
-        <package android:name="com.tyranor.next.win" />
+        <!-- YU-RIS 经外置 Winlator（winlator-cn 外置启动协议；应用 id 为 com.winlator） -->
+        <package android:name="com.winlator" />
     </queries>
 
     <application
