@@ -45,7 +45,7 @@ import java.util.ArrayList;
 
 public class ONScripter extends SDLActivity {
     private static final String TAG = "YukiONS";
-    public static final String YURI_VERSION = "Yuri_0.7.6";
+    public static final String YURI_VERSION = "Yuri_0.7.7";
     private static final String PREF_OVERLAY = "ons_overlay";
     private static final String KEY_OVERLAY_VISIBLE = "visible";
     private static final int CONTROL_BUTTON_SIZE_DP = 40;

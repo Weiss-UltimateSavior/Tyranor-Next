@@ -594,7 +594,7 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
     EngineType.RPG_MV to rpgMakerWebBuiltin,
     EngineType.RPG_MZ to rpgMakerWebBuiltin,
     EngineType.ONS to listOf(
-        builtinEntry("ons-builtin", "ONScripter-0.7.6"),
+        builtinEntry("ons-builtin", "ONScripter-0.7.7"),
     ),
     EngineType.SIGLUS to listOf(
         builtinEntry("siglus-rs", "siglus_rs-xmoezzz"),
