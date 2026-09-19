@@ -775,14 +775,27 @@
             if (arg && typeof arg === "object" && typeof arg.encoding === "string") return arg.encoding;
             return fallback;
         }
+        /** 读失败时按桥给出的原因码抛错（超限/越界不能伪装成「文件不存在」）。 */
+        function readError(p) {
+            var code = "ENOENT";
+            try { code = String(bridge.errorFor(p) || "ENOENT"); } catch (e) {}
+            var message = code === "E2BIG"
+                ? "E2BIG: file too large for this runtime's read limit, open '" + p + "'"
+                : (code === "EISDIR"
+                    ? "EISDIR: illegal operation on a directory, read '" + p + "'"
+                    : (code === "EPERM"
+                        ? "EPERM: access denied (outside game directory or invalid path), open '" + p + "'"
+                        : "ENOENT: no such file or directory, open '" + p + "'"));
+            return nodeErr(code, message);
+        }
         function readTextOrThrow(p) {
             var v = bridge.readText(p);
-            if (v === null || v === undefined) throw nodeErr("ENOENT", "ENOENT: no such file, readFileSync '" + p + "'");
+            if (v === null || v === undefined) throw readError(p);
             return v;
         }
         function readBufferOrThrow(p) {
             var b64 = bridge.readBase64(p);
-            if (b64 === null || b64 === undefined) throw nodeErr("ENOENT", "ENOENT: no such file, readFileSync '" + p + "'");
+            if (b64 === null || b64 === undefined) throw readError(p);
             return toBuffer(b64);
         }
         function statObject(p) {
@@ -823,20 +836,28 @@
                 return undefined;
             },
             writeFileSync: function (p, data, enc) {
+                // 桥返回 false 表示「越界 / 超限 / IO 失败」——必须抛错。
+                // 静默吞掉会让插件以为配置已保存（Node 在这里抛 EACCES/ENOSPC）。
+                function ensureWrite(ok, path) {
+                    if (ok !== true) throw nodeErr("EACCES", "EACCES: permission denied or write rejected, open '" + path + "'");
+                }
                 var b64 = bufferToBase64(data);
-                if (b64 !== null) { bridge.writeBase64(p, b64); return; }
+                if (b64 !== null) { ensureWrite(bridge.writeBase64(p, b64), p); return; }
                 var encoding = pickEncoding(enc, "utf8");
                 var e = String(encoding || "utf8").toLowerCase();
-                // 非 utf8 文本编码：先按该编码转字节再落盘，避免写出与 Node 不同码点的文件
-                if (e === "utf8" || e === "utf-8" || e === "ascii" || e === "binary" || e === "latin1") {
-                    bridge.writeText(p, typeof data === "string" ? data : String(data));
+                if (e === "utf8" || e === "utf-8") {
+                    ensureWrite(bridge.writeText(p, typeof data === "string" ? data : String(data)), p);
+                } else if (e === "hex") {
+                    // hex 文本 → 字节，避免把 "ff00" 当字面量写入
+                    ensureWrite(bridge.writeBase64(p, toB64Encoded(String(data), "hex")), p);
+                } else if (e === "base64") {
+                    ensureWrite(bridge.writeBase64(p, String(data)), p);
+                } else if (e === "binary" || e === "latin1" || e === "ascii") {
+                    // 这些编码是「一字符一字节」，不能走 UTF-8 写入（否则码点被重编码）
+                    ensureWrite(bridge.writeBase64(p, toB64Encoded(String(data), e)), p);
                 } else {
-                    var tmp = window.Buffer ? window.Buffer.from(String(data), e) : null;
-                    if (tmp && typeof tmp._bin === "string") {
-                        try { bridge.writeBase64(p, btoa(tmp._bin)); } catch (e2) { bridge.writeText(p, String(data)); }
-                    } else {
-                        bridge.writeText(p, String(data));
-                    }
+                    // 未知编码：Node 抛 ERR_UNKNOWN_ENCODING，不能静默当 UTF-8
+                    throw nodeErr("ERR_UNKNOWN_ENCODING", "Unknown encoding: " + encoding);
                 }
             },
             writeFile: function (p, data, o, cb) {
@@ -846,10 +867,18 @@
                 }, 0);
             },
             appendFileSync: function (p, data, enc) {
-                var prev = "";
-                try { prev = realFs.existsSync(p) ? readTextOrThrow(p) : ""; } catch (e) { prev = ""; }
-                var add = isBufferLike(data) ? data.toString("utf8") : String(data);
-                bridge.writeText(p, prev + add);
+                // 以字节为单位追加：旧的「读文本 + 拼字符串 + 写回」会把非 UTF-8
+                // 字节重新编码（00fffe → 00efbfbdefbfbd），静默损坏二进制。
+                var addB64 = bufferToBase64(data);
+                if (addB64 === null) {
+                    addB64 = toB64Encoded(typeof data === "string" ? data : String(data), pickEncoding(enc, "utf8"));
+                }
+                var prevB64 = "";
+                try { prevB64 = bridge.exists(p) === true ? (bridge.readBase64(p) || "") : ""; } catch (e) { prevB64 = ""; }
+                var merged = concatB64([prevB64, addB64]);
+                if (bridge.writeBase64(p, merged) !== true) {
+                    throw nodeErr("EACCES", "EACCES: append rejected, open '" + p + "'");
+                }
             },
             appendFile: function (p, data, o, cb) {
                 if (typeof o === "function") { cb = o; }
@@ -890,9 +919,40 @@
             chmodSync: function () {}, chownSync: function () {},
             readlinkSync: function (p) { return p; },
             truncateSync: function (p) { try { bridge.writeText(p, ""); } catch (e) {} },
-            // 流式接口保持桩：数据表类插件几乎不用，真实现成本高收益低
+            // 流式读取保持桩（数据表类插件几乎不用）
             createReadStream: function () { return { on: function () { return this; }, once: function () { return this; }, pipe: function () { return this; }, read: function () {}, close: function () {} }; },
-            createWriteStream: function () { return { on: function () { return this; }, once: function () { return this; }, write: function () {}, end: function () {}, close: function () {} }; },
+            // 流式写入**真实现**：缓冲 chunk，在 end()/close() 时落盘。
+            // 旧桩静默丢弃数据（无异常无日志），插件以为写成功了。
+            createWriteStream: function (p, options) {
+                var chunks = [];
+                var handlers = { error: [], finish: [], close: [] };
+                var written = false;
+                function flush() {
+                    if (written) return;
+                    written = true;
+                    try {
+                        var merged = concatB64(chunks);
+                        if (bridge.writeBase64(p, merged) !== true) {
+                            throw nodeErr("EACCES", "EACCES: write stream rejected, open '" + p + "'");
+                        }
+                        handlers.finish.forEach(function (fn) { fn(); });
+                        handlers.close.forEach(function (fn) { fn(); });
+                    } catch (e) {
+                        if (handlers.error.length) handlers.error.forEach(function (fn) { fn(e); });
+                        else throw e;
+                    }
+                }
+                return {
+                    write: function (chunk) { chunks.push(toB64Encoded(chunk, undefined)); return true; },
+                    end: function (chunk) { if (chunk !== undefined && chunk !== null) chunks.push(toB64Encoded(chunk, undefined)); flush(); return this; },
+                    close: function () { flush(); return this; },
+                    destroy: function () { written = true; },
+                    on: function (name, fn) { (handlers[name] = handlers[name] || []).push(fn); return this; },
+                    once: function (name, fn) { return this.on(name, fn); },
+                    pipe: function () { return this; },
+                    writable: true, path: p
+                };
+            },
             watch: function () { return { close: function () {}, on: function () { return this; } }; },
             watchFile: function () {}, unwatchFile: function () {},
             openSync: function () { return 0; },
@@ -983,7 +1043,6 @@
         // ---- 模块加载（require）：能加载游戏目录内的自己模块 ----
         var moduleCache = {};
         var dirStack = [baseDir];
-        function currentDir() { return dirStack.length ? dirStack[dirStack.length - 1] : baseDir; }
         function stripBom(s) { return s && s.charCodeAt(0) === 0xFEFF ? s.slice(1) : s; }
         function tryLoad(absPath) {
             return bridge.isFile(absPath) === true;
@@ -1047,8 +1106,11 @@
             return req;
         }
 
+        // 与 nodeModules 表同步：否则对真实存在的模块误报 "stubbed as {}"（噪音）
         var KNOWN_BUILTINS = ["path", "os", "util", "events", "child_process", "crypto",
-            "url", "querystring", "nw.gui", "buffer", "nw", "gui", "http", "https", "zlib", "stream"];
+            "url", "querystring", "nw.gui", "buffer", "nw", "gui", "zlib", "stream",
+            "assert", "assert/strict", "string_decoder", "timers", "timers/promises",
+            "vm", "punycode", "constants", "process"];
         try { window.require = makeRequire(baseDir); } catch (e3) {}
         try { if (typeof globalThis !== "undefined") globalThis.require = window.require; } catch (e4) {}
         // 未知裸模块名：基础层会静默返回 {}，这里显式记录，避免问题再次无声无息
@@ -1081,6 +1143,35 @@
             console.log("[nw-polyfill-v2] TyranorEnv bridge absent; crypto/zlib stay stubbed");
         }
 
+        /**
+         * 按 Node 的 inputEncoding 语义把输入转成 base64。
+         * 忽略该参数会把 update(hexText,'hex') 当成 utf8 文本，密文长度错误。
+         */
+        function toB64Encoded(value, inputEncoding) {
+            if (!inputEncoding) return toB64(value);
+            var enc = String(inputEncoding).toLowerCase();
+            if (enc === "utf8" || enc === "utf-8") return toB64(value);
+            if (typeof value !== "string") return toB64(value);
+            if (enc === "hex") {
+                var bytes = [];
+                for (var i = 0; i + 1 < value.length; i += 2) bytes.push(parseInt(value.substr(i, 2), 16) & 0xff);
+                return bytesToBase64(bytes);
+            }
+            if (enc === "base64") return value;
+            if (enc === "binary" || enc === "latin1" || enc === "ascii") {
+                var raw = [];
+                for (var j = 0; j < value.length; j++) raw.push(value.charCodeAt(j) & 0xff);
+                return bytesToBase64(raw);
+            }
+            return toB64(value);
+        }
+
+        function bytesToBase64(bytes) {
+            var bin = "";
+            for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i] & 0xff);
+            try { return btoa(bin); } catch (e) { return ""; }
+        }
+
         function toB64(value) {
             if (value === undefined || value === null) return "";
             if (typeof value === "string") {
@@ -1101,10 +1192,6 @@
         function fromB64(b64) {
             if (!b64) return null;
             try { return toBuffer(b64); } catch (e) { return null; }
-        }
-        function binaryFromB64(b64) {
-            if (!b64) return null;
-            try { return atob(b64); } catch (e) { return null; }
         }
         function ioError(code, message) { return nodeErr(code, message); }
 
@@ -1157,19 +1244,43 @@
         }
 
         // ---- Cipher/Decipher（Node 的 createCipheriv 语义）----
-        // Node 是流式 API（update 累计 + final 收尾）；宿主桥是一次性调用，
-        // 这里把数据缓存到 final，语义对外一致，代价是「流式处理大文件」变全内存。
+        // Node 是流式 API（update 逐块产出 + final 收尾）；宿主桥是一次性 doFinal，
+        // 因此这里缓存全部输入、由 final 一次产出。
+        //
+        // 关键：update 必须返回「暂无输出」的空值**且按请求的输出编码**——
+        // Node 惯用法是 `out = c.update(x,'utf8','hex') + c.final('hex')`，拼接后
+        // 总数正确；若 update 返回 Buffer，字符串拼接会得到 "<Buffer ...>" 或乱码
+        // （旧实现的真实缺陷：静默产出损坏数据）。实测 Node 对不完整块同样返回 ""，
+        // 故「空串」与流式语义自洽。
+        function cipherText(value, encoding) {
+            // 按编码把二进制串转成字符串（Buffer.toString 的等价子集）
+            var bin = value && typeof value._bin === "string" ? value._bin : String(value == null ? "" : value);
+            var enc = String(encoding || "utf8").toLowerCase();
+            if (enc === "hex") {
+                var hex = "";
+                for (var i = 0; i < bin.length; i++) { var h = bin.charCodeAt(i).toString(16); hex += h.length === 1 ? "0" + h : h; }
+                return hex;
+            }
+            if (enc === "base64" || enc === "base64url") {
+                var b64 = "";
+                try { b64 = btoa(bin); } catch (e) { return ""; }
+                return enc === "base64url" ? b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : b64;
+            }
+            if (enc === "binary" || enc === "latin1" || enc === "ascii") return bin;
+            try { return decodeURIComponent(escape(bin)); } catch (e2) { return bin; }
+        }
+
         function makeCipher(algorithm, key, iv, isEncrypt, options) {
             var autoPadding = !(options && options.autoPadding === false);
             var chunks = [];
             var finished = false;
             var api = {
                 update: function (data, inputEncoding, outputEncoding) {
-                    chunks.push(toB64(data));
-                    // Node 的 update 会返回已处理数据；一次性实现下只能返回空 Buffer。
-                    // 依赖返回值的代码会在 final 拿到全部数据（诚实的不完整实现，
-                    // 而不是返回错数据）。
-                    return toBuffer("");
+                    if (finished) throw ioError("ERR_CRYPTO_CIPHER_FINALIZED", "Cipher already finalized");
+                    // 输入编码必须认：update(hexText, 'hex') 若不按 hex 解码，
+                    // 密文长度就是错的，final 会直接失败（旧实现的另一半缺陷）。
+                    chunks.push(toB64Encoded(data, inputEncoding));
+                    return outputEncoding ? "" : toBuffer("");
                 },
                 final: function (outputEncoding) {
                     if (finished) throw ioError("ERR_CRYPTO_CIPHER_FINALIZED", "Cipher already finalized");
@@ -1177,7 +1288,8 @@
                     if (!env) throw ioError("ERR_NOT_IMPLEMENTED", "crypto unavailable without native bridge");
                     var out = env.cipher(algorithm, toB64(key), iv === undefined || iv === null ? "" : toB64(iv), concatB64(chunks), isEncrypt, autoPadding);
                     if (!out) throw ioError("ERR_CRYPTO_INVALID_STATE", "Cipher failed: " + algorithm);
-                    return fromB64(out);
+                    var buffer = fromB64(out);
+                    return outputEncoding ? cipherText(buffer, outputEncoding) : buffer;
                 },
                 setAutoPadding: function (value) { autoPadding = value !== false; return api; },
                 getAuthTag: function () { throw ioError("ERR_CRYPTO_INVALID_STATE", "getAuthTag not supported (no GCM)"); }
@@ -1574,17 +1686,42 @@
         // 因此显式用 with(sandbox) 让全局读写落到沙箱上。
         var vmModule = {
             runInThisContext: function (code) { return (new Function(String(code)))(); },
+            /**
+             * 在沙箱里求值。
+             *
+             * 单靠 `with(sandbox)` 时，对沙箱上**不存在**的名字（如 `Buffer`、`require`）
+             * 赋值会沿作用域链上溯写到宿主全局——实测
+             * `runInNewContext('Buffer="x"', {})` 真的改写了 window.Buffer，
+             * 一次沙箱求值就能摧毁整个兼容层。
+             *
+             * 因此用 Proxy 的 has() 拦截：除 `eval` 外一律「命中沙箱」，
+             * 让读写都落在沙箱内；get 对沙箱没有的名字回落到真正的全局，
+             * 保留「沙箱里能读到 Buffer/require/Math」的可用性。
+             *
+             * `eval` 必须放行（has 返回 false）：若 eval 也经 Proxy 取值，
+             * 它会退化为**间接 eval**、在全局作用域执行，拦截就完全失效
+             * （实测裸赋值仍会泄漏）。放行后 eval 走正常标识符解析，
+             * 保持直接求值语义，被求值代码仍在 with 作用域内。
+             */
             runInNewContext: function (code, sandbox) {
                 var context = sandbox && typeof sandbox === "object" ? sandbox : {};
-                // 用 new Function 承载：Function 构造出的函数体默认非严格模式，
-                // 因此可以用 with(sandbox) 让脚本里的全局赋值落到沙箱对象上
-                // （严格模式下 with 是语法错误，不能写在 polyfill 本体里）。
-                var runner = new Function(
-                    "__vm_scope__",
-                    "__vm_code__",
-                    "with (__vm_scope__) { return eval(__vm_code__); }"
-                );
-                return runner(context, String(code));
+                var scope = context;
+                if (typeof Proxy !== "undefined") {
+                    scope = new Proxy(context, {
+                        has: function (target, prop) { return prop !== "eval"; },
+                        get: function (target, prop) {
+                            if (prop === Symbol.unscopables) return undefined;
+                            if (Object.prototype.hasOwnProperty.call(target, prop)) return target[prop];
+                            try { return globalThis[prop]; } catch (e) { return undefined; }
+                        },
+                        set: function (target, prop, value) { target[prop] = value; return true; }
+                    });
+                }
+                // 代码内联进源码（不通过参数传入）：Function 的参数名会被 Proxy 的
+                // has 拦截成 undefined，内联则只依赖全局与 with 作用域。
+                var source = "with (__vm_scope__) { return eval(" + JSON.stringify(String(code)) + "); }";
+                var runner = new Function("__vm_scope__", source);
+                return runner(scope);
             },
             runInContext: function (code, sandbox) { return vmModule.runInNewContext(code, sandbox); },
             createContext: function (sandbox) { return sandbox || {}; },
@@ -1721,8 +1858,18 @@
             S_IFMT: 61440, S_IFREG: 32768, S_IFDIR: 16384, S_IFLNK: 40960
         };
 
+        // fs.constants：Node 的 fs 上挂着它，插件会写 fs.accessSync(p, fs.constants.R_OK)
+        try {
+            if (typeof realFs.constants === "undefined") realFs.constants = constantsModule;
+        } catch (eFsConst) {}
+
         // 模块表：require 裸名时优先命中本表（覆盖基础层桩）
         var nodeModules = {
+            // require('nw') 必须可解析（部分插件直接 require('nw').Window.evalNWBin）
+            nw: (function () {
+                var stub = window.nw || {};
+                return stub;
+            })(),
             crypto: cryptoModule,
             zlib: zlibModule,
             assert: assertModule,
@@ -2192,14 +2339,16 @@
                 try { return decodeURIComponent(escape(fallback)); } catch (e4) { return fallback; }
             }
 
-            // 每个实例都从同一个原型取方法；_bin 惰性缓存在 __binCache 上
+            // 每个实例都从同一个原型取方法。
+            // 注意：_bin **不做缓存** —— 索引写入（buf[0]=x）与 Uint8Array 的 set()
+            // 无法被缓存感知，而 isBuffer/isBufferLike 读 _bin 会预热缓存，导致
+            // 「读出 → 原地改字节 → 写回/算摘要」静默使用旧值。每次重算是 O(n)，
+            // 但正确性优先（旧实现正是因缓存而写坏数据）。
             var proto = Object.create(Uint8Array.prototype);
             Object.defineProperty(proto, "_bin", {
                 get: function () {
-                    if (this.__binCache !== undefined) return this.__binCache;
                     var s = "";
                     for (var i = 0; i < this.length; i++) s += String.fromCharCode(this[i]);
-                    try { this.__binCache = s; } catch (e) {}
                     return s;
                 },
                 configurable: true
@@ -2212,7 +2361,8 @@
                 return u;
             }
 
-            function invalidate(buf) { try { buf.__binCache = undefined; } catch (e) {} return buf; }
+            // 已无缓存需要失效；保留为恒等函数，让各写入方法共用同一退出路径
+            function invalidate(buf) { return buf; }
 
             proto.toString = function (encoding, start, end) {
                 return bytesToText(this, encoding, start, end);
@@ -2860,15 +3010,31 @@
                 return;
             }
             var STORE_DIR = joinPath(dataDir, "Local Storage");
-            function fileFor(key) {
-                var safe = encodeURIComponent(String(key)).replace(/%/g, "_");
-                if (safe.length > 150) {
-                    // 超长键名（有些插件直接用整个 JSON 当键）哈希成定长名
-                    var hash = 0;
-                    for (var i = 0; i < safe.length; i++) { hash = ((hash << 5) - hash + safe.charCodeAt(i)) | 0; }
-                    safe = safe.slice(0, 100) + "_" + (hash >>> 0).toString(36);
+            // 键名 → 文件名。用「UTF-8 字节的十六进制」编码：
+            // 之前用 encodeURIComponent 再替换 '%' 为 '_' 的方案有歧义——
+            // "a b"（→ a_20b）与字面量 "a_20b" 会映射到同一个文件（实测互相覆盖）。
+            // hex 编码一一对应，无冲突；超长键名改用定长哈希并加前缀区分。
+            function utf8Hex(str) {
+                var ascii = "";
+                try { ascii = unescape(encodeURIComponent(str)); } catch (e) { ascii = str; }
+                var out = "";
+                for (var i = 0; i < ascii.length; i++) {
+                    var h = ascii.charCodeAt(i).toString(16);
+                    out += h.length === 1 ? "0" + h : h;
                 }
-                return joinPath(STORE_DIR, safe + ".dat");
+                return out;
+            }
+            function fileFor(key) {
+                var hex = utf8Hex(String(key));
+                if (hex.length > 180) {
+                    // 超长键名（有些插件直接用整段 JSON 当键）→ 前缀 + 定长哈希
+                    var hash = 0;
+                    for (var i = 0; i < hex.length; i++) { hash = ((hash << 5) - hash + hex.charCodeAt(i)) | 0; }
+                    var hash2 = 0;
+                    for (var j = hex.length - 1; j >= 0; j -= 7) { hash2 = ((hash2 << 5) - hash2 + hex.charCodeAt(j)) | 0; }
+                    hex = "h" + (hash >>> 0).toString(36) + (hash2 >>> 0).toString(36);
+                }
+                return joinPath(STORE_DIR, hex + ".dat");
             }
             function readItem(key) {
                 var path = fileFor(key);
@@ -2895,11 +3061,21 @@
                 catch (e) { return false; }
             }
 
-            var nativeSet = null, nativeGet = null, nativeRemove = null;
+            var nativeSet = null, nativeGet = null, nativeRemove = null, nativeKey = null;
+            var nativeStorageLength = function () { return 0; };
+            var nativeStorageKey = function () { return null; };
             try {
                 nativeSet = Storage.prototype.setItem;
                 nativeGet = Storage.prototype.getItem;
                 nativeRemove = Storage.prototype.removeItem;
+                nativeKey = Storage.prototype.key;
+                var nativeLengthDesc = Object.getOwnPropertyDescriptor(Storage.prototype, "length");
+                if (nativeLengthDesc && nativeLengthDesc.get) {
+                    nativeStorageLength = function () { try { return Number(nativeLengthDesc.get.call(window.localStorage)) || 0; } catch (e) { return 0; } };
+                }
+                if (typeof nativeKey === "function") {
+                    nativeStorageKey = function (i) { try { return nativeKey.call(window.localStorage, i); } catch (e) { return null; } };
+                }
             } catch (e) {}
 
             try {
@@ -2924,6 +3100,35 @@
                             realFs.readdirSync(STORE_DIR).forEach(function (name) { realFs.rmSync(joinPath(STORE_DIR, name), { force: true }); });
                         }
                     } catch (e) {}
+                    // 原生存储也要清：否则 getItem 的兜底会把「已清掉」的值复活
+                    try { if (nativeRemove) for (var i = 0; i < nativeStorageLength(); i++) nativeRemove.call(this, nativeStorageKey(i)); } catch (e2) {}
+                };
+                // 枚举一致性：length/key() 读文件存储，否则
+                // `for (i=0;i<localStorage.length;i++)` 看不到任何落盘的数据。
+                function listKeys() {
+                    var keys = [];
+                    try {
+                        if (realFs.existsSync(STORE_DIR)) {
+                            realFs.readdirSync(STORE_DIR).forEach(function (name) {
+                                if (!/\.dat$/.test(name)) return;
+                                var hex = name.slice(0, -4);
+                                if (hex.charAt(0) === "h") return;   // 哈希名无法还原原键，跳过
+                                var bin = "";
+                                for (var i = 0; i + 1 < hex.length; i += 2) bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+                                try { keys.push(decodeURIComponent(escape(bin))); } catch (e) { keys.push(bin); }
+                            });
+                        }
+                    } catch (e) {}
+                    return keys;
+                }
+                Object.defineProperty(Storage.prototype, "length", {
+                    get: function () { return listKeys().length; },
+                    configurable: true
+                });
+                Storage.prototype.key = function (index) {
+                    var keys = listKeys();
+                    var i = Number(index) || 0;
+                    return i >= 0 && i < keys.length ? keys[i] : null;
                 };
                 window.__tyranorLocalStoragePersisted = true;
                 console.log("[nw-polyfill-v2] localStorage persisted to " + STORE_DIR);
@@ -3099,14 +3304,41 @@
                     });
                 };
             }
+            // stat/lstat 在 Node 里对缺失路径 reject；同步实现返回的是「不存在的 stats」
+            // 假值，直接包装会静默 resolve，await 型插件会拿着空数据继续跑。
+            function wrapStat(name) {
+                return function (p) {
+                    return new Promise(function (resolve, reject) {
+                        try {
+                            var st = realFs[name](p);
+                            if (!st || (st.isFile() === false && st.isDirectory() === false)) reject(readError(p));
+                            else resolve(st);
+                        } catch (e) { reject(e); }
+                    });
+                };
+            }
+            // readdir 对非目录/缺失路径在 Node 里 reject
+            function wrapReaddir(name) {
+                return function (p) {
+                    return new Promise(function (resolve, reject) {
+                        try {
+                            if (!realFs.__isDir(p)) reject(readError(p));
+                            else resolve(realFs[name](p));
+                        } catch (e) { reject(e); }
+                    });
+                };
+            }
             ["access", "chmod", "chown", "lchmod", "lchown", "appendFile", "copyFile", "lstat",
-             "lutimes", "link", "mkdtemp", "opendir", "readdir", "readlink", "realpath", "rename",
+             "lutimes", "link", "mkdtemp", "opendir", "readlink", "realpath", "rename",
              "rm", "rmdir", "stat", "symlink", "truncate", "unlink", "utimes", "writeFile"
             ].forEach(function (name) {
-                if (typeof realFs[name] === "function" && typeof promises[name] !== "function") {
+                if (typeof realFs[name] === "function") {
                     promises[name] = wrapSync(name);
                 }
             });
+            promises.stat = wrapStat("statSync");
+            promises.lstat = wrapStat("lstatSync");
+            promises.readdir = wrapReaddir("readdirSync");
             if (typeof promises.open !== "function") {
                 promises.open = function (p, flags) {
                     return new Promise(function (resolve, reject) {

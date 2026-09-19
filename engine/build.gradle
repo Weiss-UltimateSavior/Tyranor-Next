@@ -61,3 +61,27 @@ dependencies {
     implementation libs.kotlin.stdlib
     testImplementation libs.junit
 }
+
+/**
+ * v2 兼容层的 JS 端到端检查（engine/src/test/js/v2-fs-bridge.harness.js）。
+ *
+ * 该 harness 用 Node 仿真 WebView，跑真实注入链路（基础层 + v2 层 + 桥仿真），
+ * 覆盖 fs/crypto/zlib/Buffer/localStorage 等行为并与 Node 真值逐项对照。
+ * 接入 check 生命周期，避免它随代码演进而静默失效。
+ *
+ * 通过 -PskipJsHarness 可跳过（例如本机无 Node 的纯 Android 构建环境）。
+ */
+def skipJsHarness = providers.gradleProperty('skipJsHarness').isPresent()
+
+tasks.register('jsHarness', Exec) {
+    description = 'Runs the v2 compatibility-layer JS harness (requires Node.js).'
+    group = 'verification'
+    workingDir = layout.projectDirectory.dir('src/test/js')
+    commandLine 'node', 'v2-fs-bridge.harness.js'
+    // 只有在显式传 -PskipJsHarness 时才跳过；其余情况一律执行
+    onlyIf { !skipJsHarness }
+}
+
+tasks.named('check') {
+    dependsOn 'jsHarness'
+}

@@ -24,8 +24,46 @@ import org.json.JSONObject
 internal class RpgMakerFsBridge(
     gameRoot: File,
     private val contentRoot: File,
+    private val asar: AsarArchive? = null,
 ) {
     private val root: File = gameRoot.canonicalFile
+
+    /**
+     * asar 会话里网页根相对压缩包的路径前缀（`www/` 等）；无 asar 时为空。
+     * 游戏资源在压缩包内、磁盘上不存在，因此读路径采用「asar 优先、磁盘兜底」的
+     * 覆盖层语义：先前 asar 游戏的插件读数据表/require 自己模块会全部失败。
+     * 写入始终落磁盘（压缩包不可写），与 NW.js 下写 save/ 目录的行为一致。
+     */
+    private val asarPrefix: String = when {
+        asar == null -> ""
+        asar.has("index.html") -> ""
+        asar.has("www/index.html") -> "www/"
+        else -> ""
+    }
+
+    /**
+     * 请求路径 → 相对网页根的路径。绝对路径只有在位于 contentRoot 之下时才可映射到
+     * asar 条目；范围外返回 null（避免把 /sdcard/... 之类当成包内路径）。
+     */
+    private fun relativeFor(path: String): String? {
+        val raw = path.takeIf { it.isNotEmpty() } ?: return null
+        val normalized = raw.removePrefix("file://").replace('\\', '/')
+        if (!normalized.startsWith("/")) return normalized
+        val base = contentRoot.absolutePath.replace('\\', '/').trimEnd('/')
+        return when {
+            normalized == base -> ""
+            normalized.startsWith("$base/") -> normalized.substring(base.length + 1)
+            else -> null
+        }
+    }
+
+    /** 请求路径 → asar 内条目路径（无 asar 或越界时返回 null）。 */
+    private fun asarKey(relative: String?): String? {
+        if (asar == null || relative.isNullOrEmpty()) return null
+        val path = relative.replace('\\', '/').trimStart('/')
+        if (path.contains("..")) return null
+        return asarPrefix + path
+    }
 
     /** __dirname 的取值：网页根（游戏 www/ 目录）。 */
     @JavascriptInterface
@@ -36,17 +74,62 @@ internal class RpgMakerFsBridge(
     fun dataDir(): String = File(root, "AppData").absolutePath
 
     @JavascriptInterface
-    fun exists(path: String?): Boolean = resolve(path) != null
+    fun exists(path: String?): Boolean {
+        asarKey(path?.let { relativeFor(it) })?.let { if (asar?.has(it) == true) return true }
+        return resolve(path)?.exists() == true
+    }
 
     @JavascriptInterface
-    fun isFile(path: String?): Boolean = resolve(path)?.isFile == true
+    fun isFile(path: String?): Boolean {
+        asarKey(path?.let { relativeFor(it) })?.let { key ->
+            if (asar?.has(key) == true) return asar.isDirectory(key).not()
+        }
+        return resolve(path)?.isFile == true
+    }
 
     @JavascriptInterface
-    fun isDir(path: String?): Boolean = resolve(path)?.isDirectory == true
+    fun isDir(path: String?): Boolean {
+        asarKey(path?.let { relativeFor(it) })?.let { key ->
+            if (asar?.has(key) == true) return asar.isDirectory(key)
+        }
+        return resolve(path)?.isDirectory == true
+    }
+
+    /**
+     * 读失败的原因码（stateless、可重复调用）：`ENOENT` / `EISDIR` / `E2BIG` / `EPERM`。
+     *
+     * 读方法返回 null 时 JS 侧需要知道「是不存在还是被拒绝」——把超限或越界也报成
+     * ENOENT 会让插件按「文件不存在」处理，这正是要避免的静默错判。
+     * 本方法只依赖路径本身（不依赖上一次调用），故与读方法之间无竞态。
+     */
+    @JavascriptInterface
+    fun errorFor(path: String?): String {
+        val file = resolve(path)
+        asarKey(path?.let { relativeFor(it) })?.let { key ->
+            if (asar?.has(key) == true) {
+                if (asar.isDirectory(key)) return "EISDIR"
+                // asar 条目大小在 read() 时才知道；交由 SIZE_UNKNOWN 语义处理：
+                // 读路径会做上限校验，这里只区分目录与存在。
+                return "ENOENT"
+            }
+        }
+        // resolve 对「合法但不存在」的路径同样返回 File（它不查磁盘），
+        // 因此返回 null 只可能是非法字符或越界 → EPERM。
+        if (file == null) return "EPERM"
+        if (file.isDirectory) return "EISDIR"
+        if (file.length() > MAX_READ_BYTES) return "E2BIG"
+        return "ENOENT"
+    }
 
     /** 读文本；不存在/不可读返回 null（JS 侧映射为 null，与 Node 的抛错由调用方兜底区分）。 */
     @JavascriptInterface
     fun readText(path: String?): String? {
+        // asar 优先：压缩包内是游戏本体，磁盘上通常不存在同名文件
+        readAsarBytes(path)?.let { return String(it, StandardCharsets.UTF_8) }
+        return readDiskText(path)
+    }
+
+    private fun readDiskText(path: String?): String? {
         val file = resolve(path) ?: return null
         if (!file.isFile) return null
         if (file.length() > MAX_READ_BYTES) {
@@ -61,9 +144,29 @@ internal class RpgMakerFsBridge(
         }
     }
 
+    /** asar 会话的条目读取；无命中返回 null（由调用方回落到磁盘或报错）。 */
+    private fun readAsarBytes(path: String?): ByteArray? {
+        val archive = asar ?: return null
+        val key = asarKey(path?.let { relativeFor(it) }) ?: return null
+        if (!archive.has(key) || archive.isDirectory(key)) return null
+        return try {
+            val data = archive.read(key) ?: return null
+            if (data.size > MAX_READ_BYTES) {
+                Log.w(TAG, "asar read rejected (too large ${data.size}): $key")
+                return null
+            }
+            data
+        } catch (error: Throwable) {
+            Log.w(TAG, "asar read failed: $key", error)
+            null
+        }
+    }
+
     /** 读二进制（base64）；Buffer 语义用，避免桥只能传字符串的限制。 */
     @JavascriptInterface
     fun readBase64(path: String?): String? {
+        // asar 优先（压缩包内是游戏本体）
+        readAsarBytes(path)?.let { return Base64.getEncoder().encodeToString(it) }
         val file = resolve(path) ?: return null
         if (!file.isFile) return null
         if (file.length() > MAX_READ_BYTES) {
@@ -81,6 +184,15 @@ internal class RpgMakerFsBridge(
     /** 目录项名列表（JSON 数组字符串）；非目录返回空数组。 */
     @JavascriptInterface
     fun readdir(path: String?): String {
+        // asar 内的目录在磁盘上不存在，需从压缩包索引列举
+        asarKey(path?.let { relativeFor(it) })?.let { key ->
+            val archive = asar
+            if (archive != null && archive.has(key) && archive.isDirectory(key)) {
+                val array = JSONArray()
+                archive.children(key).forEach { array.put(it.first) }
+                return array.toString()
+            }
+        }
         val dir = resolve(path) ?: return "[]"
         if (!dir.isDirectory) return "[]"
         val names = dir.list() ?: return "[]"
@@ -92,6 +204,12 @@ internal class RpgMakerFsBridge(
     /** stat/lstat：JSON `{file,dir,size,mtime}`；不存在返回空串。 */
     @JavascriptInterface
     fun stat(path: String?): String {
+        readAsarBytes(path)?.let { data ->
+            return JSONObject()
+                .put("file", true).put("dir", false)
+                .put("size", data.size).put("mtime", 0)
+                .toString()
+        }
         val file = resolve(path) ?: return ""
         return try {
             JSONObject()
@@ -177,7 +295,9 @@ internal class RpgMakerFsBridge(
 
     /** 相对路径按网页根解析；越界（不在游戏目录内）返回 null。 */
     private fun resolve(path: String?): File? {
-        val raw = path?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        // 注意不要 trim()：文件名里的尾随空格是真实存在的（部分素材名带尾随空格），
+        // trim 会让这类文件永远无法访问（Node 的 fs 同样不做 trim）。
+        val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
         if (raw.any { it == '\u0000' || it.isISOControl() }) return null
         val normalized = raw.removePrefix("file://").replace('\\', '/')
         val candidate = if (normalized.startsWith("/")) File(normalized) else File(contentRoot, normalized)
@@ -187,13 +307,16 @@ internal class RpgMakerFsBridge(
             Log.w(TAG, "fs path canonicalize failed: $path", error)
             return null
         }
-        val rootPath = root.path
-        val inside = canonical.path == rootPath || canonical.path.startsWith(rootPath + File.separator)
-        if (!inside) {
+        if (!isInsideRoot(canonical)) {
             Log.w(TAG, "fs path rejected (outside game dir): $path")
             return null
         }
         return canonical
+    }
+
+    private fun isInsideRoot(target: File): Boolean {
+        val rootPath = root.path
+        return target.path == rootPath || target.path.startsWith(rootPath + File.separator)
     }
 
     /** 宽松 base64 解码：容忍换行/空白（与原先 android.util.Base64.DEFAULT 一致）。 */

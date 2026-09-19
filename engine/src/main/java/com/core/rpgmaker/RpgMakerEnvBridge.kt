@@ -3,6 +3,7 @@ package com.core.rpgmaker
 import android.util.Log
 import android.webkit.JavascriptInterface
 import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -56,8 +57,13 @@ internal class RpgMakerEnvBridge {
     fun hmac(algorithm: String?, keyBase64: String?, dataBase64: String?, outputEncoding: String?): String {
         val key = decode(keyBase64) ?: return ""
         val data = decode(dataBase64) ?: return ""
+        val javaName = hmacJavaName(algorithm)
+        if (javaName == null) {
+            Log.w(TAG, "hmac rejected (unsupported algorithm): $algorithm")
+            return ""
+        }
         return try {
-            val mac = Mac.getInstance(hmacJavaName(algorithm))
+            val mac = Mac.getInstance(javaName)
             mac.init(SecretKeySpec(key, mac.algorithm))
             encode(mac.doFinal(data), outputEncoding)
         } catch (error: Throwable) {
@@ -97,7 +103,8 @@ internal class RpgMakerEnvBridge {
         val salt = decode(saltBase64) ?: return ""
         if (iterations <= 0 || keyLength <= 0 || keyLength > MAX_BYTES) return ""
         return try {
-            val mac = Mac.getInstance(hmacJavaName(digestAlgorithm))
+            val macAlgorithm = hmacJavaName(digestAlgorithm) ?: "HmacSHA1"
+            val mac = Mac.getInstance(macAlgorithm)
             mac.init(SecretKeySpec(password, mac.algorithm))
             val hmacLen = mac.macLength
             val blocks = (keyLength + hmacLen - 1) / hmacLen
@@ -241,6 +248,12 @@ internal class RpgMakerEnvBridge {
                 out.write(buffer, 0, count)
                 if (out.size() > MAX_BYTES) throw IllegalStateException("inflate output too large")
             }
+            // 数据被截断（needsInput）或字典缺失时，Inflater 不会 finished。
+            // 返回半截结果会让调用方把损坏数据当有效数据用（Node 在此抛错），
+            // 因此必须显式失败。
+            if (!inflater.finished()) {
+                throw IllegalStateException("unexpected end of file / incomplete zlib stream")
+            }
         } finally {
             inflater.end()
         }
@@ -314,20 +327,31 @@ internal class RpgMakerEnvBridge {
         else -> algorithm?.trim().orEmpty().ifEmpty { "SHA-256" }
     }
 
-    private fun hmacJavaName(algorithm: String?): String = when (algorithm?.trim()?.lowercase()?.replace("-", "")) {
+    /**
+     * HMAC 算法名映射。未知算法返回 null 由调用方抛错——
+     * 静默降级为 SHA256 会让调用方拿到「格式正确但算法错误」的摘要。
+     */
+    private fun hmacJavaName(algorithm: String?): String? = when (algorithm?.trim()?.lowercase()?.replace("-", "")) {
         "md5" -> "HmacMD5"
         "sha1" -> "HmacSHA1"
+        "sha224" -> "HmacSHA224"
+        "sha256" -> "HmacSHA256"
         "sha384" -> "HmacSHA384"
         "sha512" -> "HmacSHA512"
-        else -> "HmacSHA256"
+        else -> null
     }
 
-    private fun encode(bytes: ByteArray, outputEncoding: String?): String =
-        if (outputEncoding?.equals("base64", ignoreCase = true) == true) {
-            Base64.getEncoder().encodeToString(bytes)
-        } else {
-            bytes.joinToString("") { "%02x".format(it) }
-        }
+    /**
+     * 摘要输出编码。必须支持 Node 的 base64url / latin1 / binary，
+     * 否则调用方会拿到 hex 却被当成别的编码使用（静默错值）。
+     */
+    private fun encode(bytes: ByteArray, outputEncoding: String?): String = when (outputEncoding?.trim()?.lowercase()) {
+        "base64" -> Base64.getEncoder().encodeToString(bytes)
+        "base64url" -> Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+        "latin1", "binary" -> String(bytes, Charsets.ISO_8859_1)
+        "utf8", "utf-8" -> String(bytes, StandardCharsets.UTF_8)
+        else -> bytes.joinToString("") { "%02x".format(it) }
+    }
 
     private fun decode(value: String?): ByteArray? {
         if (value == null) return null

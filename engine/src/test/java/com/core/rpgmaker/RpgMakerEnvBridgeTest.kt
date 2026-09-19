@@ -160,6 +160,48 @@ class RpgMakerEnvBridgeTest {
     }
 
     @Test
+    fun zlibRejectsTruncatedStreamInsteadOfReturningPartialData() {
+        // 截断/损坏的数据必须失败：返回半截结果会让调用方把坏数据当有效数据用
+        val text = "x".repeat(5000).toByteArray(Charsets.UTF_8)
+        val packed = Base64.getDecoder().decode(bridge.zlib("deflate", b64(text), -1))
+        val truncated = Base64.getEncoder().encodeToString(packed.copyOf(packed.size - 10))
+        assertEquals("截断的 deflate 流必须被拒绝", "", bridge.zlib("inflate", truncated, -1))
+
+        val corrupted = packed.copyOf()
+        corrupted[corrupted.size / 2] = (corrupted[corrupted.size / 2] + 1).toByte()
+        assertEquals(
+            "损坏的 deflate 流必须被拒绝",
+            "",
+            bridge.zlib("inflate", Base64.getEncoder().encodeToString(corrupted), -1),
+        )
+    }
+
+    @Test
+    fun hmacRejectsUnsupportedAlgorithmInsteadOfSilentlyUsingSha256() {
+        // 静默降级会让调用方拿到「算法不对但格式正确」的摘要
+        val key = b64("k".toByteArray())
+        val data = b64("m".toByteArray())
+        assertEquals("ripemd160 不受支持", "", bridge.hmac("ripemd160", key, data, "hex"))
+
+        // 支持的名字必须真的用对应算法（sha224 与 sha256 结果不同）
+        val sha224 = bridge.hmac("sha224", key, data, "hex")
+        val sha256 = bridge.hmac("sha256", key, data, "hex")
+        assertTrue("sha224 应产出结果", sha224.isNotEmpty())
+        assertTrue("sha224 不能等于 sha256", sha224 != sha256)
+    }
+
+    @Test
+    fun digestSupportsBase64UrlAndLatin1Output() {
+        val data = b64("x".toByteArray())
+        val expectedUrl = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(MessageDigest.getInstance("SHA-256").digest("x".toByteArray(Charsets.UTF_8)))
+        assertEquals(expectedUrl, bridge.digest("sha256", data, "base64url"))
+        // latin1 输出：字节 → 单字符映射
+        val latin1 = bridge.digest("sha256", data, "latin1")
+        assertEquals(32, latin1.length)
+    }
+
+    @Test
     fun memoryReportingIsSane() {
         assertTrue(bridge.maxMemory() > 0)
         assertTrue(bridge.totalMemory() > 0)

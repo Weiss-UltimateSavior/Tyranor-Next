@@ -27,46 +27,99 @@ function createBridges(gameRoot, contentRoot) {
         return (c === rootReal || c.startsWith(rootReal + nodePath.sep)) ? c : null;
     }
 
+    // 与 Kotlin RpgMakerFsBridge 逐条对齐的语义。
+    // 关键：这个替身过去比本体「更正确」（exists 真查磁盘、write 恒返回 true），
+    // 导致「existsSync 不查磁盘 / 写失败被吞 / 16MB 上限」这些缺陷对测试**不可见**。
+    // 现在每个方法都按 Kotlin 的行为实现（含其约束），测试才能抓住真实偏差。
+    const MAX_READ_BYTES = 16 * 1024 * 1024;
     const fsBridge = {
         baseDir: () => contentRoot,
         dataDir: () => nodePath.join(gameRoot, 'AppData'),
-        exists: (p) => inside(p) !== null && fs.existsSync(inside(p)),
+        // Kotlin: resolve(path)?.exists() == true —— 会查磁盘
+        exists: (p) => { const f = inside(p); return f !== null && fs.existsSync(f); },
         isFile: (p) => { const f = inside(p); return f !== null && fs.existsSync(f) && fs.statSync(f).isFile(); },
         isDir: (p) => { const f = inside(p); return f !== null && fs.existsSync(f) && fs.statSync(f).isDirectory(); },
-        readText: (p) => { const f = inside(p); return (f && fs.existsSync(f) && fs.statSync(f).isFile()) ? fs.readFileSync(f, 'utf8') : null; },
-        readBase64: (p) => { const f = inside(p); return (f && fs.existsSync(f) && fs.statSync(f).isFile()) ? fs.readFileSync(f).toString('base64') : null; },
+        readText: (p) => {
+            const f = inside(p);
+            if (f === null || !fs.existsSync(f) || !fs.statSync(f).isFile()) return null;
+            if (fs.statSync(f).size > MAX_READ_BYTES) return null;   // Kotlin 的超限拒绝
+            return fs.readFileSync(f, 'utf8');
+        },
+        readBase64: (p) => {
+            const f = inside(p);
+            if (f === null || !fs.existsSync(f) || !fs.statSync(f).isFile()) return null;
+            if (fs.statSync(f).size > MAX_READ_BYTES) return null;
+            return fs.readFileSync(f).toString('base64');
+        },
         readdir: (p) => { const f = inside(p); return (f && fs.existsSync(f) && fs.statSync(f).isDirectory()) ? JSON.stringify(fs.readdirSync(f)) : '[]'; },
         stat: (p) => {
             const f = inside(p); if (!f || !fs.existsSync(f)) return '';
             const s = fs.statSync(f);
             return JSON.stringify({ file: s.isFile(), dir: s.isDirectory(), size: s.size, mtime: s.mtimeMs });
         },
-        writeText: (p, d) => { const f = inside(p); if (!f) return false; fs.mkdirSync(nodePath.dirname(f), { recursive: true }); fs.writeFileSync(f, d == null ? '' : String(d)); return true; },
-        writeBase64: (p, d) => { const f = inside(p); if (!f) return false; fs.mkdirSync(nodePath.dirname(f), { recursive: true }); fs.writeFileSync(f, NodeBuffer.from(d || '', 'base64')); return true; },
-        makeDirs: (p) => { const f = inside(p); if (!f) return false; fs.mkdirSync(f, { recursive: true }); return true; },
-        // 目录与文件都要能删（Kotlin 侧 File.delete() 两者皆可，仿真需对齐）
+        // Kotlin: ENOENT / EISDIR / E2BIG / EPERM（读失败的原因码）
+        errorFor: (p) => {
+            const f = inside(p);
+            if (f === null) return 'EPERM';
+            if (fs.existsSync(f) && fs.statSync(f).isDirectory()) return 'EISDIR';
+            if (fs.existsSync(f) && fs.statSync(f).size > MAX_READ_BYTES) return 'E2BIG';
+            return 'ENOENT';
+        },
+        writeText: (p, d) => {
+            const f = inside(p); if (f === null) return false;      // 越界 → false（Kotlin 如此）
+            const text = d == null ? '' : String(d);
+            if (NodeBuffer.byteLength(text, 'utf8') > MAX_READ_BYTES) return false;
+            fs.mkdirSync(nodePath.dirname(f), { recursive: true });
+            fs.writeFileSync(f, text);
+            return true;
+        },
+        writeBase64: (p, d) => {
+            const f = inside(p); if (f === null) return false;
+            const bytes = NodeBuffer.from(d || '', 'base64');
+            if (bytes.length > MAX_READ_BYTES) return false;
+            fs.mkdirSync(nodePath.dirname(f), { recursive: true });
+            fs.writeFileSync(f, bytes);
+            return true;
+        },
+        makeDirs: (p) => { const f = inside(p); if (f === null) return false; fs.mkdirSync(f, { recursive: true }); return true; },
         remove: (p) => {
             const f = inside(p);
-            if (!f) return true;
+            if (f === null) return false;
             if (!fs.existsSync(f)) return true;
             if (fs.lstatSync(f).isDirectory()) fs.rmdirSync(f); else fs.unlinkSync(f);
             return true;
         },
-        setTimes: (p, mtime) => { const f = inside(p); if (!f) return false; try { fs.utimesSync(f, mtime / 1000, mtime / 1000); return true; } catch (e) { return false; } },
+        setTimes: (p, mtime) => { const f = inside(p); if (f === null) return false; try { fs.utimesSync(f, mtime / 1000, mtime / 1000); return true; } catch (e) { return false; } },
     };
 
     const b64 = (bufOrStr) => NodeBuffer.isBuffer(bufOrStr) ? bufOrStr.toString('base64') : NodeBuffer.from(String(bufOrStr), 'binary').toString('base64');
     const unb64 = (s) => NodeBuffer.from(String(s || ''), 'base64');
-    const hexOrB64 = (buf, out) => String(out || 'hex').toLowerCase() === 'base64' ? buf.toString('base64') : buf.toString('hex');
+    // 与 Kotlin encode() 对齐：unknown → hex；支持 base64url / latin1 / utf8
+    const hexOrB64 = (buf, out) => {
+        switch (String(out || 'hex').toLowerCase()) {
+            case 'base64': return buf.toString('base64');
+            case 'base64url': return buf.toString('base64url');
+            case 'latin1': case 'binary': return buf.toString('latin1');
+            case 'utf8': case 'utf-8': return buf.toString('utf8');
+            default: return buf.toString('hex');
+        }
+    };
+    const kSupportedDigests = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512'];
 
     const envBridge = {
         argv: () => JSON.stringify(['--' + '0'.repeat(32)]),
         digest: (algo, dataB64, out) => {
-            try { return hexOrB64(crypto.createHash(String(algo || 'sha256').replace('-', '')).update(unb64(dataB64)).digest(), out); }
+            // 与 Kotlin 对齐：仅支持上表算法，其余返回空串（JS 侧转成抛错）
+            const name = String(algo || 'sha256').toLowerCase().replace(/-/g, '');
+            if (kSupportedDigests.indexOf(name) < 0) return '';
+            try { return hexOrB64(crypto.createHash(name).update(unb64(dataB64)).digest(), out); }
             catch (e) { return ''; }
         },
         hmac: (algo, keyB64, dataB64, out) => {
-            try { return hexOrB64(crypto.createHmac(String(algo || 'sha256').replace('-', ''), unb64(keyB64)).update(unb64(dataB64)).digest(), out); }
+            // 与 Kotlin 对齐：未知算法返回空串，不能静默降级成 sha256
+            const name = String(algo || 'sha256').toLowerCase().replace(/-/g, '');
+            if (kSupportedDigests.indexOf(name) < 0) return '';
+            try { return hexOrB64(crypto.createHmac(name, unb64(keyB64)).update(unb64(dataB64)).digest(), out); }
             catch (e) { return ''; }
         },
         randomBytes: (n) => (n > 0 ? crypto.randomBytes(n).toString('base64') : ''),

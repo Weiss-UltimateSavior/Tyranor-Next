@@ -351,7 +351,9 @@ class RpgMakerActivity : Activity() {
         if (v2Session) {
             gameDir?.let { dir ->
                 browser.addJavascriptInterface(
-                    RpgMakerFsBridge(File(dir), bundle.contentRoot),
+                    // asar 会话传入压缩包：游戏资源在包内、磁盘上不存在，
+                    // 桥采用「asar 优先、磁盘兜底」的覆盖层语义
+                    RpgMakerFsBridge(File(dir), bundle.contentRoot, asarArchive),
                     RPG_MAKER_FS_BRIDGE_NAME,
                 )
             }

@@ -76,6 +76,28 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     /**
+     * 列出目录的直接子项（名字 + 是否目录）。供 v2 文件系统桥在 asar 会话里
+     * 提供 readdir 语义——此前 asar 游戏的插件读不到任何目录内容。
+     */
+    fun children(path: String?): List<Pair<String, Boolean>> {
+        val prefix = normalize(path).trimEnd('/').let { if (it.isEmpty()) "" else "$it/" }
+        val out = LinkedHashMap<String, Boolean>()
+        for ((key, entry) in entries) {
+            if (key == prefix.trimEnd('/')) continue
+            if (!key.startsWith(prefix)) continue
+            val rest = key.substring(prefix.length)
+            if (rest.isEmpty()) continue
+            val slash = rest.indexOf('/')
+            val name = if (slash >= 0) rest.substring(0, slash) else rest
+            if (name.isEmpty()) continue
+            val isDir = slash >= 0 || entry.directory
+            // 同名既可能是文件也可能是目录前缀，目录优先
+            out[name] = (out[name] ?: false) || isDir
+        }
+        return out.map { it.key to it.value }
+    }
+
+    /**
      * 打开条目的流式读取（PR review 意见：大体积媒体以完整 ByteArray 在内存流转，
      * 既无法 Range/seek 也有 OOM 风险）。返回 [输入流, 条目总大小]；每次调用独立
      * 打开 RandomAccessFile，调用方关闭输入流时同步关闭底层文件句柄。

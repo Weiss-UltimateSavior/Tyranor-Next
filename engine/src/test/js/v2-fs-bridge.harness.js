@@ -117,7 +117,12 @@ check('越界读被拒绝', fsMod.existsSync(outsideFile) === false);
 check('越界读内容为 null/抛错', (() => { try { fsMod.readFileSync(outsideFile, 'utf8'); return false; } catch (e) { return true; } })());
 check('writeFileSync 真落盘', (() => { fsMod.writeFileSync('data/out.txt', 'written'); return fs.readFileSync(nodePath.join(contentRoot, 'data', 'out.txt'), 'utf8') === 'written'; })());
 check('mkdirSync 真建目录', (() => { fsMod.mkdirSync('data/newdir'); return fs.existsSync(nodePath.join(contentRoot, 'data', 'newdir')); })());
-check('writeFileSync 越界被拒绝', (() => { fsMod.writeFileSync(nodePath.join(os.tmpdir(), 'evil.txt'), 'x'); return !fs.existsSync(nodePath.join(os.tmpdir(), 'evil.txt')); })());
+check('writeFileSync 越界被拒绝（抛 EACCES）', (() => {
+    const evil = nodePath.join(os.tmpdir(), 'evil.txt');
+    let code = '';
+    try { fsMod.writeFileSync(evil, 'x'); } catch (e) { code = e.code; }
+    return code === 'EACCES' && !fs.existsSync(evil);
+})(), (() => { try { fsMod.writeFileSync(nodePath.join(os.tmpdir(), 'evil2.txt'), 'x'); return '未抛错'; } catch (e) { return e.code; } })());
 
 console.log('\n== require 加载游戏模块 ==');
 const table = window.require('./js/plugins/MyTable.js');
@@ -164,7 +169,7 @@ check('Buffer.equals 正确', bin.equals(fsMod.readFileSync('bin.dat')) === true
 check('Buffer.indexOf 正确', bin.indexOf(3) === 2, bin.indexOf && bin.indexOf(3));
 check('Buffer 越界读抛错', (() => { try { bin.readUInt32LE(5); return false; } catch (e) { return true; } })());
 check('Buffer 二进制→UTF-8 解码正确（多字节）', fsMod.readFileSync('data/utf8.txt').toString('utf8') === '日本語テキスト', fsMod.readFileSync('data/utf8.txt').toString('utf8'));
-check('Buffer.toString(hex) 正确', HostBuffer.from([1, 2, 250]).toString('hex') !== undefined && fsMod.readFileSync('bin.dat').toString('hex') === '010203fa', fsMod.readFileSync('bin.dat').toString('hex'));
+check('Buffer.toString(hex) 正确', fsMod.readFileSync('bin.dat').toString('hex') === '010203fa');
 check('Buffer.toString(base64) 正确', fsMod.readFileSync('bin.dat').toString('base64') === HostBuffer.from([1,2,3,250]).toString('base64'), fsMod.readFileSync('bin.dat').toString('base64'));
 
 console.log('\n== crypto（与 Node 真值逐项对照）==');
@@ -285,18 +290,22 @@ const timersMod = window.require('timers');
 check('timers 模块可用', typeof timersMod.setTimeout === 'function' && typeof timersMod.setImmediate === 'function');
 const vmMod = window.require('vm');
 check('vm.runInNewContext 隔离求值', vmMod.runInNewContext('a + b', { a: 1, b: 2 }) === 3);
-check('vm 沙箱内新变量不进入宿主作用域', (() => {
-    global.__hostGuard = 'host';
-    vmMod.runInNewContext('var __hostGuard = "sandbox"; __hostGuard', {});
-    return global.__hostGuard === 'host';
-})(), global.__hostGuard);
+check('vm 沙箱内裸赋值不污染宿主（真正的泄漏路径）', (() => {
+    const key = '__vmLeakProbe' + Date.now();
+    global[key] = 'host';
+    vmMod.runInNewContext(key + ' = "sandbox";', {});
+    const ok = global[key] === 'host';
+    delete global[key];
+    return ok;
+})());
 check('vm 结果可写回沙箱对象', (() => {
     const sandbox = { out: 0, a: 21 };
     vmMod.runInNewContext('out = a * 2', sandbox);
     return sandbox.out === 42;
 })(), (() => { const sb = { out: 0, a: 21 }; vmMod.runInNewContext('out = a * 2', sb); return sb.out; })());
 const punyMod = window.require('punycode');
-check('punycode 编码正确', punyMod.encode('日本語') === nodeRequire('punycode').encode('日本語') || punyMod.toASCII('日本語.jp') === nodeRequire('punycode').toASCII('日本語.jp'), punyMod.toASCII('日本語.jp'));
+check('punycode encode 与 Node 一致', punyMod.encode('日本語') === nodeRequire('punycode').encode('日本語'));
+check('punycode toASCII 与 Node 一致', punyMod.toASCII('日本語.jp') === nodeRequire('punycode').toASCII('日本語.jp'));
 check('punycode 解码往返', punyMod.toUnicode(punyMod.toASCII('日本語.jp')) === '日本語.jp', punyMod.toUnicode(punyMod.toASCII('日本語.jp')));
 const constantsMod = window.require('constants');
 check('constants.F_OK 可用', constantsMod.F_OK === 0 && constantsMod.O_RDWR === 2);
@@ -326,7 +335,7 @@ check('symlinkSync 退化为内容复制', (() => {
     fsMod.symlinkSync('data/target.txt', 'data/link.txt');
     return fsMod.readFileSync('data/link.txt', 'utf8') === 'content';
 })());
-check('fs.constants 可用', fsMod.constants === undefined || typeof fsMod.constants === 'object');
+check('fs.constants 可用且值正确', typeof fsMod.constants === 'object' && fsMod.constants !== null && fsMod.constants.F_OK === 0);
 
 console.log('\n== util / os / url 增强 ==');
 const utilMod = window.require('util');
@@ -583,7 +592,7 @@ console.log('\n== 第三批：长尾补齐与明确报错 ==');
     // events
     const EES = window.require('events');
     check('events.EventEmitter 可作为构造器', typeof EES.EventEmitter === 'function' && (() => { const e = new EES.EventEmitter(); return typeof e.on === 'function'; })());
-    check('events.getMaxListeners 可用', EES.getMaxListeners(new EES()) === 10 || typeof EES.getMaxListeners(new EES()) === 'number');
+    check('events.getMaxListeners 返回默认值 10', EES.getMaxListeners(new EES()) === 10);
     check('events.on 返回 Promise', (() => { const p = EES.on(new EES(), 'x'); return p && typeof p.then === 'function'; })());
 
     // child_process
@@ -641,6 +650,191 @@ console.log('\n== 第三批：长尾补齐与明确报错 ==');
     check('digest() 无参数返回 Buffer', (() => { const d = c3.createHash('sha256').update('x').digest(); return window.Buffer.isBuffer(d) && d.length === 32; })(), (() => { const d = c3.createHash('sha256').update('x').digest(); return typeof d + '/' + (d && d.length); })());
     check('digest("hex") 返回字符串', typeof c3.createHash('sha256').update('x').digest('hex') === 'string');
     check('createHmac().digest() 无参数返回 Buffer', window.Buffer.isBuffer(c3.createHmac('sha256', 'k').update('x').digest()));
+}
+
+console.log('\n== 回归：审核发现的缺陷（每条对应一个已修问题）==');
+{
+    const B = window.Buffer;
+
+    // H1: existsSync 必须查磁盘
+    check('H1 existsSync(存在的文件) === true', fsMod.existsSync('data/table.json') === true);
+    check('H1 existsSync(不存在的文件) === false', fsMod.existsSync('data/definitely-missing.json') === false);
+    check('H1 existsSync(多级不存在路径) === false', fsMod.existsSync('a/b/c/nope.txt') === false);
+    check('H1 可选配置惯用法不抛错（降级为默认）', (() => {
+        try {
+            if (fsMod.existsSync('data/optional-config.json')) JSON.parse(fsMod.readFileSync('data/optional-config.json', 'utf8'));
+            return 'skipped';
+        } catch (e) { return '崩溃: ' + e.code; }
+    })() === 'skipped');
+    check('H1 读超限文件报 E2BIG（不伪装成 ENOENT）', (() => {
+        const big = nodePath.join(contentRoot, 'data', 'big.bin');
+        fs.writeFileSync(big, HostBuffer.alloc(17 * 1024 * 1024, 0x41));
+        try { fsMod.readFileSync('data/big.bin'); return '未抛错'; } catch (e) { return e.code; }
+    })() === 'E2BIG', (() => {
+        try { fsMod.readFileSync('data/big.bin'); return '未抛错'; } catch (e) { return e.code; }
+    })());
+    check('H1 读目录报 EISDIR', (() => { try { fsMod.readFileSync('data'); return '未抛错'; } catch (e) { return e.code === 'EISDIR'; } })() === true);
+    check('H1 越界路径报 EPERM', (() => { try { fsMod.readFileSync('../../etc/passwd'); return '未抛错'; } catch (e) { return e.code === 'EPERM'; } })() === true);
+
+    // H2: Buffer 索引写入必须生效
+    check('H2 索引写入能落盘', (() => {
+        const buf = B.from([0x11, 0x22, 0x33, 0x44]);
+        B.isBuffer(buf);              // 预热（旧实现在此缓存旧值）
+        buf.toString('hex');
+        buf[0] = 0xff;
+        fsMod.writeFileSync('data/idx-write.bin', buf);
+        return fsMod.readFileSync('data/idx-write.bin').toString('hex') === 'ff223344';
+    })(), (() => {
+        const buf = B.from([0x11, 0x22, 0x33, 0x44]); B.isBuffer(buf); buf.toString('hex'); buf[0] = 0xff;
+        fsMod.writeFileSync('data/idx-write.bin', buf);
+        return fsMod.readFileSync('data/idx-write.bin').toString('hex');
+    })());
+    check('H2 索引写入能被摘要算入', (() => {
+        const c = window.require('crypto');
+        const buf = B.from('abc');
+        c.createHash('md5').update(buf).digest('hex');   // 预热
+        buf[0] = 0x7a;                                    // 'z'
+        const got = c.createHash('md5').update(buf).digest('hex');
+        const want = nodeCrypto.createHash('md5').update('zbc').digest('hex');
+        return got === want;
+    })());
+    check('H2 set() 写入也能看到', (() => {
+        const buf = B.from([1, 2, 3]);
+        buf.toString('hex');
+        buf.set([9, 9], 0);
+        return buf.toString('hex') === '090903';
+    })(), (() => { const b = B.from([1, 2, 3]); b.toString('hex'); b.set([9, 9], 0); return b.toString('hex'); })());
+
+    // H3: Cipher 的 encoding
+    const c = window.require('crypto');
+    check('H3 加密 update(utf8→hex)+final(hex) 是合法 hex', (() => {
+        const key = c.randomBytes(32), iv = c.randomBytes(16);
+        const enc = c.createCipheriv('aes-256-cbc', key, iv);
+        const text = String(enc.update('{"gold":999}', 'utf8', 'hex')) + String(enc.final('hex'));
+        return /^[0-9a-f]{32}$/.test(text);
+    })());
+    check('H3 加密结果与 Node 一致（拼接惯用法）', (() => {
+        const keyBuf = nodeCrypto.randomBytes(32), ivBuf = nodeCrypto.randomBytes(16);
+        const key = B.from(keyBuf.toString('base64'), 'base64'), iv = B.from(ivBuf.toString('base64'), 'base64');
+        const enc = c.createCipheriv('aes-256-cbc', key, iv);
+        const ours = String(enc.update('{"gold":999}', 'utf8', 'hex')) + String(enc.final('hex'));
+        const n = nodeCrypto.createCipheriv('aes-256-cbc', keyBuf, ivBuf);
+        const theirs = HostBuffer.concat([n.update('{"gold":999}'), n.final()]).toString('hex');
+        return ours === theirs;
+    })());
+    check('H3 解密 update(hex)+final(utf8) 正确', (() => {
+        const keyBuf = nodeCrypto.randomBytes(32), ivBuf = nodeCrypto.randomBytes(16);
+        const n = nodeCrypto.createCipheriv('aes-256-cbc', keyBuf, ivBuf);
+        const ct = HostBuffer.concat([n.update('{"gold":999}'), n.final()]).toString('hex');
+        const dec = c.createDecipheriv('aes-256-cbc', B.from(keyBuf.toString('base64'), 'base64'), B.from(ivBuf.toString('base64'), 'base64'));
+        dec.update(ct, 'hex', 'utf8');
+        return String(dec.final('utf8')) === '{"gold":999}';
+    })());
+
+    // M5: 写失败必须抛错
+    check('M5 越界写入抛 EACCES', (() => { try { fsMod.writeFileSync('../../evil.txt', 'x'); return '未抛错'; } catch (e) { return e.code === 'EACCES'; } })() === true);
+    check('M5 超限写入抛 EACCES', (() => {
+        try { fsMod.writeFileSync('data/huge.bin', HostBuffer.alloc(17 * 1024 * 1024, 0x41)); return '未抛错'; }
+        catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('M5 正常写入不抛错', (() => { fsMod.writeFileSync('data/ok.txt', 'fine'); return fsMod.readFileSync('data/ok.txt', 'utf8') === 'fine'; })());
+
+    // M4: 流式写入真落盘
+    check('M4 createWriteStream 写入落盘', (() => {
+        const target = nodePath.join(contentRoot, 'data', 'stream-real.txt');
+        const s = fsMod.createWriteStream('data/stream-real.txt');
+        s.write('important');
+        s.end();
+        return fs.existsSync(target) && fs.readFileSync(target, 'utf8') === 'important';
+    })(), (() => {
+        const target = nodePath.join(contentRoot, 'data', 'stream-real.txt');
+        return fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '文件不存在';
+    })());
+
+    // M2/M3: HMAC 未知算法、digest 编码
+    check('M2 hmac(不支持的算法) 抛错（不降级为 sha256）', (() => {
+        // 注意：sha224 是**支持**的（两端都实现了），必须用真正不支持的算法测
+        try { c.createHmac('ripemd160', 'k').update('m').digest('hex'); return '未抛错'; }
+        catch (e) { return true; }
+    })(), (() => { try { c.createHmac('ripemd160', 'k').update('m').digest('hex'); return '未抛错'; } catch (e) { return '抛错'; } })());
+    check('M2 hmac(sha224) 正常且与 Node 一致', (() => {
+        const ours = c.createHmac('sha224', 'k').update('m').digest('hex');
+        const theirs = nodeCrypto.createHmac('sha224', 'k').update('m').digest('hex');
+        return ours === theirs;
+    })(), (() => { try { return c.createHmac('sha224', 'k').update('m').digest('hex').slice(0, 16); } catch (e) { return 'THROW'; } })());
+    check('M2 hmac(sha256) 仍正常', c.createHmac('sha256', 'k').update('m').digest('hex') === nodeCrypto.createHmac('sha256', 'k').update('m').digest('hex'));
+    check('M3 digest("base64url") 与 Node 一致', (() => {
+        const ours = String(c.createHash('sha256').update('x').digest('base64url'));
+        const theirs = nodeCrypto.createHash('sha256').update('x').digest('base64url');
+        return ours === theirs;
+    })(), (() => { return String(c.createHash('sha256').update('x').digest('base64url')) + ' vs ' + nodeCrypto.createHash('sha256').update('x').digest('base64url'); })());
+
+    // M1: vm 沙箱不得泄漏到宿主
+    check('M1 vm 沙箱内裸赋值不污染宿主', (() => {
+        const vm = window.require('vm');
+        const probe = '__sandboxLeak' + Date.now();
+        global[probe] = 'original';
+        vm.runInNewContext(probe + ' = "overwritten";', {});
+        return global[probe] === 'original';
+    })(), (() => { const vm2 = window.require('vm'); const k = '__leakProbe' + Date.now(); global[k] = 'original'; vm2.runInNewContext(k + ' = "x";', {}); return String(global[k]); })());
+    check('M1 vm 沙箱内覆盖 Buffer 不影响宿主', (() => {
+        const vm = window.require('vm');
+        const before = typeof window.Buffer;
+        const box = {};
+        vm.runInNewContext('Buffer = "PWNED";', box);
+        // 写入应落在沙箱对象上，宿主类型不变（实现是对象而非函数，故比较 typeof 而非可调用性）
+        return typeof window.Buffer === before && box.Buffer === 'PWNED';
+    })(), (() => { const vm2 = window.require('vm'); const box2 = {}; vm2.runInNewContext('Buffer = "PWNED";', box2); return 'host=' + typeof window.Buffer + ' box=' + String(box2.Buffer); })());
+    check('M1 vm 沙箱仍能读到全局（可用性没丢）', (() => {
+        const vm = window.require('vm');
+        return vm.runInNewContext('typeof Buffer !== "undefined"', {}) === true;
+    })());
+
+    // M6: 非 UTF-8 编码
+    check('M6 writeFileSync(latin1) 字节正确', (() => {
+        fsMod.writeFileSync('data/latin1.txt', '\u00ff\u00fe', 'latin1');
+        return fs.readFileSync(nodePath.join(contentRoot, 'data', 'latin1.txt')).toString('hex') === 'fffe';
+    })(), (() => { fsMod.writeFileSync('data/latin1.txt', '\u00ff\u00fe', 'latin1'); return fs.readFileSync(nodePath.join(contentRoot, 'data', 'latin1.txt')).toString('hex'); })());
+    check('M6 writeFileSync(未知编码) 抛 ERR_UNKNOWN_ENCODING', (() => {
+        try { fsMod.writeFileSync('data/x.txt', 'a', 'bogus'); return '未抛错'; }
+        catch (e) { return e.code === 'ERR_UNKNOWN_ENCODING'; }
+    })() === true);
+    check('M6 appendFileSync 保留二进制（不重编码）', (() => {
+        fsMod.writeFileSync('data/append.bin', B.from([0x00, 0xff, 0xfe]));
+        fsMod.appendFileSync('data/append.bin', B.from([0x01, 0x02]));
+        return fsMod.readFileSync('data/append.bin').toString('hex') === '00fffe0102';
+    })(), (() => { fsMod.writeFileSync('data/append.bin', B.from([0x00, 0xff, 0xfe])); fsMod.appendFileSync('data/append.bin', B.from([0x01, 0x02])); return fsMod.readFileSync('data/append.bin').toString('hex'); })());
+
+    // M7: promises 语义
+    check('M7 promises.stat(缺失) 会 reject', (() => fsMod.promises.stat('data/missing-xyz.json').then(() => false, (e) => e.code === 'ENOENT')));
+    check('M7 promises.readdir(缺失) 会 reject', (() => fsMod.promises.readdir('data/missing-dir-xyz').then(() => false, () => true)));
+    check('M7 promises.stat(存在) 正常 resolve', (() => fsMod.promises.stat('data/table.json').then((s) => s.isFile() === true)));
+
+    // M9/M10: localStorage
+    check('M9 键名不冲突（a b vs a_20b）', (() => {
+        const s1 = Object.create(global.Storage.prototype);
+        s1.setItem('a b', 'FIRST');
+        s1.setItem('a_20b', 'SECOND');
+        return s1.getItem('a b') === 'FIRST' && s1.getItem('a_20b') === 'SECOND';
+    })(), (() => { const s2 = Object.create(global.Storage.prototype); s2.setItem('a b', 'FIRST'); s2.setItem('a_20b', 'SECOND'); return s2.getItem('a b') + '/' + s2.getItem('a_20b'); })());
+    check('M10 length/key() 能枚举到已落盘的数据', (() => {
+        const st = Object.create(global.Storage.prototype);
+        st.setItem('enum-key-1', 'v1');
+        const len = st.length;
+        if (len < 1) return false;
+        for (let i = 0; i < len; i++) { if (st.key(i) === 'enum-key-1') return true; }
+        return false;
+    })(), (() => { const s3 = Object.create(global.Storage.prototype); s3.setItem('enum-key-1', 'v1'); const out2 = []; for (let i = 0; i < s3.length; i++) out2.push(s3.key(i)); return 'length=' + s3.length + ' keys=' + JSON.stringify(out2); })());
+
+    // 低危
+    check('低危 fs.constants 挂到 fs 上', typeof fsMod.constants === 'object' && fsMod.constants.F_OK === 0);
+    check('低危 fs.accessSync(p, fs.constants.R_OK) 可用', (() => { try { fsMod.accessSync('data/table.json', fsMod.constants.R_OK); return true; } catch (e) { return false; } })());
+    check("低危 require('nw') 可解析", typeof window.require('nw') === 'object');
+    check('低危 require("nw").Window.evalNWBin 存在', typeof (window.require('nw').Window && window.require('nw').Window.evalNWBin) === 'function');
+    check('低危 名字含尾随空格的文件可访问', (() => {
+        fsMod.writeFileSync('data/trailing   .txt', 'spacey');
+        return fsMod.readFileSync('data/trailing   .txt', 'utf8') === 'spacey';
+    })(), (() => { try { fsMod.writeFileSync('data/trailing   .txt', 'spacey'); return fsMod.readFileSync('data/trailing   .txt', 'utf8'); } catch (e) { return 'THROW ' + e.code; } })());
 }
 
 console.log('\n== 现象二端到端复现：插件读表 -> 渲染名字 ==');
