@@ -133,7 +133,7 @@ App（游戏库卡片点击）
        ├─ rfvp_android_set_text_hidpi / set_system_font    // 生效设置
        ├─ Choreographer 每帧 → rfvp_android_step(dt)       // dt clamp 250ms；1=退出
        ├─ 触摸 → rfvp_android_touch；返回键 → rfvp_android_key(ESC)
-       └─ surfaceDestroyed → 停循环并销毁引擎（一期沿用上游语义）
+       └─ surfaceDestroyed → 停循环（引擎保活）；回前台 surfaceCreated → setSurface 重挂
 ```
 
 ### 3.3 关键决策
@@ -282,7 +282,7 @@ target_link_libraries(rfvp_bridge ${android-lib} ${log-lib} ${dl-lib})
 1. `onCreate`：全屏沉浸式；解析 `LaunchContract` extras（`PATH → GAME_PATH → PROJECT_ROOT → GAME_DIR` 取第一个非空，缺失 Toast + finish）；`SurfaceHolder.Callback` + `OnTouchListener`；`setKeepScreenOn`；显示加载遮罩（`engine_starting_game`）。
 2. `surfaceCreated`：`handle == 0` → `ensureEngine()`（init context → create → 应用 hidpi/system font 设置）；否则 `setSurface` 重挂。首帧成功后移除加载遮罩。
 3. 帧循环：`Choreographer`，`dt` clamp `[0,250]ms`；`step > 0` → `finish()`。
-4. `onPause` 停循环；`onDestroy` 停循环 + `destroy(handle)`；`surfaceDestroyed` 一期沿用上游：停循环 + 销毁 + finish（`setSurface` 保活列为 P2）。
+4. `onResume` 起帧循环；`onPause` 停循环；`onDestroy` 停循环 + `destroy(handle)`；`surfaceDestroyed` 只停循环并置 `surfaceReady=false`（引擎保活），回前台 `surfaceCreated` 时 `setSurface` 重挂 wgpu Surface，避免切后台重启本局。
 5. 输入：触摸 phase 直接转发；`KEYCODE_BACK` 单击 → `keyEvent(ESC down/up)`，2 秒内双击 → 退出（Toast `engine_fvp_back_again_to_exit`）。
 6. 多实例保护：`singleInstance` + `onNewIntent` Toast `engine_another_game_running`。
 
@@ -428,8 +428,9 @@ void rfvp_android_set_system_font(void* handle, int32_t enabled);
 
 ### 7.7 后台与恢复
 
-- 一期沿用上游保守语义：`surfaceDestroyed` → 停循环 + 销毁 + finish；
-- 二期（P2）：保活 + `set_surface` 重建（Siglus 已实现该语义，可对齐）。
+- 切后台：`surfaceDestroyed` 只停帧循环并置 `surfaceReady=false`，引擎进程与 VM 状态保留（不 destroy、不 finish）；
+- 回前台：`surfaceCreated` 检测到已有 handle 时调用 `NativeRfvp.setSurface` 重挂新的 `ANativeWindow` 并重建 wgpu Surface，`onResume`/`surfaceCreated` 均会尝试恢复帧循环；
+- 进程被系统回收（内存压力/厂商后台策略）后返回才会重启本局，此为系统行为，非宿主主动结束。
 
 ---
 
@@ -508,7 +509,7 @@ git diff --check
 | 返回键/无 IME | 少量输入场景受限 | 一期仅 ESC 映射；IME 列为 P2（FVP 系基本无输入） |
 | `<游戏根>` 只读（SD 卡/Android/data） | 存档写入失败 | 复用 all-files 流程；P2 独立存档目录 |
 | MPL-2.0 合规 | 许可质疑 | 保留声明 + README 注明源码链接；shim/宿主自研 |
-| `surfaceDestroyed` 销毁引擎 | 切后台丢进度 | 一期接受；P2 用 `set_surface` 保活 |
+| `surfaceDestroyed` 销毁引擎（已修正） | 切后台丢进度 | 已改为保活 + `set_surface` 重挂（见 §7.7 与实施记录） |
 
 待确认（评审时定）：
 
@@ -635,6 +636,22 @@ cp /tmp/rfvp-android-fvp/arm64-v8a/*.so \
   4. `:fvp` 进程存活、无 FATAL，`/proc/<pid>/maps` 确认已加载 `librfvp.so` 与 `librfvp_bridge.so`（dlopen + 符号解析 + create 成功；缺少资源包时显示空画面属预期）；
   5. 测试文件与测试条目已清理。
 - 待执行：§9.2 的完整游玩验收（对白/存档/读档/编码切换/自定义字体/返回键双击退出等）需将完整游戏数据落机并通过 SAF 授权后回归。
+
+### 实施后修正：Surface 保活（用户反馈）
+
+**问题**：游玩中按 Home 切后台，从桌面返回时游戏从头重启。
+
+**原因**：`FvpActivity.surfaceDestroyed` 采用了上游保守语义（停循环 + `destroy` + `finish`），Surface 一失效即结束本局。
+
+**修正**（`com/core/fvp/FvpActivity.java`，无需重新构建 `.so`，rfvp 的 `set_surface` ABI 原生支持该模型）：
+
+- `surfaceDestroyed`：仅停帧循环并置 `surfaceReady = false`，引擎与 VM 状态保留；
+- `surfaceCreated`：已有 handle 时调用 `NativeRfvp.setSurface` 重挂新的 `ANativeWindow` 并重建 wgpu Surface；否则按首次启动创建；
+- `surfaceChanged`：仅 `surfaceReady` 时转发 `resize`；
+- `maybeStartFrameLoop` / `doFrame`：增加 `surfaceReady` 门控，避免 Surface 缺失时步进；
+- `onDestroy`：才真正 `destroy(handle)`。
+
+**验证**：真机安装修正版后，以完整游戏数据（`/sdcard/galgame/HappyMarguerite_CHS`）启动，Home 切后台再返回，游戏在原进度继续、不再重启，用户确认问题解决。
 
 ---
 

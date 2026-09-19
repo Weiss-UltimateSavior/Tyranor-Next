@@ -59,6 +59,7 @@ public final class FvpActivity extends AppCompatActivity implements
 
     private long handle = 0L;
     private boolean running = false;
+    private volatile boolean surfaceReady = false;
     private boolean loadingOverlayVisible = true;
     private long lastFrameNs = 0L;
 
@@ -207,7 +208,14 @@ public final class FvpActivity extends AppCompatActivity implements
 
     @Override
     public void surfaceCreated(@NonNull SurfaceHolder holder) {
-        ensureEngine(holder);
+        if (handle != 0L) {
+            // 后台恢复：Android 换了新的 ANativeWindow；保留运行中的引擎并重挂窗口，避免重启本局。
+            NativeRfvp.setSurface(handle, holder.getSurface(), surfaceWidth(holder), surfaceHeight(holder));
+            surfaceReady = true;
+            Log.i(TAG, "surface rebound after background");
+        } else {
+            ensureEngine(holder);
+        }
         maybeStartFrameLoop();
     }
 
@@ -215,17 +223,16 @@ public final class FvpActivity extends AppCompatActivity implements
     public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
         if (handle == 0L) {
             ensureEngine(holder);
-        } else {
+        } else if (surfaceReady) {
             NativeRfvp.resize(handle, Math.max(1, width), Math.max(1, height));
         }
     }
 
     @Override
     public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-        // 一期沿用上游语义：Surface 失效即结束本局（P2 计划改为 setSurface 保活）。
+        // ANativeWindow 即将失效，但引擎必须存活：切后台不重启游戏，onDestroy 才销毁。
+        surfaceReady = false;
         stopFrameLoop();
-        destroyEngine();
-        finish();
     }
 
     private int surfaceWidth(SurfaceHolder holder) {
@@ -260,6 +267,7 @@ public final class FvpActivity extends AppCompatActivity implements
             return;
         }
         handle = created;
+        surfaceReady = true;
 
         boolean textHidpi = getIntent().getBooleanExtra(LaunchContract.FVP_TEXT_HIDPI, true);
         boolean systemFont = getIntent().getBooleanExtra(LaunchContract.FVP_SYSTEM_FONT, true);
@@ -279,7 +287,7 @@ public final class FvpActivity extends AppCompatActivity implements
     // ---------- 帧循环 ----------
 
     private void maybeStartFrameLoop() {
-        if (!running && handle != 0L) {
+        if (!running && handle != 0L && surfaceReady) {
             running = true;
             lastFrameNs = 0L;
             Choreographer.getInstance().postFrameCallback(this);
@@ -296,7 +304,7 @@ public final class FvpActivity extends AppCompatActivity implements
 
     @Override
     public void doFrame(long frameTimeNanos) {
-        if (!running || handle == 0L) {
+        if (!running || handle == 0L || !surfaceReady) {
             return;
         }
         if (lastFrameNs == 0L) {
