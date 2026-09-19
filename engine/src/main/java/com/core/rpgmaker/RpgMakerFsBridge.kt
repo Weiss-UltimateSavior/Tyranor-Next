@@ -65,6 +65,21 @@ internal class RpgMakerFsBridge(
         return asarPrefix + path
     }
 
+    /**
+     * 覆盖层优先级必须是**磁盘优先**，理由有二：
+     *  1. 与本地 HTTP 服务器一致——服务器承载引擎全部资源加载（XHR 取 data/、图片、音频），
+     *     其 `canonicalIfValid` 要求磁盘命中且是**文件**（`isFile`）才返回，asar 仅兜底。
+     *     若桥反过来，同一个路径经 XHR 与经 fs 会解析出不同内容。
+     *  2. 写入必须可读回——插件写出的文件若被同名 asar 条目遮蔽，读回的是包内旧值，
+     *     表现为「配置/数据表改了却不生效」，且写入本身没有报错。
+     */
+
+    /** 磁盘上的同名**文件**（与服务器的命中条件一致）；目录不算命中，会继续检查 asar。 */
+    private fun diskFile(path: String?): File? = resolve(path)?.takeIf { it.isFile }
+
+    /** 磁盘上的同名条目（文件或目录），用于存在性/类型/stat 判定。 */
+    private fun diskEntry(path: String?): File? = resolve(path)?.takeIf { it.exists() }
+
     /** __dirname 的取值：网页根（游戏 www/ 目录）。 */
     @JavascriptInterface
     fun baseDir(): String = contentRoot.absolutePath
@@ -75,24 +90,27 @@ internal class RpgMakerFsBridge(
 
     @JavascriptInterface
     fun exists(path: String?): Boolean {
+        if (diskEntry(path) != null) return true
         asarKey(path?.let { relativeFor(it) })?.let { if (asar?.has(it) == true) return true }
-        return resolve(path)?.exists() == true
+        return false
     }
 
     @JavascriptInterface
     fun isFile(path: String?): Boolean {
+        diskEntry(path)?.let { return it.isFile }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) return asar.isDirectory(key).not()
         }
-        return resolve(path)?.isFile == true
+        return false
     }
 
     @JavascriptInterface
     fun isDir(path: String?): Boolean {
+        diskEntry(path)?.let { return it.isDirectory }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) return asar.isDirectory(key)
         }
-        return resolve(path)?.isDirectory == true
+        return false
     }
 
     /**
@@ -104,29 +122,30 @@ internal class RpgMakerFsBridge(
      */
     @JavascriptInterface
     fun errorFor(path: String?): String {
-        val file = resolve(path)
+        // 磁盘优先：磁盘有同名条目时按磁盘判定（与读路径同一顺序）
+        diskEntry(path)?.let { entry ->
+            if (entry.isDirectory) return "EISDIR"
+            if (entry.length() > MAX_READ_BYTES) return "E2BIG"
+            return "ENOENT"
+        }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) {
                 if (asar.isDirectory(key)) return "EISDIR"
-                // asar 条目大小在 read() 时才知道；交由 SIZE_UNKNOWN 语义处理：
-                // 读路径会做上限校验，这里只区分目录与存在。
                 return "ENOENT"
             }
         }
         // resolve 对「合法但不存在」的路径同样返回 File（它不查磁盘），
         // 因此返回 null 只可能是非法字符或越界 → EPERM。
-        if (file == null) return "EPERM"
-        if (file.isDirectory) return "EISDIR"
-        if (file.length() > MAX_READ_BYTES) return "E2BIG"
-        return "ENOENT"
+        return if (resolve(path) == null) "EPERM" else "ENOENT"
     }
 
     /** 读文本；不存在/不可读返回 null（JS 侧映射为 null，与 Node 的抛错由调用方兜底区分）。 */
     @JavascriptInterface
     fun readText(path: String?): String? {
-        // asar 优先：压缩包内是游戏本体，磁盘上通常不存在同名文件
-        readAsarBytes(path)?.let { return String(it, StandardCharsets.UTF_8) }
-        return readDiskText(path)
+        // 磁盘优先（与 HTTP 服务器及写入语义一致）：磁盘无同名文件时才回退 asar。
+        // 顺序反了会让「插件写入的文件」被 asar 遮蔽，读回包内旧值。
+        if (diskFile(path) != null) return readDiskText(path)
+        return readAsarBytes(path)?.let { String(it, StandardCharsets.UTF_8) }
     }
 
     private fun readDiskText(path: String?): String? {
@@ -165,8 +184,13 @@ internal class RpgMakerFsBridge(
     /** 读二进制（base64）；Buffer 语义用，避免桥只能传字符串的限制。 */
     @JavascriptInterface
     fun readBase64(path: String?): String? {
-        // asar 优先（压缩包内是游戏本体）
+        // 磁盘优先（见 readText 的说明）：磁盘无同名文件时才回退 asar
+        if (diskFile(path) != null) return readDiskBase64(path)
         readAsarBytes(path)?.let { return Base64.getEncoder().encodeToString(it) }
+        return readDiskBase64(path)
+    }
+
+    private fun readDiskBase64(path: String?): String? {
         val file = resolve(path) ?: return null
         if (!file.isFile) return null
         if (file.length() > MAX_READ_BYTES) {
@@ -184,7 +208,14 @@ internal class RpgMakerFsBridge(
     /** 目录项名列表（JSON 数组字符串）；非目录返回空数组。 */
     @JavascriptInterface
     fun readdir(path: String?): String {
-        // asar 内的目录在磁盘上不存在，需从压缩包索引列举
+        // 磁盘目录优先（与 readText 的覆盖层顺序一致）；asar 内的目录在磁盘上不存在，
+        // 因此磁盘未命中时从压缩包索引列举
+        if (diskEntry(path)?.isDirectory == true) {
+            val names = resolve(path)?.list() ?: emptyArray()
+            val array = JSONArray()
+            names.forEach { array.put(it) }
+            return array.toString()
+        }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             val archive = asar
             if (archive != null && archive.has(key) && archive.isDirectory(key)) {
@@ -204,6 +235,20 @@ internal class RpgMakerFsBridge(
     /** stat/lstat：JSON `{file,dir,size,mtime}`；不存在返回空串。 */
     @JavascriptInterface
     fun stat(path: String?): String {
+        // 磁盘优先：写入后 size/mtime 必须来自磁盘，否则插件按 asar 的旧 size 判断会误判
+        diskEntry(path)?.let { file ->
+            return try {
+                JSONObject()
+                    .put("file", file.isFile)
+                    .put("dir", file.isDirectory)
+                    .put("size", file.length())
+                    .put("mtime", file.lastModified())
+                    .toString()
+            } catch (error: Throwable) {
+                Log.w(TAG, "fs stat failed: ${file.path}", error)
+                ""
+            }
+        }
         readAsarBytes(path)?.let { data ->
             return JSONObject()
                 .put("file", true).put("dir", false)
