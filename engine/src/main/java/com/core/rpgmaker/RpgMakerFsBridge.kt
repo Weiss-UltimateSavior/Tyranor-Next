@@ -225,8 +225,16 @@ internal class RpgMakerFsBridge(
     }
 
     @JavascriptInterface
-    fun writeText(path: String?, data: String?): Boolean =
-        write(path) { it.write(data.orEmpty().toByteArray(StandardCharsets.UTF_8)) }
+    fun writeText(path: String?, data: String?): Boolean {
+        // 与 writeBase64 / 读路径共用同一上限：此前文本写入无任何校验，
+        // 插件传入任意长字符串会直接落盘（16MiB 的读上限也就形同虚设）。
+        val bytes = data.orEmpty().toByteArray(StandardCharsets.UTF_8)
+        if (bytes.size > MAX_WRITE_BYTES) {
+            Log.w(TAG, "fs write rejected (too large ${bytes.size}): $path")
+            return false
+        }
+        return write(path) { it.write(bytes) }
+    }
 
     @JavascriptInterface
     fun writeBase64(path: String?, data: String?): Boolean {
@@ -236,7 +244,7 @@ internal class RpgMakerFsBridge(
             Log.w(TAG, "fs write rejected (bad base64): $path", error)
             return false
         }
-        if (bytes.size > MAX_READ_BYTES) {
+        if (bytes.size > MAX_WRITE_BYTES) {
             Log.w(TAG, "fs write rejected (too large ${bytes.size}): $path")
             return false
         }
@@ -326,5 +334,8 @@ internal class RpgMakerFsBridge(
     companion object {
         private const val TAG = "YukiRpgMaker"
         private const val MAX_READ_BYTES = 16L * 1024L * 1024L
+
+        /** 单次写入上限；与读取上限分开命名以便独立调整（当前同值）。 */
+        private const val MAX_WRITE_BYTES = 16L * 1024L * 1024L
     }
 }

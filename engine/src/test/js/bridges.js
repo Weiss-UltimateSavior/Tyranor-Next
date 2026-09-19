@@ -32,6 +32,8 @@ function createBridges(gameRoot, contentRoot) {
     // 导致「existsSync 不查磁盘 / 写失败被吞 / 16MB 上限」这些缺陷对测试**不可见**。
     // 现在每个方法都按 Kotlin 的行为实现（含其约束），测试才能抓住真实偏差。
     const MAX_READ_BYTES = 16 * 1024 * 1024;
+    const MAX_WRITE_BYTES = 16 * 1024 * 1024;    // 与 Kotlin MAX_WRITE_BYTES 对齐
+    const MAX_ZLIB_BYTES = 64 * 1024 * 1024;     // 与 Kotlin EnvBridge.MAX_BYTES 对齐
     const fsBridge = {
         baseDir: () => contentRoot,
         dataDir: () => nodePath.join(gameRoot, 'AppData'),
@@ -68,7 +70,7 @@ function createBridges(gameRoot, contentRoot) {
         writeText: (p, d) => {
             const f = inside(p); if (f === null) return false;      // 越界 → false（Kotlin 如此）
             const text = d == null ? '' : String(d);
-            if (NodeBuffer.byteLength(text, 'utf8') > MAX_READ_BYTES) return false;
+            if (NodeBuffer.byteLength(text, 'utf8') > MAX_WRITE_BYTES) return false;
             fs.mkdirSync(nodePath.dirname(f), { recursive: true });
             fs.writeFileSync(f, text);
             return true;
@@ -76,7 +78,7 @@ function createBridges(gameRoot, contentRoot) {
         writeBase64: (p, d) => {
             const f = inside(p); if (f === null) return false;
             const bytes = NodeBuffer.from(d || '', 'base64');
-            if (bytes.length > MAX_READ_BYTES) return false;
+            if (bytes.length > MAX_WRITE_BYTES) return false;
             fs.mkdirSync(nodePath.dirname(f), { recursive: true });
             fs.writeFileSync(f, bytes);
             return true;
@@ -159,8 +161,8 @@ function createBridges(gameRoot, contentRoot) {
                 switch (mode) {
                     case 'inflate': return zlib.inflateSync(input).toString('base64');
                     case 'inflateRaw': return zlib.inflateRawSync(input).toString('base64');
-                    case 'gunzip': return zlib.gunzipSync(input).toString('base64');
-                    case 'unzip': return zlib.unzipSync(input).toString('base64');
+                    case 'gunzip': return zlib.gunzipSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64');
+                    case 'unzip': return zlib.unzipSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64');
                     case 'deflate': return zlib.deflateSync(input, opts).toString('base64');
                     case 'deflateRaw': return zlib.deflateRawSync(input, opts).toString('base64');
                     case 'gzip': return zlib.gzipSync(input, opts).toString('base64');

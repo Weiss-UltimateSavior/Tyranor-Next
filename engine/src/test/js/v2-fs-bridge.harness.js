@@ -30,23 +30,9 @@ fs.writeFileSync(nodePath.join(contentRoot, 'bin.dat'), HostBuffer.from([1, 2, 3
 const outsideFile = nodePath.join(os.tmpdir(), 'outside-secret.txt');
 fs.writeFileSync(outsideFile, 'SECRET');
 
-// ---- 仿真原生桥（与 Kotlin RpgMakerFsBridge 同语义）----
-// 相对路径按网页根解析（Kotlin 侧 File(contentRoot, path)），再做目录边界校验
-function toAbs(p) {
-    const s = String(p == null ? '' : p).replace(/\\/g, '/').replace(/^file:\/\//, '');
-    if (!s) return null;
-    return nodePath.isAbsolute(s) ? s : nodePath.join(contentRoot, s);
-}
-function inside(p) {
-    const abs = toAbs(p);
-    if (abs === null) return null;
-    // 与 Kotlin canonicalFile 对齐：目标可以尚不存在，此时退化为词法归一
-    let c;
-    try { c = fs.realpathSync.native(abs); }
-    catch (e) { c = nodePath.resolve(abs).replace(/[\\/]+$/, ''); }
-    const r = fs.realpathSync.native(gameRoot);
-    return (c === r || c.startsWith(r + nodePath.sep)) ? c : null;
-}
+// ---- 仿真原生桥：与 Kotlin RpgMakerFsBridge 同语义，实现统一放在 bridges.js ----
+// （此处原有一份 toAbs/inside 的重复边界校验实现，未被调用，已删除；
+//   路径解析与目录边界以 bridges.js 为单一来源，避免两份实现各自漂移）
 const { createBridges } = nodeRequire('./bridges.js');
 const created = createBridges(gameRoot, contentRoot);
 const bridge = created.fsBridge;
@@ -738,6 +724,54 @@ console.log('\n== 回归：审核发现的缺陷（每条对应一个已修问�
         catch (e) { return e.code === 'EACCES'; }
     })() === true);
     check('M5 正常写入不抛错', (() => { fsMod.writeFileSync('data/ok.txt', 'fine'); return fsMod.readFileSync('data/ok.txt', 'utf8') === 'fine'; })());
+
+    // 审核②：writeText 也必须有大小上限。
+    // 之前的 M5 用例传的是 Node Buffer（无 _bin），实际走 writeText 分支——
+    // 替身有上限、Kotlin 没有，于是那条用例在真机上不成立。
+    // 这里显式用「大字符串」走 writeText，并单独验证 Buffer 路径。
+    check('② writeText 超限（17MB 字符串）抛 EACCES', (() => {
+        try { fsMod.writeFileSync('data/huge-text.txt', 'A'.repeat(17 * 1024 * 1024)); return '未抛错'; }
+        catch (e) { return e.code === 'EACCES'; }
+    })() === true, (() => {
+        try { fsMod.writeFileSync('data/huge-text.txt', 'A'.repeat(17 * 1024 * 1024)); return '未抛错'; }
+        catch (e) { return e.code; }
+    })());
+    check('② writeText 未超限时正常写入', (() => {
+        fsMod.writeFileSync('data/ok-text.txt', 'A'.repeat(1024));
+        return fsMod.readFileSync('data/ok-text.txt', 'utf8').length === 1024;
+    })());
+    check('② writeBase64 超限（17MB Buffer）抛 EACCES', (() => {
+        try { fsMod.writeFileSync('data/huge-b64.bin', HostBuffer.alloc(17 * 1024 * 1024, 0x41)); return '未抛错'; }
+        catch (e) { return e.code === 'EACCES'; }
+    })() === true, (() => {
+        try { fsMod.writeFileSync('data/huge-b64.bin', HostBuffer.alloc(17 * 1024 * 1024, 0x41)); return '未抛错'; }
+        catch (e) { return e.code; }
+    })());
+
+    // 审核③：gzip 解压必须有界（小载荷可膨胀千倍，无界读取会撑爆堆）
+    check('③ gzip 解压超限（高膨胀比载荷）失败而非返回巨量数据', (() => {
+        const zlibMod = window.require('zlib');
+        // ~70MB 全零压缩后只有数十 KB，展开会超过 MAX_BYTES(64MB)
+        const bomb = nodeZlib.gzipSync(HostBuffer.alloc(70 * 1024 * 1024, 0), { level: 9 });
+        try {
+            const out = zlibMod.gunzipSync(asNodeBuf(bomb));
+            return '未抛错，产出 ' + (out && out.length ? out.length : '?') + ' 字节';
+        } catch (e) { return true; }
+    })() === true, (() => {
+        const zlibMod2 = window.require('zlib');
+        const bomb2 = nodeZlib.gzipSync(HostBuffer.alloc(70 * 1024 * 1024, 0), { level: 9 });
+        try { const o = zlibMod2.gunzipSync(asNodeBuf(bomb2)); return '产出 ' + o.length; } catch (e) { return '抛错'; }
+    })());
+    check('③ gzip 正常载荷仍可用（不超过上限）', (() => {
+        const zlibMod = window.require('zlib');
+        const packed = nodeZlib.gzipSync('hello gzip', { level: 9 });
+        return zlibMod.gunzipSync(asNodeBuf(packed)).toString('utf8') === 'hello gzip';
+    })());
+    check('③ unzip 分支的 gzip 路径同样有界', (() => {
+        const zlibMod = window.require('zlib');
+        const bomb = nodeZlib.gzipSync(HostBuffer.alloc(70 * 1024 * 1024, 0), { level: 9 });
+        try { zlibMod.unzipSync(asNodeBuf(bomb)); return '未抛错'; } catch (e) { return true; }
+    })() === true);
 
     // M4: 流式写入真落盘
     check('M4 createWriteStream 写入落盘', (() => {

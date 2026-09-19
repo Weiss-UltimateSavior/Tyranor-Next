@@ -201,7 +201,7 @@ internal class RpgMakerEnvBridge {
             when (mode) {
                 "inflate" -> inflate(input, nowrap = false)
                 "inflateRaw" -> inflate(input, nowrap = true)
-                "gunzip" -> GZIPInputStream(input.inputStream()).use { it.readBytes() }
+                "gunzip" -> gunzipBounded(input)
                 "unzip" -> autoInflate(input)
                 "deflate" -> deflate(input, wrap = Wrap.ZLIB, level = level)
                 "deflateRaw" -> deflate(input, wrap = Wrap.RAW, level = level)
@@ -263,10 +263,33 @@ internal class RpgMakerEnvBridge {
     /** 依次尝试 gzip → zlib → raw，用于 Node 的 zlib.unzip 语义。 */
     private fun autoInflate(input: ByteArray): ByteArray {
         if (input.size >= 2 && input[0] == 0x1f.toByte() && input[1] == 0x8b.toByte()) {
-            return GZIPInputStream(input.inputStream()).use { it.readBytes() }
+            return gunzipBounded(input)
         }
         runCatching { return inflate(input, nowrap = false) }
         return inflate(input, nowrap = true)
+    }
+
+    /**
+     * 有界 gzip 解压。
+     *
+     * `GZIPInputStream.readBytes()` 会无界读到流结束——gzip 的膨胀比可达千倍
+     * （实测 100MB 全零压缩后仅约 100KB），一个几十 KB 的载荷就能撑爆引擎进程堆。
+     * 这里边读边计长度，超过上限立即失败（与 [inflate] 的 MAX_BYTES 语义一致）。
+     */
+    private fun gunzipBounded(input: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream(input.size.coerceAtLeast(64) * 2)
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        GZIPInputStream(input.inputStream()).use { stream ->
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                if (out.size() + count > MAX_BYTES) {
+                    throw IllegalStateException("gzip output too large (exceeds ${MAX_BYTES} bytes)")
+                }
+                out.write(buffer, 0, count)
+            }
+        }
+        return out.toByteArray()
     }
 
     private fun deflate(input: ByteArray, wrap: Wrap, level: Int): ByteArray {
