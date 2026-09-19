@@ -500,11 +500,16 @@ public final class SiglusActivity extends AppCompatActivity implements
         if (needed) {
             if (!imeVisible) {
                 textInputView.requestFocus();
-                InputMethodManager imm = (InputMethodManager)
-                        getSystemService(Context.INPUT_METHOD_SERVICE);
-                if (imm != null) {
-                    imm.showSoftInput(textInputView, InputMethodManager.SHOW_IMPLICIT);
-                }
+                // Mirror the working KRKR host: post the request so the view is
+                // attached/focused before showing, and use flag 0 instead of
+                // SHOW_IMPLICIT (which the system may silently decline).
+                textInputView.post(() -> {
+                    InputMethodManager imm = (InputMethodManager)
+                            getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.showSoftInput(textInputView, 0);
+                    }
+                });
                 imeVisible = true;
             }
             textInputView.updateCursorAnchor(new Rect(area[0], area[1], area[0] + area[2], area[1] + area[3]));

@@ -44,8 +44,11 @@ final class SiglusTextInputView extends View {
 
     @Override
     public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
+        // Keep suggestions off without requesting a password variation: a
+        // VISIBLE_PASSWORD field makes IMEs (e.g. Baidu) switch to a hidden
+        // "secure" window that never becomes visible, so the soft keyboard
+        // never appeared for in-game name entry.
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
         outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE
                 | EditorInfo.IME_FLAG_NO_FULLSCREEN
