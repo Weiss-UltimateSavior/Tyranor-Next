@@ -72,7 +72,8 @@ object ExternalEmulatorLauncher {
 
     /**
      * Winlator 外置启动：只传「游戏目录 + 相对 exe 文件名」，目录由 Winlator 自动分配空闲盘符
-     * 临时挂载（`save=false` 不写回容器配置），再按相对路径启动 exe。
+     * 临时挂载（`save=false` 不写回容器配置），再按相对路径启动 exe；
+     * [options] 为引擎设置解析出的容器 / 图形 / 分辨率等下发参数（空值不下发）。
      *
      * 错误码：package_not_installed / external_launch_unsupported（已装但不支持外置启动的旧版，
      * 缺少导出入口）/ activity_not_found / security_exception / launch_exception。
@@ -83,6 +84,7 @@ object ExternalEmulatorLauncher {
         dirPath: String,
         exeName: String,
         launchId: String?,
+        options: WinlatorContract.LaunchOptions = WinlatorContract.LaunchOptions(),
     ): Result {
         val app = context.applicationContext
         if (!isInstalled(app, target)) return Result(false, CODE_PACKAGE_NOT_INSTALLED, target)
@@ -94,6 +96,13 @@ object ExternalEmulatorLauncher {
             putExtra(WinlatorContract.EXTRA_EXE_PATH, exeName)
             putExtra(WinlatorContract.EXTRA_CONFIRM, true)
             launchId?.takeIf { it.isNotBlank() }?.let { putExtra(WinlatorContract.EXTRA_LAUNCH_ID, it) }
+            WinlatorContract.extras(options).forEach { (key, value) ->
+                when (value) {
+                    is Int -> putExtra(key, value)
+                    is Boolean -> putExtra(key, value)
+                    else -> putExtra(key, value.toString())
+                }
+            }
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         return try {

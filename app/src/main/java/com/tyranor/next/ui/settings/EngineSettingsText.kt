@@ -244,6 +244,90 @@ internal fun siglusLanguageOptionsMap(): Map<String, String> = siglusLanguageOpt
 @Composable
 internal fun fvpNlsOptionsMap(): Map<String, String> = fvpNlsOptions().toMap()
 
+// ───────────────────────── Winlator 外置启动 ─────────────────────────
+
+/** 空串统一下发语义：不下发该参数，跟随 Winlator 容器/快捷方式配置。 */
+@Composable
+internal fun winlatorGraphicsDriverOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_settings_winlator_follow_container)) +
+        EngineSettingsStore.WINLATOR_GRAPHICS_DRIVERS.map { it to winlatorGraphicsDriverLabel(it) }
+
+/** 图形驱动组合标签：Vulkan 驱动 + OpenGL 驱动（对齐 Winlator 容器设置两项下拉，专名保留原文）。 */
+internal fun winlatorGraphicsDriverLabel(driver: String): String = when (driver) {
+    "turnip,zink" -> "Turnip + Zink"
+    "turnip,virgl" -> "Turnip + VirGL"
+    "turnip,gladio" -> "Turnip + Gladio"
+    "vortek,zink" -> "Vortek + Zink"
+    "vortek,virgl" -> "Vortek + VirGL"
+    "vortek,gladio" -> "Vortek + Gladio"
+    else -> driver
+}
+
+@Composable
+internal fun winlatorLcAllOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_settings_winlator_follow_container)) +
+        EngineSettingsStore.WINLATOR_LOCALES.map { it to it }
+
+@Composable
+internal fun winlatorTimezoneOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_settings_winlator_follow_container)) +
+        EngineSettingsStore.WINLATOR_TIMEZONES.map { it to it }
+
+@Composable
+internal fun winlatorDxWrapperOptions(): List<Pair<String, String>> =
+    EngineSettingsStore.WINLATOR_DXWRAPPERS.map { v ->
+        v to v.ifBlank { stringResource(R.string.engine_settings_winlator_follow_container) }
+    }
+
+@Composable
+internal fun winlatorBox64PresetOptions(): List<Pair<String, String>> =
+    EngineSettingsStore.WINLATOR_BOX64_PRESETS.map { v ->
+        v to v.ifBlank { stringResource(R.string.engine_settings_winlator_follow_container) }
+    }
+
+/** 分辨率固定档位（无自定义输入）：`宽x高 (宽高比)`，宽度按 3 位数字分档便于扫读。 */
+@Composable
+internal fun winlatorScreenSizeOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_settings_winlator_follow_container)) +
+        EngineSettingsStore.WINLATOR_SCREEN_SIZES.map { it to winlatorScreenSizeLabel(it) }
+
+internal fun winlatorScreenSizeLabel(size: String): String = when (size) {
+    "640x360" -> "640x360 (16:9)"
+    "640x480" -> "640x480 (4:3)"
+    "800x600" -> "800x600 (4:3)"
+    "854x480" -> "854x480 (16:9)"
+    "960x544" -> "960x544 (16:9)"
+    "1024x768" -> "1024x768 (4:3)"
+    "1280x720" -> "1280x720 (16:9)"
+    "1280x800" -> "1280x800 (16:10)"
+    "1280x1024" -> "1280x1024 (5:4)"
+    "1366x768" -> "1366x768 (16:9)"
+    "1440x900" -> "1440x900 (16:10)"
+    "1600x900" -> "1600x900 (16:9)"
+    "1920x1080" -> "1920x1080 (16:9)"
+    else -> size
+}
+
+@Composable
+internal fun winlatorGraphicsDriverOptionsMap(): Map<String, String> =
+    winlatorGraphicsDriverOptions().toMap()
+
+@Composable
+internal fun winlatorDxWrapperOptionsMap(): Map<String, String> = winlatorDxWrapperOptions().toMap()
+
+@Composable
+internal fun winlatorBox64PresetOptionsMap(): Map<String, String> =
+    winlatorBox64PresetOptions().toMap()
+
+@Composable
+internal fun winlatorScreenSizeOptionsMap(): Map<String, String> = winlatorScreenSizeOptions().toMap()
+
+@Composable
+internal fun winlatorLcAllOptionsMap(): Map<String, String> = winlatorLcAllOptions().toMap()
+
+@Composable
+internal fun winlatorTimezoneOptionsMap(): Map<String, String> = winlatorTimezoneOptions().toMap()
+
 @Composable
 internal fun artPatchOptionsMap(): Map<String, String> = artPatchOptions().toMap()
 

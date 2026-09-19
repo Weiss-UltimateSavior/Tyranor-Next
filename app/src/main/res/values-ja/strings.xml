@@ -130,8 +130,9 @@
     <string name="engine_emulator_installed">インストール済み</string>
     <string name="engine_emulator_not_installed">未インストール</string>
     <string name="engine_settings_external_emulator_hint">このゲームは外部エミュレータで実行されます。設定とセーブはエミュレータ側で管理されます。</string>
-    <string name="engine_settings_yuris_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブはゲームフォルダーの save/ に保存され、ランチャーの統一セーブ管理で扱えます。実行設定は Winlator が管理します。</string>
-    <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理とエンジン設定はありません。</string>
+    <string name="engine_settings_yuris_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブはゲームフォルダーの save/ に保存され、ランチャーの統一セーブ管理で扱えます。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
+    <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理はありません。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
+    <string name="engine_settings_winlator_per_game_note">上書きはこのゲームにのみ適用されます。各項目は「グローバルに従う」に戻せます。空欄（コンテナ設定に従う）はそのパラメータを送信せず、Winlator のコンテナ設定に委ねます。</string>
     <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
     <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
     <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
@@ -240,6 +241,21 @@
     <string name="engine_settings_fvp_text_hidpi_title">テキスト高解像度描画</string>
     <string name="engine_settings_fvp_text_hidpi_summary">画面スケールでテキストをラスタライズし、高解像度画面でくっきり表示します</string>
     <string name="engine_settings_fvp_note">文字コードの変更はゲームの再起動後に反映されます。セーブはゲームフォルダーの save/ に保存されます。</string>
+    <string name="engine_settings_winlator_title">Winlator 外部起動</string>
+    <string name="engine_settings_winlator_follow_container">コンテナ設定に従う</string>
+    <string name="engine_settings_winlator_container_id_title">コンテナ ID</string>
+    <string name="engine_settings_winlator_container_id_summary">0 または空欄 = 自動（最近使用 / 唯一 / 最初のコンテナ）</string>
+    <string name="engine_settings_winlator_container_name_title">コンテナ名</string>
+    <string name="engine_settings_winlator_container_name_summary">空欄 = 自動。コンテナ ID がコンテナ名より優先されます</string>
+    <string name="engine_settings_winlator_graphics_driver_title">グラフィックドライバ</string>
+    <string name="engine_settings_winlator_dxwrapper_title">グラフィックアクセラレーション</string>
+    <string name="engine_settings_winlator_screen_size_title">解像度</string>
+    <string name="engine_settings_winlator_lc_all_title">ロケール（LC_ALL）</string>
+    <string name="engine_settings_winlator_tz_title">タイムゾーン（TZ）</string>
+    <string name="engine_settings_winlator_box64_preset_title">Box64 プリセット</string>
+    <string name="engine_settings_winlator_save_title">コンテナ設定に書き込む</string>
+    <string name="engine_settings_winlator_save_summary">今回のパラメータを Winlator のコンテナ設定に書き込み（save=true）、恒久的に適用します</string>
+    <string name="engine_settings_winlator_note">外部 Winlator で起動するゲーム（YU-RIS / CatSystem2 / 手動追加の PC）にのみ適用されます。パラメータはジャンプ時に送信され、空欄の項目はコンテナ設定に従います。</string>
     <string name="engine_settings_scoped_save_dir">個別セーブフォルダ</string>
     <string name="engine_settings_skip_startup_dialogs">ゲーム起動時のポップアップを非表示</string>
     <string name="engine_settings_skip_startup_dialogs_summary">ゲームを起動するたびに表示される重複ポップアップを非表示にして、すぐにゲームを開始します</string>

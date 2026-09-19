@@ -355,10 +355,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 title = stringResource(R.string.settings_join_group),
                                 summary = stringResource(R.string.settings_join_group_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings_group) },
-                                onClick = {
-                                    showGroupDialog = true
-                                },
-                            )
+                                 onClick = {
+                                     showGroupDialog = true
+                                 },
+                             )
                         }
                     }
                 }
@@ -712,6 +712,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var fvpNls by remember { mutableStateOf(EngineSettingsStore.getFvpNls(ctx)) }
     var fvpSystemFont by remember { mutableStateOf(EngineSettingsStore.isFvpSystemFont(ctx)) }
     var fvpTextHidpi by remember { mutableStateOf(EngineSettingsStore.isFvpTextHidpi(ctx)) }
+    var winlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -769,6 +770,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setFvpNls(ctx, fvpNls)
         EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
         EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
+        EngineSettingsStore.saveWinlator(ctx, winlator)
     }
 
     MiuixSettingsTheme {
@@ -797,7 +799,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage,
-                fvpNls, fvpSystemFont, fvpTextHidpi, fontLauncher,
+                fvpNls, fvpSystemFont, fvpTextHidpi, fontLauncher, winlator,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -841,6 +843,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onFvpNls = { fvpNls = it },
                 onFvpSystemFont = { fvpSystemFont = it },
                 onFvpTextHidpi = { fvpTextHidpi = it },
+                onWinlator = { winlator = it },
             )
         }
     }
@@ -888,6 +891,7 @@ private fun LazyListPlaceholder(
     rpg: EngineSettingsStore.RpgMaker,
     renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
     fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fontLauncher: FontPickerLauncher,
+    winlator: EngineSettingsStore.Winlator,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrSkipStartupDialogs: (Boolean) -> Unit,
@@ -911,6 +915,7 @@ private fun LazyListPlaceholder(
     onFvpNls: (String) -> Unit,
     onFvpSystemFont: (Boolean) -> Unit,
     onFvpTextHidpi: (Boolean) -> Unit,
+    onWinlator: (EngineSettingsStore.Winlator) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -1148,8 +1153,145 @@ private fun LazyListPlaceholder(
             }
         }
 
+        if (kind == EngineSettingsKind.WINLATOR) item {
+            EngineCard("Winlator") {
+                WinlatorValueRow(
+                    label = stringResource(R.string.engine_settings_winlator_container_id_title),
+                    summaryHint = stringResource(R.string.engine_settings_winlator_container_id_summary),
+                    value = if (winlator.containerId > 0) winlator.containerId.toString() else "",
+                    sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                    onValueChange = { text ->
+                        onWinlator(winlator.copy(containerId = text.toIntOrNull()?.coerceAtLeast(0) ?: 0))
+                    },
+                )
+                WinlatorValueRow(
+                    label = stringResource(R.string.engine_settings_winlator_container_name_title),
+                    summaryHint = stringResource(R.string.engine_settings_winlator_container_name_summary),
+                    value = winlator.containerName,
+                    onValueChange = { onWinlator(winlator.copy(containerName = it)) },
+                )
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_graphics_driver_title),
+                    winlatorGraphicsDriverOptions(),
+                    winlator.graphicsDriver,
+                ) { onWinlator(winlator.copy(graphicsDriver = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_dxwrapper_title),
+                    winlatorDxWrapperOptions(),
+                    winlator.dxwrapper,
+                ) { onWinlator(winlator.copy(dxwrapper = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_screen_size_title),
+                    winlatorScreenSizeOptions(),
+                    winlator.screenSize,
+                ) { onWinlator(winlator.copy(screenSize = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_lc_all_title),
+                    winlatorLcAllOptions(),
+                    winlator.lcAll,
+                ) { onWinlator(winlator.copy(lcAll = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_tz_title),
+                    winlatorTimezoneOptions(),
+                    winlator.tz,
+                ) { onWinlator(winlator.copy(tz = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_box64_preset_title),
+                    winlatorBox64PresetOptions(),
+                    winlator.box64Preset,
+                ) { onWinlator(winlator.copy(box64Preset = it)) }
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_winlator_save_title),
+                    summary = stringResource(R.string.engine_settings_winlator_save_summary),
+                    checked = winlator.save,
+                    onCheckedChange = { onWinlator(winlator.copy(save = it)) },
+                )
+                Text(
+                    stringResource(R.string.engine_settings_winlator_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
         item { BottomInsetSpacer() }
     }
+}
+
+/**
+ * 值编辑行：ArrowPreference 展示当前值（空值显示「跟随容器配置」），点击弹统一输入框；
+ * 仅更新本地状态，落盘由页面顶部保存按钮统一处理。[sanitize] 用于输入即时过滤（如容器 ID 仅数字）。
+ */
+@Composable
+private fun WinlatorValueRow(
+    label: String,
+    summaryHint: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    sanitize: ((String) -> String)? = null,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    ArrowPreference(
+        title = label,
+        summary = value.ifBlank { stringResource(R.string.engine_settings_winlator_follow_container) },
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        WinlatorValueDialog(
+            title = label,
+            hint = summaryHint,
+            initial = value,
+            sanitize = sanitize,
+            onDismiss = { showDialog = false },
+            onConfirm = {
+                onValueChange(it)
+                showDialog = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun WinlatorValueDialog(
+    title: String,
+    hint: String,
+    initial: String,
+    sanitize: ((String) -> String)?,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember(initial) { mutableStateOf(initial) }
+    AppAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                AppSearchField(
+                    query = text,
+                    onQueryChange = { text = sanitize?.invoke(it) ?: it },
+                    onSearch = { onConfirm(text.trim()) },
+                    leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                    iconContentDescription = title,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(text.trim()) }) {
+                Text(stringResource(R.string.common_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
 }
 
 @Composable

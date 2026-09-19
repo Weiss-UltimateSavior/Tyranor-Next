@@ -94,6 +94,17 @@ object PerGameSettingsStore {
     const val F_FVP_SYSTEM_FONT = "fvp_system_font"
     const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
 
+    // Winlator 外置启动（null=跟随全局；字符串 "" = 显式不下发该参数）
+    const val F_WINLATOR_CONTAINER_ID = "winlator_container_id"
+    const val F_WINLATOR_CONTAINER_NAME = "winlator_container_name"
+    const val F_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
+    const val F_WINLATOR_DXWRAPPER = "winlator_dxwrapper"
+    const val F_WINLATOR_SCREEN_SIZE = "winlator_screen_size"
+    const val F_WINLATOR_LC_ALL = "winlator_lc_all"
+    const val F_WINLATOR_TZ = "winlator_tz"
+    const val F_WINLATOR_BOX64_PRESET = "winlator_box64_preset"
+    const val F_WINLATOR_SAVE = "winlator_save"
+
     // Ren'Py 外置模块配置（settings extra 的 renpy 节 + app.cheats，null=跟随全局）
     const val F_RENPY_CHEATS = "renpy_cheats"
     const val F_RENPY_HW_VIDEO = "renpy_hw_video"
@@ -230,6 +241,28 @@ object PerGameSettingsStore {
             recompile = boolOrNull(F_RENPY_RECOMPILE),
         )
         return override.takeIf { it != RenPyOverride() }
+    }
+
+    /**
+     * Winlator 外置启动覆盖快照 → 类型化模型（缺失字段=跟随全局；存在但为空串=显式不下发该参数，
+     * 供 [EffectiveEngineSettings.mergeWinlator] 使用）。
+     */
+    fun toWinlatorOverride(json: JSONObject?): WinlatorOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        fun strOrNull(key: String): String? = if (json.has(key)) json.optString(key) else null
+        val override = WinlatorOverride(
+            containerId = strOrNull(F_WINLATOR_CONTAINER_ID),
+            containerName = strOrNull(F_WINLATOR_CONTAINER_NAME),
+            graphicsDriver = strOrNull(F_WINLATOR_GRAPHICS_DRIVER),
+            dxwrapper = strOrNull(F_WINLATOR_DXWRAPPER),
+            screenSize = strOrNull(F_WINLATOR_SCREEN_SIZE),
+            lcAll = strOrNull(F_WINLATOR_LC_ALL),
+            tz = strOrNull(F_WINLATOR_TZ),
+            box64Preset = strOrNull(F_WINLATOR_BOX64_PRESET),
+            save = boolOrNull(F_WINLATOR_SAVE),
+        )
+        return override.takeIf { it != WinlatorOverride() }
     }
 
     /** 清除某游戏全部覆盖，回退到全局默认。 */

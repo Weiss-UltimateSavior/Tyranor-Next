@@ -38,6 +38,7 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
+import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.GamePathUtils
@@ -755,12 +756,24 @@ object EngineLauncher {
         val exeName = YurisLaunchFiles.resolveExeName(game, path)
             ?: return LaunchResult.Failure.YurisExeMissing
         currentCoroutineContext().ensureActive()
+        val winlator = EngineSettingsResolver.resolve(context, game, path).winlator
         val result = ExternalEmulatorLauncher.launchWinlator(
             context = context,
             target = target,
             dirPath = path,
             exeName = exeName,
             launchId = game.uri,
+            options = WinlatorContract.LaunchOptions(
+                containerId = winlator.containerId,
+                containerName = winlator.containerName,
+                graphicsDriver = winlator.graphicsDriver,
+                dxwrapper = winlator.dxwrapper,
+                screenSize = winlator.screenSize,
+                lcAll = winlator.lcAll,
+                tz = winlator.tz,
+                box64Preset = winlator.box64Preset,
+                save = winlator.save,
+            ),
         )
         if (result.success) {
             GameLibraryFacade.recordRecentGame(context, game)

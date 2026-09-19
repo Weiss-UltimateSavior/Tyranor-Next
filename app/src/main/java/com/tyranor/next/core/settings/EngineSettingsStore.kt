@@ -56,6 +56,17 @@ object EngineSettingsStore {
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
 
+    // Winlator 外置启动（YU-RIS / CatSystem2 / PC 经 Winlator 跳转时的下发参数）
+    const val KEY_WINLATOR_CONTAINER_ID = "winlator_container_id"
+    const val KEY_WINLATOR_CONTAINER_NAME = "winlator_container_name"
+    const val KEY_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
+    const val KEY_WINLATOR_DXWRAPPER = "winlator_dxwrapper"
+    const val KEY_WINLATOR_SCREEN_SIZE = "winlator_screen_size"
+    const val KEY_WINLATOR_LC_ALL = "winlator_lc_all"
+    const val KEY_WINLATOR_TZ = "winlator_tz"
+    const val KEY_WINLATOR_BOX64_PRESET = "winlator_box64_preset"
+    const val KEY_WINLATOR_SAVE = "winlator_save"
+
     // Ren'Py 外置模块（settings extra 的 renpy 节；cheats 发 app 节，键名与 RenPyConfigurationParser 一致）
     const val KEY_RENPY_CHEATS = "renpy_cheats"
     const val KEY_RENPY_HW_VIDEO = "renpy_hw_video"
@@ -238,6 +249,98 @@ object EngineSettingsStore {
         FVP_NLS_GBK,
         FVP_NLS_UTF8,
     )
+
+    // Winlator 外置启动取值域（空串 = 不下发该参数，跟随容器/快捷方式配置）
+    /**
+     * 图形驱动固定组合：Vulkan 驱动（Turnip/Vortek）× OpenGL 驱动（Zink/VirGL/Gladio），
+     * 对齐 Winlator 容器设置里的两项下拉，组合为 `vulkan,opengl` 下发。
+     */
+    val WINLATOR_GRAPHICS_DRIVERS: List<String> = listOf(
+        "turnip,zink",
+        "turnip,virgl",
+        "turnip,gladio",
+        "vortek,zink",
+        "vortek,virgl",
+        "vortek,gladio",
+    )
+
+    val WINLATOR_DXWRAPPERS: Set<String> = linkedSetOf("", "dxvk", "wined3d")
+
+    val WINLATOR_BOX64_PRESETS: Set<String> = linkedSetOf(
+        "",
+        "STABILITY",
+        "CONSERVATIVE",
+        "INTERMEDIATE",
+        "PERFORMANCE",
+    )
+
+    /** 分辨率固定档位（无自定义输入；空串 = 跟随容器配置，其余须命中此白名单）。 */
+    val WINLATOR_SCREEN_SIZES: List<String> = listOf(
+        "640x360",
+        "640x480",
+        "800x600",
+        "854x480",
+        "960x544",
+        "1024x768",
+        "1280x720",
+        "1280x800",
+        "1280x1024",
+        "1366x768",
+        "1440x900",
+        "1600x900",
+        "1920x1080",
+    )
+
+    /** 语言环境（LC_ALL）固定档位（winlator-cn 校验正则内的常用取值）。 */
+    val WINLATOR_LOCALES: List<String> = listOf(
+        "ja_JP.UTF-8",
+        "zh_CN.utf8",
+        "zh_TW.utf8",
+        "en_US.UTF-8",
+        "ko_KR.UTF-8",
+    )
+
+    /** 时区（TZ）固定档位（winlator-cn 校验正则内的常用取值）。 */
+    val WINLATOR_TIMEZONES: List<String> = listOf(
+        "Asia/Tokyo",
+        "Asia/Shanghai",
+        "Asia/Taipei",
+        "Asia/Seoul",
+        "UTC",
+        "Europe/London",
+        "America/New_York",
+    )
+
+    /** winlator-cn `Box64Preset.CUSTOM` 形态（用户自定义预设，仅回读校验用）。 */
+    private val WINLATOR_BOX64_CUSTOM_PATTERN = Regex("^CUSTOM-\\d+$")
+
+    /** 被删实现遗留的 Winlator prefs 键（一次性清理；不含当前实现使用的键）。 */
+    private val WINLATOR_LEGACY_KEYS = listOf(
+        "winlator_locale",
+        "winlator_dx_accel",
+        "winlator_hud_mode",
+        "winlator_debug_logs",
+        "winlator_controls_profile",
+        "winlator_box",
+        "winlator_turnip_version",
+        "winlator_turnip_memory",
+        "winlator_turnip_present_mode",
+        "winlator_turnip_direct_rendering",
+        "winlator_vortek_memory",
+        "winlator_vortek_image_cache",
+        "winlator_vortek_resource_memory",
+        "winlator_virgl_gl_version",
+        "winlator_virgl_vertex_bgra",
+        // 与当前实现同名的三个键：被删实现写入过非默认值（如 graphics=vortek,zink、
+        // box64=PERFORMANCE、screen=auto），一并清回默认「跟随容器配置」。
+        KEY_WINLATOR_GRAPHICS_DRIVER,
+        KEY_WINLATOR_SCREEN_SIZE,
+        KEY_WINLATOR_BOX64_PRESET,
+        // 已下线的「追加启动参数」遗留键（当前实现不再读写）。
+        "winlator_exec_args",
+    )
+    private const val KEY_WINLATOR_LEGACY_CLEANED = "winlator_legacy_clean_version"
+    private const val WINLATOR_LEGACY_CLEAN_VERSION = 3
 
     // RPG Maker RGSS 外置模块取值域（对齐 JoiPlay utilities/f.java；verticalAlign 对齐插件默认）
     const val RPG_WINDOW_SIZE_DEFAULT = "640x480"
@@ -538,6 +641,103 @@ object EngineSettingsStore {
     fun setFvpSystemFont(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_SYSTEM_FONT, b).apply()
     fun isFvpTextHidpi(c: Context): Boolean = prefs(c).getBoolean(KEY_FVP_TEXT_HIDPI, true)
     fun setFvpTextHidpi(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_TEXT_HIDPI, b).apply()
+
+    // ---------- Winlator 外置启动 ----------
+
+    /**
+     * Winlator 外置启动下发参数（YU-RIS / CatSystem2 / PC 共用）。
+     * 空串/0/false 表示不下发对应 extra，交由 Winlator 按容器配置与回退链处理。
+     */
+    data class Winlator(
+        var containerId: Int = 0,
+        var containerName: String = "",
+        var graphicsDriver: String = "",
+        var dxwrapper: String = "",
+        var screenSize: String = "",
+        var lcAll: String = "",
+        var tz: String = "",
+        var box64Preset: String = "",
+        var save: Boolean = false,
+    )
+
+    fun loadWinlator(c: Context): Winlator {
+        val p = prefs(c)
+        val d = Winlator()
+        return Winlator(
+            containerId = p.getInt(KEY_WINLATOR_CONTAINER_ID, d.containerId).coerceAtLeast(0),
+            containerName = p.getString(KEY_WINLATOR_CONTAINER_NAME, d.containerName).orEmpty().trim(),
+            graphicsDriver = normalizeWinlatorGraphicsDriver(p.getString(KEY_WINLATOR_GRAPHICS_DRIVER, d.graphicsDriver)),
+            dxwrapper = normalizeWinlatorDxWrapper(p.getString(KEY_WINLATOR_DXWRAPPER, d.dxwrapper)),
+            screenSize = normalizeWinlatorScreenSize(p.getString(KEY_WINLATOR_SCREEN_SIZE, d.screenSize)),
+            lcAll = normalizeWinlatorLcAll(p.getString(KEY_WINLATOR_LC_ALL, d.lcAll)),
+            tz = normalizeWinlatorTz(p.getString(KEY_WINLATOR_TZ, d.tz)),
+            box64Preset = normalizeWinlatorBox64Preset(p.getString(KEY_WINLATOR_BOX64_PRESET, d.box64Preset)),
+            save = p.getBoolean(KEY_WINLATOR_SAVE, d.save),
+        )
+    }
+
+    /**
+     * 一次性清理被删实现遗留的 Winlator prefs 键（应用启动时调用，版本号保证每轮只跑一次）。
+     * 含与当前实现同名的图形驱动/分辨率/Box64 预设（被删实现写入的值清回默认「跟随容器配置」）
+     * 与已下线的「追加启动参数」键；其余当前实现的键不在清理范围内。
+     */
+    fun cleanupLegacyWinlatorKeys(c: Context) {
+        val p = prefs(c)
+        if (p.getInt(KEY_WINLATOR_LEGACY_CLEANED, 0) >= WINLATOR_LEGACY_CLEAN_VERSION) return
+        val editor = p.edit()
+        WINLATOR_LEGACY_KEYS.forEach(editor::remove)
+        // 旧轮次的布尔标记一并移除（v1/v2）
+        editor.remove("winlator_legacy_keys_cleaned")
+        editor.remove("winlator_legacy_keys_cleaned_v2")
+        editor.putInt(KEY_WINLATOR_LEGACY_CLEANED, WINLATOR_LEGACY_CLEAN_VERSION)
+        editor.apply()
+    }
+
+    fun saveWinlator(c: Context, w: Winlator) {
+        prefs(c).edit().apply {
+            putInt(KEY_WINLATOR_CONTAINER_ID, w.containerId.coerceAtLeast(0))
+            putString(KEY_WINLATOR_CONTAINER_NAME, w.containerName.trim())
+            putString(KEY_WINLATOR_GRAPHICS_DRIVER, normalizeWinlatorGraphicsDriver(w.graphicsDriver))
+            putString(KEY_WINLATOR_DXWRAPPER, normalizeWinlatorDxWrapper(w.dxwrapper))
+            putString(KEY_WINLATOR_SCREEN_SIZE, normalizeWinlatorScreenSize(w.screenSize))
+            putString(KEY_WINLATOR_LC_ALL, normalizeWinlatorLcAll(w.lcAll))
+            putString(KEY_WINLATOR_TZ, normalizeWinlatorTz(w.tz))
+            putString(KEY_WINLATOR_BOX64_PRESET, normalizeWinlatorBox64Preset(w.box64Preset))
+            putBoolean(KEY_WINLATOR_SAVE, w.save)
+        }.apply()
+    }
+
+    /** 图形驱动：仅接受 [WINLATOR_GRAPHICS_DRIVERS] 固定组合；其余（含单驱动残留）归一回空串。 */
+    fun normalizeWinlatorGraphicsDriver(v: String?): String {
+        val t = v?.trim()?.lowercase()?.replace(" ", "").orEmpty()
+        return t.takeIf { it in WINLATOR_GRAPHICS_DRIVERS } ?: ""
+    }
+
+    fun normalizeWinlatorDxWrapper(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in WINLATOR_DXWRAPPERS } ?: ""
+
+    fun normalizeWinlatorBox64Preset(v: String?): String {
+        val t = v?.trim()?.uppercase().orEmpty()
+        return if (t in WINLATOR_BOX64_PRESETS || WINLATOR_BOX64_CUSTOM_PATTERN.matches(t)) t else ""
+    }
+
+    /** 分辨率：仅接受固定档位白名单；其余（含旧实现残留的 auto 等）归一回空串。 */
+    fun normalizeWinlatorScreenSize(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return t.takeIf { it in WINLATOR_SCREEN_SIZES } ?: ""
+    }
+
+    /** 语言环境（LC_ALL）：仅接受 [WINLATOR_LOCALES] 固定档位；其余归一回空串。 */
+    fun normalizeWinlatorLcAll(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return t.takeIf { it in WINLATOR_LOCALES } ?: ""
+    }
+
+    /** 时区（TZ）：仅接受 [WINLATOR_TIMEZONES] 固定档位；其余归一回空串。 */
+    fun normalizeWinlatorTz(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return t.takeIf { it in WINLATOR_TIMEZONES } ?: ""
+    }
 
     // ---------- Tyrano ----------
     fun isTyranoExternalNetwork(c: Context): Boolean = prefs(c).getBoolean(KEY_TYRANO_EXTERNAL_NETWORK, false)

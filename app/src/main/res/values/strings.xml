@@ -130,8 +130,9 @@
     <string name="engine_emulator_installed">已安装</string>
     <string name="engine_emulator_not_installed">未安装</string>
     <string name="engine_settings_external_emulator_hint">该游戏由外置模拟器运行，设置与存档由模拟器管理。</string>
-    <string name="engine_settings_yuris_hint">该游戏由外置 Winlator 运行；启动程序可在游戏详情「启动文件」中调整。存档位于游戏目录 save/，已纳入统一存档管理；运行参数由 Winlator 管理。</string>
-    <string name="engine_settings_pc_hint">该游戏经外置 Winlator 运行；启动程序可在游戏详情「启动文件」中切换。无存档管理与引擎参数。</string>
+    <string name="engine_settings_yuris_hint">该游戏由外置 Winlator 运行；启动程序可在游戏详情「启动文件」中调整。存档位于游戏目录 save/，已纳入统一存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
+    <string name="engine_settings_pc_hint">该游戏经外置 Winlator 运行；启动程序可在游戏详情「启动文件」中切换。无存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
+    <string name="engine_settings_winlator_per_game_note">覆盖仅对本游戏生效；每项可单独切回「跟随全局」。留空（跟随容器配置）表示不下发该参数，交由 Winlator 按容器配置处理。</string>
     <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
     <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
     <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
@@ -240,6 +241,21 @@
     <string name="engine_settings_fvp_text_hidpi_title">文本高分辨率渲染</string>
     <string name="engine_settings_fvp_text_hidpi_summary">按屏幕缩放栅格化文本，高分屏更清晰</string>
     <string name="engine_settings_fvp_note">修改文本编码后需重新进入游戏生效；存档位于游戏目录 save/。</string>
+    <string name="engine_settings_winlator_title">Winlator外置启动</string>
+    <string name="engine_settings_winlator_follow_container">跟随容器配置</string>
+    <string name="engine_settings_winlator_container_id_title">容器 ID</string>
+    <string name="engine_settings_winlator_container_id_summary">0 或留空 = 自动（最近使用 / 唯一 / 第一个容器）</string>
+    <string name="engine_settings_winlator_container_name_title">容器名</string>
+    <string name="engine_settings_winlator_container_name_summary">留空 = 自动；容器 ID 优先于容器名</string>
+    <string name="engine_settings_winlator_graphics_driver_title">图形驱动</string>
+    <string name="engine_settings_winlator_dxwrapper_title">图形加速</string>
+    <string name="engine_settings_winlator_screen_size_title">分辨率</string>
+    <string name="engine_settings_winlator_lc_all_title">语言环境（LC_ALL）</string>
+    <string name="engine_settings_winlator_tz_title">时区（TZ）</string>
+    <string name="engine_settings_winlator_box64_preset_title">Box64 预设</string>
+    <string name="engine_settings_winlator_save_title">写入容器配置</string>
+    <string name="engine_settings_winlator_save_summary">把本次参数写入 Winlator 容器配置（save=true），使其长期生效</string>
+    <string name="engine_settings_winlator_note">仅对经外置 Winlator 启动的游戏生效（YU-RIS / CatSystem2 / 手动添加的 PC）；参数在跳转时下发，留空项跟随容器配置。</string>
     <string name="engine_settings_scoped_save_dir">独立存档目录</string>
     <string name="engine_settings_skip_startup_dialogs">屏蔽游戏启动弹窗</string>
     <string name="engine_settings_skip_startup_dialogs_summary">屏蔽每次进入游戏前的重复弹窗，直接进入游戏</string>

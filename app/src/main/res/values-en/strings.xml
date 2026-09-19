@@ -130,8 +130,9 @@
     <string name="engine_emulator_installed">Installed</string>
     <string name="engine_emulator_not_installed">Not installed</string>
     <string name="engine_settings_external_emulator_hint">This game runs in an external emulator; settings and saves are managed by the emulator.</string>
-    <string name="engine_settings_yuris_hint">This game runs in external Winlator. The executable can be changed via "Launch file" in game details. Saves live in the game folder\'s save/ directory and are managed by the launcher; runtime options are managed by Winlator.</string>
-    <string name="engine_settings_pc_hint">Runs via external Winlator. Change the executable via "Launch file" in game details. No save management or engine options.</string>
+    <string name="engine_settings_yuris_hint">This game runs in external Winlator. The executable can be changed via "Launch file" in game details. Saves live in the game folder\'s save/ directory and are managed by the launcher; runtime options can be overridden per item in the Winlator card below.</string>
+    <string name="engine_settings_pc_hint">Runs via external Winlator. Change the executable via "Launch file" in game details. No save management; runtime options can be overridden per item in the Winlator card below.</string>
+    <string name="engine_settings_winlator_per_game_note">Overrides apply to this game only; each item can be switched back to "Follow global". An empty value (follow container config) sends no such parameter, leaving it to the Winlator container config.</string>
     <string name="launch_emulator_missing">%1$s is not installed. Download it from “External emulator support”</string>
     <string name="launch_emulator_no_activity">%1$s does not provide an entry to receive games</string>
     <string name="launch_emulator_denied">%1$s launch was denied by the system</string>
@@ -240,6 +241,21 @@
     <string name="engine_settings_fvp_text_hidpi_title">HiDPI text rendering</string>
     <string name="engine_settings_fvp_text_hidpi_summary">Rasterize text at the screen scale for sharper text on high-DPI displays</string>
     <string name="engine_settings_fvp_note">Restart the game to apply encoding changes; saves live in the game folder\'s save/.</string>
+    <string name="engine_settings_winlator_title">Winlator external launch</string>
+    <string name="engine_settings_winlator_follow_container">Follow container config</string>
+    <string name="engine_settings_winlator_container_id_title">Container ID</string>
+    <string name="engine_settings_winlator_container_id_summary">0 or empty = auto (last used / only / first container)</string>
+    <string name="engine_settings_winlator_container_name_title">Container name</string>
+    <string name="engine_settings_winlator_container_name_summary">Empty = auto; container ID takes precedence over the name</string>
+    <string name="engine_settings_winlator_graphics_driver_title">Graphics driver</string>
+    <string name="engine_settings_winlator_dxwrapper_title">DX wrapper</string>
+    <string name="engine_settings_winlator_screen_size_title">Resolution</string>
+    <string name="engine_settings_winlator_lc_all_title">Locale (LC_ALL)</string>
+    <string name="engine_settings_winlator_tz_title">Time zone (TZ)</string>
+    <string name="engine_settings_winlator_box64_preset_title">Box64 preset</string>
+    <string name="engine_settings_winlator_save_title">Write to container config</string>
+    <string name="engine_settings_winlator_save_summary">Persist these parameters into the Winlator container config (save=true) instead of this session only</string>
+    <string name="engine_settings_winlator_note">Applies only to games launched through external Winlator (YU-RIS / CatSystem2 / manually added PC games). The parameters are sent when jumping; empty items follow the container config.</string>
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
     <string name="engine_settings_skip_startup_dialogs">Block game launch pop-ups</string>
     <string name="engine_settings_skip_startup_dialogs_summary">Block repeated pop-ups before each game launch and enter the game directly</string>

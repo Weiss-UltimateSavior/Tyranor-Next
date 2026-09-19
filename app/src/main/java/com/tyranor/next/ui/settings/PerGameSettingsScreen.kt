@@ -34,6 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
+import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
@@ -47,6 +49,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.Dispatchers
@@ -55,6 +58,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -94,6 +98,15 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var fvpNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS)) }
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
+    var winlatorContainerId by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID)) }
+    var winlatorContainerName by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME)) }
+    var winlatorGraphicsDriver by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER)) }
+    var winlatorDxwrapper by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_DXWRAPPER)) }
+    var winlatorScreenSize by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE)) }
+    var winlatorLcAll by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_LC_ALL)) }
+    var winlatorTz by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_TZ)) }
+    var winlatorBox64Preset by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_BOX64_PRESET)) }
+    var winlatorSave by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_WINLATOR_SAVE)) }
     var artPatchRunning by remember(gid) { mutableStateOf(false) }
     var artPatchResult by remember(gid) { mutableStateOf<EngineLauncher.ArtemisManualPatchResult?>(null) }
     var renpyOverride by remember(gid) {
@@ -187,6 +200,13 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalFvpNls = EngineSettingsStore.getFvpNls(ctx)
     val globalFvpSystemFont = EngineSettingsStore.isFvpSystemFont(ctx)
     val globalFvpTextHidpi = EngineSettingsStore.isFvpTextHidpi(ctx)
+    val globalWinlator = remember { EngineSettingsStore.loadWinlator(ctx) }
+    val winlatorDriverMap = winlatorGraphicsDriverOptionsMap()
+    val winlatorDxWrapperMap = winlatorDxWrapperOptionsMap()
+    val winlatorScreenSizeMap = winlatorScreenSizeOptionsMap()
+    val winlatorLcAllMap = winlatorLcAllOptionsMap()
+    val winlatorTimezoneMap = winlatorTimezoneOptionsMap()
+    val winlatorBox64PresetMap = winlatorBox64PresetOptionsMap()
     val globalRenpy = remember { EngineSettingsStore.loadRenPy(ctx) }
     val globalRpg = remember { EngineSettingsStore.loadRpgMaker(ctx) }
     val rpgWindowMap = rpgWindowSizeOptionsMap()
@@ -272,6 +292,15 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS, fvpNls)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, winlatorContainerId)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, winlatorContainerName)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, winlatorGraphicsDriver)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_DXWRAPPER, winlatorDxwrapper)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE, winlatorScreenSize)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_LC_ALL, winlatorLcAll)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_TZ, winlatorTz)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_BOX64_PRESET, winlatorBox64Preset)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_WINLATOR_SAVE, winlatorSave)
         val onsObj = JSONObject()
         putIfNotNull(onsObj, "scopedsavedir", onsScoped)
         putIfNotNull(onsObj, "strechfull", onsStretch)
@@ -764,6 +793,71 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                 }
 
+                if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
+                    SectionCard("Winlator") {
+                        OverrideText(
+                            label = stringResource(R.string.engine_settings_winlator_container_id_title),
+                            globalValue = if (globalWinlator.containerId > 0) globalWinlator.containerId.toString() else "",
+                            override = winlatorContainerId,
+                            hint = stringResource(R.string.engine_settings_winlator_container_id_summary),
+                            sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                        ) { winlatorContainerId = it }
+                        OverrideText(
+                            label = stringResource(R.string.engine_settings_winlator_container_name_title),
+                            globalValue = globalWinlator.containerName,
+                            override = winlatorContainerName,
+                            hint = stringResource(R.string.engine_settings_winlator_container_name_summary),
+                        ) { winlatorContainerName = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_graphics_driver_title),
+                            winlatorDriverMap,
+                            globalWinlator.graphicsDriver,
+                            winlatorGraphicsDriver,
+                        ) { winlatorGraphicsDriver = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_dxwrapper_title),
+                            winlatorDxWrapperMap,
+                            globalWinlator.dxwrapper,
+                            winlatorDxwrapper,
+                        ) { winlatorDxwrapper = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_screen_size_title),
+                            winlatorScreenSizeMap,
+                            globalWinlator.screenSize,
+                            winlatorScreenSize,
+                        ) { winlatorScreenSize = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_lc_all_title),
+                            winlatorLcAllMap,
+                            globalWinlator.lcAll,
+                            winlatorLcAll,
+                        ) { winlatorLcAll = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_tz_title),
+                            winlatorTimezoneMap,
+                            globalWinlator.tz,
+                            winlatorTz,
+                        ) { winlatorTz = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_box64_preset_title),
+                            winlatorBox64PresetMap,
+                            globalWinlator.box64Preset,
+                            winlatorBox64Preset,
+                        ) { winlatorBox64Preset = it }
+                        OverrideSwitch(
+                            stringResource(R.string.engine_settings_winlator_save_title),
+                            globalWinlator.save,
+                            winlatorSave,
+                        ) { winlatorSave = it }
+                        Text(
+                            stringResource(R.string.engine_settings_winlator_per_game_note),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+
                 item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(12.dp)) }
             }
         }
@@ -849,6 +943,76 @@ private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, o
         selectedIndex = index,
         onSelectedIndexChange = { i -> onSet(if (i == 0) null else i == 1) },
     )
+}
+
+/** 经外置 Winlator 启动的引擎（YU-RIS / CatSystem2 / 手动添加的 PC）：展示 Winlator 覆盖卡片。 */
+private val WINLATOR_LAUNCH_ENGINES: Set<EngineType> = EngineType.entries
+    .filter { ExternalEmulatorRegistry.forEngine(it)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL }
+    .toSet()
+
+/** 覆盖版文本行：弹统一输入框；确定=写入覆盖（空串=显式不下发该参数），「跟随全局」=移除覆盖。 */
+@Composable
+private fun OverrideText(
+    label: String,
+    globalValue: String,
+    override: String?,
+    hint: String,
+    sanitize: ((String) -> String)? = null,
+    onSet: (String?) -> Unit,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val emptyLabel = stringResource(R.string.engine_settings_winlator_follow_container)
+    val summary = if (override == null) {
+        stringResource(R.string.engine_settings_follow_global_with_value, globalValue.ifBlank { emptyLabel })
+    } else {
+        override.ifBlank { emptyLabel }
+    }
+    ArrowPreference(
+        title = label,
+        summary = summary,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        var text by remember(override) { mutableStateOf(override.orEmpty()) }
+        val normalized = text.trim()
+        AppAlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(label, style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column {
+                    AppSearchField(
+                        query = text,
+                        onQueryChange = { text = sanitize?.invoke(it) ?: it },
+                        onSearch = { onSet(normalized); showDialog = false },
+                        leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                        iconContentDescription = label,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        hint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onSet(normalized); showDialog = false }) {
+                    Text(stringResource(R.string.common_save))
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { onSet(null); showDialog = false }) {
+                        Text(stringResource(R.string.engine_settings_follow_global))
+                    }
+                    TextButton(onClick = { showDialog = false }) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                }
+            },
+        )
+    }
 }
 
 private fun labelOf(v: String, map: Map<String, String>, emptyLabel: String): String = map[v] ?: v.ifEmpty { emptyLabel }

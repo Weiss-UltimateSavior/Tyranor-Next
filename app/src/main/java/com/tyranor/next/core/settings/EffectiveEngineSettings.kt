@@ -154,6 +154,40 @@ object EffectiveEngineSettings {
             recompile = resolveBool(override.recompile, global.recompile),
         )
     }
+
+    /**
+     * Winlator 外置启动全局设置 + 单游戏覆盖合并。
+     *
+     * 覆盖字段带值即生效（""=显式不下发该参数，跟随容器配置）；字符串字段仍走各自的
+     * 白名单/正则归一，非法覆盖值归一回空串而不是继承全局，避免全局与覆盖混搭出非法参数。
+     */
+    fun mergeWinlator(
+        global: EngineSettingsStore.Winlator,
+        override: WinlatorOverride?,
+    ): EngineSettingsStore.Winlator {
+        if (override == null) return global
+        return global.copy(
+            containerId = override.containerId?.let {
+                it.trim().filter(Char::isDigit).toIntOrNull()?.coerceAtLeast(0) ?: 0
+            } ?: global.containerId,
+            containerName = override.containerName?.trim() ?: global.containerName,
+            graphicsDriver = override.graphicsDriver?.let {
+                EngineSettingsStore.normalizeWinlatorGraphicsDriver(it)
+            } ?: global.graphicsDriver,
+            dxwrapper = override.dxwrapper?.let {
+                EngineSettingsStore.normalizeWinlatorDxWrapper(it)
+            } ?: global.dxwrapper,
+            screenSize = override.screenSize?.let {
+                EngineSettingsStore.normalizeWinlatorScreenSize(it)
+            } ?: global.screenSize,
+            lcAll = override.lcAll?.let { EngineSettingsStore.normalizeWinlatorLcAll(it) } ?: global.lcAll,
+            tz = override.tz?.let { EngineSettingsStore.normalizeWinlatorTz(it) } ?: global.tz,
+            box64Preset = override.box64Preset?.let {
+                EngineSettingsStore.normalizeWinlatorBox64Preset(it)
+            } ?: global.box64Preset,
+            save = resolveBool(override.save, global.save),
+        )
+    }
 }
 
 /** RPG Maker RGSS 外置模块单游戏覆盖字段（null = 跟随全局）。 */
@@ -200,4 +234,17 @@ data class OnsOverride(
     val sharpness: Boolean? = null,
     val sharpnessValue: String? = null,
     val encoding: String? = null,
+)
+
+/** Winlator 外置启动单游戏覆盖字段（null = 跟随全局；非 null 的 "" = 显式不下发该参数）。 */
+data class WinlatorOverride(
+    val containerId: String? = null,
+    val containerName: String? = null,
+    val graphicsDriver: String? = null,
+    val dxwrapper: String? = null,
+    val screenSize: String? = null,
+    val lcAll: String? = null,
+    val tz: String? = null,
+    val box64Preset: String? = null,
+    val save: Boolean? = null,
 )
