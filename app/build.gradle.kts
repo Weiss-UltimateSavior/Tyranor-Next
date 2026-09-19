@@ -33,7 +33,7 @@ fun String.asBuildConfigString(): String =
  * 应用版本名：发版唯一需要手改的版本字段（issue #79）。
  * versionCode 由它推导，杜绝“只改 versionName、忘记递增 versionCode”。
  */
-val appVersionName = "1.43"
+val appVersionName = "1.44"
 
 /**
  * versionName -> versionCode 映射：major*1_000_000 + minor*1_000 + patch。
