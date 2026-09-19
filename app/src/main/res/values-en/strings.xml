@@ -111,6 +111,7 @@
     <string name="engine_desc_artemis">Artemis games using system.ini and .pfs archives</string>
     <string name="engine_desc_renpy">Ren’Py external APK module, launched after install-state detection</string>
     <string name="engine_desc_siglus">SiglusEngine (Key / VisualArts), Gameexe and Scene.pck games</string>
+    <string name="engine_desc_fvp">FVPEngine (FAVORITE), .hcb/.bch scripts with graph/voice packs</string>
     <string name="engine_desc_unknown">Unknown engine</string>
     <string name="engine_desc_psp">PSP games run through the external PPSSPP</string>
     <string name="engine_desc_yuris">YU-RIS (yscfg.dat with .ypf packages, ysbin/.ymv), runs via external Winlator</string>
@@ -229,6 +230,16 @@
     <string name="engine_settings_siglus_language_value_fr">French (FR)</string>
     <string name="engine_settings_siglus_language_value_id">Indonesian (ID)</string>
     <string name="engine_settings_siglus_note">Saves live in the game folder\'s savedata/. The first launch writes key.toml, so all-files access is required.</string>
+    <string name="engine_settings_fvp_title">FVP engine settings</string>
+    <string name="engine_settings_fvp_nls_title">Text encoding</string>
+    <string name="engine_settings_fvp_nls_sjis">Shift-JIS (Japanese original)</string>
+    <string name="engine_settings_fvp_nls_gbk">GBK (Simplified Chinese patch)</string>
+    <string name="engine_settings_fvp_nls_utf8">UTF-8</string>
+    <string name="engine_settings_fvp_system_font_title">System font fallback</string>
+    <string name="engine_settings_fvp_system_font_summary">Use system CJK fonts for glyphs missing from game fonts (recommended for Chinese patches)</string>
+    <string name="engine_settings_fvp_text_hidpi_title">HiDPI text rendering</string>
+    <string name="engine_settings_fvp_text_hidpi_summary">Rasterize text at the screen scale for sharper text on high-DPI displays</string>
+    <string name="engine_settings_fvp_note">Restart the game to apply encoding changes; saves live in the game folder\'s save/.</string>
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
     <string name="engine_settings_skip_startup_dialogs">Block game launch pop-ups</string>
     <string name="engine_settings_skip_startup_dialogs_summary">Block repeated pop-ups before each game launch and enter the game directly</string>

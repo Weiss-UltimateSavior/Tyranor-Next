@@ -27,6 +27,7 @@ import com.core.engine.KrkrStartupDialogPolicy
 import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.EmulatorTarget as ExternalEmulatorTarget
+import com.core.fvp.FvpActivity
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.nativeplugin.NativePluginConstants
 import com.core.rpgmaker.RpgMakerActivity
@@ -110,6 +111,7 @@ object EngineLauncher {
         EngineType.WEB_OTHER,
         EngineType.ARTEMIS,
         EngineType.SIGLUS,
+        EngineType.FVP,
         EngineType.RENPY,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
@@ -702,6 +704,8 @@ object EngineLauncher {
 
             EngineType.SIGLUS -> buildSiglusIntent(context, path, game, settings)
 
+            EngineType.FVP -> buildFvpIntent(context, path, game, settings)
+
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
 
@@ -795,6 +799,28 @@ object EngineLauncher {
             .putString(EnginePrefs.KEY_SIGLUS_URI_PREFIX + pathHash, game.uri)
             .putString(EnginePrefs.KEY_SIGLUS_DEFAULT_TITLE_PREFIX + pathHash, File(path).name)
             .apply()
+    }
+
+    /**
+     * FVP（rfvp）启动：真实路径 + 文本编码 + 字体/HiDPI 生效设置。
+     * 存档目录由引擎固定为 `<游戏根>/save`（一期不支持独立存档）。
+     */
+    private fun buildFvpIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent = Intent(context, FvpActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_FVP)
+        putExtra(LaunchContract.FVP_NLS, settings.fvpNls)
+        putExtra(LaunchContract.FVP_SYSTEM_FONT, settings.fvpSystemFont)
+        putExtra(LaunchContract.FVP_TEXT_HIDPI, settings.fvpTextHidpi)
     }
 
     /**

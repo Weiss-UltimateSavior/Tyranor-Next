@@ -163,6 +163,19 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
         </activity>
 
+        <!-- FVPEngine（rfvp）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
+        <activity
+            android:name="com.core.fvp.FvpActivity"
+            android:exported="false"
+            android:process=":fvp"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Fvp"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Fvp"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+        </activity>
+
         <!-- ONS（ons）SDL2 宿主 -->
         <activity
             android:name="com.yuri.onscripter.ONScripter"

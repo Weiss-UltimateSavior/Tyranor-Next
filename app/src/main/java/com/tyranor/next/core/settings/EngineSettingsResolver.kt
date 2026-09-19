@@ -159,6 +159,20 @@ object EngineSettingsResolver {
                 EngineSettingsStore.SIGLUS_LANGUAGES,
                 EngineSettingsStore.SIGLUS_LANGUAGE_AUTO,
             ),
+            fvpNls = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_FVP_NLS),
+                EngineSettingsStore.getFvpNls(app),
+                EngineSettingsStore.FVP_NLS_VALUES,
+                EngineSettingsStore.FVP_NLS_SJIS,
+            ),
+            fvpSystemFont = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_FVP_SYSTEM_FONT),
+                EngineSettingsStore.isFvpSystemFont(app),
+            ),
+            fvpTextHidpi = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_FVP_TEXT_HIDPI),
+                EngineSettingsStore.isFvpTextHidpi(app),
+            ),
             rpg = EffectiveEngineSettings.mergeRpgMaker(
                 EngineSettingsStore.loadRpgMaker(app),
                 PerGameSettingsStore.toRpgMakerOverride(override),
@@ -214,6 +228,12 @@ data class ResolvedEngineSettings(
     val renpyVersion: String,
     /** Siglus 生效语言（auto 表示不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）。 */
     val siglusLanguage: String,
+    /** FVP 生效文本编码（sjis/gbk/utf8；创建引擎时固定，改动需重启本局）。 */
+    val fvpNls: String,
+    /** FVP 生效系统字体回退开关。 */
+    val fvpSystemFont: Boolean,
+    /** FVP 生效文本高分辨率渲染开关。 */
+    val fvpTextHidpi: Boolean,
     /** RPG Maker RGSS 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val rpg: EngineSettingsStore.RpgMaker,
     /** Ren'Py 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */

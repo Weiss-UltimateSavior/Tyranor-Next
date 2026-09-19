@@ -27,6 +27,9 @@ class GameOverridePartitionsTest {
         .put(PerGameSettingsStore.F_RPG_MZ_VERSION, "v2")
         .put(PerGameSettingsStore.F_RENPY_VERSION, "8.5")
         .put(PerGameSettingsStore.F_SIGLUS_LANGUAGE, "EN")
+        .put(PerGameSettingsStore.F_FVP_NLS, "gbk")
+        .put(PerGameSettingsStore.F_FVP_SYSTEM_FONT, true)
+        .put(PerGameSettingsStore.F_FVP_TEXT_HIDPI, false)
         .put(
             PerGameSettingsStore.ONS_KEY,
             JSONObject().put("scopedsavedir", true).put("encoding", "utf8"),
@@ -76,6 +79,9 @@ class GameOverridePartitionsTest {
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_MV_VERSION))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_MZ_VERSION))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_SIGLUS_LANGUAGE))
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_NLS))
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_SYSTEM_FONT))
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_TEXT_HIDPI))
     }
 
     @Test
@@ -125,6 +131,9 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_TY_SCOPED, GameOverridePartitions.KEY_TY_SCOPED)
         assertEquals(PerGameSettingsStore.F_RENPY_VERSION, GameOverridePartitions.KEY_RENPY_VERSION)
         assertEquals(PerGameSettingsStore.F_SIGLUS_LANGUAGE, GameOverridePartitions.KEY_SIGLUS_LANGUAGE)
+        assertEquals(PerGameSettingsStore.F_FVP_NLS, GameOverridePartitions.KEY_FVP_NLS)
+        assertEquals(PerGameSettingsStore.F_FVP_SYSTEM_FONT, GameOverridePartitions.KEY_FVP_SYSTEM_FONT)
+        assertEquals(PerGameSettingsStore.F_FVP_TEXT_HIDPI, GameOverridePartitions.KEY_FVP_TEXT_HIDPI)
         assertEquals(PerGameSettingsStore.ONS_KEY, GameOverridePartitions.ONS_OBJECT_KEY)
         // KR 分区必须覆盖 PerGameSettingsStore.KR_FIELDS 全部字段
         for (field in PerGameSettingsStore.KR_FIELDS) {

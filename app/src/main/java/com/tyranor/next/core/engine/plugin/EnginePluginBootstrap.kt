@@ -85,6 +85,7 @@ object EnginePluginBootstrap {
             EngineType.VN,
             EngineType.WEB_OTHER,
             EngineType.SIGLUS,
+            EngineType.FVP,
             EngineType.YURIS,
             EngineType.CATSYSTEM2,
             EngineType.PC,

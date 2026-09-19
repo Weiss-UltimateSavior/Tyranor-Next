@@ -114,4 +114,5 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int, @param:Drawabl
     TYRANO(R.string.engine_settings_tyrano_title, R.drawable.ic_settings_engine),
     RENPY(R.string.engine_settings_renpy_title, R.drawable.ic_settings_engine),
     SIGLUS(R.string.engine_settings_siglus_title, R.drawable.ic_settings_engine),
+    FVP(R.string.engine_settings_fvp_title, R.drawable.ic_settings_engine),
 }

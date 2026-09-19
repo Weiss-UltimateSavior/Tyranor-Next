@@ -12,6 +12,7 @@ enum class EngineType(val displayName: String) {
     WEB_OTHER("WebOther"),
     ARTEMIS("Artemis"),
     SIGLUS("Siglus"),
+    FVP("FVP"),
     RENPY("Ren'Py"),
     YURIS("YU-RIS"),
     CATSYSTEM2("CatSystem2"),

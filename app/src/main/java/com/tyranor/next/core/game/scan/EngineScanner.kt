@@ -692,6 +692,8 @@ object EngineScanner {
         var hasRvdata = false
         var hasRvdata2 = false
         var hasMkxpZRubyRuntime = false
+        var hasFvpScript = false
+        var hasFvpPack = false
 
         fun collect(entry: T, rel: String) {
             val lower = nameOf(entry).lowercase(Locale.ROOT)
@@ -781,12 +783,21 @@ object EngineScanner {
                     }
                 }
                 lower.endsWith(".rpyc") -> hasRpyc = true
+                // FVP（rfvp）：根目录脚本（原版 *.hcb / 汉化 *.bch）+ 资源包特征
+                rel.isEmpty() && (lower.endsWith(".hcb") || lower.endsWith(".bch")) -> hasFvpScript = true
+                rel.isEmpty() && lower in FVP_PACK_NAMES -> hasFvpPack = true
             }
         }
         children.forEach { collect(it, "") }
 
         if (hasGameexeDat && hasScenePck) {
             return Detection(EngineType.SIGLUS, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasFvpScript && hasFvpPack) {
+            return Detection(EngineType.FVP, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasFvpScript) {
+            return Detection(EngineType.FVP, 88, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasGameexeIni && hasScenePck) {
             return Detection(EngineType.SIGLUS, 95, LAUNCH_TARGET_GAME_DIR)
@@ -903,6 +914,12 @@ object EngineScanner {
     /** §11 典型 INT 文件名。 */
     private val CS2_TYPICAL_INT_NAMES = setOf(
         "scene.int", "image.int", "config.int", "bgm.int", "se.int", "kcs.int",
+    )
+
+    /** FVP 资源包文件名（根目录特征，与 `*.hcb`/`*.bch` 脚本配合判定）。 */
+    private val FVP_PACK_NAMES = setOf(
+        "graph.bin", "graph_vis.bin", "bgm.bin", "se.bin", "se_env.bin", "se_sys.bin",
+        "voice.bin", "voice2.bin", "etc.bin",
     )
 
     private val UNKNOWN_DETECTION = Detection(EngineType.UNKNOWN, 0, "")

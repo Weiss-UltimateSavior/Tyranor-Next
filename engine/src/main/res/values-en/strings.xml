@@ -32,4 +32,7 @@
     <string name="engine_siglus_missing_game_dir">Siglus failed to start: the game directory is missing</string>
     <string name="engine_siglus_init_failed">Failed to initialize the Siglus engine</string>
     <string name="engine_siglus_back_again_to_exit">Press back again to exit the game</string>
+    <string name="engine_fvp_missing_game_dir">FVP failed to start: the game directory is missing</string>
+    <string name="engine_fvp_init_failed">Failed to initialize the FVP engine</string>
+    <string name="engine_fvp_back_again_to_exit">Press back again to exit the game</string>
 </resources>

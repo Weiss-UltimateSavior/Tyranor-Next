@@ -92,6 +92,17 @@ object LaunchContract {
     /** 游戏根路径哈希（与 app 侧 `Integer.toHexString(path.hashCode())` 一致），标题回写定位用。 */
     const val SIGLUS_PATH_HASH = "siglus_path_hash"
 
+    // ---------- FVP ----------
+
+    /** 文本编码：`sjis`（默认）| `gbk` | `utf8`，创建引擎时固定。 */
+    const val FVP_NLS = "fvp_nls"
+
+    /** 系统 CJK 字体回退开关（bool，缺省 true）。 */
+    const val FVP_SYSTEM_FONT = "fvp_system_font"
+
+    /** 文本高分辨率渲染开关（bool，缺省 true）。 */
+    const val FVP_TEXT_HIDPI = "fvp_text_hidpi"
+
     // ---------- launchMode 固定取值 ----------
 
     const val LAUNCH_MODE_KRKRSDL3 = "internal.krkrsdl3"
@@ -99,4 +110,5 @@ object LaunchContract {
     const val LAUNCH_MODE_ONS = "internal.ons"
     const val LAUNCH_MODE_ARTEMIS = "internal.artemis"
     const val LAUNCH_MODE_SIGLUS = "internal.siglus"
+    const val LAUNCH_MODE_FVP = "internal.fvp"
 }

@@ -108,6 +108,12 @@ class GameSaveManager(private val context: Context) {
                 text(R.string.save_location_engine_game_dir, game.engine.displayName),
                 true,
             )
+            // FVP（rfvp）：存档固定在游戏目录 save/（rfvp_s###.bin，读取兼容 s###.bin）
+            EngineType.FVP -> SaveLocation(
+                File(root, "save"),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
             // YU-RIS：存档固定在游戏目录 save/（经 Winlator 运行但落盘在游戏目录，可纳入统一存档管理）
             EngineType.YURIS -> SaveLocation(
                 File(root, "save"),

@@ -1842,6 +1842,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.WEB_OTHER -> Color(0xFF546E7A)
     EngineType.ARTEMIS -> Color(0xFF7E57C2)
     EngineType.SIGLUS -> Color(0xFF00838F)
+    EngineType.FVP -> Color(0xFFB05A2A)
     EngineType.YURIS -> Color(0xFF558B2F)
     EngineType.CATSYSTEM2 -> Color(0xFF6D4C41)
     EngineType.PC -> Color(0xFF455A64)

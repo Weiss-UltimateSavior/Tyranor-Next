@@ -522,8 +522,8 @@ private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
 
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
-    EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.RENPY,
-    EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
+    EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.FVP,
+    EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
@@ -547,6 +547,7 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
     EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
     EngineType.SIGLUS -> stringResource(R.string.engine_desc_siglus)
+    EngineType.FVP -> stringResource(R.string.engine_desc_fvp)
 
     EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
     EngineType.CATSYSTEM2 -> stringResource(R.string.engine_desc_cs2)
@@ -597,6 +598,9 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
     ),
     EngineType.SIGLUS to listOf(
         builtinEntry("siglus-rs", "siglus_rs-xmoezzz"),
+    ),
+    EngineType.FVP to listOf(
+        builtinEntry("fvp-rfvp", "rfvp-xmoezzz"),
     ),
     EngineType.KIRIKIRI to listOf(
         builtinEntry("krkr-139", "Kirikiroid2-1.3.9"),

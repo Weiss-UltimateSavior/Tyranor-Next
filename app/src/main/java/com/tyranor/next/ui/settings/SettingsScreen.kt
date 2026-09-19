@@ -709,6 +709,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
     var renpy by remember { mutableStateOf(EngineSettingsStore.loadRenPy(ctx)) }
     var siglusLanguage by remember { mutableStateOf(EngineSettingsStore.getSiglusLanguage(ctx)) }
+    var fvpNls by remember { mutableStateOf(EngineSettingsStore.getFvpNls(ctx)) }
+    var fvpSystemFont by remember { mutableStateOf(EngineSettingsStore.isFvpSystemFont(ctx)) }
+    var fvpTextHidpi by remember { mutableStateOf(EngineSettingsStore.isFvpTextHidpi(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -763,6 +766,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
         EngineSettingsStore.saveRenPy(ctx, renpy)
         EngineSettingsStore.setSiglusLanguage(ctx, siglusLanguage)
+        EngineSettingsStore.setFvpNls(ctx, fvpNls)
+        EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
+        EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
     }
 
     MiuixSettingsTheme {
@@ -790,7 +796,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
-                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fontLauncher,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage,
+                fvpNls, fvpSystemFont, fvpTextHidpi, fontLauncher,
                 topInset = innerPadding.calculateTopPadding(),
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
@@ -831,6 +838,9 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onRenpyVersion = { renpyVersion = it },
                 onRenpy = { renpy = it },
                 onSiglusLanguage = { siglusLanguage = it },
+                onFvpNls = { fvpNls = it },
+                onFvpSystemFont = { fvpSystemFont = it },
+                onFvpTextHidpi = { fvpTextHidpi = it },
             )
         }
     }
@@ -876,7 +886,8 @@ private fun LazyListPlaceholder(
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
     rpg: EngineSettingsStore.RpgMaker,
-    renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String, fontLauncher: FontPickerLauncher,
+    renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
+    fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fontLauncher: FontPickerLauncher,
     topInset: Dp,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrSkipStartupDialogs: (Boolean) -> Unit,
@@ -897,6 +908,9 @@ private fun LazyListPlaceholder(
     onRenpyVersion: (String) -> Unit,
     onRenpy: (EngineSettingsStore.RenPy) -> Unit,
     onSiglusLanguage: (String) -> Unit,
+    onFvpNls: (String) -> Unit,
+    onFvpSystemFont: (Boolean) -> Unit,
+    onFvpTextHidpi: (Boolean) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -1098,6 +1112,35 @@ private fun LazyListPlaceholder(
                 )
                 Text(
                     stringResource(R.string.engine_settings_siglus_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.FVP) item {
+            EngineCard("FVP") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_fvp_nls_title),
+                    fvpNlsOptions(),
+                    fvpNls,
+                    onFvpNls,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_fvp_system_font_title),
+                    summary = stringResource(R.string.engine_settings_fvp_system_font_summary),
+                    checked = fvpSystemFont,
+                    onCheckedChange = onFvpSystemFont,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_fvp_text_hidpi_title),
+                    summary = stringResource(R.string.engine_settings_fvp_text_hidpi_summary),
+                    checked = fvpTextHidpi,
+                    onCheckedChange = onFvpTextHidpi,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_fvp_note),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MiuixTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

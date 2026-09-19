@@ -1,6 +1,6 @@
 # FVPEngine（rfvp）内置引擎接入方案
 
-> 状态：**待评审（未实施）**
+> 状态：**已实施（M0–M3 完成，真机冒烟通过）**；完整真机验收（§9.2 全量）待游戏数据落机后执行，见文末「实施记录」。
 > 关联上游：`xmoezzz/rfvp`（MPL-2.0，FVP 引擎的 Rust 跨平台重写）；本地勘察基线 `304e773`（"version bump"）
 > 结论摘要：**内置 host 路线**（engine 模块新增 `com.core.fvp` 宿主）+ **jniLibs 直打包 `librfvp.so`**；
 > 上游已提供完整 Android host-driven C ABI（`rfvp_android_*`，SurfaceView + Choreographer 驱动），
@@ -573,6 +573,68 @@ git diff --check
 | `engine_settings_fvp_note` | 修改编码后需重启游戏 | 文字コード変更後はゲームを再起動 | Restart the game to apply encoding changes |
 
 > engine 模块宿主的 Toast 文案（`engine_fvp_init_failed`、`engine_fvp_back_again_to_exit` 等）需在 `engine/src/main/res/values{,-en,-ja}/strings.xml` 三份同步；实际文案以项目三语言校对习惯为准，新增后必须通过 `python3 tools/check-hardcoded-ui-strings.py`。
+
+---
+
+## 实施记录（M0–M5）
+
+### M0 fork 改动（`/Users/weiss/github- engine/rfvp`，未提交）
+
+| 文件 | 改动 |
+|---|---|
+| `crates/rfvp/src/android_host.rs` | 新增导出 `rfvp_android_key(handle, vk, phase)`、`rfvp_android_set_system_font(handle, enabled)` |
+| `crates/rfvp/src/app.rs` | 新增 `App::host_key_android`（VK → winit Key：ESC/Enter/Space/方向键/Control，phase 0/1）、`App::set_system_font_fallback_enabled`（开启即触发一次性系统字体扫描）；`find_hcb` 改为 `*.bch` 优先、`*.hcb` 兜底 |
+| `crates/rfvp/src/subsystem/resources/text_manager.rs` | `FontEnumerator::load_system_fallback_fonts`（std 与 no_std 两个实现，no_std 为空实现） |
+
+构建与入库（API 26）：
+
+```bash
+cd "/Users/weiss/github- engine/rfvp"
+export ANDROID_NDK_HOME="$HOME/Library/Android/sdk/ndk/28.0.13004108"
+CARGO_NDK_PLATFORM=26 cargo ndk -t arm64-v8a -o /tmp/rfvp-android-fvp build --release -p rfvp --lib
+"$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-strip" --strip-unneeded /tmp/rfvp-android-fvp/arm64-v8a/*.so
+cp /tmp/rfvp-android-fvp/arm64-v8a/*.so \
+   engine/src/main/jniLibs/arm64-v8a/
+```
+
+实测产物：`librfvp.so` 45,831,904 B → strip 后 40,529,800 B；`libwmv_decoder.so` 435,832 B；`libmediacodec-4c4a3ce3b3fea0cb.so` 305,344 B；`.note.android.ident` API level = 26；`rfvp_android_*` 全量符号（含新增两个）已确认导出。
+
+### M1 engine 侧改动
+
+- `cpp/rfvp_bridge.cpp`（自研 shim：dlopen `librfvp.so` + dlsym 函数表 + JNI_OnLoad 缓存 JavaVM + ANativeWindow 引用管理 + 符号缺失容错）；
+- `cpp/CMakeLists.txt` 新增 `rfvp_bridge` 目标；
+- `com/core/fvp/NativeRfvp.java`（JNI 包装）与 `com/core/fvp/FvpActivity.java`（SurfaceView + Choreographer 主循环、沉浸式、加载遮罩、返回键单击 ESC / 2 秒双击退出、singleInstance 多开提示、`surfaceDestroyed` 停循环并销毁引擎）；
+- Manifest `FvpActivity`（`:fvp`、sensorLandscape、Theme.Fvp）、`styles.xml` Theme.Fvp、`consumer-rules.pro` keep `com.core.fvp.**`；
+- `LaunchContract`：`FVP_NLS` / `FVP_SYSTEM_FONT` / `FVP_TEXT_HIDPI` / `LAUNCH_MODE_FVP`；
+- engine 三语言文案 ×3（`engine_fvp_missing_game_dir` / `engine_fvp_init_failed` / `engine_fvp_back_again_to_exit`）。
+
+### M2/M3 app 侧改动
+
+- `EngineType.FVP`、`EngineScanner` 特征（根目录 `*.hcb`/`*.bch` + `FVP_PACK_NAMES`；脚本+资源包 96 / 仅脚本 88，嵌套目录脚本不成立）+ `EngineScannerFvpTest`（7 例）；
+- `EngineLauncher`：`supportedEngines`、`buildIntent` FVP 分支、`buildFvpIntent`（PATH/GAME_PATH/PROJECT_ROOT/GAME_DIR + 三项设置 + launchMode）；`EnginePluginBootstrap` 返回 null；`GameSaveManager` → `<游戏根>/save`；
+- UI：`EngineScreen`（GAL 分组、描述文案、`fvp-rfvp` 版本条目）、`GameScreen.coverColor`（`0xFFB05A2A`）；
+- 设置：`EngineSettingsStore`（键/白名单/默认 sjis/系统字体与 HiDPI 默认开）、`EngineSettingsResolver`/`ResolvedEngineSettings`、`PerGameSettingsStore`（`F_FVP_*`）、`GameOverridePartitions`（随 tyrano 分区，避免 Room 迁移）、`EngineSettingsText`、`EngineSettingsKind.FVP`、`SettingsScreen` FVP 卡片、`PerGameSettingsScreen` FVP 分支；
+- 三语言文案 ×3：`engine_desc_fvp` + `engine_settings_fvp_*`（共 10 键）。
+
+### 与方案的偏差
+
+1. 仓库中不存在 `EngineSettingsResolverTest` / `GameSaveManagerTest`：以 `EffectiveEngineSettingsTest` 增补 FVP 白名单/布尔覆盖用例、`GameOverridePartitionsTest` 增补 FVP 键往返与契约断言替代；存档目录分支由编译期穷举保证。
+2. Android 键 ABI 从「一期仅 ESC」扩为 ESC + Enter/Space/方向键/Control（宿主一期仍只发送 ESC），避免二期再改 `.so`。
+3. `builtinDialogEntries` 按建议新增 `fvp-rfvp` 条目（`rfvp-xmoezzz`）。
+4. 系统字体回退默认开启（按建议）；编码未提供 auto（三选一显式）。
+
+### 验证结果
+
+- `./gradlew :app:assembleDebug --no-daemon`：通过；APK 含 `lib/arm64-v8a/librfvp.so`（40.5 MB）、`librfvp_bridge.so`、`libwmv_decoder.so`、`libmediacodec-*.so`。
+- `./gradlew :app:testDebugUnitTest --no-daemon`：通过（含新增 FVP 扫描 7 例与设置/分区回归）。
+- `python3 tools/check-hardcoded-ui-strings.py`、`git diff --check`：通过。
+- **真机冒烟（Huawei MAA-AN10 / arm64）**：
+  1. Debug APK 覆盖安装成功、应用启动正常、原游戏库数据保留；
+  2. 引擎页出现 FVP 条目（描述/「已集成」）并可进入 FVP 引擎设置页（编码下拉 + 两个开关 + 说明文案渲染正常）；
+  3. 使用仅含 `Marguerite.bch`（汉化脚本，3.2 MB）的合成目录完成扫描识别（`FVP`、占位色、入库），并成功从游戏卡片启动 `FvpActivity`；
+  4. `:fvp` 进程存活、无 FATAL，`/proc/<pid>/maps` 确认已加载 `librfvp.so` 与 `librfvp_bridge.so`（dlopen + 符号解析 + create 成功；缺少资源包时显示空画面属预期）；
+  5. 测试文件与测试条目已清理。
+- 待执行：§9.2 的完整游玩验收（对白/存档/读档/编码切换/自定义字体/返回键双击退出等）需将完整游戏数据落机并通过 SAF 授权后回归。
 
 ---
 

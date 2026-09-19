@@ -194,6 +194,26 @@ class EffectiveEngineSettingsTest {
     }
 
     @Test
+    fun fvpNlsUsesWhitelistFallback() {
+        val allowed = EngineSettingsStore.FVP_NLS_VALUES
+        // 覆盖值合法：优先覆盖
+        assertEquals("gbk", EffectiveEngineSettings.resolveAllowed("gbk", "sjis", allowed, "sjis"))
+        // 覆盖值非法：回退全局
+        assertEquals("sjis", EffectiveEngineSettings.resolveAllowed("bogus", "sjis", allowed, "sjis"))
+        // 无覆盖：使用全局
+        assertEquals("utf8", EffectiveEngineSettings.resolveAllowed(null, "utf8", allowed, "sjis"))
+        // 全局非法：回退默认 sjis
+        assertEquals("sjis", EffectiveEngineSettings.resolveAllowed(null, "bogus", allowed, "sjis"))
+    }
+
+    @Test
+    fun fvpBoolOverridesFollowGlobal() {
+        assertTrue(EffectiveEngineSettings.resolveBool(null, true))
+        assertFalse(EffectiveEngineSettings.resolveBool(false, true))
+        assertTrue(EffectiveEngineSettings.resolveBool(true, false))
+    }
+
+    @Test
     fun mergeRenPyFollowsGlobalWhenNoOverride() {
         val global = EngineSettingsStore.RenPy(lessMemory = true, autosave = true)
         assertEquals(global, EffectiveEngineSettings.mergeRenPy(global, null))

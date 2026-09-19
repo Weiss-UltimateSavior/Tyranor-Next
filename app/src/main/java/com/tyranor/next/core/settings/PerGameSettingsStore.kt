@@ -89,6 +89,11 @@ object PerGameSettingsStore {
     // Siglus（游戏语言覆盖；null=跟随全局）
     const val F_SIGLUS_LANGUAGE = "siglus_language"
 
+    // FVP（文本编码/系统字体回退/HiDPI 覆盖；null=跟随全局）
+    const val F_FVP_NLS = "fvp_nls"
+    const val F_FVP_SYSTEM_FONT = "fvp_system_font"
+    const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
+
     // Ren'Py 外置模块配置（settings extra 的 renpy 节 + app.cheats，null=跟随全局）
     const val F_RENPY_CHEATS = "renpy_cheats"
     const val F_RENPY_HW_VIDEO = "renpy_hw_video"

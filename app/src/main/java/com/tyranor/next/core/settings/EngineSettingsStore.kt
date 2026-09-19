@@ -51,6 +51,11 @@ object EngineSettingsStore {
     // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
 
+    // FVP（rfvp）应用级默认（文本编码 / 系统字体回退 / 文本高分辨率渲染）
+    const val KEY_FVP_NLS = "fvp_nls"
+    const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
+    const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
+
     // Ren'Py 外置模块（settings extra 的 renpy 节；cheats 发 app 节，键名与 RenPyConfigurationParser 一致）
     const val KEY_RENPY_CHEATS = "renpy_cheats"
     const val KEY_RENPY_HW_VIDEO = "renpy_hw_video"
@@ -222,6 +227,16 @@ object EngineSettingsStore {
         SIGLUS_LANGUAGE_ES,
         SIGLUS_LANGUAGE_FR,
         SIGLUS_LANGUAGE_ID,
+    )
+
+    // FVP 文本编码取值（创建引擎时固定，改动后需重启本局）
+    const val FVP_NLS_SJIS = "sjis"
+    const val FVP_NLS_GBK = "gbk"
+    const val FVP_NLS_UTF8 = "utf8"
+    val FVP_NLS_VALUES: Set<String> = linkedSetOf(
+        FVP_NLS_SJIS,
+        FVP_NLS_GBK,
+        FVP_NLS_UTF8,
     )
 
     // RPG Maker RGSS 外置模块取值域（对齐 JoiPlay utilities/f.java；verticalAlign 对齐插件默认）
@@ -511,6 +526,18 @@ object EngineSettingsStore {
         prefs(c).edit().putString(KEY_SIGLUS_LANGUAGE, normalizeSiglusLanguage(v)).apply()
     fun normalizeSiglusLanguage(v: String?): String =
         v?.trim()?.takeIf { it in SIGLUS_LANGUAGES } ?: SIGLUS_LANGUAGE_AUTO
+
+    // ---------- FVP ----------
+    fun getFvpNls(c: Context): String =
+        normalizeFvpNls(prefs(c).getString(KEY_FVP_NLS, FVP_NLS_SJIS))
+    fun setFvpNls(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_FVP_NLS, normalizeFvpNls(v)).apply()
+    fun normalizeFvpNls(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in FVP_NLS_VALUES } ?: FVP_NLS_SJIS
+    fun isFvpSystemFont(c: Context): Boolean = prefs(c).getBoolean(KEY_FVP_SYSTEM_FONT, true)
+    fun setFvpSystemFont(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_SYSTEM_FONT, b).apply()
+    fun isFvpTextHidpi(c: Context): Boolean = prefs(c).getBoolean(KEY_FVP_TEXT_HIDPI, true)
+    fun setFvpTextHidpi(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_TEXT_HIDPI, b).apply()
 
     // ---------- Tyrano ----------
     fun isTyranoExternalNetwork(c: Context): Boolean = prefs(c).getBoolean(KEY_TYRANO_EXTERNAL_NETWORK, false)

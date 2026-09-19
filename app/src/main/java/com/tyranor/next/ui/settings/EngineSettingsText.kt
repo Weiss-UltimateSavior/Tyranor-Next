@@ -142,6 +142,14 @@ internal fun siglusLanguageOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.SIGLUS_LANGUAGE_ID to stringResource(R.string.engine_settings_siglus_language_value_id),
 )
 
+/** FVP 文本编码（创建引擎时固定；改动后需重启本局）。 */
+@Composable
+internal fun fvpNlsOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.FVP_NLS_SJIS to stringResource(R.string.engine_settings_fvp_nls_sjis),
+    EngineSettingsStore.FVP_NLS_GBK to stringResource(R.string.engine_settings_fvp_nls_gbk),
+    EngineSettingsStore.FVP_NLS_UTF8 to stringResource(R.string.engine_settings_fvp_nls_utf8),
+)
+
 @Composable
 internal fun artPatchOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.AUTO_PATCH_ASK to stringResource(R.string.engine_option_auto_patch_ask),
@@ -232,6 +240,9 @@ internal fun renpyVersionOptionsMap(): Map<String, String> = renpyVersionOptions
 
 @Composable
 internal fun siglusLanguageOptionsMap(): Map<String, String> = siglusLanguageOptions().toMap()
+
+@Composable
+internal fun fvpNlsOptionsMap(): Map<String, String> = fvpNlsOptions().toMap()
 
 @Composable
 internal fun artPatchOptionsMap(): Map<String, String> = artPatchOptions().toMap()
