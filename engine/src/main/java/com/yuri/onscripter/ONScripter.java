@@ -1,7 +1,6 @@
 package com.yuri.onscripter;
 
 import android.annotation.SuppressLint;
-import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -35,7 +34,7 @@ import com.core.engine.LaunchContract;
 import com.core.engine.R;
 import com.core.ons.OnsLibLoader;
 import com.core.ons.OnsSettings;
-import com.core.ons.OnsVideoActivity;
+import com.core.ons.OnsVideoOverlay;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -62,6 +61,8 @@ public class ONScripter extends SDLActivity {
     private final ArrayList<TextView> autoButtons = new ArrayList<>();
     private boolean controlsVisible = true;
     private boolean autoMode = false;
+    /** 视频覆盖播放控制器：在本 Activity 窗口内覆盖播放，不启动独立 Activity。 */
+    private OnsVideoOverlay videoOverlay;
     private native int nativeInitJavaCallbacks();
     private native int nativeGetWidth();
     private native int nativeGetHeight();
@@ -107,6 +108,14 @@ public class ONScripter extends SDLActivity {
     @Override public void onResume() {
         super.onResume();
         fullscreen();
+        // 播片期间切后台会暂停解码，回到前台必须恢复，否则视频停在暂停帧。
+        if (videoOverlay != null) videoOverlay.onHostResume();
+    }
+
+    @Override public void onPause() {
+        super.onPause();
+        // 切后台时暂停解码：overlay 不随 Activity 销毁，回来还在。
+        if (videoOverlay != null) videoOverlay.onHostPause();
     }
 
     @Override public void onWindowFocusChanged(boolean hasFocus) {
@@ -115,6 +124,25 @@ public class ONScripter extends SDLActivity {
     }
 
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        // 播片期间按键优先给视频层：任意键跳过，音量键仍交还系统。
+        // BACK 不在此列——它沿用下面 tyn 自己的双击退出语义，
+        // 避免播 OP 时误触退出游戏。
+        if (event != null && videoOverlay != null && videoOverlay.isPlaying()) {
+            int code = event.getKeyCode();
+            if (code == KeyEvent.KEYCODE_VOLUME_UP
+                    || code == KeyEvent.KEYCODE_VOLUME_DOWN
+                    || code == KeyEvent.KEYCODE_VOLUME_MUTE
+                    || code == KeyEvent.KEYCODE_MUTE) {
+                return super.dispatchKeyEvent(event);
+            }
+            // BACK 不在此处吞掉：落到下方既有的双击退出 / ESC 透传分支。
+            // 交给 super 会绕过 ONScripter 自身的本地处理——鼠标侧键 BACK 不被静默消费，
+            // 普通 BACK 首按也不会透传 ESC 给游戏。
+            if (code != KeyEvent.KEYCODE_BACK) {
+                if (event.getAction() == KeyEvent.ACTION_UP) videoOverlay.skipByKey();
+                return true;
+            }
+        }
         // BACK 首按透传 ESC 给 ONS（游戏内取消/右键语义），2 秒内双击真正退出；
         // ESC 的 down+up 在 DOWN 时成对发送，UP 一律吞掉，避免重复/悬空事件。
         // 鼠标来源的 BACK（侧键）静默消费：不透传 ESC、不计入双击退出
@@ -209,18 +237,37 @@ public class ONScripter extends SDLActivity {
                 Log.w(TAG, "video not found: " + path);
                 return;
             }
-            playVideo(Uri.fromFile(file));
+            final String real = file.getAbsolutePath();
+            // native 侧从 SDL 线程调用本方法，视图操作必须切到主线程。
+            runOnUiThread(() -> startVideoOverlay(real));
         } catch (Throwable t) {
             Log.e(TAG, "playVideo failed", t);
         }
     }
 
+    /**
+     * 在本 Activity 窗口内覆盖播放，不启动新 Activity。
+     *
+     * 为什么不用独立 Activity：本类是 singleInstance + 独立 taskAffinity，
+     * 拉起别的 Activity 会引发 task 切换，实测导致 SDL 收到 onStop()，
+     * 且视频结束后返回的是启动页而非游戏本身。
+     */
+    private void startVideoOverlay(String realPath) {
+        if (isFinishing() || isDestroyed()) return;
+        if (videoOverlay == null) videoOverlay = new OnsVideoOverlay(this);
+        boolean ok = videoOverlay.play(realPath, true);
+        if (!ok) Log.w(TAG, "overlay refused to play: " + realPath);
+    }
+
     public void playVideo(Uri uri) {
         if (uri == null) return;
-        Intent i = new Intent(this, OnsVideoActivity.class);
-        i.putExtra(OnsVideoActivity.EXTRA_VIDEO_URI, uri.toString());
-        i.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivity(i);
+        String path = uri.getPath();
+        if (path == null || path.isEmpty()) {
+            Log.w(TAG, "playVideo(uri) has no path: " + uri);
+            return;
+        }
+        final String real = path;
+        runOnUiThread(() -> startVideoOverlay(real));
     }
 
     public void testVideo() {
@@ -490,6 +537,13 @@ public class ONScripter extends SDLActivity {
     @Override
     @SuppressLint("MissingSuperCall")
     public void onDestroy() {
+        // 先收掉视频覆盖层：ijk 的 Surface/播放器必须在本进程被杀之前释放，
+        // 否则 HWUI 渲染线程会操作已销毁的 SurfaceTexture，退出游戏时崩溃
+        //（FORTIFY: pthread_mutex_lock called on a destroyed mutex / hwuiTask1 SIGABRT）。
+        if (videoOverlay != null) {
+            videoOverlay.dismiss();
+            videoOverlay = null;
+        }
         // ONS runs in a dedicated process. SDL native teardown can destroy
         // graphics mutexes while an OEM HWUI worker still references them.
         Log.i(TAG, "terminate dedicated ONS process before SDL/HWUI teardown");

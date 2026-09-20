@@ -35,4 +35,5 @@
     <string name="engine_fvp_missing_game_dir">FVP failed to start: the game directory is missing</string>
     <string name="engine_fvp_init_failed">Failed to initialize the FVP engine</string>
     <string name="engine_fvp_back_again_to_exit">Press back again to exit the game</string>
+    <string name="engine_ons_video_skip_hint">Tap to skip</string>
 </resources>

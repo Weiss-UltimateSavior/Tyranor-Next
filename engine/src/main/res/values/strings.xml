@@ -35,4 +35,5 @@
     <string name="engine_fvp_missing_game_dir">FVP 启动失败：缺少游戏目录</string>
     <string name="engine_fvp_init_failed">FVP 引擎初始化失败</string>
     <string name="engine_fvp_back_again_to_exit">再按一次返回键退出游戏</string>
+    <string name="engine_ons_video_skip_hint">轻触画面跳过</string>
 </resources>
