@@ -11,6 +11,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -1290,31 +1296,73 @@ private fun WinlatorValueDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column {
-                AppSearchField(
-                    query = text,
-                    onQueryChange = { text = sanitize?.invoke(it) ?: it },
-                    onSearch = { onConfirm(text.trim()) },
-                    leadingIcon = painterResource(R.drawable.ic_sheet_rename),
-                    iconContentDescription = title,
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    hint,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+            // 输入区内禁用全部点击/按压反馈（无涟漪）
+            CompositionLocalProvider(LocalIndication provides NoIndication) {
+                Column {
+                    AppSearchField(
+                        query = text,
+                        onQueryChange = { text = sanitize?.invoke(it) ?: it },
+                        onSearch = { onConfirm(text.trim()) },
+                        leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                        iconContentDescription = title,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        hint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }) {
-                Text(stringResource(R.string.common_save))
-            }
+            SettingsDialogTextButton(
+                text = stringResource(R.string.common_save),
+                onClick = { onConfirm(text.trim()) },
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            SettingsDialogTextButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss,
+            )
         },
+    )
+}
+
+/** 无涟漪/按压反馈占位：容器内组件的点击效果统一失效。 */
+private object NoIndication : IndicationNodeFactory {
+    private val node = object : Modifier.Node() {}
+    override fun create(interactionSource: InteractionSource): DelegatableNode = node
+    override fun equals(other: Any?): Boolean = other === this
+    override fun hashCode(): Int = System.identityHashCode(this)
+}
+
+/** 弹窗文本按钮：无涟漪/按压效果（indication = null），与 PcGameAddDialog 的弹窗按钮一致。 */
+@Composable
+private fun SettingsDialogTextButton(
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = if (enabled) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        },
+        modifier = Modifier
+            .clip(AppComponentShape)
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     )
 }
 
