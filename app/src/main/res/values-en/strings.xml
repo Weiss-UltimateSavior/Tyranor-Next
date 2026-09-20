@@ -262,6 +262,8 @@
     <string name="engine_settings_engine_version">Engine version</string>
     <string name="engine_settings_engine_kernel">Engine kernel</string>
     <string name="engine_settings_krkr_patch_overlay">KRKR virtual patch.tjs patch</string>
+    <string name="engine_settings_krkr_native_ui_title">Launch Kirikiroid2 v1.3.9</string>
+    <string name="engine_settings_krkr_native_ui_summary">Open the built-in native Kirikiroid2 UI (file browser; starts no specific game)</string>
     <string name="engine_settings_render">Rendering</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL accurate rendering</string>
     <string name="engine_settings_memory_usage">Memory usage</string>

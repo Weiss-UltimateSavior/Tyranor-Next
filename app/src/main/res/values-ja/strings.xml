@@ -262,6 +262,8 @@
     <string name="engine_settings_engine_version">エンジンバージョン</string>
     <string name="engine_settings_engine_kernel">エンジンカーネル</string>
     <string name="engine_settings_krkr_patch_overlay">KRKR 仮想 patch.tjs パッチ</string>
+    <string name="engine_settings_krkr_native_ui_title">Kirikiroid2 v1.3.9 を起動</string>
+    <string name="engine_settings_krkr_native_ui_summary">内蔵のネイティブ Kirikiroid2 画面を開く（ファイルブラウザ、特定のゲームは起動しません）</string>
     <string name="engine_settings_render">描画</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL 精密描画</string>
     <string name="engine_settings_memory_usage">メモリ使用量</string>

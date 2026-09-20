@@ -135,6 +135,52 @@ object EngineLauncher {
         withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
 
     /**
+     * 直接打开内置原生 Kirikiroid2 界面（`originMode`，不携带游戏路径）。
+     *
+     * 与 Tyranor 原版设置页「启动 Kirikiroid2 v1.3.9」一致：固定使用 1.3.9 宿主
+     * （Kirikiroid139）展示原生 KR2 壳的文件浏览器；引擎侧命中 [LaunchContract.ORIGIN_MODE]
+     * 后会跳过游戏启动分支（无 Loading 遮罩、不解析 path）。
+     */
+    suspend fun launchNativeKirikiroidUi(context: Context): LaunchResult = withContext(Dispatchers.IO) {
+        val app = context.applicationContext
+        // 原生界面同样需要「所有文件访问」才能浏览共享存储中的游戏目录
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            val opened = runCatching {
+                app.startActivity(
+                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${app.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.recoverCatching {
+                app.startActivity(
+                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.isSuccess
+            return@withContext if (opened) {
+                LaunchResult.Failure.AllFilesAccessRequested
+            } else {
+                LaunchResult.Failure.AllFilesAccessMissing
+            }
+        }
+        EnginePluginBootstrap.ensureForLaunch(app, EngineType.KIRIKIRI)?.let {
+            return@withContext LaunchResult.Failure.PluginBootstrapFailed(it)
+        }
+        return@withContext try {
+            app.startActivity(
+                Intent(app, Kirikiroid139::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(LaunchContract.ORIGIN_MODE, true)
+                    putExtra(LaunchContract.ORIENTATION, 6)
+                    putExtra(LaunchContract.FOCUS, "true")
+                },
+            )
+            LaunchResult.Success
+        } catch (t: Throwable) {
+            LaunchResult.Failure.StartFailed(t.message)
+        }
+    }
+
+    /**
      * 正在执行启动流程的 game.uri 集合（覆盖启动前同步到 startActivity 的全过程）。
      * 单飞协调：前台回写在同步前检查此集合——「会话已退出但同一游戏正被拉起」的窗口内
      * 引擎即将开始写存档，回写此时插入会与引擎写入交错（进程内锁约束不了引擎进程）。
