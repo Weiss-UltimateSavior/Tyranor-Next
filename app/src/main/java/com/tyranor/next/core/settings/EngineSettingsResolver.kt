@@ -173,6 +173,10 @@ object EngineSettingsResolver {
                 bool(PerGameSettingsStore.F_FVP_TEXT_HIDPI),
                 EngineSettingsStore.isFvpTextHidpi(app),
             ),
+            fvpFont = EffectiveEngineSettings.resolve(
+                str(PerGameSettingsStore.F_FVP_FONT),
+                EngineSettingsStore.getFvpFont(app),
+            ),
             rpg = EffectiveEngineSettings.mergeRpgMaker(
                 EngineSettingsStore.loadRpgMaker(app),
                 PerGameSettingsStore.toRpgMakerOverride(override),
@@ -238,6 +242,8 @@ data class ResolvedEngineSettings(
     val fvpSystemFont: Boolean,
     /** FVP 生效文本高分辨率渲染开关。 */
     val fvpTextHidpi: Boolean,
+    /** FVP 生效自定义字体路径（空 = 跟随游戏默认；非空 = App 私有字体绝对路径，强制生效）。 */
+    val fvpFont: String,
     /** RPG Maker RGSS 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val rpg: EngineSettingsStore.RpgMaker,
     /** Ren'Py 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */

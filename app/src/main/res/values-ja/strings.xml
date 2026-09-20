@@ -241,6 +241,10 @@
     <string name="engine_settings_fvp_text_hidpi_title">テキスト高解像度描画</string>
     <string name="engine_settings_fvp_text_hidpi_summary">画面スケールでテキストをラスタライズし、高解像度画面でくっきり表示します</string>
     <string name="engine_settings_fvp_note">文字コードの変更はゲームの再起動後に反映されます。セーブはゲームフォルダーの save/ に保存されます。</string>
+    <string name="engine_settings_fvp_font_title">カスタムフォント</string>
+    <string name="engine_settings_fvp_font_follow">ゲーム既定に従う</string>
+    <string name="engine_settings_fvp_font_hint">FVP のみ有効。TTC は先頭フェイスのみ。欠け字形はシステムフォントで補完。変更後は再起動が必要です。</string>
+    <string name="engine_settings_fvp_font_import_failed">フォントの読み込みに失敗しました：ttf/otf/ttc を選択してください</string>
     <string name="engine_settings_winlator_title">Winlator 外部起動</string>
     <string name="engine_settings_winlator_follow_container">コンテナ設定に従う</string>
     <string name="engine_settings_winlator_container_id_title">コンテナ ID</string>

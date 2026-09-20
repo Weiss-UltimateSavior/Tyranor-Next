@@ -241,6 +241,10 @@
     <string name="engine_settings_fvp_text_hidpi_title">文本高分辨率渲染</string>
     <string name="engine_settings_fvp_text_hidpi_summary">按屏幕缩放栅格化文本，高分屏更清晰</string>
     <string name="engine_settings_fvp_note">修改文本编码后需重新进入游戏生效；存档位于游戏目录 save/。</string>
+    <string name="engine_settings_fvp_font_title">自定义字体</string>
+    <string name="engine_settings_fvp_font_follow">跟随游戏默认</string>
+    <string name="engine_settings_fvp_font_hint">仅对 FVP 生效；TTC 使用首个字面；缺字由系统字体回退兜底；修改后需重新进入游戏。</string>
+    <string name="engine_settings_fvp_font_import_failed">字体导入失败：请选择 ttf/otf/ttc 文件</string>
     <string name="engine_settings_winlator_title">Winlator外置启动</string>
     <string name="engine_settings_winlator_follow_container">跟随容器配置</string>
     <string name="engine_settings_winlator_container_id_title">容器 ID</string>

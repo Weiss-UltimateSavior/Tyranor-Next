@@ -241,6 +241,10 @@
     <string name="engine_settings_fvp_text_hidpi_title">HiDPI text rendering</string>
     <string name="engine_settings_fvp_text_hidpi_summary">Rasterize text at the screen scale for sharper text on high-DPI displays</string>
     <string name="engine_settings_fvp_note">Restart the game to apply encoding changes; saves live in the game folder\'s save/.</string>
+    <string name="engine_settings_fvp_font_title">Custom font</string>
+    <string name="engine_settings_fvp_font_follow">Follow game default</string>
+    <string name="engine_settings_fvp_font_hint">FVP only. TTC uses the first face. Missing glyphs fall back to system fonts. Restart to apply.</string>
+    <string name="engine_settings_fvp_font_import_failed">Font import failed: choose a ttf/otf/ttc file</string>
     <string name="engine_settings_winlator_title">Winlator external launch</string>
     <string name="engine_settings_winlator_follow_container">Follow container config</string>
     <string name="engine_settings_winlator_container_id_title">Container ID</string>

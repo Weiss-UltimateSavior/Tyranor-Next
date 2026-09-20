@@ -723,6 +723,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var fvpNls by remember { mutableStateOf(EngineSettingsStore.getFvpNls(ctx)) }
     var fvpSystemFont by remember { mutableStateOf(EngineSettingsStore.isFvpSystemFont(ctx)) }
     var fvpTextHidpi by remember { mutableStateOf(EngineSettingsStore.isFvpTextHidpi(ctx)) }
+    var fvpFont by remember { mutableStateOf(EngineSettingsStore.getFvpFont(ctx)) }
     var winlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -730,6 +731,20 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             val path = FontImport.importToPrivate(ctx, uri)
             if (path != null) {
                 krFont = path
+            }
+        }
+    }
+    val fvpFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val path = FontImport.importToPrivate(ctx, uri)
+            if (path != null) {
+                fvpFont = path
+            } else {
+                android.widget.Toast.makeText(
+                    ctx,
+                    ctx.getString(R.string.engine_settings_fvp_font_import_failed),
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
             }
         }
     }
@@ -781,6 +796,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setFvpNls(ctx, fvpNls)
         EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
         EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
+        EngineSettingsStore.setFvpFont(ctx, fvpFont)
         EngineSettingsStore.saveWinlator(ctx, winlator)
     }
 
@@ -810,7 +826,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage,
-                fvpNls, fvpSystemFont, fvpTextHidpi, fontLauncher, winlator,
+                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator,
                 topInset = innerPadding.calculateTopPadding(),
                 onLaunchNativeKirikiroidUi = {
                     scope.launch {
@@ -862,6 +878,8 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onFvpNls = { fvpNls = it },
                 onFvpSystemFont = { fvpSystemFont = it },
                 onFvpTextHidpi = { fvpTextHidpi = it },
+                onFvpFontFollow = { fvpFont = "" },
+                onFvpFontPick = { fvpFontLauncher.launch("*/*") },
                 onWinlator = { winlator = it },
             )
         }
@@ -913,7 +931,8 @@ private fun LazyListPlaceholder(
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
     rpg: EngineSettingsStore.RpgMaker,
     renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
-    fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fontLauncher: FontPickerLauncher,
+    fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fvpFont: String,
+    fontLauncher: FontPickerLauncher, fvpFontLauncher: FontPickerLauncher,
     winlator: EngineSettingsStore.Winlator,
     topInset: Dp,
     onLaunchNativeKirikiroidUi: () -> Unit,
@@ -939,6 +958,8 @@ private fun LazyListPlaceholder(
     onFvpNls: (String) -> Unit,
     onFvpSystemFont: (Boolean) -> Unit,
     onFvpTextHidpi: (Boolean) -> Unit,
+    onFvpFontFollow: () -> Unit,
+    onFvpFontPick: () -> Unit,
     onWinlator: (EngineSettingsStore.Winlator) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
@@ -1172,6 +1193,19 @@ private fun LazyListPlaceholder(
                     summary = stringResource(R.string.engine_settings_fvp_text_hidpi_summary),
                     checked = fvpTextHidpi,
                     onCheckedChange = onFvpTextHidpi,
+                )
+                FontPreference(
+                    label = stringResource(R.string.engine_settings_fvp_font_title),
+                    value = fvpFont.ifBlank { stringResource(R.string.engine_settings_fvp_font_follow) },
+                    followLabel = stringResource(R.string.engine_settings_fvp_font_follow),
+                    onFollow = onFvpFontFollow,
+                    onPick = onFvpFontPick,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_fvp_font_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
                 Text(
                     stringResource(R.string.engine_settings_fvp_note),

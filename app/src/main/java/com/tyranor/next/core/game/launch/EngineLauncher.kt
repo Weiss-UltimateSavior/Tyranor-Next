@@ -880,6 +880,9 @@ object EngineLauncher {
         putExtra(LaunchContract.FVP_NLS, settings.fvpNls)
         putExtra(LaunchContract.FVP_SYSTEM_FONT, settings.fvpSystemFont)
         putExtra(LaunchContract.FVP_TEXT_HIDPI, settings.fvpTextHidpi)
+        if (settings.fvpFont.isNotBlank()) {
+            putExtra(LaunchContract.FVP_FONT_PATH, settings.fvpFont)
+        }
     }
 
     /**

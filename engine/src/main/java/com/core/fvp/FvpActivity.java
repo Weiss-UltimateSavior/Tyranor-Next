@@ -273,8 +273,27 @@ public final class FvpActivity extends AppCompatActivity implements
         boolean systemFont = getIntent().getBooleanExtra(LaunchContract.FVP_SYSTEM_FONT, true);
         NativeRfvp.setTextHidpi(handle, textHidpi);
         NativeRfvp.setSystemFont(handle, systemFont);
+        applyCustomFont();
         Log.i(TAG, "engine created: " + width + "x" + height + " nls=" + nls
                 + " hidpi=" + textHidpi + " systemFont=" + systemFont);
+    }
+
+    /** 应用用户自定义字体（App 私有目录路径）；加载失败静默回退游戏默认字体。 */
+    private void applyCustomFont() {
+        if (handle == 0L) {
+            return;
+        }
+        String fontPath = getIntent().getStringExtra(LaunchContract.FVP_FONT_PATH);
+        if (fontPath == null || fontPath.trim().isEmpty()) {
+            return;
+        }
+        int fontId = NativeRfvp.addFont(handle, fontPath.trim());
+        if (fontId >= 0) {
+            NativeRfvp.setForcedFont(handle, fontId);
+            Log.i(TAG, "forced font enabled: id=" + fontId + " path=" + fontPath);
+        } else {
+            Log.w(TAG, "custom font load failed, fall back to game default: " + fontPath);
+        }
     }
 
     private void destroyEngine() {

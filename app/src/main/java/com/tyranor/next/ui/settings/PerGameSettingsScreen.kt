@@ -45,6 +45,7 @@ import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -98,6 +99,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var fvpNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS)) }
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
+    var fvpFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT)) }
     var winlatorContainerId by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID)) }
     var winlatorContainerName by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME)) }
     var winlatorGraphicsDriver by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER)) }
@@ -153,6 +155,20 @@ fun PerGameSettingsScreen(game: ScanGame) {
             if (p != null) krFont = p
         }
     }
+    val fvpFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val p = FontImport.importToPrivate(ctx, uri)
+            if (p != null) {
+                fvpFont = p
+            } else {
+                android.widget.Toast.makeText(
+                    ctx,
+                    ctx.getString(R.string.engine_settings_fvp_font_import_failed),
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
+        }
+    }
     val scope = rememberCoroutineScope()
     // RPGM 外置插件读不到 App 私有目录，自定义字体必须落共享存储（见 RpgMakerRuntimeEnvironment）
     val rpgFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -200,6 +216,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalFvpNls = EngineSettingsStore.getFvpNls(ctx)
     val globalFvpSystemFont = EngineSettingsStore.isFvpSystemFont(ctx)
     val globalFvpTextHidpi = EngineSettingsStore.isFvpTextHidpi(ctx)
+    val globalFvpFont = EngineSettingsStore.getFvpFont(ctx)
     val globalWinlator = remember { EngineSettingsStore.loadWinlator(ctx) }
     val winlatorDriverMap = winlatorGraphicsDriverOptionsMap()
     val winlatorDxWrapperMap = winlatorDxWrapperOptionsMap()
@@ -292,6 +309,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS, fvpNls)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT, fvpFont)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, winlatorContainerId)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, winlatorContainerName)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, winlatorGraphicsDriver)
@@ -627,6 +645,20 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice(stringResource(R.string.engine_settings_fvp_nls_title), fvpNlsMap, globalFvpNls, fvpNls) { fvpNls = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_fvp_system_font_title), globalFvpSystemFont, fvpSystemFont) { fvpSystemFont = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_fvp_text_hidpi_title), globalFvpTextHidpi, fvpTextHidpi) { fvpTextHidpi = it }
+                            OverrideFontPreference(
+                                label = stringResource(R.string.engine_settings_fvp_font_title),
+                                globalValue = globalFvpFont,
+                                override = fvpFont,
+                                followGameDefaultLabel = stringResource(R.string.engine_settings_fvp_font_follow),
+                                onSet = { fvpFont = it },
+                                onPick = { fvpFontLauncher.launch("*/*") },
+                            )
+                            Text(
+                                stringResource(R.string.engine_settings_fvp_font_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
                             Text(
                                 stringResource(R.string.engine_settings_fvp_note),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -943,6 +975,73 @@ private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, o
         selectedIndex = index,
         onSelectedIndexChange = { i -> onSet(if (i == 0) null else i == 1) },
     )
+}
+
+/**
+ * 覆盖版字体行（FVP）：三态——跟随全局（展示全局值）/ 跟随游戏默认 / 选择字体文件。
+ * 覆盖值语义：null=跟随全局，""=跟随游戏默认，路径=自定义（App 私有字体）。
+ */
+@Composable
+private fun OverrideFontPreference(
+    label: String,
+    globalValue: String,
+    override: String?,
+    followGameDefaultLabel: String,
+    onSet: (String?) -> Unit,
+    onPick: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val globalLabel = globalValue.substringAfterLast('/').ifBlank { followGameDefaultLabel }
+    val summary = when {
+        override == null -> stringResource(R.string.engine_settings_follow_global_with_value, globalLabel)
+        override.isEmpty() -> followGameDefaultLabel
+        else -> override.substringAfterLast('/')
+    }
+    ArrowPreference(
+        title = label,
+        summary = summary,
+        onClick = { open = true },
+    )
+    if (open) {
+        AppAlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text(label, style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AppNavItem(
+                        title = stringResource(R.string.engine_settings_follow_global_with_value, globalLabel),
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = DialogItemSurface,
+                    ) {
+                        onSet(null)
+                        open = false
+                    }
+                    AppNavItem(
+                        title = followGameDefaultLabel,
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = DialogItemSurface,
+                    ) {
+                        onSet("")
+                        open = false
+                    }
+                    AppNavItem(
+                        title = stringResource(R.string.engine_settings_select_font_file),
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = DialogItemSurface,
+                    ) {
+                        open = false
+                        onPick()
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { open = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
 }
 
 /** 经外置 Winlator 启动的引擎（YU-RIS / CatSystem2 / 手动添加的 PC）：展示 Winlator 覆盖卡片。 */

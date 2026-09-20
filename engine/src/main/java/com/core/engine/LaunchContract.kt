@@ -103,6 +103,9 @@ object LaunchContract {
     /** 文本高分辨率渲染开关（bool，缺省 true）。 */
     const val FVP_TEXT_HIDPI = "fvp_text_hidpi"
 
+    /** 自定义字体路径（App 私有目录绝对路径；不传表示跟随游戏默认/不强制）。 */
+    const val FVP_FONT_PATH = "fvp_font_path"
+
     // ---------- launchMode 固定取值 ----------
 
     const val LAUNCH_MODE_KRKRSDL3 = "internal.krkrsdl3"

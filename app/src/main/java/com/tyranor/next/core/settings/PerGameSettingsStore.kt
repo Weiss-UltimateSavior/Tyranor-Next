@@ -89,10 +89,11 @@ object PerGameSettingsStore {
     // Siglus（游戏语言覆盖；null=跟随全局）
     const val F_SIGLUS_LANGUAGE = "siglus_language"
 
-    // FVP（文本编码/系统字体回退/HiDPI 覆盖；null=跟随全局）
+    // FVP（文本编码/系统字体回退/HiDPI/自定义字体覆盖；null=跟随全局）
     const val F_FVP_NLS = "fvp_nls"
     const val F_FVP_SYSTEM_FONT = "fvp_system_font"
     const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
+    const val F_FVP_FONT = "fvp_font"
 
     // Winlator 外置启动（null=跟随全局；字符串 "" = 显式不下发该参数）
     const val F_WINLATOR_CONTAINER_ID = "winlator_container_id"

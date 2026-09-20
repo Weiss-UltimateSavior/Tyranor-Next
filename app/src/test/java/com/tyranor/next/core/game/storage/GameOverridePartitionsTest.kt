@@ -30,6 +30,7 @@ class GameOverridePartitionsTest {
         .put(PerGameSettingsStore.F_FVP_NLS, "gbk")
         .put(PerGameSettingsStore.F_FVP_SYSTEM_FONT, true)
         .put(PerGameSettingsStore.F_FVP_TEXT_HIDPI, false)
+        .put(PerGameSettingsStore.F_FVP_FONT, "/data/user/0/com.tyranor.next/files/fonts/a.ttf")
         .put(
             PerGameSettingsStore.ONS_KEY,
             JSONObject().put("scopedsavedir", true).put("encoding", "utf8"),
@@ -82,6 +83,7 @@ class GameOverridePartitionsTest {
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_NLS))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_SYSTEM_FONT))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_TEXT_HIDPI))
+        assertTrue(tyranoPartition.has(PerGameSettingsStore.F_FVP_FONT))
     }
 
     @Test
@@ -134,6 +136,7 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_FVP_NLS, GameOverridePartitions.KEY_FVP_NLS)
         assertEquals(PerGameSettingsStore.F_FVP_SYSTEM_FONT, GameOverridePartitions.KEY_FVP_SYSTEM_FONT)
         assertEquals(PerGameSettingsStore.F_FVP_TEXT_HIDPI, GameOverridePartitions.KEY_FVP_TEXT_HIDPI)
+        assertEquals(PerGameSettingsStore.F_FVP_FONT, GameOverridePartitions.KEY_FVP_FONT)
         assertEquals(PerGameSettingsStore.ONS_KEY, GameOverridePartitions.ONS_OBJECT_KEY)
         // KR 分区必须覆盖 PerGameSettingsStore.KR_FIELDS 全部字段
         for (field in PerGameSettingsStore.KR_FIELDS) {

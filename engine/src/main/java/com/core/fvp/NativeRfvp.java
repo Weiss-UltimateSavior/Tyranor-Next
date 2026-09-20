@@ -56,6 +56,12 @@ public final class NativeRfvp {
     /** 系统 CJK 字体回退开关（开启后触发一次性系统字体扫描）。 */
     public static native void setSystemFont(long handle, boolean enabled);
 
+    /** 追加字体文件并返回字体 id（≥0 成功；-1 失败/旧版本运行库不支持）。 */
+    public static native int addFont(long handle, String fontPathUtf8);
+
+    /** 设置/清除强制默认字体（fontId < 0 清除）。 */
+    public static native void setForcedFont(long handle, int fontId);
+
     /** 销毁实例。 */
     public static native void destroy(long handle);
 }

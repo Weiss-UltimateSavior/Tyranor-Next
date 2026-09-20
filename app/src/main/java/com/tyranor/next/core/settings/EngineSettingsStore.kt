@@ -51,10 +51,11 @@ object EngineSettingsStore {
     // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
 
-    // FVP（rfvp）应用级默认（文本编码 / 系统字体回退 / 文本高分辨率渲染）
+    // FVP（rfvp）应用级默认（文本编码 / 系统字体回退 / 文本高分辨率渲染 / 自定义字体）
     const val KEY_FVP_NLS = "fvp_nls"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
+    const val KEY_FVP_FONT = "fvp_font"
 
     // Winlator 外置启动（YU-RIS / CatSystem2 / PC 经 Winlator 跳转时的下发参数）
     const val KEY_WINLATOR_CONTAINER_ID = "winlator_container_id"
@@ -641,6 +642,10 @@ object EngineSettingsStore {
     fun setFvpSystemFont(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_SYSTEM_FONT, b).apply()
     fun isFvpTextHidpi(c: Context): Boolean = prefs(c).getBoolean(KEY_FVP_TEXT_HIDPI, true)
     fun setFvpTextHidpi(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_TEXT_HIDPI, b).apply()
+    fun getFvpFont(c: Context): String = normalizeFvpFont(prefs(c).getString(KEY_FVP_FONT, ""))
+    fun setFvpFont(c: Context, v: String?) =
+        prefs(c).edit().putString(KEY_FVP_FONT, normalizeFvpFont(v)).apply()
+    fun normalizeFvpFont(v: String?): String = v?.trim().orEmpty()
 
     // ---------- Winlator 外置启动 ----------
 

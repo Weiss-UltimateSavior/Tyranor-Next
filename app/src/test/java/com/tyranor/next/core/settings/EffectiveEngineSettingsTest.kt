@@ -214,6 +214,22 @@ class EffectiveEngineSettingsTest {
     }
 
     @Test
+    fun fvpFontOverrideSupportsExplicitGameDefault() {
+        // 覆盖路径优先
+        assertEquals(
+            "/data/fonts/a.ttf",
+            EffectiveEngineSettings.resolve("/data/fonts/a.ttf", "/data/fonts/global.ttf"),
+        )
+        // 显式空串 = 跟随游戏默认（合法覆盖值，不回落全局）
+        assertEquals("", EffectiveEngineSettings.resolve("", "/data/fonts/global.ttf"))
+        // 无覆盖回落全局
+        assertEquals(
+            "/data/fonts/global.ttf",
+            EffectiveEngineSettings.resolve(null, "/data/fonts/global.ttf"),
+        )
+    }
+
+    @Test
     fun mergeRenPyFollowsGlobalWhenNoOverride() {
         val global = EngineSettingsStore.RenPy(lessMemory = true, autosave = true)
         assertEquals(global, EffectiveEngineSettings.mergeRenPy(global, null))

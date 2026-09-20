@@ -31,6 +31,8 @@ using touch_fn_t = void (*)(void* handle, int32_t phase, double x_px, double y_p
 using set_text_hidpi_fn_t = void (*)(void* handle, int32_t enabled);
 using key_fn_t = void (*)(void* handle, int32_t vk_code, int32_t phase);
 using set_system_font_fn_t = void (*)(void* handle, int32_t enabled);
+using add_font_fn_t = int32_t (*)(void* handle, const char* font_path_utf8);
+using set_forced_font_fn_t = void (*)(void* handle, int32_t font_id);
 using destroy_fn_t = void (*)(void* handle);
 
 struct RfvpApi {
@@ -43,6 +45,8 @@ struct RfvpApi {
     set_text_hidpi_fn_t set_text_hidpi = nullptr;
     key_fn_t key = nullptr;
     set_system_font_fn_t set_system_font = nullptr;
+    add_font_fn_t add_font = nullptr;
+    set_forced_font_fn_t set_forced_font = nullptr;
     destroy_fn_t destroy = nullptr;
 };
 
@@ -76,6 +80,8 @@ static void load_api_once() {
         g_api.set_text_hidpi = reinterpret_cast<set_text_hidpi_fn_t>(load_symbol("rfvp_android_set_text_hidpi"));
         g_api.key = reinterpret_cast<key_fn_t>(load_symbol("rfvp_android_key"));
         g_api.set_system_font = reinterpret_cast<set_system_font_fn_t>(load_symbol("rfvp_android_set_system_font"));
+        g_api.add_font = reinterpret_cast<add_font_fn_t>(load_symbol("rfvp_android_add_font"));
+        g_api.set_forced_font = reinterpret_cast<set_forced_font_fn_t>(load_symbol("rfvp_android_set_forced_font"));
         g_api.destroy = reinterpret_cast<destroy_fn_t>(load_symbol("rfvp_android_destroy"));
 
         bool core_ok = g_api.create && g_api.step && g_api.resize && g_api.set_surface &&
@@ -85,6 +91,9 @@ static void load_api_once() {
         }
         if (!g_api.key || !g_api.set_system_font) {
             LOGW("rfvp_android_key/set_system_font missing; back key and system font fallback stay disabled");
+        }
+        if (!g_api.add_font || !g_api.set_forced_font) {
+            LOGW("rfvp_android_add_font/set_forced_font missing; custom font stays disabled");
         }
         LOGI("rfvp_android_* symbols resolved (core=%d)", core_ok ? 1 : 0);
     });
@@ -260,6 +269,26 @@ Java_com_core_fvp_NativeRfvp_setSystemFont(JNIEnv*, jclass, jlong handle, jboole
         return;
     }
     g_api.set_system_font(reinterpret_cast<void*>(handle), enabled == JNI_TRUE ? 1 : 0);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_core_fvp_NativeRfvp_addFont(JNIEnv* env, jclass, jlong handle, jstring path) {
+    if (g_api.add_font == nullptr || handle == 0) {
+        return -1;
+    }
+    std::string value = jstring_to_string(env, path);
+    if (value.empty()) {
+        return -1;
+    }
+    return static_cast<jint>(g_api.add_font(reinterpret_cast<void*>(handle), value.c_str()));
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_core_fvp_NativeRfvp_setForcedFont(JNIEnv*, jclass, jlong handle, jint font_id) {
+    if (g_api.set_forced_font == nullptr || handle == 0) {
+        return;
+    }
+    g_api.set_forced_font(reinterpret_cast<void*>(handle), font_id);
 }
 
 extern "C" JNIEXPORT void JNICALL
