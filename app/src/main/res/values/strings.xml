@@ -41,6 +41,7 @@
     <string name="settings_nav_bar_liquid_glass_enhanced">液态玻璃 · 透镜</string>
     <string name="settings_nav_bar_desc_liquid_glass">Android 12 及以上生效</string>
     <string name="settings_nav_bar_desc_enhanced">仅 Android 13 及以上支持</string>
+    <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
     <string name="settings_invalid_theme_color">不支持透明色或黑白灰色</string>
 
     <string name="settings_update_latest">已经是最新版本</string>

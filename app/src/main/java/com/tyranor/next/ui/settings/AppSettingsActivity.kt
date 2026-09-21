@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.AppearanceStyle
@@ -79,6 +80,8 @@ internal fun AppSettingsScreen() {
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
     val glass = AppThemeColors.isGlass
+    // 平板/大窗口：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
+    val railLayout = isSideRailLayout()
     var showColorPicker by remember { mutableStateOf(false) }
     // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
     // 否则下拉会显示成默认档（与磁盘上的真实取值不一致）
@@ -267,10 +270,13 @@ internal fun AppSettingsScreen() {
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_nav_bar_title),
                                 // 说明只保留「安卓版本提醒」：默认档无需提醒（任何版本可用）
-                                summary = when (navStyle) {
-                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
+                                summary = when {
+                                    // 平板侧栏布局：液态玻璃两档不参与侧栏适配，提示实际以侧栏显示
+                                    railLayout && navStyle != AppSettingsStore.NAV_STYLE_DEFAULT ->
+                                        stringResource(R.string.settings_nav_bar_desc_rail)
+                                    navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
                                         stringResource(R.string.settings_nav_bar_desc_liquid_glass)
-                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
+                                    navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
                                         stringResource(R.string.settings_nav_bar_desc_enhanced)
                                     else -> null
                                 },

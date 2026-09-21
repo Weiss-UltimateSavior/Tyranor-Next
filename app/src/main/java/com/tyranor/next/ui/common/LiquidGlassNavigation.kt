@@ -299,6 +299,7 @@ private fun LiquidGlassNavItemView(
 /**
  * 悬浮导航栏的列表底部滚动留白：
  * 内容可滚动经过玻璃后面（沉浸），但列表尾部预留导航高度，保证滚动到底时最后一项完全露出不被遮挡。
+ * - 平板侧栏布局：导航在侧边占布局宽度，底部留白为 0（返回 0）；
  * - 液态玻璃 · 经典：栏高 64 + 上下各 12 外边距 = 88dp；
  * - 液态玻璃 · 透镜：栏高 64 + 底部 12 外边距 = 76dp（无上边距）；
  * - 玻璃外观风格下的悬浮默认导航条：无文字后栏高收窄至 64 + 上下各 12 外边距；
@@ -306,6 +307,8 @@ private fun LiquidGlassNavItemView(
  */
 @Composable
 fun glassNavBottomInset(): Dp {
+    // 平板侧栏：导航在侧边且占布局宽度，底部不需要留白
+    if (isSideRailLayout()) return 0.dp
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val navBarInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     return when (navStyle) {

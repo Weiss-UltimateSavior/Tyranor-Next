@@ -20,3 +20,17 @@ fun isWideScreen(): Boolean {
         configuration.screenWidthDp >= 600 ||
         configuration.smallestScreenWidthDp >= 600
 }
+
+/**
+ * 平板侧栏布局判定：以 **sw600dp 平板**（含竖屏）或宽度 ≥ 840dp 的大窗口为准，
+ * 命中时主导航从底部移到侧边（见 `ui/common/AppNavigationRail.kt`）。
+ *
+ * 与 [isWideScreen] 的区别：后者含「任何横屏」——横屏手机只有 360–420dp 高，
+ * 放 4 项竖排侧栏会过挤，因此侧栏单独用更严格的平板判定。
+ */
+@Composable
+fun isSideRailLayout(): Boolean {
+    val configuration = LocalConfiguration.current
+    return configuration.smallestScreenWidthDp >= 600 ||
+        configuration.screenWidthDp >= 840
+}

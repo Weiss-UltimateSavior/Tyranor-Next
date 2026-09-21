@@ -356,8 +356,8 @@ fun HomeScreen(
 }
 
 /**
- * 快捷启动区（最多 3 个）：小屏（可用宽度 < 600dp，竖屏手机）单张大卡左右滑动切换；
- * 大屏（横屏/平板）直接一行三个卡位，空槽显示占位。两种形态都限制最大宽度并水平居中。
+ * 快捷启动区（最多 3 个）：小屏（可用宽度 < 600dp，竖屏手机）单张大卡左右滑动切换（限宽居中）；
+ * 大屏（横屏/平板）一行三个卡位**占满可用宽度**，空槽显示占位。
  */
 @Composable
 private fun QuickLaunchSection(
@@ -370,10 +370,11 @@ private fun QuickLaunchSection(
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {
-            // 三张横幅卡并排需要比单卡形态更宽的行：上限放宽到 900dp，
-            // 每张卡约 293dp，保证左侧文字列在封面之外仍有可用宽度
+            // 大屏（平板/横屏）三张卡并排**占满可用宽度**（不再设 900dp 上限，
+            // 否则平板/大窗口下两侧会空出一条）；卡内封面宽度有 99dp 上限、文字列自适应，
+            // 因此拉宽不会挤压内容。
             Row(
-                modifier = Modifier.widthIn(max = 900.dp).fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 repeat(3) { i ->

@@ -41,6 +41,7 @@
     <string name="settings_nav_bar_liquid_glass_enhanced">Liquid glass · Lens</string>
     <string name="settings_nav_bar_desc_liquid_glass">Effective on Android 12 and above</string>
     <string name="settings_nav_bar_desc_enhanced">Android 13 and above only</string>
+    <string name="settings_nav_bar_desc_rail">Shown as a side rail on tablets</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>
 
     <string name="settings_update_latest">You are on the latest version</string>
