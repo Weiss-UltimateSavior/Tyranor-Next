@@ -61,21 +61,24 @@ fun MiuixSettingsTheme(
             sliderKeyPointForeground = Color.White,
         )
     }
-    // 玻璃外观风格：输入框/浮层/分割线/遮罩改用玻璃色板；
+    // 玻璃系外观风格：输入框/浮层/分割线/遮罩改用玻璃色板（高级玻璃更透、描边更亮）；
     // 卡片底色（surfaceContainer）与文字（onSurface*）已由动态色常量自动覆盖。
     val colors = if (glass) {
+        val advanced = AppThemeColors.isAdvancedGlass
+        val secondaryText = if (advanced) AdvancedGlassTextSecondary else GlassTextSecondary
         baseColors.copy(
-            surfaceContainerHigh = GlassSurfaceHigh,
-            surfaceContainerHighest = GlassSurfaceHigh,
-            secondaryContainer = GlassSurfaceHigh,
+            surfaceContainerHigh = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
+            surfaceContainerHighest = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
+            secondaryContainer = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
             onSecondaryContainer = TextColor,
-            onSurfaceContainerVariant = GlassTextSecondary,
-            onBackgroundVariant = GlassTextSecondary,
-            onSurfaceSecondary = GlassTextSecondary,
-            onSurfaceVariantSummary = GlassTextSecondary,
-            onSurfaceVariantActions = GlassTextSecondary.copy(alpha = 0.6f),
-            outline = GlassBorder,
-            dividerLine = GlassBorder,
+            onSurfaceContainerVariant = secondaryText,
+            onBackgroundVariant = secondaryText,
+            onSurfaceSecondary = secondaryText,
+            onSurfaceVariantSummary = secondaryText,
+            onSurfaceVariantActions = secondaryText.copy(alpha = 0.6f),
+            outline = if (advanced) AdvancedGlassBorder else GlassBorder,
+            dividerLine = if (advanced) AdvancedGlassBorder else GlassBorder,
+            // 高级玻璃浮层为较高不透明度的灰玻璃膜，遮罩与复古一致
             windowDimming = Color.Black.copy(alpha = 0.6f),
         )
     } else {

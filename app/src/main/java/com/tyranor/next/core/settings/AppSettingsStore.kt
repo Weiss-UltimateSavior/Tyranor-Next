@@ -91,12 +91,6 @@ object AppSettingsStore {
     val supportsLiquidGlassEnhanced: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
-    /** 外观风格：默认（现有主题）。 */
-    const val APPEARANCE_STYLE_DEFAULT = "default"
-
-    /** 外观风格：玻璃（固定黑灰渐变背景 + 毛玻璃组件）。 */
-    const val APPEARANCE_STYLE_GLASS = "glass"
-
     /** 导航栏样式内存态：随设置页切换即时广播，供 MainScreen 重组切换样式。 */
     val navStyleState: MutableStateFlow<String> = MutableStateFlow(NAV_STYLE_DEFAULT)
 
@@ -211,18 +205,12 @@ object AppSettingsStore {
             else -> NAV_STYLE_DEFAULT
         }
 
-    /** 当前外观风格（默认 / 玻璃）。 */
-    fun getAppearanceStyle(c: Context): String =
-        if (prefs(c).getString(KEY_APPEARANCE_STYLE, APPEARANCE_STYLE_DEFAULT) == APPEARANCE_STYLE_GLASS) {
-            APPEARANCE_STYLE_GLASS
-        } else {
-            APPEARANCE_STYLE_DEFAULT
-        }
+    /** 当前外观风格（默认 / 复古玻璃 / 高级玻璃；未知值归一为默认）。 */
+    fun getAppearanceStyle(c: Context): AppearanceStyle =
+        AppearanceStyle.fromStorage(prefs(c).getString(KEY_APPEARANCE_STYLE, null))
 
-    fun setAppearanceStyle(c: Context, style: String) {
-        val normalized = if (style == APPEARANCE_STYLE_GLASS) APPEARANCE_STYLE_GLASS else APPEARANCE_STYLE_DEFAULT
-        prefs(c).edit().putString(KEY_APPEARANCE_STYLE, normalized).apply()
-    }
+    fun setAppearanceStyle(c: Context, style: AppearanceStyle) =
+        prefs(c).edit().putString(KEY_APPEARANCE_STYLE, style.storageValue).apply()
 
     /** 文件夹扫描深度（1..5，默认 3）。 */
     fun getScanDepth(c: Context): Int =

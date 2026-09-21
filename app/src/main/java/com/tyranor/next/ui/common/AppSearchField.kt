@@ -14,6 +14,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
@@ -76,7 +77,7 @@ fun AppSearchField(
                     },
                     // 描边必须画在 InputField 上：SearchBar 外层还包着 insideMargin 等布局，
                     // 挂在外层会把描边画到胶囊之外（等于圈住外面一层组件）
-                    modifier = Modifier.fillMaxWidth().glassBorder(CircleShape),
+                    modifier = Modifier.fillMaxWidth().glassShadow(CircleShape).glassBorder(CircleShape),
                 )
             },
             expanded = false,

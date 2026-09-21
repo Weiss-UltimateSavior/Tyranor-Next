@@ -102,8 +102,8 @@ fun LiquidGlassNavigationBar(
     highlightAvailable: Boolean = true,
 ) {
     val density = LocalDensity.current
-    // 玻璃表面色随外观模式：深色模式用深色表面
-    val surfaceColor = if (AppThemeColors.isDark) DarkGrey else Color.White
+    // 玻璃表面色随外观模式：深色模式用深色表面；高级玻璃参考图的悬浮玻璃为浅色
+    val surfaceColor = if (AppThemeColors.isDark && !AppThemeColors.isAdvancedGlass) DarkGrey else Color.White
     val mutedColor = unselectedColor
     // 统一圆角（AGENT.md）：圆角组件一律 8dp；液态玻璃导航在 8dp 基础上加大 8dp，视觉更圆润
     val shape = RoundedCornerShape(16.dp)
@@ -111,7 +111,13 @@ fun LiquidGlassNavigationBar(
     val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     // 高版本表面半透明以透出模糊内容
     // 呈现液态玻璃质感；低版本（<12）无实时模糊，直接用不透明实底，避免文字等内容透出。
-    val glassSurfaceAlpha = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) 0.55f else 1f
+    // 高级玻璃更通透（透出封面模糊底图）、高光更强；复古玻璃保持既有参数不变。
+    val advancedGlass = AppThemeColors.isAdvancedGlass
+    val glassSurfaceAlpha = if (backdropSupported) {
+        if (advancedGlass) 0.42f else 0.55f
+    } else {
+        1f
+    }
     val currentSelectedIndex by rememberUpdatedState(selectedIndex)
     val currentOnItemClick by rememberUpdatedState(onItemClick)
     var navWidth by remember { mutableIntStateOf(0) }
@@ -149,7 +155,7 @@ fun LiquidGlassNavigationBar(
                 blur(with(density) { 12.dp.toPx() })
             },
             highlight = if (highlightAvailable) {
-                { Highlight.Default.copy(alpha = 0.85f) }
+                { Highlight.Default.copy(alpha = if (advancedGlass) 1f else 0.85f) }
             } else {
                 null
             },

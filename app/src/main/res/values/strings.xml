@@ -26,8 +26,10 @@
     <string name="settings_color_wheel">色调轮盘</string>
     <string name="settings_appearance_style">外观风格</string>
     <string name="settings_appearance_style_default">默认</string>
-    <string name="settings_appearance_style_glass">玻璃</string>
-    <string name="settings_disabled_in_glass_style">玻璃风格下不可用</string>
+    <string name="settings_appearance_style_glass">复古玻璃</string>
+    <string name="settings_appearance_style_advanced_glass">高级玻璃</string>
+    <string name="settings_appearance_style_advanced_glass_desc">封面拼贴模糊背景（Android 12 及以上悬浮元素实时模糊）</string>
+    <string name="settings_disabled_in_glass_style">玻璃外观风格下不可用</string>
     <string name="settings_theme_mode">外观模式</string>
     <string name="settings_theme_mode_light">浅色</string>
     <string name="settings_theme_mode_dark">深色</string>

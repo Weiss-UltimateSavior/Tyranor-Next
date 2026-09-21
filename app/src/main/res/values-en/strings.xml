@@ -26,8 +26,10 @@
     <string name="settings_color_wheel">Accent color</string>
     <string name="settings_appearance_style">Appearance style</string>
     <string name="settings_appearance_style_default">Default</string>
-    <string name="settings_appearance_style_glass">Glass</string>
-    <string name="settings_disabled_in_glass_style">Unavailable in Glass style</string>
+    <string name="settings_appearance_style_glass">Retro glass</string>
+    <string name="settings_appearance_style_advanced_glass">Advanced glass</string>
+    <string name="settings_appearance_style_advanced_glass_desc">Blurred cover-collage background (real-time blur on floating elements on Android 12+)</string>
+    <string name="settings_disabled_in_glass_style">Unavailable in glass appearance styles</string>
     <string name="settings_theme_mode">Appearance</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>

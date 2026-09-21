@@ -115,6 +115,9 @@ import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.theme.AdvancedGlassBorder
+import com.tyranor.next.theme.glassShadow
+import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.GlassBorder
@@ -125,6 +128,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -772,8 +776,14 @@ internal fun GameActionsSheet(
         }
     }
 
-    // 玻璃风格抽屉：面板与条目均用不透明色，任何一层都不透底
-    val drawerItemSurface = if (AppThemeColors.isGlass) GlassSurfaceSolid else NavWhite
+    // 玻璃系风格抽屉：高级玻璃用页面背景取色渐变；复古玻璃用不透明色，任何一层都不透底
+    val drawerItemSurface = when {
+        AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
+        AppThemeColors.isGlass -> GlassSurfaceSolid
+        else -> NavWhite
+    }
+    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
+    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
     ModalBottomSheet(
         onDismissRequest = {
@@ -783,23 +793,46 @@ internal fun GameActionsSheet(
             onDismiss()
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        // 玻璃风格抽屉使用不透明面板色（GlassPanel 带 10% 透明度会透出底层内容）
-        containerColor = if (AppThemeColors.isGlass) GlassPanelSolid else MaterialTheme.colorScheme.background,
-        // 玻璃风格加深化背景，避免抽屉与底层内容混在一起被看成半透明
-        scrimColor = if (AppThemeColors.isGlass) Color.Black.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.32f),
+        // 高级玻璃面板底色透明，取色渐变画在内容层（不能挂 Surface 外层 modifier：
+        // 抽屉位置由内部 anchors 布局偏移决定，外层绘制会落在未偏移位置，与玻璃描边踩过同一个坑）；
+        // 复古玻璃用不透明面板色（GlassPanel 带 10% 透明度会透出底层内容）
+        containerColor = when {
+            AppThemeColors.isAdvancedGlass -> Color.Transparent
+            AppThemeColors.isGlass -> GlassPanelSolid
+            else -> MaterialTheme.colorScheme.background
+        },
+        // 玻璃系风格加深化背景，避免抽屉与底层内容混在一起被看成半透明
+        scrimColor = when {
+            AppThemeColors.isAdvancedGlass -> Color.Black.copy(alpha = 0.6f)
+            AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
+            else -> Color.Black.copy(alpha = 0.32f)
+        },
         contentWindowInsets = { WindowInsets(0.dp) },
         // 顶部圆角与弹窗内条目圆角（AppNavItem 8dp）保持一致
         shape = AppSheetTopShape,
         // 玻璃描边只能画在抽屉真实顶边（dragHandle 槽首位）；不能挂 Surface 外层 modifier，
-        // 否则描边会按未偏移的布局位置落到背景里形成一条白线
+        // 否则描边会按未偏移的布局位置落到背景里形成一条白线。
+        // 高级玻璃的把手条用面板渐变的顶端取色铺底，与下方内容层的渐变无缝衔接。
         dragHandle = {
             // Column 默认水平 Start 对齐会让把手贴左；需显式居中，描边线仍铺满整宽
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (advancedPanelSurface != null) {
+                            Modifier.background(advancedPanelSurface.topColor)
+                        } else {
+                            Modifier
+                        },
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (AppThemeColors.isGlass) {
-                    Box(Modifier.fillMaxWidth().height(0.5.dp).background(GlassBorder))
+                    Box(
+                        Modifier.fillMaxWidth().height(0.5.dp).background(
+                            if (AppThemeColors.isAdvancedGlass) AdvancedGlassBorder else GlassBorder,
+                        ),
+                    )
                 }
                 BottomSheetDefaults.DragHandle()
             }
@@ -814,7 +847,15 @@ internal fun GameActionsSheet(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = sheetMaxHeight),
+                .heightIn(max = sheetMaxHeight)
+                // 高级玻璃取色渐变画在内容层（随抽屉偏移一起移动）
+                .then(
+                    if (advancedPanelSurface != null) {
+                        Modifier.background(advancedPanelSurface.brush)
+                    } else {
+                        Modifier
+                    },
+                ),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -1206,6 +1247,8 @@ private fun CoverSearchDialog(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
+    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
     fun search() {
         val query = keyword.trim()
@@ -1243,7 +1286,8 @@ private fun CoverSearchDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.5f)),
+                // 高级玻璃面板为较高不透明度的灰玻璃膜，遮罩略加深即可
+                .background(Color.Black.copy(alpha = if (AppThemeColors.isAdvancedGlass) 0.6f else 0.5f)),
         ) {
             Box(
                 Modifier
@@ -1270,9 +1314,16 @@ private fun CoverSearchDialog(
                         .fillMaxWidth()
                         .widthIn(max = CoverSearchDialogMaxWidth)
                         .then(dialogHeightModifier)
+                        .glassShadow()
                         .clip(AppComponentShape)
-                        // 玻璃风格用高不透明度玻璃面板，保证覆盖在暗化内容上的可读性
-                        .background(if (AppThemeColors.isGlass) GlassPanel else NavWhite)
+                        // 高级玻璃用页面背景取色渐变，其余玻璃档用高不透明度玻璃面板
+                        .then(
+                            if (advancedPanelSurface != null) {
+                                Modifier.background(advancedPanelSurface.brush)
+                            } else {
+                                Modifier.background(if (AppThemeColors.isGlass) GlassPanel else NavWhite)
+                            },
+                        )
                         .glassBorder()
                         .pointerInput(Unit) { detectTapGestures { } },
                 ) {
@@ -1668,6 +1719,7 @@ internal fun GameCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
+                .glassShadow()
                 .clip(AppComponentShape)
                 .background(game.engine.coverColor())
                 .glassBorder()

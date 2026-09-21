@@ -44,6 +44,7 @@ import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
@@ -927,7 +928,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassBorder(),
+        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {

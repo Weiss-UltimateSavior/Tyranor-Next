@@ -146,10 +146,10 @@
 
 - 顶部栏**使用页面背景色** **`colorScheme.background`（不透明）**（`Modifier.background(colorScheme.background)`），标题与图标统一使用 `colorScheme.onBackground`。
 
-- **玻璃外观风格**：玻璃下页面背景透明，顶栏保持透明（露出渐变/环境光）。因此**页面内容必须整体垫在
-  顶栏下方**（用持久 `Modifier.padding(top = 顶栏高度)`，而不是滚动区的 `contentPadding`），
-  否则滚动内容会从顶栏下方穿过与标题重叠。设置类页面（MiuixScaffold）的 `innerPadding` 顶部值一律
-  加到列表 modifier 上，`contentPadding` 只保留额外的间距。
+- **玻璃系外观风格（复古玻璃 / 高级玻璃）**：玻璃下页面背景透明，顶栏保持透明（露出渐变/色斑与环境光）。
+  因此**页面内容必须整体垫在顶栏下方**（用持久 `Modifier.padding(top = 顶栏高度)`，而不是滚动区的
+  `contentPadding`），否则滚动内容会从顶栏下方穿过与标题重叠。设置类页面（MiuixScaffold）的
+  `innerPadding` 顶部值一律加到列表 modifier 上，`contentPadding` 只保留额外的间距。
 
 - 禁止使用主题色 `primary` 作为顶部栏背景。
 
@@ -388,11 +388,18 @@ Column(fillMaxSize)                                // 页面根
 - 弹窗内的条目容器（如 `AppNavItem` 传 `containerColor = DialogItemSurface`、手写条目行用
   `DialogItemSurface`） → 与弹窗背景形成对偶反差
 
-- **玻璃外观风格（应用设置 → 外观风格 = 玻璃）**：页面背景固定黑灰渐变（`GlassBackground`），
-  `PageGrey` 透明、`NavWhite` = `GlassSurface`、`TextColor` 恒浅色；卡片/条目/弹窗/输入框统一
-  0.5dp 发丝描边（`Modifier.glassBorder()`），弹窗/抽屉面板用 `GlassPanel`。此模式下「外观模式」
-  与「色调切换」不可用（置灰），色调轮盘保持可用。新增组件必须走上述动态常量与 `glassBorder`，
-  不得硬编码玻璃色值。
+- **玻璃系外观风格（应用设置 → 外观风格 = 复古玻璃 / 高级玻璃）**：页面背景固定深色画面
+  （复古 = 黑灰渐变 + 主题色对角环境光；高级 = 游戏封面拼贴的盒式模糊底图 + 压暗 + 暗角，
+  见 `ui/common/glass/AmbientBackdrop.kt` 与 `theme/AdvancedGlassStyle.kt`），
+  `PageGrey` 透明、`TextColor` 恒浅色；卡片/条目/弹窗/输入框统一 0.5dp 发丝描边（`Modifier.glassBorder()`，
+  高级玻璃为「上亮下暗」渐变描边并可在面板上叠 `Modifier.glassSpecular()` 顶边高光），
+  高级玻璃卡片为浅色磨砂膜（14% 白），弹窗/抽屉面板为 `rememberAdvancedGlassPanelSurface()` 从页面背景取色的渐变（不得写死灰色；抽屉渐变必须画在内容层，外层 modifier 会因 anchors 布局偏移而错位）。
+  此模式下「外观模式」
+  与「色调切换」不可用（置灰），色调轮盘保持可用（兜底色斑随主题色变化）。
+  高级玻璃的绘制是独立实现（`theme/AdvancedGlassStyle.kt`），复古玻璃的 `GlassStyle.kt` 不参与其材质；
+  新增组件必须走动态常量与 `glassBorder`，不得硬编码玻璃色值。真 backdrop 采样仅限白名单
+  （液态玻璃底栏、高级玻璃悬浮默认导航条）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
+  只能用背景取色渐变 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
 

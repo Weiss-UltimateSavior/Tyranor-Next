@@ -26,8 +26,10 @@
     <string name="settings_color_wheel">色調ホイール</string>
     <string name="settings_appearance_style">外観スタイル</string>
     <string name="settings_appearance_style_default">デフォルト</string>
-    <string name="settings_appearance_style_glass">ガラス</string>
-    <string name="settings_disabled_in_glass_style">ガラススタイルでは使用できません</string>
+    <string name="settings_appearance_style_glass">レトロガラス</string>
+    <string name="settings_appearance_style_advanced_glass">プレミアムガラス</string>
+    <string name="settings_appearance_style_advanced_glass_desc">カバーコラージュのぼかし背景（Android 12 以上で浮遊要素にリアルタイムぼかし）</string>
+    <string name="settings_disabled_in_glass_style">ガラス外観スタイルでは使用できません</string>
     <string name="settings_theme_mode">外観モード</string>
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
