@@ -726,6 +726,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var fvpTextHidpi by remember { mutableStateOf(EngineSettingsStore.isFvpTextHidpi(ctx)) }
     var fvpFont by remember { mutableStateOf(EngineSettingsStore.getFvpFont(ctx)) }
     var winlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
+    var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -799,6 +800,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
         EngineSettingsStore.setFvpFont(ctx, fvpFont)
         EngineSettingsStore.saveWinlator(ctx, winlator)
+        EngineSettingsStore.setPpssppVersion(ctx, ppssppVersion)
     }
 
     MiuixSettingsTheme {
@@ -827,7 +829,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage,
-                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator,
+                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion,
                 topInset = innerPadding.calculateTopPadding(),
                 onLaunchNativeKirikiroidUi = {
                     scope.launch {
@@ -882,6 +884,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onFvpFontFollow = { fvpFont = "" },
                 onFvpFontPick = { fvpFontLauncher.launch("*/*") },
                 onWinlator = { winlator = it },
+                onPpssppVersion = { ppssppVersion = it },
             )
         }
     }
@@ -935,6 +938,7 @@ private fun LazyListPlaceholder(
     fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fvpFont: String,
     fontLauncher: FontPickerLauncher, fvpFontLauncher: FontPickerLauncher,
     winlator: EngineSettingsStore.Winlator,
+    ppssppVersion: String,
     topInset: Dp,
     onLaunchNativeKirikiroidUi: () -> Unit,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
@@ -962,6 +966,7 @@ private fun LazyListPlaceholder(
     onFvpFontFollow: () -> Unit,
     onFvpFontPick: () -> Unit,
     onWinlator: (EngineSettingsStore.Winlator) -> Unit,
+    onPpssppVersion: (String) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -1210,6 +1215,23 @@ private fun LazyListPlaceholder(
                 )
                 Text(
                     stringResource(R.string.engine_settings_fvp_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.PPSSPP) item {
+            EngineCard("PPSSPP") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_ppsspp_version_title),
+                    ppssppVersionOptions(),
+                    ppssppVersion,
+                    onPpssppVersion,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_ppsspp_note),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MiuixTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

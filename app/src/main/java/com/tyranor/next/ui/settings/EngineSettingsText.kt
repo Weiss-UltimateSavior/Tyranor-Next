@@ -244,6 +244,18 @@ internal fun siglusLanguageOptionsMap(): Map<String, String> = siglusLanguageOpt
 @Composable
 internal fun fvpNlsOptionsMap(): Map<String, String> = fvpNlsOptions().toMap()
 
+// ───────────────────────── PPSSPP 外置模拟器 ─────────────────────────
+
+/** PPSSPP 版本：标准版 / 黄金版（跳转 PSP 游戏时选择包名）。 */
+@Composable
+internal fun ppssppVersionOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.PPSSPP_VERSION_STANDARD to stringResource(R.string.engine_settings_ppsspp_version_standard),
+    EngineSettingsStore.PPSSPP_VERSION_GOLD to stringResource(R.string.engine_settings_ppsspp_version_gold),
+)
+
+@Composable
+internal fun ppssppVersionOptionsMap(): Map<String, String> = ppssppVersionOptions().toMap()
+
 // ───────────────────────── Winlator 外置启动 ─────────────────────────
 
 /** 空串统一下发语义：不下发该参数，跟随 Winlator 容器/快捷方式配置。 */

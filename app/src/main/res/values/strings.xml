@@ -128,6 +128,7 @@
     <string name="engine_tab_console">主机</string>
     <string name="engine_tab_web">网页</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
+    <string name="engine_emulator_ppsspp_gold">PPSSPP 黄金版</string>
     <string name="engine_emulator_eden">Eden</string>
     <string name="engine_emulator_winlator">Winlator</string>
     <string name="engine_emulator_installed">已安装</string>
@@ -243,6 +244,11 @@
     <string name="engine_settings_fvp_system_font_summary">使用系统 CJK 字体补足游戏字体缺失的字形（中文汉化推荐开启）</string>
     <string name="engine_settings_fvp_text_hidpi_title">文本高分辨率渲染</string>
     <string name="engine_settings_fvp_text_hidpi_summary">按屏幕缩放栅格化文本，高分屏更清晰</string>
+    <string name="engine_settings_ppsspp_title">PPSSPP引擎设置</string>
+    <string name="engine_settings_ppsspp_version_title">PPSSPP 版本</string>
+    <string name="engine_settings_ppsspp_version_standard">标准版</string>
+    <string name="engine_settings_ppsspp_version_gold">黄金版</string>
+    <string name="engine_settings_ppsspp_note">跳转 PSP 游戏时使用所选版本；黄金版为付费版，需自行安装。</string>
     <string name="engine_settings_fvp_note">修改文本编码后需重新进入游戏生效；存档位于游戏目录 save/。</string>
     <string name="engine_settings_fvp_font_title">自定义字体</string>
     <string name="engine_settings_fvp_font_follow">跟随游戏默认</string>

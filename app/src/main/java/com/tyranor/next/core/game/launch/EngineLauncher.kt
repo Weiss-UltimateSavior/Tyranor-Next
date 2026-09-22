@@ -206,7 +206,15 @@ object EngineLauncher {
             if (target.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL) {
                 return launchWindowsViaWinlator(context, game, target)
             }
-            val result = ExternalEmulatorLauncher.launch(context, target, game.uri)
+            // PSP：按三级设置的「PPSSPP 版本」解析标准版/黄金版目标；其余目标（Eden）固定
+            val resolvedTarget = if (target.supports(EngineType.PSP)) {
+                ExternalEmulatorRegistry.ppssppTarget(
+                    EngineSettingsResolver.resolve(context, game, null).ppssppVersion,
+                )
+            } else {
+                target
+            }
+            val result = ExternalEmulatorLauncher.launch(context, resolvedTarget, game.uri)
             if (result.success) {
                 GameLibraryFacade.recordRecentGame(context, game)
                 return LaunchResult.Success

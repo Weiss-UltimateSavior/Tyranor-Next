@@ -128,6 +128,7 @@
     <string name="engine_tab_console">携帯機</string>
     <string name="engine_tab_web">Web</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
+    <string name="engine_emulator_ppsspp_gold">PPSSPP ゴールド版</string>
     <string name="engine_emulator_eden">Eden</string>
     <string name="engine_emulator_winlator">Winlator</string>
     <string name="engine_emulator_installed">インストール済み</string>
@@ -243,6 +244,11 @@
     <string name="engine_settings_fvp_system_font_summary">ゲームフォントにない字形をシステムの CJK フォントで補完します（中国語パッチ推奨）</string>
     <string name="engine_settings_fvp_text_hidpi_title">テキスト高解像度描画</string>
     <string name="engine_settings_fvp_text_hidpi_summary">画面スケールでテキストをラスタライズし、高解像度画面でくっきり表示します</string>
+    <string name="engine_settings_ppsspp_title">PPSSPP エンジン設定</string>
+    <string name="engine_settings_ppsspp_version_title">PPSSPP バージョン</string>
+    <string name="engine_settings_ppsspp_version_standard">標準版</string>
+    <string name="engine_settings_ppsspp_version_gold">ゴールド版</string>
+    <string name="engine_settings_ppsspp_note">PSP ゲームのジャンプには選択したバージョンの PPSSPP を使用します。ゴールド版は有料アプリのため別途インストールが必要です。</string>
     <string name="engine_settings_fvp_note">文字コードの変更はゲームの再起動後に反映されます。セーブはゲームフォルダーの save/ に保存されます。</string>
     <string name="engine_settings_fvp_font_title">カスタムフォント</string>
     <string name="engine_settings_fvp_font_follow">ゲーム既定に従う</string>

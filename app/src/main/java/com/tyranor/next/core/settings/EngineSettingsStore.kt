@@ -51,6 +51,9 @@ object EngineSettingsStore {
     // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
 
+    // PPSSPP 外置模拟器版本（标准版 / 黄金版；跳转 PSP 游戏时按此选择包名）
+    const val KEY_PPSSPP_VERSION = "ppsspp_version"
+
     // FVP（rfvp）应用级默认（文本编码 / 系统字体回退 / 文本高分辨率渲染 / 自定义字体）
     const val KEY_FVP_NLS = "fvp_nls"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
@@ -240,6 +243,11 @@ object EngineSettingsStore {
         SIGLUS_LANGUAGE_FR,
         SIGLUS_LANGUAGE_ID,
     )
+
+    // PPSSPP 外置模拟器版本取值（standard=org.ppsspp.ppsspp，gold=org.ppsspp.ppssppgold）
+    const val PPSSPP_VERSION_STANDARD = "standard"
+    const val PPSSPP_VERSION_GOLD = "gold"
+    val PPSSPP_VERSIONS: Set<String> = linkedSetOf(PPSSPP_VERSION_STANDARD, PPSSPP_VERSION_GOLD)
 
     // FVP 文本编码取值（创建引擎时固定，改动后需重启本局）
     const val FVP_NLS_SJIS = "sjis"
@@ -630,6 +638,14 @@ object EngineSettingsStore {
         prefs(c).edit().putString(KEY_SIGLUS_LANGUAGE, normalizeSiglusLanguage(v)).apply()
     fun normalizeSiglusLanguage(v: String?): String =
         v?.trim()?.takeIf { it in SIGLUS_LANGUAGES } ?: SIGLUS_LANGUAGE_AUTO
+
+    // ---------- PPSSPP 外置模拟器 ----------
+    fun getPpssppVersion(c: Context): String =
+        normalizePpssppVersion(prefs(c).getString(KEY_PPSSPP_VERSION, PPSSPP_VERSION_STANDARD))
+    fun setPpssppVersion(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_PPSSPP_VERSION, normalizePpssppVersion(v)).apply()
+    fun normalizePpssppVersion(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in PPSSPP_VERSIONS } ?: PPSSPP_VERSION_STANDARD
 
     // ---------- FVP ----------
     fun getFvpNls(c: Context): String =

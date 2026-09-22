@@ -153,6 +153,12 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_RENPY_VERSION),
                 EngineSettingsStore.getRenpyVersion(app),
             ),
+            ppssppVersion = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_PPSSPP_VERSION),
+                EngineSettingsStore.getPpssppVersion(app),
+                EngineSettingsStore.PPSSPP_VERSIONS,
+                EngineSettingsStore.PPSSPP_VERSION_STANDARD,
+            ),
             siglusLanguage = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_SIGLUS_LANGUAGE),
                 EngineSettingsStore.getSiglusLanguage(app),
@@ -234,6 +240,8 @@ data class ResolvedEngineSettings(
     val rpgMvVersion: String,
     val rpgMzVersion: String,
     val renpyVersion: String,
+    /** PPSSPP 外置模拟器生效版本（standard / gold；PSP 跳转按此选择包名）。 */
+    val ppssppVersion: String,
     /** Siglus 生效语言（auto 表示不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）。 */
     val siglusLanguage: String,
     /** FVP 生效文本编码（sjis/gbk/utf8；创建引擎时固定，改动需重启本局）。 */

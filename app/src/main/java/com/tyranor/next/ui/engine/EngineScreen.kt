@@ -100,6 +100,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     var emulatorInstallStates by remember {
         mutableStateOf(refreshEmulatorInstallStates(context))
     }
+    var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(context)) }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
     var showExternalJumpDialog by remember { mutableStateOf(false) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
@@ -109,6 +110,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
         externalInstallStates = refreshExternalInstallStates(context, engines)
         moduleStates = refreshModuleStates(context)
         emulatorInstallStates = refreshEmulatorInstallStates(context)
+        ppssppVersion = EngineSettingsStore.getPpssppVersion(context)
     }
 
     Column(modifier.fillMaxSize()) {
@@ -168,7 +170,15 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                 val emulator = ExternalEmulatorRegistry.forEngine(engine)
                 val installed = when {
                     module != null -> externalInstallStates[engine] == true
-                    emulator != null -> emulatorInstallStates[emulator.packageName] == true
+                    emulator != null -> {
+                        // PSP 的安装态跟随「PPSSPP 版本」生效值（标准版/黄金版）
+                        val pkg = if (emulator.supports(EngineType.PSP)) {
+                            ExternalEmulatorRegistry.ppssppTarget(ppssppVersion).packageName
+                        } else {
+                            emulator.packageName
+                        }
+                        emulatorInstallStates[pkg] == true
+                    }
                     else -> true
                 }
                 val statusRes = when {

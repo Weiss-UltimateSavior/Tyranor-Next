@@ -128,6 +128,7 @@
     <string name="engine_tab_console">Handheld</string>
     <string name="engine_tab_web">Web</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
+    <string name="engine_emulator_ppsspp_gold">PPSSPP Gold</string>
     <string name="engine_emulator_eden">Eden</string>
     <string name="engine_emulator_winlator">Winlator</string>
     <string name="engine_emulator_installed">Installed</string>
@@ -243,6 +244,11 @@
     <string name="engine_settings_fvp_system_font_summary">Use system CJK fonts for glyphs missing from game fonts (recommended for Chinese patches)</string>
     <string name="engine_settings_fvp_text_hidpi_title">HiDPI text rendering</string>
     <string name="engine_settings_fvp_text_hidpi_summary">Rasterize text at the screen scale for sharper text on high-DPI displays</string>
+    <string name="engine_settings_ppsspp_title">PPSSPP engine settings</string>
+    <string name="engine_settings_ppsspp_version_title">PPSSPP version</string>
+    <string name="engine_settings_ppsspp_version_standard">Standard</string>
+    <string name="engine_settings_ppsspp_version_gold">Gold</string>
+    <string name="engine_settings_ppsspp_note">PSP games are handed off to the selected PPSSPP build; Gold is a paid app and must be installed separately.</string>
     <string name="engine_settings_fvp_note">Restart the game to apply encoding changes; saves live in the game folder\'s save/.</string>
     <string name="engine_settings_fvp_font_title">Custom font</string>
     <string name="engine_settings_fvp_font_follow">Follow game default</string>

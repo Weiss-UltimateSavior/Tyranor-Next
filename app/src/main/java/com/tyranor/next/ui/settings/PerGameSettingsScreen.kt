@@ -100,6 +100,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var fvpNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS)) }
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
+    var ppssppVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION)) }
     var fvpFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT)) }
     var winlatorContainerId by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID)) }
     var winlatorContainerName by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME)) }
@@ -219,6 +220,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalFvpTextHidpi = EngineSettingsStore.isFvpTextHidpi(ctx)
     val globalFvpFont = EngineSettingsStore.getFvpFont(ctx)
     val globalWinlator = remember { EngineSettingsStore.loadWinlator(ctx) }
+    val globalPpssppVersion = EngineSettingsStore.getPpssppVersion(ctx)
+    val ppssppVersionMap = ppssppVersionOptionsMap()
     val winlatorDriverMap = winlatorGraphicsDriverOptionsMap()
     val winlatorDxWrapperMap = winlatorDxWrapperOptionsMap()
     val winlatorScreenSizeMap = winlatorScreenSizeOptionsMap()
@@ -310,6 +313,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS, fvpNls)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION, ppssppVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT, fvpFont)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, winlatorContainerId)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, winlatorContainerName)
@@ -794,7 +798,23 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             }
                         }
                     }
-                    EngineType.PSP, EngineType.NINTENDO_SWITCH -> item {
+                    EngineType.PSP -> item {
+                        SectionCard(game.engine.displayName) {
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_ppsspp_version_title),
+                                ppssppVersionMap,
+                                globalPpssppVersion,
+                                ppssppVersion,
+                            ) { ppssppVersion = it }
+                            Text(
+                                stringResource(R.string.engine_settings_ppsspp_note),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.NINTENDO_SWITCH -> item {
                         SectionCard(game.engine.displayName) {
                             Text(
                                 stringResource(R.string.engine_settings_external_emulator_hint),
