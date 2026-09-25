@@ -40,6 +40,14 @@ android {
         viewBinding false
     }
 
+    testOptions {
+        unitTests {
+            // 纯 JVM 单测不该被 android.util.Log 的「not mocked」阻断：
+            // 失败/边界分支里的日志会抛 RuntimeException，掩盖真正的断言。
+            returnDefaultValues = true
+        }
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging true
@@ -52,4 +60,32 @@ dependencies {
     implementation libs.androidx.documentfile
     implementation libs.kotlin.stdlib
     testImplementation libs.junit
+    // 覆盖 android.jar 的 org.json stub：RpgMakerFsBridge 的 readdir/stat 以 JSON 字符串
+    // 交付结果，stub 下构造函数不初始化内部字段会抛 NPE，纯 JVM 单测无法覆盖这两条路径
+    // （与 app 模块 GameOverridePartitionsTest 同一约定）
+    testImplementation libs.json
+}
+
+/**
+ * v2 兼容层的 JS 端到端检查（engine/src/test/js/v2-fs-bridge.harness.js）。
+ *
+ * 该 harness 用 Node 仿真 WebView，跑真实注入链路（基础层 + v2 层 + 桥仿真），
+ * 覆盖 fs/crypto/zlib/Buffer/localStorage 等行为并与 Node 真值逐项对照。
+ * 接入 check 生命周期，避免它随代码演进而静默失效。
+ *
+ * 通过 -PskipJsHarness 可跳过（例如本机无 Node 的纯 Android 构建环境）。
+ */
+def skipJsHarness = providers.gradleProperty('skipJsHarness').isPresent()
+
+tasks.register('jsHarness', Exec) {
+    description = 'Runs the v2 compatibility-layer JS harness (requires Node.js).'
+    group = 'verification'
+    workingDir = layout.projectDirectory.dir('src/test/js')
+    commandLine 'node', 'v2-fs-bridge.harness.js'
+    // 只有在显式传 -PskipJsHarness 时才跳过；其余情况一律执行
+    onlyIf { !skipJsHarness }
+}
+
+tasks.named('check') {
+    dependsOn 'jsHarness'
 }

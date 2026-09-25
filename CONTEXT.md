@@ -157,7 +157,7 @@ _Avoid_: 存档路径
 _Avoid_: 备份、云同步
 
 **标准存档格式 / Tyranor 存档格式（RPG Maker MV/MZ）**:
-同一份存档内容的两种文件名形态：标准格式（JoiPlay/PC 兼容，`global|config|fileN` + `.rpgsave`/`.rmmzsave`）与 Tyranor 格式（MV 为 `RPG Global.bin` 等、MZ 为 `global.bin` 等）；二者字节级一致，仅文件名不同。引擎写入的 `key_<sha256(key)>.bin` 哈希名是 Tyranor 写入落点（键空间有限，导出时可反解回标准名）。
+同一份存档内容的两种文件名形态：标准格式（JoiPlay/PC 兼容，`global|config|fileN` + `.rpgsave`/`.rmmzsave`）与 Tyranor 格式。MV 的 Tyranor 格式为引擎确定性哈希名 `key_<sha256(键)>.bin`（键如 `RPG File3`）；legacy 名 `RPG FileN.bin` 引擎读取时优先但仍兼容。MZ 的键为纯 ASCII（`fileN`），引擎固定读写 `fileN.bin`，**不能**用哈希名。二者内容字节级一致、仅文件名不同；哈希名键空间有限，导出可反解回标准名。
 _Avoid_: 存档版本、编码
 
 **存档格式转化（RPG Maker MV/MZ）**:

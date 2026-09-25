@@ -76,6 +76,10 @@ class RpgMakerActivity : Activity() {
     /** v1/v2 兼容会话（NW.js polyfill、加密资源回退等）；版本缺失的兜底会话按 v0 资源策略。 */
     @Volatile
     private var v12Session = false
+
+    /** 仅 v2 会话启用：真文件系统桥 + 素材文件名宽松匹配。v0/v1 行为不变。 */
+    @Volatile
+    private var v2Session = false
     private val processExitScheduled = AtomicBoolean(false)
 
     override fun attachBaseContext(newBase: Context) {
@@ -201,6 +205,7 @@ class RpgMakerActivity : Activity() {
             val isRpgMvV2 = webGameType == WebGameType.RPG_MV && normalizedVersion == "v2"
             val isRpgMzV2 = webGameType == WebGameType.RPG_MZ && normalizedVersion == "v2"
             v12Session = isRpgMvV1 || isRpgMvV2 || isRpgMzV2
+            v2Session = isRpgMvV2 || isRpgMzV2
             var useCoreScriptOverlay = isRpgMvV1
             if (!v12Session && normalizedVersion != null) {
                 // 目前仅 MZ v1 为占位版本；缺版本（null）视为未配置的兜底会话，均回退 v0 资源策略
@@ -213,6 +218,7 @@ class RpgMakerActivity : Activity() {
                 if (overlay.isEmpty()) {
                     Log.w(TAG, "v1 overlay incomplete, downgrading session to v0 resources")
                     v12Session = false
+                    v2Session = false
                     useCoreScriptOverlay = false
                 }
                 overlay
@@ -303,11 +309,11 @@ class RpgMakerActivity : Activity() {
         try {
             localServer = if (gameUsesAsar) {
                 RpgMakerLocalHttpServer(
-                    bundle.contentRoot, asarArchive, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session,
+                    bundle.contentRoot, asarArchive, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session, v2Session,
                 )
             } else {
                 RpgMakerLocalHttpServer(
-                    bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session,
+                    bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session, v2Session,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
@@ -339,6 +345,22 @@ class RpgMakerActivity : Activity() {
 
         configureWebView(browser)
         browser.addJavascriptInterface(RpgMakerSaveBridge(saves), RPG_MAKER_SAVE_BRIDGE_NAME)
+        // v2 增强：暴露真文件系统桥。仅 v2 会话注册——v0/v1 的 WebView 里不存在该对象，
+        // 兼容层按其有无决定是否接管空实现（见 __nwjs_polyfill_v2.js），
+        // 同时也避免给非 v2 会话的游戏脚本新增文件读取能力。
+        if (v2Session) {
+            gameDir?.let { dir ->
+                browser.addJavascriptInterface(
+                    // asar 会话传入压缩包：游戏资源在包内、磁盘上不存在，
+                    // 桥采用「asar 优先、磁盘兜底」的覆盖层语义
+                    RpgMakerFsBridge(File(dir), bundle.contentRoot, asarArchive),
+                    RPG_MAKER_FS_BRIDGE_NAME,
+                )
+            }
+            // 原生「计算」能力：哈希/HMAC/随机数/KDF/AES/zlib（纯 JS 复刻要么不可行，
+            // 要么容易写出静默错值），由 __nwjs_polyfill_v2.js 包装成 Node 模块
+            browser.addJavascriptInterface(RpgMakerEnvBridge(), RPG_MAKER_ENV_BRIDGE_NAME)
+        }
         browser.addJavascriptInterface(
             TouchPadSaveBridge(rpgMakerModGameId),
             TOUCH_PAD_BRIDGE_NAME,
@@ -891,6 +913,8 @@ class RpgMakerActivity : Activity() {
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"
+        private const val RPG_MAKER_FS_BRIDGE_NAME = "TyranorFs"
+        private const val RPG_MAKER_ENV_BRIDGE_NAME = "TyranorEnv"
         private const val RPG_MAKER_MOD_BRIDGE_NAME = "TyranorModNative"
         private const val TOUCH_PAD_BRIDGE_NAME = "TyranorTouchPadNative"
         private const val RPG_MV_SAVE_EXTENSION = ".bin"
