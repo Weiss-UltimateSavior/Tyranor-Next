@@ -54,6 +54,9 @@ object EngineSettingsStore {
     // PPSSPP 外置模拟器版本（标准版 / 黄金版；跳转 PSP 游戏时按此选择包名）
     const val KEY_PPSSPP_VERSION = "ppsspp_version"
 
+    // framebuffer 引擎（RealLive / AVG32 / UK2）应用级默认（文本编码）
+    const val KEY_FB_NLS = "fb_nls"
+
     // FVP（rfvp）应用级默认（文本编码 / 系统字体回退 / 文本高分辨率渲染 / 自定义字体）
     const val KEY_FVP_NLS = "fvp_nls"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
@@ -248,6 +251,22 @@ object EngineSettingsStore {
     const val PPSSPP_VERSION_STANDARD = "standard"
     const val PPSSPP_VERSION_GOLD = "gold"
     val PPSSPP_VERSIONS: Set<String> = linkedSetOf(PPSSPP_VERSION_STANDARD, PPSSPP_VERSION_GOLD)
+
+    // framebuffer 引擎文本编码取值（创建引擎时固定，改动后需重启本局）
+    const val FB_NLS_AUTO = "auto"
+    const val FB_NLS_SJIS = "sjis"
+    const val FB_NLS_GBK = "gbk"
+    const val FB_NLS_BIG5 = "big5"
+    const val FB_NLS_UTF8 = "utf8"
+    const val FB_NLS_KOREAN = "korean"
+    val FB_NLS_VALUES: Set<String> = linkedSetOf(
+        FB_NLS_AUTO,
+        FB_NLS_SJIS,
+        FB_NLS_GBK,
+        FB_NLS_BIG5,
+        FB_NLS_UTF8,
+        FB_NLS_KOREAN,
+    )
 
     // FVP 文本编码取值（创建引擎时固定，改动后需重启本局）
     const val FVP_NLS_SJIS = "sjis"
@@ -646,6 +665,14 @@ object EngineSettingsStore {
         prefs(c).edit().putString(KEY_PPSSPP_VERSION, normalizePpssppVersion(v)).apply()
     fun normalizePpssppVersion(v: String?): String =
         v?.trim()?.lowercase()?.takeIf { it in PPSSPP_VERSIONS } ?: PPSSPP_VERSION_STANDARD
+
+    // ---------- framebuffer 引擎（RealLive / AVG32 / UK2） ----------
+    fun getFbNls(c: Context): String =
+        normalizeFbNls(prefs(c).getString(KEY_FB_NLS, FB_NLS_AUTO))
+    fun setFbNls(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_FB_NLS, normalizeFbNls(v)).apply()
+    fun normalizeFbNls(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in FB_NLS_VALUES } ?: FB_NLS_AUTO
 
     // ---------- FVP ----------
     fun getFvpNls(c: Context): String =

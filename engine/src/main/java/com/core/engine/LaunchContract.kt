@@ -106,6 +106,17 @@ object LaunchContract {
     /** 自定义字体路径（App 私有目录绝对路径；不传表示跟随游戏默认/不强制）。 */
     const val FVP_FONT_PATH = "fvp_font_path"
 
+    // ---------- framebuffer 引擎（RealLive / AVG32 / UK2） ----------
+
+    /** 引擎 id：`reallive` | `avg32` | `uk2`（不传时引擎库自行探测）。 */
+    const val GAMES_ENGINE = "games_engine"
+
+    /** 文本编码：`auto` | `sjis` | `gbk` | `big5` | `utf8` | `korean`（不传使用引擎默认）。 */
+    const val GAMES_NLS = "games_nls"
+
+    /** 游戏标题（加载层/窗口标题兜底用）。 */
+    const val GAMES_TITLE = "games_title"
+
     // ---------- launchMode 固定取值 ----------
 
     const val LAUNCH_MODE_KRKRSDL3 = "internal.krkrsdl3"
@@ -114,4 +125,5 @@ object LaunchContract {
     const val LAUNCH_MODE_ARTEMIS = "internal.artemis"
     const val LAUNCH_MODE_SIGLUS = "internal.siglus"
     const val LAUNCH_MODE_FVP = "internal.fvp"
+    const val LAUNCH_MODE_FRAMEBUFFER = "internal.framebuffer"
 }

@@ -165,6 +165,12 @@ object EngineSettingsResolver {
                 EngineSettingsStore.SIGLUS_LANGUAGES,
                 EngineSettingsStore.SIGLUS_LANGUAGE_AUTO,
             ),
+            fbNls = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_FB_NLS),
+                EngineSettingsStore.getFbNls(app),
+                EngineSettingsStore.FB_NLS_VALUES,
+                EngineSettingsStore.FB_NLS_AUTO,
+            ),
             fvpNls = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_FVP_NLS),
                 EngineSettingsStore.getFvpNls(app),
@@ -244,6 +250,8 @@ data class ResolvedEngineSettings(
     val ppssppVersion: String,
     /** Siglus 生效语言（auto 表示不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）。 */
     val siglusLanguage: String,
+    /** framebuffer 引擎生效文本编码（auto/sjis/gbk/big5/utf8/korean；创建引擎时固定）。 */
+    val fbNls: String,
     /** FVP 生效文本编码（sjis/gbk/utf8；创建引擎时固定，改动需重启本局）。 */
     val fvpNls: String,
     /** FVP 生效系统字体回退开关。 */

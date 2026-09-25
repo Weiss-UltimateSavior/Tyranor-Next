@@ -65,6 +65,8 @@ internal object GameOverridePartitions {
     const val KEY_RENPY_VERSION = "renpy_engine_version"
     // Siglus 无独立分区：语言覆盖随 tyrano 分区持久化（与 RPG Maker 会话键同策略）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
+    // framebuffer 引擎（RealLive / AVG32 / UK2）无独立分区：文本编码覆盖随 tyrano 分区持久化
+    const val KEY_FB_NLS = "fb_nls"
     // FVP 无独立分区：编码/字体开关覆盖同样随 tyrano 分区持久化
     const val KEY_FVP_NLS = "fvp_nls"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
@@ -103,6 +105,7 @@ internal object GameOverridePartitions {
         KEY_RPG_CUSTOM_FONT, KEY_RPG_VERTICAL_SCREEN_ALIGN, KEY_RPG_WINDOW_SIZE,
         KEY_RPG_SPEED_UP, KEY_RPG_FONT_SCALE,
         KEY_SIGLUS_LANGUAGE,
+        KEY_FB_NLS,
         KEY_FVP_NLS, KEY_FVP_SYSTEM_FONT, KEY_FVP_TEXT_HIDPI, KEY_FVP_FONT,
     )
     // Ren'Py 分区：版本选择 + 外置模块配置，显式建模防止未来收紧分区时丢键

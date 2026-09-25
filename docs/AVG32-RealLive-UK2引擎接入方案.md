@@ -1,9 +1,10 @@
 # AVG32 / RealLive / UK2 三引擎接入方案（framebuffer 引擎组）
 
-> 状态：**方案待评审（未实施）**
+> 状态：**方案待评审（未实施）；M0 实测已完成（见 §2.6）**
 > 关联上游：`Weiss-UltimateSavior/siglus_rs` @ `85730c2`（新增 `game_launcher` / `engine-detect` / `avg32` / `reallive` / `uk2`）
 > 结论摘要：**复用上游统一库 `game_launcher` + 自研 JNI shim + 新增一个 framebuffer 宿主 Activity**；
-> Siglus 链路保持不动（内核 .so 是否换成 `game_launcher` 超集由 M0 实测决定）。
+> M0 实测确认单库同时导出 `siglus_android_*`（含 fork 新增的输入 ABI）与 `game_*`，体积仅 +4.0MB，
+> **方案 A 定稿**，Siglus 链路继续复用同一 `.so`、宿主代码不动。
 > 一期范围 = 扫描识别 → 启动 → 文本/音频/画面 → 存档读写 → 文本编码设置；**不做封面在线抓取、不做独立存档镜像**。
 
 ---
@@ -19,7 +20,7 @@
 | JNI 包装 | `com.core.games.NativeGames`（`System.loadLibrary("games_bridge")`） |
 | 自研 shim | `engine/src/main/cpp/games_bridge.cpp` → `libgames_bridge.so` |
 | 原生引擎库 | `libsiglus.so`（= 上游 `libgame_launcher.so` 改名）**或** `libgames.so`（方案 B，见 §3.1） |
-| 存档目录 | 见 §6（AVG32 = `<根>/SAVE.INI` 单文件；RealLive = `<根>/savedata_rs`；UK2 = 游戏根 `flagNN.dat1` 待实测） |
+| 存档目录 | 见 §6（AVG32 = `<根>/SAVE.INI` 单文件；RealLive = `<根>/savedata_rs`；UK2 = `<根>/FLAG00.DAT`…`FLAG09.DAT`） |
 | 引擎设置分类 | 新增 `EngineSettingsKind.FRAMEBUFFER`（文本编码） |
 
 ---
@@ -97,15 +98,37 @@ RealLive 的档案位置通过 `Gameexe.ini` 的 `#FOLDNAME.TXT` 定位，回退
 
 | # | 缺口 | 处理方式 |
 |---|---|---|
-| G1 | 单库是否同时导出 `siglus_android_*` 与 `game_*` | M0 用 `llvm-nm` 实测 + TyranorNext Siglus 回归；不通过则走方案 B（§3.1） |
+| G1 | 单库是否同时导出 `siglus_android_*` 与 `game_*` | **M0 已解决**：实测两类 ABI 全部导出（§2.6），无需方案 B |
 | G2 | 非 Siglus 路径无 `android_logger` 初始化 | shim 内自行 `android_logger` 初始化，或复用 `siglus_android_init_context` |
 | G3 | 三引擎都需要 CJK 字体 | 启动前 `game_add_font_file`：优先游戏自带 `dat/*.ttf`，回退 FVP/Siglus 的默认字体 |
 | G4 | AVG32 存档是单文件 `SAVE.INI` | 存档管理需支持「文件模式」或 `root + 文件名过滤`（§6） |
-| G5 | UK2 存档文件名/目录待实测 | M0/M1 真机确认后写死路径 |
+| G5 | UK2 存档文件名/目录 | **M0 已解决（读源确认）**：`<游戏根>/FLAG00.DAT`…`FLAG09.DAT`（10 槽，见 §6） |
 | G6 | CPU 软渲染性能（1080p 拉伸） | 位图上传由 Canvas/GPU 完成；实测帧率与内存（§7） |
 | G7 | 三语言文案、三语言严格一致 | 新增 strings 键并过 `tools/check-hardcoded-ui-strings.py` |
 | G8 | 标题/封面已有 Kotlin 实现 | 可选接入 `game_probe_json` 提升非 Siglus 封面/标题质量 |
 | G9 | 仅 arm64-v8a 目标 | 与现有 `engine` 模块一致；x86_64 模拟器二期 |
+
+### 2.6 M0 实测记录（2026-09-25，siglus_rs @ `85730c2`）
+
+构建命令：
+
+```bash
+ANDROID_NDK_HOME=$HOME/Library/Android/sdk/ndk/28.0.13004108 \
+  cargo ndk -t arm64-v8a -o /tmp/games-android build --release -p game_launcher
+# 1m57s，产物 libgame_launcher.so
+```
+
+| 指标 | 实测值 | 结论 |
+|---|---|---|
+| 产物 | `libgame_launcher.so`，24,602,928 B，stripped | 单库可用 |
+| 体积增量 | 对比现 `libsiglus.so`（20,645,832 B）**+3,957,096 B（+4.0MB）** | 三引擎总增量仅 4MB，可接受 |
+| 动态依赖 | 仅 `liblog/libandroid/libdl/libOpenSLES/libm/libc` | 无第三方运行库 |
+| LOAD 对齐 | `0x4000`（16KB） | 满足 Android 15+/16KB page size |
+| `siglus_android_*` 导出 | 16 个全在，含 `create/step/touch/key_event/ime_area/ime_preedit/text_input/editbox_accepts_direct_text/set_native_messagebox_callback/submit_messagebox_result/init_context/set_surface/resize/destroy/key_down/key_up` | **G1 解决**：现有 `libsiglus_bridge.so` dlopen 链路不变 |
+| `siglus_*` 其他导出 | `siglus_game_name_from_dir`、`siglus_game_cover_path_from_dir`、`siglus_game_cover_mime_from_dir`、`siglus_string_free` | 标题/封面 ABI 也在 |
+| `game_*` 导出 | 15 个全在：`game_fb_open/step/frame/pointer_move/pointer_button/wheel/key/text/close/cursor_visible/title`、`game_scan_json`、`game_probe_json`、`game_add_font_file`、`game_string_free` | 新宿主所需 ABI 齐全 |
+
+**结论**：方案 A 通过；`engine/src/main/jniLibs/arm64-v8a/libsiglus.so` 可直接替换为本产物（后续 Siglus 回归见 §7.2）。
 
 ---
 
@@ -120,7 +143,7 @@ RealLive 的档案位置通过 `Gameexe.ini` 的 `#FOLDNAME.TXT` 定位，回退
 | 缺点 | 任一引擎问题进入同一个 .so；体积增加 | 两个 .so 都含 siglus_scene_vm，重复约 20MB |
 | 适用前提 | M0 实测符号导出 + Siglus 回归通过 | 方案 A 验证失败或体积不可接受 |
 
-**结论**：默认走 **A**，M0 做硬验证；失败再回退 B。实施时以实测数据最终定稿。
+**结论**：M0 实测（§2.6）已确认方案 A 的符号导出与体积均达标，**定稿走 A**；方案 B 仅作为将来出现回归时的排障手段保留。
 
 ### 3.2 数据流
 
@@ -287,7 +310,7 @@ cp /tmp/games-android/arm64-v8a/libgame_launcher.so \
 |---|---|---|---|
 | AVG32 | `<游戏根>/SAVE.INI`（`AVG32_SAVE_DIR` 可覆盖） | **单文件模式**：`File(root, "SAVE.INI")`，或新增 `SaveLocation.file` 字段 | 全局 flags 也存于此文件 |
 | RealLive | `<游戏根>/savedata_rs`（`REALLIVE_SAVE_DIR` 可覆盖） | 目录 `<root>/savedata_rs` | 目录式，直接复用现有列表/导入导出 |
-| UK2 | 游戏根 `flagNN.dat1`（待实测） | `root + 文件名过滤` 或单文件模式 | PC-98 原生存档名 |
+| UK2 | `<游戏根>/FLAG00.DAT`…`FLAG09.DAT`（10 槽，源确认） | `root + ^FLAG\d\d\.DAT$ 过滤` 或目录模式 | PC-98 存档；引擎内部名 `flagNN.dat1` 经虚拟扩展名映射 + 大写后落盘 |
 | Siglus | `<游戏根>/savedata` | 目录（现状） | 不变 |
 
 **建议**：为 `SaveLocation` 增加「文件集合（目录 + 文件名白名单）」能力，
@@ -327,11 +350,11 @@ AVG32/UK2 走该模式；RealLive 走现有目录模式。删除游戏时按现�
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| 单库符号导出不成立（G1） | Siglus 宿主 dlopen 失败 | M0 验证；失败走方案 B（双库） |
+| 单库符号导出不成立（G1） | Siglus 宿主 dlopen 失败 | **已消除**：M0 实测两类 ABI 全导出（§2.6） |
 | 单库体积增长 | APK 增大 | M0 记录实测；必要时拆库/裁剪 |
 | CPU 软渲染性能不足 | 卡顿 | 目标分辨率/帧率实测；宿主只做缩放；后续可优化 `fb_frame` 零拷贝 |
 | AVG32 单文件存档语义 | 存档管理不可用 | 扩展 `SaveLocation` 文件模式 |
-| UK2 存档路径不明 | 存读失败 | M0/M1 真机实测后固化 |
+| UK2 存档路径 | 存读失败 | **已消除**：源确认 `<根>/FLAG00.DAT`…`FLAG09.DAT`（§6）；M1 真机复核 |
 | 字体缺失 | 文本乱码/方块 | `game_add_font_file` 注册游戏字体/默认字体 |
 | SAF/权限 | 无法写存档 | 沿用 `requestAllFilesAccessIfNeeded`（MANAGE_EXTERNAL_STORAGE） |
 | IME 无按需唤起接口 | 名字输入体验差 | 一期宿主手动唤起按钮；二期可向上游补 ABI |
@@ -343,12 +366,12 @@ AVG32/UK2 走该模式；RealLive 走现有目录模式。删除游戏时按现�
 
 | 阶段 | 内容 | 依赖 | 预估 |
 |---|---|---|---|
-| M0 | 构建 `game_launcher` arm64；符号核对；**方案 A/B 定稿**；真机确认 UK2 存档路径 | 无 | 0.5–1 天 |
-| M1 | shim + `NativeGames` + `FramebufferGameActivity/View` + Manifest；跑通 1 款 RealLive | M0 | 1–2 天 |
-| M2 | app：EngineType/扫描/启动/存档/插件分支 + 文案 | M1 | 1 天 |
-| M3 | 文本编码设置链路（全局/单游戏）、字体注册、封面/标题增强（可选） | M2 | 1 天 |
+| M0 | ~~构建 `game_launcher` arm64；符号核对；方案 A/B 定稿；确认 UK2 存档路径~~ **已完成（§2.6）** | 无 | ✅ |
+| M1 | shim + `NativeGames` + `FramebufferGameActivity/View` + Manifest；~~跑通 1 款 RealLive~~ **代码已完成，实机待 M4**（见「实施记录」） | M0 | ✅ |
+| M2 | app：EngineType/扫描/启动/存档/插件分支 + 文案 | M1 | ✅ |
+| M3 | 文本编码设置链路（全局/单游戏）**已完成**；字体注册与封面/标题增强延后（见偏差 3） | M2 | ✅ |
 | M4 | 三引擎逐款真机验收 + Siglus 回归 | M3 | 1–2 天 |
-| M5 | 打包、体积/性能记录、README/CONTEXT/文档更新 | M4 | 0.5 天 |
+| M5 | 打包、体积记录、README/CONTEXT/文档更新 **已完成**；性能指标随 M4 | M4 | ✅ |
 
 ---
 
@@ -426,3 +449,73 @@ app/src/main/res/values{,-ja,-en}/strings.xml                     [修改]
 app/src/test/java/.../EngineScanner{Avg32,Reallive,Uk2}Test.kt    [新增]
 README.md / CONTEXT.md                                            [修改]
 ```
+
+---
+
+## 实施记录（M1–M3 + M5，M4 待实机）
+
+### M1 engine 模块（native + Java 宿主）
+
+| 文件 | 改动 |
+|---|---|
+| `engine/src/main/cpp/games_bridge.cpp` | **新增**：自研 shim，`dlopen("libsiglus.so")` + `dlsym` `game_*`，另解析 `siglus_android_init_context` 用于 ndk-context/日志初始化；JNI 方法对齐 `NativeGames` |
+| `engine/src/main/cpp/CMakeLists.txt` | 新增 `games_bridge` 共享库目标 |
+| `engine/src/main/java/com/core/games/NativeGames.java` | **新增**：JNI 包装 + 键码/鼠标键常量 + `initAndroidContext` |
+| `engine/src/main/java/com/core/games/FramebufferView.java` | **新增**：位图 letterbox 绘制与坐标换算 |
+| `engine/src/main/java/com/core/games/FramebufferTextInputView.java` | **新增**：1×1 隐藏输入视图，IME 提交 → `game_fb_text` |
+| `engine/src/main/java/com/core/games/FramebufferGameActivity.java` | **新增**：`Choreographer` 帧循环、手势/按键/IME、控制条（输入法/跳过/菜单）、返回键（单击=右键、双击=退出确认）、加载层 |
+| `engine/src/main/AndroidManifest.xml` | 新增 `FramebufferGameActivity`（`:fbgames`、`sensorLandscape`、`Theme.FramebufferGames`） |
+| `engine/src/main/res/values/styles.xml` | 新增 `Theme.FramebufferGames` |
+| `engine/src/main/res/values{,-ja,-en}/strings.xml` | 新增 8 个 fb 文案（缺目录/初始化失败/返回退出/输入法/跳过/菜单） |
+| `engine/src/main/java/com/core/engine/LaunchContract.kt` | 新增 `LAUNCH_MODE_FRAMEBUFFER`、`GAMES_ENGINE`、`GAMES_NLS`、`GAMES_TITLE` |
+| `engine/src/main/jniLibs/arm64-v8a/libsiglus.so` | 替换为 `game_launcher` 产物（单库含四引擎，24,602,928 B） |
+
+### M2 app 模块
+
+| 文件 | 改动 |
+|---|---|
+| `core/engine/EngineType.kt` | 新增 `REALLIVE` / `AVG32` / `UK2` |
+| `core/game/scan/EngineScanner.kt` | 新增特征与内容嗅探：`UK2.CFG`、MES 头、`SEEN.TXT`（`PACL`→AVG32 / 10000 项 TOC→RealLive）、散装 `SEEN###/####.TXT`；搜索目录新增 `dat`；SAF/File 会话新增 `readHead` |
+| `core/game/launch/EngineLauncher.kt` | `supportedEngines` + `buildFramebufferIntent` + `framebufferEngineId` |
+| `core/engine/plugin/EnginePluginBootstrap.kt` | 三引擎 → 内置（`return null`） |
+| `core/game/save/GameSaveManager.kt` | RealLive → `<根>/savedata_rs`；AVG32/UK2 → 游戏根 + 白名单（`SAVE.INI` / `FLAGnn.DAT`），导入时其余游戏文件从备份移回（同 ARTEMIS 语义） |
+| `ui/engine/EngineScreen.kt` | GAL 分组、描述、`game_launcher-xmoezzz` 内置条目 |
+| `ui/game/GameScreen.kt` | 三引擎占位色 |
+| `app/src/main/res/values{,-ja,-en}/strings.xml` | 3 条引擎描述 + 7 条 fb 编码设置 + 说明，三语言严格一致 |
+| `app/src/test/.../EngineScannerFramebufferTest.kt` | **新增** 7 个单测 |
+
+### M3 文本编码设置链路
+
+- `EngineSettingsStore`：`fb_nls`（auto/sjis/gbk/big5/utf8/korean）+ getter/setter/normalize
+- `EngineSettingsResolver` / `ResolvedEngineSettings.fbNls`（全局 + 单游戏合并）
+- `PerGameSettingsStore.F_FB_NLS` + `GameOverridePartitions.KEY_FB_NLS`（随 tyrano 分区持久化）
+- `EngineSettingsKind.FRAMEBUFFER` + 设置页/单游戏设置卡片（`fbNlsOptions`）
+
+### 与方案的偏差（已实现口径）
+
+1. **存档管理**：AVG32/UK2 采用「游戏根 + 文件名白名单 + 导入后从备份移回其余文件」，复用 ARTEMIS 的既有语义，未新增 `SaveLocation.file` 模式；AVG32 `#SAVEFILE` 自定义名暂不识别。
+2. **IME**：引擎无「是否需要输入法」ABI，宿主用控制条「输入法」按钮手动唤起/收起（方案一期口径）。
+3. **字体**：未调用 `game_add_font_file`；依赖 `game_fs` 内置的 Android 系统 CJK 字体路径回退。
+4. **引擎 id**：`EngineType` → `reallive/avg32/uk2` 下发；内容嗅探失败时为 null，由引擎按文件内容自动探测。
+5. **识别**：`SEEN.TXT` 用文件头内容区分（`PACL` / TOC），复刻上游 `engine-detect`，避免 AVG32 误判为 RealLive。
+
+### 验证结果
+
+- `./gradlew :app:assembleDebug --no-daemon` 通过（含 native shim 编译、`.so` 打包）。
+- `./gradlew :app:testDebugUnitTest --no-daemon` 通过；`EngineScannerFramebufferTest` 7/7。
+- `python3 tools/check-hardcoded-ui-strings.py` 通过；`git diff --check` 通过。
+- **待办（M4）**：实机回归 Siglus（銀色、遥か IME / 月の彼方 NAMAE）+ 每引擎至少一款真机验收（AVG32/RealLive/UK2）；CPU 软渲染帧率/内存指标。
+
+### M4 实机验证记录（2026-09-25，HONOR MAA-AN10 / Android 16）
+
+| 项目 | 结果 |
+|---|---|
+| 构建/安装 | `assembleDebug` 通过；`adb install -r -t -d` 成功（本地产物 versionCode 低于设备已装版本，测试用 `-d` 允许降级） |
+| 引擎页展示 | GAL 分组出现 RealLive / AVG32 / UK2，描述与「已集成」条目正确 |
+| **Siglus 回归** | 銀色、遥か：警告页 → 标题 → 初めから → 名字变更页，点击 `姓` 后 `mInputShown=true`（软键盘正常），**换用 game_launcher 单库后 Siglus 链路零回归** |
+| 扫描识别（合成样本） | `Gameexe.ini` + 8B `PACL` `SEEN.TXT` → AVG32 徽标；`UK2.CFG` → UK2 徽标（UI + DB 双向确认） |
+| 宿主链路（合成样本） | 启动后进入 `FramebufferGameActivity`（`:fbgames` 进程）；UK2 打开失败 → 本地化「启动失败 / uk2: UK2.CFG is missing MIDI_EXT」对话框；AVG32 打开成功、引擎运行到缺失场景后 `fbStep` 返回结束并优雅退出 |
+| 实机发现并修复 | shim 的 `nativeInitAndroidContext` JNI 符号漏写 `native` 前缀导致 `UnsatisfiedLinkError` 崩溃；已修复并重新验证（全部 16 个 JNI 符号与 Java native 一一对应） |
+| 未覆盖 | 无真机 RealLive/AVG32/UK2 游戏（设备上只有 Siglus/ONS/KRKR 等），实际画面/音频/存档读写与性能指标（G6）待有真实游戏后回归 |
+
+> 合成样本目录已删除；其库记录因目录缺失不参与 UI 展示，后续全量重扫会清理。

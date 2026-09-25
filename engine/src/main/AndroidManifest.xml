@@ -176,6 +176,19 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
         </activity>
 
+        <!-- RealLive / AVG32 / UK2（framebuffer 软渲染）宿主：Choreographer 主循环 + Bitmap 呈现 -->
+        <activity
+            android:name="com.core.games.FramebufferGameActivity"
+            android:exported="false"
+            android:process=":fbgames"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.FramebufferGames"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.FramebufferGames"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+        </activity>
+
         <!-- ONS（ons）SDL2 宿主 -->
         <activity
             android:name="com.yuri.onscripter.ONScripter"

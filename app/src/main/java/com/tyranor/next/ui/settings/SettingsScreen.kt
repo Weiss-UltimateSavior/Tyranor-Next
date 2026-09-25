@@ -721,6 +721,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
     var renpy by remember { mutableStateOf(EngineSettingsStore.loadRenPy(ctx)) }
     var siglusLanguage by remember { mutableStateOf(EngineSettingsStore.getSiglusLanguage(ctx)) }
+    var fbNls by remember { mutableStateOf(EngineSettingsStore.getFbNls(ctx)) }
     var fvpNls by remember { mutableStateOf(EngineSettingsStore.getFvpNls(ctx)) }
     var fvpSystemFont by remember { mutableStateOf(EngineSettingsStore.isFvpSystemFont(ctx)) }
     var fvpTextHidpi by remember { mutableStateOf(EngineSettingsStore.isFvpTextHidpi(ctx)) }
@@ -795,6 +796,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
         EngineSettingsStore.saveRenPy(ctx, renpy)
         EngineSettingsStore.setSiglusLanguage(ctx, siglusLanguage)
+        EngineSettingsStore.setFbNls(ctx, fbNls)
         EngineSettingsStore.setFvpNls(ctx, fvpNls)
         EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
         EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
@@ -828,7 +830,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
-                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
                 fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion,
                 topInset = innerPadding.calculateTopPadding(),
                 onLaunchNativeKirikiroidUi = {
@@ -878,6 +880,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onRenpyVersion = { renpyVersion = it },
                 onRenpy = { renpy = it },
                 onSiglusLanguage = { siglusLanguage = it },
+                onFbNls = { fbNls = it },
                 onFvpNls = { fvpNls = it },
                 onFvpSystemFont = { fvpSystemFont = it },
                 onFvpTextHidpi = { fvpTextHidpi = it },
@@ -935,6 +938,7 @@ private fun LazyListPlaceholder(
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
     rpg: EngineSettingsStore.RpgMaker,
     renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
+    fbNls: String,
     fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fvpFont: String,
     fontLauncher: FontPickerLauncher, fvpFontLauncher: FontPickerLauncher,
     winlator: EngineSettingsStore.Winlator,
@@ -960,6 +964,7 @@ private fun LazyListPlaceholder(
     onRenpyVersion: (String) -> Unit,
     onRenpy: (EngineSettingsStore.RenPy) -> Unit,
     onSiglusLanguage: (String) -> Unit,
+    onFbNls: (String) -> Unit,
     onFvpNls: (String) -> Unit,
     onFvpSystemFont: (Boolean) -> Unit,
     onFvpTextHidpi: (Boolean) -> Unit,
@@ -1173,6 +1178,23 @@ private fun LazyListPlaceholder(
                 )
                 Text(
                     stringResource(R.string.engine_settings_siglus_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.FRAMEBUFFER) item {
+            EngineCard("RealLive / AVG32 / UK2") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_fb_nls_title),
+                    fbNlsOptions(),
+                    fbNls,
+                    onFbNls,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_fb_note),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MiuixTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

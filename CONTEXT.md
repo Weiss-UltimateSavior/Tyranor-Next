@@ -5,12 +5,16 @@
 ## 引擎与运行时
 
 **引擎（EngineType）**:
-游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、FVP、RENPY、YURIS、CATSYSTEM2、PC、UNKNOWN。
+游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、REALLIVE、AVG32、UK2、FVP、RENPY、YURIS、CATSYSTEM2、PC、UNKNOWN。
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:
-随 App 分发、无需外置安装即可运行的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、FVP（rfvp Rust 运行时）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
+随 App 分发、无需外置安装即可运行的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、RealLive / AVG32 / UK2（siglus_rs game_launcher 软渲染运行时）、FVP（rfvp Rust 运行时）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
 _Avoid_: 预制引擎、捆绑引擎
+
+**视觉小说引擎组（Framebuffer 引擎）**:
+Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（RealLive、AVG32、UK2）的统称：引擎逐帧输出 RGBA 帧缓冲，宿主 `FramebufferGameActivity` 拷进 Bitmap 呈现并转发指针/键盘/文本输入；文本编码（NLS）按全局/单游戏设置。
+_Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
 以独立 APK 形式分发、需用户安装/下载的引擎运行时（Ren'Py 8.5/7.7.1、RPG Maker XP/VX/VX Ace/mkxp-z），由注册表（ExternalEngineModuleRegistry）按引擎 + 版本解析目标模块，启动时通过 Intent 协议拉起。

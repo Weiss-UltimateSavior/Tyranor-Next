@@ -28,6 +28,7 @@ import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.EmulatorTarget as ExternalEmulatorTarget
 import com.core.fvp.FvpActivity
+import com.core.games.FramebufferGameActivity
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.nativeplugin.NativePluginConstants
 import com.core.rpgmaker.RpgMakerActivity
@@ -112,6 +113,9 @@ object EngineLauncher {
         EngineType.WEB_OTHER,
         EngineType.ARTEMIS,
         EngineType.SIGLUS,
+        EngineType.REALLIVE,
+        EngineType.AVG32,
+        EngineType.UK2,
         EngineType.FVP,
         EngineType.RENPY,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
@@ -759,6 +763,10 @@ object EngineLauncher {
 
             EngineType.SIGLUS -> buildSiglusIntent(context, path, game, settings)
 
+            EngineType.REALLIVE,
+            EngineType.AVG32,
+            EngineType.UK2 -> buildFramebufferIntent(context, path, game, settings)
+
             EngineType.FVP -> buildFvpIntent(context, path, game, settings)
 
             EngineType.RPGMAKER,
@@ -866,6 +874,40 @@ object EngineLauncher {
             .putString(EnginePrefs.KEY_SIGLUS_URI_PREFIX + pathHash, game.uri)
             .putString(EnginePrefs.KEY_SIGLUS_DEFAULT_TITLE_PREFIX + pathHash, File(path).name)
             .apply()
+    }
+
+    /**
+     * RealLive / AVG32 / UK2 启动：真实路径 + 引擎 id + 文本编码。
+     * 存档目录由引擎固定写入游戏目录（AVG32 = `SAVE.INI`；RealLive = `savedata_rs`；
+     * UK2 = `FLAGnn.DAT`），一期不支持独立存档。
+     */
+    private fun buildFramebufferIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent = Intent(context, FramebufferGameActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_FRAMEBUFFER)
+        putExtra(LaunchContract.GAMES_ENGINE, framebufferEngineId(game.engine))
+        val nls = settings.fbNls
+        if (nls.isNotBlank() && nls != EngineSettingsStore.FB_NLS_AUTO) {
+            putExtra(LaunchContract.GAMES_NLS, nls)
+        }
+        putExtra(LaunchContract.GAMES_TITLE, game.title)
+    }
+
+    /** EngineType → 上游 `game_fb_open` 的 engine id（未知/歧义时交给引擎按内容自动探测）。 */
+    private fun framebufferEngineId(engine: EngineType): String? = when (engine) {
+        EngineType.REALLIVE -> "reallive"
+        EngineType.AVG32 -> "avg32"
+        EngineType.UK2 -> "uk2"
+        else -> null
     }
 
     /**

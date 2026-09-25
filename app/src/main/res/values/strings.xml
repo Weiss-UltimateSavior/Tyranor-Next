@@ -117,6 +117,9 @@
     <string name="engine_desc_renpy">Ren’Py 外置 APK 模块，检测安装状态后启动</string>
     <string name="engine_desc_siglus">SiglusEngine（Key/VisualArts 系），Gameexe 与 Scene.pck 游戏</string>
     <string name="engine_desc_fvp">FVPEngine（FAVORITE 系），.hcb/.bch 脚本与 graph/voice 封包游戏</string>
+    <string name="engine_desc_reallive">RealLive（VisualArt’s 系），Kanon SE/CLANNAD/Little Busters! 等</string>
+    <string name="engine_desc_avg32">AVG32（VisualArt’s 早期引擎），Kanon/AIR/ONE 等</string>
+    <string name="engine_desc_uk2">UK2（AyPio 早期引擎，PC-98），ソーサーキングダム 等</string>
     <string name="engine_desc_unknown">未知引擎</string>
     <string name="engine_desc_psp">PSP 游戏通过外置 PPSSPP 运行</string>
     <string name="engine_desc_yuris">YU-RIS，yscfg.dat 与 .ypf 封包（ysbin/.ymv）游戏，经外置 Winlator 运行</string>
@@ -237,6 +240,15 @@
     <string name="engine_settings_siglus_language_value_fr">法语（FR）</string>
     <string name="engine_settings_siglus_language_value_id">印尼语（ID）</string>
     <string name="engine_settings_siglus_note">存档位于游戏目录 savedata/；首次启动会生成 key.toml，需开启所有文件访问权限。</string>
+    <string name="engine_settings_framebuffer_title">R/A/U引擎设置</string>
+    <string name="engine_settings_fb_nls_title">文本编码</string>
+    <string name="engine_settings_fb_nls_auto">自动</string>
+    <string name="engine_settings_fb_nls_sjis">Shift-JIS（日文原版）</string>
+    <string name="engine_settings_fb_nls_gbk">GBK（简体汉化）</string>
+    <string name="engine_settings_fb_nls_big5">Big5（繁体汉化）</string>
+    <string name="engine_settings_fb_nls_utf8">UTF-8</string>
+    <string name="engine_settings_fb_nls_korean">韩语</string>
+    <string name="engine_settings_fb_note">仅对 RealLive / AVG32 / UK2 生效；修改编码后需重新进入游戏。存档位于游戏目录内。</string>
     <string name="engine_settings_fvp_title">FVP引擎设置</string>
     <string name="engine_settings_fvp_nls_title">文本编码</string>
     <string name="engine_settings_fvp_nls_sjis">Shift-JIS（日文原版）</string>

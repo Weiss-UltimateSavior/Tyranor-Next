@@ -46,6 +46,16 @@ object EngineScanner {
     private val GAMEEXE_DAT_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.dat$""")
     private val GAMEEXE_INI_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.ini$""")
 
+    /** AVG32 散装场景 `SEEN###.TXT`（三位数）与 RealLive `SEEN####.TXT`（四位数）。 */
+    private val SEEN_SCENE_AVG32_RE = Regex("""^seen\d{3}\.txt$""")
+    private val SEEN_SCENE_REALLIVE_RE = Regex("""^seen\d{4}\.txt$""")
+
+    /** UK2 MES 文件头（`<< UK2 TEXT Ver1.00 >>`）。 */
+    private val UK2_MES_MAGIC = "<< UK2 TEXT Ver1.00 >>".toByteArray(Charsets.US_ASCII)
+
+    /** RealLive `SEEN.TXT` 场景头尺寸（`0x1d0`，AVG2000 为 `0x1cc`）。 */
+    private val REALLIVE_HEADER_SIZES = intArrayOf(0x1d0, 0x1cc)
+
     // ============ 扫描游戏 ============
 
     /** 全量扫描所有根目录（结果以本次扫描为准，用于首次/无数据场景）。 */
@@ -166,7 +176,7 @@ object EngineScanner {
         if (dir.uri.toString() in known) return
         val children = session.children(dir)
 
-        val detected = detectEngine(children, session::children)
+        val detected = detectEngine(children, session::children, session::readHead)
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
@@ -227,7 +237,7 @@ object EngineScanner {
         val children = session.children(dir)
 
         // 1) 本级目录本身可能是游戏（含引擎特征文件）
-        val detected = detectEngine(children, session::children)
+        val detected = detectEngine(children, session::children, session::readHead)
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
@@ -328,6 +338,15 @@ object EngineScanner {
                 val buffer = ByteArray(maxBytes)
                 val count = input.read(buffer)
                 if (count <= 0) "" else String(buffer, 0, count, Charsets.UTF_8)
+            }
+        }.getOrNull()
+
+        /** 读取文件头字节，用于 AVG32/RealLive 的 `SEEN.TXT` 与 UK2 `.MES` 内容判定。 */
+        fun readHead(node: SafNode, maxBytes: Int = 64 * 1024): ByteArray? = runCatching {
+            resolver.openInputStream(node.uri)?.use { input ->
+                val buffer = ByteArray(maxBytes)
+                val count = input.read(buffer)
+                if (count <= 0) null else buffer.copyOf(count)
             }
         }.getOrNull()
     }
@@ -499,10 +518,23 @@ object EngineScanner {
 
     private class FileScanSession {
         private val childrenCache = HashMap<String, Array<File>>()
+        private val headCache = HashMap<String, ByteArray?>()
 
         fun children(dir: File): Array<File> = childrenCache.getOrPut(dir.absolutePath) {
             dir.listFiles() ?: emptyArray()
         }
+
+        /** 读取文件头字节，用于 AVG32/RealLive 的 `SEEN.TXT` 与 UK2 `.MES` 内容判定。 */
+        fun readHead(file: File, maxBytes: Int = 64 * 1024): ByteArray? =
+            headCache.getOrPut(file.absolutePath) {
+                runCatching {
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(maxBytes)
+                        val count = input.read(buffer)
+                        if (count <= 0) null else buffer.copyOf(count)
+                    }
+                }.getOrNull()
+            }
     }
 
     private fun scanRootIncrementalFile(
@@ -621,16 +653,19 @@ object EngineScanner {
         nameOf = { it.name },
         isDirectory = { it.isDirectory },
         childrenOf = { session.children(it).asIterable() },
+        headOf = { session.readHead(it) },
     )
 
     private fun detectEngine(
         children: List<SafNode>,
         childrenOf: (SafNode) -> List<SafNode>,
+        headOf: (SafNode) -> ByteArray?,
     ): Detection = detectEngine(
         children = children,
         nameOf = { it.name },
         isDirectory = { it.isDirectory },
         childrenOf = childrenOf,
+        headOf = headOf,
     )
 
     private fun <T> detectEngine(
@@ -638,6 +673,7 @@ object EngineScanner {
         nameOf: (T) -> String,
         isDirectory: (T) -> Boolean,
         childrenOf: (T) -> Iterable<T>,
+        headOf: (T) -> ByteArray? = { null },
     ): Detection {
 
         val xp3Files = mutableListOf<String>()
@@ -694,6 +730,12 @@ object EngineScanner {
         var hasMkxpZRubyRuntime = false
         var hasFvpScript = false
         var hasFvpPack = false
+        var hasUk2Cfg = false
+        var hasSeenSceneAvg32 = false
+        var hasSeenSceneReallive = false
+        var seenArchiveNode: T? = null
+        var seenArchiveIsRoot = false
+        var uk2MesNode: T? = null
 
         fun collect(entry: T, rel: String) {
             val lower = nameOf(entry).lowercase(Locale.ROOT)
@@ -745,6 +787,17 @@ object EngineScanner {
                 lower == "scene.pck" -> hasScenePck = true
                 lower == "select.ini" -> hasSelectIni = true
                 lower.endsWith(".g00") -> hasG00 = true
+                // RealLive / AVG32 / UK2（framebuffer 引擎）
+                lower == "uk2.cfg" -> hasUk2Cfg = true
+                lower == "seen.txt" -> {
+                    if (seenArchiveNode == null || (!seenArchiveIsRoot && rel.isEmpty())) {
+                        seenArchiveNode = entry
+                        seenArchiveIsRoot = rel.isEmpty()
+                    }
+                }
+                SEEN_SCENE_AVG32_RE.matches(lower) -> hasSeenSceneAvg32 = true
+                SEEN_SCENE_REALLIVE_RE.matches(lower) -> hasSeenSceneReallive = true
+                lower.endsWith(".mes") -> if (uk2MesNode == null) uk2MesNode = entry
                 lower == "yscfg.dat" -> hasYscfgDat = true
                 lower == "cs2.exe" -> hasCs2Exe = true
                 lower.endsWith(".int") -> {
@@ -798,6 +851,30 @@ object EngineScanner {
         }
         if (hasFvpScript) {
             return Detection(EngineType.FVP, 88, LAUNCH_TARGET_GAME_DIR)
+        }
+        // ---- framebuffer 引擎（RealLive / AVG32 / UK2）----
+        if (hasUk2Cfg) {
+            return Detection(EngineType.UK2, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        val uk2Mes = uk2MesNode
+        if (uk2Mes != null && hasUk2MesHeader(headOf(uk2Mes))) {
+            return Detection(EngineType.UK2, 90, LAUNCH_TARGET_GAME_DIR)
+        }
+        val seenKind = classifySeenArchive(seenArchiveNode?.let { headOf(it) })
+        if (hasGameexeIni && seenKind != null) {
+            return Detection(seenKind, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeIni && hasSeenSceneReallive) {
+            return Detection(EngineType.REALLIVE, 92, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeIni && hasSeenSceneAvg32) {
+            return Detection(EngineType.AVG32, 92, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (seenKind != null) {
+            return Detection(seenKind, 80, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (uk2MesNode != null) {
+            return Detection(EngineType.UK2, 82, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasGameexeIni && hasScenePck) {
             return Detection(EngineType.SIGLUS, 95, LAUNCH_TARGET_GAME_DIR)
@@ -906,6 +983,52 @@ object EngineScanner {
         return UNKNOWN_DETECTION
     }
 
+    /** UK2 `.MES` 头判定（读到内容时使用）。 */
+    private fun hasUk2MesHeader(head: ByteArray?): Boolean {
+        if (head == null || head.size < UK2_MES_MAGIC.size) return false
+        return UK2_MES_MAGIC.indices.all { head[it] == UK2_MES_MAGIC[it] }
+    }
+
+    /**
+     * 区分共享 `SEEN.TXT` 文件名的 AVG32 与 RealLive：
+     * `PACL` 头 → AVG32；10000 项 TOC（每项 8 字节 offset/length，场景头 `0x1d0`/`0x1cc`）→ RealLive。
+     * 参考上游 `engine-detect`，只读文件头即可判定。
+     */
+    private fun classifySeenArchive(head: ByteArray?): EngineType? {
+        if (head == null || head.size < 8) return null
+        if (head.size >= 4 &&
+            head[0] == 'P'.code.toByte() &&
+            head[1] == 'A'.code.toByte() &&
+            head[2] == 'C'.code.toByte() &&
+            head[3] == 'L'.code.toByte()
+        ) {
+            return EngineType.AVG32
+        }
+        var valid = 0
+        for (index in 0 until 4) {
+            val at = index * 8
+            if (at + 8 > head.size) break
+            val offset = readU32(head, at)
+            val length = readU32(head, at + 4)
+            if (offset == 0L || length < 4) continue
+            if (offset + 4 <= head.size) {
+                val header = readU32(head, offset.toInt())
+                if (REALLIVE_HEADER_SIZES.none { it.toLong() == header }) return null
+            }
+            valid++
+            if (valid >= 4) break
+        }
+        return if (valid > 0) EngineType.REALLIVE else null
+    }
+
+    private fun readU32(bytes: ByteArray, at: Int): Long {
+        if (at < 0 || at + 4 > bytes.size) return 0
+        return (bytes[at].toLong() and 0xFF) or
+            ((bytes[at + 1].toLong() and 0xFF) shl 8) or
+            ((bytes[at + 2].toLong() and 0xFF) shl 16) or
+            ((bytes[at + 3].toLong() and 0xFF) shl 24)
+    }
+
     const val LAUNCH_TARGET_GAME_DIR = "DIR"
 
     /** CatSystem2 判定阈值（§15 评分：`startup.xml + 多个 .int`（含典型名）即可达标）。 */
@@ -929,6 +1052,7 @@ object EngineScanner {
 
     private val ENGINE_SEARCH_DIRECTORIES = setOf(
         "data",
+        "dat",
         "tyrano",
         "scenario",
         "system",

@@ -97,6 +97,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var artPowerSaving by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
     var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
     var siglusLanguage by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_SIGLUS_LANGUAGE)) }
+    var fbNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FB_NLS)) }
     var fvpNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS)) }
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
@@ -215,6 +216,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalRpgMzVersion = EngineSettingsStore.getRpgMzEngineVersion(ctx)
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
     val globalSiglusLanguage = EngineSettingsStore.getSiglusLanguage(ctx)
+    val globalFbNls = EngineSettingsStore.getFbNls(ctx)
     val globalFvpNls = EngineSettingsStore.getFvpNls(ctx)
     val globalFvpSystemFont = EngineSettingsStore.isFvpSystemFont(ctx)
     val globalFvpTextHidpi = EngineSettingsStore.isFvpTextHidpi(ctx)
@@ -249,6 +251,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val artVersionMap = artVersionOptionsMap()
     val renpyVersionMap = renpyVersionOptionsMap()
     val siglusLanguageMap = siglusLanguageOptionsMap()
+    val fbNlsMap = fbNlsOptionsMap()
     val fvpNlsMap = fvpNlsOptionsMap()
     val artPatchMap = artPatchOptionsMap()
     val artResolutionMap = artResolutionOptionsMap()
@@ -310,6 +313,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING, artPowerSaving)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION, renpyVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_SIGLUS_LANGUAGE, siglusLanguage)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FB_NLS, fbNls)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS, fvpNls)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
@@ -639,6 +643,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice(stringResource(R.string.engine_settings_siglus_language_title), siglusLanguageMap, globalSiglusLanguage, siglusLanguage) { siglusLanguage = it }
                             Text(
                                 stringResource(R.string.engine_settings_siglus_note),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2 -> item {
+                        SectionCard("RealLive / AVG32 / UK2") {
+                            OverrideChoice(stringResource(R.string.engine_settings_fb_nls_title), fbNlsMap, globalFbNls, fbNls) { fbNls = it }
+                            Text(
+                                stringResource(R.string.engine_settings_fb_note),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

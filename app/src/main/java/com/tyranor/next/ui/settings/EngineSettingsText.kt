@@ -144,6 +144,16 @@ internal fun siglusLanguageOptions(): List<Pair<String, String>> = listOf(
 
 /** FVP 文本编码（创建引擎时固定；改动后需重启本局）。 */
 @Composable
+internal fun fbNlsOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.FB_NLS_AUTO to stringResource(R.string.engine_settings_fb_nls_auto),
+    EngineSettingsStore.FB_NLS_SJIS to stringResource(R.string.engine_settings_fb_nls_sjis),
+    EngineSettingsStore.FB_NLS_GBK to stringResource(R.string.engine_settings_fb_nls_gbk),
+    EngineSettingsStore.FB_NLS_BIG5 to stringResource(R.string.engine_settings_fb_nls_big5),
+    EngineSettingsStore.FB_NLS_UTF8 to stringResource(R.string.engine_settings_fb_nls_utf8),
+    EngineSettingsStore.FB_NLS_KOREAN to stringResource(R.string.engine_settings_fb_nls_korean),
+)
+
+@Composable
 internal fun fvpNlsOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.FVP_NLS_SJIS to stringResource(R.string.engine_settings_fvp_nls_sjis),
     EngineSettingsStore.FVP_NLS_GBK to stringResource(R.string.engine_settings_fvp_nls_gbk),
@@ -243,6 +253,10 @@ internal fun siglusLanguageOptionsMap(): Map<String, String> = siglusLanguageOpt
 
 @Composable
 internal fun fvpNlsOptionsMap(): Map<String, String> = fvpNlsOptions().toMap()
+
+/** RealLive / AVG32 / UK2 文本编码（创建引擎时固定）。 */
+@Composable
+internal fun fbNlsOptionsMap(): Map<String, String> = fbNlsOptions().toMap()
 
 // ───────────────────────── PPSSPP 外置模拟器 ─────────────────────────
 

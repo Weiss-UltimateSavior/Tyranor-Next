@@ -9,4 +9,8 @@
         <item name="android:windowBackground">@android:color/black</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+    <style name="Theme.FramebufferGames" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
 </resources>

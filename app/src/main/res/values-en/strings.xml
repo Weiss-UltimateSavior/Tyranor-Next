@@ -117,6 +117,9 @@
     <string name="engine_desc_renpy">Ren’Py external APK module, launched after install-state detection</string>
     <string name="engine_desc_siglus">SiglusEngine (Key / VisualArts), Gameexe and Scene.pck games</string>
     <string name="engine_desc_fvp">FVPEngine (FAVORITE), .hcb/.bch scripts with graph/voice packs</string>
+    <string name="engine_desc_reallive">RealLive (VisualArt’s). Kanon SE / CLANNAD / Little Busters! and more</string>
+    <string name="engine_desc_avg32">AVG32 (VisualArt’s early engine). Kanon / AIR / ONE and more</string>
+    <string name="engine_desc_uk2">UK2 (AyPio early PC-98 engine). Sorcer Kingdom and more</string>
     <string name="engine_desc_unknown">Unknown engine</string>
     <string name="engine_desc_psp">PSP games run through the external PPSSPP</string>
     <string name="engine_desc_yuris">YU-RIS (yscfg.dat with .ypf packages, ysbin/.ymv), runs via external Winlator</string>
@@ -237,6 +240,15 @@
     <string name="engine_settings_siglus_language_value_fr">French (FR)</string>
     <string name="engine_settings_siglus_language_value_id">Indonesian (ID)</string>
     <string name="engine_settings_siglus_note">Saves live in the game folder\'s savedata/. The first launch writes key.toml, so all-files access is required.</string>
+    <string name="engine_settings_framebuffer_title">R/A/U engine settings</string>
+    <string name="engine_settings_fb_nls_title">Text encoding</string>
+    <string name="engine_settings_fb_nls_auto">Auto</string>
+    <string name="engine_settings_fb_nls_sjis">Shift-JIS (Japanese)</string>
+    <string name="engine_settings_fb_nls_gbk">GBK (Simplified Chinese)</string>
+    <string name="engine_settings_fb_nls_big5">Big5 (Traditional Chinese)</string>
+    <string name="engine_settings_fb_nls_utf8">UTF-8</string>
+    <string name="engine_settings_fb_nls_korean">Korean</string>
+    <string name="engine_settings_fb_note">Applies to RealLive / AVG32 / UK2 only. Restart the game after changing the encoding. Saves stay inside the game folder.</string>
     <string name="engine_settings_fvp_title">FVP engine settings</string>
     <string name="engine_settings_fvp_nls_title">Text encoding</string>
     <string name="engine_settings_fvp_nls_sjis">Shift-JIS (Japanese original)</string>

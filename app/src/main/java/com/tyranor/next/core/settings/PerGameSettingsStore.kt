@@ -92,6 +92,9 @@ object PerGameSettingsStore {
     // Siglus（游戏语言覆盖；null=跟随全局）
     const val F_SIGLUS_LANGUAGE = "siglus_language"
 
+    // framebuffer 引擎（RealLive / AVG32 / UK2）（文本编码覆盖；null=跟随全局）
+    const val F_FB_NLS = "fb_nls"
+
     // FVP（文本编码/系统字体回退/HiDPI/自定义字体覆盖；null=跟随全局）
     const val F_FVP_NLS = "fvp_nls"
     const val F_FVP_SYSTEM_FONT = "fvp_system_font"

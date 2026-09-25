@@ -117,6 +117,9 @@
     <string name="engine_desc_renpy">Ren’Py 外部 APK モジュール。インストール状態を確認して起動</string>
     <string name="engine_desc_siglus">SiglusEngine（Key/VisualArts 系）。Gameexe と Scene.pck のゲーム</string>
     <string name="engine_desc_fvp">FVPEngine（FAVORITE 系）。.hcb/.bch スクリプトと graph/voice パッケージのゲーム</string>
+    <string name="engine_desc_reallive">RealLive（VisualArt’s 系）。Kanon SE / CLANNAD / Little Busters! など</string>
+    <string name="engine_desc_avg32">AVG32（VisualArt’s 初期エンジン）。Kanon / AIR / ONE など</string>
+    <string name="engine_desc_uk2">UK2（AyPio 初期エンジン、PC-98）。ソーサーキングダム など</string>
     <string name="engine_desc_unknown">不明なエンジン</string>
     <string name="engine_desc_psp">PSP ゲームは外部 PPSSPP で実行します</string>
     <string name="engine_desc_yuris">YU-RIS（yscfg.dat と .ypf パッケージ、ysbin/.ymv）。外部 Winlator で実行</string>
@@ -237,6 +240,15 @@
     <string name="engine_settings_siglus_language_value_fr">フランス語（FR）</string>
     <string name="engine_settings_siglus_language_value_id">インドネシア語（ID）</string>
     <string name="engine_settings_siglus_note">セーブはゲームフォルダーの savedata/ に保存されます。初回起動時に key.toml を書き込むため、すべてのファイルへのアクセス権限が必要です。</string>
+    <string name="engine_settings_framebuffer_title">R/A/U エンジン設定</string>
+    <string name="engine_settings_fb_nls_title">テキスト文字コード</string>
+    <string name="engine_settings_fb_nls_auto">自動</string>
+    <string name="engine_settings_fb_nls_sjis">Shift-JIS（日本語版）</string>
+    <string name="engine_settings_fb_nls_gbk">GBK（簡体字中国語）</string>
+    <string name="engine_settings_fb_nls_big5">Big5（繁体字中国語）</string>
+    <string name="engine_settings_fb_nls_utf8">UTF-8</string>
+    <string name="engine_settings_fb_nls_korean">韓国語</string>
+    <string name="engine_settings_fb_note">RealLive / AVG32 / UK2 にのみ適用されます。変更後はゲームを再起動してください。セーブはゲームフォルダ内に保存されます。</string>
     <string name="engine_settings_fvp_title">FVP エンジン設定</string>
     <string name="engine_settings_fvp_nls_title">テキスト文字コード</string>
     <string name="engine_settings_fvp_nls_sjis">Shift-JIS（日本語版）</string>

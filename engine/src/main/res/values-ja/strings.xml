@@ -35,5 +35,13 @@
     <string name="engine_fvp_missing_game_dir">FVP の起動に失敗しました：ゲームディレクトリがありません</string>
     <string name="engine_fvp_init_failed">FVP エンジンの初期化に失敗しました</string>
     <string name="engine_fvp_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
+    <string name="engine_fb_missing_game_dir">起動失敗：ゲームディレクトリがありません</string>
+    <string name="engine_fb_init_failed">エンジンの初期化に失敗しました</string>
+    <string name="engine_fb_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
+    <string name="engine_fb_ime_show">キーボード</string>
+    <string name="engine_fb_ime_hide">キーボードを閉じる</string>
+    <string name="engine_fb_skip">スキップ</string>
+    <string name="engine_fb_skip_off">スキップ解除</string>
+    <string name="engine_fb_menu">メニュー</string>
     <string name="engine_ons_video_skip_hint">画面をタップしてスキップ</string>
 </resources>
