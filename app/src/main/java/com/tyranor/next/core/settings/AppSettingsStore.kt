@@ -21,6 +21,7 @@ object AppSettingsStore {
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
     const val KEY_ENGINE_TABS = "engine_tabs"
+    const val KEY_SIDE_RAIL = "side_rail"
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
     const val KEY_COVER_SCRAPER_SOURCE_ORDER = "cover_scraper_source_order"
     private const val KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX = "cover_scraper_source_enabled_"
@@ -97,6 +98,12 @@ object AppSettingsStore {
     /** 引擎页分类显示默认关闭：关闭时平铺展示全部引擎项，开启后按 GAL/RPGM/主机/网页 分页。 */
     const val DEFAULT_ENGINE_TABS_ENABLED = false
 
+    /** 平板侧边栏默认开启：平板/大窗口下主导航移到侧边，关闭则保持底部导航。 */
+    const val DEFAULT_SIDE_RAIL_ENABLED = true
+
+    /** 平板侧边栏内存态：设置页切换后主界面即时重组（平板判定 + 本开关决定是否用侧栏）。 */
+    val sideRailState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_SIDE_RAIL_ENABLED)
+
     /** 引擎页分类显示内存态：设置页切换后引擎页即时重组。 */
     val engineTabsState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_TABS_ENABLED)
 
@@ -154,6 +161,11 @@ object AppSettingsStore {
     /** 首次组合时从持久化加载引擎页分类显示开关到内存态（幂等）。 */
     fun initEngineTabs(c: Context) {
         engineTabsState.value = isEngineTabsEnabled(c)
+    }
+
+    /** 首次组合时从持久化加载平板侧边栏开关到内存态（幂等）。 */
+    fun initSideRail(c: Context) {
+        sideRailState.value = isSideRailEnabled(c)
     }
 
     private fun prefs(context: Context) =
@@ -241,6 +253,15 @@ object AppSettingsStore {
     fun setEngineTabsEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit().putBoolean(KEY_ENGINE_TABS, enabled).apply()
         engineTabsState.value = enabled
+    }
+
+    /** 平板/大窗口下是否使用侧边导航（默认开）。 */
+    fun isSideRailEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_SIDE_RAIL, DEFAULT_SIDE_RAIL_ENABLED)
+
+    fun setSideRailEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_SIDE_RAIL, enabled).apply()
+        sideRailState.value = enabled
     }
 
     fun isCoverScraperOnlyMissing(c: Context): Boolean =

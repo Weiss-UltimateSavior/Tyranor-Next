@@ -35,6 +35,8 @@
     <string name="settings_theme_mode_dark">ダーク</string>
     <string name="settings_tone_switch">色調切り替え</string>
     <string name="settings_engine_tabs">エンジンページを分類表示</string>
+    <string name="settings_side_rail">タブレットサイドレール</string>
+    <string name="settings_side_rail_summary">タブレット・大画面ではナビを側面に移動。オフの場合は下部のまま</string>
     <string name="settings_nav_bar_title">ナビゲーションバーのスタイル</string>
     <string name="settings_nav_bar_default">デフォルト</string>
     <string name="settings_nav_bar_liquid_glass">リキッドグラス · クラシック</string>

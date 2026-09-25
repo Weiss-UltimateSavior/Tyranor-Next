@@ -125,6 +125,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
     AppSettingsStore.gameSortState.value = gameSort
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
     libraryViewModel.refreshFromStorage()

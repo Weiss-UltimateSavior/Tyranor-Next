@@ -79,14 +79,18 @@ internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
+    val sideRailEnabled by AppSettingsStore.sideRailState.collectAsState()
     val glass = AppThemeColors.isGlass
-    // 平板/大窗口：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
+    // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
     val railLayout = isSideRailLayout()
     var showColorPicker by remember { mutableStateOf(false) }
     // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
-    // 否则下拉会显示成默认档（与磁盘上的真实取值不一致）
+    // 否则下拉/开关会显示成默认档（与磁盘上的真实取值不一致）
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(ctx) }
+        withContext(Dispatchers.IO) {
+            AppSettingsStore.initNavStyle(ctx)
+            AppSettingsStore.initSideRail(ctx)
+        }
     }
 
     MiuixSettingsTheme {
@@ -286,6 +290,21 @@ internal fun AppSettingsScreen() {
                                     navStyleOptions.getOrNull(index)?.first?.let { style ->
                                         AppSettingsStore.setNavStyle(ctx, style)
                                     }
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // 平板侧边栏：开启时平板/大窗口下导航移到侧边，关闭则保持底部导航
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_side_rail),
+                                summary = stringResource(R.string.settings_side_rail_summary),
+                                checked = sideRailEnabled,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setSideRailEnabled(ctx, checked)
                                 },
                             )
                         }

@@ -35,6 +35,8 @@
     <string name="settings_theme_mode_dark">Dark</string>
     <string name="settings_tone_switch">Tone switch</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
+    <string name="settings_side_rail">Tablet side rail</string>
+    <string name="settings_side_rail_summary">Move navigation to the side on tablets and large windows; keep it at the bottom when off</string>
     <string name="settings_nav_bar_title">Navigation bar style</string>
     <string name="settings_nav_bar_default">Default</string>
     <string name="settings_nav_bar_liquid_glass">Liquid glass · Classic</string>

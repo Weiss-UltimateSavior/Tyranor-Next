@@ -113,7 +113,7 @@ _Avoid_: 玻璃（单独出现时指本档）
 _Avoid_: 高级玻璃主题、液态玻璃（导航样式专属）
 
 **平板侧栏（Side Rail）**:
-平板/大窗口（sw600dp 或宽 ≥ 840dp）下主导航的侧边形态：按外观风格取该主题「默认导航栏」形态（默认 = Material3 `NavigationRail`、复古/高级玻璃 = 悬浮玻璃柱），液态玻璃两档不适配侧栏（平板下降级为主题默认形态）；侧栏占布局宽度，`glassNavBottomInset()` 返回 0，高级玻璃用单独录制的纯背景层 `railBackdrop` 做真采样。
+平板/大窗口（sw600dp 或宽 ≥ 840dp）下主导航的侧边形态（应用设置「平板侧边栏」开关控制，默认开）：按外观风格取该主题「默认导航栏」形态（默认 = Material3 `NavigationRail`、复古/高级玻璃 = 悬浮玻璃柱），液态玻璃两档不适配侧栏（平板下降级为主题默认形态）；侧栏占布局宽度，`glassNavBottomInset()` 返回 0，高级玻璃用单独录制的纯背景层 `railBackdrop` 做真采样。
 _Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
 
 **外观模式（Appearance）**:

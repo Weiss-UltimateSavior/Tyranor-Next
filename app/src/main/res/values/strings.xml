@@ -35,6 +35,8 @@
     <string name="settings_theme_mode_dark">深色</string>
     <string name="settings_tone_switch">色调切换</string>
     <string name="settings_engine_tabs">引擎页分类显示</string>
+    <string name="settings_side_rail">平板侧边栏</string>
+    <string name="settings_side_rail_summary">平板/大窗口下导航移到侧边；关闭后保持底部导航</string>
     <string name="settings_nav_bar_title">导航栏样式</string>
     <string name="settings_nav_bar_default">默认</string>
     <string name="settings_nav_bar_liquid_glass">液态玻璃 · 经典</string>
