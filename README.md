@@ -11,6 +11,7 @@ mac原生版本如下：
 - [Tyranor Next for macOS](https://github.com/Weiss-UltimateSavior/Tyranor-Mac)
 
 iOS版本计划中...
+鸿蒙设备可使用卓易通安装
 
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
 
