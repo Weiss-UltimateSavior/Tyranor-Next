@@ -49,6 +49,11 @@ struct LegacyCowString {
     explicit LegacyCowString(const std::string& value) {
         constexpr size_t kHeaderSize = sizeof(size_t) * 3;
         const size_t size = value.size();
+        // Guard against integer overflow in the allocation size computation
+        // below; without this check an attacker-controlled, near-SIZE_MAX
+        // length could wrap the malloc request small and cause the memcpy
+        // that follows to overflow the undersized buffer.
+        if (size > SIZE_MAX - kHeaderSize - 1) return;
         auto* header = static_cast<unsigned char*>(std::malloc(kHeaderSize + size + 1));
         if (header == nullptr) return;
         auto* words = reinterpret_cast<size_t*>(header);
