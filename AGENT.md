@@ -58,7 +58,7 @@
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
-- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/settings`、`core/auth`、`core/updater` 等包。
+- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater` 等包。
 
 ### 3. 界面 UI 交互层
 

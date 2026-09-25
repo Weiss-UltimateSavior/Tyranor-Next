@@ -43,3 +43,6 @@ captures/
 
 # ===== 外部参考仓库（仅本地参考，不入库） =====
 /reference/
+
+# ===== Rust 构建中间产物（engine/rust 源码入库，target 不入库） =====
+/engine/rust/target/

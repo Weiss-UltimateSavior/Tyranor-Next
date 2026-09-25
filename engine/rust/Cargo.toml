@@ -1,0 +1,21 @@
+[workspace]
+members = [
+    "crates/common",
+    "crates/xp3-core",
+    "crates/pfs-core",
+    "crates/ksd-core",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = true
+codegen-units = 1
+# NOTE: no `panic = "abort"` — the JNI `guarded`/`catch_unwind` crash guards
+# depend on unwinding; abort would turn every Rust panic into a process death.

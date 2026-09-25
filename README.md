@@ -203,4 +203,5 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - [Miuix](https://github.com/compose-miuix-ui/miuix)：设置界面组件库
 - [Anime4K](https://github.com/bloc97/Anime4K):（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）
 - [OnscripterYuri](https://github.com/YuriSizuku/OnscripterYuri): ONS引擎
+- [UsefulUnpack](https://github.com/znso4pa/usefulunpack)（znso4pa，MIT）：XP3 / PFS / KSD 解封包 Rust 实现（`engine/rust` 的 `xp3-core` / `pfs-core` / `ksd-core` / `common` 来源，许可证见 `engine/rust/LICENSE.usefulunpack`）
 - 各引擎运行时均基于其开源许可引入

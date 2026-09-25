@@ -1,0 +1,12 @@
+[package]
+name = "archive_ksd-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+archive_common = { path = "../common" }
+flate2 = "1"

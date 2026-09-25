@@ -1,0 +1,18 @@
+[package]
+name = "archive_xp3-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+archive_common = { path = "../common" }
+archive_ksd-core = { path = "../ksd-core" }
+jni = "0.21"
+xp3 = "0.4"
+tokio = { version = "1", features = ["io-util"] }
+
+[dev-dependencies]
+flate2 = "1"

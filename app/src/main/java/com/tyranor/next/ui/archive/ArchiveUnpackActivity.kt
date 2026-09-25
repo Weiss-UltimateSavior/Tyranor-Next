@@ -1,0 +1,508 @@
+package com.tyranor.next.ui.archive
+
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.tyranor.next.R
+import com.tyranor.next.core.unpack.ArchiveBackend
+import com.tyranor.next.core.unpack.ScannedArchive
+import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.ui.common.AppScreenActivity
+import com.tyranor.next.ui.common.AppTopBar
+import java.util.Locale
+
+/** 解包 / 封包独立页：入口见应用设置。解包=选目录扫描XP3/PFS→主从预览→解到同名文件夹；封包=选目录→选格式→输出同名文件。 */
+class ArchiveUnpackActivity : AppScreenActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setAppScreenContent {
+            ArchiveScreen()
+        }
+    }
+
+    companion object {
+        fun createIntent(context: Context): Intent =
+            Intent(context, ArchiveUnpackActivity::class.java)
+    }
+}
+
+private const val TAG = "ArchiveUnpack"
+private const val MAX_LISTED_ENTRIES = 2000
+
+private fun displayNameOf(uri: Uri): String =
+    uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
+        ?.takeIf { it.isNotBlank() } ?: uri.toString()
+
+@Composable
+private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+
+    LaunchedEffect(Unit) {
+        vm.cleanStaleStagingOnce(appContext)
+    }
+
+    fun takeTreePermissions(uri: Uri) {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }.onFailure { error -> Log.w(TAG, "take persistable permission failed for $uri", error) }
+    }
+
+    val pickSourceDir = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        takeTreePermissions(uri)
+        vm.chooseSourceDir(appContext, uri, displayNameOf(uri))
+    }
+    val pickPackDir = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        takeTreePermissions(uri)
+        vm.choosePackDir(appContext, uri, displayNameOf(uri))
+    }
+    val createPackFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        vm.finishSave(appContext, uri)
+    }
+    val pendingSave = vm.pendingSaveFile
+    LaunchedEffect(pendingSave) {
+        if (pendingSave != null) createPackFile.launch(vm.pendingSaveName.ifBlank { "archive" })
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        AppTopBar(title = stringResource(R.string.archive_title))
+
+        ModeTabs(mode = vm.mode, onSelect = { vm.switchMode(it) })
+
+        when (vm.mode) {
+            ArchiveMode.UNPACK -> UnpackPane(
+                vm = vm,
+                appContext = appContext,
+                onPickDir = { pickSourceDir.launch(null) },
+            )
+            ArchiveMode.PACK -> PackPane(
+                vm = vm,
+                appContext = appContext,
+                onPickDir = { pickPackDir.launch(null) },
+            )
+        }
+
+        if (vm.working || vm.message != null) {
+            StatusBar(vm = vm)
+        }
+        Spacer(Modifier.navigationBarsPadding().height(4.dp))
+    }
+}
+
+@Composable
+private fun ModeTabs(mode: ArchiveMode, onSelect: (ArchiveMode) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        FilterChip(
+            selected = mode == ArchiveMode.UNPACK,
+            onClick = { onSelect(ArchiveMode.UNPACK) },
+            label = { Text(stringResource(R.string.archive_mode_unpack), style = MaterialTheme.typography.bodyMedium) },
+        )
+        FilterChip(
+            selected = mode == ArchiveMode.PACK,
+            onClick = { onSelect(ArchiveMode.PACK) },
+            label = { Text(stringResource(R.string.archive_mode_pack), style = MaterialTheme.typography.bodyMedium) },
+        )
+    }
+}
+
+@Composable
+private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () -> Unit) {
+    if (vm.sourceTreeUri == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            BigAction(
+                label = stringResource(R.string.archive_pick_source_dir),
+                onClick = onPickDir,
+                enabled = !vm.working,
+            )
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        DirStrip(
+            name = vm.sourceDirName,
+            onRescan = { vm.rescan(appContext) },
+            onRePick = onPickDir,
+            enabled = !vm.working,
+            rescanLabel = stringResource(R.string.archive_rescan),
+            rePickLabel = stringResource(R.string.archive_change_dir),
+        )
+
+        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+            // 左栏：归档列表
+            Column(
+                modifier = Modifier.weight(0.42f).fillMaxSize().padding(end = 6.dp),
+            ) {
+                PaneHeader(stringResource(R.string.archive_archives_count, vm.archives.size))
+                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                    items(vm.archives, key = { it.id }) { archive ->
+                        ArchiveListRow(
+                            archive = archive,
+                            selected = archive.id == vm.selectedId,
+                            onClick = { vm.selectArchive(appContext, archive.id) },
+                        )
+                    }
+                }
+            }
+            // 右栏：选中归档的内容
+            Column(
+                modifier = Modifier.weight(0.58f).fillMaxSize().padding(start = 6.dp),
+            ) {
+                val selected = vm.selectedArchive
+                if (selected == null) {
+                    PaneHeader(stringResource(R.string.archive_select_hint))
+                } else {
+                    val fileCount = vm.entries.count { !it.isDirectory }
+                    val totalSize = vm.entries.filter { !it.isDirectory }.sumOf { it.size }
+                    PaneHeader(
+                        if (fileCount > 0) {
+                            stringResource(R.string.archive_entries_summary).format(fileCount, formatBytes(totalSize))
+                        } else {
+                            selected.fileName
+                        },
+                    )
+                    Button(
+                        onClick = { vm.extractSelected(appContext) },
+                        enabled = !vm.working && vm.entriesListed,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.archive_extract_to, baseNameOf(selected.fileName)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                        items(vm.entries.take(MAX_LISTED_ENTRIES), key = { (if (it.isDirectory) "d:" else "f:") + it.name }) { entry ->
+                            EntryListRow(entry)
+                        }
+                        if (vm.entries.size > MAX_LISTED_ENTRIES) {
+                            item {
+                                Text(
+                                    "+${vm.entries.size - MAX_LISTED_ENTRIES}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            ArchiveCard(title = stringResource(R.string.archive_pack_pick_dir)) {
+                Button(
+                    onClick = onPickDir,
+                    enabled = !vm.working,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        if (vm.packDirName.isBlank()) stringResource(R.string.archive_pack_pick_dir)
+                        else vm.packDirName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                LabeledChips(
+                    label = stringResource(R.string.archive_backend),
+                    options = listOf(
+                        stringResource(R.string.archive_backend_xp3) to (vm.packBackend == ArchiveBackend.XP3),
+                        stringResource(R.string.archive_backend_pfs) to (vm.packBackend == ArchiveBackend.PFS),
+                    ),
+                    enabled = !vm.working,
+                    onSelect = { vm.choosePackBackend(if (it == 0) ArchiveBackend.XP3 else ArchiveBackend.PFS) },
+                )
+                if (vm.packBackend == ArchiveBackend.PFS) {
+                    LabeledChips(
+                        label = stringResource(R.string.archive_format),
+                        options = listOf("PF8" to !vm.packPf6, "PF6" to vm.packPf6),
+                        enabled = !vm.working,
+                        onSelect = { vm.setPackFormat(it == 1, vm.packLevel) },
+                    )
+                    if (!vm.packPf6) {
+                        Text(
+                            stringResource(R.string.archive_pf8_note),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    LabeledChips(
+                        label = stringResource(R.string.archive_level),
+                        options = listOf(
+                            "0" to (vm.packLevel == 0),
+                            "6" to (vm.packLevel == 6),
+                            "9" to (vm.packLevel == 9),
+                        ),
+                        enabled = !vm.working,
+                        onSelect = { vm.setPackFormat(vm.packPf6, listOf(0, 6, 9)[it]) },
+                    )
+                }
+                Button(
+                    onClick = { vm.pack(appContext) },
+                    enabled = !vm.working && vm.packTreeUri != null,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                ) {
+                    Text(stringResource(R.string.archive_pack_action), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DirStrip(
+    name: String,
+    onRescan: () -> Unit,
+    onRePick: () -> Unit,
+    enabled: Boolean,
+    rescanLabel: String,
+    rePickLabel: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            name.ifBlank { "-" },
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onRescan, enabled = enabled) {
+            Text(rescanLabel, style = MaterialTheme.typography.bodyMedium)
+        }
+        TextButton(onClick = onRePick, enabled = enabled) {
+            Text(rePickLabel, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+@Composable
+private fun PaneHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else NavWhite)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Text(
+            archive.fileName,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            "${archive.backend.name} · ${formatBytes(archive.size)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun EntryListRow(entry: EntryRow) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            (if (entry.isDirectory) "▸ " else "· ") + entry.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (!entry.isDirectory) {
+            Text(
+                formatBytes(entry.size),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusBar(vm: ArchiveViewModel) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        if (vm.working) {
+            if (vm.progressDeterminate) {
+                LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    vm.progressName.ifBlank { vm.workingLabel },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { vm.cancel() }) {
+                    Text(stringResource(R.string.archive_cancel), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        vm.message?.let { text ->
+            Text(
+                text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun BigAction(label: String, onClick: () -> Unit, enabled: Boolean) {
+    Button(onClick = onClick, enabled = enabled) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun LabeledChips(
+    label: String,
+    options: List<Pair<String, Boolean>>,
+    enabled: Boolean,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        options.forEachIndexed { index, (text, selected) ->
+            FilterChip(
+                selected = selected,
+                onClick = { onSelect(index) },
+                enabled = enabled,
+                label = { Text(text, style = MaterialTheme.typography.bodyMedium) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ArchiveCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        shape = RoundedCornerShape(8.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                content()
+            }
+        }
+    }
+}
+
+private fun baseNameOf(fileName: String): String {
+    val dot = fileName.lastIndexOf('.')
+    return if (dot > 0) fileName.substring(0, dot) else fileName
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = arrayOf("KB", "MB", "GB", "TB")
+    var value = bytes.toDouble() / 1024
+    var unit = 0
+    while (value >= 1024 && unit < units.size - 1) {
+        value /= 1024
+        unit++
+    }
+    return String.format(Locale.US, "%.1f %s", value, units[unit])
+}
