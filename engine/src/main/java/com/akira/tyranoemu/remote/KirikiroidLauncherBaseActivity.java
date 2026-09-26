@@ -106,6 +106,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         // Must run before super.onCreate (native library loading and preference singleton construction).
         applyFontPreferences();
         applyEnginePreferences();
+        applyGameLanguage();
         super.onCreate(bundle);
         app = this;
         // KR2 宿主不是 SDLActivity（SDL.setContext 从未被调用），须显式注册耳机
@@ -879,5 +880,49 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             return ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE;
         }
         return ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
+    }
+
+    /**
+     * 应用用户选择的 KRKR 游戏语言环境（KR_LANGUAGE extra；全局默认 + 单游戏覆盖）。
+     * libgame.so 从偏好 XML 读取文本编码（default_encoding 项，与 language 项同见）；
+     * 此处把用户语言选择映射为引擎编码，使日文 Shift-JIS / 汉化 GBK 脚本在默认英语环境下
+     * 也能正确解码，无需修改系统语言。auto 保持引擎默认。
+     */
+    private void applyGameLanguage() {
+        Intent intent = getIntent();
+        if (intent == null) return;
+        String language = safeTrim(intent.getStringExtra(LaunchContract.KR_LANGUAGE));
+        if (language.isEmpty() || "auto".equals(language)) return;
+        String encoding = krEncodingForLanguage(language);
+        if (encoding.isEmpty()) return;
+        File globalFile = globalPreferenceFile();
+        if (globalFile == null) return;
+        File gameFile = gamePreferenceFile();
+        File target = scopeTarget(true, gameFile, globalFile);
+        try {
+            boolean changed = applyPreferenceItem(
+                    target, "default_encoding", markerFor("default_encoding"), encoding);
+            Log.i(TAG, "game language=" + language + " default_encoding=" + encoding
+                    + " -> " + target + (changed ? "" : " (unchanged)"));
+            clearStalePreferenceItem(target, gameFile, "default_encoding", markerFor("default_encoding"));
+        } catch (Exception error) {
+            Log.w(TAG, "apply default_encoding failed", error);
+        }
+    }
+
+    /** 用户语言选择 → 引擎文本编码标识（libgame.so default_encoding 取值）。 */
+    private static String krEncodingForLanguage(String language) {
+        switch (language) {
+            case "jp":
+                return "SJIS";
+            case "zh":
+                return "GBK";
+            case "zhtw":
+                return "BIG5";
+            case "en":
+                return "UTF8";
+            default:
+                return "";
+        }
     }
 }

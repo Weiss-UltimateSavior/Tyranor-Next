@@ -425,3 +425,17 @@ internal fun rpgFontScaleOptionsMap(): Map<String, String> = rpgFontScaleOptions
 
 @Composable
 internal fun rpgVerticalAlignOptionsMap(): Map<String, String> = rpgVerticalAlignOptions().toMap()
+
+/** KRKR 游戏底层语言环境（全局默认 / 单游戏覆盖）。引擎按此切换运行环境与文本编码，
+ *  避免为日文原版 / 特殊汉化版反复切换系统语言。auto=保持引擎默认。 */
+@Composable
+internal fun krLanguageOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.KR_LANGUAGE_AUTO to stringResource(R.string.common_auto),
+    EngineSettingsStore.KR_LANGUAGE_JP to "日本語",
+    EngineSettingsStore.KR_LANGUAGE_EN to "English",
+    EngineSettingsStore.KR_LANGUAGE_ZH to "简体中文",
+    EngineSettingsStore.KR_LANGUAGE_ZHTW to "繁體中文",
+)
+
+@Composable
+internal fun krLanguageOptionsMap(): Map<String, String> = krLanguageOptions().toMap()

@@ -67,6 +67,12 @@ object EngineSettingsResolver {
             krRenderer = EffectiveEngineSettings.resolve(
                 str(PerGameSettingsStore.F_RENDERER),
                 EngineSettingsStore.getKrRenderer(app),
+            krLanguage = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_KR_LANGUAGE),
+                EngineSettingsStore.getKrLanguage(app),
+                EngineSettingsStore.KR_LANGUAGES,
+                EngineSettingsStore.KR_LANGUAGE_AUTO,
+            ),
             ),
             artVersion = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ART_VERSION),
@@ -232,6 +238,8 @@ data class ResolvedEngineSettings(
     val krSkipStartupDialogs: Boolean,
     val krAnime4kMode: String,
     val krRenderer: String,
+    /** KRKR 生效语言环境（auto/jp/en/zh；启动时经 KR_LANGUAGE 下发引擎宿主）。 */
+    val krLanguage: String,
     val artVersion: String,
     /** Artemis 内核生效值（官方多 revision / 自研 clean-room）。 */
     val artKernel: String,
