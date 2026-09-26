@@ -159,6 +159,8 @@ class ArchiveViewModel : ViewModel() {
             } finally {
                 working = false
                 currentJob = null
+                // 暂存拷贝必须随操作结束立即收回（大包可达 GB 级），成功/取消/失败一律释放。
+                releaseStagedArchive()
                 // 结果需要展示（成功提示/取消/失败）则保留弹窗等待「完成」；静默成功（如扫描）自动关闭。
                 if (message == null) dialogVisible = false
             }
@@ -168,6 +170,12 @@ class ArchiveViewModel : ViewModel() {
 
     fun dismissDialog() {
         dialogVisible = false
+    }
+
+    /** 释放当前操作的暂存输入拷贝（cacheDir/archive_staging/input 目录）。 */
+    private fun releaseStagedArchive() {
+        stagedArchive?.let { (_, file) -> runCatching { file.delete() } }
+        stagedArchive = null
     }
 
     private val isCancelled: () -> Boolean = { cancelFlag.get() || currentJob?.isCancelled == true }
@@ -203,7 +211,7 @@ class ArchiveViewModel : ViewModel() {
         val scanning = appContext.getString(R.string.archive_scanning)
         val noArchives = appContext.getString(R.string.archive_no_archives)
         launchOp(appContext, scanning, determinate = false) {
-            val found = withContext(Dispatchers.IO) { ArchiveScanner.scan(appContext, uri) }
+            val found = withContext(Dispatchers.IO) { ArchiveScanner.scan(appContext, uri, isCancelled) }
             archives = found
             scanned = true
             if (found.isEmpty()) message = noArchives
@@ -400,6 +408,9 @@ class ArchiveViewModel : ViewModel() {
 
     override fun onCleared() {
         cancelFlag.set(true)
+        currentJob?.cancel()
+        // 页面销毁兜底：暂存输入拷贝不可残留。
+        releaseStagedArchive()
         super.onCleared()
     }
 }
