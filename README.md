@@ -114,7 +114,7 @@ PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 
 - `core/settings`：应用级配置、引擎级配置、单游戏配置
 - `core/auth`：Hikarinagi OAuth 授权与 token 管理
 - `core/updater`：后台更新检查与通知
-- `core/unpack`：引擎相关封包解包辅助
+- `core/unpack`：Artemis 启动封包解包辅助；XP3 解包/封包独立工具的核心逻辑与 SAF 中转
 
 UI 层按页面域继续拆分：
 
@@ -126,6 +126,7 @@ UI 层按页面域继续拆分：
 - `ui/cover`：封面来源与批量抓取设置
 - `ui/patch`：KRKR 在线补丁页面
 - `ui/save`：存档管理页面
+- `ui/archive`：XP3 解包 / 封包独立工具页
 - `ui/auth`：OAuth 回调 Activity
 - `ui/common`：公共 UI 组件、弹窗、占位页、顶部栏/输入框等复用组件
 
@@ -165,7 +166,7 @@ UI 层按页面域继续拆分：
 ```
 app/
 ├── src/main/java/com/tyranor/next/
-│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、配置、授权、更新
+│   ├── core/      功能抽象层：扫描、启动、引擎模块、封面、存档、补丁、拆封包、配置、授权、更新
 │   ├── ui/        界面 UI 交互层：主界面、游戏页、设置页、弹窗、公共组件
 │   └── theme/     Compose / Miuix 主题、色调、深浅色适配
 ├── src/main/assets/
@@ -177,7 +178,8 @@ engine/
 ├── src/main/java/          底层引擎宿主、桥接代码与运行时入口
 ├── src/main/cpp/           Native/JNI、SDL、引擎运行时代码
 ├── src/main/assets/        底层引擎资源与共享引擎脚本源头
-└── src/main/nativeplugins/ 共享 Native 插件 so 源头
+├── src/main/nativeplugins/ 共享 Native 插件 so 源头
+└── rust/                   XP3 解封包 Rust 源码（xp3 解析与 KSD mode-2 隐性解码；许可证见 LICENSE.usefulunpack）
 
 docs/   设计文档、逆向分析、功能计划与优化方案
 ```

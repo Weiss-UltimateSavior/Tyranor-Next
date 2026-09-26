@@ -53,7 +53,7 @@
 
 - 目录：`app/src/main/java/com/tyranor/next/core/`
 
-- 职责：游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新。
+- 职责：游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、XP3 解包/封包、应用/引擎/单游戏配置、授权、后台更新。
 
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
@@ -68,7 +68,7 @@
 
 - 规则：只能调用功能抽象层；禁止直接 import `com.core`、`com.akira`、`com.yuri`、`org.tvp`、`org.libsdl`、`org.cocos2dx`、`bridge` 等底层引擎包。
 
-- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/auth`，公共组件放入 `ui/common`。
+- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`，公共组件放入 `ui/common`。
 
 ### 4. 资源归属
 
