@@ -67,12 +67,12 @@ object EngineSettingsResolver {
             krRenderer = EffectiveEngineSettings.resolve(
                 str(PerGameSettingsStore.F_RENDERER),
                 EngineSettingsStore.getKrRenderer(app),
+            ),
             krLanguage = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_KR_LANGUAGE),
                 EngineSettingsStore.getKrLanguage(app),
                 EngineSettingsStore.KR_LANGUAGES,
                 EngineSettingsStore.KR_LANGUAGE_AUTO,
-            ),
             ),
             artVersion = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ART_VERSION),
