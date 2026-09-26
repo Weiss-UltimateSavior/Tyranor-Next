@@ -622,6 +622,7 @@
     <string name="archive_cancel">キャンセル</string>
     <string name="archive_conflict_dir">同名フォルダ「%1$s」が既に存在します。バックアップまたは名前変更後に再試行してください</string>
     <string name="archive_conflict_file">同名ファイル「%1$s」が既に存在します。事前にバックアップまたは名前を変更してください</string>
+    <string name="archive_conflict_inside">アーカイブ内に重複エントリ「%1$s」があるため、上書き防止のため解凍を拒否しました</string>
     <string name="archive_no_file">先にアーカイブを選択してください</string>
     <string name="archive_no_dir">先にフォルダを選択してください</string>
     <string name="archive_empty_list">空または読み取れません</string>

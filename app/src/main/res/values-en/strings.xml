@@ -622,6 +622,7 @@
     <string name="archive_cancel">Cancel</string>
     <string name="archive_conflict_dir">Folder “%1$s” already exists — back it up or rename it first</string>
     <string name="archive_conflict_file">Output “%1$s” already exists — back it up or rename it first</string>
+    <string name="archive_conflict_inside">Duplicate entry “%1$s” inside the archive — extraction refused to avoid overwriting</string>
     <string name="archive_no_file">Select an archive first</string>
     <string name="archive_no_dir">Select a folder first</string>
     <string name="archive_empty_list">Empty or unreadable</string>

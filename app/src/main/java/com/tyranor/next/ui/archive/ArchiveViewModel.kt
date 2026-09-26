@@ -254,6 +254,18 @@ class ArchiveViewModel : ViewModel() {
     ): Pair<Int, Int> = Xp3Archive.extractAll(file, outDir, ::reportProgress, isCancelled)
         .let { it.extracted to it.skipped }
 
+    /**
+     * 包内重名条目预检：大小写折叠后存在同名条目（含仅大小写不同、目录与文件同名）
+     * 返回该名字，无重名返回 null。
+     */
+    private fun findDuplicateEntryName(): String? {
+        val seen = HashSet<String>()
+        for (entry in entries) {
+            if (!seen.add(entry.name.lowercase(Locale.ROOT))) return entry.name
+        }
+        return null
+    }
+
     fun extractSelected(appContext: Context) {
         val archive = selectedArchive ?: run {
             message = appContext.getString(R.string.archive_select_hint)
@@ -263,6 +275,15 @@ class ArchiveViewModel : ViewModel() {
         val doneSkippedFormat = appContext.getString(R.string.archive_done_extract_skipped)
         val conflictDirFormat = appContext.getString(R.string.archive_conflict_dir)
         val baseName = baseNameWithoutExt(archive.fileName)
+        // 包内重名预检：大小写折叠后同名（含仅大小写不同）即拒绝解压——
+        // /sdcard 等大小写不敏感文件系统上后写会覆盖先写，静默丢数据。
+        val duplicate = findDuplicateEntryName()
+        if (duplicate != null) {
+            val text = appContext.getString(R.string.archive_conflict_inside).format(duplicate)
+            message = text
+            Toast.makeText(appContext, text, Toast.LENGTH_LONG).show()
+            return
+        }
         launchOp(appContext, archive.fileName, determinate = true) {
             val file = requireArchiveFile(appContext, archive) { copied, total ->
                 reportProgress(copied, total, 0, 0, archive.fileName)

@@ -622,6 +622,7 @@
     <string name="archive_cancel">取消</string>
     <string name="archive_conflict_dir">已存在同名文件夹「%1$s」，请先备份或改名后重试</string>
     <string name="archive_conflict_file">已存在同名产物「%1$s」，请提前备份或改名后重试</string>
+    <string name="archive_conflict_inside">包内存在重名条目「%1$s」，已拒绝解压以避免覆盖</string>
     <string name="archive_no_file">请先选择封包文件</string>
     <string name="archive_no_dir">请先选择目录</string>
     <string name="archive_empty_list">空包或无法读取</string>
