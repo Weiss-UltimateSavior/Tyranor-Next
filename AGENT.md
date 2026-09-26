@@ -343,6 +343,38 @@ Column(fillMaxSize)                                // 页面根
 
 ***
 
+## 弹窗点击反馈统一规范
+
+`AppAlertDialog` 弹窗（含 `title` / `text` / `confirmButton` / `dismissButton` 内容）内的
+**所有按钮与组件不得使用任何点击或按压反馈效果**：涟漪、水波、缩放、高亮、透明度/颜色变化等一律禁止。
+点击行为本身不受影响，仅去掉视觉/触感反馈。
+
+### 1. 组件选型
+
+- 弹窗文本按钮统一使用 `ui/common/DialogClickEffects.kt` 的 `DialogTextButton`（内部
+  `Modifier.clickable(indication = null)`）；**禁止**在弹窗内直接使用 Material3 `TextButton` /
+  `Button` / `IconButton`，也禁止使用自带按压动效的按钮组件。
+- 弹窗正文中的可点击组件（输入框、列表项、开关、单选等）必须禁用点击反馈：
+  - 区域级：外层包 `CompositionLocalProvider(LocalIndication provides NoIndication)`（`NoIndication` 由 `ui/common` 提供）；
+  - 单点级：对 `Modifier.clickable` 显式传 `indication = null`；
+  - 共享条目组件：`AppNavItem` 显式传 `indication = null`。
+- 遮罩层点击关闭已由 `AppAlertDialog` 内置 `indication = null`，无需调用方处理。
+
+### 2. 现有调用点（新增场景照此对齐）
+
+| 场景 | 位置 | 处理方式 |
+| --- | --- | --- |
+| Winlator / Web 端口等文本值弹窗（全局） | `ui/settings/SettingsScreen.kt` | `DialogTextButton` + 输入区包 `NoIndication` |
+| 单游戏覆盖文本弹窗（Winlator 容器、Web 端口等） | `ui/settings/PerGameSettingsScreen.kt`（`OverrideText`） | `DialogTextButton` + 输入区包 `NoIndication` |
+| 添加 PC 游戏弹窗 | `ui/game/PcGameAddDialog.kt` | `DialogTextButton` + 行内 `indication = null` |
+
+### 3. 存量对齐
+
+其余既有弹窗（`GameScreen`、`LaunchErrorDialog`、`CoverScraperSettingsActivity` 等仍有 Material
+`TextButton`）按「改动即对齐」迁移：任何弹窗被修改时，须同步替换为无点击反馈实现。
+
+***
+
 ## 主题色调统一使用规范
 
 应用主题色（primary）由用户通过 **应用设置 → 色调轮盘** 修改，必须全局统一生效。规范如下：
