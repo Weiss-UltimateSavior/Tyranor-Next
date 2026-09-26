@@ -271,14 +271,21 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    // 展开集合随 entries 换包自动重置；默认全收起
+                    val expandedDirs = remember(vm.entries) { mutableStateOf(setOf<String>()) }
+                    val visibleRows = remember(vm.entries, expandedDirs.value) {
+                        buildVisibleTree(vm.entries, expandedDirs.value)
+                    }
                     LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                        items(vm.entries.take(MAX_LISTED_ENTRIES), key = { (if (it.isDirectory) "d:" else "f:") + it.name }) { entry ->
-                            EntryListRow(entry)
+                        items(visibleRows.take(MAX_LISTED_ENTRIES), key = { (if (it.entry.isDirectory) "d:" else "f:") + it.entry.name }) { row ->
+                            EntryListRow(row) { toggle ->
+                                expandedDirs.value = if (toggle) expandedDirs.value + row.entry.name else expandedDirs.value - row.entry.name
+                            }
                         }
-                        if (vm.entries.size > MAX_LISTED_ENTRIES) {
+                        if (visibleRows.size > MAX_LISTED_ENTRIES) {
                             item {
                                 Text(
-                                    "+${vm.entries.size - MAX_LISTED_ENTRIES}",
+                                    "+${visibleRows.size - MAX_LISTED_ENTRIES}",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
@@ -420,13 +427,18 @@ private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: 
 }
 
 @Composable
-private fun EntryListRow(entry: EntryRow) {
+private fun EntryListRow(row: VisibleEntry, onToggle: (Boolean) -> Unit) {
+    val (entry, depth, expanded) = row
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
+        modifier = Modifier.fillMaxWidth()
+            .padding(start = (depth * 14).dp)
+            .padding(vertical = 1.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .then(if (entry.isDirectory) Modifier.clickable { onToggle(!expanded) } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            (if (entry.isDirectory) "▸ " else "· ") + entry.name,
+            (if (entry.isDirectory) (if (expanded) "▾ " else "▸ ") else "· ") + entry.name.substringAfterLast('/'),
             style = MaterialTheme.typography.bodyMedium,
             color = if (entry.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -442,6 +454,27 @@ private fun EntryListRow(entry: EntryRow) {
             )
         }
     }
+}
+
+/** 可见树节点：条目 + 缩进深度 + 文件夹展开态。 */
+private data class VisibleEntry(val entry: EntryRow, val depth: Int, val expanded: Boolean)
+
+/**
+ * 把平铺条目（name 为归档内 `/` 分隔全路径，含派生目录）组装成按层展开的可见列表：
+ * 只展开 [expanded] 中的文件夹，每层内文件夹在前、按名排序。
+ */
+private fun buildVisibleTree(entries: List<EntryRow>, expanded: Set<String>): List<VisibleEntry> {
+    val byParent = entries.groupBy { it.name.substringBeforeLast('/', missingDelimiterValue = "") }
+    val out = mutableListOf<VisibleEntry>()
+    fun walk(children: List<EntryRow>, depth: Int) {
+        for (entry in children.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))) {
+            val isExpanded = entry.isDirectory && entry.name in expanded
+            out.add(VisibleEntry(entry, depth, isExpanded))
+            if (isExpanded) walk(byParent[entry.name].orEmpty(), depth + 1)
+        }
+    }
+    walk(byParent[""].orEmpty(), 0)
+    return out
 }
 
 @Composable
