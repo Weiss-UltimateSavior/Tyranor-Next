@@ -22,6 +22,12 @@ object RpgMakerRuntimeEnvironment {
     private const val RTP_PARENT = "JoiPlay/RTP"
     private const val FONT_PARENT = "JoiPlay/fonts"
     private const val IMPORT_TEMP_DIR = ".import_tmp"
+
+    // 用户挑选的 zip 解压上限（与 NativePluginInstaller.unzipSafely 同口径）
+    private const val MAX_ZIP_ENTRIES = 20_000
+    private const val MAX_ENTRY_UNCOMPRESSED_BYTES = 256L * 1024L * 1024L
+    private const val MAX_TOTAL_UNCOMPRESSED_BYTES = 1024L * 1024L * 1024L
+    private const val ZIP_BUFFER_SIZE = 64 * 1024
     private val FONT_EXTENSIONS = listOf(".ttf", ".ttc", ".otf", ".otc")
 
     fun rtpDirName(gameType: String): String = when (gameType.trim().lowercase(Locale.ROOT)) {
@@ -124,6 +130,8 @@ object RpgMakerRuntimeEnvironment {
 
     private fun extractZip(context: Context, uri: Uri, dest: File): Boolean {
         val tempRoot = dest.canonicalPath
+        var entryCount = 0
+        var totalBytes = 0L
         context.contentResolver.openInputStream(uri)?.use { raw ->
             ZipInputStream(raw.buffered()).use { zip ->
                 while (true) {
@@ -133,6 +141,9 @@ object RpgMakerRuntimeEnvironment {
                         zip.closeEntry()
                         continue
                     }
+                    entryCount += 1
+                    if (entryCount > MAX_ZIP_ENTRIES) return false
+                    if (entry.size > MAX_ENTRY_UNCOMPRESSED_BYTES) return false
                     val outFile = File(dest, name)
                     if (!outFile.canonicalPath.startsWith(tempRoot + File.separator)) {
                         zip.closeEntry()
@@ -144,7 +155,25 @@ object RpgMakerRuntimeEnvironment {
                         outFile.parentFile?.let { parent ->
                             if (!parent.exists() && !parent.mkdirs()) return false
                         }
-                        outFile.outputStream().use { output -> zip.copyTo(output) }
+                        // 上限与 NativePluginInstaller.unzipSafely 一致：用户挑选的 zip 也可能
+                        // 是损坏或精心构造的（高压缩比），无界解压会写满共享存储。
+                        // copyTo 不提供计数，故手工逐块读写并同时校验单条目与总量。
+                        outFile.outputStream().use { output ->
+                            val buffer = ByteArray(ZIP_BUFFER_SIZE)
+                            var entryBytes = 0L
+                            while (true) {
+                                val read = zip.read(buffer)
+                                if (read <= 0) break
+                                entryBytes += read
+                                totalBytes += read
+                                if (entryBytes > MAX_ENTRY_UNCOMPRESSED_BYTES ||
+                                    totalBytes > MAX_TOTAL_UNCOMPRESSED_BYTES
+                                ) {
+                                    return false
+                                }
+                                output.write(buffer, 0, read)
+                            }
+                        }
                     }
                     zip.closeEntry()
                 }

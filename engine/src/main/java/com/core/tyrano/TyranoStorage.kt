@@ -49,7 +49,14 @@ internal object TyranoStorage {
     fun write(directory: File?, key: String?, value: String?, extension: String) {
         try {
             val file = resolveFile(directory, key, extension) ?: return
-            val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
+            val text = value.orEmpty()
+            // 预检（无分配）：UTF-8 字节数恒 ≥ UTF-16 字符数，字符数已超限即可直接拒绝，
+            // 避免为必然被拒的载荷先分配一份全量字节数组
+            if (text.length > MAX_SAVE_BYTES) {
+                Log.w(TAG, "setStorage rejected pre-encode (chars=${text.length})")
+                return
+            }
+            val bytes = text.toByteArray(StandardCharsets.UTF_8)
             if (bytes.size > MAX_SAVE_BYTES) return
             file.outputStream().use { it.write(bytes) }
         } catch (error: Throwable) {

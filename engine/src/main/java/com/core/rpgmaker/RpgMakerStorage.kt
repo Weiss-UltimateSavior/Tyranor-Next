@@ -41,7 +41,14 @@ internal object RpgMakerStorage {
         // （finish 500ms 自杀 / 系统回收）不会留下截断的存档文件（PR review 意见）
         return try {
             val file = resolveFile(directory, key, extension) ?: return false
-            val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
+            val text = value.orEmpty()
+            // 预检（无分配）：UTF-8 字节数恒 ≥ UTF-16 字符数，字符数已超限即可直接拒绝，
+            // 避免为必然被拒的载荷先分配一份全量字节数组
+            if (text.length > MAX_SAVE_BYTES) {
+                Log.w(TAG, "setStorage rejected pre-encode (chars=${text.length})")
+                return false
+            }
+            val bytes = text.toByteArray(StandardCharsets.UTF_8)
             if (bytes.size > MAX_SAVE_BYTES) return false
             val dir = file.parentFile ?: return false
             if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
