@@ -2,6 +2,7 @@ package com.tyranor.next.core.settings
 
 import android.content.Context
 import com.core.engine.EnginePrefs
+import com.core.engine.LaunchContract
 import org.json.JSONObject
 
 /**
@@ -50,6 +51,9 @@ object EngineSettingsStore {
 
     // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
+
+    // Web 壳本地端口（Tyrano / WebOther / VN；固定端口保证 localStorage/IndexedDB 存档跨启动可见）
+    const val KEY_WEB_SHELL_PORT = "web_shell_port"
 
     // PPSSPP 外置模拟器版本（标准版 / 黄金版；跳转 PSP 游戏时按此选择包名）
     const val KEY_PPSSPP_VERSION = "ppsspp_version"
@@ -657,6 +661,18 @@ object EngineSettingsStore {
         prefs(c).edit().putString(KEY_SIGLUS_LANGUAGE, normalizeSiglusLanguage(v)).apply()
     fun normalizeSiglusLanguage(v: String?): String =
         v?.trim()?.takeIf { it in SIGLUS_LANGUAGES } ?: SIGLUS_LANGUAGE_AUTO
+
+    // ---------- Web 壳（Tyrano / WebOther / VN） ----------
+    fun getWebShellPort(c: Context): Int =
+        normalizeWebShellPort(prefs(c).getString(KEY_WEB_SHELL_PORT, null))
+    fun setWebShellPort(c: Context, v: Int) =
+        prefs(c).edit().putString(KEY_WEB_SHELL_PORT, normalizeWebShellPort(v.toString()).toString()).apply()
+
+    /** 归一：1..65535 合法，其余（含空/0/越界/非数字）回退 [LaunchContract.WEB_SHELL_PORT_DEFAULT]。 */
+    fun normalizeWebShellPort(v: String?): Int {
+        val parsed = v?.trim()?.toIntOrNull() ?: return LaunchContract.WEB_SHELL_PORT_DEFAULT
+        return parsed.takeIf { it in 1..65535 } ?: LaunchContract.WEB_SHELL_PORT_DEFAULT
+    }
 
     // ---------- PPSSPP 外置模拟器 ----------
     fun getPpssppVersion(c: Context): String =

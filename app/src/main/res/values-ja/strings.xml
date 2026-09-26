@@ -333,6 +333,8 @@
     <string name="engine_settings_artemis_patch_dir_unresolved">ゲームフォルダーのパスを解決できません</string>
     <string name="engine_settings_artemis_patch_permission_required">「すべてのファイルへのアクセス」権限が必要です。設定画面を開きました</string>
     <string name="engine_settings_artemis_clean_hint">自研カーネルはゲームパックから直接読み込むため、公式のバージョン/パッチ/表示設定は適用されません。</string>
+    <string name="engine_settings_web_shell_port_title">Web サーバーポート</string>
+    <string name="engine_settings_web_shell_port_summary">固定ポート（既定 23333）で Web セーブのオリジンを安定させます。Tyrano / WebOther / VN 共用。変更すると既存セーブが見えなくなる場合があり、ポート使用中は一時ポートに自動切替します</string>
     <string name="engine_settings_external_network_resources">外部ネットワークリソースを許可</string>
     <string name="engine_settings_external_network">外部ネットワークを許可</string>
     <string name="engine_settings_game_modifier">ゲーム改造ツール</string>

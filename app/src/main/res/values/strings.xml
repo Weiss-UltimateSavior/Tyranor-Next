@@ -333,6 +333,8 @@
     <string name="engine_settings_artemis_patch_dir_unresolved">无法解析游戏目录路径，请确认已导入可访问的目录</string>
     <string name="engine_settings_artemis_patch_permission_required">需要「所有文件访问」权限，已尝试打开设置页</string>
     <string name="engine_settings_artemis_clean_hint">自研内核直接从游戏包读取资源与配置，官方版本/补丁/显示注入项不适用。</string>
+    <string name="engine_settings_web_shell_port_title">Web 服务端口</string>
+    <string name="engine_settings_web_shell_port_summary">固定端口（默认 23333）保证网页存档域稳定；Tyrano / WebOther / VN 共用，改动后旧存档可能不再可见，端口被占用时会自动改用临时端口</string>
     <string name="engine_settings_external_network_resources">允许加载外部网络资源</string>
     <string name="engine_settings_external_network">允许外部网络</string>
     <string name="engine_settings_game_modifier">游戏修改器</string>

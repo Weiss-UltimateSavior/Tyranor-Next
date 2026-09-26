@@ -120,6 +120,10 @@ object EngineSettingsResolver {
                 EngineSettingsStore.ART_TOGGLES,
                 EngineSettingsStore.ART_TOGGLE_DEFAULT,
             ),
+            webShellPort = EffectiveEngineSettings.resolveWebShellPort(
+                str(PerGameSettingsStore.F_WEB_SHELL_PORT),
+                EngineSettingsStore.getWebShellPort(app),
+            ),
             webScopedSaveDir = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_TY_SCOPED),
                 EngineSettingsStore.isTyranoScopedSaveDir(app),
@@ -238,6 +242,8 @@ data class ResolvedEngineSettings(
     val artSurfaceCacheSize: String,
     val artFontCacheSize: String,
     val artPowerSaving: String,
+    /** Web 壳（Tyrano / WebOther / VN）本地 HTTP 服务端口（固定端口保证 WebView 存档域稳定）。 */
+    val webShellPort: Int,
     val webScopedSaveDir: Boolean,
     val rpgMakerModEnabled: Boolean,
     val rpgLegacyRenderer: Boolean,

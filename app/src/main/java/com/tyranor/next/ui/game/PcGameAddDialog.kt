@@ -40,6 +40,7 @@ import com.tyranor.next.core.game.launch.YurisLaunchFiles
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.DialogItemSurface
@@ -207,32 +208,6 @@ internal fun PcGameAddDialog(
     )
 }
 
-/** 弹窗文本按钮：无涟漪/按压效果（indication = null），颜色随可用态变化。 */
-@Composable
-private fun DialogTextButton(
-    text: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = if (enabled) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-        },
-        modifier = Modifier
-            .clip(AppComponentShape)
-            .clickable(
-                enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
-}
 
 /** 读取所选目录（SAF）的目录名与 exe 候选（过滤干扰项并排序）。 */
 private fun loadPcCandidates(

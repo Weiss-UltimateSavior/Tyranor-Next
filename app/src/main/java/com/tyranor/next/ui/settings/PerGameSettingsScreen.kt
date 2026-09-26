@@ -50,6 +50,10 @@ import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.DialogTextButton
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.LocalIndication
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
@@ -102,6 +106,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
     var ppssppVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION)) }
+    var webShellPort by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WEB_SHELL_PORT)) }
     var fvpFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT)) }
     var winlatorContainerId by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID)) }
     var winlatorContainerName by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME)) }
@@ -223,6 +228,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalFvpFont = EngineSettingsStore.getFvpFont(ctx)
     val globalWinlator = remember { EngineSettingsStore.loadWinlator(ctx) }
     val globalPpssppVersion = EngineSettingsStore.getPpssppVersion(ctx)
+    val globalWebShellPort = EngineSettingsStore.getWebShellPort(ctx)
     val ppssppVersionMap = ppssppVersionOptionsMap()
     val winlatorDriverMap = winlatorGraphicsDriverOptionsMap()
     val winlatorDxWrapperMap = winlatorDxWrapperOptionsMap()
@@ -318,6 +324,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION, ppssppVersion)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WEB_SHELL_PORT, webShellPort)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT, fvpFont)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, winlatorContainerId)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, winlatorContainerName)
@@ -811,6 +818,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
                             }
+                            if (game.engine in setOf(EngineType.TYRANO, EngineType.VN, EngineType.WEB_OTHER)) {
+                                OverrideText(
+                                    label = stringResource(R.string.engine_settings_web_shell_port_title),
+                                    globalValue = globalWebShellPort.toString(),
+                                    override = webShellPort,
+                                    hint = stringResource(R.string.engine_settings_web_shell_port_summary),
+                                    sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
+                                    allowEmpty = false,
+                                    validate = { it.toIntOrNull()?.let { port -> port in 1..65535 } == true },
+                                ) { webShellPort = it }
+                            }
                         }
                     }
                     EngineType.PSP -> item {
@@ -1093,6 +1111,8 @@ private fun OverrideText(
     override: String?,
     hint: String,
     sanitize: ((String) -> String)? = null,
+    allowEmpty: Boolean = true,
+    validate: (String) -> Boolean = { true },
     onSet: (String?) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
@@ -1110,40 +1130,48 @@ private fun OverrideText(
     if (showDialog) {
         var text by remember(override) { mutableStateOf(override.orEmpty()) }
         val normalized = text.trim()
+        val canConfirm = validate(normalized) && (allowEmpty || normalized.isNotEmpty())
         AppAlertDialog(
             onDismissRequest = { showDialog = false },
             title = { Text(label, style = MaterialTheme.typography.titleMedium) },
             text = {
-                Column {
-                    AppSearchField(
-                        query = text,
-                        onQueryChange = { text = sanitize?.invoke(it) ?: it },
-                        onSearch = { onSet(normalized); showDialog = false },
-                        leadingIcon = painterResource(R.drawable.ic_sheet_rename),
-                        iconContentDescription = label,
-                        textStyle = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        hint,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
+                // 弹窗点击反馈规范：输入区内禁用全部点击/按压反馈（无涟漪）
+                CompositionLocalProvider(LocalIndication provides NoIndication) {
+                    Column {
+                        AppSearchField(
+                            query = text,
+                            onQueryChange = { text = sanitize?.invoke(it) ?: it },
+                            onSearch = { if (canConfirm) { onSet(normalized); showDialog = false } },
+                            leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                            iconContentDescription = label,
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            hint,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { onSet(normalized); showDialog = false }) {
-                    Text(stringResource(R.string.common_save))
-                }
+                DialogTextButton(
+                    text = stringResource(R.string.common_save),
+                    enabled = canConfirm,
+                    onClick = { onSet(normalized); showDialog = false },
+                )
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { onSet(null); showDialog = false }) {
-                        Text(stringResource(R.string.engine_settings_follow_global))
-                    }
-                    TextButton(onClick = { showDialog = false }) {
-                        Text(stringResource(R.string.common_cancel))
-                    }
+                    DialogTextButton(
+                        text = stringResource(R.string.engine_settings_follow_global),
+                        onClick = { onSet(null); showDialog = false },
+                    )
+                    DialogTextButton(
+                        text = stringResource(R.string.common_cancel),
+                        onClick = { showDialog = false },
+                    )
                 }
             },
         )

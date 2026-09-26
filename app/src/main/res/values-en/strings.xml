@@ -333,6 +333,8 @@
     <string name="engine_settings_artemis_patch_dir_unresolved">Cannot resolve the game folder path</string>
     <string name="engine_settings_artemis_patch_permission_required">All-files access is required; the settings page was opened</string>
     <string name="engine_settings_artemis_clean_hint">The clean-room kernel reads resources and config directly from the game pack; official version/patch/display options do not apply.</string>
+    <string name="engine_settings_web_shell_port_title">Web server port</string>
+    <string name="engine_settings_web_shell_port_summary">A fixed port (default 23333) keeps the web save origin stable; shared by Tyrano / WebOther / VN. Changing it may hide existing saves; a temporary port is used automatically when the port is in use</string>
     <string name="engine_settings_external_network_resources">Allow external network resources</string>
     <string name="engine_settings_external_network">Allow external network</string>
     <string name="engine_settings_game_modifier">Game modifier</string>

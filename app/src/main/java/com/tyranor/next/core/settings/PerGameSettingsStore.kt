@@ -86,6 +86,9 @@ object PerGameSettingsStore {
     // Ren'Py（外置模块版本选择）
     const val F_RENPY_VERSION = "renpy_engine_version"
 
+    // Web 壳本地端口覆盖（Tyrano / WebOther / VN；null=跟随全局）
+    const val F_WEB_SHELL_PORT = "web_shell_port"
+
     // PPSSPP 外置模拟器版本覆盖（standard/gold；null=跟随全局）
     const val F_PPSSPP_VERSION = "ppsspp_version"
 

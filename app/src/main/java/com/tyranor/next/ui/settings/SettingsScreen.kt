@@ -84,8 +84,10 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
@@ -728,6 +730,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var fvpFont by remember { mutableStateOf(EngineSettingsStore.getFvpFont(ctx)) }
     var winlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
     var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(ctx)) }
+    var webShellPort by remember { mutableStateOf(EngineSettingsStore.getWebShellPort(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
@@ -803,6 +806,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setFvpFont(ctx, fvpFont)
         EngineSettingsStore.saveWinlator(ctx, winlator)
         EngineSettingsStore.setPpssppVersion(ctx, ppssppVersion)
+        EngineSettingsStore.setWebShellPort(ctx, webShellPort)
     }
 
     MiuixSettingsTheme {
@@ -831,7 +835,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
-                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion,
+                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
                 topInset = innerPadding.calculateTopPadding(),
                 onLaunchNativeKirikiroidUi = {
                     scope.launch {
@@ -888,6 +892,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onFvpFontPick = { fvpFontLauncher.launch("*/*") },
                 onWinlator = { winlator = it },
                 onPpssppVersion = { ppssppVersion = it },
+                onWebShellPort = { webShellPort = it },
             )
         }
     }
@@ -943,6 +948,7 @@ private fun LazyListPlaceholder(
     fontLauncher: FontPickerLauncher, fvpFontLauncher: FontPickerLauncher,
     winlator: EngineSettingsStore.Winlator,
     ppssppVersion: String,
+    webShellPort: Int,
     topInset: Dp,
     onLaunchNativeKirikiroidUi: () -> Unit,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
@@ -972,6 +978,7 @@ private fun LazyListPlaceholder(
     onFvpFontPick: () -> Unit,
     onWinlator: (EngineSettingsStore.Winlator) -> Unit,
     onPpssppVersion: (String) -> Unit,
+    onWebShellPort: (Int) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -1133,6 +1140,15 @@ private fun LazyListPlaceholder(
                 // RPG Maker Web 与 Tyrano 共用同一套 WebView 宿主开关，避免同类引擎重复配置。
                 SwitchPreference(title = stringResource(R.string.engine_settings_external_network_resources), checked = tyExternal, onCheckedChange = onTyExternal)
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = tyScoped, onCheckedChange = onTyScoped)
+                // Tyrano / WebOther / VN：固定端口保证 WebView 存档域（origin）跨启动稳定
+                WinlatorValueRow(
+                    label = stringResource(R.string.engine_settings_web_shell_port_title),
+                    summaryHint = stringResource(R.string.engine_settings_web_shell_port_summary),
+                    value = webShellPort.toString(),
+                    sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
+                    validate = { it.isNotEmpty() && (it.toIntOrNull()?.let { port -> port in 1..65535 } == true) },
+                    onValueChange = { onWebShellPort(it.toInt()) },
+                )
             }
         }
 
@@ -1339,6 +1355,7 @@ private fun WinlatorValueRow(
     value: String,
     onValueChange: (String) -> Unit,
     sanitize: ((String) -> String)? = null,
+    validate: (String) -> Boolean = { true },
 ) {
     var showDialog by remember { mutableStateOf(false) }
     ArrowPreference(
@@ -1352,6 +1369,7 @@ private fun WinlatorValueRow(
             hint = summaryHint,
             initial = value,
             sanitize = sanitize,
+            validate = validate,
             onDismiss = { showDialog = false },
             onConfirm = {
                 onValueChange(it)
@@ -1367,10 +1385,13 @@ private fun WinlatorValueDialog(
     hint: String,
     initial: String,
     sanitize: ((String) -> String)?,
+    validate: (String) -> Boolean,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
     var text by remember(initial) { mutableStateOf(initial) }
+    val normalized = text.trim()
+    val canConfirm = normalized.isEmpty() || validate(normalized)
     AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title, style = MaterialTheme.typography.titleMedium) },
@@ -1381,7 +1402,7 @@ private fun WinlatorValueDialog(
                     AppSearchField(
                         query = text,
                         onQueryChange = { text = sanitize?.invoke(it) ?: it },
-                        onSearch = { onConfirm(text.trim()) },
+                        onSearch = { if (canConfirm) onConfirm(normalized) },
                         leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                         iconContentDescription = title,
                         textStyle = MaterialTheme.typography.bodyMedium,
@@ -1396,13 +1417,14 @@ private fun WinlatorValueDialog(
             }
         },
         confirmButton = {
-            SettingsDialogTextButton(
+            DialogTextButton(
                 text = stringResource(R.string.common_save),
-                onClick = { onConfirm(text.trim()) },
+                enabled = canConfirm,
+                onClick = { onConfirm(normalized) },
             )
         },
         dismissButton = {
-            SettingsDialogTextButton(
+            DialogTextButton(
                 text = stringResource(R.string.common_cancel),
                 onClick = onDismiss,
             )
@@ -1410,40 +1432,6 @@ private fun WinlatorValueDialog(
     )
 }
 
-/** 无涟漪/按压反馈占位：容器内组件的点击效果统一失效。 */
-private object NoIndication : IndicationNodeFactory {
-    private val node = object : Modifier.Node() {}
-    override fun create(interactionSource: InteractionSource): DelegatableNode = node
-    override fun equals(other: Any?): Boolean = other === this
-    override fun hashCode(): Int = System.identityHashCode(this)
-}
-
-/** 弹窗文本按钮：无涟漪/按压效果（indication = null），与 PcGameAddDialog 的弹窗按钮一致。 */
-@Composable
-private fun SettingsDialogTextButton(
-    text: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = if (enabled) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-        },
-        modifier = Modifier
-            .clip(AppComponentShape)
-            .clickable(
-                enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    )
-}
 
 @Composable
 internal fun EngineCard(header: String, content: @Composable () -> Unit) {

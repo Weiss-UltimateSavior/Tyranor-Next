@@ -25,6 +25,10 @@ object LaunchContract {
     const val ORIENTATION = "orientation"
     const val FOCUS = "focus"
     const val ORIGIN_MODE = "originMode"
+    /** Web 壳本地 HTTP 服务端口（Tyrano / WebOther / VN）：固定端口保证 localStorage/IndexedDB 存档跨启动可见。 */
+    const val WEB_SHELL_PORT = "webShellPort"
+    /** Web 壳默认固定端口（与 Tyranor 原版 webGamePort 默认值一致，便于沿用既有存档域）。 */
+    const val WEB_SHELL_PORT_DEFAULT = 23333
     const val UI_LANGUAGE_TAG = "uiLanguageTag"
 
     // ---------- 主题 ----------

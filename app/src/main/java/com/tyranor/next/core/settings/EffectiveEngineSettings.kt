@@ -156,6 +156,12 @@ object EffectiveEngineSettings {
     }
 
     /**
+     * Web 壳端口三级合并：单游戏覆盖值合法（1..65535）时优先，否则回退全局生效值。
+     */
+    fun resolveWebShellPort(override: String?, global: Int): Int =
+        override?.trim()?.toIntOrNull()?.takeIf { it in 1..65535 } ?: global
+
+    /**
      * Winlator 外置启动全局设置 + 单游戏覆盖合并。
      *
      * 覆盖字段带值即生效（""=显式不下发该参数，跟随容器配置）；字符串字段仍走各自的

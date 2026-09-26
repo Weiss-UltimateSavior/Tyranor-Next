@@ -91,6 +91,7 @@ class TyranoActivity : Activity() {
         intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT),
         intent.getBooleanExtra(LaunchContract.RPG_MAKER_MOD_ENABLED, true).toString(),
         intent.getStringExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID),
+        intent.getIntExtra(LaunchContract.WEB_SHELL_PORT, 0).toString(),
     ).joinToString("\u0000")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +129,8 @@ class TyranoActivity : Activity() {
             asarPath = entry.asarPath
         }
 
+        // 固定端口（Tyrano / WebOther / VN）：WebView 存储按 origin 隔离，随机端口会丢存档
+        val preferredPort = intent.getIntExtra(LaunchContract.WEB_SHELL_PORT, 0)
         if (gameUsesAsar) {
             try {
                 asarArchive = AsarArchive(File(requireNotNull(asarPath)))
@@ -215,11 +218,11 @@ class TyranoActivity : Activity() {
             val injectBeforeBody = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
-                    contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, modResources,
+                    contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, modResources, preferredPort,
                 )
             } else {
                 TyranoLocalHttpServer(
-                    contentRoot, hook, injectBeforeBody, scriptAppends, modHtml, modResources,
+                    contentRoot, hook, injectBeforeBody, scriptAppends, modHtml, modResources, preferredPort,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
@@ -267,7 +270,15 @@ class TyranoActivity : Activity() {
             WebGameType.TYRANO -> browser.addJavascriptInterface(TyranoJsBridge(saves), JS_BRIDGE_NAME)
             WebGameType.VN, WebGameType.WEB_OTHER -> Unit
         }
-        val url = "http://localhost:${requireNotNull(localServer).port}/index.html"
+        val server = requireNotNull(localServer)
+        if (server.usedFallbackPort) {
+            Toast.makeText(
+                this,
+                getString(R.string.engine_web_shell_port_fallback, preferredPort, server.port),
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+        val url = "http://localhost:${server.port}/index.html"
         Log.i(TAG, "loadUrl=$url")
         browser.loadUrl(url)
     }

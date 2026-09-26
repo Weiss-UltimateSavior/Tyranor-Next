@@ -1340,6 +1340,10 @@ object EngineLauncher {
             }
             putExtra(LaunchContract.TYPE, webType)
             putExtra(LaunchContract.LAUNCH_MODE, "internal.${webType.lowercase()}")
+            // Tyrano / WebOther / VN：固定端口（WebView 存储按 origin 隔离，随机会丢存档）
+            if (game.engine == EngineType.TYRANO || game.engine == EngineType.WEB_OTHER || game.engine == EngineType.VN) {
+                putExtra(LaunchContract.WEB_SHELL_PORT, settings.webShellPort)
+            }
             putExtra(LaunchContract.ORIENTATION, 6)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, scoped)
             scopedSaveRoot?.let { putExtra(LaunchContract.SCOPED_SAVE_ROOT, it) }
