@@ -2,6 +2,7 @@ package com.tyranor.next.ui.archive
 
 import android.content.Context
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -11,6 +12,7 @@ import androidx.lifecycle.viewModelScope
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.unpack.ArchiveCancelledException
+import com.tyranor.next.core.unpack.ArchiveConflictException
 import com.tyranor.next.core.unpack.ArchiveNativeMissingException
 import com.tyranor.next.core.unpack.ArchiveScanner
 import com.tyranor.next.core.unpack.ArchiveStaging
@@ -74,11 +76,23 @@ class ArchiveViewModel : ViewModel() {
         private set
     var progress by mutableFloatStateOf(0f)
         private set
+
+    /** 当前文件字节进度（双层进度条第二层）；fileBytes.second<=0 时 UI 隐藏该层。 */
+    var fileProgress by mutableFloatStateOf(0f)
+        private set
+    var progressBytes by mutableStateOf(0L to 0L)
+        private set
+    var fileBytes by mutableStateOf(0L to 0L)
+        private set
     var progressDeterminate by mutableStateOf(false)
         private set
     var progressName by mutableStateOf("")
         private set
     var message by mutableStateOf<String?>(null)
+        private set
+
+    /** 模态进度弹窗：运行中强制锁定页面，结束后展示结果等待「完成」。 */
+    var dialogVisible by mutableStateOf(false)
         private set
 
     /** 无法映射真实路径时，封包产物暂存 cache 等待系统保存框。 */
@@ -114,9 +128,13 @@ class ArchiveViewModel : ViewModel() {
         working = true
         workingLabel = label
         progress = 0f
+        fileProgress = 0f
+        progressBytes = 0L to 0L
+        fileBytes = 0L to 0L
         progressDeterminate = determinate
         progressName = ""
         message = null
+        dialogVisible = true
         cancelFlag.set(false)
         val failedFormat = appContext.getString(R.string.archive_failed)
         val cancelledMessage = appContext.getString(R.string.archive_cancelled)
@@ -131,20 +149,34 @@ class ArchiveViewModel : ViewModel() {
                 message = cancelledMessage
             } catch (missing: ArchiveNativeMissingException) {
                 message = nativeMissingMessage
+            } catch (conflict: ArchiveConflictException) {
+                // 同名产物拒绝：不进结果弹窗，就地 toast + 状态栏提示。
+                message = conflict.message
+                dialogVisible = false
+                Toast.makeText(appContext, conflict.message, Toast.LENGTH_LONG).show()
             } catch (error: Exception) {
                 message = failedFormat.format(error.message ?: error.javaClass.simpleName)
             } finally {
                 working = false
                 currentJob = null
+                // 结果需要展示（成功提示/取消/失败）则保留弹窗等待「完成」；静默成功（如扫描）自动关闭。
+                if (message == null) dialogVisible = false
             }
         }
         currentJob = job
     }
 
+    fun dismissDialog() {
+        dialogVisible = false
+    }
+
     private val isCancelled: () -> Boolean = { cancelFlag.get() || currentJob?.isCancelled == true }
 
-    private fun reportProgress(written: Long, total: Long, name: String) {
+    private fun reportProgress(written: Long, total: Long, fileWritten: Long, fileTotal: Long, name: String) {
         if (total > 0) progress = (written.toFloat() / total).coerceIn(0f, 1f)
+        fileProgress = if (fileTotal > 0) (fileWritten.toFloat() / fileTotal).coerceIn(0f, 1f) else 0f
+        progressBytes = written to total
+        fileBytes = fileWritten to fileTotal
         progressName = name
     }
 
@@ -221,20 +253,30 @@ class ArchiveViewModel : ViewModel() {
         }
         val doneFormat = appContext.getString(R.string.archive_extract_created)
         val doneSkippedFormat = appContext.getString(R.string.archive_done_extract_skipped)
+        val conflictDirFormat = appContext.getString(R.string.archive_conflict_dir)
         val baseName = baseNameWithoutExt(archive.fileName)
         launchOp(appContext, archive.fileName, determinate = true) {
-            val file = requireArchiveFile(appContext, archive)
+            val file = requireArchiveFile(appContext, archive) { copied, total ->
+                reportProgress(copied, total, 0, 0, archive.fileName)
+            }
             val result = withContext(Dispatchers.IO) {
                 if (archive.realFile != null) {
                     val parent = archive.realFile.parentFile
                         ?: throw java.io.IOException("archive has no parent: ${archive.realFile.path}")
-                    val outDir = uniqueDir(parent, baseName)
+                    // 同名拒绝：不静默去重，提示用户先备份或改名。
+                    val outDir = File(parent, baseName)
+                    if (outDir.exists()) {
+                        throw ArchiveConflictException(conflictDirFormat.format(outDir.absolutePath))
+                    }
+                    if (!outDir.mkdirs()) {
+                        throw java.io.IOException("cannot create directory: ${outDir.path}")
+                    }
                     extractTo(file, outDir, isCancelled) to outDir.absolutePath
                 } else {
                     val treeRoot = sourceTreeUri
                         ?: throw java.io.IOException("missing source directory")
-                    val outDoc = ArchiveStaging.createDedupedChildDirectory(appContext, treeRoot, baseName)
-                        ?: throw java.io.IOException("cannot create output folder: $baseName")
+                    val outDoc = ArchiveStaging.createChildDirectoryExclusive(appContext, treeRoot, baseName)
+                        ?: throw ArchiveConflictException(conflictDirFormat.format(baseName))
                     val tmp = File(ArchiveStaging.stagingDir(appContext), "extract_${System.currentTimeMillis()}")
                     try {
                         val counts = extractTo(file, tmp, isCancelled)
@@ -256,13 +298,17 @@ class ArchiveViewModel : ViewModel() {
         }
     }
 
-    /** 取归档文件：真实路径直用，否则中转（带缓存）。 */
-    private suspend fun requireArchiveFile(appContext: Context, archive: ScannedArchive): File {
+    /** 取归档文件：真实路径直用，否则中转（带缓存与字节级进度）。 */
+    private suspend fun requireArchiveFile(
+        appContext: Context,
+        archive: ScannedArchive,
+        onStagingProgress: ((copied: Long, total: Long) -> Unit)? = null,
+    ): File {
         archive.realFile?.let { return it }
         val uri = archive.docUri ?: throw java.io.IOException("archive source missing: ${archive.fileName}")
         stagedArchive?.takeIf { it.first == archive.id }?.let { return it.second }
         val staged = withContext(Dispatchers.IO) {
-            ArchiveStaging.stageInputFile(appContext, uri, isCancelled)
+            ArchiveStaging.stageInputFile(appContext, uri, isCancelled, onStagingProgress)
         }
         stagedArchive = archive.id to staged
         return staged
@@ -290,15 +336,19 @@ class ArchiveViewModel : ViewModel() {
         val ext = ".xp3"
         val level = packLevel
         val doneFormat = appContext.getString(R.string.archive_pack_done)
+        val conflictFileFormat = appContext.getString(R.string.archive_conflict_file)
         launchOp(appContext, packDirName, determinate = true) {
             val mappedPath = GamePathUtils.safUriToPath(uri.toString())
             val mappedDir = mappedPath?.let { File(it) }?.takeIf { it.isDirectory }
             if (mappedDir != null) {
-                // 真实路径：输出为同级同名文件（去重）。
+                // 真实路径：输出为同级同名文件，同名拒绝（提示提前备份/改名）。
                 val parent = mappedDir.parentFile ?: mappedDir
-                val outFile = uniqueFile(parent, "${mappedDir.name}$ext")
+                val outFile = File(parent, "${mappedDir.name}$ext")
+                if (outFile.exists()) {
+                    throw ArchiveConflictException(conflictFileFormat.format(outFile.absolutePath))
+                }
                 withContext(Dispatchers.IO) { runPack(mappedDir, outFile, level) }
-                message = doneFormat.format(outFile.name)
+                message = doneFormat.format(outFile.absolutePath)
             } else {
                 // SAF 专有 provider：封到 cache，交给系统保存框。
                 val srcDir = withContext(Dispatchers.IO) { ArchiveStaging.stageInputDir(appContext, uri, isCancelled) }
@@ -346,30 +396,6 @@ class ArchiveViewModel : ViewModel() {
     private fun baseNameWithoutExt(fileName: String): String {
         val dot = fileName.lastIndexOf('.')
         return if (dot > 0) fileName.substring(0, dot) else fileName
-    }
-
-    private fun uniqueDir(parent: File, base: String): File {
-        var candidate = File(parent, base)
-        var index = 1
-        while (candidate.exists()) {
-            candidate = File(parent, "$base($index)")
-            index++
-        }
-        if (!candidate.mkdirs()) throw java.io.IOException("cannot create directory: ${candidate.path}")
-        return candidate
-    }
-
-    private fun uniqueFile(parent: File, name: String): File {
-        var candidate = File(parent, name)
-        var index = 1
-        val dot = name.lastIndexOf('.')
-        val stem = if (dot > 0) name.substring(0, dot) else name
-        val ext = if (dot > 0) name.substring(dot) else ""
-        while (candidate.exists()) {
-            candidate = File(parent, "$stem($index)$ext")
-            index++
-        }
-        return candidate
     }
 
     override fun onCleared() {

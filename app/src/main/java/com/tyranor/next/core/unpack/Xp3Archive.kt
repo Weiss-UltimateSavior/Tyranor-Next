@@ -41,7 +41,13 @@ object Xp3Archive {
     fun extractAll(
         archive: File,
         outputDir: File,
-        onProgress: ((writtenBytes: Long, totalBytes: Long, entryName: String) -> Unit)? = null,
+        onProgress: (
+            writtenBytes: Long,
+            totalBytes: Long,
+            fileWrittenBytes: Long,
+            fileTotalBytes: Long,
+            entryName: String,
+        ) -> Unit = { _, _, _, _, _ -> },
         isCancelled: () -> Boolean = { false },
     ): ExtractStats {
         if (!archive.isFile) throw IOException("XP3 archive missing: ${archive.path}")
@@ -78,7 +84,13 @@ object Xp3Archive {
         source: File,
         output: File,
         level: Int = 6,
-        onProgress: ((writtenBytes: Long, totalBytes: Long, entryName: String) -> Unit)? = null,
+        onProgress: (
+            writtenBytes: Long,
+            totalBytes: Long,
+            fileWrittenBytes: Long,
+            fileTotalBytes: Long,
+            entryName: String,
+        ) -> Unit = { _, _, _, _, _ -> },
         isCancelled: () -> Boolean = { false },
     ): PackStats {
         if (!source.exists()) throw IOException("XP3 pack: source missing: ${source.path}")

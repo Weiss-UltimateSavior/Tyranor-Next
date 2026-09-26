@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,6 +57,7 @@ import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.unpack.ScannedArchive
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppScreenActivity
+import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
@@ -124,6 +126,16 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
         allFilesGranted = isAllFilesAccessGranted()
     }
 
+    // 强制模态锁：运行中系统手势/返回关掉弹窗立即重建，操作结束（完成/取消/失败）后才放行。
+    var dialogNonce by remember { mutableStateOf(0) }
+    if (vm.dialogVisible) {
+        key(dialogNonce) {
+            ArchiveProgressDialog(vm) {
+                if (vm.working) dialogNonce++ else vm.dismissDialog()
+            }
+        }
+    }
+
     fun takeTreePermissions(uri: Uri) {
         runCatching {
             context.contentResolver.takePersistableUriPermission(
@@ -177,7 +189,7 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
             )
         }
 
-        if (vm.working || vm.message != null) {
+        if (vm.message != null && !vm.dialogVisible) {
             StatusBar(vm = vm)
         }
         Spacer(Modifier.navigationBarsPadding().height(4.dp))
@@ -479,36 +491,79 @@ private fun buildVisibleTree(entries: List<EntryRow>, expanded: Set<String>): Li
 
 @Composable
 private fun StatusBar(vm: ArchiveViewModel) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
-        if (vm.working) {
-            if (vm.progressDeterminate) {
-                LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth())
-            } else {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    vm.message?.let { text ->
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+/**
+ * 运行模态弹窗：运行中显示双层字节进度（总进度 + 当前文件进度）并锁定页面，
+ * 仅「取消」可点；结束后显示结果消息，「完成」按钮关闭弹窗。
+ */
+@Composable
+private fun ArchiveProgressDialog(vm: ArchiveViewModel, onDismissRequest: () -> Unit) {
+    AppAlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(stringResource(R.string.archive_title), style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (vm.working) {
+                    if (vm.progressDeterminate) {
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth())
+                            if (vm.fileBytes.second > 0) {
+                                LinearProgressIndicator(progress = { vm.fileProgress }, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                        Text(
+                            progressBytesText(vm),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    Text(
+                        vm.progressName.ifBlank { vm.workingLabel },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else {
+                    Text(
+                        vm.message ?: "",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    vm.progressName.ifBlank { vm.workingLabel },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+        },
+        confirmButton = {
+            if (vm.working) {
                 TextButton(onClick = { vm.cancel() }) {
                     Text(stringResource(R.string.archive_cancel), style = MaterialTheme.typography.bodyMedium)
                 }
+            } else {
+                TextButton(onClick = { vm.dismissDialog() }) {
+                    Text(stringResource(R.string.common_done), style = MaterialTheme.typography.bodyMedium)
+                }
             }
-        }
-        vm.message?.let { text ->
-            Text(
-                text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-    }
+        },
+    )
+}
+
+/** 字节计数文本：总进度 `已写 / 总量`，双层时追加当前文件的 `已写 / 总量`。 */
+private fun progressBytesText(vm: ArchiveViewModel): String {
+    val (written, total) = vm.progressBytes
+    val overall = if (total > 0) "${formatBytes(written)} / ${formatBytes(total)}" else formatBytes(written)
+    val (fileWritten, fileTotal) = vm.fileBytes
+    return if (fileTotal > 0) "$overall · ${formatBytes(fileWritten)} / ${formatBytes(fileTotal)}" else overall
 }
 
 @Composable

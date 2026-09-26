@@ -26,13 +26,19 @@ internal object NativeArchiveOp {
     data class ResultCounts(val total: Int, val success: Int, val error: Int)
 
     /**
-     * 执行阻塞式 [call] 并轮询 [snapshot] 上报进度。返回解析后的计数；
+     * 执行阻塞式 [call] 并轮询 [snapshot] 上报进度（总字节 + 当前文件字节，双层进度条数据源）。
      * 取消或 `cancelled` 错误抛 [ArchiveCancelledException]。
      */
     fun run(
         what: String,
         isCancelled: () -> Boolean,
-        onProgress: ((writtenBytes: Long, totalBytes: Long, entryName: String) -> Unit)?,
+        onProgress: (
+            writtenBytes: Long,
+            totalBytes: Long,
+            fileWrittenBytes: Long,
+            fileTotalBytes: Long,
+            entryName: String,
+        ) -> Unit,
         snapshot: () -> ProgressSnapshot,
         cancel: () -> Unit,
         call: () -> String?,
@@ -45,7 +51,7 @@ internal object NativeArchiveOp {
                     runCatching { cancel() }
                 } else {
                     runCatching { snapshot() }.getOrNull()?.let { snap ->
-                        onProgress?.invoke(snap.bytes, snap.total, snap.name)
+                        onProgress?.invoke(snap.bytes, snap.total, snap.fileBytes, snap.fileTotal, snap.name)
                     }
                 }
                 try {

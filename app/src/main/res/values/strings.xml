@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">确定</string>
+    <string name="common_done">完成</string>
     <string name="common_cancel">取消</string>
     <string name="common_delete">删除</string>
     <string name="common_save">保存</string>
@@ -619,6 +620,8 @@
     <string name="archive_native_missing">解包组件缺失，请重装完整应用后重试</string>
     <string name="archive_level">压缩等级（0=明文存放）</string>
     <string name="archive_cancel">取消</string>
+    <string name="archive_conflict_dir">已存在同名文件夹「%1$s」，请先备份或改名后重试</string>
+    <string name="archive_conflict_file">已存在同名产物「%1$s」，请提前备份或改名后重试</string>
     <string name="archive_no_file">请先选择封包文件</string>
     <string name="archive_no_dir">请先选择目录</string>
     <string name="archive_empty_list">空包或无法读取</string>

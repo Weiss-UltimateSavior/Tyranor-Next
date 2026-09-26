@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">OK</string>
+    <string name="common_done">完了</string>
     <string name="common_cancel">キャンセル</string>
     <string name="common_delete">削除</string>
     <string name="common_save">保存</string>
@@ -619,6 +620,8 @@
     <string name="archive_native_missing">解凍コンポーネントが見つかりません。アプリを再インストールしてください</string>
     <string name="archive_level">圧縮レベル（0=無圧縮）</string>
     <string name="archive_cancel">キャンセル</string>
+    <string name="archive_conflict_dir">同名フォルダ「%1$s」が既に存在します。バックアップまたは名前変更後に再試行してください</string>
+    <string name="archive_conflict_file">同名ファイル「%1$s」が既に存在します。事前にバックアップまたは名前を変更してください</string>
     <string name="archive_no_file">先にアーカイブを選択してください</string>
     <string name="archive_no_dir">先にフォルダを選択してください</string>
     <string name="archive_empty_list">空または読み取れません</string>

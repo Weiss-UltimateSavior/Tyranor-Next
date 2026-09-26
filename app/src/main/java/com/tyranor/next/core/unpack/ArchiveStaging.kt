@@ -120,19 +120,13 @@ object ArchiveStaging {
     }
 
     /**
-     * 在目录树下按 [baseName] 创建去重子目录（`名字`、`名字(1)`…）。
-     * 返回新建目录；创建失败返回 null。
+     * 在目录树下创建名为 [baseName] 的子目录；同名（文件或文件夹）已存在时返回 null
+     * ——拒绝静默去重，由调用方提示用户处理同名产物。
      */
-    fun createDedupedChildDirectory(context: Context, treeUri: Uri, baseName: String): DocumentFile? {
+    fun createChildDirectoryExclusive(context: Context, treeUri: Uri, baseName: String): DocumentFile? {
         val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
-        val existing = root.listFiles().mapNotNull { it.name }.toHashSet()
-        var candidate = baseName
-        var index = 1
-        while (candidate in existing) {
-            candidate = "$baseName($index)"
-            index++
-        }
-        return root.createDirectory(candidate)
+        if (root.findFile(baseName)?.exists() == true) return null
+        return root.createDirectory(baseName)
     }
 
     /** 把 [srcDir] 树写进已打开的 SAF 目录（幂等覆盖：同名文件删后重建）。 */
