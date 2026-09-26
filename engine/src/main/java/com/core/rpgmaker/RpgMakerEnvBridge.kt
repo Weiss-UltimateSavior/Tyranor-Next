@@ -239,7 +239,10 @@ internal class RpgMakerEnvBridge {
     private fun inflate(input: ByteArray, nowrap: Boolean): ByteArray {
         val inflater = Inflater(nowrap)
         inflater.setInput(input)
-        val out = ByteArrayOutputStream(input.size.coerceAtLeast(64) * 2)
+        // 初始容量不按输入规模倍增：`input.size * 2` 在高压缩比/大输入下会
+        // 立刻申请上百 MB（64MiB 输入 → 128MiB），而此时输出可能远小于该值。
+        // 改用小的固定容量，按实际产出翻倍增长（总拷贝量仍是 O(输出)）。
+        val out = ByteArrayOutputStream(DECOMPRESS_INITIAL_CAPACITY)
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         try {
             while (!inflater.finished()) {
@@ -277,7 +280,10 @@ internal class RpgMakerEnvBridge {
      * 这里边读边计长度，超过上限立即失败（与 [inflate] 的 MAX_BYTES 语义一致）。
      */
     private fun gunzipBounded(input: ByteArray): ByteArray {
-        val out = ByteArrayOutputStream(input.size.coerceAtLeast(64) * 2)
+        // 初始容量不按输入规模倍增：`input.size * 2` 在高压缩比/大输入下会
+        // 立刻申请上百 MB（64MiB 输入 → 128MiB），而此时输出可能远小于该值。
+        // 改用小的固定容量，按实际产出翻倍增长（总拷贝量仍是 O(输出)）。
+        val out = ByteArrayOutputStream(DECOMPRESS_INITIAL_CAPACITY)
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         GZIPInputStream(input.inputStream()).use { stream ->
             while (true) {
@@ -402,5 +408,8 @@ internal class RpgMakerEnvBridge {
     companion object {
         private const val TAG = "YukiRpgMaker"
         private const val MAX_BYTES = 64 * 1024 * 1024
+
+        /** 解压缓冲初始容量（按需增长）；不随输入放大，避免无谓的内存峰值。 */
+        private const val DECOMPRESS_INITIAL_CAPACITY = 64 * 1024
     }
 }

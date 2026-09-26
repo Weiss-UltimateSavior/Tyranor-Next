@@ -841,10 +841,27 @@
                 function ensureWrite(ok, path) {
                     if (ok !== true) throw nodeErr("EACCES", "EACCES: permission denied or write rejected, open '" + path + "'");
                 }
-                var b64 = bufferToBase64(data);
-                if (b64 !== null) { ensureWrite(bridge.writeBase64(p, b64), p); return; }
+                // 上限预检必须发生在任何全量编码之前：btoa 会额外产生 1.33 倍
+                // 的 base64 字符串，先编码再让桥拒绝等于「上限只挡磁盘、不挡内存」。
                 var encoding = pickEncoding(enc, "utf8");
                 var e = String(encoding || "utf8").toLowerCase();
+
+                // Buffer/类型化数组：按字节数预检（_bin 为每字符一字节）
+                if (isBufferLike(data)) {
+                    assertWritableSize(data.length || 0, p);
+                } else if (data && typeof data.length === "number" && typeof data !== "string") {
+                    assertWritableSize(data.length || 0, p);
+                } else {
+                    var size = encodedByteLength(typeof data === "string" ? data : String(data), e);
+                    if (size < 0) {
+                        // 未知编码：Node 抛 ERR_UNKNOWN_ENCODING，不能静默当 UTF-8
+                        throw nodeErr("ERR_UNKNOWN_ENCODING", "Unknown encoding: " + encoding);
+                    }
+                    assertWritableSize(size, p);
+                }
+
+                var b64 = bufferToBase64(data);
+                if (b64 !== null) { ensureWrite(bridge.writeBase64(p, b64), p); return; }
                 if (e === "utf8" || e === "utf-8") {
                     ensureWrite(bridge.writeText(p, typeof data === "string" ? data : String(data)), p);
                 } else if (e === "hex") {
@@ -855,9 +872,6 @@
                 } else if (e === "binary" || e === "latin1" || e === "ascii") {
                     // 这些编码是「一字符一字节」，不能走 UTF-8 写入（否则码点被重编码）
                     ensureWrite(bridge.writeBase64(p, toB64Encoded(String(data), e)), p);
-                } else {
-                    // 未知编码：Node 抛 ERR_UNKNOWN_ENCODING，不能静默当 UTF-8
-                    throw nodeErr("ERR_UNKNOWN_ENCODING", "Unknown encoding: " + encoding);
                 }
             },
             writeFile: function (p, data, o, cb) {
@@ -869,12 +883,20 @@
             appendFileSync: function (p, data, enc) {
                 // 以字节为单位追加：旧的「读文本 + 拼字符串 + 写回」会把非 UTF-8
                 // 字节重新编码（00fffe → 00efbfbdefbfbd），静默损坏二进制。
+                var apBytes = isBufferLike(data) || (data && typeof data.length === "number" && typeof data !== "string")
+                    ? (data.length || 0)
+                    : encodedByteLength(typeof data === "string" ? data : String(data), pickEncoding(enc, "utf8"));
+                if (apBytes > MAX_WRITE_BYTES) {
+                    throw nodeErr("EACCES", "EACCES: payload too large (" + apBytes + " bytes), open '" + p + "'");
+                }
                 var addB64 = bufferToBase64(data);
                 if (addB64 === null) {
                     addB64 = toB64Encoded(typeof data === "string" ? data : String(data), pickEncoding(enc, "utf8"));
                 }
                 var prevB64 = "";
                 try { prevB64 = bridge.exists(p) === true ? (bridge.readBase64(p) || "") : ""; } catch (e) { prevB64 = ""; }
+                // 追加后的总长度也要在限内（否则会先读全量再被桥拒绝）
+                assertWritableSize(Math.floor((prevB64.length + addB64.length) * 3 / 4), p);
                 var merged = concatB64([prevB64, addB64]);
                 if (bridge.writeBase64(p, merged) !== true) {
                     throw nodeErr("EACCES", "EACCES: append rejected, open '" + p + "'");
@@ -927,6 +949,12 @@
                 var chunks = [];
                 var handlers = { error: [], finish: [], close: [] };
                 var written = false;
+                var totalBytes = 0;
+                function chunkBytes(chunk) {
+                    if (isBufferLike(chunk)) return chunk.length || 0;
+                    if (chunk && typeof chunk.length === "number" && typeof chunk !== "string") return chunk.length || 0;
+                    return encodedByteLength(typeof chunk === "string" ? chunk : String(chunk), "utf8");
+                }
                 function flush() {
                     if (written) return;
                     written = true;
@@ -943,8 +971,21 @@
                     }
                 }
                 return {
-                    write: function (chunk) { chunks.push(toB64Encoded(chunk, undefined)); return true; },
-                    end: function (chunk) { if (chunk !== undefined && chunk !== null) chunks.push(toB64Encoded(chunk, undefined)); flush(); return this; },
+                    write: function (chunk) {
+                        totalBytes += chunkBytes(chunk);
+                        assertWritableSize(totalBytes, p);
+                        chunks.push(toB64Encoded(chunk, undefined));
+                        return true;
+                    },
+                    end: function (chunk) {
+                        if (chunk !== undefined && chunk !== null) {
+                            totalBytes += chunkBytes(chunk);
+                            assertWritableSize(totalBytes, p);
+                            chunks.push(toB64Encoded(chunk, undefined));
+                        }
+                        flush();
+                        return this;
+                    },
                     close: function () { flush(); return this; },
                     destroy: function () { written = true; },
                     on: function (name, fn) { (handlers[name] = handlers[name] || []).push(fn); return this; },
@@ -1141,6 +1182,46 @@
         try { env = window.TyranorEnv || null; } catch (eEnv) {}
         if (!env) {
             console.log("[nw-polyfill-v2] TyranorEnv bridge absent; crypto/zlib stay stubbed");
+        }
+
+        // 单次写入上限；必须与 Kotlin RpgMakerFsBridge.MAX_WRITE_BYTES 保持一致
+        // （桥也会判，这里前置判是为了**避免先做昂贵的编码**）。
+        var MAX_WRITE_BYTES = 16 * 1024 * 1024;
+
+        /** UTF-8 字节数（不分配缓冲区，仅计数）。 */
+        function utf8ByteLength(str) {
+            var n = 0;
+            for (var i = 0; i < str.length; i++) {
+                var c = str.charCodeAt(i);
+                if (c < 0x80) n += 1;
+                else if (c < 0x800) n += 2;
+                else if (c >= 0xD800 && c <= 0xDBFF) { n += 4; i++; }
+                else n += 3;
+            }
+            return n;
+        }
+
+        /**
+         * 编码前的大小预检（抛错码与桥拒绝时一致，插件感知相同）。
+         *
+         * 存在的意义：写路径上的 `btoa`/字节数组创建都是全量分配，
+         * 一旦先编码再判上限，上限就只挡磁盘、不挡内存——超限载荷在 WebView 侧
+         * 已经付出了 1.33 倍 base64 字符串与全部中间副本。
+         */
+        function assertWritableSize(bytes, path) {
+            if (bytes > MAX_WRITE_BYTES) {
+                throw nodeErr("EACCES", "EACCES: payload too large (" + bytes + " bytes), open '" + path + "'");
+            }
+        }
+
+        /** 字符串按编码的字节数（不分配）。未知编码返回 -1 由调用方报错。 */
+        function encodedByteLength(str, encoding) {
+            var e = String(encoding || "utf8").toLowerCase();
+            if (e === "utf8" || e === "utf-8") return utf8ByteLength(str);
+            if (e === "hex") return str.length >> 1;
+            if (e === "base64") return Math.floor(str.length * 3 / 4);
+            if (e === "binary" || e === "latin1" || e === "ascii") return str.length;
+            return -1;
         }
 
         /**

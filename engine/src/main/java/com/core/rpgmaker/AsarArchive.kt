@@ -76,6 +76,18 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     /**
+     * 条目大小（字节）；非文件条目或不存在返回 null。
+     *
+     * 供调用方在**读取之前**做上限判断——`read()` 会把整个条目读进内存，
+     * 先读再判上限等于上限失效（本类允许单条目至 [MAX_ENTRY_BYTES]）。
+     */
+    fun entrySize(path: String?): Long? {
+        val e = entries[normalize(path)] ?: return null
+        if (e.directory) return null
+        return e.size
+    }
+
+    /**
      * 列出目录的直接子项（名字 + 是否目录）。供 v2 文件系统桥在 asar 会话里
      * 提供 readdir 语义——此前 asar 游戏的插件读不到任何目录内容。
      */

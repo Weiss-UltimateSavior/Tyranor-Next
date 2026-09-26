@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -150,6 +151,63 @@ class RpgMakerFsBridgeAsarTest {
         assertTrue("磁盘同名目录仍应被视为目录", bridge.isDir("data/table.json"))
         assertFalse("此时它不是文件", bridge.isFile("data/table.json"))
         assertEquals("目录不应遮蔽 asar 文件条目", asarContent, bridge.readText("data/table.json"))
+    }
+
+    /**
+     * 磁盘上的**文件**遮蔽 asar 同名**目录**时，readdir 不得回退 asar 索引。
+     *
+     * 覆盖层规则必须在 exists/isFile/isDir/stat/readdir 之间完全一致，否则同一路径
+     * 会「既是文件又是目录」（isDir=false 但 readdir 列出子项），JS 消费方据此分支会错乱。
+     */
+    @Test
+    fun diskFilePreventsAsarDirectoryFallbackInReaddir() {
+        val gameRoot = File(java.nio.file.Files.createTempDirectory("asar-mask").toFile(), "game").apply { mkdirs() }
+        val contentRoot = File(gameRoot, "www").apply { mkdirs() }
+        val asar = AsarArchive(
+            buildAsar(
+                gameRoot,
+                mapOf(
+                    "www/index.html" to "<html></html>".toByteArray(StandardCharsets.UTF_8),
+                    // asar 内 data 是目录，含一个子项
+                    "www/data/table.json" to asarContent.toByteArray(StandardCharsets.UTF_8),
+                ),
+            ),
+        )
+        // 磁盘上把同名 `data` 造成**文件**（与 asar 的目录同名）
+        File(contentRoot, "data").writeText("i am a file")
+        val bridge = RpgMakerFsBridge(gameRoot, contentRoot, asar)
+
+        assertTrue("磁盘条目是文件", bridge.isFile("data"))
+        assertFalse("同一路径不应同时是目录", bridge.isDir("data"))
+        assertEquals("磁盘文件存在时不得回退 asar 目录索引", "[]", bridge.readdir("data"))
+    }
+
+    /**
+     * asar 条目超过读上限时必须在**读取之前**拒绝。
+     *
+     * AsarArchive 允许单条目至 256MiB，而 fs 桥的读上限是 16MiB；若先 read() 再判，
+     * 就会为必然被拒的请求白占最多 256MiB 内存（且 errorFor 需给出 E2BIG）。
+     * 注：asar 的条目偏移/大小要与文件实际内容一致（parse 阶段会校验范围），
+     * 因此这里写入真实的超限数据。
+     */
+    @Test
+    fun oversizedAsarEntryIsRejectedBeforeReading() {
+        val gameRoot = File(java.nio.file.Files.createTempDirectory("asar-big").toFile(), "game").apply { mkdirs() }
+        val contentRoot = File(gameRoot, "www").apply { mkdirs() }
+        val oversized = ByteArray(17 * 1024 * 1024)   // 17MiB > 16MiB 上限
+        val asar = AsarArchive(
+            buildAsar(
+                gameRoot,
+                mapOf(
+                    "www/index.html" to "<html></html>".toByteArray(StandardCharsets.UTF_8),
+                    "www/big.bin" to oversized,
+                ),
+            ),
+        )
+        val bridge = RpgMakerFsBridge(gameRoot, contentRoot, asar)
+        assertTrue("条目存在", bridge.exists("big.bin"))
+        assertNull("超限 asar 条目读应返回 null", bridge.readText("big.bin"))
+        assertEquals("原因码必须是 E2BIG", "E2BIG", bridge.errorFor("big.bin"))
     }
 
     /** asar 内独有的文件仍应能 stat（无磁盘对应物时回退 asar）。 */

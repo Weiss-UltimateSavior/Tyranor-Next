@@ -748,6 +748,53 @@ console.log('\n== 回归：审核发现的缺陷（每条对应一个已修问�
         catch (e) { return e.code; }
     })());
 
+    // 审核④：inflate/inflateRaw 在替身中也必须有界（与 Kotlin MAX_BYTES 对齐）
+    check('④ inflate 超限（高膨胀比载荷）失败而非返回巨量数据', (() => {
+        const zlibMod = window.require('zlib');
+        const bomb = nodeZlib.deflateSync(HostBuffer.alloc(70 * 1024 * 1024, 0), { level: 9 });
+        try { zlibMod.inflateSync(asNodeBuf(bomb)); return '未抛错'; } catch (e) { return true; }
+    })() === true);
+    check('④ inflateRaw 超限同样失败', (() => {
+        const zlibMod = window.require('zlib');
+        const bomb = nodeZlib.deflateRawSync(HostBuffer.alloc(70 * 1024 * 1024, 0), { level: 9 });
+        try { zlibMod.inflateRawSync(asNodeBuf(bomb)); return '未抛错'; } catch (e) { return true; }
+    })() === true);
+    check('④ inflate 正常载荷仍可用', (() => {
+        const zlibMod = window.require('zlib');
+        const packed = nodeZlib.deflateSync('hello inflate', { level: 9 });
+        return zlibMod.inflateSync(asNodeBuf(packed)).toString('utf8') === 'hello inflate';
+    })());
+
+    // 审核③：写入预检必须在编码前生效（否则上限只挡磁盘、不挡内存）
+    check('③ 超限字符串在编码前被拒（不产生 base64 中间串）', (() => {
+        try { fsMod.writeFileSync('data/huge-pre.txt', 'A'.repeat(17 * 1024 * 1024)); return '未抛错'; }
+        catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('③ 超限 Buffer 在编码前被拒', (() => {
+        const big = window.Buffer.alloc(17 * 1024 * 1024);
+        try { fsMod.writeFileSync('data/huge-pre.bin', big); return '未抛错'; } catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('③ 高风险 base64 字符串被拒', (() => {
+        try { fsMod.writeFileSync('data/huge-pre.b64', 'A'.repeat(24 * 1024 * 1024), 'base64'); return '未抛错'; }
+        catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('③ latin1 也按字节数判定（不按字符数放行）', (() => {
+        try { fsMod.writeFileSync('data/huge-pre.latin', 'A'.repeat(17 * 1024 * 1024), 'latin1'); return '未抛错'; }
+        catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('③ 流式写入累计超限被拒', (() => {
+        try {
+            const st = fsMod.createWriteStream('data/huge-stream.bin');
+            for (let i = 0; i < 18; i++) st.write(window.Buffer.alloc(1024 * 1024));
+            st.end();
+            return '未抛错';
+        } catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('③ 未超限的正常写入不受影响', (() => {
+        fsMod.writeFileSync('data/normal.txt', 'x'.repeat(1024 * 1024));
+        return fsMod.readFileSync('data/normal.txt', 'utf8').length === 1024 * 1024;
+    })());
+
     // 审核③：gzip 解压必须有界（小载荷可膨胀千倍，无界读取会撑爆堆）
     check('③ gzip 解压超限（高膨胀比载荷）失败而非返回巨量数据', (() => {
         const zlibMod = window.require('zlib');

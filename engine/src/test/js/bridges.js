@@ -70,6 +70,8 @@ function createBridges(gameRoot, contentRoot) {
         writeText: (p, d) => {
             const f = inside(p); if (f === null) return false;      // 越界 → false（Kotlin 如此）
             const text = d == null ? '' : String(d);
+            // 预检（无分配）：UTF-8 字节数 ≥ UTF-16 字符数
+            if (text.length > MAX_WRITE_BYTES) return false;
             if (NodeBuffer.byteLength(text, 'utf8') > MAX_WRITE_BYTES) return false;
             fs.mkdirSync(nodePath.dirname(f), { recursive: true });
             fs.writeFileSync(f, text);
@@ -77,7 +79,16 @@ function createBridges(gameRoot, contentRoot) {
         },
         writeBase64: (p, d) => {
             const f = inside(p); if (f === null) return false;
-            const bytes = NodeBuffer.from(d || '', 'base64');
+            const encoded = d || '';
+            // 预检（无分配）：有效 base64 字符数 → 解码长度下界（与 Kotlin 同法）
+            let valid = 0, padding = 0;
+            for (let i = 0; i < encoded.length; i++) {
+                const c = encoded.charCodeAt(i);
+                if (c === 61) padding++;
+                else if ((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c === 43 || c === 47 || c === 45 || c === 95) valid++;
+            }
+            if (Math.floor(valid / 4) * 3 - padding > MAX_WRITE_BYTES) return false;
+            const bytes = NodeBuffer.from(encoded, 'base64');
             if (bytes.length > MAX_WRITE_BYTES) return false;
             fs.mkdirSync(nodePath.dirname(f), { recursive: true });
             fs.writeFileSync(f, bytes);
@@ -159,8 +170,10 @@ function createBridges(gameRoot, contentRoot) {
                 const input = unb64(dataB64);
                 const opts = { level: Number.isInteger(level) && level >= 0 && level <= 9 ? level : -1 };
                 switch (mode) {
-                    case 'inflate': return zlib.inflateSync(input).toString('base64');
-                    case 'inflateRaw': return zlib.inflateRawSync(input).toString('base64');
+                    // 与 Kotlin inflate() 的 MAX_BYTES(64MiB) 上限对齐：
+                    // 替身此前只给 gunzip/unzip 加了界，inflate 仍可无界膨胀
+                    case 'inflate': return zlib.inflateSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64');
+                    case 'inflateRaw': return zlib.inflateRawSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64');
                     case 'gunzip': return zlib.gunzipSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64');
                     case 'unzip': return zlib.unzipSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64');
                     case 'deflate': return zlib.deflateSync(input, opts).toString('base64');

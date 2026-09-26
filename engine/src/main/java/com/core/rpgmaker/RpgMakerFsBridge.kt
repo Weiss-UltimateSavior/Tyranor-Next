@@ -131,6 +131,7 @@ internal class RpgMakerFsBridge(
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) {
                 if (asar.isDirectory(key)) return "EISDIR"
+                if ((asar.entrySize(key) ?: 0L) > MAX_READ_BYTES) return "E2BIG"
                 return "ENOENT"
             }
         }
@@ -168,6 +169,14 @@ internal class RpgMakerFsBridge(
         val archive = asar ?: return null
         val key = asarKey(path?.let { relativeFor(it) }) ?: return null
         if (!archive.has(key) || archive.isDirectory(key)) return null
+        // 先按条目声明大小判断，避免「读进内存后再拒绝」——AsarArchive 允许单条目
+        // 至 256MiB，而这里的读上限是 16MiB，先读会白占最多 256MiB。
+        archive.entrySize(key)?.let { size ->
+            if (size > MAX_READ_BYTES) {
+                Log.w(TAG, "asar read rejected (too large $size): $key")
+                return null
+            }
+        }
         return try {
             val data = archive.read(key) ?: return null
             if (data.size > MAX_READ_BYTES) {
@@ -208,14 +217,17 @@ internal class RpgMakerFsBridge(
     /** 目录项名列表（JSON 数组字符串）；非目录返回空数组。 */
     @JavascriptInterface
     fun readdir(path: String?): String {
-        // 磁盘目录优先（与 readText 的覆盖层顺序一致）；asar 内的目录在磁盘上不存在，
-        // 因此磁盘未命中时从压缩包索引列举
-        if (diskEntry(path)?.isDirectory == true) {
-            val names = resolve(path)?.list() ?: emptyArray()
+        // 磁盘上有同名条目即不再回退 asar——覆盖层规则必须与 exists/isFile/isDir/stat
+        // 完全一致，否则同一路径会「既是文件又是目录」：例如磁盘有文件 `data`、
+        // asar 内有目录 `data/`，若这里回退 asar 就会列出子项，而 isDir 返回 false。
+        diskEntry(path)?.let { entry ->
+            if (!entry.isDirectory) return "[]"   // 磁盘是文件（或其它非目录）→ 不是目录
+            val names = entry.list() ?: return "[]"
             val array = JSONArray()
             names.forEach { array.put(it) }
             return array.toString()
         }
+        // 磁盘无同名条目时才查压缩包索引（asar 内的目录在磁盘上通常不存在）
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             val archive = asar
             if (archive != null && archive.has(key) && archive.isDirectory(key)) {
@@ -224,12 +236,7 @@ internal class RpgMakerFsBridge(
                 return array.toString()
             }
         }
-        val dir = resolve(path) ?: return "[]"
-        if (!dir.isDirectory) return "[]"
-        val names = dir.list() ?: return "[]"
-        val array = JSONArray()
-        names.forEach { array.put(it) }
-        return array.toString()
+        return "[]"
     }
 
     /** stat/lstat：JSON `{file,dir,size,mtime}`；不存在返回空串。 */
@@ -273,7 +280,14 @@ internal class RpgMakerFsBridge(
     fun writeText(path: String?, data: String?): Boolean {
         // 与 writeBase64 / 读路径共用同一上限：此前文本写入无任何校验，
         // 插件传入任意长字符串会直接落盘（16MiB 的读上限也就形同虚设）。
-        val bytes = data.orEmpty().toByteArray(StandardCharsets.UTF_8)
+        val text = data.orEmpty()
+        // 预检（无分配）：UTF-8 字节数恒 ≥ UTF-16 字符数，字符数已超限即可直接拒绝，
+        // 避免为必然被拒的载荷先分配一份全量字节数组。
+        if (text.length > MAX_WRITE_BYTES) {
+            Log.w(TAG, "fs write rejected pre-encode (chars=${text.length}): $path")
+            return false
+        }
+        val bytes = text.toByteArray(StandardCharsets.UTF_8)
         if (bytes.size > MAX_WRITE_BYTES) {
             Log.w(TAG, "fs write rejected (too large ${bytes.size}): $path")
             return false
@@ -283,8 +297,15 @@ internal class RpgMakerFsBridge(
 
     @JavascriptInterface
     fun writeBase64(path: String?, data: String?): Boolean {
+        val encoded = data.orEmpty()
+        // 预检（无分配）：按有效字符数算出解码长度的**下界**（每 4 个有效字符 ⇒ 3 字节），
+        // 下界已超限即可拒绝，避免先 MIME 解码出全量字节再判。
+        if (decodedBase64LowerBound(encoded) > MAX_WRITE_BYTES) {
+            Log.w(TAG, "fs write rejected pre-decode (chars=${encoded.length}): $path")
+            return false
+        }
         val bytes = try {
-            decodeBase64Lenient(data.orEmpty())
+            decodeBase64Lenient(encoded)
         } catch (error: Throwable) {
             Log.w(TAG, "fs write rejected (bad base64): $path", error)
             return false
@@ -347,6 +368,29 @@ internal class RpgMakerFsBridge(
     }
 
     /** 相对路径按网页根解析；越界（不在游戏目录内）返回 null。 */
+    /**
+     * base64 解码长度下界（不做任何分配）。
+     *
+     * 仅统计 base64 字母表内字符（MIME 解码器会跳过空白与非法字符），
+     * 按「每 4 个有效字符编码 3 字节」并扣除 padding 得到下界——
+     * 用于在解码前拒绝必然超限的载荷，且不会误拒合法载荷（下界 ≤ 实际）。
+     */
+    private fun decodedBase64LowerBound(value: String): Long {
+        var valid = 0L
+        var padding = 0L
+        for (ch in value) {
+            when {
+                ch == '=' -> padding++
+                ch in 'A'..'Z' || ch in 'a'..'z' || ch in '0'..'9' ||
+                    ch == '+' || ch == '/' || ch == '-' || ch == '_' -> valid++
+                // 其余字符（空白/换行等）会被 MIME 解码器忽略，不计入
+            }
+        }
+        val groups = valid / 4
+        val decoded = groups * 3 - padding
+        return if (decoded < 0) 0 else decoded
+    }
+
     private fun resolve(path: String?): File? {
         // 注意不要 trim()：文件名里的尾随空格是真实存在的（部分素材名带尾随空格），
         // trim 会让这类文件永远无法访问（Node 的 fs 同样不做 trim）。
