@@ -229,7 +229,7 @@ class ArchiveViewModel : ViewModel() {
                     val parent = archive.realFile.parentFile
                         ?: throw java.io.IOException("archive has no parent: ${archive.realFile.path}")
                     val outDir = uniqueDir(parent, baseName)
-                    extractTo(file, outDir, isCancelled) to outDir.name
+                    extractTo(file, outDir, isCancelled) to outDir.absolutePath
                 } else {
                     val treeRoot = sourceTreeUri
                         ?: throw java.io.IOException("missing source directory")
@@ -239,7 +239,7 @@ class ArchiveViewModel : ViewModel() {
                     try {
                         val counts = extractTo(file, tmp, isCancelled)
                         ArchiveStaging.publishDir(appContext, tmp, outDoc, isCancelled)
-                        counts to outDoc.name
+                        counts to (GamePathUtils.safUriToPath(outDoc.uri.toString()) ?: outDoc.name)
                     } finally {
                         runCatching { tmp.deleteRecursively() }
                     }

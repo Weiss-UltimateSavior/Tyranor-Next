@@ -590,6 +590,8 @@
     <string name="launch_create_krkr_save_failed">无法创建 KRKR 存档目录：%1$s</string>
 
     <string name="archive_title">解包 / 封包</string>
+    <string name="archive_permission_rationale">需要「所有文件访问」权限以直接读取存储中的封包；未授权时部分目录可能扫描不到或需慢速中转</string>
+    <string name="archive_permission_grant">去授权</string>
     <string name="archive_summary">选择目录扫描 XP3 并解包，或将目录封包为 XP3</string>
     <string name="archive_mode_unpack">解包</string>
     <string name="archive_mode_pack">封包</string>

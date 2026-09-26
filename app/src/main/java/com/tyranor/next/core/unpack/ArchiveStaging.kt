@@ -34,22 +34,27 @@ object ArchiveStaging {
         return path == root || path.startsWith(root + File.separator)
     }
 
-    /** 单文件入参：可映射直用，否则拷入中转区。返回可直接读的真实文件。 */
+    /** 单文件入参：可映射直用，否则拷入中转区（带字节级进度）。返回可直接读的真实文件。 */
     fun stageInputFile(
         context: Context,
         uri: Uri,
         isCancelled: () -> Boolean = { false },
+        onProgress: ((copied: Long, total: Long) -> Unit)? = null,
     ): File {
         GamePathUtils.safUriToPath(uri.toString())?.let { path ->
             val direct = File(path)
             if (direct.isFile) return direct
         }
         val name = displayName(context, uri)?.takeIf { it.isNotBlank() } ?: "archive.bin"
+        val total = documentSize(context, uri)
+        onProgress?.invoke(0L, total)
         val target = uniqueFile(stagingDir(context).resolve("input"), name)
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
                 target.outputStream().use { output ->
-                    copyBounded(input, output, what = "staging input", isCancelled = isCancelled)
+                    copyBounded(input, output, what = "staging input", isCancelled = isCancelled) { copied ->
+                        onProgress?.invoke(copied, total)
+                    }
                 }
             } ?: throw IOException("Cannot open document: $uri")
         } catch (error: Throwable) {
@@ -186,6 +191,13 @@ object ArchiveStaging {
         }.getOrNull()
     }
 
+    /** 文档字节数（provider 不报或查询失败回 0，进度条退化为不定长）。 */
+    private fun documentSize(context: Context, uri: Uri): Long = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0) else 0L
+        } ?: 0L
+    }.getOrDefault(0L)
+
     private fun uniqueFile(dir: File, name: String): File {
         dir.mkdirs()
         var candidate = File(dir, name)
@@ -206,6 +218,7 @@ object ArchiveStaging {
         already: Long = 0L,
         what: String,
         isCancelled: () -> Boolean = { false },
+        onBytes: ((copied: Long) -> Unit)? = null,
     ): Long {
         val chunk = ByteArray(IO_CHUNK)
         var total = 0L
@@ -218,6 +231,7 @@ object ArchiveStaging {
             }
             output.write(chunk, 0, n)
             total += n
+            onBytes?.invoke(total)
         }
         output.flush()
         return total

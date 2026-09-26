@@ -590,6 +590,8 @@
     <string name="launch_create_krkr_save_failed">KRKR セーブフォルダを作成できません：%1$s</string>
 
     <string name="archive_title">解凍 / 圧縮</string>
+    <string name="archive_permission_rationale">アーカイブを直接読み取るには「すべてのファイルアクセス」権限が必要です。未許可の場合、一部のフォルダはスキャンできないか低速な転送になります</string>
+    <string name="archive_permission_grant">許可する</string>
     <string name="archive_summary">フォルダを選んで XP3 をスキャン・解凍、またはフォルダを XP3 に圧縮</string>
     <string name="archive_mode_unpack">解凍</string>
     <string name="archive_mode_pack">圧縮</string>

@@ -590,6 +590,8 @@
     <string name="launch_create_krkr_save_failed">Unable to create the KRKR save directory: %1$s</string>
 
     <string name="archive_title">Unpack / Pack</string>
+    <string name="archive_permission_rationale">“All files access” is required to read archives from storage directly; without it some folders cannot be scanned or fall back to slow transfers</string>
+    <string name="archive_permission_grant">Grant</string>
     <string name="archive_summary">Pick a folder to scan &amp; extract XP3, or pack a folder to XP3</string>
     <string name="archive_mode_unpack">Unpack</string>
     <string name="archive_mode_pack">Pack</string>

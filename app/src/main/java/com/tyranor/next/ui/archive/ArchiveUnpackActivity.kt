@@ -3,7 +3,10 @@ package com.tyranor.next.ui.archive
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,8 +48,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
+import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.unpack.ScannedArchive
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppScreenActivity
@@ -70,9 +80,33 @@ class ArchiveUnpackActivity : AppScreenActivity() {
 private const val TAG = "ArchiveUnpack"
 private const val MAX_LISTED_ENTRIES = 2000
 
-private fun displayNameOf(uri: Uri): String =
-    uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
-        ?.takeIf { it.isNotBlank() } ?: uri.toString()
+/** 目录展示名：优先映射真实路径（从 /storage/emulated/0 起），映射失败退回解码的文档 id 路径。 */
+private fun dirLabelOf(uri: Uri): String =
+    GamePathUtils.safUriToPath(uri.toString())
+        ?: uri.lastPathSegment?.let { Uri.decode(it) }?.substringAfterLast(':')
+            ?.takeIf { it.isNotBlank() }?.let { "/$it" }
+        ?: uri.toString()
+
+/** Android 11+ 需要「所有文件访问」才能 File 直读共享存储；低版本 legacy 存储无需。 */
+private fun isAllFilesAccessGranted(): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+
+/** 打开系统「所有文件访问」授权页（与 EngineLauncher 启动前校验同一模式）。 */
+private fun launchAllFilesAccessSettings(context: Context) {
+    val app = context.applicationContext
+    val packageUri = Uri.parse("package:${app.packageName}")
+    runCatching {
+        app.startActivity(
+            Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, packageUri)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.recoverCatching {
+        app.startActivity(
+            Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+}
 
 @Composable
 private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
@@ -81,6 +115,13 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
 
     LaunchedEffect(Unit) {
         vm.cleanStaleStagingOnce(appContext)
+    }
+
+    // 「所有文件访问」授权状态：从系统设置返回本页即刷新。未授权时扫描只能走
+    // SAF 回退（部分目录扫不到、输入需慢速中转），横幅引导授权后走真实路径直读。
+    var allFilesGranted by remember { mutableStateOf(isAllFilesAccessGranted()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        allFilesGranted = isAllFilesAccessGranted()
     }
 
     fun takeTreePermissions(uri: Uri) {
@@ -95,12 +136,12 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
     val pickSourceDir = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         takeTreePermissions(uri)
-        vm.chooseSourceDir(appContext, uri, displayNameOf(uri))
+        vm.chooseSourceDir(appContext, uri, dirLabelOf(uri))
     }
     val pickPackDir = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         takeTreePermissions(uri)
-        vm.choosePackDir(appContext, uri, displayNameOf(uri))
+        vm.choosePackDir(appContext, uri, dirLabelOf(uri))
     }
     val createPackFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         vm.finishSave(appContext, uri)
@@ -112,6 +153,14 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
 
     Column(Modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.archive_title))
+
+        if (!allFilesGranted) {
+            ArchiveCard(title = stringResource(R.string.archive_permission_rationale)) {
+                Button(onClick = { launchAllFilesAccessSettings(appContext) }) {
+                    Text(stringResource(R.string.archive_permission_grant), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
 
         ModeTabs(mode = vm.mode, onSelect = { vm.switchMode(it) })
 
