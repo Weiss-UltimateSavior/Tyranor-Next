@@ -47,7 +47,10 @@ import com.tyranor.next.core.unpack.ScannedArchive
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
+import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.SliderDefaults
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** 解包 / 封包独立页：入口见应用设置。解包=选目录扫描XP3→主从预览→解到同名文件夹；封包=选目录→选压缩等级→输出同名 .xp3。 */
 class ArchiveUnpackActivity : AppScreenActivity() {
@@ -261,15 +264,30 @@ private fun PackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () ->
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                LabeledChips(
-                    label = stringResource(R.string.archive_level),
-                    options = listOf(
-                        "0" to (vm.packLevel == 0),
-                        "6" to (vm.packLevel == 6),
-                        "9" to (vm.packLevel == 9),
-                    ),
-                    enabled = !vm.working,
-                    onSelect = { vm.choosePackLevel(listOf(0, 6, 9)[it]) },
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        stringResource(R.string.archive_level),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        vm.packLevel.toString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Slider(
+                    value = vm.packLevel.toFloat(),
+                    onValueChange = { vm.choosePackLevel(it.roundToInt()) },
+                    valueRange = 0f..9f,
+                    showKeyPoints = true,
+                    keyPoints = (0..9).map { it.toFloat() },
+                    magnetThreshold = 0.25f,
+                    hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                    modifier = Modifier.padding(horizontal = 16.dp),
                 )
                 Button(
                     onClick = { vm.pack(appContext) },
@@ -415,30 +433,6 @@ private fun StatusBar(vm: ArchiveViewModel) {
 private fun BigAction(label: String, onClick: () -> Unit, enabled: Boolean) {
     Button(onClick = onClick, enabled = enabled) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
-    }
-}
-
-@Composable
-private fun LabeledChips(
-    label: String,
-    options: List<Pair<String, Boolean>>,
-    enabled: Boolean,
-    onSelect: (Int) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        options.forEachIndexed { index, (text, selected) ->
-            FilterChip(
-                selected = selected,
-                onClick = { onSelect(index) },
-                enabled = enabled,
-                label = { Text(text, style = MaterialTheme.typography.bodyMedium) },
-            )
-        }
     }
 }
 

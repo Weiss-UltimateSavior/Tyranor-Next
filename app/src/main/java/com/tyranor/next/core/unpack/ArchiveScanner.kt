@@ -37,7 +37,10 @@ object ArchiveScanner {
     fun scan(context: Context, treeUri: Uri): List<ScannedArchive> {
         val mapped = GamePathUtils.safUriToPath(treeUri.toString())
             ?.let { File(it) }?.takeIf { it.isDirectory }
-        return if (mapped != null) scanRealDir(mapped) else scanDocumentTree(context, treeUri)
+        // File 直读依赖「所有文件访问」授权（新装应用可能未授予，listFiles 静默返回空）：
+        // 真实路径扫不到时回退 SAF DocumentFile 遍历——所选目录树必有持久授权，必定可列。
+        val viaFiles = mapped?.let(::scanRealDir).orEmpty()
+        return if (viaFiles.isEmpty()) scanDocumentTree(context, treeUri) else viaFiles
     }
 
     private fun scanRealDir(root: File): List<ScannedArchive> {
