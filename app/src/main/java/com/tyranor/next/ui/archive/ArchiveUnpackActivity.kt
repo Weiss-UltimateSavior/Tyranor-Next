@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -289,7 +290,10 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                         buildVisibleTree(vm.entries, expandedDirs.value)
                     }
                     LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                        items(visibleRows.take(MAX_LISTED_ENTRIES), key = { (if (it.entry.isDirectory) "d:" else "f:") + it.entry.name }) { row ->
+                        // key 带索引：归档内允许重名条目，纯名字 key 会撞 Compose 崩溃
+                        itemsIndexed(visibleRows.take(MAX_LISTED_ENTRIES), key = { index, row ->
+                            "$index:" + (if (row.entry.isDirectory) "d:" else "f:") + row.entry.name
+                        }) { _, row ->
                             EntryListRow(row) { toggle ->
                                 expandedDirs.value = if (toggle) expandedDirs.value + row.entry.name else expandedDirs.value - row.entry.name
                             }

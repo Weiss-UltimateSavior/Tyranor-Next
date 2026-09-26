@@ -28,14 +28,15 @@ const KSD_PROBE_MAX: u64 = 16 * 1024 * 1024;
 /// a Kirikiri KSD mode-2 filter (`FE FE 02 FF FE …`, used on text inside XP3)
 /// can be unwrapped — the xp3 crate only decodes the outer zlib, which would
 /// otherwise leave the scrambled wrapper as the file content. Returns true on
-/// success.
+/// success (including a successful explicit flush — a BufWriter drop swallows
+/// flush errors, so disk-full at the tail must be surfaced here).
 fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
     mut xf: R,
     size: u64,
     out_stream: &mut SyncIo<ProgressWriter<BufWriter<File>>>,
 ) -> bool {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    if size <= KSD_PROBE_MAX {
+    let ok = if size <= KSD_PROBE_MAX {
         // Buffer up to a hard cap so a crafted entry that inflates far beyond
         // its declared size can't grow the Vec unboundedly (zlib bomb → OOM).
         let copied: Result<Vec<u8>, std::io::Error> = oneshot_async(async {
@@ -76,10 +77,41 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
         // Calibrate the per-file progress to the actual (KSD-unwrapped)
         // size — the wrapper's declared size was set before we knew.
         extract_progress::set_file(payload.len() as u64);
+        // The unwrap grows output beyond the declared entry size; grow TOTAL
+        // by the same delta so the overall bar can still reach exactly 100%.
+        if payload.len() as u64 > size {
+            extract_progress::add_total(payload.len() as u64 - size);
+        }
         oneshot_async(async { out_stream.write_all(&payload).await }).is_ok()
     } else {
         oneshot_async(tokio::io::copy(&mut xf, out_stream)).is_ok()
+    };
+    if !ok {
+        return false;
     }
+    // BufWriter::drop swallows flush errors — surface ENOSPC/EIO here.
+    oneshot_async(async { out_stream.flush().await }).is_ok()
+}
+
+/// Resolves output-path collisions so an entry never silently clobbers a file
+/// already written by this run — duplicate entry paths inside one XP3 and
+/// case-only differences (FAT/sdcardfs output filesystems are case-insensitive)
+/// both land here. First writer keeps the name; later ones get ` (n)` suffixes
+/// (matching the app-side `名字 (1)` dedupe convention).
+fn dedupe_dest(dest: PathBuf, seen: &mut HashSet<String>) -> PathBuf {
+    if seen.insert(dest.to_string_lossy().to_lowercase()) {
+        return dest;
+    }
+    let parent = dest.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+    let stem = dest.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let ext = dest.extension().map(|s| format!(".{}", s.to_string_lossy())).unwrap_or_default();
+    for n in 1..u32::MAX {
+        let candidate = parent.join(format!("{stem} ({n}){ext}"));
+        if seen.insert(candidate.to_string_lossy().to_lowercase()) {
+            return candidate;
+        }
+    }
+    dest
 }
 
 fn guarded<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
@@ -111,13 +143,15 @@ fn extract_xp3(input: &str, output: &str) -> Result<(u32, u32), String> {
     let total = archive.entries().len() as u32;
     extract_progress::reset(archive.entries().iter().map(|e| e.size).sum());
     let mut fail = 0u32;
+    // 同名条目/大小写碰撞防护：后到者改名 ` (n)`，绝不静默覆盖已写出的文件。
+    let mut seen: HashSet<String> = HashSet::new();
     for i in 0..total as usize {
         if extract_progress::cancelled() { return Err("cancelled".to_string()); }
         let name = &archive.entries()[i].name;
         extract_progress::set_name(name);
         extract_progress::set_file(archive.entries()[i].size);
         let dest = match safe_join(output, name) {
-            Ok(d) => d,
+            Ok(d) => dedupe_dest(d, &mut seen),
             Err(_) => { fail += 1; continue; }
         };
         if let Some(p) = dest.parent() { let _ = fs::create_dir_all(p); }
@@ -129,7 +163,8 @@ fn extract_xp3(input: &str, output: &str) -> Result<(u32, u32), String> {
         let mut out_stream = SyncIo(ProgressWriter::extract(BufWriter::new(out_file)));
         let xf = match oneshot_async(archive.by_index(i)) {
             Some(Ok(f)) => f,
-            _ => { fail += 1; continue; }
+            // File::create 已建 dest：失败也必须删掉，别留 0 字节残file。
+            _ => { let _ = fs::remove_file(&dest); fail += 1; continue; }
         };
         if !copy_xp3_entry(xf, size, &mut out_stream) {
             let _ = fs::remove_file(&dest);
@@ -202,6 +237,7 @@ fn extract_xp3_selected(input: &str, output: &str, selected: &str) -> Result<(u3
     };
     extract_progress::reset(archive.entries().iter().filter(|e| matches(&e.name)).map(|e| e.size).sum());
     let mut sel = 0u32; let mut fail = 0u32;
+    let mut seen: HashSet<String> = HashSet::new();
     for i in 0..archive.entries().len() {
         if extract_progress::cancelled() { return Err("cancelled".to_string()); }
         let raw_name = &archive.entries()[i].name;
@@ -210,7 +246,7 @@ fn extract_xp3_selected(input: &str, output: &str, selected: &str) -> Result<(u3
         extract_progress::set_name(raw_name);
         extract_progress::set_file(archive.entries()[i].size);
         let dest = match safe_join(output, raw_name) {
-            Ok(d) => d,
+            Ok(d) => dedupe_dest(d, &mut seen),
             Err(_) => { fail += 1; continue; }
         };
         if let Some(p) = dest.parent() { let _ = fs::create_dir_all(p); }
@@ -222,7 +258,7 @@ fn extract_xp3_selected(input: &str, output: &str, selected: &str) -> Result<(u3
         let mut out_stream = SyncIo(ProgressWriter::extract(BufWriter::new(out_file)));
         let xf = match oneshot_async(archive.by_index(i)) {
             Some(Ok(f)) => f,
-            _ => { fail += 1; continue; }
+            _ => { let _ = fs::remove_file(&dest); fail += 1; continue; }
         };
         if !copy_xp3_entry(xf, size, &mut out_stream) {
             let _ = fs::remove_file(&dest);
@@ -393,6 +429,30 @@ mod tests {
         extract_xp3(xp3.to_str().unwrap(), out.to_str().unwrap()).unwrap();
         assert_eq!(std::fs::read(out.join("one.dat")).unwrap(), vec![9u8; 5000]);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn dedupe_dest_appends_suffix_on_collision() {
+        let mut seen: HashSet<String> = HashSet::new();
+        let first = PathBuf::from("/out/data/readme.txt");
+        assert_eq!(dedupe_dest(first.clone(), &mut seen), first);
+        // 同名第二条 → ` (1)` 后缀，绝不覆盖第一条
+        assert_eq!(
+            dedupe_dest(first.clone(), &mut seen),
+            PathBuf::from("/out/data/readme (1).txt")
+        );
+        // 大小写不敏感文件系统（/sdcard）碰撞：ReadMe.TXT 折叠后与第一条
+        // readme.txt 撞名，而 (1) 已被第二条占用 → 正确落到 (2)。
+        let cased = PathBuf::from("/out/data/ReadMe.TXT");
+        assert_eq!(
+            dedupe_dest(cased, &mut seen),
+            PathBuf::from("/out/data/ReadMe (2).TXT")
+        );
+        // 第四条继续递增
+        assert_eq!(
+            dedupe_dest(first.clone(), &mut seen),
+            PathBuf::from("/out/data/readme (3).txt")
+        );
     }
 
     #[test]

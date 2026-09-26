@@ -290,6 +290,10 @@ class ArchiveViewModel : ViewModel() {
                         val counts = extractTo(file, tmp, isCancelled)
                         ArchiveStaging.publishDir(appContext, tmp, outDoc, isCancelled)
                         counts to (GamePathUtils.safUriToPath(outDoc.uri.toString()) ?: outDoc.name)
+                    } catch (error: Throwable) {
+                        // 失败/取消回滚：刚在用户目录树里建出的输出目录（可能已有半成品）整体移除。
+                        runCatching { outDoc.delete() }
+                        throw error
                     } finally {
                         runCatching { tmp.deleteRecursively() }
                     }
@@ -346,26 +350,33 @@ class ArchiveViewModel : ViewModel() {
         val doneFormat = appContext.getString(R.string.archive_pack_done)
         val conflictFileFormat = appContext.getString(R.string.archive_conflict_file)
         launchOp(appContext, packDirName, determinate = true) {
-            val mappedPath = GamePathUtils.safUriToPath(uri.toString())
-            val mappedDir = mappedPath?.let { File(it) }?.takeIf { it.isDirectory }
-            if (mappedDir != null) {
-                // 真实路径：输出为同级同名文件，同名拒绝（提示提前备份/改名）。
-                val parent = mappedDir.parentFile ?: mappedDir
-                val outFile = File(parent, "${mappedDir.name}$ext")
-                if (outFile.exists()) {
-                    throw ArchiveConflictException(conflictFileFormat.format(outFile.absolutePath))
+            // SAF 专有 provider 下 stageInputDir 的整棵输入拷贝必须随操作回收
+            var stagedDir: File? = null
+            try {
+                val mappedPath = GamePathUtils.safUriToPath(uri.toString())
+                val mappedDir = mappedPath?.let { File(it) }?.takeIf { it.isDirectory }
+                if (mappedDir != null) {
+                    // 真实路径：输出为同级同名文件，同名拒绝（提示提前备份/改名）。
+                    val parent = mappedDir.parentFile ?: mappedDir
+                    val outFile = File(parent, "${mappedDir.name}$ext")
+                    if (outFile.exists()) {
+                        throw ArchiveConflictException(conflictFileFormat.format(outFile.absolutePath))
+                    }
+                    withContext(Dispatchers.IO) { runPack(mappedDir, outFile, level) }
+                    message = doneFormat.format(outFile.absolutePath)
+                } else {
+                    // SAF 专有 provider：封到 cache，交给系统保存框。
+                    val srcDir = withContext(Dispatchers.IO) { ArchiveStaging.stageInputDir(appContext, uri, isCancelled) }
+                    stagedDir = srcDir
+                    val outFile = File(ArchiveStaging.stagingDir(appContext), "packed/resolved$ext")
+                    outFile.parentFile?.mkdirs()
+                    if (outFile.exists()) outFile.delete()
+                    withContext(Dispatchers.IO) { runPack(srcDir, outFile, level) }
+                    pendingSaveFile = outFile
+                    pendingSaveName = "${packDirName.ifBlank { "archive" }}$ext"
                 }
-                withContext(Dispatchers.IO) { runPack(mappedDir, outFile, level) }
-                message = doneFormat.format(outFile.absolutePath)
-            } else {
-                // SAF 专有 provider：封到 cache，交给系统保存框。
-                val srcDir = withContext(Dispatchers.IO) { ArchiveStaging.stageInputDir(appContext, uri, isCancelled) }
-                val outFile = File(ArchiveStaging.stagingDir(appContext), "packed/resolved$ext")
-                outFile.parentFile?.mkdirs()
-                if (outFile.exists()) outFile.delete()
-                withContext(Dispatchers.IO) { runPack(srcDir, outFile, level) }
-                pendingSaveFile = outFile
-                pendingSaveName = "${packDirName.ifBlank { "archive" }}$ext"
+            } finally {
+                stagedDir?.let { runCatching { it.deleteRecursively() } }
             }
         }
     }
@@ -409,8 +420,10 @@ class ArchiveViewModel : ViewModel() {
     override fun onCleared() {
         cancelFlag.set(true)
         currentJob?.cancel()
-        // 页面销毁兜底：暂存输入拷贝不可残留。
+        // 页面销毁兜底：暂存输入拷贝与未落盘的封包产物不可残留。
         releaseStagedArchive()
+        pendingSaveFile?.let { runCatching { it.delete() } }
+        pendingSaveFile = null
         super.onCleared()
     }
 }

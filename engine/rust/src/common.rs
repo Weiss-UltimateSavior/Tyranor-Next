@@ -56,6 +56,10 @@ macro_rules! progress_store {
 
             pub fn set_name(name: &str) { *FNAME.lock().unwrap_or_else(|e| e.into_inner()) = name.to_string(); }
 
+            /// Expands the overall total mid-run (XP3 KSD unwrap can grow output
+            /// beyond the declared entry size) so BYTES/TOTAL stays consistent.
+            pub fn add_total(n: u64) { TOTAL.fetch_add(n, Ordering::Relaxed); }
+
             pub fn cancel() { CANCEL.store(true, Ordering::Relaxed); }
             pub fn cancelled() -> bool { CANCEL.load(Ordering::Relaxed) }
             pub fn bytes() -> u64 { BYTES.load(Ordering::Relaxed) }
