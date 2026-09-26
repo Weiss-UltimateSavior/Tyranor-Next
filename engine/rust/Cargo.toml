@@ -2,7 +2,6 @@
 members = [
     "crates/common",
     "crates/xp3-core",
-    "crates/pfs-core",
     "crates/ksd-core",
 ]
 resolver = "2"

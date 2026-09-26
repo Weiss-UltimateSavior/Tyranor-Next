@@ -590,14 +590,14 @@
     <string name="launch_create_krkr_save_failed">KRKR セーブフォルダを作成できません：%1$s</string>
 
     <string name="archive_title">解凍 / 圧縮</string>
-    <string name="archive_summary">フォルダを選んで XP3/PFS をスキャン・解凍、またはフォルダを圧縮</string>
+    <string name="archive_summary">フォルダを選んで XP3 をスキャン・解凍、またはフォルダを XP3 に圧縮</string>
     <string name="archive_mode_unpack">解凍</string>
     <string name="archive_mode_pack">圧縮</string>
     <string name="archive_pick_source_dir">ゲームフォルダを選択</string>
     <string name="archive_rescan">再スキャン</string>
     <string name="archive_change_dir">フォルダ変更</string>
     <string name="archive_scanning">スキャン中…</string>
-    <string name="archive_no_archives">このフォルダに XP3 / PFS が見つかりません</string>
+    <string name="archive_no_archives">このフォルダに XP3 が見つかりません</string>
     <string name="archive_select_hint">左のアーカイブを選択して内容を表示</string>
     <string name="archive_archives_count">アーカイブ %1$d 件</string>
     <string name="archive_extract_to">%1$s フォルダに解凍</string>
@@ -613,14 +613,8 @@
     <string name="archive_list_entries">内容を一覧表示</string>
     <string name="archive_extract_all">すべて解凍</string>
     <string name="archive_pack_save">圧縮して保存</string>
-    <string name="archive_format">圧縮形式</string>
     <string name="archive_done_extract_skipped">解凍完了：%1$d ファイル、スキップ %2$d 件</string>
-    <string name="archive_pf8_note">注意：PF8 で出力されます。古い Artemis では読めない場合があります。古いゲームは PF6 を選択してください</string>
     <string name="archive_native_missing">解凍コンポーネントが見つかりません。アプリを再インストールしてください</string>
-    <string name="archive_unknown_format">アーカイブ形式を認識できません（XP3 / PFS のみ対応）</string>
-    <string name="archive_backend">形式</string>
-    <string name="archive_backend_pfs">PFS</string>
-    <string name="archive_backend_xp3">XP3</string>
     <string name="archive_level">圧縮レベル（0=無圧縮）</string>
     <string name="archive_cancel">キャンセル</string>
     <string name="archive_no_file">先にアーカイブを選択してください</string>

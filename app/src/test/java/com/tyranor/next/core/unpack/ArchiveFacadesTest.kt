@@ -2,7 +2,6 @@ package com.tyranor.next.core.unpack
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -17,30 +16,30 @@ class ArchiveFacadesTest {
     val temporaryFolder = TemporaryFolder()
 
     @Test
-    fun backendDetectionPrefersExtensionThenSniffsMagic() {
-        // 扩展名错配但内容是 XP3 魔数：嗅探纠正（SAF 下常见）。
+    fun archiveDetectionPrefersExtensionThenSniffsMagic() {
+        // 扩展名先行：内容垃圾但扩展名明确时不读文件。
+        val named = temporaryFolder.newFile("real.xp3")
+        named.writeBytes("junk".toByteArray())
+        assertTrue(isArchiveFile(named))
+        assertTrue(isArchiveFileName("real.xp3"))
+        // 无扩展名但内容是 XP3 魔数：嗅探纠正（SAF 中转文件常见）。
         val mislabeled = temporaryFolder.newFile("game.dat")
         mislabeled.writeBytes(
             byteArrayOf(0x58, 0x50, 0x33, 0x0D, 0x0A, 0x20, 0x0A, 0x1A, 0x8B.toByte(), 0x67) +
                 "payload".toByteArray(),
         )
-        assertEquals(ArchiveBackend.XP3, detectArchiveBackend(mislabeled))
-        // 无扩展名但内容是 PFS 魔数。
-        val noExt = temporaryFolder.newFile("noext")
-        noExt.writeBytes(byteArrayOf(0x70, 0x66, 0x38) + ByteArray(64))
-        assertEquals(ArchiveBackend.PFS, detectArchiveBackend(noExt))
-        // 扩展名优先：内容垃圾但扩展名明确时不读文件。
-        val named = temporaryFolder.newFile("real.xp3")
-        named.writeBytes("junk".toByteArray())
-        assertEquals(ArchiveBackend.XP3, detectArchiveBackend(named))
-        val namedPfs = temporaryFolder.newFile("empty.pfs")
-        assertEquals(ArchiveBackend.PFS, detectArchiveBackend(namedPfs))
-        // 魔数不明回 null，调用方出本地化错误。
+        assertTrue(isArchiveFile(mislabeled))
+        // 魔数不明且扩展名不符返回 false，调用方出本地化错误。
         val unknown = temporaryFolder.newFile("mystery.bin")
         unknown.writeBytes("junk-junk-junk".toByteArray())
-        assertNull(detectArchiveBackend(unknown))
+        assertFalse(isArchiveFile(unknown))
+        assertFalse(isArchiveFileName(unknown.name))
+        // PFS 等其他封包格式不再支持，按名与按内容均不命中。
+        assertFalse(isArchiveFileName("game.pfs"))
+        val pfsMagic = temporaryFolder.newFile("packed")
+        pfsMagic.writeBytes(byteArrayOf(0x70, 0x66, 0x38) + ByteArray(64))
+        assertFalse(isArchiveFile(pfsMagic))
     }
-
 
     @Test
     fun xp3ListParsesFilesAndDirs() {
@@ -57,28 +56,11 @@ class ArchiveFacadesTest {
     }
 
     @Test
-    fun pfsListParsesFilesAndDirs() {
-        val entries = PfsArchive.parseListEntries(
-            """[{"n":"system","s":0,"d":true,"e":false},""" +
-                """{"n":"system.ini","s":5522,"d":false,"e":false}]""",
-        )
-        assertEquals(2, entries.size)
-        assertTrue(entries[0].isDirectory)
-        assertEquals(5522L, entries[1].size)
-    }
-
-    @Test
     fun listRejectsMalformedJson() {
         // 注：org.json 对尾随字符宽容，此处只断言严格非法输入。
         for (bad in listOf("", "not json", "[{\"n\":}]")) {
             try {
                 Xp3Archive.parseListEntries(bad)
-                fail("expected IOException for $bad")
-            } catch (error: IOException) {
-                // expected
-            }
-            try {
-                PfsArchive.parseListEntries(bad)
                 fail("expected IOException for $bad")
             } catch (error: IOException) {
                 // expected
@@ -102,12 +84,6 @@ class ArchiveFacadesTest {
         for (bad in badCases) {
             try {
                 Xp3Archive.parseListEntries(bad)
-                fail("expected IOException for $bad")
-            } catch (error: IOException) {
-                // expected
-            }
-            try {
-                PfsArchive.parseListEntries(bad)
                 fail("expected IOException for $bad")
             } catch (error: IOException) {
                 // expected

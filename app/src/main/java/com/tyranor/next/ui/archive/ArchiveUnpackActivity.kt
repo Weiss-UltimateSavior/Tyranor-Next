@@ -43,14 +43,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
-import com.tyranor.next.core.unpack.ArchiveBackend
 import com.tyranor.next.core.unpack.ScannedArchive
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import java.util.Locale
 
-/** 解包 / 封包独立页：入口见应用设置。解包=选目录扫描XP3/PFS→主从预览→解到同名文件夹；封包=选目录→选格式→输出同名文件。 */
+/** 解包 / 封包独立页：入口见应用设置。解包=选目录扫描XP3→主从预览→解到同名文件夹；封包=选目录→选压缩等级→输出同名 .xp3。 */
 class ArchiveUnpackActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -263,40 +262,15 @@ private fun PackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () ->
                     )
                 }
                 LabeledChips(
-                    label = stringResource(R.string.archive_backend),
+                    label = stringResource(R.string.archive_level),
                     options = listOf(
-                        stringResource(R.string.archive_backend_xp3) to (vm.packBackend == ArchiveBackend.XP3),
-                        stringResource(R.string.archive_backend_pfs) to (vm.packBackend == ArchiveBackend.PFS),
+                        "0" to (vm.packLevel == 0),
+                        "6" to (vm.packLevel == 6),
+                        "9" to (vm.packLevel == 9),
                     ),
                     enabled = !vm.working,
-                    onSelect = { vm.choosePackBackend(if (it == 0) ArchiveBackend.XP3 else ArchiveBackend.PFS) },
+                    onSelect = { vm.choosePackLevel(listOf(0, 6, 9)[it]) },
                 )
-                if (vm.packBackend == ArchiveBackend.PFS) {
-                    LabeledChips(
-                        label = stringResource(R.string.archive_format),
-                        options = listOf("PF8" to !vm.packPf6, "PF6" to vm.packPf6),
-                        enabled = !vm.working,
-                        onSelect = { vm.setPackFormat(it == 1, vm.packLevel) },
-                    )
-                    if (!vm.packPf6) {
-                        Text(
-                            stringResource(R.string.archive_pf8_note),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    LabeledChips(
-                        label = stringResource(R.string.archive_level),
-                        options = listOf(
-                            "0" to (vm.packLevel == 0),
-                            "6" to (vm.packLevel == 6),
-                            "9" to (vm.packLevel == 9),
-                        ),
-                        enabled = !vm.working,
-                        onSelect = { vm.setPackFormat(vm.packPf6, listOf(0, 6, 9)[it]) },
-                    )
-                }
                 Button(
                     onClick = { vm.pack(appContext) },
                     enabled = !vm.working && vm.packTreeUri != null,
@@ -369,7 +343,7 @@ private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: 
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            "${archive.backend.name} · ${formatBytes(archive.size)}",
+            "XP3 · ${formatBytes(archive.size)}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,

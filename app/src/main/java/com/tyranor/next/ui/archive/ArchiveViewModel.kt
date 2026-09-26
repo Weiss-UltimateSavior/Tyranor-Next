@@ -10,13 +10,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.GamePathUtils
-import com.tyranor.next.core.unpack.ArchiveBackend
 import com.tyranor.next.core.unpack.ArchiveCancelledException
 import com.tyranor.next.core.unpack.ArchiveNativeMissingException
 import com.tyranor.next.core.unpack.ArchiveScanner
 import com.tyranor.next.core.unpack.ArchiveStaging
-import com.tyranor.next.core.unpack.ArtemisPf6Packer
-import com.tyranor.next.core.unpack.PfsArchive
 import com.tyranor.next.core.unpack.ScannedArchive
 import com.tyranor.next.core.unpack.Xp3Archive
 import kotlinx.coroutines.CancellationException
@@ -35,8 +32,8 @@ data class EntryRow(val name: String, val size: Long, val isDirectory: Boolean)
 /**
  * 解包/封包页状态机（ViewModel 常驻，旋转不丢目录/扫描结果/选中项）。
  *
- * 解包：选目录 → 扫描目录内 XP3/PFS → 主从预览（左归档、右条目）→ 全量解压到归档同名文件夹（去重）。
- * 封包：选目录 → 选格式 → 封包为同级同名文件（去重）。
+ * 解包：选目录 → 扫描目录内 XP3 → 主从预览（左归档、右条目）→ 全量解压到归档同名文件夹（去重）。
+ * 封包：选目录 → 选压缩等级 → 封包为同级同名 .xp3 文件（去重）。
  */
 class ArchiveViewModel : ViewModel() {
 
@@ -66,10 +63,6 @@ class ArchiveViewModel : ViewModel() {
     var packTreeUri by mutableStateOf<Uri?>(null)
         private set
     var packDirName by mutableStateOf("")
-        private set
-    var packBackend by mutableStateOf(ArchiveBackend.PFS)
-        private set
-    var packPf6 by mutableStateOf(false)
         private set
     var packLevel by mutableStateOf(6)
         private set
@@ -205,31 +198,21 @@ class ArchiveViewModel : ViewModel() {
         val archive = selectedArchive ?: return
         val file = requireArchiveFile(appContext, archive)
         val listed = withContext(Dispatchers.IO) {
-            when (archive.backend) {
-                ArchiveBackend.XP3 -> Xp3Archive.listEntries(file).map {
-                    EntryRow(it.name, it.size, it.isDirectory)
-                }
-                ArchiveBackend.PFS -> PfsArchive.listEntries(file).map {
-                    EntryRow(it.name, it.size, it.isDirectory)
-                }
+            Xp3Archive.listEntries(file).map {
+                EntryRow(it.name, it.size, it.isDirectory)
             }
         }
         entries = listed
         entriesListed = true
     }
 
-    /** 解包到指定输出目录，返回 (成功数, 跳过数)。两后端 stats 类型不同，此处分流归一。 */
+    /** 解包到指定输出目录，返回 (成功数, 跳过数)。 */
     private fun extractTo(
-        backend: ArchiveBackend,
         file: File,
         outDir: File,
         isCancelled: () -> Boolean,
-    ): Pair<Int, Int> = when (backend) {
-        ArchiveBackend.XP3 -> Xp3Archive.extractAll(file, outDir, ::reportProgress, isCancelled)
-            .let { it.extracted to it.skipped }
-        ArchiveBackend.PFS -> PfsArchive.extractAll(file, outDir, ::reportProgress, isCancelled)
-            .let { it.extracted to it.skipped }
-    }
+    ): Pair<Int, Int> = Xp3Archive.extractAll(file, outDir, ::reportProgress, isCancelled)
+        .let { it.extracted to it.skipped }
 
     fun extractSelected(appContext: Context) {
         val archive = selectedArchive ?: run {
@@ -246,7 +229,7 @@ class ArchiveViewModel : ViewModel() {
                     val parent = archive.realFile.parentFile
                         ?: throw java.io.IOException("archive has no parent: ${archive.realFile.path}")
                     val outDir = uniqueDir(parent, baseName)
-                    extractTo(archive.backend, file, outDir, isCancelled) to outDir.name
+                    extractTo(file, outDir, isCancelled) to outDir.name
                 } else {
                     val treeRoot = sourceTreeUri
                         ?: throw java.io.IOException("missing source directory")
@@ -254,7 +237,7 @@ class ArchiveViewModel : ViewModel() {
                         ?: throw java.io.IOException("cannot create output folder: $baseName")
                     val tmp = File(ArchiveStaging.stagingDir(appContext), "extract_${System.currentTimeMillis()}")
                     try {
-                        val counts = extractTo(archive.backend, file, tmp, isCancelled)
+                        val counts = extractTo(file, tmp, isCancelled)
                         ArchiveStaging.publishDir(appContext, tmp, outDoc, isCancelled)
                         counts to outDoc.name
                     } finally {
@@ -295,15 +278,7 @@ class ArchiveViewModel : ViewModel() {
         message = null
     }
 
-    fun choosePackBackend(backend: ArchiveBackend) {
-        if (packBackend != backend) {
-            packBackend = backend
-            message = null
-        }
-    }
-
-    fun setPackFormat(pf6: Boolean, level: Int) {
-        packPf6 = pf6
+    fun choosePackLevel(level: Int) {
         packLevel = level
     }
 
@@ -312,10 +287,8 @@ class ArchiveViewModel : ViewModel() {
             message = appContext.getString(R.string.archive_no_dir)
             return
         }
-        val ext = if (packBackend == ArchiveBackend.XP3) ".xp3" else ".pfs"
-        val usePf6 = packBackend == ArchiveBackend.PFS && packPf6
+        val ext = ".xp3"
         val level = packLevel
-        val backend = packBackend
         val doneFormat = appContext.getString(R.string.archive_pack_done)
         launchOp(appContext, packDirName, determinate = true) {
             val mappedPath = GamePathUtils.safUriToPath(uri.toString())
@@ -324,7 +297,7 @@ class ArchiveViewModel : ViewModel() {
                 // 真实路径：输出为同级同名文件（去重）。
                 val parent = mappedDir.parentFile ?: mappedDir
                 val outFile = uniqueFile(parent, "${mappedDir.name}$ext")
-                withContext(Dispatchers.IO) { runPack(appContext, mappedDir, outFile, backend, usePf6, level) }
+                withContext(Dispatchers.IO) { runPack(mappedDir, outFile, level) }
                 message = doneFormat.format(outFile.name)
             } else {
                 // SAF 专有 provider：封到 cache，交给系统保存框。
@@ -332,26 +305,15 @@ class ArchiveViewModel : ViewModel() {
                 val outFile = File(ArchiveStaging.stagingDir(appContext), "packed/resolved$ext")
                 outFile.parentFile?.mkdirs()
                 if (outFile.exists()) outFile.delete()
-                withContext(Dispatchers.IO) { runPack(appContext, srcDir, outFile, backend, usePf6, level) }
+                withContext(Dispatchers.IO) { runPack(srcDir, outFile, level) }
                 pendingSaveFile = outFile
                 pendingSaveName = "${packDirName.ifBlank { "archive" }}$ext"
             }
         }
     }
 
-    private suspend fun runPack(
-        appContext: Context,
-        srcDir: File,
-        outFile: File,
-        backend: ArchiveBackend,
-        usePf6: Boolean,
-        level: Int,
-    ) {
-        when {
-            usePf6 -> ArtemisPf6Packer.pack(srcDir, outFile, ::reportProgress, isCancelled)
-            backend == ArchiveBackend.PFS -> PfsArchive.pack(srcDir, outFile, ::reportProgress, isCancelled)
-            else -> Xp3Archive.pack(srcDir, outFile, level, ::reportProgress, isCancelled)
-        }
+    private suspend fun runPack(srcDir: File, outFile: File, level: Int) {
+        Xp3Archive.pack(srcDir, outFile, level, ::reportProgress, isCancelled)
     }
 
     /** 系统保存框回调：null 表示放弃，清理中转包。 */

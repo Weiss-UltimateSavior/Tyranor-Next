@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the XP3/PFS archive Rust cores for arm64-v8a and drops the .so files
+# Builds the XP3 archive Rust core for arm64-v8a and drops the .so file
 # into engine/src/main/jniLibs (committed, like the other prebuilt engine libs).
 #
 # Prereqs: Rust + Android target + NDK + cargo-ndk:
@@ -46,11 +46,10 @@ echo "[2/2] cargo-ndk build ($TARGET)"
 # it must run inside RUST_DIR, --manifest-path alone is not enough.
 cd "$RUST_DIR"
 cargo ndk --target "$TARGET" --platform 26 build --release \
-    -p archive_xp3-core -p archive_pfs-core
+    -p archive_xp3-core
 cd - > /dev/null
 
 mkdir -p "$OUT_DIR"
 cp -f "$RUST_DIR/target/$TARGET/release/libarchive_xp3_core.so" "$OUT_DIR/"
-cp -f "$RUST_DIR/target/$TARGET/release/libarchive_pfs_core.so" "$OUT_DIR/"
-ls -la "$OUT_DIR/libarchive_xp3_core.so" "$OUT_DIR/libarchive_pfs_core.so"
+ls -la "$OUT_DIR/libarchive_xp3_core.so"
 echo "done."

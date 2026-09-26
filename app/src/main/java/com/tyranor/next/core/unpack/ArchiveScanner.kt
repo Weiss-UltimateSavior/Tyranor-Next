@@ -20,13 +20,12 @@ data class ScannedArchive(
     /** 归档文件自身的名字（含扩展名），用于派生输出文件夹名。 */
     val fileName: String,
     val size: Long,
-    val backend: ArchiveBackend,
     val realFile: File?,
     val docUri: Uri?,
 )
 
 /**
- * 在用户选取的目录下递归扫描 XP3 / PFS 封包（深度与数量有上限）。
+ * 在用户选取的目录下递归扫描 XP3 封包（深度与数量有上限）。
  *
  * 优先走真实路径（[GamePathUtils.safUriToPath]）；映射失败时退回 DocumentFile 遍历，
  * 结果携带 `docUri` 供后续中转。按名排序，目录树中的相对路径作为展示名。
@@ -54,14 +53,13 @@ object ArchiveScanner {
                 if (child.isDirectory) {
                     stack.add(child to childRel)
                 } else if (child.isFile) {
-                    val backend = detectArchiveBackendByName(child.name) ?: continue
+                    if (!isArchiveFileName(child.name)) continue
                     out.add(
                         ScannedArchive(
                             id = "file:${child.absolutePath}",
                             displayName = childRel.replace('\\', '/'),
                             fileName = child.name,
                             size = child.length(),
-                            backend = backend,
                             realFile = child,
                             docUri = null,
                         ),
@@ -86,14 +84,13 @@ object ArchiveScanner {
                 if (child.isDirectory) {
                     stack.add(child to childRel)
                 } else if (child.isFile) {
-                    val backend = detectArchiveBackendByName(name) ?: continue
+                    if (!isArchiveFileName(name)) continue
                     out.add(
                         ScannedArchive(
                             id = "doc:${child.uri}",
                             displayName = childRel,
                             fileName = name,
                             size = child.length(),
-                            backend = backend,
                             realFile = null,
                             docUri = child.uri,
                         ),
