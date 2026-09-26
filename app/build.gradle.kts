@@ -204,6 +204,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 共存测试版：applicationId 加 .test 后缀，与正式包并行安装互不覆盖
+            applicationIdSuffix = ".test"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
