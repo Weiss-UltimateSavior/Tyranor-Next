@@ -1,15 +1,17 @@
-[workspace]
-members = [
-    "crates/common",
-    "crates/xp3-core",
-    "crates/ksd-core",
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "archive_xp3-core"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+tokio = { version = "1", features = ["io-util"] }
+xp3 = "0.4"
+flate2 = "1"
 
 [profile.release]
 opt-level = 3

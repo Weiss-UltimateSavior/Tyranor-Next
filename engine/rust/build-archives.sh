@@ -39,14 +39,13 @@ if [ -z "${ANDROID_NDK_HOME:-}" ]; then
 fi
 
 echo "[1/2] cargo test (host) — Rust suite must stay green"
-cargo test --workspace --manifest-path "$RUST_DIR/Cargo.toml"
+cargo test --manifest-path "$RUST_DIR/Cargo.toml"
 
 echo "[2/2] cargo-ndk build ($TARGET)"
 # NOTE: cargo-ndk resolves the manifest from the current directory —
 # it must run inside RUST_DIR, --manifest-path alone is not enough.
 cd "$RUST_DIR"
-cargo ndk --target "$TARGET" --platform 26 build --release \
-    -p archive_xp3-core
+cargo ndk --target "$TARGET" --platform 26 build --release
 cd - > /dev/null
 
 mkdir -p "$OUT_DIR"

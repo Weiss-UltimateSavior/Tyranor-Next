@@ -1,8 +1,12 @@
+mod common;
+mod ksd;
+
 use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::sys::{jstring, jlong};
-use archive_common::{s, SyncIo, oneshot_async, json_escape, derive_dirs, safe_join, extract_result_json, ProgressWriter, ProgressReader};
-use archive_common::{extract_progress, compress_progress};
+use common::{s, SyncIo, oneshot_async, json_escape, derive_dirs, safe_join, extract_result_json, ProgressWriter, ProgressReader};
+use common::{extract_progress, compress_progress};
+use ksd::ksd_mode2_decode;
 use xp3::read::XP3Archive;
 use xp3::header::XP3Version;
 use xp3::write::XP3Writer;
@@ -14,7 +18,10 @@ use std::path::{Path, PathBuf};
 // ─── XP3 (Kirikiri) ────────────────────────
 
 /// Only small entries are buffered for the KSD-mode-2 filter probe — the filter
-/// appears only on text/scripts (tiny), while images/audio are streamed.
+/// appears only on text/scripts (tiny), while images/audio are streamed. The
+/// engine (krkrsdl3 TextStream) decodes the wrapper natively too, so unwrapping
+/// here is purely for editable extract output; anything we fail to decode is
+/// written verbatim and still runs.
 const KSD_PROBE_MAX: u64 = 16 * 1024 * 1024;
 
 /// Copies one entry from the xp3 stream to disk. Small entries are buffered so
@@ -65,7 +72,7 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
                 return oneshot_async(tokio::io::copy(&mut xf, out_stream)).is_ok();
             }
         };
-        let payload = archive_ksd_core::ksd_mode2_decode(&buf).unwrap_or(buf);
+        let payload = ksd_mode2_decode(&buf).unwrap_or(buf);
         // Calibrate the per-file progress to the actual (KSD-unwrapped)
         // size — the wrapper's declared size was set before we knew.
         extract_progress::set_file(payload.len() as u64);
@@ -344,8 +351,19 @@ mod tests {
 
     fn tmp(tag: &str) -> PathBuf { std::env::temp_dir().join(format!("uu_xp3_{}_{}", std::process::id(), tag)) }
 
+    /// Pack/extract touch the process-wide progress statics; serialize against
+    /// the progress tests in common (merged crate = one test binary). Tests
+    /// bypass the JNI entries that normally clear_cancel, so do it here.
+    fn locked() -> std::sync::MutexGuard<'static, ()> {
+        let guard = common::TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        extract_progress::clear_cancel();
+        compress_progress::clear_cancel();
+        guard
+    }
+
     #[test]
     fn pack_round_trip_matches_bytes() {
+        let _g = locked();
         let dir = tmp("roundtrip");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::create_dir_all(dir.join("sub")).unwrap();
@@ -364,6 +382,7 @@ mod tests {
 
     #[test]
     fn pack_single_file() {
+        let _g = locked();
         let dir = tmp("single");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("one.dat"), vec![9u8; 5000]).unwrap();
@@ -378,11 +397,12 @@ mod tests {
 
     #[test]
     fn ksd_mode2_wrapped_entry_extracts_as_text() {
-        // A real galgame XP3 stores some text entries as
+        // 隐性 mode2 支持：A real galgame XP3 stores some text entries as
         //   zlib( KSD mode-2 wrapper `FE FE 02 FF FE` + comp_len/uncomp_len + zlib(text) )
-        // The xp3 crate only unwraps the OUTER zlib, so without the KSD unwrap
-        // the extracted file would be the wrapper binary — "garbled in every
-        // encoding". Build that wrapper, pack, extract, and require the real text.
+        // The xp3 crate only unwraps the OUTER zlib, so without the implicit
+        // KSD unwrap the extracted file would be the wrapper binary. Build
+        // that wrapper, pack, extract, and require the real text.
+        let _g = locked();
         let text: Vec<u8> = "こんにちは\nテスト\n".encode_utf16()
             .flat_map(|u| u.to_le_bytes()).collect();
         let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::new(6));
