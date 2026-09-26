@@ -35,12 +35,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
-import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.BottomInsetSpacer
-import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.theme.AppThemeColors
@@ -308,17 +306,6 @@ internal fun AppSettingsScreen() {
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setSideRailEnabled(ctx, checked)
                                 },
-                            )
-                        }
-                    }
-                }
-                item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            ArrowPreference(
-                                title = stringResource(R.string.archive_title),
-                                summary = stringResource(R.string.archive_summary),
-                                onClick = { startActivityWithPageTransition(ctx, ArchiveUnpackActivity.createIntent(ctx)) },
                             )
                         }
                     }

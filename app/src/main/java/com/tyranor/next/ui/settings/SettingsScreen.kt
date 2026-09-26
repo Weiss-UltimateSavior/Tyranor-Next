@@ -79,6 +79,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
@@ -338,6 +339,18 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 title = stringResource(R.string.settings_engine_settings),
                                 startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
                                 onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            ArrowPreference(
+                                title = stringResource(R.string.archive_title),
+                                summary = stringResource(R.string.archive_summary),
+                                startAction = { SettingsItemIcon(R.drawable.ic_sheet_folder) },
+                                onClick = { startActivityWithPageTransition(ctx, ArchiveUnpackActivity.createIntent(ctx)) },
                             )
                         }
                     }
