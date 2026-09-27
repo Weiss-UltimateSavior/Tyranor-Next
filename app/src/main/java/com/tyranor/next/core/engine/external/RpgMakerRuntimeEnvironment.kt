@@ -6,6 +6,7 @@ import android.os.Environment
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
+import java.io.InputStream
 import java.util.Locale
 import java.util.zip.ZipInputStream
 
@@ -129,59 +130,113 @@ object RpgMakerRuntimeEnvironment {
         path.substringAfterLast('/').substringAfterLast('\\')
 
     private fun extractZip(context: Context, uri: Uri, dest: File): Boolean {
+        val input = context.contentResolver.openInputStream(uri) ?: return false
+        return input.use { extractZipStream(it.buffered(), dest) }
+    }
+
+    /**
+     * ZIP 解压主体。与 [extractZip] 拆开是为了可单测：本函数只依赖输入流，
+     * 不需要 Context/Uri；上限参数默认取生产常量，测试注入小值即可低成本覆盖边界。
+     */
+    internal fun extractZipStream(
+        input: InputStream,
+        dest: File,
+        maxEntries: Int = MAX_ZIP_ENTRIES,
+        maxEntryBytes: Long = MAX_ENTRY_UNCOMPRESSED_BYTES,
+        maxTotalBytes: Long = MAX_TOTAL_UNCOMPRESSED_BYTES,
+    ): Boolean {
         val tempRoot = dest.canonicalPath
         var entryCount = 0
         var totalBytes = 0L
-        context.contentResolver.openInputStream(uri)?.use { raw ->
-            ZipInputStream(raw.buffered()).use { zip ->
-                while (true) {
-                    val entry = zip.nextEntry ?: break
-                    // 先计数再判断跳过：__MACOSX/ 与 .DS_Store 也是条目，
-                    // 若跳过后才计数，构造大量此类条目即可绕过上限、持续消耗解析与 I/O
-                    entryCount += 1
-                    if (entryCount > MAX_ZIP_ENTRIES) return false
-                    val name = entry.name.replace('\\', '/')
-                    if (name.startsWith("__MACOSX/") || name.contains(".DS_Store")) {
-                        zip.closeEntry()
-                        continue
+        ZipInputStream(input).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                // 先计数再判断跳过：__MACOSX/ 与 .DS_Store 也是条目，
+                // 若跳过后才计数，构造大量此类条目即可绕过上限、持续消耗解析与 I/O
+                entryCount += 1
+                if (entryCount > maxEntries) return false
+                // 声明大小检查对所有条目生效（含被过滤的）。流式 zip 的 entry.size 恒为 -1，
+                // 故这里只是廉价的前置拒绝，真正的兜底是下面的有界读取。
+                if (entry.size > maxEntryBytes) return false
+
+                val name = entry.name.replace('\\', '/')
+                val outFile = File(dest, name)
+                val insideRoot = outFile.canonicalPath.startsWith(tempRoot + File.separator)
+                val filtered = name.startsWith("__MACOSX/") || name.contains(".DS_Store")
+                if (filtered || !insideRoot) {
+                    // 跳过也必须**有界**读取：ZipInputStream 是顺序流，跳过条目必须读掉其数据，
+                    // 而 closeEntry() 会把整条无界读完（DEFLATED 条目被完整解压）。
+                    // 实测：255KB 的 zip（条目名 __MACOSX/big.bin、解压后 256MB）光
+                    // closeEntry() 就耗时 586ms —— 被过滤条目因此是绕过字节上限的通道。
+                    totalBytes = drainEntryBounded(zip, maxEntryBytes, maxTotalBytes, totalBytes)
+                        ?: return false
+                    zip.closeEntry()
+                    continue
+                }
+
+                if (entry.isDirectory) {
+                    if (!outFile.exists() && !outFile.mkdirs()) return false
+                } else {
+                    outFile.parentFile?.let { parent ->
+                        if (!parent.exists() && !parent.mkdirs()) return false
                     }
-                    if (entry.size > MAX_ENTRY_UNCOMPRESSED_BYTES) return false
-                    val outFile = File(dest, name)
-                    if (!outFile.canonicalPath.startsWith(tempRoot + File.separator)) {
-                        zip.closeEntry()
-                        continue
-                    }
-                    if (entry.isDirectory) {
-                        if (!outFile.exists() && !outFile.mkdirs()) return false
-                    } else {
-                        outFile.parentFile?.let { parent ->
-                            if (!parent.exists() && !parent.mkdirs()) return false
-                        }
-                        // 上限与 NativePluginInstaller.unzipSafely 一致：用户挑选的 zip 也可能
-                        // 是损坏或精心构造的（高压缩比），无界解压会写满共享存储。
-                        // copyTo 不提供计数，故手工逐块读写并同时校验单条目与总量。
+                    // 上限与 NativePluginInstaller.unzipSafely 一致：用户挑选的 zip 也可能
+                    // 是损坏或精心构造的（高压缩比），无界解压会写满共享存储。
+                    // copyTo 不提供计数，故手工逐块读写并同时校验单条目与总量。
+                    // 超限/IO 失败时删除半成品：被中止的条目会留下**截断文件**，
+                    // 而导入失败后整个临时目录会被丢弃，残留文件只会误导排查；
+                    // 若调用方复用了目标目录，截断文件还会被当成有效内容。
+                    var written = false
+                    try {
                         outFile.outputStream().use { output ->
                             val buffer = ByteArray(ZIP_BUFFER_SIZE)
                             var entryBytes = 0L
                             while (true) {
                                 val read = zip.read(buffer)
-                                if (read <= 0) break
+                                if (read < 0) break
                                 entryBytes += read
                                 totalBytes += read
-                                if (entryBytes > MAX_ENTRY_UNCOMPRESSED_BYTES ||
-                                    totalBytes > MAX_TOTAL_UNCOMPRESSED_BYTES
-                                ) {
+                                if (entryBytes > maxEntryBytes || totalBytes > maxTotalBytes) {
                                     return false
                                 }
                                 output.write(buffer, 0, read)
                             }
                         }
+                        written = true
+                    } finally {
+                        if (!written) {
+                            runCatching { outFile.delete() }
+                        }
                     }
-                    zip.closeEntry()
                 }
+                zip.closeEntry()
             }
-        } ?: return false
+        }
         return dest.listFiles()?.isNotEmpty() == true
+    }
+
+    /**
+     * 有界排空当前条目的剩余数据并计入累计字节，返回新的累计值；超限返回 null（调用方中止导入）。
+     *
+     * 与解压写入路径共用同一对上限，确保被过滤/越界的条目不能成为绕过字节上限的通道。
+     */
+    private fun drainEntryBounded(
+        zip: ZipInputStream,
+        maxEntryBytes: Long,
+        maxTotalBytes: Long,
+        runningTotal: Long,
+    ): Long? {
+        val buffer = ByteArray(ZIP_BUFFER_SIZE)
+        var entryBytes = 0L
+        var total = runningTotal
+        while (true) {
+            val read = zip.read(buffer)
+            if (read < 0) break
+            entryBytes += read
+            total += read
+            if (entryBytes > maxEntryBytes || total > maxTotalBytes) return null
+        }
+        return total
     }
 
     private fun copyDocumentTree(context: Context, source: DocumentFile, dest: File): Boolean {
