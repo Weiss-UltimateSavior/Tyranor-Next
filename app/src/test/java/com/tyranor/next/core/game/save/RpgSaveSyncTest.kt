@@ -317,6 +317,88 @@ class RpgSaveSyncTest {
         assertTrue(tyranor.resolve("original/RPG Global.bin").isFile)
     }
 
+    /**
+     * 平局 + Tyranor 侧**已是规范名**（本改动后的常态）：必须留底。
+     *
+     * 旧实现用 `!sameAsTarget` 判断是否留底，规范名时被跳过 → 直接原地覆盖、无 original/ 备份，
+     * 而平局下较旧一方未知，与「留底才能保证不丢任何一份」的契约矛盾。
+     */
+    @Test
+    fun tieWithCanonicalTyranorNameStillPreservesLoser() {
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "PC-CONTENT", 5_000)
+        // 关键：Tyranor 侧用**规范名**（而非 legacy 名），旧实现的测试盲区
+        val canonical = mvName("global.rpgsave")
+        tyranor.writeAt(canonical, "PHONE-OLD", 5_000)
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
+
+        assertEquals(0, result.skipped)
+        assertEquals("PC-CONTENT", tyranor.resolve(canonical).readText())
+        assertEquals(
+            "规范名平局时必须留底（旧实现此处无备份）",
+            "PHONE-OLD",
+            tyranor.resolve("original/$canonical").readText(),
+        )
+    }
+
+    /** 首同步（无历史记录）+ 规范名：同样必须留底。 */
+    @Test
+    fun firstSyncWithCanonicalNamePreservesTarget() {
+        val (standard, tyranor) = dirs()
+        standard.writeAt("file1.rpgsave", "PC-NEW", 9_000)
+        val canonical = mvName("file1.rpgsave")
+        tyranor.writeAt(canonical, "PHONE-OLD", 1_000)
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, store(), "g")
+
+        assertEquals(1, result.toTyranor)
+        assertEquals("PC-NEW", tyranor.resolve(canonical).readText())
+        assertEquals(
+            "首次同步覆盖规范名目标时必须留底",
+            "PHONE-OLD",
+            tyranor.resolve("original/$canonical").readText(),
+        )
+    }
+
+    /**
+     * 非首同步且**存在 legacy 同名槽位**时，规范名目标被覆盖前也必须留底。
+     *
+     * 旧实现只在 `mustPreserveTarget`（平局/首同步）为真时留底，非首同步下
+     * 规范名目标的旧内容会被直接覆盖且无备份 —— 本用例两轮构造出该条件：
+     * 第 1 轮建立槽位历史（hadPrevious=true），第 2 轮制造 legacy + 规范名并存且标准侧更新。
+     */
+    @Test
+    fun canonicalTargetIsPreservedWhenLegacySiblingExists() {
+        val (standard, tyranor) = dirs()
+        val canonical = mvName("file2.rpgsave")
+        // 两轮共用同一 state（状态需跨轮累积，才能构造出 hadPrevious=true）
+        val state = store()
+        // 第 1 轮：两侧同内容，建立槽位历史
+        standard.writeAt("file2.rpgsave", "SAME", 5_000)
+        tyranor.writeAt("RPG File2.bin", "SAME", 5_000)
+        RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, state, "g")
+
+        // 第 2 轮：标准侧更新；Tyranor 侧同时存在 legacy 名与规范名（规范名内容有价值）
+        standard.writeAt("file2.rpgsave", "PC-NEW", 9_000)
+        tyranor.writeAt("RPG File2.bin", "PHONE-LEGACY", 1_000)
+        tyranor.writeAt(canonical, "PHONE-CANONICAL", 1_000)
+
+        val result = RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, state, "g")
+
+        assertEquals(1, result.toTyranor)
+        assertEquals("PC-NEW", tyranor.resolve(canonical).readText())
+        assertTrue(
+            "legacy 同名槽位文件必须留底",
+            tyranor.resolve("original/RPG File2.bin").isFile,
+        )
+        assertEquals(
+            "规范名目标的旧内容也必须留底（旧实现此处直接覆盖、备份为空）",
+            "PHONE-CANONICAL",
+            tyranor.resolve("original/$canonical").readText(),
+        )
+    }
+
     @Test
     fun sameMtimeSameContentIsSkipped() {
         val (standard, tyranor) = dirs()

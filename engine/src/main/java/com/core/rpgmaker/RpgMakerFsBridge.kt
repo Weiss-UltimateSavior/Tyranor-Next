@@ -30,7 +30,7 @@ internal class RpgMakerFsBridge(
 
     /**
      * asar 会话里网页根相对压缩包的路径前缀（`www/` 等）；无 asar 时为空。
-     * 游戏资源在压缩包内、磁盘上不存在，因此读路径采用「asar 优先、磁盘兜底」的
+     * 游戏资源在压缩包内、磁盘上不存在，因此读路径采用「磁盘优先、asar 兜底」的
      * 覆盖层语义：先前 asar 游戏的插件读数据表/require 自己模块会全部失败。
      * 写入始终落磁盘（压缩包不可写），与 NW.js 下写 save/ 目录的行为一致。
      */
@@ -256,11 +256,20 @@ internal class RpgMakerFsBridge(
                 ""
             }
         }
-        readAsarBytes(path)?.let { data ->
-            return JSONObject()
-                .put("file", true).put("dir", false)
-                .put("size", data.size).put("mtime", 0)
-                .toString()
+        // asar 条目：用 entrySize 直接取声明大小，**不要**为取 size 整读条目
+        // （旧实现走 readAsarBytes，>16MiB 或目录条目会落到下面返回
+        //  {file:false,dir:false,size:0}，与 isDirectory 的结论自相矛盾）。
+        asarKey(path?.let { relativeFor(it) })?.let { key ->
+            val archive = asar
+            if (archive != null && archive.has(key)) {
+                val isDir = archive.isDirectory(key)
+                return JSONObject()
+                    .put("file", !isDir)
+                    .put("dir", isDir)
+                    .put("size", archive.entrySize(key) ?: 0L)
+                    .put("mtime", 0L)
+                    .toString()
+            }
         }
         val file = resolve(path) ?: return ""
         return try {
@@ -351,19 +360,40 @@ internal class RpgMakerFsBridge(
         }
     }
 
+    /**
+     * 原子写：先写同目录临时文件并 fsync，再 rename 覆盖。
+     *
+     * 直接 `FileOutputStream(file)` 会**先截断目标再写**，中途失败（ENOSPC/EIO/进程被杀）
+     * 会留下半截文件——插件的 JSON 配置/数据表就此损坏且无法恢复。
+     * 与 [RpgMakerStorage.write] 采用同一策略。
+     */
     private inline fun write(path: String?, block: (java.io.FileOutputStream) -> Unit): Boolean {
         val file = resolve(path) ?: return false
         val parent = file.parentFile ?: return false
+        var tmp: File? = null
         return try {
             if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) return false
-            java.io.FileOutputStream(file).use { out ->
+            val temp = File(parent, file.name + ".tmp." + System.nanoTime())
+            tmp = temp
+            java.io.FileOutputStream(temp).use { out ->
                 block(out)
                 out.fd.sync()
             }
+            if (!temp.renameTo(file)) {
+                // 目标被占用等情况下 rename 失败：退回直接覆盖（保底不丢数据）
+                file.outputStream().use { out ->
+                    temp.inputStream().use { input -> input.copyTo(out) }
+                    out.fd.sync()
+                }
+                temp.delete()
+            }
+            tmp = null
             true
         } catch (error: Throwable) {
             Log.w(TAG, "fs write failed: ${file.path}", error)
             false
+        } finally {
+            tmp?.let { runCatching { it.delete() } }
         }
     }
 

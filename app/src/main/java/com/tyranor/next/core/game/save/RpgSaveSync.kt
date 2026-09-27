@@ -393,16 +393,52 @@ object RpgSaveSync {
         val name = RpgSaveFormat.tyranorNameForSlot(slot, engine)
             ?: throw IOException("no tyranor name for slot $slot")
         val target = File(tyranorDir, name)
-        val sameAsTarget = existingTyranor?.let { samePath(it, target) } ?: false
-        // 1) 同槽位不同名的旧文件（legacy）：必移入 original/，否则遮蔽新数据并造成重复槽位
-        if (existingTyranor != null && existingTyranor.exists() && !sameAsTarget) {
-            preserveLoser(existingTyranor, tyranorDir, standardSide = false)
+        // 与目标**不同名**的既有文件（历史 legacy 名、或插件自定义名的同槽位文件）
+        val legacy = existingTyranor?.takeIf { it.exists() && !samePath(it, target) }
+
+        // 顺序即安全性（与 overwriteWithPreserve 同款「先写临时文件 → 留底 → 原子替换 → 失败回滚」）：
+        //   1) 先把赢家内容写进目标同目录临时文件——此刻未触碰任何既有文件；
+        //   2) 不同名旧文件让位留底，否则引擎优先读 legacy 名而遮蔽新数据、且同槽位留两份；
+        //   3) 目标存在时需要留底（平局/首同步必留，或步骤 2 已让位时兜底），再原子替换；
+        //   4) 任一步失败：回滚已完成的留底，恢复「两侧至少各留一份」。
+        //
+        // 修复两处缺陷：
+        //   - 规范名目标已存在时（本改动后的常态）旧实现因 sameAsTarget 跳过留底，直接
+        //     原地覆盖 —— 平局/首同步下无 original/ 备份，与「留底才能保证不丢任何一份」矛盾；
+        //   - 旧实现先把 legacy 移走再写目标，写失败后该槽位在 Tyranor 侧没有任何活动文件，
+        //     下一轮还会把标准档移入 deleted/，导致槽位两侧都不再可见。
+        val tmp = writeTmpCopy(winner, target)
+        var legacyBackup: File? = null
+        var targetBackup: File? = null
+        try {
+            if (legacy != null) {
+                legacyBackup = preserveLoser(legacy, tyranorDir, standardSide = false)
+            }
+            if (target.exists() && (mustPreserveTarget || legacy != null)) {
+                targetBackup = preserveLoser(target, tyranorDir, standardSide = false)
+            }
+            replaceAtomically(tmp, target, winner)
+        } catch (t: Throwable) {
+            restorePreserved(targetBackup, target)
+            restorePreserved(legacyBackup, legacy)
+            throw t
+        } finally {
+            discardTmp(tmp)
         }
-        // 2) 规范名目标已存在且需要留底时，先留底再覆盖
-        if (mustPreserveTarget && target.exists() && !sameAsTarget) {
-            preserveLoser(target, tyranorDir, standardSide = false)
+    }
+
+    /**
+     * 回滚留底：把文件从 `original/` 放回原位。失败时不抛错——数据仍在留底目录（未丢失），
+     * 由调用方 keepPrevious 保住清单历史、下一轮重试。
+     */
+    private fun restorePreserved(backup: File?, original: File?) {
+        if (backup == null || original == null) return
+        runCatching {
+            if (!backup.renameTo(original)) {
+                backup.copyTo(original, overwrite = true)
+                backup.delete()
+            }
         }
-        copyOverwrite(winner, target)
     }
 
     /**

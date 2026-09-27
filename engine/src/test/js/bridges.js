@@ -11,7 +11,9 @@ const zlib = nodeRequire('zlib');
 const NodeBuffer = nodeRequire('buffer').Buffer;
 
 function createBridges(gameRoot, contentRoot) {
-    const rootReal = fs.realpathSync.native(gameRoot);
+    // 根目录解析为真实路径再作比较基准：macOS 上 /var 是指向 /private/var 的符号链接，
+    // 不解析会让「已解析的子路径」与「未解析的根」前缀对不上（误判越界）。
+    const rootReal = fs.realpathSync(gameRoot);
 
     function toAbs(p) {
         const s = String(p == null ? '' : p).replace(/\\/g, '/').replace(/^file:\/\//, '');
@@ -21,9 +23,24 @@ function createBridges(gameRoot, contentRoot) {
     function inside(p) {
         const abs = toAbs(p);
         if (abs === null) return null;
-        let c;
-        try { c = fs.realpathSync.native(abs); }
-        catch (e) { c = nodePath.resolve(abs).replace(/[\\/]+$/, ''); }
+        // 目标可能尚不存在（写新文件）：对最近存在的祖先做 realpath 再拼回剩余段，
+        // 直接对不存在路径解析会抛错、退回未解析路径导致符号链接场景误判越界。
+        let c = null;
+        try {
+            c = fs.realpathSync(abs);
+        } catch (e) {
+            let probe = abs;
+            const suffix = [];
+            while (true) {
+                const parent = nodePath.dirname(probe);
+                if (parent === probe) break;
+                suffix.unshift(nodePath.basename(probe));
+                probe = parent;
+                try { c = nodePath.join(fs.realpathSync(probe), ...suffix); break; }
+                catch (e2) { /* 继续向上找存在的祖先 */ }
+            }
+            if (c === null) c = nodePath.resolve(abs);
+        }
         return (c === rootReal || c.startsWith(rootReal + nodePath.sep)) ? c : null;
     }
 

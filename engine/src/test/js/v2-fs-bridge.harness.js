@@ -765,6 +765,69 @@ console.log('\n== 回归：审核发现的缺陷（每条对应一个已修问�
         return zlibMod.inflateSync(asNodeBuf(packed)).toString('utf8') === 'hello inflate';
     })());
 
+    // B2：写操作失败必须让调用方知道（此前 renameSync 忽略返回值并删源 → 直接丢数据）
+    check('B2 renameSync 目标越界时抛错且不删源', (() => {
+        fsMod.writeFileSync('data/rename-src.txt', 'PRECIOUS');
+        try {
+            fsMod.renameSync('data/rename-src.txt', '../../escaped-rename.txt');
+            return '未抛错';
+        } catch (e) { return e.code === 'EACCES' ? true : 'wrong-code:' + e.code; }
+    })() === true);
+    check('B2 renameSync 失败后源文件仍在', (() => {
+        fsMod.writeFileSync('data/rename-src2.txt', 'PRECIOUS2');
+        try { fsMod.renameSync('data/rename-src2.txt', '../../escaped2.txt'); } catch (e) {}
+        return fsMod.existsSync('data/rename-src2.txt') === true;
+    })(), (() => { fsMod.writeFileSync('data/rename-src2.txt', 'X'); try { fsMod.renameSync('data/rename-src2.txt', '../../e2.txt'); } catch (e) {} return String(fsMod.existsSync('data/rename-src2.txt')); })());
+    check('B2 renameSync 正常路径可用', (() => {
+        fsMod.writeFileSync('data/rename-a.txt', 'MOVE');
+        fsMod.renameSync('data/rename-a.txt', 'data/rename-b.txt');
+        return fsMod.existsSync('data/rename-a.txt') === false && fsMod.readFileSync('data/rename-b.txt', 'utf8') === 'MOVE';
+    })());
+    check('B2 copyFileSync 越界抛错', (() => {
+        fsMod.writeFileSync('data/copy-src.txt', 'C');
+        try { fsMod.copyFileSync('data/copy-src.txt', '../../escaped-copy.txt'); return '未抛错'; }
+        catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('B2 unlinkSync 删除不存在的文件抛 ENOENT', (() => {
+        try { fsMod.unlinkSync('data/never-existed.txt'); return '未抛错'; }
+        catch (e) { return e.code === 'ENOENT'; }
+    })() === true);
+    check('B2 mkdirSync 越界抛错', (() => {
+        try { fsMod.mkdirSync('../../escaped-dir'); return '未抛错'; } catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+    check('B2 truncateSync 越界抛错', (() => {
+        try { fsMod.truncateSync('../../escaped-trunc.txt', 0); return '未抛错'; } catch (e) { return e.code === 'EACCES' || e.code === 'ENOENT'; }
+    })() === true);
+    check('B2 cpSync 越界抛错', (() => {
+        fsMod.writeFileSync('data/cp-src.txt', 'C');
+        try { fsMod.cpSync('data/cp-src.txt', '../../escaped-cp.txt'); return '未抛错'; } catch (e) { return e.code === 'EACCES'; }
+    })() === true);
+
+    // H1：hash/hmac 的 update 必须尊重 inputEncoding（否则算的是字面量字符串的摘要）
+    check('H1 hash.update(hex 文本, "hex") 与 Node 一致', (() => {
+        const c = window.require('crypto');
+        const hexText = 'deadbeef';
+        const ours = c.createHash('sha256').update(hexText, 'hex').digest('hex');
+        const theirs = nodeCrypto.createHash('sha256').update(hexText, 'hex').digest('hex');
+        return ours === theirs;
+    })(), (() => { const c = window.require('crypto'); return c.createHash('sha256').update('deadbeef', 'hex').digest('hex').slice(0, 16); })());
+    check('H1 hash.update(base64)', (() => {
+        const c = window.require('crypto');
+        const b64 = HostBuffer.from('payload').toString('base64');
+        return c.createHash('sha256').update(b64, 'base64').digest('hex') === nodeCrypto.createHash('sha256').update(b64, 'base64').digest('hex');
+    })());
+    check('H1 hmac.update(binary) 与 Node 一致', (() => {
+        const c = window.require('crypto');
+        const binText = 'ÿþ';
+        const ours = c.createHmac('sha256', 'k').update(binText, 'binary').digest('hex');
+        const theirs = nodeCrypto.createHmac('sha256', 'k').update(binText, 'binary').digest('hex');
+        return ours === theirs;
+    })());
+    check('H1 不带 encoding 时仍按 utf8（回归）', (() => {
+        const c = window.require('crypto');
+        return c.createHash('sha256').update('日本語').digest('hex') === nodeCrypto.createHash('sha256').update('日本語').digest('hex');
+    })());
+
     // 审核③：写入预检必须在编码前生效（否则上限只挡磁盘、不挡内存）
     check('③ 超限字符串在编码前被拒（不产生 base64 中间串）', (() => {
         try { fsMod.writeFileSync('data/huge-pre.txt', 'A'.repeat(17 * 1024 * 1024)); return '未抛错'; }

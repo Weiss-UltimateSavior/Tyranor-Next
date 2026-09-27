@@ -916,13 +916,17 @@
                 if (typeof o === "function") { cb = o; }
                 if (typeof cb === "function") setTimeout(function () { cb(null, realFs.readdirSync(p)); }, 0);
             },
-            mkdirSync: function (p) { bridge.makeDirs(p); },
+            mkdirSync: function (p) { ensureDir(bridge.makeDirs(p), p); },
             mkdir: function (p, o, cb) {
                 if (typeof o === "function") { cb = o; }
-                if (typeof cb === "function") setTimeout(function () { try { bridge.makeDirs(p); cb(null); } catch (err) { cb(err); } }, 0);
+                if (typeof cb === "function") setTimeout(function () { try { realFs.mkdirSync(p); cb(null); } catch (err) { cb(err); } }, 0);
             },
-            unlinkSync: function (p) { bridge.remove(p); },
-            unlink: function (p, cb) { if (typeof cb === "function") setTimeout(function () { try { bridge.remove(p); cb(null); } catch (err) { cb(err); } }, 0); },
+            unlinkSync: function (p) {
+                // Node: 删除不存在的文件抛 ENOENT
+                if (bridge.exists(p) !== true) throw nodeErr("ENOENT", "ENOENT: no such file or directory, unlink '" + p + "'");
+                ensureWrite(bridge.remove(p), p, "unlink");
+            },
+            unlink: function (p, cb) { if (typeof cb === "function") setTimeout(function () { try { realFs.unlinkSync(p); cb(null); } catch (err) { cb(err); } }, 0); },
             statSync: function (p) { return statObject(p); },
             lstatSync: function (p) { return statObject(p); },
             fstatSync: function (p) { return statObject(p); },
@@ -932,15 +936,31 @@
             renameSync: function (from, to) {
                 var b64 = bridge.readBase64(from);
                 if (b64 === null) throw nodeErr("ENOENT", "ENOENT: no such file, renameSync '" + from + "'");
-                bridge.writeBase64(to, b64);
-                bridge.remove(from);
+                // 先确认写入成功再删源：忽略返回值会在目标越界/超限/磁盘满时
+                // 「静默成功 + 源已删」→ 数据直接丢失
+                ensureWrite(bridge.writeBase64(to, b64), to, "rename");
+                if (bridge.remove(from) !== true) {
+                    throw nodeErr("EACCES", "EACCES: rename wrote target but failed to remove source, '" + from + "'");
+                }
             },
             rename: function (from, to, cb) { if (typeof cb === "function") setTimeout(function () { try { realFs.renameSync(from, to); cb(null); } catch (e) { cb(e); } }, 0); },
-            copyFileSync: function (from, to) { var b64 = bridge.readBase64(from); if (b64 === null) throw nodeErr("ENOENT", "ENOENT: no such file, copyFileSync '" + from + "'"); bridge.writeBase64(to, b64); },
+            copyFileSync: function (from, to) {
+                var b64 = bridge.readBase64(from);
+                if (b64 === null) throw nodeErr("ENOENT", "ENOENT: no such file, copyFileSync '" + from + "'");
+                ensureWrite(bridge.writeBase64(to, b64), to, "copyFile");
+            },
             copyFile: function (from, to, cb) { if (typeof cb === "function") setTimeout(function () { try { realFs.copyFileSync(from, to); cb(null); } catch (e) { cb(e); } }, 0); },
             chmodSync: function () {}, chownSync: function () {},
             readlinkSync: function (p) { return p; },
-            truncateSync: function (p) { try { bridge.writeText(p, ""); } catch (e) {} },
+            truncateSync: function (p, len) {
+                // 旧实现无条件清空且吞掉失败：既忽略 len，也在写失败时静默成功
+                if (bridge.exists(p) !== true) throw nodeErr("ENOENT", "ENOENT: no such file or directory, truncate '" + p + "'");
+                var target = len === undefined ? 0 : (len | 0);
+                var bytes = bridge.readBase64(p) || "";
+                var bin = "";
+                try { bin = atob(bytes); } catch (e) { bin = ""; }
+                ensureWrite(bridge.writeBase64(p, btoa(bin.slice(0, target))), p, "truncate");
+            },
             // 流式读取保持桩（数据表类插件几乎不用）
             createReadStream: function () { return { on: function () { return this; }, once: function () { return this; }, pipe: function () { return this; }, read: function () {}, close: function () {} }; },
             // 流式写入**真实现**：缓冲 chunk，在 end()/close() 时落盘。
@@ -1005,8 +1025,8 @@
                 writeFile: function (p, d) { return new Promise(function (res, rej) { try { realFs.writeFileSync(p, d); res(); } catch (e) { rej(e); } }); },
                 appendFile: function (p, d) { return new Promise(function (res, rej) { try { realFs.appendFileSync(p, d); res(); } catch (e) { rej(e); } }); },
                 readdir: function (p) { return new Promise(function (res) { res(realFs.readdirSync(p)); }); },
-                mkdir: function (p) { return new Promise(function (res) { bridge.makeDirs(p); res(); }); },
-                unlink: function (p) { return new Promise(function (res, rej) { try { bridge.remove(p); res(); } catch (e) { rej(e); } }); },
+                mkdir: function (p) { return new Promise(function (res, rej) { try { realFs.mkdirSync(p); res(); } catch (e) { rej(e); } }); },
+                unlink: function (p) { return new Promise(function (res, rej) { try { realFs.unlinkSync(p); res(); } catch (e) { rej(e); } }); },
                 stat: function (p) { return new Promise(function (res) { res(statObject(p)); }); },
                 copyFile: function (a, b) { return new Promise(function (res, rej) { try { realFs.copyFileSync(a, b); res(); } catch (e) { rej(e); } }); }
             }
@@ -1184,6 +1204,25 @@
             console.log("[nw-polyfill-v2] TyranorEnv bridge absent; crypto/zlib stay stubbed");
         }
 
+        /**
+         * 写入类桥调用的统一错误处理：桥返回 false 表示「越界/超限/IO 失败」。
+         *
+         * 必须逐处检查：忽略返回值会让插件以为写成功了（而文件根本没写），
+         * 「复制/改名后删源」这类流程更会直接丢数据——源已删、目标为空。
+         */
+        function ensureWrite(ok, path, op) {
+            if (ok !== true) {
+                throw nodeErr("EACCES", "EACCES: " + (op || "write") + " rejected (outside root, too large, or IO failure), '" + path + "'");
+            }
+        }
+
+        /** 避免重复报错的空操作（如 mkdirSync 目标已存在）。 */
+        function ensureDir(ok, path) {
+            if (ok !== true) {
+                throw nodeErr("EACCES", "EACCES: mkdir rejected, '" + path + "'");
+            }
+        }
+
         // 单次写入上限；必须与 Kotlin RpgMakerFsBridge.MAX_WRITE_BYTES 保持一致
         // （桥也会判，这里前置判是为了**避免先做昂贵的编码**）。
         var MAX_WRITE_BYTES = 16 * 1024 * 1024;
@@ -1282,7 +1321,9 @@
             var finished = false;
             var api = {
                 update: function (data, inputEncoding) {
-                    chunks.push(toB64(data));
+                    // 必须按 inputEncoding 解析：update(hexText, 'hex') 不能当 utf8 文本，
+                    // 否则算出的是「十六进制字面量字符串」的摘要（静默错值）
+                    chunks.push(toB64Encoded(data, inputEncoding));
                     return api;
                 },
                 digest: function (outputEncoding) {
@@ -1310,7 +1351,11 @@
             var chunks = [];
             var finished = false;
             var api = {
-                update: function (data, inputEncoding) { chunks.push(toB64(data)); return api; },
+                update: function (data, inputEncoding) {
+                    // 同 createHash：按 encoding 解析输入
+                    chunks.push(toB64Encoded(data, inputEncoding));
+                    return api;
+                },
                 digest: function (outputEncoding) {
                     if (finished) throw ioError("ERR_CRYPTO_HMAC_FINALIZED", "Digest already called");
                     finished = true;
@@ -2004,7 +2049,7 @@
             };
             fm.rmdirSync = function (p) {
                 if (!fm.__isDir(p)) throw nodeErr("ENOENT", "ENOENT: no such directory, rmdir '" + p + "'");
-                bridge.remove(p);
+                ensureWrite(bridge.remove(p), p, "rmdir");
             };
             fm.rmdir = function (p, o, cb) {
                 if (typeof o === "function") { cb = o; }
@@ -2023,7 +2068,7 @@
                     if (entries.length && !recursive) throw nodeErr("ERR_FS_EISDIR", "Directory not empty: " + p);
                     entries.forEach(function (name) { fm.rmSync(joinPath(p, name), options); });
                 }
-                bridge.remove(p);
+                ensureWrite(bridge.remove(p), p, "rm");
             };
             fm.rm = function (p, o, cb) {
                 if (typeof o === "function") { cb = o; }
@@ -2038,7 +2083,7 @@
                 var buffer = existing === null ? toBuffer("") : toBuffer(existing);
                 var bin = buffer && buffer._bin ? buffer._bin : "";
                 var target = len === undefined ? 0 : Math.max(0, len | 0);
-                bridge.writeBase64(p, btoa(bin.slice(0, target)));
+                ensureWrite(bridge.writeBase64(p, btoa(bin.slice(0, target))), p, "truncate");
             };
             fm.truncate = function (p, len, cb) {
                 if (typeof len === "function") { cb = len; len = 0; }
@@ -2070,7 +2115,7 @@
                 // 无符号链接：退化为复制内容，保证「读链接即读到目标内容」的可用语义
                 var data = bridge.readBase64(target);
                 if (data === null) throw nodeErr("ENOENT", "ENOENT: no such file, symlink target '" + target + "'");
-                bridge.writeBase64(path, data);
+                ensureWrite(bridge.writeBase64(path, data), path, "symlink");
             };
             fm.symlink = function (t, p, type, cb) {
                 if (typeof type === "function") { cb = type; }
@@ -2082,7 +2127,10 @@
             fm.link = fm.symlink;
             fm.mkdtempSync = function (prefix) {
                 var dir = String(prefix || "/tmp/") + Math.random().toString(36).slice(2, 10);
-                if (!fm.makeDirs) bridge.makeDirs(dir); else fm.mkdirSync(dir);
+                // 建目录失败必须抛错：旧实现返回一个并不存在的路径，
+                // 调用方后续写入会全部失败却找不到原因
+                ensureDir(bridge.makeDirs(dir), dir);
+                if (!fm.__isDir(dir)) throw nodeErr("EACCES", "EACCES: mkdtemp failed, '" + dir + "'");
                 return dir;
             };
             fm.mkdtemp = function (prefix, cb) { setTimeout(function () { try { cb(null, fm.mkdtempSync(prefix)); } catch (e) { cb(e); } }, 0); };
@@ -2963,7 +3011,7 @@
             // cp：递归复制（文件与目录）
             fm.cpSync = function (src, dest, options) {
                 if (fm.__isDir(src)) {
-                    if (!fm.existsSync(dest)) bridge.makeDirs(dest);
+                    if (!fm.existsSync(dest)) ensureDir(bridge.makeDirs(dest), dest);
                     fm.readdirSync(src).forEach(function (name) {
                         fm.cpSync(joinPath(src, name), joinPath(dest, name), options);
                     });
@@ -2973,7 +3021,7 @@
                 if (data === null) throw nodeErr("ENOENT", "ENOENT: no such file or directory, cp '" + src + "'");
                 // force:false 且目标已存在时跳过（Node 语义）
                 if (options && options.force === false && fm.existsSync(dest)) return;
-                bridge.writeBase64(dest, data);
+                ensureWrite(bridge.writeBase64(dest, data), dest, "cp");
             };
             fm.cp = function (src, dest, options, cb) {
                 if (typeof options === "function") { cb = options; options = undefined; }
