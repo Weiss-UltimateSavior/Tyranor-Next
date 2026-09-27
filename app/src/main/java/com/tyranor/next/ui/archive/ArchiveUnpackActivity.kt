@@ -161,7 +161,11 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
     }
     val pendingSave = vm.pendingSaveFile
     LaunchedEffect(pendingSave) {
-        if (pendingSave != null) createPackFile.launch(vm.pendingSaveName.ifBlank { "archive" })
+        // saveDialogActive 单次消费：旋转重组合时不重复 launch 系统保存框
+        if (pendingSave != null && !vm.saveDialogActive) {
+            vm.markSaveDialogLaunched()
+            createPackFile.launch(vm.pendingSaveName.ifBlank { "archive" })
+        }
     }
 
     Column(Modifier.fillMaxSize()) {

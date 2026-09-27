@@ -381,6 +381,25 @@ mod tests {
     }
 
     #[test]
+    fn progress_add_sub_total_saturates() {
+        let _g = locked();
+        extract_progress::clear_cancel();
+        extract_progress::reset(1000);
+        extract_progress::add_total(500);
+        assert_eq!(extract_progress::total_bytes(), 1500);
+        // 收缩超量饱和到 0，不回绕
+        extract_progress::sub_total(2000);
+        assert_eq!(extract_progress::total_bytes(), 0);
+        // TOTAL 顶到 u64::MAX 后 add/sub 都不得回绕（回归 1523a57 修复）
+        extract_progress::add_total(u64::MAX);
+        assert_eq!(extract_progress::total_bytes(), u64::MAX);
+        extract_progress::add_total(1);
+        assert_eq!(extract_progress::total_bytes(), u64::MAX);
+        extract_progress::sub_total(1);
+        assert_eq!(extract_progress::total_bytes(), u64::MAX - 1);
+    }
+
+    #[test]
     fn progress_cancel_flag_survives_reset_and_clears_explicitly() {
         let _g = locked();
         extract_progress::clear_cancel();

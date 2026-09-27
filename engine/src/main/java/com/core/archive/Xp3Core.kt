@@ -24,7 +24,6 @@ object Xp3Core {
     }
 
     external fun xp3Extract(tool: String, input: String, output: String): String?
-    external fun xp3ExtractSelected(tool: String, input: String, output: String, selected: String): String?
     external fun xp3ListEntries(input: String): String?
     external fun xp3ExtractProgressCount(): Long
     external fun xp3ExtractProgressTotal(): Long

@@ -63,12 +63,9 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
                 return false;
             }
             _ => {
-                // Read error: stream the remainder (best-effort), same bomb bound.
-                let copied = oneshot_async(tokio::io::copy(&mut xf.take(size), out_stream)).unwrap_or(0);
-                if copied != size {
-                    return false;
-                }
-                return oneshot_async(async { out_stream.flush().await }).is_ok();
+                // Read error：解码流出错后后续读恒错（ZlibDecoder/底层 I/O 均如此），
+                // 续流只会得到 0 字节——直接判失败，调用方删半成品。
+                return false;
             }
         };
         // KSD unwrap grows/shrinks output vs the declared entry size; keep the
@@ -226,66 +223,9 @@ pub extern "system" fn Java_com_core_archive_Xp3Core_xp3ListEntries(
 }
 
 // ─── XP3 Selective Extract ───
-
-#[no_mangle]
-pub extern "system" fn Java_com_core_archive_Xp3Core_xp3ExtractSelected(
-    mut env: JNIEnv, _: JClass,
-    _t: JString, input: JString, output: JString, selected: JString,
-) -> jstring {
-    extract_progress::clear_cancel();
-    let inp = s(&mut env, &input); let out = s(&mut env, &output); let sel_str = s(&mut env, &selected);
-    match guarded(move || extract_xp3_selected(&inp, &out, &sel_str)) {
-        Ok((total, error)) => { let json = extract_result_json(total, total - error, error); match env.new_string(&json) { Ok(js) => js.into_raw(), _ => std::ptr::null_mut() } }
-        Err(er) => { let _ = env.throw_new("java/io/IOException", er); std::ptr::null_mut() }
-    }
-}
-
-fn extract_xp3_selected(input: &str, output: &str, selected: &str) -> Result<(u32, u32), String> {
-    let sel_set: HashSet<&str> = selected.lines().filter(|l| !l.is_empty()).collect();
-    if sel_set.is_empty() { return Ok((0, 0)); }
-    let file = File::open(input).map_err(|e| format!("{e}"))?;
-    let mut archive = oneshot_async(XP3Archive::open(SyncIo(BufReader::new(file))))
-        .map_err(|e| format!("XP3: {e}"))?;
-    let matches = |raw_name: &str| {
-        let norm_name = raw_name.replace('\\', "/");
-        sel_set.contains(norm_name.as_str()) ||
-            sel_set.iter().any(|d| { let dd = if d.ends_with('/') { &d[..d.len()-1] } else { d }; norm_name.starts_with(&format!("{dd}/")) })
-    };
-    extract_progress::reset(archive.entries().iter().filter(|e| matches(&e.name)).map(|e| e.size).fold(0u64, |a, b| a.saturating_add(b)));
-    let mut sel = 0u32; let mut fail = 0u32;
-    let mut seen: HashSet<String> = HashSet::new();
-    for i in 0..archive.entries().len() {
-        if extract_progress::cancelled() { return Err("cancelled".to_string()); }
-        let raw_name = &archive.entries()[i].name;
-        if !matches(raw_name) { continue; }
-        sel += 1;
-        extract_progress::set_name(raw_name);
-        extract_progress::set_file(archive.entries()[i].size);
-        let dest = match safe_join(output, raw_name) {
-            Ok(d) => dedupe_dest(d, &mut seen),
-            Err(_) => { fail += 1; continue; }
-        };
-        if let Some(p) = dest.parent() { let _ = fs::create_dir_all(p); }
-        let out_file = match File::create(&dest) {
-            Ok(f) => f,
-            Err(_) => { fail += 1; continue; }
-        };
-        let size = archive.entries()[i].size;
-        let mut out_stream = SyncIo(ProgressWriter::extract(BufWriter::new(out_file)));
-        let xf = match oneshot_async(archive.by_index(i)) {
-            Some(Ok(f)) => f,
-            _ => { let _ = fs::remove_file(&dest); fail += 1; continue; }
-        };
-        if !copy_xp3_entry(xf, size, &mut out_stream) {
-            let _ = fs::remove_file(&dest);
-            fail += 1;
-        }
-    }
-    // Post-loop recheck (see extract_xp3): cancel on the final entry must not
-    // surface as a normal Ok result.
-    if extract_progress::cancelled() { return Err("cancelled".to_string()); }
-    Ok((sel, fail))
-}
+//
+// 已移除 xp3ExtractSelected：app 层从未接线（全量解包走 xp3Extract），且它会
+// 绕过 Kotlin 侧 93ebbb1 的包内重名预检。需要选择性解压时成对重写两侧并补预检。
 
 #[no_mangle]
 pub extern "system" fn Java_com_core_archive_Xp3Core_xp3ExtractProgressCount(_: JNIEnv, _: JClass) -> jlong { extract_progress::bytes() as jlong }
@@ -350,6 +290,11 @@ fn create_xp3(input: &str, output: &str, level: i32) -> Result<u32, String> {
     let mut count = 0u32;
     for (src, name) in &files {
         if compress_progress::cancelled() { return Err("cancelled".to_string()); }
+        // 与解包侧 safe_join 规则对齐：`\` 会在解包时迁移为目录层级、`:` 直接被拒，
+        // 打包期就拒绝这两种名字，保证往返一致（fail-closed，不做静默改名）。
+        if name.contains('\\') || name.contains(':') {
+            return Err(format!("XP3 pack: unsafe file name: {name}"));
+        }
         let size = src.metadata().map(|m| m.len()).unwrap_or(0);
         compress_progress::set_name(name);
         compress_progress::set_file(size);
@@ -358,6 +303,10 @@ fn create_xp3(input: &str, output: &str, level: i32) -> Result<u32, String> {
         let mut fw = oneshot_async(writer.file(name.clone(), false, compression))
             .map_err(|e| format!("XP3 add {name}: {e}"))?;
         let src_file = File::open(src).map_err(|e| format!("XP3 open {}: {e}", src.display()))?;
+        // TOCTOU 复检：collect 后被替换成 FIFO/device 的路径在这里拦下，避免 open 阻塞 JNI 线程。
+        if !src_file.metadata().map_err(|e| format!("XP3 stat {}: {e}", src.display()))?.is_file() {
+            return Err(format!("XP3 pack: not a regular file: {}", src.display()));
+        }
         let mut reader = SyncIo(ProgressReader::compress(BufReader::new(src_file)));
         if oneshot_async(tokio::io::copy(&mut reader, &mut fw)).is_err() {
             return Err(format!("XP3 write {name}: io error"));

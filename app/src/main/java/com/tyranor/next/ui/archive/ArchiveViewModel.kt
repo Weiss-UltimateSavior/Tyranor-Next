@@ -101,6 +101,10 @@ class ArchiveViewModel : ViewModel() {
     var pendingSaveName by mutableStateOf("")
         private set
 
+    /** 系统保存框已 launch 的标记：旋转重组合时防 LaunchedEffect 重复弹框。 */
+    var saveDialogActive by mutableStateOf(false)
+        private set
+
     @Volatile
     private var currentJob: Job? = null
     private val cancelFlag = AtomicBoolean(false)
@@ -232,6 +236,7 @@ class ArchiveViewModel : ViewModel() {
     }
 
     fun selectArchive(appContext: Context, id: String) {
+        if (working) return
         if (selectedId == id && entriesListed) return
         selectedId = id
         entries = emptyList()
@@ -367,6 +372,7 @@ class ArchiveViewModel : ViewModel() {
     }
 
     fun choosePackLevel(level: Int) {
+        if (working) return
         packLevel = level
     }
 
@@ -404,7 +410,8 @@ class ArchiveViewModel : ViewModel() {
                     if (outFile.exists()) outFile.delete()
                     withContext(Dispatchers.IO) { runPack(srcDir, outFile, level) }
                     pendingSaveFile = outFile
-                    pendingSaveName = "${packDirName.ifBlank { "archive" }}$ext"
+                    pendingSaveName = "${packDirName.trimStart('/').ifBlank { "archive" }}$ext"
+                    saveDialogActive = true
                 }
             } finally {
                 stagedDir?.let { runCatching { it.deleteRecursively() } }
@@ -416,8 +423,13 @@ class ArchiveViewModel : ViewModel() {
         Xp3Archive.pack(srcDir, outFile, level, ::reportProgress, isCancelled)
     }
 
+    fun markSaveDialogLaunched() {
+        saveDialogActive = true
+    }
+
     /** 系统保存框回调：null 表示放弃，清理中转包。 */
     fun finishSave(appContext: Context, targetUri: Uri?) {
+        saveDialogActive = false
         val packed = pendingSaveFile
         pendingSaveFile = null
         pendingSaveName = ""

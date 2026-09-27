@@ -44,7 +44,9 @@ object ArchiveStaging {
     ): File {
         GamePathUtils.safUriToPath(uri.toString())?.let { path ->
             val direct = File(path)
-            if (direct.isFile) return direct
+            // canRead：未授权时 stat 元数据可见但读会被拒（EACCES），
+            // 此时必须走 SAF 暂存而不是把不可读的真实路径交给 native。
+            if (direct.isFile && direct.canRead()) return direct
         }
         val name = sanitizeName(displayName(context, uri).orEmpty())
         val total = documentSize(context, uri)
