@@ -5,6 +5,7 @@ import com.tyranor.next.core.game.save.RpgSaveFormatConverter
 import com.tyranor.next.core.engine.EngineType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -70,6 +71,83 @@ class RpgSaveScanDirsTest {
         val keys = dirs.map { it.absolutePath.lowercase() }
         assertTrue(keys.contains(root.resolve("savedata").absolutePath.lowercase()))
         assertTrue(keys.contains(root.resolve("www/save").absolutePath.lowercase()))
+    }
+
+    /**
+     * 区分大小写的文件系统上，`savedata/`（生效目录）与 `Savedata/`（历史兼容目录）
+     * 是两个不同目录，必须都保留——只放在 `Savedata/` 的旧存档否则漏检、漏转化。
+     *
+     * 该用例只在大小写敏感的文件系统上有意义（Linux/Android 真机、CI）；大小写不敏感
+     * 的文件系统上两者本就是同一目录，会自动跳过。
+     */
+    @Test
+    fun keepsSavedataAndSavedataDistinctOnCaseSensitiveFilesystem() {
+        val root = mvGameRoot()
+        val lower = File(root, "savedata")
+        val upper = File(root, "Savedata")
+        // 探测文件系统是否区分大小写：创建小写目录后，大写拼写是否指向同一目录
+        lower.mkdirs()
+        assumeTrue(
+            "本文件系统不区分大小写，跳过（该场景仅存在于 Linux/Android 真机）",
+            !upper.exists(),
+        )
+        upper.mkdirs()
+        assertTrue(upper.isDirectory)
+
+        val dirs = EngineLauncher.buildRpgSaveScanDirs(root.absolutePath, lower, scoped = false)
+
+        assertTrue(
+            "生效目录 savedata/ 必须保留",
+            dirs.any { it.canonicalPath == lower.canonicalPath },
+        )
+        assertTrue(
+            "历史兼容目录 Savedata/ 必须保留（只放在其中的旧存档否则漏检）",
+            dirs.any { it.canonicalPath == upper.canonicalPath },
+        )
+    }
+
+    /**
+     * 去重键**不得折叠已存在目录的大小写**——这是修复的核心性质，且在任何文件系统上
+     * 都可验证（Windows 上 `canonicalPath` 同样返回磁盘上的真实大小写）。
+     * 若有人改回无条件 `lowercase`，本用例立即失败。
+     */
+    @Test
+    fun dedupKeyPreservesCaseOfExistingDirectories() {
+        val root = mvGameRoot()
+        val mixed = File(root, "MixedCaseDir").apply { mkdirs() }
+        assumeTrue("目录未创建成功", mixed.isDirectory)
+
+        val key = RpgSaveFormat.saveDirDedupKey(mixed)
+
+        assertTrue(
+            "已存在目录的去重键必须保留真实大小写（否则区分大小写的文件系统上会误合并不同目录）：$key",
+            key.contains("MixedCaseDir"),
+        )
+        // 同目录的另一种拼写仍应折叠为同一条（大小写不敏感文件系统上自然同一路径）
+        val sameDirOtherSpelling = File(root, "mixedcasedir")
+        if (sameDirOtherSpelling.isDirectory) {
+            assertEquals(
+                "同一目录的不同拼写仍需折叠",
+                key,
+                RpgSaveFormat.saveDirDedupKey(sameDirOtherSpelling),
+            )
+        }
+    }
+
+    /**
+     * 不存在的目录按小写折叠：避免同一目录的两种拼写重复入列（此时目录为空，不影响检测），
+     * 同时不误伤上面那类「真实存在的两个目录」。
+     */
+    @Test
+    fun nonexistentSpellingsDoNotDuplicateTheScanList() {
+        val root = mvGameRoot()
+        val savedata = root.resolve("savedata").apply { mkdirs() }
+
+        val dirs = EngineLauncher.buildRpgSaveScanDirs(root.absolutePath, savedata, scoped = false)
+
+        // www/save 与 www/Save 都不存在时只应出现一条（避免重复扫描）
+        val saveEntries = dirs.filter { it.name.equals("save", ignoreCase = true) }
+        assertEquals("不存在的大小写拼写不应重复入列", 1, saveEntries.size)
     }
 
     @Test

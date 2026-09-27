@@ -473,7 +473,10 @@ object EngineLauncher {
         val standard = RpgSaveFormat.standardSaveDirectories(File(rootPath))
         val seen = mutableSetOf<String>()
         return (listOf(effectiveDir) + compatible + standard).filter { dir ->
-            seen.add(runCatching { dir.canonicalPath }.getOrDefault(dir.absolutePath).lowercase(Locale.ROOT))
+            // 与 RpgSaveFormat 共用同一去重规则：此前此处无条件小写归一，
+            // 会把区分大小写文件系统上的 `Savedata/`（历史兼容目录）误判为与生效目录
+            // `savedata/` 相同而丢弃，只放在 Savedata/ 的旧存档因此漏检、漏转化。
+            seen.add(RpgSaveFormat.saveDirDedupKey(dir))
         }
     }
 

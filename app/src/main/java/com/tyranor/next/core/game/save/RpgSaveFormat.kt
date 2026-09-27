@@ -130,12 +130,23 @@ object RpgSaveFormat {
     }
 
     /**
-     * 路径去重键：用精确规范路径，**不做大小写归一**。在区分大小写的文件系统上
-     * `save` 与 `Save` 是两个不同目录，小写归一会把它们合并、导致漏检/漏同步；
-     * 在大小写不敏感的文件系统上 `canonicalPath` 本就返回同一路径，自然去重。
+     * 存档目录去重键（[standardSaveDirectories] 与检测/转化目录组共用同一份实现，
+     * 避免两处规则各自漂移）。
+     *
+     * 规则：
+     * - **存在的目录**用精确规范路径，不做大小写归一。区分大小写的文件系统（Linux/Android
+     *   真机）上 `savedata` 与 `Savedata` 是两个不同目录，小写归一会把它们合并，
+     *   导致只存在于其中一个的历史存档漏检/漏转化；大小写不敏感的文件系统上
+     *   `canonicalPath` 本就返回磁盘上的真实大小写，两种拼写自然折叠为一条，无需小写。
+     * - **不存在的目录**没有真实大小写身份，按小写折叠：此时目录为空、不会被扫描到，
+     *   折叠只是避免同一目录的两种拼写重复入列，不会丢失任何存档。
      */
-    private fun pathKey(file: File): String =
-        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
+    internal fun saveDirDedupKey(file: File): String {
+        val canonical = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
+        return if (file.exists()) canonical else canonical.lowercase(Locale.ROOT)
+    }
+
+    private fun pathKey(file: File): String = saveDirDedupKey(file)
 
     /** 递归定位游戏内容根（含 index.html / app.asar 的目录），与 engine 入口探测同序。 */
     private fun locateContentRoot(dir: File, depth: Int = 0): File? {
