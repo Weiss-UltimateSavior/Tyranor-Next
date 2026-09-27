@@ -431,10 +431,10 @@ internal fun rpgVerticalAlignOptionsMap(): Map<String, String> = rpgVerticalAlig
 @Composable
 internal fun krLanguageOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.KR_LANGUAGE_AUTO to stringResource(R.string.common_auto),
-    EngineSettingsStore.KR_LANGUAGE_JP to "日本語",
-    EngineSettingsStore.KR_LANGUAGE_EN to "English",
-    EngineSettingsStore.KR_LANGUAGE_ZH to "简体中文",
-    EngineSettingsStore.KR_LANGUAGE_ZHTW to "繁體中文",
+    EngineSettingsStore.KR_LANGUAGE_JP to stringResource(R.string.engine_settings_kr_language_jp),
+    EngineSettingsStore.KR_LANGUAGE_EN to stringResource(R.string.engine_settings_kr_language_en),
+    EngineSettingsStore.KR_LANGUAGE_ZH to stringResource(R.string.engine_settings_kr_language_zh),
+    EngineSettingsStore.KR_LANGUAGE_ZHTW to stringResource(R.string.engine_settings_kr_language_zhtw),
 )
 
 @Composable
