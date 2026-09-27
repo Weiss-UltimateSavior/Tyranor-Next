@@ -37,9 +37,12 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
@@ -76,12 +79,18 @@ internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
+    val sideRailEnabled by AppSettingsStore.sideRailState.collectAsState()
     val glass = AppThemeColors.isGlass
+    // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
+    val railLayout = isSideRailLayout()
     var showColorPicker by remember { mutableStateOf(false) }
     // 本页可能先于主界面被组合（进程重建后直接恢复到设置页）：主动加载一次持久化值，
-    // 否则下拉会显示成默认档（与磁盘上的真实取值不一致）
+    // 否则下拉/开关会显示成默认档（与磁盘上的真实取值不一致）
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { AppSettingsStore.initNavStyle(ctx) }
+        withContext(Dispatchers.IO) {
+            AppSettingsStore.initNavStyle(ctx)
+            AppSettingsStore.initSideRail(ctx)
+        }
     }
 
     MiuixSettingsTheme {
@@ -106,7 +115,7 @@ internal fun AppSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             var language by remember { mutableStateOf(AppSettingsStore.getLanguage(ctx)) }
                             val languageModes = listOf(
@@ -132,7 +141,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_color_wheel),
@@ -158,20 +167,33 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 外观风格：默认 / 玻璃（切换即时全 App 生效并持久化）
-                            val appearanceModes = listOf(
-                                AppSettingsStore.APPEARANCE_STYLE_DEFAULT to stringResource(R.string.settings_appearance_style_default),
-                                AppSettingsStore.APPEARANCE_STYLE_GLASS to stringResource(R.string.settings_appearance_style_glass),
-                            )
-                            val appearanceIndex = if (glass) 1 else 0
+                            // 外观风格：默认 / 复古玻璃 / 高级玻璃（切换即时全 App 生效并持久化）
+                            val appearanceStyles = AppearanceStyle.entries
+                            val appearanceLabels = appearanceStyles.map { style ->
+                                stringResource(
+                                    when (style) {
+                                        AppearanceStyle.DEFAULT -> R.string.settings_appearance_style_default
+                                        AppearanceStyle.RETRO_GLASS -> R.string.settings_appearance_style_glass
+                                        AppearanceStyle.ADVANCED_GLASS -> R.string.settings_appearance_style_advanced_glass
+                                    },
+                                )
+                            }
+                            val appearanceIndex = appearanceStyles
+                                .indexOf(AppThemeColors.appearanceStyle)
+                                .coerceAtLeast(0)
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_appearance_style),
-                                items = appearanceModes.map { it.second },
+                                summary = if (AppThemeColors.isAdvancedGlass) {
+                                    stringResource(R.string.settings_appearance_style_advanced_glass_desc)
+                                } else {
+                                    null
+                                },
+                                items = appearanceLabels,
                                 selectedIndex = appearanceIndex,
                                 onSelectedIndexChange = { index ->
-                                    appearanceModes.getOrNull(index)?.first?.let { style ->
+                                    appearanceStyles.getOrNull(index)?.let { style ->
                                         AppSettingsStore.setAppearanceStyle(ctx, style)
                                         AppThemeColors.refresh(ctx)
                                     }
@@ -181,7 +203,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 状态驱动选中项：跟随系统时系统深浅不变也不会漏刷新下拉展示
                             var themeMode by remember { mutableStateOf(AppSettingsStore.getThemeMode(ctx)) }
@@ -210,7 +232,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_tone_switch),
@@ -226,7 +248,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 导航栏样式：默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜 三选一。
                             // 「透镜」档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
@@ -252,10 +274,13 @@ internal fun AppSettingsScreen() {
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_nav_bar_title),
                                 // 说明只保留「安卓版本提醒」：默认档无需提醒（任何版本可用）
-                                summary = when (navStyle) {
-                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
+                                summary = when {
+                                    // 平板侧栏布局：液态玻璃两档不参与侧栏适配，提示实际以侧栏显示
+                                    railLayout && navStyle != AppSettingsStore.NAV_STYLE_DEFAULT ->
+                                        stringResource(R.string.settings_nav_bar_desc_rail)
+                                    navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS ->
                                         stringResource(R.string.settings_nav_bar_desc_liquid_glass)
-                                    AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
+                                    navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
                                         stringResource(R.string.settings_nav_bar_desc_enhanced)
                                     else -> null
                                 },
@@ -271,7 +296,22 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // 平板侧边栏：开启时平板/大窗口下导航移到侧边，关闭则保持底部导航
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_side_rail),
+                                summary = stringResource(R.string.settings_side_rail_summary),
+                                checked = sideRailEnabled,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setSideRailEnabled(ctx, checked)
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_engine_tabs),

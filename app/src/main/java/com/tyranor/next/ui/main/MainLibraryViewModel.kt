@@ -10,6 +10,7 @@ import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.scan.SiglusTitleFeedback
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.game.cleanupDeletedGame
@@ -118,6 +119,11 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
         refreshFromStorage()
+        // Siglus 标题回写导入：引擎宿主首次启动成功后写入 GAMENAME，此处消费并差量落库
+        viewModelScope.launch(Dispatchers.IO) {
+            SiglusTitleFeedback.import(appContext)
+            refreshFromStorage()
+        }
     }
 
     fun refreshFromStorage() {
@@ -160,6 +166,22 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 quick.map { if (it.uri == persisted.uri) persisted else it }
             }
         }
+    }
+
+    /**
+     * 手动添加游戏（PC 类型，不参与扫描）：同 uri 已存在时返回 false；
+     * 与扫描/删除共用 FIFO 命令队列落库，避免「添加后立刻重扫」互相覆盖。
+     */
+    fun addManualGame(game: ScanGame): Boolean {
+        if (_uiState.value.games.any { it.uri == game.uri }) return false
+        val revision = stateRevision.incrementAndGet()
+        _uiState.update { MainLibraryStateReducer.acceptGames(it, listOf(game)) }
+        enqueuePersistence(revision) {
+            GameLibraryFacade.updateGames(appContext) { games ->
+                if (games.any { it.uri == game.uri }) games else games + game
+            }
+        }
+        return true
     }
 
     fun deleteGame(target: ScanGame) {

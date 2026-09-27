@@ -100,9 +100,41 @@ class GameSaveManager(private val context: Context) {
                 }
             }
             EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
-            EngineType.PSP, EngineType.NINTENDO_SWITCH ->
+            EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC ->
                 SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
             EngineType.ARTEMIS -> SaveLocation(File(root), text(R.string.save_location_artemis_game_dir), true)
+            EngineType.SIGLUS -> SaveLocation(
+                File(root, "savedata"),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
+            // RealLive：存档固定在游戏目录 savedata_rs/
+            EngineType.REALLIVE -> SaveLocation(
+                File(root, "savedata_rs"),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
+            // AVG32（SAVE.INI）/ UK2（FLAGnn.DAT）：存档是游戏目录内的单个/多个文件，
+            // 以「白名单过滤 + 导入后恢复其余游戏文件」方式纳入统一管理（与 ARTEMIS 的
+            // 「存档目录即游戏根」语义一致，见 excludeFor/restoresExcludedFromBackup）。
+            EngineType.AVG32,
+            EngineType.UK2 -> SaveLocation(
+                File(root),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
+            // FVP（rfvp）：存档固定在游戏目录 save/（rfvp_s###.bin，读取兼容 s###.bin）
+            EngineType.FVP -> SaveLocation(
+                File(root, "save"),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
+            // YU-RIS：存档固定在游戏目录 save/（经 Winlator 运行但落盘在游戏目录，可纳入统一存档管理）
+            EngineType.YURIS -> SaveLocation(
+                File(root, "save"),
+                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                true,
+            )
             EngineType.UNKNOWN -> SaveLocation(null, text(R.string.save_location_unknown_unsupported), false)
         }
     }
@@ -511,8 +543,18 @@ class GameSaveManager(private val context: Context) {
         // MV/MZ 存档目录内的 original/ 是格式转化/互通留底，不参与列表计数/导出/导入/删除
         (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
             isTransientTmpName(lower) ||
-            (engine == EngineType.ARTEMIS && isArtemisResourceName(name))
+            (engine == EngineType.ARTEMIS && isArtemisResourceName(name)) ||
+            // AVG32/UK2 存档目录即游戏根：白名单之外的文件（含游戏资源）一律排除，
+            // 导入交换后由 restoresExcludedFromBackup 从备份移回。
+            (engine == EngineType.AVG32 && lower != AVG32_SAVE_FILE_NAME) ||
+            (engine == EngineType.UK2 && !UK2_SAVE_NAME_RE.matches(lower))
     }
+
+    /** AVG32 默认存档文件名（`#SAVEFILE` 自定义名暂不识别）。 */
+    private val AVG32_SAVE_FILE_NAME = "save.ini"
+
+    /** UK2 存档文件名：引擎落盘为 `<根>/FLAGnn.DAT`（内部名 `flagNN.dat1` 经虚拟扩展名映射）。 */
+    private val UK2_SAVE_NAME_RE = Regex("""^flag\d{2}\.dat$""")
 
     /**
      * 同步/转化的半成品临时文件（`<名>.sync_tmp.<nano>` / `<名>.fmt_tmp.<nano>`），不参与列表/导出/导入。
@@ -525,9 +567,15 @@ class GameSaveManager(private val context: Context) {
             suffix.isNotEmpty() && suffix.all(Char::isDigit)
         }
 
-    /** 导入交换后需要从备份移回「被排除项」的引擎：Artemis 引擎资源、MV/MZ 的 original/ 留底。 */
+    /**
+     * 导入交换后需要从备份移回「被排除项」的引擎：Artemis 引擎资源、AVG32/UK2 的游戏文件
+     * （两者存档目录即游戏根）、MV/MZ 的 original/ 留底。
+     */
     private fun restoresExcludedFromBackup(engine: EngineType): Boolean =
-        engine == EngineType.ARTEMIS || RpgSaveFormat.isRpgWebEngine(engine)
+        engine == EngineType.ARTEMIS ||
+            engine == EngineType.AVG32 ||
+            engine == EngineType.UK2 ||
+            RpgSaveFormat.isRpgWebEngine(engine)
 
     private fun isArtemisResourceName(name: String?): Boolean {
         val normalized = name?.trim()?.lowercase(Locale.ROOT) ?: return false

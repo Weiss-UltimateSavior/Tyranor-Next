@@ -39,6 +39,23 @@ object EngineScanner {
     private val PFS_PATCH_NAME_RE = Regex("""^[^.]+\.pfs\.\d{3}$""")
     private val OBB_NAME_RE = Regex("""^(main|patch)\.\d+\..+\.obb$""")
 
+    /** YU-RIS 引擎 DLL（YSPNG/YSWBP/YSZLB/YSSNP/YSTCH 等，至少两个才作为弱特征）。 */
+    private val YS_DLL_NAME_RE = Regex("""^ys[a-z0-9]*\.dll$""")
+
+    /** Siglus Gameexe（含本地化变体，与引擎 GAMEEXE_CANDIDATES 对齐）。 */
+    private val GAMEEXE_DAT_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.dat$""")
+    private val GAMEEXE_INI_RE = Regex("""^gameexe(en|zh|zhtw|de|es|fr|id)?\.ini$""")
+
+    /** AVG32 散装场景 `SEEN###.TXT`（三位数）与 RealLive `SEEN####.TXT`（四位数）。 */
+    private val SEEN_SCENE_AVG32_RE = Regex("""^seen\d{3}\.txt$""")
+    private val SEEN_SCENE_REALLIVE_RE = Regex("""^seen\d{4}\.txt$""")
+
+    /** UK2 MES 文件头（`<< UK2 TEXT Ver1.00 >>`）。 */
+    private val UK2_MES_MAGIC = "<< UK2 TEXT Ver1.00 >>".toByteArray(Charsets.US_ASCII)
+
+    /** RealLive `SEEN.TXT` 场景头尺寸（`0x1d0`，AVG2000 为 `0x1cc`）。 */
+    private val REALLIVE_HEADER_SIZES = intArrayOf(0x1d0, 0x1cc)
+
     // ============ 扫描游戏 ============
 
     /** 全量扫描所有根目录（结果以本次扫描为准，用于首次/无数据场景）。 */
@@ -76,7 +93,7 @@ object EngineScanner {
         }
         val refreshed = GameLibraryFacade.updateGames(context) { currentGames ->
             val existingByUri = currentGames.associateBy { it.uri }
-            activeScanned.map { current ->
+            val scanned = activeScanned.map { current ->
                 existingByUri[current.uri]?.let { previous ->
                     current.copy(
                         coverUri = previous.coverUri ?: current.coverUri,
@@ -92,6 +109,7 @@ object EngineScanner {
                     )
                 } ?: current
             }
+            mergeScannedWithManual(currentGames, scanned)
         }
         val validUris = refreshed.mapTo(HashSet()) { it.uri }
         // 最近打开/快捷启动为 games 派生视图，消失的游戏行已随差量删除，这里同步内存缓存即可。
@@ -104,6 +122,16 @@ object EngineScanner {
         // 扫描识别结果入缓存（迁移方案阶段 5）：Ren'Py 版本建议与 RPGM 子运行时。
         GameLibraryRepository.post(context) { EngineDetectionRepository.recordScanDetections(it, refreshed) }
         refreshed
+    }
+
+    /**
+     * 重扫合并：手动添加的 PC 游戏不参与扫描（不依赖扫描根），重扫时必须原样保留；
+     * 同 uri 若被扫描命中则以扫描结果为准（避免重复条目）。
+     */
+    internal fun mergeScannedWithManual(current: List<ScanGame>, scanned: List<ScanGame>): List<ScanGame> {
+        val scannedUris = scanned.mapTo(HashSet()) { it.uri }
+        val manual = current.filter { it.engine == EngineType.PC && it.uri !in scannedUris }
+        return manual + scanned
     }
 
     /**
@@ -148,7 +176,7 @@ object EngineScanner {
         if (dir.uri.toString() in known) return
         val children = session.children(dir)
 
-        val detected = detectEngine(children, session::children)
+        val detected = detectEngine(children, session::children, session::readHead)
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
@@ -209,7 +237,7 @@ object EngineScanner {
         val children = session.children(dir)
 
         // 1) 本级目录本身可能是游戏（含引擎特征文件）
-        val detected = detectEngine(children, session::children)
+        val detected = detectEngine(children, session::children, session::readHead)
         if (detected.engine != EngineType.UNKNOWN) {
             val coverUri = findLocalCoverUri(children)
             out.add(
@@ -312,6 +340,15 @@ object EngineScanner {
                 if (count <= 0) "" else String(buffer, 0, count, Charsets.UTF_8)
             }
         }.getOrNull()
+
+        /** 读取文件头字节，用于 AVG32/RealLive 的 `SEEN.TXT` 与 UK2 `.MES` 内容判定。 */
+        fun readHead(node: SafNode, maxBytes: Int = 64 * 1024): ByteArray? = runCatching {
+            resolver.openInputStream(node.uri)?.use { input ->
+                val buffer = ByteArray(maxBytes)
+                val count = input.read(buffer)
+                if (count <= 0) null else buffer.copyOf(count)
+            }
+        }.getOrNull()
     }
 
     private data class SafNode(
@@ -370,6 +407,37 @@ object EngineScanner {
             in SWITCH_ROM_EXTENSIONS -> EngineType.NINTENDO_SWITCH
             else -> null
         }
+    }
+
+    /**
+     * CatSystem2 目录评分（对齐 `docs/cs2参考.md` §15 的权重，PE 项因扫描链仅有文件名而省略）。
+     * `cs2.exe` 只作为辅助加分：Runtime 常被改名，不能作为唯一判定依据。
+     */
+    private fun cs2Score(
+        hasStartupXml: Boolean,
+        intCount: Int,
+        typicalIntCount: Int,
+        hasCst: Boolean,
+        hasHg3: Boolean,
+        hasCstl: Boolean,
+        hasFes: Boolean,
+        hasAnm: Boolean,
+        hasKcs: Boolean,
+        hasCs2Exe: Boolean,
+    ): Int {
+        var score = 0
+        if (hasStartupXml) score += 15
+        if (intCount >= 2) score += 25 else if (intCount == 1) score += 10
+        // §11：典型 INT 文件名（scene/image/config/bgm/se/kcs）出现多个时明显提高可信度
+        if (typicalIntCount >= 3) score += 20 else if (typicalIntCount >= 1) score += 10
+        if (hasCst) score += 15
+        if (hasHg3) score += 10
+        if (hasCstl) score += 5
+        if (hasFes) score += 5
+        if (hasAnm) score += 5
+        if (hasKcs) score += 10
+        if (hasCs2Exe) score += 10
+        return score
     }
 
     private fun romTitle(name: String): String =
@@ -450,10 +518,23 @@ object EngineScanner {
 
     private class FileScanSession {
         private val childrenCache = HashMap<String, Array<File>>()
+        private val headCache = HashMap<String, ByteArray?>()
 
         fun children(dir: File): Array<File> = childrenCache.getOrPut(dir.absolutePath) {
             dir.listFiles() ?: emptyArray()
         }
+
+        /** 读取文件头字节，用于 AVG32/RealLive 的 `SEEN.TXT` 与 UK2 `.MES` 内容判定。 */
+        fun readHead(file: File, maxBytes: Int = 64 * 1024): ByteArray? =
+            headCache.getOrPut(file.absolutePath) {
+                runCatching {
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(maxBytes)
+                        val count = input.read(buffer)
+                        if (count <= 0) null else buffer.copyOf(count)
+                    }
+                }.getOrNull()
+            }
     }
 
     private fun scanRootIncrementalFile(
@@ -572,16 +653,19 @@ object EngineScanner {
         nameOf = { it.name },
         isDirectory = { it.isDirectory },
         childrenOf = { session.children(it).asIterable() },
+        headOf = { session.readHead(it) },
     )
 
     private fun detectEngine(
         children: List<SafNode>,
         childrenOf: (SafNode) -> List<SafNode>,
+        headOf: (SafNode) -> ByteArray?,
     ): Detection = detectEngine(
         children = children,
         nameOf = { it.name },
         isDirectory = { it.isDirectory },
         childrenOf = childrenOf,
+        headOf = headOf,
     )
 
     private fun <T> detectEngine(
@@ -589,6 +673,7 @@ object EngineScanner {
         nameOf: (T) -> String,
         isDirectory: (T) -> Boolean,
         childrenOf: (T) -> Iterable<T>,
+        headOf: (T) -> ByteArray? = { null },
     ): Detection {
 
         val xp3Files = mutableListOf<String>()
@@ -607,6 +692,25 @@ object EngineScanner {
         var hasPatchPfs = false
         var hasAnyPfs = false
         var hasObbLikeFile = false
+        var hasGameexeDat = false
+        var hasGameexeIni = false
+        var hasYscfgDat = false
+        var hasYpf = false
+        var hasYmv = false
+        var ysDllCount = 0
+        var hasStartupXml = false
+        var hasCs2Exe = false
+        var intCount = 0
+        var typicalIntCount = 0
+        var hasCst = false
+        var hasCstl = false
+        var hasHg3 = false
+        var hasFes = false
+        var hasAnm = false
+        var hasKcs = false
+        var hasScenePck = false
+        var hasSelectIni = false
+        var hasG00 = false
         var hasOnsScript = false
         var hasOnsArchive = false
         var hasRenpyDir = false
@@ -624,6 +728,14 @@ object EngineScanner {
         var hasRvdata = false
         var hasRvdata2 = false
         var hasMkxpZRubyRuntime = false
+        var hasFvpScript = false
+        var hasFvpPack = false
+        var hasUk2Cfg = false
+        var hasSeenSceneAvg32 = false
+        var hasSeenSceneReallive = false
+        var seenArchiveNode: T? = null
+        var seenArchiveIsRoot = false
+        var uk2MesNode: T? = null
 
         fun collect(entry: T, rel: String) {
             val lower = nameOf(entry).lowercase(Locale.ROOT)
@@ -634,6 +746,21 @@ object EngineScanner {
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
                 if (lower == "app.asar" || childRel.endsWith("/app.asar")) hasAppAsar = true
+                if (lower == "config") {
+                    // CatSystem2：config/startup.xml 是高价值目录特征（不递归，只看该文件名）
+                    childrenOf(entry).forEach { child ->
+                        if (nameOf(child).equals("startup.xml", ignoreCase = true)) hasStartupXml = true
+                    }
+                }
+                if (lower == "pac") {
+                    // YU-RIS 封包目录：只为 YURIS 特征扫描（.ypf/.ymv），不进入通用目录白名单，
+                    // 避免把包内文件暴露给其它引擎的检测规则
+                    childrenOf(entry).forEach { child ->
+                        val childName = nameOf(child).lowercase(Locale.ROOT)
+                        if (childName.endsWith(".ypf")) hasYpf = true
+                        if (childName.endsWith(".ymv")) hasYmv = true
+                    }
+                }
                 if (lower in ENGINE_SEARCH_DIRECTORIES) {
                     childrenOf(entry).forEach { collect(it, childRel) }
                 }
@@ -655,6 +782,37 @@ object EngineScanner {
                 lower == "root.pfs" || PFS_PATCH_NAME_RE.matches(lower) -> hasPatchPfs = hasPatchPfs || lower != "root.pfs"
                 lower.endsWith(".pfs") || PFS_PATCH_NAME_RE.matches(lower) -> hasAnyPfs = true
                 lower.endsWith(".obb") || OBB_NAME_RE.matches(lower) -> hasObbLikeFile = true
+                GAMEEXE_DAT_RE.matches(lower) -> hasGameexeDat = true
+                GAMEEXE_INI_RE.matches(lower) -> hasGameexeIni = true
+                lower == "scene.pck" -> hasScenePck = true
+                lower == "select.ini" -> hasSelectIni = true
+                lower.endsWith(".g00") -> hasG00 = true
+                // RealLive / AVG32 / UK2（framebuffer 引擎）
+                lower == "uk2.cfg" -> hasUk2Cfg = true
+                lower == "seen.txt" -> {
+                    if (seenArchiveNode == null || (!seenArchiveIsRoot && rel.isEmpty())) {
+                        seenArchiveNode = entry
+                        seenArchiveIsRoot = rel.isEmpty()
+                    }
+                }
+                SEEN_SCENE_AVG32_RE.matches(lower) -> hasSeenSceneAvg32 = true
+                SEEN_SCENE_REALLIVE_RE.matches(lower) -> hasSeenSceneReallive = true
+                lower.endsWith(".mes") -> if (uk2MesNode == null) uk2MesNode = entry
+                lower == "yscfg.dat" -> hasYscfgDat = true
+                lower == "cs2.exe" -> hasCs2Exe = true
+                lower.endsWith(".int") -> {
+                    intCount++
+                    if (lower in CS2_TYPICAL_INT_NAMES) typicalIntCount++
+                }
+                lower.endsWith(".cst") -> hasCst = true
+                lower.endsWith(".cstl") -> hasCstl = true
+                lower.endsWith(".hg3") -> hasHg3 = true
+                lower.endsWith(".fes") -> hasFes = true
+                lower.endsWith(".anm") -> hasAnm = true
+                lower.endsWith(".kcs") -> hasKcs = true
+                lower.endsWith(".ypf") -> hasYpf = true
+                lower.endsWith(".ymv") -> hasYmv = true
+                YS_DLL_NAME_RE.matches(lower) -> ysDllCount++
                 lower == "0.txt" || lower == "00.txt" || lower == "nscript.dat" ||
                     lower == "onscript.nt2" || lower == "onscript.nt3" -> hasOnsScript = true
                 lower.endsWith(".nsa") || lower.endsWith(".sar") -> hasOnsArchive = true
@@ -678,10 +836,88 @@ object EngineScanner {
                     }
                 }
                 lower.endsWith(".rpyc") -> hasRpyc = true
+                // FVP（rfvp）：根目录脚本（原版 *.hcb / 汉化 *.bch）+ 资源包特征
+                rel.isEmpty() && (lower.endsWith(".hcb") || lower.endsWith(".bch")) -> hasFvpScript = true
+                rel.isEmpty() && lower in FVP_PACK_NAMES -> hasFvpPack = true
             }
         }
         children.forEach { collect(it, "") }
 
+        if (hasGameexeDat && hasScenePck) {
+            return Detection(EngineType.SIGLUS, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasFvpScript && hasFvpPack) {
+            return Detection(EngineType.FVP, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasFvpScript) {
+            return Detection(EngineType.FVP, 88, LAUNCH_TARGET_GAME_DIR)
+        }
+        // ---- framebuffer 引擎（RealLive / AVG32 / UK2）----
+        if (hasUk2Cfg) {
+            return Detection(EngineType.UK2, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        val uk2Mes = uk2MesNode
+        if (uk2Mes != null && hasUk2MesHeader(headOf(uk2Mes))) {
+            return Detection(EngineType.UK2, 90, LAUNCH_TARGET_GAME_DIR)
+        }
+        val seenKind = classifySeenArchive(seenArchiveNode?.let { headOf(it) })
+        if (hasGameexeIni && seenKind != null) {
+            return Detection(seenKind, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeIni && hasSeenSceneReallive) {
+            return Detection(EngineType.REALLIVE, 92, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeIni && hasSeenSceneAvg32) {
+            return Detection(EngineType.AVG32, 92, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (seenKind != null) {
+            return Detection(seenKind, 80, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (uk2MesNode != null) {
+            return Detection(EngineType.UK2, 82, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeIni && hasScenePck) {
+            return Detection(EngineType.SIGLUS, 95, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasGameexeDat || hasGameexeIni) {
+            return Detection(EngineType.SIGLUS, 85, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasScenePck && hasSelectIni && hasG00) {
+            return Detection(EngineType.SIGLUS, 80, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYscfgDat && hasYpf) {
+            return Detection(EngineType.YURIS, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYpf) {
+            return Detection(EngineType.YURIS, 90, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYscfgDat) {
+            return Detection(EngineType.YURIS, 85, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (ysDllCount >= 2) {
+            return Detection(EngineType.YURIS, 80, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasYmv) {
+            return Detection(EngineType.YURIS, 75, LAUNCH_TARGET_GAME_DIR)
+        }
+
+        // CatSystem2（docs/cs2参考.md）：文件名层面的评分识别。
+        // Runtime exe 常被改名（cs2.exe 仅作辅助），PE 版本信息检测不适用于仅名称可得的扫描链。
+        val cs2Score = cs2Score(
+            hasStartupXml = hasStartupXml,
+            intCount = intCount,
+            typicalIntCount = typicalIntCount,
+            hasCst = hasCst,
+            hasHg3 = hasHg3,
+            hasCstl = hasCstl,
+            hasFes = hasFes,
+            hasAnm = hasAnm,
+            hasKcs = hasKcs,
+            hasCs2Exe = hasCs2Exe,
+        )
+        if (cs2Score >= CS2_MIN_SCORE) {
+            return Detection(EngineType.CATSYSTEM2, cs2Score, LAUNCH_TARGET_GAME_DIR)
+        }
         if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasPatchPfs || hasAnyPfs || (hasBootIni && hasObbLikeFile)) {
             return Detection(
                 EngineType.ARTEMIS,
@@ -747,7 +983,67 @@ object EngineScanner {
         return UNKNOWN_DETECTION
     }
 
+    /** UK2 `.MES` 头判定（读到内容时使用）。 */
+    private fun hasUk2MesHeader(head: ByteArray?): Boolean {
+        if (head == null || head.size < UK2_MES_MAGIC.size) return false
+        return UK2_MES_MAGIC.indices.all { head[it] == UK2_MES_MAGIC[it] }
+    }
+
+    /**
+     * 区分共享 `SEEN.TXT` 文件名的 AVG32 与 RealLive：
+     * `PACL` 头 → AVG32；10000 项 TOC（每项 8 字节 offset/length，场景头 `0x1d0`/`0x1cc`）→ RealLive。
+     * 参考上游 `engine-detect`，只读文件头即可判定。
+     */
+    private fun classifySeenArchive(head: ByteArray?): EngineType? {
+        if (head == null || head.size < 8) return null
+        if (head.size >= 4 &&
+            head[0] == 'P'.code.toByte() &&
+            head[1] == 'A'.code.toByte() &&
+            head[2] == 'C'.code.toByte() &&
+            head[3] == 'L'.code.toByte()
+        ) {
+            return EngineType.AVG32
+        }
+        var valid = 0
+        for (index in 0 until 4) {
+            val at = index * 8
+            if (at + 8 > head.size) break
+            val offset = readU32(head, at)
+            val length = readU32(head, at + 4)
+            if (offset == 0L || length < 4) continue
+            if (offset + 4 <= head.size) {
+                val header = readU32(head, offset.toInt())
+                if (REALLIVE_HEADER_SIZES.none { it.toLong() == header }) return null
+            }
+            valid++
+            if (valid >= 4) break
+        }
+        return if (valid > 0) EngineType.REALLIVE else null
+    }
+
+    private fun readU32(bytes: ByteArray, at: Int): Long {
+        if (at < 0 || at + 4 > bytes.size) return 0
+        return (bytes[at].toLong() and 0xFF) or
+            ((bytes[at + 1].toLong() and 0xFF) shl 8) or
+            ((bytes[at + 2].toLong() and 0xFF) shl 16) or
+            ((bytes[at + 3].toLong() and 0xFF) shl 24)
+    }
+
     const val LAUNCH_TARGET_GAME_DIR = "DIR"
+
+    /** CatSystem2 判定阈值（§15 评分：`startup.xml + 多个 .int`（含典型名）即可达标）。 */
+    private const val CS2_MIN_SCORE = 50
+
+    /** §11 典型 INT 文件名。 */
+    private val CS2_TYPICAL_INT_NAMES = setOf(
+        "scene.int", "image.int", "config.int", "bgm.int", "se.int", "kcs.int",
+    )
+
+    /** FVP 资源包文件名（根目录特征，与 `*.hcb`/`*.bch` 脚本配合判定）。 */
+    private val FVP_PACK_NAMES = setOf(
+        "graph.bin", "graph_vis.bin", "bgm.bin", "se.bin", "se_env.bin", "se_sys.bin",
+        "voice.bin", "voice2.bin", "etc.bin",
+    )
 
     private val UNKNOWN_DETECTION = Detection(EngineType.UNKNOWN, 0, "")
 
@@ -756,6 +1052,7 @@ object EngineScanner {
 
     private val ENGINE_SEARCH_DIRECTORIES = setOf(
         "data",
+        "dat",
         "tyrano",
         "scenario",
         "system",

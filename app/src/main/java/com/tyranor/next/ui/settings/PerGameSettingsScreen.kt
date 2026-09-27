@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,15 +34,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
+import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
+import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassShadow
+import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.DialogTextButton
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.LocalIndication
+import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.Dispatchers
@@ -50,6 +64,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -85,6 +100,25 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var artFontCache by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE)) }
     var artPowerSaving by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING)) }
     var renpyVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION)) }
+    var siglusLanguage by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_SIGLUS_LANGUAGE)) }
+    var fbNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FB_NLS)) }
+    var fvpNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS)) }
+    var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
+    var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
+    var ppssppVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION)) }
+    var webShellPort by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WEB_SHELL_PORT)) }
+    var fvpFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT)) }
+    var winlatorContainerId by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID)) }
+    var winlatorContainerName by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME)) }
+    var winlatorGraphicsDriver by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER)) }
+    var winlatorDxwrapper by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_DXWRAPPER)) }
+    var winlatorScreenSize by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE)) }
+    var winlatorLcAll by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_LC_ALL)) }
+    var winlatorTz by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_TZ)) }
+    var winlatorBox64Preset by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_BOX64_PRESET)) }
+    var winlatorSave by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_WINLATOR_SAVE)) }
+    var artPatchRunning by remember(gid) { mutableStateOf(false) }
+    var artPatchResult by remember(gid) { mutableStateOf<EngineLauncher.ArtemisManualPatchResult?>(null) }
     var renpyOverride by remember(gid) {
         mutableStateOf(PerGameSettingsStore.toRenPyOverride(PerGameSettingsStore.load(ctx, gid)))
     }
@@ -127,6 +161,20 @@ fun PerGameSettingsScreen(game: ScanGame) {
         if (uri != null) {
             val p = FontImport.importToPrivate(ctx, uri)
             if (p != null) krFont = p
+        }
+    }
+    val fvpFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val p = FontImport.importToPrivate(ctx, uri)
+            if (p != null) {
+                fvpFont = p
+            } else {
+                android.widget.Toast.makeText(
+                    ctx,
+                    ctx.getString(R.string.engine_settings_fvp_font_import_failed),
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
     }
     val scope = rememberCoroutineScope()
@@ -172,6 +220,22 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalRpgMvVersion = EngineSettingsStore.getRpgMvEngineVersion(ctx)
     val globalRpgMzVersion = EngineSettingsStore.getRpgMzEngineVersion(ctx)
     val globalRenpyVersion = EngineSettingsStore.getRenpyVersion(ctx)
+    val globalSiglusLanguage = EngineSettingsStore.getSiglusLanguage(ctx)
+    val globalFbNls = EngineSettingsStore.getFbNls(ctx)
+    val globalFvpNls = EngineSettingsStore.getFvpNls(ctx)
+    val globalFvpSystemFont = EngineSettingsStore.isFvpSystemFont(ctx)
+    val globalFvpTextHidpi = EngineSettingsStore.isFvpTextHidpi(ctx)
+    val globalFvpFont = EngineSettingsStore.getFvpFont(ctx)
+    val globalWinlator = remember { EngineSettingsStore.loadWinlator(ctx) }
+    val globalPpssppVersion = EngineSettingsStore.getPpssppVersion(ctx)
+    val globalWebShellPort = EngineSettingsStore.getWebShellPort(ctx)
+    val ppssppVersionMap = ppssppVersionOptionsMap()
+    val winlatorDriverMap = winlatorGraphicsDriverOptionsMap()
+    val winlatorDxWrapperMap = winlatorDxWrapperOptionsMap()
+    val winlatorScreenSizeMap = winlatorScreenSizeOptionsMap()
+    val winlatorLcAllMap = winlatorLcAllOptionsMap()
+    val winlatorTimezoneMap = winlatorTimezoneOptionsMap()
+    val winlatorBox64PresetMap = winlatorBox64PresetOptionsMap()
     val globalRenpy = remember { EngineSettingsStore.loadRenPy(ctx) }
     val globalRpg = remember { EngineSettingsStore.loadRpgMaker(ctx) }
     val rpgWindowMap = rpgWindowSizeOptionsMap()
@@ -192,6 +256,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val artKernelMap = artKernelOptionsMap()
     val artVersionMap = artVersionOptionsMap()
     val renpyVersionMap = renpyVersionOptionsMap()
+    val siglusLanguageMap = siglusLanguageOptionsMap()
+    val fbNlsMap = fbNlsOptionsMap()
+    val fvpNlsMap = fvpNlsOptionsMap()
     val artPatchMap = artPatchOptionsMap()
     val artResolutionMap = artResolutionOptionsMap()
     val artToggleMap = artToggleOptionsMap()
@@ -251,6 +318,23 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_FONT_CACHE_SIZE, artFontCache)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ART_POWER_SAVING, artPowerSaving)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RENPY_VERSION, renpyVersion)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_SIGLUS_LANGUAGE, siglusLanguage)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FB_NLS, fbNls)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS, fvpNls)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION, ppssppVersion)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WEB_SHELL_PORT, webShellPort)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_FONT, fvpFont)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, winlatorContainerId)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, winlatorContainerName)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, winlatorGraphicsDriver)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_DXWRAPPER, winlatorDxwrapper)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE, winlatorScreenSize)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_LC_ALL, winlatorLcAll)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_TZ, winlatorTz)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_BOX64_PRESET, winlatorBox64Preset)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_WINLATOR_SAVE, winlatorSave)
         val onsObj = JSONObject()
         putIfNotNull(onsObj, "scopedsavedir", onsScoped)
         putIfNotNull(onsObj, "strechfull", onsStretch)
@@ -457,29 +541,71 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideChoice(stringResource(R.string.engine_settings_text_encoding), onsEncodingMap, globalOns.encoding.decode(), onsEnc) { onsEnc = it }
                         }
                     }
-                    EngineType.ARTEMIS -> item {
-                        SectionCard("Artemis") {
-                            val effectiveArtKernel = artKernel ?: globalArtKernel
-                            OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
-                            OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
-                            if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
-                                OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
-                            } else {
-                                // 自研内核直接读游戏包内配置，官方专属项不适用
-                                Text(
-                                    stringResource(R.string.engine_settings_artemis_clean_hint),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                    EngineType.ARTEMIS -> {
+                        item {
+                            SectionCard("Artemis") {
+                                val effectiveArtKernel = artKernel ?: globalArtKernel
+                                OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
+                                OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
+                                if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                                    OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
+                                } else {
+                                    // 自研内核直接读游戏包内配置，官方专属项不适用
+                                    Text(
+                                        stringResource(R.string.engine_settings_artemis_clean_hint),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                    )
+                                }
+                        }
+                    }
+                    // 官方内核专属的手动补丁动作：与启动前自动补丁同源实现
+                    if ((artKernel ?: globalArtKernel) == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                val patchRunningSummary = stringResource(R.string.engine_settings_artemis_patch_running)
+                                AppNavItem(
+                                    title = stringResource(R.string.engine_settings_artemis_add_base_patch),
+                                    summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_base_patch_summary),
+                                    leadingIcon = R.drawable.ic_artemis_patch,
+                                    containerColor = NavWhite,
+                                    verticalPadding = 17.dp,
+                                    onClick = if (artPatchRunning) null else {
+                                        {
+                                            artPatchRunning = true
+                                            scope.launch {
+                                                artPatchResult = EngineLauncher.applyArtemisBasePatchManually(ctx, game)
+                                                artPatchRunning = false
+                                            }
+                                        }
+                                    },
+                                )
+                                AppNavItem(
+                                    title = stringResource(R.string.engine_settings_artemis_add_windows_env_patch),
+                                    summary = if (artPatchRunning) patchRunningSummary else stringResource(R.string.engine_settings_artemis_add_windows_env_patch_summary),
+                                    leadingIcon = R.drawable.ic_artemis_patch,
+                                    containerColor = NavWhite,
+                                    verticalPadding = 17.dp,
+                                    onClick = if (artPatchRunning) null else {
+                                        {
+                                            artPatchRunning = true
+                                            scope.launch {
+                                                artPatchResult = EngineLauncher.applyArtemisWindowsEnvPatchManually(ctx, game)
+                                                artPatchRunning = false
+                                            }
+                                        }
+                                    },
                                 )
                             }
                         }
+                    }
                     }
                     EngineType.RENPY -> item {
                         SectionCard("Ren'Py") {
@@ -513,6 +639,55 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             }
                             Text(
                                 stringResource(R.string.engine_settings_renpy_module_description),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.SIGLUS -> item {
+                        SectionCard("Siglus") {
+                            OverrideChoice(stringResource(R.string.engine_settings_siglus_language_title), siglusLanguageMap, globalSiglusLanguage, siglusLanguage) { siglusLanguage = it }
+                            Text(
+                                stringResource(R.string.engine_settings_siglus_note),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2 -> item {
+                        SectionCard("RealLive / AVG32 / UK2") {
+                            OverrideChoice(stringResource(R.string.engine_settings_fb_nls_title), fbNlsMap, globalFbNls, fbNls) { fbNls = it }
+                            Text(
+                                stringResource(R.string.engine_settings_fb_note),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.FVP -> item {
+                        SectionCard("FVP") {
+                            OverrideChoice(stringResource(R.string.engine_settings_fvp_nls_title), fvpNlsMap, globalFvpNls, fvpNls) { fvpNls = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_fvp_system_font_title), globalFvpSystemFont, fvpSystemFont) { fvpSystemFont = it }
+                            OverrideSwitch(stringResource(R.string.engine_settings_fvp_text_hidpi_title), globalFvpTextHidpi, fvpTextHidpi) { fvpTextHidpi = it }
+                            OverrideFontPreference(
+                                label = stringResource(R.string.engine_settings_fvp_font_title),
+                                globalValue = globalFvpFont,
+                                override = fvpFont,
+                                followGameDefaultLabel = stringResource(R.string.engine_settings_fvp_font_follow),
+                                onSet = { fvpFont = it },
+                                onPick = { fvpFontLauncher.launch("*/*") },
+                            )
+                            Text(
+                                stringResource(R.string.engine_settings_fvp_font_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                            Text(
+                                stringResource(R.string.engine_settings_fvp_note),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -643,9 +818,36 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
                             }
+                            if (game.engine in setOf(EngineType.TYRANO, EngineType.VN, EngineType.WEB_OTHER)) {
+                                OverrideText(
+                                    label = stringResource(R.string.engine_settings_web_shell_port_title),
+                                    globalValue = globalWebShellPort.toString(),
+                                    override = webShellPort,
+                                    hint = stringResource(R.string.engine_settings_web_shell_port_summary),
+                                    sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
+                                    allowEmpty = false,
+                                    validate = { it.toIntOrNull()?.let { port -> port in 1..65535 } == true },
+                                ) { webShellPort = it }
+                            }
                         }
                     }
-                    EngineType.PSP, EngineType.NINTENDO_SWITCH -> item {
+                    EngineType.PSP -> item {
+                        SectionCard(game.engine.displayName) {
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_ppsspp_version_title),
+                                ppssppVersionMap,
+                                globalPpssppVersion,
+                                ppssppVersion,
+                            ) { ppssppVersion = it }
+                            Text(
+                                stringResource(R.string.engine_settings_ppsspp_note),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.NINTENDO_SWITCH -> item {
                         SectionCard(game.engine.displayName) {
                             Text(
                                 stringResource(R.string.engine_settings_external_emulator_hint),
@@ -655,11 +857,122 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
+                    EngineType.YURIS -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_yuris_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.PC, EngineType.CATSYSTEM2 -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_pc_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                }
+
+                if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
+                    SectionCard("Winlator") {
+                        OverrideText(
+                            label = stringResource(R.string.engine_settings_winlator_container_id_title),
+                            globalValue = if (globalWinlator.containerId > 0) globalWinlator.containerId.toString() else "",
+                            override = winlatorContainerId,
+                            hint = stringResource(R.string.engine_settings_winlator_container_id_summary),
+                            sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                        ) { winlatorContainerId = it }
+                        OverrideText(
+                            label = stringResource(R.string.engine_settings_winlator_container_name_title),
+                            globalValue = globalWinlator.containerName,
+                            override = winlatorContainerName,
+                            hint = stringResource(R.string.engine_settings_winlator_container_name_summary),
+                        ) { winlatorContainerName = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_graphics_driver_title),
+                            winlatorDriverMap,
+                            globalWinlator.graphicsDriver,
+                            winlatorGraphicsDriver,
+                        ) { winlatorGraphicsDriver = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_dxwrapper_title),
+                            winlatorDxWrapperMap,
+                            globalWinlator.dxwrapper,
+                            winlatorDxwrapper,
+                        ) { winlatorDxwrapper = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_screen_size_title),
+                            winlatorScreenSizeMap,
+                            globalWinlator.screenSize,
+                            winlatorScreenSize,
+                        ) { winlatorScreenSize = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_lc_all_title),
+                            winlatorLcAllMap,
+                            globalWinlator.lcAll,
+                            winlatorLcAll,
+                        ) { winlatorLcAll = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_tz_title),
+                            winlatorTimezoneMap,
+                            globalWinlator.tz,
+                            winlatorTz,
+                        ) { winlatorTz = it }
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_box64_preset_title),
+                            winlatorBox64PresetMap,
+                            globalWinlator.box64Preset,
+                            winlatorBox64Preset,
+                        ) { winlatorBox64Preset = it }
+                        OverrideSwitch(
+                            stringResource(R.string.engine_settings_winlator_save_title),
+                            globalWinlator.save,
+                            winlatorSave,
+                        ) { winlatorSave = it }
+                        Text(
+                            stringResource(R.string.engine_settings_winlator_per_game_note),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
                 }
 
                 item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(12.dp)) }
             }
         }
+    }
+
+    artPatchResult?.let { result ->
+        val message = when (result) {
+            EngineLauncher.ArtemisManualPatchResult.SUCCESS ->
+                stringResource(R.string.engine_settings_artemis_patch_success)
+            EngineLauncher.ArtemisManualPatchResult.FAILED ->
+                stringResource(R.string.engine_settings_artemis_patch_failed)
+            EngineLauncher.ArtemisManualPatchResult.GAME_DIR_UNRESOLVED ->
+                stringResource(R.string.engine_settings_artemis_patch_dir_unresolved)
+            EngineLauncher.ArtemisManualPatchResult.PERMISSION_REQUIRED ->
+                stringResource(R.string.engine_settings_artemis_patch_permission_required)
+        }
+        AppAlertDialog(
+            onDismissRequest = { artPatchResult = null },
+            title = {
+                Text(
+                    stringResource(R.string.engine_settings_artemis_patch_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                TextButton(onClick = { artPatchResult = null }) { Text(stringResource(R.string.common_confirm)) }
+            },
+        )
     }
 }
 
@@ -668,7 +981,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassBorder(),
+        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {
@@ -716,6 +1029,153 @@ private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, o
         selectedIndex = index,
         onSelectedIndexChange = { i -> onSet(if (i == 0) null else i == 1) },
     )
+}
+
+/**
+ * 覆盖版字体行（FVP）：三态——跟随全局（展示全局值）/ 跟随游戏默认 / 选择字体文件。
+ * 覆盖值语义：null=跟随全局，""=跟随游戏默认，路径=自定义（App 私有字体）。
+ */
+@Composable
+private fun OverrideFontPreference(
+    label: String,
+    globalValue: String,
+    override: String?,
+    followGameDefaultLabel: String,
+    onSet: (String?) -> Unit,
+    onPick: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val globalLabel = globalValue.substringAfterLast('/').ifBlank { followGameDefaultLabel }
+    val summary = when {
+        override == null -> stringResource(R.string.engine_settings_follow_global_with_value, globalLabel)
+        override.isEmpty() -> followGameDefaultLabel
+        else -> override.substringAfterLast('/')
+    }
+    ArrowPreference(
+        title = label,
+        summary = summary,
+        onClick = { open = true },
+    )
+    if (open) {
+        AppAlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text(label, style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AppNavItem(
+                        title = stringResource(R.string.engine_settings_follow_global_with_value, globalLabel),
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = DialogItemSurface,
+                    ) {
+                        onSet(null)
+                        open = false
+                    }
+                    AppNavItem(
+                        title = followGameDefaultLabel,
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = DialogItemSurface,
+                    ) {
+                        onSet("")
+                        open = false
+                    }
+                    AppNavItem(
+                        title = stringResource(R.string.engine_settings_select_font_file),
+                        leadingIcon = R.drawable.ic_font_bookmark,
+                        containerColor = DialogItemSurface,
+                    ) {
+                        open = false
+                        onPick()
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { open = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+}
+
+/** 经外置 Winlator 启动的引擎（YU-RIS / CatSystem2 / 手动添加的 PC）：展示 Winlator 覆盖卡片。 */
+private val WINLATOR_LAUNCH_ENGINES: Set<EngineType> = EngineType.entries
+    .filter { ExternalEmulatorRegistry.forEngine(it)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL }
+    .toSet()
+
+/** 覆盖版文本行：弹统一输入框；确定=写入覆盖（空串=显式不下发该参数），「跟随全局」=移除覆盖。 */
+@Composable
+private fun OverrideText(
+    label: String,
+    globalValue: String,
+    override: String?,
+    hint: String,
+    sanitize: ((String) -> String)? = null,
+    allowEmpty: Boolean = true,
+    validate: (String) -> Boolean = { true },
+    onSet: (String?) -> Unit,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    val emptyLabel = stringResource(R.string.engine_settings_winlator_follow_container)
+    val summary = if (override == null) {
+        stringResource(R.string.engine_settings_follow_global_with_value, globalValue.ifBlank { emptyLabel })
+    } else {
+        override.ifBlank { emptyLabel }
+    }
+    ArrowPreference(
+        title = label,
+        summary = summary,
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        var text by remember(override) { mutableStateOf(override.orEmpty()) }
+        val normalized = text.trim()
+        val canConfirm = validate(normalized) && (allowEmpty || normalized.isNotEmpty())
+        AppAlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text(label, style = MaterialTheme.typography.titleMedium) },
+            text = {
+                // 弹窗点击反馈规范：输入区内禁用全部点击/按压反馈（无涟漪）
+                CompositionLocalProvider(LocalIndication provides NoIndication) {
+                    Column {
+                        AppSearchField(
+                            query = text,
+                            onQueryChange = { text = sanitize?.invoke(it) ?: it },
+                            onSearch = { if (canConfirm) { onSet(normalized); showDialog = false } },
+                            leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                            iconContentDescription = label,
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            hint,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_save),
+                    enabled = canConfirm,
+                    onClick = { onSet(normalized); showDialog = false },
+                )
+            },
+            dismissButton = {
+                Row {
+                    DialogTextButton(
+                        text = stringResource(R.string.engine_settings_follow_global),
+                        onClick = { onSet(null); showDialog = false },
+                    )
+                    DialogTextButton(
+                        text = stringResource(R.string.common_cancel),
+                        onClick = { showDialog = false },
+                    )
+                }
+            },
+        )
+    }
 }
 
 private fun labelOf(v: String, map: Map<String, String>, emptyLabel: String): String = map[v] ?: v.ifEmpty { emptyLabel }

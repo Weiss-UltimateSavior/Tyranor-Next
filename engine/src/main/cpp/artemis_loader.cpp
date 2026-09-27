@@ -14,11 +14,17 @@
 #include <dlfcn.h>
 #include <android/log.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
 #include <string>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #define TAG "ArtemisLoader"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 
 namespace {
 
@@ -112,6 +118,99 @@ bool isAllowedEngineLibName(const std::string& name) {
         || name == "artemis-clean";
 }
 
+// ----- CSoundTrack::Read 无进展自递归（音频线程爆栈闪退）运行时修复 -----
+//
+// 官方线 Artemis 内核（artemis / v4 / v5 / v6 / compatible-v2）的
+// artemis::CSoundTrack::Read 在「循环播放回绕」分支里经自身 vtable 槽 16
+// 递归调用自己；当循环 BGM 回绕（Rewind）后底层 Ogg 解码仍读不出数据时，
+// 该递归不收敛：AAudio 回调线程栈耗尽，SIGSEGV/SEGV_ACCERR 命中栈保护页。
+//
+// 修复方式：dlopen 之后把 CSoundTrack vtable 的 Read 槽换成带递归深度守卫的
+// 转发函数——正常回绕语义不变（回绕后读到数据即正常返回），仅在无进展时截断
+// 递归（上限 8 层，正常 BGM 回绕只需 1~2 层）。槽号在官方全部变体中一致
+// （第 16 槽），且整个插件里只有这一处引用 Read，单点补丁即可覆盖全部调用
+// （含引擎内部递归）。vtable 位于 .data.rel.ro（RELRO），mprotect 读写后恢复
+// 只读即可，不触碰代码段，规避 Android 10+ 对 app 私有 so 代码段的 W^X /
+// execmod 限制。
+//
+// 每个 revision 的宿 Activity 各占独立进程，且 5 个官方插件 so 的 SONAME 同名，
+// 同一进程只会存在一份 CSoundTrack vtable，故只需登记一个原函数指针。
+
+typedef int (*CsReadFn)(void*, unsigned char*, int);
+
+constexpr size_t kCsReadVtableSlotIndex = 16;
+// Itanium ABI：_ZTV 符号首槽是 offset-to-top，随后 typeinfo，之后才是虚函数表。
+constexpr size_t kCsReadVtablePrologueSlots = 2;
+constexpr int kCsReadMaxRecursionDepth = 8;
+constexpr int kCsReadLimitLogTimes = 8;
+
+CsReadFn g_csReadOriginal = nullptr;
+int g_csReadLimitHits = 0;
+thread_local int g_csReadDepth = 0;
+
+// 异常安全：即使被转发调用抛异常，深度计数也会在栈展开时归还。
+struct CsReadDepthScope {
+    CsReadDepthScope() { ++g_csReadDepth; }
+    ~CsReadDepthScope() { --g_csReadDepth; }
+};
+
+int guardedCsRead(void* self, unsigned char* buf, int len) {
+    const CsReadFn original = __atomic_load_n(&g_csReadOriginal, __ATOMIC_ACQUIRE);
+    if (original == nullptr) return 0;
+    if (g_csReadDepth >= kCsReadMaxRecursionDepth) {
+        if (__atomic_fetch_add(&g_csReadLimitHits, 1, __ATOMIC_RELAXED) <
+            kCsReadLimitLogTimes) {
+            LOGW("Artemis plugin: CSoundTrack::Read recursion limit hit; truncated");
+        }
+        return 0;
+    }
+    CsReadDepthScope depthScope;
+    return original(self, buf, len);
+}
+
+void installCsReadStackGuard(void* handle) {
+    auto original = reinterpret_cast<CsReadFn>(
+            dlsym(handle, "_ZN7artemis11CSoundTrack4ReadEPhi"));
+    auto vtable = reinterpret_cast<uintptr_t*>(
+            dlsym(handle, "_ZTVN7artemis11CSoundTrackE"));
+    if (original == nullptr || vtable == nullptr) {
+        // compatible / clean 等非官方线内核不导出该符号，无需修复。
+        LOGI("Artemis plugin: CSoundTrack::Read stack guard skipped (symbol not exported)");
+        return;
+    }
+
+    uintptr_t* slot = vtable + kCsReadVtablePrologueSlots + kCsReadVtableSlotIndex;
+    if (*slot == reinterpret_cast<uintptr_t>(&guardedCsRead)) {
+        LOGI("Artemis plugin: CSoundTrack::Read stack guard already installed");
+        return;
+    }
+    if (*slot != reinterpret_cast<uintptr_t>(original)) {
+        LOGE("Artemis plugin: CSoundTrack::Read vtable slot mismatch; stack guard skipped");
+        return;
+    }
+
+    const long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0) {
+        LOGE("Artemis plugin: invalid page size; stack guard skipped");
+        return;
+    }
+    void* page = reinterpret_cast<void*>(
+            reinterpret_cast<uintptr_t>(slot) & ~(static_cast<uintptr_t>(pageSize) - 1));
+    if (mprotect(page, static_cast<size_t>(pageSize), PROT_READ | PROT_WRITE) != 0) {
+        LOGE("Artemis plugin: mprotect vtable page failed: %s", strerror(errno));
+        return;
+    }
+    // 先登记原函数再改槽：任何能看到新槽的调用都必然能查到原函数。
+    // 恢复 PROT_READ 即原始保护位（该 vtable 页位于官方全部变体的 RELRO 段内）。
+    __atomic_store_n(&g_csReadOriginal, original, __ATOMIC_RELEASE);
+    *slot = reinterpret_cast<uintptr_t>(&guardedCsRead);
+    if (mprotect(page, static_cast<size_t>(pageSize), PROT_READ) != 0) {
+        LOGE("Artemis plugin: restore vtable page protection failed: %s", strerror(errno));
+        return;
+    }
+    LOGI("Artemis plugin: CSoundTrack::Read stack guard installed (slot=%p)", slot);
+}
+
 }  // namespace
 
 extern "C" JNIEXPORT void JNICALL
@@ -148,6 +247,9 @@ ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t sav
         finishActivity(activity);
         return;
     }
+
+    // 必须早于引擎创建任何 CSoundTrack：此刻还没转发 ANativeActivity_onCreate。
+    installCsReadStackGuard(handle);
 
     OnCreateFn onCreate = reinterpret_cast<OnCreateFn>(
             dlsym(handle, "ANativeActivity_onCreate"));

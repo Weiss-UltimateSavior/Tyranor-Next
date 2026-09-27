@@ -34,6 +34,8 @@ internal class RpgMakerLocalHttpServer(
     private val earlyHook: ByteArray? = null,
     private val v12Compat: Boolean = true,
     private val fuzzyNames: Boolean = false,
+    /** 期望的固定端口（0 = 随机）；被占用时回退随机并由 [usedFallbackPort] 标记。 */
+    preferredPort: Int = com.core.web.WebShellServerSocket.RANDOM_PORT,
 ) : Runnable {
     private val root: File
     private val asar: AsarArchive?
@@ -45,6 +47,8 @@ internal class RpgMakerLocalHttpServer(
     }
     private val serverSocket: ServerSocket
     private val thread: Thread
+    /** 期望端口被占用而回退随机端口（调用方据此提示用户）。 */
+    val usedFallbackPort: Boolean
     @Volatile
     private var running = true
     private val clients: ThreadPoolExecutor
@@ -65,7 +69,9 @@ internal class RpgMakerLocalHttpServer(
             asar.has("resources/app/index.html") -> "resources/app/"
             else -> ""
         }
-        this.serverSocket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
+        val bound = com.core.web.WebShellServerSocket.bind(preferredPort)
+        this.serverSocket = bound.socket
+        this.usedFallbackPort = bound.usedFallbackPort
         this.thread = Thread(this, "YukiRpgMakerLocalHttpServer").apply { isDaemon = true }
         this.clients = ThreadPoolExecutor(
             2, 8, 30L, TimeUnit.SECONDS,
@@ -85,7 +91,8 @@ internal class RpgMakerLocalHttpServer(
         earlyHook: ByteArray? = null,
         v12Compat: Boolean = true,
         fuzzyNames: Boolean = false,
-    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames)
+        preferredPort: Int = com.core.web.WebShellServerSocket.RANDOM_PORT,
+    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames, preferredPort)
 
     fun start() { thread.start() }
     val port: Int get() = serverSocket.localPort

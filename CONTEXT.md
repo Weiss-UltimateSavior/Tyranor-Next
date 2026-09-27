@@ -1,20 +1,32 @@
 # Tyranor Next — 领域上下文
 
-基于 Tyranor 模拟器逆向重写、面向 Android 的多引擎视觉小说（Galgame）聚合启动器：识别并启动 KiriKiri / ONScripter / Tyrano / Artemis / RPG Maker / Ren'Py 等多类引擎编排的游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节。本上下文定义该领域内约定成俗的核心术语。
+基于 Tyranor 模拟器逆向重写、面向 Android 的多引擎视觉小说（Galgame）聚合启动器：识别并启动 KiriKiri / ONScripter / Tyrano / Artemis / Siglus / YU-RIS / CatSystem2 / PC（手动添加）/ RPG Maker / Ren'Py 等多类引擎编排的游戏，提供游戏库管理、封面获取、存档镜像、引擎参数调节。本上下文定义该领域内约定成俗的核心术语。
 
 ## 引擎与运行时
 
 **引擎（EngineType）**:
-游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、RENPY、UNKNOWN。
+游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、REALLIVE、AVG32、UK2、FVP、RENPY、YURIS、CATSYSTEM2、PC、UNKNOWN。
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:
-随 App 分发、无需外置安装即可运行的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
+随 App 分发、无需外置安装即可运行的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、RealLive / AVG32 / UK2（siglus_rs game_launcher 软渲染运行时）、FVP（rfvp Rust 运行时）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
 _Avoid_: 预制引擎、捆绑引擎
+
+**视觉小说引擎组（Framebuffer 引擎）**:
+Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（RealLive、AVG32、UK2）的统称：引擎逐帧输出 RGBA 帧缓冲，宿主 `FramebufferGameActivity` 拷进 Bitmap 呈现并转发指针/键盘/文本输入；文本编码（NLS）按全局/单游戏设置。
+_Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
 以独立 APK 形式分发、需用户安装/下载的引擎运行时（Ren'Py 8.5/7.7.1、RPG Maker XP/VX/VX Ace/mkxp-z），由注册表（ExternalEngineModuleRegistry）按引擎 + 版本解析目标模块，启动时通过 Intent 协议拉起。
 _Avoid_: 插件、引擎 DLC
+
+**PC 游戏（手动添加）**:
+不属于已识别引擎家族、由用户在游戏页顶栏「添加 PC 游戏」手动入库的 Windows 程序：选择目录 + 指定启动 exe（存 `launchFile`，可随时切换），启动经外置 Winlator；不参与扫描、不纳入存档管理与引擎配置。
+_Avoid_: 未知引擎、Winlator 游戏
+
+**外置模拟器跳转（External Emulator Jump）**:
+把游戏交给用户自行安装的独立模拟器/模拟器型运行时（PPSSPP、Eden、Winlator）运行；主 App 只做识别、安装探测与显式组件 Intent 跳转，不接管其存档与设置。YU-RIS 为「目录 + 主 exe」形态，经 Winlator 外置启动协议（`dir_path` + 相对 `exe_path`，自动空闲盘符临时挂载）拉起。
+_Avoid_: 外置模块（指 APK 引擎模块）、内置引擎
 
 **引擎网页壳（Tyranor Web 运行环境）**:
 内置 Web 运行时，承载 TyranoBuilder、WebOther、VN、RPG Maker MV/MZ 等网页形态游戏；各引擎共用同一颗网页壳版本（Tyranor-2.3.4，为原逆向 app 内置）。
@@ -35,6 +47,10 @@ _Avoid_: 补丁、Hook
 **autopatch 策略**:
 Artemis 启动前对必要文件（system.ini、list_windows、movie 等）进行幂等修补的决策策略：「启动时询问 / 自动 / 关闭」，由共享确认弹窗承载。
 _Avoid_: 自动补丁、提问开关
+
+**Siglus 标题回写（Title Feedback）**:
+Siglus 游戏首次启动成功后，宿主在引擎进程内解析 Gameexe `GAMENAME` 并写入共享 prefs（`siglus_title.<pathHash>`），主 App 在库加载时条件导入为游戏标题；仅当标题仍等于启动前登记的目录名（未被用户改名）时覆盖。引擎进程无法访问 Room，故以 prefs 回写协议承载。
+_Avoid_: 自动改名、元数据抓取
 
 ## 游戏库
 
@@ -85,12 +101,24 @@ _Avoid_: 设置合并、覆盖层
 _Avoid_: 引擎设置 Tab
 
 **导航样式（Nav Style）**:
-底部导航栏样式的三档取值：「默认」（Material3 导航栏；玻璃外观风格下为悬浮圆角玻璃条）、「液态玻璃 · 经典」（原版小圆角方形玻璃栏 + 模糊）、「液态玻璃 · 透镜」（见下）；内存态即时切换。
+底部导航栏样式的三档取值：「默认」（Material3 导航栏；玻璃系外观风格下为悬浮圆角玻璃条，高级玻璃在 Android 12+ 叠加真采样模糊）、「液态玻璃 · 经典」（原版小圆角方形玻璃栏 + 模糊）、「液态玻璃 · 透镜」（见下）；内存态即时切换。平板/大窗口下主导航移到侧边（见「平板侧栏」）。
 _Avoid_: 底部栏外观、主题
 
 **外观风格（Appearance Style）**:
-应用设置的视觉风格选择：「默认」与「玻璃」；玻璃风格使用黑灰渐变背景叠加主题色环境光、半透明毛玻璃容器与 0.5dp 描边，并禁用外观模式/色调切换（色调轮盘可用），以 `AppThemeColors.isGlass` 为唯一事实源。
+应用设置的视觉风格选择：「默认」、「复古玻璃」（原「玻璃」）、「高级玻璃」三档；两档玻璃均使用深色背景、半透明毛玻璃容器与 0.5dp 描边，并禁用外观模式/色调切换（色调轮盘可用），以 `AppThemeColors.appearanceStyle` / `isGlass` 为唯一事实源。
 _Avoid_: 玻璃主题、Theme（与导航样式/外观模式混用）
+
+**复古玻璃（Retro Glass）**:
+外观风格第二档（持久化值仍为 `glass`，显示名由「玻璃」更名）：黑灰三档竖向渐变 + 白色顶部光晕 + 主题色对角环境光；卡片为 80% 深色玻璃膜。
+_Avoid_: 玻璃（单独出现时指本档）
+
+**高级玻璃（Advanced Glass）**:
+外观风格第三档（持久化值 `glass_advanced`）：背景为游戏封面 2×3 拼贴后的多轮盒式模糊底图（真实图片模糊，无封面时退化为主题色软色斑）+ 压暗 + 四角暗角；卡片为浅色磨砂膜（14% 白）+「上亮下暗」渐变描边 + 顶边高光 + 柔光投影（`glassShadow`，与悬浮默认导航条同款光学组合）；悬浮元素（默认导航条、液态玻璃底栏）在 Android 12+ 叠加真 backdrop 采样模糊，弹窗/抽屉等独立窗口不参与采样，面板底色改由 `rememberAdvancedGlassPanelSurface()` 从页面背景取色生成渐变（向深色基底压暗、保留少量透色，配遮罩）；抽屉渐变须画在内容层。
+_Avoid_: 高级玻璃主题、液态玻璃（导航样式专属）
+
+**平板侧栏（Side Rail）**:
+平板/大窗口（sw600dp 或宽 ≥ 840dp）下主导航的侧边形态（应用设置「平板侧边栏」开关控制，默认开）：按外观风格取该主题「默认导航栏」形态（默认 = Material3 `NavigationRail`、复古/高级玻璃 = 悬浮玻璃柱），液态玻璃两档不适配侧栏（平板下降级为主题默认形态）；侧栏占布局宽度，`glassNavBottomInset()` 返回 0，高级玻璃用单独录制的纯背景层 `railBackdrop` 做真采样。
+_Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
 
 **外观模式（Appearance）**:
 明/暗/跟随系统的主题选择；实际生效值以 `AppSettingsStore.isDarkEffective()` 为唯一事实源。
@@ -160,7 +188,7 @@ _Avoid_: 毛玻璃、透明导航
 
 **液态玻璃 · 透镜（Liquid Glass · Lens）**:
 导航样式的第三档（旧称「液态玻璃增强」）：`ui/common/glass/` 下为本样式**独立实现**的三层采样 + 折射透镜 + 按压拖动，光学 / 运动参数经本项目实测调校后固化于 `GlassBottomBarSpec`；Android 13 以下不提供该选项，读取到该值时归一化为「液态玻璃 · 经典」。
-_Avoid_: 液态玻璃 2.0、高级玻璃
+_Avoid_: 液态玻璃 2.0、增强玻璃
 
 **四页常驻组合**:
 主界面四个 Tab（首页 / 游戏 / 引擎 / 设置）常驻组合、隐藏页置 alpha=0 保留节点，切换仅做水平 alpha 动画避免重建列表。

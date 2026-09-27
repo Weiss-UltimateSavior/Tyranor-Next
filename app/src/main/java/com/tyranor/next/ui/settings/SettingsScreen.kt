@@ -11,6 +11,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
+import androidx.compose.ui.node.DelegatableNode
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -65,6 +71,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
@@ -77,6 +84,11 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
+import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.LaunchErrorDialog
+import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -264,7 +276,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_add_game_dir),
@@ -320,7 +332,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_engine_settings),
@@ -331,7 +343,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_app_title),
@@ -355,10 +367,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 title = stringResource(R.string.settings_join_group),
                                 summary = stringResource(R.string.settings_join_group_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings_group) },
-                                onClick = {
-                                    showGroupDialog = true
-                                },
-                            )
+                                 onClick = {
+                                     showGroupDialog = true
+                                 },
+                             )
                         }
                     }
                 }
@@ -666,6 +678,8 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     val ctx = LocalContext.current
     val engineSettingsSavedMessage = stringResource(R.string.engine_settings_saved)
+    val scope = rememberCoroutineScope()
+    var nativeKrkrLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
 
     var krVersion by remember { mutableStateOf(EngineSettingsStore.getKrEngineVersion(ctx)) }
     var krKernel by remember { mutableStateOf(EngineSettingsStore.getKrKernel(ctx)) }
@@ -708,12 +722,35 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var rpg by remember { mutableStateOf(EngineSettingsStore.loadRpgMaker(ctx)) }
     var renpyVersion by remember { mutableStateOf(EngineSettingsStore.getRenpyVersion(ctx)) }
     var renpy by remember { mutableStateOf(EngineSettingsStore.loadRenPy(ctx)) }
+    var siglusLanguage by remember { mutableStateOf(EngineSettingsStore.getSiglusLanguage(ctx)) }
+    var fbNls by remember { mutableStateOf(EngineSettingsStore.getFbNls(ctx)) }
+    var fvpNls by remember { mutableStateOf(EngineSettingsStore.getFvpNls(ctx)) }
+    var fvpSystemFont by remember { mutableStateOf(EngineSettingsStore.isFvpSystemFont(ctx)) }
+    var fvpTextHidpi by remember { mutableStateOf(EngineSettingsStore.isFvpTextHidpi(ctx)) }
+    var fvpFont by remember { mutableStateOf(EngineSettingsStore.getFvpFont(ctx)) }
+    var winlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
+    var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(ctx)) }
+    var webShellPort by remember { mutableStateOf(EngineSettingsStore.getWebShellPort(ctx)) }
 
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val path = FontImport.importToPrivate(ctx, uri)
             if (path != null) {
                 krFont = path
+            }
+        }
+    }
+    val fvpFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val path = FontImport.importToPrivate(ctx, uri)
+            if (path != null) {
+                fvpFont = path
+            } else {
+                android.widget.Toast.makeText(
+                    ctx,
+                    ctx.getString(R.string.engine_settings_fvp_font_import_failed),
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
             }
         }
     }
@@ -761,6 +798,15 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.saveRpgMaker(ctx, rpg)
         EngineSettingsStore.setRenpyVersion(ctx, renpyVersion)
         EngineSettingsStore.saveRenPy(ctx, renpy)
+        EngineSettingsStore.setSiglusLanguage(ctx, siglusLanguage)
+        EngineSettingsStore.setFbNls(ctx, fbNls)
+        EngineSettingsStore.setFvpNls(ctx, fvpNls)
+        EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
+        EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
+        EngineSettingsStore.setFvpFont(ctx, fvpFont)
+        EngineSettingsStore.saveWinlator(ctx, winlator)
+        EngineSettingsStore.setPpssppVersion(ctx, ppssppVersion)
+        EngineSettingsStore.setWebShellPort(ctx, webShellPort)
     }
 
     MiuixSettingsTheme {
@@ -788,8 +834,17 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
-                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, fontLauncher,
+                artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
+                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
                 topInset = innerPadding.calculateTopPadding(),
+                onLaunchNativeKirikiroidUi = {
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) {
+                            EngineLauncher.launchNativeKirikiroidUi(ctx)
+                        }
+                        nativeKrkrLaunchError = result.toErrorState(ctx)
+                    }
+                },
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
                 onKrScoped = { krScoped = it },
@@ -828,8 +883,22 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onRpg = { rpg = it },
                 onRenpyVersion = { renpyVersion = it },
                 onRenpy = { renpy = it },
+                onSiglusLanguage = { siglusLanguage = it },
+                onFbNls = { fbNls = it },
+                onFvpNls = { fvpNls = it },
+                onFvpSystemFont = { fvpSystemFont = it },
+                onFvpTextHidpi = { fvpTextHidpi = it },
+                onFvpFontFollow = { fvpFont = "" },
+                onFvpFontPick = { fvpFontLauncher.launch("*/*") },
+                onWinlator = { winlator = it },
+                onPpssppVersion = { ppssppVersion = it },
+                onWebShellPort = { webShellPort = it },
             )
         }
+    }
+
+    nativeKrkrLaunchError?.let { state ->
+        LaunchErrorDialog(state = state, onDismiss = { nativeKrkrLaunchError = null })
     }
 }
 
@@ -873,8 +942,15 @@ private fun LazyListPlaceholder(
     artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
     rpg: EngineSettingsStore.RpgMaker,
-    renpyVersion: String, renpy: EngineSettingsStore.RenPy, fontLauncher: FontPickerLauncher,
+    renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
+    fbNls: String,
+    fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fvpFont: String,
+    fontLauncher: FontPickerLauncher, fvpFontLauncher: FontPickerLauncher,
+    winlator: EngineSettingsStore.Winlator,
+    ppssppVersion: String,
+    webShellPort: Int,
     topInset: Dp,
+    onLaunchNativeKirikiroidUi: () -> Unit,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrSkipStartupDialogs: (Boolean) -> Unit,
     onKrPatchOverlayMode: (String) -> Unit,
@@ -893,6 +969,16 @@ private fun LazyListPlaceholder(
     onRpg: (EngineSettingsStore.RpgMaker) -> Unit,
     onRenpyVersion: (String) -> Unit,
     onRenpy: (EngineSettingsStore.RenPy) -> Unit,
+    onSiglusLanguage: (String) -> Unit,
+    onFbNls: (String) -> Unit,
+    onFvpNls: (String) -> Unit,
+    onFvpSystemFont: (Boolean) -> Unit,
+    onFvpTextHidpi: (Boolean) -> Unit,
+    onFvpFontFollow: () -> Unit,
+    onFvpFontPick: () -> Unit,
+    onWinlator: (EngineSettingsStore.Winlator) -> Unit,
+    onPpssppVersion: (String) -> Unit,
+    onWebShellPort: (Int) -> Unit,
 ) {
     val krSelectMap = krSelectOptions()
     val krKernelMap = krKernelOptions()
@@ -938,6 +1024,11 @@ private fun LazyListPlaceholder(
                 if (!isSdl3) {
                     DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
                 }
+                ArrowPreference(
+                    title = stringResource(R.string.engine_settings_krkr_native_ui_title),
+                    summary = stringResource(R.string.engine_settings_krkr_native_ui_summary),
+                    onClick = onLaunchNativeKirikiroidUi,
+                )
             }
         }
 
@@ -1049,6 +1140,15 @@ private fun LazyListPlaceholder(
                 // RPG Maker Web 与 Tyrano 共用同一套 WebView 宿主开关，避免同类引擎重复配置。
                 SwitchPreference(title = stringResource(R.string.engine_settings_external_network_resources), checked = tyExternal, onCheckedChange = onTyExternal)
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = tyScoped, onCheckedChange = onTyScoped)
+                // Tyrano / WebOther / VN：固定端口保证 WebView 存档域（origin）跨启动稳定
+                WinlatorValueRow(
+                    label = stringResource(R.string.engine_settings_web_shell_port_title),
+                    summaryHint = stringResource(R.string.engine_settings_web_shell_port_summary),
+                    value = webShellPort.toString(),
+                    sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
+                    validate = { it.isNotEmpty() && (it.toIntOrNull()?.let { port -> port in 1..65535 } == true) },
+                    onValueChange = { onWebShellPort(it.toInt()) },
+                )
             }
         }
 
@@ -1084,13 +1184,258 @@ private fun LazyListPlaceholder(
             RenPySettingsCard(settings = renpy, onSettings = onRenpy)
         }
 
+        if (kind == EngineSettingsKind.SIGLUS) item {
+            EngineCard("Siglus") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_siglus_language_title),
+                    siglusLanguageOptions(),
+                    siglusLanguage,
+                    onSiglusLanguage,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_siglus_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.FRAMEBUFFER) item {
+            EngineCard("RealLive / AVG32 / UK2") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_fb_nls_title),
+                    fbNlsOptions(),
+                    fbNls,
+                    onFbNls,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_fb_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.FVP) item {
+            EngineCard("FVP") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_fvp_nls_title),
+                    fvpNlsOptions(),
+                    fvpNls,
+                    onFvpNls,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_fvp_system_font_title),
+                    summary = stringResource(R.string.engine_settings_fvp_system_font_summary),
+                    checked = fvpSystemFont,
+                    onCheckedChange = onFvpSystemFont,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_fvp_text_hidpi_title),
+                    summary = stringResource(R.string.engine_settings_fvp_text_hidpi_summary),
+                    checked = fvpTextHidpi,
+                    onCheckedChange = onFvpTextHidpi,
+                )
+                FontPreference(
+                    label = stringResource(R.string.engine_settings_fvp_font_title),
+                    value = fvpFont.ifBlank { stringResource(R.string.engine_settings_fvp_font_follow) },
+                    followLabel = stringResource(R.string.engine_settings_fvp_font_follow),
+                    onFollow = onFvpFontFollow,
+                    onPick = onFvpFontPick,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_fvp_font_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+                Text(
+                    stringResource(R.string.engine_settings_fvp_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.PPSSPP) item {
+            EngineCard("PPSSPP") {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_ppsspp_version_title),
+                    ppssppVersionOptions(),
+                    ppssppVersion,
+                    onPpssppVersion,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_ppsspp_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.WINLATOR) item {
+            EngineCard("Winlator") {
+                WinlatorValueRow(
+                    label = stringResource(R.string.engine_settings_winlator_container_id_title),
+                    summaryHint = stringResource(R.string.engine_settings_winlator_container_id_summary),
+                    value = if (winlator.containerId > 0) winlator.containerId.toString() else "",
+                    sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                    onValueChange = { text ->
+                        onWinlator(winlator.copy(containerId = text.toIntOrNull()?.coerceAtLeast(0) ?: 0))
+                    },
+                )
+                WinlatorValueRow(
+                    label = stringResource(R.string.engine_settings_winlator_container_name_title),
+                    summaryHint = stringResource(R.string.engine_settings_winlator_container_name_summary),
+                    value = winlator.containerName,
+                    onValueChange = { onWinlator(winlator.copy(containerName = it)) },
+                )
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_graphics_driver_title),
+                    winlatorGraphicsDriverOptions(),
+                    winlator.graphicsDriver,
+                ) { onWinlator(winlator.copy(graphicsDriver = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_dxwrapper_title),
+                    winlatorDxWrapperOptions(),
+                    winlator.dxwrapper,
+                ) { onWinlator(winlator.copy(dxwrapper = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_screen_size_title),
+                    winlatorScreenSizeOptions(),
+                    winlator.screenSize,
+                ) { onWinlator(winlator.copy(screenSize = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_lc_all_title),
+                    winlatorLcAllOptions(),
+                    winlator.lcAll,
+                ) { onWinlator(winlator.copy(lcAll = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_tz_title),
+                    winlatorTimezoneOptions(),
+                    winlator.tz,
+                ) { onWinlator(winlator.copy(tz = it)) }
+                DropdownRow(
+                    stringResource(R.string.engine_settings_winlator_box64_preset_title),
+                    winlatorBox64PresetOptions(),
+                    winlator.box64Preset,
+                ) { onWinlator(winlator.copy(box64Preset = it)) }
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_winlator_save_title),
+                    summary = stringResource(R.string.engine_settings_winlator_save_summary),
+                    checked = winlator.save,
+                    onCheckedChange = { onWinlator(winlator.copy(save = it)) },
+                )
+                Text(
+                    stringResource(R.string.engine_settings_winlator_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
         item { BottomInsetSpacer() }
+    }
+
+}
+
+/**
+ * 值编辑行：ArrowPreference 展示当前值（空值显示「跟随容器配置」），点击弹统一输入框；
+ * 仅更新本地状态，落盘由页面顶部保存按钮统一处理。[sanitize] 用于输入即时过滤（如容器 ID 仅数字）。
+ */
+@Composable
+private fun WinlatorValueRow(
+    label: String,
+    summaryHint: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    sanitize: ((String) -> String)? = null,
+    validate: (String) -> Boolean = { true },
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    ArrowPreference(
+        title = label,
+        summary = value.ifBlank { stringResource(R.string.engine_settings_winlator_follow_container) },
+        onClick = { showDialog = true },
+    )
+    if (showDialog) {
+        WinlatorValueDialog(
+            title = label,
+            hint = summaryHint,
+            initial = value,
+            sanitize = sanitize,
+            validate = validate,
+            onDismiss = { showDialog = false },
+            onConfirm = {
+                onValueChange(it)
+                showDialog = false
+            },
+        )
     }
 }
 
 @Composable
+private fun WinlatorValueDialog(
+    title: String,
+    hint: String,
+    initial: String,
+    sanitize: ((String) -> String)?,
+    validate: (String) -> Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var text by remember(initial) { mutableStateOf(initial) }
+    val normalized = text.trim()
+    val canConfirm = normalized.isEmpty() || validate(normalized)
+    AppAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            // 输入区内禁用全部点击/按压反馈（无涟漪）
+            CompositionLocalProvider(LocalIndication provides NoIndication) {
+                Column {
+                    AppSearchField(
+                        query = text,
+                        onQueryChange = { text = sanitize?.invoke(it) ?: it },
+                        onSearch = { if (canConfirm) onConfirm(normalized) },
+                        leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                        iconContentDescription = title,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        hint,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            DialogTextButton(
+                text = stringResource(R.string.common_save),
+                enabled = canConfirm,
+                onClick = { onConfirm(normalized) },
+            )
+        },
+        dismissButton = {
+            DialogTextButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss,
+            )
+        },
+    )
+}
+
+
+@Composable
 internal fun EngineCard(header: String, content: @Composable () -> Unit) {
-    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Text(
                 header,

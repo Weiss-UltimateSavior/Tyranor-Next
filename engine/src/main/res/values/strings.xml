@@ -13,6 +13,7 @@
     <string name="engine_tyrano_entry_not_found">Tyrano 启动失败：未找到 index.html 或 app.asar</string>
     <string name="engine_tyrano_asar_unreadable">Tyrano 启动失败：无法读取 app.asar</string>
     <string name="engine_tyrano_server_failed">Tyrano 启动失败：本地服务器启动失败</string>
+    <string name="engine_web_shell_port_fallback">端口 %1$d 被占用，本次改用 %2$d，网页存档可能不会延续</string>
     <string name="engine_rpgmaker_empty_game_directory">RPG Maker 启动失败：游戏目录为空</string>
     <string name="engine_rpgmaker_unwritable_save_directory">RPG Maker 启动失败：存档目录不可写</string>
     <string name="engine_rpgmaker_entry_not_found">RPG Maker 启动失败：未找到 index.html 或 app.asar</string>
@@ -29,4 +30,19 @@
     <string name="engine_exit_game">结束游戏</string>
     <string name="engine_exit_game_message">确定要结束当前游戏吗？</string>
     <string name="engine_cancel">取消</string>
+    <string name="engine_siglus_missing_game_dir">Siglus 启动失败：缺少游戏目录</string>
+    <string name="engine_siglus_init_failed">Siglus 引擎初始化失败</string>
+    <string name="engine_siglus_back_again_to_exit">再按一次返回键退出游戏</string>
+    <string name="engine_fvp_missing_game_dir">FVP 启动失败：缺少游戏目录</string>
+    <string name="engine_fvp_init_failed">FVP 引擎初始化失败</string>
+    <string name="engine_fvp_back_again_to_exit">再按一次返回键退出游戏</string>
+    <string name="engine_fb_missing_game_dir">启动失败：缺少游戏目录</string>
+    <string name="engine_fb_init_failed">引擎初始化失败</string>
+    <string name="engine_fb_back_again_to_exit">再按一次返回键退出游戏</string>
+    <string name="engine_fb_ime_show">输入法</string>
+    <string name="engine_fb_ime_hide">收起输入法</string>
+    <string name="engine_fb_skip">跳过</string>
+    <string name="engine_fb_skip_off">停止跳过</string>
+    <string name="engine_fb_menu">菜单</string>
+    <string name="engine_ons_video_skip_hint">轻触画面跳过</string>
 </resources>

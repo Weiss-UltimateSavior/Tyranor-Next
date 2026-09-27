@@ -16,6 +16,8 @@
         <!-- 外置主机模拟器跳转目标（安装探测 + 显式组件启动） -->
         <package android:name="org.ppsspp.ppsspp" />
         <package android:name="dev.eden.eden_emulator" />
+        <!-- YU-RIS 经外置 Winlator（winlator-cn 外置启动协议；应用 id 为 com.winlator） -->
+        <package android:name="com.winlator" />
     </queries>
 
     <application
@@ -26,6 +28,7 @@
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"

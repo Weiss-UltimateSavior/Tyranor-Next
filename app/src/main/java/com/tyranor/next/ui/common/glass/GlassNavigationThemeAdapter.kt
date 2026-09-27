@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import com.tyranor.next.theme.AdvancedGlassSurfaceSolid
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DarkGrey
 import com.tyranor.next.theme.GlassOpticalBlack
@@ -30,13 +31,20 @@ fun rememberGlassBottomBarColors(
     val primary = MaterialTheme.colorScheme.primary
     val isDark = AppThemeColors.isDark
     val isGlass = AppThemeColors.isGlass
-    return remember(primary, unselectedColor, isDark, isGlass) {
+    val isAdvancedGlass = AppThemeColors.isAdvancedGlass
+    return remember(primary, unselectedColor, isDark, isGlass, isAdvancedGlass) {
         GlassBottomBarColors(
             // 栏体着色（方案 §栏体通透材质目标）：**严格按 isDark 选中性色**——
             // 玻璃外观风格不再固定使用深色 GlassNavSurface，否则浅色档会退化成深色实心面。
+            // 高级玻璃参考图的悬浮玻璃按钮为浅色玻璃，用白着色（alpha 由渲染核心应用一次）。
             // surfaceTint 必须是不透明中性色，alpha 由渲染核心的 onDrawSurface 应用一次。
-            surfaceTint = if (isDark) DarkGrey else GlassOpticalWhite,
-            fallbackSurface = if (isGlass) GlassSurfaceSolid else if (isDark) DarkGrey else GlassOpticalWhite,
+            surfaceTint = if (isAdvancedGlass) GlassOpticalWhite else if (isDark) DarkGrey else GlassOpticalWhite,
+            fallbackSurface = when {
+                isAdvancedGlass -> AdvancedGlassSurfaceSolid
+                isGlass -> GlassSurfaceSolid
+                isDark -> DarkGrey
+                else -> GlassOpticalWhite
+            },
             selectedIcon = primary,
             unselectedIcon = unselectedColor,
             lensContentTint = primary,

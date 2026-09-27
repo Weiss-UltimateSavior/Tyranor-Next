@@ -56,9 +56,11 @@ import com.tyranor.next.core.game.shortcut.decodeShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.initialCropTransform
 import com.tyranor.next.core.game.shortcut.writeShortcutCropBitmap
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -142,7 +144,17 @@ internal fun GameShortcutCropDialog(
         ),
     ) {
         Box(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 18.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                // 高级玻璃面板为较高不透明度的灰玻璃膜；本弹窗无自带遮罩，补一层保证裁剪预览与按钮可读
+                .background(
+                    if (AppThemeColors.isAdvancedGlass) {
+                        Color.Black.copy(alpha = 0.6f)
+                    } else {
+                        Color.Transparent
+                    },
+                )
+                .padding(horizontal = 12.dp, vertical = 18.dp),
             contentAlignment = Alignment.Center,
         ) {
             CropDialogCard(
@@ -175,11 +187,29 @@ private fun CropDialogCard(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
+    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
     Card(
-        modifier = Modifier.fillMaxWidth().widthIn(max = 420.dp).imePadding().glassBorder(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .widthIn(max = 420.dp)
+            .imePadding()
+            .glassShadow()
+            .then(
+                if (advancedPanelSurface != null) {
+                    Modifier.background(advancedPanelSurface.brush, AppComponentShape)
+                } else {
+                    Modifier
+                },
+            )
+            .glassBorder(),
         colors = CardDefaults.cardColors(
-            // 玻璃风格用高不透明度玻璃面板保证浮层内文字可读
-            containerColor = if (AppThemeColors.isGlass) GlassPanel else NavWhite,
+            // 玻璃系风格用高不透明度玻璃面板保证浮层内文字可读；高级玻璃由取色渐变承担底色
+            containerColor = when {
+                AppThemeColors.isAdvancedGlass -> Color.Transparent
+                AppThemeColors.isGlass -> GlassPanel
+                else -> NavWhite
+            },
         ),
         shape = AppComponentShape,
     ) {

@@ -25,6 +25,10 @@ object LaunchContract {
     const val ORIENTATION = "orientation"
     const val FOCUS = "focus"
     const val ORIGIN_MODE = "originMode"
+    /** Web 壳本地 HTTP 服务端口（Tyrano / WebOther / VN）：固定端口保证 localStorage/IndexedDB 存档跨启动可见。 */
+    const val WEB_SHELL_PORT = "webShellPort"
+    /** Web 壳默认固定端口（与 Tyranor 原版 webGamePort 默认值一致，便于沿用既有存档域）。 */
+    const val WEB_SHELL_PORT_DEFAULT = 23333
     const val UI_LANGUAGE_TAG = "uiLanguageTag"
 
     // ---------- 主题 ----------
@@ -84,10 +88,46 @@ object LaunchContract {
     const val RPG_MAKER_VERSION = "rpgMakerVersion"
     const val RPG_LEGACY_RENDERER = "rpgLegacyRenderer"
 
+    // ---------- Siglus ----------
+
+    /** 游戏语言：引擎 GET_LANGUAGE 返回值（auto 时不传，保持引擎默认 JP）。 */
+    const val SIGLUS_LANGUAGE = "siglus_language"
+
+    /** 游戏根路径哈希（与 app 侧 `Integer.toHexString(path.hashCode())` 一致），标题回写定位用。 */
+    const val SIGLUS_PATH_HASH = "siglus_path_hash"
+
+    // ---------- FVP ----------
+
+    /** 文本编码：`sjis`（默认）| `gbk` | `utf8`，创建引擎时固定。 */
+    const val FVP_NLS = "fvp_nls"
+
+    /** 系统 CJK 字体回退开关（bool，缺省 true）。 */
+    const val FVP_SYSTEM_FONT = "fvp_system_font"
+
+    /** 文本高分辨率渲染开关（bool，缺省 true）。 */
+    const val FVP_TEXT_HIDPI = "fvp_text_hidpi"
+
+    /** 自定义字体路径（App 私有目录绝对路径；不传表示跟随游戏默认/不强制）。 */
+    const val FVP_FONT_PATH = "fvp_font_path"
+
+    // ---------- framebuffer 引擎（RealLive / AVG32 / UK2） ----------
+
+    /** 引擎 id：`reallive` | `avg32` | `uk2`（不传时引擎库自行探测）。 */
+    const val GAMES_ENGINE = "games_engine"
+
+    /** 文本编码：`auto` | `sjis` | `gbk` | `big5` | `utf8` | `korean`（不传使用引擎默认）。 */
+    const val GAMES_NLS = "games_nls"
+
+    /** 游戏标题（加载层/窗口标题兜底用）。 */
+    const val GAMES_TITLE = "games_title"
+
     // ---------- launchMode 固定取值 ----------
 
     const val LAUNCH_MODE_KRKRSDL3 = "internal.krkrsdl3"
     const val LAUNCH_MODE_KIRIKIROID2 = "internal.kirikiroid2"
     const val LAUNCH_MODE_ONS = "internal.ons"
     const val LAUNCH_MODE_ARTEMIS = "internal.artemis"
+    const val LAUNCH_MODE_SIGLUS = "internal.siglus"
+    const val LAUNCH_MODE_FVP = "internal.fvp"
+    const val LAUNCH_MODE_FRAMEBUFFER = "internal.framebuffer"
 }

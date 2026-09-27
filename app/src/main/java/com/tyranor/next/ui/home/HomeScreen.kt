@@ -67,6 +67,8 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.RpgSaveFormat
+import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.NavWhite
@@ -78,6 +80,9 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.LaunchErrorDialog
+import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.RpgSaveFormatDialog
@@ -108,7 +113,7 @@ fun HomeScreen(
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
     var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
-    var launchError by remember { mutableStateOf<String?>(null) }
+    var launchError by remember { mutableStateOf<LaunchErrorState?>(null) }
     var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
     // MV/MZ 存档格式转化确认：待转化检测结果 + 目标游戏 + 已选补丁策略（Artemis 选择后串联）
     var saveFormatTarget by remember { mutableStateOf<ScanGame?>(null) }
@@ -145,7 +150,7 @@ fun HomeScreen(
     fun launchWithSaveFormatGate(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
         scope.launch {
             if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
                 return@launch
             }
             val pending = EngineLauncher.rpgSaveFormatPending(context, game)
@@ -154,7 +159,7 @@ fun HomeScreen(
                 saveFormatDetection = pending
                 pendingPatchChoice = patchChoice
             } else {
-                launchError = EngineLauncher.launch(context, game, patchChoice).userMessage(context)
+                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
             }
         }
     }
@@ -195,7 +200,7 @@ fun HomeScreen(
                 )
                 android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
             }
-            launchError = EngineLauncher.launch(context, target, patchChoice).userMessage(context)
+            launchError = EngineLauncher.launch(context, target, patchChoice).toErrorState(context)
         }
     }
 
@@ -345,21 +350,14 @@ fun HomeScreen(
         }
     }
 
-    launchError?.let { message ->
-        AppAlertDialog(
-            onDismissRequest = { launchError = null },
-            title = { Text(stringResource(R.string.game_launch_failed), style = MaterialTheme.typography.titleMedium) },
-            text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
-            confirmButton = {
-                TextButton(onClick = { launchError = null }) { Text(stringResource(R.string.common_confirm)) }
-            },
-        )
+    launchError?.let { state ->
+        LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 }
 
 /**
- * 快捷启动区（最多 3 个）：小屏（可用宽度 < 600dp，竖屏手机）单张大卡左右滑动切换；
- * 大屏（横屏/平板）直接一行三个卡位，空槽显示占位。两种形态都限制最大宽度并水平居中。
+ * 快捷启动区（最多 3 个）：小屏（可用宽度 < 600dp，竖屏手机）单张大卡左右滑动切换（限宽居中）；
+ * 大屏（横屏/平板）一行三个卡位**占满可用宽度**，空槽显示占位。
  */
 @Composable
 private fun QuickLaunchSection(
@@ -372,10 +370,11 @@ private fun QuickLaunchSection(
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {
-            // 三张横幅卡并排需要比单卡形态更宽的行：上限放宽到 900dp，
-            // 每张卡约 293dp，保证左侧文字列在封面之外仍有可用宽度
+            // 大屏（平板/横屏）三张卡并排**占满可用宽度**（不再设 900dp 上限，
+            // 否则平板/大窗口下两侧会空出一条）；卡内封面宽度有 99dp 上限、文字列自适应，
+            // 因此拉宽不会挤压内容。
             Row(
-                modifier = Modifier.widthIn(max = 900.dp).fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 repeat(3) { i ->
@@ -442,6 +441,7 @@ private fun QuickLaunchCard(
     BoxWithConstraints(
         modifier = modifier
             .height(172.dp)
+            .glassShadow()
             .clip(AppComponentShape)
             .background(QuickLaunchFallback)
             .glassBorder(),
@@ -567,6 +567,7 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .height(172.dp)
+            .glassShadow()
             .clip(AppComponentShape)
             .background(NavWhite)
             .glassBorder(),
@@ -619,7 +620,11 @@ private fun RecentGameRow(
                     modifier = Modifier
                         .matchParentSize()
                         .background(
-                            if (AppThemeColors.isGlass) GlassSurfaceHigh else MaterialTheme.colorScheme.primary,
+                            when {
+                                AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
+                                AppThemeColors.isGlass -> GlassSurfaceHigh
+                                else -> MaterialTheme.colorScheme.primary
+                            },
                         )
                         .clickable(onClick = onSwipeDelete),
                 ) {

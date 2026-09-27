@@ -1,6 +1,6 @@
 {
   "engineId": "ons",
-  "pluginVersion": 1,
+  "pluginVersion": 3,
   "abi": "arm64-v8a",
   "bridgeAbi": 1,
   "libs": [

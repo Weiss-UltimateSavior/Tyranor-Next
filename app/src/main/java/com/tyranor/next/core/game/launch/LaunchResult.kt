@@ -43,8 +43,11 @@ sealed interface LaunchResult {
         /** 外置 APK 引擎模块启动失败；携带模块层类型化错误（文案由 UI 映射）。 */
         data class ExternalModuleFailed(val result: ExternalEngineLaunchResult) : Failure
 
-        /** 外置主机模拟器跳转失败（PPSSPP / Eden）；携带目标与错误码，文案由 UI 映射。 */
+        /** 外置主机模拟器跳转失败（PPSSPP / Eden / Winlator）；携带目标与错误码，文案由 UI 映射。 */
         data class ExternalEmulatorFailed(val result: ExternalEmulatorLauncher.Result) : Failure
+
+        /** YU-RIS：游戏目录内没有可启动的 .exe（可由单游戏「启动文件」手动指定）。 */
+        data object YurisExeMissing : Failure
 
         /** startActivity 抛出异常（[detail] 可为空）。 */
         data class StartFailed(val detail: String?) : Failure

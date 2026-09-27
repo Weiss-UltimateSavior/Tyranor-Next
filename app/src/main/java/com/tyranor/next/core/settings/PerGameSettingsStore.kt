@@ -86,6 +86,35 @@ object PerGameSettingsStore {
     // Ren'Py（外置模块版本选择）
     const val F_RENPY_VERSION = "renpy_engine_version"
 
+    // Web 壳本地端口覆盖（Tyrano / WebOther / VN；null=跟随全局）
+    const val F_WEB_SHELL_PORT = "web_shell_port"
+
+    // PPSSPP 外置模拟器版本覆盖（standard/gold；null=跟随全局）
+    const val F_PPSSPP_VERSION = "ppsspp_version"
+
+    // Siglus（游戏语言覆盖；null=跟随全局）
+    const val F_SIGLUS_LANGUAGE = "siglus_language"
+
+    // framebuffer 引擎（RealLive / AVG32 / UK2）（文本编码覆盖；null=跟随全局）
+    const val F_FB_NLS = "fb_nls"
+
+    // FVP（文本编码/系统字体回退/HiDPI/自定义字体覆盖；null=跟随全局）
+    const val F_FVP_NLS = "fvp_nls"
+    const val F_FVP_SYSTEM_FONT = "fvp_system_font"
+    const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
+    const val F_FVP_FONT = "fvp_font"
+
+    // Winlator 外置启动（null=跟随全局；字符串 "" = 显式不下发该参数）
+    const val F_WINLATOR_CONTAINER_ID = "winlator_container_id"
+    const val F_WINLATOR_CONTAINER_NAME = "winlator_container_name"
+    const val F_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
+    const val F_WINLATOR_DXWRAPPER = "winlator_dxwrapper"
+    const val F_WINLATOR_SCREEN_SIZE = "winlator_screen_size"
+    const val F_WINLATOR_LC_ALL = "winlator_lc_all"
+    const val F_WINLATOR_TZ = "winlator_tz"
+    const val F_WINLATOR_BOX64_PRESET = "winlator_box64_preset"
+    const val F_WINLATOR_SAVE = "winlator_save"
+
     // Ren'Py 外置模块配置（settings extra 的 renpy 节 + app.cheats，null=跟随全局）
     const val F_RENPY_CHEATS = "renpy_cheats"
     const val F_RENPY_HW_VIDEO = "renpy_hw_video"
@@ -222,6 +251,28 @@ object PerGameSettingsStore {
             recompile = boolOrNull(F_RENPY_RECOMPILE),
         )
         return override.takeIf { it != RenPyOverride() }
+    }
+
+    /**
+     * Winlator 外置启动覆盖快照 → 类型化模型（缺失字段=跟随全局；存在但为空串=显式不下发该参数，
+     * 供 [EffectiveEngineSettings.mergeWinlator] 使用）。
+     */
+    fun toWinlatorOverride(json: JSONObject?): WinlatorOverride? {
+        if (json == null) return null
+        fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
+        fun strOrNull(key: String): String? = if (json.has(key)) json.optString(key) else null
+        val override = WinlatorOverride(
+            containerId = strOrNull(F_WINLATOR_CONTAINER_ID),
+            containerName = strOrNull(F_WINLATOR_CONTAINER_NAME),
+            graphicsDriver = strOrNull(F_WINLATOR_GRAPHICS_DRIVER),
+            dxwrapper = strOrNull(F_WINLATOR_DXWRAPPER),
+            screenSize = strOrNull(F_WINLATOR_SCREEN_SIZE),
+            lcAll = strOrNull(F_WINLATOR_LC_ALL),
+            tz = strOrNull(F_WINLATOR_TZ),
+            box64Preset = strOrNull(F_WINLATOR_BOX64_PRESET),
+            save = boolOrNull(F_WINLATOR_SAVE),
+        )
+        return override.takeIf { it != WinlatorOverride() }
     }
 
     /** 清除某游戏全部覆盖，回退到全局默认。 */

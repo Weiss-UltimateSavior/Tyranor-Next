@@ -120,6 +120,10 @@ object EngineSettingsResolver {
                 EngineSettingsStore.ART_TOGGLES,
                 EngineSettingsStore.ART_TOGGLE_DEFAULT,
             ),
+            webShellPort = EffectiveEngineSettings.resolveWebShellPort(
+                str(PerGameSettingsStore.F_WEB_SHELL_PORT),
+                EngineSettingsStore.getWebShellPort(app),
+            ),
             webScopedSaveDir = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_TY_SCOPED),
                 EngineSettingsStore.isTyranoScopedSaveDir(app),
@@ -153,6 +157,42 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_RENPY_VERSION),
                 EngineSettingsStore.getRenpyVersion(app),
             ),
+            ppssppVersion = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_PPSSPP_VERSION),
+                EngineSettingsStore.getPpssppVersion(app),
+                EngineSettingsStore.PPSSPP_VERSIONS,
+                EngineSettingsStore.PPSSPP_VERSION_STANDARD,
+            ),
+            siglusLanguage = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_SIGLUS_LANGUAGE),
+                EngineSettingsStore.getSiglusLanguage(app),
+                EngineSettingsStore.SIGLUS_LANGUAGES,
+                EngineSettingsStore.SIGLUS_LANGUAGE_AUTO,
+            ),
+            fbNls = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_FB_NLS),
+                EngineSettingsStore.getFbNls(app),
+                EngineSettingsStore.FB_NLS_VALUES,
+                EngineSettingsStore.FB_NLS_AUTO,
+            ),
+            fvpNls = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_FVP_NLS),
+                EngineSettingsStore.getFvpNls(app),
+                EngineSettingsStore.FVP_NLS_VALUES,
+                EngineSettingsStore.FVP_NLS_SJIS,
+            ),
+            fvpSystemFont = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_FVP_SYSTEM_FONT),
+                EngineSettingsStore.isFvpSystemFont(app),
+            ),
+            fvpTextHidpi = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_FVP_TEXT_HIDPI),
+                EngineSettingsStore.isFvpTextHidpi(app),
+            ),
+            fvpFont = EffectiveEngineSettings.resolve(
+                str(PerGameSettingsStore.F_FVP_FONT),
+                EngineSettingsStore.getFvpFont(app),
+            ),
             rpg = EffectiveEngineSettings.mergeRpgMaker(
                 EngineSettingsStore.loadRpgMaker(app),
                 PerGameSettingsStore.toRpgMakerOverride(override),
@@ -160,6 +200,10 @@ object EngineSettingsResolver {
             renpy = EffectiveEngineSettings.mergeRenPy(
                 EngineSettingsStore.loadRenPy(app),
                 PerGameSettingsStore.toRenPyOverride(override),
+            ),
+            winlator = EffectiveEngineSettings.mergeWinlator(
+                EngineSettingsStore.loadWinlator(app),
+                PerGameSettingsStore.toWinlatorOverride(override),
             ),
         )
     }
@@ -198,6 +242,8 @@ data class ResolvedEngineSettings(
     val artSurfaceCacheSize: String,
     val artFontCacheSize: String,
     val artPowerSaving: String,
+    /** Web 壳（Tyrano / WebOther / VN）本地 HTTP 服务端口（固定端口保证 WebView 存档域稳定）。 */
+    val webShellPort: Int,
     val webScopedSaveDir: Boolean,
     val rpgMakerModEnabled: Boolean,
     val rpgLegacyRenderer: Boolean,
@@ -206,8 +252,24 @@ data class ResolvedEngineSettings(
     val rpgMvVersion: String,
     val rpgMzVersion: String,
     val renpyVersion: String,
+    /** PPSSPP 外置模拟器生效版本（standard / gold；PSP 跳转按此选择包名）。 */
+    val ppssppVersion: String,
+    /** Siglus 生效语言（auto 表示不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）。 */
+    val siglusLanguage: String,
+    /** framebuffer 引擎生效文本编码（auto/sjis/gbk/big5/utf8/korean；创建引擎时固定）。 */
+    val fbNls: String,
+    /** FVP 生效文本编码（sjis/gbk/utf8；创建引擎时固定，改动需重启本局）。 */
+    val fvpNls: String,
+    /** FVP 生效系统字体回退开关。 */
+    val fvpSystemFont: Boolean,
+    /** FVP 生效文本高分辨率渲染开关。 */
+    val fvpTextHidpi: Boolean,
+    /** FVP 生效自定义字体路径（空 = 跟随游戏默认；非空 = App 私有字体绝对路径，强制生效）。 */
+    val fvpFont: String,
     /** RPG Maker RGSS 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val rpg: EngineSettingsStore.RpgMaker,
     /** Ren'Py 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val renpy: EngineSettingsStore.RenPy,
+    /** Winlator 外置启动下发参数（三级合并结果；跳转 YU-RIS / CatSystem2 / PC 时消费）。 */
+    val winlator: EngineSettingsStore.Winlator,
 )

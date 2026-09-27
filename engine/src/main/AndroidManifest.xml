@@ -150,6 +150,45 @@
             <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
         </activity>
 
+        <!-- SiglusEngine（siglus_rs）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
+        <activity
+            android:name="com.core.siglus.SiglusActivity"
+            android:exported="false"
+            android:process=":siglus"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Siglus"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Siglus"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+        </activity>
+
+        <!-- FVPEngine（rfvp）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
+        <activity
+            android:name="com.core.fvp.FvpActivity"
+            android:exported="false"
+            android:process=":fvp"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Fvp"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Fvp"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+        </activity>
+
+        <!-- RealLive / AVG32 / UK2（framebuffer 软渲染）宿主：Choreographer 主循环 + Bitmap 呈现 -->
+        <activity
+            android:name="com.core.games.FramebufferGameActivity"
+            android:exported="false"
+            android:process=":fbgames"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.FramebufferGames"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.FramebufferGames"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
+        </activity>
+
         <!-- ONS（ons）SDL2 宿主 -->
         <activity
             android:name="com.yuri.onscripter.ONScripter"
@@ -157,14 +196,6 @@
             android:process=":ons"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.ONScripter"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
-
-        <!-- 引擎内辅助播放 Activity -->
-        <activity
-            android:name="com.core.ons.OnsVideoActivity"
-            android:exported="false"
-            android:process=":ons"
             android:screenOrientation="sensorLandscape"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
         <activity

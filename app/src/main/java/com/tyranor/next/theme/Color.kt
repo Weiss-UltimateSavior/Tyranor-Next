@@ -66,6 +66,46 @@ val GlassTextSecondary = Color(0xFFA6AAB0)
 /** 玻璃导航栏未选中灰。 */
 val GlassUnselected = Color(0xFF7F858D)
 
+// ===== 高级玻璃外观风格色板（浅色磨砂玻璃 + 亮描边；背景为封面拼贴模糊图） =====
+// 参考图材质：模糊图片背景上叠「浅色磨砂膜 + 上亮下暗描边 + 顶边高光」。
+// 弹窗/抽屉是独立 window（采不到背景模糊），仍用深色面板 + 光学描边保证可读性。
+
+/** 高级玻璃主卡片/条目：14% 白磨砂膜（与悬浮默认导航条同一档；再高会发白，压暗后更贴参考图）。 */
+val AdvancedGlassSurface = Color(0x24FFFFFF)
+
+/** 高级玻璃输入框/弹窗内条目/指示器：18% 白，比卡片更亮一档。 */
+val AdvancedGlassSurfaceHigh = Color(0x2EFFFFFF)
+
+/** 高级玻璃抽屉内条目的不透明玻璃面（供无实时模糊的降级路径使用）。 */
+val AdvancedGlassSurfaceSolid = Color(0xFF2A2D33)
+
+/** 高级玻璃悬浮导航条底色：14% 白（真 backdrop 采样 + 高光 + 投影，参考图的悬浮玻璃按钮）。 */
+val AdvancedGlassNavSurface = Color(0x24FFFFFF)
+
+/** 高级玻璃描边：上端 20% 白（竖向渐变的上端，压暗后不刺眼）。 */
+val AdvancedGlassBorder = Color(0x33FFFFFF)
+
+/** 高级玻璃描边：下端 5% 白（竖向渐变的下端，形成上亮下暗的光学边缘）。 */
+val AdvancedGlassBorderFaint = Color(0x0DFFFFFF)
+
+/** 高级玻璃顶边高光条：12% 白，向下渐隐（模拟光源自上方掠过的亮线）。 */
+val AdvancedGlassSpecular = Color(0x1FFFFFFF)
+
+/** 高级玻璃次要文字：比 [GlassTextSecondary] 更亮，保证在浅色磨砂膜/亮底图上仍可读。 */
+val AdvancedGlassTextSecondary = Color(0xFFC7CBD2)
+
+/** 高级玻璃未选中图标/文字：比 [GlassUnselected] 更亮（浅色玻璃条上的未选中态）。 */
+val AdvancedGlassUnselected = Color(0xFFB6BBC3)
+
+/** 高级玻璃兜底背景（库内无封面时）的底色渐变：起点。 */
+val AdvancedGlassBgTop = Color(0xFF1B1D22)
+
+/** 高级玻璃兜底背景的底色渐变：中段。 */
+val AdvancedGlassBgMid = Color(0xFF101216)
+
+/** 高级玻璃兜底背景的底色渐变：终点（近黑）。 */
+val AdvancedGlassBgBottom = Color(0xFF07080A)
+
 // ===== 液态玻璃 · 透镜档的光学中性色（不随主题色 / 色调切换变化）=====
 
 /**
@@ -77,7 +117,7 @@ val GlassOpticalWhite = Color(0xFFFFFFFF)
 /** 光学阴影与覆盖用的纯黑：透镜档透镜按压覆盖、按住时的高光/阴影本体。 */
 val GlassOpticalBlack = Color(0xFF000000)
 
-// 页面背景：随深色模式取深/浅；玻璃风格透明（露出根部渐变）
+// 页面背景：随深色模式取深/浅；玻璃系风格透明（露出根部背景）
 val PageGrey: Color
     get() = when {
         AppThemeColors.isGlass -> Color.Transparent
@@ -86,9 +126,10 @@ val PageGrey: Color
         AppThemeColors.toneSwitchEnabled -> WhiteLight
         else -> GreyLight
     }
-// 卡片/导航栏背景：随深色模式取深/浅；玻璃风格为半透明玻璃面
+// 卡片/导航栏背景：随深色模式取深/浅；复古玻璃/高级玻璃为各自半透明玻璃面
 val NavWhite: Color
     get() = when {
+        AppThemeColors.isAdvancedGlass -> AdvancedGlassSurface
         AppThemeColors.isGlass -> GlassSurface
         AppThemeColors.isDark && AppThemeColors.toneSwitchEnabled -> DarkGrey
         AppThemeColors.isDark -> LighterDark
@@ -102,13 +143,18 @@ val TextColor: Color
         AppThemeColors.isDark -> TextColorDark
         else -> TextColorLight
     }
-// 导航栏未选中图标/文字色：随深色模式取深/浅；玻璃风格固定浅灰
+// 导航栏未选中图标/文字色：随深色模式取深/浅；玻璃系风格固定浅灰（高级更亮一档）
 val UnselectedGrey: Color
     get() = when {
+        AppThemeColors.isAdvancedGlass -> AdvancedGlassUnselected
         AppThemeColors.isGlass -> GlassUnselected
         AppThemeColors.isDark -> UnselectedGreyDark
         else -> UnselectedGreyLight
     }
-// 弹窗内条目容器色：默认风格 = PageGrey（白底弹窗灰卡）；玻璃风格 = GlassSurfaceHigh（玻璃弹窗亮卡）
+// 弹窗内条目容器色：默认风格 = PageGrey（白底弹窗灰卡）；玻璃系风格 = 对应亮玻璃面
 val DialogItemSurface: Color
-    get() = if (AppThemeColors.isGlass) GlassSurfaceHigh else PageGrey
+    get() = when {
+        AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
+        AppThemeColors.isGlass -> GlassSurfaceHigh
+        else -> PageGrey
+    }

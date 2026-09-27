@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppScreenActivity
@@ -79,7 +80,7 @@ internal fun EngineSettingsMenuScreen() {
             ) {
                 EngineSettingsKind.entries.forEach { kind ->
                     item {
-                        MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                             Column(Modifier.padding(vertical = 4.dp)) {
                                 val title = engineSettingsKindTitle(kind)
                                 ArrowPreference(
@@ -113,4 +114,9 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int, @param:Drawabl
     RPG_MAKER(R.string.engine_settings_rpg_maker_title, R.drawable.ic_settings_engine),
     TYRANO(R.string.engine_settings_tyrano_title, R.drawable.ic_settings_engine),
     RENPY(R.string.engine_settings_renpy_title, R.drawable.ic_settings_engine),
+    SIGLUS(R.string.engine_settings_siglus_title, R.drawable.ic_settings_engine),
+    FRAMEBUFFER(R.string.engine_settings_framebuffer_title, R.drawable.ic_settings_engine),
+    FVP(R.string.engine_settings_fvp_title, R.drawable.ic_settings_engine),
+    PPSSPP(R.string.engine_settings_ppsspp_title, R.drawable.ic_settings_engine),
+    WINLATOR(R.string.engine_settings_winlator_title, R.drawable.ic_settings_engine),
 }

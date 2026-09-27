@@ -21,18 +21,25 @@ import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.KrkrStartupDialogPolicy
 import com.core.engine.LaunchContract
+import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
+import com.tyranor.next.core.engine.external.EmulatorTarget as ExternalEmulatorTarget
+import com.core.fvp.FvpActivity
+import com.core.games.FramebufferGameActivity
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.nativeplugin.NativePluginConstants
 import com.core.rpgmaker.RpgMakerActivity
+import com.core.siglus.SiglusActivity
 import com.core.tyrano.TyranoActivity
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
+import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.model.GamePathUtils
@@ -105,7 +112,16 @@ object EngineLauncher {
         EngineType.VN,
         EngineType.WEB_OTHER,
         EngineType.ARTEMIS,
+        EngineType.SIGLUS,
+        EngineType.REALLIVE,
+        EngineType.AVG32,
+        EngineType.UK2,
+        EngineType.FVP,
         EngineType.RENPY,
+        // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
+        EngineType.YURIS,
+        EngineType.CATSYSTEM2,
+        EngineType.PC,
         // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
         EngineType.PSP,
         EngineType.NINTENDO_SWITCH,
@@ -121,6 +137,52 @@ object EngineLauncher {
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
         withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+
+    /**
+     * 直接打开内置原生 Kirikiroid2 界面（`originMode`，不携带游戏路径）。
+     *
+     * 与 Tyranor 原版设置页「启动 Kirikiroid2 v1.3.9」一致：固定使用 1.3.9 宿主
+     * （Kirikiroid139）展示原生 KR2 壳的文件浏览器；引擎侧命中 [LaunchContract.ORIGIN_MODE]
+     * 后会跳过游戏启动分支（无 Loading 遮罩、不解析 path）。
+     */
+    suspend fun launchNativeKirikiroidUi(context: Context): LaunchResult = withContext(Dispatchers.IO) {
+        val app = context.applicationContext
+        // 原生界面同样需要「所有文件访问」才能浏览共享存储中的游戏目录
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            val opened = runCatching {
+                app.startActivity(
+                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${app.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.recoverCatching {
+                app.startActivity(
+                    Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.isSuccess
+            return@withContext if (opened) {
+                LaunchResult.Failure.AllFilesAccessRequested
+            } else {
+                LaunchResult.Failure.AllFilesAccessMissing
+            }
+        }
+        EnginePluginBootstrap.ensureForLaunch(app, EngineType.KIRIKIRI)?.let {
+            return@withContext LaunchResult.Failure.PluginBootstrapFailed(it)
+        }
+        return@withContext try {
+            app.startActivity(
+                Intent(app, Kirikiroid139::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra(LaunchContract.ORIGIN_MODE, true)
+                    putExtra(LaunchContract.ORIENTATION, 6)
+                    putExtra(LaunchContract.FOCUS, "true")
+                },
+            )
+            LaunchResult.Success
+        } catch (t: Throwable) {
+            LaunchResult.Failure.StartFailed(t.message)
+        }
+    }
 
     /**
      * 正在执行启动流程的 game.uri 集合（覆盖启动前同步到 startActivity 的全过程）。
@@ -141,10 +203,22 @@ object EngineLauncher {
     }
 
     private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
-        // 外置主机模拟器（PSP / Switch）：ROM 文件型游戏不解析目录、不走内置引擎与外置 APK 模块链路
+        // 外置模拟器跳转：PSP / Switch 为 ROM 文件型（不解析目录），
+        // YURIS 为 Windows 游戏（目录 + 主 exe，经 Winlator 外置启动协议挂载目录）
         ExternalEmulatorRegistry.forEngine(game.engine)?.let { target ->
             currentCoroutineContext().ensureActive()
-            val result = ExternalEmulatorLauncher.launch(context, target, game.uri)
+            if (target.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL) {
+                return launchWindowsViaWinlator(context, game, target)
+            }
+            // PSP：按三级设置的「PPSSPP 版本」解析标准版/黄金版目标；其余目标（Eden）固定
+            val resolvedTarget = if (target.supports(EngineType.PSP)) {
+                ExternalEmulatorRegistry.ppssppTarget(
+                    EngineSettingsResolver.resolve(context, game, null).ppssppVersion,
+                )
+            } else {
+                target
+            }
+            val result = ExternalEmulatorLauncher.launch(context, resolvedTarget, game.uri)
             if (result.success) {
                 GameLibraryFacade.recordRecentGame(context, game)
                 return LaunchResult.Success
@@ -705,8 +779,21 @@ object EngineLauncher {
 
             EngineType.ARTEMIS -> buildArtemisIntent(context, path, game, patchChoice, settings)
 
+            EngineType.SIGLUS -> buildSiglusIntent(context, path, game, settings)
+
+            EngineType.REALLIVE,
+            EngineType.AVG32,
+            EngineType.UK2 -> buildFramebufferIntent(context, path, game, settings)
+
+            EngineType.FVP -> buildFvpIntent(context, path, game, settings)
+
             EngineType.RPGMAKER,
             EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
+
+            // YURIS / CatSystem2 / PC 由外置 Winlator 承载，在 launchInternalChecked 前置分流，不会走到这里
+            EngineType.YURIS,
+            EngineType.CATSYSTEM2,
+            EngineType.PC -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
 
             // PSP / Switch 由外置模拟器跳转承载，在 launchInternalChecked 前置分流，不会走到这里
             EngineType.PSP,
@@ -732,6 +819,138 @@ object EngineLauncher {
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT, theme.textArgb)
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, theme.mutedArgb)
         return intent
+    }
+
+    /**
+     * Windows 游戏（YU-RIS / 手动添加的 PC）经外置 Winlator 启动：解析游戏目录真实路径 →
+     * 解析主 exe（`launchFile` 优先）→ 交给 Winlator 挂载目录（自动空闲盘符）并按相对文件名启动。
+     * 运行参数由 Winlator 管理，主 App 只负责识别与跳转。
+     */
+    private suspend fun launchWindowsViaWinlator(
+        context: Context,
+        game: ScanGame,
+        target: ExternalEmulatorTarget,
+    ): LaunchResult {
+        val path = resolveGameDirectory(context, game) ?: return LaunchResult.Failure.GameDirUnresolved
+        requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        val exeName = YurisLaunchFiles.resolveExeName(game, path)
+            ?: return LaunchResult.Failure.YurisExeMissing
+        currentCoroutineContext().ensureActive()
+        val winlator = EngineSettingsResolver.resolve(context, game, path).winlator
+        val result = ExternalEmulatorLauncher.launchWinlator(
+            context = context,
+            target = target,
+            dirPath = path,
+            exeName = exeName,
+            launchId = game.uri,
+            options = WinlatorContract.LaunchOptions(
+                containerId = winlator.containerId,
+                containerName = winlator.containerName,
+                graphicsDriver = winlator.graphicsDriver,
+                dxwrapper = winlator.dxwrapper,
+                screenSize = winlator.screenSize,
+                lcAll = winlator.lcAll,
+                tz = winlator.tz,
+                box64Preset = winlator.box64Preset,
+                save = winlator.save,
+            ),
+        )
+        if (result.success) {
+            GameLibraryFacade.recordRecentGame(context, game)
+            return LaunchResult.Success
+        }
+        return LaunchResult.Failure.ExternalEmulatorFailed(result)
+    }
+
+    /**
+     * Siglus 启动：真实路径 + 语言覆盖 + 标题回写定位哈希。
+     * 存档目录由引擎固定为 `<游戏根>/savedata`（一期不支持独立存档）。
+     */
+    private fun buildSiglusIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent = Intent(context, SiglusActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_SIGLUS)
+        val language = settings.siglusLanguage
+        if (!language.isNullOrBlank() && language != EngineSettingsStore.SIGLUS_LANGUAGE_AUTO) {
+            putExtra(LaunchContract.SIGLUS_LANGUAGE, language)
+        }
+        val pathHash = Integer.toHexString(path.hashCode())
+        putExtra(LaunchContract.SIGLUS_PATH_HASH, pathHash)
+        // 标题回写登记：宿主写 GAMENAME，app 侧导入时需要 uri 与目录名（判断是否用户改过名）
+        context.applicationContext
+            .getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(EnginePrefs.KEY_SIGLUS_URI_PREFIX + pathHash, game.uri)
+            .putString(EnginePrefs.KEY_SIGLUS_DEFAULT_TITLE_PREFIX + pathHash, File(path).name)
+            .apply()
+    }
+
+    /**
+     * RealLive / AVG32 / UK2 启动：真实路径 + 引擎 id + 文本编码。
+     * 存档目录由引擎固定写入游戏目录（AVG32 = `SAVE.INI`；RealLive = `savedata_rs`；
+     * UK2 = `FLAGnn.DAT`），一期不支持独立存档。
+     */
+    private fun buildFramebufferIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent = Intent(context, FramebufferGameActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_FRAMEBUFFER)
+        putExtra(LaunchContract.GAMES_ENGINE, framebufferEngineId(game.engine))
+        val nls = settings.fbNls
+        if (nls.isNotBlank() && nls != EngineSettingsStore.FB_NLS_AUTO) {
+            putExtra(LaunchContract.GAMES_NLS, nls)
+        }
+        putExtra(LaunchContract.GAMES_TITLE, game.title)
+    }
+
+    /** EngineType → 上游 `game_fb_open` 的 engine id（未知/歧义时交给引擎按内容自动探测）。 */
+    private fun framebufferEngineId(engine: EngineType): String? = when (engine) {
+        EngineType.REALLIVE -> "reallive"
+        EngineType.AVG32 -> "avg32"
+        EngineType.UK2 -> "uk2"
+        else -> null
+    }
+
+    /**
+     * FVP（rfvp）启动：真实路径 + 文本编码 + 字体/HiDPI 生效设置。
+     * 存档目录由引擎固定为 `<游戏根>/save`（一期不支持独立存档）。
+     */
+    private fun buildFvpIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+        settings: ResolvedEngineSettings,
+    ): Intent = Intent(context, FvpActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_FVP)
+        putExtra(LaunchContract.FVP_NLS, settings.fvpNls)
+        putExtra(LaunchContract.FVP_SYSTEM_FONT, settings.fvpSystemFont)
+        putExtra(LaunchContract.FVP_TEXT_HIDPI, settings.fvpTextHidpi)
+        if (settings.fvpFont.isNotBlank()) {
+            putExtra(LaunchContract.FVP_FONT_PATH, settings.fvpFont)
+        }
     }
 
     /**
@@ -1139,6 +1358,10 @@ object EngineLauncher {
             }
             putExtra(LaunchContract.TYPE, webType)
             putExtra(LaunchContract.LAUNCH_MODE, "internal.${webType.lowercase()}")
+            // Tyrano / WebOther / VN：固定端口（WebView 存储按 origin 隔离，随机会丢存档）
+            if (game.engine == EngineType.TYRANO || game.engine == EngineType.WEB_OTHER || game.engine == EngineType.VN) {
+                putExtra(LaunchContract.WEB_SHELL_PORT, settings.webShellPort)
+            }
             putExtra(LaunchContract.ORIENTATION, 6)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, scoped)
             scopedSaveRoot?.let { putExtra(LaunchContract.SCOPED_SAVE_ROOT, it) }
@@ -1176,6 +1399,35 @@ object EngineLauncher {
                     runCatching { android.os.Process.killProcess(processInfo.pid) }
                 }
         }
+    }
+
+    /** 单游戏手动补丁结果（UI 层映射本地化文案）。 */
+    enum class ArtemisManualPatchResult { SUCCESS, FAILED, GAME_DIR_UNRESOLVED, PERMISSION_REQUIRED }
+
+    /** 手动「添加基础补丁」：强制重新解出 system.ini 等启动文件并应用 Android 化改写。 */
+    suspend fun applyArtemisBasePatchManually(context: Context, game: ScanGame): ArtemisManualPatchResult =
+        applyArtemisPatchManually(context, game) { path ->
+            ArtemisPfsUnpacker.applyBasePatch(path, force = true)
+        }
+
+    /** 手动「添加Windows环境补丁」：解出 system.lua/init.lua 并把 game.os 强制为 windows。 */
+    suspend fun applyArtemisWindowsEnvPatchManually(context: Context, game: ScanGame): ArtemisManualPatchResult =
+        applyArtemisPatchManually(context, game) { path ->
+            ArtemisPfsUnpacker.applyWindowsEnvPatch(path)
+        }
+
+    private suspend fun applyArtemisPatchManually(
+        context: Context,
+        game: ScanGame,
+        action: (String) -> Boolean,
+    ): ArtemisManualPatchResult = withContext(Dispatchers.IO) {
+        if (game.engine != EngineType.ARTEMIS) return@withContext ArtemisManualPatchResult.FAILED
+        val path = resolveGameDirectory(context, game)
+            ?: return@withContext ArtemisManualPatchResult.GAME_DIR_UNRESOLVED
+        requestAllFilesAccessIfNeeded(context, game, path)?.let {
+            return@withContext ArtemisManualPatchResult.PERMISSION_REQUIRED
+        }
+        if (action(path)) ArtemisManualPatchResult.SUCCESS else ArtemisManualPatchResult.FAILED
     }
 
     /**
@@ -1528,19 +1780,36 @@ object EngineLauncher {
     /**
      * 列出游戏目录内可作为启动入口的文件（xp3 与 exe），供“启动文件”选择弹窗展示。
      */
-    internal fun listKrLaunchFiles(context: Context, game: ScanGame): List<String> {
+    /** 「启动文件」选择器候选：KRKR 列 .xp3 + .exe；YURIS 列根目录 .exe（干扰项已过滤并排序）。 */
+    internal fun listLaunchFiles(context: Context, game: ScanGame): List<String> {
         val path = resolveGameDirectory(context, game) ?: return emptyList()
-        val files = java.io.File(path).listFiles()?.filter { it.isFile }.orEmpty()
-        val xp3 = files.filter { it.name.lowercase().endsWith(".xp3") }.sortedBy { it.name.lowercase() }.map { it.name }
-        val exe = files.filter { it.name.lowercase().endsWith(".exe") }.sortedBy { it.name.lowercase() }.map { it.name }
-        return xp3 + exe
+        return when (game.engine) {
+            // YU-RIS / CatSystem2 / 手动添加的 PC 共用 Windows exe 候选（过滤干扰项并按可信度排序）；
+            // CatSystem2 额外接受 .bin（Runtime 可能被改名/改扩展名）并优先 cs2.exe
+            EngineType.YURIS, EngineType.PC -> YurisLaunchFiles.candidates(java.io.File(path)).map { it.name }
+            EngineType.CATSYSTEM2 -> YurisLaunchFiles.candidates(
+                java.io.File(path),
+                allowBin = true,
+                preferCs2Runtime = true,
+            ).map { it.name }
+            else -> {
+                val files = java.io.File(path).listFiles()?.filter { it.isFile }.orEmpty()
+                val xp3 = files.filter { it.name.lowercase().endsWith(".xp3") }.sortedBy { it.name.lowercase() }.map { it.name }
+                val exe = files.filter { it.name.lowercase().endsWith(".exe") }.sortedBy { it.name.lowercase() }.map { it.name }
+                xp3 + exe
+            }
+        }
     }
 
     /**
-     * 当前 KRKR 启动入口对应的文件名（仅当入口为目录内文件时返回；入口为目录本身时返回 null）。
+     * 当前启动入口对应的文件名（仅当入口为目录内文件时返回；入口为目录本身时返回 null）。
+     * KRKR 走入口探测；YURIS 为自动/手动解析出的主 exe。
      */
-    internal fun currentKrLaunchFileName(context: Context, game: ScanGame): String? {
+    internal fun currentLaunchFileName(context: Context, game: ScanGame): String? {
         val path = resolveGameDirectory(context, game) ?: return null
+        if (game.engine == EngineType.YURIS || game.engine == EngineType.PC || game.engine == EngineType.CATSYSTEM2) {
+            return YurisLaunchFiles.resolveExeName(game, path)
+        }
         val entry = pickKrActivateEntry(path, game)
         return java.io.File(entry).takeIf { it.isFile }?.name
     }

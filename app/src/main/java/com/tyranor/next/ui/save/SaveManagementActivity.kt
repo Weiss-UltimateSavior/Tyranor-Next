@@ -42,6 +42,7 @@ import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -189,7 +190,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         ) {
             item {
                 Card(
-                    modifier = Modifier.fillMaxWidth().glassBorder(),
+                    modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                     colors = CardDefaults.cardColors(containerColor = NavWhite),
                     shape = AppComponentShape,

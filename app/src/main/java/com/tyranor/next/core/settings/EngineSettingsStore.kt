@@ -2,6 +2,7 @@ package com.tyranor.next.core.settings
 
 import android.content.Context
 import com.core.engine.EnginePrefs
+import com.core.engine.LaunchContract
 import org.json.JSONObject
 
 /**
@@ -47,6 +48,35 @@ object EngineSettingsStore {
 
     // Ren'Py 应用级默认（外置模块版本选择）
     const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
+
+    // Siglus 应用级默认（游戏语言；引擎启动时经 SIGLUS_LANGUAGE → GET_LANGUAGE 生效）
+    const val KEY_SIGLUS_LANGUAGE = "siglus_language"
+
+    // Web 壳本地端口（Tyrano / WebOther / VN；固定端口保证 localStorage/IndexedDB 存档跨启动可见）
+    const val KEY_WEB_SHELL_PORT = "web_shell_port"
+
+    // PPSSPP 外置模拟器版本（标准版 / 黄金版；跳转 PSP 游戏时按此选择包名）
+    const val KEY_PPSSPP_VERSION = "ppsspp_version"
+
+    // framebuffer 引擎（RealLive / AVG32 / UK2）应用级默认（文本编码）
+    const val KEY_FB_NLS = "fb_nls"
+
+    // FVP（rfvp）应用级默认（文本编码 / 系统字体回退 / 文本高分辨率渲染 / 自定义字体）
+    const val KEY_FVP_NLS = "fvp_nls"
+    const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
+    const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
+    const val KEY_FVP_FONT = "fvp_font"
+
+    // Winlator 外置启动（YU-RIS / CatSystem2 / PC 经 Winlator 跳转时的下发参数）
+    const val KEY_WINLATOR_CONTAINER_ID = "winlator_container_id"
+    const val KEY_WINLATOR_CONTAINER_NAME = "winlator_container_name"
+    const val KEY_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
+    const val KEY_WINLATOR_DXWRAPPER = "winlator_dxwrapper"
+    const val KEY_WINLATOR_SCREEN_SIZE = "winlator_screen_size"
+    const val KEY_WINLATOR_LC_ALL = "winlator_lc_all"
+    const val KEY_WINLATOR_TZ = "winlator_tz"
+    const val KEY_WINLATOR_BOX64_PRESET = "winlator_box64_preset"
+    const val KEY_WINLATOR_SAVE = "winlator_save"
 
     // Ren'Py 外置模块（settings extra 的 renpy 节；cheats 发 app 节，键名与 RenPyConfigurationParser 一致）
     const val KEY_RENPY_CHEATS = "renpy_cheats"
@@ -198,6 +228,151 @@ object EngineSettingsStore {
     const val RENPY_AUTO = "auto"
     const val RENPY_85 = "8.5"
     const val RENPY_77 = "7.7.1"
+
+    // Siglus 语言取值常量（auto 不设置 SIGLUS_LANGUAGE，保持引擎默认 JP）
+    const val SIGLUS_LANGUAGE_AUTO = "auto"
+    const val SIGLUS_LANGUAGE_JP = "JP"
+    const val SIGLUS_LANGUAGE_EN = "EN"
+    const val SIGLUS_LANGUAGE_ZH = "ZH"
+    const val SIGLUS_LANGUAGE_ZHTW = "ZHTW"
+    const val SIGLUS_LANGUAGE_DE = "DE"
+    const val SIGLUS_LANGUAGE_ES = "ES"
+    const val SIGLUS_LANGUAGE_FR = "FR"
+    const val SIGLUS_LANGUAGE_ID = "ID"
+    val SIGLUS_LANGUAGES: Set<String> = linkedSetOf(
+        SIGLUS_LANGUAGE_AUTO,
+        SIGLUS_LANGUAGE_JP,
+        SIGLUS_LANGUAGE_EN,
+        SIGLUS_LANGUAGE_ZH,
+        SIGLUS_LANGUAGE_ZHTW,
+        SIGLUS_LANGUAGE_DE,
+        SIGLUS_LANGUAGE_ES,
+        SIGLUS_LANGUAGE_FR,
+        SIGLUS_LANGUAGE_ID,
+    )
+
+    // PPSSPP 外置模拟器版本取值（standard=org.ppsspp.ppsspp，gold=org.ppsspp.ppssppgold）
+    const val PPSSPP_VERSION_STANDARD = "standard"
+    const val PPSSPP_VERSION_GOLD = "gold"
+    val PPSSPP_VERSIONS: Set<String> = linkedSetOf(PPSSPP_VERSION_STANDARD, PPSSPP_VERSION_GOLD)
+
+    // framebuffer 引擎文本编码取值（创建引擎时固定，改动后需重启本局）
+    const val FB_NLS_AUTO = "auto"
+    const val FB_NLS_SJIS = "sjis"
+    const val FB_NLS_GBK = "gbk"
+    const val FB_NLS_BIG5 = "big5"
+    const val FB_NLS_UTF8 = "utf8"
+    const val FB_NLS_KOREAN = "korean"
+    val FB_NLS_VALUES: Set<String> = linkedSetOf(
+        FB_NLS_AUTO,
+        FB_NLS_SJIS,
+        FB_NLS_GBK,
+        FB_NLS_BIG5,
+        FB_NLS_UTF8,
+        FB_NLS_KOREAN,
+    )
+
+    // FVP 文本编码取值（创建引擎时固定，改动后需重启本局）
+    const val FVP_NLS_SJIS = "sjis"
+    const val FVP_NLS_GBK = "gbk"
+    const val FVP_NLS_UTF8 = "utf8"
+    val FVP_NLS_VALUES: Set<String> = linkedSetOf(
+        FVP_NLS_SJIS,
+        FVP_NLS_GBK,
+        FVP_NLS_UTF8,
+    )
+
+    // Winlator 外置启动取值域（空串 = 不下发该参数，跟随容器/快捷方式配置）
+    /**
+     * 图形驱动固定组合：Vulkan 驱动（Turnip/Vortek）× OpenGL 驱动（Zink/VirGL/Gladio），
+     * 对齐 Winlator 容器设置里的两项下拉，组合为 `vulkan,opengl` 下发。
+     */
+    val WINLATOR_GRAPHICS_DRIVERS: List<String> = listOf(
+        "turnip,zink",
+        "turnip,virgl",
+        "turnip,gladio",
+        "vortek,zink",
+        "vortek,virgl",
+        "vortek,gladio",
+    )
+
+    val WINLATOR_DXWRAPPERS: Set<String> = linkedSetOf("", "dxvk", "wined3d")
+
+    val WINLATOR_BOX64_PRESETS: Set<String> = linkedSetOf(
+        "",
+        "STABILITY",
+        "CONSERVATIVE",
+        "INTERMEDIATE",
+        "PERFORMANCE",
+    )
+
+    /** 分辨率固定档位（无自定义输入；空串 = 跟随容器配置，其余须命中此白名单）。 */
+    val WINLATOR_SCREEN_SIZES: List<String> = listOf(
+        "640x360",
+        "640x480",
+        "800x600",
+        "854x480",
+        "960x544",
+        "1024x768",
+        "1280x720",
+        "1280x800",
+        "1280x1024",
+        "1366x768",
+        "1440x900",
+        "1600x900",
+        "1920x1080",
+    )
+
+    /** 语言环境（LC_ALL）固定档位（winlator-cn 校验正则内的常用取值）。 */
+    val WINLATOR_LOCALES: List<String> = listOf(
+        "ja_JP.UTF-8",
+        "zh_CN.utf8",
+        "zh_TW.utf8",
+        "en_US.UTF-8",
+        "ko_KR.UTF-8",
+    )
+
+    /** 时区（TZ）固定档位（winlator-cn 校验正则内的常用取值）。 */
+    val WINLATOR_TIMEZONES: List<String> = listOf(
+        "Asia/Tokyo",
+        "Asia/Shanghai",
+        "Asia/Taipei",
+        "Asia/Seoul",
+        "UTC",
+        "Europe/London",
+        "America/New_York",
+    )
+
+    /** winlator-cn `Box64Preset.CUSTOM` 形态（用户自定义预设，仅回读校验用）。 */
+    private val WINLATOR_BOX64_CUSTOM_PATTERN = Regex("^CUSTOM-\\d+$")
+
+    /** 被删实现遗留的 Winlator prefs 键（一次性清理；不含当前实现使用的键）。 */
+    private val WINLATOR_LEGACY_KEYS = listOf(
+        "winlator_locale",
+        "winlator_dx_accel",
+        "winlator_hud_mode",
+        "winlator_debug_logs",
+        "winlator_controls_profile",
+        "winlator_box",
+        "winlator_turnip_version",
+        "winlator_turnip_memory",
+        "winlator_turnip_present_mode",
+        "winlator_turnip_direct_rendering",
+        "winlator_vortek_memory",
+        "winlator_vortek_image_cache",
+        "winlator_vortek_resource_memory",
+        "winlator_virgl_gl_version",
+        "winlator_virgl_vertex_bgra",
+        // 与当前实现同名的三个键：被删实现写入过非默认值（如 graphics=vortek,zink、
+        // box64=PERFORMANCE、screen=auto），一并清回默认「跟随容器配置」。
+        KEY_WINLATOR_GRAPHICS_DRIVER,
+        KEY_WINLATOR_SCREEN_SIZE,
+        KEY_WINLATOR_BOX64_PRESET,
+        // 已下线的「追加启动参数」遗留键（当前实现不再读写）。
+        "winlator_exec_args",
+    )
+    private const val KEY_WINLATOR_LEGACY_CLEANED = "winlator_legacy_clean_version"
+    private const val WINLATOR_LEGACY_CLEAN_VERSION = 3
 
     // RPG Maker RGSS 外置模块取值域（对齐 JoiPlay utilities/f.java；verticalAlign 对齐插件默认）
     const val RPG_WINDOW_SIZE_DEFAULT = "640x480"
@@ -478,6 +653,155 @@ object EngineSettingsStore {
         }
     }
     fun setRenpyVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_RENPY_ENGINE_VERSION, v).apply()
+
+    // ---------- Siglus ----------
+    fun getSiglusLanguage(c: Context): String =
+        normalizeSiglusLanguage(prefs(c).getString(KEY_SIGLUS_LANGUAGE, SIGLUS_LANGUAGE_AUTO))
+    fun setSiglusLanguage(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_SIGLUS_LANGUAGE, normalizeSiglusLanguage(v)).apply()
+    fun normalizeSiglusLanguage(v: String?): String =
+        v?.trim()?.takeIf { it in SIGLUS_LANGUAGES } ?: SIGLUS_LANGUAGE_AUTO
+
+    // ---------- Web 壳（Tyrano / WebOther / VN） ----------
+    fun getWebShellPort(c: Context): Int =
+        normalizeWebShellPort(prefs(c).getString(KEY_WEB_SHELL_PORT, null))
+    fun setWebShellPort(c: Context, v: Int) =
+        prefs(c).edit().putString(KEY_WEB_SHELL_PORT, normalizeWebShellPort(v.toString()).toString()).apply()
+
+    /** 归一：1..65535 合法，其余（含空/0/越界/非数字）回退 [LaunchContract.WEB_SHELL_PORT_DEFAULT]。 */
+    fun normalizeWebShellPort(v: String?): Int {
+        val parsed = v?.trim()?.toIntOrNull() ?: return LaunchContract.WEB_SHELL_PORT_DEFAULT
+        return parsed.takeIf { it in 1..65535 } ?: LaunchContract.WEB_SHELL_PORT_DEFAULT
+    }
+
+    // ---------- PPSSPP 外置模拟器 ----------
+    fun getPpssppVersion(c: Context): String =
+        normalizePpssppVersion(prefs(c).getString(KEY_PPSSPP_VERSION, PPSSPP_VERSION_STANDARD))
+    fun setPpssppVersion(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_PPSSPP_VERSION, normalizePpssppVersion(v)).apply()
+    fun normalizePpssppVersion(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in PPSSPP_VERSIONS } ?: PPSSPP_VERSION_STANDARD
+
+    // ---------- framebuffer 引擎（RealLive / AVG32 / UK2） ----------
+    fun getFbNls(c: Context): String =
+        normalizeFbNls(prefs(c).getString(KEY_FB_NLS, FB_NLS_AUTO))
+    fun setFbNls(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_FB_NLS, normalizeFbNls(v)).apply()
+    fun normalizeFbNls(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in FB_NLS_VALUES } ?: FB_NLS_AUTO
+
+    // ---------- FVP ----------
+    fun getFvpNls(c: Context): String =
+        normalizeFvpNls(prefs(c).getString(KEY_FVP_NLS, FVP_NLS_SJIS))
+    fun setFvpNls(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_FVP_NLS, normalizeFvpNls(v)).apply()
+    fun normalizeFvpNls(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in FVP_NLS_VALUES } ?: FVP_NLS_SJIS
+    fun isFvpSystemFont(c: Context): Boolean = prefs(c).getBoolean(KEY_FVP_SYSTEM_FONT, true)
+    fun setFvpSystemFont(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_SYSTEM_FONT, b).apply()
+    fun isFvpTextHidpi(c: Context): Boolean = prefs(c).getBoolean(KEY_FVP_TEXT_HIDPI, true)
+    fun setFvpTextHidpi(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_FVP_TEXT_HIDPI, b).apply()
+    fun getFvpFont(c: Context): String = normalizeFvpFont(prefs(c).getString(KEY_FVP_FONT, ""))
+    fun setFvpFont(c: Context, v: String?) =
+        prefs(c).edit().putString(KEY_FVP_FONT, normalizeFvpFont(v)).apply()
+    fun normalizeFvpFont(v: String?): String = v?.trim().orEmpty()
+
+    // ---------- Winlator 外置启动 ----------
+
+    /**
+     * Winlator 外置启动下发参数（YU-RIS / CatSystem2 / PC 共用）。
+     * 空串/0/false 表示不下发对应 extra，交由 Winlator 按容器配置与回退链处理。
+     */
+    data class Winlator(
+        var containerId: Int = 0,
+        var containerName: String = "",
+        var graphicsDriver: String = "",
+        var dxwrapper: String = "",
+        var screenSize: String = "",
+        var lcAll: String = "",
+        var tz: String = "",
+        var box64Preset: String = "",
+        var save: Boolean = false,
+    )
+
+    fun loadWinlator(c: Context): Winlator {
+        val p = prefs(c)
+        val d = Winlator()
+        return Winlator(
+            containerId = p.getInt(KEY_WINLATOR_CONTAINER_ID, d.containerId).coerceAtLeast(0),
+            containerName = p.getString(KEY_WINLATOR_CONTAINER_NAME, d.containerName).orEmpty().trim(),
+            graphicsDriver = normalizeWinlatorGraphicsDriver(p.getString(KEY_WINLATOR_GRAPHICS_DRIVER, d.graphicsDriver)),
+            dxwrapper = normalizeWinlatorDxWrapper(p.getString(KEY_WINLATOR_DXWRAPPER, d.dxwrapper)),
+            screenSize = normalizeWinlatorScreenSize(p.getString(KEY_WINLATOR_SCREEN_SIZE, d.screenSize)),
+            lcAll = normalizeWinlatorLcAll(p.getString(KEY_WINLATOR_LC_ALL, d.lcAll)),
+            tz = normalizeWinlatorTz(p.getString(KEY_WINLATOR_TZ, d.tz)),
+            box64Preset = normalizeWinlatorBox64Preset(p.getString(KEY_WINLATOR_BOX64_PRESET, d.box64Preset)),
+            save = p.getBoolean(KEY_WINLATOR_SAVE, d.save),
+        )
+    }
+
+    /**
+     * 一次性清理被删实现遗留的 Winlator prefs 键（应用启动时调用，版本号保证每轮只跑一次）。
+     * 含与当前实现同名的图形驱动/分辨率/Box64 预设（被删实现写入的值清回默认「跟随容器配置」）
+     * 与已下线的「追加启动参数」键；其余当前实现的键不在清理范围内。
+     */
+    fun cleanupLegacyWinlatorKeys(c: Context) {
+        val p = prefs(c)
+        if (p.getInt(KEY_WINLATOR_LEGACY_CLEANED, 0) >= WINLATOR_LEGACY_CLEAN_VERSION) return
+        val editor = p.edit()
+        WINLATOR_LEGACY_KEYS.forEach(editor::remove)
+        // 旧轮次的布尔标记一并移除（v1/v2）
+        editor.remove("winlator_legacy_keys_cleaned")
+        editor.remove("winlator_legacy_keys_cleaned_v2")
+        editor.putInt(KEY_WINLATOR_LEGACY_CLEANED, WINLATOR_LEGACY_CLEAN_VERSION)
+        editor.apply()
+    }
+
+    fun saveWinlator(c: Context, w: Winlator) {
+        prefs(c).edit().apply {
+            putInt(KEY_WINLATOR_CONTAINER_ID, w.containerId.coerceAtLeast(0))
+            putString(KEY_WINLATOR_CONTAINER_NAME, w.containerName.trim())
+            putString(KEY_WINLATOR_GRAPHICS_DRIVER, normalizeWinlatorGraphicsDriver(w.graphicsDriver))
+            putString(KEY_WINLATOR_DXWRAPPER, normalizeWinlatorDxWrapper(w.dxwrapper))
+            putString(KEY_WINLATOR_SCREEN_SIZE, normalizeWinlatorScreenSize(w.screenSize))
+            putString(KEY_WINLATOR_LC_ALL, normalizeWinlatorLcAll(w.lcAll))
+            putString(KEY_WINLATOR_TZ, normalizeWinlatorTz(w.tz))
+            putString(KEY_WINLATOR_BOX64_PRESET, normalizeWinlatorBox64Preset(w.box64Preset))
+            putBoolean(KEY_WINLATOR_SAVE, w.save)
+        }.apply()
+    }
+
+    /** 图形驱动：仅接受 [WINLATOR_GRAPHICS_DRIVERS] 固定组合；其余（含单驱动残留）归一回空串。 */
+    fun normalizeWinlatorGraphicsDriver(v: String?): String {
+        val t = v?.trim()?.lowercase()?.replace(" ", "").orEmpty()
+        return t.takeIf { it in WINLATOR_GRAPHICS_DRIVERS } ?: ""
+    }
+
+    fun normalizeWinlatorDxWrapper(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in WINLATOR_DXWRAPPERS } ?: ""
+
+    fun normalizeWinlatorBox64Preset(v: String?): String {
+        val t = v?.trim()?.uppercase().orEmpty()
+        return if (t in WINLATOR_BOX64_PRESETS || WINLATOR_BOX64_CUSTOM_PATTERN.matches(t)) t else ""
+    }
+
+    /** 分辨率：仅接受固定档位白名单；其余（含旧实现残留的 auto 等）归一回空串。 */
+    fun normalizeWinlatorScreenSize(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return t.takeIf { it in WINLATOR_SCREEN_SIZES } ?: ""
+    }
+
+    /** 语言环境（LC_ALL）：仅接受 [WINLATOR_LOCALES] 固定档位；其余归一回空串。 */
+    fun normalizeWinlatorLcAll(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return t.takeIf { it in WINLATOR_LOCALES } ?: ""
+    }
+
+    /** 时区（TZ）：仅接受 [WINLATOR_TIMEZONES] 固定档位；其余归一回空串。 */
+    fun normalizeWinlatorTz(v: String?): String {
+        val t = v?.trim().orEmpty()
+        return t.takeIf { it in WINLATOR_TIMEZONES } ?: ""
+    }
 
     // ---------- Tyrano ----------
     fun isTyranoExternalNetwork(c: Context): Boolean = prefs(c).getBoolean(KEY_TYRANO_EXTERNAL_NETWORK, false)
