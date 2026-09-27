@@ -7,6 +7,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -100,6 +101,9 @@ private fun DefaultNavigationRail(
                 WindowInsetsSides.Vertical + WindowInsetsSides.Start,
             ),
         ) {
+            // M3 NavigationRail 默认顶对齐：上下配重让整组导航项垂直居中，
+            // 与玻璃系悬浮柱（contentAlignment = Center）的视觉一致。
+            Spacer(Modifier.weight(1f))
             items.forEachIndexed { index, item ->
                 val selected = index == selectedIndex
                 NavigationRailItem(
@@ -126,6 +130,7 @@ private fun DefaultNavigationRail(
                     ),
                 )
             }
+            Spacer(Modifier.weight(1f))
         }
     }
 }
