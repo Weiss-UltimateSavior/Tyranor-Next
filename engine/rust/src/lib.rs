@@ -56,21 +56,32 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
         let buf = match copied {
             Ok(b) if b.len() as u64 <= KSD_PROBE_MAX => b,
             Ok(b) => {
-                // The stream is bigger than the probe window — write what we
-                // already buffered verbatim (no KSD guess), then stream the
-                // rest. Skipping straight to `io::copy` would drop the buffered
-                // bytes (the reader has already consumed them).
+                // Probe overflow: flush the buffered prefix, then stream the
+                // rest — bounded to the declared size so a hostile entry can't
+                // inflate past it (decompression-bomb guard).
                 let written = oneshot_async(async {
                     out_stream.write_all(&b).await
                 });
                 if written.is_err() {
                     return false;
                 }
-                return oneshot_async(tokio::io::copy(&mut xf, out_stream)).is_ok();
+                let remaining = size.saturating_sub(b.len() as u64);
+                if remaining == 0 {
+                    return oneshot_async(async { out_stream.flush().await }).is_ok();
+                }
+                let copied = oneshot_async(tokio::io::copy(&mut xf.take(remaining), out_stream)).unwrap_or(0);
+                if copied != remaining {
+                    return false;
+                }
+                return oneshot_async(async { out_stream.flush().await }).is_ok();
             }
             _ => {
-                // Read error: stream the remainder (best-effort).
-                return oneshot_async(tokio::io::copy(&mut xf, out_stream)).is_ok();
+                // Read error: stream the remainder (best-effort), same bomb bound.
+                let copied = oneshot_async(tokio::io::copy(&mut xf.take(size), out_stream)).unwrap_or(0);
+                if copied != size {
+                    return false;
+                }
+                return oneshot_async(async { out_stream.flush().await }).is_ok();
             }
         };
         let payload = ksd_mode2_decode(&buf).unwrap_or(buf);
@@ -84,7 +95,10 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
         }
         oneshot_async(async { out_stream.write_all(&payload).await }).is_ok()
     } else {
-        oneshot_async(tokio::io::copy(&mut xf, out_stream)).is_ok()
+        // 炸弹防护：写盘字节以条目声明 size 为硬上限；短写（截断/损坏流）同样计失败，
+        // 不再静默报成功。
+        let copied = oneshot_async(tokio::io::copy(&mut xf.take(size), out_stream)).unwrap_or(0);
+        copied == size
     };
     if !ok {
         return false;
@@ -141,7 +155,8 @@ fn extract_xp3(input: &str, output: &str) -> Result<(u32, u32), String> {
     let mut archive = oneshot_async(XP3Archive::open(SyncIo(BufReader::new(file))))
         .map_err(|e| format!("XP3: {e}"))?;
     let total = archive.entries().len() as u32;
-    extract_progress::reset(archive.entries().iter().map(|e| e.size).sum());
+    // 饱和加法：敌意索引可声明超大 size，普通 sum 会溢出污染进度口径。
+    extract_progress::reset(archive.entries().iter().map(|e| e.size).fold(0u64, |a, b| a.saturating_add(b)));
     let mut fail = 0u32;
     // 同名条目/大小写碰撞防护：后到者改名 ` (n)`，绝不静默覆盖已写出的文件。
     let mut seen: HashSet<String> = HashSet::new();
@@ -235,7 +250,7 @@ fn extract_xp3_selected(input: &str, output: &str, selected: &str) -> Result<(u3
         sel_set.contains(norm_name.as_str()) ||
             sel_set.iter().any(|d| { let dd = if d.ends_with('/') { &d[..d.len()-1] } else { d }; norm_name.starts_with(&format!("{dd}/")) })
     };
-    extract_progress::reset(archive.entries().iter().filter(|e| matches(&e.name)).map(|e| e.size).sum());
+    extract_progress::reset(archive.entries().iter().filter(|e| matches(&e.name)).map(|e| e.size).fold(0u64, |a, b| a.saturating_add(b)));
     let mut sel = 0u32; let mut fail = 0u32;
     let mut seen: HashSet<String> = HashSet::new();
     for i in 0..archive.entries().len() {

@@ -11,7 +11,9 @@
 use flate2::read::DeflateDecoder;
 use std::io::Read;
 
-const MAX_MODE2_OUT: usize = 512 * 1024 * 1024;
+// KSD 只包裹文本条目（真实大小 KB 级）：16 MiB 已远超需要，同时把敌意
+// 声明的单条 native 堆分配压到低内存机型可承受的范围。
+const MAX_MODE2_OUT: usize = 16 * 1024 * 1024;
 
 /// `data` starts after the 5-byte header (i.e. at offset 0x05):
 /// [compressed_len:i64][uncompressed_len:i64][compressed].

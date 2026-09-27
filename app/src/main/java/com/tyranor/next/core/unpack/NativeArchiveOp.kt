@@ -87,7 +87,7 @@ internal object NativeArchiveOp {
                 error = obj.getInt("error"),
             )
         } catch (error: Exception) {
-            throw IOException("Archive result unparseable for $what: $json")
+            throw IOException("Archive result unparseable for $what: ${json.take(200)}")
         }
     }
 }

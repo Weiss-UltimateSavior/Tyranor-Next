@@ -45,7 +45,7 @@ object ArchiveStaging {
             val direct = File(path)
             if (direct.isFile) return direct
         }
-        val name = displayName(context, uri)?.takeIf { it.isNotBlank() } ?: "archive.bin"
+        val name = sanitizeName(displayName(context, uri).orEmpty())
         val total = documentSize(context, uri)
         onProgress?.invoke(0L, total)
         val target = uniqueFile(stagingDir(context).resolve("input"), name)
@@ -86,7 +86,8 @@ object ArchiveStaging {
                 if (isCancelled()) throw ArchiveCancelledException(uri.toString())
                 val (docDir, outDir) = stack.removeLast()
                 for (child in docDir.listFiles()) {
-                    val childName = child.name ?: continue
+                    // provider 返回的名字不可信：清洗后才能拼进本地路径（防暂存区路径注入）。
+                    val childName = child.name?.let(::sanitizeName) ?: continue
                     if (child.isDirectory) {
                         val sub = File(outDir, childName).apply { mkdirs() }
                         stack.add(child to sub)
@@ -175,6 +176,11 @@ object ArchiveStaging {
     fun clearStaging(context: Context) {
         runCatching { stagingDir(context).deleteRecursively() }
     }
+
+    /** provider 显示名不可信：剥掉路径分隔符与 `..`，防暂存区路径注入；清洗后为空走兜底名。 */
+    private fun sanitizeName(name: String): String =
+        name.replace('/', '_').replace('\\', '_').replace("..", "_")
+            .takeIf { it.isNotBlank() } ?: "archive.bin"
 
     private fun displayName(context: Context, uri: Uri): String? {
         // OpenableColumns 对单文档/树子文档均适用；失败回 null 走兜底名。
