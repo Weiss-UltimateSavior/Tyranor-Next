@@ -20,6 +20,12 @@ object AppSettingsStore {
     const val KEY_THEME_MODE = "theme_mode"
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
+
+    /** 游戏页卡片隐藏名称标签（【】/[]）；默认开。 */
+    const val KEY_GAME_CARD_HIDE_TITLE_TAG = "game_card_hide_title_tag"
+
+    /** 游戏页卡片风格：网格 / 列表（封面流）；默认网格。 */
+    const val KEY_GAME_CARD_STYLE = "game_card_style"
     const val KEY_ENGINE_TABS = "engine_tabs"
     const val KEY_SIDE_RAIL = "side_rail"
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
@@ -79,6 +85,15 @@ object AppSettingsStore {
     /** 游戏排序：按标题中 【】/[] 标签内容分组。 */
     const val GAME_SORT_BRACKET_TAG = "bracket_tag"
 
+    /** 卡片隐藏名称标签默认值：开。 */
+    const val DEFAULT_GAME_CARD_HIDE_TITLE_TAG = true
+
+    const val GAME_CARD_STYLE_GRID = "grid"
+    const val GAME_CARD_STYLE_COVER_FLOW = "cover_flow"
+
+    /** 卡片风格默认值：网格。 */
+    const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_GRID
+
     /** 底部导航栏样式：默认（Material3 导航栏）。 */
     const val NAV_STYLE_DEFAULT = "default"
 
@@ -109,6 +124,12 @@ object AppSettingsStore {
 
     /** 游戏排序内存态：设置页切换后游戏页可随重组读取。 */
     val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
+
+    /** 卡片隐藏名称标签内存态：设置页切换后游戏页卡片即时重组。 */
+    val gameCardTitleTagState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_GAME_CARD_HIDE_TITLE_TAG)
+
+    /** 卡片风格内存态：设置页切换后游戏页即时切换布局。 */
+    val gameCardStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_GAME_CARD_STYLE)
 
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
     val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
@@ -230,6 +251,37 @@ object AppSettingsStore {
 
     fun setScanDepth(c: Context, depth: Int) =
         prefs(c).edit().putInt(KEY_SCAN_DEPTH, depth.coerceIn(1, 5)).apply()
+
+    /** 首次组合时从持久化加载「卡片隐藏名称标签」到内存态（幂等）。 */
+    fun initGameCardHideTitleTag(c: Context) {
+        gameCardTitleTagState.value = isGameCardHideTitleTag(c)
+    }
+
+    fun isGameCardHideTitleTag(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_GAME_CARD_HIDE_TITLE_TAG, DEFAULT_GAME_CARD_HIDE_TITLE_TAG)
+
+    fun setGameCardHideTitleTag(c: Context, hidden: Boolean) {
+        prefs(c).edit().putBoolean(KEY_GAME_CARD_HIDE_TITLE_TAG, hidden).apply()
+        gameCardTitleTagState.value = hidden
+    }
+
+    /** 首次组合时从持久化加载「卡片风格」到内存态（幂等）。 */
+    fun initGameCardStyle(c: Context) {
+        gameCardStyleState.value = getGameCardStyle(c)
+    }
+
+    fun getGameCardStyle(c: Context): String =
+        normalizeGameCardStyle(prefs(c).getString(KEY_GAME_CARD_STYLE, DEFAULT_GAME_CARD_STYLE))
+
+    /** 卡片风格归一：仅接受 cover_flow / grid，其余（含空）回退网格。 */
+    fun normalizeGameCardStyle(style: String?): String =
+        if (style?.trim()?.lowercase() == GAME_CARD_STYLE_COVER_FLOW) GAME_CARD_STYLE_COVER_FLOW else GAME_CARD_STYLE_GRID
+
+    fun setGameCardStyle(c: Context, style: String) {
+        val normalized = normalizeGameCardStyle(style)
+        prefs(c).edit().putString(KEY_GAME_CARD_STYLE, normalized).apply()
+        gameCardStyleState.value = normalized
+    }
 
     fun getGameSort(c: Context): String =
         when (prefs(c).getString(KEY_GAME_SORT, GAME_SORT_ALPHA)) {

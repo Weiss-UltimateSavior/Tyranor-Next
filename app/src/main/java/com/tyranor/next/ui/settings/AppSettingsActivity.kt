@@ -80,6 +80,7 @@ internal fun AppSettingsScreen() {
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
     val sideRailEnabled by AppSettingsStore.sideRailState.collectAsState()
+    val hideCardTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
     val glass = AppThemeColors.isGlass
     // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
     val railLayout = isSideRailLayout()
@@ -90,6 +91,7 @@ internal fun AppSettingsScreen() {
         withContext(Dispatchers.IO) {
             AppSettingsStore.initNavStyle(ctx)
             AppSettingsStore.initSideRail(ctx)
+            AppSettingsStore.initGameCardHideTitleTag(ctx)
         }
     }
 
@@ -318,6 +320,20 @@ internal fun AppSettingsScreen() {
                                 checked = engineTabs,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setEngineTabsEnabled(ctx, checked)
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // 游戏页卡片名称隐藏【】/[] 标签（切换即时生效并持久化）
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_game_card_hide_title_tag),
+                                checked = hideCardTitleTag,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setGameCardHideTitleTag(ctx, checked)
                                 },
                             )
                         }

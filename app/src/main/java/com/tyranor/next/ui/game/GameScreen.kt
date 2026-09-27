@@ -108,6 +108,7 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.model.GameSortKeys
+import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.cover.VndbCoverService
 import com.tyranor.next.core.cover.stableKey
@@ -558,12 +559,22 @@ private fun GameLibraryContent(
                             modifier = Modifier.align(Alignment.Center),
                         )
                     } else {
-                        GameGrid(
-                            games = filteredGames,
-                            gridState = gridState,
-                            onGameClick = onGameClick,
-                            onGameLongClick = onGameLongClick,
-                        )
+                        val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
+                        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) {
+                            // 「列表」风格：封面流横向轮播（列表/搜索/排序数据源相同）
+                            GameCoverFlow(
+                                games = filteredGames,
+                                onGameClick = onGameClick,
+                                onGameLongClick = onGameLongClick,
+                            )
+                        } else {
+                            GameGrid(
+                                games = filteredGames,
+                                gridState = gridState,
+                                onGameClick = onGameClick,
+                                onGameLongClick = onGameLongClick,
+                            )
+                        }
                     }
                 }
             }
@@ -1654,6 +1665,8 @@ private fun GameGrid(
     // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度，滚动到底时最后一行可完全露出不被遮挡；
     // 滚动过程中内容仍可经过玻璃后面（沉浸）
     val glassBottomInset = glassNavBottomInset()
+    // 应用设置「卡片隐藏名称标签」：游戏页卡片名称去掉【】/[] 标签（默认开）
+    val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
     // 大屏（横屏/平板）一行六个卡片，避免卡片被撑得过大；窄屏保持一行三个
     val columns = if (isWideScreen()) 6 else 3
     LazyVerticalGrid(
@@ -1677,6 +1690,7 @@ private fun GameGrid(
                 onLongClick = { onGameLongClick(game) },
                 // 滚动/惯性中暂缓封面解码，滚动停止后回填，避免首滑解码风暴挤占滑动帧
                 scrolling = gridState.isScrollInProgress,
+                hideTitleTag = hideTitleTag,
             )
         }
     }
@@ -1693,6 +1707,8 @@ internal fun GameCard(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     scrolling: Boolean = false,
+    /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
+    hideTitleTag: Boolean = false,
 ) {
     Column(modifier) {
         val engineName = when (game.engine) {
@@ -1749,7 +1765,7 @@ internal fun GameCard(
             }
         }
         Text(
-            game.title,
+            if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

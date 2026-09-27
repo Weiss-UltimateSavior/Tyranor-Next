@@ -54,6 +54,10 @@
     <string name="settings_scan_depth_level">%1$d 階層</string>
     <string name="settings_sort_alpha">名前順</string>
     <string name="settings_sort_bracket_tag">括弧タグ</string>
+    <string name="settings_game_card_style">ゲームカードのスタイル</string>
+    <string name="settings_game_card_style_grid">グリッド</string>
+    <string name="settings_game_card_style_cover_flow">リスト</string>
+    <string name="settings_game_card_hide_title_tag">カードの名前タグを非表示</string>
     <string name="settings_game_sort">ゲームの並び替え</string>
     <string name="settings_engine_settings">エンジン設定</string>
     <string name="settings_app_summary">アプリ内の各種設定</string>
@@ -607,4 +611,5 @@
     <string name="pc_add_loading">フォルダーを読み込み中…</string>
     <string name="pc_add_duplicate">このフォルダーは既に追加済みです</string>
     <string name="pc_add_failed">追加に失敗しました。もう一度お試しください</string>
+    <string name="game_cover_flow_caption">%1$s - %2$s</string>
 </resources>

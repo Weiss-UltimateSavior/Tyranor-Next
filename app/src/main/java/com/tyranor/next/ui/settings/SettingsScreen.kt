@@ -328,6 +328,24 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                     }
                                 },
                             )
+                            var cardStyle by remember { mutableStateOf(AppSettingsStore.getGameCardStyle(ctx)) }
+                            val cardStyleModes = listOf(
+                                AppSettingsStore.GAME_CARD_STYLE_GRID to stringResource(R.string.settings_game_card_style_grid),
+                                AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW to stringResource(R.string.settings_game_card_style_cover_flow),
+                            )
+                            val cardStyleIndex = cardStyleModes.indexOfFirst { it.first == cardStyle }
+                                .let { if (it < 0) 0 else it }
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_game_card_style),
+                                items = cardStyleModes.map { it.second },
+                                selectedIndex = cardStyleIndex,
+                                onSelectedIndexChange = { index ->
+                                    cardStyleModes.getOrNull(index)?.first?.let { style ->
+                                        cardStyle = style
+                                        AppSettingsStore.setGameCardStyle(ctx, style)
+                                    }
+                                },
+                            )
                         }
                     }
                 }
