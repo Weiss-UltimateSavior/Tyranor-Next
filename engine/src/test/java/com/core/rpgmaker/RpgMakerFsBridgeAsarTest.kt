@@ -210,6 +210,52 @@ class RpgMakerFsBridgeAsarTest {
         assertEquals("原因码必须是 E2BIG", "E2BIG", bridge.errorFor("big.bin"))
     }
 
+    /**
+     * `app/` 布局的 asar：网页根在归档的 `app/` 之下。
+     *
+     * 回归：fs 桥此前只认 `""` 与 `www/` 两种布局，而 HTTP 服务器认四种——
+     * `app/`/`resources/app/` 布局下会出现「服务器读得到、fs 桥读不到」的分裂，
+     * 插件读数据表与 require 自己模块全部失败。收敂为共享探测后两边一致。
+     */
+    @Test
+    fun readsFromAppLayoutArchive() {
+        val gameRoot = File(java.nio.file.Files.createTempDirectory("asar-app").toFile(), "game").apply { mkdirs() }
+        val contentRoot = File(gameRoot, "app").apply { mkdirs() }
+        val asar = AsarArchive(
+            buildAsar(
+                gameRoot,
+                mapOf(
+                    "app/index.html" to "<html></html>".toByteArray(StandardCharsets.UTF_8),
+                    "app/data/table.json" to asarContent.toByteArray(StandardCharsets.UTF_8),
+                ),
+            ),
+        )
+        val bridge = RpgMakerFsBridge(gameRoot, contentRoot, asar)
+
+        assertTrue("app/ 布局下 asar 条目应可见", bridge.exists("data/table.json"))
+        assertEquals("app/ 布局下应能读到内容", asarContent, bridge.readText("data/table.json"))
+    }
+
+    /** `resources/app/` 布局（Electron 常见）：同样必须能读到。 */
+    @Test
+    fun readsFromResourcesAppLayoutArchive() {
+        val gameRoot = File(java.nio.file.Files.createTempDirectory("asar-resapp").toFile(), "game").apply { mkdirs() }
+        val contentRoot = File(gameRoot, "resources/app").apply { mkdirs() }
+        val asar = AsarArchive(
+            buildAsar(
+                gameRoot,
+                mapOf(
+                    "resources/app/index.html" to "<html></html>".toByteArray(StandardCharsets.UTF_8),
+                    "resources/app/data/table.json" to asarContent.toByteArray(StandardCharsets.UTF_8),
+                ),
+            ),
+        )
+        val bridge = RpgMakerFsBridge(gameRoot, contentRoot, asar)
+
+        assertTrue(bridge.exists("data/table.json"))
+        assertEquals(asarContent, bridge.readText("data/table.json"))
+    }
+
     /** asar 内独有的文件仍应能 stat（无磁盘对应物时回退 asar）。 */
     @Test
     fun statFallsBackToAsarForArchiveOnlyEntries() {

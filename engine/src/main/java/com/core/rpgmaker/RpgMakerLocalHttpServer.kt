@@ -15,6 +15,7 @@ import java.net.Socket
 import java.net.SocketException
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
+import com.core.web.AsarWebRoot
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -62,13 +63,9 @@ internal class RpgMakerLocalHttpServer(
         this.root = root.canonicalFile
         this.asar = asar
         this.tyranoHook = tyranoHook ?: ByteArray(0)
-        this.asarRootPrefix = when {
-            asar == null || asar.has("index.html") -> ""
-            asar.has("www/index.html") -> "www/"
-            asar.has("app/index.html") -> "app/"
-            asar.has("resources/app/index.html") -> "resources/app/"
-            else -> ""
-        }
+        // 探测规则与 fs 桥、tyrano 服务器共用（com.core.web.AsarWebRoot），
+        // 避免「服务器读得到、fs 桥读不到」的分裂行为
+        this.asarRootPrefix = if (asar == null) "" else AsarWebRoot.prefixFor { asar.has(it) }
         val bound = com.core.web.WebShellServerSocket.bind(preferredPort)
         this.serverSocket = bound.socket
         this.usedFallbackPort = bound.usedFallbackPort

@@ -748,6 +748,21 @@ console.log('\n== 回归：审核发现的缺陷（每条对应一个已修问�
         catch (e) { return e.code; }
     })());
 
+    // 算法集一致性：替身与本体必须支持同一组算法（否则 harness 给的保证是假的）
+    check('sha3-256 digest 与 Node 一致（本体支持，替身此前误拒）', (() => {
+        const c = window.require('crypto');
+        return c.createHash('sha3-256').update('x').digest('hex') === nodeCrypto.createHash('sha3-256').update('x').digest('hex');
+    })(), (() => { const c = window.require('crypto'); try { return c.createHash('sha3-256').update('x').digest('hex').slice(0, 16); } catch (e) { return 'THROW'; } })());
+    check('sha3-256 别名写法（无连字符）一致', (() => {
+        const c = window.require('crypto');
+        return c.createHash('sha3256').update('y').digest('hex') === nodeCrypto.createHash('sha3-256').update('y').digest('hex');
+    })());
+    check('hmac 不支持 sha3（与本体 hmacJavaName 一致）', (() => {
+        const c = window.require('crypto');
+        try { c.createHmac('sha3-256', 'k').update('m').digest('hex'); return '未抛错'; }
+        catch (e) { return true; }
+    })() === true);
+
     // 审核④：inflate/inflateRaw 在替身中也必须有界（与 Kotlin MAX_BYTES 对齐）
     check('④ inflate 超限（高膨胀比载荷）失败而非返回巨量数据', (() => {
         const zlibMod = window.require('zlib');

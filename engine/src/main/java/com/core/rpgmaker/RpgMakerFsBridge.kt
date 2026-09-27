@@ -2,6 +2,7 @@ package com.core.rpgmaker
 
 import android.util.Log
 import android.webkit.JavascriptInterface
+import com.core.web.AsarWebRoot
 import java.io.File
 import java.util.Base64
 import java.nio.charset.StandardCharsets
@@ -34,12 +35,7 @@ internal class RpgMakerFsBridge(
      * 覆盖层语义：先前 asar 游戏的插件读数据表/require 自己模块会全部失败。
      * 写入始终落磁盘（压缩包不可写），与 NW.js 下写 save/ 目录的行为一致。
      */
-    private val asarPrefix: String = when {
-        asar == null -> ""
-        asar.has("index.html") -> ""
-        asar.has("www/index.html") -> "www/"
-        else -> ""
-    }
+    private val asarPrefix: String = if (asar == null) "" else AsarWebRoot.prefixFor { asar.has(it) }
 
     /**
      * 请求路径 → 相对网页根的路径。绝对路径只有在位于 contentRoot 之下时才可映射到
@@ -74,11 +70,46 @@ internal class RpgMakerFsBridge(
      *     表现为「配置/数据表改了却不生效」，且写入本身没有报错。
      */
 
+    /**
+     * 读路径解析：精确优先，未命中时逐段宽松匹配——与 HTTP 服务器的 `fuzzyNames`
+     * 行为保持一致（bridges 仅在 v2 会话注册，故这里等价于服务器的容忍分支）。
+     *
+     * 为何必须一致：服务器承载引擎的全部资源加载，若同一路径经 XHR 得 200、经 fs 得 null，
+     * 就会出现「引擎能加载素材、插件读不到同一文件」的矛盾（素材名被规范化时必然触发）。
+     * 写入**不做**宽松匹配：写请求应当创建/覆盖它明确指定的名字，避免误改相邻文件。
+     */
+    private fun resolveForRead(path: String?): File? {
+        resolve(path)?.takeIf { it.exists() }?.let { return it }
+        val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
+        if (raw.any { it == '\u0000' || it.isISOControl() }) return null
+        val normalized = raw.removePrefix("file://").replace('\\', '/')
+        val relative = if (normalized.startsWith("/")) relativeFor(normalized) ?: return null else normalized
+        if (relative.isEmpty()) return null
+
+        var current: File = contentRoot
+        for (part in relative.split("/")) {
+            if (part.isEmpty() || part == ".") continue
+            if (part == "..") return null
+            val children = current.listFiles() ?: return null
+            val matched = children.firstOrNull { it.name == part }
+                ?: children.firstOrNull { it.name.equals(part, ignoreCase = true) }
+                ?: RpgMakerNameMatcher.match(children.map { it.name }, part)
+                    ?.let { name -> children.firstOrNull { it.name == name } }
+                ?: return null
+            current = matched
+        }
+        return try {
+            current.canonicalFile.takeIf { isInsideRoot(it) }
+        } catch (error: Throwable) {
+            null
+        }
+    }
+
     /** 磁盘上的同名**文件**（与服务器的命中条件一致）；目录不算命中，会继续检查 asar。 */
-    private fun diskFile(path: String?): File? = resolve(path)?.takeIf { it.isFile }
+    private fun diskFile(path: String?): File? = resolveForRead(path)?.takeIf { it.isFile }
 
     /** 磁盘上的同名条目（文件或目录），用于存在性/类型/stat 判定。 */
-    private fun diskEntry(path: String?): File? = resolve(path)?.takeIf { it.exists() }
+    private fun diskEntry(path: String?): File? = resolveForRead(path)?.takeIf { it.exists() }
 
     /** __dirname 的取值：网页根（游戏 www/ 目录）。 */
     @JavascriptInterface
@@ -150,7 +181,8 @@ internal class RpgMakerFsBridge(
     }
 
     private fun readDiskText(path: String?): String? {
-        val file = resolve(path) ?: return null
+        // 与 diskFile 同一解析：用 resolve 会在模糊命中后重新精确解析而落空
+        val file = resolveForRead(path) ?: return null
         if (!file.isFile) return null
         if (file.length() > MAX_READ_BYTES) {
             Log.w(TAG, "fs read rejected (too large ${file.length()}): ${file.path}")
@@ -200,7 +232,8 @@ internal class RpgMakerFsBridge(
     }
 
     private fun readDiskBase64(path: String?): String? {
-        val file = resolve(path) ?: return null
+        // 同 readDiskText：必须与 diskFile 的解析一致
+        val file = resolveForRead(path) ?: return null
         if (!file.isFile) return null
         if (file.length() > MAX_READ_BYTES) {
             Log.w(TAG, "fs read(Buffer) rejected (too large ${file.length()}): ${file.path}")
@@ -271,7 +304,7 @@ internal class RpgMakerFsBridge(
                     .toString()
             }
         }
-        val file = resolve(path) ?: return ""
+        val file = resolveForRead(path) ?: return ""
         return try {
             JSONObject()
                 .put("file", file.isFile)
@@ -397,7 +430,6 @@ internal class RpgMakerFsBridge(
         }
     }
 
-    /** 相对路径按网页根解析；越界（不在游戏目录内）返回 null。 */
     /**
      * base64 解码长度下界（不做任何分配）。
      *

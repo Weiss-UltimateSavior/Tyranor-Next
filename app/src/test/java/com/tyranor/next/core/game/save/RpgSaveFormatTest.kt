@@ -6,6 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import com.core.rpgmaker.RpgSaveKeyMapping
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
@@ -231,5 +232,62 @@ class RpgSaveFormatTest {
     fun saveDirectoryIsGameRootSavedata() {
         val gameRoot = mvGameRoot()
         assertEquals(gameRoot.resolve("savedata").absolutePath, RpgSaveFormat.saveDirectory(gameRoot).absolutePath)
+    }
+
+    /**
+     * 跨模块契约：应用侧转化按 RpgSaveKeyMapping 写入，引擎按同一实现读取。
+     *
+     * 该用例锁定「app == 共享实现」这一环（引擎侧另有 RpgSaveKeyMappingTest 锁定
+     * 「引擎 == 共享实现」）。此前两侧各写一份实现、仅靠「MV 键必含空格」的巧合保持等价，
+     * 一旦漂移会导致转化出的存档写进去却读不到，且没有任何报错。
+     */
+    @Test
+    fun appNamingMatchesEngineMapping() {
+        // MV：标准槽位 → legacy 键 → 引擎落盘名，必须与共享映射逐个一致
+        listOf("global.rpgsave", "config.rpgsave", "file1.rpgsave", "file21.rpgsave")
+            .forEach { standardName ->
+                val applied = requireNotNull(RpgSaveFormat.tyranorFileNameForStandard(standardName, EngineType.RPG_MV))
+                val legacyKey = requireNotNull(RpgSaveFormat.standardToTyranor(standardName, EngineType.RPG_MV))
+                    .removeSuffix(".bin")
+                assertEquals(
+                    "MV '$standardName' 的落盘名必须等于引擎映射",
+                    RpgSaveKeyMapping.canonicalFileName(legacyKey, ".bin"),
+                    applied,
+                )
+            }
+
+        // 槽位形式（同步路径使用）同样一致
+        listOf("global", "config", "file3", "file3.bak").forEach { slot ->
+            val applied = RpgSaveFormat.tyranorNameForSlot(slot, EngineType.RPG_MV)
+                ?: return@forEach
+            val legacyKey = applied.removeSuffix(".bin")
+            // 已是哈希名：反解出的键必须能重新映射回同一文件名（往返一致）
+            if (RpgSaveKeyMapping.isHashedFileName(applied)) {
+                assertTrue("哈希名 '$applied' 必须是规范的 64 位小写十六进制", applied.startsWith("key_"))
+            } else {
+                assertEquals(
+                    "非哈希名 '$slot' 应可由映射复现",
+                    RpgSaveKeyMapping.canonicalFileName(legacyKey, ".bin"),
+                    applied,
+                )
+            }
+        }
+    }
+
+    /** MZ 保持原名（键为纯 ASCII，改名会让引擎读不到既有存档）。 */
+    @Test
+    fun mzKeepsRawNameInContract() {
+        // 注意 MZ 用 .rmmzsave 扩展名（MV 为 .rpgsave）
+        listOf("global.rmmzsave", "file1.rmmzsave").forEach { standardName ->
+            val applied = requireNotNull(RpgSaveFormat.tyranorFileNameForStandard(standardName, EngineType.RPG_MZ))
+            assertFalse("MZ '$standardName' 不应使用哈希名", RpgSaveKeyMapping.isHashedFileName(applied))
+            val legacyKey = requireNotNull(RpgSaveFormat.standardToTyranor(standardName, EngineType.RPG_MZ))
+                .removeSuffix(".bin")
+            assertEquals(
+                "MZ 落盘名必须等于引擎映射（纯 ASCII 键 → 原名）",
+                RpgSaveKeyMapping.canonicalFileName(legacyKey, ".bin"),
+                applied,
+            )
+        }
     }
 }

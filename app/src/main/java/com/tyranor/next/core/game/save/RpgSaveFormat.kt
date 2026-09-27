@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.save
 
+import com.core.rpgmaker.RpgSaveKeyMapping
 import com.tyranor.next.core.engine.EngineType
 import java.io.File
 import java.security.MessageDigest
@@ -283,12 +284,15 @@ object RpgSaveFormat {
      * - **MZ**：键形如 `file3`（纯 ASCII），匹配 `directFileKey`，引擎固定读写 `file3.bin`；
      *   若改成哈希名引擎将永远读不到，故 MZ 保持原名。
      */
-    private fun tyranorAppliedName(legacyName: String, engine: EngineType): String =
-        if (engine == EngineType.RPG_MV) {
-            "key_${sha256(legacyName.removeSuffix(".bin"))}.bin"
-        } else {
-            legacyName
-        }
+    private fun tyranorAppliedName(legacyName: String, engine: EngineType): String {
+        if (engine != EngineType.RPG_MV) return legacyName
+        // 与引擎**同一实现**（RpgSaveKeyMapping）：MV 键形如 `RPG File3`（含空格）→
+        // 不匹配 directFileKey → 确定性哈希名。此前这里是独立实现，仅靠「MV 键必含空格」
+        // 与引擎保持等价；改为共用后不存在漂移空间。
+        val key = legacyName.removeSuffix(".bin")
+        val clean = RpgSaveKeyMapping.sanitizeKey(key) ?: return legacyName
+        return RpgSaveKeyMapping.canonicalFileName(clean, ".bin")
+    }
 
     /** 标准文件名 → 转化后实际落盘的 Tyranor 文件名；不匹配返回 null。 */
     fun tyranorFileNameForStandard(standardName: String, engine: EngineType): String? {

@@ -134,7 +134,18 @@ function createBridges(gameRoot, contentRoot) {
             default: return buf.toString('hex');
         }
     };
-    const kSupportedDigests = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512'];
+    // 与 Kotlin RpgMakerEnvBridge 的算法映射保持一致（两边都必须能过，
+    // 否则替身会拒绝本体支持的算法，harness 给出的保证就是假的）：
+    //   hmacJavaName: md5/sha1/sha224/sha256/sha384/sha512
+    //   javaName:     上述 + sha3-224/256/384/512
+    const kSupportedDigests = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512',
+        'sha3224', 'sha3256', 'sha3384', 'sha3512'];
+    // digest 与 hmac 的支持集不同（本体即如此：javaName 含 SHA3，hmacJavaName 不含）
+    const kSupportedHmacs = ['md5', 'sha1', 'sha224', 'sha256', 'sha384', 'sha512'];
+    function nodeAlgorithmName(name) {
+        // 'sha3224' → 'sha3-224'（Node 需要连字符）
+        return name.replace(/^sha3(\d{3})$/, 'sha3-$1');
+    }
 
     const envBridge = {
         argv: () => JSON.stringify(['--' + '0'.repeat(32)]),
@@ -142,14 +153,14 @@ function createBridges(gameRoot, contentRoot) {
             // 与 Kotlin 对齐：仅支持上表算法，其余返回空串（JS 侧转成抛错）
             const name = String(algo || 'sha256').toLowerCase().replace(/-/g, '');
             if (kSupportedDigests.indexOf(name) < 0) return '';
-            try { return hexOrB64(crypto.createHash(name).update(unb64(dataB64)).digest(), out); }
+            try { return hexOrB64(crypto.createHash(nodeAlgorithmName(name)).update(unb64(dataB64)).digest(), out); }
             catch (e) { return ''; }
         },
         hmac: (algo, keyB64, dataB64, out) => {
             // 与 Kotlin 对齐：未知算法返回空串，不能静默降级成 sha256
             const name = String(algo || 'sha256').toLowerCase().replace(/-/g, '');
-            if (kSupportedDigests.indexOf(name) < 0) return '';
-            try { return hexOrB64(crypto.createHmac(name, unb64(keyB64)).update(unb64(dataB64)).digest(), out); }
+            if (kSupportedHmacs.indexOf(name) < 0) return '';
+            try { return hexOrB64(crypto.createHmac(nodeAlgorithmName(name), unb64(keyB64)).update(unb64(dataB64)).digest(), out); }
             catch (e) { return ''; }
         },
         randomBytes: (n) => (n > 0 ? crypto.randomBytes(n).toString('base64') : ''),

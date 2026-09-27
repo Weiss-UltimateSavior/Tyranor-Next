@@ -16,6 +16,7 @@ import java.net.SocketException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
+import com.core.web.AsarWebRoot
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -52,13 +53,8 @@ internal class TyranoLocalHttpServer(
         this.root = root.canonicalFile
         this.asar = asar
         this.tyranoHook = tyranoHook ?: ByteArray(0)
-        this.asarRootPrefix = when {
-            asar == null || asar.has("index.html") -> ""
-            asar.has("www/index.html") -> "www/"
-            asar.has("app/index.html") -> "app/"
-            asar.has("resources/app/index.html") -> "resources/app/"
-            else -> ""
-        }
+        // 与 rpgmaker 服务器/fs 桥共用同一探测规则（com.core.web.AsarWebRoot）
+        this.asarRootPrefix = if (asar == null) "" else AsarWebRoot.prefixFor { asar.has(it) }
         val bound = com.core.web.WebShellServerSocket.bind(preferredPort)
         this.serverSocket = bound.socket
         this.usedFallbackPort = bound.usedFallbackPort
