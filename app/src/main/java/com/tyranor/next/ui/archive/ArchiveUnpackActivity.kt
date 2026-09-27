@@ -17,20 +17,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,7 +49,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -173,8 +179,17 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
 
         if (!allFilesGranted) {
             ArchiveCard(title = stringResource(R.string.archive_permission_rationale)) {
-                Button(onClick = { launchAllFilesAccessSettings(appContext) }) {
-                    Text(stringResource(R.string.archive_permission_grant), style = MaterialTheme.typography.bodyMedium)
+                Button(
+                    onClick = { launchAllFilesAccessSettings(appContext) },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(R.string.archive_permission_grant),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }
@@ -204,18 +219,43 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
 @Composable
 private fun ModeTabs(mode: ArchiveMode, onSelect: (ArchiveMode) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(NavWhite)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        FilterChip(
+        ModeTab(
+            label = stringResource(R.string.archive_mode_unpack),
             selected = mode == ArchiveMode.UNPACK,
             onClick = { onSelect(ArchiveMode.UNPACK) },
-            label = { Text(stringResource(R.string.archive_mode_unpack), style = MaterialTheme.typography.bodyMedium) },
         )
-        FilterChip(
+        ModeTab(
+            label = stringResource(R.string.archive_mode_pack),
             selected = mode == ArchiveMode.PACK,
             onClick = { onSelect(ArchiveMode.PACK) },
-            label = { Text(stringResource(R.string.archive_mode_pack), style = MaterialTheme.typography.bodyMedium) },
+        )
+    }
+}
+
+@Composable
+private fun RowScope.ModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -279,6 +319,7 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                     Button(
                         onClick = { vm.extractSelected(appContext) },
                         enabled = !vm.working && vm.entriesListed,
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     ) {
                         Text(
@@ -293,22 +334,32 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                     val visibleRows = remember(vm.entries, expandedDirs.value) {
                         buildVisibleTree(vm.entries, expandedDirs.value)
                     }
-                    LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                        // key 带索引：归档内允许重名条目，纯名字 key 会撞 Compose 崩溃
-                        itemsIndexed(visibleRows.take(MAX_LISTED_ENTRIES), key = { index, row ->
-                            "$index:" + (if (row.entry.isDirectory) "d:" else "f:") + row.entry.name
-                        }) { _, row ->
-                            EntryListRow(row) { toggle ->
-                                expandedDirs.value = if (toggle) expandedDirs.value + row.entry.name else expandedDirs.value - row.entry.name
-                            }
+                    if (vm.entriesListed && vm.entries.isEmpty()) {
+                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                            Text(
+                                stringResource(R.string.archive_empty_list),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        if (visibleRows.size > MAX_LISTED_ENTRIES) {
-                            item {
-                                Text(
-                                    "+${visibleRows.size - MAX_LISTED_ENTRIES}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
+                    } else {
+                        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                            // key 带索引：归档内允许重名条目，纯名字 key 会撞 Compose 崩溃
+                            itemsIndexed(visibleRows.take(MAX_LISTED_ENTRIES), key = { index, row ->
+                                "$index:" + (if (row.entry.isDirectory) "d:" else "f:") + row.entry.name
+                            }) { _, row ->
+                                EntryListRow(row) { toggle ->
+                                    expandedDirs.value = if (toggle) expandedDirs.value + row.entry.name else expandedDirs.value - row.entry.name
+                                }
+                            }
+                            if (visibleRows.size > MAX_LISTED_ENTRIES) {
+                                item {
+                                    Text(
+                                        "+${visibleRows.size - MAX_LISTED_ENTRIES}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
                             }
                         }
                     }
@@ -330,8 +381,15 @@ private fun PackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () ->
                 Button(
                     onClick = onPickDir,
                     enabled = !vm.working,
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_sheet_folder),
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
                     Text(
                         if (vm.packDirName.isBlank()) stringResource(R.string.archive_pack_pick_dir)
                         else vm.packDirName,
@@ -368,6 +426,7 @@ private fun PackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () ->
                 Button(
                     onClick = { vm.pack(appContext) },
                     enabled = !vm.working && vm.packTreeUri != null,
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 ) {
                     Text(stringResource(R.string.archive_pack_action), style = MaterialTheme.typography.bodyMedium)
@@ -387,9 +446,21 @@ private fun DirStrip(
     rePickLabel: String,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(NavWhite)
+            .padding(start = 12.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_sheet_folder),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(Modifier.width(8.dp))
         Text(
             name.ifBlank { "-" },
             style = MaterialTheme.typography.bodyMedium,
@@ -424,10 +495,11 @@ private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: 
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else NavWhite)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else NavWhite)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         Text(
             archive.fileName,
@@ -468,7 +540,7 @@ private fun EntryListRow(row: VisibleEntry, onToggle: (Boolean) -> Unit) {
         if (!entry.isDirectory) {
             Text(
                 formatBytes(entry.size),
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 6.dp),
             )
@@ -587,7 +659,7 @@ private fun ArchiveCard(title: String, content: @Composable androidx.compose.fou
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(12.dp),
     ) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Text(
