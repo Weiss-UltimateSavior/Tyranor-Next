@@ -522,7 +522,7 @@ private fun ArchiveProgressDialog(vm: ArchiveViewModel, onDismissRequest: () -> 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (vm.working) {
                     if (vm.progressDeterminate) {
-                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth())
                             if (vm.fileBytes.second > 0) {
                                 LinearProgressIndicator(progress = { vm.fileProgress }, modifier = Modifier.fillMaxWidth())
