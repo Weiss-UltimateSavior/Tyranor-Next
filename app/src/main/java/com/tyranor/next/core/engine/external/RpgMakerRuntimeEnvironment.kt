@@ -136,13 +136,15 @@ object RpgMakerRuntimeEnvironment {
             ZipInputStream(raw.buffered()).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
+                    // 先计数再判断跳过：__MACOSX/ 与 .DS_Store 也是条目，
+                    // 若跳过后才计数，构造大量此类条目即可绕过上限、持续消耗解析与 I/O
+                    entryCount += 1
+                    if (entryCount > MAX_ZIP_ENTRIES) return false
                     val name = entry.name.replace('\\', '/')
                     if (name.startsWith("__MACOSX/") || name.contains(".DS_Store")) {
                         zip.closeEntry()
                         continue
                     }
-                    entryCount += 1
-                    if (entryCount > MAX_ZIP_ENTRIES) return false
                     if (entry.size > MAX_ENTRY_UNCOMPRESSED_BYTES) return false
                     val outFile = File(dest, name)
                     if (!outFile.canonicalPath.startsWith(tempRoot + File.separator)) {
