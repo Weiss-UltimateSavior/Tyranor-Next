@@ -58,7 +58,17 @@ macro_rules! progress_store {
 
             /// Expands the overall total mid-run (XP3 KSD unwrap can grow output
             /// beyond the declared entry size) so BYTES/TOTAL stays consistent.
-            pub fn add_total(n: u64) { TOTAL.fetch_add(n, Ordering::Relaxed); }
+            /// Saturating: a hostile index can pin TOTAL at u64::MAX, and a
+            /// wrapping fetch_add would collapse it back to ~0.
+            pub fn add_total(n: u64) {
+                let _ = TOTAL.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |t| Some(t.saturating_add(n)));
+            }
+
+            /// Shrinks the overall total when actual output is smaller than the
+            /// declared entry size (KSD unwrap yielding less), same goal as add_total.
+            pub fn sub_total(n: u64) {
+                let _ = TOTAL.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |t| Some(t.saturating_sub(n)));
+            }
 
             pub fn cancel() { CANCEL.store(true, Ordering::Relaxed); }
             pub fn cancelled() -> bool { CANCEL.load(Ordering::Relaxed) }

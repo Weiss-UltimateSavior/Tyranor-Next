@@ -110,10 +110,18 @@ class ArchiveViewModel : ViewModel() {
 
     private var sessionCleaned = false
 
+    /** 会话首清任务：GB 级残留可能删数秒，暂存前必须 join，防旧清理误删新拷贝。 */
+    private var staleCleanupJob: Job? = null
+
     fun cleanStaleStagingOnce(appContext: Context) {
         if (sessionCleaned) return
         sessionCleaned = true
-        viewModelScope.launch(Dispatchers.IO) { ArchiveStaging.clearStaging(appContext) }
+        staleCleanupJob = viewModelScope.launch(Dispatchers.IO) { ArchiveStaging.clearStaging(appContext) }
+    }
+
+    private suspend fun awaitStaleCleanup() {
+        staleCleanupJob?.join()
+        staleCleanupJob = null
     }
 
     fun switchMode(next: ArchiveMode) {
@@ -340,6 +348,7 @@ class ArchiveViewModel : ViewModel() {
         archive.realFile?.let { return it }
         val uri = archive.docUri ?: throw java.io.IOException("archive source missing: ${archive.fileName}")
         stagedArchive?.takeIf { it.first == archive.id }?.let { return it.second }
+        awaitStaleCleanup()
         val staged = withContext(Dispatchers.IO) {
             ArchiveStaging.stageInputFile(appContext, uri, isCancelled, onStagingProgress)
         }
@@ -385,9 +394,10 @@ class ArchiveViewModel : ViewModel() {
                     }
                     withContext(Dispatchers.IO) { runPack(mappedDir, outFile, level) }
                     message = doneFormat.format(outFile.absolutePath)
-                } else {
-                    // SAF 专有 provider：封到 cache，交给系统保存框。
-                    val srcDir = withContext(Dispatchers.IO) { ArchiveStaging.stageInputDir(appContext, uri, isCancelled) }
+            } else {
+                // SAF 专有 provider：封到 cache，交给系统保存框。
+                awaitStaleCleanup()
+                val srcDir = withContext(Dispatchers.IO) { ArchiveStaging.stageInputDir(appContext, uri, isCancelled) }
                     stagedDir = srcDir
                     val outFile = File(ArchiveStaging.stagingDir(appContext), "packed/resolved$ext")
                     outFile.parentFile?.mkdirs()
@@ -421,7 +431,16 @@ class ArchiveViewModel : ViewModel() {
             try {
                 withContext(Dispatchers.IO) {
                     appContext.contentResolver.openOutputStream(targetUri)?.use { output ->
-                        packed.inputStream().use { input -> input.copyTo(output) }
+                        packed.inputStream().use { input ->
+                            // 分块拷贝并响应取消：整包 copyTo 会让取消按钮在拷完前像失效一样。
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                if (isCancelled()) throw ArchiveCancelledException(packed.name)
+                                val n = input.read(buf)
+                                if (n < 0) break
+                                output.write(buf, 0, n)
+                            }
+                        }
                     } ?: throw java.io.IOException("Cannot open output: $targetUri")
                 }
                 message = doneFormat.format(packed.name)

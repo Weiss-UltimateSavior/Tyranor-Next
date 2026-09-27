@@ -7,6 +7,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.core.game.model.GamePathUtils
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 
 /**
  * SAF 双轨桥：封包/解包只认真实 [File]，SAF `content://` 在此中转。
@@ -92,7 +93,8 @@ object ArchiveStaging {
                         val sub = File(outDir, childName).apply { mkdirs() }
                         stack.add(child to sub)
                     } else if (child.isFile) {
-                        val dest = File(outDir, childName)
+                        // 清洗后撞名的文档走 uniqueFile 改名，绝不静默覆盖中转树里已拷贝的文件。
+                        val dest = uniqueFile(outDir, childName)
                         context.contentResolver.openInputStream(child.uri)?.use { input ->
                             dest.outputStream().use { output ->
                                 bytes += copyBounded(input, output, bytes, "staging directory", isCancelled)
@@ -123,10 +125,12 @@ object ArchiveStaging {
     /**
      * 在目录树下创建名为 [baseName] 的子目录；同名（文件或文件夹）已存在时返回 null
      * ——拒绝静默去重，由调用方提示用户处理同名产物。
+     * 存在性比对做大小写折叠：sdcardfs/FUSE 大小写不敏感，精确匹配会被已有目录绕过。
      */
     fun createChildDirectoryExclusive(context: Context, treeUri: Uri, baseName: String): DocumentFile? {
         val root = DocumentFile.fromTreeUri(context, treeUri) ?: return null
-        if (root.findFile(baseName)?.exists() == true) return null
+        val taken = root.listFiles().mapNotNull { it.name?.lowercase(Locale.ROOT) }.toHashSet()
+        if (baseName.lowercase(Locale.ROOT) in taken) return null
         return root.createDirectory(baseName)
     }
 

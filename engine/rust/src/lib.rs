@@ -55,25 +55,12 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
         });
         let buf = match copied {
             Ok(b) if b.len() as u64 <= KSD_PROBE_MAX => b,
-            Ok(b) => {
-                // Probe overflow: flush the buffered prefix, then stream the
-                // rest — bounded to the declared size so a hostile entry can't
-                // inflate past it (decompression-bomb guard).
-                let written = oneshot_async(async {
-                    out_stream.write_all(&b).await
-                });
-                if written.is_err() {
-                    return false;
-                }
-                let remaining = size.saturating_sub(b.len() as u64);
-                if remaining == 0 {
-                    return oneshot_async(async { out_stream.flush().await }).is_ok();
-                }
-                let copied = oneshot_async(tokio::io::copy(&mut xf.take(remaining), out_stream)).unwrap_or(0);
-                if copied != remaining {
-                    return false;
-                }
-                return oneshot_async(async { out_stream.flush().await }).is_ok();
+            Ok(_overflowed) => {
+                // Probe overflow: the decoded stream exceeded the declared entry
+                // size (16 MiB window) — hostile or sloppy archive. Refuse rather
+                // than write past the declared bound; the caller removes the
+                // partial dest file.
+                return false;
             }
             _ => {
                 // Read error: stream the remainder (best-effort), same bomb bound.
@@ -84,15 +71,29 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
                 return oneshot_async(async { out_stream.flush().await }).is_ok();
             }
         };
-        let payload = ksd_mode2_decode(&buf).unwrap_or(buf);
-        // Calibrate the per-file progress to the actual (KSD-unwrapped)
-        // size — the wrapper's declared size was set before we knew.
-        extract_progress::set_file(payload.len() as u64);
-        // The unwrap grows output beyond the declared entry size; grow TOTAL
-        // by the same delta so the overall bar can still reach exactly 100%.
-        if payload.len() as u64 > size {
-            extract_progress::add_total(payload.len() as u64 - size);
-        }
+        // KSD unwrap grows/shrinks output vs the declared entry size; keep the
+        // overall TOTAL in sync (saturating) so the bar reaches exactly 100%.
+        // A passthrough (no KSD magic / decode failure) MUST match the declared
+        // size exactly — anything else is a hostile or sloppy stream: refuse
+        // rather than write a bomb past the bound.
+        let payload = match ksd_mode2_decode(&buf) {
+            Some(p) => {
+                extract_progress::set_file(p.len() as u64);
+                match (p.len() as u64).cmp(&size) {
+                    std::cmp::Ordering::Greater => extract_progress::add_total(p.len() as u64 - size),
+                    std::cmp::Ordering::Less => extract_progress::sub_total(size - p.len() as u64),
+                    std::cmp::Ordering::Equal => {}
+                }
+                p
+            }
+            None => {
+                if buf.len() as u64 != size {
+                    return false;
+                }
+                extract_progress::set_file(buf.len() as u64);
+                buf
+            }
+        };
         oneshot_async(async { out_stream.write_all(&payload).await }).is_ok()
     } else {
         // 炸弹防护：写盘字节以条目声明 size 为硬上限；短写（截断/损坏流）同样计失败，
