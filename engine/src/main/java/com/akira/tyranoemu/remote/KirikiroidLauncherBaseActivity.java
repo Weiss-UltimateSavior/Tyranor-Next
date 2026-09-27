@@ -892,19 +892,22 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         Intent intent = getIntent();
         if (intent == null) return;
         String language = safeTrim(intent.getStringExtra(LaunchContract.KR_LANGUAGE));
-        if (language.isEmpty() || "auto".equals(language)) return;
-        String encoding = krEncodingForLanguage(language);
-        if (encoding.isEmpty()) return;
+        boolean auto = language.isEmpty() || "auto".equals(language);
+        String encoding = auto ? "" : krEncodingForLanguage(language);
+        if (!auto && encoding.isEmpty()) return;
         File globalFile = globalPreferenceFile();
         if (globalFile == null) return;
         File gameFile = gamePreferenceFile();
         File target = scopeTarget(true, gameFile, globalFile);
         try {
             boolean changed = applyPreferenceItem(
-                    target, "default_encoding", markerFor("default_encoding"), encoding);
-            Log.i(TAG, "game language=" + language + " default_encoding=" + encoding
-                    + " -> " + target + (changed ? "" : " (unchanged)"));
-            clearStalePreferenceItem(target, gameFile, "default_encoding", markerFor("default_encoding"));
+                    target, "default_encoding", markerFor("default_encoding"),
+                    auto ? null : encoding);
+            Log.i(TAG, "game language=" + language + " default_encoding='"
+                    + (auto ? "" : encoding) + "' -> " + target + (changed ? "" : " (unchanged)"));
+            if (!auto) {
+                clearStalePreferenceItem(target, gameFile, "default_encoding", markerFor("default_encoding"));
+            }
         } catch (Exception error) {
             Log.w(TAG, "apply default_encoding failed", error);
         }

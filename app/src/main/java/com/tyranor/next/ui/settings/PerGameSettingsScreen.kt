@@ -437,7 +437,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 ) { krSkipStartupDialogs = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_kr_language), krLanguageOptionsMap(), globalKrLanguage, krLanguage) { krLanguage = it }
+                                if (!isSdl3) {
+                                    OverrideChoice(stringResource(R.string.engine_settings_kr_language), krLanguageOptionsMap(), globalKrLanguage, krLanguage) { krLanguage = it }
+                                }
                                 if (!isSdl3) {
                                     OverrideChoice(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, globalKrPatchOverlayMode, krPatchOverlayMode) { krPatchOverlayMode = it }
                                 }

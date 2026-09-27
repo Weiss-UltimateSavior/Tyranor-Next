@@ -1045,7 +1045,9 @@ private fun LazyListPlaceholder(
                 )
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), krSelectMap, krVersion, onKrVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, krKernel, onKrKernel)
-                DropdownRow(stringResource(R.string.engine_settings_kr_language), krLanguageOptions(), krLanguage, onKrLanguage)
+                if (!isSdl3) {
+                    DropdownRow(stringResource(R.string.engine_settings_kr_language), krLanguageOptions(), krLanguage, onKrLanguage)
+                }
                 if (!isSdl3) {
                     DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
                 }
