@@ -118,10 +118,11 @@ object ArchiveStaging {
         srcDir: File,
         treeUri: Uri,
         isCancelled: () -> Boolean = { false },
+        onProgress: ((copied: Long, total: Long, fileName: String) -> Unit)? = null,
     ): PublishStats {
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: throw IOException("Cannot open directory tree: $treeUri")
-        return publishDir(context, srcDir, root, isCancelled)
+        return publishDir(context, srcDir, root, isCancelled, onProgress)
     }
 
     /**
@@ -136,15 +137,19 @@ object ArchiveStaging {
         return root.createDirectory(baseName)
     }
 
-    /** 把 [srcDir] 树写进已打开的 SAF 目录（幂等覆盖：同名文件删后重建）。 */
+    /** 把 [srcDir] 树写进已打开的 SAF 目录（幂等覆盖：同名文件删后重建）。
+     *  [onProgress] 按字节上报回写进度（SAF 写入慢，GB 级可达数分钟，进度条不能停格）。 */
     fun publishDir(
         context: Context,
         srcDir: File,
         docDir: DocumentFile,
         isCancelled: () -> Boolean = { false },
+        onProgress: ((copied: Long, total: Long, fileName: String) -> Unit)? = null,
     ): PublishStats {
         var files = 0
         var bytes = 0L
+        val publishTotal = srcDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+        var published = 0L
         val stack = ArrayDeque<Pair<File, DocumentFile>>()
         stack.add(srcDir to docDir)
         while (stack.isNotEmpty()) {
@@ -164,7 +169,11 @@ object ArchiveStaging {
                     try {
                         context.contentResolver.openOutputStream(dest.uri)?.use { output ->
                             child.inputStream().use { input ->
-                                bytes += copyBounded(input, output, bytes, "publishing results", isCancelled)
+                                val copied = copyBounded(input, output, bytes, "publishing results", isCancelled) { chunk ->
+                                    onProgress?.invoke(published + chunk, publishTotal, child.name)
+                                }
+                                bytes += copied
+                                published += copied
                             }
                         } ?: throw IOException("Cannot write file: ${child.name}")
                     } catch (error: Throwable) {

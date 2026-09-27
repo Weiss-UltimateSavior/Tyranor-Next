@@ -313,16 +313,35 @@ class ArchiveViewModel : ViewModel() {
                     if (!outDir.mkdirs()) {
                         throw java.io.IOException("cannot create directory: ${outDir.path}")
                     }
-                    extractTo(file, outDir, isCancelled) to outDir.absolutePath
+                    try {
+                        extractTo(file, outDir, isCancelled) to outDir.absolutePath
+                    } catch (error: Throwable) {
+                        // 取消/失败回滚：刚建出的输出目录（可能已有半成品）整体移除，
+                        // 与 SAF 路径（Path B）的回滚语义保持一致。
+                        runCatching { outDir.deleteRecursively() }
+                        throw error
+                    }
                 } else {
                     val treeRoot = sourceTreeUri
                         ?: throw java.io.IOException("missing source directory")
                     val outDoc = ArchiveStaging.createChildDirectoryExclusive(appContext, treeRoot, baseName)
                         ?: throw ArchiveConflictException(conflictDirFormat.format(baseName))
+                    if (outDoc.listFiles().isNotEmpty()) {
+                        // provider 对已存在目录可能返回成功：非空即视作同名冲突，
+                        // 绝不进入写回流程——否则取消回滚会误删目录树里的既有内容。
+                        throw ArchiveConflictException(conflictDirFormat.format(baseName))
+                    }
                     val tmp = File(ArchiveStaging.stagingDir(appContext), "extract_${System.currentTimeMillis()}")
                     try {
                         val counts = extractTo(file, tmp, isCancelled)
-                        ArchiveStaging.publishDir(appContext, tmp, outDoc, isCancelled)
+                        // 回写阶段进度：解包字节此时已计满，把 SAF 发布字节接到同一根条上
+                        // 续跑（总数 = 解包 + 回写，单调递增）。否则 GB 级回写期间条会
+                        // 长时间停格在 ~100%，看起来像卡死——用户反馈的“解包没多久就卡住”。
+                        val base = progressBytes.second
+                        val publishTotal = tmp.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+                        ArchiveStaging.publishDir(appContext, tmp, outDoc, isCancelled) { copied, total, name ->
+                            reportProgress(base + copied, base + publishTotal, copied, total, name)
+                        }
                         counts to (GamePathUtils.safUriToPath(outDoc.uri.toString()) ?: outDoc.name)
                     } catch (error: Throwable) {
                         // 失败/取消回滚：刚在用户目录树里建出的输出目录（可能已有半成品）整体移除。
@@ -357,7 +376,14 @@ class ArchiveViewModel : ViewModel() {
         val staged = withContext(Dispatchers.IO) {
             ArchiveStaging.stageInputFile(appContext, uri, isCancelled, onStagingProgress)
         }
-        stagedArchive = archive.id to staged
+        // stageInputFile 能映射真实路径时直接返回用户原文（零拷贝）：原文不是暂存拷贝，
+        // 绝不能登记进 stagedArchive，否则操作结束 releaseStagedArchive 会把用户的源封包
+        // 一并 delete（成功/取消/失败都触发——线上反馈“取消后连游戏文件也删了”的根因）。
+        // 只有真正位于暂存区的拷贝才允许随操作回收；换档前顺带收回上一档残留拷贝。
+        releaseStagedArchive()
+        if (ArchiveStaging.isStagingFile(appContext, staged)) {
+            stagedArchive = archive.id to staged
+        }
         return staged
     }
 
@@ -414,7 +440,10 @@ class ArchiveViewModel : ViewModel() {
                     saveDialogActive = true
                 }
             } finally {
-                stagedDir?.let { runCatching { it.deleteRecursively() } }
+                // stageInputDir 理论上也可能零拷贝返回用户原目录（与 stageInputFile 同款
+                // 契约）：回收前必须确认位于暂存区，绝不 deleteRecursively 用户的源目录。
+                stagedDir?.takeIf { ArchiveStaging.isStagingFile(appContext, it) }
+                    ?.let { runCatching { it.deleteRecursively() } }
             }
         }
     }

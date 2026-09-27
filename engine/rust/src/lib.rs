@@ -24,19 +24,23 @@ use std::path::{Path, PathBuf};
 /// written verbatim and still runs.
 const KSD_PROBE_MAX: u64 = 16 * 1024 * 1024;
 
-/// Copies one entry from the xp3 stream to disk. Small entries are buffered so
-/// a Kirikiri KSD mode-2 filter (`FE FE 02 FF FE …`, used on text inside XP3)
-/// can be unwrapped — the xp3 crate only decodes the outer zlib, which would
-/// otherwise leave the scrambled wrapper as the file content. Returns true on
-/// success (including a successful explicit flush — a BufWriter drop swallows
-/// flush errors, so disk-full at the tail must be surfaced here).
+/// Copies one entry from the xp3 stream to disk and returns the bytes actually
+/// written. Small entries are buffered so a Kirikiri KSD mode-2 filter
+/// (`FE FE 02 FF FE …`, used on text inside XP3) can be unwrapped — the xp3
+/// crate only decodes the outer zlib, which would otherwise leave the
+/// scrambled wrapper as the file content.
+///
+/// **宽容提取（对齐 krkr2 引擎语义）**：劣质/重打包的归档里实际解出长度经常
+/// ≠ INFO.size（引擎不校验、照玩），因此写盘内容绝不按声明 size 截断或拒绝，
+/// 实写字节数交由调用方对 TOTAL 做自校正。唯一的硬上限是「声明 size + 1 GiB」
+/// 的炸弹护栏——良构包解出恒等于 size，劣质包的口径差也远够用。
 fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
     mut xf: R,
     size: u64,
     out_stream: &mut SyncIo<ProgressWriter<BufWriter<File>>>,
-) -> bool {
+) -> Result<u64, ()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let ok = if size <= KSD_PROBE_MAX {
+    if size <= KSD_PROBE_MAX {
         // Buffer up to a hard cap so a crafted entry that inflates far beyond
         // its declared size can't grow the Vec unboundedly (zlib bomb → OOM).
         let copied: Result<Vec<u8>, std::io::Error> = oneshot_async(async {
@@ -54,55 +58,36 @@ fn copy_xp3_entry<R: tokio::io::AsyncRead + Unpin>(
             Ok(buf2)
         });
         let buf = match copied {
-            Ok(b) if b.len() as u64 <= KSD_PROBE_MAX => b,
-            Ok(_overflowed) => {
-                // Probe overflow: the decoded stream exceeded the declared entry
-                // size (16 MiB window) — hostile or sloppy archive. Refuse rather
-                // than write past the declared bound; the caller removes the
-                // partial dest file.
-                return false;
-            }
-            _ => {
-                // Read error：解码流出错后后续读恒错（ZlibDecoder/底层 I/O 均如此），
-                // 续流只会得到 0 字节——直接判失败，调用方删半成品。
-                return false;
-            }
+            Ok(b) => b,
+            // Read error：解码流出错后后续读恒错（ZlibDecoder/底层 I/O 均如此），
+            // 续流只会得到 0 字节——直接判失败，调用方删半成品。
+            Err(_) => return Err(()),
         };
-        // KSD unwrap grows/shrinks output vs the declared entry size; keep the
-        // overall TOTAL in sync (saturating) so the bar reaches exactly 100%.
-        // A passthrough (no KSD magic / decode failure) MUST match the declared
-        // size exactly — anything else is a hostile or sloppy stream: refuse
-        // rather than write a bomb past the bound.
+        // KSD unwrap 把 wrapper 解成 UTF-16 文本，输出与声明 size 的差值由调用方
+        // 校正进 TOTAL；非 KSD 内容原样透传（劣质包解出 ≠ size 也照写）。
         let payload = match ksd_mode2_decode(&buf) {
             Some(p) => {
                 extract_progress::set_file(p.len() as u64);
-                match (p.len() as u64).cmp(&size) {
-                    std::cmp::Ordering::Greater => extract_progress::add_total(p.len() as u64 - size),
-                    std::cmp::Ordering::Less => extract_progress::sub_total(size - p.len() as u64),
-                    std::cmp::Ordering::Equal => {}
-                }
                 p
             }
-            None => {
-                if buf.len() as u64 != size {
-                    return false;
-                }
-                extract_progress::set_file(buf.len() as u64);
-                buf
-            }
+            None => buf,
         };
-        oneshot_async(async { out_stream.write_all(&payload).await }).is_ok()
-    } else {
-        // 炸弹防护：写盘字节以条目声明 size 为硬上限；短写（截断/损坏流）同样计失败，
-        // 不再静默报成功。
-        let copied = oneshot_async(tokio::io::copy(&mut xf.take(size), out_stream)).unwrap_or(0);
-        copied == size
-    };
-    if !ok {
-        return false;
+        if oneshot_async(async { out_stream.write_all(&payload).await }).is_err() {
+            return Err(());
+        }
+        if oneshot_async(async { out_stream.flush().await }).is_err() {
+            return Err(());
+        }
+        return Ok(payload.len() as u64);
     }
-    // BufWriter::drop swallows flush errors — surface ENOSPC/EIO here.
-    oneshot_async(async { out_stream.flush().await }).is_ok()
+    // 炸弹护栏：声明 size + 1 GiB 硬上限。良构包解出 == size；劣质包的口径差
+    // 远小于 1 GiB；敌意灌盘最多多写 1 GiB 即被截停。
+    let cap = size.saturating_add(1024 * 1024 * 1024);
+    let copied = oneshot_async(tokio::io::copy(&mut xf.take(cap), out_stream)).unwrap_or(0);
+    if oneshot_async(async { out_stream.flush().await }).is_err() {
+        return Err(());
+    }
+    Ok(copied)
 }
 
 /// Resolves output-path collisions so an entry never silently clobbers a file
@@ -179,9 +164,16 @@ fn extract_xp3(input: &str, output: &str) -> Result<(u32, u32), String> {
             // File::create 已建 dest：失败也必须删掉，别留 0 字节残file。
             _ => { let _ = fs::remove_file(&dest); fail += 1; continue; }
         };
-        if !copy_xp3_entry(xf, size, &mut out_stream) {
-            let _ = fs::remove_file(&dest);
-            fail += 1;
+        let written = match copy_xp3_entry(xf, size, &mut out_stream) {
+            Ok(w) => w,
+            Err(()) => { let _ = fs::remove_file(&dest); fail += 1; continue; }
+        };
+        // 进度口径自校正：劣质/重打包的归档实际解出 ≠ 声明 size（引擎容忍不校验），
+        // TOTAL 按实写字节同步，终态 BYTES==TOTAL，进度条精确到 100% 而非卡满/不满。
+        match written.cmp(&size) {
+            std::cmp::Ordering::Greater => extract_progress::add_total(written - size),
+            std::cmp::Ordering::Less => extract_progress::sub_total(size - written),
+            std::cmp::Ordering::Equal => {}
         }
     }
     // Post-loop recheck: a cancel landing on the final entry would otherwise
