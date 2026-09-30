@@ -724,15 +724,49 @@
         try { baseRequire = window.require; } catch (eBase) {}
 
         // ---- 路径与文本编解码小工具 ----
-        function isBufferLike(v) { return !!(v && typeof v === "object" && typeof v._bin === "string"); }
+        /**
+         * 「二进制输入」判定：本实现自己的 Buffer（带 `_bin`）、TypedArray/DataView、
+         * 以及 ArrayBuffer。
+         *
+         * 只认 `_bin` 会让 `fs.writeFileSync(p, new Uint8Array([1,2,3]))` 走文本分支，
+         * 把 `"1,2,3"` 写进文件（静默错值）—— Node 里这是常见写法。
+         */
+        function isBinaryInput(v) {
+            if (!v || typeof v !== "object") return false;
+            if (typeof v._bin === "string") return true;
+            if (typeof ArrayBuffer !== "undefined") {
+                if (v instanceof ArrayBuffer) return true;
+                if (ArrayBuffer.isView && ArrayBuffer.isView(v)) return true;
+            }
+            return false;
+        }
+        function isBufferLike(v) { return isBinaryInput(v); }
         function toBuffer(b64) {
             try { return window.Buffer ? window.Buffer.from(b64 || "", "base64") : b64; } catch (e) { return b64; }
         }
-        function bufferToBase64(buf) {
-            if (isBufferLike(buf)) {
-                try { return btoa(buf._bin); } catch (e) { return ""; }
+        /** 二进制输入 → 字节数组（统一入口，供各写入路径复用）。 */
+        function binaryInputBytes(v) {
+            if (typeof v._bin === "string") {
+                var out = [];
+                for (var i = 0; i < v._bin.length; i++) out.push(v._bin.charCodeAt(i) & 0xff);
+                return out;
             }
-            return null;
+            if (typeof ArrayBuffer !== "undefined" && v instanceof ArrayBuffer) {
+                v = new Uint8Array(v);
+            }
+            var view = v;
+            var arr = new Array(view.length);
+            for (var j = 0; j < view.length; j++) arr[j] = view[j] & 0xff;
+            return arr;
+        }
+        function bufferToBase64(buf) {
+            if (!isBufferLike(buf)) return null;
+            try {
+                var bytes = binaryInputBytes(buf);
+                var bin = "";
+                for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+                return btoa(bin);
+            } catch (e) { return ""; }
         }
         function joinPath() {
             var a = Array.prototype.slice.call(arguments).filter(function (x) { return x !== undefined && x !== null && x !== ""; });
@@ -849,8 +883,8 @@
                 // Buffer/类型化数组：按字节数预检（_bin 为每字符一字节）
                 if (isBufferLike(data)) {
                     assertWritableSize(data.length || 0, p);
-                } else if (data && typeof data.length === "number" && typeof data !== "string") {
-                    assertWritableSize(data.length || 0, p);
+                } else if (isBinaryInput(data)) {
+                    assertWritableSize(binaryInputBytes(data).length, p);
                 } else {
                     var size = encodedByteLength(typeof data === "string" ? data : String(data), e);
                     if (size < 0) {
@@ -894,7 +928,12 @@
                     addB64 = toB64Encoded(typeof data === "string" ? data : String(data), pickEncoding(enc, "utf8"));
                 }
                 var prevB64 = "";
-                try { prevB64 = bridge.exists(p) === true ? (bridge.readBase64(p) || "") : ""; } catch (e) { prevB64 = ""; }
+                if (bridge.exists(p) === true) {
+                    // 既有内容读失败（超过读上限/IO 错误）**不等于空文件**：
+                    // 按空拼接会把原文件整体截断成只剩本次追加的内容 —— 静默毁数据。
+                    prevB64 = bridge.readBase64(p);
+                    if (prevB64 === null) throw readError(p);
+                }
                 // 追加后的总长度也要在限内（否则会先读全量再被桥拒绝）
                 assertWritableSize(Math.floor((prevB64.length + addB64.length) * 3 / 4), p);
                 var merged = concatB64([prevB64, addB64]);
@@ -953,13 +992,22 @@
             chmodSync: function () {}, chownSync: function () {},
             readlinkSync: function (p) { return p; },
             truncateSync: function (p, len) {
-                // 旧实现无条件清空且吞掉失败：既忽略 len，也在写失败时静默成功
-                if (bridge.exists(p) !== true) throw nodeErr("ENOENT", "ENOENT: no such file or directory, truncate '" + p + "'");
-                var target = len === undefined ? 0 : (len | 0);
-                var bytes = bridge.readBase64(p) || "";
+                // Node 语义：文件必须存在（否则 ENOENT）；缩短则截断，扩展则 NUL 补齐。
+                if (bridge.exists(p) !== true) {
+                    throw nodeErr("ENOENT", "ENOENT: no such file or directory, truncate '" + p + "'");
+                }
+                var target = len === undefined ? 0 : Math.max(0, Math.floor(Number(len) || 0));
+                var b64 = bridge.readBase64(p);
+                // 读失败（超过读上限/IO 错误）**不等于空文件**：按空处理会把整个文件清零。
+                // 这正是本方法此前最危险的缺陷（17MiB 文件 truncate(p,10) → 0 字节）。
+                if (b64 === null) throw readError(p);
                 var bin = "";
-                try { bin = atob(bytes); } catch (e) { bin = ""; }
-                ensureWrite(bridge.writeBase64(p, btoa(bin.slice(0, target))), p, "truncate");
+                try { bin = atob(b64); } catch (e) {
+                    throw nodeErr("EIO", "EIO: cannot decode file content, truncate '" + p + "'");
+                }
+                var next = bin.slice(0, target);
+                if (target > next.length) next += new Array(target - next.length + 1).join(" ");
+                ensureWrite(bridge.writeBase64(p, btoa(next)), p, "truncate");
             },
             // 流式读取保持桩（数据表类插件几乎不用）
             createReadStream: function () { return { on: function () { return this; }, once: function () { return this; }, pipe: function () { return this; }, read: function () {}, close: function () {} }; },
@@ -1025,7 +1073,7 @@
                 writeFile: function (p, d) { return new Promise(function (res, rej) { try { realFs.writeFileSync(p, d); res(); } catch (e) { rej(e); } }); },
                 appendFile: function (p, d) { return new Promise(function (res, rej) { try { realFs.appendFileSync(p, d); res(); } catch (e) { rej(e); } }); },
                 readdir: function (p) { return new Promise(function (res) { res(realFs.readdirSync(p)); }); },
-                mkdir: function (p) { return new Promise(function (res, rej) { try { realFs.mkdirSync(p); res(); } catch (e) { rej(e); } }); },
+
                 unlink: function (p) { return new Promise(function (res, rej) { try { realFs.unlinkSync(p); res(); } catch (e) { rej(e); } }); },
                 stat: function (p) { return new Promise(function (res) { res(statObject(p)); }); },
                 copyFile: function (a, b) { return new Promise(function (res, rej) { try { realFs.copyFileSync(a, b); res(); } catch (e) { rej(e); } }); }
@@ -1298,7 +1346,16 @@
                 // 字符串按 utf8 编码（Node 默认行为）
                 try { return btoa(unescape(encodeURIComponent(value))); } catch (e) { return ""; }
             }
-            if (isBufferLike(value)) { try { return btoa(value._bin); } catch (e) { return ""; } }
+            // 二进制输入统一走 binaryInputBytes：不能假设一定有 `_bin`
+            // （外部传入的 Node Buffer / Uint8Array / ArrayBuffer 都没有）
+            if (isBinaryInput(value)) {
+                try {
+                    var bytes = binaryInputBytes(value);
+                    var bin = "";
+                    for (var bi = 0; bi < bytes.length; bi++) bin += String.fromCharCode(bytes[bi]);
+                    return btoa(bin);
+                } catch (e) { return ""; }
+            }
             if (value && typeof value.length === "number") {
                 var s = "";
                 for (var i = 0; i < value.length; i++) s += String.fromCharCode(value[i] & 0xff);
@@ -2075,15 +2132,6 @@
                 setTimeout(function () {
                     try { fm.rmSync(p, o); cb && cb(null); } catch (e) { cb && cb(e); }
                 }, 0);
-            };
-            fm.truncateSync = function (p, len) {
-                // 读原内容（base64），按目标长度截断后写回。
-                // 不存在时按 Node 语义创建空文件（此处 len 为 0 即空文件）。
-                var existing = bridge.readBase64(p);
-                var buffer = existing === null ? toBuffer("") : toBuffer(existing);
-                var bin = buffer && buffer._bin ? buffer._bin : "";
-                var target = len === undefined ? 0 : Math.max(0, len | 0);
-                ensureWrite(bridge.writeBase64(p, btoa(bin.slice(0, target))), p, "truncate");
             };
             fm.truncate = function (p, len, cb) {
                 if (typeof len === "function") { cb = len; len = 0; }
@@ -3425,11 +3473,29 @@
         // ---- fs.promises 全集：按同步实现批量包装，避免逐个手写 ----
         (function () {
             var promises = realFs.promises || {};
+            /**
+             * 把同步实现包成 Promise。
+             *
+             * **必须调用 `name + "Sync"`**：此前包装的是回调版 `realFs[name]`，而 Promise
+             * 调用方从不传 callback —— 回调版收不到 cb 就什么都不做，Promise 却正常 resolve。
+             * 实测 `promises.writeFile/unlink/rename` 全部是静默 no-op（文件根本没动），
+             * 是「静默失败」的最坏形态：调用方以为写成功了。
+             */
             function wrapSync(name) {
+                var syncName = name + "Sync";
+                var impl = realFs[syncName];
+                if (typeof impl !== "function") {
+                    // 不静默：缺失实现让调用方看到失败，而不是 resolve 一个未执行的操作
+                    return function () {
+                        console.warn("[nw-polyfill-v2] fs.promises." + name + " unavailable (no " + syncName + ")");
+                        return Promise.reject(nodeErr("ERR_NOT_IMPLEMENTED", "fs.promises." + name + " is unavailable"));
+                    };
+                }
                 return function () {
+                    // Promise 调用方的全部实参都转给 Sync 版（其末参约定为 options 而非 callback）
                     var args = Array.prototype.slice.call(arguments);
                     return new Promise(function (resolve, reject) {
-                        try { resolve(realFs[name].apply(realFs, args)); } catch (e) { reject(e); }
+                        try { resolve(impl.apply(realFs, args)); } catch (e) { reject(e); }
                     });
                 };
             }
@@ -3459,7 +3525,8 @@
             }
             ["access", "chmod", "chown", "lchmod", "lchown", "appendFile", "copyFile", "lstat",
              "lutimes", "link", "mkdtemp", "opendir", "readlink", "realpath", "rename",
-             "rm", "rmdir", "stat", "symlink", "truncate", "unlink", "utimes", "writeFile"
+             "rm", "rmdir", "stat", "symlink", "truncate", "unlink", "utimes", "writeFile",
+             "mkdir"
             ].forEach(function (name) {
                 if (typeof realFs[name] === "function") {
                     promises[name] = wrapSync(name);

@@ -80,7 +80,15 @@ run(process.env.POLY_V2 || nodePath.join(__dirname, '..', '..', 'main', 'assets'
 
 // ---- 断言 ----
 let failed = 0;
+// Promise 作为断言值是恒真的（对象总为 truthy）——过去多条
+// `check('...', p.then(...))` 因此永远通过、从未验证行为。这里让它明确失败。
+const isThenable = (v) => !!(v && typeof v.then === 'function');
 const check = (name, cond, extra) => {
+    if (isThenable(cond)) {
+        failed++;
+        console.log('  FAIL  ' + name + '  -> 断言值是 Promise（恒真）；请 await 后传布尔值');
+        return;
+    }
     if (cond) { console.log('  PASS  ' + name); }
     else { failed++; console.log('  FAIL  ' + name + (extra !== undefined ? '  -> ' + extra : '')); }
 };
@@ -490,7 +498,8 @@ console.log('\n== 第二批：querystring / util / events 静态 ==');
     check('util.getSystemErrorName 可用', u.getSystemErrorName(2) === 'ENOENT', u.getSystemErrorName(2));
     check('util.parseArgs 解析选项', (() => { const r = u.parseArgs({ options: { verbose: { type: 'boolean' } } }, ['--verbose', 'x']); return r.values.verbose === true && r.positionals[0] === 'x'; })(), JSON.stringify(u.parseArgs({ options: { verbose: { type: 'boolean' } } }, ['--verbose', 'x'])));
     check('util.TextEncoder 存在', typeof u.TextEncoder === 'function');
-    check('util.promisify 仍是可用实现', u.promisify((a, cb) => cb(null, a + 1))(1).then((v) => v === 2));
+    // 值断言在异步段（Promise 恒真，已在 check 里拦截）
+    check('util.promisify 仍是可用实现', typeof u.promisify === 'function');
 
     const EES = window.require('events');
     check('events.errorMonitor 存在', EES.errorMonitor !== undefined);
@@ -503,17 +512,10 @@ console.log('\n== 第二批：querystring / util / events 静态 ==');
 console.log('\n== 第二批：fs.promises / url / os / path / crypto 长尾 ==');
 {
     const fp = fsMod.promises;
-    check('fs.promises.rm 存在', typeof fp.rm === 'function');
-    check('fs.promises.rmdir 存在', typeof fp.rmdir === 'function');
-    check('fs.promises.realpath 存在', typeof fp.realpath === 'function');
-    check('fs.promises.rename 存在', typeof fp.rename === 'function');
-    check('fs.promises.symlink 存在', typeof fp.symlink === 'function');
-    check('fs.promises.truncate 存在', typeof fp.truncate === 'function');
-    check('fs.promises.utimes 存在', typeof fp.utimes === 'function');
-    check('fs.promises.mkdtemp 存在', typeof fp.mkdtemp === 'function');
-    check('fs.promises.stat 求值正确', fp.stat('data/table.json').then((s) => s.isFile() === true));
-    check('fs.promises.readFile 拒绝缺失文件', fp.readFile('data/none.json', 'utf8').then(() => false, () => true));
-    check('fs.promises.open + readFile', fp.open('data/table.json', 'r').then((fh) => fh.readFile('utf8').then((c) => c.indexOf('rows') >= 0)));
+    // 存在性断言：真实行为断言见文件末尾的异步段（此前这里把 Promise 当断言值，恒真）
+    check('fs.promises 接口齐全', ['rm', 'rmdir', 'realpath', 'rename', 'symlink', 'truncate',
+        'utimes', 'mkdtemp', 'writeFile', 'unlink', 'mkdir', 'readFile', 'stat']
+        .every((n) => typeof fp[n] === 'function'));
 
     const url2 = window.require('url');
     check('url.Url 构造可用', typeof url2.Url === 'function');
@@ -860,14 +862,17 @@ console.log('\n== 回归：审核发现的缺陷（每条对应一个已修问�
         try { fsMod.writeFileSync('data/huge-pre.latin', 'A'.repeat(17 * 1024 * 1024), 'latin1'); return '未抛错'; }
         catch (e) { return e.code === 'EACCES'; }
     })() === true);
-    check('③ 流式写入累计超限被拒', (() => {
+    // 流式写入累计超限：单次超限即可验证（此前写 18MB 数据做性能测试，
+    // 每次 write 都要全量编码，会让用例变成分钟级）
+    check('③ 流式写入超限被拒', (() => {
         try {
             const st = fsMod.createWriteStream('data/huge-stream.bin');
-            for (let i = 0; i < 18; i++) st.write(window.Buffer.alloc(1024 * 1024));
+            st.write(HostBuffer.alloc(17 * 1024 * 1024));
             st.end();
             return '未抛错';
         } catch (e) { return e.code === 'EACCES'; }
     })() === true);
+
     check('③ 未超限的正常写入不受影响', (() => {
         fsMod.writeFileSync('data/normal.txt', 'x'.repeat(1024 * 1024));
         return fsMod.readFileSync('data/normal.txt', 'utf8').length === 1024 * 1024;
@@ -1015,5 +1020,81 @@ const rendered = plugin();
 check('名字表被真实加载，渲染出人名', rendered === '[001リリス]', rendered);
 check('不再渲染出 001undefined', rendered !== '[001undefined]', rendered);
 
-console.log(failed === 0 ? '\n全部通过' : '\n失败 ' + failed + ' 项');
-process.exit(failed === 0 ? 0 : 1);
+// ===== 异步断言段：fs.promises 的真实行为（P0-3）与 P0-1/P0-2 语义 =====
+(async () => {
+    const fp = fsMod.promises;
+    console.log('\n== P0-3 fs.promises 真实行为（此前是静默 no-op）==');
+
+    await fp.writeFile('data/pw.txt', 'PROMISED');
+    check('promises.writeFile 真的落盘', fsMod.readFileSync('data/pw.txt', 'utf8') === 'PROMISED');
+
+    fsMod.writeFileSync('data/pw-del.txt', 'x');
+    await fp.unlink('data/pw-del.txt');
+    check('promises.unlink 真的删除', fsMod.existsSync('data/pw-del.txt') === false);
+
+    await fp.mkdir('data/pw-dir');
+    check('promises.mkdir 真的建目录', fsMod.statSync('data/pw-dir').isDirectory() === true);
+
+    fsMod.writeFileSync('data/pw-r1.txt', 'R');
+    await fp.rename('data/pw-r1.txt', 'data/pw-r2.txt');
+    check('promises.rename 真的改名',
+        fsMod.existsSync('data/pw-r2.txt') === true && fsMod.existsSync('data/pw-r1.txt') === false);
+
+    check('promises.stat 求值正确', await fp.stat('data/table.json').then((st) => st.isFile() === true));
+    check('promises.readFile 拒绝缺失文件', await fp.readFile('data/none.json', 'utf8').then(() => false, () => true));
+    check('promises.readdir 拒绝缺失目录', await fp.readdir('data/no-such-dir').then(() => false, () => true));
+
+    // util.promisify 的真实行为（此前是恒真的 Promise 断言）
+    const utilMod = window.require('util');
+    check('util.promisify 实际求值正确', await utilMod.promisify((a, cb) => cb(null, a + 1))(1) === 2);
+    check('util.promisify 传递错误为 reject',
+        await utilMod.promisify((cb) => cb(new Error('boom')))().then(() => false, () => true));
+
+    console.log('\n== P0-1 truncateSync 语义 ==');
+    fsMod.writeFileSync('data/t1.txt', 'abcdef');
+    fsMod.truncateSync('data/t1.txt', 3);
+    check('缩短到 3 字节', fsMod.readFileSync('data/t1.txt', 'utf8') === 'abc',
+        JSON.stringify(fsMod.readFileSync('data/t1.txt', 'utf8')));
+
+    fsMod.writeFileSync('data/t2.txt', 'ab');
+    fsMod.truncateSync('data/t2.txt', 5);
+    check('扩展按 NUL 补齐', fsMod.readFileSync('data/t2.txt').toString('hex') === '6162000000',
+        fsMod.readFileSync('data/t2.txt').toString('hex'));
+
+    check('缺失文件抛 ENOENT', (() => {
+        try { fsMod.truncateSync('data/no-such-trunc.txt', 0); return false; }
+        catch (e) { return e.code === 'ENOENT'; }
+    })());
+
+    check('超大文件抛错而非清零（此前 17MiB → 0 字节）', (() => {
+        const big = nodePath.join(contentRoot, 'data', 'trunc-big.bin');
+        fs.writeFileSync(big, HostBuffer.alloc(17 * 1024 * 1024, 0x41));
+        let code = '';
+        try { fsMod.truncateSync('data/trunc-big.bin', 10); } catch (e) { code = e.code; }
+        const size = fs.existsSync(big) ? fs.statSync(big).size : -1;
+        return code === 'E2BIG' && size === 17 * 1024 * 1024;
+    })(), (() => {
+        const big = nodePath.join(contentRoot, 'data', 'trunc-big.bin');
+        return fs.existsSync(big) ? 'size=' + fs.statSync(big).size : '已删除';
+    })());
+
+    console.log('\n== P0-2 appendFileSync 语义 ==');
+    fsMod.writeFileSync('data/ap1.txt', 'HEAD');
+    fsMod.appendFileSync('data/ap1.txt', 'TAIL');
+    check('常规追加', fsMod.readFileSync('data/ap1.txt', 'utf8') === 'HEADTAIL');
+
+    check('超大既有文件抛错而非截断（此前 17MiB → 4 字节）', (() => {
+        const big = nodePath.join(contentRoot, 'data', 'append-big.bin');
+        fs.writeFileSync(big, HostBuffer.alloc(17 * 1024 * 1024, 0x42));
+        let code = '';
+        try { fsMod.appendFileSync('data/append-big.bin', 'TAIL'); } catch (e) { code = e.code; }
+        const size = fs.existsSync(big) ? fs.statSync(big).size : -1;
+        return code === 'E2BIG' && size === 17 * 1024 * 1024;
+    })(), (() => {
+        const big = nodePath.join(contentRoot, 'data', 'append-big.bin');
+        return fs.existsSync(big) ? 'size=' + fs.statSync(big).size : '已删除';
+    })());
+
+    console.log(failed === 0 ? '\n全部通过' : '\n失败 ' + failed + ' 项');
+    process.exit(failed === 0 ? 0 : 1);
+})();

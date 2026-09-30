@@ -76,6 +76,28 @@ class RpgMakerFsBridgeFuzzyReadTest {
         assertFalse("仅差空白数量的歧义请求必须拒绝", bridge.exists("data/ステ画面フキダシ  .png"))
     }
 
+    /**
+     * 大小写歧义必须拒绝（与服务端一致）。
+     *
+     * 此前桥自留「大小写首中优先」分支：目录内同时存在 `A.json` 与 `a.json` 时会任选
+     * 其一命中，而服务器对同一请求返回 404 —— 两边结论不一致会导致
+     * 「引擎加载得到、插件读到另一个或读不到」。
+     */
+    @Test
+    fun caseAmbiguityIsRejectedLikeServer() {
+        val (gameRoot, bridge) = newBridge()
+        val dir = File(gameRoot, "www/data").apply { mkdirs() }
+        if (!File(dir, "Case.json").let { it.writeText("UPPER"); File(dir, "case.json").writeText("lower"); it.isFile }) {
+            return   // 大小写不敏感文件系统上无法构造该情形
+        }
+        // 大小写不敏感文件系统会把后来者视作同一文件；仅在能构造出两个文件时断言
+        val upper = File(dir, "Case.json")
+        val lower = File(dir, "case.json")
+        if (upper.canonicalPath == lower.canonicalPath) return
+
+        assertFalse("大小写歧义请求必须拒绝（与服务端一致）", bridge.exists("data/CASE.json"))
+    }
+
     /** 越界仍被拒绝，宽松匹配不得成为逃逸通道。 */
     @Test
     fun fuzzyReadDoesNotEscapeRoot() {

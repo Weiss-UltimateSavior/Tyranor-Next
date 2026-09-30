@@ -91,12 +91,12 @@ internal class RpgMakerFsBridge(
             if (part.isEmpty() || part == ".") continue
             if (part == "..") return null
             val children = current.listFiles() ?: return null
-            val matched = children.firstOrNull { it.name == part }
-                ?: children.firstOrNull { it.name.equals(part, ignoreCase = true) }
-                ?: RpgMakerNameMatcher.match(children.map { it.name }, part)
-                    ?.let { name -> children.firstOrNull { it.name == name } }
-                ?: return null
-            current = matched
+            // 逐段解析一律走 RpgMakerNameMatcher（首级即精确匹配，与「先精确」等价），
+            // 不再自留「大小写首中优先」分支——该分支在目录内同时存在 `A.json`/`a.json`
+            // 时会任选其一命中，而服务器对同一情形返回 404；两边结论不一致会导致
+            // 「引擎加载得到、插件读到另一个或读不到」。
+            val matchedName = RpgMakerNameMatcher.match(children.map { it.name }, part) ?: return null
+            current = children.firstOrNull { it.name == matchedName } ?: return null
         }
         return try {
             current.canonicalFile.takeIf { isInsideRoot(it) }
@@ -413,12 +413,20 @@ internal class RpgMakerFsBridge(
                 out.fd.sync()
             }
             if (!temp.renameTo(file)) {
-                // 目标被占用等情况下 rename 失败：退回直接覆盖（保底不丢数据）
-                file.outputStream().use { out ->
-                    temp.inputStream().use { input -> input.copyTo(out) }
-                    out.fd.sync()
+                // rename 失败（目标被占用/跨卷）：改用「先删再移」而不是
+                // `file.outputStream()` 直写 —— 后者会**先截断目标**，拷贝中途失败即
+                // 丢掉旧内容（temp 虽在，但目标已空，等于半损）。删掉目标再 rename
+                // 让复用成为原子操作，失败时 temp 仍在、可重试。
+                val moved = file.delete().let { temp.renameTo(file) }
+                if (!moved) {
+                    // 仍失败：回退为原地覆盖，但先确认 temp 可读（避免拷到一半才失败）
+                    if (!temp.isFile) return false
+                    file.outputStream().use { out ->
+                        temp.inputStream().use { input -> input.copyTo(out) }
+                        out.fd.sync()
+                    }
+                    temp.delete()
                 }
-                temp.delete()
             }
             tmp = null
             true
