@@ -648,4 +648,9 @@
     <string name="pc_add_duplicate">This folder is already in the library</string>
     <string name="pc_add_failed">Failed to add, please retry</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="engine_settings_kr_language">Language environment</string>
+    <string name="engine_settings_kr_language_jp">Japanese</string>
+    <string name="engine_settings_kr_language_en">English</string>
+    <string name="engine_settings_kr_language_zh">Simplified Chinese</string>
+    <string name="engine_settings_kr_language_zhtw">Traditional Chinese</string>
 </resources>

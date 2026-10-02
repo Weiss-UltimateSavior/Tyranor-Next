@@ -34,6 +34,20 @@ object EngineSettingsStore {
     const val KEY_KR_PATCH_OVERLAY_MODE = "kr_patch_overlay_mode"
     const val KEY_KR_SKIP_STARTUP_DIALOGS = "kr_skip_startup_dialogs"
     const val KEY_KR_ANIME4K_MODE = "kr_anime4k_mode"
+    /** KRKR 游戏底层运行语言环境（全局默认；单游戏可覆盖）。 */
+    const val KEY_KR_LANGUAGE = "kr_language"
+
+    fun getKrLanguage(c: Context): String =
+        normalizeKrLanguage(prefs(c).getString(KEY_KR_LANGUAGE, KR_LANGUAGE_AUTO))
+    fun setKrLanguage(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_KR_LANGUAGE, normalizeKrLanguage(v)).apply()
+    fun normalizeKrLanguage(v: String?): String = when (v?.trim()?.lowercase()) {
+        KR_LANGUAGE_JP -> KR_LANGUAGE_JP
+        KR_LANGUAGE_EN -> KR_LANGUAGE_EN
+        KR_LANGUAGE_ZH -> KR_LANGUAGE_ZH
+        KR_LANGUAGE_ZHTW -> KR_LANGUAGE_ZHTW
+        else -> KR_LANGUAGE_AUTO
+    }
 
     // Artemis 应用级默认
     const val KEY_ARTEMIS_ENGINE_VERSION = "artemis_engine_version"
@@ -128,6 +142,19 @@ object EngineSettingsStore {
     const val KR_PATCH_OVERLAY_AUTO = "auto"
     const val KR_PATCH_OVERLAY_FORCE = "force"
     const val KR_PATCH_OVERLAY_OFF = "off"
+    // KRKR 语言环境取值（auto 不修改环境，保持引擎/系统默认）
+    const val KR_LANGUAGE_AUTO = "auto"
+    const val KR_LANGUAGE_JP = "jp"
+    const val KR_LANGUAGE_EN = "en"
+    const val KR_LANGUAGE_ZH = "zh"
+    const val KR_LANGUAGE_ZHTW = "zhtw"
+    val KR_LANGUAGES: Set<String> = linkedSetOf(
+        KR_LANGUAGE_AUTO,
+        KR_LANGUAGE_JP,
+        KR_LANGUAGE_EN,
+        KR_LANGUAGE_ZH,
+        KR_LANGUAGE_ZHTW,
+    )
 
     // Anime4K 画面超分模式（仅 kirikiri2 内核路径生效；取值与引擎侧 Anime4kRuntime 一致）
     const val ANIME4K_OFF = "off"

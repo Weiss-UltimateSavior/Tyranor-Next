@@ -968,6 +968,7 @@ object EngineLauncher {
                 putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
                 putExtra(LaunchContract.ORIENTATION, 6)
                 putExtra(LaunchContract.FOCUS, "true")
+            putExtra(LaunchContract.KR_LANGUAGE, settings.krLanguage)
             }
         }
         val version = settings.krEngineVersion
@@ -1019,6 +1020,7 @@ object EngineLauncher {
                 putExtra(LaunchContract.SCOPED_SAVE_ROOT, actualSaveRoot.absolutePath)
             }
             putExtra(LaunchContract.FOCUS, "true")
+            putExtra(LaunchContract.KR_LANGUAGE, settings.krLanguage)
             // 引擎版本
             putExtra(LaunchContract.KR_ENGINE_VERSION, when (version) {
                 EngineSettingsStore.KR_134 -> "1.3.4"

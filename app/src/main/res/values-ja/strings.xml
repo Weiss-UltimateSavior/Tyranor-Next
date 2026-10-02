@@ -648,4 +648,9 @@
     <string name="pc_add_duplicate">このフォルダーは既に追加済みです</string>
     <string name="pc_add_failed">追加に失敗しました。もう一度お試しください</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="engine_settings_kr_language">言語環境</string>
+    <string name="engine_settings_kr_language_jp">日本語</string>
+    <string name="engine_settings_kr_language_en">英語</string>
+    <string name="engine_settings_kr_language_zh">簡体字中国語</string>
+    <string name="engine_settings_kr_language_zhtw">繁体字中国語</string>
 </resources>
