@@ -452,10 +452,31 @@ object EngineLauncher {
             rootPath,
             settings.webScopedSaveDir,
         ) ?: return null
-        return if (settings.webScopedSaveDir) {
-            listOf(effective, File(rootPath, "savedata"), File(rootPath, "Savedata"))
+        return buildRpgSaveScanDirs(rootPath, effective, settings.webScopedSaveDir)
+    }
+
+    /**
+     * 组装检测/转化目录组（纯函数，供单测直接校验）：**首个元素是引擎生效目录 = 转化输出落点**，
+     * 其余元素仅供扫描。包含三类：
+     * - 兼容目录：非独立存档的历史 `Savedata/`；独立存档时另含游戏根 `savedata/`（用户从非独立
+     *   切到独立后，旧标准档仍能被检测/转化进生效目录——引擎只读外部目录）；
+     * - 标准侧（JoiPlay/PC）目录：`<内容根>/save`（MV 常见 `<游戏根>/www/save`，MZ 无 www 时为
+     *   `<游戏根>/save`），兼容 `Save/` 拼写。标准格式存档实际就放在这里，不纳入扫描范围就
+     *   永远检测不到，转化形同不生效。
+     */
+    internal fun buildRpgSaveScanDirs(rootPath: String, effectiveDir: File, scoped: Boolean): List<File> {
+        val compatible = if (scoped) {
+            listOf(File(rootPath, "savedata"), File(rootPath, "Savedata"))
         } else {
-            listOf(effective, File(rootPath, "Savedata"))
+            listOf(File(rootPath, "Savedata"))
+        }
+        val standard = RpgSaveFormat.standardSaveDirectories(File(rootPath))
+        val seen = mutableSetOf<String>()
+        return (listOf(effectiveDir) + compatible + standard).filter { dir ->
+            // 与 RpgSaveFormat 共用同一去重规则：此前此处无条件小写归一，
+            // 会把区分大小写文件系统上的 `Savedata/`（历史兼容目录）误判为与生效目录
+            // `savedata/` 相同而丢弃，只放在 Savedata/ 的旧存档因此漏检、漏转化。
+            seen.add(RpgSaveFormat.saveDirDedupKey(dir))
         }
     }
 
