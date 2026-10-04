@@ -93,7 +93,11 @@ internal fun RpgMakerRgssSettingsCard(
             val failedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed)
             val ok = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpZip(ctx, type, uri) }
             refreshRtp(type)
-            Toast.makeText(ctx, if (ok) importedMsg else failedMsg, Toast.LENGTH_SHORT).show()
+            // 失败时带上原因（如「条目数超过上限」）：只报「导入失败」会让用户
+            // 无从判断是包损坏、格式不对，还是被安全上限拦下。
+            val reason = if (ok) null else RpgMakerRuntimeEnvironment.lastRejectReason()
+            val message = if (ok) importedMsg else reason?.let { "$failedMsg ($it)" } ?: failedMsg
+            Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
         }
     }
 

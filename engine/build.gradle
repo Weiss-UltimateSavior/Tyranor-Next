@@ -84,6 +84,19 @@ tasks.register('jsHarness', Exec) {
     commandLine 'node', 'v2-fs-bridge.harness.js'
     // 只有在显式传 -PskipJsHarness 时才跳过；其余情况一律执行
     onlyIf { !skipJsHarness }
+    // 无 Node 时 Exec 默认只报「系统找不到指定的文件」，看不出是缺依赖还是脚本挂了。
+    // 这里改用「忽略退出码 + 事后检查」，避免在 doFirst 里 exec（配置缓存下不可用）。
+    ignoreExitValue = true
+    doLast {
+        if (executionResult.get().exitValue != 0) {
+            def detail = executionResult.get().failure?.message ?: '未知错误'
+            throw new GradleException(
+                'jsHarness 执行失败（需要 Node.js）。' +
+                ' 若因缺少 node：安装 Node 后重试，或用 ./gradlew check -PskipJsHarness 跳过；' +
+                ' 若为用例失败请查看上方输出。原始错误：' + detail
+            )
+        }
+    }
 }
 
 tasks.named('check') {

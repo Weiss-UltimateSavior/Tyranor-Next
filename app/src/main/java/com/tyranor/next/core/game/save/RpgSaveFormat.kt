@@ -3,7 +3,6 @@ package com.tyranor.next.core.game.save
 import com.core.rpgmaker.RpgSaveKeyMapping
 import com.tyranor.next.core.engine.EngineType
 import java.io.File
-import java.security.MessageDigest
 import java.util.Locale
 
 /**
@@ -67,7 +66,6 @@ object RpgSaveFormat {
     /** MZ 的 Tyranor 文件名：`global.bin` / `file1.bin` 等。 */
     private val MZ_TYRANOR_NAME = Regex("^(global|config|file(\\d+))(bak)?\\.bin$", RegexOption.IGNORE_CASE)
 
-    private val HASHED_KEY_NAME = Regex("^key_([0-9a-f]{64})\\.bin$", RegexOption.IGNORE_CASE)
 
     private const val MV_EXT = ".rpgsave"
     private const val MZ_EXT = ".rmmzsave"
@@ -350,14 +348,14 @@ object RpgSaveFormat {
     }
 
     /** 哈希存档名（key_<sha256>.bin）判定。 */
-    fun isHashedTyranorName(name: String): Boolean = HASHED_KEY_NAME.matches(name)
+    fun isHashedTyranorName(name: String): Boolean = RpgSaveKeyMapping.hashFromFileName(name) != null
 
     /**
      * 哈希存档名反解为标准文件名：查预建的「sha256(键) → 标准名」索引（键空间有限，
      * 见 [buildHashedIndex]）。命中即返回标准名；无法还原（插件自定义键）返回 null。
      */
     fun hashedToStandardName(name: String, engine: EngineType): String? {
-        val hash = HASHED_KEY_NAME.matchEntire(name)?.groupValues?.get(1)?.lowercase(Locale.ROOT) ?: return null
+        val hash = RpgSaveKeyMapping.hashFromFileName(name) ?: return null
         return when (engine) {
             EngineType.RPG_MV -> mvHashedIndex[hash]
             EngineType.RPG_MZ -> mzHashedIndex[hash]
@@ -396,9 +394,7 @@ object RpgSaveFormat {
         return index
     }
 
-    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }
+    private fun sha256(value: String): String = RpgSaveKeyMapping.sha256Hex(value)
 
     private const val MAX_ENTRY_SEARCH_DEPTH = 2
     private val WEB_ENTRY_SUBDIRS = arrayOf(

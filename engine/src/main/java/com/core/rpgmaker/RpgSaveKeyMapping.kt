@@ -51,14 +51,24 @@ object RpgSaveKeyMapping {
         if (DIRECT_FILE_KEY.matches(cleanKey)) "$cleanKey$extension"
         else "$HASH_PREFIX${sha256Hex(cleanKey)}$extension"
 
-    /** 判断文件名是否为本规则产出的哈希名。 */
-    fun isHashedFileName(fileName: String?): Boolean {
-        val name = fileName ?: return false
-        val body = name.removePrefix(HASH_PREFIX)
-        if (body == name) return false
-        val stem = body.substringBeforeLast('.', body)
-        return stem.length == 64 && stem.all { it in '0'..'9' || it in 'a'..'f' }
+    /**
+     * 从哈希名反解其中的 sha256 摘要（小写）；非哈希名返回 null。
+     *
+     * 这是「识别 + 反解」的**唯一原语**：应用侧的哈希名判定与「摘要 → 标准名」反解索引
+     * 都基于它，避免两处各自维护正则（此前 app 侧另有一份 `HASHED_KEY_NAME`）。
+     * 大小写不敏感（历史文件名可能来自大小写混用的写入方），返回前统一转小写。
+     */
+    fun hashFromFileName(fileName: String?, extension: String = ".bin"): String? {
+        val name = fileName ?: return null
+        if (!name.startsWith(HASH_PREFIX) || !name.endsWith(extension, ignoreCase = true)) return null
+        val stem = name.substring(HASH_PREFIX.length, name.length - extension.length)
+        if (stem.length != 64) return null
+        if (!stem.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return null
+        return stem.lowercase()
     }
+
+    /** 判断文件名是否为本规则产出的哈希名。 */
+    fun isHashedFileName(fileName: String?): Boolean = hashFromFileName(fileName) != null
 
     /** SHA-256 十六进制小写。 */
     fun sha256Hex(value: String): String = MessageDigest.getInstance("SHA-256")

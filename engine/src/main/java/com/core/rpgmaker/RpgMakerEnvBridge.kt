@@ -44,8 +44,13 @@ internal class RpgMakerEnvBridge {
     @JavascriptInterface
     fun digest(algorithm: String?, dataBase64: String?, outputEncoding: String?): String {
         val input = decode(dataBase64) ?: return ""
+        val mapped = javaName(algorithm)
+        if (mapped == null) {
+            Log.w(TAG, "digest rejected (missing algorithm)")
+            return ""
+        }
         return try {
-            val md = MessageDigest.getInstance(javaName(algorithm))
+            val md = MessageDigest.getInstance(mapped)
             encode(md.digest(input), outputEncoding)
         } catch (error: Throwable) {
             Log.w(TAG, "digest failed algo=$algorithm", error)
@@ -101,7 +106,16 @@ internal class RpgMakerEnvBridge {
     ): String {
         val password = decode(passwordBase64) ?: return ""
         val salt = decode(saltBase64) ?: return ""
-        if (iterations <= 0 || keyLength <= 0 || keyLength > MAX_BYTES) return ""
+        // 迭代次数必须设上限：本方法经 @JavascriptInterface 在 WebView 的 JavaBridge
+        // **单一线程**上串行执行，而 JS 侧的 `iterations | 0` 可直传 2^31-1。
+        // 游戏脚本（含远程加载的第三方插件）一次调用即可让该线程计算数十分钟，
+        // 期间所有桥调用（存档、fs 读写、crypto）全部排队冻结 —— 比 Node 下只冻结
+        // JS 事件循环严重得多。
+        if (iterations <= 0 || iterations > MAX_PBKDF2_ITERATIONS) {
+            Log.w(TAG, "pbkdf2 rejected (iterations=$iterations)")
+            return ""
+        }
+        if (keyLength <= 0 || keyLength > MAX_BYTES) return ""
         return try {
             val macAlgorithm = hmacJavaName(digestAlgorithm) ?: "HmacSHA1"
             val mac = Mac.getInstance(macAlgorithm)
@@ -343,17 +357,27 @@ internal class RpgMakerEnvBridge {
         }
     }
 
-    private fun javaName(algorithm: String?): String = when (algorithm?.trim()?.lowercase()?.replace("-", "")) {
-        "md5" -> "MD5"
-        "sha1" -> "SHA-1"
-        "sha256" -> "SHA-256"
-        "sha384" -> "SHA-384"
-        "sha512" -> "SHA-512"
-        "sha3224" -> "SHA3-224"
-        "sha3256" -> "SHA3-256"
-        "sha3384" -> "SHA3-384"
-        "sha3512" -> "SHA3-512"
-        else -> algorithm?.trim().orEmpty().ifEmpty { "SHA-256" }
+    /**
+     * 摘要算法名映射。空/缺失返回 null 由调用方失败——
+     * 静默降级为 SHA-256 会让调用方拿到「算法不对但格式正确」的摘要
+     * （Node 的 createHash() 缺参同样抛错）。表外的名字原样交给 JCE，
+     * 由它抛 NoSuchAlgorithmException 走失败路径，不静默替换算法。
+     */
+    private fun javaName(algorithm: String?): String? {
+        val raw = algorithm?.trim().orEmpty()
+        if (raw.isEmpty()) return null
+        return when (raw.lowercase().replace("-", "")) {
+            "md5" -> "MD5"
+            "sha1" -> "SHA-1"
+            "sha256" -> "SHA-256"
+            "sha384" -> "SHA-384"
+            "sha512" -> "SHA-512"
+            "sha3224" -> "SHA3-224"
+            "sha3256" -> "SHA3-256"
+            "sha3384" -> "SHA3-384"
+            "sha3512" -> "SHA3-512"
+            else -> raw
+        }
     }
 
     /**
@@ -408,6 +432,12 @@ internal class RpgMakerEnvBridge {
     companion object {
         private const val TAG = "YukiRpgMaker"
         private const val MAX_BYTES = 64 * 1024 * 1024
+
+        /**
+         * PBKDF2 迭代次数上限。Node 无此限制，但宿主桥是单线程串行执行的，
+         * 必须防止恶意/异常参数长时间占用（1e7 在该线程上约数秒，仍是可接受的代价）。
+         */
+        private const val MAX_PBKDF2_ITERATIONS = 10_000_000
 
         /** 解压缓冲初始容量（按需增长）；不随输入放大，避免无谓的内存峰值。 */
         private const val DECOMPRESS_INITIAL_CAPACITY = 64 * 1024

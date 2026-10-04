@@ -202,6 +202,26 @@ class RpgMakerEnvBridgeTest {
     }
 
     @Test
+    fun pbkdf2RejectsExcessiveIterations() {
+        // 迭代次数失控会长时间占住 WebView 的 JavaBridge 单线程（所有桥调用排队冻结），
+        // 必须拒绝而不是「跑完它」。
+        val password = b64("pw".toByteArray())
+        val salt = b64("salt".toByteArray())
+        assertEquals("超过上限的迭代次数必须拒绝", "", bridge.pbkdf2(password, salt, Int.MAX_VALUE, 32, "sha256"))
+        // 上限内的正常调用不受影响
+        assertTrue("上限内的迭代应正常工作", bridge.pbkdf2(password, salt, 1000, 32, "sha256").isNotEmpty())
+    }
+
+    @Test
+    fun digestRejectsMissingAlgorithmInsteadOfSilentlyUsingSha256() {
+        // 静默降级为 SHA-256 会让调用方拿到「算法不对但格式正确」的摘要
+        val data = b64("x".toByteArray())
+        assertEquals("缺算法必须失败", "", bridge.digest(null, data, "hex"))
+        assertEquals("空算法必须失败", "", bridge.digest("", data, "hex"))
+        assertTrue("显式 sha256 仍正常", bridge.digest("sha256", data, "hex").isNotEmpty())
+    }
+
+    @Test
     fun memoryReportingIsSane() {
         assertTrue(bridge.maxMemory() > 0)
         assertTrue(bridge.totalMemory() > 0)

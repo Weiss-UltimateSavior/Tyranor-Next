@@ -1023,7 +1023,48 @@ check('不再渲染出 001undefined', rendered !== '[001undefined]', rendered);
 // ===== 异步断言段：fs.promises 的真实行为（P0-3）与 P0-1/P0-2 语义 =====
 (async () => {
     const fp = fsMod.promises;
+    const cryptoMod2 = window.require('crypto');
+    console.log('\n== 复审修正项（#3/#4/#5/#8）==');
+
+    // #5 truncate 扩展必须真的补齐 NUL（此前源码内嵌原始 NUL 字节）
+    fsMod.writeFileSync('data/pad.txt', 'ab');
+    fsMod.truncateSync('data/pad.txt', 5);
+    check('#5 truncate 扩展按 NUL 补齐',
+        fsMod.readFileSync('data/pad.txt').toString('hex') === '6162000000',
+        fsMod.readFileSync('data/pad.txt').toString('hex'));
+
+    // #3 randomInt 的 (max, cb) 双参形式此前返回 NaN
+    check('#3 randomInt(max, cb) 返回有效值而非 NaN', await new Promise((res) => {
+        cryptoMod2.randomInt(5, (err, v) => res(err ? false : (Number.isInteger(v) && v >= 0 && v <= 5)));
+    }) === true);
+    check('#3 randomInt(min, max) 同步形式', (() => {
+        const v = cryptoMod2.randomInt(1, 3);
+        return Number.isInteger(v) && v >= 1 && v <= 3;
+    })());
+    check('#3 randomInt 非法范围抛错', (() => {
+        try { cryptoMod2.randomInt(5, 5); return false; } catch (e) { return true; }
+    })());
+
+    // #4 回调形式的 encoding 必须透传（此前丢弃 → 非 utf8 静默按 utf8 写）
+    await new Promise((res) => fsMod.writeFile('data/cb-latin.txt', '\u00ff\u00fe', 'latin1', res));
+    check('#4 writeFile 回调形式透传 encoding',
+        fs.readFileSync(nodePath.join(contentRoot, 'data', 'cb-latin.txt')).toString('hex') === 'fffe',
+        fs.readFileSync(nodePath.join(contentRoot, 'data', 'cb-latin.txt')).toString('hex'));
+    await new Promise((res) => fsMod.appendFile('data/cb-latin2.txt', '\u00ff', 'latin1', res));
+    check('#4 appendFile 回调形式透传 encoding',
+        fs.readFileSync(nodePath.join(contentRoot, 'data', 'cb-latin2.txt')).toString('hex') === 'ff',
+        fs.readFileSync(nodePath.join(contentRoot, 'data', 'cb-latin2.txt')).toString('hex'));
+
+    // #8 缺算法不再静默降级为 SHA-256
+    check('#8 createHash() 缺算法抛错（不静默用 sha256）', (() => {
+        try { cryptoMod2.createHash(); return false; } catch (e) { return true; }
+    })());
+    check('#8 createHmac() 缺算法抛错', (() => {
+        try { cryptoMod2.createHmac(); return false; } catch (e) { return true; }
+    })());
+
     console.log('\n== P0-3 fs.promises 真实行为（此前是静默 no-op）==');
+
 
     await fp.writeFile('data/pw.txt', 'PROMISED');
     check('promises.writeFile 真的落盘', fsMod.readFileSync('data/pw.txt', 'utf8') === 'PROMISED');

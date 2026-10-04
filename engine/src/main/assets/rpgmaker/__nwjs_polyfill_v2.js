@@ -909,9 +909,11 @@
                 }
             },
             writeFile: function (p, data, o, cb) {
-                if (typeof o === "function") { cb = o; }
+                if (typeof o === "function") { cb = o; o = undefined; }
                 if (typeof cb === "function") setTimeout(function () {
-                    try { realFs.writeFileSync(p, data); cb(null); } catch (err) { cb(err); }
+                    // 必须把 options/encoding 透传：丢弃它会让 latin1/hex/base64 等
+                    // 编码被静默按 utf8 写入（静默错值）
+                    try { realFs.writeFileSync(p, data, o); cb(null); } catch (err) { cb(err); }
                 }, 0);
             },
             appendFileSync: function (p, data, enc) {
@@ -942,13 +944,17 @@
                 }
             },
             appendFile: function (p, data, o, cb) {
-                if (typeof o === "function") { cb = o; }
+                if (typeof o === "function") { cb = o; o = undefined; }
                 if (typeof cb === "function") setTimeout(function () {
-                    try { realFs.appendFileSync(p, data); cb(null); } catch (err) { cb(err); }
+                    // 同 writeFile：encoding 必须透传
+                    try { realFs.appendFileSync(p, data, o); cb(null); } catch (err) { cb(err); }
                 }, 0);
             },
             readdirSync: function (p) {
                 var raw = bridge.readdir(p);
+                // "" 表示桥侧 IO 错误（与「空目录/非目录」的 "[]" 区分）——必须抛错，
+                // 否则插件会把 IO 故障当成目录为空，进而清空自建索引。
+                if (raw === "") throw nodeErr("EIO", "EIO: cannot read directory, readdir '" + p + "'");
                 try { return JSON.parse(raw || "[]"); } catch (e) { return []; }
             },
             readdir: function (p, o, cb) {
@@ -1006,7 +1012,11 @@
                     throw nodeErr("EIO", "EIO: cannot decode file content, truncate '" + p + "'");
                 }
                 var next = bin.slice(0, target);
-                if (target > next.length) next += new Array(target - next.length + 1).join(" ");
+                if (target > next.length) {
+                    // 用 fromCharCode 构造填充：避免源码里出现原始 NUL 字节（工具链易误改）
+                    var pad = new Array(target - next.length + 1).join(String.fromCharCode(0));
+                    next += pad;
+                }
                 ensureWrite(bridge.writeBase64(p, btoa(next)), p, "truncate");
             },
             // 流式读取保持桩（数据表类插件几乎不用）
@@ -1481,8 +1491,20 @@
         }
 
         var cryptoModule = {
-            createHash: function (algorithm) { return makeHash(String(algorithm || "sha256").toLowerCase().replace(/-/g, "")); },
-            createHmac: function (algorithm, key) { return makeHmac(String(algorithm || "sha256").toLowerCase().replace(/-/g, ""), key === undefined ? "" : key); },
+            createHash: function (algorithm) {
+                // 不再默认 sha256：Node 的 createHash() 缺参/未知算法会抛错，
+                // 静默用 SHA-256 会让调用方拿到「算法不对但格式正确」的摘要。
+                if (typeof algorithm !== "string" || algorithm.trim() === "") {
+                    throw ioError("ERR_INVALID_ARG_TYPE", "crypto.createHash requires an algorithm");
+                }
+                return makeHash(algorithm.trim().toLowerCase().replace(/-/g, ""));
+            },
+            createHmac: function (algorithm, key) {
+                if (typeof algorithm !== "string" || algorithm.trim() === "") {
+                    throw ioError("ERR_INVALID_ARG_TYPE", "crypto.createHmac requires an algorithm");
+                }
+                return makeHmac(algorithm.trim().toLowerCase().replace(/-/g, ""), key === undefined ? "" : key);
+            },
             createCipheriv: function (algorithm, key, iv, options) { return makeCipher(String(algorithm), key, iv, true, options); },
             createDecipheriv: function (algorithm, key, iv, options) { return makeCipher(String(algorithm), key, iv, false, options); },
             randomBytes: function (count, callback) {
@@ -1507,9 +1529,18 @@
                 return env.randomUuid();
             },
             randomInt: function (min, max, callback) {
-                var lo = min, hi = max;
-                if (typeof max !== "number") { hi = lo; lo = 0; }
-                if (typeof max === "function") { callback = max; hi = lo; lo = 0; }
+                // Node 的三种签名：(max) / (min,max) / (max, cb) / (min,max,cb) / (min,max,opts,cb)。
+                // 归一化必须一次到位：此前「两个 if 各归一一次」的写法在 (max, cb) 下会
+                // 先把 hi=lo 再执行一次 hi=lo（此时 lo 已为 0）→ hi-lo===0 → 返回 NaN。
+                var lo = 0, hi = 0;
+                if (typeof min === "function") { callback = min; }
+                else if (typeof max === "function") { callback = max; hi = min; }
+                else if (typeof max === "number") { lo = min; hi = max; }
+                else { hi = min; }
+                if (typeof min !== "number" && typeof max !== "number") {
+                    throw ioError("ERR_INVALID_ARG_TYPE", "crypto.randomInt requires a number bound");
+                }
+                if (hi <= lo) throw ioError("ERR_OUT_OF_RANGE", "crypto.randomInt max must be greater than min");
                 var bytes = env ? toBuffer(env.randomBytes(4)) : null;
                 if (!bytes) throw ioError("ERR_NOT_IMPLEMENTED", "crypto.randomInt unavailable without native bridge");
                 var value = 0;

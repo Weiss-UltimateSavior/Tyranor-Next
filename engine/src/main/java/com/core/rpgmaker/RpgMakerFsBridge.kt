@@ -255,7 +255,13 @@ internal class RpgMakerFsBridge(
         // asar 内有目录 `data/`，若这里回退 asar 就会列出子项，而 isDir 返回 false。
         diskEntry(path)?.let { entry ->
             if (!entry.isDirectory) return "[]"   // 磁盘是文件（或其它非目录）→ 不是目录
-            val names = entry.list() ?: return "[]"
+            // list() 为 null 是 IO 错误（权限/句柄耗尽等），与「空目录」语义不同：
+            // 折叠成 [] 会让插件以为目录真的空了（并可能据此清空自建索引）。
+            // 返回空串表示失败，由 JS 侧抛错。
+            val names = entry.list() ?: run {
+                Log.w(TAG, "fs readdir failed (IO error): ${entry.path}")
+                return ""
+            }
             val array = JSONArray()
             names.forEach { array.put(it) }
             return array.toString()
@@ -419,11 +425,20 @@ internal class RpgMakerFsBridge(
                 // 让复用成为原子操作，失败时 temp 仍在、可重试。
                 val moved = file.delete().let { temp.renameTo(file) }
                 if (!moved) {
-                    // 仍失败：回退为原地覆盖，但先确认 temp 可读（避免拷到一半才失败）
+                    // 仍失败：回退为原地拷贝。**此时 temp 是唯一完整副本**，
+                    // 拷贝失败必须保留它（否则 finally 删掉后数据彻底消失），
+                    // 因此这里自行决定是否清理，并让 finally 不再删除。
                     if (!temp.isFile) return false
-                    file.outputStream().use { out ->
-                        temp.inputStream().use { input -> input.copyTo(out) }
-                        out.fd.sync()
+                    try {
+                        file.outputStream().use { out ->
+                            temp.inputStream().use { input -> input.copyTo(out) }
+                            out.fd.sync()
+                        }
+                    } catch (copyError: Throwable) {
+                        // 保持 temp 落盘，便于排查与手工恢复；下次写入会生成新的 temp
+                        Log.w(TAG, "fs write fallback failed; kept temp copy: ${temp.path}", copyError)
+                        tmp = null
+                        return false
                     }
                     temp.delete()
                 }
@@ -434,6 +449,7 @@ internal class RpgMakerFsBridge(
             Log.w(TAG, "fs write failed: ${file.path}", error)
             false
         } finally {
+            // 仅在成功路径上已被置空；失败路径若需保留副本会提前把 tmp 置空
             tmp?.let { runCatching { it.delete() } }
         }
     }
