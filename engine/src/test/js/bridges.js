@@ -211,6 +211,26 @@ function createBridges(gameRoot, contentRoot) {
                 }
             } catch (e) { return ''; }
         },
+        // 带成功标志的 zlib 入口：空结果是合法的（空存档/空配置），
+        // 与失败必须可区分（旧版只靠空串，导致空结果被误判为错误）
+        zlibResult: (mode, dataB64, level) => {
+            try {
+                const input = unb64(dataB64);
+                const opts = { level: Number.isInteger(level) && level >= 0 && level <= 9 ? level : -1 };
+                let out;
+                switch (mode) {
+                    case 'inflate': out = zlib.inflateSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64'); break;
+                    case 'inflateRaw': out = zlib.inflateRawSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64'); break;
+                    case 'gunzip': out = zlib.gunzipSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64'); break;
+                    case 'unzip': out = zlib.unzipSync(input, { maxOutputLength: MAX_ZLIB_BYTES }).toString('base64'); break;
+                    case 'deflate': out = zlib.deflateSync(input, opts).toString('base64'); break;
+                    case 'deflateRaw': out = zlib.deflateRawSync(input, opts).toString('base64'); break;
+                    case 'gzip': out = zlib.gzipSync(input, opts).toString('base64'); break;
+                    default: return JSON.stringify({ ok: false });
+                }
+                return JSON.stringify({ ok: true, data: out });
+            } catch (e) { return JSON.stringify({ ok: false }); }
+        },
         crc32: (dataB64) => {
             const table = createBridges._crcTable || (createBridges._crcTable = (() => {
                 const t = new Int32Array(256);

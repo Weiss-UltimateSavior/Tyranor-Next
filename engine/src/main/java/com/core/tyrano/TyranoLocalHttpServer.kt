@@ -16,6 +16,7 @@ import java.net.SocketException
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
+import com.core.rpgmaker.parseRangeHeader
 import com.core.web.AsarWebRoot
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
@@ -296,22 +297,16 @@ internal class TyranoLocalHttpServer(
     private fun sendFile(socket: Socket, file: File?, rangeHeader: String?, headOnly: Boolean) {
         if (file == null) { sendText(socket, 404, "Not Found", "file missing"); return }
         val fileLen = file.length()
-        var start = 0L
-        var end = fileLen - 1
-        var partial = false
-        if (rangeHeader != null && rangeHeader.lowercase(Locale.ROOT).startsWith("bytes=")) {
-            val range = rangeHeader.substring(6).trim()
-            val dash = range.indexOf('-')
-            if (dash >= 0) {
-                val a = range.substring(0, dash).trim()
-                val b = range.substring(dash + 1).trim()
-                if (a.isNotEmpty()) start = a.toLong()
-                if (b.isNotEmpty()) end = b.toLong()
-                if (end >= fileLen) end = fileLen - 1
-                if (start < 0) start = 0
-                if (start <= end) partial = true
-            }
-        }
+        // 复用 rpgmaker 宿主已单测的 Range 解析（同为 engine 模块的 internal 工具）。
+        // 本文件此前内联了一份简化实现，且已漂移出三处行为差异：
+        //   bytes=-100（后缀式）→ 旧实现当作 0..100（返回错误字节段而非末尾 100 字节）
+        //   bytes=999999-（起点越界）→ 旧实现得 len=0（Content-Length: 0，播放器卡死）
+        //   多段/畸形 Range → 旧实现抛 NumberFormatException（500）
+        // 共享实现把这三类分别处理为：末尾 N 字节 / 回退全量 200 / 回退全量 200。
+        val range = parseRangeHeader(rangeHeader, fileLen)
+        val start = range?.start ?: 0L
+        val end = range?.end ?: (fileLen - 1)
+        val partial = range?.partial == true
         val len = Math.max(0, end - start + 1)
         val status = if (partial) "206 Partial Content" else "200 OK"
         val raw = BufferedOutputStream(socket.getOutputStream())

@@ -157,9 +157,14 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     fun read(path: String): ByteArray? {
+        val key = normalize(path)
+        val e = entries[key] ?: return null
+        if (e.directory) return null
+        // unpacked 条目：数据在 `<archive>.unpacked/<path>`，不在归档数据区。
+        // 绝不能沿用 packed 路径（offset=0 会返回归档开头**别的文件**的字节，
+        // 实测 readText 拿到的是前一个文件的内容）。
+        if (e.unpacked) return readUnpacked(key, e)
         return try {
-            val e = entries[normalize(path)] ?: return null
-            if (e.directory) return null
             val data = ByteArray(e.size.toInt())
             synchronized(raf) {
                 raf.seek(dataOffset + e.offset)
@@ -168,6 +173,40 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
             data
         } catch (t: Throwable) {
             Log.w(TAG, "read failed path=$path", t)
+            null
+        }
+    }
+
+    /**
+     * 读取 unpacked 条目：数据位于 `<archive>.unpacked/` 下的同名相对路径。
+     *
+     * 文件不存在（未随包分发）时返回 null，由调用方按「资源缺失」处理 ——
+     * 不再像旧实现那样返回归档里其它文件的内容。
+     */
+    private fun readUnpacked(key: String, entry: Entry): ByteArray? {
+        val archive = archiveFile ?: return null
+        val parent = archive.parentFile ?: return null
+        val unpackedRoot = File(parent, archive.name + ".unpacked")
+        val target = File(unpackedRoot, key)
+        val insideRoot = try {
+            val rootPath = unpackedRoot.canonicalFile.path
+            val targetPath = target.canonicalFile.path
+            targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)
+        } catch (_: Throwable) {
+            false
+        }
+        if (!insideRoot || !target.isFile) {
+            Log.w(TAG, "unpacked entry missing on disk: $key")
+            return null
+        }
+        return try {
+            val data = target.readBytes()
+            if (entry.size > 0L && data.size.toLong() != entry.size) {
+                Log.w(TAG, "unpacked entry size mismatch: $key (declared ${entry.size}, actual ${data.size})")
+            }
+            data
+        } catch (t: Throwable) {
+            Log.w(TAG, "unpacked read failed: $key", t)
             null
         }
     }
@@ -187,6 +226,9 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     private fun validateEntries(archiveLength: Long, parsedDataOffset: Long) {
         for ((key, entry) in entries) {
             if (entry.directory) continue
+            // unpacked 条目的数据不在归档内，offset 无意义、大小也可能超限
+            // （真实大文件），不参与 packed 范围校验。
+            if (entry.unpacked) continue
             if (entry.size < 0L || entry.size > MAX_ENTRY_BYTES || entry.size > Int.MAX_VALUE) {
                 throw IOException("invalid asar entry size: $key")
             }
@@ -203,9 +245,19 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         val files = node.optJSONObject("files")
         if (files == null) {
             if (prefix.isNotEmpty()) {
+                // Electron 的 asar 会把大文件（视频等）标记为 unpacked：其数据**不在归档里**，
+                // 而在 `<archive>.unpacked/<path>`。这类条目没有 `offset` 字段，
+                // 旧实现用 optString 默认成 0 → read() 会返回归档数据区开头**别的文件**的
+                // 字节（实测读到前一个文件内容），且 errorFor 又报 ENOENT，自相矛盾。
+                val unpacked = node.optBoolean("unpacked", false)
                 val size = parseLong(node.optString("size", "0"))
-                val offset = parseLong(node.optString("offset", "0"))
-                entries[normalize(prefix)] = Entry(directory = false, size = size, offset = offset)
+                val offset = if (unpacked) 0L else parseLong(node.optString("offset", "0"))
+                entries[normalize(prefix)] = Entry(
+                    directory = false,
+                    size = size,
+                    offset = offset,
+                    unpacked = unpacked,
+                )
             }
             return
         }
@@ -223,6 +275,8 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
 
     private data class Entry(
         val directory: Boolean,
+        /** Electron 的 unpacked 条目：数据不在归档里，而在 `<archive>.unpacked/` 下。 */
+        val unpacked: Boolean = false,
         val size: Long,
         val offset: Long
     )

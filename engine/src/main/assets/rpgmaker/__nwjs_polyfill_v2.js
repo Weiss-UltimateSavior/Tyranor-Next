@@ -794,6 +794,16 @@
             if (/^[a-zA-Z]:\//.test(s) || s.charAt(0) === "/") return normalizeSlashes(s);
             return joinPath(fromDir || baseDir, s);
         }
+        /**
+         * 两个路径串是否指向同一位置（仅做词法归一，不访问磁盘）。
+         * 用于让 renameSync 的「同路径 no-op」成立。
+         */
+        function samePathString(a, b) {
+            var pa = resolvePath(a, baseDir).replace(/\/+$/, "");
+            var pb = resolvePath(b, baseDir).replace(/\/+$/, "");
+            return pa === pb;
+        }
+
         function nodeErr(code, msg) {
             var e = new Error(msg);
             e.code = code;
@@ -979,6 +989,10 @@
             lstat: function (p, cb) { if (typeof cb === "function") setTimeout(function () { cb(null, statObject(p)); }, 0); },
             realpathSync: function (p) { return resolvePath(p, baseDir); },
             renameSync: function (from, to) {
+                // 同路径 no-op：Node 里 renameSync(p, p) 不改动文件，而「读到内存 → 写到
+                // 同一路径 → 删源」的流程会把刚写好的文件删掉（实测文件消失）。
+                // 用字符串归一比较：两条路径指向同一文件时直接返回。
+                if (samePathString(from, to)) return;
                 var b64 = bridge.readBase64(from);
                 if (b64 === null) throw nodeErr("ENOENT", "ENOENT: no such file, renameSync '" + from + "'");
                 // 先确认写入成功再删源：忽略返回值会在目标越界/超限/磁盘满时
@@ -1074,10 +1088,21 @@
             },
             watch: function () { return { close: function () {}, on: function () { return this; } }; },
             watchFile: function () {}, unwatchFile: function () {},
-            openSync: function () { return 0; },
-            open: function (p, f, m, cb) { if (typeof m === "function") { cb = m; } if (typeof cb === "function") setTimeout(function () { cb(null, 0); }, 0); },
+            // fd 系列无法在本层实现（没有真实文件描述符）。必须**抛错**而不是静默
+            // no-op —— 用 fd 惯用法的插件会「写入无报错、文件不存在」，数据静默丢失。
+            // 与 fstatSync/ftruncateSync 的既有策略一致。
+            openSync: function () {
+                throw nodeErr("ERR_NOT_IMPLEMENTED", "fs.openSync is unavailable in this runtime (no real file descriptors); use readFileSync/writeFileSync");
+            },
+            open: function (p, f, m, cb) {
+                if (typeof m === "function") { cb = m; }
+                var err = nodeErr("ERR_NOT_IMPLEMENTED", "fs.open is unavailable in this runtime (no real file descriptors)");
+                if (typeof cb === "function") setTimeout(function () { cb(err); }, 0);
+                else throw err;
+            },
             closeSync: function () {}, close: function (fd, cb) { if (typeof cb === "function") setTimeout(function () { cb(null); }, 0); },
-            readSync: function () { return 0; }, writeSync: function () { return 0; },
+            readSync: function () { throw nodeErr("ERR_NOT_IMPLEMENTED", "fs.readSync is unavailable in this runtime"); },
+            writeSync: function () { throw nodeErr("ERR_NOT_IMPLEMENTED", "fs.writeSync is unavailable in this runtime"); },
             promises: {
                 readFile: function (p, enc) { return new Promise(function (res, rej) { try { res(realFs.readFileSync(p, enc)); } catch (e) { rej(e); } }); },
                 writeFile: function (p, d) { return new Promise(function (res, rej) { try { realFs.writeFileSync(p, d); res(); } catch (e) { rej(e); } }); },
@@ -1208,8 +1233,11 @@
                 if (n.charAt(0) === "." || n.charAt(0) === "/" || /^[a-zA-Z]:[\\/]/.test(n)) {
                     var abs = resolveModulePath(n, fromDir);
                     if (abs) return loadModule(abs);
-                    console.warn("[nw-polyfill-v2] require: module not found in game dir: " + n + " (from " + fromDir + ")");
-                    return {};
+                    // 必须抛错：返回 {} 会让「模块缺失」表现为「模块为空」，
+                    // 调用方继续执行并可能写出错误状态（Node 抛 MODULE_NOT_FOUND）。
+                    var missing = nodeErr("MODULE_NOT_FOUND", "Cannot find module '" + n + "' (from " + fromDir + ")");
+                    console.warn("[nw-polyfill-v2] require: " + missing.message);
+                    throw missing;
                 }
                 // 裸模块名交给内建桩（baseRequire）；未知名的告警在外层包装统一处理
                 if (baseRequire && baseRequire !== req) {
@@ -1219,7 +1247,9 @@
             };
             req.resolve = function (name) {
                 var abs = resolveModulePath(String(name), fromDir);
-                return abs || String(name);
+                if (abs) return abs;
+                // Node 的 require.resolve 找不到时抛 MODULE_NOT_FOUND（不是回显原串）
+                throw nodeErr("MODULE_NOT_FOUND", "Cannot find module '" + name + "'");
             };
             req.cache = moduleCache;
             return req;
@@ -1377,7 +1407,10 @@
             return "";
         }
         function fromB64(b64) {
-            if (!b64) return null;
+            // 注意：空 base64 是**合法的空结果**（空文件/空解压输出），
+            // 不能因为 `!b64` 就返回 null —— 那会让「成功但结果为空」表现为失败
+            // （旧版把空结果当错误的另一半原因就在这里）。
+            if (b64 === undefined || b64 === null) return null;
             try { return toBuffer(b64); } catch (e) { return null; }
         }
         function ioError(code, message) { return nodeErr(code, message); }
@@ -1582,9 +1615,21 @@
                 try {
                     if (!env) throw ioError("ERR_NOT_IMPLEMENTED", "zlib unavailable without native bridge");
                     var level = opts && typeof opts.level === "number" ? opts.level : -1;
-                    var b64 = env.zlib(mode, toB64(buffer), level);
-                    if (!b64) throw ioError("Z_DATA_ERROR", "incorrect header check");
-                    out = fromB64(b64);
+                    // 用带成功标志的入口：空输入的压缩是**合法**的（空存档/空配置），
+                    // 其 base64 恰为空串，与失败不可区分 —— 旧实现因此把合法空结果
+                    // 误报成 Z_DATA_ERROR（实测 inflateSync(deflateSync(Buffer.alloc(0))) 抛错）。
+                    if (typeof env.zlibResult === "function") {
+                        var raw = env.zlibResult(mode, toB64(buffer), level);
+                        var res = {};
+                        try { res = JSON.parse(raw || "{}"); } catch (e2) { res = {}; }
+                        if (res.ok !== true) throw ioError("Z_DATA_ERROR", "incorrect header check");
+                        out = fromB64(res.data || "");
+                    } else {
+                        // 老桥（无 zlibResult）回退：只能按空串=失败处理
+                        var b64 = env.zlib(mode, toB64(buffer), level);
+                        if (!b64) throw ioError("Z_DATA_ERROR", "incorrect header check");
+                        out = fromB64(b64);
+                    }
                 } catch (e) { err = e; }
                 if (typeof callback === "function") { setTimeout(function () { callback(err, err ? undefined : out); }, 0); return undefined; }
                 if (err) throw err;
@@ -1922,9 +1967,15 @@
                 var scope = context;
                 if (typeof Proxy !== "undefined") {
                     scope = new Proxy(context, {
-                        has: function (target, prop) { return prop !== "eval"; },
+                        // 放行 eval（否则退化为间接求值、拦截失效）与 this
+                        //（拦截 this 会让顶层 this 解析异常；this 的归属改由调用方绑定）。
+                        has: function (target, prop) { return prop !== "eval" && prop !== "this"; },
                         get: function (target, prop) {
                             if (prop === Symbol.unscopables) return undefined;
+                            // 沙箱内的「全局对象」必须指向沙箱自身：否则
+                            // `globalThis.Buffer = "x"` 会沿 get 回落改写宿主全局，
+                            // 一次求值即可摧毁整个兼容层（实测会把 window.Buffer 变成字符串）。
+                            if (prop === "globalThis" || prop === "window" || prop === "self") return scope;
                             if (Object.prototype.hasOwnProperty.call(target, prop)) return target[prop];
                             try { return globalThis[prop]; } catch (e) { return undefined; }
                         },
@@ -1933,9 +1984,12 @@
                 }
                 // 代码内联进源码（不通过参数传入）：Function 的参数名会被 Proxy 的
                 // has 拦截成 undefined，内联则只依赖全局与 with 作用域。
-                var source = "with (__vm_scope__) { return eval(" + JSON.stringify(String(code)) + "); }";
-                var runner = new Function("__vm_scope__", source);
-                return runner(scope);
+                // 再以 .call(scope) 调用，让顶层 `this` 指向沙箱而非宿主全局
+                //（sloppy 模式下 this 由调用方式决定）。
+                var source = "(function () { with (__vm_scope__) { return eval(" + JSON.stringify(String(code)) + "); } })";
+                var factory = new Function("__vm_scope__", "return " + source + ";");
+                var runner = factory(scope);
+                return runner.call(scope);
             },
             runInContext: function (code, sandbox) { return vmModule.runInNewContext(code, sandbox); },
             createContext: function (sandbox) { return sandbox || {}; },
@@ -2631,6 +2685,14 @@
             };
             proto.includes = function (needle, offset) { return proto.indexOf.call(this, needle, offset) >= 0; };
             proto.write = function (string, offset, length, encoding) {
+                // Node 的签名特例：write(string[, offset[, length]][, encoding])——
+                // 第二参是**字符串**时它表示 encoding 而非 offset。旧实现把它当 offset，
+                // 于是 write('ff','hex') 写成 utf8 字面量（实测 66660000 vs Node ff000000）。
+                if (typeof offset === "string") {
+                    encoding = offset;
+                    offset = 0;
+                    length = undefined;
+                }
                 var off = typeof offset === "number" ? offset : 0;
                 var enc = "utf8";
                 var maxLen;
@@ -2661,7 +2723,11 @@
                 var e = sourceEnd === undefined ? this.length : sourceEnd;
                 var t = targetStart || 0;
                 var count = Math.max(0, Math.min(e - s, target.length - t));
-                for (var i = 0; i < count; i++) target[t + i] = this[s + i];
+                // 源与目标是同一块内存且区间重叠时，必须先取快照：
+                // 前向逐字节写会把还没读到的源字节覆盖掉（实测 a.copy(a,1) 得 01010101，
+                // Node 为 01010203，相当于 memmove 语义）。
+                var source = (target === this) ? this.slice(s, s + count) : null;
+                for (var i = 0; i < count; i++) target[t + i] = source ? source[i] : this[s + i];
                 if (typeof invalidate === "function") invalidate(target);
                 return count;
             };
@@ -2819,7 +2885,13 @@
                 from: function (value, encoding) {
                     if (value === undefined || value === null) return makeBuffer(new Uint8Array(0));
                     if (typeof value === "string") return makeBuffer(toByteArray(value, encoding));
-                    if (value instanceof ArrayBuffer) return makeBuffer(new Uint8Array(value));
+                    // ArrayBuffer / TypedArray 视图：必须尊重 byteOffset/length 参数，
+                    // 否则 Buffer.from(ab, 2, 2) 会返回整段 buffer（实测 8 字节而非 2）
+                    if (value instanceof ArrayBuffer) {
+                        var abOff = arguments[1] || 0;
+                        var abLen = arguments[2] === undefined ? value.byteLength - abOff : arguments[2];
+                        return makeBuffer(new Uint8Array(value, abOff, abLen));
+                    }
                     if (value.buffer instanceof ArrayBuffer && typeof value.byteLength === "number") {
                         return makeBuffer(new Uint8Array(value.buffer, value.byteOffset || 0, value.byteLength));
                     }
@@ -3764,18 +3836,28 @@
                 setTimeout(function () { cb(ioError("ERR_NOT_IMPLEMENTED", "crypto.scrypt is unavailable on this runtime")); }, 0);
             };
             cryptoModule.getRandomValues = function (typedArray) {
-                var bytes = toBuffer(env ? env.randomBytes(typedArray.length) : "");
+                if (!typedArray || typeof typedArray.byteLength !== "number") {
+                    throw ioError("ERR_INVALID_ARG_TYPE", "crypto.getRandomValues requires a typed array");
+                }
+                // 必须按**字节视图**填充：逐元素写一个字节会让 Uint16Array/Uint32Array
+                // 只得到 8 位熵（实测 20 个 Uint32 值全部 <= 255）。
+                var view = new Uint8Array(typedArray.buffer, typedArray.byteOffset || 0, typedArray.byteLength);
+                var bytes = env ? toBuffer(env.randomBytes(view.length)) : null;
+                if (!bytes) throw ioError("ERR_NOT_IMPLEMENTED", "crypto.getRandomValues unavailable without native bridge");
                 var bin = bytes._bin || "";
-                for (var i = 0; i < typedArray.length; i++) typedArray[i] = bin.charCodeAt(i) & 0xff;
+                for (var i = 0; i < view.length; i++) view[i] = bin.charCodeAt(i) & 0xff;
                 return typedArray;
             };
             cryptoModule.randomFillSync = function (buffer, offset, size) {
-                if (!buffer || typeof buffer.length !== "number") return buffer;
-                var bytes = toBuffer(env ? env.randomBytes(size === undefined ? buffer.length : size) : "");
+                if (!buffer || typeof buffer.byteLength !== "number") return buffer;
+                // 与 getRandomValues 同理：按字节视图填充，覆盖 16/32 位元素的全部字节
+                var byteOffset = offset === undefined ? 0 : offset;
+                var view = new Uint8Array(buffer.buffer, (buffer.byteOffset || 0) + byteOffset,
+                    size === undefined ? buffer.byteLength - byteOffset : size);
+                var bytes = env ? toBuffer(env.randomBytes(view.length)) : null;
+                if (!bytes) throw ioError("ERR_NOT_IMPLEMENTED", "crypto.randomFillSync unavailable without native bridge");
                 var bin = bytes._bin || "";
-                var start = offset || 0;
-                var end = size === undefined ? buffer.length : Math.min(buffer.length, start + size);
-                for (var i = start; i < end; i++) buffer[i] = bin.charCodeAt(i - start) & 0xff;
+                for (var i = 0; i < view.length; i++) view[i] = bin.charCodeAt(i) & 0xff;
                 return buffer;
             };
             cryptoModule.randomFill = function (buffer, offset, size, callback) {

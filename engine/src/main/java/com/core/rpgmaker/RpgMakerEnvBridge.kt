@@ -116,6 +116,19 @@ internal class RpgMakerEnvBridge {
             return ""
         }
         if (keyLength <= 0 || keyLength > MAX_BYTES) return ""
+        // 成本是 iterations × blocks 的**乘积**，两个上限各自独立不构成约束：
+        // (1e7 迭代, 64MiB 输出) 两者都在限内，合计约 3.3e13 次 HMAC（实测外推数十天），
+        // 而该方法在 JavaBridge 单线程上串行执行，会冻死全部桥调用。
+        // 另：salt 参与每一轮压缩，超大 salt 同样抬高单位成本，一并限制。
+        val estimatedBlocks = (keyLength + 63) / 64   // 下界（按最短摘要 64 字节估算）
+        if (iterations.toLong() * estimatedBlocks.toLong() > MAX_PBKDF2_TOTAL_WORK) {
+            Log.w(TAG, "pbkdf2 rejected (work=${iterations}x$estimatedBlocks)")
+            return ""
+        }
+        if (salt.size > MAX_PBKDF2_SALT_BYTES) {
+            Log.w(TAG, "pbkdf2 rejected (salt=${salt.size})")
+            return ""
+        }
         return try {
             val macAlgorithm = hmacJavaName(digestAlgorithm) ?: "HmacSHA1"
             val mac = Mac.getInstance(macAlgorithm)
@@ -226,6 +239,36 @@ internal class RpgMakerEnvBridge {
             // 数据损坏是常态（游戏可能拿它做特征探测），只记 debug 级
             Log.d(TAG, "zlib $mode failed: ${error.javaClass.simpleName}")
             ""
+        }
+    }
+
+    /**
+     * 压缩：返回 base64；失败返回空串。
+     *
+     * 注意与「成功但结果为空」的区分：空输入的 deflate/gzip 是**合法且常见**的
+     * （空存档、空配置表），其 base64 也是空串，与失败不可区分。JS 侧因此改用
+     * [zlibResult] 获取带成功标志的结果。
+     */
+    @JavascriptInterface
+    fun zlibResult(mode: String?, dataBase64: String?, level: Int): String {
+        val input = decode(dataBase64)
+        if (input == null) return "{\"ok\":false}"
+        return try {
+            val out = when (mode) {
+                "inflate" -> inflate(input, nowrap = false)
+                "inflateRaw" -> inflate(input, nowrap = true)
+                "gunzip" -> gunzipBounded(input)
+                "unzip" -> autoInflate(input)
+                "deflate" -> deflate(input, wrap = Wrap.ZLIB, level = level)
+                "deflateRaw" -> deflate(input, wrap = Wrap.RAW, level = level)
+                "gzip" -> deflate(input, wrap = Wrap.GZIP, level = level)
+                else -> return "{\"ok\":false}"
+            }
+            // 成功：显式携带 ok 标志与（可能为空的）数据
+            org.json.JSONObject().put("ok", true).put("data", Base64.getEncoder().encodeToString(out)).toString()
+        } catch (error: Throwable) {
+            Log.d(TAG, "zlib $mode failed: ${error.javaClass.simpleName}")
+            "{\"ok\":false}"
         }
     }
 
@@ -406,8 +449,22 @@ internal class RpgMakerEnvBridge {
         else -> bytes.joinToString("") { "%02x".format(it) }
     }
 
+    /**
+     * 解码 base64 输入，并施加统一大小上限。
+     *
+     * 所有入口（digest/hmac/cipher/zlib/crc32…）都经过这里：此前各方法对输入**完全无界**，
+     * 一个 80MiB 载荷（107MiB base64 实参）会被接受，并在桥内放大出 ~757MiB 峰值堆
+     * （实测），足以把中端设备拖进 OOM —— 而该进程同时承载 WebView。
+     *
+     * 上限按 **base64 字符串长度**判定（约 4/3 关系），因此不需要先分配解码后的字节数组。
+     */
     private fun decode(value: String?): ByteArray? {
         if (value == null) return null
+        // base64 长度上限：MAX_BYTES 解码后约需 4/3 倍字符；再多留一点余量给 padding
+        if (value.length > MAX_BASE64_CHARS) {
+            Log.w(TAG, "base64 decode rejected (too large input: ${value.length} chars)")
+            return null
+        }
         return try {
             decodeBase64Lenient(value)
         } catch (error: Throwable) {
@@ -433,11 +490,25 @@ internal class RpgMakerEnvBridge {
         private const val TAG = "YukiRpgMaker"
         private const val MAX_BYTES = 64 * 1024 * 1024
 
+        /** base64 实参长度上限（解码后约 3/4，即 ~48MiB；含 padding/换行余量）。 */
+        private const val MAX_BASE64_CHARS = (MAX_BYTES / 3) * 4 + 1024
+
         /**
          * PBKDF2 迭代次数上限。Node 无此限制，但宿主桥是单线程串行执行的，
          * 必须防止恶意/异常参数长时间占用（1e7 在该线程上约数秒，仍是可接受的代价）。
          */
         private const val MAX_PBKDF2_ITERATIONS = 10_000_000
+
+        /**
+         * PBKDF2 的总工作量上限（迭代次数 × 输出块数）。
+         *
+         * 单看 [MAX_PBKDF2_ITERATIONS] 挡不住「高迭代 + 大输出」的组合；该乘积直接
+         * 决定 HMAC 调用次数，是真正的成本量纲。
+         */
+        private const val MAX_PBKDF2_TOTAL_WORK = 100_000_000L
+
+        /** salt 参与每一轮压缩；超大 salt 会显著抬高单位成本。 */
+        private const val MAX_PBKDF2_SALT_BYTES = 4 * 1024
 
         /** 解压缓冲初始容量（按需增长）；不随输入放大，避免无谓的内存峰值。 */
         private const val DECOMPRESS_INITIAL_CAPACITY = 64 * 1024

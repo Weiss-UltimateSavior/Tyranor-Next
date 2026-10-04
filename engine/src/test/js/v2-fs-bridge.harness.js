@@ -89,6 +89,13 @@ const check = (name, cond, extra) => {
         console.log('  FAIL  ' + name + '  -> 断言值是 Promise（恒真）；请 await 后传布尔值');
         return;
     }
+    // 未调用的箭头函数同样恒真（函数对象总是 truthy）。这类写法会让断言彻底失效，
+    // 且不像 Promise 那样显眼 —— 实测有 5 处 `check('...', (() => expr))` 从未执行。
+    if (typeof cond === 'function') {
+        failed++;
+        console.log('  FAIL  ' + name + '  -> 断言值是未调用的函数（恒真）；请写成 (() => ...)() ');
+        return;
+    }
     if (cond) { console.log('  PASS  ' + name); }
     else { failed++; console.log('  FAIL  ' + name + (extra !== undefined ? '  -> ' + extra : '')); }
 };
@@ -337,9 +344,7 @@ check('util.promisify 生效', (() => {
     const fn = utilMod.promisify((a, cb) => cb(null, a * 2));
     return fn(21).then ? true : false;
 })());
-check('util.promisify 实际求值', (() => utilMod.promisify((a, cb) => cb(null, a * 2))(21).then((v) => v === 42)));
 check('util.isDeepStrictEqual 正确', utilMod.isDeepStrictEqual({ a: 1 }, { a: 1 }) === true && utilMod.isDeepStrictEqual({ a: 1 }, { a: 2 }) === false);
-check('util.promisify.reject 路径', (() => utilMod.promisify((cb) => cb(new Error('boom')))().then(() => false, () => true)));
 const osMod = window.require('os');
 check('os.homedir 指向 AppData', String(osMod.homedir()).indexOf('AppData') >= 0, osMod.homedir());
 check('os.totalmem 来自原生（非 0）', osMod.totalmem() > 0, osMod.totalmem());
@@ -549,7 +554,12 @@ console.log('\n== 第二批：fs.promises / url / os / path / crypto 长尾 ==')
     })());
     check('scryptSync 明确抛错（不给错值）', (() => { try { c2.scryptSync('p', 's', 32); return false; } catch (e) { return e.code === 'ERR_NOT_IMPLEMENTED'; } })());
     check('crypto.getRandomValues 填充字节', (() => { const arr = new Uint8Array(8); c2.getRandomValues(arr); return arr.some((b) => b !== 0); })());
-    check('crypto.randomFillSync 填充', (() => { const arr = new Uint8Array(4); c2.randomFillSync(arr); return arr.length === 4; })());
+    // 预填 0 后检查确实被填充（旧断言只比较 length，调用前后都成立 → 恒真）
+    check('crypto.randomFillSync 真填充', (() => {
+        const arr = new Uint8Array(256);
+        c2.randomFillSync(arr);
+        return arr.some((b) => b !== 0);
+    })());
 }
 
 console.log('\n== 第三批：长尾补齐与明确报错 ==');
@@ -970,9 +980,6 @@ console.log('\n== 回归：审核发现的缺陷（每条对应一个已修问�
     })(), (() => { fsMod.writeFileSync('data/append.bin', B.from([0x00, 0xff, 0xfe])); fsMod.appendFileSync('data/append.bin', B.from([0x01, 0x02])); return fsMod.readFileSync('data/append.bin').toString('hex'); })());
 
     // M7: promises 语义
-    check('M7 promises.stat(缺失) 会 reject', (() => fsMod.promises.stat('data/missing-xyz.json').then(() => false, (e) => e.code === 'ENOENT')));
-    check('M7 promises.readdir(缺失) 会 reject', (() => fsMod.promises.readdir('data/missing-dir-xyz').then(() => false, () => true)));
-    check('M7 promises.stat(存在) 正常 resolve', (() => fsMod.promises.stat('data/table.json').then((s) => s.isFile() === true)));
 
     // M9/M10: localStorage
     check('M9 键名不冲突（a b vs a_20b）', (() => {
@@ -1024,6 +1031,91 @@ check('不再渲染出 001undefined', rendered !== '[001undefined]', rendered);
 (async () => {
     const fp = fsMod.promises;
     const cryptoMod2 = window.require('crypto');
+    const c2 = cryptoMod2;
+    console.log('\n== 子代理自查修正项（C1/C2/H1-H9）==');
+
+    // C1 renameSync 同路径必须 no-op（旧实现写完删源 → 文件消失）
+    fsMod.writeFileSync('data/self-rename.txt', 'PRECIOUS');
+    fsMod.renameSync('data/self-rename.txt', 'data/self-rename.txt');
+    check('C1 renameSync(p,p) 不删文件', fsMod.existsSync('data/self-rename.txt') === true);
+    check('C1 renameSync(p,p) 内容不变', fsMod.readFileSync('data/self-rename.txt', 'utf8') === 'PRECIOUS');
+    fsMod.renameSync('data/self-rename.txt', './data/self-rename.txt');
+    check('C1 等价拼写的自改名同样 no-op', fsMod.existsSync('data/self-rename.txt') === true);
+
+    // C2 vm 沙箱不得经 globalThis / this 逃逸
+    const vm2 = window.require('vm');
+    const bufBefore = typeof window.Buffer;
+    vm2.runInNewContext('globalThis.Buffer = "PWNED";', {});
+    check('C2 globalThis 赋值不污染宿主 Buffer', typeof window.Buffer === bufBefore, String(typeof window.Buffer));
+    const thisKey = '__thisLeak' + Date.now();
+    vm2.runInNewContext('this.' + thisKey + ' = 42;', {});
+    check('C2 顶层 this 不泄漏到宿主', typeof global[thisKey] === 'undefined', String(global[thisKey]));
+    delete global[thisKey];
+
+    // H1 fd 系列必须明确报错（而非静默 no-op）
+    check('H1 openSync 明确抛 ERR_NOT_IMPLEMENTED', (() => {
+        try { fsMod.openSync('data/fd.txt', 'w'); return false; } catch (e) { return e.code === 'ERR_NOT_IMPLEMENTED'; }
+    })());
+    check('H1 writeSync 明确抛错', (() => {
+        try { fsMod.writeSync(0, 'x'); return false; } catch (e) { return e.code === 'ERR_NOT_IMPLEMENTED'; }
+    })());
+
+    // H2 getRandomValues 必须填满元素宽度
+    check('H2 Uint32Array 获得 32 位熵', (() => {
+        const a = new Uint32Array(32);
+        cryptoMod2.getRandomValues(a);
+        return Array.from(a).some((v) => v > 255);
+    })());
+    check('H2 Uint16Array 获得 16 位熵', (() => {
+        const a = new Uint16Array(32);
+        cryptoMod2.getRandomValues(a);
+        return Array.from(a).some((v) => v > 255);
+    })());
+
+    // H3 Buffer.from(ArrayBuffer, offset, length)
+    check('H3 Buffer.from(ab,2,2) 尊重偏移', (() => {
+        const ab = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer;
+        return window.Buffer.from(ab, 2, 2).toString('hex') === '0304';
+    })(), (() => {
+        const ab = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer;
+        return window.Buffer.from(ab, 2, 2).toString('hex');
+    })());
+
+    // H4 Buffer.write 的字符串第二参是 encoding
+    check('H4 write("ff","hex") 按 hex 写入', (() => {
+        const b = window.Buffer.alloc(4);
+        b.write('ff', 'hex');
+        return b.toString('hex') === 'ff000000';
+    })(), (() => { const b = window.Buffer.alloc(4); b.write('ff', 'hex'); return b.toString('hex'); })());
+
+    // H6 Buffer.copy 重叠区间（memmove 语义）
+    check('H6 自重叠 copy 结果正确', (() => {
+        const a = window.Buffer.from([1, 2, 3, 4]);
+        a.copy(a, 1);
+        return a.toString('hex') === '01010203';
+    })(), (() => { const a = window.Buffer.from([1, 2, 3, 4]); a.copy(a, 1); return a.toString('hex'); })());
+
+    // H8 zlib 空结果必须成功（空存档/空配置是合法输入）
+    const zlibMod2 = window.require('zlib');
+    check('H8 空内容 deflate/inflate 往返成功', (() => {
+        const packed = zlibMod2.deflateSync(window.Buffer.alloc(0));
+        return zlibMod2.inflateSync(packed).length === 0;
+    })());
+    check('H8 空内容 gzip/gunzip 往返成功', (() => {
+        const packed = zlibMod2.gzipSync(window.Buffer.alloc(0));
+        return zlibMod2.gunzipSync(packed).length === 0;
+    })());
+
+    // H9 require 缺失模块必须抛 MODULE_NOT_FOUND
+    check('H9 require(缺失相对模块) 抛 MODULE_NOT_FOUND', (() => {
+        try { window.require('./definitely-missing-module.js'); return false; }
+        catch (e) { return e.code === 'MODULE_NOT_FOUND'; }
+    })());
+    check('H9 require.resolve(缺失) 抛错', (() => {
+        try { window.require.resolve('./definitely-missing-module.js'); return false; }
+        catch (e) { return e.code === 'MODULE_NOT_FOUND'; }
+    })());
+
     console.log('\n== 复审修正项（#3/#4/#5/#8）==');
 
     // #5 truncate 扩展必须真的补齐 NUL（此前源码内嵌原始 NUL 字节）

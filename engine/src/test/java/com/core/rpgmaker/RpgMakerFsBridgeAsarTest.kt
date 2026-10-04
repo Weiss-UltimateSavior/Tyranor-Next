@@ -30,7 +30,12 @@ class RpgMakerFsBridgeAsarTest {
     private val diskContent = """{"v":"from-disk"}"""
 
     /** 构造最小可解析的 asar（格式见 AsarArchive 的头部解析）。 */
-    private fun buildAsar(dir: File, entries: Map<String, ByteArray>): File {
+    private fun buildAsar(
+        dir: File,
+        entries: Map<String, ByteArray>,
+        unpackedNames: Set<String> = emptySet(),
+        unpackedSize: Long = 0L,
+    ): File {
         val filesJson = JSONObject()
         var offset = 0L
         for ((path, bytes) in entries) {
@@ -39,6 +44,18 @@ class RpgMakerFsBridgeAsarTest {
                 JSONObject().put("size", bytes.size).put("offset", offset.toString()),
             )
             offset += bytes.size
+        }
+        // unpacked 条目：只有 size、没有 offset（Electron 的实际形态）
+        unpackedNames.forEach { name ->
+            val parts = name.split("/")
+            var node = filesJson
+            parts.dropLast(1).forEach { seg ->
+                val child = node.optJSONObject(seg) ?: JSONObject()
+                if (!node.has(seg)) node.put(seg, JSONObject().put("files", JSONObject()))
+                node = node.getJSONObject(seg).getJSONObject("files")
+            }
+            // 简化：unpacked 场景下直接用扁平路径（测试只覆盖单层 www/）
+            filesJson.put(name, JSONObject().put("size", unpackedSize.toString()).put("unpacked", true))
         }
         val root = JSONObject().put("files", filesJson)
         val jsonBytes = root.toString().toByteArray(StandardCharsets.UTF_8)
@@ -254,6 +271,61 @@ class RpgMakerFsBridgeAsarTest {
 
         assertTrue(bridge.exists("data/table.json"))
         assertEquals(asarContent, bridge.readText("data/table.json"))
+    }
+
+    /**
+     * unpacked 条目（Electron 把大文件放在 `<archive>.unpacked/`）：
+     * 必须从 unpacked 目录读，**绝不能**返回归档数据区开头别的文件的字节。
+     *
+     * 旧实现从不读 `unpacked` 标志，`offset` 缺失被默认成 0，于是 read() 返回数据区
+     * 偏移 0 处的内容（实测读到前一个文件），而 errorFor 又报 ENOENT —— 自相矛盾。
+     */
+    @Test
+    fun unpackedEntryReadsFromUnpackedDirectory() {
+        val gameRoot = File(java.nio.file.Files.createTempDirectory("asar-unpacked").toFile(), "game").apply { mkdirs() }
+        val contentRoot = File(gameRoot, "www").apply { mkdirs() }
+        val asarFile = buildAsar(
+            gameRoot,
+            mapOf(
+                "www/index.html" to "<html></html>".toByteArray(StandardCharsets.UTF_8),
+                "www/packed.txt" to "PACKED-BYTES".toByteArray(StandardCharsets.UTF_8),
+            ),
+        )
+        // 把 unpacked 标志补进 header：重新构造一个带 unpacked 条目的 asar
+        val withUnpacked = buildAsar(
+            gameRoot,
+            mapOf(
+                "www/index.html" to "<html></html>".toByteArray(StandardCharsets.UTF_8),
+                "www/packed.txt" to "PACKED-BYTES".toByteArray(StandardCharsets.UTF_8),
+            ),
+            unpackedNames = setOf("www/big.bin"),
+            unpackedSize = 11L,
+        )
+        val unpackedDir = File(gameRoot, "app.asar.unpacked/www").apply { mkdirs() }
+        File(unpackedDir, "big.bin").writeText("BIG-CONTENT")
+
+        val bridge = RpgMakerFsBridge(gameRoot, contentRoot, AsarArchive(withUnpacked))
+        assertEquals("unpacked 条目必须从 .unpacked 目录读取", "BIG-CONTENT", bridge.readText("big.bin"))
+        assertTrue(bridge.exists("big.bin"))
+    }
+
+    /** unpacked 文件缺失时返回 null（资源缺失），而不是归档里别的文件内容。 */
+    @Test
+    fun missingUnpackedEntryDoesNotReturnForeignBytes() {
+        val gameRoot = File(java.nio.file.Files.createTempDirectory("asar-unpacked-miss").toFile(), "game").apply { mkdirs() }
+        val contentRoot = File(gameRoot, "www").apply { mkdirs() }
+        val asarFile = buildAsar(
+            gameRoot,
+            mapOf(
+                "www/index.html" to "<html></html>".toByteArray(StandardCharsets.UTF_8),
+                "www/packed.txt" to "PACKED-BYTES".toByteArray(StandardCharsets.UTF_8),
+            ),
+            unpackedNames = setOf("www/big.bin"),
+            unpackedSize = 11L,
+        )
+        val bridge = RpgMakerFsBridge(gameRoot, contentRoot, AsarArchive(asarFile))
+        // 未创建 .unpacked 文件：必须为 null，绝不能是 "PACKED-BYTES"
+        assertNull("缺失的 unpacked 条目不得返回其他文件字节", bridge.readText("big.bin"))
     }
 
     /** asar 内独有的文件仍应能 stat（无磁盘对应物时回退 asar）。 */
