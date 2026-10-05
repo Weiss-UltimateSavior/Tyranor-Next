@@ -83,6 +83,11 @@ object CoverScrapeTaskManager {
     private fun persistScrapedCover(context: Context, original: ScanGame, scraped: ScanGame): ScanGame? =
         GameLibraryFacade.updateGameCover(context, original.uri) { current ->
             mergeScrapedCover(current, original, scraped)
+        }?.also { updated ->
+            // 换封面成功后清理被替换的旧图。mergeScrapedCover 仅在 current 与任务快照一致时生效，
+            // 因此此时 original.coverUri 就是落库前的旧封面；deleteCachedCover 只在 covers_remote
+            // 目录内删除，并自动跳过与新封面相同的文件（重复刮削同一 URL 时新旧为同一文件）。
+            CoverImageCache.deleteCachedCover(context, original.coverUri, exceptUri = updated.coverUri)
         }
 
     private suspend fun postFinished(result: CoverScrapeResult?, error: String?) {

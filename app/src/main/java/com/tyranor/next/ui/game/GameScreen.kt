@@ -1516,6 +1516,7 @@ private fun encodeCoverSearchCandidate(candidate: CoverSearchCandidate): String 
         .put("detail", candidate.detail)
         .put("score", candidate.score)
         .put("coverUrl", candidate.coverUrl)
+        .put("downloadUrl", candidate.downloadUrl)
         .put("vndbId", candidate.vndbId)
         .put("metadataTitle", candidate.metadataTitle)
         .toString()
@@ -1530,6 +1531,7 @@ private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? =
         detail = json.optString("detail"),
         score = if (json.has("score") && !json.isNull("score")) json.optInt("score") else null,
         coverUrl = json.optString("coverUrl"),
+        downloadUrl = json.optString("downloadUrl").takeIf { it.isNotBlank() && !json.isNull("downloadUrl") },
         vndbId = json.optString("vndbId").takeIf { it.isNotBlank() && !json.isNull("vndbId") },
         metadataTitle = json.optString("metadataTitle").takeIf { it.isNotBlank() && !json.isNull("metadataTitle") },
     )

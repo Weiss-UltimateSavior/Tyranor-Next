@@ -418,6 +418,8 @@
     <string name="cover_batch_result">Cover scraping finished: updated %1$d, skipped %2$d, failed %3$d</string>
     <string name="cover_only_missing_title">Only process games missing covers</string>
     <string name="cover_only_missing_summary">Avoid overwriting covers set manually by the user</string>
+    <string name="cover_vndb_large_cover_title">Large VNDB covers</string>
+    <string name="cover_vndb_large_cover_summary">Download full-size VNDB images when scraping or binding. Search previews still use thumbnails to save data</string>
     <string name="cover_write_content_title">Written content</string>
     <string name="cover_write_content_summary">Only cover images and source identifiers are saved for now. Titles, tags, and descriptions are not written.</string>
     <string name="cover_start_batch">Start batch cover scraping</string>

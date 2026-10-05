@@ -90,6 +90,7 @@ internal fun CoverScraperSettingsScreen() {
     val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
     var sources by remember(settingsVersion) { mutableStateOf(AppSettingsStore.getCoverScraperSourceOrder(ctx)) }
     var onlyMissing by remember(settingsVersion) { mutableStateOf(AppSettingsStore.isCoverScraperOnlyMissing(ctx)) }
+    var vndbLargeCover by remember(settingsVersion) { mutableStateOf(AppSettingsStore.isVndbLargeCover(ctx)) }
     val scraping = scrapeTaskState.running
     val authStatus = remember(authVersion) { HikarinagiAuthStore.getStatus(ctx) }
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
@@ -188,6 +189,15 @@ internal fun CoverScraperSettingsScreen() {
                                 onCheckedChange = { checked ->
                                     onlyMissing = checked
                                     AppSettingsStore.setCoverScraperOnlyMissing(ctx, checked)
+                                },
+                            )
+                            SwitchPreference(
+                                title = stringResource(R.string.cover_vndb_large_cover_title),
+                                summary = stringResource(R.string.cover_vndb_large_cover_summary),
+                                checked = vndbLargeCover,
+                                onCheckedChange = { checked ->
+                                    vndbLargeCover = checked
+                                    AppSettingsStore.setVndbLargeCover(ctx, checked)
                                 },
                             )
                         }

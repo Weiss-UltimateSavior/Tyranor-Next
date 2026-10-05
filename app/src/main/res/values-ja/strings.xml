@@ -418,6 +418,8 @@
     <string name="cover_batch_result">一括取得完了：更新 %1$d、スキップ %2$d、失敗 %3$d</string>
     <string name="cover_only_missing_title">カバー未設定のゲームのみ処理</string>
     <string name="cover_only_missing_summary">ユーザーが手動設定したカバーの上書きを避けます</string>
+    <string name="cover_vndb_large_cover_title">VNDB カバー大画像</string>
+    <string name="cover_vndb_large_cover_summary">オンにするとスクレイピングと手動バインドで原寸画像を保存します。検索プレビューは通信量節約のためサムネイルのままです</string>
     <string name="cover_write_content_title">書き込み内容</string>
     <string name="cover_write_content_summary">現在はカバー画像とソース識別子のみ保存し、タイトル、タグ、概要は書き込みません。</string>
     <string name="cover_start_batch">カバー画像の一括取得を開始</string>

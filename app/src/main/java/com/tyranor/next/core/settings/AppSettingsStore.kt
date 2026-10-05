@@ -44,6 +44,12 @@ object AppSettingsStore {
     const val KEY_COVER_SCRAPER_SOURCE_ORDER = "cover_scraper_source_order"
     private const val KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX = "cover_scraper_source_enabled_"
 
+    /** VNDB 封面是否下载原图大图（关闭时用缩略图）。 */
+    const val KEY_VNDB_LARGE_COVER = "vndb_large_cover"
+
+    /** VNDB 大图开关默认值：开（缩略图仅 256×362，默认直接取原图保证清晰度）。 */
+    const val DEFAULT_VNDB_LARGE_COVER = true
+
     const val COVER_SOURCE_HIKARINAGI = "hikarinagi"
     const val COVER_SOURCE_BANGUMI = "bangumi"
     const val COVER_SOURCE_STEAM = "steam"
@@ -435,6 +441,14 @@ object AppSettingsStore {
 
     fun setCoverScraperOnlyMissing(c: Context, onlyMissing: Boolean) {
         prefs(c).edit().putBoolean(KEY_COVER_SCRAPER_ONLY_MISSING, onlyMissing).apply()
+        bumpCoverScraperSettingsVersion()
+    }
+
+    fun isVndbLargeCover(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_VNDB_LARGE_COVER, DEFAULT_VNDB_LARGE_COVER)
+
+    fun setVndbLargeCover(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_VNDB_LARGE_COVER, enabled).apply()
         bumpCoverScraperSettingsVersion()
     }
 

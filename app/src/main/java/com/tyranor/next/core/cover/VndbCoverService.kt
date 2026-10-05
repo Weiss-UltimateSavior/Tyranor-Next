@@ -20,7 +20,10 @@ data class VndbCandidate(
     val originalTitle: String,
     val developer: String,
     val released: String,
+    /** 按「VNDB 封面大图」开关解析后的下载地址：开=原图 image.url，关=缩略图 image.thumbnail。 */
     val coverUrl: String,
+    /** 始终为缩略图（image.thumbnail），供搜索预览省流量使用。 */
+    val thumbnailUrl: String,
 )
 
 object VndbCoverService {
@@ -116,9 +119,10 @@ object VndbCoverService {
             if (conn.responseCode !in 200..299) throw CoverSearchException(text(context, R.string.cover_error_vndb_network))
             val text = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
             val results = JSONObject(text).optJSONArray("results") ?: return emptyList()
+            val preferLarge = AppSettingsStore.isVndbLargeCover(context)
             buildList {
                 for (i in 0 until results.length()) {
-                    results.optJSONObject(i)?.let { add(parseCandidate(it)) }
+                    results.optJSONObject(i)?.let { add(parseCandidate(it, preferLarge)) }
                 }
             }
         } catch (e: CoverSearchException) {
@@ -130,7 +134,7 @@ object VndbCoverService {
         }
     }
 
-    private fun parseCandidate(o: JSONObject): VndbCandidate {
+    private fun parseCandidate(o: JSONObject, preferLarge: Boolean): VndbCandidate {
         var chineseTitle = ""
         var originalTitle = o.optString("alttitle", "")
         o.optJSONArray("titles")?.let { titles ->
@@ -145,6 +149,10 @@ object VndbCoverService {
             }
         }
         val image = o.optJSONObject("image")
+        // image.url 为原图（实测 v17 1080×1529），image.thumbnail 仅 256×362；
+        // 大图开关关闭时沿用缩略图，避免额外流量。
+        val largeUrl = image?.optString("url", "").orEmpty()
+        val thumbnailUrl = firstNonEmpty(image?.optString("thumbnail", ""), largeUrl)
         val devs = o.optJSONArray("developers")
         val developers = buildList {
             if (devs != null) {
@@ -162,7 +170,8 @@ object VndbCoverService {
             originalTitle = firstNonEmpty(originalTitle, o.optString("title", "")),
             developer = developers,
             released = o.optString("released", ""),
-            coverUrl = firstNonEmpty(image?.optString("thumbnail", ""), image?.optString("url", "")),
+            coverUrl = if (preferLarge) firstNonEmpty(largeUrl, thumbnailUrl) else thumbnailUrl,
+            thumbnailUrl = thumbnailUrl,
         )
     }
 

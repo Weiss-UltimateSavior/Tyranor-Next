@@ -418,6 +418,8 @@
     <string name="cover_batch_result">批量刮削完成：更新 %1$d，跳过 %2$d，失败 %3$d</string>
     <string name="cover_only_missing_title">仅处理缺少封面的游戏</string>
     <string name="cover_only_missing_summary">避免覆盖用户手动设置的封面</string>
+    <string name="cover_vndb_large_cover_title">VNDB 封面大图</string>
+    <string name="cover_vndb_large_cover_summary">开启后刮削与手动绑定下载原图；搜索结果预览仍用缩略图省流量</string>
     <string name="cover_write_content_title">写入内容</string>
     <string name="cover_write_content_summary">当前只保存封面图片和来源标识，不写入标题、标签或简介。</string>
     <string name="cover_start_batch">开始批量刮削封面</string>
