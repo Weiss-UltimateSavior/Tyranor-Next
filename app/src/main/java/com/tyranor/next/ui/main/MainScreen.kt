@@ -66,6 +66,7 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AdvancedGlassNavSurface
 import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.DefaultPageBackgroundLayer
 import com.tyranor.next.theme.GlassNavSurface
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.UnselectedGrey
@@ -127,7 +128,10 @@ fun MainScreen(modifier: Modifier = Modifier) {
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initDefaultThemeGradient(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initHomeStyle(context) }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
     libraryViewModel.refreshFromStorage()
@@ -193,6 +197,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
   }
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
   Box(modifier.fillMaxSize()) {
+    // 默认外观风格页面背景（纯色 + 主题色/近似色柔光 + 高斯模糊）；玻璃系为 no-op
+    DefaultPageBackgroundLayer()
     // 内容层录制进 backdrop，供液态玻璃导航采样页面内容。
     // 关键：背景必须在 layerBackdrop 之后（内层）——layerBackdrop 只录制它之后的内容，
     // 放在外层（Surface/Column 背景）的内容不会被采样，玻璃会采到透明而漏出文字。
@@ -236,7 +242,14 @@ fun MainScreen(modifier: Modifier = Modifier) {
           Modifier
         },
       )
-      .background(MaterialTheme.colorScheme.background)
+      // 玻璃系：PageGrey（透明）兜底；默认风格由根部背景层绘制（此处不再铺不透明纯色）
+      .then(
+        if (AppThemeColors.isGlass || AppThemeColors.isAdvancedGlass) {
+          Modifier.background(MaterialTheme.colorScheme.background)
+        } else {
+          Modifier
+        },
+      )
     // 平板 + 高级玻璃：侧栏在内容层之外，采样内容层会因坐标越界采不到东西——
     // 单独把纯背景（cover 铺满 + 压暗 + 暗角）录进 railBackdrop，坐标与窗口同源供侧栏采样。
     val railBackdrop = rememberLayerBackdrop()
@@ -452,6 +465,7 @@ private fun ColumnScope.MainTabPages(
                 onGameDeleted = libraryViewModel::deleteGame,
                 onRecentRemoved = libraryViewModel::removeRecentGame,
                 onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
+                isActive = page == selectedIndex,
               )
               1 -> GameScreen(
                 modifier = Modifier.fillMaxSize(),

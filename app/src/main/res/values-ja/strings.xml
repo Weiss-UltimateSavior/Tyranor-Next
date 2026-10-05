@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">OK</string>
+    <string name="common_done">完了</string>
     <string name="common_cancel">キャンセル</string>
     <string name="common_delete">削除</string>
     <string name="common_save">保存</string>
@@ -11,6 +12,7 @@
     <string name="common_auto">自動</string>
     <string name="common_follow_system">システムに従う</string>
     <string name="common_search_content_description">検索</string>
+    <string name="common_retry">再試行</string>
 
     <string name="nav_home">ホーム</string>
     <string name="nav_games">ゲーム</string>
@@ -33,6 +35,7 @@
     <string name="settings_theme_mode">外観モード</string>
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
+    <string name="settings_default_theme_gradient">デフォルトテーマのグラデーション</string>
     <string name="settings_tone_switch">色調切り替え</string>
     <string name="settings_engine_tabs">エンジンページを分類表示</string>
     <string name="settings_side_rail">タブレットサイドレール</string>
@@ -44,6 +47,20 @@
     <string name="settings_nav_bar_desc_liquid_glass">Android 12 以上で有効</string>
     <string name="settings_nav_bar_desc_enhanced">Android 13 以上のみ対応</string>
     <string name="settings_nav_bar_desc_rail">タブレットではサイドレールで表示</string>
+    <string name="settings_home_style">ホームスタイル</string>
+    <string name="settings_home_style_native">デフォルト</string>
+    <string name="settings_home_style_web">Web</string>
+    <string name="settings_home_web_url">Web ホーム URL</string>
+    <string name="settings_home_web_custom">カスタム URL</string>
+    <string name="settings_home_web_custom_summary">カスタム URL を入力</string>
+    <string name="settings_home_web_url_invalid">有効な http/https URL を入力してください</string>
+    <string name="settings_home_web_current">現在</string>
+    <string name="home_web_preset_kungal">KunGal</string>
+    <string name="home_web_preset_letmoe">LetMoe</string>
+    <string name="home_web_error">ページの読み込みに失敗しました</string>
+    <string name="home_web_open_browser_failed">このリンクを開けるアプリが見つかりません</string>
+    <string name="home_web_download_unsupported">このダウンロードはブラウザで開けません</string>
+    <string name="home_web_refresh_content_description">更新</string>
     <string name="settings_invalid_theme_color">透明色、白黒、グレーは使用できません</string>
 
     <string name="settings_update_latest">最新バージョンです</string>
@@ -57,6 +74,7 @@
     <string name="settings_game_card_style">ゲームカードのスタイル</string>
     <string name="settings_game_card_style_grid">グリッド</string>
     <string name="settings_game_card_style_cover_flow">リスト</string>
+    <string name="settings_game_card_badge">カードのエンジンバッジ</string>
     <string name="settings_game_card_hide_title_tag">カードの名前タグを非表示</string>
     <string name="settings_game_sort">ゲームの並び替え</string>
     <string name="settings_engine_settings">エンジン設定</string>
@@ -128,6 +146,7 @@
     <string name="engine_desc_psp">PSP ゲームは外部 PPSSPP で実行します</string>
     <string name="engine_desc_yuris">YU-RIS（yscfg.dat と .ypf パッケージ、ysbin/.ymv）。外部 Winlator で実行</string>
     <string name="engine_desc_pc">手動追加の Windows PC ゲーム。外部 Winlator で実行</string>
+    <string name="engine_desc_android">手動追加の Android アプリ。ゲームライブラリから直接起動</string>
     <string name="engine_desc_cs2">CatSystem2（.int/.cst/.hg3 のゲーム）。外部 Winlator で実行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch ゲームは外部 Eden で実行します</string>
     <string name="engine_external_jump_title">外部エミュレータ連携</string>
@@ -145,12 +164,14 @@
     <string name="engine_settings_external_emulator_hint">このゲームは外部エミュレータで実行されます。設定とセーブはエミュレータ側で管理されます。</string>
     <string name="engine_settings_yuris_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブはゲームフォルダーの save/ に保存され、ランチャーの統一セーブ管理で扱えます。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
     <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理はありません。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
+    <string name="engine_settings_android_hint">このゲームはインストール済みの Android アプリです。ライブラリから起動するとアプリが直接開きます。セーブ管理とエンジン設定はありません。</string>
     <string name="engine_settings_winlator_per_game_note">上書きはこのゲームにのみ適用されます。各項目は「グローバルに従う」に戻せます。空欄（コンテナ設定に従う）はそのパラメータを送信せず、Winlator のコンテナ設定に委ねます。</string>
     <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
     <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
     <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
     <string name="launch_emulator_failed">%1$s の起動に失敗しました</string>
     <string name="launch_yuris_exe_missing">起動可能な .exe が見つかりません。ゲーム詳細の「起動ファイル」で指定してください</string>
+    <string name="launch_android_app_missing">アプリが見つかりません。アンインストールされた可能性があります</string>
     <string name="launch_emulator_unsupported">%1$s のバージョンが古く、外部起動に対応していません。外置起動対応の winlator-cn に更新してください</string>
     <string name="engine_name_unknown">不明なエンジン</string>
     <string name="engine_name_switch">Switch</string>
@@ -593,6 +614,39 @@
     <string name="launch_create_krkr_scoped_save_failed">KRKR アプリ個別セーブフォルダを作成できません：%1$s</string>
     <string name="launch_create_krkr_save_failed">KRKR セーブフォルダを作成できません：%1$s</string>
 
+    <string name="archive_title">解凍 / 圧縮</string>
+    <string name="archive_permission_rationale">アーカイブを直接読み取るには「すべてのファイルアクセス」権限が必要です。未許可の場合、一部のフォルダはスキャンできないか低速な転送になります</string>
+    <string name="archive_permission_grant">許可する</string>
+    <string name="archive_mode_unpack">解凍</string>
+    <string name="archive_mode_pack">圧縮</string>
+    <string name="archive_pick_source_dir">ゲームフォルダを選択</string>
+    <string name="archive_rescan">再スキャン</string>
+    <string name="archive_change_dir">フォルダ変更</string>
+    <string name="archive_scanning">スキャン中…</string>
+    <string name="archive_no_archives">このフォルダに XP3 が見つかりません</string>
+    <string name="archive_select_hint">左のアーカイブを選択して内容を表示</string>
+    <string name="archive_archives_count">アーカイブ %1$d 件</string>
+    <string name="archive_extract_to">%1$s フォルダに解凍</string>
+    <string name="archive_extract_created">%1$s に解凍しました</string>
+    <string name="archive_pack_pick_dir">圧縮するフォルダを選択</string>
+    <string name="archive_pack_action">圧縮</string>
+    <string name="archive_pack_done">圧縮完了：%1$s</string>
+    <string name="archive_pick_dir">フォルダを選択</string>
+    <string name="archive_done_extract_skipped">解凍完了：%1$d ファイル、スキップ %2$d 件</string>
+    <string name="archive_native_missing">解凍コンポーネントが見つかりません。アプリを再インストールしてください</string>
+    <string name="archive_level">圧縮レベル（0=無圧縮）</string>
+    <string name="archive_conflict_dir">同名フォルダ「%1$s」が既に存在します。バックアップまたは名前変更後に再試行してください</string>
+    <string name="archive_conflict_file">同名ファイル「%1$s」が既に存在します。事前にバックアップまたは名前を変更してください</string>
+    <string name="archive_conflict_inside">アーカイブ内に重複エントリ「%1$s」があるため、上書き防止のため解凍を拒否しました</string>
+    <string name="archive_conflict_rollback">生成物「%1$s」のロールバックが完了しませんでした。不完全なファイルが残っている可能性があります。手動で確認・削除してください</string>
+    <string name="archive_no_dir">先にフォルダを選択してください</string>
+    <string name="archive_empty_list">空または読み取れません</string>
+    <string name="archive_entries_summary">%1$d 件、合計 %2$s</string>
+    <string name="archive_failed_generic">操作に失敗しました。もう一度お試しください</string>
+    <string name="archive_busy">既に解凍/圧縮操作が実行中です</string>
+    <string name="archive_input_empty">選択したフォルダに圧縮できるファイルがありません</string>
+    <string name="archive_cancelled">キャンセルしました</string>
+
     <string name="patch_error_only_kirikiri">オンラインパッチは Kirikiri ゲームのみ対応しています</string>
     <string name="patch_error_select_patch">ダウンロードするパッチを選択してください</string>
     <string name="patch_progress_downloading">%1$s をダウンロード中</string>
@@ -602,7 +656,12 @@
     <string name="patch_download_too_large">パッチファイルが大きすぎるためダウンロードを中止しました</string>
     <string name="patch_error_open_write_stream">パッチ書き込みストリームを開けません</string>
     <string name="patch_error_write_game_dir">ゲームフォルダへ書き込めません。ゲームフォルダを追加し直して書き込み権限を付与してください</string>
-    <string name="game_add_pc_content_description">PC ゲームを追加</string>
+    <string name="game_add_content_description">ゲームを追加</string>
+    <string name="game_add_dialog_title">ゲームを追加</string>
+    <string name="game_add_pc">PC ゲームを追加</string>
+    <string name="game_add_pc_summary">ゲームフォルダーと exe を指定</string>
+    <string name="game_add_android">Android ゲームを追加</string>
+    <string name="game_add_android_summary">インストール済みアプリから選択してライブラリに追加</string>
     <string name="pc_add_dialog_title">PC ゲームを追加</string>
     <string name="pc_add_pick_directory">ゲームフォルダーを選択</string>
     <string name="pc_add_directory_empty">フォルダー未選択</string>
@@ -611,6 +670,12 @@
     <string name="pc_add_loading">フォルダーを読み込み中…</string>
     <string name="pc_add_duplicate">このフォルダーは既に追加済みです</string>
     <string name="pc_add_failed">追加に失敗しました。もう一度お試しください</string>
+    <string name="android_add_dialog_title">Android ゲームを追加</string>
+    <string name="android_add_empty">追加できるアプリがありません</string>
+    <string name="android_add_load_failed">アプリ一覧の読み込みに失敗しました。もう一度お試しください</string>
+    <string name="android_add_no_match">一致するアプリが見つかりません</string>
+    <string name="android_add_duplicate">このアプリは既に追加済みです</string>
+    <string name="android_add_already_added">ライブラリに追加済み</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
     <string name="engine_settings_kr_language">言語環境</string>
     <string name="engine_settings_kr_language_jp">日本語</string>

@@ -5,7 +5,7 @@
 ## 引擎与运行时
 
 **引擎（EngineType）**:
-游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、REALLIVE、AVG32、UK2、FVP、RENPY、YURIS、CATSYSTEM2、PC、UNKNOWN。
+游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、REALLIVE、AVG32、UK2、FVP、RENPY、YURIS、CATSYSTEM2、PC、ANDROID_APP、UNKNOWN。
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:
@@ -21,8 +21,12 @@ _Avoid_: 软渲染引擎、game_fb 引擎
 _Avoid_: 插件、引擎 DLC
 
 **PC 游戏（手动添加）**:
-不属于已识别引擎家族、由用户在游戏页顶栏「添加 PC 游戏」手动入库的 Windows 程序：选择目录 + 指定启动 exe（存 `launchFile`，可随时切换），启动经外置 Winlator；不参与扫描、不纳入存档管理与引擎配置。
+不属于已识别引擎家族、由用户在游戏页顶栏「添加游戏 → 添加电脑游戏」手动入库的 Windows 程序：选择目录 + 指定启动 exe（存 `launchFile`，可随时切换），启动经外置 Winlator；不参与扫描、不纳入存档管理与引擎配置。
 _Avoid_: 未知引擎、Winlator 游戏
+
+**安卓游戏（手动添加）**:
+不属于已识别引擎家族、由用户在游戏页顶栏「添加游戏 → 添加安卓游戏」从已安装可启动应用列表手动入库的 Android 应用：库内主键 `uri = androidapp://<包名>`，包名存 `launchTarget`，启动时按包名直接跳转该应用；不参与扫描、不纳入存档管理与引擎配置。
+_Avoid_: 应用快捷方式、外置模拟器游戏
 
 **外置模拟器跳转（External Emulator Jump）**:
 把游戏交给用户自行安装的独立模拟器/模拟器型运行时（PPSSPP、Eden、Winlator）运行；主 App 只做识别、安装探测与显式组件 Intent 跳转，不接管其存档与设置。YU-RIS 为「目录 + 主 exe」形态，经 Winlator 外置启动协议（`dir_path` + 相对 `exe_path`，自动空闲盘符临时挂载）拉起。
@@ -45,7 +49,7 @@ _Avoid_: 渲染器、后端
 _Avoid_: 补丁、Hook
 
 **autopatch 策略**:
-Artemis 启动前对必要文件（system.ini、list_windows、movie 等）进行幂等修补的决策策略：「启动时询问 / 自动 / 关闭」，由共享确认弹窗承载。
+Artemis 启动前对必要文件（system.ini、list_windows、movie 等）进行幂等修补的决策策略：「启动时询问 / 自动 / 关闭」，由共享确认弹窗承载；**默认关闭**（`ART_PATCH_DEFAULT`，避免无弹窗路径下等价于自动补丁）。
 _Avoid_: 自动补丁、提问开关
 
 **Siglus 标题回写（Title Feedback）**:
@@ -63,7 +67,7 @@ _Avoid_: 导入、索引
 _Avoid_: 游戏条目、GameItem
 
 **启动目标（launchTarget）**:
-认定为主入口的启动文件路径（自动探测）；可被单游戏设置的「启动文件」（launchFile）手动覆盖。
+按引擎语义解释的启动载荷：自动探测的文件路径 / ROM 文件名 / 手动添加 PC 的目录哨兵 / 手动添加安卓游戏的包名；文件型入口可被单游戏设置的「启动文件」（launchFile）手动覆盖。
 _Avoid_: 入口文件（与 launchFile 混淆时）
 
 **外置模块别名（externalModuleAlias）**:
@@ -172,10 +176,28 @@ _Avoid_: 转码、迁移（迁移专指目录位置变更）、写死 `<游戏�
 开启后 MV/MZ 的存档在「标准侧 `<内容根>/save`」与「Tyranor 侧生效存档目录」（独立存档开关决定，检测/转化/同步三处同源）间双向自动同步：启动前与回到前台各同步一次（退出后 500ms 强杀进程、无回调，故以前台兜底并等待会话进程退出）。标准侧兼容 `save` / `Save` 两种拼写（同槽位内容一致视为等价副本，不一致把未选中副本隔离进 `deleted/`）；导入压缩包会剥掉外层文件夹包装。逐槽位较新者胜，mtime 相同须内容哈希一致才跳过；Tyranor 侧已删除的槽位把标准侧对应文件移入 `<标准侧>/deleted/`；标准侧缺失则重新导出。以应用私有同步清单区分「新建」与「已删除」，清单损坏即中止同步（不做任何文件改动）。由全局/单游戏开关控制，默认关。
 _Avoid_: 云同步、备份（与存档镜像不同）
 
+## 拆封包
+
+**拆封包（Archive Unpack / Pack）**:
+设置内独立工具页（`ui/archive`）：扫描所选目录下的 XP3 封包、主从预览条目并整体解包到归档同名文件夹（同名拒绝，不自动改名）；封包把所选目录压成同级同名 `.xp3`（0=明文存放，1–9 zlib 等级）。Rust 实现（`engine/rust`），与 Artemis 启动链的 `ArtemisPfsUnpacker`（仅启动补丁，纯 Kotlin）互不依赖。
+_Avoid_: 解压（系统压缩包语义）、打包
+
+**归档扫描（ArchiveScanner）**:
+拆封包页对所选目录树的递归 XP3 探测：仅按扩展名 `.xp3` 判定，深度与数量有上限；真实路径优先（safUriToPath），映射失败退 DocumentFile 遍历。
+_Avoid_: 游戏扫描（EngineScanner 语义）
+
+**归档暂存（ArchiveStaging）**:
+SAF `content://` 无法映射真实路径时，把输入拷入 `cacheDir/archive_staging` 中转、解包产物再写回目录树的桥接机制；页首清一次陈旧暂存。
+_Avoid_: 缓存（泛化）
+
+**KSD mode-2 隐性解码**:
+XP3 小条目解包时顺带解开 Kirikiri KSD mode-2 内层包裹（`FE FE 02 FF FE` 头），使导出脚本文本可直接编辑；krkrsdl3 引擎 TextStream 原生支持该包裹，解开与否不影响游戏运行，无独立入口。
+_Avoid_: KSD 解包功能（不存在独立功能）
+
 ## 界面规范
 
 **功能跳转条目（AppNavItem）**:
-统一的「功能跳转列」组件（左侧图标 + 标题/摘要 + 右箭头），禁止手写 Row/Column 拼装；页面条目容器用 NavWhite（灰底白卡），弹窗内条目传 PageGrey（白底灰卡）与弹窗背景反色。
+统一的「功能跳转列」组件（左侧图标 + 标题/摘要 + 右箭头），禁止手写 Row/Column 拼装；页面条目容器用 NavWhite（灰底白卡），弹窗内条目传 DialogItemSurface（与弹窗背景反色，玻璃风格下为亮玻璃面）。
 _Avoid_: ListItem、手写条目
 
 **二级字号规范**:
@@ -193,6 +215,10 @@ _Avoid_: 液态玻璃 2.0、增强玻璃
 **四页常驻组合**:
 主界面四个 Tab（首页 / 游戏 / 引擎 / 设置）常驻组合、隐藏页置 alpha=0 保留节点，切换仅做水平 alpha 动画避免重建列表。
 _Avoid_: 懒加载页、Fragment
+
+**首页样式（Home Style）**:
+首页的两种形态：「默认」（最近打开 + 快捷启动）与「网页」（内置 WebView 展示用户所选地址：预设鲲Gal/一起萌或自定义）。由应用设置切换、即时生效；仅 http/https 在 WebView 内加载，http(s) 下载交系统浏览器，主框架非 http(s) 链接仅白名单 scheme（mailto/tel 等）交系统、其余拦截；Web 首页在首页不在前台或应用退后台时暂停 JS 与页面媒体，避免后台耗电。
+_Avoid_: 主页、起始页
 
 ## 架构约定
 

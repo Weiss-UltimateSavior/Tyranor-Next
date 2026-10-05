@@ -39,10 +39,15 @@ fun GlassBackground(
         val backgroundModifier = when {
             AppThemeColors.isAdvancedGlass -> Modifier.advancedGlassPageBackground()
             AppThemeColors.isGlass -> Modifier.glassPageBackground(accent)
-            else -> Modifier.background(MaterialTheme.colorScheme.background)
+            // 默认外观风格：纯色 + 主题色/近似色柔光渐变 + 高斯模糊，由独立背景层绘制
+            else -> Modifier
         }
-        Box(Modifier.fillMaxSize().then(backgroundModifier)) {
-            content()
+        Box(Modifier.fillMaxSize()) {
+            // 背景层（空层，可安全模糊）；玻璃系为 no-op
+            DefaultPageBackgroundLayer()
+            Box(Modifier.fillMaxSize().then(backgroundModifier)) {
+                content()
+            }
         }
     }
 }

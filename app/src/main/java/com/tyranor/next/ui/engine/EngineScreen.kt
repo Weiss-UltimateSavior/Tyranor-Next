@@ -83,6 +83,8 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.settings.artVersionOptions
 import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.TabRowDefaults
+import androidx.compose.ui.graphics.Color
 import android.widget.Toast
 
 /** 引擎页：列表行展示已集成的游戏引擎。 */
@@ -143,6 +145,8 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         onTabSelected = { selectedTab = it },
                         // 圆角与组件统一入口同源：默认 8dp
                         cornerRadius = AppComponentCornerRadius,
+                        // 容器背景透明（只保留选中指示器）：Miuix 默认取 surface，深色下呈不透明黑块
+                        colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent),
                         modifier = tabModifier,
                     )
                 }
@@ -541,6 +545,8 @@ private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
+    // 手动添加的安卓应用不进入引擎页（supportedEngines 未收录），此处仅为 when 完备性
+    EngineType.ANDROID_APP -> EngineTab.CONSOLE
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
     EngineType.UNKNOWN -> EngineTab.WEB
 }
@@ -570,6 +576,7 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
     EngineType.CATSYSTEM2 -> stringResource(R.string.engine_desc_cs2)
     EngineType.PC -> stringResource(R.string.engine_desc_pc)
+    EngineType.ANDROID_APP -> stringResource(R.string.engine_desc_android)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
     EngineType.PSP -> stringResource(R.string.engine_desc_psp)
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)

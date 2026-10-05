@@ -37,9 +37,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,6 +69,7 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.RpgSaveFormat
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
 import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AppThemeColors
@@ -78,6 +81,7 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TimeFormats
+import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.LaunchErrorDialog
@@ -107,11 +111,16 @@ fun HomeScreen(
     onGameDeleted: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
     onQuickLaunchToggle: (ScanGame) -> Boolean,
+    /** 首页 Tab 是否处于前台（四页常驻：Web 首页据此暂停/恢复，避免后台耗电）。 */
+    isActive: Boolean = true,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
+    val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
+    var webReloadSignal by remember { mutableIntStateOf(0) }
     var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
     var launchError by remember { mutableStateOf<LaunchErrorState?>(null) }
     var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
@@ -202,6 +211,30 @@ fun HomeScreen(
             }
             launchError = EngineLauncher.launch(context, target, patchChoice).toErrorState(context)
         }
+    }
+
+    // ===== Web 首页：应用设置「首页样式切换」为网页时，整页替换为 WebView（保留顶栏） =====
+    if (homeStyle == AppSettingsStore.HOME_STYLE_WEB) {
+        Column(modifier.fillMaxSize()) {
+            AppTopBar(
+                title = stringResource(R.string.nav_home),
+                trailing = {
+                    TopBarIcon(
+                        painterResource(R.drawable.ic_refresh),
+                        stringResource(R.string.home_web_refresh_content_description),
+                        MaterialTheme.colorScheme.primary,
+                    ) { webReloadSignal++ }
+                },
+            )
+            HomeWebView(
+                url = homeWebUrl,
+                isActive = isActive,
+                reloadSignal = webReloadSignal,
+                // 悬浮玻璃底栏不占布局：网页底部留白避免内容被永久遮挡（侧栏布局该函数返回 0）
+                modifier = Modifier.fillMaxSize().padding(bottom = glassNavBottomInset()),
+            )
+        }
+        return
     }
 
     Column(modifier.fillMaxSize()) {

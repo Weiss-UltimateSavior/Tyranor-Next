@@ -6,6 +6,7 @@ import java.io.Closeable
 import java.io.EOFException
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
 
@@ -88,6 +89,43 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         } catch (t: Throwable) {
             Log.w(TAG, "read failed path=$path", t)
             null
+        }
+    }
+
+    /** 条目字节大小；目录或不存在返回 null。用于流式响应前判定与 Range 计算，避免整体读入内存。 */
+    fun fileSize(path: String): Long? {
+        val e = entries[normalize(path)] ?: return null
+        return if (e.directory) null else e.size
+    }
+
+    /**
+     * 将条目 [path] 的 `[start, start+length)` 区间流式写入 [out]（供视频等大文件的 Range 响应使用，
+     * 不整体读入内存）。返回是否成功；越界或读取失败返回 false。
+     */
+    fun writeRange(path: String, start: Long, length: Long, out: OutputStream): Boolean {
+        val e = entries[normalize(path)] ?: return false
+        if (e.directory || start < 0L || length < 0L || start + length > e.size) return false
+        if (length == 0L) return true
+        return try {
+            val buffer = ByteArray(64 * 1024)
+            var position = start
+            var left = length
+            while (left > 0L) {
+                val chunk = Math.min(buffer.size.toLong(), left).toInt()
+                // 锁内只做 seek+读块，写出放在锁外，避免慢客户端长时间占住归档文件指针
+                val read = synchronized(raf) {
+                    raf.seek(dataOffset + e.offset + position)
+                    raf.read(buffer, 0, chunk)
+                }
+                if (read <= 0) return false
+                out.write(buffer, 0, read)
+                position += read
+                left -= read
+            }
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "writeRange failed path=$path start=$start length=$length", t)
+            false
         }
     }
 

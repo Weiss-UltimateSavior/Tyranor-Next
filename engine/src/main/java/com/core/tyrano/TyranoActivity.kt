@@ -1,6 +1,7 @@
 package com.core.tyrano
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
@@ -29,7 +30,6 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import com.core.engine.DoubleBackExit
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
@@ -195,13 +195,15 @@ class TyranoActivity : Activity() {
                 }
             val hook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
                 touchPad
-            val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
-                mapOf(
-                    "js/rmmz_core.js" to loadAsset(RPG_MZ_CORE_HOOK_ASSET),
-                    "js/rmmz_managers.js" to loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET),
-                )
-            } else {
-                emptyMap()
+            val scriptAppends = mutableMapOf<String, ByteArray>()
+            if (webGameType == WebGameType.RPG_MZ) {
+                scriptAppends["js/rmmz_core.js"] = loadAsset(RPG_MZ_CORE_HOOK_ASSET)
+                scriptAppends["js/rmmz_managers.js"] = loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET)
+            }
+            if (webGameType == WebGameType.TYRANO) {
+                // 超长 [iscript] 块会让老引擎的 tag.text 逐行递归 nextOrder 而爆栈（RangeError），
+                // 追加补丁改为单帧迭代消费连续 text 标签；见 assets/__tyrano_tag_patch.js
+                scriptAppends[TYRANO_TAG_SCRIPT_PATH] = loadAsset(TYRANO_TAG_PATCH_ASSET)
             }
             val modResources = if (rpgMakerModEnabled) {
                 mapOf(
@@ -215,7 +217,13 @@ class TyranoActivity : Activity() {
             }
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
             Log.i(TAG, "asset loaded ${hookAsset ?: "none"} bytes=${hook.size} scriptAppends=${scriptAppends.keys}")
-            val injectBeforeBody = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
+            // Tyrano 与 RPG 一样注入到 </body> 之前：部分 TyranoStudio/Electron 导出的 index.html
+            // 在第一个 </head> 之前并未加载 jQuery（jQuery 在 body 中经 <script src> 引入）。
+            // 若仍注入首个 </head> 前，hook 顶层的 $.setStorage/$.getStorage 会因 $ 未定义抛错，
+            // 存档桥接失效并连锁导致游戏卡在加载。注入到 </body> 前仍早于 tyrano 的 $(ready) 初始化。
+            val injectBeforeBody = webGameType == WebGameType.RPG_MV ||
+                webGameType == WebGameType.RPG_MZ ||
+                webGameType == WebGameType.TYRANO
             localServer = if (gameUsesAsar) {
                 TyranoLocalHttpServer(
                     contentRoot, asarArchive, hook, injectBeforeBody, scriptAppends, modHtml, modResources, preferredPort,
@@ -562,6 +570,23 @@ class TyranoActivity : Activity() {
         }
     }
 
+    /**
+     * 快捷菜单「结束」确认：与其它内核（Framebuffer 等）一致的退出确认，
+     * 确认后 finish()，由 finish/onDestroy 链路统一延时结束引擎进程。
+     *
+     * 修复点：此前 closeGame 直接走 onBackPressed 的「双击返回退出」逻辑——
+     * 单击无任何反馈、快速双击直接杀进程退出，观感等同闪退。
+     */
+    private fun confirmExitGame() {
+        showEngineConfirm(
+            getString(R.string.engine_exit_game),
+            getString(R.string.engine_exit_game_message),
+            getString(R.string.engine_confirm),
+        ) {
+            finish()
+        }
+    }
+
     override fun finish() {
         super.finish()
         if (processExitScheduled.compareAndSet(false, true)) {
@@ -694,6 +719,13 @@ class TyranoActivity : Activity() {
         confirmText: String,
         onConfirm: () -> Unit,
     ) {
+        // 守卫：JS 回调与执行之间 Activity 可能已销毁（Home 键/系统回收），
+        // 避免 dialog.show() 抛 WindowManager$BadTokenException（与 KRKRCall/Siglus 同款防御）
+        if (isFinishing || isDestroyed) return
+        // 用框架 AlertDialog：TyranoActivity 未声明独立主题，继承的是应用框架主题
+        // （android:Theme.Material.*，非 AppCompat 主题），AppCompat AlertDialog 会在
+        // setContentView 抛 "You need to use a Theme.AppCompat theme..."；
+        // 与 SDLActivity 的同风格弹窗实现保持一致。
         val dialog = AlertDialog.Builder(this).create()
         dialog.setCancelable(true)
         dialog.setCanceledOnTouchOutside(true)
@@ -845,7 +877,7 @@ class TyranoActivity : Activity() {
 
     inner class TyranoJsBridge(private val saveDirectory: File?) {
         @JavascriptInterface
-        fun closeGame() = runOnUiThread(::onBackPressed)
+        fun closeGame() = runOnUiThread(::confirmExitGame)
 
         @JavascriptInterface
         fun finishGame() = runOnUiThread(::confirmReturnToTitle)
@@ -987,6 +1019,8 @@ class TyranoActivity : Activity() {
     companion object {
         private const val TAG = "YukiTyrano"
         private const val TYRANO_HOOK_ASSET = "__tyrano__.js"
+        private const val TYRANO_TAG_PATCH_ASSET = "__tyrano_tag_patch.js"
+        private const val TYRANO_TAG_SCRIPT_PATH = "tyrano/plugins/kag/kag.tag.js"
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
         private const val TOUCH_PAD_ASSET = "__touch_pad.js"

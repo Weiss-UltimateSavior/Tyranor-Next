@@ -45,7 +45,8 @@ import androidx.compose.ui.unit.dp
 fun AppTopBar(
     title: String,
     modifier: Modifier = Modifier,
-    background: Color = MaterialTheme.colorScheme.background,
+    // 默认透明：默认外观风格露出页面根部背景层（纯色 + 主题柔光渐变 + 模糊）；玻璃系同现状
+    background: Color = Color.Transparent,
     contentColor: Color = MaterialTheme.colorScheme.onBackground,
     underTitle: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,

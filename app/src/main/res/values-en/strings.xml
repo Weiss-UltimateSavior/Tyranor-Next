@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">OK</string>
+    <string name="common_done">Done</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_delete">Delete</string>
     <string name="common_save">Save</string>
@@ -11,6 +12,7 @@
     <string name="common_auto">Auto</string>
     <string name="common_follow_system">Follow system</string>
     <string name="common_search_content_description">Search</string>
+    <string name="common_retry">Retry</string>
 
     <string name="nav_home">Home</string>
     <string name="nav_games">Games</string>
@@ -33,6 +35,7 @@
     <string name="settings_theme_mode">Appearance</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_default_theme_gradient">Default theme gradient</string>
     <string name="settings_tone_switch">Tone switch</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
     <string name="settings_side_rail">Tablet side rail</string>
@@ -44,6 +47,20 @@
     <string name="settings_nav_bar_desc_liquid_glass">Effective on Android 12 and above</string>
     <string name="settings_nav_bar_desc_enhanced">Android 13 and above only</string>
     <string name="settings_nav_bar_desc_rail">Shown as a side rail on tablets</string>
+    <string name="settings_home_style">Home style</string>
+    <string name="settings_home_style_native">Default</string>
+    <string name="settings_home_style_web">Web</string>
+    <string name="settings_home_web_url">Web home URL</string>
+    <string name="settings_home_web_custom">Custom URL</string>
+    <string name="settings_home_web_custom_summary">Enter a custom URL</string>
+    <string name="settings_home_web_url_invalid">Enter a valid http/https URL</string>
+    <string name="settings_home_web_current">Current</string>
+    <string name="home_web_preset_kungal">KunGal</string>
+    <string name="home_web_preset_letmoe">LetMoe</string>
+    <string name="home_web_error">Failed to load the page</string>
+    <string name="home_web_open_browser_failed">No app can open this link</string>
+    <string name="home_web_download_unsupported">This download cannot be opened in a browser</string>
+    <string name="home_web_refresh_content_description">Refresh</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>
 
     <string name="settings_update_latest">You are on the latest version</string>
@@ -57,6 +74,7 @@
     <string name="settings_game_card_style">Game card style</string>
     <string name="settings_game_card_style_grid">Grid</string>
     <string name="settings_game_card_style_cover_flow">List</string>
+    <string name="settings_game_card_badge">Card engine badge</string>
     <string name="settings_game_card_hide_title_tag">Hide name tags on cards</string>
     <string name="settings_game_sort">Game sorting</string>
     <string name="settings_engine_settings">Engine settings</string>
@@ -128,6 +146,7 @@
     <string name="engine_desc_psp">PSP games run through the external PPSSPP</string>
     <string name="engine_desc_yuris">YU-RIS (yscfg.dat with .ypf packages, ysbin/.ymv), runs via external Winlator</string>
     <string name="engine_desc_pc">Manually added Windows PC games, run via external Winlator</string>
+    <string name="engine_desc_android">Manually added Android apps, launched directly from the library</string>
     <string name="engine_desc_cs2">CatSystem2 (.int/.cst/.hg3 games), runs via external Winlator</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch games run through the external Eden</string>
     <string name="engine_external_jump_title">External emulator support</string>
@@ -145,12 +164,14 @@
     <string name="engine_settings_external_emulator_hint">This game runs in an external emulator; settings and saves are managed by the emulator.</string>
     <string name="engine_settings_yuris_hint">This game runs in external Winlator. The executable can be changed via "Launch file" in game details. Saves live in the game folder\'s save/ directory and are managed by the launcher; runtime options can be overridden per item in the Winlator card below.</string>
     <string name="engine_settings_pc_hint">Runs via external Winlator. Change the executable via "Launch file" in game details. No save management; runtime options can be overridden per item in the Winlator card below.</string>
+    <string name="engine_settings_android_hint">This game is an installed Android app. Launching from the library opens the app directly. No save management or engine settings.</string>
     <string name="engine_settings_winlator_per_game_note">Overrides apply to this game only; each item can be switched back to "Follow global". An empty value (follow container config) sends no such parameter, leaving it to the Winlator container config.</string>
     <string name="launch_emulator_missing">%1$s is not installed. Download it from “External emulator support”</string>
     <string name="launch_emulator_no_activity">%1$s does not provide an entry to receive games</string>
     <string name="launch_emulator_denied">%1$s launch was denied by the system</string>
     <string name="launch_emulator_failed">%1$s failed to launch</string>
     <string name="launch_yuris_exe_missing">No runnable .exe was found; pick one via "Launch file" in game details</string>
+    <string name="launch_android_app_missing">App not found; it may have been uninstalled</string>
     <string name="launch_emulator_unsupported">%1$s is too old for external launch; please update to a winlator-cn build with external launch support</string>
     <string name="engine_name_unknown">Unknown engine</string>
     <string name="engine_name_switch">Switch</string>
@@ -593,6 +614,39 @@
     <string name="launch_create_krkr_scoped_save_failed">Unable to create the KRKR app-specific save directory: %1$s</string>
     <string name="launch_create_krkr_save_failed">Unable to create the KRKR save directory: %1$s</string>
 
+    <string name="archive_title">Unpack / Pack</string>
+    <string name="archive_permission_rationale">“All files access” is required to read archives from storage directly; without it some folders cannot be scanned or fall back to slow transfers</string>
+    <string name="archive_permission_grant">Grant</string>
+    <string name="archive_mode_unpack">Unpack</string>
+    <string name="archive_mode_pack">Pack</string>
+    <string name="archive_pick_source_dir">Select game folder</string>
+    <string name="archive_rescan">Rescan</string>
+    <string name="archive_change_dir">Change</string>
+    <string name="archive_scanning">Scanning…</string>
+    <string name="archive_no_archives">No XP3 found in this folder</string>
+    <string name="archive_select_hint">Select an archive on the left to preview</string>
+    <string name="archive_archives_count">%1$d archives</string>
+    <string name="archive_extract_to">Extract to %1$s folder</string>
+    <string name="archive_extract_created">Extracted to %1$s</string>
+    <string name="archive_pack_pick_dir">Select folder to pack</string>
+    <string name="archive_pack_action">Pack</string>
+    <string name="archive_pack_done">Packed: %1$s</string>
+    <string name="archive_pick_dir">Select folder</string>
+    <string name="archive_done_extract_skipped">Extracted %1$d files, skipped %2$d</string>
+    <string name="archive_native_missing">Unpack component missing, please reinstall the full app and retry</string>
+    <string name="archive_level">Level (0=store)</string>
+    <string name="archive_conflict_dir">Folder “%1$s” already exists — back it up or rename it first</string>
+    <string name="archive_conflict_file">Output “%1$s” already exists — back it up or rename it first</string>
+    <string name="archive_conflict_inside">Duplicate entry “%1$s” inside the archive — extraction refused to avoid overwriting</string>
+    <string name="archive_conflict_rollback">Rollback of output folder “%1$s” did not finish — partial files may remain, please check and delete manually</string>
+    <string name="archive_no_dir">Select a folder first</string>
+    <string name="archive_empty_list">Empty or unreadable</string>
+    <string name="archive_entries_summary">%1$d entries, %2$s total</string>
+    <string name="archive_failed_generic">Operation failed, please retry</string>
+    <string name="archive_busy">An unpack/pack operation is already running</string>
+    <string name="archive_input_empty">The selected folder contains no files to pack</string>
+    <string name="archive_cancelled">Cancelled</string>
+
     <string name="patch_error_only_kirikiri">Online patches are only supported for Kirikiri games</string>
     <string name="patch_error_select_patch">Select a patch to download</string>
     <string name="patch_progress_downloading">Downloading %1$s</string>
@@ -602,7 +656,12 @@
     <string name="patch_download_too_large">Patch file is too large; download stopped</string>
     <string name="patch_error_open_write_stream">Unable to open the patch write stream</string>
     <string name="patch_error_write_game_dir">Unable to write to the game directory. Add the game folder again and grant write permission</string>
-    <string name="game_add_pc_content_description">Add PC game</string>
+    <string name="game_add_content_description">Add game</string>
+    <string name="game_add_dialog_title">Add game</string>
+    <string name="game_add_pc">Add PC game</string>
+    <string name="game_add_pc_summary">Choose a game folder and specify the exe</string>
+    <string name="game_add_android">Add Android game</string>
+    <string name="game_add_android_summary">Pick an installed app and add it to the library</string>
     <string name="pc_add_dialog_title">Add PC game</string>
     <string name="pc_add_pick_directory">Choose game folder</string>
     <string name="pc_add_directory_empty">No folder selected</string>
@@ -611,6 +670,12 @@
     <string name="pc_add_loading">Reading folder…</string>
     <string name="pc_add_duplicate">This folder is already in the library</string>
     <string name="pc_add_failed">Failed to add, please retry</string>
+    <string name="android_add_dialog_title">Add Android game</string>
+    <string name="android_add_empty">No apps available to add</string>
+    <string name="android_add_load_failed">Failed to load the app list, please retry</string>
+    <string name="android_add_no_match">No matching apps found</string>
+    <string name="android_add_duplicate">This app is already in the library</string>
+    <string name="android_add_already_added">In library</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
     <string name="engine_settings_kr_language">Language environment</string>
     <string name="engine_settings_kr_language_jp">Japanese</string>

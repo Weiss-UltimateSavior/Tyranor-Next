@@ -204,6 +204,8 @@ object EngineSettingsStore {
     const val AUTO_PATCH_ASK = "ask"
     const val AUTO_PATCH_AUTO = "auto"
     const val AUTO_PATCH_OFF = "off"
+    /** 补丁策略默认值：关闭（不询问、不自动补丁；用户可在引擎设置/单游戏覆盖中改为询问或自动）。 */
+    const val ART_PATCH_DEFAULT = AUTO_PATCH_OFF
     /** Artemis 引擎版本全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
     val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V3, ART_ENGINE_V4, ART_ENGINE_V5, ART_ENGINE_V6)
     /** Artemis 补丁策略全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
@@ -646,8 +648,8 @@ object EngineSettingsStore {
     fun isArtRotateScreen(c: Context): Boolean = prefs(c).getBoolean(KEY_ARTEMIS_ROTATE_SCREEN, false)
     fun setArtRotateScreen(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_ARTEMIS_ROTATE_SCREEN, b).apply()
     fun getArtAutoPatch(c: Context): String {
-        val v = prefs(c).getString(KEY_ARTEMIS_AUTO_PATCH, AUTO_PATCH_ASK)
-        return if (v == AUTO_PATCH_AUTO || v == AUTO_PATCH_OFF) v else AUTO_PATCH_ASK
+        val v = prefs(c).getString(KEY_ARTEMIS_AUTO_PATCH, ART_PATCH_DEFAULT)?.trim()
+        return if (v != null && v in ART_PATCHES) v else ART_PATCH_DEFAULT
     }
     fun setArtAutoPatch(c: Context, v: String) = prefs(c).edit().putString(KEY_ARTEMIS_AUTO_PATCH, v).apply()
     fun getArtResolution(c: Context): String = artStringPref(c, KEY_ARTEMIS_RESOLUTION, ART_RESOLUTIONS)

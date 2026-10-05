@@ -22,6 +22,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
@@ -57,12 +58,12 @@ internal fun EngineSettingsMenuScreen() {
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = MiuixTheme.colorScheme.background,
+            containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = stringResource(R.string.settings_engine_settings),
-                    background = MiuixTheme.colorScheme.background,
+                    background = ComposeColor.Transparent,
                     contentColor = MiuixTheme.colorScheme.onBackground,
                 )
             },

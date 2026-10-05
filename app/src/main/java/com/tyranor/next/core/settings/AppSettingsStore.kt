@@ -21,11 +21,23 @@ object AppSettingsStore {
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
 
+    /** 首页样式：原生（最近打开/快捷启动）或网页。 */
+    const val KEY_HOME_STYLE = "home_style"
+
+    /** Web 首页展示的地址。 */
+    const val KEY_HOME_WEB_URL = "home_web_url"
+
     /** 游戏页卡片隐藏名称标签（【】/[]）；默认开。 */
     const val KEY_GAME_CARD_HIDE_TITLE_TAG = "game_card_hide_title_tag"
 
     /** 游戏页卡片风格：网格 / 列表（封面流）；默认网格。 */
     const val KEY_GAME_CARD_STYLE = "game_card_style"
+
+    /** 游戏页卡片左上角引擎类型角标；默认关。 */
+    const val KEY_GAME_CARD_BADGE = "game_card_badge"
+
+    /** 默认外观风格的页面背景渐变（纯色+柔光/颜色渐变）；默认开。 */
+    const val KEY_DEFAULT_THEME_GRADIENT = "default_theme_gradient"
     const val KEY_ENGINE_TABS = "engine_tabs"
     const val KEY_SIDE_RAIL = "side_rail"
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
@@ -94,6 +106,12 @@ object AppSettingsStore {
     /** 卡片风格默认值：网格。 */
     const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_GRID
 
+    /** 卡片引擎角标默认值：关。 */
+    const val DEFAULT_GAME_CARD_BADGE = false
+
+    /** 默认主题渐变默认值：开（应用设置可关闭，回退纯色页面背景）。 */
+    const val DEFAULT_DEFAULT_THEME_GRADIENT = true
+
     /** 底部导航栏样式：默认（Material3 导航栏）。 */
     const val NAV_STYLE_DEFAULT = "default"
 
@@ -102,6 +120,24 @@ object AppSettingsStore {
 
     /** 底部导航栏样式：液态玻璃 · 透镜（三层采样 + 折射透镜，Android 13+ 才有完整效果）。 */
     const val NAV_STYLE_LIQUID_GLASS_ENHANCED = "liquid_glass_enhanced"
+
+    /** 首页样式：原生首页（最近打开 + 快捷启动）。 */
+    const val HOME_STYLE_NATIVE = "native"
+
+    /** 首页样式：Web 首页（内置 WebView 展示所选网址）。 */
+    const val HOME_STYLE_WEB = "web"
+
+    /** 首页样式默认值：原生。 */
+    const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
+
+    /** Web 首页预设：鲲Gal。 */
+    const val HOME_WEB_URL_KUNGAL = "https://www.kungal.com"
+
+    /** Web 首页预设：一起萌。 */
+    const val HOME_WEB_URL_LETMOE = "https://www.letmoe.com"
+
+    /** Web 首页默认地址：一起萌。 */
+    const val DEFAULT_HOME_WEB_URL = HOME_WEB_URL_LETMOE
 
     /** 透镜档需要 Android 13（API 33）的 RuntimeShader 折射能力；更低版本不提供该选项。 */
     val supportsLiquidGlassEnhanced: Boolean
@@ -131,11 +167,26 @@ object AppSettingsStore {
     /** 卡片风格内存态：设置页切换后游戏页即时切换布局。 */
     val gameCardStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_GAME_CARD_STYLE)
 
+    /** 卡片引擎角标内存态：设置页切换后游戏页卡片即时重组。 */
+    val gameCardBadgeState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_GAME_CARD_BADGE)
+
+    /** 默认主题渐变内存态：设置页切换后页面背景即时重组。 */
+    val defaultThemeGradientState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_DEFAULT_THEME_GRADIENT)
+
+    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页形态。 */
+    val homeStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_STYLE)
+
+    /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
+    val homeWebUrlState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_WEB_URL)
+
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
     val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
 
     /** 导航样式读写的串行锁：迁移的读改写与用户写入必须互斥（见 [initNavStyle]）。 */
     private val navStyleLock = Any()
+
+    /** 首页样式读写的串行锁：init 的异步加载与用户写入必须互斥（同 [navStyleLock] 的理由）。 */
+    private val homeStyleLock = Any()
 
     /**
      * 首次组合时从持久化加载导航栏样式到内存态（幂等）。
@@ -266,6 +317,69 @@ object AppSettingsStore {
     }
 
     /** 首次组合时从持久化加载「卡片风格」到内存态（幂等）。 */
+    /** 首次组合时从持久化加载「默认主题渐变」到内存态（幂等）。 */
+    fun initDefaultThemeGradient(c: Context) {
+        defaultThemeGradientState.value = isDefaultThemeGradientEnabled(c)
+    }
+
+    fun isDefaultThemeGradientEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_DEFAULT_THEME_GRADIENT, DEFAULT_DEFAULT_THEME_GRADIENT)
+
+    fun setDefaultThemeGradientEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_DEFAULT_THEME_GRADIENT, enabled).apply()
+        defaultThemeGradientState.value = enabled
+    }
+
+    /** 首次组合时从持久化加载「卡片引擎角标」到内存态（幂等）。 */
+    fun initGameCardBadge(c: Context) {
+        gameCardBadgeState.value = isGameCardBadgeEnabled(c)
+    }
+
+    /** 首次组合时从持久化加载首页样式与 Web 首页地址到内存态（幂等）。 */
+    fun initHomeStyle(c: Context) {
+        synchronized(homeStyleLock) {
+            homeStyleState.value = getHomeStyle(c)
+            homeWebUrlState.value = getHomeWebUrl(c)
+        }
+    }
+
+    /** 首页样式归一：仅接受 web，其余（含空/未知）回退原生。 */
+    fun getHomeStyle(c: Context): String =
+        when (prefs(c).getString(KEY_HOME_STYLE, HOME_STYLE_NATIVE)) {
+            HOME_STYLE_WEB -> HOME_STYLE_WEB
+            else -> HOME_STYLE_NATIVE
+        }
+
+    fun setHomeStyle(c: Context, style: String) {
+        val normalized = if (style == HOME_STYLE_WEB) HOME_STYLE_WEB else HOME_STYLE_NATIVE
+        synchronized(homeStyleLock) {
+            prefs(c).edit().putString(KEY_HOME_STYLE, normalized).apply()
+            homeStyleState.value = normalized
+        }
+    }
+
+    /** 当前 Web 首页地址；磁盘值非法/为空时回退默认（一起萌）。 */
+    fun getHomeWebUrl(c: Context): String =
+        prefs(c).getString(KEY_HOME_WEB_URL, DEFAULT_HOME_WEB_URL)
+            ?.let { HomeWebUrls.normalize(it) }
+            ?: DEFAULT_HOME_WEB_URL
+
+    fun setHomeWebUrl(c: Context, url: String) {
+        val normalized = HomeWebUrls.normalize(url) ?: DEFAULT_HOME_WEB_URL
+        synchronized(homeStyleLock) {
+            prefs(c).edit().putString(KEY_HOME_WEB_URL, normalized).apply()
+            homeWebUrlState.value = normalized
+        }
+    }
+
+    fun isGameCardBadgeEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_GAME_CARD_BADGE, DEFAULT_GAME_CARD_BADGE)
+
+    fun setGameCardBadgeEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_GAME_CARD_BADGE, enabled).apply()
+        gameCardBadgeState.value = enabled
+    }
+
     fun initGameCardStyle(c: Context) {
         gameCardStyleState.value = getGameCardStyle(c)
     }

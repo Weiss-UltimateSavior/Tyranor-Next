@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
 import com.tyranor.next.core.auth.HikarinagiAuthService
 import com.tyranor.next.core.auth.HikarinagiAuthStore
@@ -120,7 +121,7 @@ internal fun CoverScraperSettingsScreen() {
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = MiuixTheme.colorScheme.background,
+            containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = { CoverScraperTopBar() },
         ) { innerPadding ->
@@ -315,7 +316,7 @@ private fun CoverSourceRow(
 private fun CoverScraperTopBar() {
     AppTopBar(
         title = stringResource(R.string.settings_cover_scraper),
-        background = PageGrey,
+        background = ComposeColor.Transparent,
         contentColor = TextColor,
     )
 }

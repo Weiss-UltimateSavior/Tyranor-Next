@@ -1,0 +1,22 @@
+[package]
+name = "xp3"
+version = "0.4.2"
+authors = ["storycraft <storycraft@pancake.sh>"]
+readme = "readme.md"
+keywords = ["kirikiri", "archive", "xp3"]
+license = "Apache-2.0"
+edition = "2024"
+repository = "https://github.com/storycraft/xp3-rs"
+description = "A XP3 archive library for rust"
+
+[dependencies]
+flate2 = "1.1.9"
+byteorder = "1.5.0"
+adler32 = "1.2.0"
+tokio = { version = "1.50.0", features = ["io-util"] }
+thiserror = "2.0.18"
+async-compression = { version = "0.4.41", features = ["tokio", "zlib"] }
+pin-project = "1.1.11"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }

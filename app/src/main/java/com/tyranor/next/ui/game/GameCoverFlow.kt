@@ -69,52 +69,63 @@ internal fun GameCoverFlow(
     }
 
     // 背景随页面（不单独铺色）
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val cardWidth = maxWidth * 0.60f
-        val horizontalPadding = (maxWidth - cardWidth) / 2
+    Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            HorizontalPager(
-                state = pagerState,
+            // 分页区高度自适应卡片（weight fill=false，标题因此始终贴在卡片下方）。
+            // 区内可用高度参与卡片宽度计算：竖版封面 3:4，若只按「容器宽度 60%」取宽，
+            // 横屏/平板大屏时卡片高度会远超可用高度，整张卡被裁切且标题压到卡片上。
+            BoxWithConstraints(
                 modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-                pageSize = PageSize.Fixed(cardWidth),
-                contentPadding = PaddingValues(horizontal = horizontalPadding),
-                pageSpacing = 14.dp,
-            ) { page ->
-                val game = games.getOrNull(page) ?: return@HorizontalPager
-                val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-                val absOffset = min(offset.absoluteValue, 2f)
-                key(game.uri) {
-                    CoverFlowCard(
-                        game = game,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(3f / 4f)
-                            .zIndex(1f - absOffset)
-                            .graphicsLayer {
-                                cameraDistance = 16f * density.density
-                                rotationY = (-offset.coerceIn(-1f, 1f)) * 38f
-                                val scale = 1f - 0.22f * min(absOffset, 1f)
-                                scaleX = scale
-                                scaleY = scale
-                                alpha = 1f - 0.45f * min(absOffset, 1f)
-                            }
-                            .pointerInput(page) {
-                                detectTapGestures(
-                                    onTap = {
-                                        if (page == pagerState.currentPage) {
-                                            onGameClick(game)
-                                        } else {
-                                            scope.launch { pagerState.animateScrollToPage(page) }
-                                        }
-                                    },
-                                    onLongPress = { onGameLongClick(game) },
-                                )
-                            },
-                    )
+                contentAlignment = Alignment.Center,
+            ) {
+                // 宽度取「容器宽度的 60%」与「可用高度换算宽度（预留 24dp 上下呼吸位）」的较小值
+                val cardWidth = minOf(maxWidth * 0.60f, (maxHeight - 24.dp) * 3f / 4f)
+                    .coerceAtLeast(96.dp)
+                    .coerceAtMost(maxWidth)
+                val horizontalPadding = ((maxWidth - cardWidth) / 2).coerceAtLeast(0.dp)
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth(),
+                    pageSize = PageSize.Fixed(cardWidth),
+                    contentPadding = PaddingValues(horizontal = horizontalPadding),
+                    pageSpacing = 14.dp,
+                ) { page ->
+                    val game = games.getOrNull(page) ?: return@HorizontalPager
+                    val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                    val absOffset = min(offset.absoluteValue, 2f)
+                    key(game.uri) {
+                        CoverFlowCard(
+                            game = game,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(3f / 4f)
+                                .zIndex(1f - absOffset)
+                                .graphicsLayer {
+                                    cameraDistance = 16f * density.density
+                                    rotationY = (-offset.coerceIn(-1f, 1f)) * 38f
+                                    val scale = 1f - 0.22f * min(absOffset, 1f)
+                                    scaleX = scale
+                                    scaleY = scale
+                                    alpha = 1f - 0.45f * min(absOffset, 1f)
+                                }
+                                .pointerInput(page) {
+                                    detectTapGestures(
+                                        onTap = {
+                                            if (page == pagerState.currentPage) {
+                                                onGameClick(game)
+                                            } else {
+                                                scope.launch { pagerState.animateScrollToPage(page) }
+                                            }
+                                        },
+                                        onLongPress = { onGameLongClick(game) },
+                                    )
+                                },
+                        )
+                    }
                 }
             }
             CoverFlowCaption(
