@@ -1,8 +1,8 @@
 package com.tyranor.next.core.game.save
 
-import com.core.rpgmaker.RpgSaveKeyMapping
 import com.tyranor.next.core.engine.EngineType
 import java.io.File
+import java.security.MessageDigest
 import java.util.Locale
 
 /**
@@ -15,23 +15,22 @@ import java.util.Locale
  * `<external>/save/tyrano/<safeName>`。检测/转化必须消费**生效目录**（与引擎一致），
  * [saveDirectory] 仅是非独立存档时的默认路径，不是唯一来源。
  *
- * MV（键形如 `RPG FileN`，含空格 → 引擎按确定性哈希命名）：
- * | 转化后落盘名（key_<sha256>） | 标准格式（JoiPlay/PC） |
- * | -------------------------- | --------------------- |
- * | key_<sha256("RPG Global")>.bin    | global.rpgsave     |
- * | key_<sha256("RPG Config")>.bin    | config.rpgsave     |
- * | key_<sha256("RPG FileN")>.bin     | fileN.rpgsave      |
- * | key_<sha256("RPG Globalbak")>.bin | global.rpgsave.bak |
- * | key_<sha256("RPG FileNbak")>.bin  | fileN.rpgsave.bak  |
- * 其中 `RPG *.bin`（不带 key_ 前缀）是原 Tyranor 的 legacy 名，引擎读取时优先 legacy、
- * 否则回退哈希名；两种名字引擎都能读，本模块的转化与互通统一写入哈希名（见 [tyranorAppliedName]）。
+ * MV（引擎经 webStorageKey 派生 `RPG ...` 键，含空格 → 桥按 legacy 文件名落盘或哈希）：
+ * | Tyranor 格式        | 标准格式（JoiPlay/PC） |
+ * | ------------------ | --------------------- |
+ * | RPG Global.bin     | global.rpgsave        |
+ * | RPG Config.bin     | config.rpgsave        |
+ * | RPG FileN.bin      | fileN.rpgsave         |
+ * | RPG Globalbak.bin  | global.rpgsave.bak    |
+ * | RPG Configbak.bin  | config.rpgsave.bak    |
+ * | RPG FileNbak.bin   | fileN.rpgsave.bak     |
  *
- * MZ（键为 `global`/`config`/`fileN`，纯 ASCII 命中 directFileKey，核心不带备份）：
+ * MZ（键为 `global`/`config`/`fileN`，核心不带备份）：
  * | global.bin / config.bin / fileN.bin | global.rmmzsave / config.rmmzsave / fileN.rmmzsave |
- * MZ 不能改哈希名——引擎固定读写原名，改了就永远读不到。
  *
- * 哈希名反解回标准名依赖键空间有限（见 [hashedToStandardName]），可枚举还原；插件自定义键
- * 无法还原，导出时保留原名并计入 unmapped。
+ * 含空格的 MV 键经 RpgMakerStorage 的确定性哈希映射落成 `key_<sha256(key)>.bin`。该形态**不是**
+ * 可读的 Tyranor 名字（引擎读档时按 legacy 文件名找，哈希名只是写入落点），因此导出为「标准模式」
+ * 时需要把哈希名反解回标准名——键空间有限（见 [hashedToStandardName]），可枚举还原。
  */
 object RpgSaveFormat {
 
@@ -66,6 +65,7 @@ object RpgSaveFormat {
     /** MZ 的 Tyranor 文件名：`global.bin` / `file1.bin` 等。 */
     private val MZ_TYRANOR_NAME = Regex("^(global|config|file(\\d+))(bak)?\\.bin$", RegexOption.IGNORE_CASE)
 
+    private val HASHED_KEY_NAME = Regex("^key_([0-9a-f]{64})\\.bin$", RegexOption.IGNORE_CASE)
 
     private const val MV_EXT = ".rpgsave"
     private const val MZ_EXT = ".rmmzsave"
@@ -129,23 +129,12 @@ object RpgSaveFormat {
     }
 
     /**
-     * 存档目录去重键（[standardSaveDirectories] 与检测/转化目录组共用同一份实现，
-     * 避免两处规则各自漂移）。
-     *
-     * 规则：
-     * - **存在的目录**用精确规范路径，不做大小写归一。区分大小写的文件系统（Linux/Android
-     *   真机）上 `savedata` 与 `Savedata` 是两个不同目录，小写归一会把它们合并，
-     *   导致只存在于其中一个的历史存档漏检/漏转化；大小写不敏感的文件系统上
-     *   `canonicalPath` 本就返回磁盘上的真实大小写，两种拼写自然折叠为一条，无需小写。
-     * - **不存在的目录**没有真实大小写身份，按小写折叠：此时目录为空、不会被扫描到，
-     *   折叠只是避免同一目录的两种拼写重复入列，不会丢失任何存档。
+     * 路径去重键：用精确规范路径，**不做大小写归一**。在区分大小写的文件系统上
+     * `save` 与 `Save` 是两个不同目录，小写归一会把它们合并、导致漏检/漏同步；
+     * 在大小写不敏感的文件系统上 `canonicalPath` 本就返回同一路径，自然去重。
      */
-    internal fun saveDirDedupKey(file: File): String {
-        val canonical = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
-        return if (file.exists()) canonical else canonical.lowercase(Locale.ROOT)
-    }
-
-    private fun pathKey(file: File): String = saveDirDedupKey(file)
+    private fun pathKey(file: File): String =
+        runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
 
     /** 递归定位游戏内容根（含 index.html / app.asar 的目录），与 engine 入口探测同序。 */
     private fun locateContentRoot(dir: File, depth: Int = 0): File? {
@@ -274,30 +263,6 @@ object RpgSaveFormat {
         }
     }
 
-    /**
-     * 引擎 `RpgMakerStorage.resolveFile` 实际固定的落盘名（转化/互通导入时写入的名字）。
-     *
-     * - **MV**：键形如 `RPG File3`（含空格），不匹配 `directFileKey`，且 legacy 名通常不存在，
-     *   因此引擎统一按确定性哈希映射为 `key_<sha256(键)>.bin`。转化按此写入，引擎读到的正是该文件。
-     * - **MZ**：键形如 `file3`（纯 ASCII），匹配 `directFileKey`，引擎固定读写 `file3.bin`；
-     *   若改成哈希名引擎将永远读不到，故 MZ 保持原名。
-     */
-    private fun tyranorAppliedName(legacyName: String, engine: EngineType): String {
-        if (engine != EngineType.RPG_MV) return legacyName
-        // 与引擎**同一实现**（RpgSaveKeyMapping）：MV 键形如 `RPG File3`（含空格）→
-        // 不匹配 directFileKey → 确定性哈希名。此前这里是独立实现，仅靠「MV 键必含空格」
-        // 与引擎保持等价；改为共用后不存在漂移空间。
-        val key = legacyName.removeSuffix(".bin")
-        val clean = RpgSaveKeyMapping.sanitizeKey(key) ?: return legacyName
-        return RpgSaveKeyMapping.canonicalFileName(clean, ".bin")
-    }
-
-    /** 标准文件名 → 转化后实际落盘的 Tyranor 文件名；不匹配返回 null。 */
-    fun tyranorFileNameForStandard(standardName: String, engine: EngineType): String? {
-        val legacy = standardToTyranor(standardName, engine) ?: return null
-        return tyranorAppliedName(legacy, engine)
-    }
-
     // ===== 槽位键（同步用）=====
     // 槽位键 = 归一化存档位标识：`global` / `config` / `fileN`，MV 备份追加 `.bak`。
     // 两侧文件名都可映射到同一槽位键，便于判断「同一个存档位」是否两边都存在。
@@ -337,25 +302,24 @@ object RpgSaveFormat {
         return stem + ext + (if (isBackup) ".bak" else "")
     }
 
-    /** 槽位键 → 转化后实际落盘的 Tyranor 文件名（MV 为哈希名，MZ 为原名）。 */
+    /** 槽位键 → Tyranor 文件名。 */
     fun tyranorNameForSlot(slot: String, engine: EngineType): String? {
         val isBackup = slot.endsWith(".bak")
         if (isBackup && !supportsBackup(engine)) return null
         val stem = if (isBackup) slot.removeSuffix(".bak") else slot
         val base = tyranorBase(stem, engine) ?: return null
-        val legacy = base + (if (isBackup) "bak" else "") + ".bin"
-        return tyranorAppliedName(legacy, engine)
+        return base + (if (isBackup) "bak" else "") + ".bin"
     }
 
     /** 哈希存档名（key_<sha256>.bin）判定。 */
-    fun isHashedTyranorName(name: String): Boolean = RpgSaveKeyMapping.hashFromFileName(name) != null
+    fun isHashedTyranorName(name: String): Boolean = HASHED_KEY_NAME.matches(name)
 
     /**
      * 哈希存档名反解为标准文件名：查预建的「sha256(键) → 标准名」索引（键空间有限，
      * 见 [buildHashedIndex]）。命中即返回标准名；无法还原（插件自定义键）返回 null。
      */
     fun hashedToStandardName(name: String, engine: EngineType): String? {
-        val hash = RpgSaveKeyMapping.hashFromFileName(name) ?: return null
+        val hash = HASHED_KEY_NAME.matchEntire(name)?.groupValues?.get(1)?.lowercase(Locale.ROOT) ?: return null
         return when (engine) {
             EngineType.RPG_MV -> mvHashedIndex[hash]
             EngineType.RPG_MZ -> mzHashedIndex[hash]
@@ -394,7 +358,9 @@ object RpgSaveFormat {
         return index
     }
 
-    private fun sha256(value: String): String = RpgSaveKeyMapping.sha256Hex(value)
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
 
     private const val MAX_ENTRY_SEARCH_DEPTH = 2
     private val WEB_ENTRY_SUBDIRS = arrayOf(

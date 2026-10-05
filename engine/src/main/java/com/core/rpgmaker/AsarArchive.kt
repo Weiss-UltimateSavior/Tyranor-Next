@@ -76,40 +76,6 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     /**
-     * 条目大小（字节）；非文件条目或不存在返回 null。
-     *
-     * 供调用方在**读取之前**做上限判断——`read()` 会把整个条目读进内存，
-     * 先读再判上限等于上限失效（本类允许单条目至 [MAX_ENTRY_BYTES]）。
-     */
-    fun entrySize(path: String?): Long? {
-        val e = entries[normalize(path)] ?: return null
-        if (e.directory) return null
-        return e.size
-    }
-
-    /**
-     * 列出目录的直接子项（名字 + 是否目录）。供 v2 文件系统桥在 asar 会话里
-     * 提供 readdir 语义——此前 asar 游戏的插件读不到任何目录内容。
-     */
-    fun children(path: String?): List<Pair<String, Boolean>> {
-        val prefix = normalize(path).trimEnd('/').let { if (it.isEmpty()) "" else "$it/" }
-        val out = LinkedHashMap<String, Boolean>()
-        for ((key, entry) in entries) {
-            if (key == prefix.trimEnd('/')) continue
-            if (!key.startsWith(prefix)) continue
-            val rest = key.substring(prefix.length)
-            if (rest.isEmpty()) continue
-            val slash = rest.indexOf('/')
-            val name = if (slash >= 0) rest.substring(0, slash) else rest
-            if (name.isEmpty()) continue
-            val isDir = slash >= 0 || entry.directory
-            // 同名既可能是文件也可能是目录前缀，目录优先
-            out[name] = (out[name] ?: false) || isDir
-        }
-        return out.map { it.key to it.value }
-    }
-
-    /**
      * 打开条目的流式读取（PR review 意见：大体积媒体以完整 ByteArray 在内存流转，
      * 既无法 Range/seek 也有 OOM 风险）。返回 [输入流, 条目总大小]；每次调用独立
      * 打开 RandomAccessFile，调用方关闭输入流时同步关闭底层文件句柄。
@@ -157,14 +123,9 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     fun read(path: String): ByteArray? {
-        val key = normalize(path)
-        val e = entries[key] ?: return null
-        if (e.directory) return null
-        // unpacked 条目：数据在 `<archive>.unpacked/<path>`，不在归档数据区。
-        // 绝不能沿用 packed 路径（offset=0 会返回归档开头**别的文件**的字节，
-        // 实测 readText 拿到的是前一个文件的内容）。
-        if (e.unpacked) return readUnpacked(key, e)
         return try {
+            val e = entries[normalize(path)] ?: return null
+            if (e.directory) return null
             val data = ByteArray(e.size.toInt())
             synchronized(raf) {
                 raf.seek(dataOffset + e.offset)
@@ -173,40 +134,6 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
             data
         } catch (t: Throwable) {
             Log.w(TAG, "read failed path=$path", t)
-            null
-        }
-    }
-
-    /**
-     * 读取 unpacked 条目：数据位于 `<archive>.unpacked/` 下的同名相对路径。
-     *
-     * 文件不存在（未随包分发）时返回 null，由调用方按「资源缺失」处理 ——
-     * 不再像旧实现那样返回归档里其它文件的内容。
-     */
-    private fun readUnpacked(key: String, entry: Entry): ByteArray? {
-        val archive = archiveFile ?: return null
-        val parent = archive.parentFile ?: return null
-        val unpackedRoot = File(parent, archive.name + ".unpacked")
-        val target = File(unpackedRoot, key)
-        val insideRoot = try {
-            val rootPath = unpackedRoot.canonicalFile.path
-            val targetPath = target.canonicalFile.path
-            targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)
-        } catch (_: Throwable) {
-            false
-        }
-        if (!insideRoot || !target.isFile) {
-            Log.w(TAG, "unpacked entry missing on disk: $key")
-            return null
-        }
-        return try {
-            val data = target.readBytes()
-            if (entry.size > 0L && data.size.toLong() != entry.size) {
-                Log.w(TAG, "unpacked entry size mismatch: $key (declared ${entry.size}, actual ${data.size})")
-            }
-            data
-        } catch (t: Throwable) {
-            Log.w(TAG, "unpacked read failed: $key", t)
             null
         }
     }
@@ -226,9 +153,6 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     private fun validateEntries(archiveLength: Long, parsedDataOffset: Long) {
         for ((key, entry) in entries) {
             if (entry.directory) continue
-            // unpacked 条目的数据不在归档内，offset 无意义、大小也可能超限
-            // （真实大文件），不参与 packed 范围校验。
-            if (entry.unpacked) continue
             if (entry.size < 0L || entry.size > MAX_ENTRY_BYTES || entry.size > Int.MAX_VALUE) {
                 throw IOException("invalid asar entry size: $key")
             }
@@ -245,19 +169,9 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         val files = node.optJSONObject("files")
         if (files == null) {
             if (prefix.isNotEmpty()) {
-                // Electron 的 asar 会把大文件（视频等）标记为 unpacked：其数据**不在归档里**，
-                // 而在 `<archive>.unpacked/<path>`。这类条目没有 `offset` 字段，
-                // 旧实现用 optString 默认成 0 → read() 会返回归档数据区开头**别的文件**的
-                // 字节（实测读到前一个文件内容），且 errorFor 又报 ENOENT，自相矛盾。
-                val unpacked = node.optBoolean("unpacked", false)
                 val size = parseLong(node.optString("size", "0"))
-                val offset = if (unpacked) 0L else parseLong(node.optString("offset", "0"))
-                entries[normalize(prefix)] = Entry(
-                    directory = false,
-                    size = size,
-                    offset = offset,
-                    unpacked = unpacked,
-                )
+                val offset = parseLong(node.optString("offset", "0"))
+                entries[normalize(prefix)] = Entry(directory = false, size = size, offset = offset)
             }
             return
         }
@@ -275,8 +189,6 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
 
     private data class Entry(
         val directory: Boolean,
-        /** Electron 的 unpacked 条目：数据不在归档里，而在 `<archive>.unpacked/` 下。 */
-        val unpacked: Boolean = false,
         val size: Long,
         val offset: Long
     )

@@ -49,33 +49,9 @@ internal object TyranoStorage {
     fun write(directory: File?, key: String?, value: String?, extension: String) {
         try {
             val file = resolveFile(directory, key, extension) ?: return
-            val text = value.orEmpty()
-            // 预检（无分配）：UTF-8 字节数恒 ≥ UTF-16 字符数，字符数已超限即可直接拒绝，
-            // 避免为必然被拒的载荷先分配一份全量字节数组
-            if (text.length > MAX_SAVE_BYTES) {
-                Log.w(TAG, "setStorage rejected pre-encode (chars=${text.length})")
-                return
-            }
-            val bytes = text.toByteArray(StandardCharsets.UTF_8)
+            val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
             if (bytes.size > MAX_SAVE_BYTES) return
-            // 原子写：先写同目录临时文件并 fsync，再 rename 覆盖。
-            // 直写 `file.outputStream()` 会先截断目标，中途失败（ENOSPC/进程被杀）
-            // 会留下截断的存档。与 RpgMakerStorage.write 采用同一策略。
-            val dir = file.parentFile ?: return
-            if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return
-            val tmp = File(dir, file.name + ".tmp." + System.nanoTime())
-            try {
-                java.io.FileOutputStream(tmp).use { out ->
-                    out.write(bytes)
-                    out.fd.sync()
-                }
-                if (!tmp.renameTo(file)) {
-                    // rename 失败（目标被占用等）退回直接覆盖，保底不丢数据
-                    file.outputStream().use { it.write(bytes) }
-                }
-            } finally {
-                if (tmp.exists()) tmp.delete()
-            }
+            file.outputStream().use { it.write(bytes) }
         } catch (error: Throwable) {
             Log.w(TAG, "setStorage failed key=$key", error)
         }
