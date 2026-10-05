@@ -91,7 +91,9 @@
             android:exported="false" />
         <activity
             android:name=".ui.settings.PadLayoutEditActivity"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
         <activity
             android:name=".ui.settings.AppSettingsActivity"
             android:exported="false" />

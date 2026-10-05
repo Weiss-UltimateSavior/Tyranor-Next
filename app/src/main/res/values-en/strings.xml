@@ -293,7 +293,8 @@
     <string name="input_settings_profiles_summary">Each profile is one virtual-pad layout, editable in-game</string>
     <string name="input_settings_profile_default">Default layout</string>
     <string name="input_settings_profile_new">New profile</string>
-    <string name="input_settings_profile_edit">Edit layout</string>
+    <string name="input_settings_profile_use">Use</string>
+    <string name="input_settings_profile_in_use">In use</string>
     <string name="pad_layout_edit_title">Edit key layout</string>
     <string name="pad_layout_edit_saved">Layout saved</string>
     <string name="input_settings_profile_copy">Copy</string>

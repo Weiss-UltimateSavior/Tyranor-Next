@@ -588,5 +588,23 @@ class VirtualPadEditPanel(
                 else -> false
             }
         }
+        // 宿主尺寸变化（横竖屏切换/分屏）：把面板重新钳回可视区，避免停在屏外
+        root.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+            val parent = root.parent as? ViewGroup ?: return@addOnLayoutChangeListener
+            val params = root.layoutParams as? FrameLayout.LayoutParams ?: return@addOnLayoutChangeListener
+            val width = right - left
+            val height = bottom - top
+            if (width <= 0 || height <= 0) return@addOnLayoutChangeListener
+            val maxLeft = (parent.width - width).coerceAtLeast(0)
+            val maxTop = (parent.height - height).coerceAtLeast(0)
+            if (left < 0 || top < 0 || left > maxLeft || top > maxTop) {
+                params.leftMargin = left.coerceIn(0, maxLeft)
+                params.topMargin = top.coerceIn(0, maxTop)
+                params.gravity = Gravity.TOP or Gravity.START
+                params.rightMargin = 0
+                params.bottomMargin = 0
+                root.layoutParams = params
+            }
+        }
     }
 }

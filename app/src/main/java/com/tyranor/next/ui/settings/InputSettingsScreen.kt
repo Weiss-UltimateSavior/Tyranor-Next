@@ -39,7 +39,10 @@ import com.core.input.PadProfile
 import com.core.input.StickBinding
 import com.tyranor.next.R
 import com.tyranor.next.core.input.InputRemapRepository
+import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
@@ -241,27 +244,27 @@ internal fun InputSettingsScreen() {
                 }
 
                 item {
-                    EngineCard(stringResource(R.string.input_settings_gamepad_title)) {
-                        Text(
-                            stringResource(R.string.input_settings_gamepad_summary),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.engine_settings_input_gamepad_entry),
-                            summary = stringResource(R.string.engine_settings_input_gamepad_entry_summary),
-                            onClick = { startActivityWithPageTransition(ctx, GamepadMapActivity.createIntent(ctx)) },
-                        )
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-                            Box(Modifier.weight(1f)) {
-                                DialogTextButton(
-                                    text = stringResource(R.string.input_settings_reset_gamepad),
-                                    onClick = {
-                                        InputRemapRepository.resetGamepadMap(ctx)
-                                        toast(ctx, R.string.input_settings_reset_gamepad_done)
-                                    },
-                                )
+                    // 卡片不设标题：条目自身已含标题与说明，避免与卡片标题重复
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            ArrowPreference(
+                                title = stringResource(R.string.engine_settings_input_gamepad_entry),
+                                summary = stringResource(R.string.engine_settings_input_gamepad_entry_summary),
+                                onClick = { startActivityWithPageTransition(ctx, GamepadMapActivity.createIntent(ctx)) },
+                            )
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                Box(Modifier.weight(1f)) {
+                                    DialogTextButton(
+                                        text = stringResource(R.string.input_settings_reset_gamepad),
+                                        onClick = {
+                                            InputRemapRepository.resetGamepadMap(ctx)
+                                            toast(ctx, R.string.input_settings_reset_gamepad_done)
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -362,14 +365,24 @@ private fun ProfileRow(
         profile.name
     }
     Column(Modifier.fillMaxWidth()) {
+        // 整行（含行尾箭头）进入布局编辑；激活状态用左侧 ✓ 与下方「使用中」区分
         ArrowPreference(
             title = (if (selected) "✓ " else "") + displayName,
             summary = null,
-            onClick = onSelect,
+            onClick = onEdit,
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             Box(Modifier.weight(1f)) {
-                DialogTextButton(text = stringResource(R.string.input_settings_profile_edit), onClick = onEdit)
+                if (selected) {
+                    Text(
+                        text = stringResource(R.string.input_settings_profile_in_use),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    )
+                } else {
+                    DialogTextButton(text = stringResource(R.string.input_settings_profile_use), onClick = onSelect)
+                }
             }
             Box(Modifier.weight(1f)) {
                 DialogTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
@@ -445,6 +458,14 @@ internal fun GamepadMapScreen() {
                 contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                item {
+                    Text(
+                        stringResource(R.string.input_settings_gamepad_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
                 item {
                     EngineCard(stringResource(R.string.input_settings_gamepad_buttons_label)) {
                         GamepadButtons.ALL.forEach { id ->
