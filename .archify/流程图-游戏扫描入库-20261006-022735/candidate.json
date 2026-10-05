@@ -1,0 +1,364 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Tyranor Next · 游戏扫描与入库流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+    },
+    "output": ".archify/流程图-游戏扫描入库-20261006-022735/workflow-scan-import.html"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "用户操作"
+    },
+    {
+      "id": "ui",
+      "label": "界面 UI 层"
+    },
+    {
+      "id": "scan",
+      "label": "core · 扫描与识别"
+    },
+    {
+      "id": "storage",
+      "label": "core · 库合并"
+    },
+    {
+      "id": "db",
+      "label": "持久层（Room / prefs）"
+    }
+  ],
+  "groups": [
+    {
+      "id": "scan_session",
+      "label": "扫描会话 · 并行上限 2",
+      "lane": "scan",
+      "fromCol": 2,
+      "toCol": 4,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "user_add",
+    "ui_scan",
+    "rescan",
+    "traverse",
+    "detect",
+    "merge",
+    "persist",
+    "ui_refresh"
+  ],
+  "nodes": [
+    {
+      "id": "user_add",
+      "lane": "user",
+      "col": 0,
+      "type": "external",
+      "icon": "person",
+      "label": "添加扫描目录",
+      "sublabel": "系统目录选择器",
+      "tag": "SAF 授权",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/settings/SettingsScreen.kt",
+          "line": 162
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/settings/SettingsScreen.kt",
+          "line": 171
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 251
+        }
+      ]
+    },
+    {
+      "id": "ui_scan",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "触发扫描",
+      "sublabel": "游戏页 / 设置页入口",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
+          "line": 223
+        }
+      ]
+    },
+    {
+      "id": "rescan",
+      "lane": "scan",
+      "col": 2,
+      "type": "backend",
+      "label": "rescanLibrary",
+      "sublabel": "全量重扫 · 提交前二次过滤",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 87
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 63
+        }
+      ]
+    },
+    {
+      "id": "roots",
+      "lane": "db",
+      "col": 2,
+      "type": "database",
+      "label": "已授权扫描根",
+      "sublabel": "scan_roots · 深度 1..5",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 65
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 302
+        }
+      ]
+    },
+    {
+      "id": "traverse",
+      "lane": "scan",
+      "col": 3,
+      "type": "backend",
+      "label": "目录遍历",
+      "sublabel": "SAF 批量 query · File 兜底",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 233
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 279
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 581
+        }
+      ]
+    },
+    {
+      "id": "detect",
+      "lane": "scan",
+      "col": 4,
+      "type": "backend",
+      "label": "引擎识别",
+      "sublabel": "特征优先链 · 内容头判读",
+      "tag": "ROM 逐条",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 641
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 664
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 1002
+        }
+      ]
+    },
+    {
+      "id": "merge",
+      "lane": "storage",
+      "col": 4,
+      "type": "backend",
+      "label": "差量合并",
+      "sublabel": "保留手动条目与元数据",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 95
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 133
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "id": "persist",
+      "lane": "db",
+      "col": 5,
+      "type": "database",
+      "label": "Room 事务落库",
+      "sublabel": "upsert · 删除消失条目",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
+          "line": 158
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDao.kt",
+          "line": 33
+        }
+      ]
+    },
+    {
+      "id": "mirror",
+      "lane": "db",
+      "col": 5,
+      "type": "database",
+      "label": "prefs 回滚镜像",
+      "sublabel": "防抖 1.5s · 兼容旧版",
+      "width": 150,
+      "yOffset": 96,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
+          "line": 312
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
+          "line": 324
+        }
+      ]
+    },
+    {
+      "id": "ui_refresh",
+      "lane": "ui",
+      "col": 5,
+      "type": "frontend",
+      "label": "列表刷新",
+      "sublabel": "libraryRevision 订阅",
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 42
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
+          "line": 91
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "pick-scan",
+      "from": "user_add",
+      "to": "ui_scan",
+      "label": "授权目录",
+      "role": "main"
+    },
+    {
+      "id": "scan-trigger",
+      "from": "ui_scan",
+      "to": "rescan",
+      "label": "触发扫描",
+      "role": "main"
+    },
+    {
+      "id": "rescan-traverse",
+      "from": "rescan",
+      "to": "traverse",
+      "label": "逐根扫描",
+      "role": "main"
+    },
+    {
+      "id": "traverse-detect",
+      "from": "traverse",
+      "to": "detect",
+      "role": "main"
+    },
+    {
+      "id": "detect-merge",
+      "from": "detect",
+      "to": "merge",
+      "label": "扫描候选",
+      "role": "main"
+    },
+    {
+      "id": "merge-persist",
+      "from": "merge",
+      "to": "persist",
+      "label": "applyDiff",
+      "role": "main"
+    },
+    {
+      "id": "persist-refresh",
+      "from": "persist",
+      "to": "ui_refresh",
+      "label": "修订号刷新",
+      "role": "main"
+    },
+    {
+      "id": "roots-read",
+      "from": "roots",
+      "to": "rescan",
+      "label": "读取 roots",
+      "variant": "dashed",
+      "role": "branch"
+    },
+    {
+      "id": "persist-mirror",
+      "from": "persist",
+      "to": "mirror",
+      "label": "异步镜像",
+      "variant": "dashed",
+      "role": "async",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "引擎识别优先级（前几级）",
+      "items": [
+        "Siglus：Gameexe.dat + Scene.pck；UK2：UK2.CFG 或 MES 头",
+        "RealLive / AVG32：Gameexe.ini + SEEN.TXT 的 PACL / TOC 头分类",
+        "FVP：根目录 .hcb / .bch + 资源包；KRKR：.xp3 / startup.tjs",
+        "命中即停止下钻，其子目录视为引擎资源；UNKNOWN 兜底入库"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "合并与写入语义",
+      "items": [
+        "手动添加的 PC / 安卓游戏不参与扫描，重扫时原样保留",
+        "旧条目的封面 / vndbId / 启动文件等元数据保留，仅更新扫描字段",
+        "落库经单线程 FIFO 写队列，成功后防抖 1.5s 写旧 prefs 作回滚镜像"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "扫描附带产物",
+      "items": [
+        "本地封面（cover.jpg / icon.png 等）命中即写入 coverUri",
+        "Ren'Py 版本建议与 RPGM 子运行时写入 engine_detection_cache",
+        "ROM 文件（.iso / .pbp / .nsp 等）一 ROM 一条，launchTarget 为文件名"
+      ]
+    }
+  ]
+}

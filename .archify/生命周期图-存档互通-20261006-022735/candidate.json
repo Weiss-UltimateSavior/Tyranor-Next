@@ -1,0 +1,294 @@
+{
+  "schema_version": 2,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "Tyranor Next · RPG Maker MV/MZ 存档生命周期",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+    },
+    "output": ".archify/生命周期图-存档互通-20261006-022735/lifecycle-save-interop.html"
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "主路径"
+    },
+    {
+      "id": "waits",
+      "label": "等待与确认"
+    },
+    {
+      "id": "guard",
+      "label": "保护与延迟"
+    },
+    {
+      "id": "terminal",
+      "label": "终态"
+    }
+  ],
+  "states": [
+    {
+      "id": "standard",
+      "type": "start",
+      "label": "标准侧存档",
+      "sublabel": ".rpgsave / .rmmzsave",
+      "lane": "main",
+      "col": 0,
+      "step": "01",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
+          "line": 107
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
+          "line": 216
+        }
+      ]
+    },
+    {
+      "id": "switch",
+      "type": "decision",
+      "label": "互通已开启？",
+      "sublabel": "全局 / 单游戏覆盖",
+      "lane": "main",
+      "col": 1,
+      "step": "02",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 497
+        }
+      ]
+    },
+    {
+      "id": "sync",
+      "type": "active",
+      "label": "逐槽位同步",
+      "sublabel": "较新者胜 · 相同跳过",
+      "lane": "main",
+      "col": 2,
+      "step": "03",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSync.kt",
+          "line": 107
+        }
+      ]
+    },
+    {
+      "id": "verdict",
+      "type": "decision",
+      "label": "写入较新一侧",
+      "sublabel": "临时文件 + 原子替换",
+      "lane": "main",
+      "col": 3,
+      "step": "04",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSync.kt",
+          "line": 456
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSync.kt",
+          "line": 566
+        }
+      ]
+    },
+    {
+      "id": "ask",
+      "type": "waiting",
+      "label": "等待用户确认",
+      "sublabel": "是否改名转化",
+      "lane": "waits",
+      "col": 1,
+      "tag": "按需弹窗",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 385
+        }
+      ]
+    },
+    {
+      "id": "deferred",
+      "type": "waiting",
+      "label": "延迟到回前台",
+      "sublabel": "会话运行 / 目录不可用",
+      "lane": "guard",
+      "col": 2,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 557
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 577
+        }
+      ]
+    },
+    {
+      "id": "abort",
+      "type": "failure",
+      "label": "清单损坏 · 中止",
+      "sublabel": "不做任何文件改动",
+      "lane": "terminal",
+      "col": 2,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSyncState.kt",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "id": "retry",
+      "type": "waiting",
+      "label": "部分槽位失败",
+      "sublabel": "登记保留 · 下次重试",
+      "lane": "guard",
+      "col": 3,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSavePendingStore.kt",
+          "line": 22
+        }
+      ]
+    },
+    {
+      "id": "consistent",
+      "type": "success",
+      "label": "双侧一致",
+      "sublabel": "清单已更新",
+      "lane": "terminal",
+      "col": 4,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveSyncState.kt",
+          "line": 49
+        }
+      ]
+    },
+    {
+      "id": "converted",
+      "type": "success",
+      "label": "转化完成",
+      "sublabel": "源文件留底 original/",
+      "lane": "terminal",
+      "col": 3,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormatConverter.kt",
+          "line": 54
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
+          "line": 296
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/RpgSaveFormat.kt",
+          "line": 61
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "from": "standard",
+      "to": "switch",
+      "label": "启动前检测"
+    },
+    {
+      "from": "switch",
+      "to": "sync",
+      "label": "互通开启"
+    },
+    {
+      "from": "sync",
+      "to": "verdict"
+    },
+    {
+      "from": "verdict",
+      "to": "consistent",
+      "label": "无失败"
+    },
+    {
+      "from": "switch",
+      "to": "ask",
+      "label": "互通关闭",
+      "variant": "dashed"
+    },
+    {
+      "from": "ask",
+      "to": "converted",
+      "label": "确认后改名",
+      "variant": "emphasis",
+      "route": "bottom-channel"
+    },
+    {
+      "from": "sync",
+      "to": "deferred",
+      "label": "会话运行中",
+      "variant": "dashed"
+    },
+    {
+      "from": "deferred",
+      "to": "sync",
+      "label": "回前台轮询",
+      "variant": "emphasis"
+    },
+    {
+      "from": "sync",
+      "to": "abort",
+      "label": "清单不可读",
+      "variant": "security"
+    },
+    {
+      "from": "verdict",
+      "to": "retry",
+      "label": "部分失败",
+      "variant": "dashed"
+    },
+    {
+      "from": "retry",
+      "to": "sync",
+      "label": "回前台重试",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "两侧语义",
+      "items": [
+        "标准侧：PC / JoiPlay 的 save 或 Save 目录（.rpgsave / .rmmzsave）",
+        "Tyranor 侧：生效存档目录（独立存档开关决定）；MV 用 key_<sha256>.bin，MZ 固定原名",
+        "逐槽位较新者胜；mtime 相同必须内容哈希一致才跳过"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "留底与保护",
+      "items": [
+        "输家写入 original/（Tyranor 侧）或 deleted/（标准侧），不直接删除",
+        "临时文件 + fsync + 原子替换，失败回滚；同步清单损坏即中止",
+        "导入导出与互通共用 INTEROP_LOCK，引擎退出后约 500ms 强杀，因此回前台兜底"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "触发时机",
+      "items": [
+        "启动前：登记 pending；仅当会话未运行才立即同步",
+        "回前台：轮询等待会话退出后 flush，全部成功才移除登记",
+        "手动：存档管理页「立即同步」，忙碌时拒绝操作"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "b817ca90-0a77-402b-aa8c-74b3b7aec495",
+  "status": "current",
+  "command": "deliver",
+  "type": "lifecycle",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/生命周期图-存档互通-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/生命周期图-存档互通-20261006-022735/lifecycle-save-interop.html",
+  "specification": {
+    "sha256": "6848b78020d1702585eb29389dd396acce2b778a1283a9aa0bc5fc97f128748e",
+    "bytes": 7300
+  },
+  "artifact": {
+    "sha256": "9955f24d330db31255e242f2789301bacd410fd3b8cce917aef6382f2df8da66",
+    "bytes": 771080
+  }
+}
