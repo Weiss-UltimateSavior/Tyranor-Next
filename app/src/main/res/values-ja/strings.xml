@@ -50,6 +50,7 @@
     <string name="settings_home_style">ホームスタイル</string>
     <string name="settings_home_style_native">デフォルト</string>
     <string name="settings_home_style_web">Web</string>
+    <string name="settings_home_style_category">カテゴリライブラリ</string>
     <string name="settings_home_web_url">Web ホーム URL</string>
     <string name="settings_home_web_custom">カスタム URL</string>
     <string name="settings_home_web_custom_summary">カスタム URL を入力</string>
@@ -242,6 +243,10 @@
 
     <string name="home_recent_empty">最近開いたゲームはありません</string>
     <string name="home_quick_launch">クイック起動</string>
+    <string name="home_category_all">すべて</string>
+    <string name="home_category_quick">クイック</string>
+    <string name="home_category_recent">最近</string>
+    <string name="home_category_empty">このカテゴリにゲームはありません</string>
     <string name="home_empty_slot_content_description">空きスロット</string>
 
     <string name="engine_settings_save_content_description">設定を保存</string>
