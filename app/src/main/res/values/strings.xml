@@ -290,7 +290,7 @@
     <string name="input_settings_auto_keep_toggle">按下后保持（再按一次释放）</string>
     <string name="input_settings_choose_keys">选择输出键位</string>
     <string name="input_settings_profiles_title">按键方案</string>
-    <string name="input_settings_profiles_summary">每个方案是一套虚拟按键布局，可在游戏内直接编辑</string>
+    <string name="input_settings_profiles_summary">虚拟按键布局，也可以通过在游戏内长按悬浮窗编辑</string>
     <string name="input_settings_profile_default">默认布局</string>
     <string name="input_settings_profile_new">新建方案</string>
     <string name="input_settings_profile_use">使用</string>
