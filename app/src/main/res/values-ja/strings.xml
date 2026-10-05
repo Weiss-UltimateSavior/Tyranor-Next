@@ -290,7 +290,7 @@
     <string name="input_settings_auto_keep_toggle">押しっぱなし（もう一度で解除）</string>
     <string name="input_settings_choose_keys">出力キーを選択</string>
     <string name="input_settings_profiles_title">キー配置</string>
-    <string name="input_settings_profiles_summary">1つの配置＝1つのバーチャルパッドレイアウト。ゲーム内で直接編集できます</string>
+    <string name="input_settings_profiles_summary">バーチャルパッドレイアウト。ゲーム内でオーバーレイを長押しして編集できます</string>
     <string name="input_settings_profile_default">デフォルトレイアウト</string>
     <string name="input_settings_profile_new">新規配置</string>
     <string name="input_settings_profile_use">使用</string>

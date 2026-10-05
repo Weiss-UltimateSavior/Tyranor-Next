@@ -290,7 +290,7 @@
     <string name="input_settings_auto_keep_toggle">Keep pressed (press again to release)</string>
     <string name="input_settings_choose_keys">Choose output keys</string>
     <string name="input_settings_profiles_title">Key profiles</string>
-    <string name="input_settings_profiles_summary">Each profile is one virtual-pad layout, editable in-game</string>
+    <string name="input_settings_profiles_summary">Virtual-pad layout. Editable in-game via long-press on the floating window</string>
     <string name="input_settings_profile_default">Default layout</string>
     <string name="input_settings_profile_new">New profile</string>
     <string name="input_settings_profile_use">Use</string>
