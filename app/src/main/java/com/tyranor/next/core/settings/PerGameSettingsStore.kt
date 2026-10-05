@@ -65,6 +65,9 @@ object PerGameSettingsStore {
     const val F_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
     const val F_INPUT_PROFILE_ID = "input_profile_id"
 
+    /** 旧触屏手柄数据迁移标记（本类内部使用：一次性迁移的幂等守卫）。 */
+    const val F_LEGACY_MIGRATED = "input_legacy_migrated"
+
     // RPG Maker RGSS 外置模块（settings extra 的 rpg 节，null=跟随全局）
     const val F_RPG_USE_RUBY18 = "rpg_use_ruby18"
     const val F_RPG_DEBUG = "rpg_debug"

@@ -271,12 +271,8 @@
     <string name="engine_settings_input_pad_summary">Show an editable on-screen key overlay during games</string>
     <string name="engine_settings_input_gamepad_title">Gamepad mapping</string>
     <string name="engine_settings_input_gamepad_summary">Map physical gamepad buttons to game keyboard/mouse actions</string>
-    <string name="engine_settings_input_profile_title">Key profile</string>
-    <string name="engine_settings_input_profile_summary">The default profile can be edited in-game (tap the floating button to edit, long-press to hide the pad)</string>
     <string name="engine_settings_input_gamepad_entry">Gamepad bindings</string>
     <string name="engine_settings_input_gamepad_entry_summary">Configure A/B/X/Y, shoulders, triggers, sticks and D-pad outputs</string>
-    <string name="engine_settings_input_gamepad_follow_global">Follow global setting</string>
-    <string name="engine_settings_input_enabled_summary">Virtual pad switch for this game</string>
     <string name="input_settings_title">Input &amp; gamepad</string>
     <string name="input_settings_gamepad_title">Gamepad bindings</string>
     <string name="input_settings_gamepad_summary">Press "edit" to bind multiple output keys and keep-pressed behavior</string>
@@ -285,7 +281,6 @@
     <string name="input_settings_binding_empty">Not bound</string>
     <string name="input_settings_binding_keys">%1$d keys</string>
     <string name="input_settings_auto_keep">Keep</string>
-    <string name="input_settings_edit_binding">Edit</string>
     <string name="input_settings_clear_binding">Clear</string>
     <string name="input_settings_auto_keep_toggle">Keep pressed (press again to release)</string>
     <string name="input_settings_choose_keys">Choose output keys</string>
@@ -295,6 +290,9 @@
     <string name="input_settings_profile_new">New profile</string>
     <string name="input_settings_profile_use">Use</string>
     <string name="input_settings_profile_in_use">In use</string>
+    <string name="input_settings_profile_delete_title">Delete profile</string>
+    <string name="input_settings_profile_delete_message">Delete "%1$s"? Its key layout will be removed and cannot be recovered.</string>
+    <string name="input_settings_profile_name_hint">Up to 24 characters</string>
     <string name="pad_layout_edit_title">Edit key layout</string>
     <string name="pad_layout_edit_saved">Layout saved</string>
     <string name="input_settings_profile_copy">Copy</string>
@@ -307,14 +305,11 @@
     <string name="input_settings_profile_export_done">Profile exported</string>
     <string name="input_settings_profile_export_failed">Export failed</string>
     <string name="input_settings_profile_new_name">New profile name</string>
-    <string name="input_settings_profile_reset">Reset to default layout</string>
-    <string name="input_settings_profile_reset_done">Default layout restored</string>
     <string name="input_settings_profile_delete_default_blocked">The default profile cannot be deleted</string>
     <string name="input_settings_gamepad_buttons_label">Gamepad buttons</string>
     <string name="input_settings_gamepad_sticks_label">Sticks</string>
     <string name="input_settings_stick_left">Left stick</string>
     <string name="input_settings_stick_right">Right stick</string>
-    <string name="input_settings_deadzone">Deadzone</string>
     <string name="input_settings_gamepad_key_a">A</string>
     <string name="input_settings_gamepad_key_b">B</string>
     <string name="input_settings_gamepad_key_x">X</string>

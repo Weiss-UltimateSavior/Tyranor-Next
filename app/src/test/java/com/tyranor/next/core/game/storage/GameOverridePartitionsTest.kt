@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.storage
 
+import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -140,6 +141,11 @@ class GameOverridePartitionsTest {
         assertEquals(com.core.input.InputConfigStore.KEY_PAD_ENABLED, GameOverridePartitions.KEY_INPUT_PAD_ENABLED)
         assertEquals(com.core.input.InputConfigStore.KEY_GAMEPAD_ENABLED, GameOverridePartitions.KEY_INPUT_GAMEPAD_ENABLED)
         assertEquals(com.core.input.InputConfigStore.KEY_PROFILE_ID, GameOverridePartitions.KEY_INPUT_PROFILE_ID)
+        // 第四处：全局键（写路径 EngineSettingsStore）与 engine 读取常量必须同名，
+        // 漂移会导致「设置页关了开关但引擎仍按默认启用」
+        assertEquals(EngineSettingsStore.KEY_INPUT_PAD_ENABLED, com.core.input.InputConfigStore.KEY_PAD_ENABLED)
+        assertEquals(EngineSettingsStore.KEY_INPUT_GAMEPAD_ENABLED, com.core.input.InputConfigStore.KEY_GAMEPAD_ENABLED)
+        assertEquals(EngineSettingsStore.KEY_INPUT_PROFILE_ID, com.core.input.InputConfigStore.KEY_PROFILE_ID)
         assertEquals(PerGameSettingsStore.F_TY_SCOPED, GameOverridePartitions.KEY_TY_SCOPED)
         assertEquals(PerGameSettingsStore.F_RENPY_VERSION, GameOverridePartitions.KEY_RENPY_VERSION)
         assertEquals(PerGameSettingsStore.F_SIGLUS_LANGUAGE, GameOverridePartitions.KEY_SIGLUS_LANGUAGE)

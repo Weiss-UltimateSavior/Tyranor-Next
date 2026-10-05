@@ -14,7 +14,4 @@ interface InputSink {
 
     /** 释放全部仍处于按下状态的键（退后台 / 页面重载 / 退出编辑时调用）。 */
     fun releaseAll()
-
-    /** 该键位在当前引擎是否可送达（用于编辑期提示与默认键位裁剪）。 */
-    fun supports(key: Int): Boolean = true
 }

@@ -164,12 +164,18 @@ data class PadProfile(
             runCatching {
                 val presets = JSONObject(presetsJson.orEmpty())
                 val names = presets.names() ?: return@runCatching
+                val usedIds = HashMap<String, Int>()
                 for (i in 0 until names.length()) {
                     val name = names.optString(i).takeIf { it.isNotBlank() } ?: continue
                     val legacy = parseLegacyConfig(presets.optJSONObject(name)?.toString()) ?: continue
+                    // 纯 CJK 名经 slug 化后为空串，多个预设会撞成同一 id；用序号保证唯一
+                    val slug = sanitizeLegacyId(name)
+                    val seen = usedIds.getOrDefault(slug, 0)
+                    usedIds[slug] = seen + 1
+                    val profileId = if (seen == 0) "migrated-$slug" else "migrated-$slug-$seen"
                     result.add(
                         legacy.copy(
-                            id = "migrated-" + sanitizeLegacyId(name),
+                            id = profileId,
                             name = name.take(24),
                         ),
                     )
@@ -206,61 +212,89 @@ data class PadProfile(
             Triple("x", KeyEvent.KEYCODE_X, 0.085f to 0f),
         )
 
-        /** 单个旧布局 JSON → 新方案；无任何可迁移按钮（如仅旧开关）返回 null。 */
+        /**
+         * 单个旧布局 JSON → 新方案；无任何可迁移按钮（如仅旧开关）返回 null。
+         *
+         * 旧配置是「相对出厂布局的增量」：旧 JS 编辑态的条目只在用户动过的控件上产生
+         * （`ensureButtonCfg` 按需新建），因此以 [defaultProfile] 为底、用旧条目按 id
+         * 覆盖位置与显隐——只拖过一个按钮的旧配置迁移后仍保有完整按键集。
+         * 旧条目 `x/y` 为 JSON null（旧 JS 只改显隐时的写法）时保留默认锚点。
+         */
         private fun parseLegacyConfig(raw: String?): PadProfile? {
             if (raw.isNullOrBlank()) return null
             return runCatching {
                 val buttonsObj = JSONObject(raw).optJSONObject("buttons") ?: return null
-                val migrated = ArrayList<PadButton>()
+                val defaults = defaultProfile()
+                var touched = false
 
+                val migrated = ArrayList<PadButton>()
                 LEGACY_ACTIONS.forEach { (legacyId, template) ->
-                    val legacy = buttonsObj.optJSONObject(legacyId) ?: return@forEach
+                    val base = defaults.buttons.firstOrNull { it.id == legacyId } ?: PadButton(
+                        id = legacyId, text = template.text, x = 0.5f, y = 0.5f,
+                        size = template.size, aspect = template.aspect, shape = template.shape,
+                        keys = template.keys,
+                    )
+                    val legacy = buttonsObj.optJSONObject(legacyId)
+                    if (legacy == null) {
+                        migrated.add(base)
+                        return@forEach
+                    }
+                    touched = true
                     migrated.add(
-                        PadButton(
-                            id = legacyId,
-                            text = template.text,
-                            x = legacy.optDouble("x", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
-                            y = legacy.optDouble("y", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
-                            size = template.size,
-                            aspect = template.aspect,
-                            shape = template.shape,
+                        base.copy(
+                            x = legacyCoord(legacy, "x", base.x),
+                            y = legacyCoord(legacy, "y", base.y),
                             visible = legacy.optBoolean("visible", true),
-                            keys = template.keys,
                         ),
                     )
                 }
+
                 // 旧 QWZX 为整组一个配置（存组中心），拆成四个独立按钮组成菱形
+                val qwzxDefaults = defaults.buttons.filter { it.id in setOf("q", "w", "z", "x") }
                 buttonsObj.optJSONObject("qwzx")?.let { legacy ->
-                    val cx = legacy.optDouble("x", 0.78).toFloat().coerceIn(-0.1f, 1.1f)
-                    val cy = legacy.optDouble("y", 0.885).toFloat().coerceIn(-0.1f, 1.1f)
+                    touched = true
+                    val cx = legacyCoord(legacy, "x", 0.78f)
+                    val cy = legacyCoord(legacy, "y", 0.885f)
                     val visible = legacy.optBoolean("visible", true)
+                    migrated.removeAll { it.id in setOf("q", "w", "z", "x") }
                     LEGACY_QWZX.forEach { (btnId, keyCode, offset) ->
+                        val base = qwzxDefaults.firstOrNull { it.id == btnId }
                         migrated.add(
                             PadButton(
                                 id = btnId,
                                 text = btnId.uppercase(),
                                 x = (cx + offset.first).coerceIn(-0.1f, 1.1f),
                                 y = (cy + offset.second).coerceIn(-0.1f, 1.1f),
-                                size = 0.088f,
+                                size = base?.size ?: 0.088f,
                                 aspect = 1f,
                                 visible = visible,
-                                keys = listOf(keyCode),
+                                keys = base?.keys ?: listOf(keyCode),
                             ),
                         )
                     }
-                }
+                } ?: qwzxDefaults.forEach { migrated.add(it) }
 
-                var direction = PadDirection()
+                var direction = defaults.direction
                 (buttonsObj.optJSONObject("joystick") ?: buttonsObj.optJSONObject("dpad"))?.let { legacy ->
+                    touched = true
                     direction = direction.copy(
-                        x = legacy.optDouble("x", direction.x.toDouble()).toFloat().coerceIn(-0.1f, 1.1f),
-                        y = legacy.optDouble("y", direction.y.toDouble()).toFloat().coerceIn(-0.1f, 1.1f),
+                        x = legacyCoord(legacy, "x", direction.x),
+                        y = legacyCoord(legacy, "y", direction.y),
                         visible = legacy.optBoolean("visible", true),
                     )
                 }
-                if (migrated.isEmpty()) return null
+                if (!touched && buttonsObj.length() > 0) {
+                    // 旧条目全是已下线的开关（btn.hide 等）：无可迁移内容
+                    return null
+                }
                 PadProfile(BUILTIN_DEFAULT_ID, "Default", migrated, direction)
             }.getOrNull()
+        }
+
+        /** 旧配置坐标：缺失或 JSON null 时回落默认锚点（旧 JS 只改显隐时写 null）。 */
+        private fun legacyCoord(obj: JSONObject, key: String, fallback: Float): Float {
+            if (!obj.has(key) || obj.isNull(key)) return fallback
+            return obj.optDouble(key, fallback.toDouble()).toFloat().coerceIn(-0.1f, 1.1f)
         }
 
         private fun sanitizeLegacyId(name: String): String =

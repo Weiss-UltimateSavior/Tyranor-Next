@@ -222,7 +222,8 @@ class RpgMakerActivity : Activity() {
                 emptyMap()
             }
             // 触屏手柄已由原生输入重映射组件（InputRemapController）取代，
-            // 不再向页面注入 __touch_pad.js；旧布局迁移见 InputRemapController.migrateLegacyIfNeeded。
+            // 不再向页面注入 __touch_pad.js；旧布局迁移由 app 侧
+            // InputRemapRepository.migrateLegacyIfNeeded 在启动前完成。
             // v1/v2 用带 PC 存档兜底的 MV hook（__rpg_v12.js，本模块资产）；
             // 版本缺失的兜底会话用 v0 的 __rpg__.js（engine 模块资产，与 v0 宿主一致）
             val hookAsset = when {

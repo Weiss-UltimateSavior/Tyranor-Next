@@ -18,15 +18,10 @@ object CanonicalKeys {
     const val SCROLL_DOWN = 1004
     const val MOUSE_END = 1099
 
-    /** 功能动作区间起点（非按键，由宿主自行处理）。 */
+    /** 功能动作区间起点（非按键，由宿主自行处理）；v1 未定义具体动作。 */
     const val ACTION_BASE = 2000
-
-    /** 显示 / 隐藏虚拟按键层。 */
-    const val ACTION_TOGGLE_PAD = 2000
 
     fun isMouse(key: Int): Boolean = key in MOUSE_LEFT..MOUSE_END
 
     fun isAction(key: Int): Boolean = key >= ACTION_BASE
-
-    fun isKeyboard(key: Int): Boolean = key in 1..254
 }

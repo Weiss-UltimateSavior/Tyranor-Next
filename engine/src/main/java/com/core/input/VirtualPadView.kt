@@ -331,6 +331,22 @@ class VirtualPadView(
         handler.removeCallbacks(fabLongPress)
     }
 
+    /**
+     * 被跟踪的 FAB 手指抬起时收尾：轻点切换显隐、拖动落盘位置，随后清理状态。
+     * 非 FAB 手指抬起时为空操作（由 [resetFabGesture] 在别的路径兜底）。
+     */
+    private fun finishFabGesture(pointerId: Int) {
+        if (fabPointerId != pointerId) return
+        val moved = fabMoved
+        resetFabGesture()
+        if (!moved) {
+            setPadVisible(!padVisible)
+            listener?.onPadVisibilityChanged(padVisible)
+        } else {
+            InputConfigStore.saveFabPosition(context, fabX, fabY)
+        }
+    }
+
     private fun handlePlayTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -404,22 +420,15 @@ class VirtualPadView(
             }
 
             MotionEvent.ACTION_UP -> {
-                if (fabPointerId == event.getPointerId(event.actionIndex)) {
-                    val pointerId = fabPointerId
-                    fabPointerId = -1
-                    handler.removeCallbacks(fabLongPress)
-                    if (!fabMoved && pointerId != -1) {
-                        setPadVisible(!padVisible)
-                        listener?.onPadVisibilityChanged(padVisible)
-                    } else if (fabMoved) {
-                        InputConfigStore.saveFabPosition(context, fabX, fabY)
-                    }
-                }
+                finishFabGesture(event.getPointerId(event.actionIndex))
                 releasePointers(event, event.actionIndex)
                 return true
             }
 
             MotionEvent.ACTION_POINTER_UP -> {
+                // FAB 手指先抬起时也必须收尾：否则长按回调仍在队列里，
+                // 420ms 后在用户已松手的情况下被动进入编辑态
+                finishFabGesture(event.getPointerId(event.actionIndex))
                 releasePointers(event, event.actionIndex)
                 return true
             }
@@ -851,13 +860,6 @@ class VirtualPadView(
         }
     }
 
-    fun selectElement(id: String?) {
-        if (!editing) return
-        selectedId = id?.takeIf { elementById.containsKey(it) }
-        notifySelection()
-        invalidate()
-    }
-
     fun setPadVisible(visible: Boolean) {
         padVisible = visible
         releaseAllPointers()
@@ -865,11 +867,6 @@ class VirtualPadView(
     }
 
     fun isPadVisible(): Boolean = padVisible
-
-    fun togglePadVisibility() {
-        setPadVisible(!padVisible)
-        listener?.onPadVisibilityChanged(padVisible)
-    }
 
     fun releaseAllKeys() {
         releaseAllPointers()

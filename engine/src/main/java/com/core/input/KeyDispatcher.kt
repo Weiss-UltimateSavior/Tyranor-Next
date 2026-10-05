@@ -38,8 +38,6 @@ internal class KeyDispatcher(private val sink: InputSink) {
         keys.asReversed().forEach { sink.send(it, false) }
     }
 
-    fun isActive(id: String): Boolean = active.containsKey(id)
-
     fun isToggled(id: String): Boolean = toggled.contains(id)
 
     fun releaseAll() {

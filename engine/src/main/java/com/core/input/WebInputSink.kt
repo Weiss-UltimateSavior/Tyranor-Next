@@ -11,12 +11,6 @@ class WebInputSink(private val dispatchJs: (String) -> Unit) : InputSink {
 
     private val held = LinkedHashSet<Int>()
 
-    override fun supports(key: Int): Boolean = when {
-        CanonicalKeys.isMouse(key) -> true
-        CanonicalKeys.isAction(key) -> true
-        else -> WebKeyCodes.isSupported(key)
-    }
-
     override fun send(key: Int, down: Boolean) {
         if (CanonicalKeys.isAction(key)) return
         if (CanonicalKeys.isMouse(key)) {

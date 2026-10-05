@@ -113,6 +113,99 @@ class PadProfileTest {
     }
 
     @Test
+    fun legacyIncrementalConfigKeepsFullButtonSet() {
+        // 旧配置是「相对出厂布局的增量」：用户只拖过一个按钮，迁移后其余按键必须仍在
+        val legacy = JSONObject().apply {
+            put(
+                "buttons",
+                JSONObject().apply {
+                    put("esc", JSONObject().apply { put("x", 0.42); put("y", 0.37) })
+                },
+            )
+        }.toString()
+
+        val profile = PadProfile.migrateLegacy(legacy, null).single()
+
+        // 旧布局的完整按键集（9 个动作键 + QWZX 四键），不因只拖过一个而丢失
+        val expectedIds = setOf(
+            "pageup", "pagedown", "tab", "alt", "ctrl", "shift", "space", "enter", "esc",
+            "q", "w", "z", "x",
+        )
+        assertEquals(expectedIds, profile.buttons.map { it.id }.toSet())
+
+        // 拖过的那一个用旧位置
+        val esc = profile.buttons.first { it.id == "esc" }
+        assertEquals(0.42f, esc.x, 0.0001f)
+        assertEquals(0.37f, esc.y, 0.0001f)
+
+        // 未被动过的按钮保留其出厂锚点（不被挤到屏幕中心）
+        val untouched = profile.buttons.first { it.id == "pageup" }
+        val defaultPageUp = PadProfile.defaultProfile().buttons.first { it.id == "pageup" }
+        assertEquals(defaultPageUp.x, untouched.x, 0.0001f)
+        assertEquals(defaultPageUp.y, untouched.y, 0.0001f)
+    }
+
+    @Test
+    fun legacyNullCoordinatesKeepDefaultAnchor() {
+        // 旧 JS 只改显隐时写 x/y = null：不得把按钮搬到屏幕中心
+        val legacy = JSONObject().apply {
+            put(
+                "buttons",
+                JSONObject().apply {
+                    put("tab", JSONObject().apply { put("x", JSONObject.NULL); put("y", JSONObject.NULL); put("visible", false) })
+                },
+            )
+        }.toString()
+
+        val profile = PadProfile.migrateLegacy(legacy, null).single()
+        val tab = profile.buttons.first { it.id == "tab" }
+        val defaultTab = PadProfile.defaultProfile().buttons.first { it.id == "tab" }
+        assertEquals(defaultTab.x, tab.x, 0.0001f)
+        assertEquals(defaultTab.y, tab.y, 0.0001f)
+        assertEquals(false, tab.visible)
+    }
+
+    @Test
+    fun legacyPresetsWithCjkNamesAllSurvive() {
+        // 纯 CJK 方案名 slug 化后都为空串：必须靠序号去重，否则只留最后一个
+        val presets = JSONObject().apply {
+            listOf("竖屏布局", "横屏布局", "单手布局").forEachIndexed { index, name ->
+                put(
+                    name,
+                    JSONObject().apply {
+                        put(
+                            "buttons",
+                            JSONObject().apply {
+                                put("enter", JSONObject().apply { put("x", 0.3 + index * 0.1); put("y", 0.5) })
+                            },
+                        )
+                    },
+                )
+            }
+        }.toString()
+
+        val profiles = PadProfile.migrateLegacy(null, presets)
+        assertEquals(3, profiles.size)
+        assertEquals(3, profiles.map { it.id }.toSet().size)
+        assertEquals(setOf("竖屏布局", "横屏布局", "单手布局"), profiles.map { it.name }.toSet())
+    }
+
+    @Test
+    fun legacyOnlyRemovedSwitchesIsNotMigrated() {
+        // 旧条目全是已下线开关（btn.hide 等）：无可迁移内容，返回空
+        val legacy = JSONObject().apply {
+            put(
+                "buttons",
+                JSONObject().apply {
+                    put("btn.hide", JSONObject().apply { put("x", 0.1); put("y", 0.1) })
+                    put("btn.stick", JSONObject().apply { put("x", 0.1); put("y", 0.2) })
+                },
+            )
+        }.toString()
+        assertTrue(PadProfile.migrateLegacy(legacy, null).isEmpty())
+    }
+
+    @Test
     fun legacyPresetsBecomeProfiles() {
         val presets = JSONObject().apply {
             put(

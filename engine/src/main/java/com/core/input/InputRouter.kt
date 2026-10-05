@@ -16,11 +16,20 @@ import android.view.MotionEvent
  */
 class InputRouter(
     private val sink: InputSink,
-    private val mapProvider: () -> GamepadMap,
+    initialMap: GamepadMap,
 ) {
 
-    /** 映射总开关（关闭时完全不消费事件，手柄回到系统/SDL 默认行为）。 */
-    var enabled: Boolean = true
+    /**
+     * 当前映射快照。宿主在启动与回到前台时经 [updateMap] 刷新；事件处理只读内存快照，
+     * 不做文件 IO（轴事件以输入采样率到达，逐事件读盘会造成主线程抖动）。
+     */
+    var map: GamepadMap = initialMap
+        private set
+
+    /** 更新映射快照（app 侧改写手柄映射文件后由宿主在 onResume 调用）。 */
+    fun updateMap(value: GamepadMap) {
+        map = value
+    }
 
     private val dispatcher = KeyDispatcher(sink)
 
@@ -35,7 +44,6 @@ class InputRouter(
     private var rightTriggerActive = false
 
     fun handleKeyEvent(event: KeyEvent): Boolean {
-        if (!enabled) return false
         if (!isGamepadKeyEvent(event)) return false
         val id = logicalFor(event.keyCode)
         if (id == null) {
@@ -56,11 +64,8 @@ class InputRouter(
     }
 
     fun handleGenericMotionEvent(event: MotionEvent): Boolean {
-        if (!enabled) return false
         if (event.actionMasked != MotionEvent.ACTION_MOVE) return false
         if (!isGamepadMotionEvent(event)) return false
-
-        val map = mapProvider()
 
         val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
@@ -145,7 +150,7 @@ class InputRouter(
     }
 
     private fun bindingFor(id: String): GamepadBinding {
-        val map = mapProvider()
+        val map = this.map
         return when (id) {
             "left.up" -> GamepadBinding(keys = map.leftStick.up)
             "left.down" -> GamepadBinding(keys = map.leftStick.down)

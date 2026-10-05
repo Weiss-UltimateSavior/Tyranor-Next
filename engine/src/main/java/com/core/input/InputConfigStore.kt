@@ -126,15 +126,44 @@ object InputConfigStore {
 
     // ---------- 生效设置 ----------
 
+    /**
+     * 单游戏覆盖 ?: 全局 ?: 内置默认。
+     *
+     * 覆盖字段必须用 `has()` 判定存在性：`org.json` 的 `optBoolean(name)` 在键缺失时
+     * 返回 false（而非 null），直接 `optBoolean(name) ?: global` 会让「未覆盖」被当成
+     * 「显式关闭」——任何存过单游戏设置（如保存 ONSS 覆盖）的游戏都会静默失去虚拟按键。
+     */
     fun resolve(context: Context, gameId: String): InputSettings {
         val blob = if (gameId.isNotBlank()) gameOverrideBlob(context, gameId) else null
         val global = context.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
-        val padEnabled = blob?.optBoolean(KEY_PAD_ENABLED)
-            ?: global.getBoolean(KEY_PAD_ENABLED, true)
-        val gamepadEnabled = blob?.optBoolean(KEY_GAMEPAD_ENABLED)
-            ?: global.getBoolean(KEY_GAMEPAD_ENABLED, true)
-        val profileId = blob?.optString(KEY_PROFILE_ID)?.takeIf { it.isNotBlank() }
-            ?: global.getString(KEY_PROFILE_ID, null)?.takeIf { it.isNotBlank() }
+        return resolveSettings(
+            blob = blob,
+            globalPadEnabled = global.getBoolean(KEY_PAD_ENABLED, true),
+            globalGamepadEnabled = global.getBoolean(KEY_GAMEPAD_ENABLED, true),
+            globalProfileId = global.getString(KEY_PROFILE_ID, null),
+        )
+    }
+
+    /** 生效设置的纯函数部分（不依赖 Context，便于单测锚定覆盖语义）。 */
+    internal fun resolveSettings(
+        blob: JSONObject?,
+        globalPadEnabled: Boolean,
+        globalGamepadEnabled: Boolean,
+        globalProfileId: String?,
+    ): InputSettings {
+        val padEnabled = if (blob?.has(KEY_PAD_ENABLED) == true) {
+            blob.optBoolean(KEY_PAD_ENABLED)
+        } else {
+            globalPadEnabled
+        }
+        val gamepadEnabled = if (blob?.has(KEY_GAMEPAD_ENABLED) == true) {
+            blob.optBoolean(KEY_GAMEPAD_ENABLED)
+        } else {
+            globalGamepadEnabled
+        }
+        val profileId = (if (blob?.has(KEY_PROFILE_ID) == true) blob.optString(KEY_PROFILE_ID) else null)
+            ?.takeIf { it.isNotBlank() }
+            ?: globalProfileId?.takeIf { it.isNotBlank() }
             ?: DEFAULT_PROFILE_ID
         return InputSettings(
             padEnabled = padEnabled,
@@ -182,10 +211,30 @@ object InputConfigStore {
             ?.let { JSONObject(it) }
     }.getOrNull()
 
-    private fun atomicWrite(target: File, content: String): Boolean = runCatching {
-        val tmp = File(target.parentFile, target.name + ".tmp")
-        tmp.writeText(content)
-        if (target.exists()) target.delete()
-        tmp.renameTo(target)
-    }.getOrDefault(false)
+    /**
+     * 原子落盘：唯一临时名 + fsync + rename 覆盖。
+     *
+     * 不用「先 delete 再 rename」：POSIX rename 本身原子替换已存在目标，先删会留下
+     * 「文件不存在」窗口（进程被杀即丢配置）。临时名带进程号，避免 app 与引擎两个
+     * 进程并发写同一文件时互相截断。rename 失败时兜底重试一次。
+     */
+    private fun atomicWrite(target: File, content: String): Boolean {
+        val dir = target.parentFile ?: return false
+        val tmp = File(dir, ".${target.name}.${android.os.Process.myPid()}.tmp")
+        return runCatching {
+            java.io.FileOutputStream(tmp).use { output ->
+                output.write(content.toByteArray(Charsets.UTF_8))
+                output.flush()
+                output.fd.sync()
+            }
+            if (tmp.renameTo(target)) return@runCatching true
+            // 个别文件系统上 rename 覆盖失败：删除目标后重试
+            if (target.exists() && target.delete() && tmp.renameTo(target)) {
+                true
+            } else {
+                tmp.delete()
+                false
+            }
+        }.getOrDefault(false)
+    }
 }

@@ -1,7 +1,6 @@
 package com.core.input
 
 import android.app.Activity
-import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -77,7 +76,7 @@ class InputRemapController private constructor(
         }
     }
 
-    val padView: VirtualPadView? = if (settings.padEnabled) {
+    private val padView: VirtualPadView? = if (settings.padEnabled) {
         VirtualPadView(activity, sink).also { view ->
             view.theme = VirtualPadView.PadTheme(theme.primary, theme.onPrimary)
             view.profile = InputConfigStore.readProfileOrBuiltin(activity, settings.profileId)
@@ -95,17 +94,11 @@ class InputRemapController private constructor(
         null
     }
 
-    val router: InputRouter? = if (settings.gamepadEnabled) {
-        InputRouter(sink) { InputConfigStore.readGamepadMap(activity) }
+    private val router: InputRouter? = if (settings.gamepadEnabled) {
+        InputRouter(sink, InputConfigStore.readGamepadMap(activity))
     } else {
         null
     }
-
-    /** 手柄映射是否生效（设置页开关）。 */
-    val gamepadEnabled: Boolean get() = router != null
-
-    /** 虚拟按键是否生效。 */
-    val padEnabled: Boolean get() = padView != null
 
     /** 手柄按键事件入口：宿主在 dispatchKeyEvent 最前调用；返回 true 表示已消费。 */
     fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -132,10 +125,11 @@ class InputRemapController private constructor(
     }
 
     fun onResume() {
-        // 页面重载 / 切回前台：重新读取方案（设置页可能已改方案或键位）
+        // 页面重载 / 切回前台：重新读取方案与手柄映射（设置页可能已改）
+        val current = InputConfigStore.resolve(activity, gameId)
+        router?.updateMap(InputConfigStore.readGamepadMap(activity))
         val pad = padView ?: return
         if (pad.isEditing) return
-        val current = InputConfigStore.resolve(activity, gameId)
         val profile = InputConfigStore.readProfileOrBuiltin(activity, current.profileId)
         pad.profile = profile
         pad.bindPreferences(activity)
@@ -200,15 +194,5 @@ class InputRemapController private constructor(
             dispatchJs: (String) -> Unit,
         ): InputRemapController =
             install(activity, container, gameId, theme, WebInputSink(dispatchJs))
-
-        /** 游戏运行前的一次性旧数据迁移（由 app 侧仓储调用同样入口）。 */
-        fun migrateLegacyIfNeeded(context: Context, gameId: String): Boolean {
-            val legacy = InputConfigStore.readLegacyTouchPad(context, gameId) ?: return false
-            val profiles = PadProfile.migrateLegacy(legacy.first, legacy.second)
-            if (profiles.isEmpty()) return false
-            profiles.forEach { InputConfigStore.writeProfile(context, it) }
-            Log.i(TAG, "legacy touchpad migrated profiles=${profiles.map { it.id }}")
-            return true
-        }
     }
 }

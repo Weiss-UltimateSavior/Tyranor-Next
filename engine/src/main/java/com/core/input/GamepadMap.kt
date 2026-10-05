@@ -58,9 +58,6 @@ data class StickBinding(
         else -> right
     }
 
-    /** 读取指定方向的绑定视图（供设置页统一编辑）。 */
-    fun bindingFor(direction: String): GamepadBinding = GamepadBinding(keys(direction))
-
     /** 写入指定方向（保留其它方向与死区配置）。 */
     fun with(direction: String, binding: GamepadBinding): StickBinding = when (direction) {
         "up" -> copy(up = binding.keys)

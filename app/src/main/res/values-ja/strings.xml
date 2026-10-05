@@ -271,12 +271,8 @@
     <string name="engine_settings_input_pad_summary">ゲーム画面に編集可能なタッチキーを重ねて表示します</string>
     <string name="engine_settings_input_gamepad_title">ゲームパッド割り当て</string>
     <string name="engine_settings_input_gamepad_summary">外付けゲームパッドのボタンをキーボード/マウス操作に割り当てます</string>
-    <string name="engine_settings_input_profile_title">キー配置</string>
-    <string name="engine_settings_input_profile_summary">デフォルト配置はゲーム内で編集できます（フローティングボタンをタップで編集、長押しでパッド非表示）</string>
     <string name="engine_settings_input_gamepad_entry">ゲームパッド割り当て</string>
     <string name="engine_settings_input_gamepad_entry_summary">A/B/X/Y、ショルダー、トリガー、スティック、方向キーの出力を設定</string>
-    <string name="engine_settings_input_gamepad_follow_global">全体設定に従う</string>
-    <string name="engine_settings_input_enabled_summary">このゲームのバーチャルパッドスイッチ</string>
     <string name="input_settings_title">入力とゲームパッド</string>
     <string name="input_settings_gamepad_title">ゲームパッド割り当て</string>
     <string name="input_settings_gamepad_summary">「編集」から複数の出力キーと押しっぱなしを設定できます</string>
@@ -285,7 +281,6 @@
     <string name="input_settings_binding_empty">未割り当て</string>
     <string name="input_settings_binding_keys">%1$d キー</string>
     <string name="input_settings_auto_keep">保持</string>
-    <string name="input_settings_edit_binding">編集</string>
     <string name="input_settings_clear_binding">クリア</string>
     <string name="input_settings_auto_keep_toggle">押しっぱなし（もう一度で解除）</string>
     <string name="input_settings_choose_keys">出力キーを選択</string>
@@ -295,6 +290,9 @@
     <string name="input_settings_profile_new">新規配置</string>
     <string name="input_settings_profile_use">使用</string>
     <string name="input_settings_profile_in_use">使用中</string>
+    <string name="input_settings_profile_delete_title">配置を削除</string>
+    <string name="input_settings_profile_delete_message">「%1$s」を削除しますか？キー配置も削除され、元に戻せません。</string>
+    <string name="input_settings_profile_name_hint">最大 24 文字</string>
     <string name="pad_layout_edit_title">キー配置を編集</string>
     <string name="pad_layout_edit_saved">レイアウトを保存しました</string>
     <string name="input_settings_profile_copy">複製</string>
@@ -307,14 +305,11 @@
     <string name="input_settings_profile_export_done">エクスポートしました</string>
     <string name="input_settings_profile_export_failed">エクスポートに失敗しました</string>
     <string name="input_settings_profile_new_name">新しい配置名</string>
-    <string name="input_settings_profile_reset">デフォルトレイアウトに戻す</string>
-    <string name="input_settings_profile_reset_done">デフォルトレイアウトに戻しました</string>
     <string name="input_settings_profile_delete_default_blocked">デフォルト配置は削除できません</string>
     <string name="input_settings_gamepad_buttons_label">ゲームパッドボタン</string>
     <string name="input_settings_gamepad_sticks_label">スティック</string>
     <string name="input_settings_stick_left">左スティック</string>
     <string name="input_settings_stick_right">右スティック</string>
-    <string name="input_settings_deadzone">デッドゾーン</string>
     <string name="input_settings_gamepad_key_a">A ボタン</string>
     <string name="input_settings_gamepad_key_b">B ボタン</string>
     <string name="input_settings_gamepad_key_x">X ボタン</string>

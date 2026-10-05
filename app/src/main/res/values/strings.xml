@@ -271,12 +271,8 @@
     <string name="engine_settings_input_pad_summary">在游戏画面上叠加可编辑的触屏按键层</string>
     <string name="engine_settings_input_gamepad_title">手柄映射</string>
     <string name="engine_settings_input_gamepad_summary">把外接手柄的按键映射为游戏键盘/鼠标操作</string>
-    <string name="engine_settings_input_profile_title">按键方案</string>
-    <string name="engine_settings_input_profile_summary">默认方案可在游戏内编辑（左侧悬浮球点按进入编辑，长按隐藏按键层）</string>
     <string name="engine_settings_input_gamepad_entry">手柄按键映射</string>
     <string name="engine_settings_input_gamepad_entry_summary">配置 A/B/X/Y、肩键、扳机、摇杆与方向键的输出</string>
-    <string name="engine_settings_input_gamepad_follow_global">跟随全局设置</string>
-    <string name="engine_settings_input_enabled_summary">该游戏的虚拟按键开关</string>
     <string name="input_settings_title">输入与手柄</string>
     <string name="input_settings_gamepad_title">手柄按键映射</string>
     <string name="input_settings_gamepad_summary">按下手柄按键即可绑定；支持多个输出键与“按下保持”</string>
@@ -285,7 +281,6 @@
     <string name="input_settings_binding_empty">未绑定</string>
     <string name="input_settings_binding_keys">%1$d 个键位</string>
     <string name="input_settings_auto_keep">保持</string>
-    <string name="input_settings_edit_binding">编辑映射</string>
     <string name="input_settings_clear_binding">清除绑定</string>
     <string name="input_settings_auto_keep_toggle">按下后保持（再按一次释放）</string>
     <string name="input_settings_choose_keys">选择输出键位</string>
@@ -295,6 +290,9 @@
     <string name="input_settings_profile_new">新建方案</string>
     <string name="input_settings_profile_use">使用</string>
     <string name="input_settings_profile_in_use">使用中</string>
+    <string name="input_settings_profile_delete_title">删除方案</string>
+    <string name="input_settings_profile_delete_message">确定删除「%1$s」？该方案的按键布局将一并移除，且无法恢复。</string>
+    <string name="input_settings_profile_name_hint">最多 24 个字符</string>
     <string name="pad_layout_edit_title">编辑按键布局</string>
     <string name="pad_layout_edit_saved">布局已保存</string>
     <string name="input_settings_profile_copy">复制</string>
@@ -307,14 +305,11 @@
     <string name="input_settings_profile_export_done">方案已导出</string>
     <string name="input_settings_profile_export_failed">导出失败</string>
     <string name="input_settings_profile_new_name">新方案名称</string>
-    <string name="input_settings_profile_reset">恢复默认布局</string>
-    <string name="input_settings_profile_reset_done">已恢复默认布局</string>
     <string name="input_settings_profile_delete_default_blocked">默认方案不可删除</string>
     <string name="input_settings_gamepad_buttons_label">手柄按键</string>
     <string name="input_settings_gamepad_sticks_label">摇杆</string>
     <string name="input_settings_stick_left">左摇杆</string>
     <string name="input_settings_stick_right">右摇杆</string>
-    <string name="input_settings_deadzone">死区</string>
     <string name="input_settings_gamepad_key_a">A 键</string>
     <string name="input_settings_gamepad_key_b">B 键</string>
     <string name="input_settings_gamepad_key_x">X 键</string>
