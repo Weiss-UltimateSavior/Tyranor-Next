@@ -47,6 +47,20 @@
     <string name="settings_nav_bar_desc_liquid_glass">Android 12 以上で有効</string>
     <string name="settings_nav_bar_desc_enhanced">Android 13 以上のみ対応</string>
     <string name="settings_nav_bar_desc_rail">タブレットではサイドレールで表示</string>
+    <string name="settings_home_style">ホームスタイル</string>
+    <string name="settings_home_style_native">デフォルト</string>
+    <string name="settings_home_style_web">Web</string>
+    <string name="settings_home_web_url">Web ホーム URL</string>
+    <string name="settings_home_web_custom">カスタム URL</string>
+    <string name="settings_home_web_custom_summary">カスタム URL を入力</string>
+    <string name="settings_home_web_url_invalid">有効な http/https URL を入力してください</string>
+    <string name="settings_home_web_current">現在</string>
+    <string name="home_web_preset_kungal">KunGal</string>
+    <string name="home_web_preset_letmoe">LetMoe</string>
+    <string name="home_web_error">ページの読み込みに失敗しました</string>
+    <string name="home_web_open_browser_failed">このリンクを開けるアプリが見つかりません</string>
+    <string name="home_web_download_unsupported">このダウンロードはブラウザで開けません</string>
+    <string name="home_web_refresh_content_description">更新</string>
     <string name="settings_invalid_theme_color">透明色、白黒、グレーは使用できません</string>
 
     <string name="settings_update_latest">最新バージョンです</string>

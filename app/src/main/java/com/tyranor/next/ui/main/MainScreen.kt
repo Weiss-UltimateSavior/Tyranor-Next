@@ -131,6 +131,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initDefaultThemeGradient(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initHomeStyle(context) }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
     libraryViewModel.refreshFromStorage()
@@ -464,6 +465,7 @@ private fun ColumnScope.MainTabPages(
                 onGameDeleted = libraryViewModel::deleteGame,
                 onRecentRemoved = libraryViewModel::removeRecentGame,
                 onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
+                isActive = page == selectedIndex,
               )
               1 -> GameScreen(
                 modifier = Modifier.fillMaxSize(),

@@ -47,6 +47,20 @@
     <string name="settings_nav_bar_desc_liquid_glass">Android 12 及以上生效</string>
     <string name="settings_nav_bar_desc_enhanced">仅 Android 13 及以上支持</string>
     <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
+    <string name="settings_home_style">首页样式切换</string>
+    <string name="settings_home_style_native">默认</string>
+    <string name="settings_home_style_web">网页</string>
+    <string name="settings_home_web_url">Web 首页地址</string>
+    <string name="settings_home_web_custom">自定义地址</string>
+    <string name="settings_home_web_custom_summary">输入自定义地址</string>
+    <string name="settings_home_web_url_invalid">请输入有效的 http/https 地址</string>
+    <string name="settings_home_web_current">当前</string>
+    <string name="home_web_preset_kungal">鲲Gal</string>
+    <string name="home_web_preset_letmoe">一起萌</string>
+    <string name="home_web_error">网页加载失败</string>
+    <string name="home_web_open_browser_failed">未找到可打开该链接的应用</string>
+    <string name="home_web_download_unsupported">该下载链接无法在浏览器中打开</string>
+    <string name="home_web_refresh_content_description">刷新</string>
     <string name="settings_invalid_theme_color">不支持透明色或黑白灰色</string>
 
     <string name="settings_update_latest">已经是最新版本</string>

@@ -47,6 +47,20 @@
     <string name="settings_nav_bar_desc_liquid_glass">Effective on Android 12 and above</string>
     <string name="settings_nav_bar_desc_enhanced">Android 13 and above only</string>
     <string name="settings_nav_bar_desc_rail">Shown as a side rail on tablets</string>
+    <string name="settings_home_style">Home style</string>
+    <string name="settings_home_style_native">Default</string>
+    <string name="settings_home_style_web">Web</string>
+    <string name="settings_home_web_url">Web home URL</string>
+    <string name="settings_home_web_custom">Custom URL</string>
+    <string name="settings_home_web_custom_summary">Enter a custom URL</string>
+    <string name="settings_home_web_url_invalid">Enter a valid http/https URL</string>
+    <string name="settings_home_web_current">Current</string>
+    <string name="home_web_preset_kungal">KunGal</string>
+    <string name="home_web_preset_letmoe">LetMoe</string>
+    <string name="home_web_error">Failed to load the page</string>
+    <string name="home_web_open_browser_failed">No app can open this link</string>
+    <string name="home_web_download_unsupported">This download cannot be opened in a browser</string>
+    <string name="home_web_refresh_content_description">Refresh</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>
 
     <string name="settings_update_latest">You are on the latest version</string>
