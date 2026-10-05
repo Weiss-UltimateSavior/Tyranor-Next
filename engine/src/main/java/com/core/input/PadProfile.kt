@@ -32,6 +32,20 @@ data class PadButton(
     }
 }
 
+/**
+ * 新增按钮的几何预设（编辑面板「新增」对话框的选项）。
+ *
+ * 只描述宽高比：椭圆是默认键位按钮；圆形用正方形盒渲染出正圆，
+ * 与方案自带的 QWZX 键外观一致。角样式由 [PadButton.shape] 另行控制。
+ */
+enum class PadButtonGeometry {
+    /** 椭圆形（宽高比 0.46）。 */
+    OVAL,
+
+    /** 圆形（正方形盒 + 全圆角）。 */
+    ROUND,
+}
+
 /** 方向控件（摇杆外观，四向/八向）。八向由相邻两方向组合派发，不单独配置键位。 */
 data class PadDirection(
     val x: Float = 0.17f,
@@ -101,6 +115,24 @@ data class PadProfile(
                 )
             }.getOrNull()
         }
+
+        /**
+         * 新增按钮的出厂几何参数。
+         *
+         * 抽成纯函数（不依赖 View）以便单测锚定「新增能出椭圆也能出圆形」这类回归。
+         */
+        fun newButtonDefaults(geometry: PadButtonGeometry, id: String, text: String): PadButton =
+            when (geometry) {
+                PadButtonGeometry.OVAL -> PadButton(
+                    id = id, text = text, x = 0.5f, y = 0.5f,
+                    size = 0.12f, aspect = PadButton.DEFAULT_ASPECT, shape = PadButton.SHAPE_ROUND,
+                )
+
+                PadButtonGeometry.ROUND -> PadButton(
+                    id = id, text = text, x = 0.5f, y = 0.5f,
+                    size = 0.088f, aspect = 1f, shape = PadButton.SHAPE_ROUND,
+                )
+            }
 
         /**
          * 出厂默认布局：右侧动作键列 + 右下 QWZX 菱形 + 左下方向摇杆。

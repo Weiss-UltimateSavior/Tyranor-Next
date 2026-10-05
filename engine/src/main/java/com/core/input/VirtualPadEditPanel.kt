@@ -205,7 +205,9 @@ class VirtualPadEditPanel(
             textInput.isEnabled = !direction
             sizeSeek.isEnabled = true
             keysButton.isEnabled = true
-            if (!direction) textInput.setText(info.label)
+            // 文字框仅在「未聚焦」时回写：用户正在输入（含刚改完文字就点选键位）时，
+            // 用已提交值回写会把未提交的编辑冲掉（用户报告的「改完文字选键位又变回去」）
+            if (!direction && !textInput.hasFocus()) textInput.setText(info.label)
             autoKeepBox.visibility = if (direction) View.GONE else View.VISIBLE
             autoKeepBox.isChecked = info.autoKeep
             eightDirBox.visibility = if (direction) View.VISIBLE else View.GONE
@@ -221,12 +223,24 @@ class VirtualPadEditPanel(
     }
 
     fun dismiss() {
+        // 已弹出的键位/新增对话框必须先关：否则宿主销毁后会留下挂在失效窗口上的 AlertDialog
+        dismissDialog()
         val view = container ?: return
         (view.parent as? ViewGroup)?.removeView(view)
         container = null
     }
 
     // ---------- 编辑应用 ----------
+
+    /**
+     * 提交文字框当前内容。
+     *
+     * 输入框只在失焦时提交，而点「选择键位」等按钮不会让输入框失焦——这些入口
+     * 必须先显式提交，否则后续用已提交的旧值重建按钮，会冲掉用户刚改的文字。
+     */
+    private fun commitPendingText() {
+        applyButtonEdit()
+    }
 
     private fun applyButtonEdit() {
         if (suppressCallbacks) return
@@ -254,9 +268,12 @@ class VirtualPadEditPanel(
      * 「方向键」在已隐藏时可用（用于重新放回按键层）。
      */
     private fun showAddDialog() {
+        // 先提交未失焦的文字，避免新增后 selectionInfo 回退到旧值
+        commitPendingText()
         val directionAvailable = pad.canAdd(VirtualPadView.NewButtonType.DIRECTION)
         val options = listOf(
             Triple(context.getString(R.string.engine_input_new_button), VirtualPadView.NewButtonType.BUTTON, true),
+            Triple(context.getString(R.string.engine_input_new_round_button), VirtualPadView.NewButtonType.ROUND_BUTTON, true),
             Triple(context.getString(R.string.engine_input_new_direction), VirtualPadView.NewButtonType.DIRECTION, directionAvailable),
         )
         val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
@@ -293,6 +310,9 @@ class VirtualPadEditPanel(
     // ---------- 键位选择（深色卡片，多选） ----------
 
     private fun showKeyDialog() {
+        // 先提交未失焦的文字：否则选完键位后 refresh 会用旧值重建按钮，
+        // 把用户刚改的文字冲掉（用户报告的「改完文字选键位又变回去」）
+        commitPendingText()
         val info = pad.selectionInfo() ?: return
         if (info.isDirection) return
         val selected = LinkedHashSet(info.keys)
@@ -365,10 +385,11 @@ class VirtualPadEditPanel(
         buttonRow.addView(
             pillButton(context.getString(R.string.engine_input_confirm), primary = true).apply {
                 setOnClickListener {
+                    // 文字以输入框当前内容为准（用户在对话框打开前可能刚改过）
                     pad.updateSelectedButton(
-                        info.label,
+                        textInput.text?.toString().orEmpty(),
                         selected.toList(),
-                        pad.selectionInfo()?.autoKeep ?: false,
+                        autoKeepBox.isChecked,
                     )
                     dismissDialog()
                     refresh()

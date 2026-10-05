@@ -40,6 +40,32 @@ class PadProfileTest {
     }
 
     @Test
+    fun newButtonDefaultsCoverBothGeometries() {
+        // 新增按钮必须能出椭圆（默认）与圆形（正方形 + 全圆角）两种外观
+        val oval = PadProfile.newButtonDefaults(PadButtonGeometry.OVAL, "b1", "New")
+        assertEquals(PadButton.DEFAULT_ASPECT, oval.aspect, 0.0001f)
+        assertEquals(PadButton.SHAPE_ROUND, oval.shape)
+        assertEquals("b1", oval.id)
+        assertEquals("New", oval.text)
+        assertEquals(0.5f, oval.x, 0.0001f)
+        assertEquals(0.5f, oval.y, 0.0001f)
+        assertTrue("新增按钮默认不绑定键位，避免误触", oval.keys.isEmpty())
+        assertTrue(oval.visible)
+
+        val round = PadProfile.newButtonDefaults(PadButtonGeometry.ROUND, "b2", "New")
+        assertEquals("圆形必须是正方形盒（aspect=1），否则渲染成椭圆", 1f, round.aspect, 0.0001f)
+        assertEquals(PadButton.SHAPE_ROUND, round.shape)
+        assertTrue("圆形应比椭圆更小以保持视觉体量", round.size < oval.size)
+        assertTrue(round.keys.isEmpty())
+
+        // 两种几何落盘后往返不丢
+        val profile = PadProfile.defaultProfile().copy(buttons = listOf(oval, round))
+        val parsed = PadProfile.parse(profile.toJson())!!
+        assertEquals(PadButton.DEFAULT_ASPECT, parsed.buttons.first { it.id == "b1" }.aspect, 0.0001f)
+        assertEquals(1f, parsed.buttons.first { it.id == "b2" }.aspect, 0.0001f)
+    }
+
+    @Test
     fun parseRejectsBadJsonAndMissingId() {
         assertNull(PadProfile.parse("not-json"))
         assertNull(PadProfile.parse(null))

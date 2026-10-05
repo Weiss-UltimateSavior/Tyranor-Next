@@ -45,7 +45,6 @@
     <string name="engine_fb_skip_off">停止跳过</string>
     <string name="engine_fb_menu">菜单</string>
     <string name="engine_ons_video_skip_hint">轻触画面跳过</string>
-    <string name="engine_input_edit_title">按键编辑</string>
     <string name="engine_input_select_hint">点按画面中的按键开始编辑</string>
     <string name="engine_input_selected">已选中：%1$s</string>
     <string name="engine_input_button_text">按钮文字</string>
@@ -54,12 +53,11 @@
     <string name="engine_input_visible">显示该按键</string>
     <string name="engine_input_eight_dir">八方向</string>
     <string name="engine_input_pick_keys">选择键位</string>
-    <string name="engine_input_pick_direction_keys">选择方向键位</string>
-    <string name="engine_input_direction_keys_hint">方向键位暂请使用默认（方向键上下左右）</string>
     <string name="engine_input_direction">方向键</string>
     <string name="engine_input_duplicate">复制</string>
     <string name="engine_input_add">新增</string>
-    <string name="engine_input_new_button">普通按钮</string>
+    <string name="engine_input_new_button">普通按钮（椭圆）</string>
+    <string name="engine_input_new_round_button">圆形按钮</string>
     <string name="engine_input_new_direction">方向键（摇杆）</string>
     <string name="engine_input_direction_exists">方向键已存在</string>
     <string name="engine_input_delete">删除</string>

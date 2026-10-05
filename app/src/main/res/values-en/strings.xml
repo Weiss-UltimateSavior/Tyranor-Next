@@ -285,7 +285,6 @@
     <string name="input_settings_auto_keep_toggle">Keep pressed (press again to release)</string>
     <string name="input_settings_choose_keys">Choose output keys</string>
     <string name="input_settings_profiles_title">Key profiles</string>
-    <string name="input_settings_profiles_summary">Virtual-pad layout. Editable in-game via long-press on the floating window</string>
     <string name="input_settings_profile_default">Default layout</string>
     <string name="input_settings_profile_new">New profile</string>
     <string name="input_settings_profile_use">Use</string>
@@ -293,8 +292,8 @@
     <string name="input_settings_profile_delete_title">Delete profile</string>
     <string name="input_settings_profile_delete_message">Delete "%1$s"? Its key layout will be removed and cannot be recovered.</string>
     <string name="input_settings_profile_name_hint">Up to 24 characters</string>
-    <string name="pad_layout_edit_title">Edit key layout</string>
     <string name="pad_layout_edit_saved">Layout saved</string>
+    <string name="pad_layout_edit_hint">Tap to select a button and drag to move it. Tap Save when done; press system Back to exit without saving.</string>
     <string name="input_settings_profile_copy">Copy</string>
     <string name="input_settings_profile_rename">Rename</string>
     <string name="input_settings_profile_delete">Delete</string>
@@ -305,7 +304,6 @@
     <string name="input_settings_profile_export_done">Profile exported</string>
     <string name="input_settings_profile_export_failed">Export failed</string>
     <string name="input_settings_profile_new_name">New profile name</string>
-    <string name="input_settings_profile_delete_default_blocked">The default profile cannot be deleted</string>
     <string name="input_settings_gamepad_buttons_label">Gamepad buttons</string>
     <string name="input_settings_gamepad_sticks_label">Sticks</string>
     <string name="input_settings_stick_left">Left stick</string>

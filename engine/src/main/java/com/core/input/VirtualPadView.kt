@@ -756,16 +756,28 @@ class VirtualPadView(
 
     /** 新增按钮的类型（编辑面板的「新增」对话框）。 */
     enum class NewButtonType {
-        /** 普通按钮：可绑定任意键位 / 鼠标键。 */
+        /** 椭圆形普通按钮（宽高比 0.46）：可绑定任意键位 / 鼠标键。 */
         BUTTON,
+
+        /** 圆形普通按钮（正方形盒 + 全圆角）：用于单字键位。 */
+        ROUND_BUTTON,
 
         /** 方向键（摇杆外观，四/八方向）；每个方案仅一个。 */
         DIRECTION,
+
+        ;
+
+        /** 对应的按钮几何预设；方向键无几何预设（不是 PadButton）。 */
+        fun toGeometry(): PadButtonGeometry? = when (this) {
+            BUTTON -> PadButtonGeometry.OVAL
+            ROUND_BUTTON -> PadButtonGeometry.ROUND
+            DIRECTION -> null
+        }
     }
 
     /** 该类型当前能否新增（方向键至多一个）。 */
     fun canAdd(type: NewButtonType): Boolean = when (type) {
-        NewButtonType.BUTTON -> true
+        NewButtonType.BUTTON, NewButtonType.ROUND_BUTTON -> true
         NewButtonType.DIRECTION -> !activeProfile().direction.visible
     }
 
@@ -778,14 +790,17 @@ class VirtualPadView(
         if (!editing) return null
         val active = activeProfile()
         return when (type) {
-            NewButtonType.BUTTON -> {
+            NewButtonType.BUTTON,
+            NewButtonType.ROUND_BUTTON -> {
                 var index = 1
                 var id = "btn-$index"
                 while (active.buttons.any { it.id == id } || id == DIRECTION_ID) {
                     index++
                     id = "btn-$index"
                 }
-                val button = PadButton(id = id, text = "New", x = 0.5f, y = 0.5f, size = 0.12f)
+                // 几何参数由纯函数给出（可单测锚定椭圆/圆形两种外观）
+                val geometry = type.toGeometry() ?: PadButtonGeometry.OVAL
+                val button = PadProfile.newButtonDefaults(geometry, id, "New")
                 editProfile = active.copy(buttons = active.buttons + button)
                 selectedId = id
                 rebuild()

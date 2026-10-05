@@ -285,7 +285,6 @@
     <string name="input_settings_auto_keep_toggle">押しっぱなし（もう一度で解除）</string>
     <string name="input_settings_choose_keys">出力キーを選択</string>
     <string name="input_settings_profiles_title">キー配置</string>
-    <string name="input_settings_profiles_summary">バーチャルパッドレイアウト。ゲーム内でオーバーレイを長押しして編集できます</string>
     <string name="input_settings_profile_default">デフォルトレイアウト</string>
     <string name="input_settings_profile_new">新規配置</string>
     <string name="input_settings_profile_use">使用</string>
@@ -293,8 +292,8 @@
     <string name="input_settings_profile_delete_title">配置を削除</string>
     <string name="input_settings_profile_delete_message">「%1$s」を削除しますか？キー配置も削除され、元に戻せません。</string>
     <string name="input_settings_profile_name_hint">最大 24 文字</string>
-    <string name="pad_layout_edit_title">キー配置を編集</string>
     <string name="pad_layout_edit_saved">レイアウトを保存しました</string>
+    <string name="pad_layout_edit_hint">タップで選択、ドラッグで移動。完了したら「保存」、システムの戻るキーで終了（保存されません）。</string>
     <string name="input_settings_profile_copy">複製</string>
     <string name="input_settings_profile_rename">名前変更</string>
     <string name="input_settings_profile_delete">削除</string>
@@ -305,7 +304,6 @@
     <string name="input_settings_profile_export_done">エクスポートしました</string>
     <string name="input_settings_profile_export_failed">エクスポートに失敗しました</string>
     <string name="input_settings_profile_new_name">新しい配置名</string>
-    <string name="input_settings_profile_delete_default_blocked">デフォルト配置は削除できません</string>
     <string name="input_settings_gamepad_buttons_label">ゲームパッドボタン</string>
     <string name="input_settings_gamepad_sticks_label">スティック</string>
     <string name="input_settings_stick_left">左スティック</string>

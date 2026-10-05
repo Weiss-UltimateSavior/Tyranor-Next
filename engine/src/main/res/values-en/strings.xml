@@ -45,7 +45,6 @@
     <string name="engine_fb_skip_off">Stop skip</string>
     <string name="engine_fb_menu">Menu</string>
     <string name="engine_ons_video_skip_hint">Tap to skip</string>
-    <string name="engine_input_edit_title">Key layout</string>
     <string name="engine_input_select_hint">Tap a button on screen to edit it</string>
     <string name="engine_input_selected">Selected: %1$s</string>
     <string name="engine_input_button_text">Button label</string>
@@ -54,12 +53,11 @@
     <string name="engine_input_visible">Show this button</string>
     <string name="engine_input_eight_dir">8-direction</string>
     <string name="engine_input_pick_keys">Choose keys</string>
-    <string name="engine_input_pick_direction_keys">Choose direction keys</string>
-    <string name="engine_input_direction_keys_hint">Direction keys use the defaults for now (arrow keys)</string>
     <string name="engine_input_direction">D-pad</string>
     <string name="engine_input_duplicate">Copy</string>
     <string name="engine_input_add">Add</string>
-    <string name="engine_input_new_button">Key button</string>
+    <string name="engine_input_new_button">Key button (oval)</string>
+    <string name="engine_input_new_round_button">Round button</string>
     <string name="engine_input_new_direction">D-pad (stick look)</string>
     <string name="engine_input_direction_exists">A D-pad already exists</string>
     <string name="engine_input_delete">Delete</string>

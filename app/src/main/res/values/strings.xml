@@ -285,7 +285,6 @@
     <string name="input_settings_auto_keep_toggle">按下后保持（再按一次释放）</string>
     <string name="input_settings_choose_keys">选择输出键位</string>
     <string name="input_settings_profiles_title">按键方案</string>
-    <string name="input_settings_profiles_summary">虚拟按键布局，也可以通过在游戏内长按悬浮窗编辑</string>
     <string name="input_settings_profile_default">默认布局</string>
     <string name="input_settings_profile_new">新建方案</string>
     <string name="input_settings_profile_use">使用</string>
@@ -293,8 +292,8 @@
     <string name="input_settings_profile_delete_title">删除方案</string>
     <string name="input_settings_profile_delete_message">确定删除「%1$s」？该方案的按键布局将一并移除，且无法恢复。</string>
     <string name="input_settings_profile_name_hint">最多 24 个字符</string>
-    <string name="pad_layout_edit_title">编辑按键布局</string>
     <string name="pad_layout_edit_saved">布局已保存</string>
+    <string name="pad_layout_edit_hint">点按选中按钮、拖拽调整位置；改完点「保存」，用系统返回键退出（不保存）</string>
     <string name="input_settings_profile_copy">复制</string>
     <string name="input_settings_profile_rename">重命名</string>
     <string name="input_settings_profile_delete">删除</string>
@@ -305,7 +304,6 @@
     <string name="input_settings_profile_export_done">方案已导出</string>
     <string name="input_settings_profile_export_failed">导出失败</string>
     <string name="input_settings_profile_new_name">新方案名称</string>
-    <string name="input_settings_profile_delete_default_blocked">默认方案不可删除</string>
     <string name="input_settings_gamepad_buttons_label">手柄按键</string>
     <string name="input_settings_gamepad_sticks_label">摇杆</string>
     <string name="input_settings_stick_left">左摇杆</string>
