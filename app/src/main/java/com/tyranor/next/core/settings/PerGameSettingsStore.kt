@@ -13,7 +13,7 @@ import org.json.JSONObject
  *
  * 存储已迁移到 game_overrides 表（迁移方案阶段 4）：本类保留原同步 API，
  * 内部为 Repository 门面——DB 为 App 侧事实源；prefs 文件作为引擎子进程
- * （TyranoActivity/TouchPadSaveBridge 整条读改写）的同步镜像，每次写入即刷。
+ * （TyranoActivity / RpgMakerActivity 启动时读取生效设置）的同步镜像，每次写入即刷。
  * prefs 文件名契约锚点在 engine，改名只需改 EnginePrefs 一处。
  */
 object PerGameSettingsStore {
@@ -59,6 +59,11 @@ object PerGameSettingsStore {
     const val F_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val F_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val F_RPG_MZ_VERSION = "rpg_mz_engine_version"
+
+    // 输入重映射（虚拟按键 + 手柄映射）单游戏覆盖键（与 engine InputConfigStore 字面量锚定）
+    const val F_INPUT_PAD_ENABLED = "input_pad_enabled"
+    const val F_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
+    const val F_INPUT_PROFILE_ID = "input_profile_id"
 
     // RPG Maker RGSS 外置模块（settings extra 的 rpg 节，null=跟随全局）
     const val F_RPG_USE_RUBY18 = "rpg_use_ruby18"

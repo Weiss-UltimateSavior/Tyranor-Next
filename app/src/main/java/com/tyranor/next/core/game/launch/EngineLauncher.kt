@@ -56,6 +56,7 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
@@ -88,6 +89,12 @@ object EngineLauncher {
     private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
+
+    /** 承载输入重映射（虚拟按键 + 手柄映射）的 Web 系引擎：旧触屏手柄数据迁移仅对这些引擎触发。 */
+    private val WEB_INPUT_ENGINES = setOf(
+        EngineType.RPG_MV, EngineType.RPG_MZ, EngineType.TYRANO,
+        EngineType.VN, EngineType.WEB_OTHER,
+    )
 
     // 前台兜底回写：引擎 finish 后约 500ms 才杀进程，轮询等待其退出的间隔与上限
     private const val SESSION_EXIT_POLL_MS = 400L
@@ -332,6 +339,11 @@ object EngineLauncher {
                     EngineSettingsStore.setArtAutoPatch(context, EngineSettingsStore.AUTO_PATCH_OFF)
                 else -> Unit
             }
+        }
+        // 输入重映射：旧 __touch_pad.js 布局/预设 → 新方案文件（幂等；仅 Web 系引擎有旧数据）
+        if (game.engine in WEB_INPUT_ENGINES) {
+            runCatching { InputRemapRepository.migrateLegacyIfNeeded(context.applicationContext, game.uri) }
+                .onFailure { Log.w(TAG, "input legacy migration failed uri=${game.uri}", it) }
         }
         // 阻塞准备（镜像/overlay/PFS）完成后统一检查取消：已取消则不执行任何启动副作用
         currentCoroutineContext().ensureActive()

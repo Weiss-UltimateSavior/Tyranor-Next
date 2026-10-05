@@ -1,0 +1,338 @@
+package com.core.input
+
+import android.view.KeyEvent
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * 虚拟按键方案（可编辑布局）数据模型。
+ *
+ * 坐标全部归一化到**全视口**（0..1，允许 -0.1..1.1 小幅出界摆放）：横竖屏切换按比例
+ * 重映射，位置不漂移（沿用原 `__touch_pad.js` 的归一化策略）。`size` 为宽度相对
+ * `min(视口宽, 视口高)` 的比例；高度 = 宽度 × [PadButton.aspect]。
+ */
+data class PadButton(
+    val id: String,
+    val text: String,
+    val x: Float,
+    val y: Float,
+    val size: Float,
+    val aspect: Float = DEFAULT_ASPECT,
+    val shape: String = SHAPE_ROUND,
+    val visible: Boolean = true,
+    val keys: List<Int> = emptyList(),
+    val autoKeep: Boolean = false,
+) {
+    companion object {
+        const val SHAPE_ROUND = "round"
+        const val SHAPE_SQUARE = "square"
+        const val DEFAULT_ASPECT = 0.46f
+        const val MIN_SIZE = 0.02f
+        const val MAX_SIZE = 0.60f
+    }
+}
+
+/** 方向控件（摇杆外观，四向/八向）。八向由相邻两方向组合派发，不单独配置键位。 */
+data class PadDirection(
+    val x: Float = 0.17f,
+    val y: Float = 0.80f,
+    val size: Float = 0.30f,
+    val visible: Boolean = true,
+    val eightDir: Boolean = true,
+    val up: List<Int> = listOf(KeyEvent.KEYCODE_DPAD_UP),
+    val down: List<Int> = listOf(KeyEvent.KEYCODE_DPAD_DOWN),
+    val left: List<Int> = listOf(KeyEvent.KEYCODE_DPAD_LEFT),
+    val right: List<Int> = listOf(KeyEvent.KEYCODE_DPAD_RIGHT),
+)
+
+data class PadProfile(
+    val id: String,
+    val name: String,
+    val buttons: List<PadButton>,
+    val direction: PadDirection = PadDirection(),
+) {
+
+    /** 覆盖同 id 按钮；不存在时追加到末尾（编辑模式新增 / 复制的写入路径）。 */
+    fun withButton(button: PadButton): PadProfile =
+        if (buttons.any { it.id == button.id }) {
+            copy(buttons = buttons.map { if (it.id == button.id) button else it })
+        } else {
+            copy(buttons = buttons + button)
+        }
+
+    fun removeButton(id: String): PadProfile = copy(buttons = buttons.filterNot { it.id == id })
+
+    fun toJson(): String {
+        val root = JSONObject()
+        root.put("schema", SCHEMA)
+        root.put("id", id)
+        root.put("name", name)
+        root.put("direction", directionToJson(direction))
+        val array = JSONArray()
+        buttons.forEach { array.put(buttonToJson(it)) }
+        root.put("buttons", array)
+        return root.toString()
+    }
+
+    companion object {
+
+        const val SCHEMA = 1
+
+        const val BUILTIN_DEFAULT_ID = "default"
+
+        fun parse(raw: String?): PadProfile? {
+            if (raw.isNullOrBlank()) return null
+            return runCatching {
+                val root = JSONObject(raw)
+                val id = root.optString("id").takeIf { it.isNotBlank() } ?: return null
+                val name = root.optString("name").takeIf { it.isNotBlank() } ?: id
+                val buttons = ArrayList<PadButton>()
+                root.optJSONArray("buttons")?.let { array ->
+                    for (i in 0 until array.length()) {
+                        val obj = array.optJSONObject(i) ?: continue
+                        buttonFromJson(obj)?.let { buttons.add(it) }
+                    }
+                }
+                PadProfile(
+                    id = id,
+                    name = name,
+                    buttons = buttons,
+                    direction = directionFromJson(root.optJSONObject("direction")),
+                )
+            }.getOrNull()
+        }
+
+        /**
+         * 出厂默认布局：右侧动作键列 + 右下 QWZX 菱形 + 左下方向摇杆。
+         *
+         * 名称与按钮文字为语言中立的 ASCII（方案名/按钮文字是随方案持久化的用户数据，
+         * 不参与界面文案本地化；默认方案的展示名在设置页按 id 映射到字符串资源）。
+         */
+        fun defaultProfile(id: String = BUILTIN_DEFAULT_ID, name: String = "Default"): PadProfile {
+            val ok = KeyEvent.KEYCODE_ENTER
+            val space = KeyEvent.KEYCODE_SPACE
+            val esc = KeyEvent.KEYCODE_ESCAPE
+            val ctrl = KeyEvent.KEYCODE_CTRL_LEFT
+            val pageUp = KeyEvent.KEYCODE_PAGE_UP
+            val pageDown = KeyEvent.KEYCODE_PAGE_DOWN
+            val tab = KeyEvent.KEYCODE_TAB
+
+            fun action(btnId: String, text: String, y: Float, keys: List<Int>, autoKeep: Boolean = false) =
+                PadButton(
+                    id = btnId, text = text, x = 0.93f, y = y, size = 0.115f,
+                    keys = keys, autoKeep = autoKeep,
+                )
+
+            fun qwzx(btnId: String, text: String, x: Float, y: Float, keyCode: Int) =
+                PadButton(
+                    id = btnId, text = text, x = x, y = y, size = 0.088f,
+                    aspect = 1f, shape = PadButton.SHAPE_ROUND, keys = listOf(keyCode),
+                )
+
+            return PadProfile(
+                id = id,
+                name = name,
+                buttons = listOf(
+                    action("ok", "OK", 0.50f, listOf(ok, space)),
+                    action("cancel", "Esc", 0.585f, listOf(esc)),
+                    action("skip", "Skip", 0.67f, listOf(ctrl), autoKeep = true),
+                    action("pageup", "PageUp", 0.415f, listOf(pageUp)),
+                    action("pagedown", "PageDn", 0.33f, listOf(pageDown)),
+                    action("tab", "Tab", 0.245f, listOf(tab)),
+                    qwzx("q", "Q", 0.695f, 0.885f, KeyEvent.KEYCODE_Q),
+                    qwzx("w", "W", 0.78f, 0.80f, KeyEvent.KEYCODE_W),
+                    qwzx("z", "Z", 0.78f, 0.97f, KeyEvent.KEYCODE_Z),
+                    qwzx("x", "X", 0.865f, 0.885f, KeyEvent.KEYCODE_X),
+                ),
+                direction = PadDirection(),
+            )
+        }
+
+        /**
+         * 旧 `__touch_pad.js` 布局（`touch_pad_config`）与其预设（`touch_pad_presets`）
+         * → 新方案列表。返回空列表表示无旧数据。
+         *
+         * 位置（旧编辑态已存归一化中心坐标）与显隐原样保留；旧 `scale` 与新 `size`
+         * 语义不同（旧相对 padSize、新相对 min(视口边)），不强行换算，尺寸回落新默认。
+         * 旧开关类按钮（btn.hide / btn.stick / btn.dir8）由原生 FAB 取代，不迁移。
+         */
+        fun migrateLegacy(configJson: String?, presetsJson: String?): List<PadProfile> {
+            val result = ArrayList<PadProfile>()
+            parseLegacyConfig(configJson)?.let {
+                result.add(it.copy(id = BUILTIN_DEFAULT_ID, name = "Default"))
+            }
+            runCatching {
+                val presets = JSONObject(presetsJson.orEmpty())
+                val names = presets.names() ?: return@runCatching
+                for (i in 0 until names.length()) {
+                    val name = names.optString(i).takeIf { it.isNotBlank() } ?: continue
+                    val legacy = parseLegacyConfig(presets.optJSONObject(name)?.toString()) ?: continue
+                    result.add(
+                        legacy.copy(
+                            id = "migrated-" + sanitizeLegacyId(name),
+                            name = name.take(24),
+                        ),
+                    )
+                }
+            }
+            return result
+        }
+
+        /** 旧按钮 id → 新按钮模板（文本 / canonical 键位 / 默认尺寸）。 */
+        private class LegacyTemplate(
+            val text: String,
+            val keys: List<Int>,
+            val size: Float = 0.115f,
+            val aspect: Float = PadButton.DEFAULT_ASPECT,
+            val shape: String = PadButton.SHAPE_ROUND,
+        )
+
+        private val LEGACY_ACTIONS: List<Pair<String, LegacyTemplate>> = listOf(
+            "pageup" to LegacyTemplate("PageUp", listOf(KeyEvent.KEYCODE_PAGE_UP)),
+            "pagedown" to LegacyTemplate("PageDn", listOf(KeyEvent.KEYCODE_PAGE_DOWN)),
+            "tab" to LegacyTemplate("Tab", listOf(KeyEvent.KEYCODE_TAB)),
+            "alt" to LegacyTemplate("Alt", listOf(KeyEvent.KEYCODE_ALT_LEFT)),
+            "ctrl" to LegacyTemplate("Ctrl", listOf(KeyEvent.KEYCODE_CTRL_LEFT)),
+            "shift" to LegacyTemplate("Shift", listOf(KeyEvent.KEYCODE_SHIFT_LEFT)),
+            "space" to LegacyTemplate("Space", listOf(KeyEvent.KEYCODE_SPACE)),
+            "enter" to LegacyTemplate("Enter", listOf(KeyEvent.KEYCODE_ENTER)),
+            "esc" to LegacyTemplate("Esc", listOf(KeyEvent.KEYCODE_ESCAPE)),
+        )
+
+        private val LEGACY_QWZX: List<Triple<String, Int, Pair<Float, Float>>> = listOf(
+            Triple("q", KeyEvent.KEYCODE_Q, -0.085f to 0f),
+            Triple("w", KeyEvent.KEYCODE_W, 0f to -0.085f),
+            Triple("z", KeyEvent.KEYCODE_Z, 0f to 0.085f),
+            Triple("x", KeyEvent.KEYCODE_X, 0.085f to 0f),
+        )
+
+        /** 单个旧布局 JSON → 新方案；无任何可迁移按钮（如仅旧开关）返回 null。 */
+        private fun parseLegacyConfig(raw: String?): PadProfile? {
+            if (raw.isNullOrBlank()) return null
+            return runCatching {
+                val buttonsObj = JSONObject(raw).optJSONObject("buttons") ?: return null
+                val migrated = ArrayList<PadButton>()
+
+                LEGACY_ACTIONS.forEach { (legacyId, template) ->
+                    val legacy = buttonsObj.optJSONObject(legacyId) ?: return@forEach
+                    migrated.add(
+                        PadButton(
+                            id = legacyId,
+                            text = template.text,
+                            x = legacy.optDouble("x", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
+                            y = legacy.optDouble("y", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
+                            size = template.size,
+                            aspect = template.aspect,
+                            shape = template.shape,
+                            visible = legacy.optBoolean("visible", true),
+                            keys = template.keys,
+                        ),
+                    )
+                }
+                // 旧 QWZX 为整组一个配置（存组中心），拆成四个独立按钮组成菱形
+                buttonsObj.optJSONObject("qwzx")?.let { legacy ->
+                    val cx = legacy.optDouble("x", 0.78).toFloat().coerceIn(-0.1f, 1.1f)
+                    val cy = legacy.optDouble("y", 0.885).toFloat().coerceIn(-0.1f, 1.1f)
+                    val visible = legacy.optBoolean("visible", true)
+                    LEGACY_QWZX.forEach { (btnId, keyCode, offset) ->
+                        migrated.add(
+                            PadButton(
+                                id = btnId,
+                                text = btnId.uppercase(),
+                                x = (cx + offset.first).coerceIn(-0.1f, 1.1f),
+                                y = (cy + offset.second).coerceIn(-0.1f, 1.1f),
+                                size = 0.088f,
+                                aspect = 1f,
+                                visible = visible,
+                                keys = listOf(keyCode),
+                            ),
+                        )
+                    }
+                }
+
+                var direction = PadDirection()
+                (buttonsObj.optJSONObject("joystick") ?: buttonsObj.optJSONObject("dpad"))?.let { legacy ->
+                    direction = direction.copy(
+                        x = legacy.optDouble("x", direction.x.toDouble()).toFloat().coerceIn(-0.1f, 1.1f),
+                        y = legacy.optDouble("y", direction.y.toDouble()).toFloat().coerceIn(-0.1f, 1.1f),
+                        visible = legacy.optBoolean("visible", true),
+                    )
+                }
+                if (migrated.isEmpty()) return null
+                PadProfile(BUILTIN_DEFAULT_ID, "Default", migrated, direction)
+            }.getOrNull()
+        }
+
+        private fun sanitizeLegacyId(name: String): String =
+            name.trim().replace(Regex("[^A-Za-z0-9_-]+"), "-").trim('-').take(24)
+                .ifBlank { "preset" }
+
+        private fun buttonToJson(button: PadButton): JSONObject = JSONObject().apply {
+            put("id", button.id)
+            put("text", button.text)
+            put("x", button.x.toDouble())
+            put("y", button.y.toDouble())
+            put("size", button.size.toDouble())
+            put("aspect", button.aspect.toDouble())
+            put("shape", button.shape)
+            if (!button.visible) put("visible", false)
+            put("keys", JSONArray().apply { button.keys.forEach { put(it) } })
+            if (button.autoKeep) put("autoKeep", true)
+        }
+
+        private fun buttonFromJson(obj: JSONObject): PadButton? {
+            val id = obj.optString("id").takeIf { it.isNotBlank() } ?: return null
+            return PadButton(
+                id = id,
+                text = obj.optString("text"),
+                x = obj.optDouble("x", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
+                y = obj.optDouble("y", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
+                size = obj.optDouble("size", 0.1).toFloat()
+                    .coerceIn(PadButton.MIN_SIZE, PadButton.MAX_SIZE),
+                aspect = obj.optDouble("aspect", PadButton.DEFAULT_ASPECT.toDouble()).toFloat()
+                    .coerceIn(0.1f, 2f),
+                shape = obj.optString("shape", PadButton.SHAPE_ROUND),
+                visible = obj.optBoolean("visible", true),
+                keys = keysFromJson(obj.optJSONArray("keys")),
+                autoKeep = obj.optBoolean("autoKeep", false),
+            )
+        }
+
+        private fun directionToJson(direction: PadDirection): JSONObject = JSONObject().apply {
+            put("x", direction.x.toDouble())
+            put("y", direction.y.toDouble())
+            put("size", direction.size.toDouble())
+            if (!direction.visible) put("visible", false)
+            put("eightDir", direction.eightDir)
+            put("up", JSONArray().apply { direction.up.forEach { put(it) } })
+            put("down", JSONArray().apply { direction.down.forEach { put(it) } })
+            put("left", JSONArray().apply { direction.left.forEach { put(it) } })
+            put("right", JSONArray().apply { direction.right.forEach { put(it) } })
+        }
+
+        private fun directionFromJson(obj: JSONObject?): PadDirection {
+            if (obj == null) return PadDirection()
+            return PadDirection(
+                x = obj.optDouble("x", 0.17).toFloat().coerceIn(-0.1f, 1.1f),
+                y = obj.optDouble("y", 0.80).toFloat().coerceIn(-0.1f, 1.1f),
+                size = obj.optDouble("size", 0.30).toFloat().coerceIn(0.08f, 0.8f),
+                visible = obj.optBoolean("visible", true),
+                eightDir = obj.optBoolean("eightDir", true),
+                up = keysFromJson(obj.optJSONArray("up")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_UP) },
+                down = keysFromJson(obj.optJSONArray("down")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_DOWN) },
+                left = keysFromJson(obj.optJSONArray("left")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_LEFT) },
+                right = keysFromJson(obj.optJSONArray("right")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_RIGHT) },
+            )
+        }
+
+        private fun keysFromJson(array: JSONArray?): List<Int> {
+            if (array == null) return emptyList()
+            val result = ArrayList<Int>(array.length())
+            for (i in 0 until array.length()) {
+                val value = array.optInt(i, 0)
+                if (value > 0) result.add(value)
+            }
+            return result
+        }
+    }
+}

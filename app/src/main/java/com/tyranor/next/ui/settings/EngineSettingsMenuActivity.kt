@@ -120,4 +120,6 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int, @param:Drawabl
     FVP(R.string.engine_settings_fvp_title, R.drawable.ic_settings_engine),
     PPSSPP(R.string.engine_settings_ppsspp_title, R.drawable.ic_settings_engine),
     WINLATOR(R.string.engine_settings_winlator_title, R.drawable.ic_settings_engine),
+    /** 输入重映射（虚拟按键 + 手柄映射）：不隶属单一引擎，Web 系全引擎共享。 */
+    INPUT(R.string.engine_settings_input_title, R.drawable.ic_settings_engine),
 }

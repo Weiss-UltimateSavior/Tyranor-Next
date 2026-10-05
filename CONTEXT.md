@@ -172,6 +172,28 @@ _Avoid_: 转码、迁移（迁移专指目录位置变更）、写死 `<游戏�
 开启后 MV/MZ 的存档在「标准侧 `<内容根>/save`」与「Tyranor 侧生效存档目录」（独立存档开关决定，检测/转化/同步三处同源）间双向自动同步：启动前与回到前台各同步一次（退出后 500ms 强杀进程、无回调，故以前台兜底并等待会话进程退出）。标准侧兼容 `save` / `Save` 两种拼写（同槽位内容一致视为等价副本，不一致把未选中副本隔离进 `deleted/`）；导入压缩包会剥掉外层文件夹包装。逐槽位较新者胜，mtime 相同须内容哈希一致才跳过；Tyranor 侧已删除的槽位把标准侧对应文件移入 `<标准侧>/deleted/`；标准侧缺失则重新导出。以应用私有同步清单区分「新建」与「已删除」，清单损坏即中止同步（不做任何文件改动）。由全局/单游戏开关控制，默认关。
 _Avoid_: 云同步、备份（与存档镜像不同）
 
+## 输入重映射
+
+**输入重映射（Input Remap）**:
+engine 模块 `com.core.input` 下的统一输入组件：把「虚拟按键 / 物理手柄 /（后续）物理键盘」等输入源归一到 canonical 键位空间（键盘段=Android keycode、1000 段=鼠标键、2000 段=功能动作），再经每宿主一份的 `InputSink` 注入目标引擎。Web 系宿主（Tyrano / MV / MZ / VN / WebOther）经 `InputRemapController.installWeb` 一键装配，其余内置引擎按同一接口后续接入。取代原 `__touch_pad.js` 注入式实现（该资产已删除）。
+_Avoid_: 触屏手柄（旧称，指已下线的 JS 实现）、虚拟键盘（指按键层外观时用「虚拟按键」）
+
+**虚拟按键（Virtual Pad）**:
+叠加在游戏画面上的原生按键层（`VirtualPadView` 自绘 View）：显示当前**按键方案**的按钮与方向控件，负责命中、按下态与编辑模式（拖拽 / 缩放 / 增删 / 改键 / 显隐）。悬浮球（FAB）可拖动并持久化位置；点按切换按键层显隐，长按进入编辑。编辑面板 `VirtualPadEditPanel` 与键位选择对话框均为原生实现。
+_Avoid_: 软键盘、IME、游戏自带按键
+
+**按键方案（PadProfile）**:
+一套虚拟按键布局（按钮列表 + 方向控件配置），文件存于 `<filesDir>/input/profiles/<id>.json`，游戏内编辑与设置页共用。坐标归一化到全视口（0..1，允许 -0.1..1.1 出界摆放），横竖屏切换按比例重映射；`size` 为屏幕短边比例。`default` 为内置方案 id（可编辑、不可删除）；旧 `__touch_pad.js` 的 `touch_pad_config` / `touch_pad_presets` 在首次启动对应游戏时一次性迁移为方案文件。
+_Avoid_: 布局文件、preset（预设为旧实现术语）
+
+**手柄映射（GamepadMap）**:
+物理手柄 16 个逻辑按键（A/B/X/Y、START/SELECT、L1/R1、L2/R2、L3/R3、D-Pad 四向）+ 左右摇杆四方向仿真 → 多键位输出（可含鼠标键）的映射表，文件存于 `<filesDir>/input/gamepad_map.json`。摇杆仿真带死区与滞回；`autoKeep` 表示「按下保持」（再按一次释放）。手柄事件由宿主 `dispatchKeyEvent` / `dispatchGenericMotionEvent` 交给 `InputRouter`，命中映射即消费（外接键盘不受影响，BACK 不拦截）。
+_Avoid_: 控制器、JoyKey
+
+**输入开关（input_pad_enabled / input_gamepad_enabled / input_profile_id）**:
+虚拟按键、手柄映射与方案选择的全局/单游戏设置键：全局存 `tyranor_prefs`，单游戏覆盖存 `game_overrides` blob 同名字段（缺失=跟随全局）。键名三处字面量锚定：engine `InputConfigStore`、`EngineSettingsStore` / `PerGameSettingsStore`、`GameOverridePartitions`。
+_Avoid_: 触屏设置、按键开关
+
 ## 拆封包
 
 **拆封包（Archive Unpack / Pack）**:

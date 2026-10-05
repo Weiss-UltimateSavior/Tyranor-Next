@@ -52,4 +52,6 @@ dependencies {
     implementation libs.androidx.documentfile
     implementation libs.kotlin.stdlib
     testImplementation libs.junit
+    // 本地单测覆盖 android.jar 的 org.json stub（input 配置模型测试需要）
+    testImplementation libs.json
 }

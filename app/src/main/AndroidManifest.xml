@@ -84,6 +84,9 @@
             android:name=".ui.settings.PerGameSettingsActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.settings.GamepadMapActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.settings.AppSettingsActivity"
             android:exported="false" />
         <activity

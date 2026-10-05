@@ -17,7 +17,7 @@ object EnginePrefs {
 
     /**
      * 单游戏引擎设置覆盖层 prefs 文件名。
-     * 由 app 侧 PerGameSettingsStore 与引擎 TyranoActivity / TouchPadSaveBridge 共同读写；
+     * 由 app 侧 PerGameSettingsStore 统一读写（DB 为事实源，本文件为引擎子进程的只读镜像）；
      * 引擎不得反向依赖 app，故契约锚点定在 engine、app 直接引用本常量，避免两侧字面量漂移。
      */
     const val GAME_OVERRIDES_PREFS = "tyranor_game_overrides"

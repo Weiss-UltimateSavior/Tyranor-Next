@@ -5,10 +5,11 @@ import org.json.JSONObject
 /**
  * 单游戏覆盖记录在「prefs 整条 JSON blob」与「DB 分区列」之间的双向映射（迁移方案 4.4）。
  *
- * 引擎契约（TyranoActivity.TouchPadSaveBridge）：引擎子进程对 prefs blob 整条读改写，
- * 仅触碰 touchpad 两键；键名在此以字面量锚定（与 PerGameSettingsStore 的 F_* 常量、
- * 引擎侧常量三处对应，GameOverridePartitionsTest 约束一致），避免 storage 反向依赖
- * settings 形成包环。未识别的顶层键兜底归入 tyrano 分区，保证组装不丢字段。
+ * 引擎契约：引擎子进程只读 prefs blob 镜像（TyranoActivity / RpgMakerActivity 启动时
+ * 解析生效设置，含输入重映射开关与方案 id）；写路径已全部收敛到 app 侧，不再有引擎回写。
+ * 键名在此以字面量锚定（与 PerGameSettingsStore 的 F_* 常量、引擎侧常量三处对应，
+ * GameOverridePartitionsTest 约束一致），避免 storage 反向依赖 settings 形成包环。
+ * 未识别的顶层键兜底归入 tyrano 分区，保证组装不丢字段。
  */
 internal object GameOverridePartitions {
 
@@ -42,6 +43,10 @@ internal object GameOverridePartitions {
     const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val KEY_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val KEY_RPG_MZ_VERSION = "rpg_mz_engine_version"
+    // 输入重映射（虚拟按键 + 手柄映射）单游戏覆盖键；与 engine 侧 InputConfigStore 字面量锚定
+    const val KEY_INPUT_PAD_ENABLED = "input_pad_enabled"
+    const val KEY_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
+    const val KEY_INPUT_PROFILE_ID = "input_profile_id"
     // RPG Maker RGSS 外置模块覆盖键（与 PerGameSettingsStore.F_RPG_* 字面量锚定）
     const val KEY_RPG_USE_RUBY18 = "rpg_use_ruby18"
     const val KEY_RPG_DEBUG = "rpg_debug"
@@ -98,6 +103,7 @@ internal object GameOverridePartitions {
     val TYRANO_KEYS: Set<String> = setOf(
         KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED, KEY_RPG_SAVE_INTEROP,
         KEY_RPG_LEGACY_RENDERER, KEY_RPG_MV_VERSION, KEY_RPG_MZ_VERSION,
+        KEY_INPUT_PAD_ENABLED, KEY_INPUT_GAMEPAD_ENABLED, KEY_INPUT_PROFILE_ID,
         KEY_RPG_USE_RUBY18, KEY_RPG_DEBUG, KEY_RPG_SMOOTH_SCALING, KEY_RPG_VSYNC,
         KEY_RPG_FRAME_SKIP, KEY_RPG_SOLID_FONTS, KEY_RPG_PATH_CACHE,
         KEY_RPG_PREBUILT_PATH_CACHE, KEY_RPG_FAST_PATH_ENUM, KEY_RPG_COPY_TEXT,
