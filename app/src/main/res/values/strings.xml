@@ -293,6 +293,9 @@
     <string name="input_settings_profiles_summary">每个方案是一套虚拟按键布局，可在游戏内直接编辑</string>
     <string name="input_settings_profile_default">默认布局</string>
     <string name="input_settings_profile_new">新建方案</string>
+    <string name="input_settings_profile_edit">编辑布局</string>
+    <string name="pad_layout_edit_title">编辑按键布局</string>
+    <string name="pad_layout_edit_saved">布局已保存</string>
     <string name="input_settings_profile_copy">复制</string>
     <string name="input_settings_profile_rename">重命名</string>
     <string name="input_settings_profile_delete">删除</string>

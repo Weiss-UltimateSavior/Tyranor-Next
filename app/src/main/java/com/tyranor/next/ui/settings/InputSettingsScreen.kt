@@ -55,10 +55,22 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 手柄映射编辑页：逐逻辑按键与摇杆方向编辑输出键位。
+ * 输入与手柄设置页：全局虚拟按键/手柄映射开关、按键方案管理与手柄映射入口。
  *
- * 全局输入设置页本身由 [EngineSettingsActivity] 的 INPUT 分支承载（见 EngineSettingsKind.INPUT）。
+ * 入口在设置页「引擎设置」下方，与 EngineSettingsMenuActivity 平级（不隶属单一引擎）。
  */
+class InputSettingsActivity : AppScreenActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setAppScreenContent { InputSettingsScreen() }
+    }
+
+    companion object {
+        fun createIntent(context: Context): Intent = Intent(context, InputSettingsActivity::class.java)
+    }
+}
+
+/** 手柄映射编辑页：逐逻辑按键与摇杆方向编辑输出键位。 */
 class GamepadMapActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,6 +117,19 @@ internal fun InputSettingsScreen() {
                 toast(ctx, R.string.input_settings_profile_import_done)
             }
         }
+    }
+
+    // 从编辑页返回时重读方案与当前选择（编辑页可能在游戏外改了布局）
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                profiles = InputRemapRepository.listProfiles(ctx)
+                profileId = InputRemapRepository.globalProfileId(ctx)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -174,26 +199,7 @@ internal fun InputSettingsScreen() {
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         )
-                        profiles.forEach { profile ->
-                            ProfileRow(
-                                profile = profile,
-                                selected = profile.id == profileId,
-                                onSelect = {
-                                    profileId = profile.id
-                                    InputRemapRepository.setGlobalProfileId(ctx, profile.id)
-                                },
-                                onRename = { renameTarget = profile.id },
-                                onCopy = {
-                                    val id = InputRemapRepository.newProfileId(ctx)
-                                    val name = InputRemapRepository.uniqueProfileName(ctx, profile.name + " " + ctx.getString(R.string.input_settings_profile_copy))
-                                    InputRemapRepository.duplicateProfile(ctx, profile, id, name)?.let {
-                                        profiles = InputRemapRepository.listProfiles(ctx)
-                                    }
-                                },
-                                onDelete = { deleteTarget = profile.id },
-                                onExport = { exportTarget = profile },
-                            )
-                        }
+                        // 新建/导入置于方案列表上方（列表条目随方案数量增长，操作入口保持固定位置）
                         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
                             Box(Modifier.weight(1f)) {
                                 DialogTextButton(
@@ -207,6 +213,29 @@ internal fun InputSettingsScreen() {
                                     onClick = { importLauncher.launch("application/json") },
                                 )
                             }
+                        }
+                        profiles.forEach { profile ->
+                            ProfileRow(
+                                profile = profile,
+                                selected = profile.id == profileId,
+                                onSelect = {
+                                    profileId = profile.id
+                                    InputRemapRepository.setGlobalProfileId(ctx, profile.id)
+                                },
+                                onEdit = {
+                                    startActivityWithPageTransition(ctx, PadLayoutEditActivity.createIntent(ctx, profile.id))
+                                },
+                                onRename = { renameTarget = profile.id },
+                                onCopy = {
+                                    val id = InputRemapRepository.newProfileId(ctx)
+                                    val name = InputRemapRepository.uniqueProfileName(ctx, profile.name + " " + ctx.getString(R.string.input_settings_profile_copy))
+                                    InputRemapRepository.duplicateProfile(ctx, profile, id, name)?.let {
+                                        profiles = InputRemapRepository.listProfiles(ctx)
+                                    }
+                                },
+                                onDelete = { deleteTarget = profile.id },
+                                onExport = { exportTarget = profile },
+                            )
                         }
                     }
                 }
@@ -320,6 +349,7 @@ private fun ProfileRow(
     profile: PadProfile,
     selected: Boolean,
     onSelect: () -> Unit,
+    onEdit: () -> Unit,
     onRename: () -> Unit,
     onCopy: () -> Unit,
     onDelete: () -> Unit,
@@ -334,19 +364,24 @@ private fun ProfileRow(
     Column(Modifier.fillMaxWidth()) {
         ArrowPreference(
             title = (if (selected) "✓ " else "") + displayName,
-            summary = if (selected) stringResource(R.string.engine_settings_input_profile_title) else null,
+            summary = null,
             onClick = onSelect,
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            listOf(
-                stringResource(R.string.input_settings_profile_rename) to onRename,
-                stringResource(R.string.input_settings_profile_copy) to onCopy,
-                stringResource(R.string.input_settings_profile_export) to onExport,
-                stringResource(R.string.input_settings_profile_delete) to onDelete,
-            ).forEach { (label, action) ->
-                Box(Modifier.weight(1f)) {
-                    DialogTextButton(text = label, onClick = action)
-                }
+            Box(Modifier.weight(1f)) {
+                DialogTextButton(text = stringResource(R.string.input_settings_profile_edit), onClick = onEdit)
+            }
+            Box(Modifier.weight(1f)) {
+                DialogTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
+            }
+            Box(Modifier.weight(1f)) {
+                DialogTextButton(text = stringResource(R.string.input_settings_profile_copy), onClick = onCopy)
+            }
+            Box(Modifier.weight(1f)) {
+                DialogTextButton(text = stringResource(R.string.input_settings_profile_export), onClick = onExport)
+            }
+            Box(Modifier.weight(1f)) {
+                DialogTextButton(text = stringResource(R.string.input_settings_profile_delete), onClick = onDelete)
             }
         }
     }

@@ -87,6 +87,12 @@
             android:name=".ui.settings.GamepadMapActivity"
             android:exported="false" />
         <activity
+            android:name=".ui.settings.InputSettingsActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.settings.PadLayoutEditActivity"
+            android:exported="false" />
+        <activity
             android:name=".ui.settings.AppSettingsActivity"
             android:exported="false" />
         <activity

@@ -293,6 +293,9 @@
     <string name="input_settings_profiles_summary">1つの配置＝1つのバーチャルパッドレイアウト。ゲーム内で直接編集できます</string>
     <string name="input_settings_profile_default">デフォルトレイアウト</string>
     <string name="input_settings_profile_new">新規配置</string>
+    <string name="input_settings_profile_edit">レイアウト編集</string>
+    <string name="pad_layout_edit_title">キー配置を編集</string>
+    <string name="pad_layout_edit_saved">レイアウトを保存しました</string>
     <string name="input_settings_profile_copy">複製</string>
     <string name="input_settings_profile_rename">名前変更</string>
     <string name="input_settings_profile_delete">削除</string>

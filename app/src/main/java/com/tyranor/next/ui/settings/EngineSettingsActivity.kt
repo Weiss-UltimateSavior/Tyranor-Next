@@ -16,12 +16,7 @@ class EngineSettingsActivity : AppScreenActivity() {
         }
 
         setAppScreenContent {
-            // 输入与手柄设置无「编辑→保存」批量模型（写入即时生效），直接复用专属页面
-            if (kind == EngineSettingsKind.INPUT) {
-                InputSettingsScreen()
-            } else {
-                EngineSettingsDetailScreen(kind = kind)
-            }
+            EngineSettingsDetailScreen(kind = kind)
         }
     }
 

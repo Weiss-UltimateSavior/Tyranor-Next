@@ -58,6 +58,10 @@
     <string name="engine_input_direction_keys_hint">方向键位暂请使用默认（方向键上下左右）</string>
     <string name="engine_input_direction">方向键</string>
     <string name="engine_input_duplicate">复制</string>
+    <string name="engine_input_add">新增</string>
+    <string name="engine_input_new_button">普通按钮</string>
+    <string name="engine_input_new_direction">方向键（摇杆）</string>
+    <string name="engine_input_direction_exists">方向键已存在</string>
     <string name="engine_input_delete">删除</string>
     <string name="engine_input_reset">恢复默认</string>
     <string name="engine_input_save">保存</string>

@@ -120,6 +120,9 @@ class VirtualPadView(
     private val handler = Handler(Looper.getMainLooper())
     private val fabLongPress = Runnable {
         if (!fabMoved && !editing) {
+            // 长按已消费本次手势：先清掉 FAB 跟踪状态，否则编辑保存后残留的
+            // fabPointerId/fabGrabDx 会在下一次非编辑触摸的 MOVE 中把 FAB 拖到手指处
+            resetFabGesture()
             enterEditMode()
         }
     }
@@ -312,7 +315,20 @@ class VirtualPadView(
     // ---------- 触摸 ----------
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        return if (editing) handleEditTouch(event) else handlePlayTouch(event)
+        if (editing) {
+            // 长按进入编辑时手指可能仍按着：进入编辑的瞬间终止 FAB 手势跟踪，
+            // 避免其状态跨会话残留到编辑结束之后（见 fabLongPress）
+            if (fabPointerId != -1) resetFabGesture()
+            return handleEditTouch(event)
+        }
+        return handlePlayTouch(event)
+    }
+
+    /** 终止 FAB 手势跟踪并取消未决的长按。 */
+    private fun resetFabGesture() {
+        fabPointerId = -1
+        fabMoved = false
+        handler.removeCallbacks(fabLongPress)
     }
 
     private fun handlePlayTouch(event: MotionEvent): Boolean {
@@ -322,6 +338,8 @@ class VirtualPadView(
                 val pointerId = event.getPointerId(index)
                 val x = event.getX(index)
                 val y = event.getY(index)
+                // 新手势开始：上一手势若未走完 UP/CANCEL（如长按进入编辑），先清理陈旧状态
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) resetFabGesture()
                 if (event.actionMasked == MotionEvent.ACTION_DOWN && fabRect.contains(x, y)) {
                     fabPointerId = pointerId
                     fabMoved = false
@@ -407,8 +425,7 @@ class VirtualPadView(
             }
 
             MotionEvent.ACTION_CANCEL -> {
-                fabPointerId = -1
-                handler.removeCallbacks(fabLongPress)
+                resetFabGesture()
                 releaseAllPointers()
                 return true
             }
@@ -591,6 +608,11 @@ class VirtualPadView(
 
     fun enterEditMode() {
         if (editing) return
+        // 进入编辑前清掉可能的 FAB 手势残留（长按路径与 JS 桥路径都经这里收口）
+        resetFabGesture()
+        // 编辑期释放所有按下的游戏按键，避免遗留按下状态
+        releaseAllPointers()
+        dispatcher.releaseAll()
         editing = true
         editProfile = profile.copy(buttons = profile.buttons.map { it.copy() })
         selectedId = elements.firstOrNull { element ->
@@ -721,6 +743,58 @@ class VirtualPadView(
         rebuild()
         notifySelection()
         invalidate()
+    }
+
+    /** 新增按钮的类型（编辑面板的「新增」对话框）。 */
+    enum class NewButtonType {
+        /** 普通按钮：可绑定任意键位 / 鼠标键。 */
+        BUTTON,
+
+        /** 方向键（摇杆外观，四/八方向）；每个方案仅一个。 */
+        DIRECTION,
+    }
+
+    /** 该类型当前能否新增（方向键至多一个）。 */
+    fun canAdd(type: NewButtonType): Boolean = when (type) {
+        NewButtonType.BUTTON -> true
+        NewButtonType.DIRECTION -> !activeProfile().direction.visible
+    }
+
+    /**
+     * 新增一个控件并选中；类型不可用时返回 null（方向键已存在）。
+     *
+     * 普通按钮落在屏幕中央、默认无键位绑定（先出现再绑定，避免误触发送错键）。
+     */
+    fun addButton(type: NewButtonType): String? {
+        if (!editing) return null
+        val active = activeProfile()
+        return when (type) {
+            NewButtonType.BUTTON -> {
+                var index = 1
+                var id = "btn-$index"
+                while (active.buttons.any { it.id == id } || id == DIRECTION_ID) {
+                    index++
+                    id = "btn-$index"
+                }
+                val button = PadButton(id = id, text = "New", x = 0.5f, y = 0.5f, size = 0.12f)
+                editProfile = active.copy(buttons = active.buttons + button)
+                selectedId = id
+                rebuild()
+                notifySelection()
+                invalidate()
+                id
+            }
+
+            NewButtonType.DIRECTION -> {
+                if (active.direction.visible) return null
+                editProfile = active.copy(direction = active.direction.copy(visible = true))
+                selectedId = DIRECTION_ID
+                rebuild()
+                notifySelection()
+                invalidate()
+                DIRECTION_ID
+            }
+        }
     }
 
     /** 复制选中按钮（副本偏移 2%，不与原控件完全重叠）。 */

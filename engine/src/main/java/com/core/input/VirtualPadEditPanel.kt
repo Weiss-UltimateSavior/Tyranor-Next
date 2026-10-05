@@ -4,29 +4,35 @@ import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
-import android.widget.Toast
 import com.core.engine.EngineThemeColors
 import com.core.engine.R
+import kotlin.math.min
 
 /**
  * 游戏内按键编辑面板（原生实现，替代原 `__touch_pad.js` 的 DOM 面板）。
  *
- * 承载选中元素的属性编辑：文本 / 尺寸 / 键位 / 保持 / 显隐 / 复制 / 删除 / 恢复默认，
- * 以及整体保存与取消；键位选择为多选对话框（canonical 键位 + 鼠标段）。
+ * 承载选中元素的属性编辑：文本 / 尺寸 / 键位 / 保持 / 显隐 / 新增 / 复制 / 删除 /
+ * 恢复默认，以及整体保存与取消；键位选择为深色卡片多选对话框（canonical 键位 + 鼠标段）。
+ *
+ * 面板本身可拖动：顶部拖动条按住拖到任意位置（编辑时避免遮住正在调整的按键）。
+ * 同一面板同时服务游戏内编辑（[InputRemapController]）与设置页方案编辑（app 侧）。
  */
-internal class VirtualPadEditPanel(
+class VirtualPadEditPanel(
     private val context: Context,
     private val pad: VirtualPadView,
     private val theme: EngineThemeColors.Palette,
@@ -35,8 +41,7 @@ internal class VirtualPadEditPanel(
 ) {
 
     private val density = context.resources.displayMetrics.density
-    private val root = LinearLayout(context)
-    private val titleView: TextView
+    private val content = LinearLayout(context)
     private val selectionView: TextView
     private val textInput: EditText
     private val sizeLabel: TextView
@@ -46,33 +51,17 @@ internal class VirtualPadEditPanel(
     private val eightDirBox: CheckBox
     private val keysButton: Button
     private var suppressCallbacks = false
-    private var containerView: View? = null
+
+    private var container: FrameLayout? = null
 
     private fun dp(value: Float): Int = (value * density + 0.5f).toInt()
 
     init {
-        root.orientation = LinearLayout.VERTICAL
-        root.setPadding(dp(14f), dp(12f), dp(14f), dp(12f))
-        root.background = GradientDrawable().apply {
-            setColor(Color.argb(235, 24, 26, 32))
-            cornerRadius = dp(14f).toFloat()
-        }
-
-        titleView = TextView(context).apply {
-            text = context.getString(R.string.engine_input_edit_title)
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        root.addView(titleView)
-
         selectionView = TextView(context).apply {
             setTextColor(theme.primary)
             textSize = 12f
-            setPadding(0, dp(4f), 0, dp(6f))
+            setPadding(0, dp(2f), 0, dp(6f))
         }
-        root.addView(selectionView)
-
         textInput = EditText(context).apply {
             hint = context.getString(R.string.engine_input_button_text)
             inputType = InputType.TYPE_CLASS_TEXT
@@ -80,7 +69,6 @@ internal class VirtualPadEditPanel(
             setHintTextColor(0x88FFFFFF.toInt())
             textSize = 12f
         }
-        root.addView(textInput, LinearLayout.LayoutParams(-1, -2))
         textInput.setOnFocusChangeListener { _, focused ->
             if (!focused) applyButtonEdit()
         }
@@ -90,13 +78,10 @@ internal class VirtualPadEditPanel(
             textSize = 12f
             setPadding(0, dp(8f), 0, 0)
         }
-        root.addView(sizeLabel)
-
         sizeSeek = SeekBar(context).apply {
             max = 60
             min = 2
         }
-        root.addView(sizeSeek)
         sizeSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (!suppressCallbacks && fromUser) {
@@ -114,7 +99,6 @@ internal class VirtualPadEditPanel(
             setTextColor(Color.WHITE)
             textSize = 12f
         }
-        root.addView(autoKeepBox)
         autoKeepBox.setOnCheckedChangeListener { _, _ -> applyButtonEdit() }
 
         visibleBox = CheckBox(context).apply {
@@ -122,7 +106,6 @@ internal class VirtualPadEditPanel(
             setTextColor(Color.WHITE)
             textSize = 12f
         }
-        root.addView(visibleBox)
         visibleBox.setOnCheckedChangeListener { _, _ -> applyVisibilityEdit() }
 
         eightDirBox = CheckBox(context).apply {
@@ -130,7 +113,6 @@ internal class VirtualPadEditPanel(
             setTextColor(Color.WHITE)
             textSize = 12f
         }
-        root.addView(eightDirBox)
         eightDirBox.setOnCheckedChangeListener { _, checked ->
             val info = pad.selectionInfo() ?: return@setOnCheckedChangeListener
             if (!info.isDirection) return@setOnCheckedChangeListener
@@ -138,7 +120,6 @@ internal class VirtualPadEditPanel(
         }
 
         keysButton = pillButton(context.getString(R.string.engine_input_pick_keys))
-        root.addView(keysButton, LinearLayout.LayoutParams(-1, dp(34f)))
         keysButton.setOnClickListener { showKeyDialog() }
 
         val actionRow = LinearLayout(context).apply {
@@ -146,10 +127,16 @@ internal class VirtualPadEditPanel(
             setPadding(0, dp(8f), 0, 0)
         }
         actionRow.addView(
+            pillButton(context.getString(R.string.engine_input_add)).apply {
+                setOnClickListener { showAddDialog() }
+            },
+            pillParams(end = dp(3f)),
+        )
+        actionRow.addView(
             pillButton(context.getString(R.string.engine_input_duplicate)).apply {
                 setOnClickListener { pad.duplicateSelected(); refresh() }
             },
-            pillParams(end = dp(3f)),
+            pillParams(start = dp(1f), end = dp(1f)),
         )
         actionRow.addView(
             pillButton(context.getString(R.string.engine_input_delete)).apply {
@@ -157,7 +144,6 @@ internal class VirtualPadEditPanel(
             },
             pillParams(start = dp(3f)),
         )
-        root.addView(actionRow)
 
         val commitRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -184,10 +170,20 @@ internal class VirtualPadEditPanel(
             },
             pillParams(start = dp(3f)),
         )
-        root.addView(commitRow)
-    }
 
-    fun view(): View = root
+        content.orientation = LinearLayout.VERTICAL
+        content.setPadding(dp(14f), dp(2f), dp(14f), dp(12f))
+        content.addView(selectionView)
+        content.addView(textInput, LinearLayout.LayoutParams(-1, -2))
+        content.addView(sizeLabel)
+        content.addView(sizeSeek)
+        content.addView(autoKeepBox)
+        content.addView(visibleBox)
+        content.addView(eightDirBox)
+        content.addView(keysButton, LinearLayout.LayoutParams(-1, dp(34f)))
+        content.addView(actionRow)
+        content.addView(commitRow)
+    }
 
     /** 选中变化时刷新面板控件；无选中时部分控件禁用（保存/取消始终可用）。 */
     fun refresh() {
@@ -224,6 +220,14 @@ internal class VirtualPadEditPanel(
         }
     }
 
+    fun dismiss() {
+        val view = container ?: return
+        (view.parent as? ViewGroup)?.removeView(view)
+        container = null
+    }
+
+    // ---------- 编辑应用 ----------
+
     private fun applyButtonEdit() {
         if (suppressCallbacks) return
         val info = pad.selectionInfo() ?: return
@@ -237,68 +241,228 @@ internal class VirtualPadEditPanel(
 
     private fun applyVisibilityEdit() {
         if (suppressCallbacks) return
-        val info = pad.selectionInfo() ?: return
+        pad.selectionInfo() ?: return
         pad.updateSelectedVisibility(visibleBox.isChecked)
     }
 
-    /** 键位多选对话框：canonical 键位网格 + 鼠标段（点击切换选中）。 */
+    // ---------- 新增控件 ----------
+
+    /**
+     * 新增控件类型选择。
+     *
+     * 不可用的类型（方向键已存在）置灰不可点，而不是点击后才报错；
+     * 「方向键」在已隐藏时可用（用于重新放回按键层）。
+     */
+    private fun showAddDialog() {
+        val directionAvailable = pad.canAdd(VirtualPadView.NewButtonType.DIRECTION)
+        val options = listOf(
+            Triple(context.getString(R.string.engine_input_new_button), VirtualPadView.NewButtonType.BUTTON, true),
+            Triple(context.getString(R.string.engine_input_new_direction), VirtualPadView.NewButtonType.DIRECTION, directionAvailable),
+        )
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        list.addView(dialogTitle(context.getString(R.string.engine_input_add)))
+        options.forEach { (label, type, available) ->
+            val row = TextView(context).apply {
+                text = if (available) label else "$label（${context.getString(R.string.engine_input_direction_exists)}）"
+                setTextColor(if (available) Color.WHITE else 0x66FFFFFF)
+                textSize = 14f
+                gravity = Gravity.CENTER_VERTICAL
+                background = chipBackground(
+                    corner = 10f,
+                    fill = if (available) 0x2EFFFFFF else 0x14FFFFFF,
+                )
+                isClickable = available
+                setPadding(dp(14f), dp(12f), dp(14f), dp(12f))
+                if (available) {
+                    setOnClickListener {
+                        if (pad.addButton(type) != null) {
+                            dismissDialog()
+                            refresh()
+                        }
+                    }
+                }
+            }
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = dp(4f)
+                bottomMargin = dp(4f)
+            })
+        }
+        showDarkDialog(list)
+    }
+
+    // ---------- 键位选择（深色卡片，多选） ----------
+
     private fun showKeyDialog() {
         val info = pad.selectionInfo() ?: return
         if (info.isDirection) return
         val selected = LinkedHashSet(info.keys)
-        val container = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
 
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         InputKeyCatalog.groups().forEach { group ->
-            container.addView(
+            grid.addView(
                 TextView(context).apply {
                     text = context.getString(group.titleRes)
-                    setTextColor(0xAAFFFFFF.toInt())
+                    setTextColor(0xFFB9BDC6.toInt())
                     textSize = 11f
-                    setPadding(0, dp(6f), 0, dp(2f))
+                    setPadding(dp(2f), dp(10f), 0, dp(4f))
                 },
             )
-            group.keys.chunked(5).forEach { chunk ->
+            group.keys.chunked(4).forEach { chunk ->
                 val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
                 chunk.forEach { entry ->
-                    val label = entry.label ?: context.getString(entry.labelRes)
-                    val button = Button(context).apply {
-                        text = label
-                        textSize = 10f
-                        isAllCaps = false
-                        setPadding(dp(4f), dp(2f), dp(4f), dp(2f))
-                        minimumWidth = 0
-                        minWidth = 0
-                        setBackgroundColor(if (entry.code in selected) theme.primary else 0x22FFFFFF)
-                        setTextColor(if (entry.code in selected) theme.onPrimary else Color.WHITE)
-                        setOnClickListener {
-                            if (!selected.add(entry.code)) selected.remove(entry.code)
-                            val on = entry.code in selected
-                            setBackgroundColor(if (on) theme.primary else 0x22FFFFFF)
-                            setTextColor(if (on) theme.onPrimary else Color.WHITE)
-                        }
+                    val chip = keyChip(
+                        label = entry.label ?: context.getString(entry.labelRes),
+                        selected = entry.code in selected,
+                    )
+                    chip.setOnClickListener {
+                        if (!selected.add(entry.code)) selected.remove(entry.code)
+                        val on = entry.code in selected
+                        chip.background = chipBackground(corner = 10f, fill = if (on) theme.primary else 0x2EFFFFFF)
+                        chip.setTextColor(if (on) theme.onPrimary else 0xFFE8E8E8.toInt())
                     }
-                    row.addView(button, LinearLayout.LayoutParams(0, dp(32f), 1f))
+                    row.addView(chip, LinearLayout.LayoutParams(0, dp(40f), 1f).apply {
+                        marginStart = dp(2f)
+                        marginEnd = dp(2f)
+                        topMargin = dp(2f)
+                        bottomMargin = dp(2f)
+                    })
                 }
-                container.addView(row)
+                // 补满最后一行的占位，保持列宽一致
+                repeat(4 - chunk.size) {
+                    row.addView(View(context), LinearLayout.LayoutParams(0, dp(40f), 1f))
+                }
+                grid.addView(row)
             }
         }
 
-        val dialog = AlertDialog.Builder(context)
-            .setTitle(R.string.engine_input_pick_keys)
-            .setView(ScrollView(context).apply { addView(container) })
-            .setPositiveButton(R.string.engine_input_confirm) { _, _ ->
-                pad.updateSelectedButton(info.label, selected.toList(), pad.selectionInfo()?.autoKeep ?: false)
-                refresh()
+        val scroll = ScrollView(context).apply {
+            addView(grid)
+            isVerticalScrollBarEnabled = true
+        }
+
+        val rootLayout = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        rootLayout.addView(dialogTitle(context.getString(R.string.engine_input_pick_keys)))
+        // 键位网格固定高度（内容更高时由 ScrollView 滚动）：
+        // 卡片整体是 wrap_content，若这里用 weight 会让网格塌成 0 高度
+        val gridHeight = min((context.resources.displayMetrics.heightPixels * 0.52f).toInt(), dp(380f))
+        rootLayout.addView(
+            scroll,
+            LinearLayout.LayoutParams(-1, gridHeight).apply {
+                topMargin = dp(4f)
+            },
+        )
+
+        val buttonRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(10f), 0, 0)
+        }
+        buttonRow.addView(
+            pillButton(context.getString(R.string.engine_input_cancel)).apply {
+                setOnClickListener { dismissDialog() }
+            },
+            pillParams(end = dp(4f)),
+        )
+        buttonRow.addView(
+            pillButton(context.getString(R.string.engine_input_confirm), primary = true).apply {
+                setOnClickListener {
+                    pad.updateSelectedButton(
+                        info.label,
+                        selected.toList(),
+                        pad.selectionInfo()?.autoKeep ?: false,
+                    )
+                    dismissDialog()
+                    refresh()
+                }
+            },
+            pillParams(start = dp(4f)),
+        )
+        rootLayout.addView(buttonRow)
+
+        showDarkDialog(rootLayout)
+    }
+
+    // ---------- 对话框基础 ----------
+
+    private var dialog: AlertDialog? = null
+
+    /**
+     * 统一深色卡片对话框。
+     *
+     * 引擎宿主多为框架主题（非 AppCompat），AlertDialog 默认窗口背景为浅色；旧实现直接
+     * setView 会让浅色文字落在浅色底上（按键网格几乎不可见、按钮文字白底白字）。
+     * 这里清掉窗口背景、由卡片自绘深色底，并按内容测量高度自适应（键位网格超限时内部滚动）。
+     */
+    private fun showDarkDialog(contentView: View) {
+        dismissDialog()
+        val cardPaddingH = dp(16f)
+        val cardPaddingV = dp(14f) + dp(12f)
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(cardPaddingH, dp(14f), cardPaddingH, dp(12f))
+            background = GradientDrawable().apply {
+                setColor(Color.argb(245, 26, 28, 34))
+                cornerRadius = dp(16f).toFloat()
             }
-            .setNegativeButton(R.string.engine_cancel, null)
-            .create()
-        dialog.show()
+        }
+        card.addView(contentView, LinearLayout.LayoutParams(-1, -2))
+
+        val metrics = context.resources.displayMetrics
+        val width = min((metrics.widthPixels * 0.86f).toInt(), dp(380f))
+        val maxContentHeight = min((metrics.heightPixels * 0.80f).toInt(), dp(560f)) - cardPaddingV
+
+        // 先量内容（键位网格用 AT_MOST 限制，超限由内部 ScrollView 滚动），再定窗口高度
+        card.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(
+                (maxContentHeight + cardPaddingV).coerceAtLeast(1),
+                View.MeasureSpec.AT_MOST,
+            ),
+        )
+
+        val created = AlertDialog.Builder(context).create()
+        created.setView(card)
+        created.setCanceledOnTouchOutside(true)
+        created.show()
+        created.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.setLayout(width, card.measuredHeight)
+        }
+        dialog = created
+    }
+
+    private fun dismissDialog() {
+        dialog?.dismiss()
+        dialog = null
+    }
+
+    private fun dialogTitle(text: String): TextView = TextView(context).apply {
+        this.text = text
+        setTextColor(Color.WHITE)
+        textSize = 15f
+        setTypeface(typeface, Typeface.BOLD)
+        setPadding(dp(2f), 0, 0, dp(2f))
+    }
+
+    private fun keyChip(label: String, selected: Boolean): TextView =
+        TextView(context).apply {
+            text = label
+            textSize = 12f
+            gravity = Gravity.CENTER
+            setTextColor(if (selected) theme.onPrimary else 0xFFE8E8E8.toInt())
+            background = chipBackground(corner = 10f, fill = if (selected) theme.primary else 0x2EFFFFFF)
+            isClickable = true
+        }
+
+    private fun chipBackground(corner: Float, fill: Int): GradientDrawable = GradientDrawable().apply {
+        setColor(fill)
+        this.cornerRadius = corner * density
     }
 
     private fun pillButton(text: String, primary: Boolean = false): Button = Button(context).apply {
         this.text = text
         textSize = 12f
         isAllCaps = false
+        stateListAnimator = null
         setTextColor(if (primary) theme.onPrimary else theme.primary)
         background = GradientDrawable().apply {
             setColor(if (primary) theme.primary else Color.argb(60, 48, 125, 239))
@@ -312,15 +476,14 @@ internal class VirtualPadEditPanel(
             marginEnd = end
         }
 
-    fun dismiss() {
-        val view = containerView ?: return
-        (view.parent as? ViewGroup)?.removeView(view)
-        containerView = null
-    }
-
     companion object {
 
-        /** 构建面板并挂到 [parent] 右上角（不覆盖 FAB 拖拽区）；返回实例供刷新/销毁。 */
+        /**
+         * 构建面板并挂到 [parent] 右上角；返回实例供刷新/销毁。
+         *
+         * 容器固定尺寸（宽 ≤300dp、高 ≤560dp），顶部拖动条可拖动到任意位置；
+         * 内容超出时面板内滚动。
+         */
         fun attach(
             parent: ViewGroup,
             context: Context,
@@ -331,20 +494,99 @@ internal class VirtualPadEditPanel(
         ): VirtualPadEditPanel {
             val panel = VirtualPadEditPanel(context, pad, theme, onSave, onCancel)
             val density = context.resources.displayMetrics.density
-            // 宿主容器为 FrameLayout（见 InputRemapController 的装配）；面板固定右上角
-            val params = android.widget.FrameLayout.LayoutParams(
-                (268 * density).toInt(),
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                topMargin = (52 * density).toInt()
-                marginEnd = (8 * density).toInt()
-                gravity = Gravity.TOP or Gravity.END
+            fun dp(value: Float): Int = (value * density + 0.5f).toInt()
+
+            val metrics = context.resources.displayMetrics
+            val width = min((metrics.widthPixels * 0.62f).toInt(), dp(300f)).coerceAtLeast(dp(220f))
+            val height = min((metrics.heightPixels * 0.68f).toInt(), dp(560f)).coerceAtLeast(dp(260f))
+
+            val handle = View(context).apply {
+                background = GradientDrawable().apply {
+                    setColor(0x66FFFFFF)
+                    cornerRadius = dp(2f).toFloat()
+                }
             }
-            val scroll = ScrollView(context).apply { addView(panel.view()) }
-            parent.addView(scroll, params)
-            panel.containerView = scroll
+            val dragBar = FrameLayout(context).apply {
+                setBackgroundColor(Color.TRANSPARENT)
+                isClickable = true
+                addView(
+                    handle,
+                    FrameLayout.LayoutParams(dp(40f), dp(4f), Gravity.CENTER),
+                )
+            }
+
+            val scroll = ScrollView(context).apply {
+                addView(panel.content)
+                isVerticalScrollBarEnabled = true
+            }
+
+            val card = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(238, 24, 26, 32))
+                    cornerRadius = dp(14f).toFloat()
+                }
+                addView(dragBar, LinearLayout.LayoutParams(-1, dp(18f)))
+                addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            }
+
+            val root = FrameLayout(context).apply { isClickable = true }
+            root.addView(card, FrameLayout.LayoutParams(-1, -1))
+
+            val params = FrameLayout.LayoutParams(width, height).apply {
+                gravity = Gravity.TOP or Gravity.END
+                topMargin = dp(52f)
+                marginEnd = dp(8f)
+            }
+            parent.addView(root, params)
+            panel.container = root
+            panel.bindDrag(root, dragBar)
             panel.refresh()
             return panel
+        }
+    }
+
+    // ---------- 拖动 ----------
+
+    private var dragBaseLeft = 0
+    private var dragBaseTop = 0
+    private var dragStartRawX = 0f
+    private var dragStartRawY = 0f
+
+    private fun bindDrag(root: FrameLayout, dragBar: View) {
+        dragBar.setOnTouchListener { _, event ->
+            val parent = root.parent as? ViewGroup ?: return@setOnTouchListener false
+            val params = root.layoutParams as? FrameLayout.LayoutParams ?: return@setOnTouchListener false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    // 统一切到「左上角锚定 + 边距」定位，拖动只改边距
+                    params.gravity = Gravity.TOP or Gravity.START
+                    params.leftMargin = root.left
+                    params.topMargin = root.top
+                    params.rightMargin = 0
+                    params.bottomMargin = 0
+                    root.layoutParams = params
+                    dragBaseLeft = params.leftMargin
+                    dragBaseTop = params.topMargin
+                    dragStartRawX = event.rawX
+                    dragStartRawY = event.rawY
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val maxLeft = (parent.width - root.width).coerceAtLeast(0)
+                    val maxTop = (parent.height - root.height).coerceAtLeast(0)
+                    params.leftMargin = (dragBaseLeft + (event.rawX - dragStartRawX)).toInt()
+                        .coerceIn(0, maxLeft)
+                    params.topMargin = (dragBaseTop + (event.rawY - dragStartRawY)).toInt()
+                        .coerceIn(0, maxTop)
+                    root.layoutParams = params
+                    true
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> true
+                else -> false
+            }
         }
     }
 }

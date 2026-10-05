@@ -333,13 +333,19 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    // 引擎设置与拆封包合入同一卡片（同类工具入口）
+                    // 引擎设置、输入与手柄、拆封包合入同一卡片（同类工具入口）
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_engine_settings),
                                 startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
                                 onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
+                            )
+                            ArrowPreference(
+                                title = stringResource(R.string.engine_settings_input_title),
+                                summary = stringResource(R.string.engine_settings_input_pad_summary),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings_engine) },
+                                onClick = { startActivityWithPageTransition(ctx, InputSettingsActivity.createIntent(ctx)) },
                             )
                             ArrowPreference(
                                 title = stringResource(R.string.archive_title),

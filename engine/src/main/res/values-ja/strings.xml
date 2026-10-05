@@ -58,6 +58,10 @@
     <string name="engine_input_direction_keys_hint">方向キーは現在デフォルト（矢印キー）固定です</string>
     <string name="engine_input_direction">方向キー</string>
     <string name="engine_input_duplicate">複製</string>
+    <string name="engine_input_add">追加</string>
+    <string name="engine_input_new_button">通常ボタン</string>
+    <string name="engine_input_new_direction">方向キー（スティック表示）</string>
+    <string name="engine_input_direction_exists">方向キーは既にあります</string>
     <string name="engine_input_delete">削除</string>
     <string name="engine_input_reset">初期化</string>
     <string name="engine_input_save">保存</string>

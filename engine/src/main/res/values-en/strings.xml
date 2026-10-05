@@ -58,6 +58,10 @@
     <string name="engine_input_direction_keys_hint">Direction keys use the defaults for now (arrow keys)</string>
     <string name="engine_input_direction">D-pad</string>
     <string name="engine_input_duplicate">Copy</string>
+    <string name="engine_input_add">Add</string>
+    <string name="engine_input_new_button">Key button</string>
+    <string name="engine_input_new_direction">D-pad (stick look)</string>
+    <string name="engine_input_direction_exists">A D-pad already exists</string>
     <string name="engine_input_delete">Delete</string>
     <string name="engine_input_reset">Reset</string>
     <string name="engine_input_save">Save</string>
