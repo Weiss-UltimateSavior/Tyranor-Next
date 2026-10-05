@@ -12,6 +12,7 @@
     <string name="common_auto">自動</string>
     <string name="common_follow_system">システムに従う</string>
     <string name="common_search_content_description">検索</string>
+    <string name="common_retry">再試行</string>
 
     <string name="nav_home">ホーム</string>
     <string name="nav_games">ゲーム</string>
@@ -131,6 +132,7 @@
     <string name="engine_desc_psp">PSP ゲームは外部 PPSSPP で実行します</string>
     <string name="engine_desc_yuris">YU-RIS（yscfg.dat と .ypf パッケージ、ysbin/.ymv）。外部 Winlator で実行</string>
     <string name="engine_desc_pc">手動追加の Windows PC ゲーム。外部 Winlator で実行</string>
+    <string name="engine_desc_android">手動追加の Android アプリ。ゲームライブラリから直接起動</string>
     <string name="engine_desc_cs2">CatSystem2（.int/.cst/.hg3 のゲーム）。外部 Winlator で実行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch ゲームは外部 Eden で実行します</string>
     <string name="engine_external_jump_title">外部エミュレータ連携</string>
@@ -148,12 +150,14 @@
     <string name="engine_settings_external_emulator_hint">このゲームは外部エミュレータで実行されます。設定とセーブはエミュレータ側で管理されます。</string>
     <string name="engine_settings_yuris_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブはゲームフォルダーの save/ に保存され、ランチャーの統一セーブ管理で扱えます。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
     <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理はありません。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
+    <string name="engine_settings_android_hint">このゲームはインストール済みの Android アプリです。ライブラリから起動するとアプリが直接開きます。セーブ管理とエンジン設定はありません。</string>
     <string name="engine_settings_winlator_per_game_note">上書きはこのゲームにのみ適用されます。各項目は「グローバルに従う」に戻せます。空欄（コンテナ設定に従う）はそのパラメータを送信せず、Winlator のコンテナ設定に委ねます。</string>
     <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
     <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
     <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
     <string name="launch_emulator_failed">%1$s の起動に失敗しました</string>
     <string name="launch_yuris_exe_missing">起動可能な .exe が見つかりません。ゲーム詳細の「起動ファイル」で指定してください</string>
+    <string name="launch_android_app_missing">アプリが見つかりません。アンインストールされた可能性があります</string>
     <string name="launch_emulator_unsupported">%1$s のバージョンが古く、外部起動に対応していません。外置起動対応の winlator-cn に更新してください</string>
     <string name="engine_name_unknown">不明なエンジン</string>
     <string name="engine_name_switch">Switch</string>
@@ -638,7 +642,12 @@
     <string name="patch_download_too_large">パッチファイルが大きすぎるためダウンロードを中止しました</string>
     <string name="patch_error_open_write_stream">パッチ書き込みストリームを開けません</string>
     <string name="patch_error_write_game_dir">ゲームフォルダへ書き込めません。ゲームフォルダを追加し直して書き込み権限を付与してください</string>
-    <string name="game_add_pc_content_description">PC ゲームを追加</string>
+    <string name="game_add_content_description">ゲームを追加</string>
+    <string name="game_add_dialog_title">ゲームを追加</string>
+    <string name="game_add_pc">PC ゲームを追加</string>
+    <string name="game_add_pc_summary">ゲームフォルダーと exe を指定</string>
+    <string name="game_add_android">Android ゲームを追加</string>
+    <string name="game_add_android_summary">インストール済みアプリから選択してライブラリに追加</string>
     <string name="pc_add_dialog_title">PC ゲームを追加</string>
     <string name="pc_add_pick_directory">ゲームフォルダーを選択</string>
     <string name="pc_add_directory_empty">フォルダー未選択</string>
@@ -647,5 +656,11 @@
     <string name="pc_add_loading">フォルダーを読み込み中…</string>
     <string name="pc_add_duplicate">このフォルダーは既に追加済みです</string>
     <string name="pc_add_failed">追加に失敗しました。もう一度お試しください</string>
+    <string name="android_add_dialog_title">Android ゲームを追加</string>
+    <string name="android_add_empty">追加できるアプリがありません</string>
+    <string name="android_add_load_failed">アプリ一覧の読み込みに失敗しました。もう一度お試しください</string>
+    <string name="android_add_no_match">一致するアプリが見つかりません</string>
+    <string name="android_add_duplicate">このアプリは既に追加済みです</string>
+    <string name="android_add_already_added">ライブラリに追加済み</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
 </resources>

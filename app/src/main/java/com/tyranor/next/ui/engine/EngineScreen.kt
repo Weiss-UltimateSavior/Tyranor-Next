@@ -545,6 +545,8 @@ private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
+    // 手动添加的安卓应用不进入引擎页（supportedEngines 未收录），此处仅为 when 完备性
+    EngineType.ANDROID_APP -> EngineTab.CONSOLE
     EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
     EngineType.UNKNOWN -> EngineTab.WEB
 }
@@ -574,6 +576,7 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
     EngineType.CATSYSTEM2 -> stringResource(R.string.engine_desc_cs2)
     EngineType.PC -> stringResource(R.string.engine_desc_pc)
+    EngineType.ANDROID_APP -> stringResource(R.string.engine_desc_android)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
     EngineType.PSP -> stringResource(R.string.engine_desc_psp)
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)

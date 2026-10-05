@@ -99,6 +99,7 @@ import com.tyranor.next.core.cover.CoverSearchCandidate
 import com.tyranor.next.core.cover.CoverSearchResult
 import com.tyranor.next.core.cover.CoverScraperService
 import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
@@ -461,7 +462,8 @@ private fun GameLibraryContent(
     onAddManualGame: (ScanGame) -> Boolean,
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
-    var showPcAddDialog by remember { mutableStateOf(false) }
+    // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
+    var addGameStep by remember { mutableStateOf<AddGameStep?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     val gameSort by AppSettingsStore.gameSortState.collectAsState()
     val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
@@ -497,10 +499,10 @@ private fun GameLibraryContent(
             },
             trailing = {
                 TopBarIcon(
-                    painterResource(R.drawable.ic_game_add_pc),
-                    stringResource(R.string.game_add_pc_content_description),
+                    painterResource(R.drawable.ic_game_add),
+                    stringResource(R.string.game_add_content_description),
                     MaterialTheme.colorScheme.primary,
-                ) { showPcAddDialog = true }
+                ) { addGameStep = AddGameStep.CHOICE }
                 TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
                     showSearch = !showSearch
                     if (!showSearch) query = ""
@@ -584,14 +586,31 @@ private fun GameLibraryContent(
         }
     }
 
-    if (showPcAddDialog) {
-        PcGameAddDialog(
-            onDismiss = { showPcAddDialog = false },
+    when (addGameStep) {
+        AddGameStep.CHOICE -> AddGameDialog(
+            onDismiss = { addGameStep = null },
+            onAddPc = { addGameStep = AddGameStep.PC },
+            onAddAndroid = { addGameStep = AddGameStep.ANDROID },
+        )
+
+        AddGameStep.PC -> PcGameAddDialog(
+            onDismiss = { addGameStep = null },
             onAdd = onAddManualGame,
         )
+
+        AddGameStep.ANDROID -> AndroidGameAddDialog(
+            existingUris = remember(games) { games.mapTo(HashSet()) { it.uri } },
+            onDismiss = { addGameStep = null },
+            onAdd = onAddManualGame,
+        )
+
+        null -> Unit
     }
 
 }
+
+/** 「添加游戏」流程弹窗步骤（游戏页顶栏入口 → 分支 → 二级添加弹窗）。 */
+private enum class AddGameStep { CHOICE, PC, ANDROID }
 
 /** 抽屉内「一行两个」动作条目描述；[key] 供 LazyColumn item key 使用。 */
 private data class DrawerAction(
@@ -992,7 +1011,7 @@ internal fun GameActionsSheet(
                         onClick = { showRenameDialog = true },
                     ),
                 )
-                if (shouldShowSaveManagement(game.engine)) {
+                if (shouldShowSaveManagement(game)) {
                     add(
                         DrawerAction(
                             key = "save_management",
@@ -1986,6 +2005,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.YURIS -> Color(0xFF558B2F)
     EngineType.CATSYSTEM2 -> Color(0xFF6D4C41)
     EngineType.PC -> Color(0xFF455A64)
+    EngineType.ANDROID_APP -> Color(0xFF2E7D32)
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
@@ -1993,7 +2013,13 @@ internal fun EngineType.coverColor(): Color = when (this) {
 }
 
 internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
-    // YU-RIS 虽经外置 Winlator 启动，但存档落在游戏目录 save/，纳入统一存档管理
+    // YU-RIS 虽经外置 Winlator 启动，但存档落在游戏目录 save/，纳入统一存档管理；
+    // 手动添加的类型（PC / 安卓游戏）无统一存档接口，显式排除。
     engine == EngineType.YURIS ||
-        (!ExternalEngineModuleRegistry.isExternalEngine(engine) &&
+        (!engine.isManual &&
+            !ExternalEngineModuleRegistry.isExternalEngine(engine) &&
             ExternalEmulatorRegistry.forEngine(engine) == null)
+
+/** 记录级判定：engine 字段损坏的安卓条目（uri 仍为 androidapp://）同样不显示存档管理。 */
+internal fun shouldShowSaveManagement(game: ScanGame): Boolean =
+    !AndroidAppGames.isAndroidApp(game) && shouldShowSaveManagement(game.engine)

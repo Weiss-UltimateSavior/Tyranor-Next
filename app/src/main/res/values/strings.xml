@@ -12,6 +12,7 @@
     <string name="common_auto">自动</string>
     <string name="common_follow_system">跟随系统</string>
     <string name="common_search_content_description">搜索</string>
+    <string name="common_retry">重试</string>
 
     <string name="nav_home">首页</string>
     <string name="nav_games">游戏</string>
@@ -131,6 +132,7 @@
     <string name="engine_desc_psp">PSP 游戏通过外置 PPSSPP 运行</string>
     <string name="engine_desc_yuris">YU-RIS，yscfg.dat 与 .ypf 封包（ysbin/.ymv）游戏，经外置 Winlator 运行</string>
     <string name="engine_desc_pc">手动添加的 Windows PC 游戏，经外置 Winlator 运行</string>
+    <string name="engine_desc_android">手动添加的 Android 应用，从游戏库直接跳转启动</string>
     <string name="engine_desc_cs2">CatSystem2，.int/.cst/.hg3 资源游戏，经外置 Winlator 运行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
     <string name="engine_external_jump_title">外置跳转支持</string>
@@ -148,12 +150,14 @@
     <string name="engine_settings_external_emulator_hint">该游戏由外置模拟器运行，设置与存档由模拟器管理。</string>
     <string name="engine_settings_yuris_hint">该游戏由外置 Winlator 运行；启动程序可在游戏详情「启动文件」中调整。存档位于游戏目录 save/，已纳入统一存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
     <string name="engine_settings_pc_hint">该游戏经外置 Winlator 运行；启动程序可在游戏详情「启动文件」中切换。无存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
+    <string name="engine_settings_android_hint">该游戏为已安装的 Android 应用；从游戏库启动将直接跳转打开该应用。无存档管理与引擎设置。</string>
     <string name="engine_settings_winlator_per_game_note">覆盖仅对本游戏生效；每项可单独切回「跟随全局」。留空（跟随容器配置）表示不下发该参数，交由 Winlator 按容器配置处理。</string>
     <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
     <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
     <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
     <string name="launch_emulator_failed">%1$s 启动失败</string>
     <string name="launch_yuris_exe_missing">未找到可启动的程序（.exe）；可在游戏详情「启动文件」中手动指定</string>
+    <string name="launch_android_app_missing">未找到该应用，可能已被卸载</string>
     <string name="launch_emulator_unsupported">%1$s 版本过旧，不支持外置启动，请更新（需含外置启动功能的 winlator-cn）</string>
     <string name="engine_name_unknown">未知引擎</string>
     <string name="engine_name_switch">Switch</string>
@@ -638,8 +642,13 @@
     <string name="patch_download_too_large">补丁文件过大，已停止下载</string>
     <string name="patch_error_open_write_stream">无法打开补丁写入流</string>
     <string name="patch_error_write_game_dir">无法写入游戏目录，请重新添加游戏目录并授予写入权限</string>
-    <string name="game_add_pc_content_description">添加 PC 游戏</string>
-    <string name="pc_add_dialog_title">添加 PC 游戏</string>
+    <string name="game_add_content_description">添加游戏</string>
+    <string name="game_add_dialog_title">添加游戏</string>
+    <string name="game_add_pc">添加电脑游戏</string>
+    <string name="game_add_pc_summary">选择游戏目录并指定exe</string>
+    <string name="game_add_android">添加安卓游戏</string>
+    <string name="game_add_android_summary">从已安装应用中选择并添加到游戏库</string>
+    <string name="pc_add_dialog_title">添加电脑游戏</string>
     <string name="pc_add_pick_directory">选择游戏目录</string>
     <string name="pc_add_directory_empty">未选择目录</string>
     <string name="pc_add_exe_label">启动程序</string>
@@ -647,5 +656,11 @@
     <string name="pc_add_loading">正在读取目录……</string>
     <string name="pc_add_duplicate">该目录已在游戏库中</string>
     <string name="pc_add_failed">添加失败，请重试</string>
+    <string name="android_add_dialog_title">添加安卓游戏</string>
+    <string name="android_add_empty">没有可添加的应用</string>
+    <string name="android_add_load_failed">读取应用列表失败，请重试</string>
+    <string name="android_add_no_match">未找到匹配的应用</string>
+    <string name="android_add_duplicate">该应用已在游戏库中</string>
+    <string name="android_add_already_added">已在游戏库中</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
 </resources>

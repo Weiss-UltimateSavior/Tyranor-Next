@@ -92,6 +92,7 @@ object EnginePluginBootstrap {
             EngineType.YURIS,
             EngineType.CATSYSTEM2,
             EngineType.PC,
+            EngineType.ANDROID_APP,
             EngineType.RPGMAKER,
             EngineType.RENPY,
             EngineType.PSP,

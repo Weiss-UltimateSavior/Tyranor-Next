@@ -7,7 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * 重扫合并：手动添加的 PC 游戏不参与扫描，重扫时必须保留；同 uri 被扫描命中则以扫描结果为准。
+ * 重扫合并：手动添加的条目（PC 游戏 / 安卓应用）不参与扫描，重扫时必须保留；
+ * 同 uri 被扫描命中则以扫描结果为准。
  */
 class EngineScannerManualGameTest {
 
@@ -27,6 +28,27 @@ class EngineScannerManualGameTest {
 
         assertTrue(merged.contains(manual))
         assertEquals(2, merged.size)
+    }
+
+    @Test
+    fun keepsManualAndroidAppsMissingFromScan() {
+        val androidApp = game("androidapp://com.example.game", EngineType.ANDROID_APP)
+        val scanned = listOf(game("content://tree/krkr", EngineType.KIRIKIRI))
+
+        val merged = EngineScanner.mergeScannedWithManual(listOf(androidApp, scanned[0]), scanned)
+
+        assertTrue(merged.contains(androidApp))
+        assertEquals(2, merged.size)
+    }
+
+    @Test
+    fun keepsAndroidAppWhenEngineFieldCorrupted() {
+        // engine 字段损坏回退 UNKNOWN 时，仍按 androidapp:// uri 前缀识别并保留
+        val corrupted = game("androidapp://com.example.game", EngineType.UNKNOWN)
+
+        val merged = EngineScanner.mergeScannedWithManual(listOf(corrupted), emptyList())
+
+        assertTrue(merged.contains(corrupted))
     }
 
     @Test

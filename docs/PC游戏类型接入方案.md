@@ -200,6 +200,7 @@
 - **重扫保护**：`EngineScanner.mergeScannedWithManual`（internal 纯函数）：重扫时保留未被扫描命中的 `engine==PC` 条目，同 uri 以扫描结果为准；`incrementalScan` 本身为「现有 + 新发现」，不受影响
 - **手动添加**：`MainLibraryViewModel.addManualGame`（查重 + 立即发布 + FIFO 队列落库）；`PcGameAddDialog`（SAF 选目录 + 持久授权 → SAF 列根目录 exe → 单选 → 确认；无标题输入，标题=目录名；重复目录就地提示）；接入本地封面探测（`EngineScanner.applyLocalCover`）
 - **入口**：游戏页顶栏新增图标（`R.drawable.ic_game_add_pc`，来自用户提供的 `数据.png`），位于搜索图标左侧
+  - 后续更新：顶栏入口改为「添加游戏」分支弹窗（`AddGameDialog`：添加电脑游戏 / 添加安卓游戏），图标更名为 `ic_game_add`，内容描述键 `game_add_pc_content_description` 更名为 `game_add_content_description`；本方案的 PC 弹窗功能不变，入口路径变为「添加游戏 → 添加电脑游戏」
 - **引擎页**：PC 进 GAL 分组 + `engine_desc_pc`；Winlator 系专属弹窗条件泛化为 `EmulatorLaunchStyle.WINLATOR_EXTERNAL`（YURIS/PC 共用）
 - **文案**：三语言新增 12 键（`engine_desc_pc`、`engine_settings_pc_hint`、`game_add_pc_content_description`、`pc_add_*`）
 - **测试**：`EngineScannerManualGameTest`（保留手动 PC / 同 uri 扫描优先 / 非 PC 不保护）、`GameCardItemKeyTest`（PC 隐藏存档管理）

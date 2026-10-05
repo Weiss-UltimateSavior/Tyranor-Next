@@ -6,6 +6,7 @@ import androidx.annotation.StringRes
 import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -32,6 +33,15 @@ class GameSaveManager(private val context: Context) {
     )
 
     fun resolveSaveLocation(game: ScanGame): SaveLocation {
+        // 手动添加的安卓游戏无文件存档接口：先于目录解析返回（androidapp:// 无法解析为目录，
+        // 否则会落到「无法解析游戏目录」的误导文案）
+        if (AndroidAppGames.isAndroidApp(game)) {
+            return SaveLocation(
+                null,
+                text(R.string.save_location_engine_no_file_interface, game.engine.displayName),
+                false,
+            )
+        }
         val root = resolveGameDirectory(game)
             ?: return SaveLocation(null, text(R.string.save_error_resolve_game_dir), false)
         // 三级设置统一解析（应用级 + 单游戏覆盖），避免本类重复逐字段合并（P0-3）
@@ -100,7 +110,9 @@ class GameSaveManager(private val context: Context) {
                 }
             }
             EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
-            EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC ->
+            EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,
+            // ANDROID_APP 在函数开头已提前返回（无文件存档接口），此分支仅为 when 完备性
+            EngineType.ANDROID_APP ->
                 SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
             EngineType.ARTEMIS -> SaveLocation(File(root), text(R.string.save_location_artemis_game_dir), true)
             EngineType.SIGLUS -> SaveLocation(
