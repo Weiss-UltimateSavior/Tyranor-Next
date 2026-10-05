@@ -14,6 +14,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
@@ -77,17 +78,21 @@ public class KRKRCall {
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 }
 
-                // 提示：13sp 居中
+                // 提示：13sp 居中；放进 ScrollView——超长提示文本不压缩时会把输入框/按钮顶出屏幕
+                ScrollView promptScroll = null;
                 if (prompt != null && prompt.length() != 0) {
                     TextView promptView = new TextView(act);
                     promptView.setText(prompt);
                     promptView.setTextColor(colors.getTextMuted());
                     promptView.setTextSize(13f);
                     promptView.setGravity(Gravity.CENTER);
+                    promptScroll = new ScrollView(act);
+                    promptScroll.addView(promptView, new ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     LinearLayout.LayoutParams promptParams = new LinearLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                     promptParams.topMargin = dp(14f, density);
-                    root.addView(promptView, promptParams);
+                    root.addView(promptScroll, promptParams);
                 }
 
                 // 输入框：主题文字色 + 圆角描边
@@ -157,13 +162,32 @@ public class KRKRCall {
                 }
 
                 mInputDialog = dialog;
+
+                // 窗口尺寸与屏幕上限：宽度与 setLayout 共用；高度先预测量再决定是否收缩提示区
+                final int width = Math.min(dp(252f, density),
+                        act.getResources().getDisplayMetrics().widthPixels - dp(48f, density));
+                final int maxRootHeight =
+                        act.getResources().getDisplayMetrics().heightPixels - dp(64f, density);
+                // 长文本保护：提示区压缩为可滚动高度，保证输入框与按钮始终在屏幕内可见可点
+                if (promptScroll != null) {
+                    root.measure(
+                            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                    int rootHeight = root.getMeasuredHeight();
+                    if (rootHeight > maxRootHeight) {
+                        ViewGroup.LayoutParams scrollParams = promptScroll.getLayoutParams();
+                        scrollParams.height = Math.max(
+                                dp(72f, density),
+                                promptScroll.getMeasuredHeight() - (rootHeight - maxRootHeight));
+                        promptScroll.setLayoutParams(scrollParams);
+                    }
+                }
+
                 dialog.setView(root);
                 dialog.show();
 
                 // 窗口：透明背景 + 252dp 宽度（带屏幕兜底），与 LauncherDialogFactory 一致
                 dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-                int width = Math.min(dp(252f, density),
-                        act.getResources().getDisplayMetrics().widthPixels - dp(48f, density));
                 dialog.getWindow().setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
 
                 // 布局完成后唤起软键盘，规避部分 ROM 上 SHOW_IMPLICIT 时序失灵

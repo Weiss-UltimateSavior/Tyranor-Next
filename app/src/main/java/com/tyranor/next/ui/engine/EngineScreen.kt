@@ -83,6 +83,8 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.settings.artVersionOptions
 import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.TabRowDefaults
+import androidx.compose.ui.graphics.Color
 import android.widget.Toast
 
 /** 引擎页：列表行展示已集成的游戏引擎。 */
@@ -143,6 +145,8 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         onTabSelected = { selectedTab = it },
                         // 圆角与组件统一入口同源：默认 8dp
                         cornerRadius = AppComponentCornerRadius,
+                        // 容器背景透明（只保留选中指示器）：Miuix 默认取 surface，深色下呈不透明黑块
+                        colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent),
                         modifier = tabModifier,
                     )
                 }

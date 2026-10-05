@@ -80,6 +80,10 @@ internal fun AppSettingsScreen() {
     val navStyle by AppSettingsStore.navStyleState.collectAsState()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
     val sideRailEnabled by AppSettingsStore.sideRailState.collectAsState()
+    val hideCardTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
+    val gameCardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
+    val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
+    val defaultThemeGradient by AppSettingsStore.defaultThemeGradientState.collectAsState()
     val glass = AppThemeColors.isGlass
     // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
     val railLayout = isSideRailLayout()
@@ -90,18 +94,22 @@ internal fun AppSettingsScreen() {
         withContext(Dispatchers.IO) {
             AppSettingsStore.initNavStyle(ctx)
             AppSettingsStore.initSideRail(ctx)
+            AppSettingsStore.initGameCardHideTitleTag(ctx)
+            AppSettingsStore.initGameCardStyle(ctx)
+            AppSettingsStore.initGameCardBadge(ctx)
+            AppSettingsStore.initDefaultThemeGradient(ctx)
         }
     }
 
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = MiuixTheme.colorScheme.background,
+            containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = stringResource(R.string.settings_app_title),
-                    background = MiuixTheme.colorScheme.background,
+                    background = ComposeColor.Transparent,
                     contentColor = MiuixTheme.colorScheme.onBackground,
                 )
             },
@@ -244,6 +252,16 @@ internal fun AppSettingsScreen() {
                                     AppThemeColors.refresh(ctx)
                                 },
                             )
+                            // 默认外观风格的页面背景：纯色 + 主题色/近似色渐变（关闭回退纯色）
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_default_theme_gradient),
+                                summary = if (glass) stringResource(R.string.settings_disabled_in_glass_style) else null,
+                                checked = defaultThemeGradient,
+                                enabled = !glass,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setDefaultThemeGradientEnabled(ctx, checked)
+                                },
+                            )
                         }
                     }
                 }
@@ -318,6 +336,45 @@ internal fun AppSettingsScreen() {
                                 checked = engineTabs,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setEngineTabsEnabled(ctx, checked)
+                                },
+                            )
+                        }
+                    }
+                }
+                item {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            // 游戏页卡片风格：网格 / 列表（封面流）
+                            val cardStyleModes = listOf(
+                                AppSettingsStore.GAME_CARD_STYLE_GRID to stringResource(R.string.settings_game_card_style_grid),
+                                AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW to stringResource(R.string.settings_game_card_style_cover_flow),
+                            )
+                            val cardStyleIndex = cardStyleModes.indexOfFirst { it.first == gameCardStyle }
+                                .coerceAtLeast(0)
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_game_card_style),
+                                items = cardStyleModes.map { it.second },
+                                selectedIndex = cardStyleIndex,
+                                onSelectedIndexChange = { index ->
+                                    cardStyleModes.getOrNull(index)?.first?.let { style ->
+                                        AppSettingsStore.setGameCardStyle(ctx, style)
+                                    }
+                                },
+                            )
+                            // 游戏页卡片名称隐藏【】/[] 标签（切换即时生效并持久化）
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_game_card_hide_title_tag),
+                                checked = hideCardTitleTag,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setGameCardHideTitleTag(ctx, checked)
+                                },
+                            )
+                            // 游戏页卡片左上角引擎类型角标（默认关，切换即时生效并持久化）
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_game_card_badge),
+                                checked = gameCardBadge,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setGameCardBadgeEnabled(ctx, checked)
                                 },
                             )
                         }

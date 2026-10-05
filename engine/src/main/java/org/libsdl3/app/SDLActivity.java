@@ -46,6 +46,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.webkit.MimeTypeMap;
 import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
@@ -1746,7 +1747,6 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
 
         final AlertDialog dialog = new AlertDialog.Builder(this).create();
         messageboxDialog = dialog;
-        dialog.setCancelable(false);
         dialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
             @Override
             public void onDismiss(DialogInterface unused) {
@@ -1776,8 +1776,10 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
 
-        // 消息：13sp 居中
+        // 消息：13sp 居中；放进 ScrollView——长文本（汉化/移植组的启动说明等）若直接铺开，
+        // 卡片高度会超出屏幕，底部按钮被顶出屏幕，弹窗既无法确认也无法关闭。
 
+        ScrollView messageScroll = null;
         String message = args.getString("message");
         if (message != null && message.length() != 0) {
             TextView messageView = new TextView(this);
@@ -1785,10 +1787,13 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
             messageView.setTextColor(theme.getTextMuted());
             messageView.setTextSize(13f);
             messageView.setGravity(Gravity.CENTER);
+            messageScroll = new ScrollView(this);
+            messageScroll.addView(messageView, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             LinearLayout.LayoutParams messageParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             messageParams.topMargin = dp(14f);
-            root.addView(messageView, messageParams);
+            root.addView(messageScroll, messageParams);
         }
 
         // 按钮：药丸形，首按钮=确认（primary 底色），其余=次要（card 底色）
@@ -1845,6 +1850,34 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
             buttons.addView(button, buttonParams);
         }
 
+        // 窗口尺寸与屏幕上限：宽度与 setLayout 共用；高度先预测量再决定是否收缩消息区
+
+        final int width = Math.min(dp(252f), getResources().getDisplayMetrics().widthPixels - dp(48f));
+        final int maxRootHeight = getResources().getDisplayMetrics().heightPixels - dp(32f);
+
+        // 长文本保护：卡片高度超出屏幕可用高度时压缩消息滚动区、腾出屏幕内空间，
+        // 保证底部按钮始终可见可点，超出的内容在滚动区内翻看（修复长文本把按钮顶出屏幕的卡死）
+
+        if (messageScroll != null) {
+            root.measure(
+                    View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+            int rootHeight = root.getMeasuredHeight();
+            if (rootHeight > maxRootHeight) {
+                ViewGroup.LayoutParams scrollParams = messageScroll.getLayoutParams();
+                scrollParams.height = Math.max(
+                        dp(96f),
+                        messageScroll.getMeasuredHeight() - (rootHeight - maxRootHeight));
+                messageScroll.setLayoutParams(scrollParams);
+            }
+        }
+
+        // 单按钮信息框允许返回键/点击外部关闭（等价于「跳过」）；多按钮确认框必须明确选择
+
+        boolean singleButton = buttonTexts.length == 1;
+        dialog.setCancelable(singleButton);
+        dialog.setCanceledOnTouchOutside(singleButton);
+
         dialog.setView(root);
         dialog.setOnKeyListener(new Dialog.OnKeyListener() {
             @Override
@@ -1871,7 +1904,6 @@ public class SDLActivity extends AppCompatActivity implements View.OnSystemUiVis
         // 窗口：透明背景 + 252dp 宽度（带屏幕兜底），与 LauncherDialogFactory 一致
 
         dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        int width = Math.min(dp(252f), getResources().getDisplayMetrics().widthPixels - dp(48f));
         dialog.getWindow().setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
     }
 

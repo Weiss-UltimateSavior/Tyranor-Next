@@ -88,7 +88,7 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_ART_PATCH),
                 EngineSettingsStore.getArtAutoPatch(app),
                 EngineSettingsStore.ART_PATCHES,
-                EngineSettingsStore.AUTO_PATCH_ASK,
+                EngineSettingsStore.ART_PATCH_DEFAULT,
             ),
             artResolution = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ART_RESOLUTION),

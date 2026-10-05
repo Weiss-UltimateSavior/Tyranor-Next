@@ -219,7 +219,12 @@ if (!skipCheck && game.type == "Artemis" && !File(game.path, "system.ini").exist
 - 执行期间显示 `add_patch_auto_running`（「自动补丁中……」）；
 - 触发条件基于 `system.ini` 是否存在：基础补丁成功后不会再触发（除非游戏目录被清理/重装）。
 
-设置项（`p023c4/a.java:50`）：`artemisAutoPatch` 显示名 `artemis_auto_patch`（「自动补丁」），取值 `ask`/`true`/`false`，默认 `ask`。
+设置项（`p023c4/a.java:50`）：`artemisAutoPatch` 显示名 `artemis_auto_patch`（「自动补丁」），取值 `ask`/`true`/`false`，**上游默认 `ask`**。
+
+> TyranorNext 差异（有意为之）：本应用同项取值 `ask`/`auto`/`off`，**默认 `off`（关闭）**
+> （`EngineSettingsStore.ART_PATCH_DEFAULT`）。理由：`ask` 在无弹窗的快速启动/快捷方式路径下等价于
+> 自动执行基础补丁并开启引擎版本自动回退（`EngineLauncher.buildArtemisIntent`），对用户表现为「默认自动」；
+> 改为默认关闭后，只有用户显式选择「启动时询问」或「自动」才会执行补丁与自动回退。
 
 ---
 
@@ -249,7 +254,7 @@ TyranorNext 现有对应实现：`app/src/main/java/com/tyranor/next/core/unpack
 | PFS 归档改名 `root.pfs` | **有**（`I()`，含 `x.pfs.001` → `root.pfs.001`） | **无**（按原文件名读取，不重命名） | 按需：若遇到 "只有非 root 命名的 pfs 才可启动" 的机型/内核，再补；注意多家族冲突风险 |
 | 数据 XOR 条件 | `归档版本号 >= 8` | `数据长度 >= 8` | 用真实样本核对两种条件是否等价；若发现旧版本归档（'0'~'7'）未加密，应改为版本号判断 |
 | Windows 环境补丁 | 有（`system.lua`/`init.lua`，`game.os = "windows"`） | **无** | 建议实现（单游戏菜单/设置项 + 幂等改写） |
-| 自动补丁 | 启动时按 `artemisAutoPatch` = ask/true/false，仅基础补丁 | 已有等价策略（ask 弹窗 → auto/off；含 clean 内核跳过），仅基础补丁 | 若要"自动补 Windows 环境补丁"需新增独立开关，不建议默认开 |
+| 自动补丁 | 启动时按 `artemisAutoPatch` = ask/true/false，仅基础补丁 | 已有等价策略（ask 弹窗 → auto/off；含 clean 内核跳过），仅基础补丁；**默认 off（上游默认 ask，差异见 §6）** | 若要"自动补 Windows 环境补丁"需新增独立开关，不建议默认开 |
 | 失败语义 | 魔数不符/越界 → `false`；无 PFS → `true` | 校验更严（表长/条目数/名字长度/边界/总量上限），单项失败跳过继续 | 保留现状（更安全） |
 
 ---

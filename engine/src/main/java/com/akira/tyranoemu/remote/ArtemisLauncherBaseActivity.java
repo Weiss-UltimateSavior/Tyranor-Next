@@ -36,6 +36,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public final void onCreate(Bundle bundle) {
+        Log.i("YukiArtemis", "onCreate enter pid=" + android.os.Process.myPid());
         super.onCreate(bundle);
         createdAtElapsed = SystemClock.elapsedRealtime();
         Log.i("YukiArtemis", "onCreate path=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH)) + " scoped=" + (getIntent() != null && getIntent().getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) + " saveName=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.SCOPED_SAVE_NAME)));
@@ -51,6 +52,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     protected void onPause() {
+        Log.i("YukiArtemis", "onPause finishing=" + isFinishing() + " pid=" + android.os.Process.myPid());
         nativePauseAllSound();
         super.onPause();
     }
@@ -81,7 +83,9 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         // 是部分设备黑屏/闪退的根因，与 KRKR 退出即杀进程同策略。
         boolean retryStarted = maybeRetryWithCompatibleArtemis();
         if (!retryStarted) recordSuccessfulArtemisVersionIfNeeded();
+        Log.i("YukiArtemis", "onDestroy before super retry=" + retryStarted + " pid=" + android.os.Process.myPid());
         super.onDestroy();
+        Log.i("YukiArtemis", "onDestroy killing pid=" + android.os.Process.myPid());
         try {
             android.os.Process.killProcess(android.os.Process.myPid());
         } catch (Throwable ignored) {

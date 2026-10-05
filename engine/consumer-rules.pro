@@ -10,6 +10,7 @@
 -keep class org.libsdl.app.** { *; }
 -keep class org.cocos2dx.lib.** { *; }
 -keep class bridge.NativeBridge { *; }
+-keep class com.core.archive.** { *; }
 -keep class com.akira.tyranoemu.remote.** { *; }
 -keep class com.core.fvp.** { *; }
 # Artemis 引擎 native（libartemis*.so）通过字符串 FindClass("moe/artemis/gui/Dialog")

@@ -53,12 +53,12 @@
 
 - 目录：`app/src/main/java/com/tyranor/next/core/`
 
-- 职责：游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新。
+- 职责：游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、XP3 解包/封包、应用/引擎/单游戏配置、授权、后台更新。
 
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
-- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/settings`、`core/auth`、`core/updater` 等包。
+- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater` 等包。
 
 ### 3. 界面 UI 交互层
 
@@ -68,7 +68,7 @@
 
 - 规则：只能调用功能抽象层；禁止直接 import `com.core`、`com.akira`、`com.yuri`、`org.tvp`、`org.libsdl`、`org.cocos2dx`、`bridge` 等底层引擎包。
 
-- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/auth`，公共组件放入 `ui/common`。
+- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`，公共组件放入 `ui/common`。
 
 ### 4. 资源归属
 
@@ -144,7 +144,8 @@
 
 ### 4. 背景色
 
-- 顶部栏**使用页面背景色** **`colorScheme.background`（不透明）**（`Modifier.background(colorScheme.background)`），标题与图标统一使用 `colorScheme.onBackground`。
+- 顶部栏背景**恒为透明**（`AppTopBar` 默认 `Color.Transparent`），露出页面根部背景层：默认外观风格为「纯色 + 主题色/近似色渐变（浅色含柔光+高斯模糊，深色为黑底对角渐变）」（`theme/DefaultPageBackground.kt`，可在应用设置「默认主题渐变」关闭，关闭后为纯色底），玻璃系风格为玻璃页面渐变。标题与图标统一使用 `colorScheme.onBackground`。
+- 页面根容器（`MiuixScaffold(containerColor = …)`、页面级 Box）同样**不得铺不透明背景色**（一律 `Color.Transparent`），背景由根部背景层负责；否则会把渐变背景整片盖掉。
 
 - **玻璃系外观风格（复古玻璃 / 高级玻璃）**：玻璃下页面背景透明，顶栏保持透明（露出渐变/色斑与环境光）。
   因此**页面内容必须整体垫在顶栏下方**（用持久 `Modifier.padding(top = 顶栏高度)`，而不是滚动区的
@@ -174,7 +175,7 @@ Column(fillMaxSize)                                // 页面根
 └── 正文内容
 ```
 
-> 设置类页面若使用 `MiuixScaffold`，顶部栏在 `topBar` 槽中按同样规则实现：
+> 设置类页面若使用 `MiuixScaffold`，`containerColor` 取 `Color.Transparent`（背景由根部背景层绘制）；顶部栏在 `topBar` 槽中按同样规则实现：
 > `Column(background(background)) { Column(statusBarsPadding) { Row(height 64dp, padding horizontal 16dp) { ... } } }`，
 > 并设 `contentWindowInsets = WindowInsets(0.dp)` 避免系统 inset 再次叠加间距。
 
@@ -229,6 +230,8 @@ Column(fillMaxSize)                                // 页面根
 - 顶部栏标题不受此限制，仍用 `MaterialTheme.typography.titleLarge` Bold。
 
 - **明文豁免**：首页快捷启动卡（`ui/home/HomeScreen.kt` 的 QuickLaunchCard）以封面模糊图 + 黑色压暗遮罩为背景、白色文字展示，卡片内游戏名使用 `MaterialTheme.typography.titleLarge` Bold、引擎名使用 `MaterialTheme.typography.headlineSmall` Bold，均不受两档制限制；该卡片其余文字仍遵循两档制。
+
+- **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCard`，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色、外观模式与色调切换变化**。
 
 ***
 
@@ -368,10 +371,23 @@ Column(fillMaxSize)                                // 页面根
 | 单游戏覆盖文本弹窗（Winlator 容器、Web 端口等） | `ui/settings/PerGameSettingsScreen.kt`（`OverrideText`） | `DialogTextButton` + 输入区包 `NoIndication` |
 | 添加 PC 游戏弹窗 | `ui/game/PcGameAddDialog.kt` | `DialogTextButton` + 行内 `indication = null` |
 
-### 3. 存量对齐
+### 3. 页内按钮（同一意图，非弹窗）
+
+`AppScreenScaffold` 的 `WithoutPressIndication` 只影响走 `LocalIndication` 的组件；Material3 的
+`Button` / `TextButton` 内部显式使用 `ripple()`，**不受其约束**。页内需要无按压反馈的按钮统一使用
+`ui/common/NoPressFeedbackButtons.kt`：
+
+- 填充按钮：`NoRippleButton`（`tonal = true` 为浅底次级样式，可用于「前往授权」类动作）；
+- 文本按钮：`NoRippleTextButton`。
+
+| 场景 | 位置 | 组件 |
+| --- | --- | --- |
+| 解包 / 封包页（授权 / 选择目录 / 解包 / 封包 / 重新扫描 / 更换目录） | `ui/archive/ArchiveUnpackActivity.kt` | `NoRippleButton` / `NoRippleTextButton` |
+
+### 4. 存量对齐
 
 其余既有弹窗（`GameScreen`、`LaunchErrorDialog`、`CoverScraperSettingsActivity` 等仍有 Material
-`TextButton`）按「改动即对齐」迁移：任何弹窗被修改时，须同步替换为无点击反馈实现。
+`TextButton`）与页内 M3 `Button` 按「改动即对齐」迁移：任何页面/弹窗被修改时，须同步替换为无点击反馈实现。
 
 ***
 
@@ -405,6 +421,10 @@ Column(fillMaxSize)                                // 页面根
 
 - 语义色：`colorScheme.error`（错误/删除）、引擎封面色（`EngineType.coverColor()`）、封面占位白字等。
 
+- **主题色实底组件**（背景为不透明 `primary` 的按钮/徽标等）内的文字与图标**固定使用白色**（`Color.White`），
+  **禁止**使用 `MaterialTheme.colorScheme.onPrimary` 等会随主题色变化的跟随色；浅底（primary 加透明度）
+  的次级样式才使用主题色文字。
+
 - 新增任何颜色先检查 `Color.kt` 是否已有现成常量；中性色必须统一收口到 `Color.kt`，不在页面内散落硬编码。
 
 ### 3.5 组件容器/背景色的色调跟随
@@ -436,6 +456,12 @@ Column(fillMaxSize)                                // 页面根
   只能用背景取色渐变 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
+
+- **游戏操作抽屉（`GameActionsSheet`）关闭拖拽手势**：统一传 `sheetGesturesEnabled = false`，只允许遮罩/返回键关闭。
+  原因：M3 `ModalBottomSheet` 的关闭判定是「位移 > 56dp 或速度 > 125dp/s」任一命中即关闭（`BottomSheetDefaults`
+  的 `PositionalThreshold` / `VelocityThreshold`，1.4.0 起 `rememberModalBottomSheetState` 不暴露这两个阈值），
+  且列表到顶后的剩余手势/惯性会转交抽屉，导致用户"滑动稍微快一点"就误关抽屉。新增抽屉照此对齐；
+  内容滚动与条目点击不受影响。
 
 - 页面背景 → `PageGrey`
 

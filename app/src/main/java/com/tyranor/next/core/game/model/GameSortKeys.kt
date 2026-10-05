@@ -12,14 +12,9 @@ object GameSortKeys {
     /** 标题排序键：小写 + 去首尾空白（Locale.ROOT）。 */
     fun titleKey(title: String): String = title.lowercase(Locale.ROOT).trim()
 
-    /** 标题中的 【】/[] 标签内容；无标签返回空串。 */
-    fun bracketTag(title: String): String {
-        val match = TAG_RE.find(title) ?: return ""
-        return (match.groups[1]?.value ?: match.groups[2]?.value).orEmpty().trim()
-    }
+    /** 标题中的 【】/[] 标签内容（首个）；无标签返回空串。解析口径见 [GameTitleTags]。 */
+    fun bracketTag(title: String): String = GameTitleTags.firstTag(title)
 
     /** 标签排序键：小写化后的标签内容。 */
     fun tagKey(title: String): String = bracketTag(title).lowercase(Locale.ROOT)
-
-    private val TAG_RE = Regex("""【([^】]+)】|\[([^\]]+)]""")
 }

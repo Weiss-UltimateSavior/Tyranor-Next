@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">OK</string>
+    <string name="common_done">Done</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_delete">Delete</string>
     <string name="common_save">Save</string>
@@ -33,6 +34,7 @@
     <string name="settings_theme_mode">Appearance</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_default_theme_gradient">Default theme gradient</string>
     <string name="settings_tone_switch">Tone switch</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
     <string name="settings_side_rail">Tablet side rail</string>
@@ -54,6 +56,11 @@
     <string name="settings_scan_depth_level">%1$d levels</string>
     <string name="settings_sort_alpha">Alphabetical</string>
     <string name="settings_sort_bracket_tag">Bracket tag</string>
+    <string name="settings_game_card_style">Game card style</string>
+    <string name="settings_game_card_style_grid">Grid</string>
+    <string name="settings_game_card_style_cover_flow">List</string>
+    <string name="settings_game_card_badge">Card engine badge</string>
+    <string name="settings_game_card_hide_title_tag">Hide name tags on cards</string>
     <string name="settings_game_sort">Game sorting</string>
     <string name="settings_engine_settings">Engine settings</string>
     <string name="settings_app_summary">Application-level preferences</string>
@@ -589,6 +596,39 @@
     <string name="launch_create_krkr_scoped_save_failed">Unable to create the KRKR app-specific save directory: %1$s</string>
     <string name="launch_create_krkr_save_failed">Unable to create the KRKR save directory: %1$s</string>
 
+    <string name="archive_title">Unpack / Pack</string>
+    <string name="archive_permission_rationale">“All files access” is required to read archives from storage directly; without it some folders cannot be scanned or fall back to slow transfers</string>
+    <string name="archive_permission_grant">Grant</string>
+    <string name="archive_mode_unpack">Unpack</string>
+    <string name="archive_mode_pack">Pack</string>
+    <string name="archive_pick_source_dir">Select game folder</string>
+    <string name="archive_rescan">Rescan</string>
+    <string name="archive_change_dir">Change</string>
+    <string name="archive_scanning">Scanning…</string>
+    <string name="archive_no_archives">No XP3 found in this folder</string>
+    <string name="archive_select_hint">Select an archive on the left to preview</string>
+    <string name="archive_archives_count">%1$d archives</string>
+    <string name="archive_extract_to">Extract to %1$s folder</string>
+    <string name="archive_extract_created">Extracted to %1$s</string>
+    <string name="archive_pack_pick_dir">Select folder to pack</string>
+    <string name="archive_pack_action">Pack</string>
+    <string name="archive_pack_done">Packed: %1$s</string>
+    <string name="archive_pick_dir">Select folder</string>
+    <string name="archive_done_extract_skipped">Extracted %1$d files, skipped %2$d</string>
+    <string name="archive_native_missing">Unpack component missing, please reinstall the full app and retry</string>
+    <string name="archive_level">Level (0=store)</string>
+    <string name="archive_conflict_dir">Folder “%1$s” already exists — back it up or rename it first</string>
+    <string name="archive_conflict_file">Output “%1$s” already exists — back it up or rename it first</string>
+    <string name="archive_conflict_inside">Duplicate entry “%1$s” inside the archive — extraction refused to avoid overwriting</string>
+    <string name="archive_conflict_rollback">Rollback of output folder “%1$s” did not finish — partial files may remain, please check and delete manually</string>
+    <string name="archive_no_dir">Select a folder first</string>
+    <string name="archive_empty_list">Empty or unreadable</string>
+    <string name="archive_entries_summary">%1$d entries, %2$s total</string>
+    <string name="archive_failed_generic">Operation failed, please retry</string>
+    <string name="archive_busy">An unpack/pack operation is already running</string>
+    <string name="archive_input_empty">The selected folder contains no files to pack</string>
+    <string name="archive_cancelled">Cancelled</string>
+
     <string name="patch_error_only_kirikiri">Online patches are only supported for Kirikiri games</string>
     <string name="patch_error_select_patch">Select a patch to download</string>
     <string name="patch_progress_downloading">Downloading %1$s</string>
@@ -607,4 +647,5 @@
     <string name="pc_add_loading">Reading folder…</string>
     <string name="pc_add_duplicate">This folder is already in the library</string>
     <string name="pc_add_failed">Failed to add, please retry</string>
+    <string name="game_cover_flow_caption">%1$s - %2$s</string>
 </resources>

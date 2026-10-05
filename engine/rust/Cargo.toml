@@ -1,0 +1,30 @@
+[package]
+name = "archive_xp3-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+# vendor/xp3 是自带 Cargo.toml 的独立 crate（patch.crates-io 指向），不并入本包源。
+exclude = ["vendor"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+jni = "0.21"
+tokio = { version = "1", features = ["io-util"] }
+xp3 = "0.4"
+flate2 = "1"
+
+# xp3 0.4.2（crates.io）的索引解压 read_to_end 无上限：敌意包 open 阶段可放大
+# ~1032× 直接 native OOM。同步上游 usefulunpack 的本地 fork（vendor/xp3）：
+# 索引解压总量 cap 256 MiB + 条目数 cap 100 万 + name_len 边界检查。
+[patch.crates-io]
+xp3 = { path = "vendor/xp3" }
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = true
+codegen-units = 1
+# NOTE: no `panic = "abort"` — the JNI `guarded`/`catch_unwind` crash guards
+# depend on unwinding; abort would turn every Rust panic into a process death.

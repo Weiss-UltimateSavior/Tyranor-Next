@@ -79,6 +79,7 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
@@ -263,7 +264,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = modifier,
-            containerColor = MiuixTheme.colorScheme.background,
+            containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = { SettingsTopBar(stringResource(R.string.nav_settings)) },
         ) { innerPadding ->
@@ -332,12 +333,18 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
+                    // 引擎设置与拆封包合入同一卡片（同类工具入口）
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_engine_settings),
                                 startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
                                 onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
+                            )
+                            ArrowPreference(
+                                title = stringResource(R.string.archive_title),
+                                startAction = { SettingsItemIcon(R.drawable.ic_sheet_archive) },
+                                onClick = { startActivityWithPageTransition(ctx, ArchiveUnpackActivity.createIntent(ctx)) },
                             )
                         }
                     }
@@ -812,12 +819,12 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = MiuixTheme.colorScheme.background,
+            containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = engineSettingsKindTitle(kind),
-                    background = MiuixTheme.colorScheme.background,
+                    background = Color.Transparent,
                     contentColor = MiuixTheme.colorScheme.onBackground,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
@@ -918,7 +925,7 @@ private fun SettingsItemIcon(@DrawableRes iconRes: Int) {
 private fun SettingsTopBar(title: String) {
     AppTopBar(
         title = title,
-        background = MiuixTheme.colorScheme.background,
+        background = Color.Transparent,
         contentColor = MiuixTheme.colorScheme.onBackground,
     )
 }

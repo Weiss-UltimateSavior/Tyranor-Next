@@ -45,7 +45,7 @@ _Avoid_: 渲染器、后端
 _Avoid_: 补丁、Hook
 
 **autopatch 策略**:
-Artemis 启动前对必要文件（system.ini、list_windows、movie 等）进行幂等修补的决策策略：「启动时询问 / 自动 / 关闭」，由共享确认弹窗承载。
+Artemis 启动前对必要文件（system.ini、list_windows、movie 等）进行幂等修补的决策策略：「启动时询问 / 自动 / 关闭」，由共享确认弹窗承载；**默认关闭**（`ART_PATCH_DEFAULT`，避免无弹窗路径下等价于自动补丁）。
 _Avoid_: 自动补丁、提问开关
 
 **Siglus 标题回写（Title Feedback）**:
@@ -171,6 +171,24 @@ _Avoid_: 转码、迁移（迁移专指目录位置变更）、写死 `<游戏�
 **存档互通（Save Interop）**:
 开启后 MV/MZ 的存档在「标准侧 `<内容根>/save`」与「Tyranor 侧生效存档目录」（独立存档开关决定，检测/转化/同步三处同源）间双向自动同步：启动前与回到前台各同步一次（退出后 500ms 强杀进程、无回调，故以前台兜底并等待会话进程退出）。标准侧兼容 `save` / `Save` 两种拼写（同槽位内容一致视为等价副本，不一致把未选中副本隔离进 `deleted/`）；导入压缩包会剥掉外层文件夹包装。逐槽位较新者胜，mtime 相同须内容哈希一致才跳过；Tyranor 侧已删除的槽位把标准侧对应文件移入 `<标准侧>/deleted/`；标准侧缺失则重新导出。以应用私有同步清单区分「新建」与「已删除」，清单损坏即中止同步（不做任何文件改动）。由全局/单游戏开关控制，默认关。
 _Avoid_: 云同步、备份（与存档镜像不同）
+
+## 拆封包
+
+**拆封包（Archive Unpack / Pack）**:
+设置内独立工具页（`ui/archive`）：扫描所选目录下的 XP3 封包、主从预览条目并整体解包到归档同名文件夹（同名拒绝，不自动改名）；封包把所选目录压成同级同名 `.xp3`（0=明文存放，1–9 zlib 等级）。Rust 实现（`engine/rust`），与 Artemis 启动链的 `ArtemisPfsUnpacker`（仅启动补丁，纯 Kotlin）互不依赖。
+_Avoid_: 解压（系统压缩包语义）、打包
+
+**归档扫描（ArchiveScanner）**:
+拆封包页对所选目录树的递归 XP3 探测：仅按扩展名 `.xp3` 判定，深度与数量有上限；真实路径优先（safUriToPath），映射失败退 DocumentFile 遍历。
+_Avoid_: 游戏扫描（EngineScanner 语义）
+
+**归档暂存（ArchiveStaging）**:
+SAF `content://` 无法映射真实路径时，把输入拷入 `cacheDir/archive_staging` 中转、解包产物再写回目录树的桥接机制；页首清一次陈旧暂存。
+_Avoid_: 缓存（泛化）
+
+**KSD mode-2 隐性解码**:
+XP3 小条目解包时顺带解开 Kirikiri KSD mode-2 内层包裹（`FE FE 02 FF FE` 头），使导出脚本文本可直接编辑；krkrsdl3 引擎 TextStream 原生支持该包裹，解开与否不影响游戏运行，无独立入口。
+_Avoid_: KSD 解包功能（不存在独立功能）
 
 ## 界面规范
 

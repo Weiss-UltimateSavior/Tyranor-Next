@@ -101,9 +101,14 @@ internal class TyranoLocalHttpServer(
 
     companion object {
         private const val TAG = "YukiTyrano"
+        /** asar 模式下的 index 入口回退路径，与 asarRootPrefix 探测保持一致。 */
+        private val ASAR_INDEX_CANDIDATES = arrayOf(
+            "index.html", "www/index.html", "app/index.html", "resources/app/index.html",
+        )
     }
 
-    private class ResolvedFile(val file: File?, val data: ByteArray?)
+    /** 命中结果：散文件 [file] 或 asar 内条目 [asarPath]，二者至多其一非空。 */
+    private class ResolvedFile(val file: File?, val asarPath: String?)
 
     private fun handle(socket: Socket) {
         try {
@@ -134,26 +139,30 @@ internal class TyranoLocalHttpServer(
                 sendBytes(socket, resource, uri, method.equals("HEAD", true))
                 return
             }
+            val headOnly = method.equals("HEAD", true)
             val resolved = resolveRequestedFile(uri)
-            if (resolved == null || (resolved.file == null && resolved.data == null)) {
+            val asarEntry = resolved.asarPath
+            if (asarEntry != null) {
+                // 仅 index 注入与脚本追加需要整体字节；其余（含视频）按 Range 流式读取，避免大文件整体入内存。
+                if (isIndexHtml(uri)) sendInjectedIndex(socket, asar?.read(asarEntry), headOnly)
+                else if (hasScriptAppend(uri)) sendAppendedBytes(socket, asar?.read(asarEntry) ?: ByteArray(0), uri, headOnly)
+                else sendAsarResource(socket, asarEntry, headers["range"], headOnly)
+                return
+            }
+            val file = resolved.file
+            if (file == null) {
                 sendText(socket, 404, "Not Found", "not found: $uri")
                 return
             }
-            if (resolved.data != null) {
-                if (isIndexHtml(uri)) sendInjectedIndex(socket, resolved.data, method.equals("HEAD", true))
-                else if (hasScriptAppend(uri)) sendAppendedBytes(socket, resolved.data, uri, method.equals("HEAD", true))
-                else sendBytes(socket, resolved.data, uri, method.equals("HEAD", true))
-                return
-            }
-            if (isIndexHtml(uri, resolved.file)) {
-                sendInjectedIndex(socket, resolved.file!!, method.equals("HEAD", true))
+            if (isIndexHtml(uri, file)) {
+                sendInjectedIndex(socket, file, headOnly)
                 return
             }
             if (hasScriptAppend(uri)) {
-                sendAppendedFile(socket, resolved.file!!, uri, method.equals("HEAD", true))
+                sendAppendedFile(socket, file, uri, headOnly)
                 return
             }
-            sendFile(socket, resolved.file, headers["range"], method.equals("HEAD", true))
+            sendFile(socket, file, headers["range"], headOnly)
         } catch (t: Throwable) {
             if (isExpectedClientDisconnect(t)) {
                 Log.d(TAG, "client disconnected while serving local resource: ${t.javaClass.simpleName}")
@@ -180,18 +189,21 @@ internal class TyranoLocalHttpServer(
             target = canonicalIfValid(alt)
             if (target != null) { Log.i(TAG, "resource fallback rpgmvm->rpgmvo $uri -> $alt"); return ResolvedFile(target, null) }
         }
-        if (asar != null) {
-            val data = asar.read(asarRootPrefix + uri) ?: asar.read(uri)
-            if (data != null) return ResolvedFile(null, data)
-            if (uri.equals("index.html", true) || uri.equals("index.htm", true)) {
-                var indexBytes = asar.read("index.html")
-                if (indexBytes == null) indexBytes = asar.read("www/index.html")
-                if (indexBytes == null) indexBytes = asar.read("app/index.html")
-                if (indexBytes == null) indexBytes = asar.read("resources/app/index.html")
-                if (indexBytes != null) return ResolvedFile(null, indexBytes)
+        resolveAsarEntry(uri)?.let { return ResolvedFile(null, it) }
+        return ResolvedFile(resolveCaseInsensitive(uri), null)
+    }
+
+    /** 在 asar 中定位 [uri]：先按包内根前缀，再按原路径；仅 index 请求额外回退到常见入口路径。 */
+    private fun resolveAsarEntry(uri: String): String? {
+        val archive = asar ?: return null
+        if (archive.fileSize(asarRootPrefix + uri) != null) return asarRootPrefix + uri
+        if (archive.fileSize(uri) != null) return uri
+        if (uri.equals("index.html", true) || uri.equals("index.htm", true)) {
+            for (candidate in ASAR_INDEX_CANDIDATES) {
+                if (archive.fileSize(candidate) != null) return candidate
             }
         }
-        return ResolvedFile(resolveCaseInsensitive(uri), null)
+        return null
     }
 
     private fun canonicalIfValid(uri: String?): File? {
@@ -344,6 +356,39 @@ internal class TyranoLocalHttpServer(
         raw.flush()
     }
 
+    /**
+     * asar 内资源的 Range 响应：按区间从归档流式读取，不整体载入内存。
+     * 视频等大文件必须走此路径，否则单次请求会分配上百 MB 大对象并因缺少分段支持导致
+     * 播放器报 `net::ERR_FAILED`。
+     */
+    private fun sendAsarResource(socket: Socket, entryPath: String, rangeHeader: String?, headOnly: Boolean) {
+        val archive = asar
+        val fileLen = archive?.fileSize(entryPath)
+        if (archive == null || fileLen == null) {
+            sendText(socket, 404, "Not Found", "asar entry missing: $entryPath")
+            return
+        }
+        // 与 sendFile 共用 rpgmaker 宿主的 parseRangeHeader，避免同规则两份实现漂移。
+        val range = parseRangeHeader(rangeHeader, fileLen)
+        val start = range?.start ?: 0L
+        val end = range?.end ?: (fileLen - 1)
+        val partial = range?.partial == true
+        val len = Math.max(0, end - start + 1)
+        val raw = BufferedOutputStream(socket.getOutputStream())
+        val h = StringBuilder()
+        h.append("HTTP/1.1 ").append(if (partial) "206 Partial Content" else "200 OK").append("\r\n")
+        h.append("Accept-Ranges: bytes\r\n")
+        h.append("Content-Type: ").append(mime(entryPath)).append("\r\n")
+        h.append("Cache-Control: no-cache\r\n")
+        h.append("Access-Control-Allow-Origin: *\r\n")
+        h.append("Content-Length: ").append(len).append("\r\n")
+        if (partial) h.append("Content-Range: bytes ").append(start).append('-').append(end).append('/').append(fileLen).append("\r\n")
+        h.append("Connection: close\r\n\r\n")
+        raw.write(h.toString().toByteArray(StandardCharsets.UTF_8))
+        if (!headOnly) archive.writeRange(entryPath, start, len, raw)
+        raw.flush()
+    }
+
     private fun sendBytes(socket: Socket, data: ByteArray?, uri: String, headOnly: Boolean) {
         if (data == null) { sendText(socket, 404, "Not Found", "data missing"); return }
         val raw = BufferedOutputStream(socket.getOutputStream())
@@ -421,8 +466,11 @@ internal fun buildInjectedHtml(
     val script = String(hook, StandardCharsets.UTF_8)
     val hookTag = if (script.isBlank()) "" else "\n<script type='text/javascript'>\n$script\n</script>\n"
     val injected = hookTag + injectedHtml
-    val marker = if (beforeBody) "</body>" else "</head>"
-    val position = html.lowercase(Locale.ROOT).indexOf(marker)
+    // 首选标记缺失时回退到另一个，避免缺少 </body> 的页面被退化为「整体前置」而触发怪异模式
+    val lower = html.lowercase(Locale.ROOT)
+    val primary = if (beforeBody) "</body>" else "</head>"
+    val secondary = if (beforeBody) "</head>" else "</body>"
+    val position = lower.indexOf(primary).takeIf { it >= 0 } ?: lower.indexOf(secondary)
     val result = if (position >= 0) {
         html.substring(0, position) + injected + html.substring(position)
     } else {
