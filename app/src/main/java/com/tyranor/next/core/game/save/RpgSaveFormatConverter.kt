@@ -66,7 +66,8 @@ object RpgSaveFormatConverter {
         var skipped = 0
         var failed = 0
         detection.standardFiles.forEach { source ->
-            val targetName = RpgSaveFormat.standardToTyranor(source.name, engine)
+            // 写入引擎实际固定的落盘名：MV 为 key_<sha256(键)>.bin，MZ 保持原名
+            val targetName = RpgSaveFormat.tyranorFileNameForStandard(source.name, engine)
             if (targetName == null) {
                 failed++
                 return@forEach
@@ -74,8 +75,11 @@ object RpgSaveFormatConverter {
             val target = File(outputDir, targetName)
             var copied = false
             try {
-                if (target.exists()) {
-                    // 目标已有 Tyranor 存档：跳过不覆盖，仅把源文件留底
+                // 该槽位是否已有 Tyranor 存档：不限于规范名——MV 引擎会**优先**读 legacy 名
+                // （RPG *.bin），若只检查规范名就会再写一份哈希文件，形成同槽位两份且被 legacy
+                // 遮蔽。已有任一种即视为「目标已存在」，跳过不覆盖。
+                val existing = existingTyranorFileForSlot(outputDir, source.name, engine)
+                if (existing != null) {
                     if (!moveToOriginal(source)) {
                         failed++
                         return@forEach
@@ -104,6 +108,18 @@ object RpgSaveFormatConverter {
             }
         }
         return RpgSaveFormat.ConvertResult(converted, skipped, failed, detection.hashedCount)
+    }
+
+    /** 目标目录内该槽位已有的 Tyranor 存档文件（legacy 名或规范哈希名，任一即可）。 */
+    private fun existingTyranorFileForSlot(
+        outputDir: File,
+        standardName: String,
+        engine: EngineType,
+    ): File? {
+        val slot = RpgSaveFormat.standardSlot(standardName, engine) ?: return null
+        return outputDir.listFiles().orEmpty().firstOrNull { file ->
+            file.isFile && RpgSaveFormat.tyranorSlot(file.name, engine) == slot
+        }
     }
 
     /** 目标已存在时由调用方保证不进入；先写同目录临时文件再 rename，避免留下截断文件。 */
