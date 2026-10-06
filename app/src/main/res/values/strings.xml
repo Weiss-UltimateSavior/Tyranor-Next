@@ -639,6 +639,10 @@
     <string name="engine_settings_rpgm_rtp_import">导入</string>
     <string name="engine_settings_rpgm_rtp_imported">RTP 导入完成</string>
     <string name="engine_settings_rpgm_rtp_import_failed">RTP 导入失败</string>
+    <string name="engine_settings_rpgm_rtp_reject_mkdir">无法创建目录：%1$s</string>
+    <string name="engine_settings_rpgm_rtp_reject_total_size">解压总量超过上限（%1$s > %2$s）</string>
+    <string name="engine_settings_rpgm_rtp_reject_entry_size">单条目解压后超过上限（%1$s > %2$s）</string>
+    <string name="engine_settings_rpgm_rtp_reject_entry_count">条目数超过上限（%1$d > %2$d）</string>
     <string name="engine_settings_rpgm_rtp_clear">清除</string>
     <string name="engine_settings_rpgm_rtp_clear_confirm">确定删除该版本的 RTP 资源？</string>
     <string name="engine_settings_rpgm_rtp_cleared">RTP 已清除</string>

@@ -210,19 +210,30 @@ class InputRemapController private constructor(
          */
         private fun handleHostAction(activity: Activity, action: Int): Boolean = when (action) {
             CanonicalKeys.ACTION_SCREENSHOT -> {
-                ScreenCapture.capture(activity) { file ->
+                ScreenCapture.capture(activity) { result ->
                     val publicDir = ScreenCapture.publicDirectory()
-                    val message = when {
-                        file == null -> activity.getString(R.string.engine_input_screenshot_failed)
-                        // 落在公共相册：提示完整路径（用户常要去找图/分享）
-                        file.parentFile?.absolutePath == publicDir.absolutePath ->
-                            activity.getString(R.string.engine_input_screenshot_saved, file.absolutePath)
+                    val message = when (result) {
+                        is ScreenCapture.CaptureResult.Saved -> {
+                            // 落在公共相册：提示完整路径（用户常要去找图/分享）；
+                            // 其余路径（如无「所有文件访问」时的私有目录）如实说明，
+                            // 避免用户去相册找不到
+                            val file = result.file
+                            if (file.parentFile?.absolutePath == publicDir.absolutePath) {
+                                activity.getString(R.string.engine_input_screenshot_saved, file.absolutePath)
+                            } else {
+                                activity.getString(
+                                    R.string.engine_input_screenshot_saved_private,
+                                    file.absolutePath,
+                                )
+                            }
+                        }
 
-                        // 无「所有文件访问」权限时回退到应用私有目录：如实说明，避免用户去相册找不到
-                        else -> activity.getString(
-                            R.string.engine_input_screenshot_saved_private,
-                            file.absolutePath,
-                        )
+                        // 连点：上一张仍在保存——给反馈而不是静默丢弃
+                        ScreenCapture.CaptureResult.Busy ->
+                            activity.getString(R.string.engine_input_screenshot_busy)
+
+                        ScreenCapture.CaptureResult.Failed ->
+                            activity.getString(R.string.engine_input_screenshot_failed)
                     }
                     runCatching { Toast.makeText(activity, message, Toast.LENGTH_LONG).show() }
                 }

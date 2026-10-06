@@ -639,6 +639,10 @@
     <string name="engine_settings_rpgm_rtp_import">インポート</string>
     <string name="engine_settings_rpgm_rtp_imported">RTP をインポートしました</string>
     <string name="engine_settings_rpgm_rtp_import_failed">RTP のインポートに失敗しました</string>
+    <string name="engine_settings_rpgm_rtp_reject_mkdir">ディレクトリを作成できません：%1$s</string>
+    <string name="engine_settings_rpgm_rtp_reject_total_size">展開サイズの合計が上限を超えています（%1$s > %2$s）</string>
+    <string name="engine_settings_rpgm_rtp_reject_entry_size">展開後のエントリがサイズ上限を超えています（%1$s > %2$s）</string>
+    <string name="engine_settings_rpgm_rtp_reject_entry_count">エントリ数が上限を超えています（%1$d > %2$d）</string>
     <string name="engine_settings_rpgm_rtp_clear">削除</string>
     <string name="engine_settings_rpgm_rtp_clear_confirm">このバージョンの RTP を削除しますか？</string>
     <string name="engine_settings_rpgm_rtp_cleared">RTP を削除しました</string>

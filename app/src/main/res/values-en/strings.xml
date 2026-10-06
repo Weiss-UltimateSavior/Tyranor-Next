@@ -639,6 +639,10 @@
     <string name="engine_settings_rpgm_rtp_import">Import</string>
     <string name="engine_settings_rpgm_rtp_imported">RTP imported</string>
     <string name="engine_settings_rpgm_rtp_import_failed">RTP import failed</string>
+    <string name="engine_settings_rpgm_rtp_reject_mkdir">Cannot create directory: %1$s</string>
+    <string name="engine_settings_rpgm_rtp_reject_total_size">Extracted size exceeds limit (%1$s > %2$s)</string>
+    <string name="engine_settings_rpgm_rtp_reject_entry_size">Entry exceeds size limit after extraction (%1$s > %2$s)</string>
+    <string name="engine_settings_rpgm_rtp_reject_entry_count">Too many entries (%1$d > %2$d)</string>
     <string name="engine_settings_rpgm_rtp_clear">Clear</string>
     <string name="engine_settings_rpgm_rtp_clear_confirm">Delete the RTP files for this version?</string>
     <string name="engine_settings_rpgm_rtp_cleared">RTP cleared</string>

@@ -1,10 +1,12 @@
 package com.core.input
 
 import android.app.Activity
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
@@ -19,6 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 游戏画面截屏（PixelCopy）。
@@ -28,16 +31,16 @@ import java.util.concurrent.Executors
  * 而 PixelCopy 从窗口的合成结果取像素，对两类宿主都有效。minSdk 26 起
  * `PixelCopy.request(Window, …)` 可用，无需考虑旧 API 分支。
  *
- * 落盘策略（逐级降级，回调给出的路径即实际落点，由调用方据实提示）：
- *  1. **MediaStore（API 29+，首选）**：写入 `DCIM/tyranornext/`，scoped storage 下
- *     无需任何权限且自动进相册索引，兼容面最大；
- *  2. **直写文件**：API 30+ 需「所有文件访问」（MANAGE_EXTERNAL_STORAGE），
- *     API 26-28 需存储权限；成功后主动通知媒体扫描；
+ * 取的是**整个窗口**的合成结果，因此虚拟按键层 / FAB 也会进图（它们与游戏画面同窗）。
+ *
+ * 落盘策略（逐级降级；[CaptureResult.Saved.file] 是核对过存在性的真实路径，不猜测）：
+ *  1. **MediaStore（API 29+）**：写入 `DCIM/tyranornext/`，scoped storage 下无需任何权限
+ *     且自动进相册索引；
+ *  2. **直写文件**：仅 API 30+ 且已授予「所有文件访问」时可用（MANAGE_EXTERNAL_STORAGE）。
+ *     API 26–28 的 `WRITE_EXTERNAL_STORAGE` 是危险权限，而应用侧从未运行时申请，故这一段
+ *     在 26–28 上必然失败；
  *  3. **应用外部私有目录**回退（`Android/data/<包名>/files/screenshots/`，无需权限），
  *     保证任何情况下截屏都不丢。
- *
- * 三个层级都落在名为 tyranornext / screenshots 的独立目录，不与相机、其它应用的
- * 截图混在同一层。
  */
 object ScreenCapture {
 
@@ -49,45 +52,60 @@ object ScreenCapture {
     /** 回退目录名（应用外部私有目录下）。 */
     private const val FALLBACK_DIR_NAME = "screenshots"
 
+    /** 截屏结果：调用方按实际落点提示，不猜测路径。 */
+    sealed interface CaptureResult {
+
+        /** 已保存；[file] 为核对过存在性的实际路径。 */
+        data class Saved(val file: File) : CaptureResult
+
+        /** 上一张仍在保存中，本次未执行（连点保护）。 */
+        data object Busy : CaptureResult
+
+        /** 窗口未就绪、PixelCopy 失败或写盘失败。 */
+        data object Failed : CaptureResult
+    }
+
     /** PNG 编码在后台线程执行（整屏图编码数百毫秒，放主线程会明显卡顿）。 */
     private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "tyranor-screenshot").apply { isDaemon = true }
     }
 
     /** 同一时刻只允许一次截屏（连点不叠加、避免写同名文件）。 */
-    @Volatile
-    private var capturing = false
+    private val capturing = AtomicBoolean(false)
 
     /**
      * 截取 [activity] 当前窗口并保存为 PNG。
      *
-     * [onResult] 在主线程回调：成功给实际保存的文件（公共目录或回退目录），失败给 null
-     * （窗口未就绪、编码失败等）。已在进行中的截屏会被直接忽略，回调不会被调用。
+     * [onResult] 在主线程回调，且**总会**被调用一次：成功给 [CaptureResult.Saved]，
+     * 上一张仍在保存时给 [CaptureResult.Busy]（连点不再静默丢弃），其余失败给
+     * [CaptureResult.Failed]。
      */
-    fun capture(activity: Activity, onResult: (File?) -> Unit) {
-        if (capturing) return
+    fun capture(activity: Activity, onResult: (CaptureResult) -> Unit) {
         val window = activity.window
         val decor = window.decorView
         val width = decor.width
         val height = decor.height
         if (width <= 0 || height <= 0) {
             Log.w(TAG, "capture skipped: window size ${width}x$height")
-            onResult(null)
+            onResult(CaptureResult.Failed)
             return
         }
-        capturing = true
+        if (!capturing.compareAndSet(false, true)) {
+            onResult(CaptureResult.Busy)
+            return
+        }
         val mainHandler = Handler(Looper.getMainLooper())
         val bitmap = runCatching {
             Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         }.getOrNull()
         if (bitmap == null) {
-            capturing = false
-            onResult(null)
+            capturing.set(false)
+            onResult(CaptureResult.Failed)
             return
         }
-        val finish: (File?) -> Unit = { file ->
-            capturing = false
-            mainHandler.post { onResult(file) }
+        val finish: (CaptureResult) -> Unit = { result ->
+            capturing.set(false)
+            mainHandler.post { onResult(result) }
         }
         try {
             PixelCopy.request(
@@ -97,14 +115,14 @@ object ScreenCapture {
                     if (result != PixelCopy.SUCCESS) {
                         Log.w(TAG, "PixelCopy failed result=$result")
                         bitmap.recycle()
-                        finish(null)
+                        finish(CaptureResult.Failed)
                         return@request
                     }
-                    val activityContext = activity.applicationContext
+                    val appContext = activity.applicationContext
                     ioExecutor.execute {
-                        val saved = save(activityContext, bitmap)
+                        val file = save(appContext, bitmap)
                         bitmap.recycle()
-                        finish(saved)
+                        finish(if (file != null) CaptureResult.Saved(file) else CaptureResult.Failed)
                     }
                 },
                 mainHandler,
@@ -113,7 +131,7 @@ object ScreenCapture {
             // 窗口尚未 attach / 正在销毁时 PixelCopy 会抛异常
             Log.w(TAG, "PixelCopy request failed", error)
             bitmap.recycle()
-            finish(null)
+            finish(CaptureResult.Failed)
         }
     }
 
@@ -137,7 +155,8 @@ object ScreenCapture {
             Log.w(TAG, "MediaStore save failed, trying direct write")
         }
 
-        // 2) 直接写文件：API 30+ 需「所有文件访问」，API 26-28 需存储权限
+        // 2) 直接写文件：需「所有文件访问」（API 30+）。API 26–28 因未申请运行时存储权限，
+        //    这里必然拿不到写权限而落到下一级——这是已知取舍，不是缺陷。
         val publicDir = publicDirectory()
         if (publicDir.isDirectory || publicDir.mkdirs()) {
             val target = File(publicDir, name)
@@ -159,8 +178,9 @@ object ScreenCapture {
     /**
      * 经 MediaStore 写入公共相册目录（API 29+，无需存储权限）。
      *
-     * 用 IS_PENDING 标记「写入中」：写完再置 0，避免相册在文件未完整时读到半张图；
-     * 失败时删除已插入的空条目，不留垃圾记录。
+     * 用 IS_PENDING 标记「写入中」：写完再置 0，避免相册在文件未完整时读到半张图。
+     * 三步都显式判定成败——编码失败、清 pending 失败都按失败处理并删除条目，
+     * 否则会在相册里留下不可见或残缺的记录，却对用户报「已保存」。
      */
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun mediaStoreSave(context: Context, name: String, bitmap: Bitmap): File? {
@@ -173,29 +193,67 @@ object ScreenCapture {
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = runCatching { resolver.insert(collection, values) }.getOrNull() ?: return null
-        val written = runCatching {
+
+        // compress 返回 false 表示编码失败；use{} 的结果是 lambda 末值，必须把它带出来
+        val encoded = runCatching {
             resolver.openOutputStream(uri)?.use { output ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+                val ok = bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
                 output.flush()
-            } != null
+                ok
+            } ?: false
         }.getOrDefault(false)
-        if (!written) {
-            runCatching { resolver.delete(uri, null, null) }
+        if (!encoded) {
+            Log.w(TAG, "MediaStore write failed for $uri")
+            deleteQuietly(resolver, uri)
             return null
         }
-        values.clear()
-        values.put(MediaStore.Images.Media.IS_PENDING, 0)
-        runCatching { resolver.update(uri, values, null, null) }
-        // RELATIVE_PATH 决定物理落点就是 DCIM/tyranornext/<name>
-        return File(publicDirectory(), name)
+
+        val cleared = runCatching {
+            val pendingOff = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            resolver.update(uri, pendingOff, null, null) > 0
+        }.getOrDefault(false)
+        if (!cleared) {
+            // 条目保持 pending：对相册与其它应用不可见，且 7 天后被系统清理，
+            // 不能对用户报「已保存到相册」
+            Log.w(TAG, "clearing IS_PENDING failed, discarding entry $uri")
+            deleteQuietly(resolver, uri)
+            return null
+        }
+
+        // 落点以 MediaStore 记录为准（系统可能去重改名）；查不到时退化为约定路径再核对存在性
+        val resolved = queryDataPath(resolver, uri)?.let(::File) ?: File(publicDirectory(), name)
+        if (!resolved.isFile) {
+            Log.w(TAG, "MediaStore entry not found at ${resolved.absolutePath}")
+            return null
+        }
+        return resolved
     }
 
-    private fun writePng(bitmap: Bitmap, target: File): Boolean = try {
-        FileOutputStream(target).use { output ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
-            output.flush()
+    /** 查询 MediaStore 条目的实际磁盘路径；DATA 已废弃但仍是唯一可反解落点的列。 */
+    @Suppress("DEPRECATION")
+    private fun queryDataPath(resolver: ContentResolver, uri: Uri): String? = runCatching {
+        resolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0)?.takeIf { it.isNotBlank() } else null
         }
-        true
+    }.getOrNull()
+
+    private fun deleteQuietly(resolver: ContentResolver, uri: Uri) {
+        runCatching { resolver.delete(uri, null, null) }
+            .onFailure { Log.w(TAG, "delete pending entry failed: $uri", it) }
+    }
+
+    /** 直写 PNG；编码失败也删掉半成品，避免留下空文件被当成有效截图。 */
+    private fun writePng(bitmap: Bitmap, target: File): Boolean = try {
+        val encoded = FileOutputStream(target).use { output ->
+            val ok = bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
+            output.flush()
+            ok
+        }
+        if (!encoded) {
+            Log.w(TAG, "png encode failed: ${target.absolutePath}")
+            target.delete()
+        }
+        encoded
     } catch (error: Throwable) {
         Log.w(TAG, "write png failed: ${target.absolutePath}", error)
         target.delete()

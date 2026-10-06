@@ -11,6 +11,27 @@ import java.util.Locale
 import java.util.zip.ZipInputStream
 
 /**
+ * RTP 导入被拒的原因（类型化错误码，不带文案）。
+ *
+ * core 层禁止把本地化文案当返回值（AGENT.md 错误处理协议）：此处只给类型与数值，
+ * 可展示文案由 UI 层组装（见 `ui/settings/RpgMakerRtpMessages.kt`）。
+ */
+sealed interface RtpImportRejection {
+
+    /** 条目数超过上限。 */
+    data class EntryCountExceeded(val count: Int, val limit: Int) : RtpImportRejection
+
+    /** 单条目解压后超过上限。 */
+    data class EntrySizeExceeded(val size: Long, val limit: Long) : RtpImportRejection
+
+    /** 累计解压量超过上限。 */
+    data class TotalSizeExceeded(val size: Long, val limit: Long) : RtpImportRejection
+
+    /** 无法创建目录（参数为目录名或条目名）。 */
+    data class DirectoryCreateFailed(val name: String) : RtpImportRejection
+}
+
+/**
  * RPGM 外置模块的共享目录管理（RTP / 自定义字体）。
  *
  * 目录契约由 RPGM 插件固定（插件 `MainActivity` 将
@@ -36,10 +57,10 @@ object RpgMakerRuntimeEnvironment {
 
     /** 上限拒绝的原因（仅在失败时填写，供调用方给出可诊断的提示）。 */
     @Volatile
-    private var lastRejectReason: String? = null
+    private var lastRejectReason: RtpImportRejection? = null
 
     /** 最近一次 [importRtpZip] 失败的原因；成功或未运行时为 null。 */
-    fun lastRejectReason(): String? = lastRejectReason
+    fun lastRejectReason(): RtpImportRejection? = lastRejectReason
     private val FONT_EXTENSIONS = listOf(".ttf", ".ttc", ".otf", ".otc")
 
     fun rtpDirName(gameType: String): String = when (gameType.trim().lowercase(Locale.ROOT)) {
@@ -69,6 +90,9 @@ object RpgMakerRuntimeEnvironment {
 
     /** 从 SAF zip 导入 RTP：解压到临时目录 → 拍平单层根目录 → 替换 `app`。 */
     fun importRtpZip(context: Context, gameType: String, uri: Uri): Boolean {
+        // 先清空上次的拒绝原因：本函数的若干失败早退路径不写原因，
+        // 不清空会把上一次的原因挂到本次失败提示上（如「磁盘满」报成「条目数超限」）
+        lastRejectReason = null
         val target = rtpAppDir(gameType)
         val parent = target.parentFile ?: return false
         if (!parent.exists() && !parent.mkdirs()) return false
@@ -149,7 +173,7 @@ object RpgMakerRuntimeEnvironment {
      * ZIP 解压主体。与 [extractZip] 拆开是为了可单测：本函数只依赖输入流，
      * 不需要 Context/Uri；上限参数默认取生产常量，测试注入小值即可低成本覆盖边界。
      */
-    private fun reject(reason: String): Boolean {
+    private fun reject(reason: RtpImportRejection): Boolean {
         lastRejectReason = reason
         return false
     }
@@ -161,6 +185,9 @@ object RpgMakerRuntimeEnvironment {
         maxEntryBytes: Long = MAX_ENTRY_UNCOMPRESSED_BYTES,
         maxTotalBytes: Long = MAX_TOTAL_UNCOMPRESSED_BYTES,
     ): Boolean {
+        // 本入口也清空上一次的原因：下列若干失败路径（父目录创建、写入超限）不写原因，
+        // 不清理会把上一次的拒绝原因挂到本次失败上
+        lastRejectReason = null
         val tempRoot = dest.canonicalPath
         var entryCount = 0
         var totalBytes = 0L
@@ -170,10 +197,14 @@ object RpgMakerRuntimeEnvironment {
                 // 先计数再判断跳过：__MACOSX/ 与 .DS_Store 也是条目，
                 // 若跳过后才计数，构造大量此类条目即可绕过上限、持续消耗解析与 I/O
                 entryCount += 1
-                if (entryCount > maxEntries) return reject("条目数超过上限（$entryCount > $maxEntries）")
+                if (entryCount > maxEntries) {
+                    return reject(RtpImportRejection.EntryCountExceeded(entryCount, maxEntries))
+                }
                 // 声明大小检查对所有条目生效（含被过滤的）。流式 zip 的 entry.size 恒为 -1，
                 // 故这里只是廉价的前置拒绝，真正的兜底是下面的有界读取。
-                if (entry.size > maxEntryBytes) return reject("单条目解压后超过上限（${entry.size} > $maxEntryBytes）")
+                if (entry.size > maxEntryBytes) {
+                    return reject(RtpImportRejection.EntrySizeExceeded(entry.size, maxEntryBytes))
+                }
 
                 val name = entry.name.replace('\\', '/')
                 val outFile = File(dest, name)
@@ -184,14 +215,21 @@ object RpgMakerRuntimeEnvironment {
                     // 而 closeEntry() 会把整条无界读完（DEFLATED 条目被完整解压）。
                     // 实测：255KB 的 zip（条目名 __MACOSX/big.bin、解压后 256MB）光
                     // closeEntry() 就耗时 586ms —— 被过滤条目因此是绕过字节上限的通道。
-                    totalBytes = drainEntryBounded(zip, maxEntryBytes, maxTotalBytes, totalBytes)
-                        ?: return reject("条目解压后超过上限（$totalBytes > $maxTotalBytes）")
+                    when (val drained = drainEntryBounded(zip, maxEntryBytes, maxTotalBytes, totalBytes)) {
+                        is DrainResult.Drained -> totalBytes = drained.total
+                        is DrainResult.EntryOver ->
+                            return reject(RtpImportRejection.EntrySizeExceeded(drained.bytes, maxEntryBytes))
+                        is DrainResult.TotalOver ->
+                            return reject(RtpImportRejection.TotalSizeExceeded(drained.bytes, maxTotalBytes))
+                    }
                     zip.closeEntry()
                     continue
                 }
 
                 if (entry.isDirectory) {
-                    if (!outFile.exists() && !outFile.mkdirs()) return reject("无法创建目录：${outFile.name}")
+                    if (!outFile.exists() && !outFile.mkdirs()) {
+                        return reject(RtpImportRejection.DirectoryCreateFailed(outFile.name))
+                    }
                 } else {
                     outFile.parentFile?.let { parent ->
                         if (!parent.exists() && !parent.mkdirs()) return false
@@ -233,17 +271,30 @@ object RpgMakerRuntimeEnvironment {
         return ok
     }
 
+    /** 有界排空的结果：成功给出新的累计值，超限给出**区分类型**的拒绝原因。 */
+    private sealed interface DrainResult {
+        data class Drained(val total: Long) : DrainResult
+
+        /** 单条目超限（[bytes] 为该条目实际解压量）。 */
+        data class EntryOver(val bytes: Long) : DrainResult
+
+        /** 累计超限（[bytes] 为触发时的实际累计值）。 */
+        data class TotalOver(val bytes: Long) : DrainResult
+    }
+
     /**
-     * 有界排空当前条目的剩余数据并计入累计字节，返回新的累计值；超限返回 null（调用方中止导入）。
+     * 有界排空当前条目的剩余数据并计入累计字节。
      *
      * 与解压写入路径共用同一对上限，确保被过滤/越界的条目不能成为绕过字节上限的通道。
+     * 两类超限分别上报：合并成一个错误码会产出「0 B 超过 1 MiB」这类自相矛盾的提示
+     * （单条目超限时，进入该条目之前的累计值可能远小于上限）。
      */
     private fun drainEntryBounded(
         zip: ZipInputStream,
         maxEntryBytes: Long,
         maxTotalBytes: Long,
         runningTotal: Long,
-    ): Long? {
+    ): DrainResult {
         val buffer = ByteArray(ZIP_BUFFER_SIZE)
         var entryBytes = 0L
         var total = runningTotal
@@ -252,9 +303,10 @@ object RpgMakerRuntimeEnvironment {
             if (read < 0) break
             entryBytes += read
             total += read
-            if (entryBytes > maxEntryBytes || total > maxTotalBytes) return null
+            if (entryBytes > maxEntryBytes) return DrainResult.EntryOver(entryBytes)
+            if (total > maxTotalBytes) return DrainResult.TotalOver(total)
         }
-        return total
+        return DrainResult.Drained(total)
     }
 
     private fun copyDocumentTree(context: Context, source: DocumentFile, dest: File): Boolean {
