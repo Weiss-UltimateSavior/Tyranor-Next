@@ -33,7 +33,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
-import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
@@ -85,7 +84,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krSkipStartupDialogs by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS)) }
     var krPatchOverlayMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)) }
     var krAnime4kMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE)) }
-    var krLanguage by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_KR_LANGUAGE)) }
+    var krLanguage by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_KR_LANGUAGE)?.takeIf { it != EngineSettingsStore.KR_LANGUAGE_AUTO }) }
     var krFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
     val krRender = PerGameSettingsStore.KR_FIELDS.associateWith { field ->
@@ -402,12 +401,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = ComposeColor.Transparent,
+            containerColor = MiuixTheme.colorScheme.background,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = game.title,
-                    background = ComposeColor.Transparent,
+                    background = MiuixTheme.colorScheme.background,
                     contentColor = MiuixTheme.colorScheme.onBackground,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.common_save), MiuixTheme.colorScheme.primary) {
@@ -439,7 +438,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
                                 if (!isSdl3) {
-                                    OverrideChoice(stringResource(R.string.engine_settings_kr_language), krLanguageOptionsMap(), globalKrLanguage, krLanguage) { krLanguage = it }
+                                    OverrideChoice(stringResource(R.string.engine_settings_kr_language), krLanguageOverrideOptionsMap(), globalKrLanguage, krLanguage) { krLanguage = it }
                                 }
                                 if (!isSdl3) {
                                     OverrideChoice(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, globalKrPatchOverlayMode, krPatchOverlayMode) { krPatchOverlayMode = it }
@@ -878,16 +877,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         SectionCard(game.engine.displayName) {
                             Text(
                                 stringResource(R.string.engine_settings_pc_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                            )
-                        }
-                    }
-                    EngineType.ANDROID_APP -> item {
-                        SectionCard(game.engine.displayName) {
-                            Text(
-                                stringResource(R.string.engine_settings_android_hint),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

@@ -439,3 +439,15 @@ internal fun krLanguageOptions(): List<Pair<String, String>> = listOf(
 
 @Composable
 internal fun krLanguageOptionsMap(): Map<String, String> = krLanguageOptions().toMap()
+
+/** KRKR 单游戏语言覆盖选项：不含「跟随引擎默认」——单游戏的“跟随全局”由覆盖层 null 表达。 */
+@Composable
+internal fun krLanguageOverrideOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.KR_LANGUAGE_JP to stringResource(R.string.engine_settings_kr_language_jp),
+    EngineSettingsStore.KR_LANGUAGE_EN to stringResource(R.string.engine_settings_kr_language_en),
+    EngineSettingsStore.KR_LANGUAGE_ZH to stringResource(R.string.engine_settings_kr_language_zh),
+    EngineSettingsStore.KR_LANGUAGE_ZHTW to stringResource(R.string.engine_settings_kr_language_zhtw),
+)
+
+@Composable
+internal fun krLanguageOverrideOptionsMap(): Map<String, String> = krLanguageOverrideOptions().toMap()

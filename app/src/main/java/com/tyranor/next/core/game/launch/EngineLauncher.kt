@@ -1,7 +1,6 @@
 package com.tyranor.next.core.game.launch
 
 import android.app.ActivityManager
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -43,7 +42,6 @@ import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
-import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveException
@@ -127,7 +125,6 @@ object EngineLauncher {
         // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
         EngineType.PSP,
         EngineType.NINTENDO_SWITCH,
-        // ANDROID_APP 为手动添加的直接跳转条目（无运行时/设置/存档），故不收录、不出现在引擎页
     ).sortedByDescending { it.displayName.length }
 
     /** Artemis 补丁确认弹窗的用户选择：
@@ -206,10 +203,6 @@ object EngineLauncher {
     }
 
     private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
-        // 手动添加的安卓游戏：无引擎会话/存档/权限前置，按包名直接跳转（必须在目录解析之前分流）
-        if (AndroidAppGames.isAndroidApp(game)) {
-            return launchAndroidApp(context, game)
-        }
         // 外置模拟器跳转：PSP / Switch 为 ROM 文件型（不解析目录），
         // YURIS 为 Windows 游戏（目录 + 主 exe，经 Winlator 外置启动协议挂载目录）
         ExternalEmulatorRegistry.forEngine(game.engine)?.let { target ->
@@ -384,8 +377,6 @@ object EngineLauncher {
      */
     suspend fun rpgSaveFormatPending(context: Context, game: ScanGame): RpgSaveFormat.Detection? =
         withContext(Dispatchers.IO) {
-            // 仅 MV/MZ 需要检测/转化；其他引擎（含手动安卓游戏）直接短路，避免无意义的目录解析
-            if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return@withContext null
             val root = resolveGameDirectory(context, game) ?: return@withContext null
             val dirs = effectiveRpgSaveScanDirs(context, game, root) ?: return@withContext null
             RpgSaveFormat.detectInDirs(dirs, game.engine).takeIf { it.convertibleCount > 0 }
@@ -790,9 +781,6 @@ object EngineLauncher {
             EngineType.PSP,
             EngineType.NINTENDO_SWITCH -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
 
-            // 手动添加的安卓应用按包名直接跳转，在 launchInternalChecked 前置分流，不会走到这里
-            EngineType.ANDROID_APP -> error("${engine.displayName} is handled by Android app launch")
-
             EngineType.UNKNOWN -> Intent(context, TyranoActivity::class.java).apply {
                 putExtra(LaunchContract.PATH, path)
                 putExtra(LaunchContract.GAME_PATH, path)
@@ -813,39 +801,6 @@ object EngineLauncher {
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT, theme.textArgb)
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, theme.mutedArgb)
         return intent
-    }
-
-    /**
-     * 手动添加的安卓游戏：按 `launchTarget` 承载的包名取启动 Intent 直接跳转；
-     * 未安装 / 无启动入口 / 启动入口失效 → [LaunchResult.Failure.AndroidAppMissing]。
-     * 与内置引擎路径同语义：启动前确认未取消，取消原样传播；最近记录失败不影响启动结果。
-     */
-    private suspend fun launchAndroidApp(context: Context, game: ScanGame): LaunchResult {
-        val packageName = AndroidAppGames.packageNameOf(game)
-            ?: return LaunchResult.Failure.AndroidAppMissing
-        // PackageManager 查询本身也可能抛 binder 异常，统一折叠为「应用不可用」
-        val intent = runCatching { context.packageManager.getLaunchIntentForPackage(packageName) }
-            .getOrNull()
-            ?: return LaunchResult.Failure.AndroidAppMissing
-        return try {
-            currentCoroutineContext().ensureActive()
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            // 应用已拉起即成功；最近记录写失败不改变启动结果（独立兜底）
-            runCatching { GameLibraryFacade.recordRecentGame(context, game) }
-                .onFailure { Log.w(TAG, "record recent android app failed uri=${game.uri}", it) }
-            LaunchResult.Success
-        } catch (ce: CancellationException) {
-            throw ce
-        } catch (e: ActivityNotFoundException) {
-            // 解析后应用被卸载/入口被移除的竞态
-            LaunchResult.Failure.AndroidAppMissing
-        } catch (e: SecurityException) {
-            // 应用被禁用等可见性变化
-            LaunchResult.Failure.AndroidAppMissing
-        } catch (e: Exception) {
-            LaunchResult.Failure.StartFailed(e.message)
-        }
     }
 
     /**
@@ -1013,7 +968,6 @@ object EngineLauncher {
                 putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
                 putExtra(LaunchContract.ORIENTATION, 6)
                 putExtra(LaunchContract.FOCUS, "true")
-            putExtra(LaunchContract.KR_LANGUAGE, settings.krLanguage)
             }
         }
         val version = settings.krEngineVersion
@@ -1065,6 +1019,7 @@ object EngineLauncher {
                 putExtra(LaunchContract.SCOPED_SAVE_ROOT, actualSaveRoot.absolutePath)
             }
             putExtra(LaunchContract.FOCUS, "true")
+            // 游戏语言环境：先随启动下发，引擎宿主侧落地通道（TJS/overlay）待接入。
             putExtra(LaunchContract.KR_LANGUAGE, settings.krLanguage)
             // 引擎版本
             putExtra(LaunchContract.KR_ENGINE_VERSION, when (version) {
