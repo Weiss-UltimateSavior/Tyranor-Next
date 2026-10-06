@@ -147,7 +147,7 @@
     var bridge = inputBridge();
     var hasPad = false;
     try { hasPad = !!(bridge && bridge.isAvailable()); } catch (e) { hasPad = false; }
-    content.innerHTML = card("触屏手柄", hasPad
+    content.innerHTML = card("虚拟按键", hasPad
       ? '<p>按键层由应用原生实现，可自定义按键的位置、文字、大小与输出键位。进入编辑后：</p><ul style="margin:6px 0 10px;padding-left:18px;font-size:12px"><li>点按按键选中，拖拽调整位置</li><li>右侧面板改文字 / 尺寸 / 键位</li><li>可复制、删除按键，或恢复默认</li><li>保存后立即生效</li></ul><div class="tm-row">' + button("进入按键编辑", "enter-keys", "primary") + button("恢复默认", "reset-keys") + '</div>'
       : '<p>当前未启用虚拟按键。可在应用的引擎设置中开启。</p>');
   }
@@ -277,7 +277,7 @@
     positionLauncher();
     window.addEventListener("resize", positionLauncher);
   }
-  // 触屏手柄已改为原生实现（左侧 FAB + 覆盖层），不再发布 __touchPadMetrics；
+  // 虚拟按键已改为原生实现（左侧 FAB + 覆盖层），不再发布 __touchPadMetrics；
   // 悬浮球默认停靠右侧，用户可拖拽到任意位置并持久化。
   function positionLauncher() {
     if (!launcher || userDragged) return;

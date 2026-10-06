@@ -121,7 +121,6 @@ internal fun GamepadMapScreen() {
                         ).forEach { (stick, titleRes) ->
                             StickRow(
                                 title = stringResource(titleRes),
-                                stick = stick,
                                 entries = sticks.filter { it.stick == stick },
                                 summaryOf = { keys -> bindingSummary(ctx, keys, autoKeep = false) },
                                 onEdit = { direction -> editingStick = stick to direction },
@@ -183,7 +182,6 @@ internal fun GamepadMapScreen() {
 @Composable
 private fun StickRow(
     title: String,
-    stick: String,
     entries: List<InputRemapRepository.StickEntry>,
     summaryOf: (List<Int>) -> String,
     onEdit: (String) -> Unit,
@@ -231,7 +229,8 @@ private fun gamepadKeyLabel(id: String): String = stringResource(
         InputRemapRepository.GAMEPAD_DPAD_DOWN -> R.string.input_settings_gamepad_key_dpad_down
         InputRemapRepository.GAMEPAD_DPAD_LEFT -> R.string.input_settings_gamepad_key_dpad_left
         InputRemapRepository.GAMEPAD_DPAD_RIGHT -> R.string.input_settings_gamepad_key_dpad_right
-        else -> R.string.input_settings_gamepad_key_dpad_right
+        // 未知 id 不得错标为具体按键（会让用户以为绑定丢了或绑错）
+        else -> R.string.input_settings_gamepad_key_unknown
     },
 )
 

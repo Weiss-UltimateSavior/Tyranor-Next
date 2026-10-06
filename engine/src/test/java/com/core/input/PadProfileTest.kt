@@ -11,6 +11,11 @@ import org.junit.Test
 /** 方案 JSON 往返与旧 `__touch_pad.js` 配置迁移。 */
 class PadProfileTest {
 
+    private companion object {
+        /** 迁移产物的按游戏作用域（真实调用方传 gameId 哈希）。 */
+        const val TEST_SCOPE = "gabc1234"
+    }
+
     @Test
     fun jsonRoundTripKeepsEverything() {
         val profile = PadProfile.defaultProfile("custom", "我的布局")
@@ -80,6 +85,80 @@ class PadProfileTest {
     }
 
     @Test
+    fun migratedIdsAreUniquePerGameAndWithinIdLimit() {
+        // B1a：两个游戏的迁移产物必须落在不同 id（否则共享目录里互相覆盖）
+        val legacy = JSONObject().apply {
+            put(
+                "buttons",
+                JSONObject().apply { put("esc", JSONObject().apply { put("x", 0.4); put("y", 0.4) }) },
+            )
+        }.toString()
+        val gameA = PadProfile.migrateLegacy(legacy, null, "g1111")
+        val gameB = PadProfile.migrateLegacy(legacy, null, "g2222")
+        val idA = gameA.single().id
+        val idB = gameB.single().id
+        assertTrue("不同游戏的迁移 id 必须不同：$idA vs $idB", idA != idB)
+        assertTrue(idA != PadProfile.BUILTIN_DEFAULT_ID && idB != PadProfile.BUILTIN_DEFAULT_ID)
+    }
+
+    @Test
+    fun migratedIdsFitInputConfigStoreWhitelist() {
+        // B1b：id 必须落在 InputConfigStore 的白名单 [A-Za-z0-9_-]{1,32} 内，
+        // 否则 writeProfile 静默拒绝、迁移永不成功且每次启动重试
+        val pattern = Regex("[A-Za-z0-9_-]{1,32}")
+        val longName = "很长的中文预设名称用于触发slug截断与长度上限校验"
+        val legacy = JSONObject().apply {
+            put(
+                "buttons",
+                JSONObject().apply { put("esc", JSONObject().apply { put("x", 0.4); put("y", 0.4) }) },
+            )
+        }.toString()
+        val presets = JSONObject().apply {
+            put(longName, JSONObject().apply {
+                put("buttons", JSONObject().apply { put("enter", JSONObject().apply { put("x", 0.5); put("y", 0.5) }) })
+            })
+        }.toString()
+
+        val profiles = PadProfile.migrateLegacy(legacy, presets, "g" + "f".repeat(40))
+        assertTrue(profiles.isNotEmpty())
+        profiles.forEach { profile ->
+            assertTrue(
+                "迁移 id 必须是合法方案 id 且不超过 32 字符，实际：'${profile.id}'（${profile.id.length}）",
+                pattern.matches(profile.id),
+            )
+        }
+        assertEquals("迁移 id 必须互不重复", profiles.size, profiles.map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun migratedIdNeverCollidesAcrossManyGames() {
+        // 方案目录全 App 共享：N 个不同游戏的迁移产物 id 必须两两不同，
+        // 否则先迁移的游戏会被后启动的游戏顶掉
+        val legacy = JSONObject().apply {
+            put("buttons", JSONObject().apply { put("esc", JSONObject().apply { put("x", 0.4); put("y", 0.4) }) })
+        }.toString()
+        val ids = (1..50).map { PadProfile.migrateLegacy(legacy, null, "g$it").single().id }
+        assertEquals("不同游戏的迁移 id 必须两两不同", ids.size, ids.toSet().size)
+        assertTrue("迁移 id 不得占用内置 default", ids.none { it == PadProfile.BUILTIN_DEFAULT_ID })
+        assertTrue("迁移 id 必须合法且不超长", ids.all { Regex("[A-Za-z0-9_-]{1,32}").matches(it) })
+    }
+
+    @Test
+    fun migratedPresetsKeepDistinctIdsWithinOneGame() {
+        // 同一游戏的多个预设（含纯 CJK 名）不得互相覆盖
+        val presets = JSONObject()
+        listOf("竖屏布局", "横屏布局", "单手布局").forEachIndexed { i, name ->
+            presets.put(name, JSONObject().apply {
+                put("buttons", JSONObject().apply { put("enter", JSONObject().apply { put("x", 0.3 + i * 0.1); put("y", 0.5) }) })
+            })
+        }
+        val profiles = PadProfile.migrateLegacy(null, presets.toString(), "ggame")
+        assertEquals(3, profiles.size)
+        assertEquals("同游戏内预设 id 必须唯一", 3, profiles.map { it.id }.toSet().size)
+        assertTrue(profiles.all { Regex("[A-Za-z0-9_-]{1,32}").matches(it.id) })
+    }
+
+    @Test
     fun parseRejectsBadJsonAndMissingId() {
         assertNull(PadProfile.parse("not-json"))
         assertNull(PadProfile.parse(null))
@@ -127,10 +206,13 @@ class PadProfileTest {
             )
         }.toString()
 
-        val profiles = PadProfile.migrateLegacy(legacy, null)
+        val profiles = PadProfile.migrateLegacy(legacy, null, TEST_SCOPE)
         assertEquals(1, profiles.size)
         val profile = profiles.single()
-        assertEquals(PadProfile.BUILTIN_DEFAULT_ID, profile.id)
+        // 主布局必须带按游戏作用域的独立 id：沿用内置 default 会让第一个迁移的游戏
+        // 污染全局默认布局（方案目录全 App 共享）
+        assertTrue("迁移主布局不得占用内置 default id", profile.id != PadProfile.BUILTIN_DEFAULT_ID)
+        assertTrue("id 应含游戏作用域，实际：${profile.id}", profile.id.contains(TEST_SCOPE))
 
         val pageUp = profile.buttons.first { it.id == "pageup" }
         assertEquals(0.91f, pageUp.x, 0.0001f)
@@ -164,7 +246,7 @@ class PadProfileTest {
             )
         }.toString()
 
-        val profile = PadProfile.migrateLegacy(legacy, null).single()
+        val profile = PadProfile.migrateLegacy(legacy, null, TEST_SCOPE).single()
 
         // 旧布局的完整按键集（9 个动作键 + QWZX 四键），不因只拖过一个而丢失
         val expectedIds = setOf(
@@ -197,7 +279,7 @@ class PadProfileTest {
             )
         }.toString()
 
-        val profile = PadProfile.migrateLegacy(legacy, null).single()
+        val profile = PadProfile.migrateLegacy(legacy, null, TEST_SCOPE).single()
         val tab = profile.buttons.first { it.id == "tab" }
         val defaultTab = PadProfile.defaultProfile().buttons.first { it.id == "tab" }
         assertEquals(defaultTab.x, tab.x, 0.0001f)
@@ -224,7 +306,7 @@ class PadProfileTest {
             }
         }.toString()
 
-        val profiles = PadProfile.migrateLegacy(null, presets)
+        val profiles = PadProfile.migrateLegacy(null, presets, TEST_SCOPE)
         assertEquals(3, profiles.size)
         assertEquals(3, profiles.map { it.id }.toSet().size)
         assertEquals(setOf("竖屏布局", "横屏布局", "单手布局"), profiles.map { it.name }.toSet())
@@ -242,7 +324,7 @@ class PadProfileTest {
                 },
             )
         }.toString()
-        assertTrue(PadProfile.migrateLegacy(legacy, null).isEmpty())
+        assertTrue(PadProfile.migrateLegacy(legacy, null, TEST_SCOPE).isEmpty())
     }
 
     @Test
@@ -260,7 +342,7 @@ class PadProfileTest {
                 },
             )
         }.toString()
-        val profiles = PadProfile.migrateLegacy(null, presets)
+        val profiles = PadProfile.migrateLegacy(null, presets, TEST_SCOPE)
         assertEquals(1, profiles.size)
         assertEquals("竖屏布局", profiles.single().name)
         assertTrue(profiles.single().id.startsWith("migrated-"))
@@ -268,8 +350,8 @@ class PadProfileTest {
 
     @Test
     fun legacyMigrationReturnsEmptyWhenNoData() {
-        assertTrue(PadProfile.migrateLegacy(null, null).isEmpty())
-        assertTrue(PadProfile.migrateLegacy("{}", "{}").isEmpty())
-        assertTrue(PadProfile.migrateLegacy("not-json", "not-json").isEmpty())
+        assertTrue(PadProfile.migrateLegacy(null, null, TEST_SCOPE).isEmpty())
+        assertTrue(PadProfile.migrateLegacy("{}", "{}", TEST_SCOPE).isEmpty())
+        assertTrue(PadProfile.migrateLegacy("not-json", "not-json", TEST_SCOPE).isEmpty())
     }
 }

@@ -52,6 +52,9 @@ object ScreenCapture {
     /** 回退目录名（应用外部私有目录下）。 */
     private const val FALLBACK_DIR_NAME = "screenshots"
 
+    /** PixelCopy 回调的等待上限；超时按失败处理并复位状态。 */
+    private const val CAPTURE_TIMEOUT_MS = 5_000L
+
     /** 截屏结果：调用方按实际落点提示，不猜测路径。 */
     sealed interface CaptureResult {
 
@@ -103,8 +106,23 @@ object ScreenCapture {
             onResult(CaptureResult.Failed)
             return
         }
+        // 兜底：PixelCopy 在极少数情况下可能不回调（窗口被立即销毁等），
+        // 若不复位 capturing，之后所有截屏都会被判为 Busy 而永久失效。
+        // 只在「PixelCopy 尚未回调」时接管位图：回调已到说明后台线程正持有它编码，
+        // 此时回收会导致压缩已回收位图而崩溃。
+        val pixelCopyDone = AtomicBoolean(false)
+        val watchdog = Runnable {
+            if (!pixelCopyDone.get() && capturing.compareAndSet(true, false)) {
+                Log.w(TAG, "capture watchdog fired: no PixelCopy callback")
+                bitmap.recycle()
+                mainHandler.post { onResult(CaptureResult.Failed) }
+            }
+        }
+        mainHandler.postDelayed(watchdog, CAPTURE_TIMEOUT_MS)
         val finish: (CaptureResult) -> Unit = { result ->
-            capturing.set(false)
+            mainHandler.removeCallbacks(watchdog)
+            // 只有仍在进行中的截屏才回收位图（watchdog 可能已先行回收）
+            if (capturing.compareAndSet(true, false)) bitmap.recycle()
             mainHandler.post { onResult(result) }
         }
         try {
@@ -112,16 +130,17 @@ object ScreenCapture {
                 window,
                 bitmap,
                 { result ->
+                    pixelCopyDone.set(true)
+                    // 看门狗已接管（位图已回收）：迟到回调不得再触碰位图
+                    if (!capturing.get()) return@request
                     if (result != PixelCopy.SUCCESS) {
                         Log.w(TAG, "PixelCopy failed result=$result")
-                        bitmap.recycle()
                         finish(CaptureResult.Failed)
                         return@request
                     }
                     val appContext = activity.applicationContext
                     ioExecutor.execute {
                         val file = save(appContext, bitmap)
-                        bitmap.recycle()
                         finish(if (file != null) CaptureResult.Saved(file) else CaptureResult.Failed)
                     }
                 },
@@ -129,8 +148,8 @@ object ScreenCapture {
             )
         } catch (error: Throwable) {
             // 窗口尚未 attach / 正在销毁时 PixelCopy 会抛异常
+            pixelCopyDone.set(true)
             Log.w(TAG, "PixelCopy request failed", error)
-            bitmap.recycle()
             finish(CaptureResult.Failed)
         }
     }

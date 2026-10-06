@@ -17,6 +17,8 @@ import android.view.MotionEvent
 class InputRouter(
     private val sink: InputSink,
     initialMap: GamepadMap,
+    /** 与虚拟按键层共享的派发器：保证同一键的键级引用计数跨来源生效。 */
+    private val dispatcher: KeyDispatcher,
 ) {
 
     /**
@@ -31,7 +33,6 @@ class InputRouter(
         map = value
     }
 
-    private val dispatcher = KeyDispatcher(sink)
 
     /** 逻辑按键 → 当前按下的来源集合（"key" / "hat" / "trigger" / "stick"）。 */
     private val activeSources = HashMap<String, MutableSet<String>>()
@@ -201,9 +202,13 @@ class InputRouter(
         fun isGamepadKeyEvent(event: KeyEvent): Boolean {
             val device = event.device
             if (device != null && device.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC) return false
-            if (event.isFromSource(InputDevice.SOURCE_GAMEPAD)) return true
-            return device != null &&
-                (device.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+            // 摇杆类设备也可能发按键（部分手柄的方向键经 JOYSTICK 上报），
+            // 与轴判定保持一致，否则这类设备的按键会被静默忽略
+            val gamepad = InputDevice.SOURCE_GAMEPAD
+            val joystick = InputDevice.SOURCE_JOYSTICK
+            if (event.isFromSource(gamepad) || event.isFromSource(joystick)) return true
+            val sources = device?.sources ?: return false
+            return (sources and gamepad) == gamepad || (sources and joystick) == joystick
         }
 
         /** 手柄轴事件识别：SOURCE_JOYSTICK / SOURCE_GAMEPAD。 */

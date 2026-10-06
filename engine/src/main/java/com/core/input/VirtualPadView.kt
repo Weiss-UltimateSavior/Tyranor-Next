@@ -29,6 +29,8 @@ import kotlin.math.roundToInt
 class VirtualPadView(
     context: Context,
     private val sink: InputSink,
+    /** 与手柄路由器共享的派发器：保证同一键的键级引用计数跨来源生效。 */
+    private val dispatcher: KeyDispatcher = KeyDispatcher(sink),
 ) : View(context) {
 
     /** 主题色（与 app 引擎主题一致，由宿主经 EngineThemeColors 注入）。 */
@@ -59,6 +61,9 @@ class VirtualPadView(
         fun onEditEnded()
         fun onSelectionChanged(info: SelectionInfo?)
         fun onProfileCommitted(profile: PadProfile)
+
+        /** 落盘失败：宿主须先调用 [markSaveFailed] 再返回，编辑态会保留。 */
+        fun onSaveFailed()
         fun onPadVisibilityChanged(visible: Boolean)
     }
 
@@ -75,12 +80,14 @@ class VirtualPadView(
         }
 
     private var editing = false
+
+    /** 本次提交是否落盘失败（由宿主经 [markSaveFailed] 回传）。 */
+    private var saveFailed = false
     private var editProfile: PadProfile? = null
     private var selectedId: String? = null
 
     private var padVisible = true
 
-    private val dispatcher = KeyDispatcher(sink)
     private val density = resources.displayMetrics.density
 
     // ---------- 元素布局 ----------
@@ -115,7 +122,6 @@ class VirtualPadView(
     private var editDragId: String? = null
     private var editDragDx = 0f
     private var editDragDy = 0f
-    private var editMoved = false
 
     private val handler = Handler(Looper.getMainLooper())
     private val fabLongPress = Runnable {
@@ -444,8 +450,19 @@ class VirtualPadView(
 
     private fun releasePointers(event: MotionEvent, actionIndex: Int) {
         val pointerId = event.getPointerId(actionIndex)
-        pointerButtons.remove(pointerId)?.let { releaseButton(it) }
+        pointerButtons.remove(pointerId)?.let { button ->
+            pointerTargets.remove(pointerId)
+            // 多指可按同一按钮：只有最后一根按住它的手指抬起时才真正释放，
+            // 否则先抬的那一指会提前送 keyup（另一根还按着）
+            if (pointerButtons.values.none { it.id == button.id }) releaseButton(button)
+            return finishPointerRelease(pointerId)
+        }
         pointerTargets.remove(pointerId)
+        finishPointerRelease(pointerId)
+    }
+
+    /** 指针抬起的公共收尾（方向键圆心复位等）。 */
+    private fun finishPointerRelease(pointerId: Int) {
         if (pointerId == dirPointerId) {
             dirPointerId = -1
             dirKnobDx = 0f
@@ -574,7 +591,6 @@ class VirtualPadView(
                 if (element != null) {
                     selectedId = element.id
                     editDragId = element.id
-                    editMoved = false
                     editDragDx = x - element.rect.centerX()
                     editDragDy = y - element.rect.centerY()
                     notifySelection()
@@ -586,7 +602,6 @@ class VirtualPadView(
             MotionEvent.ACTION_MOVE -> {
                 val dragId = editDragId ?: return true
                 val element = elementById[dragId] ?: return true
-                editMoved = true
                 val target = activeProfile()
                 val nx = ((event.x - editDragDx) / width).coerceIn(-0.1f, 1.1f)
                 val ny = ((event.y - editDragDy) / height).coerceIn(-0.1f, 1.1f)
@@ -635,30 +650,45 @@ class VirtualPadView(
         invalidate()
     }
 
-    /** 提交编辑（写回内存并通知控制器落盘）。 */
+    /**
+     * 提交编辑并通知落盘。
+     *
+     * 调用顺序保证「先给落盘机会、再收面板」：宿主在 [Listener.onProfileCommitted] 里
+     * 写盘并回传成败（[Listener.onSaveFailed]），失败时保留编辑态，避免用户改完的布局
+     * 因一次写盘失败被静默丢弃。
+     */
     fun commitEdit() {
         if (!editing) return
         val committed = editProfile ?: return
         profile = committed
+        listener?.onProfileCommitted(committed)
+        if (saveFailed) {
+            // 落盘失败：留在编辑态，让用户能重试或取消
+            saveFailed = false
+            return
+        }
+        exitEditing()
+    }
+
+    /** 由宿主在落盘失败时回调，标记本次提交失败。 */
+    fun markSaveFailed() {
+        saveFailed = true
+    }
+
+    /** 收起编辑态（保存成功与取消共用）。 */
+    private fun exitEditing() {
         editing = false
         editProfile = null
         selectedId = null
         rebuild()
         listener?.onSelectionChanged(null)
         listener?.onEditEnded()
-        listener?.onProfileCommitted(committed)
         invalidate()
     }
 
     fun cancelEdit() {
         if (!editing) return
-        editing = false
-        editProfile = null
-        selectedId = null
-        rebuild()
-        listener?.onSelectionChanged(null)
-        listener?.onEditEnded()
-        invalidate()
+        exitEditing()
     }
 
     fun selectionInfo(): SelectionInfo? {

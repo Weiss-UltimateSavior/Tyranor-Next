@@ -27,6 +27,7 @@ class PadEditorHost private constructor(
     val rootView: View,
     private val onSavedCallback: (PadProfile) -> Unit,
     private val onCancelledCallback: () -> Unit,
+    private val onSaveFailedCallback: () -> Unit,
 ) {
 
     companion object {
@@ -48,6 +49,7 @@ class PadEditorHost private constructor(
             onPrimaryColor: Int,
             onSaved: (PadProfile) -> Unit,
             onCancelled: () -> Unit,
+            onSaveFailed: () -> Unit = {},
         ): PadEditorHost? {
             val profile = InputRemapRepository.readProfile(context, profileId) ?: return null
             val palette = EngineThemeColors.Palette(
@@ -80,7 +82,7 @@ class PadEditorHost private constructor(
                 onSave = { pad.commitEdit() },
                 onCancel = { pad.cancelEdit() },
             )
-            val host = PadEditorHost(pad, root, onSaved, onCancelled)
+            val host = PadEditorHost(pad, root, onSaved, onCancelled, onSaveFailed)
             pad.listener = object : VirtualPadView.Listener {
                 override fun onEditStarted() = Unit
 
@@ -97,8 +99,14 @@ class PadEditorHost private constructor(
                 override fun onProfileCommitted(committed: PadProfile) {
                     if (InputRemapRepository.writeProfile(context, committed)) {
                         host.onSavedCallback(committed)
+                    } else {
+                        // 写盘失败：留在编辑态并提示，避免用户改完的布局被静默丢弃
+                        pad.markSaveFailed()
+                        host.onSaveFailedCallback()
                     }
                 }
+
+                override fun onSaveFailed() = Unit
 
                 override fun onPadVisibilityChanged(visible: Boolean) = Unit
             }

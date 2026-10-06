@@ -354,7 +354,7 @@ class RpgMakerActivity : Activity() {
             // 要么容易写出静默错值），由 __nwjs_polyfill_v2.js 包装成 Node 模块
             browser.addJavascriptInterface(RpgMakerEnvBridge(), RPG_MAKER_ENV_BRIDGE_NAME)
         }
-        // 注：触屏手柄（TouchPadSaveBridge / __touch_pad.js）已由原生输入重映射组件
+        // 注：旧触屏手柄（__touch_pad.js 与其保存桥）已由原生输入重映射组件
         // （InputRemapController，见上）取代，故合并上游时不恢复其注册。
         if (rpgMakerModEnabled) {
             browser.addJavascriptInterface(
@@ -440,6 +440,9 @@ class RpgMakerActivity : Activity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 Log.i(TAG, "onPageStarted url=$url")
+                // 尽早注入输入接收器（幂等；onPageFinished 会再补一次），
+                // 避免加载期的手柄/按键输入被静默丢弃
+                view?.let { v -> runCatching { v.evaluateJavascript(inputJs, null) } }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {

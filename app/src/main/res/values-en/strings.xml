@@ -347,6 +347,7 @@
     <string name="input_settings_gamepad_key_dpad_down">D-pad down</string>
     <string name="input_settings_gamepad_key_dpad_left">D-pad left</string>
     <string name="input_settings_gamepad_key_dpad_right">D-pad right</string>
+    <string name="input_settings_gamepad_key_unknown">Unknown key</string>
     <string name="input_settings_stick_up">Stick up</string>
     <string name="input_settings_stick_down">Stick down</string>
     <string name="input_settings_stick_left_dir">Stick left</string>

@@ -72,6 +72,74 @@ class KeyDispatcherTest {
         assertEquals(0, sink.events.size)
     }
 
+    // ---------- 键级引用计数（跨来源共享同一 dispatcher） ----------
+
+    @Test
+    fun sharedKeyIsNotReleasedWhileAnotherControlHoldsIt() {
+        // 默认布局里虚拟按键 OK 与手柄 A 都映射 Enter+Space：
+        // 屏幕按住 OK 时碰一下手柄 A 并松开，不得打断屏幕上的长按
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+
+        dispatcher.press("pad.ok", listOf(66, 62), autoKeep = false)
+        dispatcher.press("gamepad.A", listOf(66, 62), autoKeep = false)
+        dispatcher.release("gamepad.A", autoKeep = false)
+
+        // 手柄抬起后仍未发任何 keyup
+        assertEquals(listOf(66 to true, 62 to true), sink.events)
+
+        dispatcher.release("pad.ok", autoKeep = false)
+        assertEquals(listOf(66 to true, 62 to true, 62 to false, 66 to false), sink.events)
+    }
+
+    @Test
+    fun duplicateKeyWithinSamePressDispatchesOnce() {
+        // 同一控件的 keys 里重复同一键：只应发一次 down/up
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+        dispatcher.press("dup", listOf(66, 66), autoKeep = false)
+        dispatcher.release("dup", autoKeep = false)
+        assertEquals(listOf(66 to true, 66 to false), sink.events)
+    }
+
+    @Test
+    fun partiallyOverlappingKeysReleaseOnlyWhenLastHolderLeaves() {
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+
+        dispatcher.press("a", listOf(66, 62), autoKeep = false)
+        dispatcher.press("b", listOf(62), autoKeep = false)
+        dispatcher.release("a", autoKeep = false)
+
+        // 66 已无持有者（释放），62 仍被 b 持有（不释放）
+        assertEquals(listOf(66 to true, 62 to true, 66 to false), sink.events)
+
+        dispatcher.release("b", autoKeep = false)
+        assertEquals(listOf(66 to true, 62 to true, 66 to false, 62 to false), sink.events)
+    }
+
+    @Test
+    fun releaseAllReleasesEveryHeldKeyExactlyOnce() {
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+        dispatcher.press("pad.ok", listOf(66, 62), autoKeep = false)
+        dispatcher.press("gamepad.A", listOf(66), autoKeep = false)
+
+        dispatcher.releaseAll()
+
+        // 两个键各按一次、各放一次；释放不得重放 down
+        val downs = sink.events.filter { it.second }.map { it.first }.sorted()
+        val ups = sink.events.filter { !it.second }.map { it.first }.sorted()
+        assertEquals(listOf(62, 66), downs)
+        assertEquals(listOf(62, 66), ups)
+        assertEquals(2, ups.size)
+
+        // releaseAll 后表已清空：再次 releaseAll 不应重复发 up
+        sink.events.clear()
+        dispatcher.releaseAll()
+        assertEquals(0, sink.events.size)
+    }
+
     @Test
     fun actionKeyFiresOncePerPressWithoutKeyEvents() {
         val sink = RecordingSink()

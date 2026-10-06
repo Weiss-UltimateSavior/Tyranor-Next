@@ -347,6 +347,7 @@
     <string name="input_settings_gamepad_key_dpad_down">方向キー 下</string>
     <string name="input_settings_gamepad_key_dpad_left">方向キー 左</string>
     <string name="input_settings_gamepad_key_dpad_right">方向キー 右</string>
+    <string name="input_settings_gamepad_key_unknown">不明なキー</string>
     <string name="input_settings_stick_up">スティック 上</string>
     <string name="input_settings_stick_down">スティック 下</string>
     <string name="input_settings_stick_left_dir">スティック 左</string>

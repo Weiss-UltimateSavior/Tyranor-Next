@@ -832,6 +832,9 @@ object EngineLauncher {
                 putExtra(LaunchContract.ROOT_URI, game.uri)
                 putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                 putExtra(LaunchContract.TYPE, "Tyrano")
+                // 输入重映射的逐游戏开关按 gameId 查询；不传会让宿主回落到目录路径，
+                // 与本游戏的单游戏设置（键为 uri）对不上而始终取全局值
+                putExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID, game.uri)
             }
         }
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经

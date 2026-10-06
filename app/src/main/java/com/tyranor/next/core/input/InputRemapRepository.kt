@@ -149,20 +149,19 @@ object InputRemapRepository {
      * 用户成果）。旧键迁移后不清除（保留为数据留底），因此幂等性完全由「已迁移」标记
      * 承担；缺了它会在每次启动时用旧配置覆盖用户改过的方案文件（数据丢失）。
      *
-     * 迁移产物写入独立 id（`migrated-*`），并把该游戏的方案选择指向迁移结果——
-     * 写单游戏覆盖而不是全局，避免 A 游戏的迁移改掉其它游戏/全局的布局。
+     * 方案目录全 App 共享，所以迁移产物一律用**按游戏唯一**的 id（`migrated-<gameScope>-*`），
+     * 并把该游戏的方案选择写进**单游戏覆盖**：若沿用内置 `default` id 并改全局选择，
+     * 第一个迁移的游戏会污染全局默认布局，其余未配置游戏也会看到它。
      */
     fun migrateLegacyIfNeeded(context: Context, gameId: String): List<String> {
         if (gameId.isBlank()) return emptyList()
         if (PerGameSettingsStore.getBool(context, gameId, PerGameSettingsStore.F_LEGACY_MIGRATED) == true) {
             return emptyList()
         }
-        val legacy = InputConfigStore.readLegacyTouchPad(context, gameId)
-        if (legacy == null) return emptyList()
-        val profiles = PadProfile.migrateLegacy(legacy.first, legacy.second)
+        val legacy = InputConfigStore.readLegacyTouchPad(context, gameId) ?: return emptyList()
+        val profiles = PadProfile.migrateLegacy(legacy.first, legacy.second, gameScope(gameId))
         val outcome = writeMigratedProfiles(
             profiles = profiles,
-            // 逐个文件判存在：用户在游戏内改过的 default.json 与已有方案文件都不得覆盖
             exists = { id -> InputConfigStore.profileFile(context, id).isFile },
             write = { profile -> writeProfile(context, profile) },
         )
@@ -171,12 +170,20 @@ object InputRemapRepository {
         if (!outcome.allWritten) return outcome.migrated
         PerGameSettingsStore.setBool(context, gameId, PerGameSettingsStore.F_LEGACY_MIGRATED, true)
         if (outcome.migrated.isEmpty()) return emptyList()
-        // 该游戏未显式选择方案时，指向迁移出的默认方案（单游戏覆盖，不动全局）
+        // 该游戏未显式选择方案时，指向迁移出的主布局（单游戏覆盖，不动全局）
         if (gameProfileIdOverride(context, gameId) == null) {
             setGameProfileIdOverride(context, gameId, outcome.migrated.first())
         }
         return outcome.migrated
     }
+
+    /**
+     * 迁移产物的按游戏作用域（进 id，需符合 `[A-Za-z0-9_-]` 白名单）。
+     *
+     * 用 gameId 的稳定短哈希：直接塞 uri 会带上 `:` `/` 等非法字符且超长。
+     */
+    internal fun gameScope(gameId: String): String =
+        "g" + Integer.toHexString(gameId.hashCode())
 
     /** 迁移写盘结果（纯数据，供 [writeMigratedProfiles] 与单测使用）。 */
     internal data class MigrationOutcome(
@@ -208,9 +215,26 @@ object InputRemapRepository {
 
     /**
      * 删除方案。内置默认方案不可删除（返回 false）。
-     * 调用方需自行处理「删除的是当前生效方案」的选择回退。
+     *
+     * 同时清理指向该方案的引用：全局选择（调用方已回退）之外，各游戏的单游戏覆盖
+     * 若仍指向已删除的 id，游戏内会回退到内置默认方案——看似能用，但设置页显示
+     * 该游戏显示已选某方案却找不到，属悬空引用，这里一并清掉。
      */
-    fun deleteProfile(context: Context, id: String): Boolean = InputConfigStore.deleteProfile(context, id)
+    fun deleteProfile(context: Context, id: String): Boolean {
+        if (!InputConfigStore.deleteProfile(context, id)) return false
+        clearProfileReferences(context, id)
+        return true
+    }
+
+    /** 清空所有把 [id] 作为方案选择的单游戏覆盖。 */
+    private fun clearProfileReferences(context: Context, id: String) {
+        val gameIds = PerGameSettingsStore.overrideGameIds(context)
+        gameIds.forEach { gameId ->
+            if (gameProfileIdOverride(context, gameId) == id) {
+                setGameProfileIdOverride(context, gameId, null)
+            }
+        }
+    }
 
     // ---------- 键位目录（UI 键位选择器用；engine 侧类型不向 ui 泄漏） ----------
 

@@ -2,6 +2,7 @@ package com.core.input
 
 import android.app.Activity
 import android.util.Log
+import android.hardware.input.InputManager
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewGroup
@@ -35,6 +36,14 @@ class InputRemapController private constructor(
 
     private val settings: InputConfigStore.InputSettings = InputConfigStore.resolve(activity, gameId)
 
+    /**
+     * 虚拟按键与手柄映射共享的派发器。
+     *
+     * 共享的原因是键级引用计数必须跨来源生效：默认布局里虚拟按键 OK 与手柄 A 都映射
+     * Enter+Space，各自持有独立派发器时「先松一侧」会误发 keyup，打断另一侧的长按。
+     */
+    private val dispatcher = KeyDispatcher(sink)
+
     private var editPanel: VirtualPadEditPanel? = null
 
     private val padListener = object : VirtualPadView.Listener {
@@ -66,21 +75,33 @@ class InputRemapController private constructor(
         }
 
         override fun onProfileCommitted(profile: PadProfile) {
-            val id = InputConfigStore.sanitizeProfileId(profile.id) ?: return
-            if (InputConfigStore.writeProfile(activity, profile.copy(id = id))) {
+            val id = InputConfigStore.sanitizeProfileId(profile.id)
+            val ok = id != null && InputConfigStore.writeProfile(activity, profile.copy(id = id))
+            if (ok) {
                 Log.i(TAG, "pad profile saved id=$id buttons=${profile.buttons.size}")
             } else {
+                // 写盘失败必须在收起编辑态之前打标，否则用户改完的布局被静默丢弃
                 Log.w(TAG, "pad profile save failed id=$id")
+                padView?.markSaveFailed()
+                runCatching {
+                    Toast.makeText(
+                        activity,
+                        activity.getString(R.string.engine_input_save_failed),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
             }
         }
+
+        override fun onSaveFailed() = Unit
 
         override fun onPadVisibilityChanged(visible: Boolean) {
             InputConfigStore.setPadVisible(activity, visible)
         }
     }
 
-    private val padView: VirtualPadView? = if (settings.padEnabled) {
-        VirtualPadView(activity, sink).also { view ->
+    private var padView: VirtualPadView? = if (settings.padEnabled) {
+        VirtualPadView(activity, sink, dispatcher).also { view ->
             view.theme = VirtualPadView.PadTheme(theme.primary, theme.onPrimary)
             view.profile = InputConfigStore.readProfileOrBuiltin(activity, settings.profileId)
             view.bindPreferences(activity)
@@ -97,8 +118,10 @@ class InputRemapController private constructor(
         null
     }
 
-    private val router: InputRouter? = if (settings.gamepadEnabled) {
-        InputRouter(sink, InputConfigStore.readGamepadMap(activity))
+    private var router: InputRouter? = if (settings.gamepadEnabled) {
+        InputRouter(sink, InputConfigStore.readGamepadMap(activity), dispatcher).also {
+            registerDeviceListener()
+        }
     } else {
         null
     }
@@ -110,10 +133,6 @@ class InputRemapController private constructor(
         return router?.handleKeyEvent(event) == true
     }
 
-    /** 手柄轴事件入口：宿主在 dispatchGenericMotionEvent 最前调用。 */
-    fun dispatchGenericMotionEvent(event: MotionEvent): Boolean =
-        router?.handleGenericMotionEvent(event) == true
-
     /** 编辑态的返回键拦截：宿主在 handleBackRequest 前调用；返回 true 表示已消费。 */
     fun handleBack(): Boolean {
         val pad = padView ?: return false
@@ -122,14 +141,43 @@ class InputRemapController private constructor(
         return true
     }
 
+    /**
+     * 手柄插拔监听：手柄拔出时按下的键不会收到 UP（部分设备连 CANCEL 都不发），
+     * autoKeep 键（如跳过=Ctrl）会永久卡住；断开即释放全部输出。
+     */
+    private val deviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = Unit
+
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            router?.reset()
+        }
+
+        override fun onInputDeviceChanged(deviceId: Int) {
+            router?.reset()
+        }
+    }
+
+    /** 手柄轴事件入口：宿主在 dispatchGenericMotionEvent 最前调用；CANCEL 也要收尾。 */
+    fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+            router?.reset()
+            return false
+        }
+        return router?.handleGenericMotionEvent(event) == true
+    }
+
     fun onPause() {
         padView?.releaseAllKeys()
         router?.reset()
+        // 派发器已释放 canonical 键，但页面侧（__tyranorInput）还持有 pressed 集合与
+        // 未完成的 click timer：退后台/页面重载时必须让 Sink 收尾，否则残留按压
+        runCatching { sink.releaseAll() }
     }
 
     fun onResume() {
-        // 页面重载 / 切回前台：重新读取方案与手柄映射（设置页可能已改）
+        // 页面重载 / 切回前台：重新读取生效设置（设置页可能已改开关或方案）
         val current = InputConfigStore.resolve(activity, gameId)
+        applyEnabledState(current)
         router?.updateMap(InputConfigStore.readGamepadMap(activity))
         val pad = padView ?: return
         if (pad.isEditing) return
@@ -138,7 +186,59 @@ class InputRemapController private constructor(
         pad.bindPreferences(activity)
     }
 
+    /**
+     * 按最新设置挂载/卸载虚拟按键与手柄映射。
+     *
+     * 设置页改动后回到游戏即可生效，无需重启：原先只在构造时判定一次，
+     * 用户在设置页关掉开关、回到游戏仍然有按键层（与设置不一致）。
+     */
+    private fun applyEnabledState(current: InputConfigStore.InputSettings) {
+        if (current.padEnabled && padView == null) {
+            val pad = VirtualPadView(activity, sink, dispatcher)
+            pad.theme = VirtualPadView.PadTheme(theme.primary, theme.onPrimary)
+            pad.profile = InputConfigStore.readProfileOrBuiltin(activity, current.profileId)
+            pad.bindPreferences(activity)
+            pad.listener = padListener
+            container.addView(
+                pad,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ),
+            )
+            padView = pad
+        } else if (!current.padEnabled && padView != null) {
+            padView?.let { pad ->
+                pad.detach()
+                (pad.parent as? ViewGroup)?.removeView(pad)
+            }
+            padView = null
+        }
+
+        if (current.gamepadEnabled && router == null) {
+            router = InputRouter(sink, InputConfigStore.readGamepadMap(activity), dispatcher)
+                .also { registerDeviceListener() }
+        } else if (!current.gamepadEnabled && router != null) {
+            router?.reset()
+            unregisterDeviceListener()
+            router = null
+        }
+    }
+
+    private fun registerDeviceListener() {
+        runCatching {
+            activity.getSystemService(InputManager::class.java)?.registerInputDeviceListener(deviceListener, null)
+        }
+    }
+
+    private fun unregisterDeviceListener() {
+        runCatching {
+            activity.getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(deviceListener)
+        }
+    }
+
     fun onDestroy() {
+        unregisterDeviceListener()
         editPanel?.dismiss()
         editPanel = null
         padView?.detach()

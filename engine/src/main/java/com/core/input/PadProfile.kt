@@ -94,6 +94,18 @@ data class PadProfile(
 
         const val BUILTIN_DEFAULT_ID = "default"
 
+        /** 迁移产物 id 前缀。 */
+        private const val MIGRATED_PREFIX = "migrated-"
+
+        /** 主布局在迁移产物里的 slug（无旧预设序号）。 */
+        private const val MAIN_SLUG = "main"
+
+        /** `InputConfigStore` 的 id 白名单上限（[A-Za-z0-9_-]{1,32}）。 */
+        private const val MAX_MIGRATED_ID_LENGTH = 32
+
+        /** 作用域 slug 的上限（给前缀与序号留出余量）。 */
+        private const val MAX_SCOPE_SLUG_LENGTH = 12
+
         fun parse(raw: String?): PadProfile? {
             if (raw.isNullOrBlank()) return null
             return runCatching {
@@ -187,33 +199,51 @@ data class PadProfile(
          * 位置（旧编辑态已存归一化中心坐标）与显隐原样保留；旧 `scale` 与新 `size`
          * 语义不同（旧相对 padSize、新相对 min(视口边)），不强行换算，尺寸回落新默认。
          * 旧开关类按钮（btn.hide / btn.stick / btn.dir8）由原生 FAB 取代，不迁移。
+         *
+         * @param gameScope 迁移产物 id 的按游戏作用域。方案目录全 App 共享，主布局若沿用
+         *   内置 [BUILTIN_DEFAULT_ID] 会让第一个迁移的游戏污染全局默认布局，因此迁移产物
+         *   一律用独立 id，由调用方写单游戏覆盖指向它。
          */
-        fun migrateLegacy(configJson: String?, presetsJson: String?): List<PadProfile> {
+        fun migrateLegacy(
+            configJson: String?,
+            presetsJson: String?,
+            gameScope: String,
+        ): List<PadProfile> {
+            val scope = sanitizeLegacyId(gameScope).take(MAX_SCOPE_SLUG_LENGTH)
             val result = ArrayList<PadProfile>()
             parseLegacyConfig(configJson)?.let {
-                result.add(it.copy(id = BUILTIN_DEFAULT_ID, name = "Default"))
+                result.add(it.copy(id = migratedId(scope, 0, MAIN_SLUG), name = "Default"))
             }
             runCatching {
                 val presets = JSONObject(presetsJson.orEmpty())
                 val names = presets.names() ?: return@runCatching
-                val usedIds = HashMap<String, Int>()
                 for (i in 0 until names.length()) {
                     val name = names.optString(i).takeIf { it.isNotBlank() } ?: continue
                     val legacy = parseLegacyConfig(presets.optJSONObject(name)?.toString()) ?: continue
-                    // 纯 CJK 名经 slug 化后为空串，多个预设会撞成同一 id；用序号保证唯一
-                    val slug = sanitizeLegacyId(name)
-                    val seen = usedIds.getOrDefault(slug, 0)
-                    usedIds[slug] = seen + 1
-                    val profileId = if (seen == 0) "migrated-$slug" else "migrated-$slug-$seen"
                     result.add(
                         legacy.copy(
-                            id = profileId,
+                            id = migratedId(scope, i + 1, sanitizeLegacyId(name)),
                             name = name.take(24),
                         ),
                     )
                 }
             }
             return result
+        }
+
+        /**
+         * 迁移产物的方案 id，长度硬约束在 `InputConfigStore` 的 id 白名单上限（32 字符）内。
+         *
+         * 原实现 `"migrated-$slug"` 可达 33 字符（前缀 9 + slug 24），超出上限后
+         * `writeProfile` 静默拒绝 → 迁移标记永不置位 → 每次启动重试且永不成功。
+         * 此处按剩余空间裁剪作用域，超出部分由序号保证唯一性。
+         */
+        private fun migratedId(scope: String, index: Int, slug: String): String {
+            val unique = if (index == 0) slug else "$slug-$index"
+            val scopeRoom = (MAX_MIGRATED_ID_LENGTH - MIGRATED_PREFIX.length - 1 - unique.length - 1)
+                .coerceAtLeast(1)
+            val scopePart = scope.ifBlank { "g" }.take(scopeRoom)
+            return (MIGRATED_PREFIX + scopePart + "-" + unique).take(MAX_MIGRATED_ID_LENGTH)
         }
 
         /** 旧按钮 id → 新按钮模板（文本 / canonical 键位 / 默认尺寸）。 */

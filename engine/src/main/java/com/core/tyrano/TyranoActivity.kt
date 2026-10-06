@@ -337,6 +337,9 @@ class TyranoActivity : Activity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 Log.i(TAG, "onPageStarted url=$url")
+                // 尽早注入输入接收器：页面脚本开始执行前若未就绪，加载期的手柄/按键输入会被静默丢弃。
+                // evaluateJavascript 在 DOM 未就绪时安全失败，onPageFinished 会再注入一次（接收器自带幂等守卫）
+                view?.let { v -> runCatching { v.evaluateJavascript(inputJs, null) } }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {

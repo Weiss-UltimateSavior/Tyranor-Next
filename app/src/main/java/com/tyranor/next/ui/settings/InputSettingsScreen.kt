@@ -46,6 +46,7 @@ import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -111,20 +112,39 @@ internal fun InputSettingsScreen() {
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
+            // 读前限长：方案 JSON 正常只有几 KB，无上限 readText 会被超大文件撑爆内存
             val raw = withContext(Dispatchers.IO) {
                 runCatching {
-                    ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    ctx.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
+                        val buffer = CharArray(MAX_IMPORT_CHARS + 1)
+                        var read = 0
+                        while (read < buffer.size) {
+                            val n = reader.read(buffer, read, buffer.size - read)
+                            if (n < 0) break
+                            read += n
+                        }
+                        if (read > MAX_IMPORT_CHARS) null else String(buffer, 0, read)
+                    }
                 }.getOrNull()
             }
-            val importedName = InputRemapRepository.importedProfileName(raw)
-            if (importedName == null) {
+            if (raw == null) {
                 toast(ctx, R.string.input_settings_profile_import_failed)
                 return@launch
             }
-            val id = InputRemapRepository.newProfileId(ctx)
-            val name = InputRemapRepository.uniqueProfileName(ctx, importedName)
+            // 解析与命名都涉及磁盘/JSON，放在 IO 线程
+            val prepared = withContext(Dispatchers.IO) {
+                val importedName = InputRemapRepository.importedProfileName(raw) ?: return@withContext null
+                val id = InputRemapRepository.newProfileId(ctx)
+                val name = InputRemapRepository.uniqueProfileName(ctx, importedName)
+                Triple(id, name, raw)
+            }
+            if (prepared == null) {
+                toast(ctx, R.string.input_settings_profile_import_failed)
+                return@launch
+            }
+            val (id, name, payload) = prepared
             val created = withContext(Dispatchers.IO) {
-                InputRemapRepository.importProfileAsNew(ctx, raw, id, name)
+                InputRemapRepository.importProfileAsNew(ctx, payload, id, name)
             }
             if (created != null) {
                 InputRemapRepository.setGlobalProfileId(ctx, id)
@@ -150,8 +170,12 @@ internal fun InputSettingsScreen() {
             }
             val ok = withContext(Dispatchers.IO) {
                 runCatching {
-                    ctx.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(payload) }
-                }.isSuccess
+                    // openOutputStream 返回 null 时 ?.use{} 会短路成 null，isSuccess 仍为 true，
+                    // 从而误报导出成功——必须显式判定写入是否真的发生
+                    val stream = ctx.contentResolver.openOutputStream(uri) ?: return@runCatching false
+                    stream.bufferedWriter().use { it.write(payload) }
+                    true
+                }.getOrDefault(false)
             }
             toast(ctx, if (ok) R.string.input_settings_profile_export_done else R.string.input_settings_profile_export_failed)
         }
@@ -215,13 +239,13 @@ internal fun InputSettingsScreen() {
                         // 新建/导入置于方案列表上方（列表条目随方案数量增长，操作入口保持固定位置）
                         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
                             Box(Modifier.weight(1f)) {
-                                DialogTextButton(
+                                NoRippleTextButton(
                                     text = stringResource(R.string.input_settings_profile_new),
                                     onClick = { newProfileDialog = true },
                                 )
                             }
                             Box(Modifier.weight(1f)) {
-                                DialogTextButton(
+                                NoRippleTextButton(
                                     text = stringResource(R.string.input_settings_profile_import),
                                     onClick = { importLauncher.launch("*/*") },
                                 )
@@ -280,7 +304,7 @@ internal fun InputSettingsScreen() {
                             )
                             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
                                 Box(Modifier.weight(1f)) {
-                                    DialogTextButton(
+                                    NoRippleTextButton(
                                         text = stringResource(R.string.input_settings_reset_gamepad),
                                         onClick = {
                                             InputRemapRepository.resetGamepadMap(ctx)
@@ -411,23 +435,23 @@ private fun ProfileRow(
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             if (!selected) {
                 Box(Modifier.weight(1f)) {
-                    DialogTextButton(text = stringResource(R.string.input_settings_profile_use), onClick = onUse)
+                    NoRippleTextButton(text = stringResource(R.string.input_settings_profile_use), onClick = onUse)
                 }
             }
             if (onRename != null) {
                 Box(Modifier.weight(1f)) {
-                    DialogTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
+                    NoRippleTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
                 }
             }
             Box(Modifier.weight(1f)) {
-                DialogTextButton(text = stringResource(R.string.input_settings_profile_copy), onClick = onCopy)
+                NoRippleTextButton(text = stringResource(R.string.input_settings_profile_copy), onClick = onCopy)
             }
             Box(Modifier.weight(1f)) {
-                DialogTextButton(text = stringResource(R.string.input_settings_profile_export), onClick = onExport)
+                NoRippleTextButton(text = stringResource(R.string.input_settings_profile_export), onClick = onExport)
             }
             if (onDelete != null) {
                 Box(Modifier.weight(1f)) {
-                    DialogTextButton(text = stringResource(R.string.input_settings_profile_delete), onClick = onDelete)
+                    NoRippleTextButton(text = stringResource(R.string.input_settings_profile_delete), onClick = onDelete)
                 }
             }
         }
@@ -465,6 +489,9 @@ private fun ProfileNameDialog(
         },
     )
 }
+
+/** 方案 JSON 导入上限（字符）：正常方案只有几 KB，仅用于挡住异常大文件。 */
+private const val MAX_IMPORT_CHARS = 512 * 1024
 
 private fun toast(context: Context, messageRes: Int) {
     Toast.makeText(context, context.getString(messageRes), Toast.LENGTH_SHORT).show()

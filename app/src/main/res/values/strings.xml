@@ -347,6 +347,7 @@
     <string name="input_settings_gamepad_key_dpad_down">方向键 下</string>
     <string name="input_settings_gamepad_key_dpad_left">方向键 左</string>
     <string name="input_settings_gamepad_key_dpad_right">方向键 右</string>
+    <string name="input_settings_gamepad_key_unknown">未知按键</string>
     <string name="input_settings_stick_up">摇杆 上</string>
     <string name="input_settings_stick_down">摇杆 下</string>
     <string name="input_settings_stick_left_dir">摇杆 左</string>

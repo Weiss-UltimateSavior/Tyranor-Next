@@ -146,6 +146,15 @@ object PerGameSettingsStore {
         return GameOverridesRepository.loadRowBlocking(context, gameId) != null
     }
 
+    /**
+     * 存在单游戏覆盖的游戏 id 列表。
+     *
+     * 用于「删除方案后清理指向它的引用」这类需要反向扫描覆盖的场景。
+     * prefs 镜像按 gameId 为键存储，键集即全部有覆盖的游戏。
+     */
+    fun overrideGameIds(context: Context): Set<String> =
+        runCatching { prefs(context).all.keys.toSet() }.getOrDefault(emptySet())
+
     /** 读取该游戏覆盖 JSON；无则返回空对象。 */
     fun load(context: Context, gameId: String): JSONObject {
         if (gameId.isBlank()) return JSONObject()
@@ -293,7 +302,7 @@ object PerGameSettingsStore {
     /**
      * 双写持久化：DB 异步落库（失败仅记日志），prefs 同步镜像立即刷盘——
      * 引擎子进程启动游戏时按旧契约整条读取镜像（方案阶段 4 过渡策略）。
-     * 已知限制（与迁移前行为等价，见引擎 TouchPadSaveBridge 注释）：App 进程的 prefs
+     * 已知限制：App 进程的 prefs
      * 缓存不跨进程刷新，引擎本次进程存活期间写回的 touchpad 字段对 App 不可见，
      * 此处整条镜像写会覆盖之；跨会话数据由启动时 syncFromPrefs 回灌保证不丢。
      * 彻底收口（引擎侧独立 prefs 文件）为方案后续项。
