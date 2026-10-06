@@ -77,7 +77,8 @@
     <string name="engine_input_scroll_up">ホイール上</string>
     <string name="engine_input_scroll_down">ホイール下</string>
     <string name="engine_input_screenshot_failed">スクリーンショットに失敗しました</string>
-    <string name="engine_input_screenshot_saved">スクリーンショットを保存しました：%1$s</string>
+    <string name="engine_input_screenshot_saved">スクリーンショットをギャラリーに保存しました：%1$s</string>
+    <string name="engine_input_screenshot_saved_private">ギャラリーフォルダーに書き込めないため、アプリ内に保存しました：%1$s</string>
     <string name="engine_input_action_screenshot">スクリーンショット</string>
     <string name="engine_input_group_actions">アクション</string>
 </resources>

@@ -211,12 +211,20 @@ class InputRemapController private constructor(
         private fun handleHostAction(activity: Activity, action: Int): Boolean = when (action) {
             CanonicalKeys.ACTION_SCREENSHOT -> {
                 ScreenCapture.capture(activity) { file ->
-                    val message = if (file != null) {
-                        activity.getString(R.string.engine_input_screenshot_saved, file.name)
-                    } else {
-                        activity.getString(R.string.engine_input_screenshot_failed)
+                    val publicDir = ScreenCapture.publicDirectory()
+                    val message = when {
+                        file == null -> activity.getString(R.string.engine_input_screenshot_failed)
+                        // 落在公共相册：提示完整路径（用户常要去找图/分享）
+                        file.parentFile?.absolutePath == publicDir.absolutePath ->
+                            activity.getString(R.string.engine_input_screenshot_saved, file.absolutePath)
+
+                        // 无「所有文件访问」权限时回退到应用私有目录：如实说明，避免用户去相册找不到
+                        else -> activity.getString(
+                            R.string.engine_input_screenshot_saved_private,
+                            file.absolutePath,
+                        )
                     }
-                    runCatching { Toast.makeText(activity, message, Toast.LENGTH_SHORT).show() }
+                    runCatching { Toast.makeText(activity, message, Toast.LENGTH_LONG).show() }
                 }
                 true
             }

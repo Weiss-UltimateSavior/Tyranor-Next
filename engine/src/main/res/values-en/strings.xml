@@ -77,7 +77,8 @@
     <string name="engine_input_scroll_up">Scroll up</string>
     <string name="engine_input_scroll_down">Scroll down</string>
     <string name="engine_input_screenshot_failed">Screenshot failed</string>
-    <string name="engine_input_screenshot_saved">Screenshot saved: %1$s</string>
+    <string name="engine_input_screenshot_saved">Screenshot saved to gallery: %1$s</string>
+    <string name="engine_input_screenshot_saved_private">Could not write to the gallery folder; saved in the app folder: %1$s</string>
     <string name="engine_input_action_screenshot">Screenshot</string>
     <string name="engine_input_group_actions">Actions</string>
 </resources>

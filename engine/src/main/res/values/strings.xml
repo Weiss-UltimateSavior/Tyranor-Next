@@ -77,7 +77,8 @@
     <string name="engine_input_scroll_up">滚轮上</string>
     <string name="engine_input_scroll_down">滚轮下</string>
     <string name="engine_input_screenshot_failed">截屏失败</string>
-    <string name="engine_input_screenshot_saved">已保存截图：%1$s</string>
+    <string name="engine_input_screenshot_saved">截图已保存到相册：%1$s</string>
+    <string name="engine_input_screenshot_saved_private">无法写入相册目录，截图已存到应用目录：%1$s</string>
     <string name="engine_input_action_screenshot">截屏</string>
     <string name="engine_input_group_actions">动作</string>
 </resources>
