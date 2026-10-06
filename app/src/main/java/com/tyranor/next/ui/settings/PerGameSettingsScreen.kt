@@ -911,6 +911,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
+                    EngineType.ANDROID_APP -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_android_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
                 }
 
                 if (game.engine in WINLATOR_LAUNCH_ENGINES) item {

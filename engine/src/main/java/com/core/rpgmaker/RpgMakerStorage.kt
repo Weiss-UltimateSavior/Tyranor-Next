@@ -3,15 +3,11 @@ package com.core.rpgmaker
 import android.util.Log
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 
 /** 供 RPG Maker MV/MZ 存档桥（RpgMakerSaveBridge，StorageManager 兼容接口）使用的、限制在单一存档目录内的文件存储。 */
 internal object RpgMakerStorage {
     private const val TAG = "YukiRpgMaker"
     private const val MAX_SAVE_BYTES = 8L * 1024L * 1024L
-    private val directFileKey = Regex("[A-Za-z0-9._-]{1,128}")
-    private const val MAX_KEY_CHARS = 512
-
     @JvmStatic
     fun read(directory: File?, key: String?, extension: String): String {
         return try {
@@ -41,7 +37,14 @@ internal object RpgMakerStorage {
         // （finish 500ms 自杀 / 系统回收）不会留下截断的存档文件（PR review 意见）
         return try {
             val file = resolveFile(directory, key, extension) ?: return false
-            val bytes = value.orEmpty().toByteArray(StandardCharsets.UTF_8)
+            val text = value.orEmpty()
+            // 预检（无分配）：UTF-8 字节数恒 ≥ UTF-16 字符数，字符数已超限即可直接拒绝，
+            // 避免为必然被拒的载荷先分配一份全量字节数组
+            if (text.length > MAX_SAVE_BYTES) {
+                Log.w(TAG, "setStorage rejected pre-encode (chars=${text.length})")
+                return false
+            }
+            val bytes = text.toByteArray(StandardCharsets.UTF_8)
             if (bytes.size > MAX_SAVE_BYTES) return false
             val dir = file.parentFile ?: return false
             if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
@@ -85,24 +88,20 @@ internal object RpgMakerStorage {
 
     @JvmStatic
     fun resolveFile(directory: File?, key: String?, extension: String): File? {
-        if (directory == null || key == null) return null
+        if (directory == null) return null
         if (extension !in setOf(".sav", ".bin")) return null
-        val clean = key.trim()
-        if (clean.isEmpty() || clean.length > MAX_KEY_CHARS || clean.any { it == '\u0000' || it.isISOControl() }) return null
-        // Keys are data, never paths.  Special filename characters are supported through the
-        // hash mapping below, but directory separators remain invalid.
-        if (clean.contains('/') || clean.contains('\\') || clean.contains("..")) return null
+        // 键校验与「键 → 落盘名」规则统一由 RpgSaveKeyMapping 提供：应用侧转化按同一实现
+        // 写入，两处漂移会导致「转化写进去、引擎读不到」且无任何报错。
+        val clean = RpgSaveKeyMapping.sanitizeKey(key) ?: return null
         val root = directory.canonicalFile
-        // Preserve Tyranor/Rinne's established filename for normal keys, so existing saves
-        // remain readable.  Non-standard keys use a deterministic SHA-256 name instead of
-        // being rejected; the raw key never becomes part of a filesystem path.
-        if (directFileKey.matches(clean)) return insideRoot(root, File(root, "$clean$extension"))
 
         // A legacy Tyranor save with spaces or Unicode may already exist under its raw key.
         // Continue using it when it is safely a single filename, otherwise migrate new writes
         // to the deterministic mapping below.
-        legacyFile(root, clean, extension)?.takeIf(File::isFile)?.let { return it }
-        return insideRoot(root, File(root, "key_${sha256(clean)}$extension"))
+        if (!RpgSaveKeyMapping.DIRECT_FILE_KEY.matches(clean)) {
+            legacyFile(root, clean, extension)?.takeIf(File::isFile)?.let { return it }
+        }
+        return insideRoot(root, File(root, RpgSaveKeyMapping.canonicalFileName(clean, extension)))
     }
 
     private fun legacyFile(root: File, key: String, extension: String): File? {
@@ -116,7 +115,4 @@ internal object RpgMakerStorage {
         null
     }
 
-    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(StandardCharsets.UTF_8))
-        .joinToString("") { "%02x".format(it) }
 }

@@ -1,6 +1,7 @@
 package com.tyranor.next.core.game.launch
 
 import android.app.ActivityManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -42,6 +43,7 @@ import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveException
@@ -132,6 +134,7 @@ object EngineLauncher {
         // PSP/Switch 不参与内置/外置 APK 链路，仅用于引擎页「主机系列」展示与外置模拟器跳转
         EngineType.PSP,
         EngineType.NINTENDO_SWITCH,
+        // ANDROID_APP 为手动添加的直接跳转条目（无运行时/设置/存档），故不收录、不出现在引擎页
     ).sortedByDescending { it.displayName.length }
 
     /** Artemis 补丁确认弹窗的用户选择：
@@ -210,6 +213,10 @@ object EngineLauncher {
     }
 
     private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
+        // 手动添加的安卓游戏：无引擎会话/存档/权限前置，按包名直接跳转（必须在目录解析之前分流）
+        if (AndroidAppGames.isAndroidApp(game)) {
+            return launchAndroidApp(context, game)
+        }
         // 外置模拟器跳转：PSP / Switch 为 ROM 文件型（不解析目录），
         // YURIS 为 Windows 游戏（目录 + 主 exe，经 Winlator 外置启动协议挂载目录）
         ExternalEmulatorRegistry.forEngine(game.engine)?.let { target ->
@@ -389,6 +396,8 @@ object EngineLauncher {
      */
     suspend fun rpgSaveFormatPending(context: Context, game: ScanGame): RpgSaveFormat.Detection? =
         withContext(Dispatchers.IO) {
+            // 仅 MV/MZ 需要检测/转化；其他引擎（含手动安卓游戏）直接短路，避免无意义的目录解析
+            if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return@withContext null
             val root = resolveGameDirectory(context, game) ?: return@withContext null
             val dirs = effectiveRpgSaveScanDirs(context, game, root) ?: return@withContext null
             RpgSaveFormat.detectInDirs(dirs, game.engine).takeIf { it.convertibleCount > 0 }
@@ -464,10 +473,31 @@ object EngineLauncher {
             rootPath,
             settings.webScopedSaveDir,
         ) ?: return null
-        return if (settings.webScopedSaveDir) {
-            listOf(effective, File(rootPath, "savedata"), File(rootPath, "Savedata"))
+        return buildRpgSaveScanDirs(rootPath, effective, settings.webScopedSaveDir)
+    }
+
+    /**
+     * 组装检测/转化目录组（纯函数，供单测直接校验）：**首个元素是引擎生效目录 = 转化输出落点**，
+     * 其余元素仅供扫描。包含三类：
+     * - 兼容目录：非独立存档的历史 `Savedata/`；独立存档时另含游戏根 `savedata/`（用户从非独立
+     *   切到独立后，旧标准档仍能被检测/转化进生效目录——引擎只读外部目录）；
+     * - 标准侧（JoiPlay/PC）目录：`<内容根>/save`（MV 常见 `<游戏根>/www/save`，MZ 无 www 时为
+     *   `<游戏根>/save`），兼容 `Save/` 拼写。标准格式存档实际就放在这里，不纳入扫描范围就
+     *   永远检测不到，转化形同不生效。
+     */
+    internal fun buildRpgSaveScanDirs(rootPath: String, effectiveDir: File, scoped: Boolean): List<File> {
+        val compatible = if (scoped) {
+            listOf(File(rootPath, "savedata"), File(rootPath, "Savedata"))
         } else {
-            listOf(effective, File(rootPath, "Savedata"))
+            listOf(File(rootPath, "Savedata"))
+        }
+        val standard = RpgSaveFormat.standardSaveDirectories(File(rootPath))
+        val seen = mutableSetOf<String>()
+        return (listOf(effectiveDir) + compatible + standard).filter { dir ->
+            // 与 RpgSaveFormat 共用同一去重规则：此前此处无条件小写归一，
+            // 会把区分大小写文件系统上的 `Savedata/`（历史兼容目录）误判为与生效目录
+            // `savedata/` 相同而丢弃，只放在 Savedata/ 的旧存档因此漏检、漏转化。
+            seen.add(RpgSaveFormat.saveDirDedupKey(dir))
         }
     }
 
@@ -793,6 +823,9 @@ object EngineLauncher {
             EngineType.PSP,
             EngineType.NINTENDO_SWITCH -> error("${engine.displayName} is handled by ExternalEmulatorLauncher")
 
+            // 手动添加的安卓应用按包名直接跳转，在 launchInternalChecked 前置分流，不会走到这里
+            EngineType.ANDROID_APP -> error("${engine.displayName} is handled by Android app launch")
+
             EngineType.UNKNOWN -> Intent(context, TyranoActivity::class.java).apply {
                 putExtra(LaunchContract.PATH, path)
                 putExtra(LaunchContract.GAME_PATH, path)
@@ -813,6 +846,39 @@ object EngineLauncher {
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT, theme.textArgb)
         intent.putExtra(LaunchContract.THEME_COLOR_TEXT_MUTED, theme.mutedArgb)
         return intent
+    }
+
+    /**
+     * 手动添加的安卓游戏：按 `launchTarget` 承载的包名取启动 Intent 直接跳转；
+     * 未安装 / 无启动入口 / 启动入口失效 → [LaunchResult.Failure.AndroidAppMissing]。
+     * 与内置引擎路径同语义：启动前确认未取消，取消原样传播；最近记录失败不影响启动结果。
+     */
+    private suspend fun launchAndroidApp(context: Context, game: ScanGame): LaunchResult {
+        val packageName = AndroidAppGames.packageNameOf(game)
+            ?: return LaunchResult.Failure.AndroidAppMissing
+        // PackageManager 查询本身也可能抛 binder 异常，统一折叠为「应用不可用」
+        val intent = runCatching { context.packageManager.getLaunchIntentForPackage(packageName) }
+            .getOrNull()
+            ?: return LaunchResult.Failure.AndroidAppMissing
+        return try {
+            currentCoroutineContext().ensureActive()
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            // 应用已拉起即成功；最近记录写失败不改变启动结果（独立兜底）
+            runCatching { GameLibraryFacade.recordRecentGame(context, game) }
+                .onFailure { Log.w(TAG, "record recent android app failed uri=${game.uri}", it) }
+            LaunchResult.Success
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: ActivityNotFoundException) {
+            // 解析后应用被卸载/入口被移除的竞态
+            LaunchResult.Failure.AndroidAppMissing
+        } catch (e: SecurityException) {
+            // 应用被禁用等可见性变化
+            LaunchResult.Failure.AndroidAppMissing
+        } catch (e: Exception) {
+            LaunchResult.Failure.StartFailed(e.message)
+        }
     }
 
     /**

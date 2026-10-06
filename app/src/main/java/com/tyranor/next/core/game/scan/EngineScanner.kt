@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
@@ -125,12 +126,16 @@ object EngineScanner {
     }
 
     /**
-     * 重扫合并：手动添加的 PC 游戏不参与扫描（不依赖扫描根），重扫时必须原样保留；
+     * 重扫合并：手动添加的条目（PC 游戏 / 安卓游戏，[EngineType.isManual]）不参与扫描（不依赖扫描根），
+     * 重扫时必须原样保留；安卓条目额外按 uri 前缀识别，避免 engine 字段损坏（回退 UNKNOWN）时被丢弃。
      * 同 uri 若被扫描命中则以扫描结果为准（避免重复条目）。
      */
     internal fun mergeScannedWithManual(current: List<ScanGame>, scanned: List<ScanGame>): List<ScanGame> {
         val scannedUris = scanned.mapTo(HashSet()) { it.uri }
-        val manual = current.filter { it.engine == EngineType.PC && it.uri !in scannedUris }
+        val manual = current.filter { game ->
+            (game.engine.isManual || AndroidAppGames.isAndroidApp(game)) &&
+                game.uri !in scannedUris
+        }
         return manual + scanned
     }
 

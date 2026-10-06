@@ -5,7 +5,7 @@
 ## 引擎与运行时
 
 **引擎（EngineType）**:
-游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、REALLIVE、AVG32、UK2、FVP、RENPY、YURIS、CATSYSTEM2、PC、UNKNOWN。
+游戏所属的运行时家族，扫描时按目录特征（脚本/资源文件）判定：KIRIKIRI、ONS、TYRANO、RPG Maker（RGSS 系列）、RPG_MV、RPG_MZ、VN、WebOther、ARTEMIS、SIGLUS、REALLIVE、AVG32、UK2、FVP、RENPY、YURIS、CATSYSTEM2、PC、ANDROID_APP、UNKNOWN。
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:
@@ -21,8 +21,12 @@ _Avoid_: 软渲染引擎、game_fb 引擎
 _Avoid_: 插件、引擎 DLC
 
 **PC 游戏（手动添加）**:
-不属于已识别引擎家族、由用户在游戏页顶栏「添加 PC 游戏」手动入库的 Windows 程序：选择目录 + 指定启动 exe（存 `launchFile`，可随时切换），启动经外置 Winlator；不参与扫描、不纳入存档管理与引擎配置。
+不属于已识别引擎家族、由用户在游戏页顶栏「添加游戏 → 添加电脑游戏」手动入库的 Windows 程序：选择目录 + 指定启动 exe（存 `launchFile`，可随时切换），启动经外置 Winlator；不参与扫描、不纳入存档管理与引擎配置。
 _Avoid_: 未知引擎、Winlator 游戏
+
+**安卓游戏（手动添加）**:
+不属于已识别引擎家族、由用户在游戏页顶栏「添加游戏 → 添加安卓游戏」从已安装可启动应用列表手动入库的 Android 应用：库内主键 `uri = androidapp://<包名>`，包名存 `launchTarget`，启动时按包名直接跳转该应用；不参与扫描、不纳入存档管理与引擎配置。
+_Avoid_: 应用快捷方式、外置模拟器游戏
 
 **外置模拟器跳转（External Emulator Jump）**:
 把游戏交给用户自行安装的独立模拟器/模拟器型运行时（PPSSPP、Eden、Winlator）运行；主 App 只做识别、安装探测与显式组件 Intent 跳转，不接管其存档与设置。YU-RIS 为「目录 + 主 exe」形态，经 Winlator 外置启动协议（`dir_path` + 相对 `exe_path`，自动空闲盘符临时挂载）拉起。
@@ -63,7 +67,7 @@ _Avoid_: 导入、索引
 _Avoid_: 游戏条目、GameItem
 
 **启动目标（launchTarget）**:
-认定为主入口的启动文件路径（自动探测）；可被单游戏设置的「启动文件」（launchFile）手动覆盖。
+按引擎语义解释的启动载荷：自动探测的文件路径 / ROM 文件名 / 手动添加 PC 的目录哨兵 / 手动添加安卓游戏的包名；文件型入口可被单游戏设置的「启动文件」（launchFile）手动覆盖。
 _Avoid_: 入口文件（与 launchFile 混淆时）
 
 **外置模块别名（externalModuleAlias）**:
@@ -161,7 +165,7 @@ _Avoid_: 存档路径
 _Avoid_: 备份、云同步
 
 **标准存档格式 / Tyranor 存档格式（RPG Maker MV/MZ）**:
-同一份存档内容的两种文件名形态：标准格式（JoiPlay/PC 兼容，`global|config|fileN` + `.rpgsave`/`.rmmzsave`）与 Tyranor 格式（MV 为 `RPG Global.bin` 等、MZ 为 `global.bin` 等）；二者字节级一致，仅文件名不同。引擎写入的 `key_<sha256(key)>.bin` 哈希名是 Tyranor 写入落点（键空间有限，导出时可反解回标准名）。
+同一份存档内容的两种文件名形态：标准格式（JoiPlay/PC 兼容，`global|config|fileN` + `.rpgsave`/`.rmmzsave`）与 Tyranor 格式。MV 的 Tyranor 格式为引擎确定性哈希名 `key_<sha256(键)>.bin`（键如 `RPG File3`）；legacy 名 `RPG FileN.bin` 引擎读取时优先但仍兼容。MZ 的键为纯 ASCII（`fileN`），引擎固定读写 `fileN.bin`，**不能**用哈希名。二者内容字节级一致、仅文件名不同；哈希名键空间有限，导出可反解回标准名。
 _Avoid_: 存档版本、编码
 
 **存档格式转化（RPG Maker MV/MZ）**:
@@ -215,7 +219,7 @@ _Avoid_: KSD 解包功能（不存在独立功能）
 ## 界面规范
 
 **功能跳转条目（AppNavItem）**:
-统一的「功能跳转列」组件（左侧图标 + 标题/摘要 + 右箭头），禁止手写 Row/Column 拼装；页面条目容器用 NavWhite（灰底白卡），弹窗内条目传 PageGrey（白底灰卡）与弹窗背景反色。
+统一的「功能跳转列」组件（左侧图标 + 标题/摘要 + 右箭头），禁止手写 Row/Column 拼装；页面条目容器用 NavWhite（灰底白卡），弹窗内条目传 DialogItemSurface（与弹窗背景反色，玻璃风格下为亮玻璃面）。
 _Avoid_: ListItem、手写条目
 
 **二级字号规范**:
@@ -233,6 +237,10 @@ _Avoid_: 液态玻璃 2.0、增强玻璃
 **四页常驻组合**:
 主界面四个 Tab（首页 / 游戏 / 引擎 / 设置）常驻组合、隐藏页置 alpha=0 保留节点，切换仅做水平 alpha 动画避免重建列表。
 _Avoid_: 懒加载页、Fragment
+
+**首页样式（Home Style）**:
+首页的两种形态：「默认」（最近打开 + 快捷启动）与「网页」（内置 WebView 展示用户所选地址：预设鲲Gal/一起萌或自定义）。由应用设置切换、即时生效；仅 http/https 在 WebView 内加载，http(s) 下载交系统浏览器，主框架非 http(s) 链接仅白名单 scheme（mailto/tel 等）交系统、其余拦截；Web 首页在首页不在前台或应用退后台时暂停 JS 与页面媒体，避免后台耗电。
+_Avoid_: 主页、起始页
 
 ## 架构约定
 

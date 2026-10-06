@@ -469,7 +469,7 @@ Column(fillMaxSize)                                // 页面根
 
 通过 `MiuixTheme`/`MaterialTheme` 的 `colorScheme` 取容器背景属于**反例**（例：弹窗内项目用
 `MiuixTheme.colorScheme.surfaceContainer` 不会随色调切换变色，应改用 `theme/Color.kt` 对应容器常量——
-页面条目 `NavWhite`、弹窗内条目 `PageGrey`）。
+页面条目 `NavWhite`、弹窗内条目 `DialogItemSurface`）。
 仅当某 scheme 颜色确为实时计算且随色调切换变化时才允许引用。
 
 ### 4. 层级要求

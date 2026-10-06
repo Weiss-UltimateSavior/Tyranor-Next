@@ -39,5 +39,14 @@ class GameCardItemKeyTest {
         assertEquals(false, shouldShowSaveManagement(EngineType.NINTENDO_SWITCH))
         assertEquals(false, shouldShowSaveManagement(EngineType.PC))
         assertEquals(false, shouldShowSaveManagement(EngineType.CATSYSTEM2))
+        // 手动添加的安卓应用：无文件存档接口，隐藏存档管理
+        assertEquals(false, shouldShowSaveManagement(EngineType.ANDROID_APP))
+        // engine 字段损坏回退 UNKNOWN 的安卓条目（uri 前缀仍在）同样隐藏
+        assertEquals(
+            false,
+            shouldShowSaveManagement(
+                game.copy(uri = "androidapp://com.example.game", engine = EngineType.UNKNOWN),
+            ),
+        )
     }
 }

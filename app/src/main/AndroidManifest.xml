@@ -18,6 +18,12 @@
         <package android:name="dev.eden.eden_emulator" />
         <!-- YU-RIS 经外置 Winlator（winlator-cn 外置启动协议；应用 id 为 com.winlator） -->
         <package android:name="com.winlator" />
+        <!-- 「添加安卓游戏」枚举可启动应用（Android 11+ 包可见性：只放开有 LAUNCHER 入口的应用，
+             不使用过宽的 QUERY_ALL_PACKAGES；getLaunchIntentForPackage 对这些包同样可见） -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <application

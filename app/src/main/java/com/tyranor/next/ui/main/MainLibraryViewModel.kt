@@ -169,13 +169,14 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     /**
-     * 手动添加游戏（PC 类型，不参与扫描）：同 uri 已存在时返回 false；
+     * 手动添加游戏（PC / 安卓游戏，不参与扫描）：同 uri 已存在时返回 false；
      * 与扫描/删除共用 FIFO 命令队列落库，避免「添加后立刻重扫」互相覆盖。
+     * 立即发布采用「现有列表 + 新条目」而非整表替换，避免短暂清空派生列表（最近/快捷启动）。
      */
     fun addManualGame(game: ScanGame): Boolean {
         if (_uiState.value.games.any { it.uri == game.uri }) return false
         val revision = stateRevision.incrementAndGet()
-        _uiState.update { MainLibraryStateReducer.acceptGames(it, listOf(game)) }
+        _uiState.update { MainLibraryStateReducer.acceptGames(it, it.games + game) }
         enqueuePersistence(revision) {
             GameLibraryFacade.updateGames(appContext) { games ->
                 if (games.any { it.uri == game.uri }) games else games + game

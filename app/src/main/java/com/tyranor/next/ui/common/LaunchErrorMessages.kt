@@ -103,6 +103,9 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.YurisExeMissing ->
             localized.getString(R.string.launch_yuris_exe_missing)
 
+        LaunchResult.Failure.AndroidAppMissing ->
+            localized.getString(R.string.launch_android_app_missing)
+
         is LaunchResult.Failure.StartFailed ->
             detail ?: localized.getString(R.string.launch_failed)
     }

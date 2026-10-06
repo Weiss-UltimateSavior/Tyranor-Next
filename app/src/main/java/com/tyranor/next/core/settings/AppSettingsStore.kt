@@ -21,6 +21,12 @@ object AppSettingsStore {
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
 
+    /** 首页样式：原生（最近打开/快捷启动）或网页。 */
+    const val KEY_HOME_STYLE = "home_style"
+
+    /** Web 首页展示的地址。 */
+    const val KEY_HOME_WEB_URL = "home_web_url"
+
     /** 游戏页卡片隐藏名称标签（【】/[]）；默认开。 */
     const val KEY_GAME_CARD_HIDE_TITLE_TAG = "game_card_hide_title_tag"
 
@@ -37,6 +43,12 @@ object AppSettingsStore {
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
     const val KEY_COVER_SCRAPER_SOURCE_ORDER = "cover_scraper_source_order"
     private const val KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX = "cover_scraper_source_enabled_"
+
+    /** VNDB 封面是否下载原图大图（关闭时用缩略图）。 */
+    const val KEY_VNDB_LARGE_COVER = "vndb_large_cover"
+
+    /** VNDB 大图开关默认值：开（缩略图仅 256×362，默认直接取原图保证清晰度）。 */
+    const val DEFAULT_VNDB_LARGE_COVER = true
 
     const val COVER_SOURCE_HIKARINAGI = "hikarinagi"
     const val COVER_SOURCE_BANGUMI = "bangumi"
@@ -115,6 +127,24 @@ object AppSettingsStore {
     /** 底部导航栏样式：液态玻璃 · 透镜（三层采样 + 折射透镜，Android 13+ 才有完整效果）。 */
     const val NAV_STYLE_LIQUID_GLASS_ENHANCED = "liquid_glass_enhanced"
 
+    /** 首页样式：原生首页（最近打开 + 快捷启动）。 */
+    const val HOME_STYLE_NATIVE = "native"
+
+    /** 首页样式：Web 首页（内置 WebView 展示所选网址）。 */
+    const val HOME_STYLE_WEB = "web"
+
+    /** 首页样式默认值：原生。 */
+    const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
+
+    /** Web 首页预设：鲲Gal。 */
+    const val HOME_WEB_URL_KUNGAL = "https://www.kungal.com"
+
+    /** Web 首页预设：一起萌。 */
+    const val HOME_WEB_URL_LETMOE = "https://www.letmoe.com"
+
+    /** Web 首页默认地址：一起萌。 */
+    const val DEFAULT_HOME_WEB_URL = HOME_WEB_URL_LETMOE
+
     /** 透镜档需要 Android 13（API 33）的 RuntimeShader 折射能力；更低版本不提供该选项。 */
     val supportsLiquidGlassEnhanced: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -149,11 +179,20 @@ object AppSettingsStore {
     /** 默认主题渐变内存态：设置页切换后页面背景即时重组。 */
     val defaultThemeGradientState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_DEFAULT_THEME_GRADIENT)
 
+    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页形态。 */
+    val homeStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_STYLE)
+
+    /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
+    val homeWebUrlState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_WEB_URL)
+
     /** 封面刮削设置内存态：设置页修改后游戏页可即时读取。 */
     val coverScraperSettingsVersion: MutableStateFlow<Int> = MutableStateFlow(0)
 
     /** 导航样式读写的串行锁：迁移的读改写与用户写入必须互斥（见 [initNavStyle]）。 */
     private val navStyleLock = Any()
+
+    /** 首页样式读写的串行锁：init 的异步加载与用户写入必须互斥（同 [navStyleLock] 的理由）。 */
+    private val homeStyleLock = Any()
 
     /**
      * 首次组合时从持久化加载导航栏样式到内存态（幂等）。
@@ -302,6 +341,43 @@ object AppSettingsStore {
         gameCardBadgeState.value = isGameCardBadgeEnabled(c)
     }
 
+    /** 首次组合时从持久化加载首页样式与 Web 首页地址到内存态（幂等）。 */
+    fun initHomeStyle(c: Context) {
+        synchronized(homeStyleLock) {
+            homeStyleState.value = getHomeStyle(c)
+            homeWebUrlState.value = getHomeWebUrl(c)
+        }
+    }
+
+    /** 首页样式归一：仅接受 web，其余（含空/未知）回退原生。 */
+    fun getHomeStyle(c: Context): String =
+        when (prefs(c).getString(KEY_HOME_STYLE, HOME_STYLE_NATIVE)) {
+            HOME_STYLE_WEB -> HOME_STYLE_WEB
+            else -> HOME_STYLE_NATIVE
+        }
+
+    fun setHomeStyle(c: Context, style: String) {
+        val normalized = if (style == HOME_STYLE_WEB) HOME_STYLE_WEB else HOME_STYLE_NATIVE
+        synchronized(homeStyleLock) {
+            prefs(c).edit().putString(KEY_HOME_STYLE, normalized).apply()
+            homeStyleState.value = normalized
+        }
+    }
+
+    /** 当前 Web 首页地址；磁盘值非法/为空时回退默认（一起萌）。 */
+    fun getHomeWebUrl(c: Context): String =
+        prefs(c).getString(KEY_HOME_WEB_URL, DEFAULT_HOME_WEB_URL)
+            ?.let { HomeWebUrls.normalize(it) }
+            ?: DEFAULT_HOME_WEB_URL
+
+    fun setHomeWebUrl(c: Context, url: String) {
+        val normalized = HomeWebUrls.normalize(url) ?: DEFAULT_HOME_WEB_URL
+        synchronized(homeStyleLock) {
+            prefs(c).edit().putString(KEY_HOME_WEB_URL, normalized).apply()
+            homeWebUrlState.value = normalized
+        }
+    }
+
     fun isGameCardBadgeEnabled(c: Context): Boolean =
         prefs(c).getBoolean(KEY_GAME_CARD_BADGE, DEFAULT_GAME_CARD_BADGE)
 
@@ -365,6 +441,14 @@ object AppSettingsStore {
 
     fun setCoverScraperOnlyMissing(c: Context, onlyMissing: Boolean) {
         prefs(c).edit().putBoolean(KEY_COVER_SCRAPER_ONLY_MISSING, onlyMissing).apply()
+        bumpCoverScraperSettingsVersion()
+    }
+
+    fun isVndbLargeCover(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_VNDB_LARGE_COVER, DEFAULT_VNDB_LARGE_COVER)
+
+    fun setVndbLargeCover(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_VNDB_LARGE_COVER, enabled).apply()
         bumpCoverScraperSettingsVersion()
     }
 
