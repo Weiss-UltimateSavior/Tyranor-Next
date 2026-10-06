@@ -61,9 +61,6 @@ class VirtualPadView(
         fun onEditEnded()
         fun onSelectionChanged(info: SelectionInfo?)
         fun onProfileCommitted(profile: PadProfile)
-
-        /** 落盘失败：宿主须先调用 [markSaveFailed] 再返回，编辑态会保留。 */
-        fun onSaveFailed()
         fun onPadVisibilityChanged(visible: Boolean)
     }
 
@@ -241,7 +238,7 @@ class VirtualPadView(
     private fun drawButton(canvas: Canvas, element: Element, button: PadButton) {
         val hidden = !button.visible
         if (hidden && !editing) return
-        val pressed = button.id in pressedIds || dispatcher.isToggled(button.id)
+        val pressed = button.id in pressedIds || dispatcher.isToggled(PAD_SCOPE + button.id)
         fillPaint.color = when {
             pressed -> withAlpha(theme.primary, 0.46f)
             hidden -> withAlpha(theme.primary, 0.16f)
@@ -417,7 +414,13 @@ class VirtualPadView(
                         if (index < 0) continue
                         val element = elementById[buttonId] ?: continue
                         if (!element.rect.contains(event.getX(index), event.getY(index))) {
-                            pointerButtons.remove(pointerId)?.let { releaseButton(it) }
+                            pointerButtons.remove(pointerId)?.let { button ->
+                                iterator.remove()
+                                pointerTargets.remove(pointerId)
+                                // 与抬起路径同一守卫：其它手指仍按着该按钮时不释放
+                                if (pointerButtons.values.none { it.id == button.id }) releaseButton(button)
+                                return@let
+                            }
                             iterator.remove()
                         }
                     }
@@ -492,13 +495,13 @@ class VirtualPadView(
     private fun pressButton(button: PadButton) {
         if (!button.visible) return
         pressedIds.add(button.id)
-        dispatcher.press(button.id, button.keys, button.autoKeep)
+        dispatcher.press(PAD_SCOPE + button.id, button.keys, button.autoKeep)
         invalidate()
     }
 
     private fun releaseButton(button: PadButton) {
         pressedIds.remove(button.id)
-        dispatcher.release(button.id, button.autoKeep)
+        dispatcher.release(PAD_SCOPE + button.id, button.autoKeep)
         invalidate()
     }
 
@@ -569,12 +572,15 @@ class VirtualPadView(
             val was = name in dirActiveSet
             if (active == was) return@forEach
             val keys = keysOf[name].orEmpty()
+            val dispatchId = PAD_SCOPE + DIRECTION_ID + "." + name
             if (active) {
                 dirActiveSet.add(name)
-                keys.forEach { sink.send(it, true) }
+                // 经共享派发器：手柄 D-Pad / 左摇杆默认也是方向键，必须参与键级引用计数，
+                // 否则任一侧松开都会打断另一侧按住的方向
+                dispatcher.press(dispatchId, keys, autoKeep = false)
             } else {
                 dirActiveSet.remove(name)
-                keys.asReversed().forEach { sink.send(it, false) }
+                dispatcher.release(dispatchId, autoKeep = false)
             }
         }
         invalidate()
@@ -636,7 +642,8 @@ class VirtualPadView(
         resetFabGesture()
         // 编辑期释放所有按下的游戏按键，避免遗留按下状态
         releaseAllPointers()
-        dispatcher.releaseAll()
+        // 只放本层持有的键：不分来源地整体释放会把同时被手柄按住的键一并放掉
+        dispatcher.releaseScope(PAD_SCOPE)
         editing = true
         editProfile = profile.copy(buttons = profile.buttons.map { it.copy() })
         selectedId = elements.firstOrNull { element ->
@@ -654,19 +661,22 @@ class VirtualPadView(
      * 提交编辑并通知落盘。
      *
      * 调用顺序保证「先给落盘机会、再收面板」：宿主在 [Listener.onProfileCommitted] 里
-     * 写盘并回传成败（[Listener.onSaveFailed]），失败时保留编辑态，避免用户改完的布局
+     * 写盘并在失败时调用 [markSaveFailed]，失败会保留编辑态，避免用户改完的布局
      * 因一次写盘失败被静默丢弃。
      */
     fun commitEdit() {
         if (!editing) return
         val committed = editProfile ?: return
-        profile = committed
+        // 清掉可能残留的失败标志（非编辑态的 resetToDefaults 落盘失败也会置位），
+        // 否则本次成功保存会被误判为失败、要再点一次
+        saveFailed = false
         listener?.onProfileCommitted(committed)
         if (saveFailed) {
-            // 落盘失败：留在编辑态，让用户能重试或取消
-            saveFailed = false
+            // 落盘失败：留在编辑态，让用户能重试或取消；内存中的已生效方案不变，
+            // 避免「写盘失败但界面已按新布局生效」
             return
         }
+        profile = committed
         exitEditing()
     }
 
@@ -752,6 +762,12 @@ class VirtualPadView(
         invalidate()
     }
 
+    /**
+     * 更新方向控件配置。
+     *
+     * 键位列表按传入值**原样写入**（空列表 = 该方向不输出）：原先的 `ifEmpty { 旧值 }`
+     * 兜底让「清空绑定」无法表达——用户把某方向的键位全取消后仍会保留原键位。
+     */
     fun updateSelectedDirection(eightDir: Boolean, up: List<Int>, down: List<Int>, left: List<Int>, right: List<Int>) {
         val id = selectedId ?: return
         if (id != DIRECTION_ID) return
@@ -759,11 +775,30 @@ class VirtualPadView(
         editProfile = active.copy(
             direction = active.direction.copy(
                 eightDir = eightDir,
-                up = up.ifEmpty { active.direction.up },
-                down = down.ifEmpty { active.direction.down },
-                left = left.ifEmpty { active.direction.left },
-                right = right.ifEmpty { active.direction.right },
+                up = up,
+                down = down,
+                left = left,
+                right = right,
             ),
+        )
+        rebuild()
+        notifySelection()
+        invalidate()
+    }
+
+    /** 更新选中方向控件的单个方向键位（空列表 = 该方向不输出）。 */
+    fun updateSelectedDirectionKey(direction: String, keys: List<Int>) {
+        val id = selectedId ?: return
+        if (id != DIRECTION_ID) return
+        val active = activeProfile()
+        val dir = active.direction
+        editProfile = active.copy(
+            direction = when (direction) {
+                "up" -> dir.copy(up = keys)
+                "down" -> dir.copy(down = keys)
+                "left" -> dir.copy(left = keys)
+                else -> dir.copy(right = keys)
+            },
         )
         rebuild()
         notifySelection()
@@ -952,8 +987,20 @@ class VirtualPadView(
 
     fun releaseAllKeys() {
         releaseAllPointers()
-        dispatcher.releaseAll()
+        // 只放本层持有的键：不分来源地整体释放会把同时被手柄按住的键一并放掉
+        dispatcher.releaseScope(PAD_SCOPE)
         invalidate()
+    }
+
+    /**
+     * 宿主进入后台：取消耗时的 FAB 长按、释放按压状态。
+     *
+     * 长按回调只受「手指是否移动」约束，页面暂停期间仍会触发——用户按着 FAB 切后台，
+     * 回来时会发现已经进了编辑态。
+     */
+    fun onHostPause() {
+        resetFabGesture()
+        releaseAllKeys()
     }
 
     fun detach() {
@@ -972,6 +1019,9 @@ class VirtualPadView(
 
     companion object {
         const val DIRECTION_ID = "direction"
+
+        /** 派发器里的来源前缀：与手柄侧（`gp:`）隔离，互不误释放。 */
+        private const val PAD_SCOPE = "pad:"
 
         private const val FAB_RADIUS_DP = 22f
         private const val FAB_LONG_PRESS_MS = 420L

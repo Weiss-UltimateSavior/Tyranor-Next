@@ -106,8 +106,6 @@ class PadEditorHost private constructor(
                     }
                 }
 
-                override fun onSaveFailed() = Unit
-
                 override fun onPadVisibilityChanged(visible: Boolean) = Unit
             }
             // 进屏即编辑态：等首次布局完成（元素矩形在 onSizeChanged 里计算，

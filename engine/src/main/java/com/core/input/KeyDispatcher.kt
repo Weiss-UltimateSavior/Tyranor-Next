@@ -11,8 +11,11 @@ package com.core.input
  *  - 动作（canonical 动作段，如截屏）：没有按下/抬起语义，只在 press 时经
  *    [InputSink.performAction] 触发一次，也不受 autoKeep 影响。
  *  - **键级引用计数**：多个控件可映射到同一键（默认布局里虚拟按键 OK 与手柄 A
- *    都是 Enter+Space）。按 id 记录持有者，只有最后一个持有者释放时才真正发 keyup，
+ *    都是 Enter+Space）。按键记录持有者，只有最后一个持有者释放时才真正发 keyup，
  *    否则「按住屏幕 OK 再碰一下手柄 A」会让屏幕上的长按被提前打断。
+ *  - **来源命名空间**：调用方用前缀区分来源（`pad:` / `gp:`），[releaseScope] 只释放
+ *    自己那一侧。手柄拔插、轴 CANCEL 这类「只应影响手柄」的事件因此不会把屏幕上
+ *    按住的虚拟按键一起放掉。
  *
  * 因此虚拟按键层与手柄路由器必须共享同一实例（见 InputRemapController）。
  */
@@ -59,16 +62,28 @@ class KeyDispatcher(private val sink: InputSink) {
 
     fun isToggled(id: String): Boolean = toggled.contains(id)
 
-    fun releaseAll() {
-        active.keys.toList().asReversed().forEach { id ->
-            active.remove(id)
-            removeHolders(id)
+    /**
+     * 释放指定来源（id 前缀，如 `pad:` / `gp:`）持有的全部键。
+     *
+     * 供「只要影响本来源」的场景使用：手柄拔插、轴 CANCEL、关闭手柄开关、虚拟按键层
+     * 卸载。共享同一个派发器时，若不分来源地整体释放，会把另一侧按住的键一并放掉——
+     * 因此本类**不提供**全局释放入口，调用方按 scope 各自释放。
+     */
+    fun releaseScope(scope: String) {
+        val affected = ArrayList<Int>()
+        active.keys.filter { it.startsWith(scope) }.forEach { id ->
+            val keys = active.remove(id) ?: return@forEach
+            keys.forEach { key ->
+                keyHolders[key]?.remove(id)
+                if (keyHolders[key]?.isEmpty() == true) {
+                    keyHolders.remove(key)
+                    affected.add(key)
+                }
+            }
         }
-        // 全部持有者撤销后统一释放：按首次登记顺序逆序，保证组合键语义稳定
-        val remaining = keyHolders.keys.toList().asReversed()
-        keyHolders.clear()
-        remaining.forEach { sink.send(it, false) }
-        toggled.clear()
+        toggled.removeAll { it.startsWith(scope) }
+        // 逆序释放，保证组合键（如 Ctrl+A）的抬键顺序与按下的加键顺序相反
+        affected.asReversed().forEach { sink.send(it, false) }
     }
 
     /** 登记持有者；集合由空变非空（0 → 1 个持有者）时才发 keydown，避免重复 down。 */
@@ -89,9 +104,5 @@ class KeyDispatcher(private val sink: InputSink) {
                 sink.send(key, false)
             }
         }
-    }
-
-    private fun removeHolders(id: String) {
-        keyHolders.values.forEach { it.remove(id) }
     }
 }

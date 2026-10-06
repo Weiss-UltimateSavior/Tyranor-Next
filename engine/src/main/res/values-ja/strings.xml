@@ -61,6 +61,14 @@
     <string name="engine_input_new_screenshot">スクリーンショットボタン</string>
     <string name="engine_input_new_direction">方向キー（スティック表示）</string>
     <string name="engine_input_direction_exists">方向キーは既にあります</string>
+    <string name="engine_input_direction_keys_title">方向キー</string>
+    <string name="engine_input_direction_up">上</string>
+    <string name="engine_input_direction_down">下</string>
+    <string name="engine_input_direction_left">左</string>
+    <string name="engine_input_direction_right">右</string>
+    <string name="engine_input_pick_direction_key">この方向のキーを選択</string>
+    <string name="engine_input_unavailable_format">%1$s（%2$s）</string>
+    <string name="input_settings_binding_empty">未割り当て</string>
     <string name="engine_input_delete">削除</string>
     <string name="engine_input_reset">初期化</string>
     <string name="engine_input_save">保存</string>

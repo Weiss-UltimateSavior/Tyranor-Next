@@ -187,7 +187,7 @@ _Avoid_: 触屏手柄（旧称，指已下线的 JS 实现）、虚拟键盘（�
 _Avoid_: 软键盘、IME、游戏自带按键
 
 **按键方案（PadProfile）**:
-一套虚拟按键布局（按钮列表 + 方向控件配置），文件存于 `<filesDir>/input/profiles/<id>.json`，游戏内编辑与设置页共用。坐标归一化到全视口（0..1，允许 -0.1..1.1 出界摆放），横竖屏切换按比例重映射；`size` 为屏幕短边比例。`default` 为内置方案 id（可编辑、不可删除）；旧 `__touch_pad.js` 的 `touch_pad_config` / `touch_pad_presets` 在首次启动对应游戏时一次性迁移为方案文件。
+一套虚拟按键布局（按钮列表 + 方向控件配置），文件存于 `<filesDir>/input/profiles/<id>.json`，游戏内编辑与设置页共用。方案目录全 App 共享，因此旧触屏手柄的迁移产物用 `migrated-<游戏作用域>-*` 独立命名（不占用内置 `default`），并按游戏写单游戏覆盖指向它。坐标归一化到全视口（0..1，允许 -0.1..1.1 出界摆放），横竖屏切换按比例重映射；`size` 为屏幕短边比例。`default` 为内置方案 id（可编辑、不可删除）；旧 `__touch_pad.js` 的 `touch_pad_config` / `touch_pad_presets` 在首次启动对应游戏时一次性迁移为方案文件。
 _Avoid_: 布局文件、preset（预设为旧实现术语）
 
 **手柄映射（GamepadMap）**:

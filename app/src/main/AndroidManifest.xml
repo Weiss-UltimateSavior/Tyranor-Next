@@ -95,11 +95,13 @@
         <activity
             android:name=".ui.settings.InputSettingsActivity"
             android:exported="false" />
+        <!-- 布局编辑器：横屏 + 不因常见配置变化重建（用户可能正拖拽/编辑未保存的草稿）；
+             与 engine 宿主的 configChanges 集合保持一致 -->
         <activity
             android:name=".ui.settings.PadLayoutEditActivity"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden" />
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
         <activity
             android:name=".ui.settings.AppSettingsActivity"
             android:exported="false" />

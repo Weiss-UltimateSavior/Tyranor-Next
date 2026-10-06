@@ -21,6 +21,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -77,6 +78,15 @@ object ScreenCapture {
     private val capturing = AtomicBoolean(false)
 
     /**
+     * 当前截屏的代际号。
+     *
+     * 用于区分「本次截屏」与「上一次的迟到回调」：A 超时后 B 开始，A 的 PixelCopy
+     * 回调迟到时若不校验代际，会以全局 capturing 判断「仍在进行」，其收尾逻辑
+     * 会偷走 B 的单飞标志（B 结果回调丢失、位图不回收）。
+     */
+    private val generation = AtomicInteger(0)
+
+    /**
      * 截取 [activity] 当前窗口并保存为 PNG。
      *
      * [onResult] 在主线程回调，且**总会**被调用一次：成功给 [CaptureResult.Saved]，
@@ -97,6 +107,7 @@ object ScreenCapture {
             onResult(CaptureResult.Busy)
             return
         }
+        val myGeneration = generation.incrementAndGet()
         val mainHandler = Handler(Looper.getMainLooper())
         val bitmap = runCatching {
             Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -108,22 +119,31 @@ object ScreenCapture {
         }
         // 兜底：PixelCopy 在极少数情况下可能不回调（窗口被立即销毁等），
         // 若不复位 capturing，之后所有截屏都会被判为 Busy 而永久失效。
-        // 只在「PixelCopy 尚未回调」时接管位图：回调已到说明后台线程正持有它编码，
-        // 此时回收会导致压缩已回收位图而崩溃。
+        // 超时只复位状态与回调失败，**不回收位图**：PixelCopy 可能仍在写它，
+        // 回收交给（带代际校验的）迟到回调，或最终由 GC 处理。
         val pixelCopyDone = AtomicBoolean(false)
         val watchdog = Runnable {
-            if (!pixelCopyDone.get() && capturing.compareAndSet(true, false)) {
+            if (!pixelCopyDone.get() && generation.get() == myGeneration &&
+                capturing.compareAndSet(true, false)
+            ) {
                 Log.w(TAG, "capture watchdog fired: no PixelCopy callback")
-                bitmap.recycle()
                 mainHandler.post { onResult(CaptureResult.Failed) }
             }
         }
         mainHandler.postDelayed(watchdog, CAPTURE_TIMEOUT_MS)
-        val finish: (CaptureResult) -> Unit = { result ->
-            mainHandler.removeCallbacks(watchdog)
-            // 只有仍在进行中的截屏才回收位图（watchdog 可能已先行回收）
-            if (capturing.compareAndSet(true, false)) bitmap.recycle()
-            mainHandler.post { onResult(result) }
+        // 本次截屏的收尾：校验代际，避免上一次的迟到回调偷走本次的单飞标志
+        val finish: (CaptureResult) -> Unit = runner@ { result ->
+            if (generation.get() == myGeneration &&
+                capturing.compareAndSet(true, false)
+            ) {
+                mainHandler.removeCallbacks(watchdog)
+                bitmap.recycle()
+                mainHandler.post { onResult(result) }
+                return@runner
+            }
+            // 非当前代（本次已被看门狗判定失败，或已被更新的截屏接替）：
+            // 只回收自己的位图，不改动全局状态、不回调
+            if (!bitmap.isRecycled) bitmap.recycle()
         }
         try {
             PixelCopy.request(
@@ -131,8 +151,8 @@ object ScreenCapture {
                 bitmap,
                 { result ->
                     pixelCopyDone.set(true)
-                    // 看门狗已接管（位图已回收）：迟到回调不得再触碰位图
-                    if (!capturing.get()) return@request
+                    // 代际已推进（本次被判超时或被新截屏接替）：迟到回调不得再触碰全局状态
+                    if (generation.get() != myGeneration) return@request
                     if (result != PixelCopy.SUCCESS) {
                         Log.w(TAG, "PixelCopy failed result=$result")
                         finish(CaptureResult.Failed)

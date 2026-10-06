@@ -61,6 +61,14 @@
     <string name="engine_input_new_screenshot">Screenshot button</string>
     <string name="engine_input_new_direction">D-pad (stick look)</string>
     <string name="engine_input_direction_exists">A D-pad already exists</string>
+    <string name="engine_input_direction_keys_title">Direction keys</string>
+    <string name="engine_input_direction_up">Up</string>
+    <string name="engine_input_direction_down">Down</string>
+    <string name="engine_input_direction_left">Left</string>
+    <string name="engine_input_direction_right">Right</string>
+    <string name="engine_input_pick_direction_key">Choose keys for this direction</string>
+    <string name="engine_input_unavailable_format">%1$s (%2$s)</string>
+    <string name="input_settings_binding_empty">Not bound</string>
     <string name="engine_input_delete">Delete</string>
     <string name="engine_input_reset">Reset</string>
     <string name="engine_input_save">Save</string>

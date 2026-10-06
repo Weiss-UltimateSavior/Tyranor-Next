@@ -20,7 +20,8 @@ import org.json.JSONObject
  * 不直接碰文件与 prefs 键名。
  *
  * 数据分类：
- *  - 方案文件：`<filesDir>/input/profiles/<id>.json`（游戏内编辑保存与设置页共同读写）；
+ *  - 方案文件：`<filesDir>/input/profiles/<id>.json`（游戏内编辑保存与设置页共同读写；
+ *    旧触屏手柄迁移产物用 `migrated-<游戏作用域>-*` 命名，避免多游戏共用内置 `default`）；
  *  - 手柄映射：`<filesDir>/input/gamepad_map.json`；
  *  - 开关/方案选择：全局存 tyranor_prefs（[EngineSettingsStore]），单游戏覆盖存
  *    game_overrides blob（[PerGameSettingsStore]，键名与 engine InputConfigStore 锚定）。
@@ -145,9 +146,9 @@ object InputRemapRepository {
     /**
      * 旧 `__touch_pad.js` 布局/预设 → 新方案文件（每游戏一次性）。
      *
-     * 守卫顺序：无旧键即返回 → 该游戏已迁移过即返回 → 该游戏已有自建方案即返回（尊重
-     * 用户成果）。旧键迁移后不清除（保留为数据留底），因此幂等性完全由「已迁移」标记
-     * 承担；缺了它会在每次启动时用旧配置覆盖用户改过的方案文件（数据丢失）。
+     * 守卫顺序：无旧键即返回 → 该游戏已迁移过即返回 → 逐文件判存在（已有方案一律不覆盖，
+     * 尊重游戏内编辑的成果与既有自建方案）。旧键迁移后不清除（保留为数据留底），因此
+     * 幂等性完全由「已迁移」标记承担；缺了它会在每次启动重复迁移。
      *
      * 方案目录全 App 共享，所以迁移产物一律用**按游戏唯一**的 id（`migrated-<gameScope>-*`），
      * 并把该游戏的方案选择写进**单游戏覆盖**：若沿用内置 `default` id 并改全局选择，
@@ -169,10 +170,13 @@ object InputRemapRepository {
         // 时留待下次启动重试，否则旧布局再也迁不进来
         if (!outcome.allWritten) return outcome.migrated
         PerGameSettingsStore.setBool(context, gameId, PerGameSettingsStore.F_LEGACY_MIGRATED, true)
-        if (outcome.migrated.isEmpty()) return emptyList()
-        // 该游戏未显式选择方案时，指向迁移出的主布局（单游戏覆盖，不动全局）
+        if (profiles.isEmpty()) return emptyList()
+        // 该游戏未显式选择方案时，指向迁移出的主布局（单游戏覆盖，不动全局）。
+        // 目标从**完整 profiles 列表**推导而非 outcome.migrated：后者是「本次新写集合」，
+        // 部分失败重试后可能只剩 preset（主布局已被 exists 跳过），会让游戏错误地
+        // 用上某个预设；文件已写全但上次在置标记前中断时它还会是空集，覆盖永不写入。
         if (gameProfileIdOverride(context, gameId) == null) {
-            setGameProfileIdOverride(context, gameId, outcome.migrated.first())
+            setGameProfileIdOverride(context, gameId, profiles.first().id)
         }
         return outcome.migrated
     }
@@ -180,7 +184,9 @@ object InputRemapRepository {
     /**
      * 迁移产物的按游戏作用域（进 id，需符合 `[A-Za-z0-9_-]` 白名单）。
      *
-     * 用 gameId 的稳定短哈希：直接塞 uri 会带上 `:` `/` 等非法字符且超长。
+     * 用 gameId 的稳定短哈希（直接塞 uri 会带上 `:` `/` 等非法字符且超长）。
+     * 32 位哈希理论上可碰撞，碰撞时第二个游戏会因「产物已存在」被跳过——
+     * 属可接受的极端情况（同名游戏库条目已先一步冲突），此处仅保证确定性。
      */
     internal fun gameScope(gameId: String): String =
         "g" + Integer.toHexString(gameId.hashCode())

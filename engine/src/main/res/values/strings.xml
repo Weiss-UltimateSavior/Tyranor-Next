@@ -61,6 +61,14 @@
     <string name="engine_input_new_screenshot">截屏按钮</string>
     <string name="engine_input_new_direction">方向键（摇杆）</string>
     <string name="engine_input_direction_exists">方向键已存在</string>
+    <string name="engine_input_direction_keys_title">方向键位</string>
+    <string name="engine_input_direction_up">上</string>
+    <string name="engine_input_direction_down">下</string>
+    <string name="engine_input_direction_left">左</string>
+    <string name="engine_input_direction_right">右</string>
+    <string name="engine_input_pick_direction_key">选择该方向的键位</string>
+    <string name="engine_input_unavailable_format">%1$s（%2$s）</string>
+    <string name="input_settings_binding_empty">未绑定</string>
     <string name="engine_input_delete">删除</string>
     <string name="engine_input_reset">恢复默认</string>
     <string name="engine_input_save">保存</string>
