@@ -293,7 +293,7 @@
     <string name="engine_settings_input_gamepad_entry_summary">A/B/X/Y、ショルダー、トリガー、スティック、方向キーの出力を設定</string>
     <string name="input_settings_title">入力とゲームパッド</string>
     <string name="input_settings_gamepad_title">ゲームパッド割り当て</string>
-    <string name="input_settings_gamepad_summary">「編集」から複数の出力キーと押しっぱなしを設定できます</string>
+    <string name="input_settings_gamepad_summary">項目をタップして出力キーを選択。複数キーと押しっぱなしに対応</string>
     <string name="input_settings_reset_gamepad">初期割り当てに戻す</string>
     <string name="input_settings_reset_gamepad_done">初期割り当てに戻しました</string>
     <string name="input_settings_binding_empty">未割り当て</string>

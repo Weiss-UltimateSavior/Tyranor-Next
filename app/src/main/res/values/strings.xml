@@ -293,7 +293,7 @@
     <string name="engine_settings_input_gamepad_entry_summary">配置 A/B/X/Y、肩键、扳机、摇杆与方向键的输出</string>
     <string name="input_settings_title">输入与手柄</string>
     <string name="input_settings_gamepad_title">手柄按键映射</string>
-    <string name="input_settings_gamepad_summary">按下手柄按键即可绑定；支持多个输出键与“按下保持”</string>
+    <string name="input_settings_gamepad_summary">点按条目选择输出键位；支持多个输出键与“按下保持”</string>
     <string name="input_settings_reset_gamepad">恢复默认映射</string>
     <string name="input_settings_reset_gamepad_done">已恢复默认映射</string>
     <string name="input_settings_binding_empty">未绑定</string>

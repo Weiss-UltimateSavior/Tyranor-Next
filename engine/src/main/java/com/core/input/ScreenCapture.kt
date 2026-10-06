@@ -223,7 +223,9 @@ object ScreenCapture {
         // 落点以 MediaStore 记录为准（系统可能去重改名）；查不到时退化为约定路径再核对存在性
         val resolved = queryDataPath(resolver, uri)?.let(::File) ?: File(publicDirectory(), name)
         if (!resolved.isFile) {
-            Log.w(TAG, "MediaStore entry not found at ${resolved.absolutePath}")
+            // 条目已发布但路径核验失败：删掉它再降级写盘，否则会留下一张重复/游离的截图
+            Log.w(TAG, "MediaStore entry not found at ${resolved.absolutePath}, discarding entry")
+            deleteQuietly(resolver, uri)
             return null
         }
         return resolved

@@ -34,6 +34,7 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.NoRippleButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -302,15 +303,16 @@ private fun KeyBindingDialog(
                             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
                                 chunk.forEach { option ->
                                     val on = option.code in selected
-                                    Box(Modifier.weight(1f)) {
-                                        // DialogTextButton 自带 indication = null（项目弹窗点击反馈规范）
-                                        DialogTextButton(
-                                            text = option.label,
-                                            onClick = {
-                                                selected = if (on) selected - option.code else selected + option.code
-                                            },
-                                        )
-                                    }
+                                    // 选中态用主题色实底 + 白字，与游戏内编辑面板的键位高亮一致；
+                                    // 未选中为静默文本，一眼可辨「选了哪些」而不是只看计数
+                                    NoRippleButton(
+                                        text = option.label,
+                                        tonal = !on,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            selected = if (on) selected - option.code else selected + option.code
+                                        },
+                                    )
                                 }
                                 repeat(4 - chunk.size) {
                                     Box(Modifier.weight(1f))

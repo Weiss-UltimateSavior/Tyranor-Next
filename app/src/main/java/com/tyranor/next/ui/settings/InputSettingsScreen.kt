@@ -238,7 +238,9 @@ internal fun InputSettingsScreen() {
                                 onEdit = {
                                     startActivityWithPageTransition(ctx, PadLayoutEditActivity.createIntent(ctx, profile.id))
                                 },
-                                onRename = { renameTarget = profile.id },
+                                // 默认方案的展示名固定在字符串资源里，重命名不会生效——
+                                // 与「删除」一致：不给入口，而不是点了没反应
+                                onRename = if (profile.isDefault) null else ({ renameTarget = profile.id }),
                                 onCopy = {
                                     scope.launch {
                                         val id = InputRemapRepository.newProfileId(ctx)
@@ -389,7 +391,7 @@ private fun ProfileRow(
     selected: Boolean,
     onUse: () -> Unit,
     onEdit: () -> Unit,
-    onRename: () -> Unit,
+    onRename: (() -> Unit)?,
     onCopy: () -> Unit,
     onDelete: (() -> Unit)?,
     onExport: () -> Unit,
@@ -412,8 +414,10 @@ private fun ProfileRow(
                     DialogTextButton(text = stringResource(R.string.input_settings_profile_use), onClick = onUse)
                 }
             }
-            Box(Modifier.weight(1f)) {
-                DialogTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
+            if (onRename != null) {
+                Box(Modifier.weight(1f)) {
+                    DialogTextButton(text = stringResource(R.string.input_settings_profile_rename), onClick = onRename)
+                }
             }
             Box(Modifier.weight(1f)) {
                 DialogTextButton(text = stringResource(R.string.input_settings_profile_copy), onClick = onCopy)

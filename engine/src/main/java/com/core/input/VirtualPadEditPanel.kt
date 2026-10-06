@@ -52,6 +52,9 @@ class VirtualPadEditPanel(
     private val keysButton: Button
     private var suppressCallbacks = false
 
+    /** 文字框当前绑定的是哪个按钮（用于识别选中切换并回写上一个按钮的未提交文字）。 */
+    private var boundId: String? = null
+
     private var container: FrameLayout? = null
 
     private fun dp(value: Float): Int = (value * density + 0.5f).toInt()
@@ -114,6 +117,8 @@ class VirtualPadEditPanel(
             textSize = 12f
         }
         eightDirBox.setOnCheckedChangeListener { _, checked ->
+            // 与其他监听一致：refresh() 回填控件时不回调，避免重入 refresh
+            if (suppressCallbacks) return@setOnCheckedChangeListener
             val info = pad.selectionInfo() ?: return@setOnCheckedChangeListener
             if (!info.isDirection) return@setOnCheckedChangeListener
             pad.updateSelectedDirection(checked, info.up, info.down, info.left, info.right)
@@ -185,11 +190,24 @@ class VirtualPadEditPanel(
         content.addView(commitRow)
     }
 
-    /** 选中变化时刷新面板控件；无选中时部分控件禁用（保存/取消始终可用）。 */
+    /**
+     * 选中变化时刷新面板控件；无选中时部分控件禁用（保存/取消始终可用）。
+     *
+     * 文字框与「当前选中按钮」的绑定靠 [boundId] 追踪：VirtualPadView 切换选中时面板
+     * 收不到「切换前」通知，因此只能在下次 refresh 时把文字框里**属于上一个按钮**的
+     * 未提交内容静默写回它——否则该内容会随下一次 applyButtonEdit 写进新选中的按钮
+     * （用户报告的「切换按钮后旧文字串到新按钮」），且上一个按钮的修改会丢失。
+     */
     fun refresh() {
         val info = pad.selectionInfo()
+        val previousId = boundId
+        val currentId = info?.id
         suppressCallbacks = true
         try {
+            if (previousId != null && previousId != VirtualPadView.DIRECTION_ID && previousId != currentId) {
+                pad.updateButtonTextSilently(previousId, textInput.text?.toString().orEmpty())
+            }
+            boundId = currentId
             if (info == null) {
                 selectionView.text = context.getString(R.string.engine_input_select_hint)
                 textInput.isEnabled = false
@@ -205,9 +223,12 @@ class VirtualPadEditPanel(
             textInput.isEnabled = !direction
             sizeSeek.isEnabled = true
             keysButton.isEnabled = true
-            // 文字框仅在「未聚焦」时回写：用户正在输入（含刚改完文字就点选键位）时，
-            // 用已提交值回写会把未提交的编辑冲掉（用户报告的「改完文字选键位又变回去」）
-            if (!direction && !textInput.hasFocus()) textInput.setText(info.label)
+            // 选中已切换：必须用新按钮的文字重建输入框（此时框里是上一个按钮的内容）；
+            // 同一选中下仅在「未聚焦」时回写，避免打断正在输入的用户
+            if (!direction && (previousId != currentId || !textInput.hasFocus())) {
+                textInput.setText(info.label)
+                textInput.setSelection(textInput.text?.length ?: 0)
+            }
             autoKeepBox.visibility = if (direction) View.GONE else View.VISIBLE
             autoKeepBox.isChecked = info.autoKeep
             eightDirBox.visibility = if (direction) View.VISIBLE else View.GONE
@@ -487,7 +508,14 @@ class VirtualPadEditPanel(
         stateListAnimator = null
         setTextColor(if (primary) theme.onPrimary else theme.primary)
         background = GradientDrawable().apply {
-            setColor(if (primary) theme.primary else Color.argb(60, 48, 125, 239))
+            setColor(
+                if (primary) {
+                    theme.primary
+                } else {
+                    // 次级按钮底色从主题色派生（AGENT.md：强调色不得硬编码）
+                    Color.argb(60, Color.red(theme.primary), Color.green(theme.primary), Color.blue(theme.primary))
+                },
+            )
             cornerRadius = 999f
         }
     }

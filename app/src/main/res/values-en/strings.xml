@@ -293,7 +293,7 @@
     <string name="engine_settings_input_gamepad_entry_summary">Configure A/B/X/Y, shoulders, triggers, sticks and D-pad outputs</string>
     <string name="input_settings_title">Input &amp; gamepad</string>
     <string name="input_settings_gamepad_title">Gamepad bindings</string>
-    <string name="input_settings_gamepad_summary">Press "edit" to bind multiple output keys and keep-pressed behavior</string>
+    <string name="input_settings_gamepad_summary">Tap an entry to pick its output keys; supports multiple keys and keep-pressed</string>
     <string name="input_settings_reset_gamepad">Reset to defaults</string>
     <string name="input_settings_reset_gamepad_done">Gamepad bindings reset</string>
     <string name="input_settings_binding_empty">Not bound</string>

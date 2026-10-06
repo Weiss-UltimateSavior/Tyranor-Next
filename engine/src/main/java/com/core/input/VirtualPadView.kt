@@ -868,10 +868,29 @@ class VirtualPadView(
         val id = selectedId ?: return
         if (id == DIRECTION_ID) return
         val active = activeProfile()
-        editProfile = active.removeButton(id)
-        selectedId = active.buttons.firstOrNull()?.id ?: DIRECTION_ID
+        val updated = active.removeButton(id)
+        editProfile = updated
+        // 从**删除后**的方案取下一个选中项：取删除前的首项会在「删的正好是首项」时
+        // 让 selectedId 指向已消失的按钮（面板退回空态、画面上没有选中框）
+        selectedId = updated.buttons.firstOrNull()?.id ?: DIRECTION_ID
         rebuild()
         notifySelection()
+        invalidate()
+    }
+
+    /**
+     * 静默写入指定按钮的文字，不触发选中变更回调。
+     *
+     * 供编辑面板在「选中已切到别的按钮」时回写上一个按钮的未提交文字：面板无法在
+     * VirtualPadView 切换选中之前收到通知，只能事后按 id 补写。
+     */
+    fun updateButtonTextSilently(id: String, text: String) {
+        if (!editing) return
+        val active = activeProfile()
+        val button = active.buttons.firstOrNull { it.id == id } ?: return
+        val next = text.take(12)
+        if (button.text == next) return
+        editProfile = active.withButton(button.copy(text = next))
         invalidate()
     }
 

@@ -149,19 +149,50 @@ object InputRemapRepository {
         val legacy = InputConfigStore.readLegacyTouchPad(context, gameId)
         if (legacy == null) return emptyList()
         val profiles = PadProfile.migrateLegacy(legacy.first, legacy.second)
-        val migrated = ArrayList<String>()
-        profiles.forEach { profile ->
+        val outcome = writeMigratedProfiles(
+            profiles = profiles,
             // 逐个文件判存在：用户在游戏内改过的 default.json 与已有方案文件都不得覆盖
-            if (InputConfigStore.profileFile(context, profile.id).isFile) return@forEach
-            if (writeProfile(context, profile)) migrated.add(profile.id)
-        }
+            exists = { id -> InputConfigStore.profileFile(context, id).isFile },
+            write = { profile -> writeProfile(context, profile) },
+        )
+        // 仅在全部待写方案都成功（或已存在）时置位标记：写盘失败（磁盘满、目录创建失败）
+        // 时留待下次启动重试，否则旧布局再也迁不进来
+        if (!outcome.allWritten) return outcome.migrated
         PerGameSettingsStore.setBool(context, gameId, PerGameSettingsStore.F_LEGACY_MIGRATED, true)
-        if (migrated.isEmpty()) return emptyList()
+        if (outcome.migrated.isEmpty()) return emptyList()
         // 该游戏未显式选择方案时，指向迁移出的默认方案（单游戏覆盖，不动全局）
         if (gameProfileIdOverride(context, gameId) == null) {
-            setGameProfileIdOverride(context, gameId, migrated.first())
+            setGameProfileIdOverride(context, gameId, outcome.migrated.first())
         }
-        return migrated
+        return outcome.migrated
+    }
+
+    /** 迁移写盘结果（纯数据，供 [writeMigratedProfiles] 与单测使用）。 */
+    internal data class MigrationOutcome(
+        /** 本次真正写入的方案 id（已存在而跳过的不计入）。 */
+        val migrated: List<String>,
+        /** 是否全部待写方案都已存在或写入成功；false 表示应留待下次重试。 */
+        val allWritten: Boolean,
+    )
+
+    /**
+     * 逐个写入迁移产物；已存在的方案文件跳过（不得覆盖用户成果）。
+     *
+     * 抽成不依赖 Context 的纯函数：`allWritten` 是「迁移标记可否置位」的唯一依据，
+     * 写盘失败时置位会让旧布局永久无法迁移（磁盘满是真实场景），必须由测试锚定。
+     */
+    internal fun writeMigratedProfiles(
+        profiles: List<PadProfile>,
+        exists: (String) -> Boolean,
+        write: (PadProfile) -> Boolean,
+    ): MigrationOutcome {
+        val migrated = ArrayList<String>()
+        var allWritten = true
+        profiles.forEach { profile ->
+            if (exists(profile.id)) return@forEach
+            if (write(profile)) migrated.add(profile.id) else allWritten = false
+        }
+        return MigrationOutcome(migrated = migrated, allWritten = allWritten)
     }
 
     /**
