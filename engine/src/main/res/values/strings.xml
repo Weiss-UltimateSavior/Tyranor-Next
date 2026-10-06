@@ -58,6 +58,7 @@
     <string name="engine_input_add">新增</string>
     <string name="engine_input_new_button">普通按钮（椭圆）</string>
     <string name="engine_input_new_round_button">圆形按钮</string>
+    <string name="engine_input_new_screenshot">截屏按钮</string>
     <string name="engine_input_new_direction">方向键（摇杆）</string>
     <string name="engine_input_direction_exists">方向键已存在</string>
     <string name="engine_input_delete">删除</string>
@@ -75,4 +76,8 @@
     <string name="engine_input_mouse_middle">鼠标中键</string>
     <string name="engine_input_scroll_up">滚轮上</string>
     <string name="engine_input_scroll_down">滚轮下</string>
+    <string name="engine_input_screenshot_failed">截屏失败</string>
+    <string name="engine_input_screenshot_saved">已保存截图：%1$s</string>
+    <string name="engine_input_action_screenshot">截屏</string>
+    <string name="engine_input_group_actions">动作</string>
 </resources>

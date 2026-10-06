@@ -6,7 +6,9 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
 import com.core.engine.EngineThemeColors
+import com.core.engine.R
 
 /**
  * 输入重映射统一组件：宿主（Web 系 Tyrano / MV / MZ，后续其余内置引擎）只需在
@@ -17,6 +19,7 @@ import com.core.engine.EngineThemeColors
  *  - 装配 [InputSink]（本引擎的按键出口，Web 为 [WebInputSink]）；
  *  - 手柄：[InputRouter] 消费物理手柄事件（映射表来自 [InputConfigStore]）；
  *  - 虚拟按键：[VirtualPadView] 覆盖层 + 游戏内编辑（[VirtualPadEditPanel]）+ 落盘；
+ *  - 宿主侧动作（canonical 动作段）：截屏经 [ScreenCapture]（PixelCopy 取全窗口像素）；
  *  - 生效开关与方案选择：启动时经 [InputConfigStore.resolve] 读全局/单游戏覆盖。
  *
  * 宿主不得在未调用 [install] 时调用其余方法；[enabled] 为 false 时组件不挂载任何 View、
@@ -185,14 +188,40 @@ class InputRemapController private constructor(
             sink: InputSink,
         ): InputRemapController = InputRemapController(activity, container, gameId, theme, sink)
 
-        /** Web 宿主便捷装配（WebView evaluateJavascript 出口）。 */
+        /** Web 宿主便捷装配（WebView evaluateJavascript 出口 + 宿主侧动作）。 */
         fun installWeb(
             activity: Activity,
             container: ViewGroup,
             gameId: String,
             theme: EngineThemeColors.Palette,
             dispatchJs: (String) -> Unit,
-        ): InputRemapController =
-            install(activity, container, gameId, theme, WebInputSink(dispatchJs))
+        ): InputRemapController = install(
+            activity,
+            container,
+            gameId,
+            theme,
+            WebInputSink(dispatchJs) { action -> handleHostAction(activity, action) },
+        )
+
+        /**
+         * 宿主侧动作处理（canonical 动作段）：虚拟按键与手柄映射共用。
+         *
+         * 目前只有截屏；返回 false 表示该动作本宿主不支持（调用方无需额外处理）。
+         */
+        private fun handleHostAction(activity: Activity, action: Int): Boolean = when (action) {
+            CanonicalKeys.ACTION_SCREENSHOT -> {
+                ScreenCapture.capture(activity) { file ->
+                    val message = if (file != null) {
+                        activity.getString(R.string.engine_input_screenshot_saved, file.name)
+                    } else {
+                        activity.getString(R.string.engine_input_screenshot_failed)
+                    }
+                    runCatching { Toast.makeText(activity, message, Toast.LENGTH_SHORT).show() }
+                }
+                true
+            }
+
+            else -> false
+        }
     }
 }

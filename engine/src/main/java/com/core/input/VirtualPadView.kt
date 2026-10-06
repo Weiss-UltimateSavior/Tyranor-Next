@@ -762,6 +762,9 @@ class VirtualPadView(
         /** 圆形普通按钮（正方形盒 + 全圆角）：用于单字键位。 */
         ROUND_BUTTON,
 
+        /** 截屏按钮：圆形外观，预绑定 canonical 动作段的截屏动作。 */
+        SCREENSHOT,
+
         /** 方向键（摇杆外观，四/八方向）；每个方案仅一个。 */
         DIRECTION,
 
@@ -770,28 +773,42 @@ class VirtualPadView(
         /** 对应的按钮几何预设；方向键无几何预设（不是 PadButton）。 */
         fun toGeometry(): PadButtonGeometry? = when (this) {
             BUTTON -> PadButtonGeometry.OVAL
-            ROUND_BUTTON -> PadButtonGeometry.ROUND
+            ROUND_BUTTON, SCREENSHOT -> PadButtonGeometry.ROUND
             DIRECTION -> null
+        }
+
+        /** 新增时预绑定的键位/动作；为空表示先落位再绑定。 */
+        fun presetKeys(): List<Int> = when (this) {
+            SCREENSHOT -> listOf(CanonicalKeys.ACTION_SCREENSHOT)
+            else -> emptyList()
+        }
+
+        /** 新增时的默认文字。 */
+        fun defaultText(): String = when (this) {
+            SCREENSHOT -> "Shot"
+            else -> "New"
         }
     }
 
     /** 该类型当前能否新增（方向键至多一个）。 */
     fun canAdd(type: NewButtonType): Boolean = when (type) {
-        NewButtonType.BUTTON, NewButtonType.ROUND_BUTTON -> true
+        NewButtonType.BUTTON, NewButtonType.ROUND_BUTTON, NewButtonType.SCREENSHOT -> true
         NewButtonType.DIRECTION -> !activeProfile().direction.visible
     }
 
     /**
      * 新增一个控件并选中；类型不可用时返回 null（方向键已存在）。
      *
-     * 普通按钮落在屏幕中央、默认无键位绑定（先出现再绑定，避免误触发送错键）。
+     * 普通按钮落在屏幕中央、默认无键位绑定（先出现再绑定，避免误触发送错键）；
+     * 截屏按钮预绑定截屏动作，否则新增出来点不动、像是坏的。
      */
     fun addButton(type: NewButtonType): String? {
         if (!editing) return null
         val active = activeProfile()
         return when (type) {
             NewButtonType.BUTTON,
-            NewButtonType.ROUND_BUTTON -> {
+            NewButtonType.ROUND_BUTTON,
+            NewButtonType.SCREENSHOT -> {
                 var index = 1
                 var id = "btn-$index"
                 while (active.buttons.any { it.id == id } || id == DIRECTION_ID) {
@@ -800,7 +817,8 @@ class VirtualPadView(
                 }
                 // 几何参数由纯函数给出（可单测锚定椭圆/圆形两种外观）
                 val geometry = type.toGeometry() ?: PadButtonGeometry.OVAL
-                val button = PadProfile.newButtonDefaults(geometry, id, "New")
+                val button = PadProfile.newButtonDefaults(geometry, id, type.defaultText())
+                    .copy(keys = type.presetKeys())
                 editProfile = active.copy(buttons = active.buttons + button)
                 selectedId = id
                 rebuild()

@@ -18,8 +18,11 @@ object CanonicalKeys {
     const val SCROLL_DOWN = 1004
     const val MOUSE_END = 1099
 
-    /** 功能动作区间起点（非按键，由宿主自行处理）；v1 未定义具体动作。 */
+    /** 功能动作区间起点（非按键，由宿主自行处理，不经 [InputSink.send]）。 */
     const val ACTION_BASE = 2000
+
+    /** 截屏：从当前游戏窗口取一帧保存为 PNG（宿主经 [InputSink.performAction] 处理）。 */
+    const val ACTION_SCREENSHOT = ACTION_BASE
 
     fun isMouse(key: Int): Boolean = key in MOUSE_LEFT..MOUSE_END
 

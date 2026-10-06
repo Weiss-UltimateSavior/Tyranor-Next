@@ -65,6 +65,13 @@ object InputKeyCatalog {
                 Entry(CanonicalKeys.SCROLL_DOWN, null, R.string.engine_input_scroll_down),
             ),
         ),
+        // 动作段：不是按键，触发宿主侧一次性功能（截屏等）
+        Group(
+            R.string.engine_input_group_actions,
+            listOf(
+                Entry(CanonicalKeys.ACTION_SCREENSHOT, null, R.string.engine_input_action_screenshot),
+            ),
+        ),
     )
 
     /** 已选键位的可读名称（优先 ASCII 名，鼠标走资源；未知给 ""）。 */

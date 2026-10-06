@@ -58,6 +58,7 @@
     <string name="engine_input_add">追加</string>
     <string name="engine_input_new_button">通常ボタン（楕円）</string>
     <string name="engine_input_new_round_button">丸ボタン</string>
+    <string name="engine_input_new_screenshot">スクリーンショットボタン</string>
     <string name="engine_input_new_direction">方向キー（スティック表示）</string>
     <string name="engine_input_direction_exists">方向キーは既にあります</string>
     <string name="engine_input_delete">削除</string>
@@ -75,4 +76,8 @@
     <string name="engine_input_mouse_middle">マウス中</string>
     <string name="engine_input_scroll_up">ホイール上</string>
     <string name="engine_input_scroll_down">ホイール下</string>
+    <string name="engine_input_screenshot_failed">スクリーンショットに失敗しました</string>
+    <string name="engine_input_screenshot_saved">スクリーンショットを保存しました：%1$s</string>
+    <string name="engine_input_action_screenshot">スクリーンショット</string>
+    <string name="engine_input_group_actions">アクション</string>
 </resources>

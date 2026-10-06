@@ -58,6 +58,7 @@
     <string name="engine_input_add">Add</string>
     <string name="engine_input_new_button">Key button (oval)</string>
     <string name="engine_input_new_round_button">Round button</string>
+    <string name="engine_input_new_screenshot">Screenshot button</string>
     <string name="engine_input_new_direction">D-pad (stick look)</string>
     <string name="engine_input_direction_exists">A D-pad already exists</string>
     <string name="engine_input_delete">Delete</string>
@@ -75,4 +76,8 @@
     <string name="engine_input_mouse_middle">Mouse middle</string>
     <string name="engine_input_scroll_up">Scroll up</string>
     <string name="engine_input_scroll_down">Scroll down</string>
+    <string name="engine_input_screenshot_failed">Screenshot failed</string>
+    <string name="engine_input_screenshot_saved">Screenshot saved: %1$s</string>
+    <string name="engine_input_action_screenshot">Screenshot</string>
+    <string name="engine_input_group_actions">Actions</string>
 </resources>

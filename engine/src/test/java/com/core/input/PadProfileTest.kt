@@ -66,6 +66,20 @@ class PadProfileTest {
     }
 
     @Test
+    fun actionKeySurvivesJsonRoundTrip() {
+        // 截屏按钮绑的是 canonical 动作段（2000），必须能正常落盘/读回
+        val shot = PadProfile.newButtonDefaults(PadButtonGeometry.ROUND, "shot", "Shot")
+            .copy(keys = listOf(CanonicalKeys.ACTION_SCREENSHOT))
+        val profile = PadProfile.defaultProfile().copy(buttons = listOf(shot))
+
+        val parsed = PadProfile.parse(profile.toJson())!!
+        val restored = parsed.buttons.single()
+        assertEquals(listOf(CanonicalKeys.ACTION_SCREENSHOT), restored.keys)
+        assertTrue(CanonicalKeys.isAction(restored.keys.single()))
+        assertEquals(1f, restored.aspect, 0.0001f)
+    }
+
+    @Test
     fun parseRejectsBadJsonAndMissingId() {
         assertNull(PadProfile.parse("not-json"))
         assertNull(PadProfile.parse(null))

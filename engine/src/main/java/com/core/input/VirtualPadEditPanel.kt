@@ -274,6 +274,7 @@ class VirtualPadEditPanel(
         val options = listOf(
             Triple(context.getString(R.string.engine_input_new_button), VirtualPadView.NewButtonType.BUTTON, true),
             Triple(context.getString(R.string.engine_input_new_round_button), VirtualPadView.NewButtonType.ROUND_BUTTON, true),
+            Triple(context.getString(R.string.engine_input_new_screenshot), VirtualPadView.NewButtonType.SCREENSHOT, true),
             Triple(context.getString(R.string.engine_input_new_direction), VirtualPadView.NewButtonType.DIRECTION, directionAvailable),
         )
         val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
