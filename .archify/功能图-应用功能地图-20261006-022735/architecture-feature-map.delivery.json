@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "43216b77-2fc2-43c0-bcd1-8767d6feeb9d",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/功能图-应用功能地图-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/功能图-应用功能地图-20261006-022735/architecture-feature-map.html",
+  "specification": {
+    "sha256": "96e48f6d9b5a0924dbbcf2d435dd1cdcdf4d77e2c0a71529869e2a188ff90e54",
+    "bytes": 16522
+  },
+  "artifact": {
+    "sha256": "e6ff1179137e6c986bddb9fb006abd1640e91d53f2f17ee2c28257abbd1dcc41",
+    "bytes": 797954
+  }
+}

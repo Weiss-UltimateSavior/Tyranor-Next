@@ -33,7 +33,10 @@ data class CoverSearchCandidate(
     val subtitle: String,
     val detail: String,
     val score: Int? = null,
+    /** 预览地址：搜索结果卡片加载用（VNDB 固定为缩略图）。 */
     val coverUrl: String,
+    /** 落库下载地址；为 null 时回退 [coverUrl]（VNDB 大图开关开启时这里是原图）。 */
+    val downloadUrl: String? = null,
     /** VNDB 候选携带的元数据（绑定后可写入游戏库；其他来源为 null）。 */
     val vndbId: String? = null,
     val metadataTitle: String? = null,
@@ -119,14 +122,15 @@ object CoverScraperService {
 
     fun bindCoverCandidate(context: Context, game: ScanGame, candidate: CoverSearchCandidate): ScanGame? {
         val prefix = "${candidate.source}_${stableKey(game.uri)}"
+        val downloadUrl = candidate.downloadUrl?.takeIf { it.isNotBlank() } ?: candidate.coverUrl
         val cover = if (candidate.source == AppSettingsStore.COVER_SOURCE_STEAM) {
             val appId = candidate.id.toIntOrNull()
-            CoverImageCache.download(context, candidate.coverUrl, prefix, source = candidate.source)
+            CoverImageCache.download(context, downloadUrl, prefix, source = candidate.source)
                 ?: appId?.let { SteamCoverSource.downloadSteamHeader(context, game, it) }
         } else {
             CoverImageCache.download(
                 context = context,
-                imageUrl = candidate.coverUrl,
+                imageUrl = downloadUrl,
                 prefix = prefix,
                 source = candidate.source,
             )
@@ -169,7 +173,9 @@ object CoverScraperService {
                     title = it.title.ifBlank { it.originalTitle },
                     subtitle = it.originalTitle,
                     detail = detailText("VNDB", it.id, it.released, it.developer),
-                    coverUrl = it.coverUrl,
+                    // 预览固定缩略图，落库按大图开关取原图（downloadUrl）
+                    coverUrl = it.thumbnailUrl.ifBlank { it.coverUrl },
+                    downloadUrl = it.coverUrl.takeIf { url -> url.isNotBlank() },
                     vndbId = it.id.takeIf { id -> id.isNotBlank() },
                     metadataTitle = it.title.ifBlank { it.originalTitle }.trim().ifBlank { null },
                 )

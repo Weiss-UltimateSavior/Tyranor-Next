@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "889fdf65-9beb-4b49-820c-3865ecf6e1b8",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.html",
+  "specification": {
+    "sha256": "6ff541c2ed087eb896be83ff9828c8fe6175a8ca0e3e0ee8d989d48c145f8751",
+    "bytes": 13778
+  },
+  "artifact": {
+    "sha256": "5c3504b54044df524d66cfb6091cc27c9c8ab41e513a1dd466f0f0daf176867e",
+    "bytes": 789771
+  }
+}

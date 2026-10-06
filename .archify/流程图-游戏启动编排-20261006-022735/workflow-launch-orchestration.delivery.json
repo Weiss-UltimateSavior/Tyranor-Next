@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "c99b9b8b-12c5-4358-b3e7-20cdb260ccc1",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/流程图-游戏启动编排-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/流程图-游戏启动编排-20261006-022735/workflow-launch-orchestration.html",
+  "specification": {
+    "sha256": "0f95df410ca1a2fd4521ddb840fcf621144ef04792b4d93e1e4686fa6e7e3cf3",
+    "bytes": 7757
+  },
+  "artifact": {
+    "sha256": "0dbc6cc6decafa6d1833089852cb91f333af64bc7c977486a4b8e0982bd439c1",
+    "bytes": 761996
+  }
+}

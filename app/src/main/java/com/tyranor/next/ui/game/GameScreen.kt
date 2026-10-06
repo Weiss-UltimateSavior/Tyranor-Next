@@ -14,6 +14,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -67,6 +68,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -140,6 +143,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
@@ -154,6 +158,7 @@ import com.tyranor.next.ui.save.SaveManagementActivity
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -399,7 +404,8 @@ fun GameScreen(
 }
 
 // 排序键与 Room 预计算列共用 GameSortKeys，保证 SQL 排序与内存排序结果一致（迁移方案阶段 3）。
-private fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
+// internal：分类仓库首页复用同一排序（与游戏页展示顺序一致）。
+internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
     return when (sortMode) {
         AppSettingsStore.GAME_SORT_BRACKET_TAG -> games.sortedWith(
             compareBy<ScanGame> { GameSortKeys.bracketTag(it.title).isBlank() }
@@ -1516,6 +1522,7 @@ private fun encodeCoverSearchCandidate(candidate: CoverSearchCandidate): String 
         .put("detail", candidate.detail)
         .put("score", candidate.score)
         .put("coverUrl", candidate.coverUrl)
+        .put("downloadUrl", candidate.downloadUrl)
         .put("vndbId", candidate.vndbId)
         .put("metadataTitle", candidate.metadataTitle)
         .toString()
@@ -1530,6 +1537,7 @@ private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? =
         detail = json.optString("detail"),
         score = if (json.has("score") && !json.isNull("score")) json.optInt("score") else null,
         coverUrl = json.optString("coverUrl"),
+        downloadUrl = json.optString("downloadUrl").takeIf { it.isNotBlank() && !json.isNull("downloadUrl") },
         vndbId = json.optString("vndbId").takeIf { it.isNotBlank() && !json.isNull("vndbId") },
         metadataTitle = json.optString("metadataTitle").takeIf { it.isNotBlank() && !json.isNull("metadataTitle") },
     )
@@ -1653,13 +1661,9 @@ private fun LaunchFileDialog(
     var selected by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(game.uri) {
-        val (names, current) = withContext(Dispatchers.IO) {
-            val names = EngineLauncher.listLaunchFiles(context, game)
-            val current = EngineLauncher.currentLaunchFileName(context, game)
-            names to current
-        }
-        files = names
-        selected = current?.takeIf { names.contains(it) }
+        val options = withContext(Dispatchers.IO) { EngineLauncher.launchFileOptions(context, game) }
+        files = options.names
+        selected = options.current?.takeIf { options.names.contains(it) }
         loading = false
     }
 
@@ -1688,7 +1692,11 @@ private fun LaunchFileDialog(
                                     .clip(AppComponentShape)
                                     // 弹窗内条目底色：默认风格 PageGrey，玻璃风格亮玻璃面
                                     .background(DialogItemSurface)
-                                    .clickable { selected = name }
+                                    // 弹窗点击反馈规范：条目禁用涟漪（indication = null）
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { selected = name }
                                     .padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -1710,19 +1718,26 @@ private fun LaunchFileDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = { selected?.let(onConfirm) },
+            DialogTextButton(
+                text = stringResource(R.string.common_confirm),
                 enabled = selected != null,
-            ) { Text(stringResource(R.string.common_confirm)) }
+                onClick = { selected?.let(onConfirm) },
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            DialogTextButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
 
+/**
+ * 游戏页默认网格（internal：分类仓库首页复用，列数/滚动优化/卡片名称标签与角标设置均与游戏页一致）。
+ */
 @Composable
-private fun GameGrid(
+internal fun GameGrid(
     games: List<ScanGame>,
     gridState: LazyGridState,
     onGameClick: (ScanGame) -> Unit,
@@ -1737,6 +1752,9 @@ private fun GameGrid(
     val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
     // 大屏（横屏/平板）一行六个卡片，避免卡片被撑得过大；窄屏保持一行三个
     val columns = if (isWideScreen()) 6 else 3
+    // 滚动状态只以 provider 形式下发，由封面加载协程读取（见 rememberCoverBitmap）：
+    // 若在 item 组合内直接读 gridState.isScrollInProgress，滑动开始/结束会让整屏卡片一并重组。
+    val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         state = gridState,
@@ -1756,8 +1774,8 @@ private fun GameGrid(
                 game = game,
                 onClick = { onGameClick(game) },
                 onLongClick = { onGameLongClick(game) },
-                // 滚动/惯性中暂缓封面解码，滚动停止后回填，避免首滑解码风暴挤占滑动帧
-                scrolling = gridState.isScrollInProgress,
+                // 滚动/惯性中暂缓封面解码，滚动停止后按帧回填（见 rememberCoverBitmap）
+                isScrolling = isScrolling,
                 hideTitleTag = hideTitleTag,
                 showEngineBadge = showEngineBadge,
             )
@@ -1775,7 +1793,8 @@ internal fun GameCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
-    scrolling: Boolean = false,
+    /** 当前是否正在滑动/惯性滚动的只读查询；在 producer 协程内读取，避免组合期订阅滚动状态。 */
+    isScrolling: () -> Boolean = neverScrolling,
     /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
     hideTitleTag: Boolean = false,
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
@@ -1788,7 +1807,7 @@ internal fun GameCard(
             EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
             else -> game.engine.displayName
         }
-        val coverBitmap by rememberCoverBitmap(game.coverUri, scrolling)
+        val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
         val pressModifier = if (onLongClick != null) {
             Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
         } else {
@@ -1863,25 +1882,63 @@ internal fun GameCard(
     }
 }
 
+/** 不感知滚动的默认查询（首页/封面流等非网格调用方复用，避免默认参数每次新建 lambda）。 */
+private val neverScrolling: () -> Boolean = { false }
+
 /**
- * 读取游戏封面；[scrolling] 为 true（列表滑动/惯性中）时不启动解码，
- * 保持 [EngineType.coverColor] 占位，待滚动停止后（[scrolling] 变 false）再触发解码回填，
- * 避免首滑时「解码完成 → 重组/纹理上传」风暴挤占滑动帧。
+ * 读取游戏封面。
+ *
+ * [isScrolling] 为「是否正在滑动/惯性滚动」的只读查询，只在 producer 协程内读取：
+ * 若在组合期读取（例如以 boolean 参数下发）会让每张卡片订阅 `LazyGridState.isScrollInProgress`，
+ * 滑动开始/结束瞬间整屏 item 一起重组，这是滑动起止掉帧的直接来源。
+ *
+ * 时序：滑动中不启动新解码（保持 [EngineType.coverColor] 占位）→ 静止后解码 → 解码完成再经
+ * [CoverPublishGate] 等静止并对齐帧时钟回填。滑动停止时一屏封面往往同时解码完成，集中写
+ * State 会在同一帧触发多张卡重组与多块纹理上传（RenderThread 上传风暴），逐帧回填将其摊平。
+ * 注：组合期直接命中内存缓存（initialValue）仍即时出图、不过闸门——复用已解码位图，无新解码成本。
  */
 @Composable
 internal fun rememberCoverBitmap(
     coverUri: String?,
-    scrolling: Boolean = false,
+    isScrolling: () -> Boolean = neverScrolling,
 ): androidx.compose.runtime.State<ImageBitmap?> {
     val context = LocalContext.current
     val cached = coverUri?.let(CoverBitmapCache::get)
-    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri, scrolling) {
+    return produceState<ImageBitmap?>(initialValue = cached?.asImageBitmap(), coverUri) {
         if (cached != null || coverUri.isNullOrBlank()) return@produceState
-        if (scrolling) {
-            // 滚动中不启动解码：滚动状态变化会变更 key 重新进入本块，滚动停止后这里再次放行
-            return@produceState
+        // 滑动/惯性中不启动解码，避免解码完成 → 重组/纹理上传挤占滑动帧
+        awaitScrollIdle(isScrolling)
+        val bitmap = CoverThumbnailLoader.load(context.applicationContext, coverUri) ?: return@produceState
+        // 解码期间可能又开始了新的滑动：等再次静止后逐帧回填，滑动帧不承担纹理上传
+        CoverPublishGate.awaitTurn(isScrolling)
+        value = bitmap.asImageBitmap()
+    }
+}
+
+/** 挂起直到 [isScrolling] 返回 false；已静止则立即返回。 */
+private suspend fun awaitScrollIdle(isScrolling: () -> Boolean) {
+    if (!isScrolling()) return
+    snapshotFlow { isScrolling() }.first { !it }
+}
+
+/**
+ * 封面回填闸门：串行化 + 对齐帧时钟，保证滑动停止后的批量回填最多每帧落地一张。
+ * 等待期间若重新开始滑动，则继续等待再次静止（滑动帧不承担解码完成的纹理上传）。
+ * [withFrameNanos] 使用 produceState 协程上下文自带的 MonotonicFrameClock；
+ * 等待者随卡片离开组合被取消时仅释放锁，不影响其他卡片继续回填。
+ *
+ * 约束：调用方同属单一窗口的 Compose 树。持锁者可能在应用退后台（帧时钟暂停）期间
+ * 一直持锁到回前台——单窗口下没有其它消费者，属可接受行为；引入第二窗口前需改为
+ * 锁只保护「取号 + 一帧」的发布节拍，静止等待放到锁外。
+ */
+private object CoverPublishGate {
+    private val mutex = Mutex()
+
+    suspend fun awaitTurn(isScrolling: () -> Boolean) {
+        mutex.withLock {
+            awaitScrollIdle(isScrolling)
+            withFrameNanos { }
         }
-        value = CoverThumbnailLoader.load(context.applicationContext, coverUri)?.asImageBitmap()
     }
 }
 

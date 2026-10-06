@@ -205,7 +205,7 @@ Column(fillMaxSize)                                // 页面根
   `AppComponentShape`（默认 8dp / 玻璃外观风格与悬浮导航一致 32dp）、Miuix 组件用 `AppComponentCornerRadius`、
   抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。
 
-- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「默认导航栏」形态，液态玻璃两档不适配侧栏；侧栏占布局宽度，底部留白归零；高级玻璃侧栏采样单独的纯背景层（`railBackdrop`，不能采样内容层——坐标会越界）。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
+- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「默认导航栏」形态，液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零；高级玻璃侧栏采样单独的纯背景层（`railBackdrop`，不能采样内容层——坐标会越界）。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
 
 - **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
 
@@ -213,6 +213,14 @@ Column(fillMaxSize)                                // 页面根
   `ui/common/glass/EnhancedLiquidGlassNavigation.kt`（栏体 / 图标副本行 / 移动透镜三处）使用
   `theme/AppShapes.kt` 的 `AppNavCapsuleShape`（胶囊，圆角 = 半高），为本项目为该样式既定的连续胶囊轮廓，为有意设计。
   **该组件内也必须统一引用 `AppNavCapsuleShape`，不得就地新建等价的圆角形状**；该豁免仅限该组件，其余组件不得援引。
+
+- **圆角豁免（悬浮按钮导航）**：「导航栏样式 = 悬浮按钮」后挂载的 `ui/common/FloatingGlassNavButton.kt`
+  主按钮与弧上导航项使用 `CircleShape`（圆形是本样式既定形态），为有意设计；该豁免仅限该组件，其余组件不得援引。
+  **材质固定为白色液态玻璃，不随外观风格 / 外观模式分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」
+  的唯一豁免；固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `GlassUnselected`，仅选中态图标与选中底色用主题色），
+  组件内不得引入 `AppThemeColors` 的风格判断。**长按拖动位置**：位置以归一化坐标存 `AppSettingsStore`
+  （安全区内换算，见 `floatingNavPositionPx` / `clampFloatingNavPosition`），展开方向按象限自适应
+  （`floatingNavArcStartAngle`），设置页有「重置悬浮按钮位置」；展开态禁用拖动。
 
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 
@@ -276,6 +284,37 @@ Column(fillMaxSize)                                // 页面根
 
 ***
 
+## 标签栏统一规范
+
+全 App 的「标签栏 / 分类栏」（横向排布、单选切换、选中项带背景指示器的场景）**必须**统一使用公共组件
+`com.tyranor.next.ui.common.SlidingTabRow`（`app/src/main/java/com/tyranor/next/ui/common/SlidingTabRow.kt`）。
+**禁止**在页面内手写指示器偏移、等分宽度、选中背景与文字取色（引擎页原自绘 `GlassTabRow` 已并入本组件）。
+
+### 1. 组件形态与参数
+
+- 选中项为**独立背景指示器**（不是逐项背景），切换时以 200ms 线性动画滑到目标标签；滚动态标签宽度不齐时宽度同步动画。指示器圆角统一 `AppComponentShape`，玻璃系由组件内部调用 `glassBorder` 补 0.5dp 发丝描边。
+- 指示器底色与文字颜色由组件内部按外观风格分派，**调用方不得传色值**：
+  默认风格指示器 `NavWhite`、选中文字 `TextColor`（不跟随主题色，加粗作选中标识）、未选中 `onSurfaceVariant`；
+  复古玻璃 `GlassSurfaceHigh` + `GlassText`/`GlassTextSecondary`；高级玻璃 `AdvancedGlassSurfaceHigh` + `GlassText`/`AdvancedGlassTextSecondary`。
+- 标签高度统一 42dp，文字统一 `MaterialTheme.typography.titleMedium`，选中加粗；无障碍统一 `selectable(selected, role = Tab)`。
+- 参数：`tabs`（标签文案）、`selectedIndex`（越界自动收敛）、`onTabSelected`、`modifier`（仅外边距）、`scrollable`（形态开关，默认 false）。
+
+### 2. 两种形态
+
+- `scrollable = false`（默认）：标签**等分宽度**，适合数量固定、宽度一致的分页。
+- `scrollable = true`：标签按**内容宽度横向滚动**，适合数量多 / 宽度不齐的分类；两端内置 12dp 留白，选中项在屏幕外（程序化回退、进程恢复）时自动滚动到可见（首次直接定位，之后带动画）。页面侧不得用 `LazyRow` 自行拼装等价物。
+
+### 3. 现有调用点（新增场景照此对齐）
+
+| 场景 | 位置 | 形态 |
+| --- | --- | --- |
+| 引擎页顶部分页（玻璃外观） | `EngineScreen.kt` | 等分 |
+| 首页「分类仓库」分类栏（全部/快捷/最近/各引擎类型） | `CategoryWarehouse.kt` | 横向滚动 |
+
+> 例外：引擎页在默认外观风格下沿用 Miuix `TabRow`（等分分页的既有观感，含动画指示器），仅在玻璃外观下走本组件；新增场景（含默认风格）一律用本组件。
+
+***
+
 ## 功能跳转条目统一规范
 
 所有「功能跳转列」——即点击后进入 / 跳转 / 打开下一级的条目（如封面来源列表、弹窗内的群聊/频道项、设置里的二级跳转项等），**必须**统一使用公共组件
@@ -335,7 +374,7 @@ Column(fillMaxSize)                                // 页面根
 | ------------------------------------ | ------------------------------------------------- | ------------------ |
 | 设置清单开关（KRKR/ONS/Artemis/RPG Maker 等） | `SettingsScreen.kt`                               | `SwitchPreference` |
 | 应用设置开关（色调切换等）                        | `AppSettingsActivity.kt`                          | `SwitchPreference` |
-| 应用设置「导航栏样式」三选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
+| 应用设置「导航栏样式」四选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
 | 封面来源启用开关（行内）                         | `CoverScraperSettingsActivity.kt`（CoverSourceRow） | `Switch`           |
 
 ### 3. 例外
@@ -452,7 +491,7 @@ Column(fillMaxSize)                                // 页面根
   与「色调切换」不可用（置灰），色调轮盘保持可用（兜底色斑随主题色变化）。
   高级玻璃的绘制是独立实现（`theme/AdvancedGlassStyle.kt`），复古玻璃的 `GlassStyle.kt` 不参与其材质；
   新增组件必须走动态常量与 `glassBorder`，不得硬编码玻璃色值。真 backdrop 采样仅限白名单
-  （液态玻璃底栏、高级玻璃悬浮默认导航条）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
+  （液态玻璃底栏、透镜底栏、高级玻璃悬浮默认导航条、悬浮按钮导航的主按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
   只能用背景取色渐变 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。

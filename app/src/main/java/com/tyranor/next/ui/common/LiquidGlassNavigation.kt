@@ -302,6 +302,7 @@ private fun LiquidGlassNavItemView(
  * - 平板侧栏布局：导航在侧边占布局宽度，底部留白为 0（返回 0）；
  * - 液态玻璃 · 经典：栏高 64 + 上下各 12 外边距 = 88dp；
  * - 液态玻璃 · 透镜：栏高 64 + 底部 12 外边距 = 76dp（无上边距）；
+ * - 悬浮按钮：收起态按钮 64 + 底部 16 外边距 + 8 余量 = 88dp（与玻璃系一致）；
  * - 玻璃外观风格下的悬浮默认导航条：无文字后栏高收窄至 64 + 上下各 12 外边距；
  * - 其余情况返回 0（导航栏占布局高度）。
  */
@@ -329,6 +330,8 @@ fun glassNavBottomInset(): Dp {
         }
         // 经典档：栏高 64 + 上下各 12
         AppSettingsStore.NAV_STYLE_LIQUID_GLASS -> navBarInset + 88.dp
+        // 悬浮按钮：收起态按钮 64 + 底部 16 外边距 + 8 余量（与玻璃系一致）
+        AppSettingsStore.NAV_STYLE_FLOATING_BUTTON -> navBarInset + 88.dp
         else -> if (AppThemeColors.isGlass) navBarInset + 88.dp else 0.dp
     }
 }

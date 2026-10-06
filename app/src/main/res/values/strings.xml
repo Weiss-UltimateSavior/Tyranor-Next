@@ -18,6 +18,8 @@
     <string name="nav_games">游戏</string>
     <string name="nav_engine">引擎</string>
     <string name="nav_settings">设置</string>
+    <string name="nav_floating_expand">展开导航</string>
+    <string name="nav_floating_collapse">收起导航</string>
 
     <string name="settings_app_title">应用设置</string>
     <string name="settings_language_title">语言</string>
@@ -44,12 +46,16 @@
     <string name="settings_nav_bar_default">默认</string>
     <string name="settings_nav_bar_liquid_glass">液态玻璃 · 经典</string>
     <string name="settings_nav_bar_liquid_glass_enhanced">液态玻璃 · 透镜</string>
+    <string name="settings_nav_bar_floating_button">悬浮按钮</string>
+    <string name="settings_nav_bar_reset_position">重置悬浮按钮位置</string>
     <string name="settings_nav_bar_desc_liquid_glass">Android 12 及以上生效</string>
     <string name="settings_nav_bar_desc_enhanced">仅 Android 13 及以上支持</string>
+    <string name="settings_nav_bar_desc_floating_button">悬浮于右下角，点击展开</string>
     <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
     <string name="settings_home_style">首页样式切换</string>
     <string name="settings_home_style_native">默认</string>
     <string name="settings_home_style_web">网页</string>
+    <string name="settings_home_style_category">分类仓库</string>
     <string name="settings_home_web_url">Web 首页地址</string>
     <string name="settings_home_web_custom">自定义地址</string>
     <string name="settings_home_web_custom_summary">输入自定义地址</string>
@@ -242,6 +248,10 @@
 
     <string name="home_recent_empty">暂无最近打开的游戏</string>
     <string name="home_quick_launch">快捷启动</string>
+    <string name="home_category_all">全部</string>
+    <string name="home_category_quick">快捷</string>
+    <string name="home_category_recent">最近</string>
+    <string name="home_category_empty">该分类暂无游戏</string>
     <string name="home_empty_slot_content_description">空槽位</string>
 
     <string name="engine_settings_save_content_description">保存设置</string>
@@ -418,6 +428,8 @@
     <string name="cover_batch_result">批量刮削完成：更新 %1$d，跳过 %2$d，失败 %3$d</string>
     <string name="cover_only_missing_title">仅处理缺少封面的游戏</string>
     <string name="cover_only_missing_summary">避免覆盖用户手动设置的封面</string>
+    <string name="cover_vndb_large_cover_title">VNDB 封面大图</string>
+    <string name="cover_vndb_large_cover_summary">开启后刮削与手动绑定下载原图；搜索结果预览仍用缩略图省流量</string>
     <string name="cover_write_content_title">写入内容</string>
     <string name="cover_write_content_summary">当前只保存封面图片和来源标识，不写入标题、标签或简介。</string>
     <string name="cover_start_batch">开始批量刮削封面</string>

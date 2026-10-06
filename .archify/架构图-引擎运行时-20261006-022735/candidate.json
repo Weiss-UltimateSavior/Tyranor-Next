@@ -1,0 +1,470 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Tyranor Next · 引擎运行时与原生插件体系",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+    },
+    "output": ".archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.html"
+  },
+  "components": [
+    {
+      "id": "apk_assets",
+      "type": "backend",
+      "label": "APK 内置插件 zip",
+      "sublabel": "kirikiroid2 · ons · artemis",
+      "pos": [
+        60,
+        150
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/build.gradle.kts",
+          "line": 82
+        },
+        {
+          "path": "app/build.gradle.kts",
+          "line": 104
+        },
+        {
+          "path": "app/build.gradle.kts",
+          "line": 117
+        }
+      ]
+    },
+    {
+      "id": "bootstrap",
+      "type": "backend",
+      "label": "EnginePluginBootstrap",
+      "sublabel": "首启幂等解压 · 版本比对",
+      "pos": [
+        280,
+        150
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
+          "line": 68
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
+          "line": 77
+        }
+      ]
+    },
+    {
+      "id": "pluginstore",
+      "type": "database",
+      "label": "应用私有插件目录",
+      "sublabel": "filesDir · manifest 校验",
+      "pos": [
+        530,
+        150
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginManager.kt",
+          "line": 34,
+          "end_line": 36
+        },
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginManager.kt",
+          "line": 482
+        }
+      ]
+    },
+    {
+      "id": "launcher",
+      "type": "backend",
+      "label": "EngineLauncher（app）",
+      "sublabel": "引擎分流 · Intent 编排",
+      "pos": [
+        60,
+        385
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 141
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 208
+        }
+      ]
+    },
+    {
+      "id": "hosts_native",
+      "type": "backend",
+      "label": "原生宿主 Activity 族",
+      "sublabel": "6 个引擎族 · 独立 : 进程",
+      "pos": [
+        530,
+        385
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "sources": [
+        {
+          "path": "engine/src/main/AndroidManifest.xml",
+          "line": 14,
+          "end_line": 206
+        },
+        {
+          "path": "engine/src/main/java/com/core/engine/LaunchContract.kt",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "id": "bridges",
+      "type": "backend",
+      "label": "JNI 桥接 .so",
+      "sublabel": "krkr_bridge_v2 等 6 个桥",
+      "pos": [
+        790,
+        385
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "sources": [
+        {
+          "path": "engine/src/main/cpp/CMakeLists.txt",
+          "line": 4,
+          "end_line": 9
+        },
+        {
+          "path": "engine/src/main/cpp/krkr_bridge.cpp",
+          "line": 690
+        },
+        {
+          "path": "engine/src/main/cpp/krkr_bridge.cpp",
+          "line": 780
+        }
+      ]
+    },
+    {
+      "id": "runtimes",
+      "type": "backend",
+      "label": "引擎运行库",
+      "sublabel": "预编译 so · 仅 arm64-v8a",
+      "pos": [
+        1050,
+        385
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "sources": [
+        {
+          "path": "engine/build.gradle",
+          "line": 28
+        },
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginConstants.kt",
+          "line": 50
+        },
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginConstants.kt",
+          "line": 71
+        }
+      ]
+    },
+    {
+      "id": "gamefiles",
+      "type": "database",
+      "label": "SAF 游戏目录与存档",
+      "sublabel": "真实路径 · savedata",
+      "pos": [
+        1310,
+        385
+      ],
+      "size": [
+        170,
+        74
+      ],
+      "sources": [
+        {
+          "path": "engine/src/main/java/bridge/KrSafMirror.kt",
+          "line": 33
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "id": "xpk_tool",
+      "type": "backend",
+      "label": "拆封包 Xp3Archive（app）",
+      "sublabel": "JNI · 进度轮询 · 取消",
+      "pos": [
+        60,
+        570
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/unpack/Xp3Archive.kt",
+          "line": 42
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/unpack/Xp3Archive.kt",
+          "line": 53
+        }
+      ]
+    },
+    {
+      "id": "rust_xp3",
+      "type": "backend",
+      "label": "XP3 Rust 核心",
+      "sublabel": "libarchive_xp3_core · KSD",
+      "pos": [
+        300,
+        570
+      ],
+      "size": [
+        170,
+        64
+      ],
+      "sources": [
+        {
+          "path": "engine/rust/src/lib.rs",
+          "line": 156
+        },
+        {
+          "path": "engine/rust/src/ksd.rs",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "id": "hosts_web",
+      "type": "backend",
+      "label": "Web 壳宿主",
+      "sublabel": "本地 HTTP · asar · JS 钩子",
+      "pos": [
+        530,
+        570
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "engine/src/main/java/com/core/tyrano/TyranoActivity.kt",
+          "line": 52
+        },
+        {
+          "path": "engine/src/main/java/com/core/tyrano/TyranoLocalHttpServer.kt",
+          "line": 81
+        },
+        {
+          "path": "engine/src/main/java/com/core/rpgmaker/RpgMakerActivity.kt",
+          "line": 54
+        }
+      ]
+    },
+    {
+      "id": "artemis_loader",
+      "type": "backend",
+      "label": "artemis_loader",
+      "sublabel": "NativeActivity 转发真实库",
+      "pos": [
+        790,
+        570
+      ],
+      "size": [
+        180,
+        64
+      ],
+      "sources": [
+        {
+          "path": "engine/src/main/cpp/artemis_loader.cpp",
+          "line": 109
+        },
+        {
+          "path": "engine/src/main/cpp/artemis_loader.cpp",
+          "line": 217
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "插件供给链",
+      "wraps": [
+        "apk_assets",
+        "bootstrap",
+        "pluginstore"
+      ],
+      "pad": 16
+    },
+    {
+      "kind": "region",
+      "label": "引擎进程族 · 独立 : 进程",
+      "wraps": [
+        "hosts_native",
+        "bridges",
+        "runtimes",
+        "hosts_web",
+        "artemis_loader"
+      ],
+      "pad": 16
+    },
+    {
+      "kind": "region",
+      "label": "XP3 拆封包工具链",
+      "wraps": [
+        "xpk_tool",
+        "rust_xp3"
+      ],
+      "pad": 14
+    },
+    {
+      "kind": "security-group",
+      "label": "SAF 外部存储",
+      "wraps": [
+        "gamefiles"
+      ],
+      "pad": 12
+    }
+  ],
+  "connections": [
+    {
+      "id": "assets-bootstrap",
+      "from": "apk_assets",
+      "to": "bootstrap"
+    },
+    {
+      "id": "bootstrap-store",
+      "from": "bootstrap",
+      "to": "pluginstore",
+      "label": "幂等解压"
+    },
+    {
+      "id": "store-hosts",
+      "from": "pluginstore",
+      "to": "hosts_native",
+      "label": "System.load",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "launcher-hosts",
+      "from": "launcher",
+      "to": "hosts_native",
+      "label": "Intent 启动"
+    },
+    {
+      "id": "hosts-bridges",
+      "from": "hosts_native",
+      "to": "bridges",
+      "label": "JNI 调用"
+    },
+    {
+      "id": "bridges-runtimes",
+      "from": "bridges",
+      "to": "runtimes",
+      "label": "dlopen"
+    },
+    {
+      "id": "runtimes-gamefiles",
+      "from": "runtimes",
+      "to": "gamefiles",
+      "label": "数据读写"
+    },
+    {
+      "id": "launcher-web",
+      "from": "launcher",
+      "to": "hosts_web",
+      "label": "Web 壳游戏",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "hosts-loader",
+      "from": "hosts_native",
+      "to": "artemis_loader",
+      "label": "lib_name 装载",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "loader-runtimes",
+      "from": "artemis_loader",
+      "to": "runtimes",
+      "label": "dlopen 插件库",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "xpk-rust",
+      "from": "xpk_tool",
+      "to": "rust_xp3",
+      "label": "JNI 调用"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "插件安装生命周期",
+      "items": [
+        "Gradle 合并 engine / app 两处 nativeplugins 源，打成 assets/nativeplugins/*.zip 随 APK 分发",
+        "首启 EnginePluginBootstrap 按 manifest 的 pluginVersion 幂等解压到 filesDir/engine_plugins/<engine>/current/arm64-v8a",
+        "版本过期删除 current 重装；用户手动导入 zip 走 SHA-256 校验、zip-slip 防护与 staging 原子换名"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "宿主与桥接机制",
+      "items": [
+        "宿主 Activity 各自独立 : 进程、singleInstance、sensorLandscape；主进程只负责编排",
+        "Artemis 为 NativeActivity：系统 dlopen artemis_loader，按 engineLibName 白名单转发真实库",
+        "krkr_bridge_v2 以 GOT/PLT patch 拦截 open/rename 等调用，实现 scopedSave、SAF 镜像与 patch overlay 重定向"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Web 壳与 Rust 工具链",
+      "items": [
+        "Tyrano / RPG Maker 宿主自带本地 HTTP 服务（固定端口被占用回退随机）、asar 随机读与 JS 钩子注入",
+        "Rust XP3 核心提供列举 / 解包 / 封包 JNI，附带进度原子槽与取消；catch_unwind 兜底 panic",
+        "KSD mode-2 文本包裹在解包时顺带解开，krkrsdl3 引擎 TextStream 亦原生支持"
+      ]
+    }
+  ]
+}

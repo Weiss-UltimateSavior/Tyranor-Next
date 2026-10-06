@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "architecture",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/candidate.json",
+    "sha256": "6ff541c2ed087eb896be83ff9828c8fe6175a8ca0e3e0ee8d989d48c145f8751",
+    "bytes": 13778
+  },
+  "artifact": {
+    "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.html",
+    "sha256": "5c3504b54044df524d66cfb6091cc27c9c8ab41e513a1dd466f0f0daf176867e",
+    "bytes": 789771
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.finalize.json",
+    "summaryReceipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.finalize-summary.json",
+    "browserCheckReceipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-系统总览-20261006-022735/architecture-overview.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-05T18:30:17.890Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 2762,
+  "visualReviewRecommendation": {
+    "action": "inspect-route-readability",
+    "signals": {
+      "routesOverSuggestedBends": 2
+    },
+    "reason": "Automated gates passed, but crossings or detours still need perceptual review before claiming visual quality.",
+    "affectedRoutes": {
+      "crossings": [],
+      "detours": [
+        {
+          "relationship": {
+            "id": "core-saf",
+            "from": "core",
+            "to": "safstore",
+            "label": "扫描遍历",
+            "collectionIndex": 8,
+            "artifactIndex": 9
+          },
+          "bends": 3,
+          "stretch": 1
+        },
+        {
+          "relationship": {
+            "id": "hosts-saf",
+            "from": "hosts",
+            "to": "safstore",
+            "label": "存档读写",
+            "collectionIndex": 10,
+            "artifactIndex": 11
+          },
+          "bends": 3,
+          "stretch": 1
+        }
+      ],
+      "truncated": false
+    },
+    "hints": [
+      "core → safstore needs 3 bends: move node core or safstore so they share a row or column with matching centers, or sit diagonally with a clear corner.",
+      "hosts → safstore needs 3 bends: move node hosts or safstore so they share a row or column with matching centers, or sit diagonally with a clear corner."
+    ],
+    "repair": "Trace these relationships at the desktop viewport. For Architecture, use references/architecture-layout-repair.md: reflow a blocked main path or tangled connected scene, and repair an isolated defect locally only when the surrounding composition is accepted. Preserve all semantic content and user-fixed geometry. Rerun finalize once after the edit."
+  }
+}

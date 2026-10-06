@@ -237,74 +237,22 @@ fun HomeScreen(
         return
     }
 
-    Column(modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.nav_home))
-
-        // ===== 快捷启动卡与最近打开列表合并为同一个滚动列表 =====
-        // 水平内边距统一由 contentPadding 提供（覆盖快捷启动区与列表行）
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = 12.dp,
-                end = 12.dp,
-                top = 4.dp,
-                bottom = 16.dp + glassNavBottomInset(),
-            ),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (!libraryState.loaded) {
-                // 加载中：快捷启动区（空态）在顶部，指示器占满剩余空间居中
-                item(key = "loading", contentType = "loading") {
-                    Column(Modifier.fillParentMaxSize()) {
-                        QuickLaunchSection(
-                            quickLaunch = quickLaunch,
-                            onGameClick = { selectedGame = it },
-                            onGameLongClick = { launchGame(it) },
-                        )
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                        }
-                    }
-                }
-            } else if (recentGames.isEmpty()) {
-                item(key = "recent_empty", contentType = "recent_empty") {
-                    Column(Modifier.fillParentMaxSize()) {
-                        QuickLaunchSection(
-                            quickLaunch = quickLaunch,
-                            onGameClick = { selectedGame = it },
-                            onGameLongClick = { launchGame(it) },
-                        )
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Text(
-                                stringResource(R.string.home_recent_empty),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            } else {
-                item(key = "quick_launch", contentType = "quick_launch") {
-                    QuickLaunchSection(
-                        quickLaunch = quickLaunch,
-                        onGameClick = { selectedGame = it },
-                        onGameLongClick = { launchGame(it) },
-                    )
-                }
-                items(
-                    items = recentGames,
-                    key = { it.uri },
-                    contentType = { "recent_game" },
-                ) { game ->
-                    RecentGameRow(
-                        game = game,
-                        onClick = { selectedGame = game },
-                        onLongClick = { launchGame(game) },
-                        onSwipeDelete = { removeRecentRecord(game) },
-                    )
-                }
-            }
-        }
+    // ===== 原生 / 分类仓库：按应用设置「首页样式」二选一（Web 已在上面分支返回） =====
+    if (homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY) {
+        CategoryWarehouseContent(
+            modifier = modifier,
+            libraryState = libraryState,
+            onGameClick = { selectedGame = it },
+            onGameLongClick = { launchGame(it) },
+        )
+    } else {
+        NativeHomeContent(
+            modifier = modifier,
+            libraryState = libraryState,
+            onGameClick = { selectedGame = it },
+            onGameLongClick = { launchGame(it) },
+            onRecentRemoved = { removeRecentRecord(it) },
+        )
     }
 
     // ===== 与游戏页统一：点按打开操作抽屉，长按直接启动 =====
@@ -385,6 +333,91 @@ fun HomeScreen(
 
     launchError?.let { state ->
         LaunchErrorDialog(state = state, onDismiss = { launchError = null })
+    }
+}
+
+/**
+ * 原生首页（应用设置「首页样式」= 默认时挂载）：快捷启动大卡 + 最近打开列表。
+ * 交互与游戏页统一：点按开操作抽屉、长按直接启动；最近记录左滑删除（仅删记录不删库）。
+ */
+@Composable
+private fun NativeHomeContent(
+    modifier: Modifier,
+    libraryState: MainLibraryUiState,
+    onGameClick: (ScanGame) -> Unit,
+    onGameLongClick: (ScanGame) -> Unit,
+    onRecentRemoved: (ScanGame) -> Unit,
+) {
+    val quickLaunch = libraryState.quickLaunch
+    val recentGames = libraryState.recentGames
+    Column(modifier.fillMaxSize()) {
+        AppTopBar(title = stringResource(R.string.nav_home))
+
+        // ===== 快捷启动卡与最近打开列表合并为同一个滚动列表 =====
+        // 水平内边距统一由 contentPadding 提供（覆盖快捷启动区与列表行）
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = 12.dp,
+                end = 12.dp,
+                top = 4.dp,
+                bottom = 16.dp + glassNavBottomInset(),
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (!libraryState.loaded) {
+                // 加载中：快捷启动区（空态）在顶部，指示器占满剩余空间居中
+                item(key = "loading", contentType = "loading") {
+                    Column(Modifier.fillParentMaxSize()) {
+                        QuickLaunchSection(
+                            quickLaunch = quickLaunch,
+                            onGameClick = onGameClick,
+                            onGameLongClick = onGameLongClick,
+                        )
+                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                }
+            } else if (recentGames.isEmpty()) {
+                item(key = "recent_empty", contentType = "recent_empty") {
+                    Column(Modifier.fillParentMaxSize()) {
+                        QuickLaunchSection(
+                            quickLaunch = quickLaunch,
+                            onGameClick = onGameClick,
+                            onGameLongClick = onGameLongClick,
+                        )
+                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                            Text(
+                                stringResource(R.string.home_recent_empty),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            } else {
+                item(key = "quick_launch", contentType = "quick_launch") {
+                    QuickLaunchSection(
+                        quickLaunch = quickLaunch,
+                        onGameClick = onGameClick,
+                        onGameLongClick = onGameLongClick,
+                    )
+                }
+                items(
+                    items = recentGames,
+                    key = { it.uri },
+                    contentType = { "recent_game" },
+                ) { game ->
+                    RecentGameRow(
+                        game = game,
+                        onClick = { onGameClick(game) },
+                        onLongClick = { onGameLongClick(game) },
+                        onSwipeDelete = { onRecentRemoved(game) },
+                    )
+                }
+            }
+        }
     }
 }
 
