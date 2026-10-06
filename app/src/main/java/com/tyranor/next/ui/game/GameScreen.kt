@@ -14,6 +14,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -142,6 +143,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
@@ -1659,13 +1661,9 @@ private fun LaunchFileDialog(
     var selected by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(game.uri) {
-        val (names, current) = withContext(Dispatchers.IO) {
-            val names = EngineLauncher.listLaunchFiles(context, game)
-            val current = EngineLauncher.currentLaunchFileName(context, game)
-            names to current
-        }
-        files = names
-        selected = current?.takeIf { names.contains(it) }
+        val options = withContext(Dispatchers.IO) { EngineLauncher.launchFileOptions(context, game) }
+        files = options.names
+        selected = options.current?.takeIf { options.names.contains(it) }
         loading = false
     }
 
@@ -1694,7 +1692,11 @@ private fun LaunchFileDialog(
                                     .clip(AppComponentShape)
                                     // 弹窗内条目底色：默认风格 PageGrey，玻璃风格亮玻璃面
                                     .background(DialogItemSurface)
-                                    .clickable { selected = name }
+                                    // 弹窗点击反馈规范：条目禁用涟漪（indication = null）
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { selected = name }
                                     .padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
@@ -1716,13 +1718,17 @@ private fun LaunchFileDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = { selected?.let(onConfirm) },
+            DialogTextButton(
+                text = stringResource(R.string.common_confirm),
                 enabled = selected != null,
-            ) { Text(stringResource(R.string.common_confirm)) }
+                onClick = { selected?.let(onConfirm) },
+            )
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            DialogTextButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = onDismiss,
+            )
         },
     )
 }
