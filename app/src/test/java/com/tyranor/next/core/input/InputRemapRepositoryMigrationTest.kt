@@ -132,16 +132,27 @@ class InputRemapRepositoryMigrationTest {
 
     @Test
     fun uniqueNameAlwaysTerminatesAndStaysWithinLimit() {
-        // 序号被占满：仍须返回一个不与现有集合冲突、且不超长的名称
+        // 序号被占满：仍须返回一个不与现有集合冲突、且不超长的名称。
+        // 占用名必须按**实际后缀长度**构造（` 10` 是 3 字符而非 2），否则两位数序号那轮
+        // 构造出的名字与函数候选不匹配，函数会在该轮提前返回、兜底分支根本执行不到。
         val full = "n".repeat(InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
         val existing = HashSet<String>()
         existing.add(full)
-        for (index in 2..999) {
-            existing.add(full.take(InputRemapRepository.PROFILE_NAME_MAX_LENGTH - 2) + " $index")
+        val occupiedIndexes = 2..999
+        for (index in occupiedIndexes) {
+            val suffix = " $index"
+            val room = (InputRemapRepository.PROFILE_NAME_MAX_LENGTH - suffix.length).coerceAtLeast(0)
+            existing.add(full.take(room) + suffix)
         }
 
         val name = InputRemapRepository.uniqueName(full, existing)
         assertTrue("结果不得超长，实际长度 ${name.length}", name.length <= InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
         assertTrue("结果不得与现有名冲突", name !in existing)
+        // 1..999 全部占满（full 本身即序号 1 的形态），因此结果必然来自时间戳兜底分支，
+        // 而不是某个序号候选；用「不再是 base+序号」的形式确认真的走到兜底
+        assertFalse(
+            "序号未耗尽时不应走兜底：$name",
+            name.matches(Regex("^n+ \\d+$")),
+        )
     }
 }
