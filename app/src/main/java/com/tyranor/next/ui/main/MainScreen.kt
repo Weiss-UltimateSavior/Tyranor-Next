@@ -151,6 +151,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()
+  // 首页样式：Web 首页参与绘制期间底栏改用仅背景采样源（见 webHomeInvolved）
+  val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
   // 液态玻璃两档共用同一套宿主准备（录制采样层、转场重定向、底部留白）
   val liquidGlass = navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS ||
     navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED
@@ -206,12 +208,13 @@ fun MainScreen(modifier: Modifier = Modifier) {
   }
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
   Box(modifier.fillMaxSize()) {
-    // 默认外观风格页面背景（纯色 + 主题色/近似色柔光 + 高斯模糊）；玻璃系为 no-op
-    DefaultPageBackgroundLayer()
     // 内容层录制进 backdrop，供液态玻璃导航采样页面内容。
     // 关键：背景必须在 layerBackdrop 之后（内层）——layerBackdrop 只录制它之后的内容，
     // 放在外层（Surface/Column 背景）的内容不会被采样，玻璃会采到透明而漏出文字。
     val backdrop = rememberLayerBackdrop()
+    // Web 首页场景的「仅背景」采样层（见下方 webHomeInvolved）：只含页面背景、不含页面内容，
+    // 避免 WebView 被录进采样层并逐帧离屏重放。
+    val backgroundBackdrop = rememberLayerBackdrop()
     // 高级玻璃的封面拼贴模糊底图：优先固定/最近游戏，再补游戏库封面（最多 6 张）。
     // 生成在后台线程（解码 + 盒式模糊），写入全局快照供根部背景与采样层绘制。
     val ambientCovers = remember(libraryState.quickLaunch, libraryState.recentGames, libraryState.games) {
@@ -239,13 +242,41 @@ fun MainScreen(modifier: Modifier = Modifier) {
         Modifier.glassPageBackground(accent)
       }
     }
+    // 玻璃系需要把页面背景并入采样源的场景（增强透镜 / 高级玻璃悬浮条 / 悬浮按钮）；
+    // 平板侧栏不适用（导航在侧边，另行录制纯背景层，见 railBackdrop）。
+    val glassSamplingBackground = AppThemeColors.isGlass &&
+      (enhancedBarActive || advancedFloatingNav || floatingButtonBackdrop)
+    // ===== Web 首页采样降级（防切页闪烁） =====
+    // Web 首页参与绘制（前台，或转场起点/终点）时底栏不得采样内容层：layerBackdrop 每个绘制帧
+    // 把内容重新录进采样层，而 Compose 的 AndroidView（WebView）经 view.draw 一并入录，底栏/透镜
+    // 重放即让 Chromium 把同一帧多次画进不同离屏 FBO。真机实测透镜档每次切页都触发
+    // `tile memory limits exceeded, some content may not draw`，网页内容被丢弃而抖动闪烁。
+    // 该场景改用仅含页面背景的 backgroundBackdrop：Web 首页在 glassNavBottomInset() 下留有底部
+    // 空白，导航栏底下本来就只有页面背景，采样内容零视觉价值；Web 首页不再参与绘制后立即恢复。
+    // currentState/targetState 只在转场起止变化（currentState 保持起点直到转场结束），不逐帧重组。
+    val webHomeInvolved = bottomBackdropActive &&
+      homeStyle == AppSettingsStore.HOME_STYLE_WEB &&
+      (selectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
+    // 底栏采样源：Web 首页参与绘制时为仅背景层，其余为内容层（两者同一坐标空间，可直接替换）。
+    val navBackdrop = if (webHomeInvolved) backgroundBackdrop else backdrop
+    // 仅背景层：默认外观绘制页面根背景（原直接挂在根 Box 上的 DefaultPageBackgroundLayer）；
+    // 玻璃系把原本画在内容层里的采样背景挪到本层——是转移而非叠加，屏幕上的背景绘制次数不变。
+    Box(
+      Modifier
+        .fillMaxSize()
+        .then(if (webHomeInvolved) Modifier.layerBackdrop(backgroundBackdrop) else Modifier)
+        .then(if (glassSamplingBackground && webHomeInvolved) pageBackground else Modifier),
+    ) {
+      DefaultPageBackgroundLayer()
+    }
     val contentLayerModifier = Modifier
-      // source 节点常驻，避免切页结束时重新挂载玻璃录制层。
-      .then(if (bottomBackdropActive) Modifier.layerBackdrop(backdrop) else Modifier)
+      // source 节点常驻，避免切页结束时重新挂载玻璃录制层；Web 首页参与绘制时改由
+      // backgroundBackdrop 采样（见上），不把内容（含 WebView）录进任何采样层。
+      .then(if (bottomBackdropActive && !webHomeInvolved) Modifier.layerBackdrop(backdrop) else Modifier)
       .then(
         // 仅玻璃外观风格需要（该模式下 PageGrey 透明、根部背景在采样层之外）；
-        // 平板侧栏在内容层之外，另行录制纯背景层（见 railBackdrop）。
-        if (AppThemeColors.isGlass && (enhancedBarActive || advancedFloatingNav || floatingButtonBackdrop)) {
+        // Web 首页场景背景已移到仅背景层，此处不再重复画，避免半透明光晕叠加增强。
+        if (glassSamplingBackground && !webHomeInvolved) {
           pageBackground
         } else {
           Modifier
@@ -315,7 +346,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       // 万一不满足则退回经典档，而不是拿未挂载的 backdrop 渲染（组件契约要求）
       if (enhancedBarActive) {
         EnhancedLiquidGlassNavigationBar(
-          backdrop = backdrop,
+          backdrop = navBackdrop,
           // 权威选中值先夹取到合法槽位，避免越界值把透镜放到栏外（组件内部也会再夹一次）
           selectedIndex = selectedIndex.coerceIn(liquidGlassTabItems.indices),
           colors = rememberGlassBottomBarColors(unselectedColor),
@@ -328,7 +359,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
         )
       } else {
         LiquidGlassNavigationBar(
-          backdrop = backdrop,
+          backdrop = navBackdrop,
           selectedIndex = selectedIndex,
           primaryColor = MaterialTheme.colorScheme.primary,
           unselectedColor = unselectedColor,
@@ -355,10 +386,10 @@ fun MainScreen(modifier: Modifier = Modifier) {
       // 每次都是新实例而判不等，导致逐帧重建 vibrancy/blur 的 RenderEffect 管线；
       // 复用同一 Modifier 才能让 Backdrop 跳过重建（与液态玻璃底栏同一处理）。
       // advancedGlass 进 key：玻璃描边在构造期定型（复古单色 / 高级渐变），现场切换必须重建。
-      val advancedNavModifier = remember(backdrop, density, advancedGlass) {
+      val advancedNavModifier = remember(navBackdrop, density, advancedGlass) {
         Modifier
           .drawBackdrop(
-            backdrop = backdrop,
+            backdrop = navBackdrop,
             shape = { AppComponentShape },
             effects = {
               vibrancy()
@@ -412,7 +443,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 悬浮不占布局高度，内容底部留白由 glassNavBottomInset() 统一提供。
     if (floatingButtonActive) {
       FloatingGlassNavButton(
-        backdrop = if (floatingButtonBackdrop) backdrop else null,
+        backdrop = if (floatingButtonBackdrop) navBackdrop else null,
         items = liquidGlassTabItems,
         selectedIndex = selectedIndex.coerceIn(liquidGlassTabItems.indices),
         primaryColor = MaterialTheme.colorScheme.primary,
