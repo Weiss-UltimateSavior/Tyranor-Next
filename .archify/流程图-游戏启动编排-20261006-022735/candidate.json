@@ -1,0 +1,290 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Tyranor Next · 游戏启动编排流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+    },
+    "output": ".archify/流程图-游戏启动编排-20261006-022735/workflow-launch-orchestration.html"
+  },
+  "lanes": [
+    {
+      "id": "ui",
+      "label": "用户与界面"
+    },
+    {
+      "id": "launcher",
+      "label": "core · EngineLauncher"
+    },
+    {
+      "id": "external",
+      "label": "外置运行时"
+    },
+    {
+      "id": "engine",
+      "label": "内置引擎进程"
+    }
+  ],
+  "mainPath": [
+    "user_launch",
+    "ui_gate",
+    "dispatch",
+    "resolve",
+    "builtin_prep",
+    "host"
+  ],
+  "nodes": [
+    {
+      "id": "user_launch",
+      "lane": "ui",
+      "col": 0,
+      "type": "external",
+      "icon": "person",
+      "label": "启动游戏",
+      "sublabel": "点按 / 长按 / 快捷方式",
+      "width": 160
+    },
+    {
+      "id": "ui_gate",
+      "lane": "ui",
+      "col": 1,
+      "type": "frontend",
+      "label": "启动前确认",
+      "sublabel": "补丁策略 · MV/MZ 存档格式",
+      "tag": "按需弹窗",
+      "width": 160,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 366
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 385
+        }
+      ]
+    },
+    {
+      "id": "dispatch",
+      "lane": "launcher",
+      "col": 2,
+      "type": "backend",
+      "label": "EngineLauncher.launch",
+      "sublabel": "四级分流判定",
+      "width": 170,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 141
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 208
+        }
+      ]
+    },
+    {
+      "id": "emu",
+      "lane": "external",
+      "col": 2,
+      "type": "external",
+      "label": "外置模拟器",
+      "sublabel": "PPSSPP · Eden · Winlator",
+      "width": 160,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorRegistry.kt",
+          "line": 38
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorLauncher.kt",
+          "line": 51
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorLauncher.kt",
+          "line": 81
+        }
+      ]
+    },
+    {
+      "id": "resolve",
+      "lane": "launcher",
+      "col": 3,
+      "type": "backend",
+      "label": "路径与设置解析",
+      "sublabel": "SAF→真实路径 · 三级设置",
+      "width": 170,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 1879
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "id": "module",
+      "lane": "external",
+      "col": 3,
+      "type": "external",
+      "label": "外置 APK 引擎模块",
+      "sublabel": "JoiPlay Ren'Py / RPGM",
+      "width": 160,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineModuleRegistry.kt",
+          "line": 22
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineLauncher.kt",
+          "line": 26
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/RpgMakerExternalEngineModule.kt",
+          "line": 144
+        }
+      ]
+    },
+    {
+      "id": "builtin_prep",
+      "lane": "launcher",
+      "col": 4,
+      "type": "backend",
+      "label": "内置启动保障",
+      "sublabel": "插件 · 镜像 · 互通同步",
+      "width": 170,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
+          "line": 77
+        },
+        {
+          "path": "engine/src/main/java/bridge/KrSafMirror.kt",
+          "line": 33
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 1126
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "lane": "engine",
+      "col": 5,
+      "type": "backend",
+      "label": "引擎宿主进程",
+      "sublabel": "Intent · 独立 : 进程",
+      "width": 160,
+      "sources": [
+        {
+          "path": "engine/src/main/AndroidManifest.xml",
+          "line": 14,
+          "end_line": 206
+        },
+        {
+          "path": "engine/src/main/java/com/core/engine/LaunchContract.kt",
+          "line": 12
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 350
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "launch-request",
+      "from": "user_launch",
+      "to": "ui_gate",
+      "label": "启动请求",
+      "role": "main"
+    },
+    {
+      "id": "gate-dispatch",
+      "from": "ui_gate",
+      "to": "dispatch",
+      "label": "确认后",
+      "role": "main"
+    },
+    {
+      "id": "dispatch-resolve",
+      "from": "dispatch",
+      "to": "resolve",
+      "role": "main"
+    },
+    {
+      "id": "dispatch-emu",
+      "from": "dispatch",
+      "to": "emu",
+      "label": "外置模拟器",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "resolve-module",
+      "from": "resolve",
+      "to": "module",
+      "label": "外置 APK 模块",
+      "variant": "dashed",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "resolve-builtin",
+      "from": "resolve",
+      "to": "builtin_prep",
+      "role": "main"
+    },
+    {
+      "id": "builtin-host",
+      "from": "builtin_prep",
+      "to": "host",
+      "label": "startActivity",
+      "role": "main"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "分流判定顺序（EngineLauncher）",
+      "items": [
+        "手动安卓游戏：按包名 getLaunchIntentForPackage 直接跳转",
+        "外置模拟器：PSP/Switch 显式组件 + ROM URI；Winlator 走 ExternalLaunchActivity 协议",
+        "外置 APK 模块：需目录时先申请所有文件访问，再走 JoiPlay Intent 协议",
+        "其余进入内置引擎：插件保障 → 互通同步 → 镜像准备 → buildIntent"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "启动前门与并发约束",
+      "items": [
+        "Artemis 补丁策略三选：启动时询问 / 自动 / 关闭（默认关闭）",
+        "MV/MZ 互通关闭时检测标准存档并询问转化；开启时跳过弹窗",
+        "同游戏会话运行中阻止重复启动（perGameLock + 进程后缀探测），取消异常原样传播"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "类型化结果与失败",
+      "items": [
+        "LaunchResult：Success / GameDirUnresolved / AllFilesAccessMissing / PluginBootstrapFailed 等 13 种",
+        "外置错误码：模块未安装 / Activity 未找到 / 授权异常 / 启动异常",
+        "core 只返回错误类型与错误码，本地化文案由 UI 层映射"
+      ]
+    }
+  ]
+}

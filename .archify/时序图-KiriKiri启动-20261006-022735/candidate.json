@@ -1,0 +1,386 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Tyranor Next · KiriKiri 启动请求时序",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1080,
+      676
+    ],
+    "repository": {
+      "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+    },
+    "output": ".archify/时序图-KiriKiri启动-20261006-022735/sequence-kirikiri-launch.html"
+  },
+  "participants": [
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "启动入口 UI",
+      "sublabel": "游戏页 / 首页",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt",
+          "line": 226
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt",
+          "line": 177
+        }
+      ]
+    },
+    {
+      "id": "launcher",
+      "type": "backend",
+      "label": "EngineLauncher",
+      "sublabel": "主进程编排",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 141
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 732
+        }
+      ]
+    },
+    {
+      "id": "bootstrap",
+      "type": "backend",
+      "label": "插件 Bootstrap",
+      "sublabel": "解压 · 校验",
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
+          "line": 68
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt",
+          "line": 77
+        }
+      ]
+    },
+    {
+      "id": "pluginstore",
+      "type": "database",
+      "label": "插件目录",
+      "sublabel": "current 目录",
+      "sources": [
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginManager.kt",
+          "line": 34,
+          "end_line": 36
+        },
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginManager.kt",
+          "line": 96
+        }
+      ]
+    },
+    {
+      "id": "mirror",
+      "type": "database",
+      "label": "KrSafMirror",
+      "sublabel": "SAF 镜像目录",
+      "sources": [
+        {
+          "path": "engine/src/main/java/bridge/KrSafMirror.kt",
+          "line": 33
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 1126
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "KiriKiri 宿主",
+      "sublabel": "独立引擎进程",
+      "sources": [
+        {
+          "path": "engine/src/main/java/com/core/krkrsdl3/Krkrsdl3Activity.kt",
+          "line": 29
+        },
+        {
+          "path": "engine/src/main/java/com/core/engine/LaunchContract.kt",
+          "line": 12
+        }
+      ]
+    },
+    {
+      "id": "bridge",
+      "type": "backend",
+      "label": "krkr_bridge_v2",
+      "sublabel": "调用重定向",
+      "sources": [
+        {
+          "path": "engine/src/main/cpp/krkr_bridge.cpp",
+          "line": 690
+        },
+        {
+          "path": "engine/src/main/cpp/krkr_bridge.cpp",
+          "line": 780
+        }
+      ]
+    },
+    {
+      "id": "tvp",
+      "type": "backend",
+      "label": "TVP 运行时",
+      "sublabel": "libgame.so",
+      "sources": [
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativePluginConstants.kt",
+          "line": 50
+        },
+        {
+          "path": "engine/src/main/java/com/core/nativeplugin/NativeLibraryLoader.kt",
+          "line": 15
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 155,
+      "to": 285,
+      "label": "启动前保障"
+    },
+    {
+      "from": 295,
+      "to": 340,
+      "label": "镜像准备"
+    },
+    {
+      "from": 350,
+      "to": 395,
+      "label": "宿主启动"
+    },
+    {
+      "from": 405,
+      "to": 445,
+      "label": "原生装配"
+    },
+    {
+      "from": 455,
+      "to": 565,
+      "label": "运行与就绪"
+    }
+  ],
+  "messages": [
+    {
+      "id": "launch-call",
+      "from": "ui",
+      "to": "launcher",
+      "y": 160,
+      "label": "launch(game)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ensure-plugin",
+      "from": "launcher",
+      "to": "bootstrap",
+      "y": 188,
+      "label": "ensureForLaunch(KIRIKIRI)"
+    },
+    {
+      "id": "verify-manifest",
+      "from": "bootstrap",
+      "to": "pluginstore",
+      "y": 216,
+      "label": "校验 manifest / pluginVersion"
+    },
+    {
+      "id": "plugin-state",
+      "from": "pluginstore",
+      "to": "bootstrap",
+      "y": 244,
+      "label": "已最新 / 删旧重解压",
+      "variant": "return"
+    },
+    {
+      "id": "plugin-ready",
+      "from": "bootstrap",
+      "to": "launcher",
+      "y": 272,
+      "label": "插件就绪",
+      "variant": "return"
+    },
+    {
+      "id": "prepare-mirror",
+      "from": "launcher",
+      "to": "mirror",
+      "y": 300,
+      "label": "prepare(uri, path)",
+      "note": "仅可移动存储"
+    },
+    {
+      "id": "mirror-root",
+      "from": "mirror",
+      "to": "launcher",
+      "y": 328,
+      "label": "镜像根路径",
+      "variant": "return"
+    },
+    {
+      "id": "start-host",
+      "from": "launcher",
+      "to": "host",
+      "y": 356,
+      "label": "startActivity(Intent + extras)",
+      "variant": "emphasis",
+      "note": "LaunchContract 键"
+    },
+    {
+      "id": "read-libs",
+      "from": "host",
+      "to": "pluginstore",
+      "y": 384,
+      "label": "NativeLibraryLoader 取库",
+      "variant": "dashed"
+    },
+    {
+      "id": "lib-paths",
+      "from": "pluginstore",
+      "to": "host",
+      "y": 412,
+      "label": "lib*.so 绝对路径",
+      "variant": "return"
+    },
+    {
+      "id": "load-bridge",
+      "from": "host",
+      "to": "bridge",
+      "y": 440,
+      "label": "System.load(krkr_bridge_v2)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dlopen-game",
+      "from": "bridge",
+      "to": "tvp",
+      "y": 468,
+      "label": "dlopen libgame.so + 解析符号",
+      "variant": "emphasis"
+    },
+    {
+      "id": "startup",
+      "from": "bridge",
+      "to": "tvp",
+      "y": 496,
+      "label": "startupFrom / update hook",
+      "variant": "emphasis"
+    },
+    {
+      "id": "redirect",
+      "from": "bridge",
+      "to": "mirror",
+      "y": 524,
+      "label": "open / rename 重定向",
+      "variant": "dashed",
+      "note": "scopedSave · SAF · overlay"
+    },
+    {
+      "id": "game-ready",
+      "from": "bridge",
+      "to": "host",
+      "y": 552,
+      "label": "onKrkrGameReady",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "ui",
+      "from": 155,
+      "to": 170,
+      "type": "frontend"
+    },
+    {
+      "participant": "launcher",
+      "from": 156,
+      "to": 368,
+      "type": "backend"
+    },
+    {
+      "participant": "bootstrap",
+      "from": 184,
+      "to": 278,
+      "type": "backend"
+    },
+    {
+      "participant": "pluginstore",
+      "from": 212,
+      "to": 248,
+      "type": "database"
+    },
+    {
+      "participant": "mirror",
+      "from": 296,
+      "to": 334,
+      "type": "database"
+    },
+    {
+      "participant": "host",
+      "from": 352,
+      "to": 560,
+      "type": "backend"
+    },
+    {
+      "participant": "pluginstore",
+      "from": 380,
+      "to": 418,
+      "type": "database"
+    },
+    {
+      "participant": "bridge",
+      "from": 434,
+      "to": 560,
+      "type": "backend"
+    },
+    {
+      "participant": "tvp",
+      "from": 462,
+      "to": 505,
+      "type": "backend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "启动前保障",
+      "items": [
+        "EnginePluginBootstrap 仅对 KIRIKIRI / ONS / ARTEMIS 生效，其余引擎直接放行",
+        "可移动存储强制 SAF 镜像并在镜像内建立 savedata；普通存储直接确保存档目录",
+        "补丁 overlay 与 Steam 配置 overlay 在 Intent 组装时一并准备"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Intent 契约",
+      "items": [
+        "buildIntent 注入 PATH / PROJECT_ROOT / GAME_SAVE_ROOT / ROOT_URI 等 LaunchContract 键",
+        "统一附加主题色 extras，引擎侧 EngineThemeColors.fromIntent 消费",
+        "krkrsdl3 走 GAME_ARGS：启动条目 + -render=… + -savedir=…"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "桥接与文件重定向",
+      "items": [
+        "krkr_bridge_v2 预加载 libgame.so、解析 TVP 符号并 patch scene update 判定就绪",
+        "GOT/PLT patch 拦截 open / rename / mkdir 等调用，接入 scopedSave、SAF 镜像与 overlay",
+        "onKrkrGameReady 回调宿主进程，未识别启动条目时给出失败而不是白屏"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "finalize",
+  "status": "pass",
+  "type": "dataflow",
+  "quality": "showcase",
+  "specification": {
+    "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/candidate.json",
+    "sha256": "ffaebed371bae250eb9da0b41948d776a8f8f17935a3684a052c7249b5836ce7",
+    "bytes": 10919
+  },
+  "artifact": {
+    "path": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/dataflow-library-covers.html",
+    "sha256": "7949b738138baf43585ad05d2dc2c9c415d8dbfb98c38cd71cc99156a29d65c5",
+    "bytes": 774882
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "pass"
+  },
+  "diagnostics": [],
+  "diagnosticSummary": {
+    "total": 0,
+    "shown": 0,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/dataflow-library-covers.finalize.json",
+    "summaryReceipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/dataflow-library-covers.finalize-summary.json",
+    "browserCheckReceipt": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/dataflow-library-covers.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.0.1",
+    "availableVersion": "3.0.1",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-05T18:30:17.890Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 6817
+}

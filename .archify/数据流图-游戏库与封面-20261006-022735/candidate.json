@@ -1,0 +1,447 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Tyranor Next · 游戏库数据与封面管线",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      600
+    ],
+    "repository": {
+      "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+    },
+    "output": ".archify/数据流图-游戏库与封面-20261006-022735/dataflow-library-covers.html"
+  },
+  "stages": [
+    {
+      "label": "采集"
+    },
+    {
+      "label": "识别与抓取"
+    },
+    {
+      "label": "权威存储"
+    },
+    {
+      "label": "缓存与镜像"
+    },
+    {
+      "label": "消费"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "covers",
+      "type": "cloud",
+      "label": "封面来源",
+      "sublabel": "VNDB · Bangumi · Steam 等",
+      "stage": 0,
+      "row": 0,
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
+          "line": 188
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
+          "line": 264
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/VndbCoverService.kt",
+          "line": 29
+        }
+      ]
+    },
+    {
+      "id": "scan",
+      "type": "backend",
+      "label": "引擎扫描",
+      "sublabel": "SAF 遍历 · 特征判定",
+      "stage": 0,
+      "row": 1,
+      "width": 140,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 87
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 664
+        }
+      ]
+    },
+    {
+      "id": "manual",
+      "type": "backend",
+      "label": "手动添加",
+      "sublabel": "PC / 安卓游戏",
+      "stage": 0,
+      "row": 2,
+      "width": 140,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
+          "line": 176
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/manual/AndroidAppGames.kt",
+          "line": 70
+        }
+      ]
+    },
+    {
+      "id": "scrape",
+      "type": "backend",
+      "label": "封面抓取",
+      "sublabel": "来源顺序 · 候选绑定",
+      "stage": 1,
+      "row": 0,
+      "width": 140,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
+          "line": 51
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
+          "line": 123
+        }
+      ]
+    },
+    {
+      "id": "detect",
+      "type": "backend",
+      "label": "识别与候选",
+      "sublabel": "EngineType · launchTarget",
+      "stage": 1,
+      "row": 1,
+      "width": 145,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 641
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 1002
+        }
+      ]
+    },
+    {
+      "id": "merge",
+      "type": "backend",
+      "label": "差量合并",
+      "sublabel": "保留手动与元数据",
+      "stage": 1,
+      "row": 2,
+      "width": 145,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 95
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 133
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "id": "covercache",
+      "type": "database",
+      "label": "封面缓存",
+      "sublabel": "filesDir + cacheDir",
+      "stage": 2,
+      "row": 0,
+      "width": 145,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverSupport.kt",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "id": "room",
+      "type": "database",
+      "label": "Room 游戏库",
+      "sublabel": "game_library.db · 5 表",
+      "stage": 2,
+      "row": 2,
+      "width": 165,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt",
+          "line": 21,
+          "end_line": 29
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
+          "line": 158
+        }
+      ]
+    },
+    {
+      "id": "facade",
+      "type": "database",
+      "label": "库门面缓存",
+      "sublabel": "GameLibraryFacade · 修订号",
+      "stage": 3,
+      "row": 1,
+      "width": 165,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 42
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 82
+        }
+      ]
+    },
+    {
+      "id": "prefs",
+      "type": "database",
+      "label": "prefs 回滚镜像",
+      "sublabel": "防抖 1.5s",
+      "stage": 3,
+      "row": 2,
+      "width": 145,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
+          "line": 312
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
+          "line": 324
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "列表与首页",
+      "sublabel": "四 Tab · 网格 / 分类",
+      "stage": 4,
+      "row": 0,
+      "width": 150,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
+          "line": 91
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt",
+          "line": 410
+        }
+      ]
+    },
+    {
+      "id": "launcher",
+      "type": "backend",
+      "label": "启动编排",
+      "sublabel": "游戏 + 生效设置",
+      "stage": 4,
+      "row": 1,
+      "width": 145,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 208
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "id": "shortcut",
+      "type": "external",
+      "label": "桌面快捷方式",
+      "sublabel": "uri 哈希反查游戏",
+      "stage": 4,
+      "row": 2,
+      "width": 155,
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/shortcut/GameShortcutManager.kt",
+          "line": 25
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/shortcut/GameShortcutManager.kt",
+          "line": 79
+        }
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "id": "covers-scrape",
+      "from": "covers",
+      "to": "scrape",
+      "label": "关键词检索",
+      "classification": "在线服务",
+      "route": "straight"
+    },
+    {
+      "id": "scan-detect",
+      "from": "scan",
+      "to": "detect",
+      "label": "扫描候选",
+      "classification": "目录遍历",
+      "route": "straight"
+    },
+    {
+      "id": "manual-merge",
+      "from": "manual",
+      "to": "merge",
+      "label": "手动条目",
+      "classification": "不参与扫描",
+      "route": "straight"
+    },
+    {
+      "id": "detect-merge",
+      "from": "detect",
+      "to": "merge",
+      "label": "ScanGame",
+      "route": "straight",
+      "labelAt": [
+        330,
+        322
+      ]
+    },
+    {
+      "id": "scrape-cache",
+      "from": "scrape",
+      "to": "covercache",
+      "label": "图片下载",
+      "variant": "emphasis",
+      "route": "straight"
+    },
+    {
+      "id": "scrape-room",
+      "from": "scrape",
+      "to": "room",
+      "label": "coverUri 落库",
+      "variant": "dashed",
+      "labelAt": [
+        420,
+        318
+      ]
+    },
+    {
+      "id": "merge-room",
+      "from": "merge",
+      "to": "room",
+      "label": "applyDiff 事务",
+      "classification": "单线程 FIFO",
+      "route": "straight",
+      "labelAt": [
+        418,
+        428
+      ]
+    },
+    {
+      "id": "room-prefs",
+      "from": "room",
+      "to": "prefs",
+      "label": "防抖镜像",
+      "variant": "dashed",
+      "route": "straight",
+      "labelAt": [
+        642,
+        420
+      ]
+    },
+    {
+      "id": "room-facade",
+      "from": "room",
+      "to": "facade",
+      "label": "落库后回填",
+      "labelAt": [
+        545,
+        322
+      ]
+    },
+    {
+      "id": "facade-launcher",
+      "from": "facade",
+      "to": "launcher",
+      "label": "缓存读取",
+      "route": "straight",
+      "labelAt": [
+        818,
+        315
+      ]
+    },
+    {
+      "id": "facade-ui",
+      "from": "facade",
+      "to": "ui",
+      "label": "修订号通知",
+      "labelAt": [
+        785,
+        196
+      ]
+    },
+    {
+      "id": "facade-shortcut",
+      "from": "facade",
+      "to": "shortcut",
+      "label": "快捷启动数据",
+      "labelDx": 50,
+      "labelDy": 24
+    },
+    {
+      "id": "cache-ui",
+      "from": "covercache",
+      "to": "ui",
+      "label": "缩略图解码",
+      "variant": "dashed",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "权威与镜像",
+      "items": [
+        "Room（game_library.db）是唯一事实源；旧 prefs 仅做首次迁移导入与防抖回滚镜像",
+        "扫描同时把 Ren'Py 版本建议 / RPGM 子运行时写入 engine_detection_cache",
+        "最近打开与快捷启动是派生视图，游戏行删除时外键级联清理"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "封面管线",
+      "items": [
+        "来源按用户自定义顺序聚合（VNDB / Bangumi / Steam / Hikarinagi），本地封面优先命中",
+        "批量任务单飞执行，仅在封面快照未变时落库，避免覆盖用户手改",
+        "封面独立磁盘缓存（covers_remote + preview），滚动感知解码避免滑动卡顿"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "消费与刷新",
+      "items": [
+        "库门面缓存持有内存快照与修订号 StateFlow，驱动四 Tab 与首页重载",
+        "启动编排消费游戏条目与三级设置解析结果",
+        "桌面快捷方式按 uri 哈希反查游戏，启动走同一编排入口"
+      ]
+    }
+  ]
+}
