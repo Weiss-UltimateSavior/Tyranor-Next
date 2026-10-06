@@ -331,10 +331,12 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 首页样式：默认（最近打开/快捷启动）/ 网页（内置 WebView 展示所选网址）
+                            // 首页样式：默认（最近打开/快捷启动）/ 网页（内置 WebView 展示所选网址）/
+                            // 分类仓库（分类栏 + 游戏页同款网格）
                             val homeStyles = listOf(
                                 AppSettingsStore.HOME_STYLE_NATIVE to stringResource(R.string.settings_home_style_native),
                                 AppSettingsStore.HOME_STYLE_WEB to stringResource(R.string.settings_home_style_web),
+                                AppSettingsStore.HOME_STYLE_CATEGORY to stringResource(R.string.settings_home_style_category),
                             )
                             val homeStyleIndex = homeStyles.indexOfFirst { it.first == homeStyle }
                                 .coerceAtLeast(0)

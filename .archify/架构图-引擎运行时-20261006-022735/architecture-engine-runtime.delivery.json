@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "278d77e2-4998-4e84-a8d8-9741e5f15739",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/架构图-引擎运行时-20261006-022735/architecture-engine-runtime.html",
+  "specification": {
+    "sha256": "8811b44decded0f1c83aa182a635a661ef332cbc6714050d10029369b8cb3cec",
+    "bytes": 10850
+  },
+  "artifact": {
+    "sha256": "ac5c1085f9752be32ba7373001c9c358258943852d63da66778030114f7c0e8c",
+    "bytes": 776807
+  }
+}

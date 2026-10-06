@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "06fcf956-4143-4639-8766-4fcb9c48f769",
+  "status": "current",
+  "command": "deliver",
+  "type": "dataflow",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/数据流图-游戏库与封面-20261006-022735/dataflow-library-covers.html",
+  "specification": {
+    "sha256": "ffaebed371bae250eb9da0b41948d776a8f8f17935a3684a052c7249b5836ce7",
+    "bytes": 10919
+  },
+  "artifact": {
+    "sha256": "7949b738138baf43585ad05d2dc2c9c415d8dbfb98c38cd71cc99156a29d65c5",
+    "bytes": 774882
+  }
+}

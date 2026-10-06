@@ -21,7 +21,7 @@ object AppSettingsStore {
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
 
-    /** 首页样式：原生（最近打开/快捷启动）或网页。 */
+    /** 首页样式：原生（最近打开/快捷启动）/ 网页 / 分类仓库。 */
     const val KEY_HOME_STYLE = "home_style"
 
     /** Web 首页展示的地址。 */
@@ -133,6 +133,9 @@ object AppSettingsStore {
     /** 首页样式：Web 首页（内置 WebView 展示所选网址）。 */
     const val HOME_STYLE_WEB = "web"
 
+    /** 首页样式：分类仓库（分类栏：全部/快捷/最近/各引擎类型 + 游戏页同款网格）。 */
+    const val HOME_STYLE_CATEGORY = "category"
+
     /** 首页样式默认值：原生。 */
     const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
 
@@ -179,7 +182,7 @@ object AppSettingsStore {
     /** 默认主题渐变内存态：设置页切换后页面背景即时重组。 */
     val defaultThemeGradientState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_DEFAULT_THEME_GRADIENT)
 
-    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页形态。 */
+    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页/分类仓库形态。 */
     val homeStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_STYLE)
 
     /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
@@ -349,15 +352,18 @@ object AppSettingsStore {
         }
     }
 
-    /** 首页样式归一：仅接受 web，其余（含空/未知）回退原生。 */
+    /** 首页样式归一：web / category 精确接受，其余（含空/未知）回退原生（纯函数，便于单测）。 */
+    fun normalizeHomeStyle(style: String?): String = when (style) {
+        HOME_STYLE_WEB -> HOME_STYLE_WEB
+        HOME_STYLE_CATEGORY -> HOME_STYLE_CATEGORY
+        else -> HOME_STYLE_NATIVE
+    }
+
     fun getHomeStyle(c: Context): String =
-        when (prefs(c).getString(KEY_HOME_STYLE, HOME_STYLE_NATIVE)) {
-            HOME_STYLE_WEB -> HOME_STYLE_WEB
-            else -> HOME_STYLE_NATIVE
-        }
+        normalizeHomeStyle(prefs(c).getString(KEY_HOME_STYLE, HOME_STYLE_NATIVE))
 
     fun setHomeStyle(c: Context, style: String) {
-        val normalized = if (style == HOME_STYLE_WEB) HOME_STYLE_WEB else HOME_STYLE_NATIVE
+        val normalized = normalizeHomeStyle(style)
         synchronized(homeStyleLock) {
             prefs(c).edit().putString(KEY_HOME_STYLE, normalized).apply()
             homeStyleState.value = normalized

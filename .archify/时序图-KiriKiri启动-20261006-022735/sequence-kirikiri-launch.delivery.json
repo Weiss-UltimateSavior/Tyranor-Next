@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "797ec7ff-e429-4aa4-8b25-374e9958f0d3",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/时序图-KiriKiri启动-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/时序图-KiriKiri启动-20261006-022735/sequence-kirikiri-launch.html",
+  "specification": {
+    "sha256": "668ba80dcad69499eca8db7a1834a60d8c41c139e572bfd5e8556192e590cd01",
+    "bytes": 9070
+  },
+  "artifact": {
+    "sha256": "39d7cb8a8ec43b6e8902f6208f7962c22c964b81ff304817fd10e5cf3ce03050",
+    "bytes": 769983
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "164deff6-cee5-493d-a49b-7619282278a5",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/weiss/opencode/rma/TyranorNext/.archify/流程图-游戏扫描入库-20261006-022735/candidate.json",
+  "output": "/Users/weiss/opencode/rma/TyranorNext/.archify/流程图-游戏扫描入库-20261006-022735/workflow-scan-import.html",
+  "specification": {
+    "sha256": "78f1933dee38c34b045f688ced2f69d996e5304f76e24ece3609d6ca61df8944",
+    "bytes": 9205
+  },
+  "artifact": {
+    "sha256": "cefa61b623111eede8a2eaadc3c3d3563541afc87a8a9dd2273ee9242b59a072",
+    "bytes": 769130
+  }
+}

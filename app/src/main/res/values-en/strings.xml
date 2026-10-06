@@ -50,6 +50,7 @@
     <string name="settings_home_style">Home style</string>
     <string name="settings_home_style_native">Default</string>
     <string name="settings_home_style_web">Web</string>
+    <string name="settings_home_style_category">Category Library</string>
     <string name="settings_home_web_url">Web home URL</string>
     <string name="settings_home_web_custom">Custom URL</string>
     <string name="settings_home_web_custom_summary">Enter a custom URL</string>
@@ -242,6 +243,10 @@
 
     <string name="home_recent_empty">No recently opened games</string>
     <string name="home_quick_launch">Quick launch</string>
+    <string name="home_category_all">All</string>
+    <string name="home_category_quick">Quick</string>
+    <string name="home_category_recent">Recent</string>
+    <string name="home_category_empty">No games in this category</string>
     <string name="home_empty_slot_content_description">Empty slot</string>
 
     <string name="engine_settings_save_content_description">Save settings</string>

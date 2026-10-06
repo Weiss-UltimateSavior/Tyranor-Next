@@ -276,6 +276,37 @@ Column(fillMaxSize)                                // 页面根
 
 ***
 
+## 标签栏统一规范
+
+全 App 的「标签栏 / 分类栏」（横向排布、单选切换、选中项带背景指示器的场景）**必须**统一使用公共组件
+`com.tyranor.next.ui.common.SlidingTabRow`（`app/src/main/java/com/tyranor/next/ui/common/SlidingTabRow.kt`）。
+**禁止**在页面内手写指示器偏移、等分宽度、选中背景与文字取色（引擎页原自绘 `GlassTabRow` 已并入本组件）。
+
+### 1. 组件形态与参数
+
+- 选中项为**独立背景指示器**（不是逐项背景），切换时以 200ms 线性动画滑到目标标签；滚动态标签宽度不齐时宽度同步动画。指示器圆角统一 `AppComponentShape`，玻璃系由组件内部调用 `glassBorder` 补 0.5dp 发丝描边。
+- 指示器底色与文字颜色由组件内部按外观风格分派，**调用方不得传色值**：
+  默认风格指示器 `NavWhite`、选中文字 `TextColor`（不跟随主题色，加粗作选中标识）、未选中 `onSurfaceVariant`；
+  复古玻璃 `GlassSurfaceHigh` + `GlassText`/`GlassTextSecondary`；高级玻璃 `AdvancedGlassSurfaceHigh` + `GlassText`/`AdvancedGlassTextSecondary`。
+- 标签高度统一 42dp，文字统一 `MaterialTheme.typography.titleMedium`，选中加粗；无障碍统一 `selectable(selected, role = Tab)`。
+- 参数：`tabs`（标签文案）、`selectedIndex`（越界自动收敛）、`onTabSelected`、`modifier`（仅外边距）、`scrollable`（形态开关，默认 false）。
+
+### 2. 两种形态
+
+- `scrollable = false`（默认）：标签**等分宽度**，适合数量固定、宽度一致的分页。
+- `scrollable = true`：标签按**内容宽度横向滚动**，适合数量多 / 宽度不齐的分类；两端内置 12dp 留白，选中项在屏幕外（程序化回退、进程恢复）时自动滚动到可见（首次直接定位，之后带动画）。页面侧不得用 `LazyRow` 自行拼装等价物。
+
+### 3. 现有调用点（新增场景照此对齐）
+
+| 场景 | 位置 | 形态 |
+| --- | --- | --- |
+| 引擎页顶部分页（玻璃外观） | `EngineScreen.kt` | 等分 |
+| 首页「分类仓库」分类栏（全部/快捷/最近/各引擎类型） | `CategoryWarehouse.kt` | 横向滚动 |
+
+> 例外：引擎页在默认外观风格下沿用 Miuix `TabRow`（等分分页的既有观感，含动画指示器），仅在玻璃外观下走本组件；新增场景（含默认风格）一律用本组件。
+
+***
+
 ## 功能跳转条目统一规范
 
 所有「功能跳转列」——即点击后进入 / 跳转 / 打开下一级的条目（如封面来源列表、弹窗内的群聊/频道项、设置里的二级跳转项等），**必须**统一使用公共组件

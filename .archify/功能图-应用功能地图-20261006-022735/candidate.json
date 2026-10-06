@@ -1,0 +1,733 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Tyranor Next · 应用功能地图",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Weiss-UltimateSavior/Tyranor-Next.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "1d6b9db336dc42e30c8b61edf5b4e075b80f295b"
+    },
+    "output": ".archify/功能图-应用功能地图-20261006-022735/architecture-feature-map.html"
+  },
+  "components": [
+    {
+      "id": "d_library",
+      "type": "backend",
+      "label": "游戏库管理",
+      "sublabel": "扫描 · 入库 · 检索",
+      "pos": [
+        40,
+        116
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt",
+          "line": 19
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 36
+        }
+      ]
+    },
+    {
+      "id": "f_scan",
+      "type": "frontend",
+      "label": "引擎扫描入库",
+      "sublabel": "SAF 遍历 + 特征判定",
+      "tag": "EngineScanner",
+      "pos": [
+        270,
+        40
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "id": "f_manual",
+      "type": "frontend",
+      "label": "手动添加",
+      "sublabel": "PC / 安卓游戏",
+      "tag": "AndroidAppGames",
+      "pos": [
+        270,
+        116
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
+          "line": 176
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/manual/AndroidAppGames.kt",
+          "line": 70
+        }
+      ]
+    },
+    {
+      "id": "f_query",
+      "type": "frontend",
+      "label": "搜索 · 排序 · 最近",
+      "sublabel": "网格 / 封面流 / 快捷启动",
+      "tag": "Room + Facade",
+      "pos": [
+        270,
+        192
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt",
+          "line": 129
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt",
+          "line": 240
+        }
+      ]
+    },
+    {
+      "id": "d_launch",
+      "type": "backend",
+      "label": "启动运行",
+      "sublabel": "分流 · 会话 · 快捷方式",
+      "pos": [
+        540,
+        116
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 141
+        }
+      ]
+    },
+    {
+      "id": "f_launch",
+      "type": "frontend",
+      "label": "四级分流启动",
+      "sublabel": "安卓 / 模拟器 / 模块 / 内置",
+      "tag": "EngineLauncher",
+      "pos": [
+        770,
+        40
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 208
+        }
+      ]
+    },
+    {
+      "id": "f_gate",
+      "type": "frontend",
+      "label": "启动前确认",
+      "sublabel": "补丁策略 · 存档格式",
+      "tag": "按需弹窗",
+      "pos": [
+        770,
+        116
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 366
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 385
+        }
+      ]
+    },
+    {
+      "id": "f_shortcut",
+      "type": "frontend",
+      "label": "桌面快捷方式",
+      "sublabel": "图钉 + 反查游戏",
+      "tag": "PinShortcut",
+      "pos": [
+        770,
+        192
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/shortcut/GameShortcutManager.kt",
+          "line": 25
+        }
+      ]
+    },
+    {
+      "id": "d_cover",
+      "type": "backend",
+      "label": "封面",
+      "sublabel": "检索 · 绑定 · 缓存",
+      "pos": [
+        1040,
+        116
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
+          "line": 50
+        }
+      ]
+    },
+    {
+      "id": "f_scrape",
+      "type": "frontend",
+      "label": "来源检索与绑定",
+      "sublabel": "VNDB / Bangumi / Steam 等",
+      "tag": "CoverScraper",
+      "pos": [
+        1270,
+        40
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
+          "line": 102
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScraperService.kt",
+          "line": 123
+        }
+      ]
+    },
+    {
+      "id": "f_batch",
+      "type": "frontend",
+      "label": "批量刮削任务",
+      "sublabel": "单飞 · 防覆盖",
+      "tag": "TaskManager",
+      "pos": [
+        1270,
+        116
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverScrapeTaskManager.kt",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "id": "f_covercache",
+      "type": "frontend",
+      "label": "封面缓存",
+      "sublabel": "本地封面 + 磁盘缓存",
+      "tag": "CoverImageCache",
+      "pos": [
+        1270,
+        192
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/cover/CoverSupport.kt",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "id": "d_save",
+      "type": "backend",
+      "label": "存档",
+      "sublabel": "定位 · 备份 · 互通",
+      "pos": [
+        40,
+        396
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "id": "f_saveloc",
+      "type": "frontend",
+      "label": "存档定位与镜像",
+      "sublabel": "按引擎 + scoped 开关",
+      "tag": "GameSaveManager",
+      "pos": [
+        270,
+        320
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
+          "line": 35
+        },
+        {
+          "path": "engine/src/main/java/bridge/KrSafMirror.kt",
+          "line": 33
+        }
+      ]
+    },
+    {
+      "id": "f_saveio",
+      "type": "frontend",
+      "label": "导出 / 导入 ZIP",
+      "sublabel": "原子交换 + 留底",
+      "tag": "zip 备份",
+      "pos": [
+        270,
+        396
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
+          "line": 178
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/save/GameSaveManager.kt",
+          "line": 211
+        }
+      ]
+    },
+    {
+      "id": "f_interop",
+      "type": "frontend",
+      "label": "MV/MZ 转化与互通",
+      "sublabel": "标准侧 ⇄ Tyranor 侧",
+      "tag": "RpgSaveSync",
+      "pos": [
+        270,
+        472
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 431
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt",
+          "line": 497
+        }
+      ]
+    },
+    {
+      "id": "d_engine",
+      "type": "backend",
+      "label": "引擎与设置",
+      "sublabel": "三级设置 · 模块 · 模拟器",
+      "pos": [
+        540,
+        396
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt",
+          "line": 17
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineModuleRegistry.kt",
+          "line": 22
+        }
+      ]
+    },
+    {
+      "id": "f_settings3",
+      "type": "frontend",
+      "label": "三级设置体系",
+      "sublabel": "应用 / 引擎 / 单游戏",
+      "tag": "Resolver",
+      "pos": [
+        770,
+        320
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt",
+          "line": 17
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/settings/PerGameSettingsStore.kt",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "id": "f_engineopts",
+      "type": "frontend",
+      "label": "引擎设置项",
+      "sublabel": "11 类设置入口",
+      "tag": "EngineSettings",
+      "pos": [
+        770,
+        396
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsStore.kt",
+          "line": 16
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/ui/settings/EngineSettingsMenuActivity.kt",
+          "line": 111
+        }
+      ]
+    },
+    {
+      "id": "f_external",
+      "type": "frontend",
+      "label": "外置模块与模拟器",
+      "sublabel": "安装探测 + Intent 跳转",
+      "tag": "Registry",
+      "pos": [
+        770,
+        472
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEngineModuleRegistry.kt",
+          "line": 22
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/engine/external/ExternalEmulatorRegistry.kt",
+          "line": 38
+        }
+      ]
+    },
+    {
+      "id": "d_tools",
+      "type": "backend",
+      "label": "工具与维护",
+      "sublabel": "补丁 · 拆封包 · 更新",
+      "pos": [
+        1040,
+        396
+      ],
+      "size": [
+        160,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/patch/KrkrOnlinePatchService.kt",
+          "line": 37
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/unpack/Xp3Archive.kt",
+          "line": 15
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/updater/GitHubUpdateChecker.kt",
+          "line": 15
+        }
+      ]
+    },
+    {
+      "id": "f_patch",
+      "type": "frontend",
+      "label": "KRKR 在线补丁",
+      "sublabel": "索引检索 · 下载安装",
+      "tag": "KrkrPatch",
+      "pos": [
+        1270,
+        320
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/patch/KrkrOnlinePatchService.kt",
+          "line": 68
+        }
+      ]
+    },
+    {
+      "id": "f_archive",
+      "type": "frontend",
+      "label": "XP3 拆封包",
+      "sublabel": "列举 / 解包 / 封包",
+      "tag": "Xp3Archive",
+      "pos": [
+        1270,
+        396
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/unpack/Xp3Archive.kt",
+          "line": 42
+        },
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/unpack/Xp3Archive.kt",
+          "line": 95
+        }
+      ]
+    },
+    {
+      "id": "f_update",
+      "type": "frontend",
+      "label": "检查更新",
+      "sublabel": "Release 通知 + 下载校验",
+      "tag": "GitHubChecker",
+      "pos": [
+        1270,
+        472
+      ],
+      "size": [
+        210,
+        64
+      ],
+      "sources": [
+        {
+          "path": "app/src/main/java/com/tyranor/next/core/updater/GitHubUpdateChecker.kt",
+          "line": 21
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "library-scan",
+      "from": "d_library",
+      "to": "f_scan",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "library-manual",
+      "from": "d_library",
+      "to": "f_manual",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "library-query",
+      "from": "d_library",
+      "to": "f_query",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "launch-run",
+      "from": "d_launch",
+      "to": "f_launch",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "launch-gate",
+      "from": "d_launch",
+      "to": "f_gate",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "launch-shortcut",
+      "from": "d_launch",
+      "to": "f_shortcut",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "cover-scrape",
+      "from": "d_cover",
+      "to": "f_scrape",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "cover-batch",
+      "from": "d_cover",
+      "to": "f_batch",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "cover-cache",
+      "from": "d_cover",
+      "to": "f_covercache",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "save-loc",
+      "from": "d_save",
+      "to": "f_saveloc",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "save-io",
+      "from": "d_save",
+      "to": "f_saveio",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "save-interop",
+      "from": "d_save",
+      "to": "f_interop",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "engine-settings",
+      "from": "d_engine",
+      "to": "f_settings3",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "engine-opts",
+      "from": "d_engine",
+      "to": "f_engineopts",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "engine-external",
+      "from": "d_engine",
+      "to": "f_external",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "tools-patch",
+      "from": "d_tools",
+      "to": "f_patch",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "tools-archive",
+      "from": "d_tools",
+      "to": "f_archive",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "tools-update",
+      "from": "d_tools",
+      "to": "f_update",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "页面骨架",
+      "items": [
+        "四 Tab 常驻组合：首页（默认 / 网页）、游戏、引擎、设置",
+        "八类二级页面（设置 / 封面 / 补丁 / 存档 / 拆封包等）统一经 AppScreenActivity + AppScreenScaffold 宿主",
+        "平板 / 大窗口自动切换侧栏导航，导航样式三档全局生效"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "跨域能力",
+      "items": [
+        "三语言（zh / ja / en）由检查工具强制键值一致，禁止源码硬编码 CJK",
+        "外观风格两档玻璃 + 导航玻璃两档为全局视觉能力，作用于所有页面",
+        "封面抓取与后台更新在任务管理器 / WorkManager 中持续，不阻塞页面"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "外置语义",
+      "items": [
+        "PC 游戏手动入库经外置 Winlator 启动；安卓游戏按包名直接跳转",
+        "外置 APK 模块（Ren'Py / RPGM）与模拟器（PPSSPP / Eden）只做安装探测与 Intent 跳转",
+        "主 App 不接管外置运行时的存档与设置，仅在 UI 提供跳转入口"
+      ]
+    }
+  ]
+}

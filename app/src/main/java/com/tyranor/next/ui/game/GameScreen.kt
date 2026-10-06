@@ -402,7 +402,8 @@ fun GameScreen(
 }
 
 // 排序键与 Room 预计算列共用 GameSortKeys，保证 SQL 排序与内存排序结果一致（迁移方案阶段 3）。
-private fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
+// internal：分类仓库首页复用同一排序（与游戏页展示顺序一致）。
+internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
     return when (sortMode) {
         AppSettingsStore.GAME_SORT_BRACKET_TAG -> games.sortedWith(
             compareBy<ScanGame> { GameSortKeys.bracketTag(it.title).isBlank() }
@@ -1726,8 +1727,11 @@ private fun LaunchFileDialog(
     )
 }
 
+/**
+ * 游戏页默认网格（internal：分类仓库首页复用，列数/滚动优化/卡片名称标签与角标设置均与游戏页一致）。
+ */
 @Composable
-private fun GameGrid(
+internal fun GameGrid(
     games: List<ScanGame>,
     gridState: LazyGridState,
     onGameClick: (ScanGame) -> Unit,
