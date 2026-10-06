@@ -59,7 +59,9 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.FloatingNavGlassSurface
+import com.tyranor.next.theme.FloatingNavGlassSurfaceDark
 import com.tyranor.next.theme.GlassUnselected
 import com.tyranor.next.theme.glassEdgeStroke
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
@@ -92,11 +94,13 @@ private val FloatingNavShadow = 6.dp
 private const val ClickSuppressWindowMs = 500L
 
 /**
- * 固定液态玻璃材质：纯白玻璃膜 + 中性发丝描边，**不随外观风格（复古/高级玻璃）与外观模式
- * （深/浅色）变化**——本导航档是自带固定观感的独立样式，只保留主题色用于选中态。
- * 表面色取自 `theme/Color.kt` 的 [FloatingNavGlassSurface]，不读取 AppThemeColors 的风格分档。
+ * 固定液态玻璃材质两档：浅色=白玻璃、深色=深色玻璃，**只跟随外观模式深浅**
+ * （[AppThemeColors.isDark]），**不随外观风格**（默认/复古玻璃/高级玻璃）分档——
+ * 本导航档是自带固定观感的独立样式，只保留主题色用于选中态图标。
+ * 表面色取自 `theme/Color.kt` 的 [FloatingNavGlassSurface] / [FloatingNavGlassSurfaceDark]。
  */
 private val FloatingNavSurfaceColor = FloatingNavGlassSurface
+private val FloatingNavSurfaceColorDark = FloatingNavGlassSurfaceDark
 
 /** 有真采样时的玻璃膜不透明度（主按钮与弧上项共用同一档）。 */
 private const val FloatingNavSurfaceAlpha = 0.55f
@@ -115,8 +119,9 @@ private const val FloatingNavSolidSurfaceAlpha = 0.96f
  *   设置页提供「重置位置」回右下角。
  * - 弧形展开方向按按钮所在象限自适应，始终朝屏幕内侧展开（见 [floatingNavArcStartAngle]）。
  *
- * 材质为**固定样式**：无论外观风格是默认 / 复古玻璃 / 高级玻璃、外观模式是深色还是浅色，
- * 都是同一份纯白玻璃膜 + 中性发丝描边，不读取 AppThemeColors 的风格分档；仅选中态图标沿用主题色。
+ * 材质为**固定样式两档**：浅色模式为白玻璃膜 + 中性发丝描边，深色模式为深色玻璃膜；
+ * 只按 `AppThemeColors.isDark` 取档，**不随外观风格**（默认 / 复古玻璃 / 高级玻璃）分档；
+ * 仅选中态图标沿用主题色。
  *
  * 降级与性能沿用既有底栏约定：API 31+ 且宿主提供采样层时走 `drawBackdrop`
  * （vibrancy + blur + 库 Highlight，受 [GlassShaderSupport] 门控），主按钮与弧上四项
@@ -158,6 +163,9 @@ internal fun FloatingGlassNavButton(
     LaunchedEffect(persistedPosition) { dragPx = null }
 
     val backdropAvailable = backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    // 固定液态玻璃两档：仅按外观模式深浅取档（玻璃系外观风格强制深色时自然走深色档）
+    val isDark = AppThemeColors.isDark
+    val surfaceColor = if (isDark) FloatingNavSurfaceColorDark else FloatingNavSurfaceColor
     val buttonSizePx = with(density) { FloatingNavMainSize.toPx() }
     val marginPx = with(density) { FloatingNavEdgeMargin.toPx() }
 
@@ -196,7 +204,7 @@ internal fun FloatingGlassNavButton(
     // remember：宿主切页动画期间 MainScreen 每帧重组，内联 drawBackdrop 会因 lambda 每次都是新实例
     // 而逐帧重建 vibrancy/blur 管线；复用同一 Modifier 才能让 Backdrop 跳过重建。
     // 主按钮与弧上四项共用**同一个**采样 Modifier，保证材质背景完全一致。
-    val glassSurfaceModifier = remember(backdrop, backdropAvailable, density) {
+    val glassSurfaceModifier = remember(backdrop, backdropAvailable, density, surfaceColor) {
         if (backdropAvailable) {
             Modifier.drawBackdrop(
                 backdrop = backdrop,
@@ -212,18 +220,18 @@ internal fun FloatingGlassNavButton(
                     null
                 },
                 shadow = { Shadow.Default.copy(alpha = 0.8f) },
-                onDrawSurface = { drawCircle(FloatingNavSurfaceColor.copy(alpha = FloatingNavSurfaceAlpha)) },
+                onDrawSurface = { drawCircle(surfaceColor.copy(alpha = FloatingNavSurfaceAlpha)) },
             )
         } else {
             // 实底路径：平台 elevation 阴影（API 28 以下自动无阴影），固定档不依赖外观风格
             Modifier
                 .shadow(FloatingNavShadow, CircleShape, clip = false)
                 .clip(CircleShape)
-                .background(FloatingNavSurfaceColor.copy(alpha = FloatingNavSolidSurfaceAlpha))
+                .background(surfaceColor.copy(alpha = FloatingNavSolidSurfaceAlpha))
         }
     }
-    // 固定浅色玻璃的中性发丝描边（与经典底栏浅色档同款），不随外观模式显隐
-    val edgeStroke = Modifier.glassEdgeStroke(CircleShape)
+    // 浅色档补中性发丝描边勾勒悬浮轮廓；深色档由 Highlight 与投影提供边缘（与经典底栏一致）
+    val edgeStroke = if (isDark) Modifier else Modifier.glassEdgeStroke(CircleShape)
     val mainDescription = stringResource(
         if (expanded) R.string.nav_floating_collapse else R.string.nav_floating_expand,
     )

@@ -216,11 +216,13 @@ Column(fillMaxSize)                                // 页面根
 
 - **圆角豁免（悬浮按钮导航）**：「导航栏样式 = 悬浮按钮」后挂载的 `ui/common/FloatingGlassNavButton.kt`
   主按钮与弧上导航项使用 `CircleShape`（圆形是本样式既定形态），为有意设计；该豁免仅限该组件，其余组件不得援引。
-  **材质固定为白色液态玻璃，不随外观风格 / 外观模式分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」
-  的唯一豁免；固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `GlassUnselected`，仅选中态图标与选中底色用主题色），
-  组件内不得引入 `AppThemeColors` 的风格判断。**长按拖动位置**：位置以归一化坐标存 `AppSettingsStore`
-  （安全区内换算，见 `floatingNavPositionPx` / `clampFloatingNavPosition`），展开方向按象限自适应
-  （`floatingNavArcStartAngle`），设置页有「重置悬浮按钮位置」；展开态禁用拖动。
+  **材质固定为液态玻璃的浅 / 深两档**（浅色 = 白玻璃、深色 = 深色玻璃），**只按 `AppThemeColors.isDark` 取档，
+  不随外观风格（默认 / 复古玻璃 / 高级玻璃）分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」的豁免；
+  固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `FloatingNavGlassSurfaceDark` / `GlassUnselected`，
+  仅选中态图标用主题色），组件内不得引入 `AppThemeColors` 的**风格**判断（深浅取档是允许且必须的）。
+  **长按拖动位置**：位置以归一化坐标存 `AppSettingsStore`（安全区内换算，见 `floatingNavPositionPx` /
+  `clampFloatingNavPosition`），展开方向按象限自适应（`floatingNavArcStartAngle`），设置页有「重置悬浮按钮位置」；
+  展开态禁用拖动。
 
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 
