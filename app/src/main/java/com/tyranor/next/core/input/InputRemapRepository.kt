@@ -27,6 +27,17 @@ import org.json.JSONObject
  */
 object InputRemapRepository {
 
+    // ---------- 方案命名规则 ----------
+
+    /** 方案名长度上限（字符）。 */
+    const val PROFILE_NAME_MAX_LENGTH = 24
+
+    /** 去重序号的上限；超出后退化为时间戳名，保证去重一定终止。 */
+    private const val MAX_NAME_SUFFIX_INDEX = 999
+
+    /** 输入名为空白时的兜底名称（语言中立，默认方案的展示名在 UI 层本地化）。 */
+    private const val FALLBACK_PROFILE_NAME = "Profile"
+
     // ---------- 全局开关 / 方案选择 ----------
 
     fun globalPadEnabled(context: Context): Boolean = EngineSettingsStore.isInputPadEnabled(context)
@@ -109,7 +120,7 @@ object InputRemapRepository {
     /** 重命名方案（默认方案由 UI 禁止入口）。 */
     fun renameProfile(context: Context, id: String, newName: String): Boolean {
         val profile = InputConfigStore.readProfile(context, id) ?: return false
-        return writeProfile(context, profile.copy(name = newName.trim().take(24)))
+        return writeProfile(context, profile.copy(name = newName.trim().take(PROFILE_NAME_MAX_LENGTH)))
     }
 
     /** 导出为 JSON 文本（与方案文件同格式，便于分享/备份）。 */
@@ -293,13 +304,34 @@ object InputRemapRepository {
     const val GAMEPAD_DPAD_LEFT = "DPAD_LEFT"
     const val GAMEPAD_DPAD_RIGHT = "DPAD_RIGHT"
 
-    /** 方案名去重（同 id 或同名时追加序号；上限 24 字符）。 */
-    fun uniqueProfileName(context: Context, base: String): String {
-        val existing = listProfiles(context).map { it.name }.toSet()
-        if (base !in existing) return base.take(24)
-        var index = 2
-        while ("$base $index" in existing) index++
-        return "$base $index".take(24)
+    /**
+     * 方案名去重（新增 / 复制 / 导入用）。
+     *
+     * @return 一个不与现有方案重名、且长度不超过 [PROFILE_NAME_MAX_LENGTH] 的名称。
+     */
+    fun uniqueProfileName(context: Context, base: String): String =
+        uniqueName(base, listProfiles(context).map { it.name }.toSet())
+
+    /**
+     * 名称去重的纯函数部分（不依赖 Context，便于单测锚定）。
+     *
+     * 两个容易写错的点，都曾是实际缺陷：
+     *  - **后缀必须先预留长度再截断**：直接对 `"$base $index"` 取前 24 字符，在 base
+     *    已满 24 字符时会把后缀整段截掉、原样返回 base，复制满长名称就得到两个无法
+     *    区分的同名方案；
+     *  - **必须以截断后的候选名查重**：按未截断字符串查重会漏掉「截断后才撞名」的情况。
+     */
+    internal fun uniqueName(base: String, existing: Set<String>): String {
+        val seed = base.trim().take(PROFILE_NAME_MAX_LENGTH).ifBlank { FALLBACK_PROFILE_NAME }
+        if (seed !in existing) return seed
+        for (index in 2..MAX_NAME_SUFFIX_INDEX) {
+            val suffix = " $index"
+            val room = (PROFILE_NAME_MAX_LENGTH - suffix.length).coerceAtLeast(0)
+            val candidate = seed.take(room) + suffix
+            if (candidate !in existing) return candidate
+        }
+        // 极端情况（同名方案多到序号耗尽）：退化为含时间戳的唯一名，保证一定终止
+        return ("p" + System.currentTimeMillis().toString(36)).take(PROFILE_NAME_MAX_LENGTH)
     }
 
     /** 新的唯一方案 id（时间戳 + 序号，避免与已有冲突）。 */

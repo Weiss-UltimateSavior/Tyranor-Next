@@ -81,4 +81,67 @@ class InputRemapRepositoryMigrationTest {
         assertTrue(outcome.migrated.isEmpty())
         assertFalse(outcome.allWritten)
     }
+
+    // ---------- 方案命名去重（后缀必须先预留长度，再截断） ----------
+
+    @Test
+    fun uniqueNameKeepsSuffixForFullLengthBase() {
+        // 满长名称重复：后缀必须保留，否则副本名被截回原名、列表里无法区分
+        val full = "n".repeat(InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
+        val name = InputRemapRepository.uniqueName(full, setOf(full))
+
+        assertEquals(InputRemapRepository.PROFILE_NAME_MAX_LENGTH, name.length)
+        assertTrue("满长名称的去重结果必须与原名不同，实际：$name", name != full)
+        assertTrue("后缀应保留在末尾，实际：$name", name.endsWith(" 2"))
+    }
+
+    @Test
+    fun uniqueNameChecksTruncatedCandidateForCollision() {
+        // 按未截断串查重会漏掉「截断后才撞名」：base 满长 + 已存在 base 与「截断版 + 2」
+        val full = "n".repeat(InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
+        val colliding = full.dropLast(2) + " 2"
+        val name = InputRemapRepository.uniqueName(full, setOf(full, colliding))
+
+        assertTrue("必须避开截断后的候选名，实际：$name", name !in setOf(full, colliding))
+        assertTrue(name.endsWith(" 3"))
+    }
+
+    @Test
+    fun uniqueNameReturnsBaseWhenAvailable() {
+        val name = InputRemapRepository.uniqueName("My Layout", setOf("Other"))
+        assertEquals("My Layout", name)
+    }
+
+    @Test
+    fun uniqueNameTruncatesOverlongBaseAndChecksIt() {
+        // 超长名先截到上限，且以截断结果为查重目标
+        val overlong = "x".repeat(40)
+        val truncated = "x".repeat(InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
+        val name = InputRemapRepository.uniqueName(overlong, setOf(truncated))
+
+        assertTrue("截断后撞名必须继续去重，实际：$name", name != truncated)
+        assertTrue(name.endsWith(" 2"))
+    }
+
+    @Test
+    fun uniqueNameFallsBackForBlankInput() {
+        val name = InputRemapRepository.uniqueName("   ", emptySet())
+        assertTrue("空白名应回退到非空名称，实际：'$name'", name.isNotBlank())
+        assertTrue(name.length <= InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
+    }
+
+    @Test
+    fun uniqueNameAlwaysTerminatesAndStaysWithinLimit() {
+        // 序号被占满：仍须返回一个不与现有集合冲突、且不超长的名称
+        val full = "n".repeat(InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
+        val existing = HashSet<String>()
+        existing.add(full)
+        for (index in 2..999) {
+            existing.add(full.take(InputRemapRepository.PROFILE_NAME_MAX_LENGTH - 2) + " $index")
+        }
+
+        val name = InputRemapRepository.uniqueName(full, existing)
+        assertTrue("结果不得超长，实际长度 ${name.length}", name.length <= InputRemapRepository.PROFILE_NAME_MAX_LENGTH)
+        assertTrue("结果不得与现有名冲突", name !in existing)
+    }
 }
