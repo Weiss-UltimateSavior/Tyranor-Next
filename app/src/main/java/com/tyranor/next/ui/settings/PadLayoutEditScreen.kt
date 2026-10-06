@@ -59,6 +59,7 @@ internal fun PadLayoutEditScreen(profileId: String) {
     // ProvideAppLocale 会包一层 ContextWrapper，不能直接 as? Activity（会静默失效导致退不出页面）
     val activity = AppLocaleController.findActivity(ctx)
     val savedMessage = stringResource(R.string.pad_layout_edit_saved)
+    val saveFailedMessage = stringResource(R.string.pad_layout_edit_save_failed)
     val hintMessage = stringResource(R.string.pad_layout_edit_hint)
     val invalidMessage = stringResource(R.string.input_settings_profile_import_failed)
     val primary = MaterialTheme.colorScheme.primary.toArgb()
@@ -82,6 +83,10 @@ internal fun PadLayoutEditScreen(profileId: String) {
                 activity?.finish()
             },
             onCancelled = { activity?.finish() },
+            // 写盘失败：留在编辑态并提示，否则用户只看到「点保存没反应」
+            onSaveFailed = {
+                Toast.makeText(ctx, saveFailedMessage, Toast.LENGTH_LONG).show()
+            },
         )
     }
 

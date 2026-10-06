@@ -159,6 +159,70 @@ class PadProfileTest {
     }
 
     @Test
+    fun longAsciiSlugPresetsKeepDistinctIds() {
+        // 长 ASCII slug 的预设：id 拼接结果被截断时不得吃掉尾部序号，
+        // 否则两个不同预设算出同一 id，后者被当作「已存在」跳过 → 静默丢预设
+        val names = listOf(
+            "My custom layout for phone",
+            "My custom layout for tablet",
+            "Another very long preset name here",
+        )
+        val presets = JSONObject()
+        names.forEachIndexed { i, name ->
+            presets.put(name, JSONObject().apply {
+                put("buttons", JSONObject().apply { put("enter", JSONObject().apply { put("x", 0.3 + i * 0.1); put("y", 0.5) }) })
+            })
+        }
+
+        val profiles = PadProfile.migrateLegacy(null, presets.toString(), "gabc123")
+        assertEquals("预设数量不得因 id 撞车而减少", names.size, profiles.size)
+        assertEquals("长 slug 预设的 id 必须两两不同", names.size, profiles.map { it.id }.toSet().size)
+        profiles.forEach { profile ->
+            assertTrue(
+                "id 必须是合法方案 id 且不超 32 字符，实际：'${profile.id}'（${profile.id.length}）",
+                Regex("[A-Za-z0-9_-]{1,32}").matches(profile.id),
+            )
+        }
+    }
+
+    @Test
+    fun directionMissingFieldFallsBackButEmptyArrayUnbinds() {
+        // 方向键位两种语义必须可区分：
+        //  - 字段缺失 = 用出厂方向键；
+        //  - 字段存在但为空数组 = 该方向不输出（显式解绑，编辑器里清空绑定）
+        val missingField = PadProfile.parse(
+            """{"id":"a","name":"a","buttons":[],"direction":{"x":0.2,"y":0.8}}""",
+        )!!
+        assertEquals(listOf(KeyEvent.KEYCODE_DPAD_UP), missingField.direction.up)
+
+        val emptyArray = PadProfile.parse(
+            """{"id":"b","name":"b","buttons":[],"direction":{"up":[],"down":[],"left":[],"right":[]}}""",
+        )!!
+        assertTrue("空数组必须表达「不输出」，实际：${emptyArray.direction.up}", emptyArray.direction.up.isEmpty())
+        assertTrue(emptyArray.direction.down.isEmpty())
+        assertTrue(emptyArray.direction.left.isEmpty())
+        assertTrue(emptyArray.direction.right.isEmpty())
+
+        // 往返不丢「解绑」语义
+        val roundTrip = PadProfile.parse(emptyArray.toJson())!!
+        assertTrue("解绑语义必须在落盘后保留", roundTrip.direction.up.isEmpty())
+    }
+
+    @Test
+    fun parseEnforcesButtonCountAndTextLimits() {
+        // 上限防御：坏文件/构造文件不得让解析无界分配
+        val buttons = (0 until PadProfile.MAX_PAD_BUTTONS + 40).joinToString(",") { i ->
+            """{"id":"b$i","text":"${"x".repeat(60)}","x":0.5,"y":0.5,"size":0.1}"""
+        }
+        val profile = PadProfile.parse("""{"id":"c","name":"c","buttons":[$buttons]}""")!!
+        assertEquals(PadProfile.MAX_PAD_BUTTONS, profile.buttons.size)
+        assertTrue(
+            "按钮文字必须截断到上限",
+            profile.buttons.all { it.text.length <= PadProfile.MAX_BUTTON_TEXT },
+        )
+    }
+
+    @Test
     fun parseRejectsBadJsonAndMissingId() {
         assertNull(PadProfile.parse("not-json"))
         assertNull(PadProfile.parse(null))

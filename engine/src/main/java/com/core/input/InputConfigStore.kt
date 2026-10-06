@@ -40,6 +40,9 @@ object InputConfigStore {
 
     private val ID_PATTERN = Regex("[A-Za-z0-9_-]{1,32}")
 
+    /** 原子写的临时文件名序号：仅带 pid 时，同进程内两次并发写会共用同一个临时文件。 */
+    private val tmpCounter = java.util.concurrent.atomic.AtomicInteger(0)
+
     /** 生效输入设置（单游戏覆盖 ?: 全局 ?: 内置默认）。 */
     data class InputSettings(
         val padEnabled: Boolean,
@@ -215,12 +218,12 @@ object InputConfigStore {
      * 原子落盘：唯一临时名 + fsync + rename 覆盖。
      *
      * 不用「先 delete 再 rename」：POSIX rename 本身原子替换已存在目标，先删会留下
-     * 「文件不存在」窗口（进程被杀即丢配置）。临时名带进程号，避免 app 与引擎两个
-     * 进程并发写同一文件时互相截断。rename 失败时兜底重试一次。
+     * 「文件不存在」窗口（进程被杀即丢配置）。临时名带进程号 + 进程内序号，避免多进程
+     * 以及同进程并发写同一目标时互相截断。rename 失败时兜底重试一次。
      */
     private fun atomicWrite(target: File, content: String): Boolean {
         val dir = target.parentFile ?: return false
-        val tmp = File(dir, ".${target.name}.${android.os.Process.myPid()}.tmp")
+        val tmp = File(dir, ".${target.name}.${android.os.Process.myPid()}.${tmpCounter.incrementAndGet()}.tmp")
         return runCatching {
             java.io.FileOutputStream(tmp).use { output ->
                 output.write(content.toByteArray(Charsets.UTF_8))

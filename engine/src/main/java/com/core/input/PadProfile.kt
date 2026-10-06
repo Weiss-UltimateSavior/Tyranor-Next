@@ -94,6 +94,12 @@ data class PadProfile(
 
         const val BUILTIN_DEFAULT_ID = "default"
 
+        /** 方案内按钮数上限（防御坏文件/构造文件）。 */
+        const val MAX_PAD_BUTTONS = 128
+
+        /** 按钮文字长度上限（与编辑面板的输入限制一致）。 */
+        const val MAX_BUTTON_TEXT = 12
+
         /** 迁移产物 id 前缀。 */
         private const val MIGRATED_PREFIX = "migrated-"
 
@@ -114,7 +120,10 @@ data class PadProfile(
                 val name = root.optString("name").takeIf { it.isNotBlank() } ?: id
                 val buttons = ArrayList<PadButton>()
                 root.optJSONArray("buttons")?.let { array ->
-                    for (i in 0 until array.length()) {
+                    // 上限防御：方案文件可能被外部改坏或构造（导入路径直接吃用户文件），
+                    // 无上限解析会一次分配大量对象
+                    val count = minOf(array.length(), MAX_PAD_BUTTONS)
+                    for (i in 0 until count) {
                         val obj = array.optJSONObject(i) ?: continue
                         buttonFromJson(obj)?.let { buttons.add(it) }
                     }
@@ -147,7 +156,7 @@ data class PadProfile(
             }
 
         /**
-         * 出厂默认布局：右侧动作键列 + 右下 QWZX 菱形 + 左下方向摇杆。
+         * 出厂默认方案：右侧动作键列 + 右下 QWZX 菱形 + 左下方向摇杆。
          *
          * 名称与按钮文字为语言中立的 ASCII（方案名/按钮文字是随方案持久化的用户数据，
          * 不参与界面文案本地化；默认方案的展示名在设置页按 id 映射到字符串资源）。
@@ -234,16 +243,24 @@ data class PadProfile(
         /**
          * 迁移产物的方案 id，长度硬约束在 `InputConfigStore` 的 id 白名单上限（32 字符）内。
          *
-         * 原实现 `"migrated-$slug"` 可达 33 字符（前缀 9 + slug 24），超出上限后
-         * `writeProfile` 静默拒绝 → 迁移标记永不置位 → 每次启动重试且永不成功。
-         * 此处按剩余空间裁剪作用域，超出部分由序号保证唯一性。
+         * 两处必须留意的坑：
+         *  - 原实现 `"migrated-$slug"` 可达 33 字符（前缀 9 + slug 24），超出上限后
+         *    `writeProfile` 静默拒绝 → 迁移标记永不置位 → 每次启动重试且永不成功；
+         *  - **不能对拼接结果直接 take(32)**：序号在尾部，截断会把它吃掉，两个长 slug
+         *    预设（如 `...for phone` / `...for tablet`）会算出同一个 id，后者被当作
+         *    「已存在」跳过且不计失败 → 静默丢预设且永不重试。
+         *
+         * 因此顺序是「先给序号留位、再截 slug」，作用域同样按剩余空间裁剪。
          */
         private fun migratedId(scope: String, index: Int, slug: String): String {
-            val unique = if (index == 0) slug else "$slug-$index"
-            val scopeRoom = (MAX_MIGRATED_ID_LENGTH - MIGRATED_PREFIX.length - 1 - unique.length - 1)
-                .coerceAtLeast(1)
+            val suffix = if (index == 0) "" else "-$index"
+            // 预留：前缀 + 分隔符 + 作用域(至少 1) + 分隔号 + 序号
+            val reserved = MIGRATED_PREFIX.length + 1 + 1 + 1 + suffix.length
+            val slugRoom = (MAX_MIGRATED_ID_LENGTH - reserved).coerceAtLeast(1)
+            val slugPart = slug.take(slugRoom).ifBlank { "p" }
+            val scopeRoom = (MAX_MIGRATED_ID_LENGTH - reserved - slugPart.length).coerceAtLeast(1)
             val scopePart = scope.ifBlank { "g" }.take(scopeRoom)
-            return (MIGRATED_PREFIX + scopePart + "-" + unique).take(MAX_MIGRATED_ID_LENGTH)
+            return MIGRATED_PREFIX + scopePart + "-" + slugPart + suffix
         }
 
         /** 旧按钮 id → 新按钮模板（文本 / canonical 键位 / 默认尺寸）。 */
@@ -380,7 +397,7 @@ data class PadProfile(
             val id = obj.optString("id").takeIf { it.isNotBlank() } ?: return null
             return PadButton(
                 id = id,
-                text = obj.optString("text"),
+                text = obj.optString("text").take(MAX_BUTTON_TEXT),
                 x = obj.optDouble("x", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
                 y = obj.optDouble("y", 0.5).toFloat().coerceIn(-0.1f, 1.1f),
                 size = obj.optDouble("size", 0.1).toFloat()
@@ -414,12 +431,17 @@ data class PadProfile(
                 size = obj.optDouble("size", 0.30).toFloat().coerceIn(0.08f, 0.8f),
                 visible = obj.optBoolean("visible", true),
                 eightDir = obj.optBoolean("eightDir", true),
-                up = keysFromJson(obj.optJSONArray("up")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_UP) },
-                down = keysFromJson(obj.optJSONArray("down")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_DOWN) },
-                left = keysFromJson(obj.optJSONArray("left")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_LEFT) },
-                right = keysFromJson(obj.optJSONArray("right")).ifEmpty { listOf(KeyEvent.KEYCODE_DPAD_RIGHT) },
+                // 字段缺失 = 用出厂方向键；字段存在但为空数组 = 该方向不输出（显式解绑）
+                up = directionKeys(obj, "up", KeyEvent.KEYCODE_DPAD_UP),
+                down = directionKeys(obj, "down", KeyEvent.KEYCODE_DPAD_DOWN),
+                left = directionKeys(obj, "left", KeyEvent.KEYCODE_DPAD_LEFT),
+                right = directionKeys(obj, "right", KeyEvent.KEYCODE_DPAD_RIGHT),
             )
         }
+
+        /** 方向键位：字段缺失回落 [defaultKey]，字段存在（含空数组）按原样使用。 */
+        private fun directionKeys(obj: JSONObject, name: String, defaultKey: Int): List<Int> =
+            if (obj.has(name)) keysFromJson(obj.optJSONArray(name)) else listOf(defaultKey)
 
         private fun keysFromJson(array: JSONArray?): List<Int> {
             if (array == null) return emptyList()

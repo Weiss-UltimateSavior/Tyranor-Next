@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color as ComposeColor
@@ -247,7 +248,11 @@ internal fun InputSettingsScreen() {
                             Box(Modifier.weight(1f)) {
                                 NoRippleTextButton(
                                     text = stringResource(R.string.input_settings_profile_import),
-                                    onClick = { importLauncher.launch("*/*") },
+                                    onClick = {
+                                    // 系统选择器不可用时不应让整个页面崩掉
+                                    runCatching { importLauncher.launch("*/*") }
+                                        .onFailure { toast(ctx, R.string.input_settings_profile_import_failed) }
+                                },
                                 )
                             }
                         }
@@ -266,18 +271,20 @@ internal fun InputSettingsScreen() {
                                 // 与「删除」一致：不给入口，而不是点了没反应
                                 onRename = if (profile.isDefault) null else ({ renameTarget = profile.id }),
                                 onCopy = {
+                                    // id/命名都要读方案目录，全部放 IO 线程（原先在主线程）
                                     scope.launch {
-                                        val id = InputRemapRepository.newProfileId(ctx)
-                                        val baseName = if (profile.isDefault) {
-                                            ctx.getString(R.string.input_settings_profile_default)
-                                        } else {
-                                            profile.name
-                                        }
-                                        val name = InputRemapRepository.uniqueProfileName(
-                                            ctx,
-                                            baseName + " " + ctx.getString(R.string.input_settings_profile_copy),
-                                        )
+                                        val copyName = ctx.getString(R.string.input_settings_profile_copy)
                                         withContext(Dispatchers.IO) {
+                                            val id = InputRemapRepository.newProfileId(ctx)
+                                            val baseName = if (profile.isDefault) {
+                                                ctx.getString(R.string.input_settings_profile_default)
+                                            } else {
+                                                profile.name
+                                            }
+                                            val name = InputRemapRepository.uniqueProfileName(
+                                                ctx,
+                                                baseName + " " + copyName,
+                                            )
                                             InputRemapRepository.duplicateProfile(ctx, profile.id, id, name)
                                         }
                                         reloadProfiles()
@@ -348,9 +355,9 @@ internal fun InputSettingsScreen() {
                 val trimmed = name.trim()
                 if (trimmed.isBlank()) return@ProfileNameDialog
                 scope.launch {
-                    val id = InputRemapRepository.newProfileId(ctx)
-                    val unique = InputRemapRepository.uniqueProfileName(ctx, trimmed)
                     val created = withContext(Dispatchers.IO) {
+                        val id = InputRemapRepository.newProfileId(ctx)
+                        val unique = InputRemapRepository.uniqueProfileName(ctx, trimmed)
                         InputRemapRepository.createProfile(ctx, id, unique)
                     }
                     if (created != null) {
@@ -472,7 +479,14 @@ private fun ProfileNameDialog(
         title = { Text(text = title, style = MaterialTheme.typography.titleMedium) },
         text = {
             Column {
-                AppSearchField(query = value, onQueryChange = { value = it })
+                // 与其他命名弹窗（RenameGameDialog）对齐：语义图标 + 正文档字号
+                AppSearchField(
+                    query = value,
+                    onQueryChange = { value = it },
+                    leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                    iconContentDescription = title,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                )
                 Text(
                     text = stringResource(R.string.input_settings_profile_name_hint),
                     style = MaterialTheme.typography.bodyMedium,

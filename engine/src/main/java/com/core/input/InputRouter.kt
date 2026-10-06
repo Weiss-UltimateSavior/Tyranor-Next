@@ -15,7 +15,6 @@ import android.view.MotionEvent
  * 按键时按来源计数，互不误释放。
  */
 class InputRouter(
-    private val sink: InputSink,
     initialMap: GamepadMap,
     /** 与虚拟按键层共享的派发器：保证同一键的键级引用计数跨来源生效。 */
     private val dispatcher: KeyDispatcher,
@@ -105,7 +104,9 @@ class InputRouter(
 
     /** 释放全部输出（退后台 / 页面重载 / 关闭映射）。 */
     fun reset() {
-        dispatcher.releaseAll()
+        // 只释放手柄侧：拔插手柄、轴 CANCEL、关闭手柄开关时，
+        // 屏幕上按住的虚拟按键与 autoKeep 保持不应被一并解除
+        dispatcher.releaseScope(GP_SCOPE)
         activeSources.clear()
         stickDirs.clear()
         hatActive = false
@@ -143,10 +144,11 @@ class InputRouter(
         val isActive = sources.isNotEmpty()
         if (wasActive == isActive) return
         val binding = bindingFor(id)
+        val dispatchId = GP_SCOPE + id
         if (isActive) {
-            dispatcher.press(id, binding.keys, binding.autoKeep)
+            dispatcher.press(dispatchId, binding.keys, binding.autoKeep)
         } else {
-            dispatcher.release(id, binding.autoKeep)
+            dispatcher.release(dispatchId, binding.autoKeep)
         }
     }
 
@@ -186,6 +188,9 @@ class InputRouter(
     }
 
     companion object {
+        /** 派发器里的来源前缀：与虚拟按键侧（`pad:`）隔离，互不误释放。 */
+        private const val GP_SCOPE = "gp:"
+
         private const val SOURCE_KEY = "key"
         private const val SOURCE_HAT = "hat"
         private const val SOURCE_TRIGGER = "trigger"

@@ -44,6 +44,25 @@ class InputRemapController private constructor(
      */
     private val dispatcher = KeyDispatcher(sink)
 
+    /**
+     * 手柄插拔监听：手柄拔出时按下的键不会收到 UP（部分设备连 CANCEL 都不发），
+     * autoKeep 键（如跳过=Ctrl）会永久卡住；断开即重置手柄侧输出。
+     *
+     * 必须声明在 [router] 之前：Kotlin 按声明顺序初始化，router 的初始化器里会
+     * 调 registerDeviceListener()，晚声明会让此处读到 null 而注册静默失败。
+     */
+    private val deviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = Unit
+
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            router?.reset()
+        }
+
+        override fun onInputDeviceChanged(deviceId: Int) {
+            router?.reset()
+        }
+    }
+
     private var editPanel: VirtualPadEditPanel? = null
 
     private val padListener = object : VirtualPadView.Listener {
@@ -93,8 +112,6 @@ class InputRemapController private constructor(
             }
         }
 
-        override fun onSaveFailed() = Unit
-
         override fun onPadVisibilityChanged(visible: Boolean) {
             InputConfigStore.setPadVisible(activity, visible)
         }
@@ -119,7 +136,7 @@ class InputRemapController private constructor(
     }
 
     private var router: InputRouter? = if (settings.gamepadEnabled) {
-        InputRouter(sink, InputConfigStore.readGamepadMap(activity), dispatcher).also {
+        InputRouter(InputConfigStore.readGamepadMap(activity), dispatcher).also {
             registerDeviceListener()
         }
     } else {
@@ -141,22 +158,6 @@ class InputRemapController private constructor(
         return true
     }
 
-    /**
-     * 手柄插拔监听：手柄拔出时按下的键不会收到 UP（部分设备连 CANCEL 都不发），
-     * autoKeep 键（如跳过=Ctrl）会永久卡住；断开即释放全部输出。
-     */
-    private val deviceListener = object : InputManager.InputDeviceListener {
-        override fun onInputDeviceAdded(deviceId: Int) = Unit
-
-        override fun onInputDeviceRemoved(deviceId: Int) {
-            router?.reset()
-        }
-
-        override fun onInputDeviceChanged(deviceId: Int) {
-            router?.reset()
-        }
-    }
-
     /** 手柄轴事件入口：宿主在 dispatchGenericMotionEvent 最前调用；CANCEL 也要收尾。 */
     fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
         if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
@@ -167,7 +168,7 @@ class InputRemapController private constructor(
     }
 
     fun onPause() {
-        padView?.releaseAllKeys()
+        padView?.onHostPause()
         router?.reset()
         // 派发器已释放 canonical 键，但页面侧（__tyranorInput）还持有 pressed 集合与
         // 未完成的 click timer：退后台/页面重载时必须让 Sink 收尾，否则残留按压
@@ -209,6 +210,8 @@ class InputRemapController private constructor(
             padView = pad
         } else if (!current.padEnabled && padView != null) {
             padView?.let { pad ->
+                // 先收起编辑面板：否则面板悬空，返回键不再能取消编辑
+                if (pad.isEditing) pad.cancelEdit()
                 pad.detach()
                 (pad.parent as? ViewGroup)?.removeView(pad)
             }
@@ -216,7 +219,7 @@ class InputRemapController private constructor(
         }
 
         if (current.gamepadEnabled && router == null) {
-            router = InputRouter(sink, InputConfigStore.readGamepadMap(activity), dispatcher)
+            router = InputRouter(InputConfigStore.readGamepadMap(activity), dispatcher)
                 .also { registerDeviceListener() }
         } else if (!current.gamepadEnabled && router != null) {
             router?.reset()
@@ -228,13 +231,13 @@ class InputRemapController private constructor(
     private fun registerDeviceListener() {
         runCatching {
             activity.getSystemService(InputManager::class.java)?.registerInputDeviceListener(deviceListener, null)
-        }
+        }.onFailure { Log.w(TAG, "register input device listener failed", it) }
     }
 
     private fun unregisterDeviceListener() {
         runCatching {
             activity.getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(deviceListener)
-        }
+        }.onFailure { Log.w(TAG, "unregister input device listener failed", it) }
     }
 
     fun onDestroy() {

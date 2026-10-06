@@ -54,13 +54,13 @@ class KeyDispatcherTest {
     }
 
     @Test
-    fun releaseAllClearsToggledKeys() {
+    fun releaseScopeClearsToggledKeys() {
         val sink = RecordingSink()
         val dispatcher = KeyDispatcher(sink)
-        dispatcher.press("skip", listOf(113), autoKeep = true)
-        dispatcher.releaseAll()
+        dispatcher.press("pad:skip", listOf(113), autoKeep = true)
+        dispatcher.releaseScope("pad:")
         assertEquals(listOf(113 to true, 113 to false), sink.events)
-        assertEquals(false, dispatcher.isToggled("skip"))
+        assertEquals(false, dispatcher.isToggled("pad:skip"))
     }
 
     @Test
@@ -119,13 +119,14 @@ class KeyDispatcherTest {
     }
 
     @Test
-    fun releaseAllReleasesEveryHeldKeyExactlyOnce() {
+    fun scopeReleaseReleasesEveryHeldKeyExactlyOnce() {
         val sink = RecordingSink()
         val dispatcher = KeyDispatcher(sink)
-        dispatcher.press("pad.ok", listOf(66, 62), autoKeep = false)
-        dispatcher.press("gamepad.A", listOf(66), autoKeep = false)
+        dispatcher.press("pad:ok", listOf(66, 62), autoKeep = false)
+        dispatcher.press("gp:A", listOf(66), autoKeep = false)
 
-        dispatcher.releaseAll()
+        dispatcher.releaseScope("pad:")
+        dispatcher.releaseScope("gp:")
 
         // 两个键各按一次、各放一次；释放不得重放 down
         val downs = sink.events.filter { it.second }.map { it.first }.sorted()
@@ -134,10 +135,73 @@ class KeyDispatcherTest {
         assertEquals(listOf(62, 66), ups)
         assertEquals(2, ups.size)
 
-        // releaseAll 后表已清空：再次 releaseAll 不应重复发 up
+        // 释放后表已清空：再次按 scope 释放不应重复发 up
         sink.events.clear()
-        dispatcher.releaseAll()
+        dispatcher.releaseScope("pad:")
+        dispatcher.releaseScope("gp:")
         assertEquals(0, sink.events.size)
+    }
+
+    // ---------- 来源命名空间隔离 ----------
+
+    @Test
+    fun releaseScopeDoesNotReleaseOtherSource() {
+        // 手柄拔插/轴 CANCEL 只应释放手柄侧：屏幕上按住的虚拟按键不得被放掉
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+
+        dispatcher.press("pad:ok", listOf(66), autoKeep = false)
+        dispatcher.press("gp:A", listOf(66), autoKeep = false)
+
+        dispatcher.releaseScope("gp:")
+
+        // 66 仍被 pad:ok 持有，不得发 keyup
+        assertEquals(listOf(66 to true), sink.events)
+
+        dispatcher.releaseScope("pad:")
+        assertEquals(listOf(66 to true, 66 to false), sink.events)
+    }
+
+    @Test
+    fun releaseScopeClearsOwnAutoKeepToggle() {
+        // 关手柄开关时，手柄侧 autoKeep（如跳过=Ctrl）必须解除且不影响按键层
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+
+        dispatcher.press("gp:X", listOf(113), autoKeep = true)
+        dispatcher.press("pad:skip", listOf(113), autoKeep = true)
+
+        dispatcher.releaseScope("gp:")
+        assertEquals("手柄侧保持应被解除，按键层仍持有", listOf(113 to true), sink.events)
+        assertEquals(false, dispatcher.isToggled("gp:X"))
+        assertEquals(true, dispatcher.isToggled("pad:skip"))
+
+        dispatcher.releaseScope("pad:")
+        assertEquals(listOf(113 to true, 113 to false), sink.events)
+    }
+
+    @Test
+    fun releaseScopeOnEmptySourceIsNoop() {
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+        dispatcher.press("pad:ok", listOf(66), autoKeep = false)
+        dispatcher.releaseScope("gp:")
+        assertEquals(listOf(66 to true), sink.events)
+    }
+
+    @Test
+    fun directionKeysParticipateInRefCountAcrossSources() {
+        // 虚拟方向键与手柄 D-Pad 默认同为方向键：任一侧松开不得打断另一侧
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+
+        dispatcher.press("pad:direction.up", listOf(38), autoKeep = false)
+        dispatcher.press("gp:DPAD_UP", listOf(38), autoKeep = false)
+        dispatcher.release("gp:DPAD_UP", autoKeep = false)
+
+        assertEquals("手柄侧松开不得打断按键层方向", listOf(38 to true), sink.events)
+        dispatcher.release("pad:direction.up", autoKeep = false)
+        assertEquals(listOf(38 to true, 38 to false), sink.events)
     }
 
     @Test
@@ -173,8 +237,8 @@ class KeyDispatcherTest {
         val sink = RecordingSink()
         val dispatcher = KeyDispatcher(sink)
         // 同一条映射里既能出普通键也能出动作，互不干扰
-        dispatcher.press("combo", listOf(CanonicalKeys.ACTION_SCREENSHOT, 66), autoKeep = false)
-        dispatcher.release("combo", autoKeep = false)
+        dispatcher.press("pad:combo", listOf(CanonicalKeys.ACTION_SCREENSHOT, 66), autoKeep = false)
+        dispatcher.release("pad:combo", autoKeep = false)
         assertEquals(listOf(CanonicalKeys.ACTION_SCREENSHOT), sink.actions)
         assertEquals(listOf(66 to true, 66 to false), sink.events)
     }
@@ -184,7 +248,8 @@ class KeyDispatcherTest {
         val sink = RecordingSink()
         val dispatcher = KeyDispatcher(sink)
         dispatcher.press("shot", listOf(CanonicalKeys.ACTION_SCREENSHOT), autoKeep = false)
-        dispatcher.releaseAll()
+        dispatcher.releaseScope("pad:")
+        dispatcher.releaseScope("gp:")
         // 释放不应重放动作
         assertEquals(1, sink.actions.size)
     }

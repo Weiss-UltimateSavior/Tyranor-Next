@@ -95,15 +95,14 @@ internal fun GamepadMapScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    Text(
-                        text = stringResource(R.string.input_settings_gamepad_summary),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                    )
-                }
-                item {
                     EngineCard(stringResource(R.string.input_settings_gamepad_buttons_label)) {
+                        // 说明并入卡片内：AGENT.md 禁止在顶部栏下方放整页描述文案
+                        Text(
+                            text = stringResource(R.string.input_settings_gamepad_summary),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                        )
                         entries.forEach { entry ->
                             ArrowPreference(
                                 title = gamepadKeyLabel(entry.id),
