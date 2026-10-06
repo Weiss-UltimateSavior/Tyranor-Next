@@ -12,12 +12,20 @@ class NavStyleNormalizationTest {
     private val default = AppSettingsStore.NAV_STYLE_DEFAULT
     private val glass = AppSettingsStore.NAV_STYLE_LIQUID_GLASS
     private val enhanced = AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED
+    private val floating = AppSettingsStore.NAV_STYLE_FLOATING_BUTTON
 
     @Test
     fun knownValues_areKeptWhenSupported() {
         assertEquals(default, AppSettingsStore.normalizeNavStyle(default, enhancedSupported = true))
         assertEquals(glass, AppSettingsStore.normalizeNavStyle(glass, enhancedSupported = true))
         assertEquals(enhanced, AppSettingsStore.normalizeNavStyle(enhanced, enhancedSupported = true))
+        assertEquals(floating, AppSettingsStore.normalizeNavStyle(floating, enhancedSupported = true))
+    }
+
+    @Test
+    fun floatingButton_hasNoVersionGate() {
+        // 悬浮按钮在低版本走组件内实底降级，读取时不做归一化降级
+        assertEquals(floating, AppSettingsStore.normalizeNavStyle(floating, enhancedSupported = false))
     }
 
     @Test
@@ -38,5 +46,6 @@ class NavStyleNormalizationTest {
         assertEquals("default", default)
         assertEquals("liquid_glass", glass)
         assertEquals("liquid_glass_enhanced", enhanced)
+        assertEquals("floating_button", floating)
     }
 }

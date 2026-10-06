@@ -74,6 +74,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.glassPageBackground
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.AppNavigationRail
+import com.tyranor.next.ui.common.FloatingGlassNavButton
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.ui.common.NavigationTabIcon
 import com.tyranor.next.ui.common.isSideRailLayout
@@ -132,6 +133,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     withContext(Dispatchers.IO) { AppSettingsStore.initDefaultThemeGradient(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initHomeStyle(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initFloatingNavPosition(context) }
   }
   LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
     libraryViewModel.refreshFromStorage()
@@ -157,8 +159,12 @@ fun MainScreen(modifier: Modifier = Modifier) {
   // 液态玻璃两档（尤其透镜）不参与侧栏适配，平板下自动落到主题默认形态。
   val railLayout = isSideRailLayout()
   val liquidBottomActive = liquidGlass && !railLayout
+  // 悬浮按钮导航（第 4 档）：右下角圆形玻璃按钮，点击弧形展开四项；
+  // 与液态玻璃两档一致，平板下不参与侧栏适配，落到主题默认侧栏形态。
+  val floatingButtonStyle = navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON
+  val floatingButtonActive = floatingButtonStyle && !railLayout
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
-  val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass && !railLayout
+  val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass && !floatingButtonStyle && !railLayout
   // 高级玻璃 + 默认导航：悬浮条升级为真 backdrop 采样（API 31+ 才有效）
   val advancedFloatingNav = floatingDefaultNav && AppThemeColors.isAdvancedGlass
   val advancedGlass = AppThemeColors.isAdvancedGlass
@@ -172,9 +178,12 @@ fun MainScreen(modifier: Modifier = Modifier) {
     tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
   }
 
-  // 采样层可用条件：液态玻璃两档或高级玻璃悬浮条（底栏形态），或平板高级玻璃侧栏
+  // 采样层可用条件：液态玻璃两档、高级玻璃悬浮条或悬浮按钮（底栏形态），或平板高级玻璃侧栏
   val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-  val bottomBackdropActive = (liquidBottomActive || advancedFloatingNav) && backdropSupported
+  val bottomBackdropActive = (liquidBottomActive || advancedFloatingNav || floatingButtonActive) &&
+    backdropSupported
+  // 悬浮按钮的采样层是否真的挂载（API < 31 时组件退实底，无需背景复制）
+  val floatingButtonBackdrop = floatingButtonActive && bottomBackdropActive
   val railBackdropActive = advancedGlassRail && backdropSupported
   // 透镜档**是否真的会渲染**：设置选了它 + 采样层可用 + 本机 AGSL 可用。
   // 后者是运行期探测（见 GlassShaderSupport）：API 33+ 但 AGSL 编译异常的机器上，
@@ -236,7 +245,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       .then(
         // 仅玻璃外观风格需要（该模式下 PageGrey 透明、根部背景在采样层之外）；
         // 平板侧栏在内容层之外，另行录制纯背景层（见 railBackdrop）。
-        if (AppThemeColors.isGlass && (enhancedBarActive || advancedFloatingNav)) {
+        if (AppThemeColors.isGlass && (enhancedBarActive || advancedFloatingNav || floatingButtonBackdrop)) {
           pageBackground
         } else {
           Modifier
@@ -288,7 +297,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
         )
-        if (!liquidGlass && !floatingDefaultNav) {
+        if (!liquidGlass && !floatingDefaultNav && !floatingButtonActive) {
           DefaultBottomNavigationBar(
             selectedIndex = selectedIndex,
             tabLabels = tabLabels,
@@ -397,6 +406,20 @@ fun MainScreen(modifier: Modifier = Modifier) {
           showLabels = false,
         )
       }
+    }
+
+    // 悬浮按钮导航：右下角一个圆形液态玻璃按钮，点击后四项沿 1/4 圆弧交错展开；
+    // 悬浮不占布局高度，内容底部留白由 glassNavBottomInset() 统一提供。
+    if (floatingButtonActive) {
+      FloatingGlassNavButton(
+        backdrop = if (floatingButtonBackdrop) backdrop else null,
+        items = liquidGlassTabItems,
+        selectedIndex = selectedIndex.coerceIn(liquidGlassTabItems.indices),
+        primaryColor = MaterialTheme.colorScheme.primary,
+        onItemClick = { selectPage(it) },
+        // 组件在安全区内自行摆放（长按可拖动、位置持久化），宿主只负责占满可用区域
+        modifier = Modifier.fillMaxSize(),
+      )
     }
   }
 }

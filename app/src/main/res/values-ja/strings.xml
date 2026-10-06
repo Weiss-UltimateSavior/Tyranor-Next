@@ -18,6 +18,8 @@
     <string name="nav_games">ゲーム</string>
     <string name="nav_engine">エンジン</string>
     <string name="nav_settings">設定</string>
+    <string name="nav_floating_expand">ナビゲーションを展開</string>
+    <string name="nav_floating_collapse">ナビゲーションを折りたたむ</string>
 
     <string name="settings_app_title">アプリ設定</string>
     <string name="settings_language_title">言語</string>
@@ -44,8 +46,11 @@
     <string name="settings_nav_bar_default">デフォルト</string>
     <string name="settings_nav_bar_liquid_glass">リキッドグラス · クラシック</string>
     <string name="settings_nav_bar_liquid_glass_enhanced">リキッドグラス · レンズ</string>
+    <string name="settings_nav_bar_floating_button">フローティングボタン</string>
+    <string name="settings_nav_bar_reset_position">フローティングボタンの位置をリセット</string>
     <string name="settings_nav_bar_desc_liquid_glass">Android 12 以上で有効</string>
     <string name="settings_nav_bar_desc_enhanced">Android 13 以上のみ対応</string>
+    <string name="settings_nav_bar_desc_floating_button">右下に浮かび、タップで展開</string>
     <string name="settings_nav_bar_desc_rail">タブレットではサイドレールで表示</string>
     <string name="settings_home_style">ホームスタイル</string>
     <string name="settings_home_style_native">デフォルト</string>

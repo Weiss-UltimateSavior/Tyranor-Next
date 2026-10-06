@@ -205,7 +205,7 @@ Column(fillMaxSize)                                // 页面根
   `AppComponentShape`（默认 8dp / 玻璃外观风格与悬浮导航一致 32dp）、Miuix 组件用 `AppComponentCornerRadius`、
   抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。
 
-- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「默认导航栏」形态，液态玻璃两档不适配侧栏；侧栏占布局宽度，底部留白归零；高级玻璃侧栏采样单独的纯背景层（`railBackdrop`，不能采样内容层——坐标会越界）。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
+- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「默认导航栏」形态，液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零；高级玻璃侧栏采样单独的纯背景层（`railBackdrop`，不能采样内容层——坐标会越界）。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
 
 - **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
 
@@ -213,6 +213,14 @@ Column(fillMaxSize)                                // 页面根
   `ui/common/glass/EnhancedLiquidGlassNavigation.kt`（栏体 / 图标副本行 / 移动透镜三处）使用
   `theme/AppShapes.kt` 的 `AppNavCapsuleShape`（胶囊，圆角 = 半高），为本项目为该样式既定的连续胶囊轮廓，为有意设计。
   **该组件内也必须统一引用 `AppNavCapsuleShape`，不得就地新建等价的圆角形状**；该豁免仅限该组件，其余组件不得援引。
+
+- **圆角豁免（悬浮按钮导航）**：「导航栏样式 = 悬浮按钮」后挂载的 `ui/common/FloatingGlassNavButton.kt`
+  主按钮与弧上导航项使用 `CircleShape`（圆形是本样式既定形态），为有意设计；该豁免仅限该组件，其余组件不得援引。
+  **材质固定为白色液态玻璃，不随外观风格 / 外观模式分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」
+  的唯一豁免；固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `GlassUnselected`，仅选中态图标与选中底色用主题色），
+  组件内不得引入 `AppThemeColors` 的风格判断。**长按拖动位置**：位置以归一化坐标存 `AppSettingsStore`
+  （安全区内换算，见 `floatingNavPositionPx` / `clampFloatingNavPosition`），展开方向按象限自适应
+  （`floatingNavArcStartAngle`），设置页有「重置悬浮按钮位置」；展开态禁用拖动。
 
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 
@@ -366,7 +374,7 @@ Column(fillMaxSize)                                // 页面根
 | ------------------------------------ | ------------------------------------------------- | ------------------ |
 | 设置清单开关（KRKR/ONS/Artemis/RPG Maker 等） | `SettingsScreen.kt`                               | `SwitchPreference` |
 | 应用设置开关（色调切换等）                        | `AppSettingsActivity.kt`                          | `SwitchPreference` |
-| 应用设置「导航栏样式」三选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
+| 应用设置「导航栏样式」四选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
 | 封面来源启用开关（行内）                         | `CoverScraperSettingsActivity.kt`（CoverSourceRow） | `Switch`           |
 
 ### 3. 例外
@@ -483,7 +491,7 @@ Column(fillMaxSize)                                // 页面根
   与「色调切换」不可用（置灰），色调轮盘保持可用（兜底色斑随主题色变化）。
   高级玻璃的绘制是独立实现（`theme/AdvancedGlassStyle.kt`），复古玻璃的 `GlassStyle.kt` 不参与其材质；
   新增组件必须走动态常量与 `glassBorder`，不得硬编码玻璃色值。真 backdrop 采样仅限白名单
-  （液态玻璃底栏、高级玻璃悬浮默认导航条）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
+  （液态玻璃底栏、透镜底栏、高级玻璃悬浮默认导航条、悬浮按钮导航的主按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
   只能用背景取色渐变 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。

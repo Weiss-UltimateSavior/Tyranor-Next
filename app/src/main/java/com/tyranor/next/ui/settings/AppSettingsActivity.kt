@@ -300,6 +300,10 @@ internal fun AppSettingsScreen() {
                                             stringResource(R.string.settings_nav_bar_liquid_glass_enhanced),
                                     )
                                 }
+                                add(
+                                    AppSettingsStore.NAV_STYLE_FLOATING_BUTTON to
+                                        stringResource(R.string.settings_nav_bar_floating_button),
+                                )
                             }
                             val navStyleIndex = navStyleOptions
                                 .indexOfFirst { it.first == navStyle }
@@ -315,6 +319,8 @@ internal fun AppSettingsScreen() {
                                         stringResource(R.string.settings_nav_bar_desc_liquid_glass)
                                     navStyle == AppSettingsStore.NAV_STYLE_LIQUID_GLASS_ENHANCED ->
                                         stringResource(R.string.settings_nav_bar_desc_enhanced)
+                                    navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON ->
+                                        stringResource(R.string.settings_nav_bar_desc_floating_button)
                                     else -> null
                                 },
                                 items = navStyleOptions.map { it.second },
@@ -325,6 +331,15 @@ internal fun AppSettingsScreen() {
                                     }
                                 },
                             )
+                            // 悬浮按钮支持长按拖动；拖动后可用此项一键回右下角
+                            if (navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON) {
+                                ArrowPreference(
+                                    title = stringResource(R.string.settings_nav_bar_reset_position),
+                                    onClick = {
+                                        AppSettingsStore.setFloatingNavPosition(ctx, 1f, 1f)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
