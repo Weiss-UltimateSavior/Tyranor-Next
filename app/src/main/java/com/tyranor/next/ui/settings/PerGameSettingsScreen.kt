@@ -33,6 +33,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
@@ -401,12 +402,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
     MiuixSettingsTheme {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
-            containerColor = MiuixTheme.colorScheme.background,
+            containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = game.title,
-                    background = MiuixTheme.colorScheme.background,
+                    background = ComposeColor.Transparent,
                     contentColor = MiuixTheme.colorScheme.onBackground,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.common_save), MiuixTheme.colorScheme.primary) {
@@ -877,6 +878,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         SectionCard(game.engine.displayName) {
                             Text(
                                 stringResource(R.string.engine_settings_pc_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.ANDROID_APP -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_android_hint),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
