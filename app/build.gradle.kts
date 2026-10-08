@@ -277,7 +277,8 @@ dependencies {
   // 游戏库持久化（Room）：games/scan_roots/quick_launch 表，见 core/game/storage
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
-  ksp(libs.androidx.room.compiler)
+    debugImplementation(libs.leakcanary)
+    ksp(libs.androidx.room.compiler)
 
   // Compose
   implementation(libs.androidx.compose.ui)
