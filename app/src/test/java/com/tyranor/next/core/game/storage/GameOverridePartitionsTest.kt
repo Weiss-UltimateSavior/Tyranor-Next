@@ -107,6 +107,23 @@ class GameOverridePartitionsTest {
     }
 
     @Test
+    fun inputLegacyMigratedFlagIsPartitionedIntoTyrano() {
+        // 迁移标记是 PerGameSettingsStore 内部字段，同样必须显式建模：
+        // 落到「未识别键兜底」路径虽然当下也能持久化，但未来收紧分区时会静默丢键，
+        // 丢键会让迁移在每次启动重跑
+        assertEquals(PerGameSettingsStore.F_LEGACY_MIGRATED, GameOverridePartitions.KEY_INPUT_LEGACY_MIGRATED)
+        assertTrue(
+            "迁移标记必须显式属于 tyrano 分区",
+            GameOverridePartitions.KEY_INPUT_LEGACY_MIGRATED in GameOverridePartitions.TYRANO_KEYS,
+        )
+
+        val blob = JSONObject().put(PerGameSettingsStore.F_LEGACY_MIGRATED, true)
+        val row = GameOverridePartitions.split("/games/migrated", blob, 1L)
+        assertTrue(JSONObject(row.tyranoJson!!).has(PerGameSettingsStore.F_LEGACY_MIGRATED))
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+    }
+
+    @Test
     fun partitionKeysMatchPerGameSettingsStoreConstants() {
         // 字面量键集与 settings 层常量的契约约束（避免漂移）
         assertEquals(PerGameSettingsStore.F_ENGINE_VERSION, GameOverridePartitions.KEY_ENGINE_VERSION)

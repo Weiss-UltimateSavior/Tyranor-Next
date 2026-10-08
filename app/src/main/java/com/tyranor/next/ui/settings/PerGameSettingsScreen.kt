@@ -40,6 +40,7 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RenPyOverride
@@ -160,7 +161,14 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var inputGamepadEnabled by remember {
         mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED))
     }
-    val inputGlobalPad = remember { EngineSettingsStore.isInputPadEnabled(ctx) }
+    // 「跟随全局」的展示值必须按本游戏引擎取：未显式设置时 MV/MZ 默认开、其余默认关，
+    // 否则这个标签会与游戏内实际是否出现按键层相反
+    val inputGlobalPad = remember(gid) {
+        EngineSettingsStore.isInputPadEnabled(
+            ctx,
+            default = InputRemapRepository.engineDefaultsPadEnabled(game.engine),
+        )
+    }
     val inputGlobalGamepad = remember { EngineSettingsStore.isInputGamepadEnabled(ctx) }
     var rpgmOverride by remember(gid) {
         mutableStateOf(PerGameSettingsStore.toRpgMakerOverride(PerGameSettingsStore.load(ctx, gid)))

@@ -36,8 +36,8 @@ class InputRouter(
     /** 逻辑按键 → 当前按下的来源集合（"key" / "hat" / "trigger" / "stick"）。 */
     private val activeSources = HashMap<String, MutableSet<String>>()
 
-    /** 摇杆方向激活状态（防抖滞回用）。 */
-    private val stickDirs = HashMap<String, Boolean>()
+    /** 摇杆方向激活状态（死区/滞回判定；状态机实现见 [StickDirectionResolver]）。 */
+    private val stickDirs = StickDirectionResolver()
 
     private var hatActive = false
     private var leftTriggerActive = false
@@ -123,16 +123,10 @@ class InputRouter(
 
     private fun updateStickDir(prefix: String, dir: String, component: Float, stick: StickBinding) {
         val key = "$prefix.$dir"
-        val wasActive = stickDirs[key] == true
-        val threshold = if (wasActive) {
-            (stick.deadzone - stick.hysteresis).coerceAtLeast(0f)
-        } else {
-            stick.deadzone
-        }
-        val nowActive = component > threshold
-        if (nowActive == wasActive) return
-        stickDirs[key] = nowActive
-        setPressed(stickLogicalId(prefix, dir), SOURCE_STICK, nowActive)
+        // 阈值来自当前映射快照（updateMap 后即生效），状态保留在状态机内
+        val flipped = stickDirs.update(key, component, stick.deadzone, stick.hysteresis)
+        if (!flipped) return
+        setPressed(stickLogicalId(prefix, dir), SOURCE_STICK, stickDirs.isActive(key))
     }
 
     private fun stickLogicalId(prefix: String, dir: String): String = "$prefix.$dir"

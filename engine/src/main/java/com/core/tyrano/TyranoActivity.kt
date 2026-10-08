@@ -231,12 +231,16 @@ class TyranoActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         setContentView(root)
-        // 输入重映射（虚拟按键 + 手柄映射）：Web 系全引擎生效，叠在最上层接收触摸
+        // 输入重映射（虚拟按键 + 手柄映射）：Web 系全引擎生效，叠在最上层接收触摸。
+        // 默认开关按引擎分档：只有 MV/MZ 改造前就有按键层（旧 __touch_pad.js），
+        // 对 Tyrano/VN/WebOther 默认开启等于给老用户凭空加一层按钮，因此默认关
+        val rpgMakerWebGame = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
         inputRemap = InputRemapController.installWeb(
             activity = this,
             container = root,
             gameId = rpgMakerModGameId,
             theme = EngineThemeColors.fromIntent(intent),
+            engineDefaultsEnabled = rpgMakerWebGame,
         ) { js -> webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } } }
         browser.addJavascriptInterface(
             requireNotNull(inputRemap).Bridge(),

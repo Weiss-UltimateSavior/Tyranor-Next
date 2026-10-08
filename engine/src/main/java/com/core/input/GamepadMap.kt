@@ -113,11 +113,12 @@ data class GamepadMap(
 
         const val SCHEMA = 1
 
-        /** 容忍坏数据：解析失败返回 null，由调用方回退默认。 */
+        /** 容忍坏数据：解析失败或 schema 高于本实现时返回 null，由调用方回退默认。 */
         fun parse(raw: String?): GamepadMap? {
             if (raw.isNullOrBlank()) return null
             return runCatching {
                 val root = JSONObject(raw)
+                if (!InputJsonLimits.isSupportedSchema(root.opt("schema"), SCHEMA)) return null
                 val buttons = LinkedHashMap<String, GamepadBinding>()
                 root.optJSONObject("buttons")?.let { obj ->
                     for (id in obj.keys()) {
@@ -221,8 +222,9 @@ data class GamepadMap(
 
         private fun keysFromJson(array: JSONArray?): List<Int> {
             if (array == null) return emptyList()
-            val result = ArrayList<Int>(array.length())
-            for (i in 0 until array.length()) {
+            val count = minOf(array.length(), InputJsonLimits.MAX_KEYS_PER_BINDING)
+            val result = ArrayList<Int>(count)
+            for (i in 0 until count) {
                 val value = array.optInt(i, 0)
                 if (value > 0) result.add(value)
             }

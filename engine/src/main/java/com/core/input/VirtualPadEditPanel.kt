@@ -19,6 +19,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import com.core.engine.EngineThemeColors
 import com.core.engine.R
 import kotlin.math.min
@@ -173,7 +174,22 @@ class VirtualPadEditPanel(
         )
         actionRow.addView(
             pillButton(context.getString(R.string.engine_input_duplicate)).apply {
-                setOnClickListener { pad.duplicateSelected(); refresh() }
+                setOnClickListener {
+                    // 只有「达上限」才提示原因；未选中或选中方向控件时该动作本就不适用
+                    // （静默即可，否则会给出与实际原因不符的提示）
+                    val duplicated = pad.duplicateSelected()
+                    if (!duplicated && pad.isButtonLimitReached()) {
+                        Toast.makeText(
+                            context,
+                            context.getString(
+                                R.string.engine_input_button_limit,
+                                PadProfile.MAX_PAD_BUTTONS,
+                            ),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                    refresh()
+                }
             },
             pillParams(start = dp(1f), end = dp(1f)),
         )
@@ -261,9 +277,10 @@ class VirtualPadEditPanel(
             sizeSeek.isEnabled = true
             keysButton.isEnabled = true
             // 选中已切换：必须用新按钮的文字重建输入框（此时框里是上一个按钮的内容）；
-            // 同一选中下仅在「未聚焦」时回写，避免打断正在输入的用户
+            // 同一选中下仅在「未聚焦」时回写，避免打断正在输入的用户。
+            // 用 info.text 而非 info.label：label 空文字时回落 id，会把展示值写进输入框
             if (!direction && (previousId != currentId || !textInput.hasFocus())) {
-                textInput.setText(info.label)
+                textInput.setText(info.text)
                 textInput.setSelection(textInput.text?.length ?: 0)
             }
             autoKeepBox.visibility = if (direction) View.GONE else View.VISIBLE
@@ -366,31 +383,50 @@ class VirtualPadEditPanel(
     /**
      * 新增控件类型选择。
      *
-     * 不可用的类型（方向键已存在）置灰不可点，而不是点击后才报错；
+     * 不可用的类型（方向键已存在 / 按钮数已达上限）置灰不可点，而不是点击后才报错；
      * 「方向键」在已隐藏时可用（用于重新放回按键层）。
      */
     private fun showAddDialog() {
         // 先提交未失焦的文字，避免新增后 selectionInfo 回退到旧值
         commitPendingText()
+        val limitReached = pad.isButtonLimitReached()
         val directionAvailable = pad.canAdd(VirtualPadView.NewButtonType.DIRECTION)
+        val buttonUnavailableReason = context.getString(
+            R.string.engine_input_button_limit,
+            PadProfile.MAX_PAD_BUTTONS,
+        )
+        val directionUnavailableReason = context.getString(R.string.engine_input_direction_exists)
         val options = listOf(
-            Triple(context.getString(R.string.engine_input_new_button), VirtualPadView.NewButtonType.BUTTON, true),
-            Triple(context.getString(R.string.engine_input_new_round_button), VirtualPadView.NewButtonType.ROUND_BUTTON, true),
-            Triple(context.getString(R.string.engine_input_new_screenshot), VirtualPadView.NewButtonType.SCREENSHOT, true),
-            Triple(context.getString(R.string.engine_input_new_direction), VirtualPadView.NewButtonType.DIRECTION, directionAvailable),
+            Triple(
+                context.getString(R.string.engine_input_new_button),
+                VirtualPadView.NewButtonType.BUTTON,
+                if (limitReached) buttonUnavailableReason else null,
+            ),
+            Triple(
+                context.getString(R.string.engine_input_new_round_button),
+                VirtualPadView.NewButtonType.ROUND_BUTTON,
+                if (limitReached) buttonUnavailableReason else null,
+            ),
+            Triple(
+                context.getString(R.string.engine_input_new_screenshot),
+                VirtualPadView.NewButtonType.SCREENSHOT,
+                if (limitReached) buttonUnavailableReason else null,
+            ),
+            Triple(
+                context.getString(R.string.engine_input_new_direction),
+                VirtualPadView.NewButtonType.DIRECTION,
+                if (directionAvailable) null else directionUnavailableReason,
+            ),
         )
         val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         list.addView(dialogTitle(context.getString(R.string.engine_input_add)))
-        options.forEach { (label, type, available) ->
+        options.forEach { (label, type, unavailableReason) ->
+            val available = unavailableReason == null
             val row = TextView(context).apply {
                 text = if (available) {
                     label
                 } else {
-                    context.getString(
-                        R.string.engine_input_unavailable_format,
-                        label,
-                        context.getString(R.string.engine_input_direction_exists),
-                    )
+                    context.getString(R.string.engine_input_unavailable_format, label, unavailableReason)
                 }
                 setTextColor(if (available) Color.WHITE else 0x66FFFFFF)
                 textSize = 14f
@@ -430,7 +466,9 @@ class VirtualPadEditPanel(
             titleRes = R.string.engine_input_pick_keys,
             selectedKeys = info.keys,
         ) { keys ->
-            pad.updateSelectedButton(info.label, keys, autoKeepBox.isChecked)
+            // 文字取输入框当前值（而非 info.label）：label 在文字为空时回落为按钮 id，
+            // 用它回写会把「清空文字」变成「显示 id」
+            pad.updateSelectedButton(textInput.text?.toString().orEmpty(), keys, autoKeepBox.isChecked)
             refresh()
         }
     }

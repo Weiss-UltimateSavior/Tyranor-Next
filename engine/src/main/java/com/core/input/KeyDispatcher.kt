@@ -70,6 +70,9 @@ class KeyDispatcher(private val sink: InputSink) {
      * 因此本类**不提供**全局释放入口，调用方按 scope 各自释放。
      */
     fun releaseScope(scope: String) {
+        // 空 scope 会退化为「跨来源整体释放」——每个 id 都以空串匹配 startsWith，
+        // 手柄拔插就会把屏幕上按住的虚拟按键一并放掉。生产调用点全用常量，这里挡的是未来误用。
+        require(scope.isNotBlank()) { "releaseScope requires a non-blank source prefix" }
         val affected = ArrayList<Int>()
         active.keys.filter { it.startsWith(scope) }.forEach { id ->
             val keys = active.remove(id) ?: return@forEach

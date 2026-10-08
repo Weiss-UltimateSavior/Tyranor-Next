@@ -291,7 +291,7 @@
     <string name="engine_settings_ppsspp_title">PPSSPP エンジン設定</string>
     <string name="engine_settings_input_title">入力とゲームパッド</string>
     <string name="engine_settings_input_pad_title">バーチャルパッド</string>
-    <string name="engine_settings_input_pad_summary">ゲーム画面に編集可能なタッチキーを重ねて表示します</string>
+    <string name="engine_settings_input_pad_summary">ゲーム画面に編集可能なタッチキーを重ねて表示します。既定では RPG Maker MV/MZ のみ有効で、オンにするとすべての Web エンジンに適用されます</string>
     <string name="engine_settings_input_gamepad_title">ゲームパッド割り当て</string>
     <string name="engine_settings_input_gamepad_summary">外付けゲームパッドのボタンをキーボード/マウス操作に割り当てます</string>
     <string name="engine_settings_input_gamepad_entry">ゲームパッド割り当て</string>
@@ -319,7 +319,9 @@
     <string name="pad_layout_edit_save_failed">保存に失敗しました。空き容量を確認して再試行してください。</string>
     <string name="pad_layout_edit_hint">タップで選択、ドラッグで移動。完了したら「保存」、システムの戻るキーで終了（保存されません）。</string>
     <string name="input_settings_profile_copy">複製</string>
+    <string name="input_settings_profile_copy_failed">複製に失敗しました。空き容量を確認して再試行してください。</string>
     <string name="input_settings_profile_rename">名前変更</string>
+    <string name="input_settings_profile_rename_failed">名前変更に失敗しました。空き容量を確認して再試行してください。</string>
     <string name="input_settings_profile_delete">削除</string>
     <string name="input_settings_profile_export">エクスポート</string>
     <string name="input_settings_profile_import">インポート</string>
@@ -645,11 +647,13 @@
     <string name="engine_settings_rpgm_rtp_missing_status">未インポート</string>
     <string name="engine_settings_rpgm_rtp_import">インポート</string>
     <string name="engine_settings_rpgm_rtp_imported">RTP をインポートしました</string>
-    <string name="engine_settings_rpgm_rtp_import_failed">RTP のインポートに失敗しました</string>
+    <string name="engine_settings_rpgm_rtp_import_failed">RTP のインポートに失敗しました（%1$s）</string>
     <string name="engine_settings_rpgm_rtp_reject_mkdir">ディレクトリを作成できません：%1$s</string>
     <string name="engine_settings_rpgm_rtp_reject_total_size">展開サイズの合計が上限を超えています（%1$s > %2$s）</string>
     <string name="engine_settings_rpgm_rtp_reject_entry_size">展開後のエントリがサイズ上限を超えています（%1$s > %2$s）</string>
     <string name="engine_settings_rpgm_rtp_reject_entry_count">エントリ数が上限を超えています（%1$d > %2$d）</string>
+    <string name="engine_settings_rpgm_rtp_reject_io">読み書きに失敗しました：%1$s（読み取り不可、または空き容量不足）</string>
+    <string name="engine_settings_rpgm_rtp_reject_empty">選択した場所にインポートできる内容がありません</string>
     <string name="engine_settings_rpgm_rtp_clear">削除</string>
     <string name="engine_settings_rpgm_rtp_clear_confirm">このバージョンの RTP を削除しますか？</string>
     <string name="engine_settings_rpgm_rtp_cleared">RTP を削除しました</string>
@@ -680,7 +684,9 @@
 
     <string name="launch_resolve_local_dir_failed">ゲームフォルダを解析できません（ローカルファイルパスのみ対応）</string>
     <string name="launch_external_module_failed">%1$s の起動に失敗しました</string>
-    <string name="launch_prepare_krkr_sd_mirror_failed">KRKR SD カードミラーを準備できません</string>
+    <string name="launch_prepare_krkr_sd_mirror_failed">SD カードのゲームフォルダを読み取れません。アクセス許可を再付与してください</string>
+    <string name="launch_create_krkr_mirror_failed">KRKR ミラーを作成できません：%1$s（空き容量と権限を確認してください）</string>
+    <string name="launch_create_krkr_mirror_unknown_path">不明なパス</string>
     <string name="launch_create_krkr_mirror_save_failed">KRKR ミラーセーブフォルダを作成できません</string>
     <string name="launch_failed">起動に失敗しました</string>
     <string name="launch_all_files_access_request">システム設定で「すべてのファイルの管理」を許可し、戻ってから再度ゲームを起動してください</string>

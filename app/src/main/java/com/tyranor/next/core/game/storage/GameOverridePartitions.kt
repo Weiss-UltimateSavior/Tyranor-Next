@@ -13,7 +13,7 @@ import org.json.JSONObject
  */
 internal object GameOverridePartitions {
 
-    /** 引擎侧 TyranoActivity.PER_GAME_TOUCH_PAD_KEY / ..._PRESETS_KEY 的契约镜像。 */
+    /** 旧触屏手柄布局键（迁移来源，只在 touchpad 分区持久化）。 */
     const val TOUCH_PAD_CONFIG_KEY = "touch_pad_config"
     const val TOUCH_PAD_PRESETS_KEY = "touch_pad_presets"
 
@@ -47,6 +47,8 @@ internal object GameOverridePartitions {
     const val KEY_INPUT_PAD_ENABLED = "input_pad_enabled"
     const val KEY_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
     const val KEY_INPUT_PROFILE_ID = "input_profile_id"
+    // 旧触屏手柄的一次性迁移标记（与 PerGameSettingsStore.F_LEGACY_MIGRATED 字面量锚定）
+    const val KEY_INPUT_LEGACY_MIGRATED = "input_legacy_migrated"
     // RPG Maker RGSS 外置模块覆盖键（与 PerGameSettingsStore.F_RPG_* 字面量锚定）
     const val KEY_RPG_USE_RUBY18 = "rpg_use_ruby18"
     const val KEY_RPG_DEBUG = "rpg_debug"
@@ -104,6 +106,7 @@ internal object GameOverridePartitions {
         KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED, KEY_RPG_SAVE_INTEROP,
         KEY_RPG_LEGACY_RENDERER, KEY_RPG_MV_VERSION, KEY_RPG_MZ_VERSION,
         KEY_INPUT_PAD_ENABLED, KEY_INPUT_GAMEPAD_ENABLED, KEY_INPUT_PROFILE_ID,
+        KEY_INPUT_LEGACY_MIGRATED,
         KEY_RPG_USE_RUBY18, KEY_RPG_DEBUG, KEY_RPG_SMOOTH_SCALING, KEY_RPG_VSYNC,
         KEY_RPG_FRAME_SKIP, KEY_RPG_SOLID_FONTS, KEY_RPG_PATH_CACHE,
         KEY_RPG_PREBUILT_PATH_CACHE, KEY_RPG_FAST_PATH_ENUM, KEY_RPG_COPY_TEXT,

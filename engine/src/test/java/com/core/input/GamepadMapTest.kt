@@ -70,4 +70,21 @@ class GamepadMapTest {
         val parsed = GamepadMap.parse(raw)!!
         assertEquals(StickBinding.MAX_DEADZONE, parsed.leftStick.deadzone, 0.0001f)
     }
+
+    @Test
+    fun higherSchemaIsRejected() {
+        // 与 PadProfile 同一约束：高版本文件可能带未知字段，静默按低版本读会丢字段
+        assertNull(GamepadMap.parse("""{"schema":${GamepadMap.SCHEMA + 1},"buttons":{}}"""))
+        assertNotNull(GamepadMap.parse("""{"schema":${GamepadMap.SCHEMA},"buttons":{}}"""))
+        assertNotNull("缺失 schema 的历史文件仍需可读", GamepadMap.parse("""{"buttons":{}}"""))
+    }
+
+    @Test
+    fun keysPerBindingAreCapped() {
+        val keys = (1..200).joinToString(",")
+        val raw = """{"schema":1,"buttons":{"A":{"keys":[$keys]}},"sticks":{"left":{"up":[$keys]}}}"""
+        val parsed = GamepadMap.parse(raw)!!
+        assertEquals(InputJsonLimits.MAX_KEYS_PER_BINDING, parsed.binding(GamepadButtons.A).keys.size)
+        assertEquals(InputJsonLimits.MAX_KEYS_PER_BINDING, parsed.leftStick.up.size)
+    }
 }

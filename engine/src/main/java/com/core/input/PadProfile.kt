@@ -97,6 +97,14 @@ data class PadProfile(
         /** 方案内按钮数上限（防御坏文件/构造文件）。 */
         const val MAX_PAD_BUTTONS = 128
 
+        /**
+         * 方向控件的保留 id。
+         *
+         * 方向控件与普通按钮共处同一张 `elementById`（见 [VirtualPadView]），按钮 id 占用
+         * 该值会让渲染、命中与编辑全部错乱，因此解析时直接丢弃同名按钮。
+         */
+        const val DIRECTION_ID = "direction"
+
         /** 按钮文字长度上限（与编辑面板的输入限制一致）。 */
         const val MAX_BUTTON_TEXT = 12
 
@@ -116,6 +124,7 @@ data class PadProfile(
             if (raw.isNullOrBlank()) return null
             return runCatching {
                 val root = JSONObject(raw)
+                if (!InputJsonLimits.isSupportedSchema(root.opt("schema"), SCHEMA)) return null
                 val id = root.optString("id").takeIf { it.isNotBlank() } ?: return null
                 val name = root.optString("name").takeIf { it.isNotBlank() } ?: id
                 val buttons = ArrayList<PadButton>()
@@ -125,7 +134,11 @@ data class PadProfile(
                     val count = minOf(array.length(), MAX_PAD_BUTTONS)
                     for (i in 0 until count) {
                         val obj = array.optJSONObject(i) ?: continue
-                        buttonFromJson(obj)?.let { buttons.add(it) }
+                        val button = buttonFromJson(obj) ?: continue
+                        // 保留 id 与方向控件撞键：两者同处 elementById，重名会让渲染、
+                        // 命中与编辑全部错乱（导入的用户方案可达此路径）
+                        if (button.id == DIRECTION_ID) continue
+                        buttons.add(button)
                     }
                 }
                 PadProfile(
@@ -250,16 +263,18 @@ data class PadProfile(
          *    预设（如 `...for phone` / `...for tablet`）会算出同一个 id，后者被当作
          *    「已存在」跳过且不计失败 → 静默丢预设且永不重试。
          *
-         * 因此顺序是「先给序号留位、再截 slug」，作用域同样按剩余空间裁剪。
+         * 分配顺序因此是「**先给作用域** → 再给序号 → 最后才让 slug 吃剩余空间」：
+         * 作用域是跨游戏唯一性的唯一来源，若被长 slug 挤到只剩 1 字符，不同游戏就会
+         * 算出同一个 id（导入的用户方案可直接触发），因此它优先拿满自己的配额。
          */
         private fun migratedId(scope: String, index: Int, slug: String): String {
             val suffix = if (index == 0) "" else "-$index"
-            // 预留：前缀 + 分隔符 + 作用域(至少 1) + 分隔号 + 序号
-            val reserved = MIGRATED_PREFIX.length + 1 + 1 + 1 + suffix.length
-            val slugRoom = (MAX_MIGRATED_ID_LENGTH - reserved).coerceAtLeast(1)
+            val scopePart = scope.ifBlank { "g" }.take(MAX_SCOPE_SLUG_LENGTH)
+            // 固定占用：前缀 + 作用域 + 分隔符 + 序号；余量全给 slug（截断不影响唯一性，
+            // 同游戏内的预设已由尾部序号区分）
+            val fixed = MIGRATED_PREFIX.length + scopePart.length + 1 + suffix.length
+            val slugRoom = (MAX_MIGRATED_ID_LENGTH - fixed).coerceAtLeast(1)
             val slugPart = slug.take(slugRoom).ifBlank { "p" }
-            val scopeRoom = (MAX_MIGRATED_ID_LENGTH - reserved - slugPart.length).coerceAtLeast(1)
-            val scopePart = scope.ifBlank { "g" }.take(scopeRoom)
             return MIGRATED_PREFIX + scopePart + "-" + slugPart + suffix
         }
 
@@ -445,8 +460,9 @@ data class PadProfile(
 
         private fun keysFromJson(array: JSONArray?): List<Int> {
             if (array == null) return emptyList()
-            val result = ArrayList<Int>(array.length())
-            for (i in 0 until array.length()) {
+            val count = minOf(array.length(), InputJsonLimits.MAX_KEYS_PER_BINDING)
+            val result = ArrayList<Int>(count)
+            for (i in 0 until count) {
                 val value = array.optInt(i, 0)
                 if (value > 0) result.add(value)
             }

@@ -301,11 +301,12 @@ object PerGameSettingsStore {
 
     /**
      * 双写持久化：DB 异步落库（失败仅记日志），prefs 同步镜像立即刷盘——
-     * 引擎子进程启动游戏时按旧契约整条读取镜像（方案阶段 4 过渡策略）。
-     * 已知限制：App 进程的 prefs
-     * 缓存不跨进程刷新，引擎本次进程存活期间写回的 touchpad 字段对 App 不可见，
-     * 此处整条镜像写会覆盖之；跨会话数据由启动时 syncFromPrefs 回灌保证不丢。
-     * 彻底收口（引擎侧独立 prefs 文件）为方案后续项。
+     * 引擎子进程启动游戏时按契约整条读取镜像（方案阶段 4 过渡策略）。
+     *
+     * 写路径已全部收敛到 app 侧：引擎只读镜像，不再回写任何字段，因此不存在
+     * 「app 进程的 prefs 缓存与引擎写入互相覆盖」的问题（跨进程 prefs 缓存不共享，
+     * 但单向只读不受其影响）。镜像的权威来源仍是 DB，进程启动时由
+     * `GameOverridesRepository.syncFromPrefs` 回灌保证历史数据不丢。
      */
     private fun persist(context: Context, gameId: String, record: JSONObject) {
         GameOverridesRepository.updateRecord(context, gameId, record)

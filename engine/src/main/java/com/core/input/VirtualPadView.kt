@@ -44,7 +44,10 @@ class VirtualPadView(
     data class SelectionInfo(
         val id: String,
         val isDirection: Boolean,
+        /** 展示名：按钮文字为空时回落 id（**仅用于展示**，不得回写为按钮文字）。 */
         val label: String,
+        /** 按钮文字的原始值（可为空；方向控件为空串）。 */
+        val text: String = "",
         val visible: Boolean,
         val sizePercent: Int,
         val keys: List<Int>,
@@ -80,6 +83,9 @@ class VirtualPadView(
 
     /** 本次提交是否落盘失败（由宿主经 [markSaveFailed] 回传）。 */
     private var saveFailed = false
+
+    /** 异步落盘的会话账本：丢弃被接替/已结束会话的迟到结果（见 [SaveSessionTracker]）。 */
+    private val saveSessions = SaveSessionTracker()
     private var editProfile: PadProfile? = null
     private var selectedId: String? = null
 
@@ -105,8 +111,7 @@ class VirtualPadView(
     private var dirKnobDx = 0f
     private var dirKnobDy = 0f
 
-    private val pointerTargets = HashMap<Int, String>()
-    private val pointerButtons = HashMap<Int, PadButton>()
+    private val pointerLedger = PointerLedger()
     private var dirPointerId = -1
 
     private var fabPointerId = -1
@@ -357,8 +362,13 @@ class VirtualPadView(
                 val pointerId = event.getPointerId(index)
                 val x = event.getX(index)
                 val y = event.getY(index)
-                // 新手势开始：上一手势若未走完 UP/CANCEL（如长按进入编辑），先清理陈旧状态
-                if (event.actionMasked == MotionEvent.ACTION_DOWN) resetFabGesture()
+                // 新手势开始：上一手势若未走完 UP/CANCEL（如长按进入编辑、指针被系统
+                // 窗口接管），先清理陈旧状态——否则那根指针的账本永不释放，
+                // 对应按键会一直保持按下（autoKeep 键还会在下一次按下时被反转）
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    resetFabGesture()
+                    releaseAllPointers()
+                }
                 if (event.actionMasked == MotionEvent.ACTION_DOWN && fabRect.contains(x, y)) {
                     fabPointerId = pointerId
                     fabMoved = false
@@ -377,8 +387,7 @@ class VirtualPadView(
                     updateDirection(x, y)
                 } else {
                     val button = element.button ?: return true
-                    pointerTargets[pointerId] = button.id
-                    pointerButtons[pointerId] = button
+                    pointerLedger.press(pointerId, button)
                     pressButton(button)
                 }
                 return true
@@ -406,25 +415,7 @@ class VirtualPadView(
                     val index = event.findPointerIndex(dirPointerId)
                     if (index >= 0) updateDirection(event.getX(index), event.getY(index))
                 }
-                if (pointerTargets.isNotEmpty()) {
-                    val iterator = pointerTargets.entries.iterator()
-                    while (iterator.hasNext()) {
-                        val (pointerId, buttonId) = iterator.next()
-                        val index = event.findPointerIndex(pointerId)
-                        if (index < 0) continue
-                        val element = elementById[buttonId] ?: continue
-                        if (!element.rect.contains(event.getX(index), event.getY(index))) {
-                            pointerButtons.remove(pointerId)?.let { button ->
-                                iterator.remove()
-                                pointerTargets.remove(pointerId)
-                                // 与抬起路径同一守卫：其它手指仍按着该按钮时不释放
-                                if (pointerButtons.values.none { it.id == button.id }) releaseButton(button)
-                                return@let
-                            }
-                            iterator.remove()
-                        }
-                    }
-                }
+                releasePointersOutside(event)
                 return true
             }
 
@@ -451,16 +442,36 @@ class VirtualPadView(
         return super.onTouchEvent(event)
     }
 
+    /**
+     * 拖离按钮的指针 == 取消按压：摘出账本后统一释放。
+     *
+     * 释放守卫与抬起路径一致（[PointerLedger.isHeldById]）：其它手指仍按着同一按钮时不释放，
+     * 否则先滑出的那一指会提前送 keyup，打断仍按着的长按。
+     */
+    private fun releasePointersOutside(event: MotionEvent) {
+        if (pointerLedger.isEmpty()) return
+        val leftButtons = pointerLedger.retainOnly { pointerId ->
+            val index = event.findPointerIndex(pointerId)
+            // 本次事件里找不到该指针（被系统窗口接管、事件被 split）：保留账本。
+            // 此时无法判断它是否还在按钮上，而 ACTION_UP 只带抬起的那根手指、不会碰它，
+            // 因此兜底是「下一次手势的 ACTION_DOWN 整体清理」与 CANCEL/切后台（见 handlePlayTouch）。
+            if (index < 0) return@retainOnly true
+            val buttonId = pointerLedger.buttonOf(pointerId)?.id ?: return@retainOnly false
+            val element = elementById[buttonId] ?: return@retainOnly false
+            element.rect.contains(event.getX(index), event.getY(index))
+        }
+        leftButtons.forEach { button ->
+            if (!pointerLedger.isHeldById(button.id)) releaseButton(button)
+        }
+    }
+
     private fun releasePointers(event: MotionEvent, actionIndex: Int) {
         val pointerId = event.getPointerId(actionIndex)
-        pointerButtons.remove(pointerId)?.let { button ->
-            pointerTargets.remove(pointerId)
+        pointerLedger.release(pointerId)?.let { button ->
             // 多指可按同一按钮：只有最后一根按住它的手指抬起时才真正释放，
             // 否则先抬的那一指会提前送 keyup（另一根还按着）
-            if (pointerButtons.values.none { it.id == button.id }) releaseButton(button)
-            return finishPointerRelease(pointerId)
+            if (!pointerLedger.isHeldById(button.id)) releaseButton(button)
         }
-        pointerTargets.remove(pointerId)
         finishPointerRelease(pointerId)
     }
 
@@ -479,9 +490,8 @@ class VirtualPadView(
     }
 
     private fun releaseAllPointers() {
-        pointerButtons.values.forEach { releaseButton(it) }
-        pointerButtons.clear()
-        pointerTargets.clear()
+        pointerLedger.allButtons().forEach { releaseButton(it) }
+        pointerLedger.clear()
         dirPointerId = -1
         dirKnobDx = 0f
         dirKnobDy = 0f
@@ -645,6 +655,8 @@ class VirtualPadView(
         // 只放本层持有的键：不分来源地整体释放会把同时被手柄按住的键一并放掉
         dispatcher.releaseScope(PAD_SCOPE)
         editing = true
+        // 新会话开始：上一次会话的在途落盘结果到此作废（见 completeDeferredSave）
+        saveSessions.clear()
         editProfile = profile.copy(buttons = profile.buttons.map { it.copy() })
         selectedId = elements.firstOrNull { element ->
             val visible = if (element.isDirection) activeProfile().direction.visible
@@ -663,6 +675,10 @@ class VirtualPadView(
      * 调用顺序保证「先给落盘机会、再收面板」：宿主在 [Listener.onProfileCommitted] 里
      * 写盘并在失败时调用 [markSaveFailed]，失败会保留编辑态，避免用户改完的布局
      * 因一次写盘失败被静默丢弃。
+     *
+     * 写盘若不能同步完成（如 app 设置页编辑器把落盘放到 IO 线程），宿主应在回调里
+     * 调用 [beginDeferredSave] 取得会话号，待结果回来再用 [completeDeferredSave] 收尾；
+     * 此时本方法只发起请求、不自行收尾。
      */
     fun commitEdit() {
         if (!editing) return
@@ -670,7 +686,10 @@ class VirtualPadView(
         // 清掉可能残留的失败标志（非编辑态的 resetToDefaults 落盘失败也会置位），
         // 否则本次成功保存会被误判为失败、要再点一次
         saveFailed = false
+        saveSessions.clear()
         listener?.onProfileCommitted(committed)
+        // 宿主选择了异步落盘：本次提交由 completeDeferredSave 收尾
+        if (saveSessions.hasPending) return
         if (saveFailed) {
             // 落盘失败：留在编辑态，让用户能重试或取消；内存中的已生效方案不变，
             // 避免「写盘失败但界面已按新布局生效」
@@ -680,14 +699,51 @@ class VirtualPadView(
         exitEditing()
     }
 
-    /** 由宿主在落盘失败时回调，标记本次提交失败。 */
+    /** 由宿主在落盘失败时回调，标记本次提交失败（同步落盘路径）。 */
     fun markSaveFailed() {
         saveFailed = true
+    }
+
+    /**
+     * 由宿主在 [Listener.onProfileCommitted] 内调用，声明本次落盘将异步完成。
+     *
+     * @return 本次提交的会话号；结果回来后必须原样回传给 [isDeferredSaveCurrent] /
+     *   [completeDeferredSave] 做校验。
+     */
+    fun beginDeferredSave(): Int = saveSessions.begin()
+
+    /**
+     * 该会话号是否仍是当前在途的提交。
+     *
+     * 宿主在写盘结果回来后、**执行任何用户可见动作（Toast / 关页）之前**必须先问这里：
+     * 连点两次保存时先发的那次会被后发的接替，已取消/已结束的会话则不再有在途提交——
+     * 这两种情况下迟到的结果都不得再提示或改动状态（否则会出现「已保存成功却又弹失败」
+     * 「用户已离开编辑页还看到提示」）。
+     */
+    fun isDeferredSaveCurrent(session: Int): Boolean = saveSessions.isCurrent(session)
+
+    /**
+     * 异步落盘的收尾（须在主线程调用）。
+     *
+     * 成功则接受提交并退出编辑态；失败则留在编辑态（与同步路径一致：编辑态与工作副本都
+     * 未被改动，用户直接再点保存即可）。
+     *
+     * @return 该结果是否属于当前会话（false = 已被接替或会话已结束，本次调用无副作用）
+     */
+    fun completeDeferredSave(session: Int, success: Boolean): Boolean {
+        if (!saveSessions.complete(session)) return false
+        if (!success) return true
+        val committed = editProfile ?: return false
+        profile = committed
+        exitEditing()
+        return true
     }
 
     /** 收起编辑态（保存成功与取消共用）。 */
     private fun exitEditing() {
         editing = false
+        // 会话结束：在途的异步落盘结果不得再改动状态或提示用户
+        saveSessions.clear()
         editProfile = null
         selectedId = null
         rebuild()
@@ -709,6 +765,7 @@ class VirtualPadView(
                 id = id,
                 isDirection = true,
                 label = context.getString(com.core.engine.R.string.engine_input_direction),
+                text = "",
                 visible = active.direction.visible,
                 sizePercent = (active.direction.size * 100f).roundToInt(),
                 keys = emptyList(),
@@ -724,7 +781,10 @@ class VirtualPadView(
             SelectionInfo(
                 id = id,
                 isDirection = false,
+                // label 是展示回落（空文字显示 id）；text 才是可回写的真实文字。
+                // 二者必须分开：编辑面板若把 label 当文字提交，清空文字后会被 id 复活
                 label = button.text.ifBlank { button.id },
+                text = button.text,
                 visible = button.visible,
                 sizePercent = (button.size * 100f).roundToInt(),
                 keys = button.keys,
@@ -855,14 +915,21 @@ class VirtualPadView(
         }
     }
 
-    /** 该类型当前能否新增（方向键至多一个）。 */
+    /** 该类型当前能否新增（方向键至多一个；按钮数受 [PadProfile.MAX_PAD_BUTTONS] 约束）。 */
     fun canAdd(type: NewButtonType): Boolean = when (type) {
-        NewButtonType.BUTTON, NewButtonType.ROUND_BUTTON, NewButtonType.SCREENSHOT -> true
+        // 达上限必须在这里挡住：超出上限的方案落盘后，下次 parse 会静默截断按钮列表
+        NewButtonType.BUTTON,
+        NewButtonType.ROUND_BUTTON,
+        NewButtonType.SCREENSHOT -> !isButtonLimitReached()
+
         NewButtonType.DIRECTION -> !activeProfile().direction.visible
     }
 
+    /** 是否已达按钮数上限（编辑面板据此给出提示文案）。 */
+    fun isButtonLimitReached(): Boolean = activeProfile().buttons.size >= PadProfile.MAX_PAD_BUTTONS
+
     /**
-     * 新增一个控件并选中；类型不可用时返回 null（方向键已存在）。
+     * 新增一个控件并选中；类型不可用时返回 null（方向键已存在或按钮数已达上限）。
      *
      * 普通按钮落在屏幕中央、默认无键位绑定（先出现再绑定，避免误触发送错键）；
      * 截屏按钮预绑定截屏动作，否则新增出来点不动、像是坏的。
@@ -874,6 +941,7 @@ class VirtualPadView(
             NewButtonType.BUTTON,
             NewButtonType.ROUND_BUTTON,
             NewButtonType.SCREENSHOT -> {
+                if (isButtonLimitReached()) return null
                 var index = 1
                 var id = "btn-$index"
                 while (active.buttons.any { it.id == id } || id == DIRECTION_ID) {
@@ -904,12 +972,13 @@ class VirtualPadView(
         }
     }
 
-    /** 复制选中按钮（副本偏移 2%，不与原控件完全重叠）。 */
-    fun duplicateSelected() {
-        val id = selectedId ?: return
-        if (id == DIRECTION_ID) return
+    /** 复制选中按钮（副本偏移 2%，不与原控件完全重叠）；达上限或未选中返回 false。 */
+    fun duplicateSelected(): Boolean {
+        val id = selectedId ?: return false
+        if (id == DIRECTION_ID) return false
+        if (isButtonLimitReached()) return false
         val active = activeProfile()
-        val button = active.buttons.firstOrNull { it.id == id } ?: return
+        val button = active.buttons.firstOrNull { it.id == id } ?: return false
         var index = 2
         var newId = "${button.id}-$index"
         while (active.buttons.any { it.id == newId }) {
@@ -927,6 +996,7 @@ class VirtualPadView(
         rebuild()
         notifySelection()
         invalidate()
+        return true
     }
 
     fun deleteSelected() {
@@ -1018,7 +1088,8 @@ class VirtualPadView(
     }
 
     companion object {
-        const val DIRECTION_ID = "direction"
+        /** 方向控件的保留 id（契约定义在 [PadProfile.DIRECTION_ID]）。 */
+        const val DIRECTION_ID = PadProfile.DIRECTION_ID
 
         /** 派发器里的来源前缀：与手柄侧（`gp:`）隔离，互不误释放。 */
         private const val PAD_SCOPE = "pad:"

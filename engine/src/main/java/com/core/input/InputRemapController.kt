@@ -32,9 +32,17 @@ class InputRemapController private constructor(
     private val gameId: String,
     private val theme: EngineThemeColors.Palette,
     private val sink: InputSink,
+    /**
+     * 用户从未显式设置虚拟按键开关时本宿主的默认值。
+     *
+     * 只有 RPG Maker MV/MZ 传 true：改造前其余 Web 宿主（Tyrano / VN / WebOther）没有
+     * 按键层，对它们默认开启会让老用户升级后凭空多出一层按钮。
+     */
+    private val engineDefaultsEnabled: Boolean,
 ) {
 
-    private val settings: InputConfigStore.InputSettings = InputConfigStore.resolve(activity, gameId)
+    private val settings: InputConfigStore.InputSettings =
+        InputConfigStore.resolve(activity, gameId, engineDefaultsEnabled)
 
     /**
      * 虚拟按键与手柄映射共享的派发器。
@@ -177,7 +185,7 @@ class InputRemapController private constructor(
 
     fun onResume() {
         // 页面重载 / 切回前台：重新读取生效设置（设置页可能已改开关或方案）
-        val current = InputConfigStore.resolve(activity, gameId)
+        val current = InputConfigStore.resolve(activity, gameId, engineDefaultsEnabled)
         applyEnabledState(current)
         router?.updateMap(InputConfigStore.readGamepadMap(activity))
         val pad = padView ?: return
@@ -289,7 +297,11 @@ class InputRemapController private constructor(
             gameId: String,
             theme: EngineThemeColors.Palette,
             sink: InputSink,
-        ): InputRemapController = InputRemapController(activity, container, gameId, theme, sink)
+            /** 未显式设置开关时的默认值；宿主按引擎类型传入（MV/MZ 为 true，其余 Web 为 false）。 */
+            engineDefaultsEnabled: Boolean = true,
+        ): InputRemapController = InputRemapController(
+            activity, container, gameId, theme, sink, engineDefaultsEnabled,
+        )
 
         /** Web 宿主便捷装配（WebView evaluateJavascript 出口 + 宿主侧动作）。 */
         fun installWeb(
@@ -297,6 +309,7 @@ class InputRemapController private constructor(
             container: ViewGroup,
             gameId: String,
             theme: EngineThemeColors.Palette,
+            engineDefaultsEnabled: Boolean,
             dispatchJs: (String) -> Unit,
         ): InputRemapController = install(
             activity,
@@ -304,6 +317,7 @@ class InputRemapController private constructor(
             gameId,
             theme,
             WebInputSink(dispatchJs) { action -> handleHostAction(activity, action) },
+            engineDefaultsEnabled,
         )
 
         /**

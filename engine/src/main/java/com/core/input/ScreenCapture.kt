@@ -122,10 +122,14 @@ object ScreenCapture {
         // 超时只复位状态与回调失败，**不回收位图**：PixelCopy 可能仍在写它，
         // 回收交给（带代际校验的）迟到回调，或最终由 GC 处理。
         val pixelCopyDone = AtomicBoolean(false)
+        // 看门狗与迟到回调共用：超时后本次结果已对用户报过「失败」，
+        // 迟到的成功回调不得再落盘（否则用户看到失败提示、相册却多一张图）
+        val timedOut = AtomicBoolean(false)
         val watchdog = Runnable {
             if (!pixelCopyDone.get() && generation.get() == myGeneration &&
                 capturing.compareAndSet(true, false)
             ) {
+                timedOut.set(true)
                 Log.w(TAG, "capture watchdog fired: no PixelCopy callback")
                 mainHandler.post { onResult(CaptureResult.Failed) }
             }
@@ -151,8 +155,17 @@ object ScreenCapture {
                 bitmap,
                 { result ->
                     pixelCopyDone.set(true)
-                    // 代际已推进（本次被判超时或被新截屏接替）：迟到回调不得再触碰全局状态
-                    if (generation.get() != myGeneration) return@request
+                    // 代际已推进（本次被判超时或被新截屏接替）：迟到回调不得再触碰全局状态，
+                    // 位图无人再引用，就地回收而不是等 GC
+                    if (generation.get() != myGeneration) {
+                        if (!bitmap.isRecycled) bitmap.recycle()
+                        return@request
+                    }
+                    // 看门狗已对用户报过失败：此时只回收位图，不落盘、不回调
+                    if (timedOut.get()) {
+                        if (!bitmap.isRecycled) bitmap.recycle()
+                        return@request
+                    }
                     if (result != PixelCopy.SUCCESS) {
                         Log.w(TAG, "PixelCopy failed result=$result")
                         finish(CaptureResult.Failed)

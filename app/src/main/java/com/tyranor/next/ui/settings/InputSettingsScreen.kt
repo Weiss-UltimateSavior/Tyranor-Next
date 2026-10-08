@@ -16,9 +16,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +49,7 @@ import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import kotlinx.coroutines.Dispatchers
@@ -80,7 +83,11 @@ class InputSettingsActivity : AppScreenActivity() {
 internal fun InputSettingsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    var padEnabled by remember { mutableStateOf(InputRemapRepository.globalPadEnabled(ctx)) }
+    // 开关展示「实际生效值」：从未显式设置时 MV/MZ 默认开着（见 engineDefaultsPadEnabled），
+    // 显示为关会让用户以为按键层是关的，且要连点两下才能真正关闭
+    var padEnabled by remember {
+        mutableStateOf(InputRemapRepository.effectiveGlobalPadEnabled(ctx))
+    }
     var gamepadEnabled by remember { mutableStateOf(InputRemapRepository.globalGamepadEnabled(ctx)) }
     var profileId by remember { mutableStateOf(InputRemapRepository.globalProfileId(ctx)) }
 
@@ -214,6 +221,9 @@ internal fun InputSettingsScreen() {
             ) {
                 item {
                     EngineCard(stringResource(R.string.engine_settings_input_title)) {
+                        // 开关反映**实际生效值**：从未显式设置时 MV/MZ 默认开，
+                        // 若按「是否显式设置」显示为关，用户会看到「关着但游戏里有按键层」，
+                        // 且想关闭得点两下（先显式开、再显式关）。切换即写入显式设置。
                         SwitchPreference(
                             title = stringResource(R.string.engine_settings_input_pad_title),
                             summary = stringResource(R.string.engine_settings_input_pad_summary),
@@ -274,9 +284,11 @@ internal fun InputSettingsScreen() {
                                     // id/命名都要读方案目录，全部放 IO 线程（原先在主线程）
                                     scope.launch {
                                         val copyName = ctx.getString(R.string.input_settings_profile_copy)
-                                        withContext(Dispatchers.IO) {
+                                        val copied = withContext(Dispatchers.IO) {
                                             val id = InputRemapRepository.newProfileId(ctx)
-                                            val baseName = if (profile.isDefault) {
+                                            // 占位名的方案（内置默认 / 迁移主布局）复制时用本地化名字
+                                            // 作底，否则副本会带上英文 "Default"
+                                            val baseName = if (profile.isDefault || profile.isLegacyMain) {
                                                 ctx.getString(R.string.input_settings_profile_default)
                                             } else {
                                                 profile.name
@@ -286,6 +298,11 @@ internal fun InputSettingsScreen() {
                                                 baseName + " " + copyName,
                                             )
                                             InputRemapRepository.duplicateProfile(ctx, profile.id, id, name)
+                                        }
+                                        // 写盘失败（磁盘满等）必须提示：否则列表没有新条目，
+                                        // 用户只会以为「点了复制没反应」
+                                        if (copied == null) {
+                                            toast(ctx, R.string.input_settings_profile_copy_failed)
                                         }
                                         reloadProfiles()
                                     }
@@ -337,7 +354,11 @@ internal fun InputSettingsScreen() {
                 renameTarget = null
                 if (newName.isNotBlank()) {
                     scope.launch {
-                        withContext(Dispatchers.IO) { InputRemapRepository.renameProfile(ctx, target, newName) }
+                        val ok = withContext(Dispatchers.IO) {
+                            InputRemapRepository.renameProfile(ctx, target, newName)
+                        }
+                        // 写盘失败必须提示，否则用户只看到弹窗关闭、名称未变
+                        if (!ok) toast(ctx, R.string.input_settings_profile_rename_failed)
                         reloadProfiles()
                     }
                 }
@@ -427,8 +448,9 @@ private fun ProfileRow(
     onDelete: (() -> Unit)?,
     onExport: () -> Unit,
 ) {
-    // 方案名是随方案持久化的用户数据（默认方案存的是语言中立占位名），此处按 id 本地化展示
-    val displayName = if (profile.isDefault) {
+    // 方案名是随方案持久化的用户数据（默认方案与迁移主布局存的是语言中立占位名），
+    // 此处按 id 本地化展示；其余方案名是用户自己输入的，原样显示
+    val displayName = if (profile.isDefault || profile.isLegacyMain) {
         stringResource(R.string.input_settings_profile_default)
     } else {
         profile.name
@@ -478,21 +500,24 @@ private fun ProfileNameDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = title, style = MaterialTheme.typography.titleMedium) },
         text = {
-            Column {
-                // 与其他命名弹窗（RenameGameDialog）对齐：语义图标 + 正文档字号
-                AppSearchField(
-                    query = value,
-                    onQueryChange = { value = it },
-                    leadingIcon = painterResource(R.drawable.ic_sheet_rename),
-                    iconContentDescription = title,
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    text = stringResource(R.string.input_settings_profile_name_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
+            // 弹窗点击反馈规范：输入区内禁用全部点击/按压反馈（无涟漪）
+            CompositionLocalProvider(LocalIndication provides NoIndication) {
+                Column {
+                    // 与其他命名弹窗（RenameGameDialog）对齐：语义图标 + 正文字号
+                    AppSearchField(
+                        query = value,
+                        onQueryChange = { value = it },
+                        leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                        iconContentDescription = title,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text = stringResource(R.string.input_settings_profile_name_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
             }
         },
         confirmButton = {

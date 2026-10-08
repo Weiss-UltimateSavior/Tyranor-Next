@@ -85,6 +85,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
+import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
@@ -126,14 +127,8 @@ private sealed interface UpdateDownloadPhase {
     data class Failed(val message: String) : UpdateDownloadPhase
 }
 
-/** 更新下载进度文案的字节格式化（APK 体积通常在 MB 级）。 */
-private fun formatUpdateBytes(bytes: Long): String {
-    return if (bytes >= 1024L * 1024) {
-        String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
-    } else {
-        String.format(Locale.US, "%.0f KB", bytes / 1024.0)
-    }
-}
+/** 更新下载进度文案的字节格式化（统一走 [ByteFormats]：二进制单位 + 有效量级精度）。 */
+private fun formatUpdateBytes(bytes: Long): String = ByteFormats.formatBinarySize(bytes)
 
 /** 设置页：只展示各引擎全局设置入口，具体设置内容由独立 Activity 承载。列表项采用 Miuix Card + Preference 体系。 */
 @Composable

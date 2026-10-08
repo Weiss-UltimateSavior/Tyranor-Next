@@ -23,6 +23,33 @@ object KrSafMirror {
     private const val TAG = "KrSafMirror"
     private const val INDEX_VERSION = "krkr-saf-index-v1"
 
+    /**
+     * 镜像准备失败（**类型化原因，不带文案**：文案由 app 层按 [stage] 映射，见 AGENT.md 错误协议）。
+     *
+     * [name] 为相关目录/文件名，供调用方给出可定位的提示（如「无法创建镜像目录：data」）。
+     */
+    class PrepareException(
+        val stage: Stage,
+        val name: String? = null,
+    ) : IllegalStateException(stage.name + (name?.let { ": $it" } ?: ""))
+
+    enum class Stage {
+        /** 无法解析 SD 卡/SAF 源目录（授权失效或目录已被移动）。 */
+        SOURCE_UNRESOLVED,
+
+        /** 无法创建镜像根目录。 */
+        MIRROR_DIR,
+
+        /** 无法创建 SAF 索引目录。 */
+        INDEX_DIR,
+
+        /** 无法创建镜像子目录。 */
+        CHILD_DIR,
+
+        /** 无法创建镜像占位文件。 */
+        CHILD_FILE,
+    }
+
     data class Prepared(
         val mirrorRoot: File,
         val indexFile: File,
@@ -37,15 +64,19 @@ object KrSafMirror {
         displayName: String,
     ): Prepared {
         val tree = resolveDocumentDirectory(context.applicationContext, sourceReference, logicalPath)
-            ?: error("无法读取 SD 卡游戏目录，请重新添加包含该游戏的 SD 卡目录授权")
+            ?: throw PrepareException(Stage.SOURCE_UNRESOLVED, logicalPath)
         val mirrorRoot = mirrorRootFor(context, sourceReference, logicalPath, displayName)
-        if (!mirrorRoot.isDirectory && !mirrorRoot.mkdirs()) error("无法创建 KRKR 镜像目录")
+        if (!mirrorRoot.isDirectory && !mirrorRoot.mkdirs()) {
+            throw PrepareException(Stage.MIRROR_DIR, mirrorRoot.name)
+        }
 
         val entries = ArrayList<Pair<String, String>>()
         mirrorDirectory(tree, mirrorRoot, entries)
 
         val indexDir = File(context.noBackupFilesDir, "krkr_saf_index")
-        if (!indexDir.isDirectory && !indexDir.mkdirs()) error("无法创建 KRKR SAF 索引目录")
+        if (!indexDir.isDirectory && !indexDir.mkdirs()) {
+            throw PrepareException(Stage.INDEX_DIR, indexDir.name)
+        }
         val indexFile = File(indexDir, "${mirrorKey(sourceReference, logicalPath)}.idx")
         writeIndex(indexFile, entries)
         return Prepared(mirrorRoot, indexFile, entries.size)
@@ -94,10 +125,14 @@ object KrSafMirror {
             val name = child.name?.takeIf { it.isNotBlank() } ?: continue
             val local = File(destination, name.lowercase(Locale.ROOT))
             if (child.isDirectory) {
-                if (!local.isDirectory && !local.mkdirs()) error("无法创建镜像目录：${local.name}")
+                if (!local.isDirectory && !local.mkdirs()) {
+                    throw PrepareException(Stage.CHILD_DIR, local.name)
+                }
                 mirrorDirectory(child, local, entries)
             } else if (child.isFile) {
-                if (!local.exists() && !local.createNewFile()) error("无法创建镜像文件：${local.name}")
+                if (!local.exists() && !local.createNewFile()) {
+                    throw PrepareException(Stage.CHILD_FILE, local.name)
+                }
                 entries += local.absolutePath.lowercase(Locale.ROOT) to child.uri.toString()
             }
         }

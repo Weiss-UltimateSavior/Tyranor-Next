@@ -7,6 +7,8 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -50,8 +52,9 @@ class RpgMakerRuntimeEnvironmentZipTest {
         return bos.toByteArray()
     }
 
+    /** 返回类型化拒绝原因（null = 成功）；断言统一走真值判定。 */
     private fun run(zipBytes: ByteArray, dest: File, maxEntries: Int = 20_000,
-                    maxEntry: Long = 256L * 1024 * 1024, maxTotal: Long = 1024L * 1024 * 1024): Boolean =
+                    maxEntry: Long = 256L * 1024 * 1024, maxTotal: Long = 1024L * 1024 * 1024): RtpImportRejection? =
         RpgMakerRuntimeEnvironment.extractZipStream(
             ByteArrayInputStream(zipBytes), dest, maxEntries, maxEntry, maxTotal,
         )
@@ -66,7 +69,7 @@ class RpgMakerRuntimeEnvironmentZipTest {
                 Triple("ok.txt", 0, "ok".toByteArray()),
             ),
         )
-        assertFalse("被过滤的超大条目必须中止导入", run(zip, dest, maxEntry = 1024 * 1024))
+        assertNotNull("被过滤的超大条目必须中止导入", run(zip, dest, maxEntry = 1024 * 1024))
     }
 
     @Test
@@ -80,7 +83,7 @@ class RpgMakerRuntimeEnvironmentZipTest {
                 Triple("c/.DS_Store", 1024 * 1024, null),
             ),
         )
-        assertFalse(
+        assertNotNull(
             "被过滤条目累计超总量必须中止",
             run(zip, dest, maxEntry = 10 * 1024 * 1024, maxTotal = 2 * 1024 * 1024),
         )
@@ -96,7 +99,7 @@ class RpgMakerRuntimeEnvironmentZipTest {
                 Triple("ok.txt", 0, "ok".toByteArray()),
             ),
         )
-        assertFalse("越界条目也必须受限", run(zip, dest, maxEntry = 1024 * 1024))
+        assertNotNull("越界条目也必须受限", run(zip, dest, maxEntry = 1024 * 1024))
         assertFalse(
             "越界条目不得写出到 dest 之外",
             File(dest.parentFile, "escape/evil.bin").exists(),
@@ -115,7 +118,7 @@ class RpgMakerRuntimeEnvironmentZipTest {
                 Triple("app/sub/nested.txt", 0, "nested".toByteArray()),
             ),
         )
-        assertTrue("正常包应导入成功", run(zip, dest))
+        assertNull("正常包应导入成功", run(zip, dest))
         assertEquals("hello", File(dest, "app/data.txt").readText())
         assertEquals("nested", File(dest, "app/sub/nested.txt").readText())
         assertFalse("过滤条目不应落盘", File(dest, ".DS_Store").exists())
@@ -127,14 +130,14 @@ class RpgMakerRuntimeEnvironmentZipTest {
         val dest = temporaryFolder.newFolder("rtp5")
         // 大量被过滤条目：条目数上限必须在跳过**之前**生效（上一轮已修，这里回归锁定）
         val zip = buildZip(List(20) { Triple("__MACOSX/f$it", 0, ByteArray(8)) })
-        assertFalse("被过滤条目也要计入条目数上限", run(zip, dest, maxEntries = 10))
+        assertNotNull("被过滤条目也要计入条目数上限", run(zip, dest, maxEntries = 10))
     }
 
     @Test
     fun normalEntryOverLimitIsRejected() {
         val dest = temporaryFolder.newFolder("rtp6")
         val zip = buildZip(listOf(Triple("app/big.bin", 4 * 1024 * 1024, null)))
-        assertFalse(run(zip, dest, maxEntry = 1024 * 1024))
+        assertNotNull(run(zip, dest, maxEntry = 1024 * 1024))
         assertFalse("超限条目不应留下文件", File(dest, "app/big.bin").exists())
     }
 
@@ -148,9 +151,7 @@ class RpgMakerRuntimeEnvironmentZipTest {
         val dest = temporaryFolder.newFolder("reason1")
         val zip = buildZip(listOf(Triple("__MACOSX/big.bin", 4 * 1024 * 1024, null)))
 
-        assertFalse(run(zip, dest, maxEntry = 1024 * 1024))
-
-        val reason = RpgMakerRuntimeEnvironment.lastRejectReason()
+        val reason = run(zip, dest, maxEntry = 1024 * 1024)
         assertTrue("应报单条目超限，实际：$reason", reason is RtpImportRejection.EntrySizeExceeded)
         val exceeded = reason as RtpImportRejection.EntrySizeExceeded
         assertEquals(1024L * 1024L, exceeded.limit)
@@ -169,9 +170,7 @@ class RpgMakerRuntimeEnvironmentZipTest {
             ),
         )
 
-        assertFalse(run(zip, dest, maxEntry = 10 * 1024 * 1024, maxTotal = 2 * 1024 * 1024))
-
-        val reason = RpgMakerRuntimeEnvironment.lastRejectReason()
+        val reason = run(zip, dest, maxEntry = 10 * 1024 * 1024, maxTotal = 2 * 1024 * 1024)
         assertTrue("应报累计超限，实际：$reason", reason is RtpImportRejection.TotalSizeExceeded)
         val exceeded = reason as RtpImportRejection.TotalSizeExceeded
         assertEquals(2L * 1024L * 1024L, exceeded.limit)
@@ -183,9 +182,7 @@ class RpgMakerRuntimeEnvironmentZipTest {
         val dest = temporaryFolder.newFolder("reason3")
         val zip = buildZip(List(20) { Triple("__MACOSX/f$it", 0, ByteArray(8)) })
 
-        assertFalse(run(zip, dest, maxEntries = 10))
-
-        val reason = RpgMakerRuntimeEnvironment.lastRejectReason()
+        val reason = run(zip, dest, maxEntries = 10)
         assertTrue("应报条目数超限，实际：$reason", reason is RtpImportRejection.EntryCountExceeded)
         val exceeded = reason as RtpImportRejection.EntryCountExceeded
         assertEquals(10, exceeded.limit)
@@ -193,30 +190,39 @@ class RpgMakerRuntimeEnvironmentZipTest {
     }
 
     @Test
-    fun rejectReasonClearedBySubsequentSuccessfulImport() {
-        // 先失败再成功：原因必须回到 null，否则会把上次的原因挂到本次结果上
-        val dest = temporaryFolder.newFolder("reason4")
+    fun reasonIsReturnedPerCallNotFromGlobalState() {
+        // 每次调用各自返回原因：上一次的失败不得残留到本次结果上
+        // （旧的全局 lastRejectReason 槽在并发/连续导入下会把原因串台）
         val bad = buildZip(listOf(Triple("__MACOSX/big.bin", 4 * 1024 * 1024, null)))
-        assertFalse(run(bad, dest, maxEntry = 1024 * 1024))
-        assertTrue(RpgMakerRuntimeEnvironment.lastRejectReason() != null)
+        val first = run(bad, temporaryFolder.newFolder("reason4"), maxEntry = 1024 * 1024)
+        assertTrue(first is RtpImportRejection.EntrySizeExceeded)
 
         val good = buildZip(listOf(Triple("app/data.txt", 0, "ok".toByteArray())))
-        assertTrue(run(good, temporaryFolder.newFolder("reason4ok")))
-        assertEquals(null, RpgMakerRuntimeEnvironment.lastRejectReason())
+        assertNull("成功后必须返回 null", run(good, temporaryFolder.newFolder("reason4ok")))
+
+        // 本次是「条目数超限」：返回的原因必须是本次的，而不是上次的单条目超限
+        val many = buildZip(List(20) { Triple("app/f$it", 0, ByteArray(8)) })
+        val reason = run(many, temporaryFolder.newFolder("reason5b"), maxEntries = 5)
+        assertTrue("原因必须是本次失败的原因，实际：$reason", reason is RtpImportRejection.EntryCountExceeded)
     }
 
     @Test
-    fun rejectReasonClearedBeforeEachRun() {
-        // 每次解压开始先清空：上一次的原因不得残留到本次失败上
-        val dest = temporaryFolder.newFolder("reason5")
-        val bad = buildZip(listOf(Triple("__MACOSX/big.bin", 4 * 1024 * 1024, null)))
-        assertFalse(run(bad, dest, maxEntry = 1024 * 1024))
-        assertTrue(RpgMakerRuntimeEnvironment.lastRejectReason() is RtpImportRejection.EntrySizeExceeded)
+    fun emptyZipReportsEmptyArchive() {
+        // 空 zip 此前只返回 false 且无原因：用户看到「导入失败」无从判断是选错了包
+        val dest = temporaryFolder.newFolder("empty1")
+        assertEquals(RtpImportRejection.EmptyArchive, run(buildZip(emptyList()), dest))
+    }
 
-        // 本次是「条目数超限」，原因必须被本次覆盖
-        val many = buildZip(List(20) { Triple("app/f$it", 0, ByteArray(8)) })
-        assertFalse(run(many, temporaryFolder.newFolder("reason5b"), maxEntries = 5))
-        val reason = RpgMakerRuntimeEnvironment.lastRejectReason()
-        assertTrue("原因应被本次失败覆盖，实际：$reason", reason is RtpImportRejection.EntryCountExceeded)
+    @Test
+    fun onlyFilteredEntriesReportsEmptyArchive() {
+        // 全是元数据条目：过滤后无内容，同样属于「来源里没有可导入的内容」
+        val dest = temporaryFolder.newFolder("empty2")
+        val zip = buildZip(
+            listOf(
+                Triple("__MACOSX/._file", 0, ByteArray(16)),
+                Triple(".DS_Store", 0, ByteArray(16)),
+            ),
+        )
+        assertEquals(RtpImportRejection.EmptyArchive, run(zip, dest))
     }
 }

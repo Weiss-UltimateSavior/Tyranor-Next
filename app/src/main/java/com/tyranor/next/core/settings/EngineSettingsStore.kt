@@ -822,7 +822,15 @@ object EngineSettingsStore {
     fun setRpgSaveInterop(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_SAVE_INTEROP, b).apply()
 
     // ---------- 输入重映射（虚拟按键 + 手柄映射） ----------
-    fun isInputPadEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_INPUT_PAD_ENABLED, true)
+    /**
+     * 全局虚拟按键开关。
+     *
+     * [default] 由调用方给出，因为「用户未设置」的生效值随引擎而异：MV/MZ 改造前就有
+     * 按键层故默认开，Tyrano/VN/WebOther 默认关（引擎侧 `InputConfigStore.resolve`
+     * 用同一个 prefs 键 + `contains` 判定显式性，两处必须给出同样的默认）。
+     */
+    fun isInputPadEnabled(c: Context, default: Boolean = false): Boolean =
+        prefs(c).getBoolean(KEY_INPUT_PAD_ENABLED, default)
     fun setInputPadEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_INPUT_PAD_ENABLED, b).apply()
     fun isInputGamepadEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_INPUT_GAMEPAD_ENABLED, true)
     fun setInputGamepadEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_INPUT_GAMEPAD_ENABLED, b).apply()

@@ -209,6 +209,76 @@ class PadProfileTest {
     }
 
     @Test
+    fun parseRejectsReservedDirectionId() {
+        // 保留 id 与方向控件撞键（同处 elementById）：导入的用户方案可达此路径，
+        // 重名会让渲染、命中与编辑全部错乱，故解析时直接丢弃同名按钮
+        val raw = """
+            {"id":"c","name":"c","buttons":[
+              {"id":"direction","text":"fake","x":0.5,"y":0.5,"size":0.1},
+              {"id":"ok","text":"OK","x":0.5,"y":0.5,"size":0.1}
+            ]}
+        """.trimIndent()
+        val profile = PadProfile.parse(raw)!!
+        assertEquals("保留 id 的按钮必须被丢弃", listOf("ok"), profile.buttons.map { it.id })
+    }
+
+    @Test
+    fun parseCapsKeysPerBinding() {
+        // 键位数组无上限会让坏文件一次分配大量对象；上限同时约束方向键位
+        val keys = (1..200).joinToString(",")
+        val raw = """
+            {"id":"c","name":"c","buttons":[
+              {"id":"ok","text":"OK","x":0.5,"y":0.5,"size":0.1,"keys":[$keys]}
+            ],"direction":{"up":[$keys]}}
+        """.trimIndent()
+        val profile = PadProfile.parse(raw)!!
+        assertEquals(InputJsonLimits.MAX_KEYS_PER_BINDING, profile.buttons.single().keys.size)
+        assertEquals(InputJsonLimits.MAX_KEYS_PER_BINDING, profile.direction.up.size)
+    }
+
+    @Test
+    fun parseRejectsHigherSchemaButAcceptsEqualAndMissing() {
+        // 高版本文件可能带本实现不认识的字段：静默按低版本读会在下次落盘时丢字段，
+        // 因此拒绝解析（调用方回退出厂默认），而不是做有损读取
+        assertNull(
+            "schema 高于当前版本必须拒绝",
+            PadProfile.parse("""{"schema":${PadProfile.SCHEMA + 1},"id":"a","name":"a","buttons":[]}"""),
+        )
+        assertNotNull(
+            "同版本必须接受",
+            PadProfile.parse("""{"schema":${PadProfile.SCHEMA},"id":"a","name":"a","buttons":[]}"""),
+        )
+        assertNotNull(
+            "缺失 schema（历史文件）按当前版本处理",
+            PadProfile.parse("""{"id":"a","name":"a","buttons":[]}"""),
+        )
+    }
+
+    @Test
+    fun migratedIdGivesScopePriorityOverLongSlug() {
+        // 作用域是跨游戏唯一性的唯一来源：长 slug 不得把它挤到只剩 1 字符——
+        // 那样不同游戏会算出同一个 id（导入的用户方案带长名即可触发）
+        val longName = "a".repeat(80)
+        val presets = JSONObject().apply {
+            put(longName, JSONObject().apply {
+                put("buttons", JSONObject().apply { put("enter", JSONObject().apply { put("x", 0.5); put("y", 0.5) }) })
+            })
+        }.toString()
+        val scopeA = "g1234567890a".take(13)
+        val scopeB = "g1234567890b".take(13)
+        val idA = PadProfile.migrateLegacy(null, presets, scopeA).single().id
+        val idB = PadProfile.migrateLegacy(null, presets, scopeB).single().id
+
+        assertTrue("不同游戏的迁移 id 必须不同：$idA vs $idB", idA != idB)
+        // 作用域取满自己的配额（MAX_SCOPE_SLUG_LENGTH），不再被长 slug 压缩
+        assertTrue("id 必须包含完整作用域前缀，实际：$idA", idA.contains(scopeA.take(12)))
+        assertTrue(
+            "id 必须合法且不超 32 字符，实际：'$idA'（${idA.length}）",
+            Regex("[A-Za-z0-9_-]{1,32}").matches(idA),
+        )
+    }
+
+    @Test
     fun parseEnforcesButtonCountAndTextLimits() {
         // 上限防御：坏文件/构造文件不得让解析无界分配
         val buttons = (0 until PadProfile.MAX_PAD_BUTTONS + 40).joinToString(",") { i ->

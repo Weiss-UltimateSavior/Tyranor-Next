@@ -291,7 +291,7 @@
     <string name="engine_settings_ppsspp_title">PPSSPP engine settings</string>
     <string name="engine_settings_input_title">Input &amp; gamepad</string>
     <string name="engine_settings_input_pad_title">Virtual pad</string>
-    <string name="engine_settings_input_pad_summary">Show an editable on-screen key overlay during games</string>
+    <string name="engine_settings_input_pad_summary">Show an editable on-screen key overlay during games; on by default for RPG Maker MV/MZ only, enabling it applies to all Web engines</string>
     <string name="engine_settings_input_gamepad_title">Gamepad mapping</string>
     <string name="engine_settings_input_gamepad_summary">Map physical gamepad buttons to game keyboard/mouse actions</string>
     <string name="engine_settings_input_gamepad_entry">Gamepad bindings</string>
@@ -319,7 +319,9 @@
     <string name="pad_layout_edit_save_failed">Save failed. Check storage space and try again.</string>
     <string name="pad_layout_edit_hint">Tap to select a button and drag to move it. Tap Save when done; press system Back to exit without saving.</string>
     <string name="input_settings_profile_copy">Copy</string>
+    <string name="input_settings_profile_copy_failed">Copy failed. Check storage space and try again.</string>
     <string name="input_settings_profile_rename">Rename</string>
+    <string name="input_settings_profile_rename_failed">Rename failed. Check storage space and try again.</string>
     <string name="input_settings_profile_delete">Delete</string>
     <string name="input_settings_profile_export">Export</string>
     <string name="input_settings_profile_import">Import</string>
@@ -645,11 +647,13 @@
     <string name="engine_settings_rpgm_rtp_missing_status">Not imported</string>
     <string name="engine_settings_rpgm_rtp_import">Import</string>
     <string name="engine_settings_rpgm_rtp_imported">RTP imported</string>
-    <string name="engine_settings_rpgm_rtp_import_failed">RTP import failed</string>
+    <string name="engine_settings_rpgm_rtp_import_failed">RTP import failed (%1$s)</string>
     <string name="engine_settings_rpgm_rtp_reject_mkdir">Cannot create directory: %1$s</string>
     <string name="engine_settings_rpgm_rtp_reject_total_size">Extracted size exceeds limit (%1$s > %2$s)</string>
     <string name="engine_settings_rpgm_rtp_reject_entry_size">Entry exceeds size limit after extraction (%1$s > %2$s)</string>
     <string name="engine_settings_rpgm_rtp_reject_entry_count">Too many entries (%1$d > %2$d)</string>
+    <string name="engine_settings_rpgm_rtp_reject_io">Read/write failed: %1$s (source unreadable or storage full)</string>
+    <string name="engine_settings_rpgm_rtp_reject_empty">The selected source contains nothing to import</string>
     <string name="engine_settings_rpgm_rtp_clear">Clear</string>
     <string name="engine_settings_rpgm_rtp_clear_confirm">Delete the RTP files for this version?</string>
     <string name="engine_settings_rpgm_rtp_cleared">RTP cleared</string>
@@ -680,7 +684,9 @@
 
     <string name="launch_resolve_local_dir_failed">Unable to resolve the game directory (local file paths only)</string>
     <string name="launch_external_module_failed">Failed to launch %1$s</string>
-    <string name="launch_prepare_krkr_sd_mirror_failed">Unable to prepare the KRKR SD-card mirror</string>
+    <string name="launch_prepare_krkr_sd_mirror_failed">Cannot read the SD-card game directory. Re-add access permission for it.</string>
+    <string name="launch_create_krkr_mirror_failed">Cannot create the KRKR mirror: %1$s (check storage space and directory permissions)</string>
+    <string name="launch_create_krkr_mirror_unknown_path">unknown path</string>
     <string name="launch_create_krkr_mirror_save_failed">Unable to create the KRKR mirror save directory</string>
     <string name="launch_failed">Launch failed</string>
     <string name="launch_all_files_access_request">Allow “Manage all files” on the system page, then return and launch the game again</string>

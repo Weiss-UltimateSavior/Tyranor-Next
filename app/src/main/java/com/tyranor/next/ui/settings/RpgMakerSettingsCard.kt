@@ -90,14 +90,14 @@ internal fun RpgMakerRgssSettingsCard(
         if (uri == null || type == null) return@rememberLauncherForActivityResult
         scope.launch {
             val importedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_imported)
-            val failedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed)
-            val ok = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpZip(ctx, type, uri) }
+            val rejection = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpZip(ctx, type, uri) }
             refreshRtp(type)
-            // 失败时带上原因（如「条目数超过上限」）：只报「导入失败」会让用户
-            // 无从判断是包损坏、格式不对，还是被安全上限拦下。
-            // core 只给类型化原因，文案由本层映射组装（AGENT.md 错误处理协议）。
-            val reason = if (ok) null else RpgMakerRuntimeEnvironment.lastRejectReason()
-            val message = if (ok) importedMsg else reason?.let { "$failedMsg (${it.userMessage(ctx)})" } ?: failedMsg
+            // 失败时带上原因（如「条目数超过上限」「源里没有可导入内容」）：只报「导入失败」
+            // 会让用户无从判断是包损坏、格式不对，还是被安全上限拦下。
+            // core 返回类型化原因，文案与括号样式由 UI 层资源组装（AGENT.md 错误处理协议）
+            val message = rejection?.let {
+                ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed, it.userMessage(ctx))
+            } ?: importedMsg
             Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
         }
     }
@@ -114,10 +114,13 @@ internal fun RpgMakerRgssSettingsCard(
         }
         scope.launch {
             val importedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_imported)
-            val failedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed)
-            val ok = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpTree(ctx, type, uri) }
+            val rejection = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpTree(ctx, type, uri) }
             refreshRtp(type)
-            Toast.makeText(ctx, if (ok) importedMsg else failedMsg, Toast.LENGTH_SHORT).show()
+            // 目录导入同样带原因（选错目录 / 空目录 / 空间不足在提示里可区分）
+            val message = rejection?.let {
+                ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed, it.userMessage(ctx))
+            } ?: importedMsg
+            Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
         }
     }
 

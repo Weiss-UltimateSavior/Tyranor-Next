@@ -9,6 +9,12 @@ import com.core.input.InputSink
 import com.core.input.PadProfile
 import com.core.input.VirtualPadEditPanel
 import com.core.input.VirtualPadView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 按键布局编辑器的应用层宿主（core 门面）。
@@ -20,15 +26,24 @@ import com.core.input.VirtualPadView
  *
  * 生命周期：根视图由本类自建并持有 pad 与编辑面板；UI 在 `AndroidView` 工厂里取
  * [rootView] 挂载即可，Activity 销毁时随视图树回收（pad 的 Handler 在
- * `onDetachedFromWindow` 中清理）。
+ * `onDetachedFromWindow` 中清理，本类的协程作用域在根视图 detach 时取消）。
  */
 class PadEditorHost private constructor(
     private val pad: VirtualPadView,
     val rootView: View,
     private val onSavedCallback: (PadProfile) -> Unit,
-    private val onCancelledCallback: () -> Unit,
+    /**
+     * 编辑会话结束（保存成功与取消共用）。
+     *
+     * 命名刻意不叫 `onCancelled`：保存成功路径也会走到这里（面板收起 + 页面退出）。
+     * 若将来在此挂「丢弃草稿」之类的语义，保存路径会误执行。
+     */
+    private val onEditEndedCallback: () -> Unit,
     private val onSaveFailedCallback: () -> Unit,
 ) {
+
+    /** 落盘协程：挂在编辑器根视图的生命周期上（detach 即取消）。 */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     companion object {
 
@@ -48,7 +63,7 @@ class PadEditorHost private constructor(
             primaryColor: Int,
             onPrimaryColor: Int,
             onSaved: (PadProfile) -> Unit,
-            onCancelled: () -> Unit,
+            onEditEnded: () -> Unit,
             onSaveFailed: () -> Unit = {},
         ): PadEditorHost? {
             val profile = InputRemapRepository.readProfile(context, profileId) ?: return null
@@ -82,14 +97,22 @@ class PadEditorHost private constructor(
                 onSave = { pad.commitEdit() },
                 onCancel = { pad.cancelEdit() },
             )
-            val host = PadEditorHost(pad, root, onSaved, onCancelled, onSaveFailed)
+            val host = PadEditorHost(pad, root, onSaved, onEditEnded, onSaveFailed)
+            // 落盘协程随视图树销毁：detach 后不该再有人调 onSaved/onSaveFailed
+            root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(view: View) = Unit
+
+                override fun onViewDetachedFromWindow(view: View) {
+                    host.scope.cancel()
+                }
+            })
             pad.listener = object : VirtualPadView.Listener {
                 override fun onEditStarted() = Unit
 
                 override fun onEditEnded() {
                     // 保存与取消都走这里；面板先收起，再交给页面决定是否退出
                     panel.dismiss()
-                    host.onCancelledCallback()
+                    host.onEditEndedCallback()
                 }
 
                 override fun onSelectionChanged(info: VirtualPadView.SelectionInfo?) {
@@ -97,12 +120,27 @@ class PadEditorHost private constructor(
                 }
 
                 override fun onProfileCommitted(committed: PadProfile) {
-                    if (InputRemapRepository.writeProfile(context, committed)) {
-                        host.onSavedCallback(committed)
-                    } else {
-                        // 写盘失败：留在编辑态并提示，避免用户改完的布局被静默丢弃
-                        pad.markSaveFailed()
-                        host.onSaveFailedCallback()
+                    // 写盘带 fsync，放主线程会在保存瞬间卡住界面：交给 IO 线程，
+                    // 结果回主线程再收尾。提交协议据此走「会话号 → 结果校验」两段
+                    // （见 VirtualPadView.beginDeferredSave / completeDeferredSave）
+                    val session = pad.beginDeferredSave()
+                    host.scope.launch {
+                        val ok = withContext(Dispatchers.IO) {
+                            InputRemapRepository.writeProfile(context, committed)
+                        }
+                        // 会话已被新的提交接替、或用户已取消/离开：结果不再提示、不再改状态
+                        // （否则连点保存会「已保存成功又弹失败」，取消后还会弹过期提示）
+                        if (!pad.isDeferredSaveCurrent(session)) return@launch
+                        if (ok) {
+                            // 先通知页面再收尾：与同步路径一致（页面在 onSaved 里会退出并
+                            // 回收视图树），失败时才由页面提示并留在编辑态
+                            host.onSavedCallback(committed)
+                            pad.completeDeferredSave(session, true)
+                        } else {
+                            pad.completeDeferredSave(session, false)
+                            // 写盘失败：留在编辑态并提示，避免用户改完的布局被静默丢弃
+                            host.onSaveFailedCallback()
+                        }
                     }
                 }
 

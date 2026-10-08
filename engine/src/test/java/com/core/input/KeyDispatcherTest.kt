@@ -1,6 +1,7 @@
 package com.core.input
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** 多键输出 / 保持（toggle）语义 / 动作段派发的派发器单测。 */
@@ -244,13 +245,28 @@ class KeyDispatcherTest {
     }
 
     @Test
-    fun releaseAllDoesNotFireActions() {
+    fun scopeReleaseDoesNotReplayActions() {
+        // 语义：来源释放（手柄拔插 / 关闭开关 / 卸载按键层）只回收键位，动作不得重放
         val sink = RecordingSink()
         val dispatcher = KeyDispatcher(sink)
-        dispatcher.press("shot", listOf(CanonicalKeys.ACTION_SCREENSHOT), autoKeep = false)
-        dispatcher.releaseScope("pad:")
-        dispatcher.releaseScope("gp:")
-        // 释放不应重放动作
+        dispatcher.press("pad:shot", listOf(CanonicalKeys.ACTION_SCREENSHOT, 66), autoKeep = false)
         assertEquals(1, sink.actions.size)
+
+        dispatcher.releaseScope("pad:")
+
+        // 普通键被释放，动作不重放
+        assertEquals("动作不得因来源释放而重放", 1, sink.actions.size)
+        assertEquals(listOf(66 to true, 66 to false), sink.events)
+    }
+
+    @Test
+    fun blankScopeIsRejected() {
+        // 空 scope 会退化为跨来源整体释放：必须直接拒绝，而不是静默放掉另一侧的键
+        val sink = RecordingSink()
+        val dispatcher = KeyDispatcher(sink)
+        dispatcher.press("pad:ok", listOf(66), autoKeep = false)
+        val error = runCatching { dispatcher.releaseScope("") }.exceptionOrNull()
+        assertTrue("空 scope 必须抛 IllegalArgumentException", error is IllegalArgumentException)
+        assertEquals(setOf(66 to true), sink.events.toSet())
     }
 }

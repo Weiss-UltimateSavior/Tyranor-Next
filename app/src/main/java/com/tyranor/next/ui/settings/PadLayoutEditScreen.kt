@@ -30,6 +30,8 @@ import com.tyranor.next.ui.common.AppScreenActivity
  *
  * 页面不设顶栏与任何常驻按钮——编辑区占满全屏（与游戏内所见一致），进屏 Toast 说明
  * 操作方式与退出方式；退出统一走系统返回键（等同取消，不保存），保存用面板内的「保存」。
+ * 该无顶栏形态是 AGENT.md「页面顶部栏统一规范」的**明文豁免**（见该文档第 8 节）：
+ * 按键位置按视口归一化存储，顶栏会压缩画布高度、破坏「所见即所得」这一核心契约。
  *
  * 本 Activity 声明 `sensorLandscape`：游戏几乎都是横屏，编辑布局在横屏下所见即所得；
  * 退出后应用其余页面仍为竖屏。
@@ -82,7 +84,8 @@ internal fun PadLayoutEditScreen(profileId: String) {
                 // 保存即完成本页使命，直接退出（编辑面板随视图树回收）
                 activity?.finish()
             },
-            onCancelled = { activity?.finish() },
+            // 编辑会话结束（保存成功亦经此退出）：本页无需区分「取消」语义
+            onEditEnded = { activity?.finish() },
             // 写盘失败：留在编辑态并提示，否则用户只看到「点保存没反应」
             onSaveFailed = {
                 Toast.makeText(ctx, saveFailedMessage, Toast.LENGTH_LONG).show()

@@ -8,6 +8,7 @@ import com.core.input.InputConfigStore
 import com.core.input.InputKeyCatalog
 import com.core.input.PadProfile
 import com.core.input.StickBinding
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import org.json.JSONObject
@@ -23,8 +24,9 @@ import org.json.JSONObject
  *  - 方案文件：`<filesDir>/input/profiles/<id>.json`（游戏内编辑保存与设置页共同读写；
  *    旧触屏手柄迁移产物用 `migrated-<游戏作用域>-*` 命名，避免多游戏共用内置 `default`）；
  *  - 手柄映射：`<filesDir>/input/gamepad_map.json`；
- *  - 开关/方案选择：全局存 tyranor_prefs（[EngineSettingsStore]），单游戏覆盖存
- *    game_overrides blob（[PerGameSettingsStore]，键名与 engine InputConfigStore 锚定）。
+ *  - 开关/方案选择：全局存 tyranor_prefs（[EngineSettingsStore]，键名与 engine
+ *    `InputConfigStore` 的 `KEY_*` 常量锚定），单游戏覆盖存 game_overrides blob
+ *    （[PerGameSettingsStore]，键名同样与 engine 锚定；引擎侧只读）。
  */
 object InputRemapRepository {
 
@@ -41,7 +43,26 @@ object InputRemapRepository {
 
     // ---------- 全局开关 / 方案选择 ----------
 
-    fun globalPadEnabled(context: Context): Boolean = EngineSettingsStore.isInputPadEnabled(context)
+    /**
+     * 该引擎在「用户从未设置开关」时是否默认开启虚拟按键。
+     *
+     * 与 engine 侧 `InputRemapController.engineDefaultsEnabled` 同一策略：只有 MV/MZ
+     * 改造前就有按键层（旧 `__touch_pad.js`），故默认开；Tyrano / VN / WebOther 默认关，
+     * 否则老用户升级后会凭空多出一层按钮。设置页用它给「跟随全局」标出正确取值。
+     */
+    fun engineDefaultsPadEnabled(engine: EngineType): Boolean =
+        engine == EngineType.RPG_MV || engine == EngineType.RPG_MZ
+
+    /**
+     * 设置页开关应展示的取值（全局开关对所有引擎生效）。
+     *
+     * 未显式设置时按「开」显示：MV/MZ 的实际默认就是开（见 [engineDefaultsPadEnabled]），
+     * 显示为关会让用户以为按键层已关闭、且要连点两下才能真正关闭。
+     * Tyrano/VN/WebOther 用户看到开关为开、游戏里却没有按键层——这正是设置页摘要
+     * 所说明的默认范围（单游戏覆盖仍可逐游戏调整）。
+     */
+    fun effectiveGlobalPadEnabled(context: Context): Boolean =
+        EngineSettingsStore.isInputPadEnabled(context, default = true)
 
     fun setGlobalPadEnabled(context: Context, enabled: Boolean) =
         EngineSettingsStore.setInputPadEnabled(context, enabled)
@@ -80,7 +101,18 @@ object InputRemapRepository {
         val id: String,
         val name: String,
         val isDefault: Boolean,
+        /**
+         * 语言中立占位名（迁移主布局的 `"Default"`）。
+         *
+         * 旧触屏手柄迁移产物的方案名是硬编码 ASCII（[PadProfile.migrateLegacy]），UI 按
+         * [isDefault] 只对内置方案做本地化；少了这个标记，中日文界面会把迁移主布局直接
+         * 显示成英文 "Default"。UI 据此改走同一份本地化文案。
+         */
+        val isLegacyMain: Boolean,
     )
+
+    /** 迁移产物主布局的 id 约定：`migrated-<游戏作用域>-main`（见 [PadProfile.migrateLegacy]）。 */
+    private val LEGACY_MAIN_ID = Regex("^migrated-.+-main$")
 
     fun listProfileSummaries(context: Context): List<ProfileSummary> =
         InputConfigStore.listProfiles(context).map { profile ->
@@ -88,6 +120,7 @@ object InputRemapRepository {
                 id = profile.id,
                 name = profile.name,
                 isDefault = profile.id == InputConfigStore.DEFAULT_PROFILE_ID,
+                isLegacyMain = LEGACY_MAIN_ID.matches(profile.id),
             )
         }
 
@@ -107,7 +140,7 @@ object InputRemapRepository {
         val source = InputConfigStore.readProfile(context, id) ?: return null
         val copy = source.copy(id = newId, name = newName)
         if (!writeProfile(context, copy)) return null
-        return ProfileSummary(id = newId, name = newName, isDefault = false)
+        return ProfileSummary(id = newId, name = newName, isDefault = false, isLegacyMain = false)
     }
 
     /** 新建方案：以出厂默认布局为底（出厂布局不向 app 暴露构造细节）。 */
@@ -115,7 +148,7 @@ object InputRemapRepository {
         if (InputConfigStore.sanitizeProfileId(newId) == null) return null
         val profile = PadProfile.defaultProfile(newId, newName)
         if (!writeProfile(context, profile)) return null
-        return ProfileSummary(id = newId, name = newName, isDefault = false)
+        return ProfileSummary(id = newId, name = newName, isDefault = false, isLegacyMain = false)
     }
 
     /** 重命名方案（默认方案由 UI 禁止入口）。 */
@@ -166,18 +199,21 @@ object InputRemapRepository {
             exists = { id -> InputConfigStore.profileFile(context, id).isFile },
             write = { profile -> writeProfile(context, profile) },
         )
-        // 仅在全部待写方案都成功（或已存在）时置位标记：写盘失败（磁盘满、目录创建失败）
+        // 仅在全部待写方案都成功（或已存在）时继续：写盘失败（磁盘满、目录创建失败）
         // 时留待下次启动重试，否则旧布局再也迁不进来
         if (!outcome.allWritten) return outcome.migrated
-        PerGameSettingsStore.setBool(context, gameId, PerGameSettingsStore.F_LEGACY_MIGRATED, true)
-        if (profiles.isEmpty()) return emptyList()
-        // 该游戏未显式选择方案时，指向迁移出的主布局（单游戏覆盖，不动全局）。
-        // 目标从**完整 profiles 列表**推导而非 outcome.migrated：后者是「本次新写集合」，
-        // 部分失败重试后可能只剩 preset（主布局已被 exists 跳过），会让游戏错误地
-        // 用上某个预设；文件已写全但上次在置标记前中断时它还会是空集，覆盖永不写入。
-        if (gameProfileIdOverride(context, gameId) == null) {
+        if (profiles.isNotEmpty() && gameProfileIdOverride(context, gameId) == null) {
+            // 该游戏未显式选择方案时，指向迁移出的主布局（单游戏覆盖，不动全局）。
+            // 目标从**完整 profiles 列表**推导而非 outcome.migrated：后者是「本次新写集合」，
+            // 部分失败重试后可能只剩 preset（主布局已被 exists 跳过），会让游戏错误地
+            // 用上某个预设；文件已写全但上次在置标记前中断时它还会是空集，覆盖永不写入。
+            //
+            // 这一步必须**先于**置标记：两者是独立持久化，中间被杀时留下「覆盖已写、标记未置」
+            // 只会让下次启动幂等重试；顺序反过来会留下「标记已置但覆盖未写」，覆盖永不写入，
+            // 该游戏的方案选择静默留在全局默认。
             setGameProfileIdOverride(context, gameId, profiles.first().id)
         }
+        PerGameSettingsStore.setBool(context, gameId, PerGameSettingsStore.F_LEGACY_MIGRATED, true)
         return outcome.migrated
     }
 
@@ -388,7 +424,7 @@ object InputRemapRepository {
         if (InputConfigStore.sanitizeProfileId(newId) == null) return null
         val profile = parsed.copy(id = newId, name = newName)
         if (!writeProfile(context, profile)) return null
-        return ProfileSummary(id = newId, name = newName, isDefault = false)
+        return ProfileSummary(id = newId, name = newName, isDefault = false, isLegacyMain = false)
     }
 
     /** 从导入的 JSON 中读取方案名（解析失败返回 null）。 */

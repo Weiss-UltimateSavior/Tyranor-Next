@@ -43,7 +43,7 @@ object InputConfigStore {
     /** 原子写的临时文件名序号：仅带 pid 时，同进程内两次并发写会共用同一个临时文件。 */
     private val tmpCounter = java.util.concurrent.atomic.AtomicInteger(0)
 
-    /** 生效输入设置（单游戏覆盖 ?: 全局 ?: 内置默认）。 */
+    /** 生效输入设置（单游戏覆盖 ?: 全局显式设置 ?: 引擎默认，见 [resolveSettings]）。 */
     data class InputSettings(
         val padEnabled: Boolean,
         val gamepadEnabled: Boolean,
@@ -130,18 +130,32 @@ object InputConfigStore {
     // ---------- 生效设置 ----------
 
     /**
-     * 单游戏覆盖 ?: 全局 ?: 内置默认。
+     * 单游戏覆盖 ?: 全局显式设置 ?: 引擎默认。
      *
      * 覆盖字段必须用 `has()` 判定存在性：`org.json` 的 `optBoolean(name)` 在键缺失时
      * 返回 false（而非 null），直接 `optBoolean(name) ?: global` 会让「未覆盖」被当成
      * 「显式关闭」——任何存过单游戏设置（如保存 ONSS 覆盖）的游戏都会静默失去虚拟按键。
+     *
+     * 全局侧同理，但对象是 prefs：`getBoolean(KEY_PAD_ENABLED, true)` 分不清「用户显式
+     * 打开」与「从未设置」，因此这里用 `contains()` 区分，未设置时回落到宿主给出的
+     * [engineDefaultsEnabled]（改造前这些 Web 宿主没有按键层，默认全开会让老用户
+     * 一升级就凭空多出一层按键）。
      */
-    fun resolve(context: Context, gameId: String): InputSettings {
+    fun resolve(
+        context: Context,
+        gameId: String,
+        engineDefaultsEnabled: Boolean = true,
+    ): InputSettings {
         val blob = if (gameId.isNotBlank()) gameOverrideBlob(context, gameId) else null
         val global = context.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
         return resolveSettings(
             blob = blob,
-            globalPadEnabled = global.getBoolean(KEY_PAD_ENABLED, true),
+            globalPadEnabled = if (global.contains(KEY_PAD_ENABLED)) {
+                global.getBoolean(KEY_PAD_ENABLED, engineDefaultsEnabled)
+            } else {
+                null
+            },
+            enginePadDefault = engineDefaultsEnabled,
             globalGamepadEnabled = global.getBoolean(KEY_GAMEPAD_ENABLED, true),
             globalProfileId = global.getString(KEY_PROFILE_ID, null),
         )
@@ -150,14 +164,17 @@ object InputConfigStore {
     /** 生效设置的纯函数部分（不依赖 Context，便于单测锚定覆盖语义）。 */
     internal fun resolveSettings(
         blob: JSONObject?,
-        globalPadEnabled: Boolean,
+        /** 全局显式设置；null = 用户从未设置过（回落 [enginePadDefault]）。 */
+        globalPadEnabled: Boolean?,
         globalGamepadEnabled: Boolean,
         globalProfileId: String?,
+        /** 宿主引擎的默认开关：MV/MZ 为 true，Tyrano/VN/WebOther 为 false。 */
+        enginePadDefault: Boolean = true,
     ): InputSettings {
         val padEnabled = if (blob?.has(KEY_PAD_ENABLED) == true) {
             blob.optBoolean(KEY_PAD_ENABLED)
         } else {
-            globalPadEnabled
+            globalPadEnabled ?: enginePadDefault
         }
         val gamepadEnabled = if (blob?.has(KEY_GAMEPAD_ENABLED) == true) {
             blob.optBoolean(KEY_GAMEPAD_ENABLED)
@@ -220,24 +237,39 @@ object InputConfigStore {
      * 不用「先 delete 再 rename」：POSIX rename 本身原子替换已存在目标，先删会留下
      * 「文件不存在」窗口（进程被杀即丢配置）。临时名带进程号 + 进程内序号，避免多进程
      * 以及同进程并发写同一目标时互相截断。rename 失败时兜底重试一次。
+     *
+     * 任何失败路径都必须删干净临时文件（含写入过程中抛异常）：残留的 `.tmp` 会一直躺在
+     * profiles 目录里，虽然 [listProfiles] 按 `.json` 后缀过滤不会读到它，但会持续占用空间。
+     * 兜底也不能先删目标再 rename——删除目标与 rename 之间失败会丢用户配置。
      */
     private fun atomicWrite(target: File, content: String): Boolean {
         val dir = target.parentFile ?: return false
         val tmp = File(dir, ".${target.name}.${android.os.Process.myPid()}.${tmpCounter.incrementAndGet()}.tmp")
-        return runCatching {
-            java.io.FileOutputStream(tmp).use { output ->
-                output.write(content.toByteArray(Charsets.UTF_8))
-                output.flush()
-                output.fd.sync()
+        var renamed = false
+        return try {
+            try {
+                java.io.FileOutputStream(tmp).use { output ->
+                    output.write(content.toByteArray(Charsets.UTF_8))
+                    output.flush()
+                    output.fd.sync()
+                }
+                renamed = tmp.renameTo(target)
+                if (!renamed) {
+                    // 个别文件系统上 rename 无法覆盖已存在的目标：先删目标再重试。
+                    // 这次删除是安全的——目标内容是本次即将替换掉的旧版本，且紧随其后 rename；
+                    // 若 rename 仍失败，则说明 rename 本身不可用，此时只剩「保留旧文件」的选择：
+                    // 先前的实现删掉目标后失败会让用户配置凭空消失。
+                    if (target.exists() && target.delete()) {
+                        renamed = tmp.renameTo(target)
+                    }
+                }
+                renamed
+            } finally {
+                if (!renamed) tmp.delete()
             }
-            if (tmp.renameTo(target)) return@runCatching true
-            // 个别文件系统上 rename 覆盖失败：删除目标后重试
-            if (target.exists() && target.delete() && tmp.renameTo(target)) {
-                true
-            } else {
-                tmp.delete()
-                false
-            }
-        }.getOrDefault(false)
+        } catch (_: Throwable) {
+            // 磁盘满 / 权限 / 目录被删等：调用方按「写盘失败」处理，不得让异常穿出
+            false
+        }
     }
 }

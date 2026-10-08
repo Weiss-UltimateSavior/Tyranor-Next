@@ -4,6 +4,7 @@ import android.content.Context
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.external.RtpImportRejection
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.ui.common.ByteFormats
 
 /**
  * RTP 导入拒绝原因 → 本地化文案（core → ui 错误协议，见 AGENT.md）。
@@ -33,16 +34,14 @@ internal fun RtpImportRejection.userMessage(context: Context): String {
 
         is RtpImportRejection.DirectoryCreateFailed ->
             localized.getString(R.string.engine_settings_rpgm_rtp_reject_mkdir, name)
+
+        is RtpImportRejection.IoFailed ->
+            localized.getString(R.string.engine_settings_rpgm_rtp_reject_io, name)
+
+        RtpImportRejection.EmptyArchive ->
+            localized.getString(R.string.engine_settings_rpgm_rtp_reject_empty)
     }
 }
 
-/** 字节数的人类可读形式（MiB/GiB 取整，避免长串数字）。 */
-private fun formatBytes(bytes: Long): String {
-    val mib = 1024.0 * 1024.0
-    val gib = mib * 1024.0
-    return when {
-        bytes >= gib -> String.format(java.util.Locale.US, "%.1f GiB", bytes / gib)
-        bytes >= mib -> String.format(java.util.Locale.US, "%.0f MiB", bytes / mib)
-        else -> "$bytes B"
-    }
-}
+/** 字节数的人类可读形式（统一走 [ByteFormats]：二进制单位 + 有效的量级精度）。 */
+private fun formatBytes(bytes: Long): String = ByteFormats.formatBinarySize(bytes)

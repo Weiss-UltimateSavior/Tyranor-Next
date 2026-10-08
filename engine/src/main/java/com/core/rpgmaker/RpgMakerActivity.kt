@@ -324,12 +324,14 @@ class RpgMakerActivity : Activity() {
         root.addView(layer, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         setContentView(root)
-        // 输入重映射（虚拟按键 + 手柄映射）：叠在最上层接收触摸
+        // 输入重映射（虚拟按键 + 手柄映射）：叠在最上层接收触摸。
+        // 本宿主只承载 RPG Maker MV/MZ，引擎默认即为开启（见 InputRemapController 说明）
         inputRemap = InputRemapController.installWeb(
             activity = this,
             container = root,
             gameId = rpgMakerModGameId,
             theme = EngineThemeColors.fromIntent(intent),
+            engineDefaultsEnabled = true,
         ) { js -> webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } } }
         browser.addJavascriptInterface(
             requireNotNull(inputRemap).Bridge(),
