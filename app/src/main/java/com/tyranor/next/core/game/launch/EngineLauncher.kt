@@ -88,7 +88,6 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object EngineLauncher {
     private const val TAG = "EngineLauncher"
-    private const val LEGACY_GAME_DIR_TARGET = "\u005B\u6E38\u620F\u76EE\u5F55\u005D"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
 
@@ -1534,22 +1533,13 @@ object EngineLauncher {
 
         // 脚本/主启动归档优先（此类 xp3 内含 start.ks / FirstConductor 等启动脚本），
         // 避开 bgimage/bgm/video/voice 等纯素材档。
-        val preferred = listOf(
-            "data.xp3", "main.xp3", "scn.xp3", "patch.xp3", "scenario.xp3",
-            "startup.tjs", "0.ebk",
-        )
-        preferred.forEach { name ->
+        LaunchFileCandidates.KR_PREFERRED_NAMES.forEach { name ->
             files.firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { return it.absolutePath }
         }
 
         // launchTarget 若存在且非素材档，作为候选用
-        val target = game.launchTarget
-            .takeIf {
-                !it.isNullOrBlank() &&
-                    it != LEGACY_GAME_DIR_TARGET &&
-                    !it.equals(EngineScanner.LAUNCH_TARGET_GAME_DIR, ignoreCase = true)
-            }
-        if (target != null && !target.lowercase().startsWith("bg")) {
+        val target = game.launchTarget.takeIf { LaunchFileCandidates.isLaunchTargetCandidate(it) }
+        if (target != null) {
             val exact = java.io.File(path, target)
             val f = if (exact.isFile) exact else java.io.File(path, target.lowercase(Locale.ROOT))
             if (f.isFile) return f.absolutePath
@@ -1853,41 +1843,88 @@ object EngineLauncher {
     }
 
     /**
-     * 列出游戏目录内可作为启动入口的文件（xp3 与 exe），供“启动文件”选择弹窗展示。
+     * 「启动文件」选择器数据：候选文件名列表 + 当前生效项，一次读取供弹窗展示。
+     *
+     * 目录枚举分两级：真实路径 File 直读（内置存储 / 已授予“所有文件访问”）；不可用
+     * （SD 卡未授权时 `listFiles` 静默返回空）则回退 SAF 子项查询。确认仍只写
+     * [ScanGame.launchFile]：启动侧 SD 卡经 SAF 镜像读取，不依赖真实路径可枚举。
      */
-    /** 「启动文件」选择器候选：KRKR 列 .xp3 + .exe；YURIS 列根目录 .exe（干扰项已过滤并排序）。 */
-    internal fun listLaunchFiles(context: Context, game: ScanGame): List<String> {
-        val path = resolveGameDirectory(context, game) ?: return emptyList()
+    internal fun launchFileOptions(context: Context, game: ScanGame): LaunchFileOptions {
+        val path = resolveGameDirectory(context, game)
+        val entries = readLaunchFileEntries(context, game, path)
         return when (game.engine) {
             // YU-RIS / CatSystem2 / 手动添加的 PC 共用 Windows exe 候选（过滤干扰项并按可信度排序）；
             // CatSystem2 额外接受 .bin（Runtime 可能被改名/改扩展名）并优先 cs2.exe
-            EngineType.YURIS, EngineType.PC -> YurisLaunchFiles.candidates(java.io.File(path)).map { it.name }
-            EngineType.CATSYSTEM2 -> YurisLaunchFiles.candidates(
-                java.io.File(path),
-                allowBin = true,
-                preferCs2Runtime = true,
-            ).map { it.name }
-            else -> {
-                val files = java.io.File(path).listFiles()?.filter { it.isFile }.orEmpty()
-                val xp3 = files.filter { it.name.lowercase().endsWith(".xp3") }.sortedBy { it.name.lowercase() }.map { it.name }
-                val exe = files.filter { it.name.lowercase().endsWith(".exe") }.sortedBy { it.name.lowercase() }.map { it.name }
-                xp3 + exe
+            EngineType.YURIS, EngineType.CATSYSTEM2, EngineType.PC -> {
+                val allowBin = game.engine == EngineType.CATSYSTEM2
+                val candidates = YurisLaunchFiles.candidatesOf(
+                    entries.map { YurisLaunchFiles.ExeCandidate(it.name, it.size) },
+                    launchFileDirName(path, game.title),
+                    allowBin = allowBin,
+                    preferCs2Runtime = game.engine == EngineType.CATSYSTEM2,
+                )
+                LaunchFileOptions(
+                    names = candidates.map { it.name },
+                    current = LaunchFileCandidates.windowsCurrentName(candidates, game.launchFile, allowBin),
+                )
             }
+            else -> LaunchFileOptions(
+                names = LaunchFileCandidates.krkrNames(entries),
+                current = LaunchFileCandidates.krkrCurrentName(entries, game),
+            )
         }
     }
 
-    /**
-     * 当前启动入口对应的文件名（仅当入口为目录内文件时返回；入口为目录本身时返回 null）。
-     * KRKR 走入口探测；YURIS 为自动/手动解析出的主 exe。
-     */
-    internal fun currentLaunchFileName(context: Context, game: ScanGame): String? {
-        val path = resolveGameDirectory(context, game) ?: return null
-        if (game.engine == EngineType.YURIS || game.engine == EngineType.PC || game.engine == EngineType.CATSYSTEM2) {
-            return YurisLaunchFiles.resolveExeName(game, path)
+    /** 候选目录枚举：真实路径优先；File 直读不可用（null 或空）时回退 SAF（SD 卡常见）。 */
+    private fun readLaunchFileEntries(
+        context: Context,
+        game: ScanGame,
+        path: String?,
+    ): List<LaunchFileCandidates.Entry> {
+        if (path != null) {
+            val files = runCatching { File(path).listFiles() }.getOrNull()
+            if (!files.isNullOrEmpty()) {
+                return files.filter { it.isFile }.map { LaunchFileCandidates.Entry(it.name, it.length()) }
+            }
         }
-        val entry = pickKrActivateEntry(path, game)
-        return java.io.File(entry).takeIf { it.isFile }?.name
+        return readSafLaunchFileEntries(context, game.uri)
     }
+
+    /** 经 SAF 查询游戏目录子项；查询失败返回空列表（弹窗按空态提示，不阻断其它功能）。 */
+    private fun readSafLaunchFileEntries(context: Context, uriText: String): List<LaunchFileCandidates.Entry> {
+        val uri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return emptyList()
+        if (!uri.scheme.equals("content", ignoreCase = true)) return emptyList()
+        return runCatching {
+            // 扫描保存的是树内子文档 URI；纯树 URI（如手动添加 PC 的目录授权）退回树根文档 id
+            val documentId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+                ?: DocumentsContract.getTreeDocumentId(uri)
+            val childrenUri = if (DocumentsContract.isTreeUri(uri)) {
+                DocumentsContract.buildChildDocumentsUriUsingTree(uri, documentId)
+            } else {
+                DocumentsContract.buildChildDocumentsUri(uri.authority, documentId)
+            }
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+                DocumentsContract.Document.COLUMN_SIZE,
+            )
+            buildList {
+                context.contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(0) ?: continue
+                        if (cursor.getString(1) == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                        add(LaunchFileCandidates.Entry(name, if (cursor.isNull(2)) 0L else cursor.getLong(2)))
+                    }
+                }
+            }
+        }.onFailure { error ->
+            Log.w(TAG, "SAF launch file query failed uri=$uriText", error)
+        }.getOrDefault(emptyList())
+    }
+
+    /** 候选排序用的目录名：真实路径可用时取目录名，否则回退游戏标题（扫描/手动添加默认均为目录名）。 */
+    private fun launchFileDirName(path: String?, title: String): String =
+        path?.let { runCatching { File(it).name }.getOrNull() }?.takeIf { it.isNotBlank() } ?: title
 
     /** 与 OnsSettings.safeSharpness 一致：只接受 0.1~10.0 的数字，否则回退 "2"。 */
     private fun safeSharpnessValue(value: String): String {
@@ -1943,6 +1980,12 @@ object EngineLauncher {
         }
     }
 }
+
+/** 「启动文件」选择器数据（见 [EngineLauncher.launchFileOptions]）：候选名 + 当前生效项。 */
+internal data class LaunchFileOptions(
+    val names: List<String>,
+    val current: String?,
+)
 
 internal fun effectiveRpgMakerModEnabled(
     engine: EngineType,

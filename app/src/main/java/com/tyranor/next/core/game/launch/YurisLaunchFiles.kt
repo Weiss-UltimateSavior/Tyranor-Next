@@ -52,7 +52,7 @@ object YurisLaunchFiles {
         return sortCandidates(filtered.ifEmpty { launchable }, dirName, preferCs2Runtime)
     }
 
-    private fun isLaunchableName(name: String, allowBin: Boolean): Boolean {
+    internal fun isLaunchableName(name: String, allowBin: Boolean): Boolean {
         val lower = name.lowercase(Locale.ROOT)
         return lower.endsWith(".exe") || (allowBin && lower.endsWith(".bin"))
     }
@@ -73,9 +73,6 @@ object YurisLaunchFiles {
     /** 解析出的 exe 文件名（相对游戏目录）；无可用 exe 返回 null。 */
     fun resolveExeName(game: ScanGame, projectDirPath: String): String? =
         resolveExe(game, projectDirPath)?.name
-
-    /** 当前生效的启动文件名（供「启动文件」选择器回显）。 */
-    fun currentLaunchFileName(projectDir: File): String? = candidates(projectDir).firstOrNull()?.name
 
     internal fun isExcluded(fileName: String): Boolean {
         val stem = fileName.substringBeforeLast('.').lowercase(Locale.ROOT)

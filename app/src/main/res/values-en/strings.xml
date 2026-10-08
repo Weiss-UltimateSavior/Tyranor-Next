@@ -18,6 +18,8 @@
     <string name="nav_games">Games</string>
     <string name="nav_engine">Engines</string>
     <string name="nav_settings">Settings</string>
+    <string name="nav_floating_expand">Expand navigation</string>
+    <string name="nav_floating_collapse">Collapse navigation</string>
 
     <string name="settings_app_title">App settings</string>
     <string name="settings_language_title">Language</string>
@@ -44,8 +46,11 @@
     <string name="settings_nav_bar_default">Default</string>
     <string name="settings_nav_bar_liquid_glass">Liquid glass · Classic</string>
     <string name="settings_nav_bar_liquid_glass_enhanced">Liquid glass · Lens</string>
+    <string name="settings_nav_bar_floating_button">Floating button</string>
+    <string name="settings_nav_bar_reset_position">Reset floating button position</string>
     <string name="settings_nav_bar_desc_liquid_glass">Effective on Android 12 and above</string>
     <string name="settings_nav_bar_desc_enhanced">Android 13 and above only</string>
+    <string name="settings_nav_bar_desc_floating_button">Floats at the bottom right; tap to expand</string>
     <string name="settings_nav_bar_desc_rail">Shown as a side rail on tablets</string>
     <string name="settings_home_style">Home style</string>
     <string name="settings_home_style_native">Default</string>
