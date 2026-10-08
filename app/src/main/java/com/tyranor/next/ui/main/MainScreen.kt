@@ -45,6 +45,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -206,8 +208,6 @@ fun MainScreen(modifier: Modifier = Modifier) {
       },
     )
   }
-  // 左半屏右滑唤出：挂在根布局上（子内容优先，不遮挡任何点击/滚动）
-  val sidePanelSwipeModifier = rememberSidePanelSwipeModifier(onOpen = { sidePanelOpen = true })
   // 首页样式：Web 首页参与绘制期间底栏改用仅背景采样源（见 webHomeInvolved）
   val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
   // 液态玻璃两档共用同一套宿主准备（录制采样层、转场重定向、底部留白）
@@ -222,6 +222,20 @@ fun MainScreen(modifier: Modifier = Modifier) {
   // 与液态玻璃两档一致，平板下不参与侧栏适配，落到主题默认侧栏形态。
   val floatingButtonStyle = navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON
   val floatingButtonActive = floatingButtonStyle && !railLayout
+  // 侧边栏唤出识别需跳过底部导航栏区域：各底栏形态在布局后把自己顶边（根布局坐标）上报到
+  // bottomNavTopY；悬浮按钮 / 平板侧栏没有底部导航栏，恒按「无排除」处理。
+  var bottomNavTopY by remember { mutableStateOf(Float.POSITIVE_INFINITY) }
+  val reportBottomNavTop = remember {
+    Modifier.onGloballyPositioned { bottomNavTopY = it.positionInParent().y }
+  }
+  // 左半屏右滑唤出：挂在根布局上（子内容优先，不遮挡任何点击/滚动）；
+  // 起点落在底部导航栏区域内时不识别（见 rememberSidePanelSwipeModifier 的 bottomBarTopY）
+  val sidePanelSwipeModifier = rememberSidePanelSwipeModifier(
+    onOpen = { sidePanelOpen = true },
+    bottomBarTopY = {
+      if (railLayout || floatingButtonActive) Float.POSITIVE_INFINITY else bottomNavTopY
+    },
+  )
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass && !floatingButtonStyle && !railLayout
   // 高级玻璃 + 默认导航：悬浮条升级为真 backdrop 采样（API 31+ 才有效）
@@ -391,6 +405,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
             tabLabels = tabLabels,
             unselectedColor = unselectedColor,
             onSelectPage = { selectPage(it) },
+            modifier = reportBottomNavTop,
           )
         }
       }
@@ -409,7 +424,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           colors = rememberGlassBottomBarColors(unselectedColor),
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
-          modifier = Modifier
+          modifier = reportBottomNavTop
             .align(Alignment.BottomCenter)
             .navigationBarsPadding()
             .padding(bottom = GlassBottomBarSpec.Default.hostBottomPadding),
@@ -427,7 +442,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           // 而 API 31–32 库走非 shader 的描边路径、本来有高光，必须保持 true
           //（别用 isRuntimeShaderUsable——它在 33 以下恒为 false，会误删 Android 12 的高光）。
           highlightAvailable = GlassShaderSupport.highlightAllowed,
-          modifier = Modifier.align(Alignment.BottomCenter),
+          modifier = reportBottomNavTop.align(Alignment.BottomCenter),
         )
       }
     }
@@ -461,7 +476,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           .glassBorder(AppComponentShape)
       }
       Box(
-        modifier = Modifier
+        modifier = reportBottomNavTop
           .align(Alignment.BottomCenter)
           .fillMaxWidth()
           .navigationBarsPadding()

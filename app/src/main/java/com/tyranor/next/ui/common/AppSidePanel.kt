@@ -205,7 +205,8 @@ internal fun AppSidePanel(
 
 /**
  * 左半屏右滑唤出侧边栏的指针手势（挂给**页面根布局**的 Modifier，而不是覆盖层）：
- * 起点在屏幕左缘 [SidePanelSwipeStartInset] 到水平居中之间，向右滑过 [SidePanelSwipeThreshold] 即回调 [onOpen]。
+ * 起点在屏幕左缘 [SidePanelSwipeStartInset] 到水平居中之间、且位于 [bottomBarTopY] 之上
+ * （底部导航栏区域不参与识别），向右滑过 [SidePanelSwipeThreshold] 即回调 [onOpen]。
  *
  * 实现要点：
  * - 挂在根布局而不是做覆盖层：Compose 重叠的兄弟节点默认只有最上层能收到指针事件，覆盖层会让
@@ -215,10 +216,18 @@ internal fun AppSidePanel(
  *   纵向滑动与向左的横向滑动一律不消费，原样交还给子内容。
  *   也就是说：左半屏内**向右**的横滑会被本手势占用（这是用户要求的宽识别区取舍），
  *   其余方向完全不受影响。
+ * - **底部导航栏排除**：起点落在 [bottomBarTopY]（导航栏顶边，根布局坐标 px）及以下的手势
+ *   一律放行（不消费、不唤出），由导航栏自行处理；无底栏时传 `Float.POSITIVE_INFINITY`。
+ *
+ * @param bottomBarTopY 底部导航栏顶边取数回调（宿主布局后上报；手势发生时读取最新值）
  */
 @Composable
-internal fun rememberSidePanelSwipeModifier(onOpen: () -> Unit): Modifier {
+internal fun rememberSidePanelSwipeModifier(
+    onOpen: () -> Unit,
+    bottomBarTopY: () -> Float = { Float.POSITIVE_INFINITY },
+): Modifier {
     val currentOnOpen by rememberUpdatedState(onOpen)
+    val currentBottomBarTopY by rememberUpdatedState(bottomBarTopY)
     val density = LocalDensity.current
     val startInsetPx = with(density) { SidePanelSwipeStartInset.toPx() }
     val thresholdPx = with(density) { SidePanelSwipeThreshold.toPx() }
@@ -232,6 +241,9 @@ internal fun rememberSidePanelSwipeModifier(onOpen: () -> Unit): Modifier {
                 // 起点必须在识别区内：左缘内缩起、到屏幕水平居中为止
                 val startX = down.position.x
                 if (startX < startInsetPx || startX > size.width / 2f) return@awaitEachGesture
+                // 底部导航栏区域不参与：起点落在导航栏顶边（含）之下直接放行，
+                // 避免在底栏上滑动（切页/误触）被本手势占用而唤出侧边栏
+                if (down.position.y >= currentBottomBarTopY()) return@awaitEachGesture
                 val touchSlop = viewConfiguration.touchSlop
                 var dx = 0f
                 var dy = 0f
