@@ -114,6 +114,18 @@ val AdvancedGlassBgMid = Color(0xFF101216)
 /** 高级玻璃兜底背景的底色渐变：终点（近黑）。 */
 val AdvancedGlassBgBottom = Color(0xFF07080A)
 
+// ===== 悬浮按钮导航固定色（只随外观模式深浅取档，不随外观风格变化） =====
+
+/**
+ * 悬浮按钮导航的固定玻璃表面（浅色档）：纯白玻璃膜。
+ * 本导航档为固定样式（见 `ui/common/FloatingGlassNavButton.kt`），不参与外观风格的动态分档；
+ * 仅按外观模式（`AppThemeColors.isDark`）在浅 / 深两档间切换。
+ */
+val FloatingNavGlassSurface = Color(0xFFFFFFFF)
+
+/** 悬浮按钮导航的固定玻璃表面（深色档）：近黑中性玻璃膜（与默认深色页面对齐）。 */
+val FloatingNavGlassSurfaceDark = Color(0xFF17191C)
+
 // ===== 液态玻璃 · 透镜档的光学中性色（不随主题色 / 色调切换变化）=====
 
 /**

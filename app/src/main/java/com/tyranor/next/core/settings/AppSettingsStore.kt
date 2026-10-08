@@ -127,6 +127,9 @@ object AppSettingsStore {
     /** 底部导航栏样式：液态玻璃 · 透镜（三层采样 + 折射透镜，Android 13+ 才有完整效果）。 */
     const val NAV_STYLE_LIQUID_GLASS_ENHANCED = "liquid_glass_enhanced"
 
+    /** 底部导航栏样式：悬浮按钮（右下角圆形玻璃按钮，点击沿 1/4 圆弧展开四项）。 */
+    const val NAV_STYLE_FLOATING_BUTTON = "floating_button"
+
     /** 首页样式：原生首页（最近打开 + 快捷启动）。 */
     const val HOME_STYLE_NATIVE = "native"
 
@@ -289,14 +292,55 @@ object AppSettingsStore {
      * 导航样式归一化（纯函数，便于单元测试）：
      * 未知值回退默认；透镜档在不支持的版本（< Android 13）回退普通档——
      * 这样即使从更新的设备备份恢复数据，旧设备也只会得到普通档而不是降级画面。
+     * 悬浮按钮在低版本走实底降级（组件内处理），不参与归一化降级。
      */
     fun normalizeNavStyle(stored: String?, enhancedSupported: Boolean): String =
         when (stored) {
             NAV_STYLE_LIQUID_GLASS -> NAV_STYLE_LIQUID_GLASS
             NAV_STYLE_LIQUID_GLASS_ENHANCED ->
                 if (enhancedSupported) NAV_STYLE_LIQUID_GLASS_ENHANCED else NAV_STYLE_LIQUID_GLASS
+            NAV_STYLE_FLOATING_BUTTON -> NAV_STYLE_FLOATING_BUTTON
             else -> NAV_STYLE_DEFAULT
         }
+
+    /** 悬浮按钮导航位置键：归一化 "x,y"（0..1，相对安全区内可拖动范围）。 */
+    const val KEY_FLOATING_NAV_POS = "floating_nav_pos"
+
+    /** 悬浮按钮位置默认值：右下角。 */
+    val DEFAULT_FLOATING_NAV_POSITION: Pair<Float, Float> = 1f to 1f
+
+    /** 悬浮按钮位置内存态：拖动落盘 / 设置页重置后即时广播，供主界面重组。 */
+    val floatingNavPositionState: MutableStateFlow<Pair<Float, Float>> =
+        MutableStateFlow(DEFAULT_FLOATING_NAV_POSITION)
+
+    /** 首次组合时从持久化加载悬浮按钮位置到内存态（幂等）。 */
+    fun initFloatingNavPosition(c: Context) {
+        floatingNavPositionState.value = getFloatingNavPosition(c)
+    }
+
+    fun getFloatingNavPosition(c: Context): Pair<Float, Float> =
+        normalizeFloatingNavPosition(prefs(c).getString(KEY_FLOATING_NAV_POS, null))
+
+    fun setFloatingNavPosition(c: Context, x: Float, y: Float) {
+        val normalized = normalizeFloatingNavPosition("$x,$y")
+        prefs(c).edit()
+            .putString(KEY_FLOATING_NAV_POS, "${normalized.first},${normalized.second}")
+            .apply()
+        floatingNavPositionState.value = normalized
+    }
+
+    /**
+     * 位置归一化（纯函数，便于单测）：解析 "x,y" 两个 0..1 浮点；
+     * 缺失 / 格式错误 / NaN / 无穷一律回退默认右下角，越界值钳到 [0,1]。
+     */
+    fun normalizeFloatingNavPosition(stored: String?): Pair<Float, Float> {
+        val parts = stored?.split(",") ?: return DEFAULT_FLOATING_NAV_POSITION
+        if (parts.size != 2) return DEFAULT_FLOATING_NAV_POSITION
+        val x = parts[0].trim().toFloatOrNull() ?: return DEFAULT_FLOATING_NAV_POSITION
+        val y = parts[1].trim().toFloatOrNull() ?: return DEFAULT_FLOATING_NAV_POSITION
+        if (!x.isFinite() || !y.isFinite()) return DEFAULT_FLOATING_NAV_POSITION
+        return x.coerceIn(0f, 1f) to y.coerceIn(0f, 1f)
+    }
 
     /** 当前外观风格（默认 / 复古玻璃 / 高级玻璃；未知值归一为默认）。 */
     fun getAppearanceStyle(c: Context): AppearanceStyle =

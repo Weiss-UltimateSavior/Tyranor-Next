@@ -18,6 +18,8 @@
     <string name="nav_games">游戏</string>
     <string name="nav_engine">引擎</string>
     <string name="nav_settings">设置</string>
+    <string name="nav_floating_expand">展开导航</string>
+    <string name="nav_floating_collapse">收起导航</string>
 
     <string name="settings_app_title">应用设置</string>
     <string name="settings_language_title">语言</string>
@@ -44,8 +46,11 @@
     <string name="settings_nav_bar_default">默认</string>
     <string name="settings_nav_bar_liquid_glass">液态玻璃 · 经典</string>
     <string name="settings_nav_bar_liquid_glass_enhanced">液态玻璃 · 透镜</string>
+    <string name="settings_nav_bar_floating_button">悬浮按钮</string>
+    <string name="settings_nav_bar_reset_position">重置悬浮按钮位置</string>
     <string name="settings_nav_bar_desc_liquid_glass">Android 12 及以上生效</string>
     <string name="settings_nav_bar_desc_enhanced">仅 Android 13 及以上支持</string>
+    <string name="settings_nav_bar_desc_floating_button">悬浮于右下角，点击展开</string>
     <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
     <string name="settings_home_style">首页样式切换</string>
     <string name="settings_home_style_native">默认</string>
