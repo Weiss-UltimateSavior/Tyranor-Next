@@ -67,6 +67,8 @@
     <string name="home_web_open_browser_failed">このリンクを開けるアプリが見つかりません</string>
     <string name="home_web_download_unsupported">このダウンロードはブラウザで開けません</string>
     <string name="home_web_refresh_content_description">更新</string>
+    <string name="side_panel_title">妙妙ツール</string>
+    <string name="side_panel_kr2_native_title">kr2 ネイティブを起動</string>
     <string name="settings_invalid_theme_color">透明色、白黒、グレーは使用できません</string>
 
     <string name="settings_update_latest">最新バージョンです</string>
@@ -324,8 +326,6 @@
     <string name="engine_settings_engine_version">エンジンバージョン</string>
     <string name="engine_settings_engine_kernel">エンジンカーネル</string>
     <string name="engine_settings_krkr_patch_overlay">KRKR 仮想 patch.tjs パッチ</string>
-    <string name="engine_settings_krkr_native_ui_title">Kirikiroid2 v1.3.9 を起動</string>
-    <string name="engine_settings_krkr_native_ui_summary">内蔵のネイティブ Kirikiroid2 画面を開く（ファイルブラウザ、特定のゲームは起動しません）</string>
     <string name="engine_settings_render">描画</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL 精密描画</string>
     <string name="engine_settings_memory_usage">メモリ使用量</string>

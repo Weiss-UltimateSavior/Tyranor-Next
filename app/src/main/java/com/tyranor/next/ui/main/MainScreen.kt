@@ -75,15 +75,20 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.glassPageBackground
+import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.LiquidGlassNavItem
+import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppNavigationRail
 import com.tyranor.next.ui.common.AppSidePanel
 import com.tyranor.next.ui.common.FloatingGlassNavButton
+import com.tyranor.next.ui.common.LaunchErrorDialog
+import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.ui.common.NavigationTabIcon
 import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.rememberSidePanelSwipeModifier
+import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
@@ -157,11 +162,13 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()
-  // ===== 侧边栏（仅四大页面可唤出）：左边缘侧滑 / 左边缘返回手势打开 =====
+  // ===== 侧边栏（仅四大页面可唤出）：左半屏右滑 / 左边缘返回手势打开 =====
   // 面板关闭时把「左边缘返回手势」解读为唤出侧边栏；右边缘/返回键保持系统默认（退出）。
   // 页面级 BackHandler（如 Web 首页回退历史、悬浮按钮展开态）在更晚的组合位置注册，
   // 按返回分发「后注册优先」规则仍优先生效。
   var sidePanelOpen by rememberSaveable { mutableStateOf(false) }
+  // 侧边栏条目：内置原生 Kirikiroid2 界面启动失败提示（原引擎设置 KRKR 页的功能迁入）
+  var sidePanelLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
   val hostActivity = AppLocaleController.findActivity(context)
   PredictiveBackHandler(enabled = !sidePanelOpen) { progress ->
     var fromLeftEdge = false
@@ -170,7 +177,23 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
     if (fromLeftEdge) sidePanelOpen = true else hostActivity?.finish()
   }
-  AppSidePanel(open = sidePanelOpen, onDismiss = { sidePanelOpen = false })
+  AppSidePanel(open = sidePanelOpen, onDismiss = { sidePanelOpen = false }) {
+    // 妙妙工具条目：启动内置原生 Kirikiroid2 界面（文件浏览器，不启动具体游戏）
+    AppNavItem(
+      title = stringResource(R.string.side_panel_kr2_native_title),
+      leadingIcon = R.drawable.ic_settings_engine,
+      containerColor = DialogItemSurface,
+      onClick = {
+        sidePanelOpen = false
+        interactScope.launch {
+          val result = withContext(Dispatchers.IO) {
+            EngineLauncher.launchNativeKirikiroidUi(context)
+          }
+          sidePanelLaunchError = result.toErrorState(context)
+        }
+      },
+    )
+  }
   // 左半屏右滑唤出：挂在根布局上（子内容优先，不遮挡任何点击/滚动）
   val sidePanelSwipeModifier = rememberSidePanelSwipeModifier(onOpen = { sidePanelOpen = true })
   // 首页样式：Web 首页参与绘制期间底栏改用仅背景采样源（见 webHomeInvolved）
@@ -480,6 +503,11 @@ fun MainScreen(modifier: Modifier = Modifier) {
     SidePanelEdgeExclusionBar(
       modifier = Modifier.align(Alignment.CenterStart),
     )
+  }
+
+  // 侧边栏条目启动失败弹窗（与首页/游戏页共用同一个错误弹窗组件）
+  sidePanelLaunchError?.let { state ->
+    LaunchErrorDialog(state = state, onDismiss = { sidePanelLaunchError = null })
   }
 }
 

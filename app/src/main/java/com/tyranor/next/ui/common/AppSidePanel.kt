@@ -12,14 +12,18 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,9 +39,13 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.tyranor.next.R
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
@@ -58,7 +66,7 @@ private val SidePanelStartMargin = 10.dp
 private val SidePanelTopMargin = 35.dp
 private val SidePanelBottomMargin = 25.dp
 
-/** 左边缘侧滑识别区起点内缩（与屏幕左缘留出的距离）。 */
+/** 左半屏右滑识别区起点内缩（与屏幕左缘留出的距离）。 */
 private val SidePanelSwipeStartInset = 5.dp
 
 /** 左缘系统返回手势排除条宽度（从 [SidePanelSwipeStartInset] 起算，覆盖系统返回手势边缘区）。 */
@@ -68,7 +76,7 @@ private val SidePanelEdgeExclusionWidth = 25.dp
 private val SidePanelSwipeThreshold = 40.dp
 
 /**
- * 应用侧边栏（空白骨架）：主界面四大页面通过**左边缘侧滑**唤出，自左侧滑入的浮动面板。
+ * 应用侧边栏（空白骨架 + 顶部标题）：主界面四大页面通过**左半屏右滑**唤出，自左侧滑入的浮动面板。
  *
  * 几何与材质约定：
  * - 四边圆角（[AppComponentShape]）；与屏幕边缘间距：左 [SidePanelStartMargin]、
@@ -78,12 +86,14 @@ private val SidePanelSwipeThreshold = 40.dp
  *   「遮罩点击 / 返回键关闭 + 进出动画」宿主；
  * - 面板材质沿用应用弹窗/抽屉的玻璃适配：默认 [NavWhite]、复古玻璃 [GlassPanel]、
  *   高级玻璃用 [rememberAdvancedGlassPanelSurface] 的页面取色渐变；
- * - 内容区目前为空，后续功能条目加在 Card 内容区，条目仍必须使用 AppNavItem 等统一组件。
+ * - 顶部固定标题（[R.string.side_panel_title]，水平居中），下方 [content] 为功能条目区；
+ *   条目仍必须使用 AppNavItem 等统一组件（弹窗内传 `DialogItemSurface`）。
  */
 @Composable
 internal fun AppSidePanel(
     open: Boolean,
     onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit = {},
 ) {
     if (!open) return
     val scope = rememberCoroutineScope()
@@ -156,8 +166,19 @@ internal fun AppSidePanel(
                 ),
                 shape = AppComponentShape,
             ) {
-                // 空白侧边栏：暂不承载内容，后续功能条目加在这里
-                Spacer(Modifier.fillMaxSize())
+                // 顶部标题（水平居中）+ 功能条目区
+                Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    Text(
+                        text = stringResource(R.string.side_panel_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 18.dp, bottom = 10.dp),
+                    )
+                    content()
+                }
             }
         }
     }
