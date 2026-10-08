@@ -74,4 +74,20 @@ class InputConfigStoreBackupTest {
         assertTrue("中断运行的旧数据必须回到原位", target.exists())
         assertEquals("precious", target.readText())
     }
+
+    @Test
+    fun staleBackupAlongsideValidTargetIsSuperseded() {
+        // 目标有效、备份是上一次替换成功后被杀留下的孤儿：替换成功时旧目标内容
+        // 经备份中转后整体清掉，不得留下孤儿文件（否则下次替换把它当残留删除，
+        // 等于是静默丢弃一份「看起来最新」的数据）
+        val (tmp, target, backup) = files("stale-orphan")
+        tmp.writeText("new")
+        target.writeText("current")
+        backup.writeText("superseded")
+
+        assertTrue(InputConfigStore.replaceViaBackup(tmp, target, backup))
+
+        assertEquals("new", target.readText())
+        assertFalse("孤儿备份必须清掉", backup.exists())
+    }
 }

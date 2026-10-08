@@ -31,6 +31,11 @@ import kotlinx.coroutines.withContext
  * 生命周期：根视图由本类自建并持有 pad 与编辑面板；UI 在 `AndroidView` 工厂里取
  * [rootView] 挂载即可，Activity 销毁时随视图树回收（pad 的 Handler 在
  * `onDetachedFromWindow` 中清理，本类的协程作用域在根视图 detach 时取消）。
+ *
+ * 已知边界（取消竞态）：写盘是阻塞 IO，`cancelEdit()`（清会话）只发生在主线程，
+ * 无法中断已在 `Dispatchers.IO` 上执行的写盘——用户按返回键「取消」时，若一次写盘
+ * 已在途，文件仍可能落盘且 UI 不做任何提示。窗口为一次 fsync 写盘的耗时（毫秒级），
+ * 属可接受边界；如需严格语义应在保存前先落「待提交」状态由页面统一裁决（成本较高）。
  */
 class PadEditorHost private constructor(
     private val pad: VirtualPadView,
@@ -164,13 +169,20 @@ class PadEditorHost private constructor(
                         if (!pad.isDeferredSaveCurrent(session)) return@launch
                         if (ok) {
                             // 先通知页面再收尾：与同步路径一致（页面在 onSaved 里会退出并
-                            // 回收视图树），失败时才由页面提示并留在编辑态
-                            host.onSavedCallback(committed)
-                            pad.completeDeferredSave(session, true)
+                            // 回收视图树），失败时才由页面提示并留在编辑态。
+                            // 回调不设防会拖垮收尾：onSaved（Toast + finish）若抛出，异常会从
+                            // launch 逃到未捕获处理器（SupervisorJob 只隔离兄弟协程）导致进程
+                            // 崩溃，且会话停在 pending、编辑态不收尾。收尾放 finally、回调自身的
+                            // 异常吞掉。
+                            try {
+                                runCatching { host.onSavedCallback(committed) }
+                            } finally {
+                                pad.completeDeferredSave(session, true)
+                            }
                         } else {
-                            pad.completeDeferredSave(session, false)
+                            runCatching { pad.completeDeferredSave(session, false) }
                             // 写盘失败：留在编辑态并提示，避免用户改完的布局被静默丢弃
-                            host.onSaveFailedCallback()
+                            runCatching { host.onSaveFailedCallback() }
                         }
                     }
                 }

@@ -64,6 +64,16 @@ object RpgMakerRuntimeEnvironment {
     /** 备份式替换用的旧目录暂存名（与 [IMPORT_TEMP_DIR] 同层，替换成功即删）。 */
     private const val IMPORT_BACKUP_DIR = ".import_backup"
 
+    /**
+     * 提交标记名（与 [IMPORT_BACKUP_DIR] 同层）。
+     *
+     * 备份式替换在「旧目录已移开、新内容未顶上」之间被杀时，`target` 缺失而旧数据在
+     * 备份里，尚可归位；但 `copyRecursively` 只拷了一半就被杀时，`target` 存在且非空，
+     * 仅凭目录是否存在无法与「完整导入」区分。因此替换期间先落 `.importing` 标记，
+     * 成功收尾才删除——**标记存在即表示 target 不可信**（见 [recoverPendingImport]）。
+     */
+    private const val IMPORT_MARKER_FILE = ".importing"
+
     // 用户挑选的 RTP 包解压上限。数值与 NativePluginInstaller.unzipSafely **不同**
     // （那边是 32 条目 / 512MiB 总量，面向内置插件包）：RTP 是整包素材，条目数与总量
     // 都大得多，因此这里给到 10 万条目 / 4GiB、单条目同为 256MiB
@@ -89,9 +99,9 @@ object RpgMakerRuntimeEnvironment {
     /**
      * RTP 根目录（`.../<子类型>/app`）。
      *
-     * 顺带做一次**待替换备份的归位**：备份式替换若在「旧目录已改名、新内容未顶上」之间
+     * 顺带做一次**待替换现场的归位**：备份式替换若在「旧目录已改名、新内容未顶上」之间
      * 被杀，这里把旧目录放回去。少了这一步，[isRtpImported] 会报「未导入」、游戏也读不到
-     * RTP，而盘上其实还留着完整的旧数据。归位是幂等的（目标已存在时不做任何事）。
+     * RTP，而盘上其实还留着完整的旧数据。归位是幂等的（目标已有效时不做任何事）。
      */
     fun rtpAppDir(gameType: String): File {
         val dir = File(rtpDir(gameType), "app")
@@ -99,12 +109,48 @@ object RpgMakerRuntimeEnvironment {
         return dir
     }
 
-    /** 把中断的替换留下的备份归位（目标已存在时不动，避免覆盖有效内容）。 */
-    private fun recoverPendingImport(target: File) {
-        if (target.exists()) return
-        val parent = target.parentFile ?: return
+    /**
+     * 把中断的替换留下的现场归位（幂等）。
+     *
+     * 现场有两种形态：
+     *  - **提交标记 `.importing`**（本次改造起）：上一次替换未正常收尾，`target` 可能是
+     *    半成品（备份式替换在「旧目录已改名、新内容未顶上」之间被杀，或 `copyRecursively`
+     *    只拷了一半）。有备份 → 删掉半成品 target、把备份归位；无备份 → 首次导入的
+     *    半成品，无旧数据可保护，整体清除（连同标记）。
+     *  - **仅备份（旧版遗留）**：目标缺失**或为空目录**、备份在 → 归位备份。目标为空目录
+     *    只可能是上次替换在 `copyRecursively` 刚建目录就被杀留下的半成品，备份才是完整
+     *    旧数据；[isRtpImported] 只看目录非空，不归位会让它误报「未导入」。
+     *
+     * @return false = 现场无法收拾（备份路径被占等），调用方应放弃本次替换（不丢数据）
+     */
+    internal fun recoverPendingImport(target: File): Boolean {
+        val parent = target.parentFile ?: return false
         val backup = File(parent, IMPORT_BACKUP_DIR)
-        if (backup.exists()) runCatching { backup.renameTo(target) }
+        val marker = File(parent, IMPORT_MARKER_FILE)
+        if (marker.exists()) {
+            if (backup.exists()) {
+                runCatching { target.deleteRecursively() }
+                if (!marker.delete()) return false
+                if (!target.exists() && !backup.renameTo(target)) return false
+            } else {
+                runCatching { target.deleteRecursively() }
+                if (!marker.delete()) return false
+            }
+            return true
+        }
+        if (backup.exists()) {
+            if (!target.exists() || target.listFiles()?.isEmpty() == true) {
+                // 目标缺失或为空目录：备份是唯一旧数据（或完整旧数据），归位
+                if (target.exists() && !target.deleteRecursively()) return false
+                if (!backup.renameTo(target)) return false
+            } else {
+                // 目标有效：备份是上一次已成功替换的残留（成功路径清理失败留下的孤儿）。
+                // 删不掉会占住 .import_backup 路径，使后续 target.renameTo(backup) 失败并
+                // 被迫走「删旧数据」分支——直接返回失败更安全（不丢数据）
+                if (!backup.deleteRecursively()) return false
+            }
+        }
+        return true
     }
 
     /** RTP 是否已导入（app 目录存在且非空）。 */
@@ -183,12 +229,19 @@ object RpgMakerRuntimeEnvironment {
      * 两个导入路径的失败分支必须一致：拍平、替换与「导入后仍为空」的判定都在这里，
      * 否则两条路径会给出不同的失败原因。
      *
-     * 替换采用**备份式**：旧目录先改名成 `.import_backup`，新内容顶上后再删备份，失败即回滚。
+     * 替换采用**备份式** + **提交标记**：
+     *  - 旧目录先改名成 `.import_backup`，新内容顶上后再删备份，失败即回滚；
+     *  - `.importing` 标记在「旧目录已移开、新内容落位」前写盘、成功收尾才删除——
+     *    存在即表示 target 不可信（可能只拷了一半），[recoverPendingImport] 据此
+     *    恢复，而不是让 [isRtpImported] 误报「已导入」却缺素材；
+     *  - **旧目录不能改名时直接放弃本次替换，绝不删旧数据**：删除后若安装又失败，
+     *    旧 RTP 没有备份可回滚，将永久丢失。
+     *
      * 先前的「先删旧目录再铺新内容」有两个后果——`copyRecursively` 中途失败会留下半成品
      * 目录，而 [isRtpImported] 只看目录非空，下次会显示「已导入」却缺素材；删除与替换之间
      * 被杀则旧 RTP 直接丢失。
      */
-    private fun commitImportTemp(temp: File, target: File): RtpImportRejection? {
+    internal fun commitImportTemp(temp: File, target: File): RtpImportRejection? {
         flattenSingleRoot(temp)
         // 「无内容」在建目录前判定：空目录/空 zip 复制过去也只会得到空 app 目录，
         // 用户看到「导入成功」却没有任何素材。listFiles() 为 null 是 IO 错误而非空目录，
@@ -198,28 +251,48 @@ object RpgMakerRuntimeEnvironment {
 
         val parent = target.parentFile ?: return RtpImportRejection.IoFailed(target.name)
         val backup = File(parent, IMPORT_BACKUP_DIR)
-        // 上一次替换中途被杀（备份还在、目标缺失）：先归位，否则下面的清理会删掉唯一旧数据
-        if (backup.exists() && !target.exists() && !backup.renameTo(target)) {
-            return RtpImportRejection.IoFailed(target.name)
-        }
-        backup.deleteRecursively()
+        val marker = File(parent, IMPORT_MARKER_FILE)
+        // 上一次替换未正常收尾的现场（含半成品 target）先归位；收拾不了直接放弃本次替换
+        if (!recoverPendingImport(target)) return RtpImportRejection.IoFailed(target.name)
+
         var hadTarget = false
         if (target.exists()) {
-            if (target.renameTo(backup)) {
-                hadTarget = true
-            } else if (!target.deleteRecursively()) {
-                // 旧目录既不能改名也不能删：放弃本次替换（旧数据保持原样）
+            if (!target.renameTo(backup)) {
+                // 旧目录不能改名：**不删旧数据**。删除后若安装又失败，旧 RTP 将没有备份
+                // 可回滚而永久丢失，直接放弃本次替换（旧数据保持原样）
                 return RtpImportRejection.IoFailed(target.name)
             }
+            hadTarget = true
+        }
+        // 旧数据已移开（或本就无旧数据）后才置提交标记：标记+无备份 ⇔ 首次导入，恢复逻辑
+        // 据此可安全清除半成品 target。置位失败回滚 rename 并放弃。
+        if (!marker.createNewFile()) {
+            if (hadTarget) runCatching { backup.renameTo(target) }
+            return RtpImportRejection.IoFailed(marker.name)
         }
 
         val installed = temp.renameTo(target) || temp.copyRecursively(target, overwrite = true)
         if (!installed || target.listFiles()?.isNotEmpty() != true) {
-            // 回滚：清掉半成品，把旧目录放回去（回滚失败时保留备份不删，数据仍在盘上）
+            // 回滚：清掉半成品、删标记，把旧目录放回去。
+            // 顺序很关键——标记必须先删：若先放回旧数据却留下标记，下次恢复会把
+            // 「放回的旧数据」误当成首次导入半成品而删掉。标记删不掉就保持
+            // 「标记 + 备份」现场（旧数据仍在备份），由下次恢复归位。
             target.deleteRecursively()
-            if (hadTarget && backup.exists()) backup.renameTo(target)
+            if (!marker.delete()) {
+                return RtpImportRejection.IoFailed(target.name)
+            }
+            if (hadTarget && backup.exists() && !backup.renameTo(target)) {
+                return RtpImportRejection.IoFailed(target.name)
+            }
             return if (installed) RtpImportRejection.EmptyArchive else RtpImportRejection.IoFailed(target.name)
         }
+        // 成功：先删提交标记（提交点）再删备份。标记删不掉 = 无法确认提交（下次恢复会把
+        // 新 target 回滚到旧数据），按失败处理；旧数据仍在备份，不丢。
+        if (!marker.delete()) {
+            return RtpImportRejection.IoFailed(target.name)
+        }
+        // 备份清理失败不阻塞本次成功，但会占住 .import_backup 路径（下次导入的
+        // recoverPendingImport 会先删它；若仍删不掉则放弃替换，不丢数据）
         backup.deleteRecursively()
         return null
     }

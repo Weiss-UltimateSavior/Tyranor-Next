@@ -104,12 +104,16 @@ object InputRemapRepository {
         val name: String,
         val isDefault: Boolean,
         /**
-         * 迁移产物的**主布局**（`migrated-<作用域>-main`）且仍带着语言中立占位名。
+         * 迁移产物的**主布局**（`migrated-<作用域>-main`）且仍未被用户重命名。
          *
-         * 旧触屏手柄迁移产物的方案名是硬编码 ASCII（[PadProfile.migrateLegacy] 写 `"Default"`），
-         * UI 按 [isDefault] 只对内置方案做本地化；少了这个标记，中日文界面会把迁移主布局直接
-         * 显示成英文 "Default"。用户改过名（不再是占位名）后为 false —— 那是用户的命名，
-         * 不该再被本地化覆盖，也不该出现「重命名无效」的观感。
+         * 判定由持久化的 `PadProfile.legacyMain` 承担，占位名只作**旧文件**（早于该字段
+         * 引入的迁移产物）的兜底：旧迁移主布局写死占位名 "Default"，UI 按 [isDefault]
+         * 只对内置方案做本地化，少了该标记中日文界面会把迁移主布局直接显示成英文
+         * "Default"。
+         *
+         * 只用名字判断有个边角：用户把迁移主布局**恰好改名为 "Default"** 会被误认回
+         * 「未重命名」状态（列表改显「默认方案（迁移）」、复制基数也变回本地化名）。
+         * `legacyMain` 在重命名时被清为 false，即使名字撞占位名也不会翻回。
          */
         val isLegacyMain: Boolean,
     )
@@ -130,10 +134,21 @@ object InputRemapRepository {
                 id = profile.id,
                 name = profile.name,
                 isDefault = profile.id == InputConfigStore.DEFAULT_PROFILE_ID,
-                isLegacyMain = LEGACY_MAIN_ID.matches(profile.id) &&
-                    profile.name == LEGACY_PLACEHOLDER_NAME,
+                isLegacyMain = isLegacyMainProfile(profile),
             )
         }
+
+    /**
+     * 迁移主布局判定（id + 标记/占位名一并判断）：
+     *
+     *  - id 必须匹配 `migrated-<作用域>-main`（预设/自建方案的 id 天然不匹配）；
+     *  - `legacyMain == true` 权威；`null`（旧文件无该字段）回退到占位名判断；
+     *    `false`（含用户重命名后）一律不是——名字撞占位名也不会翻回。
+     */
+    internal fun isLegacyMainProfile(profile: PadProfile): Boolean =
+        LEGACY_MAIN_ID.matches(profile.id) &&
+            (profile.legacyMain == true ||
+                (profile.legacyMain == null && profile.name == LEGACY_PLACEHOLDER_NAME))
 
     private fun listProfiles(context: Context): List<PadProfile> = InputConfigStore.listProfiles(context)
 
@@ -149,7 +164,9 @@ object InputRemapRepository {
     fun duplicateProfile(context: Context, id: String, newId: String, newName: String): ProfileSummary? {
         if (InputConfigStore.sanitizeProfileId(newId) == null) return null
         val source = InputConfigStore.readProfile(context, id) ?: return null
-        val copy = source.copy(id = newId, name = newName)
+        // 副本是新方案（新 id 天然不匹配迁移主布局正则）：显式清掉 legacyMain，
+        // 避免把源方案的迁移标记写进副本 JSON
+        val copy = source.copy(id = newId, name = newName, legacyMain = false)
         if (!writeProfile(context, copy)) return null
         return ProfileSummary(id = newId, name = newName, isDefault = false, isLegacyMain = false)
     }
@@ -165,7 +182,15 @@ object InputRemapRepository {
     /** 重命名方案（默认方案由 UI 禁止入口）。 */
     fun renameProfile(context: Context, id: String, newName: String): Boolean {
         val profile = InputConfigStore.readProfile(context, id) ?: return false
-        return writeProfile(context, profile.copy(name = newName.trim().take(PROFILE_NAME_MAX_LENGTH)))
+        // 重命名即脱离「迁移主布局」展示语义（含恰好改名为占位名 "Default" 的情形）：
+        // 清掉 legacyMain，避免列表/复制基数误认回未重命名状态
+        return writeProfile(
+            context,
+            profile.copy(
+                name = newName.trim().take(PROFILE_NAME_MAX_LENGTH),
+                legacyMain = false,
+            ),
+        )
     }
 
     /** 导出为 JSON 文本（与方案文件同格式，便于分享/备份）。 */

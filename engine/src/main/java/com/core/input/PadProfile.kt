@@ -64,6 +64,18 @@ data class PadProfile(
     val name: String,
     val buttons: List<PadButton>,
     val direction: PadDirection = PadDirection(),
+    /**
+     * 迁移产物的**主布局**标记：由 [migrateLegacy] 对主布局置位，用户重命名后清除
+     * （app 侧 `InputRemapRepository.renameProfile` 负责改写）。
+     *
+     * app 侧按它识别迁移主布局以本地化展示名（`isLegacyMain`）。仅按占位名判断时，
+     * 用户把迁移主布局**改名为占位名 "Default"** 会被误认回「未重命名」状态（列表改显
+     * 「默认方案（迁移）」、复制基数也变回本地化名）。
+     *
+     * 三态语义：`null` = 方案早于本字段引入（旧文件按占位名兜底判断）；`false` = 已明确
+     * 不是/不再是迁移主布局（含用户重命名）；`true` = 迁移主布局且未被重命名。
+     */
+    val legacyMain: Boolean? = null,
 ) {
 
     /** 覆盖同 id 按钮；不存在时追加到末尾（编辑模式新增 / 复制的写入路径）。 */
@@ -81,6 +93,7 @@ data class PadProfile(
         root.put("schema", SCHEMA)
         root.put("id", id)
         root.put("name", name)
+        if (legacyMain != null) root.put("legacyMain", legacyMain)
         root.put("direction", directionToJson(direction))
         val array = JSONArray()
         buttons.forEach { array.put(buttonToJson(it)) }
@@ -150,6 +163,7 @@ data class PadProfile(
                     name = name,
                     buttons = buttons,
                     direction = directionFromJson(root.optJSONObject("direction")),
+                    legacyMain = if (root.has("legacyMain")) root.optBoolean("legacyMain") else null,
                 )
             }.getOrNull()
         }
@@ -238,7 +252,11 @@ data class PadProfile(
             val scope = sanitizeLegacyId(gameScope).take(MAX_SCOPE_SLUG_LENGTH)
             val result = ArrayList<PadProfile>()
             parseLegacyConfig(configJson)?.let {
-                result.add(it.copy(id = migratedId(scope, 0, MAIN_SLUG), name = "Default"))
+                // 主布局打上 legacyMain 标记：app 侧按它（而非仅按占位名）识别迁移主布局，
+                // 用户改名（含改回占位名 "Default"）后由 renameProfile 清掉该标记
+                result.add(
+                    it.copy(id = migratedId(scope, 0, MAIN_SLUG), name = "Default", legacyMain = true),
+                )
             }
             runCatching {
                 val presets = JSONObject(presetsJson.orEmpty())

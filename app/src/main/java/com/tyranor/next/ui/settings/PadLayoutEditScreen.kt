@@ -30,8 +30,8 @@ import com.tyranor.next.ui.common.AppScreenActivity
  *
  * 页面不设顶栏与任何常驻按钮——编辑区占满全屏（与游戏内所见一致），进屏 Toast 说明
  * 操作方式与退出方式；退出统一走系统返回键（等同取消，不保存），保存用面板内的「保存」。
- * 这是对「页面顶部栏统一规范」的**有意偏离**（非疏漏）：按键位置按视口归一化存储，
- * 顶栏会压缩画布高度、破坏「所见即所得」这一核心契约。修改本页布局前请留意该约束。
+ * 该无顶栏形态是 AGENT.md「页面顶部栏统一规范」的**明文豁免**（该文档第 8 节）：
+ * 按键位置按视口归一化存储，顶栏会压缩画布高度、破坏「所见即所得」这一核心契约。
  *
  * 本 Activity 声明 `sensorLandscape`：游戏几乎都是横屏，编辑布局在横屏下所见即所得；
  * 退出后应用其余页面仍为竖屏。
@@ -61,7 +61,7 @@ internal fun PadLayoutEditScreen(profileId: String) {
     // ProvideAppLocale 会包一层 ContextWrapper，不能直接 as? Activity（会静默失效导致退不出页面）
     val activity = AppLocaleController.findActivity(ctx)
     val savedMessage = stringResource(R.string.pad_layout_edit_saved)
-    val saveFailedMessage = stringResource(R.string.pad_layout_edit_save_failed)
+    val saveFailedMessage = stringResource(R.string.input_save_failed)
     val hintMessage = stringResource(R.string.pad_layout_edit_hint)
     val invalidMessage = stringResource(R.string.input_settings_profile_import_failed)
     val primary = MaterialTheme.colorScheme.primary.toArgb()

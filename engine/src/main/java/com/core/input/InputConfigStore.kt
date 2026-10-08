@@ -1,6 +1,7 @@
 package com.core.input
 
 import android.content.Context
+import android.util.Log
 import com.core.engine.EnginePrefs
 import java.io.File
 import org.json.JSONObject
@@ -18,6 +19,8 @@ import org.json.JSONObject
  * 写入一律「临时文件 + rename」原子替换，避免跨进程读到半截 JSON。
  */
 object InputConfigStore {
+
+    private const val TAG = "InputConfigStore"
 
     /** 全局与单游戏覆盖共用的键名（三处字面量锚定：本文件 / PerGameSettingsStore / GameOverridePartitions）。 */
     const val KEY_PAD_ENABLED = "input_pad_enabled"
@@ -242,6 +245,11 @@ object InputConfigStore {
      * [replaceViaBackup]）：目标先改名成 `.bak`，tmp 顶上后再删备份，任一步失败都回滚。
      * 先前实现是「删掉目标再 rename」，只要第二次 rename 仍失败，**新旧配置就一起消失**。
      *
+     * 备份式替换的触发**不依赖 target 是否存在**：若上一次替换中途被杀（备份在、目标缺失），
+     * [replaceViaBackup] 会先把备份归位再替换——少了这一步，备份会被当成可丢弃的残留删掉，
+     * 盘上唯一的旧配置就此消失。快路径成功时顺带清理陈旧 `.bak`（上一次成功后被杀的孤儿），
+     * 避免其永久占位、下次替换时被静默丢弃。
+     *
      * 任何失败路径都必须删干净临时文件（含写入过程中抛异常）：残留的 `.tmp` 会一直躺在
      * profiles 目录里，虽然 [listProfiles] 按 `.json` 后缀过滤不会读到它，但会持续占用空间。
      */
@@ -258,8 +266,12 @@ object InputConfigStore {
                     output.fd.sync()
                 }
                 installed = tmp.renameTo(target)
-                if (!installed && target.exists()) {
+                if (!installed) {
                     installed = replaceViaBackup(tmp, target, backup)
+                } else if (backup.exists()) {
+                    // 快路径成功：清理上一次替换成功后被杀留下的陈旧备份，避免孤儿文件
+                    // 永久占位（否则下次替换会在 replaceViaBackup 里把它当可丢弃残留删掉）
+                    backup.delete()
                 }
                 installed
             } finally {
@@ -278,20 +290,29 @@ object InputConfigStore {
      * 这条不变量是「用户配置不因一次写盘失败而消失」的唯一保证，由
      * `InputConfigStoreBackupTest` 用真实文件锚定。
      *
+     * 回滚再失败（备份也改不回原名）时，旧配置留在 `.bak`：数据未销毁，下一次
+     * [atomicWrite] 在触发本方法前会再次尝试归位；此处记日志让排障可见。
+     *
      * @return 是否替换成功；失败时 [target] 保持原内容（tmp 由调用方清理）
      */
     internal fun replaceViaBackup(tmp: File, target: File, backup: File): Boolean {
         // 上一次替换中途被杀（备份还在、目标缺失）：先把备份放回去。
         // 少了这一步，下面的 delete 会把盘上唯一的旧配置删掉
         if (backup.exists() && !target.exists() && !backup.renameTo(target)) return false
-        backup.delete()
-        if (!target.renameTo(backup)) return false
+        if (target.exists()) {
+            // 清理陈旧备份（可能是上次替换成功后被杀留下的孤儿；target 仍有效时它已无价值）
+            backup.delete()
+            if (!target.renameTo(backup)) return false
+        }
+        // 此刻 target 必不存在（原本就没有，或刚被改名成 backup）
         if (tmp.renameTo(target)) {
             backup.delete()
             return true
         }
-        // 回滚：目标此时已不存在，把旧配置放回去；回滚再失败也保留备份不删（数据仍在）
-        if (!target.exists()) backup.renameTo(target)
+        // 回滚：把旧配置放回去；回滚再失败也保留备份不删（数据仍在 .bak）
+        if (!target.exists() && backup.exists() && !backup.renameTo(target)) {
+            Log.w(TAG, "replaceViaBackup rollback failed, old config stranded at ${backup.path}")
+        }
         return false
     }
 }

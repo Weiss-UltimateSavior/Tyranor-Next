@@ -115,7 +115,7 @@
 - 页面顶部栏必须调用 `AppTopBar(title, ...)`；标题、结构、取色由组件兜底。
 - 参数约定：
   - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `colorScheme.background` / `colorScheme.onBackground`。
-  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = MiuixTheme.colorScheme.background`、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
+  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/渐变根背景）、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
   - 需要「色调切换」参与取色的页面：传 `background = PageGrey`、`contentColor = TextColor`。
   - 右侧图标用 `trailing` 槽传入 `TopBarIcon`；标题下方的折叠内容（如游戏页搜索框）用 `underTitle` 槽。
 - 新页面/组件禁止再书写「背景层 + statusBarsPadding + 64dp + titleLarge Bold」结构。
@@ -188,6 +188,10 @@ Column(fillMaxSize)                                // 页面根
 - `tint` 由调用方传入当前主题色：Material 页面传 `MaterialTheme.colorScheme.primary`，Miuix 页面传 `MiuixTheme.colorScheme.primary`。
 
 - 顶部栏图标一律使用 drawable 资源（`R.drawable.ic_*`）；需要新图标时在 `res/drawable` 新建资源（PNG 或 vector XML），禁止直接用 `Icons.*` 矢量图标充当顶部栏按钮。
+
+### 8. 明文豁免
+
+- **明文豁免（按键方案布局编辑器）**：`ui/settings/PadLayoutEditScreen.kt`（`PadLayoutEditActivity`）**不设顶部栏**，编辑画布占满全屏（含系统栏区域）——为有意设计，不受本节 0–7 条约束。理由：该页的核心契约是与游戏内按键层**同视口**（按钮位置按视口归一化存储，横竖屏按比例重映射），顶栏会压缩画布高度、使「所见即所得」失效。操作方式与退出方式由进屏 Toast 说明，保存经编辑面板内的「保存」触发，退出走系统返回键。**该豁免仅限本页**，其余页面一律使用 `AppTopBar`，不得援引。
 
 ***
 
@@ -493,7 +497,8 @@ Column(fillMaxSize)                                // 页面根
   与「色调切换」不可用（置灰），色调轮盘保持可用（兜底色斑随主题色变化）。
   高级玻璃的绘制是独立实现（`theme/AdvancedGlassStyle.kt`），复古玻璃的 `GlassStyle.kt` 不参与其材质；
   新增组件必须走动态常量与 `glassBorder`，不得硬编码玻璃色值。真 backdrop 采样仅限白名单
-  （液态玻璃底栏、透镜底栏、高级玻璃悬浮默认导航条、悬浮按钮导航的主按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
+  （液态玻璃底栏、透镜底栏、高级玻璃悬浮默认导航条、悬浮按钮导航的主按钮**与弧上导航项**
+  ——两者共用同一份采样 Modifier，见 `FloatingGlassNavButton.kt`）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
   只能用背景取色渐变 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。

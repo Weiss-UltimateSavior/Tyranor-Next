@@ -488,4 +488,30 @@ class PadProfileTest {
         assertTrue(PadProfile.migrateLegacy("{}", "{}", TEST_SCOPE).isEmpty())
         assertTrue(PadProfile.migrateLegacy("not-json", "not-json", TEST_SCOPE).isEmpty())
     }
+
+    @Test
+    fun migratedMainLayoutCarriesLegacyMainFlag() {
+        // 迁移主布局必须带 legacyMain=true（app 侧据此本地化展示名）；用户重命名后
+        // renameProfile 把它清成 false——即使名字恰好撞占位名 "Default" 也不翻回。
+        val legacy = JSONObject().apply {
+            put("buttons", JSONObject().apply { put("esc", JSONObject().apply { put("x", 0.4); put("y", 0.4) }) })
+        }.toString()
+
+        val main = PadProfile.migrateLegacy(legacy, null, TEST_SCOPE).single()
+        assertTrue("迁移主布局必须带 legacyMain 标记", main.legacyMain == true)
+        assertTrue("迁移主布局的 id 必须是 -main 结尾", main.id.endsWith("-${PadProfile.MAIN_SLUG}"))
+
+        // 往返不丢标记
+        val roundTripped = PadProfile.parse(main.toJson())!!
+        assertTrue("legacyMain 必须落盘/读回", roundTripped.legacyMain == true)
+
+        // 用户重命名后（legacyMain=false）再落盘读回仍为 false
+        val renamed = main.copy(name = "Default", legacyMain = false)
+        val renamedBack = PadProfile.parse(renamed.toJson())!!
+        assertEquals("重命名后标记必须保持 false", false, renamedBack.legacyMain)
+
+        // 旧文件（无 legacyMain 字段）解析为 null（app 侧按占位名兜底）
+        val legacyFile = PadProfile.parse("""{"id":"x","name":"Default","buttons":[]}""")!!
+        assertEquals("旧文件无该字段应为 null", null, legacyFile.legacyMain)
+    }
 }

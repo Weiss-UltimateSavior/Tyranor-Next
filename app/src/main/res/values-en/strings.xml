@@ -322,13 +322,12 @@
     <string name="input_settings_profile_delete_message">Delete "%1$s"? Its key layout will be removed and cannot be recovered.</string>
     <string name="input_settings_profile_name_hint">Up to 24 characters</string>
     <string name="pad_layout_edit_saved">Profile saved</string>
-    <string name="pad_layout_edit_save_failed">Save failed. Check storage space and try again.</string>
+    <string name="input_save_failed">Save failed. Check storage space and try again.</string>
     <string name="pad_layout_edit_hint">Tap to select a button and drag to move it. Tap Save when done; press system Back to exit without saving.</string>
     <string name="input_settings_profile_copy">Copy</string>
     <string name="input_settings_profile_copy_failed">Copy failed. Check storage space and try again.</string>
     <string name="input_settings_profile_new_failed">Create failed. Check storage space and try again.</string>
     <string name="input_settings_profile_delete_failed">Delete failed. Check storage space and try again.</string>
-    <string name="input_settings_gamepad_save_failed">Save failed. Check storage space and try again.</string>
     <string name="input_settings_profile_rename">Rename</string>
     <string name="input_settings_profile_rename_failed">Rename failed. Check storage space and try again.</string>
     <string name="input_settings_profile_delete">Delete</string>

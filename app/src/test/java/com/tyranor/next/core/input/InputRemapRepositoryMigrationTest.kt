@@ -155,4 +155,36 @@ class InputRemapRepositoryMigrationTest {
             name.matches(Regex("^n+ \\d+$")),
         )
     }
+
+    // ---------- 迁移主布局识别（isLegacyMain） ----------
+
+    @Test
+    fun isLegacyMainTrustsFlagOverPlaceholderName() {
+        // 核心边角：用户把迁移主布局**恰好改名为占位名 "Default"**，仅按名字判断会把它
+        // 误认回「未重命名」；legacyMain=false（renameProfile 写入）必须压过占位名。
+        val renamedToPlaceholder = PadProfile.defaultProfile("migrated-g1-main", "Default").copy(legacyMain = false)
+        assertFalse(
+            "重命名到占位名后不得再被识别为迁移主布局",
+            InputRemapRepository.isLegacyMainProfile(renamedToPlaceholder),
+        )
+
+        // 正常未重命名的迁移主布局（新文件带 true）必须识别
+        val fresh = PadProfile.defaultProfile("migrated-g1-main", "Default").copy(legacyMain = true)
+        assertTrue(InputRemapRepository.isLegacyMainProfile(fresh))
+
+        // 旧文件（无 legacyMain 字段 → null）：按占位名兜底
+        val legacyFileUnrenamed = PadProfile.parse("""{"id":"migrated-g1-main","name":"Default","buttons":[]}""")!!
+        assertTrue("旧文件 + 占位名应识别", InputRemapRepository.isLegacyMainProfile(legacyFileUnrenamed))
+
+        // 旧文件且已改名（不再是占位名）：不识别
+        val legacyFileRenamed = PadProfile.parse("""{"id":"migrated-g1-main","name":"My Pad","buttons":[]}""")!!
+        assertFalse("旧文件 + 非占位名不应识别", InputRemapRepository.isLegacyMainProfile(legacyFileRenamed))
+
+        // 非迁移主布局 id 一律不识别（即使名字撞占位名）
+        val nonMain = PadProfile.defaultProfile("migrated-g1-extra", "Default").copy(legacyMain = true)
+        assertFalse(
+            "非 -main id 不得识别为迁移主布局",
+            InputRemapRepository.isLegacyMainProfile(nonMain),
+        )
+    }
 }

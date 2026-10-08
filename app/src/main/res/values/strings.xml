@@ -296,7 +296,7 @@
     <string name="engine_settings_ppsspp_title">PPSSPP引擎设置</string>
     <string name="engine_settings_input_title">输入与手柄</string>
     <string name="engine_settings_input_pad_title">虚拟按键</string>
-    <string name="engine_settings_input_pad_summary">在游戏画面上叠加可编辑的触屏按键层；默认仅对 RPG Maker MV/MZ 开启，开启后对所有 Web 引擎生效</string>
+    <string name="engine_settings_input_pad_summary">在游戏画面上叠加可编辑的虚拟按键层；默认仅对 RPG Maker MV/MZ 开启，开启后对所有 Web 引擎生效</string>
     <string name="engine_settings_input_gamepad_title">手柄映射</string>
     <string name="engine_settings_input_gamepad_summary">把外接手柄的按键映射为游戏键盘/鼠标操作</string>
     <string name="engine_settings_input_gamepad_entry">手柄按键映射</string>
@@ -322,13 +322,12 @@
     <string name="input_settings_profile_delete_message">确定删除「%1$s」？该方案的按键布局将一并移除，且无法恢复。</string>
     <string name="input_settings_profile_name_hint">最多 24 个字符</string>
     <string name="pad_layout_edit_saved">方案已保存</string>
-    <string name="pad_layout_edit_save_failed">保存失败，请检查存储空间后重试</string>
+    <string name="input_save_failed">保存失败，请检查存储空间后重试</string>
     <string name="pad_layout_edit_hint">点按选中按钮、拖拽调整位置；改完点「保存」，用系统返回键退出（不保存）</string>
     <string name="input_settings_profile_copy">复制</string>
     <string name="input_settings_profile_copy_failed">复制失败，请检查存储空间后重试</string>
     <string name="input_settings_profile_new_failed">新建失败，请检查存储空间后重试</string>
     <string name="input_settings_profile_delete_failed">删除失败，请检查存储空间后重试</string>
-    <string name="input_settings_gamepad_save_failed">保存失败，请检查存储空间后重试</string>
     <string name="input_settings_profile_rename">重命名</string>
     <string name="input_settings_profile_rename_failed">重命名失败，请检查存储空间后重试</string>
     <string name="input_settings_profile_delete">删除</string>

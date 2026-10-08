@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +36,7 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.NoRippleButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -185,7 +188,7 @@ internal fun GamepadMapScreen() {
 private fun toastBindingFailed(context: android.content.Context) {
     android.widget.Toast.makeText(
         context,
-        context.getString(R.string.input_settings_gamepad_save_failed),
+        context.getString(R.string.input_save_failed),
         android.widget.Toast.LENGTH_SHORT,
     ).show()
 }
@@ -282,50 +285,53 @@ private fun KeyBindingDialog(
             )
         },
         text = {
-            LazyColumn(Modifier.fillMaxWidth()) {
-                if (allowAutoKeep) {
-                    item {
-                        SwitchPreference(
-                            title = stringResource(R.string.input_settings_auto_keep_toggle),
-                            checked = keep,
-                            onCheckedChange = { keep = it },
-                        )
+            // 弹窗点击反馈规范：正文内所有可点击组件（开关/键位网格）禁用按压反馈
+            CompositionLocalProvider(LocalIndication provides NoIndication) {
+                LazyColumn(Modifier.fillMaxWidth()) {
+                    if (allowAutoKeep) {
+                        item {
+                            SwitchPreference(
+                                title = stringResource(R.string.input_settings_auto_keep_toggle),
+                                checked = keep,
+                                onCheckedChange = { keep = it },
+                            )
+                        }
                     }
-                }
-                item {
-                    Text(
-                        text = stringResource(R.string.input_settings_binding_keys, selected.size),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
-                groups.forEach { group ->
                     item {
                         Text(
-                            text = group.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            text = stringResource(R.string.input_settings_binding_keys, selected.size),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         )
                     }
-                    group.keys.chunked(4).forEach { chunk ->
+                    groups.forEach { group ->
                         item {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-                                chunk.forEach { option ->
-                                    val on = option.code in selected
-                                    // 选中态用主题色实底 + 白字，与游戏内编辑面板的键位高亮一致；
-                                    // 未选中为静默文本，一眼可辨「选了哪些」而不是只看计数
-                                    NoRippleButton(
-                                        text = option.label,
-                                        tonal = !on,
-                                        modifier = Modifier.weight(1f),
-                                        onClick = {
-                                            selected = if (on) selected - option.code else selected + option.code
-                                        },
-                                    )
-                                }
-                                repeat(4 - chunk.size) {
-                                    Box(Modifier.weight(1f))
+                            Text(
+                                text = group.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                            )
+                        }
+                        group.keys.chunked(4).forEach { chunk ->
+                            item {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                                    chunk.forEach { option ->
+                                        val on = option.code in selected
+                                        // 选中态用主题色实底 + 白字，与游戏内编辑面板的键位高亮一致；
+                                        // 未选中为静默文本，一眼可辨「选了哪些」而不是只看计数
+                                        NoRippleButton(
+                                            text = option.label,
+                                            tonal = !on,
+                                            modifier = Modifier.weight(1f),
+                                            onClick = {
+                                                selected = if (on) selected - option.code else selected + option.code
+                                            },
+                                        )
+                                    }
+                                    repeat(4 - chunk.size) {
+                                        Box(Modifier.weight(1f))
+                                    }
                                 }
                             }
                         }
