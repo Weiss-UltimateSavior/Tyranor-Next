@@ -78,7 +78,13 @@ object KrSafMirror {
             throw PrepareException(Stage.INDEX_DIR, indexDir.name)
         }
         val indexFile = File(indexDir, "${mirrorKey(sourceReference, logicalPath)}.idx")
-        writeIndex(indexFile, entries)
+        // 索引写入失败会抛 IOException（AtomicFile.failWrite 后原样抛出）：归到 INDEX_DIR，
+        // 否则它会落到调用方的 catch-all 分支、报成「未知路径」，用户看不出是写索引失败
+        try {
+            writeIndex(indexFile, entries)
+        } catch (error: Throwable) {
+            throw PrepareException(Stage.INDEX_DIR, indexFile.name).also { it.initCause(error) }
+        }
         return Prepared(mirrorRoot, indexFile, entries.size)
     }
 

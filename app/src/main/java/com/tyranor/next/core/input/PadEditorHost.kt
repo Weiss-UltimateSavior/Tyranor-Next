@@ -9,11 +9,15 @@ import com.core.input.InputSink
 import com.core.input.PadProfile
 import com.core.input.VirtualPadEditPanel
 import com.core.input.VirtualPadView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -42,8 +46,21 @@ class PadEditorHost private constructor(
     private val onSaveFailedCallback: () -> Unit,
 ) {
 
-    /** 落盘协程：挂在编辑器根视图的生命周期上（detach 即取消）。 */
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * 落盘协程：挂在编辑器根视图的生命周期上（detach 即取消）。
+     *
+     * 可重建：视图被重新挂载时若作用域已取消，保存协程将永远不会执行（界面停在编辑态且
+     * 无任何提示），因此 attach 时按需重建（见 `create` 里的挂载监听）。
+     */
+    private var scope = newScope()
+
+    /**
+     * 写入串行化：并发写同一文件时，先发起的旧快照可能后落盘、覆盖掉新会话写下的内容。
+     * 会话号只能拦住「迟到结果改 UI」，拦不住落盘顺序，因此这里再加一层互斥。
+     */
+    private val saveMutex = Mutex()
+
+    private fun newScope() = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     companion object {
 
@@ -98,9 +115,12 @@ class PadEditorHost private constructor(
                 onCancel = { pad.cancelEdit() },
             )
             val host = PadEditorHost(pad, root, onSaved, onEditEnded, onSaveFailed)
-            // 落盘协程随视图树销毁：detach 后不该再有人调 onSaved/onSaveFailed
+            // 落盘协程随视图树销毁：detach 后不该再有人调 onSaved/onSaveFailed；
+            // 重新挂载时按需重建（被取消的作用域会让后续保存永不执行）
             root.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-                override fun onViewAttachedToWindow(view: View) = Unit
+                override fun onViewAttachedToWindow(view: View) {
+                    if (!host.scope.isActive) host.scope = host.newScope()
+                }
 
                 override fun onViewDetachedFromWindow(view: View) {
                     host.scope.cancel()
@@ -125,8 +145,19 @@ class PadEditorHost private constructor(
                     // （见 VirtualPadView.beginDeferredSave / completeDeferredSave）
                     val session = pad.beginDeferredSave()
                     host.scope.launch {
-                        val ok = withContext(Dispatchers.IO) {
-                            InputRemapRepository.writeProfile(context, committed)
+                        val ok = host.saveMutex.withLock {
+                            // 已在锁内再次确认会话：被接替的提交不再写盘，否则旧快照可能
+                            // 后落盘把新会话的内容覆盖掉（会话号本身只保证 UI 不被过期结果改）
+                            if (!pad.isDeferredSaveCurrent(session)) return@launch
+                            runCatching {
+                                withContext(Dispatchers.IO) {
+                                    InputRemapRepository.writeProfile(context, committed)
+                                }
+                            }.getOrElse { error ->
+                                // 取消（页面退出）必须原样传播，否则会被当成写盘失败误报提示
+                                if (error is CancellationException) throw error
+                                false
+                            }
                         }
                         // 会话已被新的提交接替、或用户已取消/离开：结果不再提示、不再改状态
                         // （否则连点保存会「已保存成功又弹失败」，取消后还会弹过期提示）

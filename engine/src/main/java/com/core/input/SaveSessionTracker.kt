@@ -11,7 +11,7 @@ package com.core.input
  * 只有仍属当前会话的结果才继续处理。会话边界（进入/退出编辑态、发起新提交）都会清空
  * 在途状态，使更早的会话自动失效。
  */
-class SaveSessionTracker {
+internal class SaveSessionTracker {
 
     private var sequence = 0
     private var pending = 0

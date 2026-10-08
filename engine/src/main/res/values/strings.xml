@@ -61,7 +61,7 @@
     <string name="engine_input_new_screenshot">截屏按钮</string>
     <string name="engine_input_new_direction">方向键（摇杆）</string>
     <string name="engine_input_direction_exists">方向键已存在</string>
-    <string name="engine_input_button_limit">已达按钮数上限（%1$d 个）</string>
+    <string name="engine_input_button_limit">按钮数已达上限 %1$d 个</string>
     <string name="engine_input_direction_keys_title">方向键位</string>
     <string name="engine_input_direction_up">上</string>
     <string name="engine_input_direction_down">下</string>

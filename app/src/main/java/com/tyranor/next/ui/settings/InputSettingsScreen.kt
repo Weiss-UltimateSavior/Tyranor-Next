@@ -83,10 +83,10 @@ class InputSettingsActivity : AppScreenActivity() {
 internal fun InputSettingsScreen() {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    // 开关展示「实际生效值」：从未显式设置时 MV/MZ 默认开着（见 engineDefaultsPadEnabled），
-    // 显示为关会让用户以为按键层是关的，且要连点两下才能真正关闭
+    // 开关展示值：未显式设置时按开显示（与 MV/MZ 默认一致，见 globalPadSwitchValue），
+    // 否则用户以为按键层已关、且要连点两下才能真正关闭
     var padEnabled by remember {
-        mutableStateOf(InputRemapRepository.effectiveGlobalPadEnabled(ctx))
+        mutableStateOf(InputRemapRepository.globalPadSwitchValue(ctx))
     }
     var gamepadEnabled by remember { mutableStateOf(InputRemapRepository.globalGamepadEnabled(ctx)) }
     var profileId by remember { mutableStateOf(InputRemapRepository.globalProfileId(ctx)) }
@@ -277,8 +277,9 @@ internal fun InputSettingsScreen() {
                                 onEdit = {
                                     startActivityWithPageTransition(ctx, PadLayoutEditActivity.createIntent(ctx, profile.id))
                                 },
-                                // 默认方案的展示名固定在字符串资源里，重命名不会生效——
-                                // 与「删除」一致：不给入口，而不是点了没反应
+                                // 内置默认方案的展示名恒取字符串资源，重命名不会生效——不给入口，
+                                // 而不是点了没反应。迁移主布局只在**仍是占位名**时被本地化展示
+                                // （见 isLegacyMain），给出重命名入口是有效的：改完即显示用户命名
                                 onRename = if (profile.isDefault) null else ({ renameTarget = profile.id }),
                                 onCopy = {
                                     // id/命名都要读方案目录，全部放 IO 线程（原先在主线程）
@@ -331,8 +332,14 @@ internal fun InputSettingsScreen() {
                                     NoRippleTextButton(
                                         text = stringResource(R.string.input_settings_reset_gamepad),
                                         onClick = {
-                                            InputRemapRepository.resetGamepadMap(ctx)
-                                            toast(ctx, R.string.input_settings_reset_gamepad_done)
+                                            // 写盘带 fsync：放主线程会卡住点击瞬间，移到 IO 线程。
+                                            // 该函数返回默认表而非成败，因此这里只保证不阻塞 UI
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    InputRemapRepository.resetGamepadMap(ctx)
+                                                }
+                                                toast(ctx, R.string.input_settings_reset_gamepad_done)
+                                            }
                                         },
                                     )
                                 }
@@ -381,10 +388,13 @@ internal fun InputSettingsScreen() {
                         val unique = InputRemapRepository.uniqueProfileName(ctx, trimmed)
                         InputRemapRepository.createProfile(ctx, id, unique)
                     }
-                    if (created != null) {
+                    // 写盘失败必须提示：否则弹窗关闭、列表没变化，用户只会以为没反应
+                    if (created == null) {
+                        toast(ctx, R.string.input_settings_profile_new_failed)
+                    } else {
                         InputRemapRepository.setGlobalProfileId(ctx, created.id)
-                        reloadProfiles()
                     }
+                    reloadProfiles()
                 }
             },
             onDismiss = { newProfileDialog = false },
@@ -415,7 +425,11 @@ internal fun InputSettingsScreen() {
                     onClick = {
                         deleteTarget = null
                         scope.launch {
-                            withContext(Dispatchers.IO) { InputRemapRepository.deleteProfile(ctx, target) }
+                            val deleted = withContext(Dispatchers.IO) {
+                                InputRemapRepository.deleteProfile(ctx, target)
+                            }
+                            // 删除失败（占用/权限）必须提示，否则列表条目还在、用户以为点了没反应
+                            if (!deleted) toast(ctx, R.string.input_settings_profile_delete_failed)
                             if (profileId == target) {
                                 profileId = InputRemapRepository.defaultProfileId()
                                 InputRemapRepository.setGlobalProfileId(ctx, profileId)
@@ -448,12 +462,13 @@ private fun ProfileRow(
     onDelete: (() -> Unit)?,
     onExport: () -> Unit,
 ) {
-    // 方案名是随方案持久化的用户数据（默认方案与迁移主布局存的是语言中立占位名），
-    // 此处按 id 本地化展示；其余方案名是用户自己输入的，原样显示
-    val displayName = if (profile.isDefault || profile.isLegacyMain) {
-        stringResource(R.string.input_settings_profile_default)
-    } else {
-        profile.name
+    // 方案名是随方案持久化的用户数据。两类方案存的是语言中立占位名，此处按 id 本地化展示；
+    // 迁移主布局用**不同文案**（默认方案（迁移）），否则它与内置默认方案同名、列表里
+    // 出现两个无法区分的条目。用户改过名的方案原样显示（见 isLegacyMain 的判定）
+    val displayName = when {
+        profile.isDefault -> stringResource(R.string.input_settings_profile_default)
+        profile.isLegacyMain -> stringResource(R.string.input_settings_profile_default_migrated)
+        else -> profile.name
     }
     Column(Modifier.fillMaxWidth()) {
         ArrowPreference(

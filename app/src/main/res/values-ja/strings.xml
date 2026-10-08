@@ -314,6 +314,7 @@
     <string name="input_settings_choose_keys">出力キーを選択</string>
     <string name="input_settings_profiles_title">キー配置</string>
     <string name="input_settings_profile_default">デフォルト配置</string>
+    <string name="input_settings_profile_default_migrated">デフォルト配置（移行）</string>
     <string name="input_settings_profile_new">新規配置</string>
     <string name="input_settings_profile_use">使用</string>
     <string name="input_settings_profile_in_use">使用中</string>
@@ -325,6 +326,9 @@
     <string name="pad_layout_edit_hint">タップで選択、ドラッグで移動。完了したら「保存」、システムの戻るキーで終了（保存されません）。</string>
     <string name="input_settings_profile_copy">複製</string>
     <string name="input_settings_profile_copy_failed">複製に失敗しました。空き容量を確認して再試行してください。</string>
+    <string name="input_settings_profile_new_failed">作成に失敗しました。空き容量を確認して再試行してください。</string>
+    <string name="input_settings_profile_delete_failed">削除に失敗しました。空き容量を確認して再試行してください。</string>
+    <string name="input_settings_gamepad_save_failed">保存に失敗しました。空き容量を確認して再試行してください。</string>
     <string name="input_settings_profile_rename">名前変更</string>
     <string name="input_settings_profile_rename_failed">名前変更に失敗しました。空き容量を確認して再試行してください。</string>
     <string name="input_settings_profile_delete">削除</string>

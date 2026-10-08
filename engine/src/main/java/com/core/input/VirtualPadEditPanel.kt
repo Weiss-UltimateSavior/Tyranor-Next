@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
 import android.view.MotionEvent
@@ -75,6 +76,9 @@ class VirtualPadEditPanel(
             setTextColor(Color.WHITE)
             setHintTextColor(0x88FFFFFF.toInt())
             textSize = 12f
+            // 上限与落盘侧的截断同源（PadProfile.MAX_BUTTON_TEXT）：只在提交时 take(12)
+            // 会让用户敲到第 13 个字后看着它消失，输入期就挡掉更直观
+            filters = arrayOf(InputFilter.LengthFilter(PadProfile.MAX_BUTTON_TEXT))
         }
         textInput.setOnFocusChangeListener { _, focused ->
             if (!focused) applyButtonEdit()

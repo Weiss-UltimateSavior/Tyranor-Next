@@ -144,9 +144,11 @@ internal fun GamepadMapScreen() {
                 onSave = { keys, autoKeep ->
                     editingButton = null
                     scope.launch {
-                        withContext(Dispatchers.IO) {
+                        val ok = withContext(Dispatchers.IO) {
                             InputRemapRepository.setGamepadBinding(ctx, id, keys, autoKeep)
                         }
+                        // 写盘失败必须提示：否则弹窗关闭、行值未变，用户以为没反应
+                        if (!ok) toastBindingFailed(ctx)
                         reload()
                     }
                 },
@@ -167,15 +169,25 @@ internal fun GamepadMapScreen() {
                 onSave = { keys, _ ->
                     editingStick = null
                     scope.launch {
-                        withContext(Dispatchers.IO) {
+                        val ok = withContext(Dispatchers.IO) {
                             InputRemapRepository.setStickBinding(ctx, stick, direction, keys)
                         }
+                        if (!ok) toastBindingFailed(ctx)
                         reload()
                     }
                 },
             )
         }
     }
+}
+
+/** 手柄映射写盘失败提示（两处保存回调共用）。 */
+private fun toastBindingFailed(context: android.content.Context) {
+    android.widget.Toast.makeText(
+        context,
+        context.getString(R.string.input_settings_gamepad_save_failed),
+        android.widget.Toast.LENGTH_SHORT,
+    ).show()
 }
 
 @Composable

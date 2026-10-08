@@ -109,10 +109,14 @@ data class PadProfile(
         const val MAX_BUTTON_TEXT = 12
 
         /** 迁移产物 id 前缀。 */
-        private const val MIGRATED_PREFIX = "migrated-"
+        const val MIGRATED_PREFIX = "migrated-"
 
-        /** 主布局在迁移产物里的 slug（无旧预设序号）。 */
-        private const val MAIN_SLUG = "main"
+        /**
+         * 主布局在迁移产物里的 slug（无旧预设序号）。
+         *
+         * app 侧（`InputRemapRepository`）按它识别迁移主布局以本地化展示名，两处必须一致。
+         */
+        const val MAIN_SLUG = "main"
 
         /** `InputConfigStore` 的 id 白名单上限（[A-Za-z0-9_-]{1,32}）。 */
         private const val MAX_MIGRATED_ID_LENGTH = 32

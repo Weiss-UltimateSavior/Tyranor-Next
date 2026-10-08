@@ -14,7 +14,7 @@ package com.core.input
  *
  * 线程约束：只在主线程（View 的触摸事件）使用。
  */
-class PointerLedger {
+internal class PointerLedger {
 
     private val targets = HashMap<Int, String>()
     private val buttons = HashMap<Int, PadButton>()

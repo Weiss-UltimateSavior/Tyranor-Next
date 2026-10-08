@@ -195,7 +195,7 @@ _Avoid_: 布局文件、preset（预设为旧实现术语）
 _Avoid_: 控制器、JoyKey
 
 **输入开关（input_pad_enabled / input_gamepad_enabled / input_profile_id）**:
-虚拟按键、手柄映射与方案选择的全局/单游戏设置键：全局存 `tyranor_prefs`，单游戏覆盖存 `game_overrides` blob 同名字段（缺失=跟随全局）。键名三处字面量锚定：engine `InputConfigStore`、`EngineSettingsStore` / `PerGameSettingsStore`、`GameOverridePartitions`。
+虚拟按键、手柄映射与方案选择的全局/单游戏设置键：全局存 `tyranor_prefs`，单游戏覆盖存 `game_overrides` blob 同名字段（缺失=跟随全局）。键名三处字面量锚定：engine `InputConfigStore`、`EngineSettingsStore` / `PerGameSettingsStore`、`GameOverridePartitions`（含 `input_legacy_migrated` 旧触屏手柄的一次性迁移标记）。虚拟按键的全局默认**按引擎分档**：未显式设置时 MV/MZ 默认开、Tyrano/VN/WebOther 默认关（`engineDefaultsEnabled`），显式设置（全局或单游戏）优先；手柄映射全引擎默认开。
 _Avoid_: 触屏设置、按键开关
 
 ## 拆封包

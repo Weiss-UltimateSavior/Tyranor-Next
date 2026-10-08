@@ -8,8 +8,15 @@ package com.core.input
  */
 internal object InputJsonLimits {
 
-    /** 单个控件/逻辑按键可绑定的键位数量上限。 */
-    const val MAX_KEYS_PER_BINDING = 16
+    /**
+     * 单个控件/逻辑按键可绑定的键位数量上限。
+     *
+     * 这是**防御性**上限（拦住坏文件/构造文件的一次性大分配），不是编辑约束：
+     * 取值必须显著大于 `InputKeyCatalog` 的可选键总数，否则用户在键位对话框里如实勾选
+     * 很多键时，落盘后会被解析侧静默截断（重启即丢绑定）。该关系由
+     * `InputJsonLimitsTest` 锚定。
+     */
+    const val MAX_KEYS_PER_BINDING = 128
 
     /**
      * `schema` 兼容性判定：缺失（历史文件）按当前版本处理，高于 [current] 拒绝解析。
@@ -23,7 +30,9 @@ internal object InputJsonLimits {
      */
     fun isSupportedSchema(raw: Any?, current: Int): Boolean {
         if (raw == null) return true
-        val version = (raw as? Number)?.toInt() ?: return true
-        return version <= current
+        val number = raw as? Number ?: return true
+        // 用 Long 比较而不是 toInt()：JSON 的数值可能是 Long，截断后
+        // 0x1_0000_0001 会变成 1 而被当成旧版本放行
+        return number.toLong() <= current.toLong()
     }
 }

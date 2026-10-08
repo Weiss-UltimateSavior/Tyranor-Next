@@ -54,14 +54,16 @@ object InputRemapRepository {
         engine == EngineType.RPG_MV || engine == EngineType.RPG_MZ
 
     /**
-     * 设置页开关应展示的取值（全局开关对所有引擎生效）。
+     * 设置页「虚拟按键」开关应展示的取值。
      *
-     * 未显式设置时按「开」显示：MV/MZ 的实际默认就是开（见 [engineDefaultsPadEnabled]），
-     * 显示为关会让用户以为按键层已关闭、且要连点两下才能真正关闭。
-     * Tyrano/VN/WebOther 用户看到开关为开、游戏里却没有按键层——这正是设置页摘要
-     * 所说明的默认范围（单游戏覆盖仍可逐游戏调整）。
+     * 命名刻意不用 `effective...`：这不是「所有引擎的实际生效值」——未显式设置时按**开**
+     * 显示（与 MV/MZ 的默认一致），而 Tyrano / VN / WebOther 的实际默认是关。全局开关对
+     * 所有引擎只有一份，无法同时表达两种默认；展示值取「开」是为了让想关闭的用户
+     * 一次点击即生效（若显示为关，用户得先点开、再点关）。
+     * 摘要文案（`engine_settings_input_pad_summary`）向用户说明了这一默认范围，
+     * 单游戏覆盖仍可逐游戏调整。
      */
-    fun effectiveGlobalPadEnabled(context: Context): Boolean =
+    fun globalPadSwitchValue(context: Context): Boolean =
         EngineSettingsStore.isInputPadEnabled(context, default = true)
 
     fun setGlobalPadEnabled(context: Context, enabled: Boolean) =
@@ -102,17 +104,25 @@ object InputRemapRepository {
         val name: String,
         val isDefault: Boolean,
         /**
-         * 语言中立占位名（迁移主布局的 `"Default"`）。
+         * 迁移产物的**主布局**（`migrated-<作用域>-main`）且仍带着语言中立占位名。
          *
-         * 旧触屏手柄迁移产物的方案名是硬编码 ASCII（[PadProfile.migrateLegacy]），UI 按
-         * [isDefault] 只对内置方案做本地化；少了这个标记，中日文界面会把迁移主布局直接
-         * 显示成英文 "Default"。UI 据此改走同一份本地化文案。
+         * 旧触屏手柄迁移产物的方案名是硬编码 ASCII（[PadProfile.migrateLegacy] 写 `"Default"`），
+         * UI 按 [isDefault] 只对内置方案做本地化；少了这个标记，中日文界面会把迁移主布局直接
+         * 显示成英文 "Default"。用户改过名（不再是占位名）后为 false —— 那是用户的命名，
+         * 不该再被本地化覆盖，也不该出现「重命名无效」的观感。
          */
         val isLegacyMain: Boolean,
     )
 
-    /** 迁移产物主布局的 id 约定：`migrated-<游戏作用域>-main`（见 [PadProfile.migrateLegacy]）。 */
-    private val LEGACY_MAIN_ID = Regex("^migrated-.+-main$")
+    /**
+     * 迁移产物主布局的 id 约定：`migrated-<游戏作用域>-main`（见 [PadProfile.migrateLegacy]）。
+     *
+     * 与 [PadProfile] 的 [PadProfile.MAIN_SLUG] 锚定。
+     */
+    private val LEGACY_MAIN_ID = Regex("^migrated-.+-${PadProfile.MAIN_SLUG}$")
+
+    /** 迁移主布局的占位名（语言中立的 ASCII，展示时按 [isLegacyMain] 本地化）。 */
+    private const val LEGACY_PLACEHOLDER_NAME = "Default"
 
     fun listProfileSummaries(context: Context): List<ProfileSummary> =
         InputConfigStore.listProfiles(context).map { profile ->
@@ -120,7 +130,8 @@ object InputRemapRepository {
                 id = profile.id,
                 name = profile.name,
                 isDefault = profile.id == InputConfigStore.DEFAULT_PROFILE_ID,
-                isLegacyMain = LEGACY_MAIN_ID.matches(profile.id),
+                isLegacyMain = LEGACY_MAIN_ID.matches(profile.id) &&
+                    profile.name == LEGACY_PLACEHOLDER_NAME,
             )
         }
 

@@ -12,7 +12,7 @@ package com.core.input
  * 改生产代码不会让测试失败（真实测试盲区）。阈值由调用方按当前映射表传入，
  * 因此手柄映射在 [InputRouter.updateMap] 后变化时状态机无需重建。
  */
-class StickDirectionResolver {
+internal class StickDirectionResolver {
 
     /** 各方向（调用方给的 key，如 `"left.up"`）当前是否激活。 */
     private val active = HashMap<String, Boolean>()

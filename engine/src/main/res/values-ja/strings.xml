@@ -61,7 +61,7 @@
     <string name="engine_input_new_screenshot">スクリーンショットボタン</string>
     <string name="engine_input_new_direction">方向キー（スティック表示）</string>
     <string name="engine_input_direction_exists">方向キーは既にあります</string>
-    <string name="engine_input_button_limit">ボタン数の上限（%1$d）に達しました</string>
+    <string name="engine_input_button_limit">ボタン数が上限 %1$d に達しました</string>
     <string name="engine_input_direction_keys_title">方向キー</string>
     <string name="engine_input_direction_up">上</string>
     <string name="engine_input_direction_down">下</string>

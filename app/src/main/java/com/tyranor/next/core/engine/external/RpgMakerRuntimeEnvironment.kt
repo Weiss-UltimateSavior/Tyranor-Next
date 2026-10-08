@@ -61,6 +61,9 @@ object RpgMakerRuntimeEnvironment {
     private const val FONT_PARENT = "JoiPlay/fonts"
     private const val IMPORT_TEMP_DIR = ".import_tmp"
 
+    /** 备份式替换用的旧目录暂存名（与 [IMPORT_TEMP_DIR] 同层，替换成功即删）。 */
+    private const val IMPORT_BACKUP_DIR = ".import_backup"
+
     // 用户挑选的 RTP 包解压上限。数值与 NativePluginInstaller.unzipSafely **不同**
     // （那边是 32 条目 / 512MiB 总量，面向内置插件包）：RTP 是整包素材，条目数与总量
     // 都大得多，因此这里给到 10 万条目 / 4GiB、单条目同为 256MiB
@@ -83,7 +86,26 @@ object RpgMakerRuntimeEnvironment {
     fun rtpDir(gameType: String): File =
         File(Environment.getExternalStorageDirectory(), "$RTP_PARENT/${rtpDirName(gameType)}")
 
-    fun rtpAppDir(gameType: String): File = File(rtpDir(gameType), "app")
+    /**
+     * RTP 根目录（`.../<子类型>/app`）。
+     *
+     * 顺带做一次**待替换备份的归位**：备份式替换若在「旧目录已改名、新内容未顶上」之间
+     * 被杀，这里把旧目录放回去。少了这一步，[isRtpImported] 会报「未导入」、游戏也读不到
+     * RTP，而盘上其实还留着完整的旧数据。归位是幂等的（目标已存在时不做任何事）。
+     */
+    fun rtpAppDir(gameType: String): File {
+        val dir = File(rtpDir(gameType), "app")
+        recoverPendingImport(dir)
+        return dir
+    }
+
+    /** 把中断的替换留下的备份归位（目标已存在时不动，避免覆盖有效内容）。 */
+    private fun recoverPendingImport(target: File) {
+        if (target.exists()) return
+        val parent = target.parentFile ?: return
+        val backup = File(parent, IMPORT_BACKUP_DIR)
+        if (backup.exists()) runCatching { backup.renameTo(target) }
+    }
 
     /** RTP 是否已导入（app 目录存在且非空）。 */
     fun isRtpImported(gameType: String): Boolean {
@@ -160,6 +182,11 @@ object RpgMakerRuntimeEnvironment {
      *
      * 两个导入路径的失败分支必须一致：拍平、替换与「导入后仍为空」的判定都在这里，
      * 否则两条路径会给出不同的失败原因。
+     *
+     * 替换采用**备份式**：旧目录先改名成 `.import_backup`，新内容顶上后再删备份，失败即回滚。
+     * 先前的「先删旧目录再铺新内容」有两个后果——`copyRecursively` 中途失败会留下半成品
+     * 目录，而 [isRtpImported] 只看目录非空，下次会显示「已导入」却缺素材；删除与替换之间
+     * 被杀则旧 RTP 直接丢失。
      */
     private fun commitImportTemp(temp: File, target: File): RtpImportRejection? {
         flattenSingleRoot(temp)
@@ -168,17 +195,33 @@ object RpgMakerRuntimeEnvironment {
         // 按 IoFailed 上报（报成「没有内容」会把排查引到错误方向）
         val children = temp.listFiles() ?: return RtpImportRejection.IoFailed(temp.name)
         if (children.isEmpty()) return RtpImportRejection.EmptyArchive
-        if (target.exists() && !target.deleteRecursively()) return RtpImportRejection.IoFailed(target.name)
-        if (!temp.renameTo(target)) {
-            if (!temp.copyRecursively(target, overwrite = true)) {
+
+        val parent = target.parentFile ?: return RtpImportRejection.IoFailed(target.name)
+        val backup = File(parent, IMPORT_BACKUP_DIR)
+        // 上一次替换中途被杀（备份还在、目标缺失）：先归位，否则下面的清理会删掉唯一旧数据
+        if (backup.exists() && !target.exists() && !backup.renameTo(target)) {
+            return RtpImportRejection.IoFailed(target.name)
+        }
+        backup.deleteRecursively()
+        var hadTarget = false
+        if (target.exists()) {
+            if (target.renameTo(backup)) {
+                hadTarget = true
+            } else if (!target.deleteRecursively()) {
+                // 旧目录既不能改名也不能删：放弃本次替换（旧数据保持原样）
                 return RtpImportRejection.IoFailed(target.name)
             }
         }
-        return if (target.listFiles()?.isNotEmpty() == true) {
-            null
-        } else {
-            RtpImportRejection.EmptyArchive
+
+        val installed = temp.renameTo(target) || temp.copyRecursively(target, overwrite = true)
+        if (!installed || target.listFiles()?.isNotEmpty() != true) {
+            // 回滚：清掉半成品，把旧目录放回去（回滚失败时保留备份不删，数据仍在盘上）
+            target.deleteRecursively()
+            if (hadTarget && backup.exists()) backup.renameTo(target)
+            return if (installed) RtpImportRejection.EmptyArchive else RtpImportRejection.IoFailed(target.name)
         }
+        backup.deleteRecursively()
+        return null
     }
 
     /** 导入自定义字体到共享目录，返回插件可读的绝对路径；扩展名非法或 IO 失败返回 null。 */

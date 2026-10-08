@@ -314,6 +314,7 @@
     <string name="input_settings_choose_keys">选择输出键位</string>
     <string name="input_settings_profiles_title">按键方案</string>
     <string name="input_settings_profile_default">默认方案</string>
+    <string name="input_settings_profile_default_migrated">默认方案（迁移）</string>
     <string name="input_settings_profile_new">新建方案</string>
     <string name="input_settings_profile_use">使用</string>
     <string name="input_settings_profile_in_use">使用中</string>
@@ -325,6 +326,9 @@
     <string name="pad_layout_edit_hint">点按选中按钮、拖拽调整位置；改完点「保存」，用系统返回键退出（不保存）</string>
     <string name="input_settings_profile_copy">复制</string>
     <string name="input_settings_profile_copy_failed">复制失败，请检查存储空间后重试</string>
+    <string name="input_settings_profile_new_failed">新建失败，请检查存储空间后重试</string>
+    <string name="input_settings_profile_delete_failed">删除失败，请检查存储空间后重试</string>
+    <string name="input_settings_gamepad_save_failed">保存失败，请检查存储空间后重试</string>
     <string name="input_settings_profile_rename">重命名</string>
     <string name="input_settings_profile_rename_failed">重命名失败，请检查存储空间后重试</string>
     <string name="input_settings_profile_delete">删除</string>

@@ -236,16 +236,20 @@ object InputConfigStore {
      *
      * 不用「先 delete 再 rename」：POSIX rename 本身原子替换已存在目标，先删会留下
      * 「文件不存在」窗口（进程被杀即丢配置）。临时名带进程号 + 进程内序号，避免多进程
-     * 以及同进程并发写同一目标时互相截断。rename 失败时兜底重试一次。
+     * 以及同进程并发写同一目标时互相截断。
+     *
+     * rename 无法覆盖已存在目标时（个别 FUSE / 外置存储实现）走**备份式替换**（见
+     * [replaceViaBackup]）：目标先改名成 `.bak`，tmp 顶上后再删备份，任一步失败都回滚。
+     * 先前实现是「删掉目标再 rename」，只要第二次 rename 仍失败，**新旧配置就一起消失**。
      *
      * 任何失败路径都必须删干净临时文件（含写入过程中抛异常）：残留的 `.tmp` 会一直躺在
      * profiles 目录里，虽然 [listProfiles] 按 `.json` 后缀过滤不会读到它，但会持续占用空间。
-     * 兜底也不能先删目标再 rename——删除目标与 rename 之间失败会丢用户配置。
      */
     private fun atomicWrite(target: File, content: String): Boolean {
         val dir = target.parentFile ?: return false
         val tmp = File(dir, ".${target.name}.${android.os.Process.myPid()}.${tmpCounter.incrementAndGet()}.tmp")
-        var renamed = false
+        val backup = File(dir, "${target.name}.bak")
+        var installed = false
         return try {
             try {
                 java.io.FileOutputStream(tmp).use { output ->
@@ -253,23 +257,41 @@ object InputConfigStore {
                     output.flush()
                     output.fd.sync()
                 }
-                renamed = tmp.renameTo(target)
-                if (!renamed) {
-                    // 个别文件系统上 rename 无法覆盖已存在的目标：先删目标再重试。
-                    // 这次删除是安全的——目标内容是本次即将替换掉的旧版本，且紧随其后 rename；
-                    // 若 rename 仍失败，则说明 rename 本身不可用，此时只剩「保留旧文件」的选择：
-                    // 先前的实现删掉目标后失败会让用户配置凭空消失。
-                    if (target.exists() && target.delete()) {
-                        renamed = tmp.renameTo(target)
-                    }
+                installed = tmp.renameTo(target)
+                if (!installed && target.exists()) {
+                    installed = replaceViaBackup(tmp, target, backup)
                 }
-                renamed
+                installed
             } finally {
-                if (!renamed) tmp.delete()
+                if (!installed) tmp.delete()
             }
         } catch (_: Throwable) {
             // 磁盘满 / 权限 / 目录被删等：调用方按「写盘失败」处理，不得让异常穿出
             false
         }
+    }
+
+    /**
+     * 备份式替换：`target → backup`、`tmp → target`；失败则把备份改回原名。
+     *
+     * 不变量：**返回 false 时 [target] 必须仍是替换前的旧内容**（或已从备份恢复）。
+     * 这条不变量是「用户配置不因一次写盘失败而消失」的唯一保证，由
+     * `InputConfigStoreBackupTest` 用真实文件锚定。
+     *
+     * @return 是否替换成功；失败时 [target] 保持原内容（tmp 由调用方清理）
+     */
+    internal fun replaceViaBackup(tmp: File, target: File, backup: File): Boolean {
+        // 上一次替换中途被杀（备份还在、目标缺失）：先把备份放回去。
+        // 少了这一步，下面的 delete 会把盘上唯一的旧配置删掉
+        if (backup.exists() && !target.exists() && !backup.renameTo(target)) return false
+        backup.delete()
+        if (!target.renameTo(backup)) return false
+        if (tmp.renameTo(target)) {
+            backup.delete()
+            return true
+        }
+        // 回滚：目标此时已不存在，把旧配置放回去；回滚再失败也保留备份不删（数据仍在）
+        if (!target.exists()) backup.renameTo(target)
+        return false
     }
 }

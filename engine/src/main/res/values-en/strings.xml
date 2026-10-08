@@ -61,7 +61,7 @@
     <string name="engine_input_new_screenshot">Screenshot button</string>
     <string name="engine_input_new_direction">D-pad (stick look)</string>
     <string name="engine_input_direction_exists">A D-pad already exists</string>
-    <string name="engine_input_button_limit">Button limit reached (%1$d)</string>
+    <string name="engine_input_button_limit">Button limit reached: %1$d</string>
     <string name="engine_input_direction_keys_title">Direction keys</string>
     <string name="engine_input_direction_up">Up</string>
     <string name="engine_input_direction_down">Down</string>
