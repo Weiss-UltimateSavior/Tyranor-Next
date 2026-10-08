@@ -69,6 +69,7 @@
     <string name="home_web_refresh_content_description">更新</string>
     <string name="side_panel_title">妙妙ツール</string>
     <string name="side_panel_kr2_native_title">kr2 ネイティブを起動</string>
+    <string name="side_panel_archive_tool_title">解凍 / 圧縮ツール</string>
     <string name="settings_invalid_theme_color">透明色、白黒、グレーは使用できません</string>
 
     <string name="settings_update_latest">最新バージョンです</string>

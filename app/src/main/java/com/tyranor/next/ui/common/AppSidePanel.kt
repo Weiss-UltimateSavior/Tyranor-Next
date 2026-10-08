@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -59,6 +60,9 @@ import kotlin.math.abs
 /** 侧边栏面板宽度（固定值，后续按内容再调）。 */
 private val SidePanelWidth = 250.dp
 
+/** 面板内条目之间的统一纵向间距（与弹窗内 AppNavItem 列表一致）。 */
+private val SidePanelItemSpacing = 8.dp
+
 /** 面板与屏幕左边缘的间距。 */
 private val SidePanelStartMargin = 10.dp
 
@@ -86,8 +90,9 @@ private val SidePanelSwipeThreshold = 40.dp
  *   「遮罩点击 / 返回键关闭 + 进出动画」宿主；
  * - 面板材质沿用应用弹窗/抽屉的玻璃适配：默认 [NavWhite]、复古玻璃 [GlassPanel]、
  *   高级玻璃用 [rememberAdvancedGlassPanelSurface] 的页面取色渐变；
- * - 顶部固定标题（[R.string.side_panel_title]，水平居中），下方 [content] 为功能条目区；
- *   条目仍必须使用 AppNavItem 等统一组件（弹窗内传 `DialogItemSurface`）。
+ * - 顶部固定标题（[R.string.side_panel_title]，水平居中），下方 [content] 为功能条目区：
+ *   条目之间统一加 [SidePanelItemSpacing] 纵向间距（调用方不要自加外边距）；条目仍必须
+ *   使用 AppNavItem 等统一组件（弹窗内传 `DialogItemSurface`）。
  */
 @Composable
 internal fun AppSidePanel(
@@ -166,7 +171,7 @@ internal fun AppSidePanel(
                 ),
                 shape = AppComponentShape,
             ) {
-                // 顶部标题（水平居中）+ 功能条目区
+                // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
                 Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                     Text(
                         text = stringResource(R.string.side_panel_title),
@@ -177,7 +182,12 @@ internal fun AppSidePanel(
                             .fillMaxWidth()
                             .padding(top = 18.dp, bottom = 10.dp),
                     )
-                    content()
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
+                    ) {
+                        content()
+                    }
                 }
             }
         }

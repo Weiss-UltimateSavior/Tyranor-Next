@@ -76,6 +76,7 @@ import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.glassPageBackground
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.LiquidGlassNavItem
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppNavigationRail
@@ -100,6 +101,7 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.advancedGlassPageBackground
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
+import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.settings.SettingsScreen
 import kotlinx.coroutines.CancellationException
@@ -191,6 +193,16 @@ fun MainScreen(modifier: Modifier = Modifier) {
           }
           sidePanelLaunchError = result.toErrorState(context)
         }
+      },
+    )
+    // 妙妙工具条目：解包 / 封包工具（原设置页「解包 / 封包」入口迁入）
+    AppNavItem(
+      title = stringResource(R.string.side_panel_archive_tool_title),
+      leadingIcon = R.drawable.ic_sheet_archive,
+      containerColor = DialogItemSurface,
+      onClick = {
+        sidePanelOpen = false
+        startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context))
       },
     )
   }

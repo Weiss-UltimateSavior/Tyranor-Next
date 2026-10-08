@@ -69,6 +69,7 @@
     <string name="home_web_refresh_content_description">Refresh</string>
     <string name="side_panel_title">Miaomiao Tools</string>
     <string name="side_panel_kr2_native_title">Launch kr2 Native</string>
+    <string name="side_panel_archive_tool_title">Unpack / Pack Tool</string>
     <string name="settings_invalid_theme_color">Transparent, black, white, or gray colors are not supported</string>
 
     <string name="settings_update_latest">You are on the latest version</string>
