@@ -690,4 +690,9 @@
     <string name="android_add_duplicate">このアプリは既に追加済みです</string>
     <string name="android_add_already_added">ライブラリに追加済み</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="engine_settings_kr_language">言語環境</string>
+    <string name="engine_settings_kr_language_jp">日本語</string>
+    <string name="engine_settings_kr_language_en">英語</string>
+    <string name="engine_settings_kr_language_zh">簡体字中国語</string>
+    <string name="engine_settings_kr_language_zhtw">繁体字中国語</string>
 </resources>

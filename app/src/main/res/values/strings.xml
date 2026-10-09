@@ -690,4 +690,9 @@
     <string name="android_add_duplicate">该应用已在游戏库中</string>
     <string name="android_add_already_added">已在游戏库中</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+    <string name="engine_settings_kr_language">语言环境</string>
+    <string name="engine_settings_kr_language_jp">日语</string>
+    <string name="engine_settings_kr_language_en">英语</string>
+    <string name="engine_settings_kr_language_zh">简体中文</string>
+    <string name="engine_settings_kr_language_zhtw">繁体中文</string>
 </resources>

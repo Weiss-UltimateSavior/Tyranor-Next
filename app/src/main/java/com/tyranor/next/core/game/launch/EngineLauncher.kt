@@ -1084,6 +1084,8 @@ object EngineLauncher {
                 putExtra(LaunchContract.SCOPED_SAVE_ROOT, actualSaveRoot.absolutePath)
             }
             putExtra(LaunchContract.FOCUS, "true")
+            // 游戏语言环境：先随启动下发，引擎宿主侧落地通道（TJS/overlay）待接入。
+            putExtra(LaunchContract.KR_LANGUAGE, settings.krLanguage)
             // 引擎版本
             putExtra(LaunchContract.KR_ENGINE_VERSION, when (version) {
                 EngineSettingsStore.KR_134 -> "1.3.4"

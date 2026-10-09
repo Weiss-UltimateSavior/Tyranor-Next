@@ -425,3 +425,29 @@ internal fun rpgFontScaleOptionsMap(): Map<String, String> = rpgFontScaleOptions
 
 @Composable
 internal fun rpgVerticalAlignOptionsMap(): Map<String, String> = rpgVerticalAlignOptions().toMap()
+
+/** KRKR 游戏底层语言环境（全局默认 / 单游戏覆盖）。引擎按此切换运行环境与文本编码，
+ *  避免为日文原版 / 特殊汉化版反复切换系统语言。auto=保持引擎默认。 */
+@Composable
+internal fun krLanguageOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.KR_LANGUAGE_AUTO to stringResource(R.string.common_auto),
+    EngineSettingsStore.KR_LANGUAGE_JP to stringResource(R.string.engine_settings_kr_language_jp),
+    EngineSettingsStore.KR_LANGUAGE_EN to stringResource(R.string.engine_settings_kr_language_en),
+    EngineSettingsStore.KR_LANGUAGE_ZH to stringResource(R.string.engine_settings_kr_language_zh),
+    EngineSettingsStore.KR_LANGUAGE_ZHTW to stringResource(R.string.engine_settings_kr_language_zhtw),
+)
+
+@Composable
+internal fun krLanguageOptionsMap(): Map<String, String> = krLanguageOptions().toMap()
+
+/** KRKR 单游戏语言覆盖选项：不含「跟随引擎默认」——单游戏的“跟随全局”由覆盖层 null 表达。 */
+@Composable
+internal fun krLanguageOverrideOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.KR_LANGUAGE_JP to stringResource(R.string.engine_settings_kr_language_jp),
+    EngineSettingsStore.KR_LANGUAGE_EN to stringResource(R.string.engine_settings_kr_language_en),
+    EngineSettingsStore.KR_LANGUAGE_ZH to stringResource(R.string.engine_settings_kr_language_zh),
+    EngineSettingsStore.KR_LANGUAGE_ZHTW to stringResource(R.string.engine_settings_kr_language_zhtw),
+)
+
+@Composable
+internal fun krLanguageOverrideOptionsMap(): Map<String, String> = krLanguageOverrideOptions().toMap()
