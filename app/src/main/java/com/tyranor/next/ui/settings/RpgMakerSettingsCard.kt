@@ -15,7 +15,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +36,8 @@ import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.NoRippleTextButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,13 +91,14 @@ internal fun RpgMakerRgssSettingsCard(
         if (uri == null || type == null) return@rememberLauncherForActivityResult
         scope.launch {
             val importedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_imported)
-            val failedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed)
-            val ok = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpZip(ctx, type, uri) }
+            val rejection = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpZip(ctx, type, uri) }
             refreshRtp(type)
-            // 失败时带上原因（如「条目数超过上限」）：只报「导入失败」会让用户
-            // 无从判断是包损坏、格式不对，还是被安全上限拦下。
-            val reason = if (ok) null else RpgMakerRuntimeEnvironment.lastRejectReason()
-            val message = if (ok) importedMsg else reason?.let { "$failedMsg ($it)" } ?: failedMsg
+            // 失败时带上原因（如「条目数超过上限」「源里没有可导入内容」）：只报「导入失败」
+            // 会让用户无从判断是包损坏、格式不对，还是被安全上限拦下。
+            // core 返回类型化原因，文案与括号样式由 UI 层资源组装（AGENT.md 错误处理协议）
+            val message = rejection?.let {
+                ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed, it.userMessage(ctx))
+            } ?: importedMsg
             Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
         }
     }
@@ -113,10 +115,13 @@ internal fun RpgMakerRgssSettingsCard(
         }
         scope.launch {
             val importedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_imported)
-            val failedMsg = ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed)
-            val ok = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpTree(ctx, type, uri) }
+            val rejection = withContext(Dispatchers.IO) { RpgMakerRuntimeEnvironment.importRtpTree(ctx, type, uri) }
             refreshRtp(type)
-            Toast.makeText(ctx, if (ok) importedMsg else failedMsg, Toast.LENGTH_SHORT).show()
+            // 目录导入同样带原因（选错目录 / 空目录 / 空间不足在提示里可区分）
+            val message = rejection?.let {
+                ctx.getString(R.string.engine_settings_rpgm_rtp_import_failed, it.userMessage(ctx))
+            } ?: importedMsg
+            Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -158,12 +163,11 @@ internal fun RpgMakerRgssSettingsCard(
             )
         }
         if (!moduleInstalled) {
-            TextButton(
-                onClick = { ExternalEngineLauncher.openInstallPage(ctx, RpgMakerExternalEngineModule) },
+            NoRippleTextButton(
+                text = stringResource(R.string.engine_settings_rpgm_module_download),
                 modifier = Modifier.padding(horizontal = 8.dp),
-            ) {
-                Text(stringResource(R.string.engine_settings_rpgm_module_download))
-            }
+                onClick = { ExternalEngineLauncher.openInstallPage(ctx, RpgMakerExternalEngineModule) },
+            )
         }
 
         // 兼容性
@@ -343,10 +347,10 @@ internal fun RpgMakerRgssSettingsCard(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = {
                     showRtpSourceDialog = false
                     pendingRtpType = null
-                }) { Text(stringResource(R.string.common_cancel)) }
+                })
             },
         )
     }
@@ -362,7 +366,7 @@ internal fun RpgMakerRgssSettingsCard(
             },
             text = { Text(stringResource(R.string.engine_settings_rpgm_rtp_clear_confirm)) },
             confirmButton = {
-                TextButton(onClick = {
+                DialogTextButton(text = stringResource(R.string.common_confirm), onClick = {
                     val cleared = RpgMakerRuntimeEnvironment.clearRtp(type)
                     refreshRtp(type)
                     clearingRtpType = null
@@ -372,12 +376,10 @@ internal fun RpgMakerRgssSettingsCard(
                         R.string.engine_settings_rpgm_rtp_clear_failed
                     }
                     Toast.makeText(ctx, ctx.getString(msg), Toast.LENGTH_SHORT).show()
-                }) { Text(stringResource(R.string.common_confirm)) }
+                })
             },
             dismissButton = {
-                TextButton(onClick = { clearingRtpType = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { clearingRtpType = null })
             },
         )
     }
@@ -393,16 +395,14 @@ internal fun RpgMakerRgssSettingsCard(
             },
             text = { Text(stringResource(R.string.engine_settings_rpgm_reset_confirm)) },
             confirmButton = {
-                TextButton(onClick = {
+                DialogTextButton(text = stringResource(R.string.common_confirm), onClick = {
                     showResetDialog = false
                     advancedExpanded = false
                     onSettings(EngineSettingsStore.RpgMaker())
-                }) { Text(stringResource(R.string.common_confirm)) }
+                })
             },
             dismissButton = {
-                TextButton(onClick = { showResetDialog = false }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = { showResetDialog = false })
             },
         )
     }
@@ -412,7 +412,7 @@ internal fun RpgMakerRgssSettingsCard(
 private fun RpgmGroupLabel(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleSmall,
+        style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 2.dp),
     )
@@ -439,16 +439,17 @@ private fun RpgmRtpRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = onImport) {
-            Text(stringResource(R.string.engine_settings_rpgm_rtp_import))
-        }
+        NoRippleTextButton(
+            text = stringResource(R.string.engine_settings_rpgm_rtp_import),
+            onClick = onImport,
+        )
         if (imported) {
-            TextButton(onClick = onClear) {
-                Text(
-                    stringResource(R.string.engine_settings_rpgm_rtp_clear),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+            // 清除是破坏性动作；无点击反馈实现（AGENT.md 弹窗/页内按钮规范）——
+            // 共享组件不暴露自定义颜色，沿用页内文本按钮的默认主色
+            NoRippleTextButton(
+                text = stringResource(R.string.engine_settings_rpgm_rtp_clear),
+                onClick = onClear,
+            )
         }
     }
 }

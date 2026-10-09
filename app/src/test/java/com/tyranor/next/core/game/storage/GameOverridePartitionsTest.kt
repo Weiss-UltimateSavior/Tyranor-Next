@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.storage
 
+import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -25,6 +26,9 @@ class GameOverridePartitionsTest {
         .put(PerGameSettingsStore.F_RPG_SAVE_INTEROP, true)
         .put(PerGameSettingsStore.F_RPG_MV_VERSION, "v2")
         .put(PerGameSettingsStore.F_RPG_MZ_VERSION, "v2")
+        .put(PerGameSettingsStore.F_INPUT_PAD_ENABLED, true)
+        .put(PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED, false)
+        .put(PerGameSettingsStore.F_INPUT_PROFILE_ID, "p1abc")
         .put(PerGameSettingsStore.F_RENPY_VERSION, "8.5")
         .put(PerGameSettingsStore.F_SIGLUS_LANGUAGE, "EN")
         .put(PerGameSettingsStore.F_FVP_NLS, "gbk")
@@ -103,6 +107,23 @@ class GameOverridePartitionsTest {
     }
 
     @Test
+    fun inputLegacyMigratedFlagIsPartitionedIntoTyrano() {
+        // 迁移标记是 PerGameSettingsStore 内部字段，同样必须显式建模：
+        // 落到「未识别键兜底」路径虽然当下也能持久化，但未来收紧分区时会静默丢键，
+        // 丢键会让迁移在每次启动重跑
+        assertEquals(PerGameSettingsStore.F_LEGACY_MIGRATED, GameOverridePartitions.KEY_INPUT_LEGACY_MIGRATED)
+        assertTrue(
+            "迁移标记必须显式属于 tyrano 分区",
+            GameOverridePartitions.KEY_INPUT_LEGACY_MIGRATED in GameOverridePartitions.TYRANO_KEYS,
+        )
+
+        val blob = JSONObject().put(PerGameSettingsStore.F_LEGACY_MIGRATED, true)
+        val row = GameOverridePartitions.split("/games/migrated", blob, 1L)
+        assertTrue(JSONObject(row.tyranoJson!!).has(PerGameSettingsStore.F_LEGACY_MIGRATED))
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+    }
+
+    @Test
     fun partitionKeysMatchPerGameSettingsStoreConstants() {
         // 字面量键集与 settings 层常量的契约约束（避免漂移）
         assertEquals(PerGameSettingsStore.F_ENGINE_VERSION, GameOverridePartitions.KEY_ENGINE_VERSION)
@@ -130,6 +151,18 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_RPG_SAVE_INTEROP, GameOverridePartitions.KEY_RPG_SAVE_INTEROP)
         assertEquals(PerGameSettingsStore.F_RPG_MV_VERSION, GameOverridePartitions.KEY_RPG_MV_VERSION)
         assertEquals(PerGameSettingsStore.F_RPG_MZ_VERSION, GameOverridePartitions.KEY_RPG_MZ_VERSION)
+        // 输入重映射键：app 分区常量 ↔ settings 常量 ↔ engine InputConfigStore 常量三处锚定
+        assertEquals(PerGameSettingsStore.F_INPUT_PAD_ENABLED, GameOverridePartitions.KEY_INPUT_PAD_ENABLED)
+        assertEquals(PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED, GameOverridePartitions.KEY_INPUT_GAMEPAD_ENABLED)
+        assertEquals(PerGameSettingsStore.F_INPUT_PROFILE_ID, GameOverridePartitions.KEY_INPUT_PROFILE_ID)
+        assertEquals(com.core.input.InputConfigStore.KEY_PAD_ENABLED, GameOverridePartitions.KEY_INPUT_PAD_ENABLED)
+        assertEquals(com.core.input.InputConfigStore.KEY_GAMEPAD_ENABLED, GameOverridePartitions.KEY_INPUT_GAMEPAD_ENABLED)
+        assertEquals(com.core.input.InputConfigStore.KEY_PROFILE_ID, GameOverridePartitions.KEY_INPUT_PROFILE_ID)
+        // 第四处：全局键（写路径 EngineSettingsStore）与 engine 读取常量必须同名，
+        // 漂移会导致「设置页关了开关但引擎仍按默认启用」
+        assertEquals(EngineSettingsStore.KEY_INPUT_PAD_ENABLED, com.core.input.InputConfigStore.KEY_PAD_ENABLED)
+        assertEquals(EngineSettingsStore.KEY_INPUT_GAMEPAD_ENABLED, com.core.input.InputConfigStore.KEY_GAMEPAD_ENABLED)
+        assertEquals(EngineSettingsStore.KEY_INPUT_PROFILE_ID, com.core.input.InputConfigStore.KEY_PROFILE_ID)
         assertEquals(PerGameSettingsStore.F_TY_SCOPED, GameOverridePartitions.KEY_TY_SCOPED)
         assertEquals(PerGameSettingsStore.F_RENPY_VERSION, GameOverridePartitions.KEY_RENPY_VERSION)
         assertEquals(PerGameSettingsStore.F_SIGLUS_LANGUAGE, GameOverridePartitions.KEY_SIGLUS_LANGUAGE)

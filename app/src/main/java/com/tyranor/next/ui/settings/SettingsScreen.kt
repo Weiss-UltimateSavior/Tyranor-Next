@@ -84,6 +84,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
+import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.TopBarIcon
@@ -122,14 +123,8 @@ private sealed interface UpdateDownloadPhase {
     data class Failed(val message: String) : UpdateDownloadPhase
 }
 
-/** 更新下载进度文案的字节格式化（APK 体积通常在 MB 级）。 */
-private fun formatUpdateBytes(bytes: Long): String {
-    return if (bytes >= 1024L * 1024) {
-        String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
-    } else {
-        String.format(Locale.US, "%.0f KB", bytes / 1024.0)
-    }
-}
+/** 更新下载进度文案的字节格式化（统一走 [ByteFormats]：二进制单位 + 有效量级精度）。 */
+private fun formatUpdateBytes(bytes: Long): String = ByteFormats.formatBinarySize(bytes)
 
 /** 设置页：只展示各引擎全局设置入口，具体设置内容由独立 Activity 承载。列表项采用 Miuix Card + Preference 体系。 */
 @Composable
@@ -329,13 +324,19 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    // 工具入口：引擎设置（解包 / 封包入口已迁至侧边栏「妙妙工具」面板）
+                    // 工具入口：引擎设置与输入重映射合入同一卡片（解包 / 封包入口已迁至侧边栏「妙妙工具」面板）
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_engine_settings),
                                 startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
                                 onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
+                            )
+                            ArrowPreference(
+                                title = stringResource(R.string.engine_settings_input_title),
+                                summary = stringResource(R.string.engine_settings_input_pad_summary),
+                                startAction = { SettingsItemIcon(R.drawable.ic_settings_engine) },
+                                onClick = { startActivityWithPageTransition(ctx, InputSettingsActivity.createIntent(ctx)) },
                             )
                         }
                     }

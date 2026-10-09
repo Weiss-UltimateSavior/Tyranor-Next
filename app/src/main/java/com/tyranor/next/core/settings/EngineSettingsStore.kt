@@ -92,6 +92,10 @@ object EngineSettingsStore {
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
     const val KEY_TYRANO_SCOPED_SAVE_DIR = "tyrano_scoped_save_dir"
+    // 输入重映射全局键（与 engine InputConfigStore 字面量锚定）
+    const val KEY_INPUT_PAD_ENABLED = "input_pad_enabled"
+    const val KEY_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
+    const val KEY_INPUT_PROFILE_ID = "input_profile_id"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
     const val KEY_RPG_LEGACY_RENDERER = "rpg_legacy_renderer"
     const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
@@ -816,6 +820,25 @@ object EngineSettingsStore {
     fun setRpgLegacyRenderer(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_LEGACY_RENDERER, b).apply()
     fun isRpgSaveInterop(c: Context): Boolean = prefs(c).getBoolean(KEY_RPG_SAVE_INTEROP, false)
     fun setRpgSaveInterop(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_SAVE_INTEROP, b).apply()
+
+    // ---------- 输入重映射（虚拟按键 + 手柄映射） ----------
+    /**
+     * 全局虚拟按键开关。
+     *
+     * [default] 由调用方给出，因为「用户未设置」的生效值随引擎而异：MV/MZ 改造前就有
+     * 按键层故默认开，Tyrano/VN/WebOther 默认关（引擎侧 `InputConfigStore.resolve`
+     * 用同一个 prefs 键 + `contains` 判定显式性，两处必须给出同样的默认）。
+     */
+    fun isInputPadEnabled(c: Context, default: Boolean = false): Boolean =
+        prefs(c).getBoolean(KEY_INPUT_PAD_ENABLED, default)
+    fun setInputPadEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_INPUT_PAD_ENABLED, b).apply()
+    fun isInputGamepadEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_INPUT_GAMEPAD_ENABLED, true)
+    fun setInputGamepadEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_INPUT_GAMEPAD_ENABLED, b).apply()
+    fun getInputProfileId(c: Context): String =
+        prefs(c).getString(KEY_INPUT_PROFILE_ID, null)?.takeIf { it.isNotBlank() }
+            ?: com.core.input.InputConfigStore.DEFAULT_PROFILE_ID
+    fun setInputProfileId(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_INPUT_PROFILE_ID, v).apply()
 
     // ---------- RPG Maker MV / MZ ----------
     fun getRpgMvEngineVersion(c: Context): String =

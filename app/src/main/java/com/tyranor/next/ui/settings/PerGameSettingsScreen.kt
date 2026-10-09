@@ -40,6 +40,7 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RenPyOverride
@@ -153,6 +154,22 @@ fun PerGameSettingsScreen(game: ScanGame) {
     }
     var rpgMvVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION)) }
     var rpgMzVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION)) }
+    // 输入重映射：虚拟按键 / 手柄映射（null=跟随全局）
+    var inputPadEnabled by remember {
+        mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_INPUT_PAD_ENABLED))
+    }
+    var inputGamepadEnabled by remember {
+        mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED))
+    }
+    // 「跟随全局」的展示值必须按本游戏引擎取：未显式设置时 MV/MZ 默认开、其余默认关，
+    // 否则这个标签会与游戏内实际是否出现按键层相反
+    val inputGlobalPad = remember(gid) {
+        EngineSettingsStore.isInputPadEnabled(
+            ctx,
+            default = InputRemapRepository.engineDefaultsPadEnabled(game.engine),
+        )
+    }
+    val inputGlobalGamepad = remember { EngineSettingsStore.isInputGamepadEnabled(ctx) }
     var rpgmOverride by remember(gid) {
         mutableStateOf(PerGameSettingsStore.toRpgMakerOverride(PerGameSettingsStore.load(ctx, gid)))
     }
@@ -367,6 +384,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
         )
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MV_VERSION, rpgMvVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_RPG_MZ_VERSION, rpgMzVersion)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_INPUT_PAD_ENABLED, inputPadEnabled)
+        PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED, inputGamepadEnabled)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RPG_USE_RUBY18, rpgm.useRuby18)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RPG_SMOOTH_SCALING, rpgm.smoothScaling)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RPG_VSYNC, rpgm.vsync)
@@ -802,6 +821,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             OverrideSwitch(stringResource(R.string.engine_settings_game_modifier), globalRpgMakerMod, rpgMakerMod) { rpgMakerMod = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_legacy_renderer), globalRpgLegacyRenderer, rpgLegacyRenderer) { rpgLegacyRenderer = it }
                             OverrideSwitch(stringResource(R.string.engine_settings_save_interop), globalRpgSaveInterop, rpgSaveInterop) { rpgSaveInterop = it }
+                            // 输入重映射：虚拟按键 + 手柄映射（逐游戏跟随全局或单独开关）
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_input_pad_title),
+                                inputGlobalPad,
+                                inputPadEnabled,
+                            ) { inputPadEnabled = it }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_input_gamepad_title),
+                                inputGlobalGamepad,
+                                inputGamepadEnabled,
+                            ) { inputGamepadEnabled = it }
                         }
                     }
                     EngineType.TYRANO,
@@ -819,6 +849,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             if (game.engine !in setOf(EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalTyScoped, tyScoped) { tyScoped = it }
                             }
+                            // 输入重映射：Web 系共享（虚拟按键 + 手柄映射），逐游戏可跟随全局或单独开关
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_input_pad_title),
+                                inputGlobalPad,
+                                inputPadEnabled,
+                            ) { inputPadEnabled = it }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_input_gamepad_title),
+                                inputGlobalGamepad,
+                                inputGamepadEnabled,
+                            ) { inputGamepadEnabled = it }
                             if (game.engine in setOf(EngineType.TYRANO, EngineType.VN, EngineType.WEB_OTHER)) {
                                 OverrideText(
                                     label = stringResource(R.string.engine_settings_web_shell_port_title),

@@ -5,6 +5,21 @@ import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 
 /**
+ * KRKR 可移动存储镜像准备的失败阶段（app 侧视图模型）。
+ *
+ * 是 engine 侧 `KrSafMirror.Stage`（5 个细分阶段）按**用户处置方式**的收窄映射，
+ * 不复用其类型：ui 层按三层架构不得 import `bridge` 包，core 负责在这一层做映射
+ * （见 `EngineLauncher`）。
+ */
+enum class MirrorPrepareStage {
+    /** 无法解析 SD 卡/SAF 源目录（授权失效或目录已被移动）→ 需重新授权。 */
+    SOURCE_UNRESOLVED,
+
+    /** 无法创建镜像根目录 / SAF 索引目录 / 镜像子项 → 需检查存储空间与权限。 */
+    CREATE_FAILED,
+}
+
+/**
  * 引擎启动结果（P0-6 错误协议）：成功 / 失败两类，失败携带可程序化区分的类型，
  * UI 层统一经 `ui/common/LaunchErrorMessages.kt` 映射本地化文案；core 不再拼接展示文案。
  */
@@ -28,8 +43,11 @@ sealed interface LaunchResult {
         /** 内置引擎原生插件保障失败。 */
         data class PluginBootstrapFailed(val reason: EnginePluginBootstrap.Failure) : Failure
 
-        /** KRKR 可移动存储镜像准备失败（[detail] 为底层异常信息，可为空）。 */
-        data class KrkrMirrorPrepareFailed(val detail: String?) : Failure
+        /** KRKR 可移动存储镜像准备失败；携带类型化阶段（文案由 UI 映射）。 */
+        data class KrkrMirrorPrepareFailed(
+            val stage: MirrorPrepareStage,
+            val name: String?,
+        ) : Failure
 
         /** KRKR 存档目录存在但不是目录。 */
         data class KrkrSavePathNotDirectory(val path: String) : Failure

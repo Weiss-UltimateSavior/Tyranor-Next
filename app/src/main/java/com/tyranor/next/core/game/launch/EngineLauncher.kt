@@ -58,6 +58,7 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
@@ -89,6 +90,12 @@ object EngineLauncher {
     private const val TAG = "EngineLauncher"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
+
+    /** 承载输入重映射（虚拟按键 + 手柄映射）的 Web 系引擎：旧触屏手柄数据迁移仅对这些引擎触发。 */
+    private val WEB_INPUT_ENGINES = setOf(
+        EngineType.RPG_MV, EngineType.RPG_MZ, EngineType.TYRANO,
+        EngineType.VN, EngineType.WEB_OTHER,
+    )
 
     // 前台兜底回写：引擎 finish 后约 500ms 才杀进程，轮询等待其退出的间隔与上限
     private const val SESSION_EXIT_POLL_MS = 400L
@@ -314,7 +321,19 @@ object EngineLauncher {
                 throw ce // 取消不是启动失败，原样传播给调用方
             } catch (t: Throwable) {
                 Log.e(TAG, "prepare KRKR SAF mirror failed uri=${game.uri}", t)
-                return LaunchResult.Failure.KrkrMirrorPrepareFailed(t.message)
+                // 只把类型化阶段交给 UI：底层异常 message 是给日志的排查线索，
+                // 不该当作界面文案（AGENT.md 错误协议）。
+                // 非 PrepareException 的未知异常一律按「创建失败」上报（名称留空，
+                // UI 回落到「未知路径」），因为此时连失败发生在哪一步都无法断言
+                val failure = t as? KrSafMirror.PrepareException
+                return LaunchResult.Failure.KrkrMirrorPrepareFailed(
+                    stage = if (failure?.stage == KrSafMirror.Stage.SOURCE_UNRESOLVED) {
+                        MirrorPrepareStage.SOURCE_UNRESOLVED
+                    } else {
+                        MirrorPrepareStage.CREATE_FAILED
+                    },
+                    name = failure?.name,
+                )
             }
         } else {
             null
@@ -338,6 +357,11 @@ object EngineLauncher {
                     EngineSettingsStore.setArtAutoPatch(context, EngineSettingsStore.AUTO_PATCH_OFF)
                 else -> Unit
             }
+        }
+        // 输入重映射：旧 __touch_pad.js 布局/预设 → 新方案文件（幂等；仅 Web 系引擎有旧数据）
+        if (game.engine in WEB_INPUT_ENGINES) {
+            runCatching { InputRemapRepository.migrateLegacyIfNeeded(context.applicationContext, game.uri) }
+                .onFailure { Log.w(TAG, "input legacy migration failed uri=${game.uri}", it) }
         }
         // 阻塞准备（镜像/overlay/PFS）完成后统一检查取消：已取消则不执行任何启动副作用
         currentCoroutineContext().ensureActive()
@@ -819,6 +843,9 @@ object EngineLauncher {
                 putExtra(LaunchContract.ROOT_URI, game.uri)
                 putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
                 putExtra(LaunchContract.TYPE, "Tyrano")
+                // 输入重映射的逐游戏开关按 gameId 查询；不传会让宿主回落到目录路径，
+                // 与本游戏的单游戏设置（键为 uri）对不上而始终取全局值
+                putExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID, game.uri)
             }
         }
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经

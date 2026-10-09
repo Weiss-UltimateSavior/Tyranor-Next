@@ -36,6 +36,7 @@ import com.core.engine.EngineSessionRegistry
 import com.core.engine.EngineThemeColors
 import com.core.engine.LaunchContract
 import com.core.engine.R
+import com.core.input.InputRemapController
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.Locale
@@ -52,6 +53,7 @@ import org.json.JSONObject
 class TyranoActivity : Activity() {
     private var webView: WebView? = null
     private var virtualMouseLayer: VirtualMouseLayer? = null
+    private var inputRemap: InputRemapController? = null
     private var gameDir: String? = null
     private var gameRootFile: File? = null
     private var saveDirectory: File? = null
@@ -164,37 +166,7 @@ class TyranoActivity : Activity() {
                 WebGameType.RPG_MZ -> RPG_MZ_HOOK_ASSET
                 WebGameType.VN, WebGameType.WEB_OTHER -> null
             }
-            // 触屏手柄（issue #35）：MV/MZ 共用 __touch_pad.js，拼接进 hook 注入，
-            // 独立于修改器开关。手柄代码零引擎依赖，MV/MZ 的 Input 均读 keyCode。
-            // issue #30：游戏内可自定义按钮布局，逐游戏配置在此注入供 JS 读取。
-            val isRpgWebGame = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
-            val touchPadConf = if (isRpgWebGame && rpgMakerModGameId.isNotBlank()) {
-                getSharedPreferences(EnginePrefs.GAME_OVERRIDES_PREFS, Context.MODE_PRIVATE)
-                    .getString(rpgMakerModGameId, null)?.let { raw ->
-                        runCatching { JSONObject(raw).optString(PER_GAME_TOUCH_PAD_KEY) }
-                            .getOrNull()?.takeIf { it.isNotBlank() }
-                    }
-            } else {
-                null
-            }
-            val touchPadConfigJs = touchPadConf?.takeIf { it.isNotBlank() }?.let {
-                "window.__touchPadConfig=$it;"
-            }.orEmpty()
-            val touchPadThemeJs = if (isRpgWebGame) {
-                val colors = EngineThemeColors.fromIntent(intent)
-                "window.__touchPadTheme={primary:'${cssColor(colors.primary)}',onPrimary:'${cssColor(colors.onPrimary)}'};"
-            } else {
-                ""
-            }
-            val touchPad =
-                if (isRpgWebGame) {
-                    val pad = try { String(loadAsset(TOUCH_PAD_ASSET), Charsets.UTF_8) } catch (_: Exception) { "" }
-                    (touchPadThemeJs + "\n" + touchPadConfigJs + "\n" + pad).toByteArray(Charsets.UTF_8)
-                } else {
-                    ByteArray(0)
-                }
-            val hook = (hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)) +
-                touchPad
+            val hook = hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)
             val scriptAppends = mutableMapOf<String, ByteArray>()
             if (webGameType == WebGameType.RPG_MZ) {
                 scriptAppends["js/rmmz_core.js"] = loadAsset(RPG_MZ_CORE_HOOK_ASSET)
@@ -259,15 +231,26 @@ class TyranoActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         setContentView(root)
+        // 输入重映射（虚拟按键 + 手柄映射）：Web 系全引擎生效，叠在最上层接收触摸。
+        // 默认开关按引擎分档：只有 MV/MZ 改造前就有按键层（旧 __touch_pad.js），
+        // 对 Tyrano/VN/WebOther 默认开启等于给老用户凭空加一层按钮，因此默认关
+        val rpgMakerWebGame = webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ
+        inputRemap = InputRemapController.installWeb(
+            activity = this,
+            container = root,
+            gameId = rpgMakerModGameId,
+            theme = EngineThemeColors.fromIntent(intent),
+            engineDefaultsEnabled = rpgMakerWebGame,
+        ) { js -> webView?.let { v -> runCatching { v.evaluateJavascript(js, null) } } }
+        browser.addJavascriptInterface(
+            requireNotNull(inputRemap).Bridge(),
+            InputRemapController.BRIDGE_NAME,
+        )
 
         configureWebView(browser)
         when (webGameType) {
             WebGameType.RPG_MV, WebGameType.RPG_MZ -> {
                 browser.addJavascriptInterface(RpgMakerSaveBridge(saves), RPG_MAKER_SAVE_BRIDGE_NAME)
-                browser.addJavascriptInterface(
-                    TouchPadSaveBridge(rpgMakerModGameId),
-                    TOUCH_PAD_BRIDGE_NAME,
-                )
                 if (rpgMakerModEnabled) {
                     browser.addJavascriptInterface(
                         RpgMakerModBridge(rpgMakerModGameId),
@@ -303,6 +286,11 @@ class TyranoActivity : Activity() {
     /** 虚拟鼠标合成事件 API（懒加载缓存；见 assets/__tyranor_mouse.js）。 */
     private val mouseJs: String by lazy {
         runCatching { loadAsset(VIRTUAL_MOUSE_ASSET).toString(Charsets.UTF_8) }.getOrDefault("")
+    }
+
+    /** 输入重映射合成事件接收器（懒加载缓存；见 assets/__tyranor_input.js）。 */
+    private val inputJs: String by lazy {
+        runCatching { loadAsset(INPUT_RECEIVER_ASSET).toString(Charsets.UTF_8) }.getOrDefault("")
     }
 
     private fun buildRpgMakerModHtml(): String {
@@ -353,14 +341,21 @@ class TyranoActivity : Activity() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 Log.i(TAG, "onPageStarted url=$url")
+                // 尽早注入输入接收器：页面脚本开始执行前若未就绪，加载期的手柄/按键输入会被静默丢弃。
+                // evaluateJavascript 在 DOM 未就绪时安全失败，onPageFinished 会再注入一次（接收器自带幂等守卫）
+                view?.let { v -> runCatching { v.evaluateJavascript(inputJs, null) } }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 Log.i(TAG, "onPageFinished url=$url")
-                // 虚拟鼠标合成事件 API（幂等，页面每次加载后重新注入）
-                if (virtualMouseLayer != null && view != null) {
-                    runCatching { view.evaluateJavascript(mouseJs, null) }
+                // 页面内合成事件 API（幂等，页面每次加载后重新注入）：
+                // 虚拟鼠标（MV/MZ）+ 输入重映射接收器（全 Web 系）
+                if (view != null) {
+                    if (virtualMouseLayer != null) {
+                        runCatching { view.evaluateJavascript(mouseJs, null) }
+                    }
+                    runCatching { view.evaluateJavascript(inputJs, null) }
                 }
             }
 
@@ -620,10 +615,19 @@ class TyranoActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP) handleBackRequest()
             return true
         }
+        // 手柄映射优先：命中即消费（BACK 除外，见 InputRemapController）
+        if (inputRemap?.dispatchKeyEvent(event) == true) return true
         return super.dispatchKeyEvent(event)
     }
 
+    override fun dispatchGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        if (inputRemap?.dispatchGenericMotionEvent(event) == true) return true
+        return super.dispatchGenericMotionEvent(event)
+    }
+
     private fun handleBackRequest() {
+        // 按键编辑模式的返回键 = 取消编辑（不退出游戏）
+        if (inputRemap?.handleBack() == true) return
         val browser = webView
         if (!rpgMakerModEnabled || browser == null) {
             DoubleBackExit.handleBack(this) { finish() }
@@ -639,6 +643,7 @@ class TyranoActivity : Activity() {
     }
 
     override fun onPause() {
+        inputRemap?.onPause()
         virtualMouseLayer?.reset()
         runCatching { webView?.loadUrl("javascript:if(window._tyrano_player){_tyrano_player.pauseAllAudio();}") }
         runCatching { webView?.onPause() }
@@ -648,6 +653,7 @@ class TyranoActivity : Activity() {
     override fun onResume() {
         super.onResume()
         enterFullscreen()
+        inputRemap?.onResume()
         if (firstResume) firstResume = false else {
             runCatching { webView?.loadUrl("javascript:if(window._tyrano_player){_tyrano_player.resumeAllAudio();}") }
         }
@@ -657,6 +663,8 @@ class TyranoActivity : Activity() {
     override fun onDestroy() {
         EngineSessionRegistry.clear(this, EngineSessionRegistry.HOST_TYRANO)
         DoubleBackExit.clear(this)
+        runCatching { inputRemap?.onDestroy() }
+        inputRemap = null
         runCatching {
             webView?.stopLoading()
             webView?.loadUrl("about:blank")
@@ -936,72 +944,6 @@ class TyranoActivity : Activity() {
         }
     }
 
-    /** 触屏手柄游戏内布局保存桥（issue #30）：按游戏持久化自定义布局与预设。 */
-    inner class TouchPadSaveBridge(private val gameId: String) {
-        private val preferences
-            get() = getSharedPreferences(EnginePrefs.GAME_OVERRIDES_PREFS, Context.MODE_PRIVATE)
-
-        // touch_pad_config / touch_pad_presets 键名在本文件与 app 侧 GameOverridePartitions
-        // 双处锚定（engine 不得反向依赖 app）：app 侧经 game_overrides 表 + prefs 镜像参与读写；
-        // 与 PerGameSettingsStore 的其它引擎字段共存于同一条 JSON 记录，必须整条读改写以保留他人字段。
-        // 已知限制：app 主线程的设置页写路径与本桥线程之间暂无跨层互斥，极端并发下存在丢更新窗口，
-        // 后续如需彻底收口应把该记录的全部读写收敛到单一同步入口。
-        private fun readField(key: String): String = try {
-            preferences.getString(gameId, null)?.let { raw ->
-                JSONObject(raw).optString(key)
-            }.orEmpty()
-        } catch (_: Throwable) {
-            ""
-        }
-
-        private fun updateRecord(mutate: (JSONObject) -> Unit) {
-            val existing = runCatching { preferences.getString(gameId, null)?.let { JSONObject(it) } }
-                .getOrNull() ?: JSONObject()
-            mutate(existing)
-            preferences.edit().putString(gameId, existing.toString()).apply()
-        }
-
-        @JavascriptInterface
-        fun getConfig(): String = readField(PER_GAME_TOUCH_PAD_KEY)
-
-        @JavascriptInterface
-        fun saveConfig(raw: String?) {
-            if (gameId.isBlank() || raw.isNullOrBlank()) return
-            try {
-                val input = JSONObject(raw)
-                updateRecord { record ->
-                    if (input.length() == 0) {
-                        record.remove(PER_GAME_TOUCH_PAD_KEY)
-                    } else {
-                        // 统一字符串形态落盘，与 PerGameSettingsStore.setStr 的包裹方式一致
-                        record.put(PER_GAME_TOUCH_PAD_KEY, input.toString())
-                    }
-                }
-            } catch (_: Throwable) {
-                // 保留现有配置
-            }
-        }
-
-        @JavascriptInterface
-        fun getPresets(): String = readField(PER_GAME_TOUCH_PAD_PRESETS_KEY)
-
-        @JavascriptInterface
-        fun savePresets(raw: String?) {
-            if (gameId.isBlank()) return
-            try {
-                updateRecord { record ->
-                    if (raw.isNullOrBlank() || JSONObject(raw).length() == 0) {
-                        record.remove(PER_GAME_TOUCH_PAD_PRESETS_KEY)
-                    } else {
-                        record.put(PER_GAME_TOUCH_PAD_PRESETS_KEY, JSONObject(raw).toString())
-                    }
-                }
-            } catch (_: Throwable) {
-                // 保留现有预设
-            }
-        }
-    }
-
     private enum class WebGameType(val intentValue: String) {
         TYRANO("Tyrano"),
         RPG_MV("RPG"),
@@ -1023,22 +965,19 @@ class TyranoActivity : Activity() {
         private const val TYRANO_TAG_SCRIPT_PATH = "tyrano/plugins/kag/kag.tag.js"
         private const val RPG_MV_HOOK_ASSET = "__rpg__.js"
         private const val RPG_MZ_HOOK_ASSET = "__rmmz__.js"
-        private const val TOUCH_PAD_ASSET = "__touch_pad.js"
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val JS_BRIDGE_NAME = "appJsInterface"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"
         private const val RPG_MAKER_MOD_BRIDGE_NAME = "TyranorModNative"
-        private const val TOUCH_PAD_BRIDGE_NAME = "TyranorTouchPadNative"
         private const val RPG_MV_SAVE_EXTENSION = ".bin"
         private const val RPG_MAKER_MOD_PREFS = "tyranor_rpgmaker_mod_state"
-        private const val PER_GAME_TOUCH_PAD_KEY = "touch_pad_config"
-        private const val PER_GAME_TOUCH_PAD_PRESETS_KEY = "touch_pad_presets"
         private const val RPG_MAKER_MOD_CORE_ASSET = "__rpgmaker_mod_core.js"
         private const val RPG_MAKER_MOD_UI_ASSET = "__rpgmaker_mod_ui.js"
         private const val RPG_MAKER_MOD_CSS_ASSET = "__rpgmaker_mod.css"
         private const val RPG_MAKER_MOD_ICON_ASSET = "__rpgmaker_mod_icon.png"
         private const val VIRTUAL_MOUSE_ASSET = "__tyranor_mouse.js"
+        private const val INPUT_RECEIVER_ASSET = "__tyranor_input.js"
         private const val RPG_MAKER_MOD_CORE_PATH = "__tyranor__/rpgmaker_mod_core.js"
         private const val RPG_MAKER_MOD_UI_PATH = "__tyranor__/rpgmaker_mod_ui.js"
         private const val RPG_MAKER_MOD_CSS_PATH = "__tyranor__/rpgmaker_mod.css"

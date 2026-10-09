@@ -13,7 +13,7 @@ import org.json.JSONObject
  *
  * 存储已迁移到 game_overrides 表（迁移方案阶段 4）：本类保留原同步 API，
  * 内部为 Repository 门面——DB 为 App 侧事实源；prefs 文件作为引擎子进程
- * （TyranoActivity/TouchPadSaveBridge 整条读改写）的同步镜像，每次写入即刷。
+ * （TyranoActivity / RpgMakerActivity 启动时读取生效设置）的同步镜像，每次写入即刷。
  * prefs 文件名契约锚点在 engine，改名只需改 EnginePrefs 一处。
  */
 object PerGameSettingsStore {
@@ -59,6 +59,14 @@ object PerGameSettingsStore {
     const val F_RPG_SAVE_INTEROP = "rpg_save_interop"
     const val F_RPG_MV_VERSION = "rpg_mv_engine_version"
     const val F_RPG_MZ_VERSION = "rpg_mz_engine_version"
+
+    // 输入重映射（虚拟按键 + 手柄映射）单游戏覆盖键（与 engine InputConfigStore 字面量锚定）
+    const val F_INPUT_PAD_ENABLED = "input_pad_enabled"
+    const val F_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
+    const val F_INPUT_PROFILE_ID = "input_profile_id"
+
+    /** 旧触屏手柄数据迁移标记（本类内部使用：一次性迁移的幂等守卫）。 */
+    const val F_LEGACY_MIGRATED = "input_legacy_migrated"
 
     // RPG Maker RGSS 外置模块（settings extra 的 rpg 节，null=跟随全局）
     const val F_RPG_USE_RUBY18 = "rpg_use_ruby18"
@@ -137,6 +145,15 @@ object PerGameSettingsStore {
         if (gameId.isBlank()) return false
         return GameOverridesRepository.loadRowBlocking(context, gameId) != null
     }
+
+    /**
+     * 存在单游戏覆盖的游戏 id 列表。
+     *
+     * 用于「删除方案后清理指向它的引用」这类需要反向扫描覆盖的场景。
+     * prefs 镜像按 gameId 为键存储，键集即全部有覆盖的游戏。
+     */
+    fun overrideGameIds(context: Context): Set<String> =
+        runCatching { prefs(context).all.keys.toSet() }.getOrDefault(emptySet())
 
     /** 读取该游戏覆盖 JSON；无则返回空对象。 */
     fun load(context: Context, gameId: String): JSONObject {
@@ -284,11 +301,12 @@ object PerGameSettingsStore {
 
     /**
      * 双写持久化：DB 异步落库（失败仅记日志），prefs 同步镜像立即刷盘——
-     * 引擎子进程启动游戏时按旧契约整条读取镜像（方案阶段 4 过渡策略）。
-     * 已知限制（与迁移前行为等价，见引擎 TouchPadSaveBridge 注释）：App 进程的 prefs
-     * 缓存不跨进程刷新，引擎本次进程存活期间写回的 touchpad 字段对 App 不可见，
-     * 此处整条镜像写会覆盖之；跨会话数据由启动时 syncFromPrefs 回灌保证不丢。
-     * 彻底收口（引擎侧独立 prefs 文件）为方案后续项。
+     * 引擎子进程启动游戏时按契约整条读取镜像（方案阶段 4 过渡策略）。
+     *
+     * 写路径已全部收敛到 app 侧：引擎只读镜像，不再回写任何字段，因此不存在
+     * 「app 进程的 prefs 缓存与引擎写入互相覆盖」的问题（跨进程 prefs 缓存不共享，
+     * 但单向只读不受其影响）。镜像的权威来源仍是 DB，进程启动时由
+     * `GameOverridesRepository.syncFromPrefs` 回灌保证历史数据不丢。
      */
     private fun persist(context: Context, gameId: String, record: JSONObject) {
         GameOverridesRepository.updateRecord(context, gameId, record)
