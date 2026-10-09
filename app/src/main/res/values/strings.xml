@@ -67,6 +67,9 @@
     <string name="home_web_open_browser_failed">未找到可打开该链接的应用</string>
     <string name="home_web_download_unsupported">该下载链接无法在浏览器中打开</string>
     <string name="home_web_refresh_content_description">刷新</string>
+    <string name="side_panel_title">妙妙工具</string>
+    <string name="side_panel_kr2_native_title">启动 kr2 原生</string>
+    <string name="side_panel_archive_tool_title">解封包工具</string>
     <string name="settings_invalid_theme_color">不支持透明色或黑白灰色</string>
 
     <string name="settings_update_latest">已经是最新版本</string>
@@ -393,8 +396,6 @@
     <string name="engine_settings_engine_version">引擎版本</string>
     <string name="engine_settings_engine_kernel">引擎内核</string>
     <string name="engine_settings_krkr_patch_overlay">KRKR 虚拟 patch.tjs 补丁</string>
-    <string name="engine_settings_krkr_native_ui_title">启动 Kirikiroid2 v1.3.9</string>
-    <string name="engine_settings_krkr_native_ui_summary">打开内置原生 Kirikiroid2 界面（文件浏览器，不启动具体游戏）</string>
     <string name="engine_settings_render">渲染</string>
     <string name="engine_settings_opengl_accurate_render">OpenGL 精确渲染</string>
     <string name="engine_settings_memory_usage">内存用量</string>

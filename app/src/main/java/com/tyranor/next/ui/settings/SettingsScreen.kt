@@ -79,7 +79,6 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
-import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
@@ -87,10 +86,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
-import com.tyranor.next.ui.common.LaunchErrorDialog
-import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.NoIndication
-import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -328,7 +324,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    // 引擎设置、输入与手柄、拆封包合入同一卡片（同类工具入口）
+                    // 工具入口：引擎设置与输入重映射合入同一卡片（解包 / 封包入口已迁至侧边栏「妙妙工具」面板）
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
@@ -341,11 +337,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 summary = stringResource(R.string.engine_settings_input_pad_summary),
                                 startAction = { SettingsItemIcon(R.drawable.ic_settings_engine) },
                                 onClick = { startActivityWithPageTransition(ctx, InputSettingsActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.archive_title),
-                                startAction = { SettingsItemIcon(R.drawable.ic_sheet_archive) },
-                                onClick = { startActivityWithPageTransition(ctx, ArchiveUnpackActivity.createIntent(ctx)) },
                             )
                         }
                     }
@@ -686,8 +677,6 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     val ctx = LocalContext.current
     val engineSettingsSavedMessage = stringResource(R.string.engine_settings_saved)
-    val scope = rememberCoroutineScope()
-    var nativeKrkrLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
 
     var krVersion by remember { mutableStateOf(EngineSettingsStore.getKrEngineVersion(ctx)) }
     var krKernel by remember { mutableStateOf(EngineSettingsStore.getKrKernel(ctx)) }
@@ -845,14 +834,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
                 fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
                 topInset = innerPadding.calculateTopPadding(),
-                onLaunchNativeKirikiroidUi = {
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            EngineLauncher.launchNativeKirikiroidUi(ctx)
-                        }
-                        nativeKrkrLaunchError = result.toErrorState(ctx)
-                    }
-                },
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
                 onKrScoped = { krScoped = it },
@@ -904,10 +885,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             )
         }
     }
-
-    nativeKrkrLaunchError?.let { state ->
-        LaunchErrorDialog(state = state, onDismiss = { nativeKrkrLaunchError = null })
-    }
 }
 
 @Composable
@@ -958,7 +935,6 @@ private fun LazyListPlaceholder(
     ppssppVersion: String,
     webShellPort: Int,
     topInset: Dp,
-    onLaunchNativeKirikiroidUi: () -> Unit,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrSkipStartupDialogs: (Boolean) -> Unit,
     onKrPatchOverlayMode: (String) -> Unit,
@@ -1032,11 +1008,6 @@ private fun LazyListPlaceholder(
                 if (!isSdl3) {
                     DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
                 }
-                ArrowPreference(
-                    title = stringResource(R.string.engine_settings_krkr_native_ui_title),
-                    summary = stringResource(R.string.engine_settings_krkr_native_ui_summary),
-                    onClick = onLaunchNativeKirikiroidUi,
-                )
             }
         }
 

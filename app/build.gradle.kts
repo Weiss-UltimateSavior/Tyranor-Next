@@ -33,7 +33,7 @@ fun String.asBuildConfigString(): String =
  * 应用版本名：发版唯一需要手改的版本字段（issue #79）。
  * versionCode 由它推导，杜绝“只改 versionName、忘记递增 versionCode”。
  */
-val appVersionName = "1.56"
+val appVersionName = "1.57"
 
 /**
  * versionName -> versionCode 映射：major*1_000_000 + minor*1_000 + patch。
@@ -277,7 +277,8 @@ dependencies {
   // 游戏库持久化（Room）：games/scan_roots/quick_launch 表，见 core/game/storage
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
-  ksp(libs.androidx.room.compiler)
+    debugImplementation(libs.leakcanary)
+    ksp(libs.androidx.room.compiler)
 
   // Compose
   implementation(libs.androidx.compose.ui)

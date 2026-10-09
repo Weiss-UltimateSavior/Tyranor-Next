@@ -1,6 +1,8 @@
 package com.tyranor.next.ui.main
 
 import android.os.Build
+import androidx.activity.BackEventCompat
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.Transition
@@ -43,6 +45,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -62,6 +66,7 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AdvancedGlassNavSurface
 import com.tyranor.next.theme.glassShadow
@@ -72,12 +77,21 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.glassPageBackground
+import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.LiquidGlassNavItem
+import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppNavigationRail
+import com.tyranor.next.ui.common.AppSidePanel
 import com.tyranor.next.ui.common.FloatingGlassNavButton
+import com.tyranor.next.ui.common.LaunchErrorDialog
+import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.ui.common.NavigationTabIcon
+import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
 import com.tyranor.next.ui.common.isSideRailLayout
+import com.tyranor.next.ui.common.rememberSidePanelSwipeModifier
+import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
@@ -89,6 +103,7 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.advancedGlassPageBackground
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
+import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.settings.SettingsScreen
 import kotlinx.coroutines.CancellationException
@@ -151,6 +166,48 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
   }
   val navStyle by AppSettingsStore.navStyleState.collectAsState()
+  // ===== 侧边栏（仅四大页面可唤出）：左半屏右滑 / 左边缘返回手势打开 =====
+  // 面板关闭时把「左边缘返回手势」解读为唤出侧边栏；右边缘/返回键保持系统默认（退出）。
+  // 页面级 BackHandler（如 Web 首页回退历史、悬浮按钮展开态）在更晚的组合位置注册，
+  // 按返回分发「后注册优先」规则仍优先生效。
+  var sidePanelOpen by rememberSaveable { mutableStateOf(false) }
+  // 侧边栏条目：内置原生 Kirikiroid2 界面启动失败提示（原引擎设置 KRKR 页的功能迁入）
+  var sidePanelLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
+  val hostActivity = AppLocaleController.findActivity(context)
+  PredictiveBackHandler(enabled = !sidePanelOpen) { progress ->
+    var fromLeftEdge = false
+    progress.collect { event ->
+      if (event.swipeEdge == BackEventCompat.EDGE_LEFT) fromLeftEdge = true
+    }
+    if (fromLeftEdge) sidePanelOpen = true else hostActivity?.finish()
+  }
+  AppSidePanel(open = sidePanelOpen, onDismiss = { sidePanelOpen = false }) {
+    // 妙妙工具条目：启动内置原生 Kirikiroid2 界面（文件浏览器，不启动具体游戏）
+    AppNavItem(
+      title = stringResource(R.string.side_panel_kr2_native_title),
+      leadingIcon = R.drawable.ic_settings_engine,
+      containerColor = DialogItemSurface,
+      onClick = {
+        sidePanelOpen = false
+        interactScope.launch {
+          val result = withContext(Dispatchers.IO) {
+            EngineLauncher.launchNativeKirikiroidUi(context)
+          }
+          sidePanelLaunchError = result.toErrorState(context)
+        }
+      },
+    )
+    // 妙妙工具条目：解包 / 封包工具（原设置页「解包 / 封包」入口迁入）
+    AppNavItem(
+      title = stringResource(R.string.side_panel_archive_tool_title),
+      leadingIcon = R.drawable.ic_sheet_archive,
+      containerColor = DialogItemSurface,
+      onClick = {
+        sidePanelOpen = false
+        startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context))
+      },
+    )
+  }
   // 首页样式：Web 首页参与绘制期间底栏改用仅背景采样源（见 webHomeInvolved）
   val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
   // 液态玻璃两档共用同一套宿主准备（录制采样层、转场重定向、底部留白）
@@ -165,6 +222,20 @@ fun MainScreen(modifier: Modifier = Modifier) {
   // 与液态玻璃两档一致，平板下不参与侧栏适配，落到主题默认侧栏形态。
   val floatingButtonStyle = navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON
   val floatingButtonActive = floatingButtonStyle && !railLayout
+  // 侧边栏唤出识别需跳过底部导航栏区域：各底栏形态在布局后把自己顶边（根布局坐标）上报到
+  // bottomNavTopY；悬浮按钮 / 平板侧栏没有底部导航栏，恒按「无排除」处理。
+  var bottomNavTopY by remember { mutableStateOf(Float.POSITIVE_INFINITY) }
+  val reportBottomNavTop = remember {
+    Modifier.onGloballyPositioned { bottomNavTopY = it.positionInParent().y }
+  }
+  // 左半屏右滑唤出：挂在根布局上（子内容优先，不遮挡任何点击/滚动）；
+  // 起点落在底部导航栏区域内时不识别（见 rememberSidePanelSwipeModifier 的 bottomBarTopY）
+  val sidePanelSwipeModifier = rememberSidePanelSwipeModifier(
+    onOpen = { sidePanelOpen = true },
+    bottomBarTopY = {
+      if (railLayout || floatingButtonActive) Float.POSITIVE_INFINITY else bottomNavTopY
+    },
+  )
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass && !floatingButtonStyle && !railLayout
   // 高级玻璃 + 默认导航：悬浮条升级为真 backdrop 采样（API 31+ 才有效）
@@ -207,7 +278,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     selectedIndex = index
   }
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
-  Box(modifier.fillMaxSize()) {
+  Box(modifier.fillMaxSize().then(sidePanelSwipeModifier)) {
     // 内容层录制进 backdrop，供液态玻璃导航采样页面内容。
     // 关键：背景必须在 layerBackdrop 之后（内层）——layerBackdrop 只录制它之后的内容，
     // 放在外层（Surface/Column 背景）的内容不会被采样，玻璃会采到透明而漏出文字。
@@ -334,6 +405,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
             tabLabels = tabLabels,
             unselectedColor = unselectedColor,
             onSelectPage = { selectPage(it) },
+            modifier = reportBottomNavTop,
           )
         }
       }
@@ -352,7 +424,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           colors = rememberGlassBottomBarColors(unselectedColor),
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
-          modifier = Modifier
+          modifier = reportBottomNavTop
             .align(Alignment.BottomCenter)
             .navigationBarsPadding()
             .padding(bottom = GlassBottomBarSpec.Default.hostBottomPadding),
@@ -370,7 +442,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           // 而 API 31–32 库走非 shader 的描边路径、本来有高光，必须保持 true
           //（别用 isRuntimeShaderUsable——它在 33 以下恒为 false，会误删 Android 12 的高光）。
           highlightAvailable = GlassShaderSupport.highlightAllowed,
-          modifier = Modifier.align(Alignment.BottomCenter),
+          modifier = reportBottomNavTop.align(Alignment.BottomCenter),
         )
       }
     }
@@ -404,7 +476,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           .glassBorder(AppComponentShape)
       }
       Box(
-        modifier = Modifier
+        modifier = reportBottomNavTop
           .align(Alignment.BottomCenter)
           .fillMaxWidth()
           .navigationBarsPadding()
@@ -452,6 +524,17 @@ fun MainScreen(modifier: Modifier = Modifier) {
         modifier = Modifier.fillMaxSize(),
       )
     }
+
+    // 侧边栏唤出入口：左缘系统返回手势排除条（无指针输入不拦截事件；识别逻辑在根布局的
+    // sidePanelSwipeModifier 上，靠边排除区外的返回手势由 PredictiveBackHandler 兜底）
+    SidePanelEdgeExclusionBar(
+      modifier = Modifier.align(Alignment.CenterStart),
+    )
+  }
+
+  // 侧边栏条目启动失败弹窗（与首页/游戏页共用同一个错误弹窗组件）
+  sidePanelLaunchError?.let { state ->
+    LaunchErrorDialog(state = state, onDismiss = { sidePanelLaunchError = null })
   }
 }
 
