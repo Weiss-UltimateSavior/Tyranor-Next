@@ -56,7 +56,7 @@
     <string name="settings_home_style_native">デフォルト</string>
     <string name="settings_home_style_web">Web</string>
     <string name="settings_home_style_category">カテゴリライブラリ</string>
-    <string name="settings_home_carousel_mode">ホームのカルーセル</string>
+    <string name="settings_home_carousel_mode">ホームカルーセルのソース</string>
     <string name="settings_home_carousel_mode_summary">最近：最近開いたゲーム／クイック：クイック起動のゲーム／ランダム：毎日固定で入れ替わります</string>
     <string name="settings_home_web_url">Web ホーム URL</string>
     <string name="settings_home_web_custom">カスタム URL</string>
