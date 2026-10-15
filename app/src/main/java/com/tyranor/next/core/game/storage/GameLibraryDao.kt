@@ -131,7 +131,7 @@ internal interface GameLibraryDao {
     }
 
     companion object {
-        const val MAX_QUICK_LAUNCH = 3
+        const val MAX_QUICK_LAUNCH = 10
         const val RECENT_LIMIT = 20
     }
 }

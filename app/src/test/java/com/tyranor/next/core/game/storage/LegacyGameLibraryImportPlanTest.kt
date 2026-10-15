@@ -110,13 +110,11 @@ class LegacyGameLibraryImportPlanTest {
     }
 
     @Test
-    fun quickLaunchSlotsCappedAtThree() {
-        val games = listOf("a", "b", "c", "d").joinToString("\n") { name ->
-            line(name, "/games/$name", "ONS")
-        }
-        val quick = listOf("d", "c", "b", "a").joinToString("\n") { name ->
-            line(name, "/games/$name", "ONS")
-        }
+    fun quickLaunchSlotsCappedAtMax() {
+        val max = GameLibraryDao.MAX_QUICK_LAUNCH
+        val names = ('a'..'z').take(max + 1).map { it.toString() }
+        val games = names.joinToString("\n") { name -> line(name, "/games/$name", "ONS") }
+        val quick = names.reversed().joinToString("\n") { name -> line(name, "/games/$name", "ONS") }
 
         val plan = LegacyGameLibraryImportPlan.build(
             rootsText = null,
@@ -127,7 +125,7 @@ class LegacyGameLibraryImportPlanTest {
             isGameUnderRoot = { _, _ -> false },
         )
 
-        assertEquals(listOf("/games/d", "/games/c", "/games/b"), plan.quickLaunch.map { it.gameUri })
-        assertEquals(listOf(0, 1, 2), plan.quickLaunch.map { it.slotIndex })
+        assertEquals(names.reversed().take(max).map { "/games/$it" }, plan.quickLaunch.map { it.gameUri })
+        assertEquals((0 until max).toList(), plan.quickLaunch.map { it.slotIndex })
     }
 }

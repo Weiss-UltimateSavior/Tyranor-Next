@@ -184,7 +184,7 @@ object GameLibraryFacade {
         updated
     }
 
-    // ============ 首页快捷启动（最多 3 个） ============
+    // ============ 首页快捷启动（上限见 MAX_QUICK_LAUNCH） ============
 
     fun loadQuickLaunch(context: Context): List<ScanGame> =
         quickLaunchCache ?: synchronized(cacheLock) {
@@ -198,7 +198,7 @@ object GameLibraryFacade {
     fun isQuickLaunched(context: Context, uri: String): Boolean =
         loadQuickLaunch(context).any { it.uri == uri }
 
-    /** 加入快捷启动。已存在视为成功；槽位满（MAX_QUICK_LAUNCH=3）返回 false。 */
+    /** 加入快捷启动。已存在视为成功；槽位满（MAX_QUICK_LAUNCH）返回 false。 */
     fun addQuickLaunch(context: Context, game: ScanGame): Boolean = synchronized(cacheLock) {
         val current = loadQuickLaunch(context)
         if (current.any { it.uri == game.uri }) return@synchronized true
