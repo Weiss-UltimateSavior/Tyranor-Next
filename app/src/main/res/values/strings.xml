@@ -56,6 +56,7 @@
     <string name="settings_home_style_native">默认</string>
     <string name="settings_home_style_web">网页</string>
     <string name="settings_home_style_category">分类仓库</string>
+    <string name="settings_home_style_poster">海报轮播</string>
     <string name="settings_home_carousel_mode">首页轮播来源</string>
     <string name="settings_home_carousel_mode_summary">最近：最近打开的游戏；快捷：快捷启动的游戏；推荐：每天固定推荐一批，次日自动更换</string>
     <string name="settings_home_web_url">Web 首页地址</string>
@@ -213,7 +214,7 @@
     <string name="game_launch_file_auto_summary">自动 - 如有错误请手动选择启动文件</string>
     <string name="game_remove_quick_launch">移除快捷启动</string>
     <string name="game_add_quick_launch">添加快捷启动</string>
-    <string name="game_quick_launch_full">首页快捷启动已满（最多 10 个）</string>
+    <string name="game_quick_launch_full">首页快捷启动已满（最多 3 个）</string>
     <string name="game_add_desktop_shortcut">添加到桌面</string>
     <string name="game_desktop_shortcut_requested">请在系统弹窗中确认添加</string>
     <string name="game_desktop_shortcut_updated">桌面快捷方式已更新</string>
@@ -253,6 +254,8 @@
     <string name="game_cover_source_generic_summary">搜索此来源</string>
     <string name="game_launch_file_empty">目录中未找到 xp3 或 exe 文件</string>
 
+    <string name="home_recent_empty">暂无最近打开的游戏</string>
+    <string name="home_quick_launch">快捷启动</string>
     <string name="home_category_all">全部</string>
     <string name="home_category_quick">快捷</string>
     <string name="home_category_recent">最近</string>
@@ -260,6 +263,10 @@
     <string name="home_category_random">推荐</string>
     <string name="home_quick_launch_empty">还没有快捷启动的游戏，可在游戏操作里添加快捷启动</string>
     <string name="home_category_empty">该分类暂无游戏</string>
+    <string name="home_empty_slot_content_description">空槽位</string>
+    <string name="home_stats_games">游戏数量</string>
+    <string name="home_stats_last_played">最近运行</string>
+    <string name="home_stats_engines">引擎数量</string>
 
     <string name="engine_settings_save_content_description">保存设置</string>
     <string name="engine_settings_saved">引擎设置已保存</string>

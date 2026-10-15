@@ -142,6 +142,9 @@ object AppSettingsStore {
     /** 首页样式：分类仓库（分类栏：全部/快捷/最近/各引擎类型 + 游戏页同款网格）。 */
     const val HOME_STYLE_CATEGORY = "category"
 
+    /** 首页样式：海报轮播（叠放海报 + 模糊光幕 + 统计卡片，来源见 [KEY_HOME_CAROUSEL_MODE]）。 */
+    const val HOME_STYLE_POSTER = "poster"
+
     /** 首页样式默认值：原生。 */
     const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
 
@@ -200,7 +203,7 @@ object AppSettingsStore {
     /** 默认主题渐变内存态：设置页切换后页面背景即时重组。 */
     val defaultThemeGradientState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_DEFAULT_THEME_GRADIENT)
 
-    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页/分类仓库形态。 */
+    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/海报轮播/网页/分类仓库形态。 */
     val homeStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_STYLE)
 
     /** 首页轮播来源内存态：应用设置「首页轮播来源」切换后即时生效，并持久化。 */
@@ -433,9 +436,10 @@ object AppSettingsStore {
         }
     }
 
-    /** 首页样式归一：web / category 精确接受，其余（含空/未知）回退原生（纯函数，便于单测）。 */
+    /** 首页样式归一：web / category / poster 精确接受，其余（含空/未知）回退原生（纯函数，便于单测）。 */
     fun normalizeHomeStyle(style: String?): String = when (style) {
         HOME_STYLE_WEB -> HOME_STYLE_WEB
+        HOME_STYLE_POSTER -> HOME_STYLE_POSTER
         HOME_STYLE_CATEGORY -> HOME_STYLE_CATEGORY
         else -> HOME_STYLE_NATIVE
     }

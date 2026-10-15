@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * 首页样式归一：web / category 精确接受，其余（含空/未知/大小写差异）回退原生。
+ * 首页样式归一：web / category / poster 精确接受，其余（含空/未知/大小写差异）回退原生。
  */
 class HomeStyleNormalizationTest {
 
@@ -19,6 +19,11 @@ class HomeStyleNormalizationTest {
             AppSettingsStore.HOME_STYLE_CATEGORY,
             AppSettingsStore.normalizeHomeStyle("category"),
         )
+    }
+
+    @Test
+    fun posterIsAccepted() {
+        assertEquals(AppSettingsStore.HOME_STYLE_POSTER, AppSettingsStore.normalizeHomeStyle("poster"))
     }
 
     @Test

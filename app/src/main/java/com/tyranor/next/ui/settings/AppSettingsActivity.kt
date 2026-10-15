@@ -347,10 +347,11 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 首页样式：默认（最近打开/快捷启动）/ 网页（内置 WebView 展示所选网址）/
+                            // 首页样式：默认（最近打开/快捷启动）/ 海报轮播 / 网页（内置 WebView 展示所选网址）/
                             // 分类仓库（分类栏 + 游戏页同款网格）
                             val homeStyles = listOf(
                                 AppSettingsStore.HOME_STYLE_NATIVE to stringResource(R.string.settings_home_style_native),
+                                AppSettingsStore.HOME_STYLE_POSTER to stringResource(R.string.settings_home_style_poster),
                                 AppSettingsStore.HOME_STYLE_WEB to stringResource(R.string.settings_home_style_web),
                                 AppSettingsStore.HOME_STYLE_CATEGORY to stringResource(R.string.settings_home_style_category),
                             )
@@ -366,8 +367,8 @@ internal fun AppSettingsScreen() {
                                     }
                                 },
                             )
-                            // 首页轮播来源：仅默认样式下的海报轮播使用——最近打开 / 快捷启动 / 随机（当天固定）
-                            if (homeStyle == AppSettingsStore.HOME_STYLE_NATIVE) {
+                            // 首页轮播来源：仅海报轮播样式使用——最近打开 / 快捷启动 / 推荐（当天固定）
+                            if (homeStyle == AppSettingsStore.HOME_STYLE_POSTER) {
                                 val carouselModes = listOf(
                                     AppSettingsStore.HOME_CAROUSEL_RECENT to stringResource(R.string.home_category_recent),
                                     AppSettingsStore.HOME_CAROUSEL_QUICK to stringResource(R.string.home_category_quick),

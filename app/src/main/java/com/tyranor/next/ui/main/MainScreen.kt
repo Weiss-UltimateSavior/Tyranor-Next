@@ -633,6 +633,7 @@ private fun ColumnScope.MainTabPages(
                 libraryState = libraryState,
                 onGameUpdated = libraryViewModel::replaceGame,
                 onGameDeleted = libraryViewModel::deleteGame,
+                onRecentRemoved = libraryViewModel::removeRecentGame,
                 onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
                 isActive = page == selectedIndex,
                 sidePanelGuard = sidePanelGuard,
