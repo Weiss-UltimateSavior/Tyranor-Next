@@ -57,7 +57,7 @@
     <string name="settings_home_style_web">Web</string>
     <string name="settings_home_style_category">Category Library</string>
     <string name="settings_home_carousel_mode">Home carousel source</string>
-    <string name="settings_home_carousel_mode_summary">Recent: recently opened; Quick: quick launch games; Random: a daily pick that changes each day</string>
+    <string name="settings_home_carousel_mode_summary">Recent: recently opened; Quick: quick launch games; Recommended: a daily pick that changes each day</string>
     <string name="settings_home_web_url">Web home URL</string>
     <string name="settings_home_web_custom">Custom URL</string>
     <string name="settings_home_web_custom_summary">Enter a custom URL</string>
@@ -257,7 +257,7 @@
     <string name="home_category_quick">Quick</string>
     <string name="home_category_recent">Recent</string>
     <string name="home_last_played">Last played %1$s</string>
-    <string name="home_category_random">Random</string>
+    <string name="home_category_random">Recommended</string>
     <string name="home_quick_launch_empty">No quick launch games yet. Add some from a game\'s actions</string>
     <string name="home_category_empty">No games in this category</string>
 

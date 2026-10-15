@@ -57,7 +57,7 @@
     <string name="settings_home_style_web">网页</string>
     <string name="settings_home_style_category">分类仓库</string>
     <string name="settings_home_carousel_mode">首页轮播来源</string>
-    <string name="settings_home_carousel_mode_summary">最近：最近打开的游戏；快捷：快捷启动的游戏；随机：每天固定抽一批，次日自动更换</string>
+    <string name="settings_home_carousel_mode_summary">最近：最近打开的游戏；快捷：快捷启动的游戏；推荐：每天固定推荐一批，次日自动更换</string>
     <string name="settings_home_web_url">Web 首页地址</string>
     <string name="settings_home_web_custom">自定义地址</string>
     <string name="settings_home_web_custom_summary">输入自定义地址</string>
@@ -257,7 +257,7 @@
     <string name="home_category_quick">快捷</string>
     <string name="home_category_recent">最近</string>
     <string name="home_last_played">上次游玩 %1$s</string>
-    <string name="home_category_random">随机</string>
+    <string name="home_category_random">推荐</string>
     <string name="home_quick_launch_empty">还没有快捷启动的游戏，可在游戏操作里添加快捷启动</string>
     <string name="home_category_empty">该分类暂无游戏</string>
 
