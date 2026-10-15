@@ -19,9 +19,6 @@ val DarkGrey = Color(0xFF17191C)
 private val TextColorDark = Color(0xFFE3E4E6)
 private val UnselectedGreyDark = Color(0xFF7A8087)
 
-/** 快捷启动卡无封面/封面加载中时的中性兜底底色。 */
-val QuickLaunchFallback = Color(0xFF303338)
-
 // ===== 封面压字（游戏卡片角标等）固定样式：不随外观模式/色调切换变化 =====
 
 /** 角标底色：半透明黑（≈56%），保证任意封面上的可读性。 */

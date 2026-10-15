@@ -91,6 +91,7 @@ import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.ui.common.NavigationTabIcon
 import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
+import com.tyranor.next.ui.common.SidePanelGestureGuard
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.rememberSidePanelSwipeModifier
 import com.tyranor.next.ui.common.toErrorState
@@ -241,6 +242,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
   }
   // 侧边栏唤出识别需跳过底部导航栏区域：各底栏形态在布局后把自己顶边（根布局坐标）上报到
   // bottomNavTopY；悬浮按钮 / 平板侧栏没有底部导航栏，恒按「无排除」处理。
+  // 让位登记处：首页海报轮播往回翻时占用起点在其区域内的右滑（宿主坐标见下方根 Box 的 onGloballyPositioned）
+  val sidePanelGestureGuard = remember { SidePanelGestureGuard() }
   var bottomNavTopY by remember { mutableStateOf(Float.POSITIVE_INFINITY) }
   val reportBottomNavTop = remember {
     Modifier.onGloballyPositioned { bottomNavTopY = it.positionInParent().y }
@@ -253,7 +256,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
       if (railLayout || floatingButtonActive) Float.POSITIVE_INFINITY else bottomNavTopY
     },
     excludeStart = { point ->
-      floatingButtonActive && floatingNavOutsideTapBridge.containsControls(point)
+      (floatingButtonActive && floatingNavOutsideTapBridge.containsControls(point)) ||
+        sidePanelGestureGuard.owns(point)
     },
   )
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
@@ -299,7 +303,9 @@ fun MainScreen(modifier: Modifier = Modifier) {
   }
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
   Box(
-    modifier.fillMaxSize().then(sidePanelSwipeModifier)
+    modifier.fillMaxSize()
+      .onGloballyPositioned { sidePanelGestureGuard.hostCoordinates = it }
+      .then(sidePanelSwipeModifier)
       .then(if (floatingButtonActive) floatingNavOutsideTapObserver else Modifier),
   ) {
     // 内容层录制进 backdrop，供液态玻璃导航采样页面内容。
@@ -411,6 +417,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
             pageTransition = pageTransition,
             libraryState = libraryState,
             libraryViewModel = libraryViewModel,
+            sidePanelGuard = sidePanelGestureGuard,
           )
         }
       }
@@ -421,6 +428,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           pageTransition = pageTransition,
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
+          sidePanelGuard = sidePanelGestureGuard,
         )
         if (!liquidGlass && !floatingDefaultNav && !floatingButtonActive) {
           DefaultBottomNavigationBar(
@@ -573,6 +581,7 @@ private fun ColumnScope.MainTabPages(
   pageTransition: Transition<Int>,
   libraryState: MainLibraryUiState,
   libraryViewModel: MainLibraryViewModel,
+  sidePanelGuard: SidePanelGestureGuard,
 ) {
     Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
       WithoutPressIndication {
@@ -624,9 +633,9 @@ private fun ColumnScope.MainTabPages(
                 libraryState = libraryState,
                 onGameUpdated = libraryViewModel::replaceGame,
                 onGameDeleted = libraryViewModel::deleteGame,
-                onRecentRemoved = libraryViewModel::removeRecentGame,
                 onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
                 isActive = page == selectedIndex,
+                sidePanelGuard = sidePanelGuard,
               )
               1 -> GameScreen(
                 modifier = Modifier.fillMaxSize(),

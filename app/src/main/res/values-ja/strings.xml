@@ -56,6 +56,8 @@
     <string name="settings_home_style_native">デフォルト</string>
     <string name="settings_home_style_web">Web</string>
     <string name="settings_home_style_category">カテゴリライブラリ</string>
+    <string name="settings_home_carousel_mode">ホームのカルーセル</string>
+    <string name="settings_home_carousel_mode_summary">最近：最近開いたゲーム／クイック：クイック起動のゲーム／ランダム：毎日固定で入れ替わります</string>
     <string name="settings_home_web_url">Web ホーム URL</string>
     <string name="settings_home_web_custom">カスタム URL</string>
     <string name="settings_home_web_custom_summary">カスタム URL を入力</string>
@@ -211,7 +213,7 @@
     <string name="game_launch_file_auto_summary">自動 - 問題がある場合は手動で起動ファイルを選択</string>
     <string name="game_remove_quick_launch">クイック起動から削除</string>
     <string name="game_add_quick_launch">クイック起動に追加</string>
-    <string name="game_quick_launch_full">ホームのクイック起動は最大 3 件までです</string>
+    <string name="game_quick_launch_full">ホームのクイック起動は最大 10 件までです</string>
     <string name="game_add_desktop_shortcut">ホーム画面に追加</string>
     <string name="game_desktop_shortcut_requested">システムダイアログで追加を確認してください</string>
     <string name="game_desktop_shortcut_updated">ホーム画面ショートカットを更新しました</string>
@@ -251,13 +253,13 @@
     <string name="game_cover_source_generic_summary">このソースを検索</string>
     <string name="game_launch_file_empty">フォルダ内に xp3 または exe ファイルが見つかりません</string>
 
-    <string name="home_recent_empty">最近開いたゲームはありません</string>
-    <string name="home_quick_launch">クイック起動</string>
     <string name="home_category_all">すべて</string>
     <string name="home_category_quick">クイック</string>
     <string name="home_category_recent">最近</string>
+    <string name="home_last_played">最終プレイ %1$s</string>
+    <string name="home_category_random">ランダム</string>
+    <string name="home_quick_launch_empty">クイック起動のゲームがありません。ゲームの操作から追加できます</string>
     <string name="home_category_empty">このカテゴリにゲームはありません</string>
-    <string name="home_empty_slot_content_description">空きスロット</string>
 
     <string name="engine_settings_save_content_description">設定を保存</string>
     <string name="engine_settings_saved">エンジン設定を保存しました</string>

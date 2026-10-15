@@ -56,6 +56,8 @@
     <string name="settings_home_style_native">Default</string>
     <string name="settings_home_style_web">Web</string>
     <string name="settings_home_style_category">Category Library</string>
+    <string name="settings_home_carousel_mode">Home carousel source</string>
+    <string name="settings_home_carousel_mode_summary">Recent: recently opened; Quick: quick launch games; Random: a daily pick that changes each day</string>
     <string name="settings_home_web_url">Web home URL</string>
     <string name="settings_home_web_custom">Custom URL</string>
     <string name="settings_home_web_custom_summary">Enter a custom URL</string>
@@ -211,7 +213,7 @@
     <string name="game_launch_file_auto_summary">Auto - choose a launch file manually if startup fails</string>
     <string name="game_remove_quick_launch">Remove from quick launch</string>
     <string name="game_add_quick_launch">Add to quick launch</string>
-    <string name="game_quick_launch_full">Home quick launch is full (max 3)</string>
+    <string name="game_quick_launch_full">Home quick launch is full (max 10)</string>
     <string name="game_add_desktop_shortcut">Add to Home screen</string>
     <string name="game_desktop_shortcut_requested">Confirm the shortcut in the system dialog</string>
     <string name="game_desktop_shortcut_updated">Home screen shortcut updated</string>
@@ -251,13 +253,13 @@
     <string name="game_cover_source_generic_summary">Search this source</string>
     <string name="game_launch_file_empty">No xp3 or exe files found in this folder</string>
 
-    <string name="home_recent_empty">No recently opened games</string>
-    <string name="home_quick_launch">Quick launch</string>
     <string name="home_category_all">All</string>
     <string name="home_category_quick">Quick</string>
     <string name="home_category_recent">Recent</string>
+    <string name="home_last_played">Last played %1$s</string>
+    <string name="home_category_random">Random</string>
+    <string name="home_quick_launch_empty">No quick launch games yet. Add some from a game\'s actions</string>
     <string name="home_category_empty">No games in this category</string>
-    <string name="home_empty_slot_content_description">Empty slot</string>
 
     <string name="engine_settings_save_content_description">Save settings</string>
     <string name="engine_settings_saved">Engine settings saved</string>

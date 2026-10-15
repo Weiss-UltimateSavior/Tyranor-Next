@@ -95,6 +95,7 @@ internal fun AppSettingsScreen() {
     val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
     val defaultThemeGradient by AppSettingsStore.defaultThemeGradientState.collectAsState()
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    val homeCarouselMode by AppSettingsStore.homeCarouselModeState.collectAsState()
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     val glass = AppThemeColors.isGlass
     // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
@@ -365,6 +366,26 @@ internal fun AppSettingsScreen() {
                                     }
                                 },
                             )
+                            // 首页轮播来源：仅默认样式下的海报轮播使用——最近打开 / 快捷启动 / 随机（当天固定）
+                            if (homeStyle == AppSettingsStore.HOME_STYLE_NATIVE) {
+                                val carouselModes = listOf(
+                                    AppSettingsStore.HOME_CAROUSEL_RECENT to stringResource(R.string.home_category_recent),
+                                    AppSettingsStore.HOME_CAROUSEL_QUICK to stringResource(R.string.home_category_quick),
+                                    AppSettingsStore.HOME_CAROUSEL_RANDOM to stringResource(R.string.home_category_random),
+                                )
+                                OverlayDropdownPreference(
+                                    title = stringResource(R.string.settings_home_carousel_mode),
+                                    summary = stringResource(R.string.settings_home_carousel_mode_summary),
+                                    items = carouselModes.map { it.second },
+                                    selectedIndex = carouselModes.indexOfFirst { it.first == homeCarouselMode }
+                                        .coerceAtLeast(0),
+                                    onSelectedIndexChange = { index ->
+                                        carouselModes.getOrNull(index)?.first?.let { mode ->
+                                            AppSettingsStore.setHomeCarouselMode(ctx, mode)
+                                        }
+                                    },
+                                )
+                            }
                             // Web 首页地址：预设（鲲Gal / 一起萌）或自定义，点击弹出选择
                             ArrowPreference(
                                 title = stringResource(R.string.settings_home_web_url),
