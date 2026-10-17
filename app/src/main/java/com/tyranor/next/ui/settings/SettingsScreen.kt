@@ -1070,7 +1070,8 @@ private fun LazyListPlaceholder(
                 )
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), krSelectMap, krVersion, onKrVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, krKernel, onKrKernel)
-                if (!isSdl3) {
+                // 语言环境仅 krkrsdl3 内核支持（kirikiroid2 无编码符号），故仅对该内核展示
+                if (isSdl3) {
                     DropdownRow(stringResource(R.string.engine_settings_kr_language), krLanguageOptions(), krLanguage, onKrLanguage)
                 }
                 if (!isSdl3) {

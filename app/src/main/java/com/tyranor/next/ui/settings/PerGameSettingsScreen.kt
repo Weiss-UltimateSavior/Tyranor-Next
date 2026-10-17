@@ -563,7 +563,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 ) { krSkipStartupDialogs = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
-                                if (!isSdl3) {
+                                // 语言环境仅 krkrsdl3 内核支持（kirikiroid2 无编码符号）
+                                if (isSdl3) {
                                     OverrideChoice(stringResource(R.string.engine_settings_kr_language), krLanguageOverrideOptionsMap(), globalKrLanguage, krLanguage) { krLanguage = it }
                                 }
                                 if (!isSdl3) {
