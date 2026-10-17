@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppComponentShape
 
 /**
- * 页内无按压反馈按钮（配合 AGENT.md「弹窗点击反馈统一规范」的同一意图）。
+ * 页内无按压反馈按钮（配合 AGENTS.md「弹窗点击反馈统一规范」的同一意图）。
  *
  * `AppScreenScaffold` 的 `WithoutPressIndication` 只影响走 `LocalIndication` 的组件；
  * Material3 的 `Button` / `TextButton` 内部显式使用 `ripple()`，不经过 `LocalIndication`，
@@ -37,13 +37,15 @@ fun NoRippleTextButton(
     text: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /** 可用态文字色；破坏性动作（删除/清除）传 `MaterialTheme.colorScheme.error`。 */
+    contentColor: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit,
 ) {
     Text(
         text = text,
         style = MaterialTheme.typography.bodyMedium,
         color = if (enabled) {
-            MaterialTheme.colorScheme.primary
+            contentColor
         } else {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         },

@@ -270,18 +270,36 @@ class RpgSaveSyncTest {
 
     @Test
     fun uppercaseSaveIsWrittenWhenItIsTheOnlyExistingDir() {
-        // 只有 Save/ 存在时，无槽位的新导出应写入该目录（首选=已存在目录）
-        val parent = temporaryFolder.newFolder("www")
-        val lower = parent.resolve("save")
-        val upper = parent.resolve("Save").apply { mkdirs() }
+        // 只有 Save/ 存在时，无槽位的新导出应写入该目录。
+        // 注意：**候选目录的排序**由 RpgSaveFormat.standardSaveDirectories 负责（已存在的目录排首位），
+        // RpgSaveSync 只写 standardDirs.first()（见其 KDoc）。因此这里必须走真实排序函数，
+        // 不能手工构造 listOf(lower, upper) 来断言「sync 自己会挑存在的那个」——
+        // 该断言在大小写不敏感的文件系统（Windows/macOS）上会因两个拼写折叠为同一目录而假通过，
+        // 在区分大小写的文件系统（Linux CI / Android 真机 ext4）上必然失败。
+        val root = temporaryFolder.newFolder("game")
+        // www/index.html 是内容根标记（locateContentRoot 据此把 www 认作内容根）
+        val www = File(root, "www").apply { mkdirs() }
+        File(www, "index.html").writeText("<html></html>")
+        val upper = File(www, "Save").apply { mkdirs() }
         val tyranor = temporaryFolder.newFolder("savedata")
         tyranor.writeAt("RPG File1.bin", "PHONE", 1_000)
 
-        val result = RpgSaveSync.sync(listOf(lower, upper), tyranor, EngineType.RPG_MV, store(), "g")
+        val standardDirs = RpgSaveFormat.standardSaveDirectories(root)
+        val target = standardDirs.first()
+        // 首位必须是**已存在**的目录：区分大小写的文件系统上，若实现把不存在的小写 save 排在前面，
+        // 导出就会新建 save/ 而游戏读的是 Save/（存档「消失」）。大小写不敏感的文件系统上两个拼写
+        // 本就是同一目录，用 isSameFile 判定才不会因路径大小写不同而误报。
+        assertTrue("首位候选必须是已存在的标准目录", target.isDirectory)
+        assertTrue(
+            "写入目录必须就是那个已存在的 Save",
+            java.nio.file.Files.isSameFile(upper.toPath(), target.toPath()),
+        )
+
+        val result = RpgSaveSync.sync(standardDirs, tyranor, EngineType.RPG_MV, store(), "g")
 
         assertEquals(1, result.exported)
         assertEquals("PHONE", upper.resolve("file1.rpgsave").readText())
-        assertEquals(1, parent.listFiles().orEmpty().count { it.name.equals("save", ignoreCase = true) })
+        assertEquals(1, www.listFiles().orEmpty().count { it.name.equals("save", ignoreCase = true) })
     }
 
     @Test

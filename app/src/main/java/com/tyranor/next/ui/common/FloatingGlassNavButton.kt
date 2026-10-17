@@ -1,132 +1,108 @@
 package com.tyranor.next.ui.common
 
 import android.os.Build
+import android.os.SystemClock
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.EaseIn
-import androidx.compose.animation.core.EaseOut
-import androidx.compose.animation.core.EaseOutBack
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.kyant.backdrop.Backdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.theme.FloatingNavGlassSurface
+import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.FloatingNavGlassUnselectedDark
 import com.tyranor.next.theme.GlassUnselected
-import com.tyranor.next.theme.glassEdgeStroke
-import com.tyranor.next.ui.common.glass.GlassShaderSupport
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlin.math.cos
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-/** 主按钮直径（与默认悬浮玻璃导航条同高，视觉体量一致）。 */
 private val FloatingNavMainSize = 64.dp
-
-/** 弧上单个导航项直径。 */
 private val FloatingNavItemSize = 52.dp
+private val FloatingNavArcRadius = 129.dp
+private val FloatingNavEdgeMargin = 20.dp
 
-/** 弧形展开半径：主按钮中心 → 导航项中心，保证两者边缘留出约 40dp 间隙。 */
-private val FloatingNavArcRadius = 104.dp
+private class FloatingNavSession {
+    var startedExpanded = false
+    var origin = Offset.Zero
+    var ballOrigin = Offset.Zero
+    var selecting = false
+    var moving = false
+}
 
-/** 主按钮内的图标尺寸。 */
-private val FloatingNavMainIconSize = 28.dp
+private class FloatingNavSelectionState {
+    var generation = 0L
+    var feedback: Job? = null
+}
 
-/** 弧上导航项的图标尺寸（与经典液态玻璃底栏一致）。 */
-private val FloatingNavItemIconSize = 26.dp
-
-/** 位置钳制边距：拖动/恢复时按钮与安全区边缘至少留出的间距。 */
-private val FloatingNavEdgeMargin = 16.dp
-
-/** 实底路径（API < 31 无采样）的平台 elevation 阴影（主按钮与弧上项统一档位）。 */
-private val FloatingNavShadow = 6.dp
-
-/** 长按进入拖动后，抑制随后的松手 click 时间窗（长按未移动时 clickable 仍会收到 tap）。 */
-private const val ClickSuppressWindowMs = 500L
-
-/**
- * 固定液态玻璃材质：纯白玻璃膜 + 中性发丝描边，**不随外观风格（复古/高级玻璃）与外观模式
- * （深/浅色）变化**——本导航档是自带固定观感的独立样式，只保留主题色用于选中态。
- * 表面色取自 `theme/Color.kt` 的 [FloatingNavGlassSurface]，不读取 AppThemeColors 的风格分档。
- */
-private val FloatingNavSurfaceColor = FloatingNavGlassSurface
-
-/** 有真采样时的玻璃膜不透明度（主按钮与弧上项共用同一档）。 */
-private const val FloatingNavSurfaceAlpha = 0.55f
-
-/** 无实时采样（API < 31）的表面不透明度：接近实底，保证图标可读。 */
-private const val FloatingNavSolidSurfaceAlpha = 0.96f
+private class FloatingNavGestureActions(
+    val down: (Offset) -> Boolean,
+    val move: (Offset, Boolean) -> Unit,
+    val hold: () -> Unit,
+    val up: (Offset, Boolean, Boolean) -> Unit,
+    val cancel: () -> Unit,
+)
 
 /**
- * 悬浮按钮导航（应用设置「导航栏样式」第 4 档）：
- * 右下角一个圆形液态玻璃按钮，点击后四个导航项沿 1/4 圆弧交错展开
- * （`EaseOutBack` 轻微过冲回弹），再点主按钮 / 选中项 / 返回键收起。
- *
- * 交互：
- * - **长按拖动**可移动按钮位置（展开态禁用拖动，避免与选项点击混淆；松手不吸附）；
- *   位置以归一化坐标持久化（`AppSettingsStore`），换分辨率/横竖屏后按新安全区重新钳制，
- *   设置页提供「重置位置」回右下角。
- * - 弧形展开方向按按钮所在象限自适应，始终朝屏幕内侧展开（见 [floatingNavArcStartAngle]）。
- *
- * 材质为**固定样式**：无论外观风格是默认 / 复古玻璃 / 高级玻璃、外观模式是深色还是浅色，
- * 都是同一份纯白玻璃膜 + 中性发丝描边，不读取 AppThemeColors 的风格分档；仅选中态图标沿用主题色。
- *
- * 降级与性能沿用既有底栏约定：API 31+ 且宿主提供采样层时走 `drawBackdrop`
- * （vibrancy + blur + 库 Highlight，受 [GlassShaderSupport] 门控），主按钮与弧上四项
- * **共用同一份玻璃材质**（同一个 remember 的采样 Modifier + 同档白玻璃膜），否则一律退
- * 半透明实底圆面 + 平台 elevation 阴影；展开进度与拖动位置只在 layout/draw 阶段读取，
- * 动画/拖动期间不触发重组（`dragging` 开关只切一次）。
- *
- * [backdrop] 由宿主在**采样层已挂载**时传入（`MainScreen` 的 `bottomBackdropActive`），
- * 传 null 表示无实时模糊可用，组件自行退实底。宿主应传 `fillMaxSize` 修饰符，
- * 组件在安全区内自行摆放（原先由宿主 `align + padding` 定位的逻辑已收敛进组件）。
+ * 点击、长按滑选和展开后移动共用同一指针；单点子项保持展开，滑选确认后收起。
+ * API 31+ 使用 backdrop 采样；较低版本或没有采样源时回退为实底玻璃。
  */
 @Composable
 internal fun FloatingGlassNavButton(
@@ -136,301 +112,466 @@ internal fun FloatingGlassNavButton(
     primaryColor: Color,
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    outsideTapBridge: FloatingNavOutsideTapBridge? = null,
 ) {
     if (items.isEmpty()) return
     val context = LocalContext.current
     val density = LocalDensity.current
-    val haptics = LocalHapticFeedback.current
+    val view = LocalView.current
+    val scope = rememberCoroutineScope()
+    val currentOnItemClick by rememberUpdatedState(onItemClick)
     val persistedPosition by AppSettingsStore.floatingNavPositionState.collectAsState()
     var expanded by rememberSaveable { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
+    var mainPressed by remember { mutableStateOf(false) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
-    // 拖动期间的像素位置覆盖；松手落盘后由 LaunchedEffect(persistedPosition) 清掉（两者同值，无跳变）
+    var containerCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var dragPx by remember { mutableStateOf<Offset?>(null) }
-    // 长按拖动后抑制紧随其后的松手 click（长按未移动时 clickable 仍会收到 tap）
-    var suppressClickUntil by remember { mutableLongStateOf(0L) }
-
-    // 返回键仅展开时拦截：未展开时让位给页面自身（如 Web 首页的返回）。
-    BackHandler(enabled = expanded) { expanded = false }
-    // 选中项变化（含从外部切页）后收起，避免展开态停留在新页面上。
-    LaunchedEffect(selectedIndex) { expanded = false }
-    // 外部位置变更（设置页重置）后清掉本地拖动覆盖
-    LaunchedEffect(persistedPosition) { dragPx = null }
-
-    val backdropAvailable = backdrop != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val buttonSizePx = with(density) { FloatingNavMainSize.toPx() }
+    var finger by remember { mutableStateOf<Offset?>(null) }
+    var armedIndex by remember { mutableIntStateOf(-1) }
+    var committedIndex by remember { mutableIntStateOf(-1) }
+    var committing by remember { mutableStateOf(false) }
+    val session = remember { FloatingNavSession() }
+    val selectionState = remember { FloatingNavSelectionState() }
+    val mainMotion = remember { FloatingNavOrbMotion() }
+    val motions = remember(items.size) { List(items.size) { FloatingNavOrbMotion() } }
+    val lastTick = remember { longArrayOf(0L) }
+    val mainSizePx = with(density) { FloatingNavMainSize.toPx() }
     val marginPx = with(density) { FloatingNavEdgeMargin.toPx() }
+    val dark = AppThemeColors.isDark
 
-    // 当前位置（布局期解析）：拖动覆盖优先，否则由归一化坐标换算；容器尺寸未就绪/变化时自动重钳制
-    fun currentPositionPx(): Offset = clampFloatingNavPosition(
-        position = dragPx ?: floatingNavPositionPx(
-            normalized = persistedPosition,
-            containerWidth = containerSize.width,
-            containerHeight = containerSize.height,
-            buttonSizePx = buttonSizePx,
-            marginPx = marginPx,
-        ),
-        containerWidth = containerSize.width,
-        containerHeight = containerSize.height,
-        buttonSizePx = buttonSizePx,
-        marginPx = marginPx,
+    fun tick(kind: Int = HapticFeedbackConstants.CLOCK_TICK) {
+        val now = SystemClock.uptimeMillis()
+        val minimumInterval = if (kind == HapticFeedbackConstants.CLOCK_TICK) 130L else 90L
+        if (now - lastTick[0] >= minimumInterval) {
+            if (view.performHapticFeedback(kind)) lastTick[0] = now
+        }
+    }
+    fun position(): Offset = clampFloatingNavPosition(
+        dragPx ?: floatingNavPositionPx(
+            persistedPosition, containerSize.width, containerSize.height, mainSizePx, marginPx,
+        ), containerSize.width, containerSize.height, mainSizePx, marginPx,
     )
-
+    fun mainCenter() = position() + Offset(mainSizePx / 2f, mainSizePx / 2f)
+    fun startAngle(): Float {
+        val center = mainCenter()
+        return floatingNavArcStartAngle(center.x, center.y, containerSize.width, containerSize.height)
+    }
+    fun availableRadius(): Float {
+        val center = mainCenter()
+        val availableX = if (center.x >= containerSize.width / 2f) center.x else containerSize.width - center.x
+        val availableY = if (center.y >= containerSize.height / 2f) center.y else containerSize.height - center.y
+        val reserve = with(density) { 48.dp.toPx() }
+        return minOf(
+            (availableX - reserve) / 1.08f, (availableY - reserve) / 1.08f,
+        ).coerceAtLeast(0f)
+    }
+    fun radius(): Float = minOf(with(density) { FloatingNavArcRadius.toPx() }, availableRadius())
+    fun itemSizePx(): Float {
+        // Resting centres and diameters depend only on position/window geometry.
+        val spacing = if (items.size > 1) {
+            2f * radius() * sin(Math.PI / (4.0 * (items.size - 1))).toFloat()
+        } else Float.MAX_VALUE
+        val diameter = (spacing - with(density) { 4.dp.toPx() }) / 1.16f
+        return minOf(diameter, with(density) { FloatingNavItemSize.toPx() }).coerceAtLeast(1f)
+    }
+    fun scaleLimit(index: Int): Float {
+        if (items.size < 2) return 1.42f
+        val spacing = 2f * radius() * sin(Math.PI / (4.0 * (items.size - 1))).toFloat()
+        val extraBudget = ((spacing - with(density) { 4.dp.toPx() }) /
+            (itemSizePx() / 2f) - 2f).coerceAtLeast(0f)
+        val mine = (motions[index].rawScale.value - 1f).coerceAtLeast(0f)
+        var fraction = 1f
+        for (other in maxOf(0, index - 1)..minOf(motions.lastIndex, index + 1)) {
+            if (other == index) continue
+            val total = mine + (motions[other].rawScale.value - 1f).coerceAtLeast(0f)
+            if (total > extraBudget && total > 0f) fraction = minOf(fraction, extraBudget / total)
+        }
+        // Limit only enlargement; no centre can be displaced by another orb's touch.
+        return 1f + mine * fraction
+    }
+    fun itemCenter(index: Int): Offset {
+        // Use the endpoints too, giving four compact targets 30 degrees of separation.
+        return mainCenter() + floatingNavArcOffset(
+            index, items.size, radius(), motions[index].expansion.value.coerceIn(0f, 1.08f), startAngle(),
+        )
+    }
+    fun clearApproach() {
+        finger = null
+        armedIndex = -1
+        motions.forEach { it.proximity = 0f; it.touching = false }
+    }
+    fun approach(point: Offset?) {
+        if (point == null || !expanded || dragging || committing) {
+            if (!committing) {
+                armedIndex = -1
+                motions.forEach { it.proximity = 0f; it.touching = false }
+            }
+            return
+        }
+        val baseRadius = itemSizePx() / 2f
+        val reach = baseRadius + with(density) { 76.dp.toPx() }
+        var nearest = -1
+        var nearestDistance = Float.MAX_VALUE
+        motions.forEachIndexed { index, motion ->
+            val delta = point - itemCenter(index)
+            val distance = delta.getDistance()
+            val proximity = (1f - distance / reach).coerceIn(0f, 1f)
+            motion.proximity = proximity * proximity * (3f - 2f * proximity)
+            if (distance > 0.01f) motion.direction = delta
+            val entranceScale = 0.8f + motion.expansion.value.coerceIn(0f, 1f) * 0.2f
+            val hitRadius = baseRadius * motion.visualScale.value * entranceScale
+            if (motion.expansion.value > 0.65f && distance <= hitRadius && distance < nearestDistance) {
+                nearest = index
+                nearestDistance = distance
+            }
+        }
+        armedIndex = nearest
+        motions.forEachIndexed { index, motion -> motion.touching = index == nearest }
+    }
     fun persistPosition() {
         val px = dragPx ?: return
         val normalized = floatingNavNormalizedPosition(
-            position = px,
-            containerWidth = containerSize.width,
-            containerHeight = containerSize.height,
-            buttonSizePx = buttonSizePx,
-            marginPx = marginPx,
+            px, containerSize.width, containerSize.height, mainSizePx, marginPx,
         )
         AppSettingsStore.setFloatingNavPosition(context, normalized.first, normalized.second)
     }
-
-    val mainProgress by animateFloatAsState(
-        targetValue = if (expanded) 1f else 0f,
-        animationSpec = tween(durationMillis = 220, easing = EaseOut),
-        label = "floatingNavMain",
-    )
-    // remember：宿主切页动画期间 MainScreen 每帧重组，内联 drawBackdrop 会因 lambda 每次都是新实例
-    // 而逐帧重建 vibrancy/blur 管线；复用同一 Modifier 才能让 Backdrop 跳过重建。
-    // 主按钮与弧上四项共用**同一个**采样 Modifier，保证材质背景完全一致。
-    val glassSurfaceModifier = remember(backdrop, backdropAvailable, density) {
-        if (backdropAvailable) {
-            Modifier.drawBackdrop(
-                backdrop = backdrop,
-                shape = { CircleShape },
-                effects = {
-                    vibrancy()
-                    blur(with(density) { 12.dp.toPx() })
-                },
-                // Highlight 与经典底栏同档；AGSL 探测失败（33+）时置 null 兜底不崩。
-                highlight = if (GlassShaderSupport.highlightAllowed) {
-                    { Highlight.Default.copy(alpha = 0.85f) }
-                } else {
-                    null
-                },
-                shadow = { Shadow.Default.copy(alpha = 0.8f) },
-                onDrawSurface = { drawCircle(FloatingNavSurfaceColor.copy(alpha = FloatingNavSurfaceAlpha)) },
-            )
-        } else {
-            // 实底路径：平台 elevation 阴影（API 28 以下自动无阴影），固定档不依赖外观风格
-            Modifier
-                .shadow(FloatingNavShadow, CircleShape, clip = false)
-                .clip(CircleShape)
-                .background(FloatingNavSurfaceColor.copy(alpha = FloatingNavSolidSurfaceAlpha))
+    fun dismiss() {
+        if (!committing && !dragging) {
+            expanded = false
+            mainPressed = false
+            clearApproach()
         }
     }
-    // 固定浅色玻璃的中性发丝描边（与经典底栏浅色档同款），不随外观模式显隐
-    val edgeStroke = Modifier.glassEdgeStroke(CircleShape)
+    fun finishSelection(index: Int, keepExpanded: Boolean = false) {
+        if (committing || index !in items.indices) return
+        val generation = ++selectionState.generation
+        selectionState.feedback?.cancel()
+        committing = true
+        committedIndex = index
+        motions[index].pulseKey++
+        tick(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM
+            else HapticFeedbackConstants.KEYBOARD_TAP,
+        )
+        selectionState.feedback = scope.launch {
+            try {
+                delay(110)
+                currentOnItemClick(index)
+                if (!keepExpanded) expanded = false
+                clearApproach()
+                // Repeated taps become available as soon as this selection is dispatched.
+                if (keepExpanded) committing = false
+                delay(if (keepExpanded) 160 else 220)
+            } finally {
+                if (generation == selectionState.generation) {
+                    committedIndex = -1
+                    committing = false
+                    clearApproach()
+                }
+            }
+        }
+    }
+    fun toggle() {
+        if (committing) return
+        mainMotion.pulseKey++
+        tick()
+        expanded = !expanded
+        if (!expanded) clearApproach()
+    }
+    fun cancelGesture() {
+        if (session.moving) persistPosition()
+        session.moving = false
+        dragging = false
+        mainPressed = false
+        mainMotion.proximity = 0f
+        clearApproach()
+    }
+    fun actions(source: Int) = FloatingNavGestureActions(
+        down = { point ->
+            val hit = if (source < 0) (point - mainCenter()).getDistance() <= mainSizePx * 0.55f else expanded
+            if (committing || !hit) false else {
+                // New input owns the feedback now; an older pulse cannot clear its finger state.
+                selectionState.generation++
+                selectionState.feedback?.cancel()
+                committedIndex = -1
+                session.startedExpanded = expanded
+                session.origin = point
+                session.ballOrigin = position()
+                session.selecting = source >= 0
+                session.moving = false
+                finger = point
+                mainPressed = source < 0
+                mainMotion.direction = point - mainCenter()
+                if (source >= 0) approach(point)
+                true
+            }
+        },
+        move = { point, moved ->
+            if (session.moving) {
+                dragPx = clampFloatingNavPosition(
+                    session.ballOrigin + point - session.origin,
+                    containerSize.width, containerSize.height, mainSizePx, marginPx,
+                )
+                mainMotion.direction = point - mainCenter()
+            } else {
+                if (source < 0 && moved && !session.selecting) {
+                    session.selecting = true
+                    expanded = true
+                    mainPressed = false
+                    mainMotion.pulseKey++
+                    if (!session.startedExpanded) tick()
+                }
+                finger = point
+            }
+        },
+        hold = {
+            if (source < 0) {
+                mainPressed = false
+                mainMotion.pulseKey++
+                tick(HapticFeedbackConstants.LONG_PRESS)
+                if (session.startedExpanded) {
+                    session.moving = true
+                    session.selecting = false
+                    dragging = true
+                    expanded = false
+                    clearApproach()
+                    mainMotion.proximity = 0.45f
+                } else {
+                    session.selecting = true
+                    expanded = true
+                    approach(finger)
+                }
+            }
+        },
+        up = { point, moved, held ->
+            mainPressed = false
+            if (session.moving) {
+                dragPx = clampFloatingNavPosition(
+                    session.ballOrigin + point - session.origin,
+                    containerSize.width, containerSize.height, mainSizePx, marginPx,
+                )
+                persistPosition()
+                session.moving = false
+                dragging = false
+                mainMotion.proximity = 0f
+                mainMotion.pulseKey++
+                if (moved) tick()
+                clearApproach()
+            } else if (session.selecting) {
+                approach(point)
+                val target = armedIndex
+                if (target >= 0) finishSelection(target, keepExpanded = source >= 0 && !moved && !held)
+                else if (source >= 0 && !moved && !held) dismiss()
+                else clearApproach()
+            } else {
+                clearApproach()
+                toggle()
+            }
+        },
+        cancel = { cancelGesture() },
+    )
+
+    BackHandler(enabled = expanded) { dismiss() }
+    LaunchedEffect(persistedPosition) { if (!dragging) dragPx = null }
+    val fingerDown by remember { derivedStateOf { finger != null } }
+    // Coalesce approach work to display frames, only while a finger owns the expanded fan.
+    LaunchedEffect(containerSize, density, motions, expanded, fingerDown, dragging) {
+        if (!expanded || !fingerDown || dragging) return@LaunchedEffect
+        while (isActive) {
+            withFrameNanos { approach(finger) }
+        }
+    }
+    val fanVisible by remember(motions) {
+        derivedStateOf { expanded || motions.any { it.expansion.isRunning || it.expansion.value > 0.001f } }
+    }
+
+    val mainProgress by animateFloatAsState(
+        if (expanded) 1f else 0f,
+        spring(Spring.DampingRatioLowBouncy, Spring.StiffnessMediumLow),
+        label = "floatingMainIcon",
+    )
     val mainDescription = stringResource(
         if (expanded) R.string.nav_floating_collapse else R.string.nav_floating_expand,
     )
-    val radiusPx = with(density) { FloatingNavArcRadius.toPx() }
-
-    Box(
-        modifier = modifier
-            // 安全区（状态栏/导航条/刘海）由组件统一避让，拖动范围据此钳制
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .onSizeChanged { containerSize = it },
-    ) {
-        // 可拖动簇：位置在 layout 期解析，拖动只触发重新布局，不逐帧重组
-        Box(
-            modifier = Modifier
-                .offset {
-                    val position = currentPositionPx()
-                    IntOffset(position.x.roundToInt(), position.y.roundToInt())
-                }
-                .graphicsLayer {
-                    // 拖动中轻微放大，给出「已进入拖动」的即时反馈
-                    val scale = if (dragging) 1.06f else 1f
-                    scaleX = scale
-                    scaleY = scale
-                },
-        ) {
-            // 主按钮：收起态显示当前页图标，展开态交叉淡入旋转 45° 的加号（呈叉形作关闭暗示）。
-            val mainInteraction = remember { MutableInteractionSource() }
-            Box(
-                modifier = Modifier
-                    .size(FloatingNavMainSize)
-                    .then(glassSurfaceModifier)
-                    .then(edgeStroke)
-                    // 长按拖动（展开态禁用）；松手不吸附，直接停在当前位置
-                    .pointerInput(expanded, containerSize) {
-                        if (expanded) return@pointerInput
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                suppressClickUntil = System.currentTimeMillis() + ClickSuppressWindowMs
-                                dragging = true
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                val base = currentPositionPx()
-                                dragPx = clampFloatingNavPosition(
-                                    position = Offset(base.x + dragAmount.x, base.y + dragAmount.y),
-                                    containerWidth = containerSize.width,
-                                    containerHeight = containerSize.height,
-                                    buttonSizePx = buttonSizePx,
-                                    marginPx = marginPx,
-                                )
-                            },
-                            onDragEnd = {
-                                dragging = false
-                                persistPosition()
-                            },
-                            onDragCancel = { dragging = false },
-                        )
-                    }
-                    .clickable(
-                        interactionSource = mainInteraction,
-                        indication = null,
-                    ) {
-                        if (System.currentTimeMillis() >= suppressClickUntil) expanded = !expanded
-                    }
-                    .semantics { contentDescription = mainDescription },
-                contentAlignment = Alignment.Center,
-            ) {
-                val currentItem = items[selectedIndex.coerceIn(items.indices)]
-                Box(Modifier.size(FloatingNavMainIconSize)) {
-                    Image(
-                        painter = painterResource(currentItem.iconRes),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer { alpha = (1f - mainProgress).coerceIn(0f, 1f) },
-                        colorFilter = ColorFilter.tint(primaryColor),
-                    )
-                    Image(
-                        painter = painterResource(R.drawable.ic_game_add),
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                alpha = mainProgress.coerceIn(0f, 1f)
-                                rotationZ = 45f * mainProgress
-                            },
-                        colorFilter = ColorFilter.tint(primaryColor),
-                    )
-                }
+    val currentDismiss by rememberUpdatedState({
+        selectionState.generation++
+        selectionState.feedback?.cancel()
+        committing = false
+        committedIndex = -1
+        dismiss()
+    })
+    val currentContainsControls by rememberUpdatedState<(Offset) -> Boolean>({ windowPoint ->
+        val coordinates = containerCoordinates
+        if (coordinates?.isAttached != true) {
+            false
+        } else {
+            val point = coordinates.windowToLocal(windowPoint)
+            val mainDelta = point - mainCenter()
+            val onMain = (abs(mainDelta.x) <= mainSizePx / 2f && abs(mainDelta.y) <= mainSizePx / 2f) ||
+                mainDelta.getDistance() <= mainSizePx * mainMotion.visualScale.value / 2f
+            val itemHalf = itemSizePx() / 2f
+            val touchHalf = maxOf(itemHalf, with(density) { 24.dp.toPx() })
+            val onItem = expanded && motions.indices.any { index ->
+                val delta = point - itemCenter(index)
+                val progress = motions[index].expansion.value.coerceIn(0f, 1f)
+                val visibleRadius = itemHalf * motions[index].visualScale.value * (0.8f + progress * 0.2f)
+                (abs(delta.x) <= touchHalf && abs(delta.y) <= touchHalf) || delta.getDistance() <= visibleRadius
             }
-
-            // 弧上导航项：从主按钮中心出发，沿所在象限朝屏幕内侧的 1/4 圆弧交错展开；
-            // 收起时逆序错峰收回。
-            items.forEachIndexed { index, item ->
-                val itemProgress by animateFloatAsState(
-                    targetValue = if (expanded) 1f else 0f,
-                    animationSpec = if (expanded) {
-                        tween(durationMillis = 280, delayMillis = index * 30, easing = EaseOutBack)
-                    } else {
-                        tween(
-                            durationMillis = 160,
-                            delayMillis = (items.lastIndex - index) * 18,
-                            easing = EaseIn,
-                        )
-                    },
-                    label = "floatingNavItem$index",
+            onMain || onItem
+        }
+    })
+    val currentOutsideStart by rememberUpdatedState<(Offset) -> Boolean>({ windowPoint ->
+        expanded && !dragging && containerCoordinates?.isAttached == true && !currentContainsControls(windowPoint)
+    })
+    DisposableEffect(outsideTapBridge) {
+        val handler = FloatingNavOutsideTapHandler(
+            containsControls = { currentContainsControls(it) },
+            startsOutside = { currentOutsideStart(it) },
+            dismiss = { currentDismiss() },
+        )
+        outsideTapBridge?.handler = handler
+        onDispose {
+            if (outsideTapBridge?.handler === handler) outsideTapBridge.handler = null
+        }
+    }
+    Box(
+        modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+            .onSizeChanged { containerSize = it }
+            .onGloballyPositioned { containerCoordinates = it },
+    ) {
+        if (fanVisible) items.forEachIndexed { index, item ->
+            val motion = motions[index]
+            motion.maximumScale = { scaleLimit(index) }
+            LaunchedEffect(expanded) {
+                delay(if (expanded) index * 26L else (items.lastIndex - index) * 14L)
+                motion.expansion.animateTo(
+                    if (expanded) 1f else 0f,
+                    spring(
+                        if (expanded) {
+                            (Spring.DampingRatioMediumBouncy + Spring.DampingRatioLowBouncy) / 2f
+                        } else Spring.DampingRatioLowBouncy,
+                        Spring.StiffnessMediumLow,
+                    ),
                 )
-                val selected = index == selectedIndex
-                val itemInteraction = remember { MutableInteractionSource() }
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(FloatingNavItemSize)
-                        // offset 更新布局坐标（命中测试跟随），缩放/透明度走图层，均在 layout/draw 期读进度
-                        .offset {
-                            val position = currentPositionPx()
-                            val startAngle = floatingNavArcStartAngle(
-                                centerX = position.x + buttonSizePx / 2f,
-                                centerY = position.y + buttonSizePx / 2f,
-                                containerWidth = containerSize.width,
-                                containerHeight = containerSize.height,
-                            )
-                            val point = floatingNavArcOffset(index, items.size, radiusPx, itemProgress, startAngle)
-                            IntOffset(point.x.roundToInt(), point.y.roundToInt())
-                        }
-                        .graphicsLayer {
-                            val progress = itemProgress.coerceIn(0f, 1f)
-                            val scale = 0.45f + 0.55f * progress
-                            scaleX = scale
-                            scaleY = scale
-                            alpha = progress
-                        }
-                        .then(glassSurfaceModifier)
-                        .then(edgeStroke)
-                        // 仅在展开态挂点击处理：收起时若保留指针节点，会叠在主按钮上把
-                        // 命中测试整个截走（disabled clickable 同样参与命中），主按钮就点不动了。
-                        .then(
-                            if (expanded) {
-                                Modifier.clickable(
-                                    interactionSource = itemInteraction,
-                                    indication = null,
-                                ) {
-                                    onItemClick(index)
-                                    expanded = false
-                                }
-                            } else {
-                                Modifier
-                            },
-                        )
-                        // 收起时把弧上导航项整体移出无障碍树（视觉已 alpha=0）
-                        .then(if (expanded) Modifier else Modifier.clearAndSetSemantics { }),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    NavigationTabIcon(
-                        iconRes = item.iconRes,
-                        contentDescription = item.label,
-                        selected = selected,
-                        // 固定样式的未选中灰同样是固定中性常量，不随外观模式/玻璃风格变化
-                        unselectedColor = GlassUnselected,
-                        selectedColor = primaryColor,
-                        size = FloatingNavItemIconSize,
-                        animationLabel = "floatingNavIconFill$index",
-                    )
-                }
+            }
+            val sizeDp = with(density) { itemSizePx().toDp() }
+            val touchSize = maxOf(sizeDp, 48.dp)
+            FloatingNavTouchTarget(
+                container = { containerCoordinates }, containerSize = containerSize,
+                enabled = expanded, description = item.label,
+                selectedItem = index == selectedIndex, actions = actions(index),
+                activate = { finishSelection(index, keepExpanded = true) },
+                modifier = Modifier.offset {
+                    val center = itemCenter(index)
+                    val half = with(density) { touchSize.toPx() } / 2f
+                    IntOffset((center.x - half).roundToInt(), (center.y - half).roundToInt())
+                }.size(touchSize).zIndex(if (armedIndex == index || committedIndex == index) 2f else 1f),
+            ) {
+                FloatingNavOrb(
+                    motion, backdrop, primaryColor,
+                    if (index == selectedIndex) primaryColor else if (dark) FloatingNavGlassUnselectedDark else GlassUnselected,
+                    dark, Modifier.size(sizeDp), committed = committedIndex == index,
+                ) { tint -> FloatingNavIcon(item.iconRes, tint, Modifier.size(28.dp)) }
+            }
+        }
+        FloatingNavTouchTarget(
+            container = { containerCoordinates }, containerSize = containerSize,
+            enabled = true, description = mainDescription, selectedItem = null,
+            actions = actions(-1), activate = { toggle() },
+            modifier = Modifier.offset {
+                val point = position()
+                IntOffset(point.x.roundToInt(), point.y.roundToInt())
+            }.size(FloatingNavMainSize).zIndex(3f),
+        ) {
+            FloatingNavOrb(
+                mainMotion, backdrop, primaryColor, primaryColor, dark, Modifier.fillMaxSize(),
+                main = true, pressed = mainPressed, dragging = dragging,
+            ) { tint ->
+                val iconRes = items[selectedIndex.coerceIn(items.indices)].iconRes
+                FloatingNavIcon(
+                    iconRes, tint, Modifier.size(28.dp).graphicsLayer {
+                        alpha = (1f - mainProgress).coerceIn(0f, 1f)
+                        rotationZ = -30f * mainProgress
+                    },
+                )
+                FloatingNavIcon(
+                    iconRes, tint, Modifier.size(28.dp).graphicsLayer {
+                        alpha = mainProgress.coerceIn(0f, 1f)
+                        rotationZ = -90f * (1f - mainProgress)
+                    }, closing = true,
+                )
             }
         }
     }
 }
 
-/**
- * 弧形展开坐标（纯函数，便于单测）：以主按钮中心为圆心，[count] 个导航项在
- * 以 [startAngleDeg] 为起点、+90° 的 1/4 圆弧上均分排布
- * （角度 = startAngle + (index + 0.5) × 90°/count），[progress] 从 0 到 1 表示由圆心滑到弧上。
- * 屏幕坐标 y 向下，故纵向取负值（向上）。默认 90° 起（正上方 → 正左方，即右下角锚点的展开方向）。
- */
-internal fun floatingNavArcOffset(
-    index: Int,
-    count: Int,
-    radiusPx: Float,
-    progress: Float,
-    startAngleDeg: Float = 90f,
-): Offset {
-    if (count <= 0) return Offset.Zero
-    val safeIndex = index.coerceIn(0, count - 1)
-    val degrees = startAngleDeg + (safeIndex + 0.5f) * (90f / count)
-    val radians = Math.toRadians(degrees.toDouble())
-    val distance = radiusPx * progress
-    // progress = 0 时直接返回零值：cos/sin 乘 0 会得到 -0.0f，其位模式与 Offset.Zero 不相等
-    if (distance == 0f) return Offset.Zero
-    return Offset(
-        x = (cos(radians) * distance).toFloat(),
-        y = (-sin(radians) * distance).toFloat(),
+/** Input only lives on the orbs; transparent space stays available to the page. */
+@Composable
+private fun FloatingNavTouchTarget(
+    container: () -> LayoutCoordinates?,
+    containerSize: IntSize,
+    enabled: Boolean,
+    description: String,
+    selectedItem: Boolean?,
+    actions: FloatingNavGestureActions,
+    activate: () -> Unit,
+    modifier: Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val currentActions by rememberUpdatedState(actions)
+    val currentContainer by rememberUpdatedState(container)
+    Box(
+        modifier.onGloballyPositioned { coordinates = it }.then(
+            if (enabled) Modifier.pointerInput(containerSize) {
+                detectFloatingNavGesture(
+                    toContainer = { point ->
+                        val parent = currentContainer()
+                        val local = coordinates
+                        if (parent?.isAttached == true && local?.isAttached == true) {
+                            parent.localPositionOf(local, point)
+                        } else Offset.Zero
+                    },
+                    onDown = { currentActions.down(it) },
+                    onMove = { point, moved -> currentActions.move(point, moved) },
+                    onHold = { currentActions.hold() },
+                    onUp = { point, moved, held -> currentActions.up(point, moved, held) },
+                    onCancel = { currentActions.cancel() },
+                )
+            } else Modifier,
+        ).onKeyEvent { event ->
+            val activationKey = event.key == Key.Enter || event.key == Key.NumPadEnter ||
+                event.key == Key.DirectionCenter || event.key == Key.Spacebar
+            if (enabled && activationKey) {
+                if (event.type == KeyEventType.KeyUp) activate()
+                true
+            } else false
+        }.focusable(enabled).then(
+            if (enabled) Modifier.semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = description
+                if (selectedItem != null) selected = selectedItem
+                onClick { activate(); true }
+            } else Modifier.clearAndSetSemantics { },
+        ),
+        contentAlignment = Alignment.Center, content = content,
     )
 }
 
-/**
- * 弧形展开的起始角度（纯函数，便于单测）：按按钮中心相对容器中心的象限，
- * 让扇形始终朝屏幕内侧展开，避免拖到任意位置后四项飞出屏幕：
- * 右下 → 90°（上→左）、右上 → 180°（左→下）、左下 → 0°（右→上）、左上 → -90°（下→右）。
- */
-internal fun floatingNavArcStartAngle(
-    centerX: Float,
-    centerY: Float,
-    containerWidth: Int,
-    containerHeight: Int,
-): Float {
+/** Endpoint spacing gives compact targets room to enlarge; one target stays centred in the arc. */
+internal fun floatingNavArcOffset(
+    index: Int, count: Int, radiusPx: Float, progress: Float, startAngleDeg: Float = 90f,
+): Offset {
+    if (count <= 0) return Offset.Zero
+    val angle = startAngleDeg + if (count > 1) index.coerceIn(0, count - 1) * 90f / (count - 1) else 45f
+    val radians = Math.toRadians(angle.toDouble())
+    val distance = radiusPx * progress
+    if (distance == 0f) return Offset.Zero
+    return Offset((cos(radians) * distance).toFloat(), (-sin(radians) * distance).toFloat())
+}
+
+internal fun floatingNavArcStartAngle(centerX: Float, centerY: Float, containerWidth: Int, containerHeight: Int): Float {
     val rightHalf = centerX >= containerWidth / 2f
     val bottomHalf = centerY >= containerHeight / 2f
     return when {
@@ -441,55 +582,27 @@ internal fun floatingNavArcStartAngle(
     }
 }
 
-/**
- * 归一化位置 → 像素位置（纯函数，便于单测）：[normalized] 为 0..1 的 `(x, y)`，
- * 映射到「安全区 - 按钮 - 两侧边距」的可拖动范围；默认 (1,1) 即右下角。
- * 容器小于按钮 + 边距时退化为左上角边距处，不产生负坐标。
- */
 internal fun floatingNavPositionPx(
-    normalized: Pair<Float, Float>,
-    containerWidth: Int,
-    containerHeight: Int,
-    buttonSizePx: Float,
-    marginPx: Float,
+    normalized: Pair<Float, Float>, containerWidth: Int, containerHeight: Int, buttonSizePx: Float, marginPx: Float,
 ): Offset {
     val freeX = (containerWidth - buttonSizePx - 2f * marginPx).coerceAtLeast(0f)
     val freeY = (containerHeight - buttonSizePx - 2f * marginPx).coerceAtLeast(0f)
-    val nx = normalized.first.coerceIn(0f, 1f)
-    val ny = normalized.second.coerceIn(0f, 1f)
-    return Offset(
-        x = marginPx + nx * freeX,
-        y = marginPx + ny * freeY,
-    )
+    return Offset(marginPx + normalized.first.coerceIn(0f, 1f) * freeX, marginPx + normalized.second.coerceIn(0f, 1f) * freeY)
 }
 
-/** 像素位置钳制到可拖动范围（拖动中与容器尺寸变化时使用）。 */
 internal fun clampFloatingNavPosition(
-    position: Offset,
-    containerWidth: Int,
-    containerHeight: Int,
-    buttonSizePx: Float,
-    marginPx: Float,
+    position: Offset, containerWidth: Int, containerHeight: Int, buttonSizePx: Float, marginPx: Float,
 ): Offset {
     val maxX = (containerWidth - buttonSizePx - marginPx).coerceAtLeast(marginPx)
     val maxY = (containerHeight - buttonSizePx - marginPx).coerceAtLeast(marginPx)
-    return Offset(
-        x = position.x.coerceIn(marginPx, maxX),
-        y = position.y.coerceIn(marginPx, maxY),
-    )
+    return Offset(position.x.coerceIn(marginPx, maxX), position.y.coerceIn(marginPx, maxY))
 }
 
-/** 像素位置 → 归一化位置（拖动落盘用），与 [floatingNavPositionPx] 互逆。 */
 internal fun floatingNavNormalizedPosition(
-    position: Offset,
-    containerWidth: Int,
-    containerHeight: Int,
-    buttonSizePx: Float,
-    marginPx: Float,
+    position: Offset, containerWidth: Int, containerHeight: Int, buttonSizePx: Float, marginPx: Float,
 ): Pair<Float, Float> {
     val freeX = (containerWidth - buttonSizePx - 2f * marginPx).coerceAtLeast(0f)
     val freeY = (containerHeight - buttonSizePx - 2f * marginPx).coerceAtLeast(0f)
-    val nx = if (freeX > 0f) ((position.x - marginPx) / freeX).coerceIn(0f, 1f) else 1f
-    val ny = if (freeY > 0f) ((position.y - marginPx) / freeY).coerceIn(0f, 1f) else 1f
-    return nx to ny
+    return (if (freeX > 0f) ((position.x - marginPx) / freeX).coerceIn(0f, 1f) else 1f) to
+        (if (freeY > 0f) ((position.y - marginPx) / freeY).coerceIn(0f, 1f) else 1f)
 }

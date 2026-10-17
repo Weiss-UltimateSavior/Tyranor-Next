@@ -23,6 +23,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import java.io.File
 import java.util.Locale
 
@@ -54,6 +55,15 @@ object EngineScanner {
     /** UK2 MES 文件头（`<< UK2 TEXT Ver1.00 >>`）。 */
     private val UK2_MES_MAGIC = "<< UK2 TEXT Ver1.00 >>".toByteArray(Charsets.US_ASCII)
 
+    /** System3.x（xsystem35）场景/图形档 `*.ALD` 的最小文件名长度（`SA.ALD` 起）。 */
+    private const val XS35_ALD_MIN_LENGTH = 6
+
+    /** System3.x 辅助特征（根目录或 `GAMEDATA/` 内的 System39 配置文件）。 */
+    private val XS35_SUPPORT_EXACT_NAMES = setOf("system39.ain", "system39.ini")
+
+    /** System3.x 辅助特征扩展名（`.wai` / `.bgi` / `.alk`）。 */
+    private val XS35_SUPPORT_EXTENSIONS = listOf(".wai", ".bgi", ".alk")
+
     /** RealLive `SEEN.TXT` 场景头尺寸（`0x1d0`，AVG2000 为 `0x1cc`）。 */
     private val REALLIVE_HEADER_SIZES = intArrayOf(0x1d0, 0x1cc)
 
@@ -69,7 +79,7 @@ object EngineScanner {
         val all = coroutineScope {
             roots.map { root ->
                 async {
-                    gate.withPermit { scanRootInternal(context.applicationContext, root, maxDepth) }
+                    gate.withPermit { runInterruptible { scanRootInternal(context.applicationContext, root, maxDepth) } }
                 }
             }.awaitAll().flatten()
         }
@@ -143,7 +153,7 @@ object EngineScanner {
      * 增量扫描（游戏库已有数据时调用）：遍历根目录时对已识别游戏目录剪枝跳过，
      * 只发现新游戏；返回 现有游戏 + 新发现游戏（已删除游戏保留，不主动移除）。
      */
-    suspend fun incrementalScan(context: Context): List<ScanGame> = withContext(Dispatchers.IO) {
+    suspend fun incrementalScan(context: Context): List<ScanGame> = runInterruptible(Dispatchers.IO) {
         val existing = GameLibraryFacade.loadGames(context)
         val known = existing.mapTo(HashSet()) { it.uri }
         val seen = HashSet<String>()
@@ -207,7 +217,7 @@ object EngineScanner {
         }
     }
 
-    suspend fun scanRoot(context: Context, rootUriStr: String, maxDepth: Int = 3): List<ScanGame> = withContext(Dispatchers.IO) {
+    suspend fun scanRoot(context: Context, rootUriStr: String, maxDepth: Int = 3): List<ScanGame> = runInterruptible(Dispatchers.IO) {
         scanRootInternal(context.applicationContext, rootUriStr, maxDepth)
     }
 
@@ -317,6 +327,7 @@ object EngineScanner {
                                     documentId = documentId,
                                     name = name,
                                     isDirectory = mimeType == DocumentsContract.Document.MIME_TYPE_DIR,
+                                    size = if (it.isNull(3)) null else it.getLong(3).takeIf { size -> size >= 0 },
                                 )
                             )
                         }
@@ -346,14 +357,18 @@ object EngineScanner {
             }
         }.getOrNull()
 
-        /** 读取文件头字节，用于 AVG32/RealLive 的 `SEEN.TXT` 与 UK2 `.MES` 内容判定。 */
-        fun readHead(node: SafNode, maxBytes: Int = 64 * 1024): ByteArray? = runCatching {
+        /** Bounded content evidence shared by the framebuffer and Ethornell scanners. */
+        fun readHead(node: SafNode, maxBytes: Int = 64 * 1024): ByteArray? = try {
             resolver.openInputStream(node.uri)?.use { input ->
-                val buffer = ByteArray(maxBytes)
-                val count = input.read(buffer)
-                if (count <= 0) null else buffer.copyOf(count)
+                EthornellArchiveProbe.readHead(input, maxBytes)
             }
-        }.getOrNull()
+        } catch (cancelled: java.util.concurrent.CancellationException) {
+            throw cancelled
+        } catch (_: java.io.IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
     }
 
     private data class SafNode(
@@ -361,12 +376,14 @@ object EngineScanner {
         val documentId: String,
         val name: String,
         val isDirectory: Boolean,
+        val size: Long? = null,
     )
 
     private val SAF_PROJECTION = arrayOf(
         DocumentsContract.Document.COLUMN_DOCUMENT_ID,
         DocumentsContract.Document.COLUMN_DISPLAY_NAME,
         DocumentsContract.Document.COLUMN_MIME_TYPE,
+        DocumentsContract.Document.COLUMN_SIZE,
     )
 
     fun applyLocalCover(context: Context, game: ScanGame): ScanGame {
@@ -529,16 +546,20 @@ object EngineScanner {
             dir.listFiles() ?: emptyArray()
         }
 
-        /** 读取文件头字节，用于 AVG32/RealLive 的 `SEEN.TXT` 与 UK2 `.MES` 内容判定。 */
+        /** Bounded content evidence shared by the framebuffer and Ethornell scanners. */
         fun readHead(file: File, maxBytes: Int = 64 * 1024): ByteArray? =
             headCache.getOrPut(file.absolutePath) {
-                runCatching {
+                try {
                     file.inputStream().use { input ->
-                        val buffer = ByteArray(maxBytes)
-                        val count = input.read(buffer)
-                        if (count <= 0) null else buffer.copyOf(count)
+                        EthornellArchiveProbe.readHead(input, maxBytes)
                     }
-                }.getOrNull()
+                } catch (cancelled: java.util.concurrent.CancellationException) {
+                    throw cancelled
+                } catch (_: java.io.IOException) {
+                    null
+                } catch (_: SecurityException) {
+                    null
+                }
             }
     }
 
@@ -638,13 +659,25 @@ object EngineScanner {
         val externalModuleAlias: String? = null,
     )
 
-    fun detectEngine(dir: DocumentFile): Detection {
+    fun detectEngine(context: Context, dir: DocumentFile): Detection {
         if (!dir.isDirectory) return UNKNOWN_DETECTION
         return detectEngine(
             children = dir.listFiles().asIterable(),
             nameOf = { it.name.orEmpty() },
             isDirectory = { it.isDirectory },
             childrenOf = { it.listFiles().asIterable() },
+            headOf = { file ->
+                try {
+                    context.contentResolver.openInputStream(file.uri)?.use { EthornellArchiveProbe.readHead(it) }
+                } catch (cancelled: java.util.concurrent.CancellationException) {
+                    throw cancelled
+                } catch (_: java.io.IOException) {
+                    null
+                } catch (_: SecurityException) {
+                    null
+                }
+            },
+            sizeOf = { it.length().takeIf { size -> size > 0 } },
         )
     }
 
@@ -659,6 +692,7 @@ object EngineScanner {
         isDirectory = { it.isDirectory },
         childrenOf = { session.children(it).asIterable() },
         headOf = { session.readHead(it) },
+        sizeOf = { it.length() },
     )
 
     private fun detectEngine(
@@ -671,14 +705,16 @@ object EngineScanner {
         isDirectory = { it.isDirectory },
         childrenOf = childrenOf,
         headOf = headOf,
+        sizeOf = { it.size },
     )
 
-    private fun <T> detectEngine(
+    internal fun <T> detectEngine(
         children: Iterable<T>,
         nameOf: (T) -> String,
         isDirectory: (T) -> Boolean,
         childrenOf: (T) -> Iterable<T>,
         headOf: (T) -> ByteArray? = { null },
+        sizeOf: (T) -> Long? = { null },
     ): Detection {
 
         val xp3Files = mutableListOf<String>()
@@ -735,14 +771,20 @@ object EngineScanner {
         var hasMkxpZRubyRuntime = false
         var hasFvpScript = false
         var hasFvpPack = false
+        var hasAldScript = false
+        var aldCount = 0
+        var hasXs35Support = false
         var hasUk2Cfg = false
         var hasSeenSceneAvg32 = false
         var hasSeenSceneReallive = false
         var seenArchiveNode: T? = null
         var seenArchiveIsRoot = false
         var uk2MesNode: T? = null
+        var ethornellSystemNode: T? = null
+        var ambiguousEthornellSystem = false
 
         fun collect(entry: T, rel: String) {
+            if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
             val lower = nameOf(entry).lowercase(Locale.ROOT)
             if (lower.isEmpty()) return
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
@@ -766,12 +808,31 @@ object EngineScanner {
                         if (childName.endsWith(".ymv")) hasYmv = true
                     }
                 }
+                if (rel.isEmpty() && lower == "gamedata") {
+                    // System3.x（xsystem35）CD 镜像解出形态（`<根>/GAMEDATA/SA.ALD`）：只为 XS35
+                    // 特征扫描（.ALD / System39.* / .wai / .bgi / .alk），不进入通用目录白名单，
+                    // 避免把包内文件暴露给其它引擎的检测规则（与 pac 分支同策略）。
+                    // 要求 rel.isEmpty():仅认根目录的直接子目录，`data/gamedata/` 等嵌套同名目录不贡献特征
+                    childrenOf(entry).forEach { child ->
+                        if (isDirectory(child)) return@forEach
+                        val childName = nameOf(child).lowercase(Locale.ROOT)
+                        if (childName.endsWith(".ald") && childName.length >= XS35_ALD_MIN_LENGTH) {
+                            hasAldScript = true
+                            aldCount++
+                        }
+                        if (isXs35SupportName(childName)) hasXs35Support = true
+                    }
+                }
                 if (lower in ENGINE_SEARCH_DIRECTORIES) {
                     childrenOf(entry).forEach { collect(it, childRel) }
                 }
                 return
             }
             when {
+                rel.isEmpty() && lower == "system.arc" -> {
+                    if (ethornellSystemNode != null) ambiguousEthornellSystem = true
+                    ethornellSystemNode = entry
+                }
                 lower == "index.html" || lower == "index.htm" -> hasIndex = true
                 childRel == "js/rpg_core.js" || childRel.endsWith("/js/rpg_core.js") -> hasRpgMvCore = true
                 childRel == "js/rmmz_core.js" || childRel.endsWith("/js/rmmz_core.js") -> hasRpgMzCore = true
@@ -844,6 +905,12 @@ object EngineScanner {
                 // FVP（rfvp）：根目录脚本（原版 *.hcb / 汉化 *.bch）+ 资源包特征
                 rel.isEmpty() && (lower.endsWith(".hcb") || lower.endsWith(".bch")) -> hasFvpScript = true
                 rel.isEmpty() && lower in FVP_PACK_NAMES -> hasFvpPack = true
+                // System3.x（xsystem35）：根目录级 ALD 与辅助特征（GAMEDATA/ 子目录见 collect 专用分支）
+                rel.isEmpty() && lower.endsWith(".ald") && lower.length >= XS35_ALD_MIN_LENGTH -> {
+                    hasAldScript = true
+                    aldCount++
+                }
+                rel.isEmpty() && isXs35SupportName(lower) -> hasXs35Support = true
             }
         }
         children.forEach { collect(it, "") }
@@ -864,6 +931,10 @@ object EngineScanner {
         val uk2Mes = uk2MesNode
         if (uk2Mes != null && hasUk2MesHeader(headOf(uk2Mes))) {
             return Detection(EngineType.UK2, 90, LAUNCH_TARGET_GAME_DIR)
+        }
+        // Preserve explicit UK2 evidence; only outrank its weak generic .mes fallback.
+        if (!ambiguousEthornellSystem && ethornellSystemNode?.let { EthornellArchiveProbe.hasBootstrap(headOf(it), sizeOf(it)) } == true) {
+            return Detection(EngineType.ETHORNELL, 96, LAUNCH_TARGET_GAME_DIR)
         }
         val seenKind = classifySeenArchive(seenArchiveNode?.let { headOf(it) })
         if (hasGameexeIni && seenKind != null) {
@@ -922,6 +993,20 @@ object EngineScanner {
         )
         if (cs2Score >= CS2_MIN_SCORE) {
             return Detection(EngineType.CATSYSTEM2, cs2Score, LAUNCH_TARGET_GAME_DIR)
+        }
+        // System3.x（xsystem35）：场景/图形档 *.ALD 为硬特征，System39.*/.wai/.bgi/.alk 为辅助。
+        // 判定置于 CS2 之后、ARTEMIS 之前（即所有既有 native 引擎之后）：既有引擎优先，
+        // 防止「既有引擎特征 + 杂散 ALD」被抢判为 XSYS35；XSYS35 真实目录不含既有引擎特征，
+        // 召回不受影响。仅含非 S 前缀 ALD 的目录（如只有 GA.ALD，无法启动）会被低分识别为
+        // XSYS35，由宿主启动预检（场景档 S*.ALD / adisk.ald 检查，见 Xs35Activity）兜底拦下。
+        if (hasAldScript && hasXs35Support) {
+            return Detection(EngineType.XSYS35, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasAldScript && aldCount >= 2) {
+            return Detection(EngineType.XSYS35, 90, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasAldScript) {
+            return Detection(EngineType.XSYS35, 80, LAUNCH_TARGET_GAME_DIR)
         }
         if ((hasSystemIni && hasFirstIet) || hasRootPfs || hasPatchPfs || hasAnyPfs || (hasBootIni && hasObbLikeFile)) {
             return Detection(
@@ -993,6 +1078,10 @@ object EngineScanner {
         if (head == null || head.size < UK2_MES_MAGIC.size) return false
         return UK2_MES_MAGIC.indices.all { head[it] == UK2_MES_MAGIC[it] }
     }
+
+    /** System3.x（xsystem35）辅助特征文件名判定（调用方传 lowercase 名称）。 */
+    private fun isXs35SupportName(lowerName: String): Boolean =
+        lowerName in XS35_SUPPORT_EXACT_NAMES || XS35_SUPPORT_EXTENSIONS.any(lowerName::endsWith)
 
     /**
      * 区分共享 `SEEN.TXT` 文件名的 AVG32 与 RealLive：

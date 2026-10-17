@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.storage
 
+import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -25,6 +26,9 @@ class GameOverridePartitionsTest {
         .put(PerGameSettingsStore.F_RPG_SAVE_INTEROP, true)
         .put(PerGameSettingsStore.F_RPG_MV_VERSION, "v2")
         .put(PerGameSettingsStore.F_RPG_MZ_VERSION, "v2")
+        .put(PerGameSettingsStore.F_INPUT_PAD_ENABLED, true)
+        .put(PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED, false)
+        .put(PerGameSettingsStore.F_INPUT_PROFILE_ID, "p1abc")
         .put(PerGameSettingsStore.F_RENPY_VERSION, "8.5")
         .put(PerGameSettingsStore.F_SIGLUS_LANGUAGE, "EN")
         .put(PerGameSettingsStore.F_FVP_NLS, "gbk")
@@ -48,7 +52,8 @@ class GameOverridePartitionsTest {
         assertEquals(123L, row.updatedAt)
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
         for (key in blob.keys()) {
-            assertEquals(blob.opt(key).toString(), GameOverridePartitions.assemble(row).opt(key).toString())
+            // opt 返回 Any?：显式安全调用（否则 Kotlin 报「nullable receiver 上只允许 ?. / !!.」）
+            assertEquals(blob.opt(key)?.toString(), GameOverridePartitions.assemble(row).opt(key)?.toString())
         }
     }
 
@@ -73,8 +78,8 @@ class GameOverridePartitionsTest {
         assertTrue(touchpad.has(GameOverridePartitions.TOUCH_PAD_CONFIG_KEY))
         assertTrue(touchpad.has(GameOverridePartitions.TOUCH_PAD_PRESETS_KEY))
         // 未识别键兜底归入 tyrano 分区；RPG Maker 会话键显式归入 tyrano 分区
-        assertEquals("keep-me", JSONObject(row.tyranoJson!!).getString("future_engine_key"))
         val tyranoPartition = JSONObject(row.tyranoJson!!)
+        assertEquals("keep-me", tyranoPartition.getString("future_engine_key"))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_LEGACY_RENDERER))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_SAVE_INTEROP))
         assertTrue(tyranoPartition.has(PerGameSettingsStore.F_RPG_MV_VERSION))
@@ -100,6 +105,23 @@ class GameOverridePartitionsTest {
         assertEquals(null, row.tyranoJson)
         assertEquals(null, row.renpyJson)
         assertEquals(null, row.touchpadJson)
+    }
+
+    @Test
+    fun inputLegacyMigratedFlagIsPartitionedIntoTyrano() {
+        // 迁移标记是 PerGameSettingsStore 内部字段，同样必须显式建模：
+        // 落到「未识别键兜底」路径虽然当下也能持久化，但未来收紧分区时会静默丢键，
+        // 丢键会让迁移在每次启动重跑
+        assertEquals(PerGameSettingsStore.F_LEGACY_MIGRATED, GameOverridePartitions.KEY_INPUT_LEGACY_MIGRATED)
+        assertTrue(
+            "迁移标记必须显式属于 tyrano 分区",
+            GameOverridePartitions.KEY_INPUT_LEGACY_MIGRATED in GameOverridePartitions.TYRANO_KEYS,
+        )
+
+        val blob = JSONObject().put(PerGameSettingsStore.F_LEGACY_MIGRATED, true)
+        val row = GameOverridePartitions.split("/games/migrated", blob, 1L)
+        assertTrue(JSONObject(row.tyranoJson!!).has(PerGameSettingsStore.F_LEGACY_MIGRATED))
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }
 
     @Test
@@ -130,6 +152,18 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_RPG_SAVE_INTEROP, GameOverridePartitions.KEY_RPG_SAVE_INTEROP)
         assertEquals(PerGameSettingsStore.F_RPG_MV_VERSION, GameOverridePartitions.KEY_RPG_MV_VERSION)
         assertEquals(PerGameSettingsStore.F_RPG_MZ_VERSION, GameOverridePartitions.KEY_RPG_MZ_VERSION)
+        // 输入重映射键：app 分区常量 ↔ settings 常量 ↔ engine InputConfigStore 常量三处锚定
+        assertEquals(PerGameSettingsStore.F_INPUT_PAD_ENABLED, GameOverridePartitions.KEY_INPUT_PAD_ENABLED)
+        assertEquals(PerGameSettingsStore.F_INPUT_GAMEPAD_ENABLED, GameOverridePartitions.KEY_INPUT_GAMEPAD_ENABLED)
+        assertEquals(PerGameSettingsStore.F_INPUT_PROFILE_ID, GameOverridePartitions.KEY_INPUT_PROFILE_ID)
+        assertEquals(com.core.input.InputConfigStore.KEY_PAD_ENABLED, GameOverridePartitions.KEY_INPUT_PAD_ENABLED)
+        assertEquals(com.core.input.InputConfigStore.KEY_GAMEPAD_ENABLED, GameOverridePartitions.KEY_INPUT_GAMEPAD_ENABLED)
+        assertEquals(com.core.input.InputConfigStore.KEY_PROFILE_ID, GameOverridePartitions.KEY_INPUT_PROFILE_ID)
+        // 第四处：全局键（写路径 EngineSettingsStore）与 engine 读取常量必须同名，
+        // 漂移会导致「设置页关了开关但引擎仍按默认启用」
+        assertEquals(EngineSettingsStore.KEY_INPUT_PAD_ENABLED, com.core.input.InputConfigStore.KEY_PAD_ENABLED)
+        assertEquals(EngineSettingsStore.KEY_INPUT_GAMEPAD_ENABLED, com.core.input.InputConfigStore.KEY_GAMEPAD_ENABLED)
+        assertEquals(EngineSettingsStore.KEY_INPUT_PROFILE_ID, com.core.input.InputConfigStore.KEY_PROFILE_ID)
         assertEquals(PerGameSettingsStore.F_TY_SCOPED, GameOverridePartitions.KEY_TY_SCOPED)
         assertEquals(PerGameSettingsStore.F_RENPY_VERSION, GameOverridePartitions.KEY_RENPY_VERSION)
         assertEquals(PerGameSettingsStore.F_SIGLUS_LANGUAGE, GameOverridePartitions.KEY_SIGLUS_LANGUAGE)
@@ -177,6 +211,34 @@ class GameOverridePartitionsTest {
         val tyranoPartition = JSONObject(row.tyranoJson!!)
         pairs.forEach { (_, perGameKey) ->
             assertTrue(tyranoPartition.has(perGameKey))
+        }
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+    }
+
+    @Test
+    fun system35KeysArePartitionedIntoTyrano() {
+        val pairs = listOf(
+            GameOverridePartitions.KEY_XSYS35_SCOPED_SAVE_DIR to PerGameSettingsStore.F_XSYS35_SCOPED_SAVE_DIR,
+            GameOverridePartitions.KEY_XSYS35_RENDERER to PerGameSettingsStore.F_XSYS35_RENDERER,
+            GameOverridePartitions.KEY_XSYS35_INTEGER_SCALE to PerGameSettingsStore.F_XSYS35_INTEGER_SCALE,
+            GameOverridePartitions.KEY_XSYS35_MUTE_UNFOCUS to PerGameSettingsStore.F_XSYS35_MUTE_UNFOCUS,
+        )
+        pairs.forEach { (partitionKey, perGameKey) ->
+            assertEquals(perGameKey, partitionKey)
+            assertTrue("System35 分区缺少字段 $perGameKey", perGameKey in GameOverridePartitions.TYRANO_KEYS)
+        }
+
+        val blob = JSONObject()
+            .put(PerGameSettingsStore.F_XSYS35_SCOPED_SAVE_DIR, false)
+            .put(PerGameSettingsStore.F_XSYS35_RENDERER, "software")
+            .put(PerGameSettingsStore.F_XSYS35_INTEGER_SCALE, true)
+            .put(PerGameSettingsStore.F_XSYS35_MUTE_UNFOCUS, true)
+
+        val row = GameOverridePartitions.split("/games/xsys35", blob, 1L)
+        val tyranoPartition = JSONObject(row.tyranoJson!!)
+        for (key in blob.keys()) {
+            assertTrue("System35 键 $key 未落入 tyrano 分区", tyranoPartition.has(key))
+            assertEquals(blob.opt(key)?.toString(), GameOverridePartitions.assemble(row).opt(key)?.toString())
         }
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }

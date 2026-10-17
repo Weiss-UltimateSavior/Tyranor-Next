@@ -11,6 +11,7 @@ internal fun coverSourceTitle(source: String): String = when (source) {
     AppSettingsStore.COVER_SOURCE_BANGUMI -> "Bangumi"
     AppSettingsStore.COVER_SOURCE_STEAM -> "Steam"
     AppSettingsStore.COVER_SOURCE_VNDB -> "VNDB"
+    AppSettingsStore.COVER_SOURCE_NEXTMOE -> stringResource(R.string.cover_source_nextmoe)
     AppSettingsStore.COVER_SOURCE_LOCAL -> stringResource(R.string.cover_source_local)
     AppSettingsStore.COVER_SOURCE_CUSTOM -> stringResource(R.string.cover_source_custom)
     else -> source

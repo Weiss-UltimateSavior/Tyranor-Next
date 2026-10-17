@@ -22,12 +22,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -58,6 +57,7 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.AppSearchField
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
 import kotlinx.coroutines.CancellationException
@@ -292,14 +292,13 @@ private fun PatchEntryCard(
                 }
             }
 
-            Button(
+            NoRippleButton(
+                text = if (installing) stringResource(R.string.patch_processing) else stringResource(R.string.patch_download_install),
                 onClick = { onInstall(selected) },
                 enabled = selected.isNotEmpty() && !installing,
                 modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-            ) {
-                Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(if (installing) stringResource(R.string.patch_processing) else stringResource(R.string.patch_download_install), modifier = Modifier.padding(start = 8.dp))
-            }
+                leadingIcon = rememberVectorPainter(Icons.Filled.CloudDownload),
+            )
         }
     }
 }

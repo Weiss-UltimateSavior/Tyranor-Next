@@ -8,13 +8,15 @@ build/
 
 .trae/
 .zcode/
+.zcodeignore
 
 # ===== IDE =====
 .idea/
 .vscode/
 *.iml
 .DS_Store
-
+.dsh*/
+.dsh-review-latest-commit.diff
 # ===== Android 本地配置与产物 =====
 local.properties
 captures/

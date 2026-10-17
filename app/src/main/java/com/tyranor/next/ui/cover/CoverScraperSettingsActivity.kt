@@ -21,11 +21,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,8 +54,9 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.NoRippleButton
+import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
-import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -107,8 +105,8 @@ internal fun CoverScraperSettingsScreen() {
                 Toast.LENGTH_SHORT,
             ).show()
         }
-        scrapeTaskState.error?.let { message ->
-            Toast.makeText(ctx, message, Toast.LENGTH_SHORT).show()
+        scrapeTaskState.error?.let { error ->
+            Toast.makeText(ctx, error.coverErrorMessage(ctx), Toast.LENGTH_SHORT).show()
         }
         CoverScrapeTaskManager.clearFinished(scrapeTaskState.eventId)
     }
@@ -221,25 +219,13 @@ internal fun CoverScraperSettingsScreen() {
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            // 无按压涟漪（WithoutPressIndication），且禁用态底色与常态一致，无变色效果
-                            WithoutPressIndication {
-                                Button(
-                                    enabled = !scraping,
-                                    onClick = { startBatchScrape() },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = AppComponentShape,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        disabledContainerColor = MaterialTheme.colorScheme.primary,
-                                    ),
-                                ) {
-                                    Text(
-                                        if (scraping) stringResource(R.string.cover_scraping_batch) else stringResource(R.string.cover_start_batch),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = androidx.compose.ui.graphics.Color.White,
-                                    )
-                                }
-                            }
+                            // 无按压反馈：Material Button 内部走 ripple()，不经过 LocalIndication
+                            NoRippleButton(
+                                text = if (scraping) stringResource(R.string.cover_scraping_batch) else stringResource(R.string.cover_start_batch),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !scraping,
+                                onClick = { startBatchScrape() },
+                            )
                         }
                     }
                 }
@@ -302,19 +288,25 @@ private fun CoverSourceRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(enabled = index > 0, onClick = onMoveUp) {
-                    Text(stringResource(R.string.cover_move_up), style = MaterialTheme.typography.bodyMedium)
-                }
-                TextButton(enabled = index < count - 1, onClick = onMoveDown) {
-                    Text(stringResource(R.string.cover_move_down), style = MaterialTheme.typography.bodyMedium)
-                }
+                NoRippleTextButton(
+                    text = stringResource(R.string.cover_move_up),
+                    enabled = index > 0,
+                    onClick = onMoveUp,
+                )
+                NoRippleTextButton(
+                    text = stringResource(R.string.cover_move_down),
+                    enabled = index < count - 1,
+                    onClick = onMoveDown,
+                )
                 if (source == AppSettingsStore.COVER_SOURCE_HIKARINAGI) {
-                    TextButton(onClick = onAuthClick) {
-                        Text(
-                            if (authStatus.authorized && !authStatus.needsReauth) stringResource(R.string.cover_logout) else stringResource(R.string.cover_login),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
+                    NoRippleTextButton(
+                        text = if (authStatus.authorized && !authStatus.needsReauth) {
+                            stringResource(R.string.cover_logout)
+                        } else {
+                            stringResource(R.string.cover_login)
+                        },
+                        onClick = onAuthClick,
+                    )
                 }
             }
         }
@@ -341,5 +333,6 @@ private fun sourceSummary(source: String, authStatus: com.tyranor.next.core.auth
     AppSettingsStore.COVER_SOURCE_BANGUMI -> stringResource(R.string.cover_bangumi_summary)
     AppSettingsStore.COVER_SOURCE_STEAM -> stringResource(R.string.cover_steam_summary)
     AppSettingsStore.COVER_SOURCE_VNDB -> stringResource(R.string.cover_vndb_summary)
+    AppSettingsStore.COVER_SOURCE_NEXTMOE -> stringResource(R.string.cover_nextmoe_summary)
     else -> ""
 }

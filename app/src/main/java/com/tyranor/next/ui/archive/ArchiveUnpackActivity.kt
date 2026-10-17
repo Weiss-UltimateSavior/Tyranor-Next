@@ -75,11 +75,11 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.common.NoRippleButton
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
-import java.util.Locale
 import kotlin.math.roundToInt
 
 /** 解包 / 封包独立页：入口见应用设置。解包=选目录扫描XP3→主从预览→解到同名文件夹；封包=选目录→选压缩等级→输出同名 .xp3。 */
@@ -688,14 +688,5 @@ private fun ArchiveCard(title: String, content: @Composable androidx.compose.fou
     }
 }
 
-private fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val units = arrayOf("KB", "MB", "GB", "TB")
-    var value = bytes.toDouble() / 1024
-    var unit = 0
-    while (value >= 1024 && unit < units.size - 1) {
-        value /= 1024
-        unit++
-    }
-    return String.format(Locale.US, "%.1f %s", value, units[unit])
-}
+/** 字节格式化统一走 [ByteFormats]（本文件内的 5 处调用点沿用简短别名）。 */
+private fun formatBytes(bytes: Long): String = ByteFormats.formatBinarySize(bytes)

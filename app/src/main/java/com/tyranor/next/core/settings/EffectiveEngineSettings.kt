@@ -30,6 +30,14 @@ object EffectiveEngineSettings {
         return candidate.takeIf { it in allowed } ?: fallback
     }
 
+    /** Ethornell encoding has no auto/UTF-8 mode; normalize spelling before whitelist merging. */
+    fun resolveEthornellNls(override: String?, global: String): String = resolveAllowed(
+        override?.trim()?.lowercase(java.util.Locale.ROOT),
+        global.trim().lowercase(java.util.Locale.ROOT),
+        EngineSettingsStore.ETHORNELL_NLS_VALUES,
+        EngineSettingsStore.ETHORNELL_NLS_SJIS,
+    )
+
     /**
      * KR 内核三级合并：可移动存储不支持 krkrsdl3，命中时强制回退 kirikiri2
      * （与 EngineLauncher/GameSaveManager 原行为一致）。

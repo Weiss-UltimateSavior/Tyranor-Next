@@ -230,6 +230,26 @@ class EffectiveEngineSettingsTest {
     }
 
     @Test
+    fun xsys35RendererUsesWhitelistFallback() {
+        val allowed = EngineSettingsStore.XSYS35_RENDERER_VALUES
+        // 覆盖值合法：优先覆盖
+        assertEquals("opengl", EffectiveEngineSettings.resolveAllowed("opengl", "software", allowed, "auto"))
+        // 覆盖值非法：回退全局
+        assertEquals("software", EffectiveEngineSettings.resolveAllowed("vulkan", "software", allowed, "auto"))
+        // 无覆盖：使用全局
+        assertEquals("opengl", EffectiveEngineSettings.resolveAllowed(null, "opengl", allowed, "auto"))
+        // 全局也非法：回退默认 auto
+        assertEquals("auto", EffectiveEngineSettings.resolveAllowed(null, "bogus", allowed, "auto"))
+    }
+
+    @Test
+    fun xsys35BoolOverridesFollowGlobal() {
+        assertTrue(EffectiveEngineSettings.resolveBool(null, true))
+        assertFalse(EffectiveEngineSettings.resolveBool(false, true))
+        assertTrue(EffectiveEngineSettings.resolveBool(true, false))
+    }
+
+    @Test
     fun mergeRenPyFollowsGlobalWhenNoOverride() {
         val global = EngineSettingsStore.RenPy(lessMemory = true, autosave = true)
         assertEquals(global, EffectiveEngineSettings.mergeRenPy(global, null))

@@ -187,6 +187,14 @@ object EngineSettingsResolver {
                 EngineSettingsStore.FVP_NLS_VALUES,
                 EngineSettingsStore.FVP_NLS_SJIS,
             ),
+            ethornellNls = EffectiveEngineSettings.resolveEthornellNls(
+                str(PerGameSettingsStore.F_ETHORNELL_NLS),
+                EngineSettingsStore.getEthornellNls(app),
+            ),
+            ethornellFont = EffectiveEngineSettings.resolve(
+                str(PerGameSettingsStore.F_ETHORNELL_FONT),
+                EngineSettingsStore.getEthornellFont(app),
+            ),
             fvpSystemFont = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_FVP_SYSTEM_FONT),
                 EngineSettingsStore.isFvpSystemFont(app),
@@ -198,6 +206,24 @@ object EngineSettingsResolver {
             fvpFont = EffectiveEngineSettings.resolve(
                 str(PerGameSettingsStore.F_FVP_FONT),
                 EngineSettingsStore.getFvpFont(app),
+            ),
+            xs35ScopedSaveDir = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_XSYS35_SCOPED_SAVE_DIR),
+                EngineSettingsStore.isXs35ScopedSaveDir(app),
+            ),
+            xs35Renderer = EffectiveEngineSettings.resolveAllowed(
+                str(PerGameSettingsStore.F_XSYS35_RENDERER),
+                EngineSettingsStore.getXs35Renderer(app),
+                EngineSettingsStore.XSYS35_RENDERER_VALUES,
+                EngineSettingsStore.XSYS35_RENDERER_AUTO,
+            ),
+            xs35IntegerScale = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_XSYS35_INTEGER_SCALE),
+                EngineSettingsStore.isXs35IntegerScale(app),
+            ),
+            xs35MuteUnfocus = EffectiveEngineSettings.resolveBool(
+                bool(PerGameSettingsStore.F_XSYS35_MUTE_UNFOCUS),
+                EngineSettingsStore.isXs35MuteUnfocus(app),
             ),
             rpg = EffectiveEngineSettings.mergeRpgMaker(
                 EngineSettingsStore.loadRpgMaker(app),
@@ -268,12 +294,24 @@ data class ResolvedEngineSettings(
     val fbNls: String,
     /** FVP 生效文本编码（sjis/gbk/utf8；创建引擎时固定，改动需重启本局）。 */
     val fvpNls: String,
+    /** Graphics text only, sjis/gbk; resource names and UI locale are independent. */
+    val ethornellNls: String,
+    /** Empty = engine fallback; nonempty paths must pass the private-font launch preflight. */
+    val ethornellFont: String,
     /** FVP 生效系统字体回退开关。 */
     val fvpSystemFont: Boolean,
     /** FVP 生效文本高分辨率渲染开关。 */
     val fvpTextHidpi: Boolean,
     /** FVP 生效自定义字体路径（空 = 跟随游戏默认；非空 = App 私有字体绝对路径，强制生效）。 */
     val fvpFont: String,
+    /** System35 生效「独立存档」开关（默认开；目录 = `<外部存储>/save/<safeSaveName>`）。 */
+    val xs35ScopedSaveDir: Boolean,
+    /** System35 生效渲染后端（auto/opengl/software；auto 不传 `-renderer`）。 */
+    val xs35Renderer: String,
+    /** System35 生效整数倍缩放开关（`-integerscale`）。 */
+    val xs35IntegerScale: Boolean,
+    /** System35 生效失焦静音开关（`-mute_on_unfocus`）。 */
+    val xs35MuteUnfocus: Boolean,
     /** RPG Maker RGSS 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */
     val rpg: EngineSettingsStore.RpgMaker,
     /** Ren'Py 外置模块生效配置（三级合并结果，启动时经 settings extra 下发）。 */

@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -653,9 +652,13 @@ private fun ColorPickerDialog(
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+        dismissButton = { DialogTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss) },
         confirmButton = {
-            TextButton(enabled = !invalid, onClick = { onConfirm(pickerColor) }) { Text(stringResource(R.string.common_confirm)) }
+            DialogTextButton(
+                text = stringResource(R.string.common_confirm),
+                enabled = !invalid,
+                onClick = { onConfirm(pickerColor) },
+            )
         },
     )
 }

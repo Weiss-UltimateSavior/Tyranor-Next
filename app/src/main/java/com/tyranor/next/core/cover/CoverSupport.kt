@@ -3,16 +3,111 @@ package com.tyranor.next.core.cover
 import android.content.Context
 import android.net.Uri
 import com.tyranor.next.core.settings.AppSettingsStore
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 
-internal class CoverSearchException(message: String) : RuntimeException(message)
+/**
+ * 搜索失败：携带错误码而非文案。`detail` 只进异常 message 供日志排查，绝不直接展示；
+ * 文案映射见 `ui/cover/CoverErrorMessages.kt`。
+ */
+internal class CoverSearchException(
+    val error: CoverErrorCode,
+    detail: String? = null,
+) : RuntimeException(detail ?: error.name)
+
+/** HTTP 响应：状态码 + 已解析的 JSON 体（非 JSON 体时为 null）。 */
+internal data class HttpJsonResult(val status: Int, val json: JSONObject?)
+
+/** JSON 响应体上限：与 CoverImageCache 的图片上限同理，避免被超大响应打爆内存。 */
+private const val MAX_JSON_CHARS = 4 * 1024 * 1024
+
+/**
+ * 带状态码的 JSON 请求：供需要区分 HTTP 状态的来源使用（如 NextMoe 的 429 限流）。
+ * 传输异常统一返回 `status = 0`；已在读体前拿到的状态码不会因读体失败而丢失。
+ */
+internal fun httpJsonResult(
+    url: String,
+    method: String = "GET",
+    body: String? = null,
+    headers: Map<String, String> = emptyMap(),
+): HttpJsonResult {
+    var conn: HttpURLConnection? = null
+    return try {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = method
+            connectTimeout = 15000
+            readTimeout = 20000
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "TyranorNext/1.0")
+            headers.forEach { (key, value) -> setRequestProperty(key, value) }
+            if (body != null) {
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            }
+        }
+        conn = connection
+        if (body != null) {
+            connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+        }
+        val status = connection.responseCode
+        val text = runCatching {
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            stream?.bufferedReader(StandardCharsets.UTF_8)?.use { it.readTextCapped(MAX_JSON_CHARS) }
+        }.getOrNull()
+        HttpJsonResult(status, text?.let { runCatching { JSONObject(it) }.getOrNull() })
+    } catch (_: Exception) {
+        HttpJsonResult(0, null)
+    } finally {
+        conn?.disconnect()
+    }
+}
+
+private fun java.io.Reader.readTextCapped(maxChars: Int): String {
+    val buffer = CharArray(16 * 1024)
+    val out = StringBuilder()
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        if (out.length + read > maxChars) throw IllegalStateException("json response too large")
+        out.append(buffer, 0, read)
+    }
+    return out.toString()
+}
+
+/**
+ * 请求最小间隔节流：VNDB / 未萌 NextMoe 都是「单机串行 + 服务端限流」的来源。
+ * 必须在 IO 线程调用（内部阻塞）。
+ */
+internal class RequestThrottle(private val minIntervalMs: Long) {
+    private var lastRequestTime = 0L
+
+    @Synchronized
+    fun await() {
+        val wait = minIntervalMs - (System.currentTimeMillis() - lastRequestTime)
+        if (wait > 0) Thread.sleep(wait)
+        lastRequestTime = System.currentTimeMillis()
+    }
+}
+
+/** 仅成功（2xx）时返回 JSON，行为与各来源原有 httpJson 保持一致。 */
+internal fun httpJson(
+    url: String,
+    method: String = "GET",
+    body: String? = null,
+    headers: Map<String, String> = emptyMap(),
+): JSONObject? = httpJsonResult(url, method, body, headers)
+    .let { if (it.status in 200..299) it.json else null }
+
+internal fun String.urlEncode(): String =
+    URLEncoder.encode(this, StandardCharsets.UTF_8.name())
 
 internal object CoverImageCache {
     private const val MAX_COVER_BYTES = 20L * 1024L * 1024L

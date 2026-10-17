@@ -13,16 +13,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  assemble-debug:
-    name: Assemble Debug
+  ethornell-native:
+    name: Ethornell native gate
+    uses: ./.github/workflows/ethornell-native.yml
+    with:
+      strict-release: false
+    permissions:
+      contents: read
+
+  regression-checks:
+    name: UI strings and JVM regression tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
     env:
       HIKARINAGI_CLIENT_ID: ${{ vars.HIKARINAGI_CLIENT_ID }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -37,13 +49,73 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
-          sdkmanager --channel=3 "platforms;android-36" "platforms;android-37.0" "build-tools;37.0.0"
+          sdkmanager --channel=3 "platforms;android-36" "platforms;android-37.0" "build-tools;37.0.0" "ndk;28.0.13004108"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 硬编码界面文案门禁（三语言键齐平 + Kotlin CJK 字面量 + 豁免文件数量基线）：
+      # 脚本此前只在本地手动跑，扩展 engine 扫描范围后必须有自动保障
+      - name: Check hardcoded UI strings
+        run: python3 tools/check-hardcoded-ui-strings.py
+
+      # 单元测试：输入内核（键位/配置/迁移/RTP 语义）等回归全靠它，此前 CI 只构建不测试
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+  assemble-debug:
+    name: Assemble Debug
+    needs: [regression-checks, ethornell-native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      HIKARINAGI_CLIENT_ID: ${{ vars.HIKARINAGI_CLIENT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --channel=3 "platforms;android-36" "platforms;android-37.0" "build-tools;37.0.0" "ndk;28.0.13004108"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Verify actual debug APK Ethornell bytes and dependency closure
+        run: |
+          python3 tools/ethornell/verify_provenance.py \
+            --local-static \
+            --ndk "$ANDROID_HOME/ndk/28.0.13004108" \
+            --host-tag linux-x86_64 \
+            --apk app/build/outputs/apk/debug/app-debug.apk \
+            --report ethornell-debug-apk-acceptance.json
+
+      - name: Preserve APK native acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethornell-debug-apk-acceptance
+          path: ethornell-debug-apk-acceptance.json
+          if-no-files-found: warn
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

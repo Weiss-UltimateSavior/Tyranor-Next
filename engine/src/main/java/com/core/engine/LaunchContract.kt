@@ -112,6 +112,40 @@ object LaunchContract {
     /** 自定义字体路径（App 私有目录绝对路径；不传表示跟随游戏默认/不强制）。 */
     const val FVP_FONT_PATH = "fvp_font_path"
 
+    // ---------- Ethornell / BGI ----------
+
+    /** Graphics text encoding only: sjis (default) or gbk. ROOT_URI is identity; PATH is a real directory. */
+    const val ETHORNELL_NLS = "ETHORNELL_NLS"
+    /** Optional imported font inside the app-private files/fonts directory. */
+    const val ETHORNELL_FONT_PATH = "ETHORNELL_FONT_PATH"
+    /** Explicit private writable user root, separate from the read-only game resource root. */
+    const val ETHORNELL_USER_DATA_DIR = "ETHORNELL_USER_DATA_DIR"
+    /** Durable one-shot launch dispatch lease; issued/claimed through EthornellDispatchRegistry. */
+    const val ETHORNELL_DISPATCH_TOKEN = "ETHORNELL_DISPATCH_TOKEN"
+
+    // ---------- System35 (xsystem35) ----------
+
+    /** 生效存档目录**绝对路径**（由 App 按「独立存档开关」解析，禁止宿主自行推导）。 */
+    const val XS35_SAVE_DIR = "xs35_save_dir"
+
+    /** 独立存档布尔（供宿主日志/提示；路径以 [XS35_SAVE_DIR] 为准）。 */
+    const val XS35_SCOPED_SAVE_DIR = "xs35_scoped_save_dir"
+
+    /** 渲染后端：`auto`（默认，不传 `-renderer`）| `opengl` | `software`。 */
+    const val XS35_RENDERER = "xs35_renderer"
+
+    /** 整数倍缩放开关（bool，缺省 false）→ `-integerscale`。 */
+    const val XS35_INTEGER_SCALE = "xs35_integer_scale"
+
+    /** 失焦静音开关（bool，缺省 false）→ `-mute_on_unfocus`。 */
+    const val XS35_MUTE_UNFOCUS = "xs35_mute_unfocus"
+
+    /**
+     * 游戏根路径哈希（与 app 侧 `Integer.toHexString(path.hashCode())` 一致），标题回写定位用。
+     * App 计算一次后同时用于登记 prefs 与下发本 extra；宿主直接使用，禁止自行推导。
+     */
+    const val XS35_PATH_HASH = "xs35_path_hash"
+
     // ---------- framebuffer 引擎（RealLive / AVG32 / UK2） ----------
 
     /** 引擎 id：`reallive` | `avg32` | `uk2`（不传时引擎库自行探测）。 */
@@ -131,5 +165,7 @@ object LaunchContract {
     const val LAUNCH_MODE_ARTEMIS = "internal.artemis"
     const val LAUNCH_MODE_SIGLUS = "internal.siglus"
     const val LAUNCH_MODE_FVP = "internal.fvp"
+    const val LAUNCH_MODE_ETHORNELL = "internal.ethornell"
     const val LAUNCH_MODE_FRAMEBUFFER = "internal.framebuffer"
+    const val LAUNCH_MODE_XSYS35 = "internal.xsys35"
 }

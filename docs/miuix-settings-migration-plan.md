@@ -106,7 +106,7 @@ private val TyranorMiuixLightColors = lightColorScheme(
 
 仅在设置相关界面局部包裹 `MiuixSettingsTheme { ... }`，不影响其他页面。
 
-### 3.3 页面结构（遵守 AGENT.md 顶部栏规范）
+### 3.3 页面结构（遵守 AGENTS.md 顶部栏规范）
 
 ```
 MiuixSettingsTheme
@@ -119,7 +119,7 @@ MiuixSettingsTheme
 
 - `contentWindowInsets = WindowInsets(0.dp)`，内边距全部手动控制（沿用现有行为，避免重复 inset）。
 
-## 4. 与 AGENT.md 规范的差异说明
+## 4. 与 AGENTS.md 规范的差异说明
 
 | 规范条目 | 本次处理 |
 |---|---|

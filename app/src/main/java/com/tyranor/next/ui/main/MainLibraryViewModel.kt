@@ -11,8 +11,10 @@ import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.scan.SiglusTitleFeedback
+import com.tyranor.next.core.game.scan.Xs35TitleFeedback
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.ui.cover.coverErrorMessage
 import com.tyranor.next.ui.game.cleanupDeletedGame
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class MainLibraryUiState(
     val games: List<ScanGame> = emptyList(),
@@ -107,7 +110,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                         result.failedCount,
                     )
                 } else {
-                    task.error
+                    task.error?.coverErrorMessage(appContext)
                 }
                 if (result != null) {
                     acceptPersistedGames(result.games, task.eventId, message)
@@ -119,15 +122,36 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             }
         }
         refreshFromStorage()
-        // Siglus 标题回写导入：引擎宿主首次启动成功后写入 GAMENAME，此处消费并差量落库
+        // 标题回写导入：引擎宿主首次启动成功后写入解析出的标题，此处消费并差量落库
         viewModelScope.launch(Dispatchers.IO) {
             SiglusTitleFeedback.import(appContext)
+            Xs35TitleFeedback.import(appContext)
             refreshFromStorage()
         }
     }
 
     fun refreshFromStorage() {
         enqueuePersistence(revision = stateRevision.get()) { }
+    }
+
+    /**
+     * 回到前台时的库刷新（与 [refreshFromStorage] 同一入口）：先补一次标题回写导入
+     * （引擎子进程在后台写入 prefs，幂等、无待处理键时快速返回），再刷新列表。
+     * 单次 launch 内顺序执行，导入先于发布，避免「刷新已完成、标题仍旧」的竞态。
+     */
+    fun onForeground() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    Xs35TitleFeedback.import(appContext)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (throwable: Throwable) {
+                    Log.e(TAG, "Xs35 title feedback import failed", throwable)
+                }
+            }
+            refreshFromStorage()
+        }
     }
 
     /** 扫描/刮削已经完成持久化时，立即发布结果，再由 FIFO 队列校准派生列表。 */

@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +17,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.ui.common.ProvideAppLocale
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -62,18 +62,21 @@ internal fun ArtemisPatchChoiceDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onChoice(PatchChoiceOption.ALWAYS.toArtemisChoice()) }) {
-                Text(stringResource(PatchChoiceOption.ALWAYS.labelRes))
-            }
+            DialogTextButton(
+                text = stringResource(PatchChoiceOption.ALWAYS.labelRes),
+                onClick = { onChoice(PatchChoiceOption.ALWAYS.toArtemisChoice()) },
+            )
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { onChoice(PatchChoiceOption.NEVER.toArtemisChoice()) }) {
-                    Text(stringResource(PatchChoiceOption.NEVER.labelRes))
-                }
-                TextButton(onClick = { onChoice(PatchChoiceOption.ONCE.toArtemisChoice()) }) {
-                    Text(stringResource(PatchChoiceOption.ONCE.labelRes))
-                }
+                DialogTextButton(
+                    text = stringResource(PatchChoiceOption.NEVER.labelRes),
+                    onClick = { onChoice(PatchChoiceOption.NEVER.toArtemisChoice()) },
+                )
+                DialogTextButton(
+                    text = stringResource(PatchChoiceOption.ONCE.labelRes),
+                    onClick = { onChoice(PatchChoiceOption.ONCE.toArtemisChoice()) },
+                )
             }
         },
     )
@@ -89,7 +92,7 @@ internal fun ArtemisPatchChoiceDialog(
 suspend fun ComponentActivity.awaitArtemisPatchChoice(game: ScanGame): EngineLauncher.ArtemisPatchChoice? =
     suspendCancellableCoroutine { continuation ->
         setContent {
-            // 主题最外层（AGENT.md 界面规范）：透明蹦床 trampoline 也必须挂主题，否则 typography/primary 回落默认
+            // 主题最外层（AGENTS.md 界面规范）：透明蹦床 trampoline 也必须挂主题，否则 typography/primary 回落默认
             TyranorNextTheme {
                 ProvideAppLocale {
                     var showDialog by remember { mutableStateOf(true) }

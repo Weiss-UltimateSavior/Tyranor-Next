@@ -1,12 +1,20 @@
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.bundling.Zip
+import org.gradle.process.ExecOperations
 import java.util.Properties
+import javax.inject.Inject
 
 plugins {
   alias(libs.plugins.android.application)
@@ -33,7 +41,7 @@ fun String.asBuildConfigString(): String =
  * 应用版本名：发版唯一需要手改的版本字段（issue #79）。
  * versionCode 由它推导，杜绝“只改 versionName、忘记递增 versionCode”。
  */
-val appVersionName = "1.56"
+val appVersionName = "1.58"
 
 /**
  * versionName -> versionCode 映射：major*1_000_000 + minor*1_000 + patch。
@@ -90,6 +98,11 @@ val sharedEngineAssetNames = listOf(
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
 val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
+val ethornellReleaseProbe = providers.gradleProperty("ethornellReleaseProbe").orNull.let { value ->
+    require(value == null || value == "true" || value == "false") { "ethornellReleaseProbe must be true or false" }
+    value == "true"
+}
+val ethornellTestBuildType = if (ethornellReleaseProbe) "release" else "debug"
 val ciKeystoreFile = System.getenv("ANDROID_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
 val ciKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
 val ciKeyAlias = System.getenv("ANDROID_KEY_ALIAS")?.takeIf { it.isNotBlank() }
@@ -177,6 +190,8 @@ val checkHardcodedUiStrings by tasks.registering(Exec::class) {
 
 android {
     namespace = "com.tyranor.next"
+    testBuildType = ethornellTestBuildType
+    ndkVersion = "28.0.13004108"
     // miuix 0.9.2 传递依赖要求 compileSdk 37（本地平台为 android-37.0）
     compileSdk {
         version = release(37) {
@@ -189,6 +204,10 @@ android {
         targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersionName
+        testInstrumentationRunner = if (ethornellReleaseProbe)
+            "com.tyranor.next.releaseprobe.EthornellReleaseInstrumentation"
+        else "androidx.test.runner.AndroidJUnitRunner"
+        if (ethornellReleaseProbe) testProguardFiles("src/releaseProbe/proguard-rules.pro")
         buildConfigField("String", "HIKARINAGI_CLIENT_ID", hikarinagiClientId.asBuildConfigString())
     }
 
@@ -224,6 +243,12 @@ android {
       shaders = false
     }
 
+    // 内置引擎字体（MTLc3m.ttf / mincho.ttf，由 engine 模块 xs35-assets 生成目录并入）不得被
+    // AAPT 压缩：xsystem35 对压缩过的字体读取极慢（上游明确要求字体 asset 不压缩）。
+    androidResources {
+      noCompress += listOf("ttf", "otf")
+    }
+
     packaging {
       jniLibs {
         useLegacyPackaging = true
@@ -235,11 +260,78 @@ android {
 
     // 引擎原生插件先压缩为 assets/nativeplugins/<engine>.zip，首次启动自动安装到 app 私有目录
     sourceSets {
+      if (ethornellReleaseProbe) {
+        // AGP's built-in Kotlin source set independently includes src/androidTest/java.
+        // Clear BOTH languages on base and build-type test overlays; clearing Java alone
+        // still compiles the debug Kotlin harness against this dependency-free runner.
+        configureEach {
+          if (name.startsWith("androidTest")) {
+            java.setSrcDirs(emptyList<String>())
+            kotlin.setSrcDirs(emptyList<String>())
+          }
+        }
+      }
       getByName("main") {
         assets.directories.clear()
         assets.directories.add("src/main/assets")
         assets.directories.add("build/generated/assets")
       }
+    }
+}
+
+// Test-only ABI probe: never linked or packaged into the production app.
+val ethornellTestJniDir = layout.buildDirectory.dir("generated/ethornell-androidTest/jniLibs")
+abstract class CompileEthornellTestProbe : DefaultTask() {
+    @get:Input
+    abstract val compilerPath: Property<String>
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceFile: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val abiHeader: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val jniOutput: DirectoryProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun compile() {
+        val output = jniOutput.file("arm64-v8a/libethornell_test_probe.so").get().asFile
+        check(output.parentFile.isDirectory || output.parentFile.mkdirs()) {
+            "Cannot create instrumentation JNI output directory"
+        }
+        execOperations.exec {
+            commandLine(compilerPath.get(),
+                "--target=aarch64-linux-android26", "-shared", "-fPIC", "-std=c++17", "-nostdlib++",
+                "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384",
+                "-I${abiHeader.get().asFile.parentFile.absolutePath}",
+                sourceFile.get().asFile.absolutePath, "-ldl", "-o", output.absolutePath)
+        }.assertNormalExitValue()
+    }
+}
+val compileEthornellTestProbe by tasks.registering(CompileEthornellTestProbe::class) {
+    sourceFile.set(layout.projectDirectory.file("src/androidTest/cpp/ethornell_test_probe.cpp"))
+    abiHeader.set(rootProject.layout.projectDirectory.file("engine/src/main/cpp/ethornell_android.h"))
+    jniOutput.set(ethornellTestJniDir)
+    // Resolve script/environment inputs during configuration, not in a captured execution lambda.
+    val sdk = localProperties.getProperty("sdk.dir")
+        ?: providers.environmentVariable("ANDROID_HOME").orNull
+        ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
+        ?: error("Android SDK required for instrumentation JNI probe")
+    val ndk = providers.environmentVariable("ANDROID_NDK_HOME").orNull ?: "$sdk/ndk/28.0.13004108"
+    val host = if (System.getProperty("os.name").contains("Mac")) "darwin-x86_64" else "linux-x86_64"
+    compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/clang++")
+}
+androidComponents.onVariants(androidComponents.selector().withBuildType(ethornellTestBuildType)) { variant ->
+    variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
+        compileEthornellTestProbe, CompileEthornellTestProbe::jniOutput)
+    if (ethornellReleaseProbe) {
+        variant.androidTest?.sources?.java?.addStaticSourceDirectory("src/releaseProbe/java")
     }
 }
 
@@ -262,7 +354,7 @@ kotlin {
 dependencies {
   val composeBom = platform(libs.androidx.compose.bom)
   implementation(composeBom)
-  androidTestImplementation(composeBom)
+   if (!ethornellReleaseProbe) androidTestImplementation(composeBom)
 
   // Core Android dependencies
   implementation(libs.androidx.core.ktx)
@@ -277,7 +369,8 @@ dependencies {
   // 游戏库持久化（Room）：games/scan_roots/quick_launch 表，见 core/game/storage
   implementation(libs.androidx.room.runtime)
   implementation(libs.androidx.room.ktx)
-  ksp(libs.androidx.room.compiler)
+    debugImplementation(libs.leakcanary)
+    ksp(libs.androidx.room.compiler)
 
   // Compose
   implementation(libs.androidx.compose.ui)
@@ -287,7 +380,7 @@ dependencies {
   // Tooling
   debugImplementation(libs.androidx.compose.ui.tooling)
   // Instrumented tests
-  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+   if (!ethornellReleaseProbe) androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
 
   // Local tests: jUnit, coroutines, Android runner
@@ -296,10 +389,12 @@ dependencies {
   testImplementation(libs.json)
 
   // Instrumented tests: jUnit rules and runners
-  androidTestImplementation(libs.androidx.test.core)
-  androidTestImplementation(libs.androidx.test.ext.junit)
-  androidTestImplementation(libs.androidx.test.runner)
-  androidTestImplementation(libs.androidx.test.espresso.core)
+   if (!ethornellReleaseProbe) {
+     androidTestImplementation(libs.androidx.test.core)
+     androidTestImplementation(libs.androidx.test.ext.junit)
+     androidTestImplementation(libs.androidx.test.runner)
+     androidTestImplementation(libs.androidx.test.espresso.core)
+   }
 
   // Navigation
   implementation(libs.androidx.navigation3.ui)

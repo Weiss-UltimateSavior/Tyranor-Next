@@ -40,7 +40,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -79,17 +78,14 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
-import com.tyranor.next.ui.archive.ArchiveUnpackActivity
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
+import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
-import com.tyranor.next.ui.common.LaunchErrorDialog
-import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.NoIndication
-import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -126,14 +122,8 @@ private sealed interface UpdateDownloadPhase {
     data class Failed(val message: String) : UpdateDownloadPhase
 }
 
-/** 更新下载进度文案的字节格式化（APK 体积通常在 MB 级）。 */
-private fun formatUpdateBytes(bytes: Long): String {
-    return if (bytes >= 1024L * 1024) {
-        String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
-    } else {
-        String.format(Locale.US, "%.0f KB", bytes / 1024.0)
-    }
-}
+/** 更新下载进度文案的字节格式化（统一走 [ByteFormats]：二进制单位 + 有效量级精度）。 */
+private fun formatUpdateBytes(bytes: Long): String = ByteFormats.formatBinarySize(bytes)
 
 /** 设置页：只展示各引擎全局设置入口，具体设置内容由独立 Activity 承载。列表项采用 Miuix Card + Preference 体系。 */
 @Composable
@@ -333,18 +323,13 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     }
                 }
                 item {
-                    // 引擎设置与拆封包合入同一卡片（同类工具入口）
+                    // 工具入口：引擎设置；输入与手柄、解包 / 封包入口已迁至侧边栏「妙妙工具」面板
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_engine_settings),
                                 startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
                                 onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.archive_title),
-                                startAction = { SettingsItemIcon(R.drawable.ic_sheet_archive) },
-                                onClick = { startActivityWithPageTransition(ctx, ArchiveUnpackActivity.createIntent(ctx)) },
                             )
                         }
                     }
@@ -433,29 +418,34 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                             )
-                            TextButton(
+                            DialogTextButton(
+                                text = stringResource(R.string.common_delete),
+                                contentColor = MaterialTheme.colorScheme.error,
                                 onClick = {
                                     GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
                                     scanDirs = GameLibraryFacade.loadRoots(ctx)
                                 },
-                            ) {
-                                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
-                            }
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
+                    DialogTextButton(
+                        text = stringResource(R.string.settings_input_path),
+                        modifier = Modifier.padding(end = 8.dp),
                         onClick = { showPathDialog = true },
+                    )
+                    DialogTextButton(
+                        text = stringResource(R.string.settings_add_dir),
                         modifier = Modifier.padding(end = 8.dp),
-                    ) { Text(stringResource(R.string.settings_input_path)) }
-                    TextButton(
                         onClick = { dirPicker.launch(null) },
-                        modifier = Modifier.padding(end = 8.dp),
-                    ) { Text(stringResource(R.string.settings_add_dir)) }
-                    TextButton(onClick = { showScanDirs = false }) { Text(stringResource(R.string.settings_done)) }
+                    )
+                    DialogTextButton(
+                        text = stringResource(R.string.settings_done),
+                        onClick = { showScanDirs = false },
+                    )
                 }
             },
         )
@@ -505,16 +495,18 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             },
             confirmButton = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(
-                        onClick = savePath,
+                    DialogTextButton(
+                        text = stringResource(R.string.common_confirm),
                         modifier = Modifier.padding(end = 8.dp),
-                    ) { Text(stringResource(R.string.common_confirm), style = MaterialTheme.typography.bodyMedium) }
-                    TextButton(
+                        onClick = savePath,
+                    )
+                    DialogTextButton(
+                        text = stringResource(R.string.common_cancel),
                         onClick = {
                             showPathDialog = false
                             pathInput = ""
                         },
-                    ) { Text(stringResource(R.string.common_cancel), style = MaterialTheme.typography.bodyMedium) }
+                    )
                 }
             },
         )
@@ -529,18 +521,31 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    AppNavItem(stringResource(R.string.settings_qq_group), leadingIcon = R.drawable.ic_group_qq, containerColor = DialogItemSurface) {
+                    AppNavItem(
+                        stringResource(R.string.settings_qq_group),
+                        leadingIcon = R.drawable.ic_group_qq,
+                        containerColor = DialogItemSurface,
+                        indication = null,
+                    ) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://qm.qq.com/q/M9JH8A9Yys")))
                     }
-                    AppNavItem(stringResource(R.string.settings_telegram_channel), leadingIcon = R.drawable.ic_group_telegram, containerColor = DialogItemSurface) {
+                    AppNavItem(
+                        stringResource(R.string.settings_telegram_channel),
+                        leadingIcon = R.drawable.ic_group_telegram,
+                        containerColor = DialogItemSurface,
+                        indication = null,
+                    ) {
                         showGroupDialog = false
                         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/tyranornext")))
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showGroupDialog = false }) { Text(stringResource(R.string.common_cancel)) }
+                DialogTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { showGroupDialog = false },
+                )
             },
         )
     }
@@ -657,23 +662,38 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                     null -> Unit
                     is UpdateDownloadPhase.Downloading -> Unit
                     is UpdateDownloadPhase.Completed, is UpdateDownloadPhase.Failed -> {
-                        TextButton(onClick = { closeUpdateDialog() }) { Text(stringResource(R.string.common_cancel)) }
+                        DialogTextButton(
+                            text = stringResource(R.string.common_cancel),
+                            onClick = { closeUpdateDialog() },
+                        )
                     }
                 }
             },
             confirmButton = {
                 when (downloadPhase) {
                     null -> {
-                        TextButton(onClick = { closeUpdateDialog() }) { Text(stringResource(R.string.common_cancel)) }
+                        DialogTextButton(
+                            text = stringResource(R.string.common_cancel),
+                            onClick = { closeUpdateDialog() },
+                        )
                     }
                     is UpdateDownloadPhase.Downloading -> {
-                        TextButton(onClick = { closeUpdateDialog() }) { Text(stringResource(R.string.update_download_cancel)) }
+                        DialogTextButton(
+                            text = stringResource(R.string.update_download_cancel),
+                            onClick = { closeUpdateDialog() },
+                        )
                     }
                     is UpdateDownloadPhase.Completed -> {
-                        TextButton(onClick = { installUpdateApk(downloadPhase.apkFile) }) { Text(stringResource(R.string.update_install)) }
+                        DialogTextButton(
+                            text = stringResource(R.string.update_install),
+                            onClick = { installUpdateApk(downloadPhase.apkFile) },
+                        )
                     }
                     is UpdateDownloadPhase.Failed -> {
-                        TextButton(onClick = { activeCandidate?.let { startApkDownload(it) } }) { Text(stringResource(R.string.update_retry)) }
+                        DialogTextButton(
+                            text = stringResource(R.string.update_retry),
+                            onClick = { activeCandidate?.let { startApkDownload(it) } },
+                        )
                     }
                 }
             },
@@ -683,10 +703,12 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
 
 @Composable
 internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
+    if (kind == EngineSettingsKind.ETHORNELL) {
+        EthornellSettingsScreen()
+        return
+    }
     val ctx = LocalContext.current
     val engineSettingsSavedMessage = stringResource(R.string.engine_settings_saved)
-    val scope = rememberCoroutineScope()
-    var nativeKrkrLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
 
     var krVersion by remember { mutableStateOf(EngineSettingsStore.getKrEngineVersion(ctx)) }
     var krKernel by remember { mutableStateOf(EngineSettingsStore.getKrKernel(ctx)) }
@@ -736,29 +758,41 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var fvpSystemFont by remember { mutableStateOf(EngineSettingsStore.isFvpSystemFont(ctx)) }
     var fvpTextHidpi by remember { mutableStateOf(EngineSettingsStore.isFvpTextHidpi(ctx)) }
     var fvpFont by remember { mutableStateOf(EngineSettingsStore.getFvpFont(ctx)) }
+    var xs35Scoped by remember { mutableStateOf(EngineSettingsStore.isXs35ScopedSaveDir(ctx)) }
+    var xs35Renderer by remember { mutableStateOf(EngineSettingsStore.getXs35Renderer(ctx)) }
+    var xs35IntegerScale by remember { mutableStateOf(EngineSettingsStore.isXs35IntegerScale(ctx)) }
+    var xs35MuteUnfocus by remember { mutableStateOf(EngineSettingsStore.isXs35MuteUnfocus(ctx)) }
     var winlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
     var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(ctx)) }
     var webShellPort by remember { mutableStateOf(EngineSettingsStore.getWebShellPort(ctx)) }
 
+    val fontImportScope = rememberCoroutineScope()
+    var importingFont by remember { mutableStateOf(false) }
     val fontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            val path = FontImport.importToPrivate(ctx, uri)
-            if (path != null) {
-                krFont = path
+        if (uri != null && !importingFont) {
+            importingFont = true
+            fontImportScope.launch {
+                try {
+                    val path = FontImport.importToPrivate(ctx, uri)
+                    if (path != null) krFont = path
+                } finally { importingFont = false }
             }
         }
     }
     val fvpFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            val path = FontImport.importToPrivate(ctx, uri)
-            if (path != null) {
-                fvpFont = path
-            } else {
-                android.widget.Toast.makeText(
-                    ctx,
-                    ctx.getString(R.string.engine_settings_fvp_font_import_failed),
-                    android.widget.Toast.LENGTH_SHORT,
-                ).show()
+        if (uri != null && !importingFont) {
+            importingFont = true
+            fontImportScope.launch {
+                try {
+                    val path = FontImport.importToPrivate(ctx, uri)
+                    if (path != null) fvpFont = path else {
+                        android.widget.Toast.makeText(
+                            ctx,
+                            ctx.getString(R.string.engine_settings_fvp_font_import_failed),
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                } finally { importingFont = false }
             }
         }
     }
@@ -813,6 +847,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setFvpSystemFont(ctx, fvpSystemFont)
         EngineSettingsStore.setFvpTextHidpi(ctx, fvpTextHidpi)
         EngineSettingsStore.setFvpFont(ctx, fvpFont)
+        EngineSettingsStore.setXs35ScopedSaveDir(ctx, xs35Scoped)
+        EngineSettingsStore.setXs35Renderer(ctx, xs35Renderer)
+        EngineSettingsStore.setXs35IntegerScale(ctx, xs35IntegerScale)
+        EngineSettingsStore.setXs35MuteUnfocus(ctx, xs35MuteUnfocus)
         EngineSettingsStore.saveWinlator(ctx, winlator)
         EngineSettingsStore.setPpssppVersion(ctx, ppssppVersion)
         EngineSettingsStore.setWebShellPort(ctx, webShellPort)
@@ -845,16 +883,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 krLanguage,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
-                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont, fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
+                fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont,
+                xs35Scoped, xs35Renderer, xs35IntegerScale, xs35MuteUnfocus,
+                fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
                 topInset = innerPadding.calculateTopPadding(),
-                onLaunchNativeKirikiroidUi = {
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) {
-                            EngineLauncher.launchNativeKirikiroidUi(ctx)
-                        }
-                        nativeKrkrLaunchError = result.toErrorState(ctx)
-                    }
-                },
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
                 onKrScoped = { krScoped = it },
@@ -901,15 +933,15 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onFvpTextHidpi = { fvpTextHidpi = it },
                 onFvpFontFollow = { fvpFont = "" },
                 onFvpFontPick = { fvpFontLauncher.launch("*/*") },
+                onXs35Scoped = { xs35Scoped = it },
+                onXs35Renderer = { xs35Renderer = it },
+                onXs35IntegerScale = { xs35IntegerScale = it },
+                onXs35MuteUnfocus = { xs35MuteUnfocus = it },
                 onWinlator = { winlator = it },
                 onPpssppVersion = { ppssppVersion = it },
                 onWebShellPort = { webShellPort = it },
             )
         }
-    }
-
-    nativeKrkrLaunchError?.let { state ->
-        LaunchErrorDialog(state = state, onDismiss = { nativeKrkrLaunchError = null })
     }
 }
 
@@ -957,12 +989,12 @@ private fun LazyListPlaceholder(
     renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
     fbNls: String,
     fvpNls: String, fvpSystemFont: Boolean, fvpTextHidpi: Boolean, fvpFont: String,
+    xs35Scoped: Boolean, xs35Renderer: String, xs35IntegerScale: Boolean, xs35MuteUnfocus: Boolean,
     fontLauncher: FontPickerLauncher, fvpFontLauncher: FontPickerLauncher,
     winlator: EngineSettingsStore.Winlator,
     ppssppVersion: String,
     webShellPort: Int,
     topInset: Dp,
-    onLaunchNativeKirikiroidUi: () -> Unit,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrSkipStartupDialogs: (Boolean) -> Unit,
     onKrPatchOverlayMode: (String) -> Unit,
@@ -989,6 +1021,10 @@ private fun LazyListPlaceholder(
     onFvpTextHidpi: (Boolean) -> Unit,
     onFvpFontFollow: () -> Unit,
     onFvpFontPick: () -> Unit,
+    onXs35Scoped: (Boolean) -> Unit,
+    onXs35Renderer: (String) -> Unit,
+    onXs35IntegerScale: (Boolean) -> Unit,
+    onXs35MuteUnfocus: (Boolean) -> Unit,
     onWinlator: (EngineSettingsStore.Winlator) -> Unit,
     onPpssppVersion: (String) -> Unit,
     onWebShellPort: (Int) -> Unit,
@@ -1040,11 +1076,6 @@ private fun LazyListPlaceholder(
                 if (!isSdl3) {
                     DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
                 }
-                ArrowPreference(
-                    title = stringResource(R.string.engine_settings_krkr_native_ui_title),
-                    summary = stringResource(R.string.engine_settings_krkr_native_ui_summary),
-                    onClick = onLaunchNativeKirikiroidUi,
-                )
             }
         }
 
@@ -1269,6 +1300,38 @@ private fun LazyListPlaceholder(
                 )
                 Text(
                     stringResource(R.string.engine_settings_fvp_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
+        if (kind == EngineSettingsKind.XSYS35) item {
+            EngineCard(stringResource(R.string.engine_settings_xsys35_title)) {
+                DropdownRow(
+                    stringResource(R.string.engine_settings_xsys35_renderer_title),
+                    xsys35RendererOptions(),
+                    xs35Renderer,
+                    onXs35Renderer,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_scoped_save_dir),
+                    checked = xs35Scoped,
+                    onCheckedChange = onXs35Scoped,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_xsys35_integer_scale_title),
+                    checked = xs35IntegerScale,
+                    onCheckedChange = onXs35IntegerScale,
+                )
+                SwitchPreference(
+                    title = stringResource(R.string.engine_settings_xsys35_mute_unfocus_title),
+                    checked = xs35MuteUnfocus,
+                    onCheckedChange = onXs35MuteUnfocus,
+                )
+                Text(
+                    stringResource(R.string.engine_settings_xsys35_note),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MiuixTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

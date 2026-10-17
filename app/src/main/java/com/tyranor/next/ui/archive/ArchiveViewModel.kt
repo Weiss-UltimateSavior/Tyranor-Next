@@ -196,7 +196,7 @@ class ArchiveViewModel : ViewModel() {
                 } catch (empty: ArchiveEmptyInputException) {
                     message = appContext.getString(R.string.archive_input_empty)
                 } catch (error: Exception) {
-                    // 错误协议收口：泛化失败不再把 core 技术消息拼上屏（AGENT.md core→ui
+                    // 错误协议收口：泛化失败不再把 core 技术消息拼上屏（AGENTS.md core→ui
                     // 协议），本地化兜底 + 日志留痕。
                     Log.w(TAG, "archive op failed: $label", error)
                     message = failedMessage
@@ -220,7 +220,7 @@ class ArchiveViewModel : ViewModel() {
         dialogVisible = false
     }
 
-    /** core 层冲突异常 → UI 本地化文案（AGENT.md：core 错误不带本地化文本）。 */
+    /** core 层冲突异常 → UI 本地化文案（AGENTS.md：core 错误不带本地化文本）。 */
     private fun conflictMessage(appContext: Context, conflict: ArchiveConflictException): String =
         appContext.getString(
             when (conflict.kind) {

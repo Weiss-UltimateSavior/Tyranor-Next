@@ -41,13 +41,13 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 /**
  * 功能跳转条目统一组件：左侧图标 + 标题/摘要 + 右侧指示箭头。
  *
- * 统一规范（详见 AGENT.md「功能跳转条目统一规范」）：
+ * 统一规范（详见 AGENTS.md「功能跳转条目统一规范」）：
  * - 所有「功能跳转列」（点击后进入/跳转/打开下一级的条目，如封面来源列表、群聊/频道项等）
  *   必须使用本组件，禁止用手写 Row/Column 拼装、禁止混用 Material 的 ListItem 等。
  * - 排版：圆角统一用 [com.tyranor.next.theme.AppComponentShape]（默认 8dp / 玻璃风格 32dp）+ 背景 [containerColor]（默认 [NavWhite]）+ 内边距（纵向 12dp / 横向 16dp）+ 左侧图标 24dp + 右侧箭头，
  *   标题用 [TextColor]、摘要用半透明辅助色；进入跳转的 icon 一律 `KeyboardArrowRight`。
  * - 背景色约定：页面上条目默认 [NavWhite]（页面背景 PageGrey 灰底白卡）；弹窗内条目传 [DialogItemSurface]，
- *   与弹窗背景形成层次反差（AGENT.md 界面规范，勿回退 PageGrey——玻璃外观下 PageGrey 透明会丢失卡片层次）。
+ *   与弹窗背景形成层次反差（AGENTS.md 界面规范，勿回退 PageGrey——玻璃外观下 PageGrey 透明会丢失卡片层次）。
  * - 「色调切换」遵循统一规范：背景引用 `theme/Color.kt` 常量，前景取 [TextColor]，
  *   不依赖 `colorScheme.surface*`，保证弹窗作用域内外一致。
  *

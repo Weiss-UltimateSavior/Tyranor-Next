@@ -21,7 +21,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +61,7 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.ui.common.DialogTextButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -303,26 +303,26 @@ private fun CropDialogActions(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onPickImage, enabled = !confirming) {
-            Text(
-                stringResource(R.string.game_desktop_shortcut_crop_choose_image),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
+        DialogTextButton(
+            text = stringResource(R.string.game_desktop_shortcut_crop_choose_image),
+            onClick = onPickImage,
+            enabled = !confirming,
+        )
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = onDismiss, enabled = !confirming) {
-            Text(stringResource(R.string.common_cancel), style = MaterialTheme.typography.bodyMedium)
-        }
-        TextButton(onClick = onConfirm, enabled = canConfirm && !confirming) {
-            Text(
-                text = if (confirming) {
-                    stringResource(R.string.common_loading)
-                } else {
-                    stringResource(R.string.common_confirm)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        }
+        DialogTextButton(
+            text = stringResource(R.string.common_cancel),
+            onClick = onDismiss,
+            enabled = !confirming,
+        )
+        DialogTextButton(
+            text = if (confirming) {
+                stringResource(R.string.common_loading)
+            } else {
+                stringResource(R.string.common_confirm)
+            },
+            onClick = onConfirm,
+            enabled = canConfirm && !confirming,
+        )
     }
 }
 

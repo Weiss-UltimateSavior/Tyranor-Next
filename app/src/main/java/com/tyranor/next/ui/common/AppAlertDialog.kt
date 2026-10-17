@@ -50,7 +50,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Miuix 风格弹窗：小屏底部弹入 + 窗口变暗 + 标题居中。
- * 背景白色、圆角 8dp 遵循项目规范（AGENT.md），动画节奏复刻 miuix OverlayDialog。
+ * 背景白色、圆角 8dp 遵循项目规范（AGENTS.md），动画节奏复刻 miuix OverlayDialog。
  */
 @Composable
 internal fun AppAlertDialog(

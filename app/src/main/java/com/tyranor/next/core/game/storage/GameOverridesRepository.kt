@@ -14,7 +14,7 @@ import org.json.JSONObject
  * 单游戏覆盖设置的 DB 仓库（迁移方案阶段 4）：game_overrides 表为 App 侧事实源，
  * 旧 tyranor_game_overrides prefs 保留为引擎子进程的同步镜像——
  * App 写路径双写（DB 异步落库 + prefs 同步镜像），启动时按 prefs 差异回灌
- * （覆盖旧数据导入与引擎 touchpad 写回二合一，方案阶段 4 任务 1/5）。
+ * （覆盖旧数据导入；引擎侧已改为只读，不再有写回）。
  */
 object GameOverridesRepository {
 
@@ -38,7 +38,7 @@ object GameOverridesRepository {
 
     /**
      * 启动同步：prefs 每条覆盖与 DB 组装结果按键比较（不敏感于键序），不一致以 prefs 为准
-     * （DB 先写、prefs 后写的 App 正常路径两者恒等；差异只可能来自引擎 touchpad 写回
+     * （DB 先写、prefs 后写的 App 正常路径两者恒等；差异只可能来自历史遗留的引擎写回
      * 或回滚版本期间的修改）。幂等可重入；首次读路径也会等待它完成，避免读到半迁移状态。
      */
     suspend fun ensureSynced(context: Context) {

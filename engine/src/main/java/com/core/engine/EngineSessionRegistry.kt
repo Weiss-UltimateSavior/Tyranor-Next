@@ -17,6 +17,43 @@ import java.io.File
 object EngineSessionRegistry {
     const val HOST_TYRANO = "tyrano"
     const val HOST_RPGMAKER = "rpgmaker"
+    const val HOST_ETHORNELL = "ethornell"
+
+    /** Conservative cross-process liveness, scoped to our UID and exact host process name. */
+    @JvmStatic
+    fun isHostAlive(context: Context, host: String): Boolean {
+        if (host !in setOf(HOST_TYRANO, HOST_RPGMAKER, HOST_ETHORNELL)) return false
+        return runCatching {
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                ?: return@runCatching false
+            manager.runningAppProcesses.orEmpty().any {
+                it.uid == android.os.Process.myUid() && it.processName == "${context.packageName}:$host"
+            }
+        }.getOrDefault(false)
+    }
+
+    /** A leftover file after LMK/crash is not an active session. This never kills any process. */
+    @JvmStatic
+    fun currentLiveGame(context: Context, host: String): String? =
+        currentGame(context, host)?.takeIf { game ->
+            if (host != HOST_ETHORNELL) return@takeIf isHostAlive(context, host)
+            runCatching {
+                val owner = File(sessionFile(context, host).path + ".owner").readLines()
+                if (owner.size != 3 || owner[2] != game) return@runCatching false
+                val pid = owner[0].toIntOrNull() ?: return@runCatching false
+                val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                    ?: return@runCatching false
+                manager.runningAppProcesses.orEmpty().any {
+                    it.pid == pid && it.uid == android.os.Process.myUid() &&
+                        it.processName == "${context.packageName}:$host"
+                } && processStart(pid) == owner[1]
+            }.getOrDefault(false)
+        }
+
+    /** /proc starttime distinguishes PID reuse after a killed engine session. No paths are logged. */
+    private fun processStart(pid: Int): String? = runCatching {
+        File("/proc/$pid/stat").readText().substringAfterLast(") ").split(' ').getOrNull(19)
+    }.getOrNull()
 
     private fun sessionFile(context: Context, host: String): File =
         File(File(context.filesDir, "engine_sessions"), "$host.session")
@@ -29,13 +66,25 @@ object EngineSessionRegistry {
             val f = sessionFile(context, host)
             f.parentFile?.mkdirs()
             f.writeText(gameDir)
+            if (host == HOST_ETHORNELL) {
+                val pid = android.os.Process.myPid()
+                val start = processStart(pid) ?: return@runCatching
+                val owner = File(f.path + ".owner")
+                val temp = File(f.path + ".owner.tmp")
+                temp.writeText("$pid\n$start\n$gameDir")
+                if (!temp.renameTo(owner)) temp.delete()
+            }
         }
     }
 
     /** 清除宿主登记（onDestroy；重复清除安全）。 */
     @JvmStatic
     fun clear(context: Context, host: String) {
-        runCatching { sessionFile(context, host).delete() }
+        runCatching {
+            val file = sessionFile(context, host)
+            file.delete()
+            if (host == HOST_ETHORNELL) File(file.path + ".owner").delete()
+        }
     }
 
     /** 读取宿主当前登记的游戏目录；未登记返回 null。 */

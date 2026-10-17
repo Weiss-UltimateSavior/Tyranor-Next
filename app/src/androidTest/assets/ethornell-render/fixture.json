@@ -1,0 +1,234 @@
+{
+  "schema": 1,
+  "fixture": "original-generated-bgi-smoke",
+  "profile": "render",
+  "origin": "Generated solely by tools/ethornell/generate_fixture.py; no commercial assets",
+  "format_evidence": [
+    "ethornell-archive/src/lib.rs::read_packfile_index",
+    "ethornell-script/src/lib.rs::detect_code_range",
+    "ethornell-script/src/vm_opcode.rs::0x17",
+    "ethornell-vm/src/native_call.rs::SYS_REQUEST_WINDOW_CLOSE"
+  ],
+  "expected": "Load checker.png through Graph90:10; create/configure/show a real native Sprite; request redraw and ret; expect four colored quadrants on black after an active host tick",
+  "limitations": [
+    "Not a real game or compatibility evidence",
+    "No text/audio/save coverage",
+    "PNG is a portable ethornell-rs input, not a claim that original BGI supports PNG",
+    "Source-contract expectation only; generation/Python tests do not certify Rust VM or GPU execution"
+  ],
+  "files": {
+    "system.arc": {
+      "size": 1235,
+      "sha256": "f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8"
+    }
+  },
+  "entries": {
+    "ipl._bp": {
+      "size": 122,
+      "sha256": "2bcc87a51db064d0163bf81cbf724589f00b3cbe440a6eebcf2cb5a3feb04217"
+    },
+    "checker.png": {
+      "size": 1033,
+      "sha256": "5ec79caab3ad7cd91499e3b2642e1188c4cc940d87d648714a2dbdf2443a7e80"
+    }
+  },
+  "bp": {
+    "header_size": 16,
+    "module_size": 106,
+    "code_hex": "100004201102000010009003000190010001900801e80390070001053800054000901090500404000a02040400080201000201e80000010001000001800890560404000802000190540001900010000421111773797374656d2e61726300636865636b65722e706e6700"
+  },
+  "raw_bp_hex": "100000006a0000000000000000000000100004201102000010009003000190010001900801e80390070001053800054000901090500404000a02040400080201000201e80000010001000001800890560404000802000190540001900010000421111773797374656d2e61726300636865636b65722e706e6700",
+  "render_expectation": {
+    "verification_status": "source-contract-derived; Rust VM and GPU execution pending",
+    "logical_canvas": [
+      1280,
+      720
+    ],
+    "recommended_surface_px": [
+      1280,
+      720
+    ],
+    "sprite_rect_xywh": [
+      512,
+      232,
+      256,
+      256
+    ],
+    "texture_size": [
+      256,
+      256
+    ],
+    "background_rgba": [
+      0,
+      0,
+      0,
+      255
+    ],
+    "probes": [
+      {
+        "logical_xy": [
+          576,
+          296
+        ],
+        "expected_rgba": [
+          255,
+          0,
+          0,
+          255
+        ]
+      },
+      {
+        "logical_xy": [
+          704,
+          296
+        ],
+        "expected_rgba": [
+          0,
+          255,
+          0,
+          255
+        ]
+      },
+      {
+        "logical_xy": [
+          576,
+          424
+        ],
+        "expected_rgba": [
+          0,
+          0,
+          255,
+          255
+        ]
+      },
+      {
+        "logical_xy": [
+          704,
+          424
+        ],
+        "expected_rgba": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      {
+        "logical_xy": [
+          128,
+          128
+        ],
+        "expected_rgba": [
+          0,
+          0,
+          0,
+          255
+        ]
+      }
+    ],
+    "viewport": {
+      "origin": "top-left; Surface physical pixels, not dp",
+      "scale": "max(0.01, min(surface_width / 1280, surface_height / 720))",
+      "offset_x": "(surface_width - 1280 * scale) / 2",
+      "offset_y": "(surface_height - 720 * scale) / 2",
+      "probe_mapping": "surface_xy = offset_xy + logical_xy * scale",
+      "letterbox_rgba": [
+        0,
+        0,
+        0,
+        255
+      ],
+      "readback": "Normalize BGRA/RGBA and bottom-up GPU rows to top-left RGBA before comparison"
+    },
+    "suggested_channel_tolerance": 3,
+    "suggested_probe_patch_px": [
+      3,
+      3
+    ],
+    "expected_native_calls": [
+      {
+        "opcode": "90:03",
+        "args": [
+          1048576
+        ]
+      },
+      {
+        "opcode": "90:01",
+        "args": [
+          1
+        ]
+      },
+      {
+        "opcode": "90:08",
+        "args": [
+          1
+        ]
+      },
+      {
+        "opcode": "90:07",
+        "args": [
+          1000
+        ]
+      },
+      {
+        "opcode": "90:10",
+        "args": [
+          1,
+          "system.arc",
+          "checker.png"
+        ]
+      },
+      {
+        "opcode": "90:50",
+        "args": [],
+        "result": "sprite handle H"
+      },
+      {
+        "opcode": "90:56",
+        "args": [
+          "H",
+          512,
+          232,
+          1,
+          1,
+          0,
+          2176
+        ]
+      },
+      {
+        "opcode": "90:54",
+        "args": [
+          "H",
+          1
+        ]
+      },
+      {
+        "opcode": "90:00",
+        "args": [
+          1
+        ]
+      }
+    ],
+    "expected_vm": "Top-level ret: VmStopReason::Completed with halted=true, empty operand stack, frame base restored; no close request",
+    "step_protocol": [
+      "Create with resource_root=this fixture and a separate writable user_root; provide a valid font even though no text is drawn",
+      "Attach a real Surface, clear pause reasons; explicit silent mode is appropriate for this audio-free fixture",
+      "step(t0) establishes time baseline; step(t0 + 16000000ns) should execute the synchronous bootstrap and present",
+      "Require successful VM/native calls AND real pixel readback matching all probes; black-only/non-crashing is failure",
+      "No C ABI VM-completion event is assumed; independently observe report/diagnostics in HostRuntime harness"
+    ],
+    "evidence": [
+      "ethornell-script/src/lib.rs::{parse_bp_program,detect_bp_code_end}",
+      "ethornell-vm/src/lib.rs::{take_dispatch_call_frame,execute_instruction}",
+      "ethornell-vm/src/lib.rs::tests::mediation_program_registration_and_call_preserve_the_native_stack",
+      "ethornell-vm/src/native_call.rs::{GRAPH90_LOAD_BITMAP_PARAMETERS,GRAPH90_CONFIGURE_SPRITE_SINGLE_BITMAP_PARAMETERS}",
+      "ethornell-app/src/lib.rs::{graph_sync_load_active,call_graph,load_graph_image_resource_target}",
+      "ethornell-app/src/lib.rs::tests::sprite_draw_gate_does_not_latch_indicator_hidden_across_bitmap_replacement",
+      "ethornell-app/src/native_graph.rs::{graph90_allocate_object,graph90_sync_sprite_primary_layer}",
+      "ethornell-image/src/lib.rs::{decode_image,decode_standard_image}",
+      "ethornell-app/src/frame_presenter.rs::{prepare_frame,compose_commands}",
+      "ethornell-app/src/host_runtime.rs::HostRuntime::step_inner",
+      "ethornell-render/src/lib.rs::viewport_transform"
+    ]
+  }
+}

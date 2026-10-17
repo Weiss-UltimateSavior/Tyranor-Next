@@ -140,29 +140,16 @@
   function renderAbout(content) {
     content.innerHTML = card("Tyranor 修改器", '<p>版本 ' + escapeHtml(mod.version) + '</p><p>修改器只操作当前 RPG Maker MV/MZ 游戏的运行时对象。部分深度定制插件可能覆盖标准引擎 API；遇到异常时可在单游戏设置中关闭修改器。</p><p>事件加速和对话快进可能跳过演出或等待，建议先保存游戏。</p>');
   }
+  function inputBridge() {
+    return window.TyranorInputNative || null;
+  }
   function renderKeys(content) {
-    var hasPad = !!(window.__touchPad);
-    content.innerHTML = card("触屏手柄", hasPad
-      ? '<p>自定义屏幕上虚拟键的位置、大小与显隐。进入映射后：</p><ul style="margin:6px 0 10px;padding-left:18px;font-size:12px"><li>拖拽按钮调整位置</li><li>缩放进度条调整大小（1%-200%）</li><li>“透明”隐藏按钮</li><li>十字键微调位置</li></ul><div class="tm-row">' + button("进入键盘映射", "enter-keys", "primary") + button("恢复默认", "reset-keys") + '</div>'
-      : '<p>当前未加载触屏手柄。</p>');
-    if (!hasPad) return;
-    var names;
-    try { names = window.__touchPad.listPresets(); } catch (e) { names = []; }
-    if (names && names.length) {
-      var rows = names.map(function (name) {
-        // escapeHtml 已覆盖引号转义，data-name 属性可直接使用
-        var esc = escapeHtml(name);
-        return '<div class="tm-row" style="justify-content:space-between">' +
-          '<label style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0">' + escapeHtml(name) + '</label>' +
-          '<span style="display:flex;gap:6px">' +
-          button("预览", "preview-preset", "", 'data-name="' + esc + '"') +
-          button("载入", "load-preset", "", 'data-name="' + esc + '"') +
-          '</span></div>';
-      }).join("");
-      content.innerHTML += card("预设（" + names.length + "/10）", rows);
-    } else {
-      content.innerHTML += card("预设", '<p>暂无预设。在键盘映射面板中可保存当前布局为预设。</p>');
-    }
+    var bridge = inputBridge();
+    var hasPad = false;
+    try { hasPad = !!(bridge && bridge.isAvailable()); } catch (e) { hasPad = false; }
+    content.innerHTML = card("虚拟按键", hasPad
+      ? '<p>按键层由应用原生实现，可自定义按键的位置、文字、大小与输出键位。进入编辑后：</p><ul style="margin:6px 0 10px;padding-left:18px;font-size:12px"><li>点按按键选中，拖拽调整位置</li><li>右侧面板改文字 / 尺寸 / 键位</li><li>可复制、删除按键，或恢复默认</li><li>保存后立即生效</li></ul><div class="tm-row">' + button("进入按键编辑", "enter-keys", "primary") + button("恢复默认", "reset-keys") + '</div>'
+      : '<p>当前未启用虚拟按键。可在应用的引擎设置中开启。</p>');
   }
   function handleAction(action, node) {
     if (action === "close") return close();
@@ -191,39 +178,21 @@
     if (action === "load") return run(function () { return mod.loadGame(node.dataset.id); }, function () { toast("读取完成"); close(); });
     if (action === "delete-save") return run(function () { return mod.deleteSave(node.dataset.id); }, function () { toast("存档已删除"); renderSave(root.querySelector(".tm-content")); });
     if (action === "enter-keys") {
-      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
+      var bridge = inputBridge();
+      if (!bridge) { toast("当前未启用虚拟按键", true); return; }
+      var available = true;
+      try { available = !!bridge.isAvailable(); } catch (e) { available = false; }
+      if (!available) { toast("当前未启用虚拟按键", true); return; }
       close();
-      setTimeout(function () { try { window.__touchPad.enterEdit(); } catch (e) { toast(String(e && e.message || e), true); } }, 50);
+      setTimeout(function () { try { bridge.enterEdit(); } catch (e) { toast(String(e && e.message || e), true); } }, 50);
       return;
     }
     if (action === "reset-keys") {
-      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
+      var rbridge = inputBridge();
+      if (!rbridge) { toast("当前未启用虚拟按键", true); return; }
       try {
-        window.__touchPad.resetToDefaults();
+        rbridge.resetToDefaults();
         toast("已恢复默认");
-      } catch (e) { toast(String(e && e.message || e), true); }
-      return;
-    }
-    if (action === "preview-preset") {
-      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
-      var pname = node.dataset.name;
-      close();
-      setTimeout(function () {
-        try {
-          var res = window.__touchPad.previewPreset(pname);
-          if (res && res.ok === false) toast(res.msg, true);
-        } catch (e) { toast(String(e && e.message || e), true); }
-      }, 50);
-      return;
-    }
-    if (action === "load-preset") {
-      if (!window.__touchPad) { toast("未加载触屏手柄", true); return; }
-      var lname = node.dataset.name;
-      try {
-        var lres = window.__touchPad.loadPreset(lname);
-        if (lres && lres.ok) toast(lres.msg);
-        else toast(lres && lres.msg || "载入失败", true);
-        renderKeys(root.querySelector(".tm-content"));
       } catch (e) { toast(String(e && e.message || e), true); }
       return;
     }
@@ -306,21 +275,14 @@
       }
     } catch (e) {}
     positionLauncher();
-    // 触屏手柄（__touch_pad.js）重排后避让其动作键列；无手柄时回退右侧
-    window.addEventListener("tyranorpadlayout", positionLauncher);
     window.addEventListener("resize", positionLauncher);
   }
+  // 虚拟按键已改为原生实现（左侧 FAB + 覆盖层），不再发布 __touchPadMetrics；
+  // 悬浮球默认停靠右侧，用户可拖拽到任意位置并持久化。
   function positionLauncher() {
     if (!launcher || userDragged) return;
-    var pad = window.__touchPadMetrics;
-    var w = launcher.offsetWidth || 46;
-    if (pad && pad.actionLeft > 0 && window.innerWidth > pad.actionLeft + w + 20) {
-      launcher.style.right = "auto";
-      launcher.style.left = Math.max(8, Math.round(pad.actionLeft - w - 12)) + "px";
-    } else {
-      launcher.style.left = "";
-      launcher.style.right = "10px";
-    }
+    launcher.style.left = "";
+    launcher.style.right = "10px";
   }
   window.TyranorModUI = { open: open, close: close, toggle: toggle, isOpen: isOpen };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", installLauncher); else installLauncher();

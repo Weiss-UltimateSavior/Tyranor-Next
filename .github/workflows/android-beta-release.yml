@@ -28,6 +28,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          persist-credentials: false
 
       - name: Detect app version change
         id: version
@@ -91,9 +92,19 @@ jobs:
           echo "version_name=${new_name}" >> "${GITHUB_OUTPUT}"
           echo "version_code=$(code_of "${new_name}")" >> "${GITHUB_OUTPUT}"
 
+  ethornell-native:
+    name: Ethornell release native gate
+    needs: detect-version-change
+    if: needs.detect-version-change.outputs.changed == 'true'
+    uses: ./.github/workflows/ethornell-native.yml
+    with:
+      strict-release: true
+    permissions:
+      contents: read
+
   release-beta:
     name: Release Beta APK
-    needs: detect-version-change
+    needs: [detect-version-change, ethornell-native]
     if: needs.detect-version-change.outputs.changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -110,6 +121,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -124,7 +137,7 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
-          sdkmanager --channel=3 "platforms;android-36" "platforms;android-37.0" "build-tools;37.0.0"
+          sdkmanager --channel=3 "platforms;android-36" "platforms;android-37.0" "build-tools;37.0.0" "ndk;28.0.13004108"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -158,6 +171,35 @@ jobs:
 
       - name: Assemble release APK
         run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify actual release APK Ethornell bytes and dependency closure
+        run: |
+          # Check every APK, not an arbitrary first match. No APK is also failure.
+          shopt -s nullglob
+          apks=(app/build/outputs/apk/release/*.apk)
+          if (( ${#apks[@]} == 0 )); then
+            echo "::error::No release APK for native acceptance"
+            exit 1
+          fi
+          index=0
+          for apk in "${apks[@]}"; do
+            python3 tools/ethornell/verify_provenance.py \
+              --fetch-source "$RUNNER_TEMP/ethornell-release-source-$index" \
+              --ndk "$ANDROID_HOME/ndk/28.0.13004108" \
+              --host-tag linux-x86_64 \
+              --apk "$apk" \
+              --report "ethornell-release-apk-$index-acceptance.json"
+            "$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 -v 4 "$apk"
+            index=$((index + 1))
+          done
+
+      - name: Preserve release native acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethornell-release-apk-acceptance
+          path: ethornell-release-apk-*-acceptance.json
+          if-no-files-found: warn
 
       - name: Verify APK versionCode
         run: |

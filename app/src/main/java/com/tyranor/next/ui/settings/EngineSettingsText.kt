@@ -160,6 +160,14 @@ internal fun fvpNlsOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.FVP_NLS_UTF8 to stringResource(R.string.engine_settings_fvp_nls_utf8),
 )
 
+/** System35 渲染后端（auto 不传 `-renderer`，交由 SDL 自动探测；software 为兼容性兜底）。 */
+@Composable
+internal fun xsys35RendererOptions(): List<Pair<String, String>> = listOf(
+    EngineSettingsStore.XSYS35_RENDERER_AUTO to stringResource(R.string.engine_settings_xsys35_renderer_auto),
+    EngineSettingsStore.XSYS35_RENDERER_OPENGL to stringResource(R.string.engine_settings_xsys35_renderer_opengl),
+    EngineSettingsStore.XSYS35_RENDERER_SOFTWARE to stringResource(R.string.engine_settings_xsys35_renderer_software),
+)
+
 @Composable
 internal fun artPatchOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.AUTO_PATCH_ASK to stringResource(R.string.engine_option_auto_patch_ask),
@@ -253,6 +261,9 @@ internal fun siglusLanguageOptionsMap(): Map<String, String> = siglusLanguageOpt
 
 @Composable
 internal fun fvpNlsOptionsMap(): Map<String, String> = fvpNlsOptions().toMap()
+
+@Composable
+internal fun xsys35RendererOptionsMap(): Map<String, String> = xsys35RendererOptions().toMap()
 
 /** RealLive / AVG32 / UK2 文本编码（创建引擎时固定）。 */
 @Composable

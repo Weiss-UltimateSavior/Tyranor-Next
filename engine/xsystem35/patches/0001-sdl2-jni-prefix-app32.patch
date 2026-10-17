@@ -1,0 +1,26 @@
+--- a/src/core/android/SDL_android.c	2025-01-01 23:47:53
++++ b/src/core/android/SDL_android.c	2026-10-13 15:24:50
+@@ -50,7 +50,7 @@
+ #include <unistd.h>
+ #include <dlfcn.h>
+ 
+-#define SDL_JAVA_PREFIX                               org_libsdl_app
++#define SDL_JAVA_PREFIX                               org_libsdl_app32
+ #define CONCAT1(prefix, class, function)              CONCAT2(prefix, class, function)
+ #define CONCAT2(prefix, class, function)              Java_##prefix##_##class##_##function
+ #define SDL_JAVA_INTERFACE(function)                  CONCAT1(SDL_JAVA_PREFIX, SDLActivity, function)
+@@ -524,10 +524,10 @@
+         return JNI_VERSION_1_4;
+     }
+ 
+-    register_methods(env, "org/libsdl/app/SDLActivity", SDLActivity_tab, SDL_arraysize(SDLActivity_tab));
+-    register_methods(env, "org/libsdl/app/SDLInputConnection", SDLInputConnection_tab, SDL_arraysize(SDLInputConnection_tab));
+-    register_methods(env, "org/libsdl/app/SDLAudioManager", SDLAudioManager_tab, SDL_arraysize(SDLAudioManager_tab));
+-    register_methods(env, "org/libsdl/app/SDLControllerManager", SDLControllerManager_tab, SDL_arraysize(SDLControllerManager_tab));
++    register_methods(env, "org/libsdl/app32/SDLActivity", SDLActivity_tab, SDL_arraysize(SDLActivity_tab));
++    register_methods(env, "org/libsdl/app32/SDLInputConnection", SDLInputConnection_tab, SDL_arraysize(SDLInputConnection_tab));
++    register_methods(env, "org/libsdl/app32/SDLAudioManager", SDLAudioManager_tab, SDL_arraysize(SDLAudioManager_tab));
++    register_methods(env, "org/libsdl/app32/SDLControllerManager", SDLControllerManager_tab, SDL_arraysize(SDLControllerManager_tab));
+ 
+     return JNI_VERSION_1_4;
+ }

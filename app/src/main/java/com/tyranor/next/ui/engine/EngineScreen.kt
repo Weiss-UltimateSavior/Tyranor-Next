@@ -118,7 +118,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                 val tabModifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
                 if (AppThemeColors.isGlass) {
                     // 玻璃外观：Miuix TabRow 不支持指示器描边，改用统一标签栏组件
-                    // （亮卡指示器 + 滑动动画 + 0.5dp 描边，见 AGENT.md「标签栏统一规范」）
+                    // （亮卡指示器 + 滑动动画 + 0.5dp 描边，见 AGENTS.md「标签栏统一规范」）
                     SlidingTabRow(
                         tabs = tabs,
                         selectedIndex = selectedTab,
@@ -467,7 +467,8 @@ private enum class EngineTab { GAL, RPGM, CONSOLE, WEB }
 private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS,
-    EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2, EngineType.FVP,
+    EngineType.REALLIVE, EngineType.AVG32, EngineType.XSYS35, EngineType.UK2, EngineType.FVP,
+    EngineType.ETHORNELL,
     EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
@@ -496,8 +497,10 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.SIGLUS -> stringResource(R.string.engine_desc_siglus)
     EngineType.REALLIVE -> stringResource(R.string.engine_desc_reallive)
     EngineType.AVG32 -> stringResource(R.string.engine_desc_avg32)
+    EngineType.XSYS35 -> stringResource(R.string.engine_desc_xsys35)
     EngineType.UK2 -> stringResource(R.string.engine_desc_uk2)
     EngineType.FVP -> stringResource(R.string.engine_desc_fvp)
+    EngineType.ETHORNELL -> stringResource(R.string.engine_desc_ethornell)
 
     EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
     EngineType.CATSYSTEM2 -> stringResource(R.string.engine_desc_cs2)
@@ -539,6 +542,7 @@ private val rpgMakerWebBuiltin = listOf(
 
 /** 各内置引擎的「版本条目」弹窗内容（条目顺序即展示顺序）。 */
 private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = mapOf(
+    EngineType.ETHORNELL to listOf(builtinEntry("internal.ethornell", "ethornell-rs / Android host ABI 1")),
     EngineType.TYRANO to tyranorWebBuiltin,
     EngineType.WEB_OTHER to tyranorWebBuiltin,
     EngineType.VN to tyranorWebBuiltin,
@@ -559,6 +563,9 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
     ),
     EngineType.UK2 to listOf(
         builtinEntry("game-launcher", "game_launcher-xmoezzz"),
+    ),
+    EngineType.XSYS35 to listOf(
+        builtinEntry("xsys35-2.20.0", "xsystem35-2.20.0"),
     ),
     EngineType.FVP to listOf(
         builtinEntry("fvp-rfvp", "rfvp-xmoezzz"),

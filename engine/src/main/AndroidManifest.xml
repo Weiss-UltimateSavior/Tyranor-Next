@@ -163,6 +163,18 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
         </activity>
 
+        <!-- Host-driven Ethornell runtime: VM/GPU calls are owned by its dedicated engine thread. -->
+        <activity
+            android:name="com.core.ethornell.EthornellActivity"
+            android:exported="false"
+            android:process=":ethornell"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Ethornell"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Ethornell"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
         <!-- FVPEngine（rfvp）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
         <activity
             android:name="com.core.fvp.FvpActivity"
@@ -188,6 +200,18 @@
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
         </activity>
+
+        <!-- System3.x（xsystem35）宿主：SDL2 主循环（vendored org.libsdl.app32 2.32.10） -->
+        <activity
+            android:name="com.core.xsys35.Xs35Activity"
+            android:exported="false"
+            android:process=":xsys35"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Xsys35"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Xsys35"
+            android:windowSoftInputMode="adjustPan"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
 
         <!-- ONS（ons）SDL2 宿主 -->
         <activity

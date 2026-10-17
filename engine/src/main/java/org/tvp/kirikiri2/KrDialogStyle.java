@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.text.InputType;
 import android.view.Gravity;
 import android.view.Window;
 import android.view.WindowManager;
@@ -24,7 +25,7 @@ import com.core.engine.LaunchContract;
  * <p>从启动 Activity 的 Intent extras 读取主题色（由 LauncherUiBridge.appendEngineThemeExtras
  * 注入），使引擎弹窗在视觉上与 Launcher 主题一致。无 extras 时回退到 Material 深色默认值。</p>
  *
- * <p>样式规格遵循 agent.md：20dp 卡片圆角、20dp 按钮圆角、16sp bold 标题、
+ * <p>样式规格遵循 AGENTS.md：20dp 卡片圆角、20dp 按钮圆角、16sp bold 标题、
  * 12sp muted 正文、13sp bold 按钮、38dp 按钮高度。</p>
  */
 public final class KrDialogStyle {
@@ -39,7 +40,7 @@ public final class KrDialogStyle {
     private static final int FALLBACK_INPUT_TEXT    = 0xFFFFFFFF;
     private static final int FALLBACK_INPUT_HINT    = 0xFF808080;
 
-    // --- 尺寸常量（agent.md） ---
+    // --- 尺寸常量（AGENTS.md） ---
     private static final float CARD_RADIUS_DP   = 20f;
     private static final float BUTTON_RADIUS_DP = 20f;
     private static final float INPUT_RADIUS_DP  = 8f;
@@ -80,6 +81,57 @@ public final class KrDialogStyle {
     public static Dialog showInputBox(Context context, String title, String message,
                                       String initialText, String[] buttons,
                                       boolean cancelable, Callback callback) {
+        return showInputBoxInternal(context, title, message, initialText, buttons, cancelable, callback,
+                InputType.TYPE_CLASS_TEXT, (which, rawText) -> rawText);
+    }
+
+    /**
+     * 带数值输入的弹窗：确认时对 [min,max] 做钳制，返回 String.valueOf(值)；取消/无效输入回退 initial。
+     *
+     * <p>与文本输入入口共用同一卡片与按钮，输入控件为同一规格的 EditText（数字键盘、允许负号）。
+     * 确认（which==0）时解析输入框文本：空或非法回退 initial，再钳制到规范化后的 [min,max]；
+     * 取消（which!=0）时回调 inputText 为空串。</p>
+     *
+     * @param initial 预填值，内部钳制入 [min,max]（min/max 顺序不限，内部先规范化）。
+     */
+    public static Dialog showNumberBox(Context context, String title, String message,
+                                       int initial, int min, int max,
+                                       String[] buttons, boolean cancelable, Callback callback) {
+        final int lo = Math.min(min, max);
+        final int hi = Math.max(min, max);
+        final int start = Math.min(Math.max(initial, lo), hi);
+        return showInputBoxInternal(context, title, message, String.valueOf(start), buttons, cancelable, callback,
+                InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_SIGNED,
+                (which, rawText) -> which == 0 ? resolveNumberText(rawText, start, lo, hi) : "");
+    }
+
+    /**
+     * 数值输入解析（{@link #showNumberBox} 确认路径）：空或非法输入回退 fallback，
+     * 再钳制到 [min,max]（顺序不限）。包内可见以便单元测试。
+     */
+    static String resolveNumberText(String rawText, int fallback, int min, int max) {
+        String text = rawText == null ? "" : rawText.trim();
+        int value = fallback;
+        if (!text.isEmpty()) {
+            try {
+                value = Integer.parseInt(text);
+            } catch (NumberFormatException ignored) {
+                value = fallback;
+            }
+        }
+        return String.valueOf(Math.min(Math.max(value, Math.min(min, max)), Math.max(min, max)));
+    }
+
+    /**
+     * 输入弹窗核心：文本与数值入口共用同一卡片、按钮与键盘唤起流程。
+     *
+     * @param inputType 输入控件类型（文本或数值）。
+     * @param resolver 按钮点击时把输入框原文转换为回调的 inputText。
+     */
+    private static Dialog showInputBoxInternal(Context context, String title, String message,
+                                               String initialText, String[] buttons,
+                                               boolean cancelable, Callback callback,
+                                               int inputType, InputTextResolver resolver) {
         Colors c = resolveColors(context);
 
         // 用 Dialog 而非 AlertDialog，避免内部布局冲突。
@@ -99,14 +151,14 @@ public final class KrDialogStyle {
         }
         final EditText editText;
         if (initialText != null) {
-            editText = addEditText(card, initialText, c);
+            editText = addEditText(card, initialText, c, inputType);
         } else {
             editText = null;
         }
         addButtons(card, buttons, c, (which) -> {
             buttonClicked[0] = true;
             dialog.dismiss();
-            String text = editText != null ? editText.getText().toString() : "";
+            String text = editText != null ? resolver.resolve(which, editText.getText().toString()) : "";
             if (callback != null) callback.onButtonClicked(which, text);
         });
 
@@ -259,14 +311,14 @@ public final class KrDialogStyle {
         card.addView(view, params);
     }
 
-    private static EditText addEditText(LinearLayout card, String initialText, Colors c) {
+    private static EditText addEditText(LinearLayout card, String initialText, Colors c, int inputType) {
         Context context = card.getContext();
         EditText edit = new EditText(context);
         edit.setText(initialText);
         edit.setTextColor(c.inputText);
         edit.setHintTextColor(c.inputHint);
         edit.setSingleLine(true);
-        edit.setInputType(android.text.InputType.TYPE_CLASS_TEXT);
+        edit.setInputType(inputType);
         edit.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
         edit.setFocusable(true);
         edit.setFocusableInTouchMode(true);
@@ -337,5 +389,10 @@ public final class KrDialogStyle {
 
     private interface ButtonClickCallback {
         void onClicked(int index);
+    }
+
+    /** 输入框原文 → 回调 inputText 的转换（数值入口用于解析与钳制）。 */
+    private interface InputTextResolver {
+        String resolve(int which, String rawText);
     }
 }

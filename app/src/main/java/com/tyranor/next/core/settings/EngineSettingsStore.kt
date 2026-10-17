@@ -77,9 +77,17 @@ object EngineSettingsStore {
 
     // FVP（rfvp）应用级默认（文本编码 / 系统字体回退 / 文本高分辨率渲染 / 自定义字体）
     const val KEY_FVP_NLS = "fvp_nls"
+    const val KEY_ETHORNELL_NLS = "ethornell_nls"
+    const val KEY_ETHORNELL_FONT = "ethornell_font"
     const val KEY_FVP_SYSTEM_FONT = "fvp_system_font"
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val KEY_FVP_FONT = "fvp_font"
+
+    // System35（xsystem35）应用级默认（独立存档 / 渲染后端 / 整数倍缩放 / 失焦静音）
+    const val KEY_XSYS35_SCOPED_SAVE_DIR = "xsys35_scoped_save_dir"
+    const val KEY_XSYS35_RENDERER = "xsys35_renderer"
+    const val KEY_XSYS35_INTEGER_SCALE = "xsys35_integer_scale"
+    const val KEY_XSYS35_MUTE_UNFOCUS = "xsys35_mute_unfocus"
 
     // Winlator 外置启动（YU-RIS / CatSystem2 / PC 经 Winlator 跳转时的下发参数）
     const val KEY_WINLATOR_CONTAINER_ID = "winlator_container_id"
@@ -106,6 +114,10 @@ object EngineSettingsStore {
     // Tyrano 与 RPG Maker Web 共用同一套 WebView 宿主设置；启动链路按同一键读取。
     const val KEY_TYRANO_EXTERNAL_NETWORK = "tyrano_external_network"
     const val KEY_TYRANO_SCOPED_SAVE_DIR = "tyrano_scoped_save_dir"
+    // 输入重映射全局键（与 engine InputConfigStore 字面量锚定）
+    const val KEY_INPUT_PAD_ENABLED = "input_pad_enabled"
+    const val KEY_INPUT_GAMEPAD_ENABLED = "input_gamepad_enabled"
+    const val KEY_INPUT_PROFILE_ID = "input_profile_id"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
     const val KEY_RPG_LEGACY_RENDERER = "rpg_legacy_renderer"
     const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
@@ -303,12 +315,25 @@ object EngineSettingsStore {
 
     // FVP 文本编码取值（创建引擎时固定，改动后需重启本局）
     const val FVP_NLS_SJIS = "sjis"
+    const val ETHORNELL_NLS_SJIS = "sjis"
+    const val ETHORNELL_NLS_GBK = "gbk"
+    val ETHORNELL_NLS_VALUES: Set<String> = linkedSetOf(ETHORNELL_NLS_SJIS, ETHORNELL_NLS_GBK)
     const val FVP_NLS_GBK = "gbk"
     const val FVP_NLS_UTF8 = "utf8"
     val FVP_NLS_VALUES: Set<String> = linkedSetOf(
         FVP_NLS_SJIS,
         FVP_NLS_GBK,
         FVP_NLS_UTF8,
+    )
+
+    // System35 渲染后端取值（auto 不传 -renderer，交由 SDL 自动探测；opengl = GLES2，software 兜底）
+    const val XSYS35_RENDERER_AUTO = "auto"
+    const val XSYS35_RENDERER_OPENGL = "opengl"
+    const val XSYS35_RENDERER_SOFTWARE = "software"
+    val XSYS35_RENDERER_VALUES: Set<String> = linkedSetOf(
+        XSYS35_RENDERER_AUTO,
+        XSYS35_RENDERER_OPENGL,
+        XSYS35_RENDERER_SOFTWARE,
     )
 
     // Winlator 外置启动取值域（空串 = 不下发该参数，跟随容器/快捷方式配置）
@@ -719,6 +744,16 @@ object EngineSettingsStore {
     fun normalizeFbNls(v: String?): String =
         v?.trim()?.lowercase()?.takeIf { it in FB_NLS_VALUES } ?: FB_NLS_AUTO
 
+    // ---------- Ethornell / BGI ----------
+    fun getEthornellNls(c: Context): String =
+        normalizeEthornellNls(prefs(c).getString(KEY_ETHORNELL_NLS, ETHORNELL_NLS_SJIS))
+    fun setEthornellNls(c: Context, value: String) =
+        prefs(c).edit().putString(KEY_ETHORNELL_NLS, normalizeEthornellNls(value)).apply()
+    fun normalizeEthornellNls(value: String?): String =
+        value?.trim()?.lowercase(java.util.Locale.ROOT)?.takeIf { it in ETHORNELL_NLS_VALUES } ?: ETHORNELL_NLS_SJIS
+    fun getEthornellFont(c: Context): String = prefs(c).getString(KEY_ETHORNELL_FONT, "").orEmpty()
+    fun setEthornellFont(c: Context, value: String) = prefs(c).edit().putString(KEY_ETHORNELL_FONT, value.trim()).apply()
+
     // ---------- FVP ----------
     fun getFvpNls(c: Context): String =
         normalizeFvpNls(prefs(c).getString(KEY_FVP_NLS, FVP_NLS_SJIS))
@@ -734,6 +769,24 @@ object EngineSettingsStore {
     fun setFvpFont(c: Context, v: String?) =
         prefs(c).edit().putString(KEY_FVP_FONT, normalizeFvpFont(v)).apply()
     fun normalizeFvpFont(v: String?): String = v?.trim().orEmpty()
+
+    // ---------- System35（xsystem35） ----------
+    fun isXs35ScopedSaveDir(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_XSYS35_SCOPED_SAVE_DIR, true)
+    fun setXs35ScopedSaveDir(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_XSYS35_SCOPED_SAVE_DIR, b).apply()
+    fun getXs35Renderer(c: Context): String =
+        normalizeXs35Renderer(prefs(c).getString(KEY_XSYS35_RENDERER, XSYS35_RENDERER_AUTO))
+    fun setXs35Renderer(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_XSYS35_RENDERER, normalizeXs35Renderer(v)).apply()
+    fun normalizeXs35Renderer(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in XSYS35_RENDERER_VALUES } ?: XSYS35_RENDERER_AUTO
+    fun isXs35IntegerScale(c: Context): Boolean = prefs(c).getBoolean(KEY_XSYS35_INTEGER_SCALE, false)
+    fun setXs35IntegerScale(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_XSYS35_INTEGER_SCALE, b).apply()
+    fun isXs35MuteUnfocus(c: Context): Boolean = prefs(c).getBoolean(KEY_XSYS35_MUTE_UNFOCUS, false)
+    fun setXs35MuteUnfocus(c: Context, b: Boolean) =
+        prefs(c).edit().putBoolean(KEY_XSYS35_MUTE_UNFOCUS, b).apply()
 
     // ---------- Winlator 外置启动 ----------
 
@@ -843,6 +896,27 @@ object EngineSettingsStore {
     fun setRpgLegacyRenderer(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_LEGACY_RENDERER, b).apply()
     fun isRpgSaveInterop(c: Context): Boolean = prefs(c).getBoolean(KEY_RPG_SAVE_INTEROP, false)
     fun setRpgSaveInterop(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_RPG_SAVE_INTEROP, b).apply()
+
+    // ---------- 输入重映射（虚拟按键 + 手柄映射） ----------
+    /**
+     * 全局虚拟按键开关。
+     *
+     * [default] 必须由调用方显式给出（**故意不给默认值**）：「用户未设置」的生效值随引擎而异，
+     * MV/MZ 改造前就有按键层故默认开、Tyrano/VN/WebOther 默认关；留一个隐式默认值意味着
+     * 某个调用点可能悄悄用错策略（设置页「跟随全局」显示与游戏内实际按键层相悖）。
+     * 唯一策略来源：[com.tyranor.next.core.input.InputRemapRepository.engineDefaultsPadEnabled]；
+     * 引擎侧 `InputConfigStore.resolve` 用同一个 prefs 键 + `contains` 判定显式性，两处必须一致。
+     */
+    fun isInputPadEnabled(c: Context, default: Boolean): Boolean =
+        prefs(c).getBoolean(KEY_INPUT_PAD_ENABLED, default)
+    fun setInputPadEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_INPUT_PAD_ENABLED, b).apply()
+    fun isInputGamepadEnabled(c: Context): Boolean = prefs(c).getBoolean(KEY_INPUT_GAMEPAD_ENABLED, true)
+    fun setInputGamepadEnabled(c: Context, b: Boolean) = prefs(c).edit().putBoolean(KEY_INPUT_GAMEPAD_ENABLED, b).apply()
+    fun getInputProfileId(c: Context): String =
+        prefs(c).getString(KEY_INPUT_PROFILE_ID, null)?.takeIf { it.isNotBlank() }
+            ?: com.core.input.InputConfigStore.DEFAULT_PROFILE_ID
+    fun setInputProfileId(c: Context, v: String) =
+        prefs(c).edit().putString(KEY_INPUT_PROFILE_ID, v).apply()
 
     // ---------- RPG Maker MV / MZ ----------
     fun getRpgMvEngineVersion(c: Context): String =

@@ -6,7 +6,7 @@ import org.junit.Test
 
 /**
  * 悬浮按钮导航的弧形展开坐标：四个导航项在「正上方 → 正左方」的 1/4 圆弧上均分，
- * progress 0→1 从圆心滑到弧上。这里钉住坐标方向与角度分布，防止后续调参把弧线画反。
+ * 首尾使用弧端点，progress 0→1 从圆心滑到弧上，约束实际布局使用的坐标方向与角度分布。
  */
 class FloatingNavArcTest {
 
@@ -25,25 +25,23 @@ class FloatingNavArcTest {
     @Test
     fun firstItem_expandsUpward() {
         val offset = floatingNavArcOffset(index = 0, count = 4, radiusPx = 100f, progress = 1f)
-        // 角度 101.25°：偏左上，纵向为主
-        assertEquals(-19.51f, offset.x, tolerance)
-        assertEquals(-98.08f, offset.y, tolerance)
+        assertEquals(0f, offset.x, tolerance)
+        assertEquals(-100f, offset.y, tolerance)
     }
 
     @Test
     fun lastItem_expandsLeftward() {
         val offset = floatingNavArcOffset(index = 3, count = 4, radiusPx = 100f, progress = 1f)
-        // 角度 168.75°：偏左上，横向为主
-        assertEquals(-98.08f, offset.x, tolerance)
-        assertEquals(-19.51f, offset.y, tolerance)
+        assertEquals(-100f, offset.x, tolerance)
+        assertEquals(0f, offset.y, tolerance)
     }
 
     @Test
     fun allItems_stayInUpperLeftQuadrant() {
         for (index in 0 until 4) {
             val offset = floatingNavArcOffset(index, count = 4, radiusPx = 100f, progress = 1f)
-            assertEquals(true, offset.x < 0f)
-            assertEquals(true, offset.y < 0f)
+            assertEquals(true, offset.x <= tolerance)
+            assertEquals(true, offset.y <= tolerance)
         }
     }
 
@@ -82,9 +80,8 @@ class FloatingNavArcTest {
             progress = 1f,
             startAngleDeg = -90f,
         )
-        // 角度 -78.75°：偏右下，横向为主
-        assertEquals(19.51f, offset.x, tolerance)
-        assertEquals(98.08f, offset.y, tolerance)
+        assertEquals(0f, offset.x, tolerance)
+        assertEquals(100f, offset.y, tolerance)
     }
 
     @Test
@@ -96,8 +93,14 @@ class FloatingNavArcTest {
             progress = 1f,
             startAngleDeg = 180f,
         )
-        // 角度 258.75°：偏左下，纵向为主
-        assertEquals(-19.51f, offset.x, tolerance)
-        assertEquals(98.08f, offset.y, tolerance)
+        assertEquals(0f, offset.x, tolerance)
+        assertEquals(100f, offset.y, tolerance)
+    }
+
+    @Test
+    fun singleItem_staysInArcCenter() {
+        val offset = floatingNavArcOffset(0, count = 1, radiusPx = 100f, progress = 1f)
+        assertEquals(-70.71f, offset.x, tolerance)
+        assertEquals(-70.71f, offset.y, tolerance)
     }
 }

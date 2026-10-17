@@ -138,7 +138,9 @@ class RpgMakerFsBridgeTest {
         val contentRoot = File(gameRoot, "www").apply { mkdirs() }
         val bridge = RpgMakerFsBridge(gameRoot, contentRoot)
         assertEquals(contentRoot.absolutePath, bridge.baseDir())
-        assertEquals(File(gameRoot, "AppData").absolutePath, bridge.dataDir())
+        // 生产构造器先 canonicalize gameRoot；macOS 临时目录的 /var 别名会解析为
+        // /private/var。预期必须采用同一根语义，不能把别名拼写差异当业务回归。
+        assertEquals(File(gameRoot.canonicalFile, "AppData").absolutePath, bridge.dataDir())
         // 相对路径按网页根解析
         assertTrue(bridge.writeText("data.txt", "x"))
         assertTrue(File(contentRoot, "data.txt").exists())

@@ -1,0 +1,78 @@
+name: Ethornell Native Acceptance
+
+on:
+  workflow_call:
+    inputs:
+      strict-release:
+        description: Require the exact clean engine revision to be publicly fetchable
+        type: boolean
+        default: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tools-tests:
+    name: Ethornell Python tool tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run format, ELF verifier and provenance regression tests
+        run: python3 -m unittest discover -s tools/ethornell/tests -v
+
+  native-acceptance:
+    name: Formal runtime ELF and provenance checks
+    needs: tools-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Do not add a hashFiles()/exists guard here: absent runtime is a failure.
+      - name: Require formal native delivery
+        run: |
+          for file in engine/src/main/jniLibs/arm64-v8a/libethornell.so engine/src/main/jniLibs/arm64-v8a/libethornell.provenance.json engine/src/main/cpp/ethornell_android.h; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Missing formal Ethornell delivery: $file (no skip/fallback allowed)"
+              exit 1
+            fi
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install pinned official Linux NDK
+        run: sdkmanager "ndk;28.0.13004108"
+      - name: Verify vendored ABI, exact published engine source, ELF and dependencies
+        env:
+          STRICT_RELEASE: ${{ github.event_name == 'workflow_dispatch' || inputs.strict-release }}
+        run: |
+          source_args=(--local-static)
+          if [[ "$STRICT_RELEASE" == "true" ]]; then
+            source_args=(--fetch-source "$RUNNER_TEMP/ethornell-source")
+          fi
+          python3 tools/ethornell/verify_provenance.py \
+            "${source_args[@]}" \
+            --ndk "$ANDROID_HOME/ndk/28.0.13004108" \
+            --host-tag linux-x86_64 \
+            --report ethornell-native-acceptance.json
+          if [[ "$STRICT_RELEASE" != "true" ]]; then
+            echo "::notice::Local static acceptance only; source provenance/reproducibility is PENDING (release_ready=false)."
+          fi
+      - name: Preserve acceptance evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethornell-native-acceptance
+          path: ethornell-native-acceptance.json
+          if-no-files-found: warn

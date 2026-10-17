@@ -95,7 +95,7 @@ object RpgSaveFormatConverter {
                     converted++
                 }
             } catch (cancelled: CancellationException) {
-                // 取消必须原样传播（AGENT.md：取消不得被吞掉），且不计入 failed
+                // 取消必须原样传播（AGENTS.md：取消不得被吞掉），且不计入 failed
                 throw cancelled
             } catch (_: Throwable) {
                 // 单文件失败不影响其它文件。复制阶段失败时目标可能是半成品，而源文件仍在原位；

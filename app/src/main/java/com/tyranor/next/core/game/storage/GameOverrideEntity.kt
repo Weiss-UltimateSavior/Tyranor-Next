@@ -7,7 +7,7 @@ import androidx.room.PrimaryKey
 /**
  * 单游戏覆盖设置表（迁移方案 4.4 第一阶段）：按引擎域分区的结构化 JSON，
  * 替代旧 tyranor_game_overrides prefs 的 JSON-in-XML 整条读写。
- * 引擎子进程（TyranoActivity/TouchPadSaveBridge）仍直读 prefs 镜像，
+ * 引擎子进程（TyranoActivity / RpgMakerActivity）只读 prefs 镜像，
  * App 写路径由 PerGameSettingsStore 同步写镜像（方案阶段 4 的过渡策略）。
  * 分区映射见 [GameOverridePartitions]。
  */

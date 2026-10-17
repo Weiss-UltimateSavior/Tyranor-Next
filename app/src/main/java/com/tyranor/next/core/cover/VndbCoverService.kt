@@ -2,8 +2,6 @@ package com.tyranor.next.core.cover
 
 import android.content.Context
 import android.net.Uri
-import com.tyranor.next.R
-import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import org.json.JSONArray
@@ -30,9 +28,8 @@ object VndbCoverService {
     private const val ENDPOINT = "https://api.vndb.org/kana/vn"
     private const val FIELDS =
         "title,alttitle,titles.lang,titles.title,titles.latin,titles.official,titles.main,released,image.url,image.thumbnail,developers.name,developers.original"
-    private const val MIN_REQUEST_INTERVAL_MS = 1100L
-
-    private var lastRequestTime = 0L
+    /** 限流：与未萌 NextMoe 共用 RequestThrottle（都属「单机串行 + 服务端限流」来源）。 */
+    private val throttle = RequestThrottle(1100L)
 
     fun fetchBestCover(context: Context, game: ScanGame): ScanGame? {
         if (!game.coverUri.isNullOrBlank()) return game
@@ -102,7 +99,7 @@ object VndbCoverService {
             .put("sort", "searchrank")
             .put("results", limit.coerceIn(1, 10))
 
-        throttle()
+        throttle.await()
 
         var conn: HttpURLConnection? = null
         return try {
@@ -116,7 +113,7 @@ object VndbCoverService {
                 setRequestProperty("User-Agent", "TyranorNext/1.0")
             }
             conn.outputStream.use { it.write(body.toString().toByteArray(StandardCharsets.UTF_8)) }
-            if (conn.responseCode !in 200..299) throw CoverSearchException(text(context, R.string.cover_error_vndb_network))
+            if (conn.responseCode !in 200..299) throw CoverSearchException(CoverErrorCode.VNDB_NETWORK)
             val text = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
             val results = JSONObject(text).optJSONArray("results") ?: return emptyList()
             val preferLarge = AppSettingsStore.isVndbLargeCover(context)
@@ -128,7 +125,7 @@ object VndbCoverService {
         } catch (e: CoverSearchException) {
             throw e
         } catch (_: Exception) {
-            throw CoverSearchException(text(context, R.string.cover_error_vndb_network))
+            throw CoverSearchException(CoverErrorCode.VNDB_NETWORK)
         } finally {
             conn?.disconnect()
         }
@@ -175,17 +172,6 @@ object VndbCoverService {
         )
     }
 
-    @Synchronized
-    private fun throttle() {
-        val now = System.currentTimeMillis()
-        val wait = MIN_REQUEST_INTERVAL_MS - (now - lastRequestTime)
-        if (wait > 0) Thread.sleep(wait)
-        lastRequestTime = System.currentTimeMillis()
-    }
-
     private fun VndbCandidate.displayTitle(): String =
         firstNonEmpty(title, originalTitle).trim()
-
-    private fun text(context: Context, id: Int): String =
-        AppLocaleController.wrap(context).getString(id)
 }

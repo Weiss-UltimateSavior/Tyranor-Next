@@ -18,7 +18,7 @@ import com.tyranor.next.theme.GlassSurfaceSolid
  * 只需要把这里的输入换成根部统一的 `MaterialTheme.colorScheme`，玻璃渲染核心与交互参数不动。
  *
  * 说明：报告 §8.2 建议把本文件放在 `theme/`，但项目 `theme/` 不依赖 `ui/`
- * （AGENT.md 三层架构与依赖方向纪律），因此适配器与颜色契约同置于 `ui/common/glass/`，
+ * （AGENTS.md 三层架构与依赖方向纪律），因此适配器与颜色契约同置于 `ui/common/glass/`，
  * 保持依赖方向为 `ui → theme`，取色职责仍收口在单一函数内。
  *
  * @param unselectedColor 可见未选中图标色（调用方传入当前主题的未选中灰）。

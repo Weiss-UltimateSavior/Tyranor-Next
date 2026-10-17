@@ -66,7 +66,7 @@ private val ScrollableTabContentPadding = 12.dp
 private const val IndicatorDurationMillis = 200
 
 /**
- * 标签栏统一组件（AGENT.md「标签栏统一规范」的唯一入口）。
+ * 标签栏统一组件（AGENTS.md「标签栏统一规范」的唯一入口）。
  *
  * 选中项是**独立背景指示器**（不是逐项背景），切换时指示器以 200ms 线性动画滑到目标标签，
  * 宽度同步动画（滚动态标签宽度不齐时宽度也平滑过渡）。指示器与文字颜色由组件内部按

@@ -112,7 +112,7 @@ git remote -v
 提交代码时，请尽量保持与项目现有代码风格一致。
 
 基本要求：
-* vibe coding 必须严格遵守 `AGENT.md` 中的代码规范。
+* vibe coding 必须严格遵守 `AGENTS.md` 中的代码规范。
 * 使用 Kotlin 13.0.0 或更高版本
 * 使用清晰、有意义的变量名
 * 避免无意义缩写

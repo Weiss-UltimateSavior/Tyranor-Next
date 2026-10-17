@@ -105,7 +105,7 @@ fun LiquidGlassNavigationBar(
     // 玻璃表面色随外观模式：深色模式用深色表面；高级玻璃参考图的悬浮玻璃为浅色
     val surfaceColor = if (AppThemeColors.isDark && !AppThemeColors.isAdvancedGlass) DarkGrey else Color.White
     val mutedColor = unselectedColor
-    // 统一圆角（AGENT.md）：圆角组件一律 8dp；液态玻璃导航在 8dp 基础上加大 8dp，视觉更圆润
+    // 统一圆角（AGENTS.md）：圆角组件一律 8dp；液态玻璃导航在 8dp 基础上加大 8dp，视觉更圆润
     val shape = RoundedCornerShape(16.dp)
     // blur 依赖 RenderEffect（Android 12+ 才生效）；低版本使用轻量实色表面。
     val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S

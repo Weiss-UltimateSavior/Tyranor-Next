@@ -34,7 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -80,6 +79,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
@@ -290,30 +290,33 @@ fun HomeScreen(
                 )
             },
             confirmButton = {
-                TextButton(
+                DialogTextButton(
+                    text = stringResource(R.string.game_patch_always),
                     onClick = {
                         val target = patchLaunchTarget
                         patchLaunchTarget = null
                         target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.ALWAYS) }
                     },
-                ) { Text(stringResource(R.string.game_patch_always)) }
+                )
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(
+                    DialogTextButton(
+                        text = stringResource(R.string.game_patch_never),
                         onClick = {
                             val target = patchLaunchTarget
                             patchLaunchTarget = null
                             target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.NEVER) }
                         },
-                    ) { Text(stringResource(R.string.game_patch_never)) }
-                    TextButton(
+                    )
+                    DialogTextButton(
+                        text = stringResource(R.string.game_patch_once),
                         onClick = {
                             val target = patchLaunchTarget
                             patchLaunchTarget = null
                             target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.ONCE) }
                         },
-                    ) { Text(stringResource(R.string.game_patch_once)) }
+                    )
                 }
             },
         )

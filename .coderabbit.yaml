@@ -6,7 +6,7 @@
 #
 # 项目级审核依据：
 #
-#   1. AGENT.md
+#   1. AGENTS.md
 #   2. CONTRIBUTING.md
 #
 # CodeRabbit 必须结合上述文件以及实际代码上下文进行审核。
@@ -159,7 +159,7 @@ reviews:
   # 2. Engine Compatibility Impact
   # 3. Breaking Change Documentation
   # 4. Engine Regression Testing
-  # 5. AGENT.md Compliance
+  # 5. AGENTS.md Compliance
   #
   # ==========================================================
 
@@ -438,22 +438,22 @@ reviews:
 
 
     # --------------------------------------------------------
-    # 5. AGENT.md Compliance
+    # 5. AGENTS.md Compliance
     # --------------------------------------------------------
 
-    - name: "AGENT.md Compliance"
+    - name: "AGENTS.md Compliance"
 
       mode: "error"
 
       instructions: |
-        检查本次 Pull Request 是否遵守仓库根目录 AGENT.md。
+        检查本次 Pull Request 是否遵守仓库根目录 AGENTS.md。
 
-        AGENT.md 是 Tyranor Next 的强制项目开发规范之一。
+        AGENTS.md 是 Tyranor Next 的强制项目开发规范之一。
 
-        审核时必须实际参考当前分支中的最新 AGENT.md，
+        审核时必须实际参考当前分支中的最新 AGENTS.md，
         不得凭通用 Android / Kotlin 风格代替项目自己的规则。
 
-        特别关注 AGENT.md 中具有以下措辞的规则：
+        特别关注 AGENTS.md 中具有以下措辞的规则：
 
         - 必须
         - 禁止
@@ -494,13 +494,13 @@ reviews:
         - 公共组件复用
         - 测试与审核要求
 
-        如果 PR 存在仍未解决的明确 AGENT.md 强制规范违规，
+        如果 PR 存在仍未解决的明确 AGENTS.md 强制规范违规，
         此检查必须失败。
 
         如果只是非强制性的可选改进，
         不应错误阻塞 PR。
 
-        对 AGENT.md 自身的修改：
+        对 AGENTS.md 自身的修改：
 
         不应使用修改前的旧规则机械判定新规则违规。
 
@@ -536,12 +536,12 @@ reviews:
         审核所有 Pull Request 时，
         必须优先阅读和遵守仓库根目录：
 
-        - AGENT.md
+        - AGENTS.md
         - CONTRIBUTING.md
 
         两个文件属于项目级审核依据。
 
-        AGENT.md：
+        AGENTS.md：
 
         定义 Tyranor Next 的：
 
@@ -564,7 +564,7 @@ reviews:
         - Bug 修复要求
         - 合并要求
 
-        AGENT.md 中出现：
+        AGENTS.md 中出现：
 
         - 必须
         - 禁止
@@ -576,7 +576,7 @@ reviews:
         应将其理解为项目强制要求，
         而不是普通风格建议。
 
-        对明确违反 AGENT.md 强制规则的问题，
+        对明确违反 AGENTS.md 强制规则的问题，
         默认至少按 Major 级别理解。
 
         如果违规可能造成：
@@ -659,7 +659,7 @@ reviews:
 
         检查：
 
-        - AGENT.md
+        - AGENTS.md
         - CONTRIBUTING.md
         - 命名
         - 重复代码
@@ -686,7 +686,7 @@ reviews:
 
         Major
 
-        - 明确违反 AGENT.md 强制规范
+        - 明确违反 AGENTS.md 强制规范
         - 明显逻辑错误
         - 生命周期错误
         - SAF / 文件处理错误
@@ -748,7 +748,7 @@ reviews:
     - path: "app/src/main/**/*.kt"
 
       instructions: |
-        严格按照 AGENT.md 审核 Kotlin 与 Android 代码。
+        严格按照 AGENTS.md 审核 Kotlin 与 Android 代码。
 
         重点检查：
 
@@ -808,7 +808,7 @@ reviews:
     - path: "app/src/main/java/**/ui/**/*.kt"
 
       instructions: |
-        本路径必须严格执行 AGENT.md 中的 UI 统一规范。
+        本路径必须严格执行 AGENTS.md 中的 UI 统一规范。
 
         请主动检查以下问题。
 
@@ -841,7 +841,7 @@ reviews:
 
         【圆角】
 
-        AGENT.md 指定的：
+        AGENTS.md 指定的：
 
         - 卡片
         - 列表项
@@ -867,7 +867,7 @@ reviews:
         - headlineMedium
         - headlineSmall
 
-        等违反 AGENT.md 的 typography。
+        等违反 AGENTS.md 的 typography。
 
         顶部栏 titleLarge 属于允许例外。
 
@@ -906,7 +906,7 @@ reviews:
       instructions: |
         主题系统属于高风险公共模块。
 
-        必须严格依据 AGENT.md 检查主题状态传播。
+        必须严格依据 AGENTS.md 检查主题状态传播。
 
         重点检查：
 
@@ -950,10 +950,10 @@ reviews:
         - 固定品牌蓝
         - 页面内硬编码主题色
 
-        Material 页面主题强调色应根据 AGENT.md
+        Material 页面主题强调色应根据 AGENTS.md
         从 MaterialTheme.colorScheme.primary 获取。
 
-        Miuix 页面主题强调色应根据 AGENT.md
+        Miuix 页面主题强调色应根据 AGENTS.md
         从 MiuixTheme.colorScheme.primary 获取。
 
         对需要跟随色调切换的容器，
@@ -973,11 +973,11 @@ reviews:
         - PageGrey
         - TextColor
 
-        的场景，应遵循 AGENT.md。
+        的场景，应遵循 AGENTS.md。
 
         不要机械报告所有 Color 使用。
 
-        AGENT.md 明确允许的：
+        AGENTS.md 明确允许的：
 
         - error
         - EngineType.coverColor()
@@ -1016,7 +1016,7 @@ reviews:
         - TopBarIcon
         - AppSearchField
 
-        必须检查是否仍满足 AGENT.md 的固定行为。
+        必须检查是否仍满足 AGENTS.md 的固定行为。
 
 
     # ========================================================
@@ -1389,13 +1389,13 @@ reviews:
 
 
     # ========================================================
-    # AGENT.md
+    # AGENTS.md
     # ========================================================
 
-    - path: "AGENT.md"
+    - path: "AGENTS.md"
 
       instructions: |
-        AGENT.md 是 Tyranor Next 的核心项目开发与审核规范。
+        AGENTS.md 是 Tyranor Next 的核心项目开发与审核规范。
 
         修改本文件时重点检查：
 
@@ -1409,8 +1409,8 @@ reviews:
         - 是否产生模糊措辞
         - 是否与当前项目结构严重不一致
 
-        对 AGENT.md 自身的修改，
-        不要机械使用旧版 AGENT.md 判定新版一定违规。
+        对 AGENTS.md 自身的修改，
+        不要机械使用旧版 AGENTS.md 判定新版一定违规。
 
         应分析规范修改本身是否合理。
 
@@ -1426,7 +1426,7 @@ reviews:
 
         修改时检查：
 
-        - 是否与 AGENT.md 冲突
+        - 是否与 AGENTS.md 冲突
         - 是否降低质量门槛
         - 是否删除必要审核
         - 是否删除必要测试

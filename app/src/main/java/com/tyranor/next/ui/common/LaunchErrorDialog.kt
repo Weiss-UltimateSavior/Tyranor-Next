@@ -4,7 +4,6 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -60,19 +59,22 @@ fun LaunchErrorDialog(state: LaunchErrorState, onDismiss: () -> Unit) {
         confirmButton = {
             val target = state.installTarget
             if (target != null) {
-                TextButton(onClick = {
-                    onDismiss()
-                    if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
-                        Toast.makeText(context, openDownloadFailedMessage, Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text(stringResource(R.string.engine_module_download)) }
+                DialogTextButton(
+                    text = stringResource(R.string.engine_module_download),
+                    onClick = {
+                        onDismiss()
+                        if (!ExternalEngineLauncher.openInstallPage(context, target.installUrl)) {
+                            Toast.makeText(context, openDownloadFailedMessage, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                )
             } else {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_confirm)) }
+                DialogTextButton(text = stringResource(R.string.common_confirm), onClick = onDismiss)
             }
         },
         dismissButton = if (state.installTarget != null) {
             {
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+                DialogTextButton(text = stringResource(R.string.common_cancel), onClick = onDismiss)
             }
         } else {
             null

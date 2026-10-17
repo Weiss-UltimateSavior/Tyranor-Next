@@ -54,11 +54,14 @@ object AppSettingsStore {
     const val COVER_SOURCE_BANGUMI = "bangumi"
     const val COVER_SOURCE_STEAM = "steam"
     const val COVER_SOURCE_VNDB = "vndb"
+    /** 未萌 NextMoe（鲲 Galgame 论坛）：匿名来源，无需登录。 */
+    const val COVER_SOURCE_NEXTMOE = "nextmoe"
     const val COVER_SOURCE_LOCAL = "local"
     const val COVER_SOURCE_CUSTOM = "custom"
 
     val DEFAULT_COVER_SCRAPER_SOURCES = listOf(
         COVER_SOURCE_VNDB,
+        COVER_SOURCE_NEXTMOE,
         COVER_SOURCE_HIKARINAGI,
         COVER_SOURCE_BANGUMI,
         COVER_SOURCE_STEAM,

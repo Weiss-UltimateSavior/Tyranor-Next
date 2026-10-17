@@ -25,7 +25,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 /**
  * Miuix 风格统一搜索/单行输入框（非展开内嵌式）。
  *
- * 统一规范（详见 AGENT.md「搜索/输入框统一规范」）：
+ * 统一规范（详见 AGENTS.md「搜索/输入框统一规范」）：
  * - 全 App 的搜索过滤框与弹窗内单行文本输入一律使用本组件，禁止直接拼装 Miuix
  *   `SearchBar`/`InputField`，禁止使用 Material 的 `TextField`/`OutlinedTextField`。
  * - 前导图标固定 26dp、tint 取 `MiuixTheme.colorScheme.primary`、内边距取

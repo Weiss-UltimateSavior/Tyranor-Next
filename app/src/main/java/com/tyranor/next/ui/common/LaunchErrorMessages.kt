@@ -5,6 +5,8 @@ import com.tyranor.next.R
 import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.game.launch.LaunchResult
+import com.tyranor.next.core.game.launch.EthornellPrepareError
+import com.tyranor.next.core.game.launch.MirrorPrepareStage
 import com.tyranor.next.core.i18n.AppLocaleController
 
 /**
@@ -24,6 +26,14 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.GameDirUnresolved ->
             localized.getString(R.string.launch_resolve_local_dir_failed)
 
+        is LaunchResult.Failure.EthornellPrepareFailed -> localized.getString(when (error) {
+            EthornellPrepareError.RESOURCE_ROOT -> R.string.ethornell_error_root
+            EthornellPrepareError.BOOTSTRAP -> R.string.ethornell_error_bootstrap
+            EthornellPrepareError.FONT -> R.string.ethornell_error_font
+            EthornellPrepareError.USER_DATA -> R.string.ethornell_error_userdata
+            EthornellPrepareError.SESSION_BUSY -> R.string.ethornell_error_session_busy
+        })
+
         LaunchResult.Failure.AllFilesAccessRequested ->
             localized.getString(R.string.launch_all_files_access_request)
 
@@ -37,8 +47,17 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 localized.getString(R.string.plugin_install_failed)
         }
 
-        is LaunchResult.Failure.KrkrMirrorPrepareFailed ->
-            detail ?: localized.getString(R.string.launch_prepare_krkr_sd_mirror_failed)
+        // 镜像准备失败的文案按类型化阶段映射：底层异常 message 是日志线索，
+        // 不同失败原因给用户的处置方式不同（重新授权 vs 清理存储空间）
+        is LaunchResult.Failure.KrkrMirrorPrepareFailed -> when (stage) {
+            MirrorPrepareStage.SOURCE_UNRESOLVED ->
+                localized.getString(R.string.launch_prepare_krkr_sd_mirror_failed)
+
+            MirrorPrepareStage.CREATE_FAILED -> localized.getString(
+                R.string.launch_create_krkr_mirror_failed,
+                name ?: localized.getString(R.string.launch_create_krkr_mirror_unknown_path),
+            )
+        }
 
         is LaunchResult.Failure.KrkrSavePathNotDirectory ->
             localized.getString(R.string.launch_krkr_save_path_not_dir, path)
@@ -52,6 +71,16 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
 
         is LaunchResult.Failure.KrkrMirrorSaveDirFailed ->
             localized.getString(R.string.launch_create_krkr_mirror_save_failed)
+
+        is LaunchResult.Failure.Xs35SavePathNotDirectory ->
+            localized.getString(R.string.launch_error_xs35_save_path_not_directory, path)
+
+        is LaunchResult.Failure.Xs35SaveDirUnavailable ->
+            if (path == null || path.isEmpty()) {
+                localized.getString(R.string.launch_error_xs35_external_unavailable)
+            } else {
+                localized.getString(R.string.launch_error_xs35_save_dir_unavailable, path)
+            }
 
         is LaunchResult.Failure.ExternalModuleFailed -> {
             val moduleName = result.moduleNameRes?.let { localized.getString(it) }

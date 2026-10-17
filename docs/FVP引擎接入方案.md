@@ -659,4 +659,4 @@ cp /tmp/rfvp-android-fvp/arm64-v8a/*.so \
 
 - 上游：`xmoezzz/rfvp`（MPL-2.0）：`setsumei/HOW-TO-BUILD.android-apk.md`、`platform/android/`、`crates/rfvp/src/android_host.rs`、`crates/rfvp/src/app.rs`、`crates/rfvp/src/subsystem/resources/text_manager.rs`
 - 本项目先例：`docs/Siglus引擎接入方案.md`（内置 host + jniLibs 路线模板）、`docs/外置APK引擎模块接入方案.md`
-- 规范：根 `AGENT.md`（三层架构、提交前审核）、`CONTEXT.md`（术语）
+- 规范：根 `AGENTS.md`（三层架构、提交前审核）、`CONTEXT.md`（术语）

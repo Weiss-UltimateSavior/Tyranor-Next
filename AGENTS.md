@@ -115,7 +115,7 @@
 - 页面顶部栏必须调用 `AppTopBar(title, ...)`；标题、结构、取色由组件兜底。
 - 参数约定：
   - Material 页面（默认）：不传 `background`/`contentColor`，组件默认 `colorScheme.background` / `colorScheme.onBackground`。
-  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = MiuixTheme.colorScheme.background`、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
+  - Miuix 风格页面（设置类 MiuixScaffold 的 `topBar` 槽）：传 `background = Color.Transparent`（顶部栏背景恒为透明，交由根部背景层——`MiuixTheme.colorScheme.background` 实为 `PageGrey`，传它会盖住玻璃/渐变根背景）、`contentColor = MiuixTheme.colorScheme.onBackground`，并设 `contentWindowInsets = WindowInsets(0.dp)`。
   - 需要「色调切换」参与取色的页面：传 `background = PageGrey`、`contentColor = TextColor`。
   - 右侧图标用 `trailing` 槽传入 `TopBarIcon`；标题下方的折叠内容（如游戏页搜索框）用 `underTitle` 槽。
 - 新页面/组件禁止再书写「背景层 + statusBarsPadding + 64dp + titleLarge Bold」结构。
@@ -189,6 +189,11 @@ Column(fillMaxSize)                                // 页面根
 
 - 顶部栏图标一律使用 drawable 资源（`R.drawable.ic_*`）；需要新图标时在 `res/drawable` 新建资源（PNG 或 vector XML），禁止直接用 `Icons.*` 矢量图标充当顶部栏按钮。
 
+### 8. 明文豁免
+
+- **明文豁免（按键方案布局编辑器）**：`ui/settings/PadLayoutEditScreen.kt`（`PadLayoutEditActivity`）**不设顶部栏**，编辑画布占满全屏（含系统栏区域）——为有意设计，不受本节 0–7 条约束。理由：该页的核心契约是与游戏内按键层**同视口**（按钮位置按视口归一化存储，横竖屏按比例重映射），顶栏会压缩画布高度、使「所见即所得」失效。操作方式与退出方式由进屏 Toast 说明，保存经编辑面板内的「保存」触发，退出走系统返回键。**该豁免仅限本页**，其余页面一律使用 `AppTopBar`，不得援引。
+- **同一豁免的延伸（该页复用 engine 原生编辑 UI）**：本页把 engine 侧的原生按键层与编辑面板（`com.core.input.VirtualPadView` / `VirtualPadEditPanel`，由 core 门面 `PadEditorHost` 提供 `rootView`）整体当作画布，因此**该页内的自绘弹窗与文字尺寸**同样随本页豁免「跨页面一致性要求」的弹窗白底 / 8dp 圆角与两档排版（面板为深色卡片、随游戏画面同视口呈现，见 `VirtualPadEditPanel.showDarkDialog`）。延伸豁免**同样仅限本页与游戏内按键层**：设置域的其它弹窗（`AppAlertDialog`）必须照常遵守弹窗点击反馈、白底与 8dp 圆角规范。**理由修正**：该页 Activity 固定 `sensorLandscape`（见 `AndroidManifest.xml`），编辑器本身不经历横竖屏切换；「横竖屏按比例重映射」描述的是**游戏内**按键层的行为。
+
 ***
 
 ## 跨页面一致性要求
@@ -216,11 +221,19 @@ Column(fillMaxSize)                                // 页面根
 
 - **圆角豁免（悬浮按钮导航）**：「导航栏样式 = 悬浮按钮」后挂载的 `ui/common/FloatingGlassNavButton.kt`
   主按钮与弧上导航项使用 `CircleShape`（圆形是本样式既定形态），为有意设计；该豁免仅限该组件，其余组件不得援引。
-  **材质固定为白色液态玻璃，不随外观风格 / 外观模式分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」
-  的唯一豁免；固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `GlassUnselected`，仅选中态图标与选中底色用主题色），
-  组件内不得引入 `AppThemeColors` 的风格判断。**长按拖动位置**：位置以归一化坐标存 `AppSettingsStore`
-  （安全区内换算，见 `floatingNavPositionPx` / `clampFloatingNavPosition`），展开方向按象限自适应
-  （`floatingNavArcStartAngle`），设置页有「重置悬浮按钮位置」；展开态禁用拖动。
+  **材质固定为液态玻璃的浅 / 深两档**（浅色 = 白玻璃、深色 = 深色玻璃），**只按 `AppThemeColors.isDark` 取档，
+  不随外观风格（默认 / 复古玻璃 / 高级玻璃）分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」的豁免；
+  固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `FloatingNavGlassSurfaceDark` /
+  `GlassUnselected` / `FloatingNavGlassUnselectedDark`，
+  沿用原版图标，图标强调色与接近光效跟随主题色，触边使用半透明主题色玻璃覆盖），组件内不得引入 `AppThemeColors` 的**风格**判断（深浅取档是允许且必须的）。
+  **长按拖动位置**：位置以归一化坐标存 `AppSettingsStore`（安全区内换算，见 `floatingNavPositionPx` /
+  `clampFloatingNavPosition`），展开方向按象限自适应（`floatingNavArcStartAngle`），设置页有「重置悬浮按钮位置」；
+  收起时长按展开并连续滑选；展开后长按主按钮收起并进入自由移动，同一手指可持续拖动。
+  展开后单点子控件切页保持展开，连续滑选松手确认后收起；主控件维持 64dp，主子图标统一为 28dp。
+  展开位置固定，触碰子控件不得带动其它子控件移动；圆球靠近时只缩放并按固定间距限制相交。
+  页面点击由共同父层观察，事件不得消费：同一次点击同时收起导航并执行页面选项，不铺全屏拦截层。
+  触觉反馈保留展开/收起、确认选中、长按进入移动与实际落位；接近、移入或切换子控件候选时不得震动。
+  悬浮按钮在平板也保持圆球导航，弧形半径与选项尺寸按安全区自适应；其它样式的平板侧栏规则不变。
 
 - 所有弹窗背景必须为白色，且圆角必须使用统一圆角数值 **8dp**。
 
@@ -347,12 +360,24 @@ Column(fillMaxSize)                                // 页面根
 
 - 颜色判断依赖全局 `AppThemeColors.isDark` 快照，切换外观模式自动重组刷新，与整体主题保持同步。
 
-### 2. 现有调用点（新增场景照此对齐）
+### 2. 侧边栏面板（AppSidePanel）内条目
+
+妙妙工具侧边栏（`ui/common/AppSidePanel.kt` 的 `content` 槽）内的条目必须使用 `AppNavItem`，统一采用**与弹窗条目一致的完整形态（带图标 + 右侧指示标）**：
+
+- `containerColor = DialogItemSurface`（面板底色为 `NavWhite`，条目反色灰卡，与弹窗内条目为同一对偶关系）。
+- `leadingIcon` 必须传与功能语义对应的具体图标，不得使用组件默认占位图标，也不得隐藏图标位。
+- `showArrow = true`（默认）：面板内条目统一保留右侧指示标，**「执行动作」条目（如启动 kr2 原生）同样不隐藏箭头**——本条优先于上文「执行动作传 `false`」条款。
+- 条目之间的纵向间距由 `AppSidePanel` 内部统一加（`SidePanelItemSpacing` = 8dp，与弹窗内条目列表一致），调用方不得自加外边距。
+
+### 3. 现有调用点（新增场景照此对齐）
 
 | 场景              | 位置                                       | leadingIcon                         |
 | --------------- | ---------------------------------------- | ----------------------------------- |
-| 选择封面来源（四源统一）    | `GameScreen.kt`（CoverSourcePickerDialog） | `ic_cover_source`（云端）               |
+| 选择封面来源（五源统一）    | `GameScreen.kt`（CoverSourcePickerDialog） | `ic_cover_source`（云端）               |
 | 加入群聊（企鹅群聊/飞机频道） | `SettingsScreen.kt`（加入群聊弹窗）              | `ic_group_qq` / `ic_group_telegram` |
+| 妙妙工具面板（启动 kr2 原生） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_settings_engine` |
+| 妙妙工具面板（解封包工具） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_sheet_archive` |
+| 妙妙工具面板（输入与手柄） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_input_gamepad` |
 
 ***
 
@@ -491,7 +516,7 @@ Column(fillMaxSize)                                // 页面根
   与「色调切换」不可用（置灰），色调轮盘保持可用（兜底色斑随主题色变化）。
   高级玻璃的绘制是独立实现（`theme/AdvancedGlassStyle.kt`），复古玻璃的 `GlassStyle.kt` 不参与其材质；
   新增组件必须走动态常量与 `glassBorder`，不得硬编码玻璃色值。真 backdrop 采样仅限白名单
-  （液态玻璃底栏、透镜底栏、高级玻璃悬浮默认导航条、悬浮按钮导航的主按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
+  （液态玻璃底栏、透镜底栏、高级玻璃悬浮默认导航条、悬浮按钮导航的主子按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
   只能用背景取色渐变 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随色调切换，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
@@ -530,7 +555,7 @@ Column(fillMaxSize)                                // 页面根
 架构审核：检查模块职责、依赖关系、代码耦合以及是否破坏现有架构。
 代码健壮性审核：检查异常处理、空值、资源释放、线程安全、生命周期以及极端输入。
 回归风险审核：分析修改是否可能影响现有功能、其他引擎或既有调用链。
-代码规范审核：检查代码风格、命名、重复代码、无效代码以及是否符合 AGENT.md 和项目现有规范。
+代码规范审核：检查代码风格、命名、重复代码、无效代码以及是否符合 AGENTS.md 和项目现有规范。
 
 ***
 

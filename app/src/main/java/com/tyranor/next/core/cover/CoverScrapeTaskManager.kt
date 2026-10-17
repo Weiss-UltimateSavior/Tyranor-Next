@@ -1,8 +1,7 @@
 package com.tyranor.next.core.cover
 
 import android.content.Context
-import com.tyranor.next.R
-import com.tyranor.next.core.i18n.AppLocaleController
+import android.util.Log
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import kotlinx.coroutines.CancellationException
@@ -23,11 +22,14 @@ import kotlinx.coroutines.withContext
 data class CoverScrapeTaskState(
     val running: Boolean = false,
     val result: CoverScrapeResult? = null,
-    val error: String? = null,
+    /** 错误码而非文案；本地化由 UI 映射（`ui/cover/CoverErrorMessages.kt`）。 */
+    val error: CoverErrorCode? = null,
     val eventId: Long = 0L,
 )
 
 object CoverScrapeTaskManager {
+    private const val TAG = "CoverScrapeTask"
+
     private val _state = MutableStateFlow(CoverScrapeTaskState())
     val state: StateFlow<CoverScrapeTaskState> = _state.asStateFlow()
     private val _gameUpdates = MutableSharedFlow<ScanGame>()
@@ -59,10 +61,12 @@ object CoverScrapeTaskManager {
                     }
                     postFinished(result = result.copy(games = mergedGames), error = null)
                 } catch (e: CancellationException) {
-                    postFinished(result = null, error = appContext.getLocalizedString(R.string.cover_scrape_cancelled))
+                    postFinished(result = null, error = CoverErrorCode.CANCELLED)
                     throw e
                 } catch (e: Exception) {
-                    postFinished(result = null, error = e.message ?: appContext.getLocalizedString(R.string.cover_scrape_failed))
+                    // 底层 message 只作日志线索，不外泄给 UI（AGENTS.md 错误处理协议）
+                    Log.w(TAG, "cover scrape task failed", e)
+                    postFinished(result = null, error = CoverErrorCode.UNKNOWN)
                 } finally {
                     synchronized(lock) {
                         job = null
@@ -90,7 +94,7 @@ object CoverScrapeTaskManager {
             CoverImageCache.deleteCachedCover(context, original.coverUri, exceptUri = updated.coverUri)
         }
 
-    private suspend fun postFinished(result: CoverScrapeResult?, error: String?) {
+    private suspend fun postFinished(result: CoverScrapeResult?, error: CoverErrorCode?) {
         val eventId = synchronized(lock) {
             nextEventId += 1
             nextEventId
@@ -120,6 +124,3 @@ internal fun mergeScrapedCover(current: ScanGame, original: ScanGame, scraped: S
     } else {
         current
     }
-
-private fun Context.getLocalizedString(id: Int): String =
-    AppLocaleController.wrap(this).getString(id)

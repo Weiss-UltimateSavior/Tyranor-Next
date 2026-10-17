@@ -74,5 +74,5 @@ engine/rust（单 crate cdylib，产物 libarchive_xp3_core.so）
 - **Rust**：`engine/rust` 单 crate（`Cargo.toml` cdylib + lto，`build-archives.sh` 跑 host 测试后 cargo-ndk 产 arm64 .so，NDK 版本对齐 engine/build.gradle）；进度槽测试与打包往返测试共用 `TEST_LOCK` 串行（合并单测试二进制后静态量互踩），并修 reader 测试漏清 cancel 毒化后续用例的问题
 - **Kotlin**：`core/unpack` 新增 `ArchiveDetection/ArchiveScanner/ArchiveStaging/ArchiveCancelledException/ArchiveNativeMissingException/NativeArchiveOp/Xp3Archive`；`ui/archive` 新增 `ArchiveUnpackActivity/ArchiveViewModel`（ViewModel 常驻，旋转不丢扫描结果）；设置中心 `SettingsScreen` 增跳转条目（一级卡片）
 - **文案**：三语言新增 `archive_*` 键（三侧齐全性已脚本核验）
-- **文档**：`AGENT.md`（core/ui 域清单）、`README.md`（core/unpack 与 ui/archive 登记、engine/rust 目录、UsefulUnpack 致谢）、`CONTEXT.md`（拆封包术语节）
+- **文档**：`AGENTS.md`（core/ui 域清单）、`README.md`（core/unpack 与 ui/archive 登记、engine/rust 目录、UsefulUnpack 致谢）、`CONTEXT.md`（拆封包术语节）
 - **校验**：Rust `cargo test` 17/17；Kotlin `testDebugUnitTest` 346/346；`assembleDebug`（136M）与 `assembleRelease`（R8，112M）通过；release dex 确认 `com/core/archive/Xp3Core` 按名保留、`libarchive_xp3_core.so` 在包

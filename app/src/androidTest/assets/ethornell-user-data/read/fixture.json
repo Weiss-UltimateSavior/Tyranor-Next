@@ -1,0 +1,98 @@
+{
+  "schema": 1,
+  "fixture": "original-generated-bgi-smoke",
+  "profile": "user-data-read",
+  "origin": "Generated solely by tools/ethornell/generate_fixture.py; no commercial assets",
+  "format_evidence": [
+    "ethornell-archive/src/lib.rs::read_packfile_index",
+    "ethornell-script/src/lib.rs::detect_code_range",
+    "ethornell-script/src/vm_opcode.rs::0x17",
+    "ethornell-vm/src/native_call.rs::SYS_REQUEST_WINDOW_CLOSE"
+  ],
+  "expected": "VM global user-data read; exact phase-specific Title then Closed required; two NEW sessions sharing one fresh test-only user_root prove reopen semantics",
+  "limitations": [
+    "Synthetic VM serialization fixture, not a real game or PC-save compatibility evidence",
+    "No persistence is performed by generation or Python structural tests; real VM execution pending",
+    "No graphics/audio/text/save-manager import-export coverage",
+    "Only use a fresh dedicated user_root; never run writer over real saves"
+  ],
+  "files": {
+    "system.arc": {
+      "size": 435,
+      "sha256": "75c558c5fe797fb522d6d0baadeff0e9471fd13f67bc612e674dc8b8831f4ab0"
+    }
+  },
+  "entries": {
+    "ipl._bp": {
+      "size": 275,
+      "sha256": "e26fa5225923c5ebe01cf5f2dd16431823e1d6c1983bd1c0324e3a77e39a95d9"
+    },
+    "checker.png": {
+      "size": 80,
+      "sha256": "79438c1570b65e7923759259cbefb618ec6aaead1b6159cf1046cf9be0f72747"
+    }
+  },
+  "bp": {
+    "header_size": 16,
+    "module_size": 259,
+    "code_hex": "100020201180800408000a02040c000a020410000a020408000802028e00000015000420000040001080830420000802024247492d3002990000001501041c00080202534d4f4b3002990000001501041800080202452d5631300299000000150104140008020200a55a013002990000001501052d00806602a400000014053e00806602a400000014055800806602a4000000140001806880691000202111174554484f524e454c4c5f555345525f444154415f524541445f4f4b004554484f524e454c4c5f555345525f444154415f524541445f4c4f41445f4641494c4544004554484f524e454c4c5f555345525f444154415f524541445f4d49534d4154434800"
+  },
+  "raw_bp_hex": "10000000030100000000000000000000100020201180800408000a02040c000a020410000a020408000802028e00000015000420000040001080830420000802024247492d3002990000001501041c00080202534d4f4b3002990000001501041800080202452d5631300299000000150104140008020200a55a013002990000001501052d00806602a400000014053e00806602a400000014055800806602a4000000140001806880691000202111174554484f524e454c4c5f555345525f444154415f524541445f4f4b004554484f524e454c4c5f555345525f444154415f524541445f4c4f41445f4641494c4544004554484f524e454c4c5f555345525f444154415f524541445f4d49534d4154434800",
+  "user_data_expectation": {
+    "verification_status": "source-contract-derived; real Rust VM serialization/reopen execution pending",
+    "phase": "read",
+    "serializer": "VM Sys80:81 -> serialize_global_data -> encode_sdc -> SysApi::write_file_bytes",
+    "loader": "VM Sys80:80 -> SysApi::read_user_file_bytes -> decode_sdc -> install_global_data",
+    "guest_file": "BGI.gdb",
+    "host_file": "<same HostConfig.user_root>/BGI.gdb",
+    "path_policy": "Unprefixed user-file hooks resolve under user_root (equivalent to bgi-user/BGI.gdb), NOT resource_root or bgi-resource/UserData",
+    "marker_global_offset": 64,
+    "marker_hex": "4247492d534d4f4b452d563100a55a01",
+    "success_events": [
+      {
+        "kind": 4,
+        "code": 0,
+        "text": "ETHORNELL_USER_DATA_READ_OK"
+      },
+      {
+        "kind": 3,
+        "code": 0,
+        "text": ""
+      }
+    ],
+    "failure_title_prefix": "ETHORNELL_USER_DATA_READ_",
+    "failure_titles": [
+      "ETHORNELL_USER_DATA_READ_LOAD_FAILED",
+      "ETHORNELL_USER_DATA_READ_MISMATCH"
+    ],
+    "save_content_expectation": {
+      "outer_magic_hex": "53444320464f524d415420312e303000",
+      "outer_header_bytes": 32,
+      "decoded_magic_hex": "425552494b4f2047444220332e303000",
+      "decoded_marker_offset": 1124,
+      "encoding": "Current Rust literal-block SDC serializer, checksum + obfuscation; not a raw marker file",
+      "pc_compatibility": "NOT certified; no original PC save interchange or game compatibility claim"
+    },
+    "protocol": [
+      "Use generated write/read roots as separate resources; one fresh dedicated user_root shared across both sessions; never point either profile at real user saves",
+      "Generator creates system.arc/fixture.json ONLY; no BGI.gdb, no user_root, no synthesized persisted bytes",
+      "Write profile first calls 80:80 and requires missing=1; status=0/2 refuses existing/invalid saves without writing; empty/unreadable files may also appear missing, so a fresh test-only root is mandatory",
+      "Attach a real Surface, unpause; step(t0), step(t0+16000000ns); provide a valid system/user font; silent mode is appropriate",
+      "Require exact WRITE_OK Title then Closed; absent title, wrong title or native error is failure even if Closed arrives",
+      "Destroy writer and release writer lock; observe VM-created SDC file under user_root and absence under resource_root; Java/Python must not create/replace the save",
+      "Create a NEW HostRuntime/ABI session using read resource_root and the SAME unchanged user_root; attach Surface and advance active ticks",
+      "Require exact READ_OK Title then Closed; read profile has NO save opcode and cannot create or repair BGI.gdb",
+      "Negative control: read against a DIFFERENT fresh empty test-only user_root must emit READ_LOAD_FAILED, never READ_OK",
+      "Optionally corrupt only a copy inside a newly allocated disposable test directory; expected LOAD_FAILED or MISMATCH, never alter user data"
+    ],
+    "evidence": [
+      "ethornell-vm/src/lib.rs::{try_builtin_sys_with_api,execute_instruction,jump_target_index}",
+      "ethornell-vm/src/user_data.rs::{copy_to_global_data,save_global_user_data,load_global_user_data,copy_from_global_data}",
+      "ethornell-vm/src/user_data.rs::{serialize_global_data,install_global_data,encode_sdc,decode_sdc}",
+      "ethornell-vm/src/user_data.rs::tests::global_payload_round_trips_memory_names_and_flags",
+      "ethornell-app/src/lib.rs::{write_file_bytes,read_user_file_bytes,call_sys}",
+      "ethornell-app/src/file_policy.rs::{parent,atomic_write,read_user}",
+      "ethornell-app/src/host_runtime.rs::{step_inner,request_close}"
+    ]
+  }
+}
