@@ -804,4 +804,9 @@
     <string name="ethornell_error_bootstrap">ipl._bp 起動項目を含む対応 system.arc 索引が見つかりません。</string>
     <string name="ethornell_error_font">フォントが無効、または読み取れません。TTF、TTC、OTF、OTC フォントを再度取り込んでください。</string>
     <string name="ethornell_error_userdata">Ethornell 専用ユーザーデータを作成できません。空き容量を確認してください。</string>
+    <string name="engine_settings_kr_language">言語環境</string>
+    <string name="engine_settings_kr_language_jp">日本語</string>
+    <string name="engine_settings_kr_language_en">英語</string>
+    <string name="engine_settings_kr_language_zh">簡体字中国語</string>
+    <string name="engine_settings_kr_language_zhtw">繁体字中国語</string>
 </resources>

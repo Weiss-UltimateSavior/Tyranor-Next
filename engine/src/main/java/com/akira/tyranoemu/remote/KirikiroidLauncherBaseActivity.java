@@ -880,4 +880,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         }
         return ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;
     }
+
+    
+
+    
 }

@@ -42,8 +42,34 @@ class Krkrsdl3Activity : KRKRActivity() {
         applyEngineRequestedOrientation()
         applyLauncherWindowTone()
         super.onCreate(savedInstanceState)
+        // 引擎 native 已初始化，此处应用游戏语言环境（krkrsdl3 唯一可行通道）
+        applyGameLanguage()
         // 绝对超时兜底：即使原生窗口创建回调异常缺失，超时后也解除方向锁
         scheduleGuardRelease(GUARD_FALLBACK_RELEASE_MS)
+    }
+
+    /**
+     * 应用用户选择的游戏语言环境。
+     *
+     * auto / 缺失 / 未知取值不动作；任何失败只记日志，不阻断游戏启动。
+     * 编码桥在首次调用时懒加载，加载或调用失败都会被捕获。
+     */
+    private fun applyGameLanguage() {
+        val language = intent?.getStringExtra(LaunchContract.KR_LANGUAGE)?.trim().orEmpty()
+        if (language.isEmpty() || language == LaunchContract.KR_LANGUAGE_AUTO) return
+        val encoding = when (language) {
+            LaunchContract.KR_LANGUAGE_JP -> "SJIS"
+            LaunchContract.KR_LANGUAGE_ZH -> "GBK"
+            LaunchContract.KR_LANGUAGE_EN -> "UTF-8"
+            else -> return
+        }
+        try {
+            System.loadLibrary("krkr_encoding_bridge")
+            val applied = bridge.KrkrTextEncodingBridge.setDefaultReadEncoding(null, encoding)
+            Log.i(TAG, "game language=$language encoding=$encoding applied=$applied")
+        } catch (t: Throwable) {
+            Log.w(TAG, "apply game language failed language=$language encoding=$encoding", t)
+        }
     }
 
     override fun onResume() {
