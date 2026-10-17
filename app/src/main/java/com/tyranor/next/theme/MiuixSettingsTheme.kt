@@ -2,6 +2,7 @@ package com.tyranor.next.theme
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.NonSkippableComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -10,6 +11,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.defaultTextStyles
 import top.yukonga.miuix.kmp.theme.lightColorScheme
+
+/** 弹窗颜色上下文由 AppAlertDialog 提供；输入框与标签栏复用同一动态条目色。 */
+internal val LocalAppDialogContent = staticCompositionLocalOf { false }
 
 /**
  * 文字统一规范：页面内容只用 titleMedium(15sp)/bodyMedium(14sp) 两档。
@@ -70,6 +74,8 @@ fun MiuixSettingsTheme(
             surfaceContainerHigh = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
             surfaceContainerHighest = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
             secondaryContainer = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
+            onSurfaceContainerHigh = TextColor,
+            onSurfaceContainerHighest = TextColor,
             onSecondaryContainer = TextColor,
             onSurfaceContainerVariant = secondaryText,
             onBackgroundVariant = secondaryText,
@@ -84,8 +90,20 @@ fun MiuixSettingsTheme(
     } else {
         baseColors
     }
+    // 只在弹窗内映射反色条目；普通页面保留 Miuix 的输入框底色和图标色。
+    // 玻璃页面沿用上面的玻璃色板，弹窗由 DialogItemSurface 选择对应条目色。
+    val dialogColors = if (LocalAppDialogContent.current) {
+        colors.copy(
+            surfaceContainerHigh = DialogItemSurface,
+            surfaceContainerHighest = DialogItemSurface,
+            onSurfaceContainerHigh = TextColor,
+            onSurfaceContainerHighest = TextColor,
+        )
+    } else {
+        colors
+    }
     MiuixTheme(
-        colors = colors,
+        colors = dialogColors,
         textStyles = TyranorMiuixTextStyles,
     ) {
         WithoutPressIndication(content)

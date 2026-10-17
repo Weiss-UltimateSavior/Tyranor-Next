@@ -6,15 +6,17 @@ import android.util.Log;
 import android.content.Intent;
 import android.view.KeyEvent;
 
+import com.core.engine.ArtemisVersion;
 import com.core.engine.DoubleBackExit;
 import com.core.engine.EnginePrefs;
 import com.core.engine.LaunchContract;
 
 public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.ArtemisActivity {
     private static final long EARLY_EXIT_WINDOW_MS = 3_000L;
-    private static final int FALLBACK_STAGE_V4_DIRECT = -1;
     private static final String KEY_ARTEMIS_ENGINE_PREFIX = "artemis_engine.";
     private static final String KEY_ARTEMIS_ENGINE_SUCCESS_PREFIX = "artemis_engine_success.";
+    private com.core.gl.ArtemisPerformanceOverlay graphicsOverlay;
+    private boolean officialGraphics;
     private long createdAtElapsed;
     private boolean userRequestedFinish;
     /** Loads the revision-specific Artemis native library (e.g. libartemis.so). Called once from onCreate. */
@@ -22,7 +24,8 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     public java.io.File getExternalFilesDir(String type) {
-        String path = getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH);
+        Intent intent = getIntent();
+        String path = intent == null ? null : intent.getStringExtra(LaunchContract.PATH);
         if (path == null || path.isEmpty()) {
             java.io.File fallback = super.getExternalFilesDir(type);
             Log.i("YukiArtemis", "getExternalFilesDir type=" + type + " fallback=" + (fallback == null ? "null" : fallback.getAbsolutePath()));
@@ -30,14 +33,18 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         }
         if (path.startsWith("file://")) path = path.substring("file://".length());
         java.io.File out = new java.io.File(path);
-        Log.i("YukiArtemis", "getExternalFilesDir type=" + type + " path=" + out.getAbsolutePath() + " scoped=" + getIntent().getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false));
+        Log.i("YukiArtemis", "getExternalFilesDir type=" + type + " path=" + out.getAbsolutePath() + " scoped=" + (intent != null && intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)));
         return out;
     }
 
     @Override
     public final void onCreate(Bundle bundle) {
         Log.i("YukiArtemis", "onCreate enter pid=" + android.os.Process.myPid());
+        Intent intent = getIntent();
+        officialGraphics = intent != null && !"artemis-clean".equals(intent.getStringExtra(LaunchContract.ENGINE_LIB_NAME));
+        if (officialGraphics) com.core.gl.ArtemisOfficialBridge.prepare(this);
         super.onCreate(bundle);
+        if (officialGraphics) graphicsOverlay = new com.core.gl.ArtemisPerformanceOverlay(this, com.core.gl.ArtemisOfficialBridge.source());
         createdAtElapsed = SystemClock.elapsedRealtime();
         Log.i("YukiArtemis", "onCreate path=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.PATH)) + " scoped=" + (getIntent() != null && getIntent().getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) + " saveName=" + (getIntent() == null ? null : getIntent().getStringExtra(LaunchContract.SCOPED_SAVE_NAME)));
         loadEngineLibrary();
@@ -46,13 +53,16 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     @Override
     public final void onResume() {
         super.onResume();
-        setRequestedOrientation(getIntent().getIntExtra(LaunchContract.ORIENTATION, 6));
+        Intent intent = getIntent();
+        setRequestedOrientation(intent == null ? 6 : intent.getIntExtra(LaunchContract.ORIENTATION, 6));
         nativeResumeAllSound();
+        if (graphicsOverlay != null) graphicsOverlay.show();
     }
 
     @Override
     protected void onPause() {
         Log.i("YukiArtemis", "onPause finishing=" + isFinishing() + " pid=" + android.os.Process.myPid());
+        if (graphicsOverlay != null) graphicsOverlay.hide();
         nativePauseAllSound();
         super.onPause();
     }
@@ -75,6 +85,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
 
     @Override
     protected void onDestroy() {
+        if (graphicsOverlay != null) graphicsOverlay.hide();
         DoubleBackExit.clear(this);
         // 兼容回退改为「先按动态候选链/旧 stage 拉起下一版本（独立进程），未回退时再记录成功版本」：
         // 兼容版本在各自独立进程（如 :artemis.compat / :artemis.compat.v2）启动，当前进程
@@ -85,6 +96,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         if (!retryStarted) recordSuccessfulArtemisVersionIfNeeded();
         Log.i("YukiArtemis", "onDestroy before super retry=" + retryStarted + " pid=" + android.os.Process.myPid());
         super.onDestroy();
+        if (officialGraphics) com.core.gl.ArtemisOfficialBridge.close();
         Log.i("YukiArtemis", "onDestroy killing pid=" + android.os.Process.myPid());
         try {
             android.os.Process.killProcess(android.os.Process.myPid());
@@ -109,42 +121,18 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         boolean dynamicRetried = maybeRetryWithDynamicArtemisPlan(source);
         if (dynamicRetried) return true;
         int stage = source.getIntExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, 0);
-        String nextPackage = stage == FALLBACK_STAGE_V4_DIRECT ? "internal.artemis"
-                : stage == 0 ? "internal.artemis.compat"
-                : stage == 1 ? "internal.artemis.compat.v2"
-                : stage == 2 ? "internal.artemis.v4"
-                : stage == 3 ? "internal.artemis.v5"
-                : stage == 4 ? "internal.artemis.v6"
-                : null;
+        ArtemisVersion next = ArtemisVersion.legacyNext(stage);
         String path = source.getStringExtra(LaunchContract.PATH);
-        if (nextPackage == null || path == null || path.trim().isEmpty()) return false;
+        if (next == null || path == null || path.trim().isEmpty()) return false;
 
-        Intent retry = new Intent(this,
-                stage == FALLBACK_STAGE_V4_DIRECT ? com.akira.tyranoemu.remote.ArtemisActivityV1.class
-                        : stage == 0 ? com.akira.tyranoemu.remote.ArtemisActivityV2.class
-                        : stage == 1 ? com.akira.tyranoemu.remote.ArtemisActivityV3.class
-                        : stage == 2 ? com.akira.tyranoemu.remote.ArtemisActivityV4.class
-                        : stage == 3 ? com.akira.tyranoemu.remote.ArtemisActivityV5.class
-                        : com.akira.tyranoemu.remote.ArtemisActivityV6.class);
+        Intent retry = new Intent(this, next.activityClass);
         retry.putExtras(source);
-        retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, stage == FALLBACK_STAGE_V4_DIRECT ? 0 : stage + 1);
-        // retry 到下一 revision 时，bootstrap loader 需加载对应的插件库名。
-        retry.putExtra(LaunchContract.ENGINE_LIB_NAME,
-                stage == FALLBACK_STAGE_V4_DIRECT ? "artemis"
-                        : stage == 0 ? "artemis-compatible"
-                        : stage == 1 ? "artemis-compatible-v2"
-                        : stage == 2 ? "artemis-v4"
-                        : stage == 3 ? "artemis-v5"
-                        : "artemis-v6");
-        retry.putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION,
-                stage == FALLBACK_STAGE_V4_DIRECT ? "1"
-                        : stage == 0 ? "2"
-                        : stage == 1 ? "3"
-                        : stage == 2 ? "4"
-                        : stage == 3 ? "5"
-                        : "6");
+        retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, next.fallbackStage());
+        retry.putExtra(LaunchContract.ENGINE_LIB_NAME, next.engineLibraryName);
+        retry.putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, next.id);
+        updateGraphicsRequest(retry);
         retry.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        Log.w("YukiArtemis", "Artemis exited during startup; retrying with " + nextPackage + " path=" + path);
+        Log.w("YukiArtemis", "Artemis exited during startup; retrying with " + next.legacyId + " path=" + path);
         try {
             startActivity(retry);
         } catch (Throwable t) {
@@ -169,19 +157,19 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
         int nextIndex = currentIndex + 1;
         if (nextIndex >= versions.size()) return false;
         String nextVersion = versions.get(nextIndex);
-        Class<?> activity = activityClassForVersion(nextVersion);
-        String engineLibName = engineLibNameForVersion(nextVersion);
-        if (activity == null || engineLibName == null) return false;
+        ArtemisVersion next = ArtemisVersion.find(nextVersion);
+        if (next == null) return false;
 
-        Intent retry = new Intent(this, activity);
+        Intent retry = new Intent(this, next.activityClass);
         retry.putExtras(source);
         retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_INDEX, nextIndex);
-        retry.putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, nextVersion);
-        retry.putExtra(LaunchContract.ENGINE_LIB_NAME, engineLibName);
-        retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, fallbackStageForVersion(nextVersion));
+        retry.putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, next.id);
+        retry.putExtra(LaunchContract.ENGINE_LIB_NAME, next.engineLibraryName);
+        retry.putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, next.fallbackStage());
+        updateGraphicsRequest(retry);
         retry.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         Log.w("YukiArtemis", "Artemis exited during startup; retrying dynamic version=" + nextVersion
-                + " lib=" + engineLibName + " index=" + nextIndex + "/" + versions.size()
+                + " lib=" + next.engineLibraryName + " index=" + nextIndex + "/" + versions.size()
                 + " path=" + path);
         try {
             startActivity(retry);
@@ -190,6 +178,18 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
             return false;
         }
         return true;
+    }
+
+    /** Every candidate recomputes its gate; a rejected first candidate must not erase the user's request. */
+    private static void updateGraphicsRequest(Intent retry) {
+        String library = retry.getStringExtra(LaunchContract.ENGINE_LIB_NAME);
+        boolean requested = retry.getBooleanExtra(LaunchContract.ARTEMIS_GRAPHICS_REQUESTED_ENABLED,
+                retry.getBooleanExtra(LaunchContract.GRAPHICS_FILTER_ENABLED, false));
+        boolean analyzer = retry.getBooleanExtra(LaunchContract.ARTEMIS_GRAPHICS_REQUESTED_ANALYZER,
+                retry.getBooleanExtra(LaunchContract.GRAPHICS_FILTER_ANALYZER, false));
+        boolean enabled = com.core.gl.ArtemisLibraryIdentity.supportsEngine(library, requested);
+        retry.putExtra(LaunchContract.GRAPHICS_FILTER_ENABLED, enabled);
+        retry.putExtra(LaunchContract.GRAPHICS_FILTER_ANALYZER, enabled && analyzer);
     }
 
     private void recordSuccessfulArtemisVersionIfNeeded() {
@@ -209,43 +209,7 @@ public abstract class ArtemisLauncherBaseActivity extends com.ies_net.artemis.Ar
     }
 
     private static String normalizeArtemisVersion(String value) {
-        if (value == null) return null;
-        String v = value.trim();
-        if ("1".equals(v) || "internal.artemis".equals(v)) return "1";
-        if ("2".equals(v) || "internal.artemis.compat".equals(v)) return "2";
-        if ("3".equals(v) || "internal.artemis.compat.v2".equals(v)) return "3";
-        if ("4".equals(v) || "internal.artemis.v4".equals(v)) return "4";
-        if ("5".equals(v) || "internal.artemis.v5".equals(v)) return "5";
-        if ("6".equals(v) || "internal.artemis.v6".equals(v)) return "6";
-        return null;
-    }
-
-    private static Class<?> activityClassForVersion(String version) {
-        if ("2".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV2.class;
-        if ("3".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV3.class;
-        if ("4".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV4.class;
-        if ("5".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV5.class;
-        if ("6".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV6.class;
-        if ("1".equals(version)) return com.akira.tyranoemu.remote.ArtemisActivityV1.class;
-        return null;
-    }
-
-    private static String engineLibNameForVersion(String version) {
-        if ("2".equals(version)) return "artemis-compatible";
-        if ("3".equals(version)) return "artemis-compatible-v2";
-        if ("4".equals(version)) return "artemis-v4";
-        if ("5".equals(version)) return "artemis-v5";
-        if ("6".equals(version)) return "artemis-v6";
-        if ("1".equals(version)) return "artemis";
-        return null;
-    }
-
-    private static int fallbackStageForVersion(String version) {
-        if ("2".equals(version)) return 1;
-        if ("3".equals(version)) return 2;
-        if ("4".equals(version)) return 3;
-        if ("5".equals(version)) return 4;
-        if ("6".equals(version)) return 5;
-        return 0;
+        ArtemisVersion version = ArtemisVersion.find(value);
+        return version == null ? null : version.id;
     }
 }

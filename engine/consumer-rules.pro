@@ -24,3 +24,6 @@
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+
+# Official producer adapter is resolved by the bootstrap JNI bridge.
+-keep class com.core.gl.ArtemisOfficialBridge { public static *; }

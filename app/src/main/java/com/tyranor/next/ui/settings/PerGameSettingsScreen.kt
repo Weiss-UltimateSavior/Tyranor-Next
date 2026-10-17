@@ -39,10 +39,15 @@ import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
 import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveManager
+import com.tyranor.next.core.settings.GraphicsCapabilities
+import com.tyranor.next.core.settings.GraphicsFamily
+import com.tyranor.next.core.settings.GraphicsOverride
 import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
@@ -81,6 +86,11 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun PerGameSettingsScreen(game: ScanGame) {
     val ctx = LocalContext.current
     val gid = game.uri
+    val graphicsFamily = game.engine.graphicsFamily()
+    val globalGraphics = graphicsFamily?.let { EngineSettingsStore.getGraphicsSettings(ctx, it) }
+    var graphicsOverride by remember(gid, graphicsFamily) {
+        mutableStateOf(graphicsFamily?.let { PerGameSettingsStore.getGraphicsOverride(ctx, gid, it) } ?: GraphicsOverride())
+    }
 
     // 覆盖值（null=跟随全局）
     var krVersion by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION)) }
@@ -88,7 +98,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var krScoped by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR)) }
     var krSkipStartupDialogs by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS)) }
     var krPatchOverlayMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE)) }
-    var krAnime4kMode by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE)) }
     var krFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT)) }
     var krForceFont by remember(gid) { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT)) }
     val krRender = PerGameSettingsStore.KR_FIELDS.associateWith { field ->
@@ -292,7 +301,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalKrScoped = EngineSettingsStore.isKrScopedSaveDir(ctx)
     val globalKrSkipStartupDialogs = EngineSettingsStore.isKrSkipStartupDialogs(ctx)
     val globalKrPatchOverlayMode = EngineSettingsStore.getKrPatchOverlayMode(ctx)
-    val globalKrAnime4kMode = EngineSettingsStore.getKrAnime4kMode(ctx)
     val globalKrFont = EngineSettingsStore.getKrDefaultFont(ctx)
     val globalForce = EngineSettingsStore.isKrForceDefaultFont(ctx)
     val configuredGlobalRenderer = EngineSettingsStore.getKrRenderer(ctx)
@@ -306,6 +314,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalArtSurfaceCache = EngineSettingsStore.getArtSurfaceCacheSize(ctx)
     val globalArtFontCache = EngineSettingsStore.getArtFontCacheSize(ctx)
     val globalArtPowerSaving = EngineSettingsStore.getArtPowerSaving(ctx)
+    val effectiveArtKernel = EffectiveEngineSettings.resolveAllowed(
+        artKernel, globalArtKernel, EngineSettingsStore.ART_KERNELS, EngineSettingsStore.ART_KERNEL_OFFICIAL,
+    )
     val globalTyExternal = EngineSettingsStore.isTyranoExternalNetwork(ctx)
     val globalTyScoped = EngineSettingsStore.isTyranoScopedSaveDir(ctx)
     val globalRpgMakerMod = EngineSettingsStore.isRpgMakerModEnabled(ctx)
@@ -368,11 +379,15 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val auto = stringResource(R.string.common_auto)
     val perGameSettingsSavedMessage = stringResource(R.string.engine_settings_per_game_saved)
 
-    val isSdl3 = (krKernel ?: globalKrKernel) == EngineSettingsStore.KERNEL_KRKRSDL3
+    val effectiveKrKernel = EffectiveEngineSettings.resolveKrKernel(
+        krKernel, globalKrKernel,
+        GamePathUtils.safUriToPath(game.uri)?.let(GamePathUtils::isRemovableStoragePath) == true,
+    )
+    val isSdl3 = effectiveKrKernel == EngineSettingsStore.KERNEL_KRKRSDL3
     val globalRenderer = configuredGlobalRenderer.ifEmpty {
         if (isSdl3) EngineSettingsStore.RENDERER_OPENGL else ""
     }
-    val effVersion = krVersion ?: globalKrVersion
+    val effVersion = EffectiveEngineSettings.resolveKrVersion(krVersion, globalKrVersion)
     val krIs134126 = effVersion == EngineSettingsStore.KR_134 || effVersion == EngineSettingsStore.KR_126
 
     // 渲染相关全局值（跟随全局时展示用）
@@ -388,12 +403,12 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val effRenderer = krRender[PerGameSettingsStore.F_RENDERER]!!.value ?: globalRenderer
 
     fun save() {
+        graphicsFamily?.let { PerGameSettingsStore.setGraphicsOverride(ctx, gid, it, graphicsOverride) }
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_VERSION, krVersion)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ENGINE_KERNEL, krKernel)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SCOPED_SAVE_DIR, krScoped)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS, krSkipStartupDialogs)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PATCH_OVERLAY_MODE, krPatchOverlayMode)
-        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ANIME4K_MODE, krAnime4kMode?.takeIf { it in EngineSettingsStore.ANIME4K_MODES })
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_DEFAULT_FONT, krFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FORCE_DEFAULT_FONT, krForceFont)
         krRender.forEach { (field, st) ->
@@ -574,13 +589,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     OverrideChoice(stringResource(R.string.engine_settings_memory_usage), krMemMap, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = engineDefault) {
                                         krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value = it
                                     }
-                                    // Anime4K 后处理仅 kirikiri2 内核路径支持（GLSurfaceView 注入）
-                                    OverrideChoice(
-                                        stringResource(R.string.engine_settings_anime4k),
-                                        krAnime4kOptionsMap(),
-                                        globalKrAnime4kMode,
-                                        krAnime4kMode,
-                                    ) { krAnime4kMode = it }
                                 }
                                 OverrideChoice(stringResource(R.string.engine_settings_renderer), krRendererMap, globalRenderer, krRender[PerGameSettingsStore.F_RENDERER]!!.value, emptyLabel = engineDefault) {
                                     krRender[PerGameSettingsStore.F_RENDERER]!!.value = it
@@ -670,7 +678,6 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     EngineType.ARTEMIS -> {
                         item {
                             SectionCard("Artemis") {
-                                val effectiveArtKernel = artKernel ?: globalArtKernel
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
                                 OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
                                 if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
@@ -693,7 +700,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         }
                     }
                     // 官方内核专属的手动补丁动作：与启动前自动补丁同源实现
-                    if ((artKernel ?: globalArtKernel) == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                    if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 val patchRunningSummary = stringResource(R.string.engine_settings_artemis_patch_running)
@@ -1111,6 +1118,19 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     }
                 }
 
+                if (graphicsFamily != null && globalGraphics != null) item {
+                    PerGameGraphicsSettings(
+                        global = globalGraphics,
+                        override = graphicsOverride,
+                        capability = GraphicsCapabilities.forSettings(
+                            graphicsFamily, if (graphicsFamily == GraphicsFamily.KR) effectiveKrKernel else effectiveArtKernel,
+                            if (graphicsFamily == GraphicsFamily.KR) effVersion
+                            else EffectiveEngineSettings.resolveArtVersion(artVersion, globalArtVersion),
+                            effRenderer,
+                        ),
+                    ) { graphicsOverride = it }
+                }
+
                 if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
                     SectionCard("Winlator") {
                         OverrideText(
@@ -1283,12 +1303,13 @@ private fun InputProfileOverrideRow(
  *   选中该占位项不产生任何写入；[notReadyLabel] 非空时本参数不生效（加载态下还读不出覆盖）。
  */
 @Composable
-private fun OverrideChoice(
+internal fun OverrideChoice(
     label: String,
     options: Map<String, String>,
     global: String,
     override: String?,
     emptyLabel: String = stringResource(R.string.engine_settings_builtin_font),
+    enabled: Boolean = true,
     notReadyLabel: String? = null,
     missingLabel: String? = null,
     onSet: (String?) -> Unit,
@@ -1323,6 +1344,7 @@ private fun OverrideChoice(
         title = label,
         items = labels,
         selectedIndex = index,
+        enabled = enabled,
         onSelectedIndexChange = { i ->
             if (i == 0) {
                 onSet(null)
@@ -1336,7 +1358,13 @@ private fun OverrideChoice(
 
 /** 覆盖版开关行：Miuix OverlayDropdownPreference，三态（跟随全局 / 开 / 关）。 */
 @Composable
-private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, onSet: (Boolean?) -> Unit) {
+internal fun OverrideSwitch(
+    label: String,
+    global: Boolean,
+    override: Boolean?,
+    enabled: Boolean = true,
+    onSet: (Boolean?) -> Unit,
+) {
     val onText = stringResource(R.string.common_enabled)
     val offText = stringResource(R.string.common_disabled)
     val labels = listOf(stringResource(R.string.engine_settings_follow_global_bool, if (global) onText else offText), onText, offText)
@@ -1345,6 +1373,7 @@ private fun OverrideSwitch(label: String, global: Boolean, override: Boolean?, o
         title = label,
         items = labels,
         selectedIndex = index,
+        enabled = enabled,
         onSelectedIndexChange = { i -> onSet(if (i == 0) null else i == 1) },
     )
 }

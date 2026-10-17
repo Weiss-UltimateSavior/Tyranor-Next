@@ -1,0 +1,35 @@
+{
+  "upstream": "https://github.com/xmoezzz/siglus_rs",
+  "revision": "5f358ef1360b0439e92aed2b749e8f25d8721954",
+  "archiveSha256": "d60b508c5a2e77f5f34cfc686c4f3141799c7106897475c939d2e310d19afbc3",
+  "cargoLockSha256": "76412e48b8ce98c92d51e757daabfdb0b0d1e85e6453315862a81154e30f87eb",
+  "rustVersion": "1.99.0",
+  "rustCommit": "b940084d7eb6a299eb4bfeb8e34901bc051e7ac4",
+  "target": "aarch64-linux-android",
+  "androidApi": 26,
+  "ndkVersion": "30.0.16248370",
+  "package": "game_launcher",
+  "patches": [
+    {
+      "file": "0001-stage-geometry-v1.patch",
+      "sha256": "d658383c63c06cbb259e12a804fec9dd11cc553f542f5284510340958b22ded4"
+    }
+  ],
+  "geometryAbi": "siglus_android_get_stage_geometry_v1",
+  "geometryWords": 10,
+  "previousLibrarySha256": "fdef411e1f30550ef7adb7ab4ff1f383433aee94be7609a481eb18c13c3563df",
+  "previousExportsFile": "engine/patches/siglus/previous-exports.txt",
+  "previousExportsSha256": "77729269b2a8b774010062feb4b929beb59810c09ce1532cd72274d62561f55e",
+  "librarySha256": "d206e7e104dcf794767de120d0264374afed42735de16d121875ec523de02612",
+  "libraryFile": "engine/src/main/jniLibs/arm64-v8a/libsiglus.so",
+  "previousLibrarySha256Purpose": "Latest upstream TYN bundled image used to record previous-exports.txt; not a claim that its unpublished build tree is reproduced.",
+  "upstreamBundledRevision": "87615940bbdd379d9ef22f58747a59278a365c15",
+  "libraryStatus": "ci-rebuilt-patched",
+  "sourceRevisionCheckedAt": "2026-10-13",
+  "rebuildPurpose": "Rebuild from the latest public xmoezzz/siglus_rs source with downstream-only stage geometry ABI for filter processing; do not reuse an older patched binary.",
+  "ciBuildRunUrl": "https://github.com/AAAA1111-Lab/Tyranor-Next/actions/runs/38421811796",
+  "ciBuildCommit": "7815df004cc8d5343b297bbdc43f81f5ed7afa42",
+  "ciArtifactId": 11827246261,
+  "ciArtifactSha256": "222b9507963d2510c32a97dc0a3ca4f2a2239e4ad70f37028208007d56ca9346",
+  "baselineLibrarySha256": "1ef61c0d5f1a9d565b538753de68fc486fc378ea094fb5fdd273f0bbc55a9ca8"
+}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fixed chart categories, independent of chain order and app preference theme. -->
+    <!-- Gray marks the unmeasured default presentation stage. -->
+    <color name="graphics_analyzer_presentation">#B9707070</color>
+</resources>

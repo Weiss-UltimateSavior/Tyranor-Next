@@ -92,6 +92,14 @@ jobs:
           echo "version_name=${new_name}" >> "${GITHUB_OUTPUT}"
           echo "version_code=$(code_of "${new_name}")" >> "${GITHUB_OUTPUT}"
 
+  siglus-native:
+    name: Siglus release native source gate
+    needs: detect-version-change
+    if: needs.detect-version-change.outputs.changed == 'true'
+    uses: ./.github/workflows/siglus-graphics-ci.yml
+    permissions:
+      contents: read
+
   ethornell-native:
     name: Ethornell release native gate
     needs: detect-version-change
@@ -104,7 +112,7 @@ jobs:
 
   release-beta:
     name: Release Beta APK
-    needs: [detect-version-change, ethornell-native]
+    needs: [detect-version-change, ethornell-native, siglus-native]
     if: needs.detect-version-change.outputs.changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60

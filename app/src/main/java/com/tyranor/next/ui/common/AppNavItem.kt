@@ -61,6 +61,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param showArrow 是否显示右侧跳转箭头；「进入下一级」的跳转条目保持 true，「执行动作」条目传 false
  * @param leadingIconTint 显式覆盖左侧图标颜色（如主题色 [MaterialTheme.colorScheme.primary] / 危险色 error）；
  *   null 时保持默认行为（深色染白、浅色用原图）
+ * @param titleMaxLines 标题最大行数；长预设名可允许换行，默认保持单行
  * @param titleColor 显式覆盖标题颜色（如危险条目用 error 色）；null 时用默认 [TextColor]
  */
 @Composable
@@ -75,6 +76,7 @@ fun AppNavItem(
     showArrow: Boolean = true,
     leadingIconTint: Color? = null,
     titleColor: Color? = null,
+    titleMaxLines: Int = 1,
     indication: Indication? = LocalIndication.current,
     onClick: (() -> Unit)? = null,
 ) {
@@ -117,7 +119,7 @@ fun AppNavItem(
                 title,
                 style = MaterialTheme.typography.bodyMedium,
                 color = (titleColor ?: TextColor).copy(alpha = contentAlpha),
-                maxLines = 1,
+                maxLines = titleMaxLines,
                 overflow = TextOverflow.Ellipsis,
             )
             if (!summary.isNullOrBlank()) {

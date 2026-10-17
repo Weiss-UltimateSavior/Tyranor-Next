@@ -1,0 +1,164 @@
+{
+  "filters": [
+    {
+      "id": "denoise_mean",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 7,
+      "title": {
+        "zh": "双边均值降噪",
+        "en": "Bilateral mean denoise",
+        "ja": "バイラテラル平均ノイズ除去"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "DMean",
+      "color": "#FF3DA578",
+      "asset": "anime4k/Anime4K_Denoise_Bilateral_Mean.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "denoise_median",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 8,
+      "title": {
+        "zh": "双边中值降噪",
+        "en": "Bilateral median denoise",
+        "ja": "バイラテラル中央値ノイズ除去"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "DMed",
+      "color": "#FF3DA578",
+      "asset": "anime4k/Anime4K_Denoise_Bilateral_Median.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "denoise_mode",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 9,
+      "title": {
+        "zh": "双边众值降噪",
+        "en": "Bilateral mode denoise",
+        "ja": "バイラテラル最頻値ノイズ除去"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "DMode",
+      "color": "#FF3DA578",
+      "asset": "anime4k/Anime4K_Denoise_Bilateral_Mode.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "thin_hq",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 10,
+      "title": {
+        "zh": "线条细化 HQ",
+        "en": "Thin lines HQ",
+        "ja": "線の細線化 HQ"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "Thin",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Thin_HQ.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "darken_hq",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 11,
+      "title": {
+        "zh": "线条加深 HQ",
+        "en": "Darken lines HQ",
+        "ja": "線の暗化 HQ"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "Dark",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Darken_HQ.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    }
+  ]
+}

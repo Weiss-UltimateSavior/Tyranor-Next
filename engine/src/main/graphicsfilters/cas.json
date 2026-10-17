@@ -1,0 +1,230 @@
+{
+  "filters": [
+    {
+      "id": "cas",
+      "category": "CAS",
+      "categoryOrder": 20,
+      "order": 0,
+      "title": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "categoryTitle": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "shortName": "CAS",
+      "color": "#FFE1A13C",
+      "asset": "cas/CAS.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": true,
+      "scaleModes": [
+        "none",
+        "fit",
+        "factor"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": true,
+      "forceParameters": true,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 2
+    },
+    {
+      "id": "cas_low",
+      "category": "CAS",
+      "categoryOrder": 20,
+      "order": 1,
+      "title": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "categoryTitle": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "shortName": "CAS",
+      "color": "#FFE1A13C",
+      "asset": "cas/CAS_low.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.2,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": false,
+      "migrationTarget": "cas",
+      "maxOutputScale": 1
+    },
+    {
+      "id": "cas_standard",
+      "category": "CAS",
+      "categoryOrder": 20,
+      "order": 1,
+      "title": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "categoryTitle": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "shortName": "CAS",
+      "color": "#FFE1A13C",
+      "asset": "cas/CAS_standard.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": false,
+      "migrationTarget": "cas",
+      "maxOutputScale": 1
+    },
+    {
+      "id": "cas_high",
+      "category": "CAS",
+      "categoryOrder": 20,
+      "order": 1,
+      "title": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "categoryTitle": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "shortName": "CAS",
+      "color": "#FFE1A13C",
+      "asset": "cas/CAS_high.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.8,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": false,
+      "migrationTarget": "cas",
+      "maxOutputScale": 1
+    },
+    {
+      "id": "cas_scale_low",
+      "category": "CAS",
+      "categoryOrder": 20,
+      "order": 1,
+      "title": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "categoryTitle": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "shortName": "CAS",
+      "color": "#FFE1A13C",
+      "asset": "cas/CAS_Scaling_low.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "fit"
+      ],
+      "defaultScaleMode": "fit",
+      "defaultSharpness": 0.2,
+      "outputSized": true,
+      "forceParameters": false,
+      "visible": false,
+      "migrationTarget": "cas",
+      "maxOutputScale": 2
+    },
+    {
+      "id": "cas_scale_standard",
+      "category": "CAS",
+      "categoryOrder": 20,
+      "order": 1,
+      "title": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "categoryTitle": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "shortName": "CAS",
+      "color": "#FFE1A13C",
+      "asset": "cas/CAS_Scaling_standard.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "fit"
+      ],
+      "defaultScaleMode": "fit",
+      "defaultSharpness": 0.4,
+      "outputSized": true,
+      "forceParameters": false,
+      "visible": false,
+      "migrationTarget": "cas",
+      "maxOutputScale": 2
+    },
+    {
+      "id": "cas_scale_high",
+      "category": "CAS",
+      "categoryOrder": 20,
+      "order": 1,
+      "title": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "categoryTitle": {
+        "zh": "CAS",
+        "en": "CAS",
+        "ja": "CAS"
+      },
+      "shortName": "CAS",
+      "color": "#FFE1A13C",
+      "asset": "cas/CAS_Scaling_high.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "fit"
+      ],
+      "defaultScaleMode": "fit",
+      "defaultSharpness": 0.8,
+      "outputSized": true,
+      "forceParameters": false,
+      "visible": false,
+      "migrationTarget": "cas",
+      "maxOutputScale": 2
+    }
+  ]
+}

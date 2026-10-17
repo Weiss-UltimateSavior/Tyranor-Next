@@ -30,6 +30,11 @@ object LaunchContract {
     /** Web 壳默认固定端口（与 Tyranor 原版 webGamePort 默认值一致，便于沿用既有存档域）。 */
     const val WEB_SHELL_PORT_DEFAULT = 23333
     const val UI_LANGUAGE_TAG = "uiLanguageTag"
+    const val GRAPHICS_FILTER_CHAIN = "graphicsFilterChain"
+    const val GRAPHICS_FILTER_ENABLED = "graphicsFilterEnabled"
+    const val GRAPHICS_FILTER_ANALYZER = "graphicsFilterAnalyzer"
+    const val GRAPHICS_FILTER_ANALYZER_POSITION = "graphicsFilterAnalyzerPosition"
+    const val GRAPHICS_FILTER_REFRESH_INTERVAL_MS = "graphicsFilterRefreshIntervalMs"
 
     // ---------- 主题 ----------
 
@@ -73,12 +78,16 @@ object LaunchContract {
 
     // ---------- Artemis ----------
 
+    /** 官方 Artemis 自动候选与回退协议，不通过画质设置改写候选顺序。 */
     const val ARTEMIS_AUTO_FALLBACK = "artemisAutoFallback"
     const val ARTEMIS_FALLBACK_STAGE = "artemisFallbackStage"
     const val ARTEMIS_CURRENT_VERSION = "artemisCurrentVersion"
     const val ARTEMIS_FALLBACK_VERSIONS = "artemisFallbackVersions"
     const val ARTEMIS_FALLBACK_INDEX = "artemisFallbackIndex"
     const val ARTEMIS_AUTO_PLAN_REASON = "artemisAutoPlanReason"
+    // 原始画质请求跨候选保留；实际 enabled/analyzer 每次按加载库重算。
+    const val ARTEMIS_GRAPHICS_REQUESTED_ENABLED = "artemisGraphicsRequestedEnabled"
+    const val ARTEMIS_GRAPHICS_REQUESTED_ANALYZER = "artemisGraphicsRequestedAnalyzer"
     const val ENGINE_LIB_NAME = "engineLibName"
 
     // ---------- RPG Maker Web ----------

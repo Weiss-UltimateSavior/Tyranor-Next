@@ -1,5 +1,10 @@
 package com.tyranor.next.core.game.storage
 
+import com.tyranor.next.core.settings.GraphicsFamily
+import com.tyranor.next.core.settings.GraphicsNode
+import com.tyranor.next.core.settings.GraphicsOverride
+import com.tyranor.next.core.settings.GraphicsSettingsCodec
+import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import org.json.JSONObject
@@ -20,6 +25,8 @@ class GameOverridePartitionsTest {
         .put(PerGameSettingsStore.F_VCURSOR_SCALE, "80")
         .put(PerGameSettingsStore.F_ART_VERSION, "3")
         .put(PerGameSettingsStore.F_ART_ROTATE, true)
+        .put(PerGameSettingsStore.F_ART_ANIME4K_ENABLED, true)
+        .put(PerGameSettingsStore.F_ART_ANIME4K_MODE, "soft_m")
         .put(PerGameSettingsStore.F_TY_SCOPED, false)
         .put(PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED, true)
         .put(PerGameSettingsStore.F_RPG_LEGACY_RENDERER, true)
@@ -55,6 +62,26 @@ class GameOverridePartitionsTest {
             // opt 返回 Any?：显式安全调用（否则 Kotlin 报「nullable receiver 上只允许 ?. / !!.」）
             assertEquals(blob.opt(key)?.toString(), GameOverridePartitions.assemble(row).opt(key)?.toString())
         }
+    }
+
+    @Test
+    fun artemisGraphicsOverridesUseArtemisPartitionAndSurviveRoundTrip() {
+        val row = GameOverridePartitions.split("/games/artemis", fullBlob(), 1L)
+        val artemis = JSONObject(row.artemisJson!!)
+        val tyrano = JSONObject(row.tyranoJson!!)
+        val assembled = GameOverridePartitions.assemble(row)
+        val keys = listOf(
+            PerGameSettingsStore.F_ART_ANIME4K_ENABLED,
+            PerGameSettingsStore.F_ART_ANIME4K_MODE,
+        )
+        for (key in keys) {
+            assertTrue(key in GameOverridePartitions.ARTEMIS_KEYS)
+            assertTrue(artemis.has(key))
+            assertTrue(!tyrano.has(key))
+            assertEquals(artemis.get(key), assembled.get(key))
+        }
+        assertEquals(true, assembled.getBoolean(PerGameSettingsStore.F_ART_ANIME4K_ENABLED))
+        assertEquals("soft_m", assembled.getString(PerGameSettingsStore.F_ART_ANIME4K_MODE))
     }
 
     @Test
@@ -146,6 +173,8 @@ class GameOverridePartitionsTest {
         assertEquals(PerGameSettingsStore.F_MENU_HANDLER_OPA, GameOverridePartitions.KEY_MENU_HANDLER_OPA)
         assertEquals(PerGameSettingsStore.F_ART_VERSION, GameOverridePartitions.KEY_ART_VERSION)
         assertEquals(PerGameSettingsStore.F_ART_ROTATE, GameOverridePartitions.KEY_ART_ROTATE)
+        assertEquals(PerGameSettingsStore.F_ART_ANIME4K_ENABLED, GameOverridePartitions.KEY_ART_ANIME4K_ENABLED)
+        assertEquals(PerGameSettingsStore.F_ART_ANIME4K_MODE, GameOverridePartitions.KEY_ART_ANIME4K_MODE)
         assertEquals(PerGameSettingsStore.F_ART_PATCH, GameOverridePartitions.KEY_ART_PATCH)
         assertEquals(PerGameSettingsStore.F_RPG_MAKER_MOD_ENABLED, GameOverridePartitions.KEY_RPG_MAKER_MOD_ENABLED)
         assertEquals(PerGameSettingsStore.F_RPG_LEGACY_RENDERER, GameOverridePartitions.KEY_RPG_LEGACY_RENDERER)
@@ -270,4 +299,57 @@ class GameOverridePartitionsTest {
         }
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }
+    @Test
+    fun graphicsFamilyMarkersAndOrderedListsSurviveOwnedPartitionsWithoutLosingLegacyKeys() {
+        val blob = JSONObject().put("anime4k_mode", "soft_l").put("art_graphics_monitor", true)
+            .put("future_setting", "keep")
+        for (family in GraphicsFamily.entries) {
+            blob.put(family.overrideKey, GraphicsSettingsCodec.encode(GraphicsOverride(
+                chain = listOf(GraphicsNode("deblur", false), GraphicsNode("s"), GraphicsNode("s")),
+            )))
+        }
+        val row = GameOverridePartitions.split("game", blob, 1L)
+        assertTrue(JSONObject(row.krJson!!).has(GraphicsFamily.KR.overrideKey))
+        assertTrue(JSONObject(row.artemisJson!!).has(GraphicsFamily.ARTEMIS.overrideKey))
+        assertTrue(JSONObject(row.tyranoJson!!).has(GraphicsFamily.SIGLUS.overrideKey))
+        val restored = GameOverridePartitions.assemble(row)
+        assertEquals("soft_l", restored.getString("anime4k_mode"))
+        assertTrue(restored.getBoolean("art_graphics_monitor"))
+        assertEquals("keep", restored.getString("future_setting"))
+        for (family in GraphicsFamily.entries) {
+            assertEquals(listOf(GraphicsNode("deblur", false), GraphicsNode("s"), GraphicsNode("s")),
+                GraphicsSettingsCodec.readOverride(restored, family).chain)
+            restored.put(family.overrideKey, GraphicsSettingsCodec.encode(GraphicsOverride()))
+        }
+        val inherited = GameOverridePartitions.assemble(GameOverridePartitions.split("game", restored, 2L))
+        for (family in GraphicsFamily.entries) assertEquals(GraphicsOverride(), GraphicsSettingsCodec.readOverride(inherited, family))
+        assertEquals(GraphicsFamily.KR.overrideKey, GameOverridePartitions.KEY_KR_GRAPHICS)
+        assertEquals(GraphicsFamily.ARTEMIS.overrideKey, GameOverridePartitions.KEY_ART_GRAPHICS)
+        assertEquals(GraphicsFamily.SIGLUS.overrideKey, GameOverridePartitions.KEY_SIGLUS_GRAPHICS)
+    }
+
+    @Test fun legacyKrModeHasAnOwnedPartitionAndFamilyMarkerFreezesInheritance() {
+        assertEquals(PerGameSettingsStore.F_ANIME4K_MODE, GameOverridePartitions.KEY_KR_LEGACY_ANIME4K_MODE)
+        assertTrue(PerGameSettingsStore.F_ANIME4K_MODE in GameOverridePartitions.KR_KEYS)
+        val before = JSONObject().put(PerGameSettingsStore.F_ANIME4K_MODE, "soft_l")
+            .put(PerGameSettingsStore.F_RPG_MV_VERSION, "v2")
+        val legacyRow = GameOverridePartitions.split("/games/legacy-kr", before, 1L)
+        assertEquals("soft_l", JSONObject(legacyRow.krJson!!).getString(PerGameSettingsStore.F_ANIME4K_MODE))
+        assertTrue(!JSONObject(legacyRow.tyranoJson!!).has(PerGameSettingsStore.F_ANIME4K_MODE))
+        val loaded = GameOverridePartitions.assemble(legacyRow)
+        assertEquals(GraphicsOverride(enabled = true, chain = listOf(GraphicsNode("soft_l"))),
+            GraphicsSettingsCodec.readOverride(loaded, GraphicsFamily.KR))
+
+        // Saving the family marker means absent fields now inherit; the legacy value is retained for provenance.
+        loaded.put(GraphicsFamily.KR.overrideKey, GraphicsSettingsCodec.encode(GraphicsOverride()))
+        val saved = GameOverridePartitions.assemble(GameOverridePartitions.split("/games/legacy-kr", loaded, 2L))
+        assertEquals("soft_l", saved.getString(PerGameSettingsStore.F_ANIME4K_MODE))
+        assertEquals(GraphicsOverride(), GraphicsSettingsCodec.readOverride(saved, GraphicsFamily.KR))
+        val global = GraphicsSettings(false, listOf(GraphicsNode("m")), false)
+        assertEquals(global, GraphicsSettingsCodec.resolve(global, GraphicsSettingsCodec.readOverride(saved, GraphicsFamily.KR)))
+        saved.put(PerGameSettingsStore.F_ANIME4K_MODE, "l")
+        assertEquals(global, GraphicsSettingsCodec.resolve(global, GraphicsSettingsCodec.readOverride(saved, GraphicsFamily.KR)))
+        assertEquals("v2", saved.getString(PerGameSettingsStore.F_RPG_MV_VERSION))
+    }
+
 }

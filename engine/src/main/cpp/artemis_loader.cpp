@@ -11,6 +11,7 @@
 
 #include <jni.h>
 #include <android/native_activity.h>
+#include "artemis_official_graphics.h"
 #include <dlfcn.h>
 #include <android/log.h>
 
@@ -260,6 +261,7 @@ ANativeActivity_onCreate(ANativeActivity* activity, void* savedState, size_t sav
         return;
     }
 
+    if (engineLibName != "artemis-clean") installArtemisOfficialGraphics(handle, activity, libPath);
     LOGI("Artemis plugin: forwarding ANativeActivity_onCreate to %s", libPath.c_str());
     onCreate(activity, savedState, savedStateSize);
 }

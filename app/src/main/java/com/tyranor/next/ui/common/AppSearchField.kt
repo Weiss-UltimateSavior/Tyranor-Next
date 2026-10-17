@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.common
 
+import android.os.Build
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +32,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * - 前导图标固定 26dp、tint 取 `MiuixTheme.colorScheme.primary`、内边距取
  *   `SearchBarDefaults.LeadingIcon*`，均由组件内部处理，调用方不要传色值/尺寸。
  * - `expanded` 恒为 false（非展开内嵌式），不使用展开式全屏搜索页形态。
+ * - API 26/27 在本组件内兼容 Miuix 0.9.2 的折叠输入禁用逻辑；其他版本仍走 InputField。
  *
  * @param query 输入内容，状态由调用方持有
  * @param onQueryChange 输入变化回调（即时过滤场景在此更新过滤条件）
@@ -57,15 +59,9 @@ fun AppSearchField(
         // 此处显式提供主题 onBackground（深色=白色系 / 浅色=深灰），保证深浅色下文字正确。
         CompositionLocalProvider(LocalContentColor provides MiuixTheme.colorScheme.onBackground) {
             SearchBar(
-            inputField = {
-                InputField(
-                    query = query,
-                    onQueryChange = onQueryChange,
-                    onSearch = { onSearch() },
-                    textStyle = textStyle ?: MiuixTheme.textStyles.main,
-                    expanded = false,
-                    onExpandedChange = { },
-                    leadingIcon = {
+                inputField = {
+                    val fieldModifier = Modifier.fillMaxWidth().glassShadow(CircleShape).glassBorder(CircleShape)
+                    val fieldLeadingIcon: @Composable () -> Unit = {
                         Icon(
                             modifier = Modifier
                                 .padding(start = SearchBarDefaults.LeadingIconStartPadding, end = SearchBarDefaults.LeadingIconEndPadding)
@@ -74,16 +70,38 @@ fun AppSearchField(
                             tint = MiuixTheme.colorScheme.primary,
                             contentDescription = resolvedIconContentDescription,
                         )
-                    },
-                    // 描边必须画在 InputField 上：SearchBar 外层还包着 insideMargin 等布局，
-                    // 挂在外层会把描边画到胶囊之外（等于圈住外面一层组件）
-                    modifier = Modifier.fillMaxWidth().glassShadow(CircleShape).glassBorder(CircleShape),
-                )
-            },
-            expanded = false,
-            onExpandedChange = { },
-            modifier = modifier.fillMaxWidth(),
-            content = { },
+                    }
+                    if (Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.O_MR1) {
+                        // 局部兼容豁免：Miuix 0.9.2 在 API 26/27 禁用折叠态 InputField。
+                        // 仅公共组件内部用兼容输入保持可编辑，沿用 Miuix 配色、胶囊与玻璃材质；
+                        // 不以展开启用输入（会自动聚焦和拉起键盘），也不在失焦时清空内容。
+                        // API 28+ 仍走原 InputField，页面不自行拼装此兼容分支。
+                        EmbeddedSearchInputField(
+                            query = query,
+                            onQueryChange = onQueryChange,
+                            onSearch = onSearch,
+                            textStyle = textStyle ?: MiuixTheme.textStyles.main,
+                            leadingIcon = fieldLeadingIcon,
+                            modifier = fieldModifier,
+                        )
+                    } else {
+                        InputField(
+                            query = query,
+                            onQueryChange = onQueryChange,
+                            onSearch = { onSearch() },
+                            textStyle = textStyle ?: MiuixTheme.textStyles.main,
+                            expanded = false,
+                            onExpandedChange = { },
+                            leadingIcon = fieldLeadingIcon,
+                            // 描边位于 InputField 胶囊上，而不是外层 SearchBar 的布局间距。
+                            modifier = fieldModifier,
+                        )
+                    }
+                },
+                expanded = false,
+                onExpandedChange = { },
+                modifier = modifier.fillMaxWidth(),
+                content = { },
             )
         }
     }

@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
 import java.io.File
+import com.tyranor.next.core.engine.graphics.putDisabledGraphicsRequest
 
 /**
  * 外置主机模拟器跳转（PPSSPP / Eden）。
@@ -58,6 +59,7 @@ object ExternalEmulatorLauncher {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
             if (target.grantWrite) addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
+        intent.putDisabledGraphicsRequest()
         return try {
             app.startActivity(intent)
             Result(true, "success", target)
@@ -105,6 +107,7 @@ object ExternalEmulatorLauncher {
             }
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+        intent.putDisabledGraphicsRequest()
         return try {
             app.startActivity(intent)
             Result(true, "success", target)

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,8 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.TextColor
+import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
@@ -59,6 +62,7 @@ internal fun AppAlertDialog(
     text: @Composable () -> Unit,
     confirmButton: @Composable () -> Unit,
     dismissButton: (@Composable () -> Unit)? = null,
+    buttonArrangement: Arrangement.Horizontal = Arrangement.spacedBy(8.dp, Alignment.End),
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -129,23 +133,28 @@ internal fun AppAlertDialog(
                         AppThemeColors.isGlass -> GlassPanel
                         else -> NavWhite
                     },
+                    contentColor = TextColor,
                 ),
                 shape = AppComponentShape,
             ) {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        title()
-                    }
-                    Box(Modifier.fillMaxWidth().heightIn(max = textMaxHeight).padding(top = 14.dp)) {
-                        text()
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        dismissButton?.invoke()
-                        confirmButton()
+                // 仅为弹窗子组件提供取色上下文，使输入框与标签指示器和面板形成反差；
+                // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
+                CompositionLocalProvider(LocalAppDialogContent provides true) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            title()
+                        }
+                        Box(Modifier.fillMaxWidth().heightIn(max = textMaxHeight).padding(top = 14.dp)) {
+                            text()
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                            horizontalArrangement = buttonArrangement,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            dismissButton?.invoke()
+                            confirmButton()
+                        }
                     }
                 }
             }

@@ -12,6 +12,7 @@ import android.view.View
 import android.view.WindowManager
 import com.core.engine.EngineThemeColors
 import com.core.engine.LaunchContract
+import com.core.gl.ArtemisPerformanceOverlay
 import org.libsdl3.app.SDLActivity
 import org.tvp.krkrsdl3.KRKRActivity
 import java.util.Locale
@@ -36,12 +37,16 @@ class Krkrsdl3Activity : KRKRActivity() {
      */
     private var launchOrientationGuardEnabled = true
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var graphics: Krkrsdl3Graphics? = null
+    private var graphicsOverlay: ArtemisPerformanceOverlay? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 先落方向锁再走 super：super 链中 KRKRActivity.onCreate → fullscreen() 会设置方向
         applyEngineRequestedOrientation()
         applyLauncherWindowTone()
+        graphics = Krkrsdl3Graphics(this, intent)
         super.onCreate(savedInstanceState)
+        graphics?.let { graphicsOverlay = ArtemisPerformanceOverlay(this, it) }
         // 绝对超时兜底：即使原生窗口创建回调异常缺失，超时后也解除方向锁
         scheduleGuardRelease(GUARD_FALLBACK_RELEASE_MS)
     }
@@ -51,6 +56,24 @@ class Krkrsdl3Activity : KRKRActivity() {
         // 覆盖 KRKRActivity 固定的竖屏强制：按启动器传入的方向（默认 sensorLandscape=6），
         // 与 KirikiroidLauncherBaseActivity.onResume 行为一致。
         applyEngineRequestedOrientation()
+        graphicsOverlay?.show()
+    }
+
+    override fun onPause() {
+        graphicsOverlay?.hide()
+        super.onPause()
+    }
+
+    /** SDL owns this thread and all GLES work; registration precedes native main. */
+    override fun main() {
+        val session = graphics
+        try {
+            session?.install()
+            super.main()
+        } finally {
+            session?.close()
+            runOnUiThread { graphicsOverlay?.hide() }
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -64,6 +87,7 @@ class Krkrsdl3Activity : KRKRActivity() {
         val forceFocus = intent?.getStringExtra(LaunchContract.FOCUS)?.toBoolean() ?: false
         super.onWindowFocusChanged(hasFocus || forceFocus)
         if (hasFocus || forceFocus) applySystemUiVisibility()
+        if (hasFocus || forceFocus) graphicsOverlay?.show() else graphicsOverlay?.hide()
     }
 
     /**
@@ -107,6 +131,8 @@ class Krkrsdl3Activity : KRKRActivity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        graphicsOverlay?.hide()
+        graphicsOverlay = null
         super.onDestroy()
     }
 

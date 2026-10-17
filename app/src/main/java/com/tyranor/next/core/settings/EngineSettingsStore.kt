@@ -45,6 +45,8 @@ object EngineSettingsStore {
     const val KEY_ARTEMIS_SURFACE_CACHE_SIZE = "artemis_surface_cache_size"
     const val KEY_ARTEMIS_FONT_CACHE_SIZE = "artemis_font_cache_size"
     const val KEY_ARTEMIS_POWER_SAVING = "artemis_power_saving"
+    const val KEY_ARTEMIS_ANIME4K_ENABLED = "artemis_anime4k_enabled"
+    const val KEY_ARTEMIS_ANIME4K_MODE = "artemis_anime4k_mode"
 
     // Ren'Py 应用级默认（外置模块版本选择）
     const val KEY_RENPY_ENGINE_VERSION = "renpy_engine_version"
@@ -137,11 +139,13 @@ object EngineSettingsStore {
     const val KR_126 = "1.2.6"
     const val KERNEL_KIRIKIRI2 = "kirikiri2"
     const val KERNEL_KRKRSDL3 = "krkrsdl3"
+    val KR_VERSIONS = setOf(KR_AUTO, KR_139, KR_134, KR_126)
+    val KR_KERNELS = setOf(KR_AUTO, KERNEL_KIRIKIRI2, KERNEL_KRKRSDL3)
     const val KR_PATCH_OVERLAY_AUTO = "auto"
     const val KR_PATCH_OVERLAY_FORCE = "force"
     const val KR_PATCH_OVERLAY_OFF = "off"
 
-    // Anime4K 画面超分模式（仅 kirikiri2 内核路径生效；取值与引擎侧 Anime4kRuntime 一致）
+    // 历史单模式设置的迁移取值；当前滤镜链的执行能力由原始帧接入门禁决定。
     const val ANIME4K_OFF = "off"
     const val ANIME4K_S = "s"
     const val ANIME4K_M = "m"
@@ -155,6 +159,10 @@ object EngineSettingsStore {
         ANIME4K_OFF, ANIME4K_S, ANIME4K_M, ANIME4K_L,
         ANIME4K_SOFT_S, ANIME4K_SOFT_M, ANIME4K_SOFT_L, ANIME4K_DEBLUR,
     )
+
+    /** Artemis 的启用开关独立于模式，模式不接受 off。 */
+    const val ART_ANIME4K_DEFAULT = ANIME4K_S
+    val ART_ANIME4K_MODES = ANIME4K_MODES - ANIME4K_OFF
 
     const val RENDERER_SOFTWARE = "software"
     const val RENDERER_OPENGL = "opengl"
@@ -446,13 +454,6 @@ object EngineSettingsStore {
     fun setKrPatchOverlayMode(c: Context, v: String) =
         prefs(c).edit().putString(KEY_KR_PATCH_OVERLAY_MODE, normalizeKrPatchOverlayMode(v)).apply()
 
-    fun getKrAnime4kMode(c: Context): String {
-        val v = prefs(c).getString(KEY_KR_ANIME4K_MODE, null)
-        return if (v != null && v in ANIME4K_MODES) v else ANIME4K_OFF
-    }
-    fun setKrAnime4kMode(c: Context, v: String) =
-        prefs(c).edit().putString(KEY_KR_ANIME4K_MODE, if (v in ANIME4K_MODES) v else ANIME4K_OFF).apply()
-
     /** Automatically confirm one-button KRKR information dialogs during the first 30 seconds. */
     fun isKrSkipStartupDialogs(c: Context): Boolean =
         prefs(c).getBoolean(KEY_KR_SKIP_STARTUP_DIALOGS, false)
@@ -661,6 +662,10 @@ object EngineSettingsStore {
     fun getArtPowerSaving(c: Context): String = artStringPref(c, KEY_ARTEMIS_POWER_SAVING, ART_TOGGLES)
     fun setArtPowerSaving(c: Context, v: String) = setArtStringPref(c, KEY_ARTEMIS_POWER_SAVING, v, ART_TOGGLES)
 
+
+    fun normalizeArtAnime4kMode(mode: String?): String =
+        mode?.trim()?.takeIf { it in ART_ANIME4K_MODES } ?: ART_ANIME4K_DEFAULT
+
     private fun artStringPref(c: Context, key: String, allowed: Set<String>): String {
         val value = prefs(c).getString(key, ART_CACHE_DEFAULT).orEmpty().trim()
         return if (value in allowed) value else ART_CACHE_DEFAULT
@@ -680,6 +685,13 @@ object EngineSettingsStore {
         }
     }
     fun setRenpyVersion(c: Context, v: String) = prefs(c).edit().putString(KEY_RENPY_ENGINE_VERSION, v).apply()
+
+    /** Capture new marker and legacy fields atomically from one SharedPreferences snapshot. */
+    fun getGraphicsSettings(c: Context, family: GraphicsFamily): GraphicsSettings =
+        GraphicsSettingsCodec.readGlobal(prefs(c).all, family)
+
+    fun setGraphicsSettings(c: Context, family: GraphicsFamily, settings: GraphicsSettings) =
+        prefs(c).edit().putString(family.preferenceKey, GraphicsSettingsCodec.encode(settings)).apply()
 
     // ---------- Siglus ----------
     fun getSiglusLanguage(c: Context): String =

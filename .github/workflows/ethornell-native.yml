@@ -8,6 +8,11 @@ on:
         type: boolean
         default: true
   workflow_dispatch:
+    inputs:
+      strict-release:
+        description: Require the exact clean engine revision to be publicly fetchable
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -55,7 +60,7 @@ jobs:
         run: sdkmanager "ndk;28.0.13004108"
       - name: Verify vendored ABI, exact published engine source, ELF and dependencies
         env:
-          STRICT_RELEASE: ${{ github.event_name == 'workflow_dispatch' || inputs.strict-release }}
+          STRICT_RELEASE: ${{ inputs.strict-release }}
         run: |
           source_args=(--local-static)
           if [[ "$STRICT_RELEASE" == "true" ]]; then

@@ -27,7 +27,19 @@ object EngineSettingsResolver {
 
         return ResolvedEngineSettings(
             ons = EffectiveEngineSettings.mergeOns(onsGlobal, onsOverride),
-            krEngineVersion = EffectiveEngineSettings.resolve(
+            krGraphics = GraphicsSettingsCodec.resolve(
+                EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.KR),
+                GraphicsSettingsCodec.readOverride(override, GraphicsFamily.KR),
+            ),
+            artGraphics = GraphicsSettingsCodec.resolve(
+                EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.ARTEMIS),
+                GraphicsSettingsCodec.readOverride(override, GraphicsFamily.ARTEMIS),
+            ),
+            siglusGraphics = GraphicsSettingsCodec.resolve(
+                EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.SIGLUS),
+                GraphicsSettingsCodec.readOverride(override, GraphicsFamily.SIGLUS),
+            ),
+            krEngineVersion = EffectiveEngineSettings.resolveKrVersion(
                 str(PerGameSettingsStore.F_ENGINE_VERSION),
                 EngineSettingsStore.getKrEngineVersion(app),
             ),
@@ -58,21 +70,12 @@ object EngineSettingsResolver {
                 bool(PerGameSettingsStore.F_SKIP_STARTUP_DIALOGS),
                 EngineSettingsStore.isKrSkipStartupDialogs(app),
             ),
-            krAnime4kMode = EffectiveEngineSettings.resolveAllowed(
-                str(PerGameSettingsStore.F_ANIME4K_MODE),
-                EngineSettingsStore.getKrAnime4kMode(app),
-                EngineSettingsStore.ANIME4K_MODES,
-                EngineSettingsStore.ANIME4K_OFF,
-            ),
             krRenderer = EffectiveEngineSettings.resolve(
                 str(PerGameSettingsStore.F_RENDERER),
                 EngineSettingsStore.getKrRenderer(app),
             ),
-            artVersion = EffectiveEngineSettings.resolveAllowed(
-                str(PerGameSettingsStore.F_ART_VERSION),
-                EngineSettingsStore.getArtEngineVersion(app),
-                EngineSettingsStore.ART_VERSIONS,
-                EngineSettingsStore.ART_ENGINE_AUTO,
+            artVersion = EffectiveEngineSettings.resolveArtVersion(
+                str(PerGameSettingsStore.F_ART_VERSION), EngineSettingsStore.getArtEngineVersion(app),
             ),
             artKernel = EffectiveEngineSettings.resolveAllowed(
                 str(PerGameSettingsStore.F_ART_KERNEL),
@@ -249,6 +252,9 @@ object EngineSettingsResolver {
 /** 三级合并后的启动期生效设置（纯数据）。 */
 data class ResolvedEngineSettings(
     val ons: EngineSettingsStore.Ons,
+    val krGraphics: GraphicsSettings = GraphicsSettings.defaults(GraphicsFamily.KR),
+    val artGraphics: GraphicsSettings = GraphicsSettings.defaults(GraphicsFamily.ARTEMIS),
+    val siglusGraphics: GraphicsSettings = GraphicsSettings.defaults(GraphicsFamily.SIGLUS),
     val krEngineVersion: String,
     val krKernel: String,
     val krScopedSaveDir: Boolean,
@@ -256,7 +262,6 @@ data class ResolvedEngineSettings(
     val krForceDefaultFont: Boolean,
     val krPatchOverlayMode: String,
     val krSkipStartupDialogs: Boolean,
-    val krAnime4kMode: String,
     val krRenderer: String,
     val artVersion: String,
     /** Artemis 内核生效值（官方多 revision / 自研 clean-room）。 */

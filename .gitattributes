@@ -1,0 +1,2 @@
+tools/build-siglus-graphics.py text eol=lf
+.github/workflows/siglus-graphics-ci.yml text eol=lf

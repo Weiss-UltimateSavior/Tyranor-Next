@@ -38,6 +38,8 @@ internal object GameOverridePartitions {
     const val KEY_ART_KERNEL = "artemis_kernel"
     const val KEY_ART_ROTATE = "art_rotate_screen"
     const val KEY_ART_PATCH = "art_auto_patch"
+    const val KEY_ART_ANIME4K_ENABLED = "art_anime4k_enabled"
+    const val KEY_ART_ANIME4K_MODE = "art_anime4k_mode"
     const val KEY_RPG_MAKER_MOD_ENABLED = "rpg_maker_mod_enabled"
     const val KEY_RPG_LEGACY_RENDERER = "rpg_legacy_renderer"
     const val KEY_RPG_SAVE_INTEROP = "rpg_save_interop"
@@ -98,14 +100,26 @@ internal object GameOverridePartitions {
     const val KEY_RENPY_RECOMPILE = "renpy_recompile"
     const val ONS_OBJECT_KEY = "ons"
 
+    /** Read-only legacy migration key; keep old KR values in their own partition until frozen. */
+    const val KEY_KR_LEGACY_ANIME4K_MODE = "anime4k_mode"
+
+    const val KEY_KR_GRAPHICS = "kr_graphics_v1"
+    const val KEY_ART_GRAPHICS = "artemis_graphics_v1"
+    const val KEY_SIGLUS_GRAPHICS = "siglus_graphics_v1"
+
     val KR_KEYS: Set<String> = setOf(
+        KEY_KR_GRAPHICS, KEY_KR_LEGACY_ANIME4K_MODE,
         KEY_ENGINE_VERSION, KEY_ENGINE_KERNEL, KEY_SCOPED_SAVE_DIR, KEY_DEFAULT_FONT,
         KEY_FORCE_DEFAULT_FONT, KEY_PATCH_OVERLAY_MODE, KEY_RENDERER, KEY_SOFTWARE_DRAW_THREAD,
         KEY_SOFTWARE_COMPRESS_TEX, KEY_OGL_COMPRESS_TEX, KEY_MEM_USAGE, KEY_OGL_MAX_TEXSIZE,
         KEY_OGL_ACCURATE_RENDER, KEY_FPS_LIMIT, KEY_VCURSOR_SCALE, KEY_MENU_HANDLER_OPA,
         KEY_SKIP_STARTUP_DIALOGS,
     )
-    val ARTEMIS_KEYS: Set<String> = setOf(KEY_ART_VERSION, KEY_ART_KERNEL, KEY_ART_ROTATE, KEY_ART_PATCH)
+    val ARTEMIS_KEYS: Set<String> = setOf(
+        KEY_ART_GRAPHICS,
+        KEY_ART_VERSION, KEY_ART_KERNEL, KEY_ART_ROTATE, KEY_ART_PATCH,
+        KEY_ART_ANIME4K_ENABLED, KEY_ART_ANIME4K_MODE,
+    )
     // RPG Maker 会话键（legacy 渲染、MV/MZ 运行时版本、RGSS 外置模块配置）与 tyrano 共用分区：
     // v0 宿主与 v1/v2 宿主的逐游戏覆盖都在这一条 blob 里，显式建模，
     // 不依赖“未识别键兜底归入 tyrano”的 else 路径，防止未来收紧分区时丢键
@@ -120,7 +134,7 @@ internal object GameOverridePartitions {
         KEY_RPG_CHEATS, KEY_RPG_USE_CJK_FONT, KEY_RPG_ENABLE_POSTLOAD_SCRIPTS,
         KEY_RPG_CUSTOM_FONT, KEY_RPG_VERTICAL_SCREEN_ALIGN, KEY_RPG_WINDOW_SIZE,
         KEY_RPG_SPEED_UP, KEY_RPG_FONT_SCALE,
-        KEY_SIGLUS_LANGUAGE,
+        KEY_SIGLUS_LANGUAGE, KEY_SIGLUS_GRAPHICS,
         KEY_FB_NLS,
         KEY_ETHORNELL_NLS, KEY_ETHORNELL_FONT,
         KEY_FVP_NLS, KEY_FVP_SYSTEM_FONT, KEY_FVP_TEXT_HIDPI, KEY_FVP_FONT,

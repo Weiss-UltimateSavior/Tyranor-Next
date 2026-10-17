@@ -1,4 +1,5 @@
 <resources>
+    <string name="common_clear_input_content_description">入力をクリア</string>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">OK</string>
     <string name="common_done">完了</string>
@@ -500,14 +501,6 @@
     <string name="engine_option_rpg_mv_v2">TynMV-0.2</string>
     <string name="engine_option_rpg_mz_v0">Tyranor-2.3.4</string>
     <string name="engine_option_rpg_mz_v2">TynMZ-0.1</string>
-    <string name="engine_settings_anime4k">アップスケーリング</string>
-    <string name="engine_option_anime4k_fast">高速（S）</string>
-    <string name="engine_option_anime4k_balanced">バランス（M）</string>
-    <string name="engine_option_anime4k_high">高品質（L）</string>
-    <string name="engine_option_anime4k_soft_fast">ソフト・高速</string>
-    <string name="engine_option_anime4k_soft_balanced">ソフト・バランス</string>
-    <string name="engine_option_anime4k_soft_high">ソフト・高品質</string>
-    <string name="engine_option_anime4k_deblur">ぼかし除去（DoG）</string>
 
     <string name="cover_source_local">ローカルカバー</string>
     <string name="cover_source_custom">カスタムカバー</string>
@@ -793,6 +786,38 @@
     <string name="android_add_duplicate">このアプリは既に追加済みです</string>
     <string name="android_add_already_added">ライブラリに追加済み</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+
+    <!-- Shared ordered graphics-chain settings -->
+    <string name="graphics_settings_title">画面フィルター</string>
+    <string name="graphics_settings_enabled">フィルターチェーンを有効化</string>
+    <string name="graphics_chain_title">フィルターチェーン</string>
+    <string name="graphics_chain_custom">このゲーム専用のチェーンを設定</string>
+    <string name="graphics_chain_empty">チェーンが空のため、画面処理と性能モニターは実行されません。</string>
+    <string name="graphics_chain_up">上へ</string>
+    <string name="graphics_chain_down">下へ</string>
+    <string name="graphics_chain_remove">削除</string>
+    <string name="graphics_chain_add_type">追加するフィルター</string>
+    <string name="graphics_chain_add">フィルターを追加</string>
+    <string name="graphics_chain_clear">チェーンを空にする</string>
+    <string name="graphics_chain_limit">最大 %1$d ノード</string>
+    <string name="graphics_filter_back_categories">戻る</string>
+    <string name="graphics_settings_unsupported">このエンジンのバージョンはフィルター非対応です</string>
+    <string name="graphics_settings_runtime_dependent">自動選択：フィルター対応は実際のエンジンに依存します</string>
+    <string name="graphics_filter_parameters">パラメーター</string>
+    <string name="graphics_filter_sharpness">シャープネス</string>
+    <string name="graphics_filter_scale_type">種類</string>
+    <string name="graphics_filter_scale_fit">画面に合わせる</string>
+    <string name="graphics_filter_scale_factor">倍率</string>
+    <string name="graphics_filter_scale_multiplier">拡大・縮小倍率（0.25–4）</string>
+    <string name="graphics_filter_scale_none">拡縮なし</string>
+    <string name="graphics_analyzer_title">パフォーマンス分析</string>
+    <string name="graphics_refresh_interval">データ更新間隔</string>
+    <string name="graphics_refresh_seconds">%1$s 秒</string>
+    <string name="graphics_analyzer_position">位置</string>
+    <string name="graphics_analyzer_top_center">上中央</string>
+    <string name="graphics_analyzer_bottom_center">下中央</string>
+    <string name="graphics_filter_decrease">−</string>
+    <string name="graphics_filter_increase">+</string>
     <string name="ethornell_settings_title">Ethornell / BGI 設定</string>
     <string name="ethornell_error_session_busy">Ethornell で別のゲームが実行中、またはセッションを開始・終了しています。現在のゲームを終了してから再試行してください。</string>
     <string name="engine_desc_ethornell">内蔵 ethornell-rs 再実装ランタイム。互換性はゲームのバージョンに依存し、Windows プラグインには対応しません。</string>

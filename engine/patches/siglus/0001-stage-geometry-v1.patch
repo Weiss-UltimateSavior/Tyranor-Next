@@ -1,0 +1,80 @@
+diff --git a/crates/siglus_scene_vm/src/render/mod.rs b/crates/siglus_scene_vm/src/render/mod.rs
+--- a/crates/siglus_scene_vm/src/render/mod.rs
++++ b/crates/siglus_scene_vm/src/render/mod.rs
+@@ -1206,6 +1206,21 @@
+         )
+     }
+ 
++    /// Downstream filter bridge: actual output and render serial before host scaling.
++    #[cfg(target_os = "android")]
++    pub(crate) fn android_presentation_geometry(&self) -> [u32; 8] {
++        [
++            self.config.width,
++            self.config.height,
++            self.surface_viewport.x,
++            self.surface_viewport.y,
++            self.surface_viewport.w,
++            self.surface_viewport.h,
++            self.debug_frame_serial as u32,
++            (self.debug_frame_serial >> 32) as u32,
++        ]
++    }
++
+     pub fn render_sprites(
+         &mut self,
+         images: &ImageManager,
+diff --git a/crates/siglus_scene_vm/src/android_host.rs b/crates/siglus_scene_vm/src/android_host.rs
+--- a/crates/siglus_scene_vm/src/android_host.rs
++++ b/crates/siglus_scene_vm/src/android_host.rs
+@@ -242,6 +242,31 @@
+     }
+ }
+ 
++/// Optional downstream ABI for original-stage filter processing. Call on the
++/// engine's owning thread with a live handle and at least ten writable u32s.
++/// Layout: logical W/H, configured Surface W/H, viewport X/Y/W/H, render serial
++/// low/high words. Actual geometry rejects an accidentally scaled producer;
++/// the serial distinguishes a rendered step from suppressed/messagebox steps.
++#[unsafe(no_mangle)]
++pub unsafe extern "C" fn siglus_android_get_stage_geometry_v1(
++    handle: *mut c_void,
++    out_geometry: *mut u32,
++    out_count: u32,
++) -> i32 {
++    if handle.is_null() || out_geometry.is_null() || out_count < 10 {
++        return 0;
++    }
++    let host = unsafe { &mut *(handle as *mut SiglusHost) };
++    let (width, height) = host.logical_size();
++    let surface = host.renderer_mut().android_presentation_geometry();
++    let geometry = [
++        width, height, surface[0], surface[1], surface[2], surface[3], surface[4],
++        surface[5], surface[6], surface[7],
++    ];
++    unsafe { std::ptr::copy_nonoverlapping(geometry.as_ptr(), out_geometry, geometry.len()) };
++    1
++}
++
+ #[unsafe(no_mangle)]
+ pub unsafe extern "C" fn siglus_android_resize(
+     handle: *mut c_void,
+diff --git a/crates/siglus_scene_vm/include/siglus.h b/crates/siglus_scene_vm/include/siglus.h
+--- a/crates/siglus_scene_vm/include/siglus.h
++++ b/crates/siglus_scene_vm/include/siglus.h
+@@ -68,11 +68,15 @@
+ void siglus_android_submit_messagebox_result(void *handle, uint64_t request_id, int64_t value);
+ int32_t siglus_android_step(void *handle, uint32_t dt_ms);
+ void siglus_android_resize(void *handle, uint32_t surface_width_px, uint32_t surface_height_px);
+-void siglus_android_set_surface(
++int32_t siglus_android_set_surface(
+     void *handle,
+     void *native_window_ptr,
+     uint32_t surface_width_px,
+     uint32_t surface_height_px);
++/* Optional downstream filter ABI; engine thread, live handle, >=10 writable u32s.
++ * logical W/H, configured Surface W/H, viewport X/Y/W/H, render serial low/high.
++ * Returns 1 on success, 0 for invalid arguments. */
++int32_t siglus_android_get_stage_geometry_v1(void *handle, uint32_t *out_geometry, uint32_t out_count);
+ void siglus_android_touch(void *handle, int32_t phase, double x_px, double y_px);
+ void siglus_android_text_input(void *handle, const char *text_utf8);
+ void siglus_android_ime_preedit(void *handle, const char *text_utf8, int32_t cursor_start, int32_t cursor_end);

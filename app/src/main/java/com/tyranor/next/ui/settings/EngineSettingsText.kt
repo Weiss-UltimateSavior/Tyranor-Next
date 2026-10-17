@@ -1,9 +1,12 @@
 package com.tyranor.next.ui.settings
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.core.settings.GraphicsFilterCatalog
+import com.tyranor.next.core.settings.GraphicsFilterCategory
 
 @Composable
 internal fun engineSettingsKindTitle(kind: EngineSettingsKind): String = stringResource(kind.titleRes)
@@ -28,18 +31,6 @@ internal fun krPatchOverlayOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.KR_PATCH_OVERLAY_AUTO to stringResource(R.string.common_auto),
     EngineSettingsStore.KR_PATCH_OVERLAY_FORCE to stringResource(R.string.engine_option_force_enable),
     EngineSettingsStore.KR_PATCH_OVERLAY_OFF to stringResource(R.string.engine_option_off),
-)
-
-@Composable
-internal fun krAnime4kOptions(): List<Pair<String, String>> = listOf(
-    EngineSettingsStore.ANIME4K_OFF to stringResource(R.string.engine_option_off),
-    EngineSettingsStore.ANIME4K_S to stringResource(R.string.engine_option_anime4k_fast),
-    EngineSettingsStore.ANIME4K_M to stringResource(R.string.engine_option_anime4k_balanced),
-    EngineSettingsStore.ANIME4K_L to stringResource(R.string.engine_option_anime4k_high),
-    EngineSettingsStore.ANIME4K_SOFT_S to stringResource(R.string.engine_option_anime4k_soft_fast),
-    EngineSettingsStore.ANIME4K_SOFT_M to stringResource(R.string.engine_option_anime4k_soft_balanced),
-    EngineSettingsStore.ANIME4K_SOFT_L to stringResource(R.string.engine_option_anime4k_soft_high),
-    EngineSettingsStore.ANIME4K_DEBLUR to stringResource(R.string.engine_option_anime4k_deblur),
 )
 
 @Composable
@@ -215,9 +206,6 @@ internal fun krKernelOptionsMap(): Map<String, String> = krKernelOptions().toMap
 
 @Composable
 internal fun krPatchOverlayOptionsMap(): Map<String, String> = krPatchOverlayOptions().toMap()
-
-@Composable
-internal fun krAnime4kOptionsMap(): Map<String, String> = krAnime4kOptions().toMap()
 
 @Composable
 internal fun krRendererOptionsMap(): Map<String, String> =
@@ -436,3 +424,12 @@ internal fun rpgFontScaleOptionsMap(): Map<String, String> = rpgFontScaleOptions
 
 @Composable
 internal fun rpgVerticalAlignOptionsMap(): Map<String, String> = rpgVerticalAlignOptions().toMap()
+
+/** The core catalog adapts engine contributions to UI-only localized labels. */
+@Composable
+internal fun graphicsFilterOptions(): List<Pair<String, String>> =
+    GraphicsFilterCatalog.options(LocalConfiguration.current.locales[0].language)
+
+@Composable
+internal fun graphicsFilterCategoryTitle(category: GraphicsFilterCategory): String =
+    category.title(LocalConfiguration.current.locales[0].language)

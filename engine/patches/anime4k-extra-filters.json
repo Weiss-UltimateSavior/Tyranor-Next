@@ -1,0 +1,43 @@
+{
+  "upstream": "https://github.com/bloc97/Anime4K",
+  "revision": "7684e9586f8dcc738af08a1cdceb024cc184f426",
+  "files": [
+    {
+      "file": "Anime4K_Denoise_Bilateral_Mean.glsl",
+      "upstreamPath": "glsl/Denoise/Anime4K_Denoise_Bilateral_Mean.glsl",
+      "sha256": "bdcbc73cecdbc2fda879824cad822c70cc89c9e93d747fa740c1301c3d270dee",
+      "gitBlob": "bb43c631eed81df740c74111c6d87fed64e4f046"
+    },
+    {
+      "file": "Anime4K_Denoise_Bilateral_Median.glsl",
+      "upstreamPath": "glsl/Denoise/Anime4K_Denoise_Bilateral_Median.glsl",
+      "sha256": "5f9667ae9c2dbbcc460da5a12c5adfae72e7c72c595fa1cec13aa09cb5bd6f52",
+      "gitBlob": "164c2cacc8a3db55c42cb26ba7eea48b1a0ce280"
+    },
+    {
+      "file": "LICENSE",
+      "upstreamPath": "LICENSE",
+      "sha256": "5bad448b737378e3d0c977ad0d0521fa37ad279a7e76ea9a31d9257eeb6953f5",
+      "gitBlob": "140b2c983100845a3ad52e12d20573459d0f484c"
+    },
+    {
+      "file": "Anime4K_Denoise_Bilateral_Mode.glsl",
+      "upstreamPath": "glsl/Denoise/Anime4K_Denoise_Bilateral_Mode.glsl",
+      "sha256": "1f20a48ff19bf50181ee1ad608defbcb9e5ad3c0d8d6760fd8e1834c194efcb4",
+      "gitBlob": "7028331df012a65d92379f2125a2a44994511e29"
+    },
+    {
+      "file": "Anime4K_Thin_HQ.glsl",
+      "upstreamPath": "glsl/Experimental-Effects/Anime4K_Thin_HQ.glsl",
+      "sha256": "026e245fb49b1d7ab549043d75fcfe9c1b6a5e3170323861fa9abfdbad5abe61",
+      "gitBlob": "0a8bb84122175feae38c43b655e079c176e39c2d"
+    },
+    {
+      "file": "Anime4K_Darken_HQ.glsl",
+      "upstreamPath": "glsl/Experimental-Effects/Anime4K_Darken_HQ.glsl",
+      "sha256": "7506e41f3c2b031574897a74fc98a7fa478289747e6131b21d25fbc221460e13",
+      "gitBlob": "d6f2239678cd2a2f6798e86c2903ac48904e7e8e"
+    }
+  ],
+  "assetDirectory": "anime4k"
+}

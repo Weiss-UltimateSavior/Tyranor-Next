@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import com.tyranor.next.core.engine.graphics.putDisabledGraphicsRequest
 
 /** 外置 APK 引擎启动与安装状态检查。 */
 object ExternalEngineLauncher {
@@ -44,6 +45,7 @@ object ExternalEngineLauncher {
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
         )
+        intent.putDisabledGraphicsRequest(onlyMissing = true)
         return try {
             context.applicationContext.startActivity(intent)
             ExternalEngineLaunchResult.success()

@@ -277,4 +277,44 @@ class EffectiveEngineSettingsTest {
         assertTrue(merged.hwVideo)
         assertFalse(merged.lessMemory)
     }
+    @Test
+    fun artemisUiAndLaunchShareValidatedVersionFallback() {
+        assertEquals(EngineSettingsStore.ART_ENGINE_V6,
+            EffectiveEngineSettings.resolveArtVersion("broken", EngineSettingsStore.ART_ENGINE_V6))
+        assertEquals(EngineSettingsStore.ART_ENGINE_AUTO,
+            EffectiveEngineSettings.resolveArtVersion("broken", "broken"))
+        assertEquals(EngineSettingsStore.ART_ENGINE_V2,
+            EffectiveEngineSettings.resolveArtVersion(" 2 ", EngineSettingsStore.ART_ENGINE_V6))
+        val version = EffectiveEngineSettings.resolveArtVersion("broken", EngineSettingsStore.ART_ENGINE_V6)
+        assertTrue(GraphicsCapabilities.forRuntime(GraphicsFamily.ARTEMIS,
+            EngineSettingsStore.ART_KERNEL_OFFICIAL, version).supported)
+        assertEquals(EngineSettingsStore.ART_VERSIONS - EngineSettingsStore.ART_ENGINE_AUTO,
+            com.core.engine.ArtemisVersion.values().map { it.id }.toSet())
+        for (host in com.core.engine.ArtemisVersion.values()) {
+            assertEquals(com.core.gl.ArtemisLibraryIdentity.supports(host.libraryFilename),
+                GraphicsCapabilities.forRuntime(GraphicsFamily.ARTEMIS,
+                    EngineSettingsStore.ART_KERNEL_OFFICIAL, host.id).supported)
+        }
+    }
+
+    @Test fun staleKrVersionAndKernelOverridesFollowValidatedGlobalValues() {
+        assertEquals(EngineSettingsStore.KR_134,
+            EffectiveEngineSettings.resolveKrVersion("retired", EngineSettingsStore.KR_134))
+        assertEquals(EngineSettingsStore.KR_AUTO,
+            EffectiveEngineSettings.resolveKrVersion("retired", "invalid"))
+        assertEquals(EngineSettingsStore.KR_139,
+            EffectiveEngineSettings.resolveKrVersion(" 1.3.9 ", EngineSettingsStore.KR_134))
+        assertEquals(EngineSettingsStore.KERNEL_KRKRSDL3,
+            EffectiveEngineSettings.resolveKrKernel("retired", EngineSettingsStore.KERNEL_KRKRSDL3, false))
+        assertEquals(EngineSettingsStore.KERNEL_KIRIKIRI2,
+            EffectiveEngineSettings.resolveKrKernel("retired", EngineSettingsStore.KERNEL_KRKRSDL3, true))
+        assertEquals(EngineSettingsStore.KR_AUTO,
+            EffectiveEngineSettings.resolveKrKernel("retired", "invalid", false))
+        val version = EffectiveEngineSettings.resolveKrVersion("retired", EngineSettingsStore.KR_134)
+        val kernel = EffectiveEngineSettings.resolveKrKernel("retired", EngineSettingsStore.KERNEL_KIRIKIRI2, false)
+        assertTrue(GraphicsCapabilities.forSettings(GraphicsFamily.KR, kernel, version).supported)
+        assertEquals(GraphicsCapabilities.forRuntime(GraphicsFamily.KR, kernel, version),
+            GraphicsCapabilities.forSettings(GraphicsFamily.KR, kernel, version))
+    }
+
 }

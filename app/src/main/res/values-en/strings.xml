@@ -1,4 +1,5 @@
 <resources>
+    <string name="common_clear_input_content_description">Clear input</string>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">OK</string>
     <string name="common_done">Done</string>
@@ -500,14 +501,6 @@
     <string name="engine_option_rpg_mv_v2">TynMV-0.2</string>
     <string name="engine_option_rpg_mz_v0">Tyranor-2.3.4</string>
     <string name="engine_option_rpg_mz_v2">TynMZ-0.1</string>
-    <string name="engine_settings_anime4k">Upscaling</string>
-    <string name="engine_option_anime4k_fast">Fast (S)</string>
-    <string name="engine_option_anime4k_balanced">Balanced (M)</string>
-    <string name="engine_option_anime4k_high">High (L)</string>
-    <string name="engine_option_anime4k_soft_fast">Soft · Fast</string>
-    <string name="engine_option_anime4k_soft_balanced">Soft · Balanced</string>
-    <string name="engine_option_anime4k_soft_high">Soft · High</string>
-    <string name="engine_option_anime4k_deblur">Deblur (DoG)</string>
 
     <string name="cover_source_local">Local cover</string>
     <string name="cover_source_custom">Custom cover</string>
@@ -793,6 +786,38 @@
     <string name="android_add_duplicate">This app is already in the library</string>
     <string name="android_add_already_added">In library</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+
+    <!-- Shared ordered graphics-chain settings -->
+    <string name="graphics_settings_title">Graphics filters</string>
+    <string name="graphics_settings_enabled">Enable filter chain</string>
+    <string name="graphics_chain_title">Filter chain</string>
+    <string name="graphics_chain_custom">Use a custom chain for this game</string>
+    <string name="graphics_chain_empty">The chain is empty. No graphics processing or performance monitoring will run.</string>
+    <string name="graphics_chain_up">Move up</string>
+    <string name="graphics_chain_down">Move down</string>
+    <string name="graphics_chain_remove">Remove</string>
+    <string name="graphics_chain_add_type">Filter to add</string>
+    <string name="graphics_chain_add">Add filter</string>
+    <string name="graphics_chain_clear">Clear chain</string>
+    <string name="graphics_chain_limit">Up to %1$d nodes</string>
+    <string name="graphics_filter_back_categories">Back</string>
+    <string name="graphics_settings_unsupported">This engine version does not support filters</string>
+    <string name="graphics_settings_runtime_dependent">Auto selection: filter support depends on the actual engine version</string>
+    <string name="graphics_filter_parameters">Parameters</string>
+    <string name="graphics_filter_sharpness">Sharpness</string>
+    <string name="graphics_filter_scale_type">Type</string>
+    <string name="graphics_filter_scale_fit">Fit</string>
+    <string name="graphics_filter_scale_factor">Factor</string>
+    <string name="graphics_filter_scale_multiplier">Scale factor (0.25–4)</string>
+    <string name="graphics_filter_scale_none">No resize</string>
+    <string name="graphics_analyzer_title">Performance analyzer</string>
+    <string name="graphics_refresh_interval">Data refresh interval</string>
+    <string name="graphics_refresh_seconds">%1$s s</string>
+    <string name="graphics_analyzer_position">Position</string>
+    <string name="graphics_analyzer_top_center">Top center</string>
+    <string name="graphics_analyzer_bottom_center">Bottom center</string>
+    <string name="graphics_filter_decrease">−</string>
+    <string name="graphics_filter_increase">+</string>
     <string name="ethornell_settings_title">Ethornell / BGI settings</string>
     <string name="ethornell_error_session_busy">Ethornell is running another game, or its session is starting or closing. Exit the current game before trying again.</string>
     <string name="engine_desc_ethornell">Built-in ethornell-rs reimplementation. Compatibility depends on the game version; Windows plugins are unsupported.</string>

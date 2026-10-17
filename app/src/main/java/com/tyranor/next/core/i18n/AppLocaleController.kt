@@ -35,6 +35,14 @@ object AppLocaleController {
         else -> null
     }
 
+    /** Resolve the app UI language before entering an engine with its own compatibility locale. */
+    fun engineUiLanguageTag(context: Context): String = engineUiLanguageTag(
+        AppSettingsStore.getLanguage(context), Resources.getSystem().configuration.locales[0],
+    )
+
+    internal fun engineUiLanguageTag(language: String, systemLocale: Locale): String =
+        (localeOf(language) ?: systemLocale).toLanguageTag()
+
     tailrec fun findActivity(context: Context?): Activity? = when (context) {
         is Activity -> context
         is ContextWrapper -> findActivity(context.baseContext)

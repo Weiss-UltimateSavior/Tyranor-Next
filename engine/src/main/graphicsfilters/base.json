@@ -1,0 +1,261 @@
+{
+  "filters": [
+    {
+      "id": "s",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 0,
+      "title": {
+        "zh": "快速（S）",
+        "en": "Fast (S)",
+        "ja": "高速（S）"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "A4K-S",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Restore_CNN_S.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "m",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 1,
+      "title": {
+        "zh": "平衡（M）",
+        "en": "Balanced (M)",
+        "ja": "バランス（M）"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "A4K-M",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Restore_CNN_M.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "l",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 2,
+      "title": {
+        "zh": "高质量（L）",
+        "en": "High (L)",
+        "ja": "高品質（L）"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "A4K-L",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Restore_CNN_L.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "soft_s",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 3,
+      "title": {
+        "zh": "轻柔·快速",
+        "en": "Soft · Fast",
+        "ja": "ソフト・高速"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "A4K-SS",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Restore_CNN_Soft_S.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "soft_m",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 4,
+      "title": {
+        "zh": "轻柔·平衡",
+        "en": "Soft · Balanced",
+        "ja": "ソフト・バランス"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "A4K-SM",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Restore_CNN_Soft_M.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "soft_l",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 5,
+      "title": {
+        "zh": "轻柔·高质量",
+        "en": "Soft · High",
+        "ja": "ソフト・高品質"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "A4K-SL",
+      "color": "#FF238DE0",
+      "asset": "anime4k/Anime4K_Restore_CNN_Soft_L.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 1,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "deblur",
+      "category": "Anime4K",
+      "categoryOrder": 10,
+      "order": 6,
+      "title": {
+        "zh": "去模糊（DoG）",
+        "en": "Deblur (DoG)",
+        "ja": "ぼかし除去（DoG）"
+      },
+      "categoryTitle": {
+        "zh": "Anime4K",
+        "en": "Anime4K",
+        "ja": "Anime4K"
+      },
+      "shortName": "DoG",
+      "color": "#FFE1A13C",
+      "asset": "anime4k/Anime4K_Deblur_DoG.glsl",
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "none"
+      ],
+      "defaultScaleMode": "none",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "lanczos",
+      "category": "Lanczos",
+      "categoryOrder": 40,
+      "order": 0,
+      "title": {
+        "zh": "Lanczos",
+        "en": "Lanczos",
+        "ja": "Lanczos"
+      },
+      "categoryTitle": {
+        "zh": "Lanczos",
+        "en": "Lanczos",
+        "ja": "Lanczos"
+      },
+      "shortName": "LZ",
+      "color": "#FF8B6657",
+      "asset": null,
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": false,
+      "scaleModes": [
+        "fit",
+        "factor"
+      ],
+      "defaultScaleMode": "fit",
+      "defaultSharpness": 0.4,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    }
+  ]
+}

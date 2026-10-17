@@ -11,33 +11,21 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
-import androidx.compose.ui.node.DelegatableNode
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.IndicationNodeFactory
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,13 +55,15 @@ import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.GraphicsCapabilities
+import com.tyranor.next.core.settings.GraphicsFamily
+import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -87,6 +77,7 @@ import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.formatUiDecimal
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
 import com.tyranor.next.core.updater.UpdateApkDownloader
@@ -708,6 +699,11 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         return
     }
     val ctx = LocalContext.current
+    val graphicsFamily = kind.graphicsFamily()
+    var graphics by remember(kind) {
+        mutableStateOf(graphicsFamily?.let { EngineSettingsStore.getGraphicsSettings(ctx, it) }
+            ?: GraphicsSettings.defaults(GraphicsFamily.KR))
+    }
     val engineSettingsSavedMessage = stringResource(R.string.engine_settings_saved)
 
     var krVersion by remember { mutableStateOf(EngineSettingsStore.getKrEngineVersion(ctx)) }
@@ -727,7 +723,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     var krFps by remember { mutableStateOf(EngineSettingsStore.getKrFpsLimit(ctx)) }
     var krVCursorScale by remember { mutableStateOf(EngineSettingsStore.getKrVCursorScale(ctx)) }
     var krMenuOpa by remember { mutableStateOf(EngineSettingsStore.getKrMenuHandlerOpa(ctx)) }
-    var krAnime4k by remember { mutableStateOf(EngineSettingsStore.getKrAnime4kMode(ctx)) }
 
     var ons by remember { mutableStateOf(EngineSettingsStore.loadOns(ctx)) }
 
@@ -801,6 +796,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
 
     // 编辑→保存模型：控件仅更新本地状态，点顶部保存按钮才统一写盘
     fun saveAll() {
+        graphicsFamily?.let { EngineSettingsStore.setGraphicsSettings(ctx, it, graphics) }
         EngineSettingsStore.setKrEngineVersion(ctx, krVersion)
         EngineSettingsStore.setKrKernel(ctx, krKernel)
         EngineSettingsStore.setKrScopedSaveDir(ctx, krScoped)
@@ -818,7 +814,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EngineSettingsStore.setKrFpsLimit(ctx, krFps)
         EngineSettingsStore.setKrVCursorScale(ctx, krVCursorScale)
         EngineSettingsStore.setKrMenuHandlerOpa(ctx, krMenuOpa)
-        EngineSettingsStore.setKrAnime4kMode(ctx, krAnime4k)
         EngineSettingsStore.saveOns(ctx, ons)
         EngineSettingsStore.setArtKernel(ctx, artKernel)
         EngineSettingsStore.setArtEngineVersion(ctx, artVersion)
@@ -877,13 +872,21 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 kind,
                 krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
                 krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
-                krVCursorScale, krMenuOpa, krPatchOverlayMode, krAnime4k,
+                krVCursorScale, krMenuOpa, krPatchOverlayMode,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
                 fvpNls, fvpSystemFont, fvpTextHidpi, fvpFont,
                 xs35Scoped, xs35Renderer, xs35IntegerScale, xs35MuteUnfocus,
                 fontLauncher, fvpFontLauncher, winlator, ppssppVersion, webShellPort,
                 topInset = innerPadding.calculateTopPadding(),
+                graphicsContent = {
+                    graphicsFamily?.let { family ->
+                        GlobalGraphicsSettings(
+                            settings = graphics,
+                            capability = GraphicsCapabilities.forSettings(family, if (family == GraphicsFamily.KR) krKernel else artKernel, if (family == GraphicsFamily.KR) krVersion else artVersion, krRenderer),
+                        ) { graphics = it }
+                    }
+                },
                 onKrVersion = { krVersion = it },
                 onKrKernel = { krKernel = it },
                 onKrScoped = { krScoped = it },
@@ -900,7 +903,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onKrFps = { krFps = it },
                 onKrVCursorScale = { krVCursorScale = it },
                 onKrMenuOpa = { krMenuOpa = it },
-                onKrAnime4k = { krAnime4k = it },
                 onResetKrFont = { krFont = "" },
                 onOns = { ons = it },
                 onArtKernel = { artKernel = it },
@@ -975,10 +977,11 @@ private fun LazyListPlaceholder(
     krFont: String, krForceFont: Boolean,
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
     krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
-    krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String, krAnime4k: String,
+    krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String,
     ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artRotate: Boolean, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
-    artPowerSaving: String, tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
+    artPowerSaving: String,
+    tyExternal: Boolean, tyScoped: Boolean, rpgMakerMod: Boolean,
     rpgLegacyRenderer: Boolean, rpgSaveInterop: Boolean, rpgMvVersion: String, rpgMzVersion: String,
     rpg: EngineSettingsStore.RpgMaker,
     renpyVersion: String, renpy: EngineSettingsStore.RenPy, siglusLanguage: String,
@@ -990,13 +993,14 @@ private fun LazyListPlaceholder(
     ppssppVersion: String,
     webShellPort: Int,
     topInset: Dp,
+    graphicsContent: @Composable () -> Unit,
     onKrVersion: (String) -> Unit, onKrKernel: (String) -> Unit, onKrScoped: (Boolean) -> Unit,
     onKrSkipStartupDialogs: (Boolean) -> Unit,
     onKrPatchOverlayMode: (String) -> Unit,
     onKrForceFont: (Boolean) -> Unit, onKrRenderer: (String) -> Unit, onKrDrawThread: (String) -> Unit,
     onKrSwCompress: (String) -> Unit, onKrOglCompress: (String) -> Unit, onKrMem: (String) -> Unit,
     onKrTexsize: (String) -> Unit, onKrAccurate: (String) -> Unit, onKrFps: (String) -> Unit,
-    onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit, onKrAnime4k: (String) -> Unit,
+    onKrVCursorScale: (String) -> Unit, onKrMenuOpa: (String) -> Unit,
     onResetKrFont: () -> Unit, onOns: (EngineSettingsStore.Ons) -> Unit,
     onArtKernel: (String) -> Unit,
     onArtVersion: (String) -> Unit, onArtRotate: (Boolean) -> Unit, onArtPatch: (String) -> Unit,
@@ -1075,8 +1079,6 @@ private fun LazyListPlaceholder(
                 if (!isSdl3) {
                     SwitchPreference(title = stringResource(R.string.engine_settings_opengl_accurate_render), checked = krAccurate == "1", onCheckedChange = { b -> onKrAccurate(if (b) "1" else "0") })
                     SliderRow(stringResource(R.string.engine_settings_memory_usage), krMemMap, krMem, onSelect = onKrMem)
-                    // Anime4K 后处理仅 kirikiri2 内核路径支持（GLSurfaceView 注入），krkrsdl3 不提供
-                    DropdownRow(stringResource(R.string.engine_settings_anime4k), krAnime4kOptions(), krAnime4k, onKrAnime4k)
                 }
                 val rendererOptions = if (isSdl3) krSdl3RendererMap else krRendererMap
                 val selectedRenderer = if (isSdl3) {
@@ -1409,6 +1411,7 @@ private fun LazyListPlaceholder(
             }
         }
 
+        if (kind.graphicsFamily() != null) item { graphicsContent() }
         item { BottomInsetSpacer() }
     }
 
@@ -1595,7 +1598,7 @@ internal fun krkrPercentOptions(): List<Pair<String, String>> =
 internal fun krkrVcursorOptions(): List<Pair<String, String>> =
     listOf("" to stringResource(R.string.engine_option_engine_default)) +
         (1..150).map {
-            val v = String.format(java.util.Locale.US, "%.2f", it / 100.0)
+            val v = formatUiDecimal(it / 100.0, fractionDigits = 2)
             v to v
         }
 /** 游戏目录 URI → 可读目录名（取 SAF documentId 的最后一段，失败回退原 uri）。 */

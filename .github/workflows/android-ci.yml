@@ -1,6 +1,7 @@
 name: Android CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -13,6 +14,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  siglus-native:
+    name: Siglus native source gate
+    uses: ./.github/workflows/siglus-graphics-ci.yml
+    permissions:
+      contents: read
+
   ethornell-native:
     name: Ethornell native gate
     uses: ./.github/workflows/ethornell-native.yml
@@ -65,7 +72,7 @@ jobs:
 
   assemble-debug:
     name: Assemble Debug
-    needs: [regression-checks, ethornell-native]
+    needs: [regression-checks, ethornell-native, siglus-native]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

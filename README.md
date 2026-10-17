@@ -212,6 +212,7 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - Siglus / RealLive / AVG32 / UK2 引擎运行库来自 [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0，上述引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
 - FVP 引擎运行库来自 [rfvp](https://github.com/xmoezzz/rfvp)（MPL-2.0，FVP 引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
 - System35 引擎运行库来自 [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2)（GPL-2.0-or-later，AliceSoft System 3.x 开源重实现的 SDL2 移植），引擎源码与修改声明见 fork [xsystem35-sdl2](https://github.com/Weiss-UltimateSavior/xsystem35-sdl2)；本仓库仅保留预构建运行库、构建剧本与补丁记录（见 `engine/xsystem35/BUILD.md`）；其依赖 SDL2 / SDL2_mixer（zlib）、freetype（FTL/GPLv2）、libwebp（BSD-3-Clause）按各自许可证引入，许可证文本随 `engine/xsystem35/licenses/` 保留
+- CAS 可选滤镜来自 [GPUOpen-Effects/FidelityFX-CAS](https://github.com/GPUOpen-Effects/FidelityFX-CAS)，以 MIT 许可引入；独立资源随附 `engine/src/main/assets/cas/LICENSE-MIT`，固定来源及生成结果见 `engine/patches/cas-filters.json`。
 - Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
 
 ## 致谢
@@ -227,3 +228,7 @@ docs/   设计文档、逆向分析、功能计划与优化方案
 - [OnscripterYuri](https://github.com/YuriSizuku/OnscripterYuri): ONS引擎
 - [UsefulUnpack](https://github.com/znso4pa/usefulunpack)（znso4pa，MIT）：XP3 / KSD 解封包 Rust 实现（`engine/rust` 的 `lib.rs` / `common.rs` / `ksd.rs` 来源，许可证见 `engine/rust/LICENSE.usefulunpack`）
 - 各引擎运行时均基于其开源许可引入
+
+## 共用画质滤镜链
+
+为受支持的 Kirikiroid2、Siglus 和官方 Artemis 提供有序滤镜、单游戏配置与移动端性能分析器。支持范围、尺寸来源、独立滤镜依赖及已知限制见 [画质滤镜说明](docs/graphics-filters.md)。

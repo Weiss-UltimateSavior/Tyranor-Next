@@ -67,6 +67,11 @@ final class SiglusTextInputView extends View {
         try {
             android.view.inputmethod.CursorAnchorInfo.Builder builder =
                     new android.view.inputmethod.CursorAnchorInfo.Builder();
+            int[] location = new int[2];
+            getLocationOnScreen(location);
+            android.graphics.Matrix matrix = new android.graphics.Matrix();
+            matrix.setTranslate(location[0], location[1]);
+            builder.setMatrix(matrix);
             builder.setInsertionMarkerLocation(
                     rectPx.left, rectPx.top, rectPx.bottom, rectPx.bottom, 0);
             android.view.inputmethod.InputMethodManager imm =

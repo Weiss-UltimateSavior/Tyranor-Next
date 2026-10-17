@@ -12,20 +12,16 @@ import android.provider.Settings
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import bridge.KrSafMirror
-import com.akira.tyranoemu.remote.ArtemisActivityV1
-import com.akira.tyranoemu.remote.ArtemisActivityV2
-import com.akira.tyranoemu.remote.ArtemisActivityV3
-import com.akira.tyranoemu.remote.ArtemisActivityV4
-import com.akira.tyranoemu.remote.ArtemisActivityV5
-import com.akira.tyranoemu.remote.ArtemisActivityV6
 import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.engine.ArtemisVersion
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
 import com.core.engine.KrkrStartupDialogPolicy
 import com.core.engine.LaunchContract
+import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.EmulatorTarget as ExternalEmulatorTarget
 import com.core.fvp.FvpActivity
@@ -36,6 +32,9 @@ import com.core.rpgmaker.RpgMakerActivity
 import com.core.siglus.SiglusActivity
 import com.core.tyrano.TyranoActivity
 import com.core.xsys35.Xs35Activity
+import com.tyranor.next.core.engine.graphics.GraphicsLaunchPolicy
+import com.tyranor.next.core.engine.graphics.putDisabledGraphicsRequest
+import com.tyranor.next.core.engine.graphics.putGraphicsExtras
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
@@ -61,6 +60,9 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
 import com.tyranor.next.core.game.scan.GameDirFingerprint
+import com.tyranor.next.core.settings.GraphicsCapabilities
+import com.tyranor.next.core.settings.GraphicsFamily
+import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.input.InputRemapRepository
 import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.EngineSettingsResolver
@@ -188,6 +190,11 @@ object EngineLauncher {
                 Intent(app, Kirikiroid139::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     putExtra(LaunchContract.ORIGIN_MODE, true)
+                    putExtra(LaunchContract.UI_LANGUAGE_TAG, AppLocaleController.engineUiLanguageTag(app))
+                    putGraphicsSettings(
+                        EngineSettingsStore.getGraphicsSettings(app, GraphicsFamily.KR),
+                        GraphicsCapabilities.forRuntime(GraphicsFamily.KR, EngineSettingsStore.KERNEL_KIRIKIRI2),
+                    )
                     putExtra(LaunchContract.ORIENTATION, 6)
                     putExtra(LaunchContract.FOCUS, "true")
                 },
@@ -903,6 +910,8 @@ object EngineLauncher {
                 putExtra(LaunchContract.RPG_MAKER_MOD_GAME_ID, game.uri)
             }
         }
+        if (!intent.hasExtra(LaunchContract.GRAPHICS_FILTER_CHAIN)) intent.putDisabledGraphicsRequest()
+        intent.putExtra(LaunchContract.UI_LANGUAGE_TAG, AppLocaleController.engineUiLanguageTag(context))
         // 注入 App 统一主题色与深浅色：引擎壳自绘 UI（确认/输入弹窗按钮等）经
         // EngineThemeColors.fromIntent / KrDialogStyle 读取，缺失时回落默认绿。
         // 主题色来自 ui 层写入的纯数据快照（ThemeColorPayloadStore），core 不反向依赖 theme。
@@ -932,6 +941,7 @@ object EngineLauncher {
         return try {
             currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent.putDisabledGraphicsRequest()
             context.startActivity(intent)
             // 应用已拉起即成功；最近记录写失败不改变启动结果（独立兜底）
             runCatching { GameLibraryFacade.recordRecentGame(context, game) }
@@ -1001,6 +1011,7 @@ object EngineLauncher {
         game: ScanGame,
         settings: ResolvedEngineSettings,
     ): Intent = Intent(context, SiglusActivity::class.java).apply {
+        putGraphicsSettings(settings.siglusGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.SIGLUS))
         putExtra(LaunchContract.PATH, path)
         putExtra(LaunchContract.GAME_PATH, path)
         putExtra(LaunchContract.PROJECT_ROOT, path)
@@ -1257,6 +1268,7 @@ object EngineLauncher {
             Log.i(TAG, "krkrsdl3 launch root=$path entry=$pickedLaunchEntry args=$args")
             // krkrsdl3 内核：gameargs 首项为启动文件绝对路径，后续为 TVP 命令行参数
             return Intent(context, Krkrsdl3Activity::class.java).apply {
+                putGraphicsSettings(settings.krGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.KR, kernel, settings.krEngineVersion, settings.krRenderer))
                 putStringArrayListExtra(LaunchContract.GAME_ARGS, args)
                 putExtra(LaunchContract.PATH, path)
                 putExtra(LaunchContract.GAME_PATH, pickedLaunchEntry)
@@ -1331,8 +1343,7 @@ object EngineLauncher {
             // 的根因：残留的 force_default_font=1 一直压住新设置的字体）。
             putExtra(LaunchContract.DEFAULT_FONT, defaultFont)
             putExtra(LaunchContract.FORCE_DEFAULT_FONT, forceFont)
-            // Anime4K 画面超分（单游戏覆盖 > 全局；仅 kirikiri2 内核路径支持）
-            putExtra(com.core.gl.Anime4kRuntime.EXTRA_MODE, settings.krAnime4kMode)
+            putGraphicsSettings(settings.krGraphics, GraphicsCapabilities.forRuntime(GraphicsFamily.KR, kernel, settings.krEngineVersion, settings.krRenderer))
             // 渲染/内存偏好 JSON：单游戏覆盖 与 全局 逐键合并；字段映射由 KrRenderPrefs 单一来源提供
             runCatching {
                 putExtra(LaunchContract.KR_ENGINE_PREFS, EngineSettingsStore.buildKrEnginePrefsJson(context) { pref ->
@@ -1528,6 +1539,8 @@ object EngineLauncher {
             putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_ARTEMIS)
             putExtra(LaunchContract.ORIENTATION, if (rotate) 8 else 6)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, false)
+            // 按实际首选库设置门禁，保留原始请求供后续候选重新判定。
+            putArtemisGraphicsSettings(settings, version)
             // artemis_loader 按 "lib<engineLibName>.so" 拼路径，需传库名（不带 lib 前缀）
             putExtra(LaunchContract.ENGINE_LIB_NAME, libName)
             putExtra(LaunchContract.ARTEMIS_AUTO_FALLBACK, auto)
@@ -1563,28 +1576,24 @@ object EngineLauncher {
         putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, "clean")
     }
 
+    /** 官方内核携带滤镜请求，不通过增强选项隐式改写版本或回退链。 */
+    private fun Intent.putArtemisGraphicsSettings(settings: ResolvedEngineSettings, version: String = "") {
+        putGraphicsExtras(GraphicsLaunchPolicy.artemisExtras(settings.artGraphics,
+            GraphicsCapabilities.forRuntime(GraphicsFamily.ARTEMIS, settings.artKernel, version)))
+    }
+
+    private fun Intent.putGraphicsSettings(settings: GraphicsSettings, capability: GraphicsCapabilities) {
+        putGraphicsExtras(GraphicsLaunchPolicy.extras(settings, capability))
+    }
+
     private fun fallbackChainStartingWith(version: String): List<String> =
         (listOf(version) + ARTEMIS_DEFAULT_FALLBACK_CHAIN.filterNot { it == version }).distinct()
 
     private fun artemisFallbackStage(version: String): Int =
-        when (version) {
-            EngineSettingsStore.ART_ENGINE_V2 -> 1
-            EngineSettingsStore.ART_ENGINE_V3 -> 2
-            EngineSettingsStore.ART_ENGINE_V4 -> 3
-            EngineSettingsStore.ART_ENGINE_V5 -> 4
-            EngineSettingsStore.ART_ENGINE_V6 -> 5
-            else -> 0
-        }
+        (ArtemisVersion.requested(version) ?: ArtemisVersion.V1).fallbackStage()
 
     private fun artemisActivityAndLib(version: String): Pair<Class<*>, String> =
-        when (version) {
-            EngineSettingsStore.ART_ENGINE_V2 -> ArtemisActivityV2::class.java to "artemis-compatible"
-            EngineSettingsStore.ART_ENGINE_V3 -> ArtemisActivityV3::class.java to "artemis-compatible-v2"
-            EngineSettingsStore.ART_ENGINE_V4 -> ArtemisActivityV4::class.java to "artemis-v4"
-            EngineSettingsStore.ART_ENGINE_V5 -> ArtemisActivityV5::class.java to "artemis-v5"
-            EngineSettingsStore.ART_ENGINE_V6 -> ArtemisActivityV6::class.java to "artemis-v6"
-            else -> ArtemisActivityV1::class.java to "artemis"
-        }
+        (ArtemisVersion.requested(version) ?: ArtemisVersion.V1).let { it.activityClass to it.engineLibraryName }
 
     private fun buildWebIntent(
         context: Context,

@@ -9,6 +9,16 @@ import com.tyranor.next.core.engine.EngineType
  * Context 读取由 [EngineSettingsResolver] 完成后传入。
  */
 object EffectiveEngineSettings {
+    /** Settings preview and launch share the same official Artemis version whitelist. */
+    fun resolveArtVersion(override: String?, global: String): String = resolveAllowed(
+        override, global, EngineSettingsStore.ART_VERSIONS, EngineSettingsStore.ART_ENGINE_AUTO,
+    )
+
+
+    /** KR preview and launch reject stale overrides before selecting a host or its capabilities. */
+    fun resolveKrVersion(override: String?, global: String): String = resolveAllowed(
+        override, global, EngineSettingsStore.KR_VERSIONS, EngineSettingsStore.KR_AUTO,
+    )
 
     /** 通用三级合并：单游戏覆盖优先，null 跟随全局。 */
     fun <T : Any> resolve(override: T?, global: T): T = override ?: global
@@ -43,7 +53,9 @@ object EffectiveEngineSettings {
      * （与 EngineLauncher/GameSaveManager 原行为一致）。
      */
     fun resolveKrKernel(override: String?, global: String, removableStorage: Boolean): String {
-        val requested = resolve(override, global)
+        val requested = resolveAllowed(
+            override, global, EngineSettingsStore.KR_KERNELS, EngineSettingsStore.KR_AUTO,
+        )
         return if (removableStorage && requested == EngineSettingsStore.KERNEL_KRKRSDL3) {
             EngineSettingsStore.KERNEL_KIRIKIRI2
         } else {

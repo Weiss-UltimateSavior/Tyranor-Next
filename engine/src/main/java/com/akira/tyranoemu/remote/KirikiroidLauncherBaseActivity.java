@@ -80,6 +80,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private int launchReadinessFrames;
     private String pendingGamePath;
     private boolean pendingMaps;
+    private com.core.gl.ArtemisPerformanceOverlay graphicsOverlay;
 
     @Override
     protected void attachBaseContext(Context newBase) {
@@ -102,12 +103,13 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         doSetSystemUiVisibility();
         NativeBridge.configureSafMirror(getIntent().getStringExtra(LaunchContract.SAF_MIRROR_INDEX));
         // Anime4K 后处理：必须在 super.onCreate（GL SurfaceView 构造，EGL 版本定型）前配置
-        com.core.gl.Anime4kRuntime.configure(this, getIntent().getStringExtra(com.core.gl.Anime4kRuntime.EXTRA_MODE));
+        com.core.gl.Anime4kRuntime.configureFromIntent(this, getIntent());
         // Must run before super.onCreate (native library loading and preference singleton construction).
         applyFontPreferences();
         applyEnginePreferences();
         super.onCreate(bundle);
         app = this;
+        graphicsOverlay = new com.core.gl.ArtemisPerformanceOverlay(this, com.core.gl.Anime4kRuntime.source());
         // KR2 宿主不是 SDLActivity（SDL.setContext 从未被调用），须显式注册耳机
         // 热插拔监听，否则游戏中插拔耳机后静态 AudioTrack 失联、永久静音。
         org.libsdl.app.AudioRouteWatcher.ensureRegistered(this);
@@ -492,6 +494,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         String gameLibrary = gameLibraryForBridge();
         boolean initialized = NativeBridge.initialize(gameLibrary);
         nativeBridgeInitialized = initialized;
+        if (initialized) com.core.gl.KirikiroidRawFrameBridge.configureLibrary(gameLibrary);
         recordBridgeDiagnostic("initialize=" + initialized + " library=" + gameLibrary);
         Log.i(TAG, "native initialize result=" + initialized + " so=" + gameLibrary);
         if (!initialized) {
@@ -815,8 +818,15 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     }
 
     @Override
+    public void onPause() {
+        if (graphicsOverlay != null) graphicsOverlay.hide();
+        super.onPause();
+    }
+
+    @Override
     public void onResume() {
         super.onResume();
+        if (graphicsOverlay != null) graphicsOverlay.show();
         applyKrkrRequestedOrientation();
     }
 
@@ -840,6 +850,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     public void onDestroy() {
         try {
             destroyed = true;
+            if (graphicsOverlay != null) graphicsOverlay.hide();
             mask = null;
             maskMessage = null;
             maskHint = null;

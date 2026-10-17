@@ -1,0 +1,44 @@
+{
+  "upstream": "https://github.com/Weiss-UltimateSavior/Tyranor-Next",
+  "revision": "bc458af8d90e8908538e019f34fe05f2a54707b1",
+  "assetDirectory": "anime4k",
+  "files": [
+    {
+      "file": "Anime4K_Deblur_DoG.glsl",
+      "sha256": "480367048caca7520b6f66d4db731c96103677d0e5bad69d72adf46f58a59532"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_L.glsl",
+      "sha256": "d6efe215e6ee8af1ec560478a91afc1df83fac4ba43b2c806ee61ca2267ed674"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_M.glsl",
+      "sha256": "67ea3ed26539e8de3b7d307688535d2ff17e8d147e11dda0247da7770dbecf41"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_S.glsl",
+      "sha256": "97c24dc370ab300c108bfaa09db7f175aeff343674842c299cf3940a3d330427"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_Soft_L.glsl",
+      "sha256": "8f2a5c73b526c6e4c67bce0366f7dcd7410bfa4a31e718240d86f53660788e63"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_Soft_M.glsl",
+      "sha256": "a78a2c76898e08e09e442a9628c64208c26e8e15789649b8755223f009794c02"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_Soft_S.glsl",
+      "sha256": "9f6867f2ef42786729522d86fe24147cb4ea145418e3974df70496acf52dc392"
+    },
+    {
+      "file": "LICENSE.bundled.txt",
+      "sha256": "5bad448b737378e3d0c977ad0d0521fa37ad279a7e76ea9a31d9257eeb6953f5",
+      "license": "MIT",
+      "upstream": "https://github.com/bloc97/Anime4K",
+      "revision": "7684e9586f8dcc738af08a1cdceb024cc184f426",
+      "upstreamPath": "LICENSE",
+      "gitBlob": "140b2c983100845a3ad52e12d20573459d0f484c"
+    }
+  ]
+}

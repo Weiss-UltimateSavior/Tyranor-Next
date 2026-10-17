@@ -1,0 +1,60 @@
+{
+  "sources": [
+    {
+      "repository": "https://github.com/GPUOpen-Effects/FidelityFX-CAS",
+      "revision": "9fabcc9a2c45f958aff55ddfda337e74ef894b7f",
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE.txt",
+        "gitBlob": "6adade01787c4a679e61de9bf39fe865f15ee21f",
+        "sha256": "e008031a95f6f655def9eaf914118531c9e1055b8ea201eb98b9f95f1af9bec4"
+      },
+      "files": [
+        {
+          "path": "ffx-cas/ffx_a.h",
+          "gitBlob": "b92546ebbce954fa5e2e057b4f2b99d0bfc6e681",
+          "sha256": "ab5d9fbcda3399e3793a67e92ccebe510a671e9913a7e3ec74bf00d489162c5f"
+        },
+        {
+          "path": "ffx-cas/ffx_cas.h",
+          "gitBlob": "34b99bf85937f366ca287394a8a02e74174d0bbe",
+          "sha256": "3224935584202390ca9bc0149a45973ad2269f4d874abb2ff13625263fc036e0"
+        }
+      ]
+    }
+  ],
+  "generated": [
+    {
+      "file": "cas/CAS_low.glsl",
+      "sha256": "5f1d2cb1334f22b39b4fbc79e9b08793af8f46f877e280b84b514ebebe318631"
+    },
+    {
+      "file": "cas/CAS_standard.glsl",
+      "sha256": "90aeeee6ebf1e40884d3cb983b281932466eb6f5b0c02774efc936c36c94a37e"
+    },
+    {
+      "file": "cas/CAS_high.glsl",
+      "sha256": "0f0e80bf10a4168146082184826edfb11ea0ca4d8fc419510a9a78b51719a65a"
+    },
+    {
+      "file": "cas/CAS_Scaling_low.glsl",
+      "sha256": "f5683c7802dc244b4b2dd06fcea1b3e798028eda42d814441f2201a8799e2c30"
+    },
+    {
+      "file": "cas/CAS_Scaling_standard.glsl",
+      "sha256": "9e2bde2c4675dde92e924ba97027e7baa4867113c872f76348e6cf00392afbe6"
+    },
+    {
+      "file": "cas/CAS_Scaling_high.glsl",
+      "sha256": "fa046576a5b7c19abae9deef468b1f48cb4d7d332b396c322b41c1eaa7c1de4b"
+    },
+    {
+      "file": "cas/CAS.glsl",
+      "sha256": "a229db0cf4456f84a6b98663a2f78d1b92107d2da74e97f4d87f7fd52d603af7"
+    },
+    {
+      "file": "cas/LICENSE-MIT",
+      "sha256": "e008031a95f6f655def9eaf914118531c9e1055b8ea201eb98b9f95f1af9bec4"
+    }
+  ]
+}

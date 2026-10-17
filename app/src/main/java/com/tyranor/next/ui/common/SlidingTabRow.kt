@@ -47,6 +47,9 @@ import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.GlassText
 import com.tyranor.next.theme.GlassTextSecondary
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.LocalAppDialogContent
+import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 
@@ -265,9 +268,12 @@ private fun TabLabel(
     }
 }
 
-/** 指示器底色：默认 [NavWhite]，复古玻璃 [GlassSurfaceHigh]，高级玻璃 [AdvancedGlassSurfaceHigh]。 */
+/** 弹窗上下文的局部取色适配：指示器复用反色条目，避免与弹窗面板同色。
+ * 由公共弹窗提供上下文，调用方不传色值；页内标签栏保留既有取色分派，玻璃档各用自身动态常量。
+ */
 @Composable
 private fun tabIndicatorContainer(): Color = when {
+    LocalAppDialogContent.current -> DialogItemSurface
     AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
     AppThemeColors.isGlass -> GlassSurfaceHigh
     else -> NavWhite
@@ -280,5 +286,6 @@ private fun tabContentColor(selected: Boolean): Color = when {
     selected -> TextColor
     AppThemeColors.isAdvancedGlass -> AdvancedGlassTextSecondary
     AppThemeColors.isGlass -> GlassTextSecondary
+    LocalAppDialogContent.current -> UnselectedGrey
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }

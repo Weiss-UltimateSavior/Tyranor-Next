@@ -1,80 +1,95 @@
 package com.core.gl;
 
-/**
- * Anime4K 后处理运行时配置（进程内静态，主线程写 / GL 线程读）。
- *
- * KR2（Kirikiroid2）路径专用：由启动器经 intent extra {@link #EXTRA_MODE} 配置，
- * 必须在 Activity onCreate（GL SurfaceView 构造）之前写入，
- * 因为 EGL 上下文版本（2/3）在 SurfaceView 构造时就要确定。
- */
+import android.app.ActivityManager;
+import android.content.Context;
+import android.content.Intent;
+import com.core.engine.LaunchContract;
+
+/** KR2 filter-chain runtime. Historical class name and EXTRA_MODE preserve external single-mode launch compatibility. */
 public final class Anime4kRuntime {
-
-    /** intent extra：画面超分模式，取值见 {@link #configure(String)} */
     public static final String EXTRA_MODE = "tyranor_anime4k";
-
-    // ---- 模式常量（extra 取值） ----
-    public static final String MODE_OFF = "off";
-    public static final String MODE_S = "s";
-    public static final String MODE_M = "m";
-    public static final String MODE_L = "l";
-    public static final String MODE_SOFT_S = "soft_s";
-    public static final String MODE_SOFT_M = "soft_m";
-    public static final String MODE_SOFT_L = "soft_l";
-    public static final String MODE_DEBLUR = "deblur";
-
-    private static volatile boolean sEnabled = false;
-    private static volatile String sShaderAsset = "Anime4K_Restore_CNN_S";
-
+    private static volatile boolean enabled, requested, analyzing;
+    private static volatile GraphicsFilterChain chain = GraphicsFilterChain.parse("v1:");
+    private static volatile int status = GraphicsStatus.WAITING;
+    private static final ArtemisGraphicsStats STATS = new ArtemisGraphicsStats();
     private Anime4kRuntime() {}
 
-    /**
-     * 按 intent extra 值配置。无法识别的值视为关闭。
-     * 必须在 GL SurfaceView 构造前调用（决定 EGL 上下文版本）。
-     *
-     * @param context Activity 上下文（用于设备 GLES3 能力探测，不支持时强制关闭避免黑屏）
-     */
-    public static void configure(android.content.Context context, String mode) {
-        if (mode == null || mode.isEmpty() || MODE_OFF.equals(mode)) {
-            sEnabled = false;
-            sShaderAsset = "Anime4K_Restore_CNN_S";
-            return;
-        }
-        // 请求 ES3 上下文前确认设备支持（不支持时 EGL 创建失败会黑屏）
-        if (context != null) {
-            android.app.ActivityManager am = (android.app.ActivityManager)
-                    context.getSystemService(android.content.Context.ACTIVITY_SERVICE);
-            if (am == null || am.getDeviceConfigurationInfo().reqGlEsVersion < 0x30000) {
-                android.util.Log.w("Anime4kRuntime", "device lacks GLES3, Anime4K disabled");
-                sEnabled = false;
-                return;
-            }
-        }
-        switch (mode) {
-            case MODE_S:       sShaderAsset = "Anime4K_Restore_CNN_S"; break;
-            case MODE_M:       sShaderAsset = "Anime4K_Restore_CNN_M"; break;
-            case MODE_L:       sShaderAsset = "Anime4K_Restore_CNN_L"; break;
-            case MODE_SOFT_S:  sShaderAsset = "Anime4K_Restore_CNN_Soft_S"; break;
-            case MODE_SOFT_M:  sShaderAsset = "Anime4K_Restore_CNN_Soft_M"; break;
-            case MODE_SOFT_L:  sShaderAsset = "Anime4K_Restore_CNN_Soft_L"; break;
-            case MODE_DEBLUR:  sShaderAsset = "Anime4K_Deblur_DoG"; break;
-            default:
-                sEnabled = false;
-                return;
-        }
-        sEnabled = true;
+    public static void configure(Context context, String mode) {
+        apply(context, GraphicsFilterChain.fromLegacy(mode), true);
     }
 
-    /** 超分是否启用（决定是否请求 GLES3 上下文与逐帧后处理） */
-    public static boolean isEnabled() { return sEnabled; }
+    public static void configureFromIntent(Context context, Intent intent) {
+        if (intent != null && intent.hasExtra(LaunchContract.GRAPHICS_FILTER_CHAIN)) {
+            apply(context, GraphicsFilterChain.parse(intent.getStringExtra(LaunchContract.GRAPHICS_FILTER_CHAIN)),
+                    intent.getBooleanExtra(LaunchContract.GRAPHICS_FILTER_ENABLED, false));
+            analyzing = enabled && intent.getBooleanExtra(LaunchContract.GRAPHICS_FILTER_ANALYZER, false);
+        } else {
+            configure(context, intent == null ? null : intent.getStringExtra(EXTRA_MODE));
+        }
+    }
 
-    /** 是否需要 GLES3 上下文（CNN 中间值可为负，需 RGBA16F 中间纹理，ES2 无可靠渲染到 fp16 能力） */
-    public static boolean useGles3Context() { return sEnabled; }
+    private static void apply(Context context, GraphicsFilterChain configured, boolean master) {
+        boolean invalid = configured == null;
+        chain = invalid ? GraphicsFilterChain.parse("v1:") : configured;
+        requested = !invalid && master && chain.hasActive();
+        analyzing = false;
+        enabled = requested && supportsGles3(context);
+        status = invalid ? GraphicsStatus.FILTER_FAILED
+                : requested && !enabled ? GraphicsStatus.GLES3_UNAVAILABLE : GraphicsStatus.WAITING;
+        STATS.reset();
+    }
 
-    /** assets/anime4k/ 下的着色器文件名（不含扩展名） */
-    public static String shaderAsset() { return sShaderAsset; }
+    private static boolean supportsGles3(Context context) {
+        if (context == null) return false;
+        ActivityManager manager = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
+        return manager != null && manager.getDeviceConfigurationInfo().reqGlEsVersion >= 0x30000;
+    }
+    public static ArtemisPerformanceOverlay.Source source() {
+        return new ArtemisPerformanceOverlay.Source() {
+            public ArtemisGraphicsStats stats() { return Anime4kRuntime.stats(); }
+            public boolean isAnalyzing() { return Anime4kRuntime.isAnalyzing(); }
+            public int status() { return Anime4kRuntime.status(); }
+        };
+    }
 
-    /** Activity 销毁时重置，避免同进程下次启动残留 */
+    public static boolean isEnabled() { return enabled; }
+    public static boolean useGles3Context() { return enabled; }
+    public static boolean isAnalyzing() { return analyzing; }
+    public static GraphicsFilterChain chain() { return chain; }
+    public static int status() { return status; }
+    public static ArtemisGraphicsStats stats() { return STATS; }
+    public static void onContextCreated() {
+        STATS.reset();
+        if (enabled) status = GraphicsStatus.WAITING;
+    }
+    static void onRawUnavailable(int width, int height, int unavailableStatus) {
+        if (enabled) status = unavailableStatus;
+        if (analyzing) {
+            STATS.surface(width, height);
+            STATS.frame(0, 0, 0, 0, 0, 0);
+            STATS.invalidateNodes();
+            STATS.gpu(-1);
+            if (width > 0 && height > 0) STATS.presented();
+        }
+    }
+    static void onRawFrame(int sw,int sh,int width,int height,GraphicsFilterPipeline processor) {
+        status = sw <= 0 || sh <= 0 ? GraphicsStatus.SIZE_UNAVAILABLE
+                : processor != null && processor.isFailed() ? GraphicsStatus.FILTER_FAILED
+                : processor != null && processor.bypassReason() != Anime4kPostProcessor.BYPASS_NONE
+                ? GraphicsStatus.SIZE_UNAVAILABLE : GraphicsStatus.READY;
+        if (analyzing) {
+            GraphicsOutputSize.Size fitted = GraphicsOutputSize.fit(sw,sh,width,height);
+            STATS.surface(width,height);
+            STATS.frame(sw,sh,processor == null ? sw : processor.outputWidth(),
+                    processor == null ? sh : processor.outputHeight(),
+                    fitted == null ? 0 : fitted.width,fitted == null ? 0 : fitted.height);
+            STATS.gpu(-1); STATS.presented();
+        }
+    }
     public static void reset() {
-        sEnabled = false;
+        enabled = requested = analyzing = false;
+        chain = GraphicsFilterChain.parse("v1:");
+        status = GraphicsStatus.WAITING;
+        STATS.reset();
     }
 }

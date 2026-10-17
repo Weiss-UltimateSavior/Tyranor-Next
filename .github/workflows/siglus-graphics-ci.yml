@@ -1,0 +1,159 @@
+name: Siglus Graphics Native CI
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  push:
+    paths:
+      - engine/src/main/jniLibs/arm64-v8a/libsiglus.so
+      - engine/patches/siglus/**
+      - tools/build-siglus-graphics.py
+      - .github/workflows/siglus-graphics-ci.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  # Standalone, Android CI and release callers must not cancel one another.
+  group: siglus-graphics-native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-native:
+    name: Verify and build Siglus stage bridge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      BUILD_DIR: build/siglus-ci
+
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set isolated Rust paths
+        run: |
+          echo "CARGO_HOME=$RUNNER_TEMP/siglus-cargo" >> "$GITHUB_ENV"
+          echo "RUSTUP_HOME=$RUNNER_TEMP/siglus-rustup" >> "$GITHUB_ENV"
+
+      - name: Read pinned build inputs
+        id: inputs
+        run: |
+          key=$(python3 tools/build-siglus-graphics.py --print-build-key)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path('engine/patches/siglus/manifest.json').read_text())
+          for output, key in [('ndk', 'ndkVersion'), ('rust', 'rustVersion'), ('target', 'target')]:
+              print(f'{output}={manifest[key]}')
+          PY
+
+      # Cache only verified libraries and reports, never an unverified mutable
+      # source tree. An installed-library checksum update keeps this key stable.
+      - name: Restore exact native artifacts
+        id: native-cache
+        uses: actions/cache@v4
+        with:
+          path: build/siglus-ci/staged
+          key: siglus-native-${{ runner.os }}-${{ steps.inputs.outputs.key }}
+
+      - name: Set up JDK 17
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install pinned NDK and Rust
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        env:
+          NDK_VERSION: ${{ steps.inputs.outputs.ndk }}
+          RUST_VERSION: ${{ steps.inputs.outputs.rust }}
+          RUST_TARGET: ${{ steps.inputs.outputs.target }}
+        run: |
+          sdkmanager --channel=3 "ndk;$NDK_VERSION"
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$RUST_TARGET"
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y cmake ninja-build pkg-config
+
+      - name: Build verified unpatched baseline
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        env:
+          NDK_VERSION: ${{ steps.inputs.outputs.ndk }}
+        run: |
+          python3 tools/build-siglus-graphics.py \
+            --ndk "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" --cmake-bin /usr/bin \
+            --cargo-home "$CARGO_HOME" --rustup-home "$RUSTUP_HOME" \
+            --build-dir "$BUILD_DIR" --jobs 2 --baseline-only
+
+      - name: Apply downstream patch and build complete runtime
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        env:
+          NDK_VERSION: ${{ steps.inputs.outputs.ndk }}
+        run: |
+          python3 tools/build-siglus-graphics.py \
+            --ndk "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" --cmake-bin /usr/bin \
+            --cargo-home "$CARGO_HOME" --rustup-home "$RUSTUP_HOME" \
+            --build-dir "$BUILD_DIR" --jobs 2
+
+      - name: Verify artifact bytes, source provenance, ABI and alignment
+        run: |
+          python3 tools/build-siglus-graphics.py --build-dir "$BUILD_DIR" --verify-staged --baseline-only
+          python3 tools/build-siglus-graphics.py --build-dir "$BUILD_DIR" --verify-staged
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          directory = Path(os.environ['BUILD_DIR']) / 'staged'
+          baseline = json.loads((directory / 'baseline-build.json').read_text())
+          patched = json.loads((directory / 'patched-build.json').read_text())
+          if baseline['buildKey'] != patched['buildKey']:
+              raise SystemExit('Baseline and patched build inputs differ')
+          abi = patched['geometryAbi']
+          if set(patched['exports']) - set(baseline['exports']) != {abi}:
+              raise SystemExit('Patched runtime must add only the geometry ABI')
+          if set(baseline['exports']) - set(patched['exports']):
+              raise SystemExit('Patched runtime removed baseline exports')
+          manifest = json.loads(Path('engine/patches/siglus/manifest.json').read_text())
+          installed = Path('engine/src/main/jniLibs/arm64-v8a/libsiglus.so')
+          if manifest['libraryFile'] != installed.as_posix():
+              raise SystemExit('Manifest must name the actual checked-in Siglus library')
+          installed_bytes = installed.read_bytes()
+          installed_sha = hashlib.sha256(installed_bytes).hexdigest()
+          if installed_sha != manifest['librarySha256']:
+              raise SystemExit('Checked-in library differs from manifest checksum')
+          if manifest['libraryStatus'] != 'ci-rebuilt-patched':
+              raise SystemExit('Checked-in library must have final patched build status')
+          if installed_bytes != (directory / 'libsiglus-patched.so').read_bytes():
+              raise SystemExit('Checked-in library must match the verified source-built patched artifact')
+          with Path(os.environ['GITHUB_STEP_SUMMARY']).open('a') as summary:
+              summary.write('Source: `' + patched['revision'] + '`\n\n')
+              summary.write('| Build | Exports | SHA-256 |\n| --- | --- | --- |\n')
+              for report in [baseline, patched]:
+                  summary.write(f"| {report['buildKind']} | {len(report['exports'])} | `{report['librarySha256']}` |\n")
+              summary.write('\nThe checked-in library matches the patched artifact verified against pinned public upstream source; no checked-in library was overwritten.\n')
+          PY
+
+      - name: Upload native candidates and provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: siglus-stage-native-${{ github.sha }}
+          path: build/siglus-ci/staged/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload build failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: siglus-native-failure-${{ github.sha }}
+          path: build/siglus-ci/*-build.log
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,4 +1,5 @@
 <resources>
+    <string name="common_clear_input_content_description">清除输入</string>
     <string name="app_name">Tyranor Next</string>
     <string name="common_confirm">确定</string>
     <string name="common_done">完成</string>
@@ -500,14 +501,6 @@
     <string name="engine_option_rpg_mv_v2">TynMV-0.2</string>
     <string name="engine_option_rpg_mz_v0">Tyranor-2.3.4</string>
     <string name="engine_option_rpg_mz_v2">TynMZ-0.1</string>
-    <string name="engine_settings_anime4k">画面超分</string>
-    <string name="engine_option_anime4k_fast">快速（S）</string>
-    <string name="engine_option_anime4k_balanced">平衡（M）</string>
-    <string name="engine_option_anime4k_high">高质量（L）</string>
-    <string name="engine_option_anime4k_soft_fast">轻柔·快速</string>
-    <string name="engine_option_anime4k_soft_balanced">轻柔·平衡</string>
-    <string name="engine_option_anime4k_soft_high">轻柔·高质量</string>
-    <string name="engine_option_anime4k_deblur">去模糊（DoG）</string>
 
     <string name="cover_source_local">本地封面</string>
     <string name="cover_source_custom">自定义封面</string>
@@ -793,6 +786,38 @@
     <string name="android_add_duplicate">该应用已在游戏库中</string>
     <string name="android_add_already_added">已在游戏库中</string>
     <string name="game_cover_flow_caption">%1$s - %2$s</string>
+
+    <!-- Shared ordered graphics-chain settings -->
+    <string name="graphics_settings_title">画面滤镜</string>
+    <string name="graphics_settings_enabled">启用滤镜链</string>
+    <string name="graphics_chain_title">滤镜链</string>
+    <string name="graphics_chain_custom">为此游戏设置滤镜链</string>
+    <string name="graphics_chain_empty">滤镜链为空，不执行画面处理或性能监测。</string>
+    <string name="graphics_chain_up">上移</string>
+    <string name="graphics_chain_down">下移</string>
+    <string name="graphics_chain_remove">移除</string>
+    <string name="graphics_chain_add_type">要添加的滤镜</string>
+    <string name="graphics_chain_add">添加滤镜</string>
+    <string name="graphics_chain_clear">清空滤镜链</string>
+    <string name="graphics_chain_limit">最多 %1$d 个节点</string>
+    <string name="graphics_filter_back_categories">返回</string>
+    <string name="graphics_settings_unsupported">当前引擎版本不支持滤镜</string>
+    <string name="graphics_settings_runtime_dependent">自动选择：滤镜支持取决于实际内核</string>
+    <string name="graphics_filter_parameters">参数</string>
+    <string name="graphics_filter_sharpness">锐度</string>
+    <string name="graphics_filter_scale_type">类型</string>
+    <string name="graphics_filter_scale_fit">适应</string>
+    <string name="graphics_filter_scale_factor">倍数</string>
+    <string name="graphics_filter_scale_multiplier">缩放倍率（0.25–4）</string>
+    <string name="graphics_filter_scale_none">不缩放</string>
+    <string name="graphics_analyzer_title">性能分析器</string>
+    <string name="graphics_refresh_interval">数据刷新间隔</string>
+    <string name="graphics_refresh_seconds">%1$s 秒</string>
+    <string name="graphics_analyzer_position">位置</string>
+    <string name="graphics_analyzer_top_center">顶部居中</string>
+    <string name="graphics_analyzer_bottom_center">底部居中</string>
+    <string name="graphics_filter_decrease">−</string>
+    <string name="graphics_filter_increase">+</string>
     <string name="ethornell_settings_title">Ethornell / BGI 设置</string>
     <string name="ethornell_error_session_busy">Ethornell 正在运行另一个游戏，或会话正在初始化/关闭。请先退出当前游戏再重试。</string>
     <string name="engine_desc_ethornell">内置 ethornell-rs 重实现运行时；兼容性取决于游戏版本，不支持 Windows 插件。</string>

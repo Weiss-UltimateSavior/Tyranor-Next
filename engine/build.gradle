@@ -104,3 +104,29 @@ tasks.register('jsHarness', Exec) {
 tasks.named('check') {
     dependsOn 'jsHarness'
 }
+
+// Each filter family owns its registration and assets; no optional filter IDs in shared code.
+def graphicsCatalog = tasks.register('generateGraphicsFilters', GenerateGraphicsFilters) {
+    descriptors.set(layout.projectDirectory.dir('src/main/graphicsfilters'))
+    assetsDirectory.set(layout.projectDirectory.dir('src/main/assets'))
+    outputDirectory.set(layout.buildDirectory.dir('generated/graphicsFilters'))
+}
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.java.addGeneratedSourceDirectory(graphicsCatalog) { it.outputDirectory }
+    }
+}
+
+// Provenance follows the descriptors: absent optional contributions have no required hashes.
+def verifyGraphicsResources = tasks.register('verifyGraphicsResources', VerifyGraphicsResources) {
+    group = 'verification'
+    description = 'Verifies pinned local graphics assets, downstream patches and the patched runtime.'
+    manifestsDirectory.set(layout.projectDirectory.dir('patches'))
+    descriptorsDirectory.set(layout.projectDirectory.dir('src/main/graphicsfilters'))
+    engineDirectory.set(layout.projectDirectory)
+    artifacts.from(fileTree('src/main/assets') { include '**/*.glsl', '**/LICENSE*' })
+    artifacts.from(fileTree('patches') { include '**/*.patch', '**/previous-exports.txt' })
+    artifacts.from(file('src/main/jniLibs/arm64-v8a/libsiglus.so'))
+}
+tasks.named('preBuild') { dependsOn verifyGraphicsResources }
+tasks.named('check') { dependsOn verifyGraphicsResources }

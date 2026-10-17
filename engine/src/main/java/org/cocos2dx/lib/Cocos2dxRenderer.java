@@ -76,6 +76,7 @@ public class Cocos2dxRenderer implements GLSurfaceView.Renderer {
         if (mNativeInitCompleted) {
             try { Cocos2dxHelper.onEnterBackground(); } catch (Throwable ignored) { }
             nativeOnPause();
+            com.core.gl.KirikiroidRawFrameBridge.release();
         }
     }
 
@@ -114,11 +115,9 @@ public class Cocos2dxRenderer implements GLSurfaceView.Renderer {
             }
         }
 
+        com.core.gl.Anime4kRuntime.onContextCreated();
+        com.core.gl.KirikiroidRawFrameBridge.onContextCreated(Cocos2dxHelper.getContext());
         nativeInit(mScreenWidth, mScreenHeight);
-        // EGL 上下文重建：Anime4K 的 GL 句柄随旧上下文失效，通知丢弃
-        if (com.core.gl.Anime4kRuntime.isEnabled()) {
-            com.core.gl.Anime4kPostProcessor.getInstance().onSurfaceCreated();
-        }
         mNextFrameDeadline = System.nanoTime() + sAnimationInterval;
         // 跨 EGL 生命周期兜底：60fps + eglSwapInterval 成功场景下 onDrawFrame 不进入 if 块，
         // Thread.interrupted() 永不被调用；此处消费可能残留的中断标志，避免跨 EGL 重建透传。
@@ -130,10 +129,8 @@ public class Cocos2dxRenderer implements GLSurfaceView.Renderer {
     @Override
     public void onSurfaceChanged(GL10 gl, int width, int height) {
         nativeOnSurfaceChanged(width, height);
-        // 尺寸变化 / 上下文重建后（重建路径必然伴随 surfaceChanged）重建 Anime4K GL 资源
-        if (com.core.gl.Anime4kRuntime.isEnabled()) {
-            com.core.gl.Anime4kPostProcessor.getInstance().onSurfaceChanged(width, height);
-        }
+        mScreenWidth = width;
+        mScreenHeight = height;
     }
 
     @Override
@@ -182,12 +179,14 @@ public class Cocos2dxRenderer implements GLSurfaceView.Renderer {
             }
         }
 
-        nativeRender();
-        // Anime4K 后处理：引擎帧完成后、GLSurfaceView 隐式 swap 前执行超分链。
-        // 未启用时为一次 volatile 读，零 GL 开销；内部失败后自动退化为空操作。
-        if (com.core.gl.Anime4kRuntime.isEnabled()) {
-            com.core.gl.Anime4kPostProcessor.getInstance().drawFrame();
+        boolean raw = com.core.gl.KirikiroidRawFrameBridge.isInstalled();
+        if (raw) com.core.gl.KirikiroidRawFrameBridge.beginFrame(mScreenWidth,mScreenHeight);
+        try { nativeRender(); }
+        finally {
+            if (raw) com.core.gl.KirikiroidRawFrameBridge.endFrame(mScreenWidth,mScreenHeight);
+            else com.core.gl.KirikiroidRawFrameBridge.onUnavailableFrame(mScreenWidth,mScreenHeight);
         }
+        // An unverified raw entry retains native presentation; never filter or label the screen as raw input.
         if (mListener != null) mListener.onFrameRendered();
     }
 }
