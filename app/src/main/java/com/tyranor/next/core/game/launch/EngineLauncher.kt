@@ -1362,6 +1362,8 @@ object EngineLauncher {
                 putExtra(KrkrStartupDialogPolicy.EXTRA_ENABLED, skipStartupDialogs)
                 putExtra(LaunchContract.ORIENTATION, 6)
                 putExtra(LaunchContract.FOCUS, "true")
+                // krkrsdl3 语言环境：由 Krkrsdl3Activity 在 native 初始化后消费
+                putExtra(LaunchContract.KR_LANGUAGE, settings.krLanguage)
             }
         }
         val version = settings.krEngineVersion

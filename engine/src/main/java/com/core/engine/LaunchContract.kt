@@ -64,6 +64,15 @@ object LaunchContract {
     const val KR_PATCH_OVERLAY_TARGET = "krPatchOverlayTarget"
     const val KR_PATCH_OVERLAY_PATH = "krPatchOverlayPath"
     const val KR_PATCH_OVERLAY_MODE = "krPatchOverlayMode"
+    /** KRKR 游戏底层语言环境（auto/jp/en/zh/zhtw；引擎宿主据此切换运行环境）。 */
+    const val KR_LANGUAGE = "krLanguage"
+
+    /** KRKR 语言环境取值（app 与引擎双侧引用，禁止裸字符串）。 */
+    const val KR_LANGUAGE_AUTO = "auto"
+    const val KR_LANGUAGE_JP = "jp"
+    const val KR_LANGUAGE_EN = "en"
+    const val KR_LANGUAGE_ZH = "zh"
+    const val KR_LANGUAGE_ZHTW = "zhtw"
     const val KR_STEAM_CONFIG_OVERLAY_TARGET = "krSteamConfigOverlayTarget"
     const val KR_STEAM_CONFIG_OVERLAY_PATH = "krSteamConfigOverlayPath"
     const val BASE_DOC = "baseDoc"

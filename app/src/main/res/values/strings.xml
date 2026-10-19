@@ -828,4 +828,9 @@
     <string name="ethornell_error_bootstrap">未找到受支持的 system.arc 与 ipl._bp 启动索引。</string>
     <string name="ethornell_error_font">字体无效或不可读取，请重新导入 TTF、TTC、OTF 或 OTC 字体。</string>
     <string name="ethornell_error_userdata">无法创建 Ethornell 私有用户数据目录，请检查可用空间。</string>
+    <string name="engine_settings_kr_language">语言环境</string>
+    <string name="engine_settings_kr_language_jp">日语</string>
+    <string name="engine_settings_kr_language_en">英语</string>
+    <string name="engine_settings_kr_language_zh">简体中文</string>
+    <string name="engine_settings_kr_language_zhtw">繁体中文</string>
 </resources>

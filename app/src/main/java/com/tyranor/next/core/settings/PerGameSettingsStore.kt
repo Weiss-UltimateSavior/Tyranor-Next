@@ -39,6 +39,8 @@ object PerGameSettingsStore {
     const val F_VCURSOR_SCALE = "vcursor_scale"
     const val F_MENU_HANDLER_OPA = "menu_handler_opa"
     const val F_ANIME4K_MODE = "anime4k_mode"
+    // KRKR 语言环境覆盖（null=跟随全局）
+    const val F_KR_LANGUAGE = "kr_language"
     /** KR 渲染偏好覆盖字段清单（由 [KrRenderPrefs] 派生，与全局键一一对应）。 */
     val KR_FIELDS: List<String> = KrRenderPrefs.ALL.map { it.overrideField }
 
