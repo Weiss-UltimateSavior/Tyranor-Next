@@ -91,10 +91,14 @@ object EngineSettingsStore {
     const val KEY_WINLATOR_CONTAINER_NAME = "winlator_container_name"
     const val KEY_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
     const val KEY_WINLATOR_DXWRAPPER = "winlator_dxwrapper"
+    const val KEY_WINLATOR_WINED3D_RENDERER = "winlator_wined3d_renderer"
     const val KEY_WINLATOR_SCREEN_SIZE = "winlator_screen_size"
     const val KEY_WINLATOR_LC_ALL = "winlator_lc_all"
     const val KEY_WINLATOR_TZ = "winlator_tz"
     const val KEY_WINLATOR_BOX64_PRESET = "winlator_box64_preset"
+    const val KEY_WINLATOR_WIN_COMPONENTS = "winlator_win_components"
+    const val KEY_WINLATOR_AUDIO_DRIVER = "winlator_audio_driver"
+    const val KEY_WINLATOR_ENV_VARS = "winlator_env_vars"
     const val KEY_WINLATOR_SAVE = "winlator_save"
 
     // Ren'Py 外置模块（settings extra 的 renpy 节；cheats 发 app 节，键名与 RenPyConfigurationParser 一致）
@@ -355,11 +359,49 @@ object EngineSettingsStore {
         "vortek,gladio",
     )
 
-    val WINLATOR_DXWRAPPERS: Set<String> = linkedSetOf(
-        "", "dxvk", "wined3d",
-        WinlatorContract.DXWRAPPER_WINED3D_GL,
-        WinlatorContract.DXWRAPPER_WINED3D_GDI,
+    /**
+     * 图形加速白名单：`dxvk` / `wined3d`。
+     * 旧版 App 内部的 `wined3d_gl` / `wined3d_gdi` 只作读入兼容（见 [winlatorLegacyRenderer]），不再写出。
+     */
+    val WINLATOR_DXWRAPPERS: Set<String> = linkedSetOf("", "dxvk", "wined3d")
+
+    /** WineD3D 渲染器（`dxwrapperConfig` 的 `renderer` 键；对齐 WineD3DConfigDialog 下拉）。 */
+    val WINLATOR_WINED3D_RENDERERS: List<String> = listOf("gdi", "gl", "vulkan")
+
+    /** 音频驱动（winlator-cn `AudioDrivers` 白名单）。 */
+    val WINLATOR_AUDIO_DRIVERS: List<String> = listOf("alsa", "pulseaudio")
+
+    /**
+     * Winlator「Win Components / DX 函数 + 常用运行库」固定组件，顺序与 winlator-cn
+     * `WinComponentOverrides.KEYS` 一致（`direct3d…wmdecoder`）。
+     * 下发值为 `0`（内置 Wine）/ `1`（外置 Windows），与 Winlator 容器设置里的下拉序号一致。
+     */
+    val WINLATOR_WIN_COMPONENT_KEYS: List<String> = listOf(
+        "direct3d",
+        "directsound",
+        "directmusic",
+        "directshow",
+        "directplay",
+        "xaudio",
+        "vcrun2005",
+        "vcrun2010",
+        "wmdecoder",
     )
+
+    /** Winlator 容器设置「DX 函数设置」分组（与 [WINLATOR_WIN_COMPONENT_KEYS] 前缀一致）。 */
+    val WINLATOR_WIN_COMPONENT_DX_KEYS: List<String> = WINLATOR_WIN_COMPONENT_KEYS.take(6)
+
+    /** Winlator 容器设置「常用运行库」分组。 */
+    val WINLATOR_WIN_COMPONENT_RUNTIME_KEYS: List<String> = WINLATOR_WIN_COMPONENT_KEYS.drop(6)
+
+    const val WINLATOR_WIN_COMPONENT_BUILTIN = "0"
+    const val WINLATOR_WIN_COMPONENT_NATIVE = "1"
+
+    /**
+     * 单游戏覆盖专用哨兵：显式「跟随容器配置」（不下发该组件），用于压过全局的同名设置。
+     * 只存在于单游戏覆盖串中，归一化下发给 Winlator 前会被移除。
+     */
+    const val WINLATOR_WIN_COMPONENT_CONTAINER = "container"
 
     val WINLATOR_BOX64_PRESETS: Set<String> = linkedSetOf(
         "",
@@ -845,25 +887,45 @@ object EngineSettingsStore {
         var containerName: String = "",
         var graphicsDriver: String = "",
         var dxwrapper: String = "",
+        var wined3dRenderer: String = "",
         var screenSize: String = "",
         var lcAll: String = "",
         var tz: String = "",
         var box64Preset: String = "",
+        var winComponents: String = "",
+        var audioDriver: String = "",
+        var envVars: String = "",
         var save: Boolean = false,
     )
 
     fun loadWinlator(c: Context): Winlator {
         val p = prefs(c)
         val d = Winlator()
+        val storedDxWrapper = p.getString(KEY_WINLATOR_DXWRAPPER, d.dxwrapper)
+        // 旧版内部预设（wined3d_gl/gdi）读入即拆成 wrapper + renderer；
+        // 渲染器已显式设置时以显式值为准（预设只补齐空值）。
+        val legacyRenderer = winlatorLegacyRenderer(storedDxWrapper)
         return Winlator(
             containerId = p.getInt(KEY_WINLATOR_CONTAINER_ID, d.containerId).coerceAtLeast(0),
             containerName = p.getString(KEY_WINLATOR_CONTAINER_NAME, d.containerName).orEmpty().trim(),
             graphicsDriver = normalizeWinlatorGraphicsDriver(p.getString(KEY_WINLATOR_GRAPHICS_DRIVER, d.graphicsDriver)),
-            dxwrapper = normalizeWinlatorDxWrapper(p.getString(KEY_WINLATOR_DXWRAPPER, d.dxwrapper)),
+            dxwrapper = if (legacyRenderer != null) {
+                WinlatorContract.DXWRAPPER_WINED3D
+            } else {
+                normalizeWinlatorDxWrapper(storedDxWrapper)
+            },
+            wined3dRenderer = normalizeWinlatorWined3dRenderer(
+                p.getString(KEY_WINLATOR_WINED3D_RENDERER, d.wined3dRenderer),
+            ).ifEmpty { legacyRenderer ?: "" },
             screenSize = normalizeWinlatorScreenSize(p.getString(KEY_WINLATOR_SCREEN_SIZE, d.screenSize)),
             lcAll = normalizeWinlatorLcAll(p.getString(KEY_WINLATOR_LC_ALL, d.lcAll)),
             tz = normalizeWinlatorTz(p.getString(KEY_WINLATOR_TZ, d.tz)),
             box64Preset = normalizeWinlatorBox64Preset(p.getString(KEY_WINLATOR_BOX64_PRESET, d.box64Preset)),
+            winComponents = normalizeWinlatorWinComponents(
+                p.getString(KEY_WINLATOR_WIN_COMPONENTS, d.winComponents),
+            ),
+            audioDriver = normalizeWinlatorAudioDriver(p.getString(KEY_WINLATOR_AUDIO_DRIVER, d.audioDriver)),
+            envVars = normalizeWinlatorEnvVars(p.getString(KEY_WINLATOR_ENV_VARS, d.envVars)),
             save = p.getBoolean(KEY_WINLATOR_SAVE, d.save),
         )
     }
@@ -891,10 +953,14 @@ object EngineSettingsStore {
             putString(KEY_WINLATOR_CONTAINER_NAME, w.containerName.trim())
             putString(KEY_WINLATOR_GRAPHICS_DRIVER, normalizeWinlatorGraphicsDriver(w.graphicsDriver))
             putString(KEY_WINLATOR_DXWRAPPER, normalizeWinlatorDxWrapper(w.dxwrapper))
+            putString(KEY_WINLATOR_WINED3D_RENDERER, normalizeWinlatorWined3dRenderer(w.wined3dRenderer))
             putString(KEY_WINLATOR_SCREEN_SIZE, normalizeWinlatorScreenSize(w.screenSize))
             putString(KEY_WINLATOR_LC_ALL, normalizeWinlatorLcAll(w.lcAll))
             putString(KEY_WINLATOR_TZ, normalizeWinlatorTz(w.tz))
             putString(KEY_WINLATOR_BOX64_PRESET, normalizeWinlatorBox64Preset(w.box64Preset))
+            putString(KEY_WINLATOR_WIN_COMPONENTS, normalizeWinlatorWinComponents(w.winComponents))
+            putString(KEY_WINLATOR_AUDIO_DRIVER, normalizeWinlatorAudioDriver(w.audioDriver))
+            putString(KEY_WINLATOR_ENV_VARS, normalizeWinlatorEnvVars(w.envVars))
             putBoolean(KEY_WINLATOR_SAVE, w.save)
         }.apply()
     }
@@ -905,7 +971,7 @@ object EngineSettingsStore {
         return t.takeIf { it in WINLATOR_GRAPHICS_DRIVERS } ?: ""
     }
 
-    /** 接受既有 wrapper 和 App 内部 GL/GDI 预设；未知值回退为空串，不下发覆盖。 */
+    /** 图形加速：仅接受 `dxvk` / `wined3d`；旧预设值需先经 [winlatorLegacyRenderer] 迁移。 */
     fun normalizeWinlatorDxWrapper(v: String?): String =
         v?.trim()?.lowercase()?.takeIf { it in WINLATOR_DXWRAPPERS } ?: ""
 
@@ -930,6 +996,127 @@ object EngineSettingsStore {
     fun normalizeWinlatorTz(v: String?): String {
         val t = v?.trim().orEmpty()
         return t.takeIf { it in WINLATOR_TIMEZONES } ?: ""
+    }
+
+    /**
+     * 旧版 App 内部预设（`wined3d_gl` / `wined3d_gdi`）对应的 WineD3D 渲染器。
+     * 仅用于**读入兼容**：命中时调用方把 dxwrapper 归一回 `wined3d`，并在渲染器为空时补上该值；
+     * 保存时一律写 `dxwrapper + wined3dRenderer`，不再写出预设值。
+     */
+    fun winlatorLegacyRenderer(dxwrapper: String?): String? = when (dxwrapper?.trim()?.lowercase()) {
+        WinlatorContract.DXWRAPPER_WINED3D_GDI -> "gdi"
+        WinlatorContract.DXWRAPPER_WINED3D_GL -> "gl"
+        else -> null
+    }
+
+    /** WineD3D 渲染器：仅接受 [WINLATOR_WINED3D_RENDERERS]；其余归一回空串（跟随容器）。 */
+    fun normalizeWinlatorWined3dRenderer(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in WINLATOR_WINED3D_RENDERERS } ?: ""
+
+    /** 音频驱动：仅接受 [WINLATOR_AUDIO_DRIVERS]；其余归一回空串（跟随容器）。 */
+    fun normalizeWinlatorAudioDriver(v: String?): String =
+        v?.trim()?.lowercase()?.takeIf { it in WINLATOR_AUDIO_DRIVERS } ?: ""
+
+    /**
+     * 自定义环境变量（winlator-cn `envVars` 格式：空格分隔 `K=V`）。
+     * 只校验「每个 token 都含非空键的 `=`」这一条硬约束；不校验变量名大小写/语义。
+     */
+    fun isValidWinlatorEnvVars(v: String?): Boolean =
+        v.isNullOrBlank() || v.trim().split(Regex("\\s+")).all { it.indexOf('=') > 0 }
+
+    /** 自定义环境变量归一：丢弃非法 token，按空格重新拼接；全空归一回空串（不下发）。 */
+    fun normalizeWinlatorEnvVars(v: String?): String =
+        v?.trim()?.split(Regex("\\s+"))?.filter { it.indexOf('=') > 0 }?.joinToString(" ").orEmpty()
+
+    /**
+     * 解析 Winlator `wincomponents` 紧凑串（`direct3d=1,xaudio=0`）：
+     * 仅保留已知组件与 `0`/`1`（[allowContainer] 时额外接受单游戏覆盖哨兵 `container`），
+     * 其余 token 丢弃；输出按 [WINLATOR_WIN_COMPONENT_KEYS] 固定顺序，便于持久化与比较。
+     */
+    fun parseWinlatorWinComponents(
+        v: String?,
+        allowContainer: Boolean = false,
+    ): LinkedHashMap<String, String> {
+        val out = LinkedHashMap<String, String>()
+        for (raw in v?.split(',') ?: emptyList()) {
+            val token = raw.trim()
+            val eq = token.indexOf('=')
+            if (eq <= 0) continue
+            val key = token.substring(0, eq).trim()
+            if (key !in WINLATOR_WIN_COMPONENT_KEYS) continue
+            val value = token.substring(eq + 1).trim()
+            val accepted = value == WINLATOR_WIN_COMPONENT_BUILTIN ||
+                value == WINLATOR_WIN_COMPONENT_NATIVE ||
+                (allowContainer && value == WINLATOR_WIN_COMPONENT_CONTAINER)
+            if (accepted) out[key] = value
+        }
+        return out
+    }
+
+    /** 按固定组件顺序编码 `wincomponents` 紧凑串（空 Map → 空串）。 */
+    fun encodeWinlatorWinComponents(values: Map<String, String>): String =
+        WINLATOR_WIN_COMPONENT_KEYS.mapNotNull { key ->
+            values[key]?.let { "$key=$it" }
+        }.joinToString(",")
+
+    /** 全局 Winlator 组件覆盖：仅保留 `0`/`1`（空串 = 全部跟随容器配置）。 */
+    fun normalizeWinlatorWinComponents(v: String?): String =
+        encodeWinlatorWinComponents(parseWinlatorWinComponents(v))
+
+    /** 单游戏组件覆盖：额外保留显式「跟随容器」哨兵，供 [mergeWinlatorWinComponents] 压过全局。 */
+    fun normalizeWinlatorWinComponentsOverride(v: String?): String =
+        encodeWinlatorWinComponents(parseWinlatorWinComponents(v, allowContainer = true))
+
+    /** 全局单组件生效值（"" = 未覆盖，跟随容器配置）。 */
+    fun winlatorWinComponent(compact: String?, key: String): String =
+        parseWinlatorWinComponents(compact)[key] ?: ""
+
+    /** 单游戏单组件覆盖值（null = 跟随全局；"" = 显式跟随容器配置）。 */
+    fun winlatorWinComponentOverride(compact: String?, key: String): String? =
+        parseWinlatorWinComponents(compact, allowContainer = true)[key]?.let {
+            if (it == WINLATOR_WIN_COMPONENT_CONTAINER) "" else it
+        }
+
+    /** 写入全局单组件（value 不属于 `0`/`1` 时移除该组件覆盖）。 */
+    fun setWinlatorWinComponent(compact: String?, key: String, value: String): String {
+        val values = parseWinlatorWinComponents(compact)
+        if (value == WINLATOR_WIN_COMPONENT_BUILTIN || value == WINLATOR_WIN_COMPONENT_NATIVE) {
+            values[key] = value
+        } else {
+            values.remove(key)
+        }
+        return encodeWinlatorWinComponents(values)
+    }
+
+    /**
+     * 写入单游戏单组件覆盖：null = 跟随全局（移除该键）；"" = 显式跟随容器（写哨兵）；
+     * `0`/`1` = 内置/外置。全部键都回落到「跟随全局」时返回 null（整项无覆盖）。
+     */
+    fun setWinlatorWinComponentOverride(compact: String?, key: String, value: String?): String? {
+        val values = parseWinlatorWinComponents(compact, allowContainer = true)
+        when (value) {
+            null -> values.remove(key)
+            "" -> values[key] = WINLATOR_WIN_COMPONENT_CONTAINER
+            WINLATOR_WIN_COMPONENT_BUILTIN, WINLATOR_WIN_COMPONENT_NATIVE -> values[key] = value
+            else -> return normalizeWinlatorWinComponentsOverride(compact)
+        }
+        return encodeWinlatorWinComponents(values).ifEmpty { null }
+    }
+
+    /**
+     * 全局 + 单游戏组件覆盖合并：单游戏按组件覆盖全局；`container` 哨兵从最终下发值中移除
+     * （即该组件跟随容器）。覆盖串为空/无有效项 = 显式不下发全部组件（跟随容器）。
+     */
+    fun mergeWinlatorWinComponents(global: String, override: String?): String {
+        val merged = parseWinlatorWinComponents(global)
+        if (override == null) return encodeWinlatorWinComponents(merged)
+        if (override.isBlank()) return ""
+        val overrideValues = parseWinlatorWinComponents(override, allowContainer = true)
+        if (overrideValues.isEmpty()) return ""
+        for ((key, value) in overrideValues) {
+            if (value == WINLATOR_WIN_COMPONENT_CONTAINER) merged.remove(key) else merged[key] = value
+        }
+        return encodeWinlatorWinComponents(merged)
     }
 
     // ---------- Tyrano ----------
