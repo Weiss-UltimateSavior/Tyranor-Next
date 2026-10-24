@@ -71,9 +71,11 @@ PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 
 
 ### Winlator 图形加速
 
-全局 Winlator 设置与单游戏覆盖可选「跟随容器配置」、DXVK、WineD3D（跟随容器渲染器）、WineD3D + OpenGL、WineD3D + GDI。需要 GDI 的游戏请选择明确的 GDI 预设；旧 WineD3D 设置不迁移、不强制改为 GL 或 GDI。
+全局 Winlator 设置与单游戏覆盖可选「跟随容器配置」、DXVK、WineD3D。选择 WineD3D 后还可指定渲染器：全局可选跟随容器、GDI、GL、Vulkan，单游戏覆盖另有「跟随全局」继承全局渲染器；仅在 WineD3D 下通过 `dxwrapperConfig` 下发。旧版 GL/GDI 预设会在读取时自动迁移为 WineD3D + 对应渲染器，不会丢设置。
 
-显式 GL/GDI 预设通过现有 `dxwrapperConfig` 协议整项覆盖 WineD3D 配置，其它子参数使用 Winlator 默认值；开启「写入容器配置」时也会保存该预设。Box64 预设可同时下发。该能力适用于带外置启动协议的 winlator-cn，不代表任意 Winlator 分支均支持。
+外置启动还支持 Win Components（DX 函数与常用运行库）、音频驱动与自定义环境变量，均按白名单归一后随 `overrides` 下发；Box64 预设可同时下发，开启「写入容器配置」时也会保存。
+
+游戏操作抽屉提供「Winlator 快捷方式启动」：只打开 Winlator 中已存在的快捷方式（`.desktop`），不重新下发目录、主程序或图形参数，也不写入容器配置；容器 ID 与快捷方式名可在单游戏设置里指定。该能力适用于带外置启动协议的 winlator-cn，不代表任意 Winlator 分支均支持。
 
 ### 平台与文件要求
 

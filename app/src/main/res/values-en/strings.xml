@@ -179,7 +179,7 @@
     <string name="engine_settings_yuris_hint">This game runs in external Winlator. The executable can be changed via "Launch file" in game details. Saves live in the game folder\'s save/ directory and are managed by the launcher; runtime options can be overridden per item in the Winlator card below.</string>
     <string name="engine_settings_pc_hint">Runs via external Winlator. Change the executable via "Launch file" in game details. No save management; runtime options can be overridden per item in the Winlator card below.</string>
     <string name="engine_settings_android_hint">This game is an installed Android app. Launching from the library opens the app directly. No save management or engine settings.</string>
-    <string name="engine_settings_winlator_per_game_note">Overrides apply to this game only; each item can be switched back to "Follow global". An empty value (follow container config) sends no such parameter, leaving it to the Winlator container config. Explicit WineD3D + OpenGL/GDI presets replace the entire WineD3D config; other sub-options use defaults. Enabling Write to container config also persists the preset.</string>
+    <string name="engine_settings_winlator_per_game_note">Overrides apply to this game only; each item can be switched back to "Follow global". An empty value (follow container config) sends no such parameter, leaving it to the Winlator container config. When DX wrapper is WineD3D you can pick its renderer, which replaces the entire container WineD3D config; other sub-options use defaults. Enabling Write to container config also persists these parameters.</string>
     <string name="launch_emulator_missing">%1$s is not installed. Download it from “External emulator support”</string>
     <string name="launch_emulator_no_activity">%1$s does not provide an entry to receive games</string>
     <string name="launch_emulator_denied">%1$s launch was denied by the system</string>
@@ -211,6 +211,8 @@
     <string name="game_cover_set_failed">Failed to set cover</string>
     <string name="game_launch_action">Launch game</string>
     <string name="game_launch_file">Launch file</string>
+    <string name="game_winlator_launch">Launch Winlator shortcut</string>
+    <string name="game_winlator_launch_summary">Open an existing shortcut in Winlator (no graphics/runtime parameters sent)</string>
     <string name="game_launch_file_auto_summary">Auto - choose a launch file manually if startup fails</string>
     <string name="game_remove_quick_launch">Remove from quick launch</string>
     <string name="game_add_quick_launch">Add to quick launch</string>
@@ -418,16 +420,37 @@
     <string name="engine_settings_winlator_container_name_summary">Empty = auto; container ID takes precedence over the name</string>
     <string name="engine_settings_winlator_graphics_driver_title">Graphics driver</string>
     <string name="engine_settings_winlator_dxwrapper_title">DX wrapper</string>
-    <string name="engine_settings_winlator_wined3d_container">WineD3D (container renderer)</string>
-    <string name="engine_settings_winlator_wined3d_gl">WineD3D + OpenGL</string>
-    <string name="engine_settings_winlator_wined3d_gdi">WineD3D + GDI</string>
+    <string name="engine_settings_winlator_wined3d_renderer_title">WineD3D renderer</string>
+    <string name="engine_settings_winlator_audio_driver_title">Audio driver</string>
+    <string name="engine_settings_winlator_env_vars_title">Custom environment variables</string>
+    <string name="engine_settings_winlator_env_vars_summary">Space-separated K=V, appended to the container environment</string>
+    <string name="engine_settings_winlator_win_component_builtin">Builtin (Wine)</string>
+    <string name="engine_settings_winlator_win_component_native">Native (Windows)</string>
+    <string name="engine_settings_winlator_win_component_unknown">Unknown component</string>
+    <string name="engine_settings_winlator_win_component_note">Builtin uses Wine\'s own implementation; native uses the Windows components installed in the container. Choosing \"follow container config\" sends no value for that item and lets Winlator decide; items marked \"no adjustment needed\" can stay at their default. Restart the game after changes.</string>
+    <string name="engine_settings_winlator_win_component_direct3d">D3D runtime (direct3d)</string>
+    <string name="engine_settings_winlator_win_component_directsound">Sound playback (directsound)</string>
+    <string name="engine_settings_winlator_win_component_directmusic">Music playback (directmusic)</string>
+    <string name="engine_settings_winlator_win_component_directshow">Video decoding (directshow)</string>
+    <string name="engine_settings_winlator_win_component_directplay">Communications (directplay)</string>
+    <string name="engine_settings_winlator_win_component_xaudio">XAudio runtime (audio fix)</string>
+    <string name="engine_settings_winlator_win_component_vcrun2005">Visual C++ 2005</string>
+    <string name="engine_settings_winlator_win_component_vcrun2010">VC++ 2010 runtime (no adjustment needed)</string>
+    <string name="engine_settings_winlator_win_component_wmdecoder">Windows Media decoder (no adjustment needed)</string>
+    <string name="engine_settings_winlator_shortcut_title">Winlator shortcut</string>
+    <string name="engine_settings_winlator_shortcut_summary">Empty = match the launch file name; enter the shortcut name shown in Winlator (without .desktop)</string>
+    <string name="engine_settings_winlator_shortcut_auto">Auto (launch file name)</string>
+    <string name="engine_settings_winlator_shortcut_container_id_title">Shortcut container ID</string>
+    <string name="engine_settings_winlator_shortcut_container_id_summary">Container ID used for shortcut launch; 0 or empty = container 1</string>
+    <string name="engine_settings_winlator_shortcut_container_default">Container 1 (default)</string>
+    <string name="engine_settings_winlator_shortcut_note">Shortcut launch only opens an existing .desktop in Winlator; it sends no graphics/runtime parameters and writes no container config. When the name is empty it falls back to the launch file name or the game title; multiple containers need an explicit ID.</string>
     <string name="engine_settings_winlator_screen_size_title">Resolution</string>
     <string name="engine_settings_winlator_lc_all_title">Locale (LC_ALL)</string>
     <string name="engine_settings_winlator_tz_title">Time zone (TZ)</string>
     <string name="engine_settings_winlator_box64_preset_title">Box64 preset</string>
     <string name="engine_settings_winlator_save_title">Write to container config</string>
     <string name="engine_settings_winlator_save_summary">Persist these parameters into the Winlator container config (save=true) instead of this session only</string>
-    <string name="engine_settings_winlator_note">Applies only to games launched through external Winlator (YU-RIS / CatSystem2 / manually added PC games). The parameters are sent when jumping; empty items follow the container config. Explicit WineD3D + OpenGL/GDI presets replace the entire WineD3D config; other sub-options use defaults. Enabling Write to container config also persists the preset.</string>
+    <string name="engine_settings_winlator_note">Applies only to games launched through external Winlator (YU-RIS / CatSystem2 / manually added PC games). The parameters are sent when jumping; empty items follow the container config. When DX wrapper is WineD3D you can pick its renderer, which replaces the entire container WineD3D config; other sub-options use defaults. Enabling Write to container config also persists these parameters.</string>
     <string name="engine_settings_scoped_save_dir">Isolated save directory</string>
     <string name="engine_settings_skip_startup_dialogs">Block game launch pop-ups</string>
     <string name="engine_settings_skip_startup_dialogs_summary">Block repeated pop-ups before each game launch and enter the game directly</string>

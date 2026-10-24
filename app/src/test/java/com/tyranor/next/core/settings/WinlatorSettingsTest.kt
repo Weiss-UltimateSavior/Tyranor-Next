@@ -21,17 +21,73 @@ class WinlatorSettingsTest {
         assertEquals("", EngineSettingsStore.normalizeWinlatorGraphicsDriver("auto"))
     }
 
-    /** 接受现有 wrapper 与 GL/GDI 预设，并将未知值归一回跟随容器。 */
+    /** 存储值只接受 `dxvk` / `wined3d`；旧版 GL/GDI 预设由 [EngineSettingsStore.winlatorLegacyRenderer] 迁移。 */
     @Test
-    fun dxWrapperAcceptsKnownWrappersAndRendererPresets() {
+    fun dxWrapperAcceptsOnlyDxvkAndWineD3d() {
         assertEquals("dxvk", EngineSettingsStore.normalizeWinlatorDxWrapper("DXVK"))
         assertEquals("wined3d", EngineSettingsStore.normalizeWinlatorDxWrapper("wined3d"))
-        assertEquals("wined3d_gl", EngineSettingsStore.normalizeWinlatorDxWrapper(" WINED3D_GL "))
-        assertEquals("wined3d_gdi", EngineSettingsStore.normalizeWinlatorDxWrapper(" WINED3D_GDI "))
         assertEquals("", EngineSettingsStore.normalizeWinlatorDxWrapper(null))
-        assertEquals("", EngineSettingsStore.normalizeWinlatorDxWrapper("wined3d_vulkan"))
         assertEquals("", EngineSettingsStore.normalizeWinlatorDxWrapper("vkd3d"))
         assertEquals("", EngineSettingsStore.normalizeWinlatorDxWrapper("auto"))
+        // 旧预设不再作为存储值写出，归一为空串；读入迁移见 winlatorLegacyRenderer。
+        assertEquals("", EngineSettingsStore.normalizeWinlatorDxWrapper("WINED3D_GL"))
+        assertEquals("", EngineSettingsStore.normalizeWinlatorDxWrapper("wined3d_gdi"))
+    }
+
+    /** 旧版 GL/GDI 预设只作读入兼容：拆成 wrapper=wined3d + 对应渲染器。 */
+    @Test
+    fun legacyRendererPresetsMapToWineD3dRenderer() {
+        assertEquals("gl", EngineSettingsStore.winlatorLegacyRenderer(" WINED3D_GL "))
+        assertEquals("gdi", EngineSettingsStore.winlatorLegacyRenderer("wined3d_gdi"))
+        assertEquals(null, EngineSettingsStore.winlatorLegacyRenderer("wined3d"))
+        assertEquals(null, EngineSettingsStore.winlatorLegacyRenderer("dxvk"))
+        assertEquals(null, EngineSettingsStore.winlatorLegacyRenderer(null))
+    }
+
+    /** 渲染器 / 音频驱动仅接受固定白名单，未知值不下发。 */
+    @Test
+    fun rendererAndAudioDriverOnlyAcceptWhitelistedValues() {
+        assertEquals("vulkan", EngineSettingsStore.normalizeWinlatorWined3dRenderer(" Vulkan "))
+        assertEquals("gdi", EngineSettingsStore.normalizeWinlatorWined3dRenderer("GDI"))
+        assertEquals("", EngineSettingsStore.normalizeWinlatorWined3dRenderer("opengl"))
+        assertEquals("", EngineSettingsStore.normalizeWinlatorWined3dRenderer(null))
+
+        assertEquals("pulseaudio", EngineSettingsStore.normalizeWinlatorAudioDriver(" PulseAudio "))
+        assertEquals("alsa", EngineSettingsStore.normalizeWinlatorAudioDriver("alsa"))
+        assertEquals("", EngineSettingsStore.normalizeWinlatorAudioDriver("oss"))
+    }
+
+    /** 环境变量只保留含非空键的 K=V，其余 token 丢弃。 */
+    @Test
+    fun envVarsKeepOnlyValidKeyValueTokens() {
+        assertEquals("A=1 B=2", EngineSettingsStore.normalizeWinlatorEnvVars(" A=1  bad  B=2 "))
+        assertEquals("", EngineSettingsStore.normalizeWinlatorEnvVars("   "))
+        assertEquals("", EngineSettingsStore.normalizeWinlatorEnvVars("=x"))
+        assertEquals("", EngineSettingsStore.normalizeWinlatorEnvVars(null))
+        assertEquals(true, EngineSettingsStore.isValidWinlatorEnvVars("A=1 B=2"))
+        assertEquals(false, EngineSettingsStore.isValidWinlatorEnvVars("A=1 bad"))
+    }
+
+    /** 组件紧凑串按固定顺序归一，单游戏覆盖额外保留「跟随容器」哨兵。 */
+    @Test
+    fun winComponentsNormalizeAndMerge() {
+        assertEquals(
+            "direct3d=1,xaudio=0",
+            EngineSettingsStore.normalizeWinlatorWinComponents("xaudio=0,bad=1,direct3d=1"),
+        )
+        assertEquals(
+            "direct3d=container,directsound=1",
+            EngineSettingsStore.normalizeWinlatorWinComponentsOverride("directsound=1,direct3d=container"),
+        )
+        assertEquals(
+            "xaudio=1",
+            EngineSettingsStore.mergeWinlatorWinComponents(
+                "direct3d=1,xaudio=0",
+                "direct3d=container,xaudio=1",
+            ),
+        )
+        assertEquals("", EngineSettingsStore.mergeWinlatorWinComponents("direct3d=1", ""))
+        assertEquals("direct3d=1", EngineSettingsStore.mergeWinlatorWinComponents("direct3d=1", null))
     }
 
     /** Box64 预设接受内置名称与 CUSTOM 编号，未知名称不下发。 */
@@ -92,7 +148,7 @@ class WinlatorSettingsTest {
         assertEquals(global, EffectiveEngineSettings.mergeWinlator(global, null))
     }
 
-    /** 单游戏快照保留 GDI 选择、显式空值与 save，缺失字段仍表示继承。 */
+    /** 单游戏快照保留显式空值与 save，缺失字段仍表示继承；旧 GL/GDI 预设读入即迁移。 */
     @Test
     fun perGameOverrideSnapshotMapsFlatKeys() {
         val json = org.json.JSONObject()
@@ -103,10 +159,24 @@ class WinlatorSettingsTest {
         val override = PerGameSettingsStore.toWinlatorOverride(json)
 
         assertEquals("2", override?.containerId)
-        assertEquals("wined3d_gdi", override?.dxwrapper)
+        // 旧预设迁移为 wrapper + renderer，不再以 wined3d_gdi 形式落到运行时。
+        assertEquals("wined3d", override?.dxwrapper)
+        assertEquals("gdi", override?.wined3dRenderer)
         assertEquals("", override?.screenSize)
         assertEquals(true, override?.save)
         assertEquals(null, override?.containerName)
+    }
+
+    /** 显式渲染器覆盖优先于旧预设推导。 */
+    @Test
+    fun explicitRendererWinsOverLegacyPreset() {
+        val json = org.json.JSONObject()
+            .put(PerGameSettingsStore.F_WINLATOR_DXWRAPPER, "wined3d_gl")
+            .put(PerGameSettingsStore.F_WINLATOR_WINED3D_RENDERER, "vulkan")
+        val override = PerGameSettingsStore.toWinlatorOverride(json)
+
+        assertEquals("wined3d", override?.dxwrapper)
+        assertEquals("vulkan", override?.wined3dRenderer)
     }
 
     /** 语言环境保留白名单中的规范拼写，其它值归一为空串。 */
@@ -135,23 +205,58 @@ class WinlatorSettingsTest {
         assertEquals("", defaults.containerName)
         assertEquals("", defaults.graphicsDriver)
         assertEquals("", defaults.dxwrapper)
+        assertEquals("", defaults.wined3dRenderer)
         assertEquals("", defaults.screenSize)
         assertEquals("", defaults.lcAll)
         assertEquals("", defaults.tz)
         assertEquals("", defaults.box64Preset)
+        assertEquals("", defaults.winComponents)
+        assertEquals("", defaults.audioDriver)
+        assertEquals("", defaults.envVars)
         assertEquals(false, defaults.save)
     }
 
-    /** 缺失覆盖继承全局；显式空值、旧 wrapper 与新预设保持各自语义。 */
+    /** 新参数按「缺失继承 / 显式空值覆盖」规则合并，组件串按组件粒度合并。 */
+    @Test
+    fun mergeWinlatorMergesNewParameters() {
+        val global = EngineSettingsStore.Winlator(
+            dxwrapper = "wined3d",
+            wined3dRenderer = "gdi",
+            winComponents = "direct3d=1,xaudio=0",
+            audioDriver = "alsa",
+            envVars = "A=1",
+        )
+        val merged = EffectiveEngineSettings.mergeWinlator(
+            global,
+            WinlatorOverride(
+                wined3dRenderer = "",                 // 显式跟随容器
+                winComponents = "direct3d=container",
+                audioDriver = "PULSEAUDIO",
+                envVars = "",
+            ),
+        )
+
+        assertEquals("wined3d", merged.dxwrapper)
+        assertEquals("", merged.wined3dRenderer)
+        assertEquals("xaudio=0", merged.winComponents)
+        assertEquals("pulseaudio", merged.audioDriver)
+        assertEquals("", merged.envVars)
+
+        val inherited = EffectiveEngineSettings.mergeWinlator(global, WinlatorOverride())
+        assertEquals("gdi", inherited.wined3dRenderer)
+        assertEquals("direct3d=1,xaudio=0", inherited.winComponents)
+        assertEquals("alsa", inherited.audioDriver)
+        assertEquals("A=1", inherited.envVars)
+    }
+
+    /** 缺失覆盖继承全局；显式空值、旧 wrapper 迁移与新预设保持各自语义。 */
     @Test
     fun dxWrapperOverrideDistinguishesInheritanceContainerAndExplicitPresets() {
-        val global = EngineSettingsStore.Winlator(dxwrapper = "wined3d_gdi")
+        val global = EngineSettingsStore.Winlator(dxwrapper = "wined3d", wined3dRenderer = "gdi")
         val overrides = listOf(
-            null to "wined3d_gdi",
+            null to "wined3d",
             "" to "",
             "wined3d" to "wined3d",
-            " WINED3D_GL " to "wined3d_gl",
-            "wined3d_gdi" to "wined3d_gdi",
             "dxvk" to "dxvk",
             "invalid" to "",
         )

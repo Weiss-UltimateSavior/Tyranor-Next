@@ -179,7 +179,7 @@
     <string name="engine_settings_yuris_hint">该游戏由外置 Winlator 运行；启动程序可在游戏详情「启动文件」中调整。存档位于游戏目录 save/，已纳入统一存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
     <string name="engine_settings_pc_hint">该游戏经外置 Winlator 运行；启动程序可在游戏详情「启动文件」中切换。无存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
     <string name="engine_settings_android_hint">该游戏为已安装的 Android 应用；从游戏库启动将直接跳转打开该应用。无存档管理与引擎设置。</string>
-    <string name="engine_settings_winlator_per_game_note">覆盖仅对本游戏生效；每项可单独切回「跟随全局」。留空（跟随容器配置）表示不下发该参数，交由 Winlator 按容器配置处理。 显式选择 WineD3D + OpenGL/GDI 会替换整项 WineD3D 配置，其它子参数使用默认值；开启「写入容器配置」时也会保存该预设。</string>
+    <string name="engine_settings_winlator_per_game_note">覆盖仅对本游戏生效；每项可单独切回「跟随全局」。留空（跟随容器配置）表示不下发该参数，交由 Winlator 按容器配置处理。「图形加速」选 WineD3D 时可再选渲染器，该渲染器会整项替换容器的 WineD3D 配置，其它子参数使用默认值；开启「写入容器配置」时也会保存这些参数。</string>
     <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
     <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
     <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
@@ -211,6 +211,8 @@
     <string name="game_cover_set_failed">封面设置失败</string>
     <string name="game_launch_action">启动游戏</string>
     <string name="game_launch_file">启动文件</string>
+    <string name="game_winlator_launch">Winlator 快捷方式启动</string>
+    <string name="game_winlator_launch_summary">打开 Winlator 中已存在的快捷方式（不下发图形/运行参数）</string>
     <string name="game_launch_file_auto_summary">自动 - 如有错误请手动选择启动文件</string>
     <string name="game_remove_quick_launch">移除快捷启动</string>
     <string name="game_add_quick_launch">添加快捷启动</string>
@@ -411,23 +413,44 @@
     <string name="engine_settings_fvp_font_hint">仅对 FVP 生效；TTC 使用首个字面；缺字由系统字体回退兜底；修改后需重新进入游戏。</string>
     <string name="engine_settings_fvp_font_import_failed">字体导入失败：请选择 ttf/otf/ttc 文件</string>
     <string name="engine_settings_winlator_title">Winlator外置启动</string>
-    <string name="engine_settings_winlator_follow_container">跟随容器配置</string>
+    <string name="engine_settings_winlator_follow_container">跟随容器</string>
     <string name="engine_settings_winlator_container_id_title">容器 ID</string>
     <string name="engine_settings_winlator_container_id_summary">0 或留空 = 自动（最近使用 / 唯一 / 第一个容器）</string>
     <string name="engine_settings_winlator_container_name_title">容器名</string>
     <string name="engine_settings_winlator_container_name_summary">留空 = 自动；容器 ID 优先于容器名</string>
     <string name="engine_settings_winlator_graphics_driver_title">图形驱动</string>
     <string name="engine_settings_winlator_dxwrapper_title">图形加速</string>
-    <string name="engine_settings_winlator_wined3d_container">WineD3D（跟随容器渲染器）</string>
-    <string name="engine_settings_winlator_wined3d_gl">WineD3D + OpenGL</string>
-    <string name="engine_settings_winlator_wined3d_gdi">WineD3D + GDI</string>
+    <string name="engine_settings_winlator_wined3d_renderer_title">WineD3D 渲染器</string>
+    <string name="engine_settings_winlator_audio_driver_title">音频驱动</string>
+    <string name="engine_settings_winlator_env_vars_title">自定义环境变量</string>
+    <string name="engine_settings_winlator_env_vars_summary">空格分隔 K=V，追加到容器环境</string>
+    <string name="engine_settings_winlator_win_component_builtin">内置（Wine）</string>
+    <string name="engine_settings_winlator_win_component_native">外置（Windows）</string>
+    <string name="engine_settings_winlator_win_component_unknown">未知组件</string>
+    <string name="engine_settings_winlator_win_component_note">内置由 Wine 自带实现；外置使用容器内的 Windows 组件。选「跟随容器」时不下发该项，交由 Winlator 处理；标注「无需调整」的项保持默认即可。修改后需退出当前游戏并重新启动；若仍未生效，请重启 Winlator。</string>
+    <string name="engine_settings_winlator_win_component_direct3d">D3D 运行库（direct3d）</string>
+    <string name="engine_settings_winlator_win_component_directsound">声音播放（directsound）</string>
+    <string name="engine_settings_winlator_win_component_directmusic">音乐播放（directmusic）</string>
+    <string name="engine_settings_winlator_win_component_directshow">视频解码（directshow）</string>
+    <string name="engine_settings_winlator_win_component_directplay">通讯工具（directplay）</string>
+    <string name="engine_settings_winlator_win_component_xaudio">XAudio 运行库（修复程序音效）</string>
+    <string name="engine_settings_winlator_win_component_vcrun2005">Visual C++ 2005</string>
+    <string name="engine_settings_winlator_win_component_vcrun2010">VC++ 2010 运行库（无需调整）</string>
+    <string name="engine_settings_winlator_win_component_wmdecoder">Windows Media 解码器（无需调整）</string>
+    <string name="engine_settings_winlator_shortcut_title">Winlator 快捷方式</string>
+    <string name="engine_settings_winlator_shortcut_summary">留空 = 按启动文件名自动匹配；填写 Winlator 中显示的快捷方式名（不含 .desktop）</string>
+    <string name="engine_settings_winlator_shortcut_auto">自动匹配（按启动文件名）</string>
+    <string name="engine_settings_winlator_shortcut_container_id_title">快捷方式容器 ID</string>
+    <string name="engine_settings_winlator_shortcut_container_id_summary">快捷方式启动使用的容器 ID；0 或留空按容器 1</string>
+    <string name="engine_settings_winlator_shortcut_container_default">默认容器 1</string>
+    <string name="engine_settings_winlator_shortcut_note">快捷方式启动只打开 Winlator 里已存在的 .desktop，不下发图形/运行参数，也不写回容器配置。名称留空时按启动文件名或游戏标题推导；多容器需明确填写容器 ID。</string>
     <string name="engine_settings_winlator_screen_size_title">分辨率</string>
     <string name="engine_settings_winlator_lc_all_title">语言环境（LC_ALL）</string>
     <string name="engine_settings_winlator_tz_title">时区（TZ）</string>
     <string name="engine_settings_winlator_box64_preset_title">Box64 预设</string>
     <string name="engine_settings_winlator_save_title">写入容器配置</string>
     <string name="engine_settings_winlator_save_summary">把本次参数写入 Winlator 容器配置（save=true），使其长期生效</string>
-    <string name="engine_settings_winlator_note">仅对经外置 Winlator 启动的游戏生效（YU-RIS / CatSystem2 / 手动添加的 PC）；参数在跳转时下发，留空项跟随容器配置。 显式选择 WineD3D + OpenGL/GDI 会替换整项 WineD3D 配置，其它子参数使用默认值；开启「写入容器配置」时也会保存该预设。</string>
+    <string name="engine_settings_winlator_note">仅对经外置 Winlator 启动的游戏生效（YU-RIS / CatSystem2 / 手动添加的 PC）；参数在跳转时下发，留空项跟随容器配置。「图形加速」选 WineD3D 时可再选渲染器，该渲染器会整项替换容器的 WineD3D 配置，其它子参数使用默认值；开启「写入容器配置」时也会保存这些参数。</string>
     <string name="engine_settings_scoped_save_dir">独立存档目录</string>
     <string name="engine_settings_skip_startup_dialogs">屏蔽游戏启动弹窗</string>
     <string name="engine_settings_skip_startup_dialogs_summary">屏蔽每次进入游戏前的重复弹窗，直接进入游戏</string>

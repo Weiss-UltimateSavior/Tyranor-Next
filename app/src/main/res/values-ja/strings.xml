@@ -179,7 +179,7 @@
     <string name="engine_settings_yuris_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブはゲームフォルダーの save/ に保存され、ランチャーの統一セーブ管理で扱えます。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
     <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理はありません。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
     <string name="engine_settings_android_hint">このゲームはインストール済みの Android アプリです。ライブラリから起動するとアプリが直接開きます。セーブ管理とエンジン設定はありません。</string>
-    <string name="engine_settings_winlator_per_game_note">上書きはこのゲームにのみ適用されます。各項目は「グローバルに従う」に戻せます。空欄（コンテナ設定に従う）はそのパラメータを送信せず、Winlator のコンテナ設定に委ねます。 WineD3D + OpenGL/GDI を明示的に選ぶと WineD3D 設定全体が置き換わり、他の詳細項目は既定値になります。「コンテナ設定に書き込む」が有効なら、このプリセットも保存されます。</string>
+    <string name="engine_settings_winlator_per_game_note">上書きはこのゲームにのみ適用されます。各項目は「グローバルに従う」に戻せます。空欄（コンテナ設定に従う）はそのパラメータを送信せず、Winlator のコンテナ設定に委ねます。「グラフィックアクセラレーション」が WineD3D のときはレンダラーを選択でき、WineD3D 設定全体が置き換わります（他の詳細項目は既定値）。「コンテナ設定に書き込む」が有効なら、これらのパラメータも保存されます。</string>
     <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
     <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
     <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
@@ -211,6 +211,8 @@
     <string name="game_cover_set_failed">カバー画像の設定に失敗しました</string>
     <string name="game_launch_action">ゲームを起動</string>
     <string name="game_launch_file">起動ファイル</string>
+    <string name="game_winlator_launch">Winlator ショートカットで起動</string>
+    <string name="game_winlator_launch_summary">Winlator に既存のショートカットを開く（グラフィック/実行パラメータは送信しません）</string>
     <string name="game_launch_file_auto_summary">自動 - 問題がある場合は手動で起動ファイルを選択</string>
     <string name="game_remove_quick_launch">クイック起動から削除</string>
     <string name="game_add_quick_launch">クイック起動に追加</string>
@@ -418,16 +420,37 @@
     <string name="engine_settings_winlator_container_name_summary">空欄 = 自動。コンテナ ID がコンテナ名より優先されます</string>
     <string name="engine_settings_winlator_graphics_driver_title">グラフィックドライバ</string>
     <string name="engine_settings_winlator_dxwrapper_title">グラフィックアクセラレーション</string>
-    <string name="engine_settings_winlator_wined3d_container">WineD3D（コンテナのレンダラー）</string>
-    <string name="engine_settings_winlator_wined3d_gl">WineD3D + OpenGL</string>
-    <string name="engine_settings_winlator_wined3d_gdi">WineD3D + GDI</string>
+    <string name="engine_settings_winlator_wined3d_renderer_title">WineD3D レンダラー</string>
+    <string name="engine_settings_winlator_audio_driver_title">音声ドライバ</string>
+    <string name="engine_settings_winlator_env_vars_title">カスタム環境変数</string>
+    <string name="engine_settings_winlator_env_vars_summary">スペース区切りの K=V。コンテナ環境に追加されます</string>
+    <string name="engine_settings_winlator_win_component_builtin">内蔵（Wine）</string>
+    <string name="engine_settings_winlator_win_component_native">外付け（Windows）</string>
+    <string name="engine_settings_winlator_win_component_unknown">不明なコンポーネント</string>
+    <string name="engine_settings_winlator_win_component_note">「内蔵」は Wine 自身の実装、「外付け」はコンテナ内の Windows コンポーネントを使用します。「コンテナ設定に従う」の項目は送信せず Winlator に委ねます。「調整不要」の項目は既定のままで問題ありません。変更後はゲームの再起動が必要です。</string>
+    <string name="engine_settings_winlator_win_component_direct3d">D3D ランタイム（direct3d）</string>
+    <string name="engine_settings_winlator_win_component_directsound">サウンド再生（directsound）</string>
+    <string name="engine_settings_winlator_win_component_directmusic">音楽再生（directmusic）</string>
+    <string name="engine_settings_winlator_win_component_directshow">動画デコード（directshow）</string>
+    <string name="engine_settings_winlator_win_component_directplay">通信ツール（directplay）</string>
+    <string name="engine_settings_winlator_win_component_xaudio">XAudio ランタイム（音声修正）</string>
+    <string name="engine_settings_winlator_win_component_vcrun2005">Visual C++ 2005</string>
+    <string name="engine_settings_winlator_win_component_vcrun2010">VC++ 2010 ランタイム（調整不要）</string>
+    <string name="engine_settings_winlator_win_component_wmdecoder">Windows Media デコーダー（調整不要）</string>
+    <string name="engine_settings_winlator_shortcut_title">Winlator ショートカット</string>
+    <string name="engine_settings_winlator_shortcut_summary">空欄 = 起動ファイル名で自動照合。Winlator に表示されるショートカット名を入力（.desktop は不要）</string>
+    <string name="engine_settings_winlator_shortcut_auto">自動（起動ファイル名）</string>
+    <string name="engine_settings_winlator_shortcut_container_id_title">ショートカットのコンテナ ID</string>
+    <string name="engine_settings_winlator_shortcut_container_id_summary">ショートカット起動に使うコンテナ ID。0 または空欄 = コンテナ 1</string>
+    <string name="engine_settings_winlator_shortcut_container_default">既定のコンテナ 1</string>
+    <string name="engine_settings_winlator_shortcut_note">ショートカット起動は Winlator に既存の .desktop を開くだけで、グラフィック/実行パラメータを送信せず、コンテナ設定も書き換えません。名前が空欄の場合は起動ファイル名またはゲームタイトルから推測します。複数コンテナを使う場合は ID を明示してください。</string>
     <string name="engine_settings_winlator_screen_size_title">解像度</string>
     <string name="engine_settings_winlator_lc_all_title">ロケール（LC_ALL）</string>
     <string name="engine_settings_winlator_tz_title">タイムゾーン（TZ）</string>
     <string name="engine_settings_winlator_box64_preset_title">Box64 プリセット</string>
     <string name="engine_settings_winlator_save_title">コンテナ設定に書き込む</string>
     <string name="engine_settings_winlator_save_summary">今回のパラメータを Winlator のコンテナ設定に書き込み（save=true）、恒久的に適用します</string>
-    <string name="engine_settings_winlator_note">外部 Winlator で起動するゲーム（YU-RIS / CatSystem2 / 手動追加の PC）にのみ適用されます。パラメータはジャンプ時に送信され、空欄の項目はコンテナ設定に従います。 WineD3D + OpenGL/GDI を明示的に選ぶと WineD3D 設定全体が置き換わり、他の詳細項目は既定値になります。「コンテナ設定に書き込む」が有効なら、このプリセットも保存されます。</string>
+    <string name="engine_settings_winlator_note">外部 Winlator で起動するゲーム（YU-RIS / CatSystem2 / 手動追加の PC）にのみ適用されます。パラメータはジャンプ時に送信され、空欄の項目はコンテナ設定に従います。「グラフィックアクセラレーション」が WineD3D のときはレンダラーを選択でき、WineD3D 設定全体が置き換わります（他の詳細項目は既定値）。「コンテナ設定に書き込む」が有効なら、これらのパラメータも保存されます。</string>
     <string name="engine_settings_scoped_save_dir">個別セーブフォルダ</string>
     <string name="engine_settings_skip_startup_dialogs">ゲーム起動時のポップアップを非表示</string>
     <string name="engine_settings_skip_startup_dialogs_summary">ゲームを起動するたびに表示される重複ポップアップを非表示にして、すぐにゲームを開始します</string>

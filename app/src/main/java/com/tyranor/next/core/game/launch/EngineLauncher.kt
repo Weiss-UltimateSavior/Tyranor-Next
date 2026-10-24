@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.launch
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -997,10 +998,14 @@ object EngineLauncher {
                 containerName = winlator.containerName,
                 graphicsDriver = winlator.graphicsDriver,
                 dxwrapper = winlator.dxwrapper,
+                wined3dRenderer = winlator.wined3dRenderer,
                 screenSize = winlator.screenSize,
                 lcAll = winlator.lcAll,
                 tz = winlator.tz,
                 box64Preset = winlator.box64Preset,
+                winComponents = winlator.winComponents,
+                audioDriver = winlator.audioDriver,
+                envVars = winlator.envVars,
                 save = winlator.save,
             ),
         )
@@ -1010,6 +1015,68 @@ object EngineLauncher {
         }
         return LaunchResult.Failure.ExternalEmulatorFailed(result)
     }
+
+    /**
+     * 打开本游戏在 Winlator 中**已存在的快捷方式**（不重新下发 exe/参数、不写容器配置）。
+     *
+     * 快捷方式文件在 Winlator 私有目录，路径按 Winlator 的固定结构构造：
+     * `/data/data/com.winlator/files/rootfs/home/xuser-<containerId>/.wine/drive_c/users/xuser/Desktop/<name>.desktop`。
+     * 容器 ID / 名称在这里的 IO 协程内读取（避免 UI 线程同步读设置）；
+     * 容器未填时按 Winlator 默认首个容器（1），名称留空时退到启动文件名（无扩展名）、游戏标题。
+     *
+     * 启动优先级低于 [launch]（引擎设置启动）：只在用户显式选择该入口时调用。
+     */
+    // Winlator 的快捷方式固定放在它自己的私有目录，路径只能按字面量拼，无法用公开 API 推导。
+    @SuppressLint("SdCardPath")
+    suspend fun openWinlatorShortcut(
+        context: Context,
+        game: ScanGame,
+    ): LaunchResult =
+        withContext(Dispatchers.IO) {
+            val target = ExternalEmulatorRegistry.forEngine(game.engine)
+                ?.takeIf { it.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL }
+                ?: return@withContext LaunchResult.Failure.StartFailed(null)
+            val path = resolveGameDirectory(context, game)
+            // 快捷方式启动使用独立的容器 ID；未填时按 Winlator 默认容器 1。
+            val resolvedContainerId = PerGameSettingsStore.getStr(
+                context,
+                game.uri,
+                PerGameSettingsStore.F_WINLATOR_SHORTCUT_CONTAINER_ID,
+            )?.trim()?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+            val explicitName = PerGameSettingsStore.getStr(
+                context,
+                game.uri,
+                PerGameSettingsStore.F_WINLATOR_SHORTCUT,
+            )?.trim()
+                ?.removeSuffix(".desktop")
+                ?.takeIf { it.isNotEmpty() }
+            val exeBase = path
+                ?.let { YurisLaunchFiles.resolveExeName(game, it) }
+                ?.substringBeforeLast('.')
+                ?.takeIf { it.isNotBlank() }
+            // 兜底值也可能是带分隔符的游戏标题：先选最终名称，再统一把斜杠换成下划线，
+            // 避免拼出 Desktop/A/B.desktop 这样的子路径。
+            val name = (explicitName ?: exeBase ?: game.title)
+                .replace('/', '_')
+                .replace('\\', '_')
+                .trim()
+                .ifEmpty { "shortcut" }
+            val shortcutPath = "/data/data/${WinlatorContract.PACKAGE_NAME}/files/rootfs/home/xuser-$resolvedContainerId" +
+                "/.wine/drive_c/users/xuser/Desktop/$name.desktop"
+            val result = ExternalEmulatorLauncher.launchWinlatorShortcut(
+                context = context,
+                target = target,
+                containerId = resolvedContainerId,
+                shortcutPath = shortcutPath,
+                launchId = game.uri,
+            )
+            if (result.success) {
+                GameLibraryFacade.recordRecentGame(context, game)
+                LaunchResult.Success
+            } else {
+                LaunchResult.Failure.ExternalEmulatorFailed(result)
+            }
+        }
 
     /**
      * Siglus 启动：真实路径 + 语言覆盖 + 标题回写定位哈希。
