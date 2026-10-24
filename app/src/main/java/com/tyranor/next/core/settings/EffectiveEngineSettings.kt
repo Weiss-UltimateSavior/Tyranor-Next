@@ -193,16 +193,26 @@ object EffectiveEngineSettings {
      *
      * 覆盖字段带值即生效（""=显式不下发该参数，跟随容器配置）；字符串字段仍走各自的
      * 白名单/正则归一，非法覆盖值归一回空串而不是继承全局，避免全局与覆盖混搭出非法参数。
+     *
+     * 容器规则：`containerId` 与 `containerName` 同时存在时以 ID 为准；只覆盖名称时
+     * （`containerId == null` 且名称非空）会清除继承的全局 ID，否则 ID 优先会让名称覆盖失效。
      */
     fun mergeWinlator(
         global: EngineSettingsStore.Winlator,
         override: WinlatorOverride?,
     ): EngineSettingsStore.Winlator {
         if (override == null) return global
+        // 只覆盖容器名时不能再继承全局 ID：协议规定 container_id 优先于 container_name，
+        // 继承下来的 ID 会让逐游戏的名称覆盖失效。
+        val nameOnlyOverride = override.containerId == null && !override.containerName.isNullOrBlank()
         return global.copy(
-            containerId = override.containerId?.let {
-                it.trim().filter(Char::isDigit).toIntOrNull()?.coerceAtLeast(0) ?: 0
-            } ?: global.containerId,
+            containerId = when {
+                override.containerId != null ->
+                    override.containerId.trim().filter(Char::isDigit).toIntOrNull()?.coerceAtLeast(0) ?: 0
+
+                nameOnlyOverride -> 0
+                else -> global.containerId
+            },
             containerName = override.containerName?.trim() ?: global.containerName,
             graphicsDriver = override.graphicsDriver?.let {
                 EngineSettingsStore.normalizeWinlatorGraphicsDriver(it)

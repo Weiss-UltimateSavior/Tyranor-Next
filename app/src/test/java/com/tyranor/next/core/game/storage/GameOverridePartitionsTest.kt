@@ -152,6 +152,22 @@ class GameOverridePartitionsTest {
     }
 
     @Test
+    fun winlatorModeIsPartitionedIntoTyrano() {
+        // 运行模式没有独立分区，必须显式建模进 tyrano；
+        // 只靠「未识别键兜底」会在未来收紧分区时静默丢键，把玩家的模式选择重置成推断值。
+        assertEquals(PerGameSettingsStore.F_WINLATOR_MODE, GameOverridePartitions.KEY_WINLATOR_MODE)
+        assertTrue(
+            "运行模式必须显式属于 tyrano 分区",
+            GameOverridePartitions.KEY_WINLATOR_MODE in GameOverridePartitions.TYRANO_KEYS,
+        )
+
+        val blob = JSONObject().put(PerGameSettingsStore.F_WINLATOR_MODE, PerGameSettingsStore.WINLATOR_MODE_CONTAINER)
+        val row = GameOverridePartitions.split("/games/winlator", blob, 1L)
+        assertTrue(JSONObject(row.tyranoJson!!).has(PerGameSettingsStore.F_WINLATOR_MODE))
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+    }
+
+    @Test
     fun partitionKeysMatchPerGameSettingsStoreConstants() {
         // 字面量键集与 settings 层常量的契约约束（避免漂移）
         assertEquals(PerGameSettingsStore.F_ENGINE_VERSION, GameOverridePartitions.KEY_ENGINE_VERSION)

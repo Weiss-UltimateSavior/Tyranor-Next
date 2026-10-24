@@ -132,6 +132,10 @@ object PerGameSettingsStore {
     const val F_XSYS4_MSGSKIP_DELAY = "xsys4_msgskip_delay"
 
     // Winlator 外置启动（null=跟随全局；字符串 "" = 显式不下发该参数）
+    const val F_WINLATOR_MODE = "winlator_mode"
+    const val WINLATOR_MODE_GLOBAL = "global"
+    const val WINLATOR_MODE_CONTAINER = "container"
+    const val WINLATOR_MODE_CUSTOM = "custom"
     const val F_WINLATOR_CONTAINER_ID = "winlator_container_id"
     const val F_WINLATOR_CONTAINER_NAME = "winlator_container_name"
     const val F_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
@@ -298,6 +302,52 @@ object PerGameSettingsStore {
             recompile = boolOrNull(F_RENPY_RECOMPILE),
         )
         return override.takeIf { it != RenPyOverride() }
+    }
+
+    private val WINLATOR_OVERRIDE_FIELDS = listOf(
+        F_WINLATOR_GRAPHICS_DRIVER,
+        F_WINLATOR_DXWRAPPER,
+        F_WINLATOR_SCREEN_SIZE,
+        F_WINLATOR_LC_ALL,
+        F_WINLATOR_TZ,
+        F_WINLATOR_BOX64_PRESET,
+    )
+
+    /**
+     * 单游戏运行模式：global（默认）/ container / custom。
+     * 旧数据严格按 1.61 的 null / "" / 值语义迁移。
+     */
+    fun getWinlatorMode(context: Context, gameId: String): String = inferWinlatorMode(load(context, gameId))
+
+    /** [getWinlatorMode] 的纯函数部分：按 1.61 的 null / "" / 值语义推断模式，便于 JVM 回归。 */
+    internal fun inferWinlatorMode(json: JSONObject): String {
+        val mode = json.optString(F_WINLATOR_MODE, "")
+        if (mode == WINLATOR_MODE_GLOBAL || mode == WINLATOR_MODE_CONTAINER || mode == WINLATOR_MODE_CUSTOM) {
+            return mode
+        }
+        val presentParams = WINLATOR_OVERRIDE_FIELDS.filter { json.has(it) }
+        val hasNonEmptyParam = presentParams.any { json.optString(it).isNotEmpty() }
+        if (hasNonEmptyParam) return WINLATOR_MODE_CUSTOM
+        // 六个参数字段全空是「跟随容器」的强信号，必须优先于单独出现的容器字段判断：
+        // 这类记录在 1.61 里本来就走容器基线，若判成 custom 会把 save 继承成全局值。
+        if (presentParams.isNotEmpty()) {
+            return if (presentParams.size == WINLATOR_OVERRIDE_FIELDS.size) {
+                WINLATOR_MODE_CONTAINER
+            } else {
+                WINLATOR_MODE_CUSTOM
+            }
+        }
+        if (json.has(F_WINLATOR_CONTAINER_ID) || json.has(F_WINLATOR_CONTAINER_NAME)) {
+            return WINLATOR_MODE_CUSTOM
+        }
+        // save 是真实的逐游戏覆盖（仅「自定义」模式写入）：只有它一条的旧记录不能回落到全局，
+        // 否则会丢掉玩家原有的「写回容器配置」。六个参数字段全空 = 跟随容器的语义已在上方先行返回。
+        if (json.has(F_WINLATOR_SAVE)) return WINLATOR_MODE_CUSTOM
+        return WINLATOR_MODE_GLOBAL
+    }
+
+    fun setWinlatorMode(context: Context, gameId: String, mode: String) {
+        setStr(context, gameId, F_WINLATOR_MODE, mode)
     }
 
     /**

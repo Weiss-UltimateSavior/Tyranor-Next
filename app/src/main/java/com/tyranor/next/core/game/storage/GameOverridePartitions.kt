@@ -71,6 +71,8 @@ internal object GameOverridePartitions {
     const val KEY_RPG_SPEED_UP = "rpg_speed_up"
     const val KEY_RPG_FONT_SCALE = "rpg_font_scale"
     const val KEY_TY_SCOPED = "ty_scoped"
+    // Winlator 无独立分区：单游戏运行模式随 tyrano 分区持久化（与 PerGameSettingsStore.F_WINLATOR_MODE 锚定）
+    const val KEY_WINLATOR_MODE = "winlator_mode"
     const val KEY_RENPY_VERSION = "renpy_engine_version"
     // Siglus 无独立分区：语言覆盖随 tyrano 分区持久化（与 RPG Maker 会话键同策略）
     const val KEY_SIGLUS_LANGUAGE = "siglus_language"
@@ -131,7 +133,7 @@ internal object GameOverridePartitions {
     // v0 宿主与 v1/v2 宿主的逐游戏覆盖都在这一条 blob 里，显式建模，
     // 不依赖“未识别键兜底归入 tyrano”的 else 路径，防止未来收紧分区时丢键
     val TYRANO_KEYS: Set<String> = setOf(
-        KEY_TY_SCOPED, KEY_RPG_MAKER_MOD_ENABLED, KEY_RPG_SAVE_INTEROP,
+        KEY_TY_SCOPED, KEY_WINLATOR_MODE, KEY_RPG_MAKER_MOD_ENABLED, KEY_RPG_SAVE_INTEROP,
         KEY_RPG_LEGACY_RENDERER, KEY_RPG_MV_VERSION, KEY_RPG_MZ_VERSION,
         KEY_INPUT_PAD_ENABLED, KEY_INPUT_GAMEPAD_ENABLED, KEY_INPUT_PROFILE_ID,
         KEY_INPUT_LEGACY_MIGRATED,
