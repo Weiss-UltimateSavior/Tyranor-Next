@@ -234,11 +234,11 @@
     <string name="game_delete_title">删除游戏</string>
     <string name="game_delete_message">将移除「%1$s」的应用内记录、设置与缓存，不会删除游戏文件。</string>
     <string name="game_select_cover_source">选择封面来源</string>
-    <string name="game_cover_download_failed">封面下载失败</string>
     <string name="game_cover_no_match">未找到匹配结果</string>
     <string name="game_cover_search_title">搜索 %1$s 封面</string>
     <string name="game_cover_searching">正在搜索封面…</string>
-    <string name="game_cover_binding">正在绑定封面…</string>
+    <string name="game_cover_binding_in_progress">绑定中</string>
+    <string name="game_cover_binding_retry">重新下载</string>
     <string name="game_searching">搜索中…</string>
     <string name="game_search">搜索</string>
     <string name="game_no_preview">无预览</string>

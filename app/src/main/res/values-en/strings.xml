@@ -234,11 +234,11 @@
     <string name="game_delete_title">Delete game</string>
     <string name="game_delete_message">This removes the in-app record, settings, and cache for “%1$s”. It will not delete game files.</string>
     <string name="game_select_cover_source">Select cover source</string>
-    <string name="game_cover_download_failed">Cover download failed</string>
     <string name="game_cover_no_match">No matching results found</string>
     <string name="game_cover_search_title">Search %1$s covers</string>
     <string name="game_cover_searching">Searching covers…</string>
-    <string name="game_cover_binding">Applying cover…</string>
+    <string name="game_cover_binding_in_progress">Binding</string>
+    <string name="game_cover_binding_retry">Retry</string>
     <string name="game_searching">Searching…</string>
     <string name="game_search">Search</string>
     <string name="game_no_preview">No preview</string>

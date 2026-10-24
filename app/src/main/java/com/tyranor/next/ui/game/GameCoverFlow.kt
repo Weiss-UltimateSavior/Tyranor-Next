@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.tyranor.next.R
+import com.tyranor.next.core.cover.CoverBindingManager
 import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -145,6 +147,9 @@ private fun CoverFlowCard(
     modifier: Modifier = Modifier,
 ) {
     val cover by rememberCoverBitmap(game.coverUri)
+    val context = LocalContext.current
+    val bindingStates by CoverBindingManager.states.collectAsState()
+    val bindingState = bindingStates[game.uri]
     Box(
         modifier = modifier
             .clip(AppComponentShape)
@@ -169,6 +174,19 @@ private fun CoverFlowCard(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+        bindingState?.let { state ->
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = 0.28f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                CoverBindingProgress(
+                    state = state,
+                    onRetry = { CoverBindingManager.retry(game.uri) },
+                )
+            }
         }
     }
 }
