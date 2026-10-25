@@ -38,6 +38,7 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.RpgMakerRuntimeEnvironment
+import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
@@ -61,6 +62,10 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.DialogTextButton
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.LocalIndication
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
@@ -139,7 +144,44 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var winlatorContainerId by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_ID)) }
     var winlatorContainerName by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME)) }
     var winlatorGraphicsDriver by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER)) }
-    var winlatorDxwrapper by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_DXWRAPPER)) }
+    // 旧版内部预设（wined3d_gl/gdi）读入即拆成 wrapper + renderer，写回时只落新形态。
+    val winlatorStoredDxWrapper = remember(gid) {
+        PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_DXWRAPPER)
+    }
+    val winlatorLegacyRenderer = remember(gid) {
+        EngineSettingsStore.winlatorLegacyRenderer(winlatorStoredDxWrapper)
+    }
+    var winlatorDxwrapper by remember(gid) {
+        mutableStateOf(
+            if (winlatorLegacyRenderer != null) {
+                WinlatorContract.DXWRAPPER_WINED3D
+            } else {
+                winlatorStoredDxWrapper
+            },
+        )
+    }
+    var winlatorWined3dRenderer by remember(gid) {
+        mutableStateOf(
+            PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_WINED3D_RENDERER)
+                ?: winlatorLegacyRenderer,
+        )
+    }
+    var winlatorWinComponents by remember(gid) {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_WIN_COMPONENTS))
+    }
+    var winlatorAudioDriver by remember(gid) {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_AUDIO_DRIVER))
+    }
+    var winlatorEnvVars by remember(gid) {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_ENV_VARS))
+    }
+    // 快捷方式启动：只打开 Winlator 里已存在的 .desktop，容器 ID / 名称留空时按默认推导。
+    var winlatorShortcutContainerId by remember(gid) {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SHORTCUT_CONTAINER_ID))
+    }
+    var winlatorShortcut by remember(gid) {
+        mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SHORTCUT))
+    }
     var winlatorScreenSize by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE)) }
     var winlatorLcAll by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_LC_ALL)) }
     var winlatorTz by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_TZ)) }
@@ -381,7 +423,19 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val globalXs4FontMincho = EngineSettingsStore.getXs4FontMinchoPath(ctx)
     val globalXs4Joypad = EngineSettingsStore.getXs4Joypad(ctx)
     val globalXs4Msgskip = EngineSettingsStore.getXs4MsgskipDelay(ctx)
-    val globalWinlator = remember { EngineSettingsStore.loadWinlator(ctx) }
+    // 从「Winlator 全局设置」返回时只更新状态，让 Compose 重组刷新「跟随全局」文案；
+    // 不能用 recreate()，否则会丢掉页面上尚未保存的单游戏改动。
+    var globalWinlator by remember { mutableStateOf(EngineSettingsStore.loadWinlator(ctx)) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                globalWinlator = EngineSettingsStore.loadWinlator(ctx)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val globalPpssppVersion = EngineSettingsStore.getPpssppVersion(ctx)
     val globalWebShellPort = EngineSettingsStore.getWebShellPort(ctx)
     val ppssppVersionMap = ppssppVersionOptionsMap()
@@ -391,6 +445,9 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val winlatorLcAllMap = winlatorLcAllOptionsMap()
     val winlatorTimezoneMap = winlatorTimezoneOptionsMap()
     val winlatorBox64PresetMap = winlatorBox64PresetOptionsMap()
+    val winlatorWined3dRendererMap = winlatorWined3dRendererOptionsMap()
+    val winlatorWinComponentMap = winlatorWinComponentOptionsMap()
+    val winlatorAudioDriverMap = winlatorAudioDriverOptionsMap()
     val globalRenpy = remember { EngineSettingsStore.loadRenPy(ctx) }
     val globalRpg = remember { EngineSettingsStore.loadRpgMaker(ctx) }
     val rpgWindowMap = rpgWindowSizeOptionsMap()
@@ -525,10 +582,26 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, winlatorContainerName)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, winlatorGraphicsDriver)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_DXWRAPPER, winlatorDxwrapper)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_WINED3D_RENDERER, winlatorWined3dRenderer)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE, winlatorScreenSize)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_LC_ALL, winlatorLcAll)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_TZ, winlatorTz)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_BOX64_PRESET, winlatorBox64Preset)
+        PerGameSettingsStore.setStr(
+            ctx,
+            gid,
+            PerGameSettingsStore.F_WINLATOR_WIN_COMPONENTS,
+            winlatorWinComponents?.let { EngineSettingsStore.normalizeWinlatorWinComponentsOverride(it) },
+        )
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_AUDIO_DRIVER, winlatorAudioDriver)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_ENV_VARS, winlatorEnvVars)
+        PerGameSettingsStore.setStr(
+            ctx,
+            gid,
+            PerGameSettingsStore.F_WINLATOR_SHORTCUT_CONTAINER_ID,
+            winlatorShortcutContainerId,
+        )
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_WINLATOR_SHORTCUT, winlatorShortcut)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_WINLATOR_SAVE, winlatorSave)
         val onsObj = JSONObject()
         putIfNotNull(onsObj, "scopedsavedir", onsScoped)
@@ -1258,7 +1331,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 }
 
                 if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
-                    SectionCard("Winlator") {
+                    SectionCard(stringResource(R.string.engine_settings_winlator_group_graphics)) {
                         OverrideText(
                             label = stringResource(R.string.engine_settings_winlator_container_id_title),
                             globalValue = if (globalWinlator.containerId > 0) globalWinlator.containerId.toString() else "",
@@ -1283,7 +1356,26 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             winlatorDxWrapperMap,
                             globalWinlator.dxwrapper,
                             winlatorDxwrapper,
-                        ) { winlatorDxwrapper = it }
+                        ) {
+                            winlatorDxwrapper = it
+                            // 切到非 WineD3D 时清掉渲染器覆盖，避免隐藏后仍残留 GDI/GL/Vulkan。
+                            if ((it ?: globalWinlator.dxwrapper) != WinlatorContract.DXWRAPPER_WINED3D) {
+                                winlatorWined3dRenderer = null
+                            }
+                        }
+                        // 未覆盖（null）时运行时用全局值；显式空串仍表示「跟随容器」，不回退到全局。
+                        val effectiveDxWrapper = winlatorDxwrapper ?: globalWinlator.dxwrapper
+                        if (effectiveDxWrapper == WinlatorContract.DXWRAPPER_WINED3D) {
+                            // 渲染器从属于「图形加速」，缩进一级表示层级关系。
+                            Box(Modifier.padding(start = 12.dp)) {
+                                OverrideChoice(
+                                    stringResource(R.string.engine_settings_winlator_wined3d_renderer_title),
+                                    winlatorWined3dRendererMap,
+                                    globalWinlator.wined3dRenderer,
+                                    winlatorWined3dRenderer,
+                                ) { winlatorWined3dRenderer = it }
+                            }
+                        }
                         OverrideChoice(
                             stringResource(R.string.engine_settings_winlator_screen_size_title),
                             winlatorScreenSizeMap,
@@ -1302,12 +1394,94 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             globalWinlator.tz,
                             winlatorTz,
                         ) { winlatorTz = it }
+                    }
+                }
+
+                if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
+                    SectionCard(stringResource(R.string.engine_settings_winlator_group_box64)) {
                         OverrideChoice(
                             stringResource(R.string.engine_settings_winlator_box64_preset_title),
                             winlatorBox64PresetMap,
                             globalWinlator.box64Preset,
                             winlatorBox64Preset,
                         ) { winlatorBox64Preset = it }
+                        // 当前生效值：显式覆盖 → 跟随全局值 → 全局也交给容器。
+                        val box64Current = when {
+                            winlatorBox64Preset != null -> stringResource(
+                                R.string.engine_settings_winlator_box64_current,
+                                winlatorBox64PresetMap[winlatorBox64Preset] ?: winlatorBox64Preset.orEmpty(),
+                            )
+
+                            globalWinlator.box64Preset.isNotBlank() -> stringResource(
+                                R.string.engine_settings_winlator_box64_follow_global,
+                                winlatorBox64PresetMap[globalWinlator.box64Preset] ?: globalWinlator.box64Preset,
+                            )
+
+                            else -> stringResource(
+                                R.string.engine_settings_winlator_box64_follow_global,
+                                stringResource(R.string.engine_settings_winlator_box64_follow_container),
+                            )
+                        }
+                        Text(
+                            box64Current,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        )
+                    }
+                }
+
+                if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
+                    SectionCard(stringResource(R.string.engine_settings_winlator_group_windows)) {
+                        EngineSettingsStore.WINLATOR_WIN_COMPONENT_KEYS.forEach { key ->
+                            OverrideChoice(
+                                label = winlatorWinComponentTitle(key),
+                                options = winlatorWinComponentMap,
+                                global = EngineSettingsStore.winlatorWinComponent(
+                                    globalWinlator.winComponents,
+                                    key,
+                                ),
+                                override = EngineSettingsStore.winlatorWinComponentOverride(
+                                    winlatorWinComponents,
+                                    key,
+                                ),
+                            ) { value ->
+                                winlatorWinComponents = EngineSettingsStore.setWinlatorWinComponentOverride(
+                                    winlatorWinComponents,
+                                    key,
+                                    value,
+                                )
+                            }
+                        }
+                        Text(
+                            stringResource(R.string.engine_settings_winlator_win_component_note),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+
+                if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
+                    SectionCard(stringResource(R.string.engine_settings_winlator_group_advanced)) {
+                        OverrideChoice(
+                            stringResource(R.string.engine_settings_winlator_audio_driver_title),
+                            winlatorAudioDriverMap,
+                            globalWinlator.audioDriver,
+                            winlatorAudioDriver,
+                        ) { winlatorAudioDriver = it }
+                        OverrideText(
+                            label = stringResource(R.string.engine_settings_winlator_env_vars_title),
+                            globalValue = globalWinlator.envVars,
+                            override = winlatorEnvVars,
+                            hint = stringResource(R.string.engine_settings_winlator_env_vars_summary),
+                            validate = { EngineSettingsStore.isValidWinlatorEnvVars(it) },
+                        ) { winlatorEnvVars = it }
+                    }
+                }
+
+                if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
+                    SectionCard(stringResource(R.string.engine_settings_winlator_group_save)) {
                         OverrideSwitch(
                             stringResource(R.string.engine_settings_winlator_save_title),
                             globalWinlator.save,
@@ -1315,6 +1489,37 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         ) { winlatorSave = it }
                         Text(
                             stringResource(R.string.engine_settings_winlator_per_game_note),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        )
+                    }
+                }
+
+                if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
+                    SectionCard(stringResource(R.string.engine_settings_winlator_group_shortcut)) {
+                        // 快捷方式启动：仅打开 Winlator 内已存在的 .desktop，不参与上面的参数下发。
+                        OverrideText(
+                            label = stringResource(R.string.engine_settings_winlator_shortcut_container_id_title),
+                            globalValue = "",
+                            override = winlatorShortcutContainerId,
+                            hint = stringResource(R.string.engine_settings_winlator_shortcut_container_id_summary),
+                            sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                            nullSummary = stringResource(R.string.engine_settings_winlator_shortcut_container_default),
+                            blankSummary = stringResource(R.string.engine_settings_winlator_shortcut_container_default),
+                            clearLabel = stringResource(R.string.engine_settings_winlator_shortcut_container_default),
+                        ) { winlatorShortcutContainerId = it }
+                        OverrideText(
+                            label = stringResource(R.string.engine_settings_winlator_shortcut_title),
+                            globalValue = "",
+                            override = winlatorShortcut,
+                            hint = stringResource(R.string.engine_settings_winlator_shortcut_summary),
+                            nullSummary = stringResource(R.string.engine_settings_winlator_shortcut_auto),
+                            blankSummary = stringResource(R.string.engine_settings_winlator_shortcut_auto),
+                            clearLabel = stringResource(R.string.engine_settings_winlator_shortcut_auto),
+                        ) { winlatorShortcut = it }
+                        Text(
+                            stringResource(R.string.engine_settings_winlator_shortcut_note),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1594,14 +1799,19 @@ private fun OverrideText(
     sanitize: ((String) -> String)? = null,
     allowEmpty: Boolean = true,
     validate: (String) -> Boolean = { true },
+    // 仅对本游戏生效、无全局对应项的字段（如 Winlator 快捷方式）：覆写 null / 空串摘要与清除按钮文案。
+    nullSummary: String? = null,
+    blankSummary: String? = null,
+    clearLabel: String? = null,
     onSet: (String?) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
     val emptyLabel = stringResource(R.string.engine_settings_winlator_follow_container)
-    val summary = if (override == null) {
-        stringResource(R.string.engine_settings_follow_global_with_value, globalValue.ifBlank { emptyLabel })
-    } else {
-        override.ifBlank { emptyLabel }
+    val summary = when {
+        override == null ->
+            nullSummary ?: stringResource(R.string.engine_settings_follow_global_with_value, globalValue.ifBlank { emptyLabel })
+        override.isBlank() -> blankSummary ?: emptyLabel
+        else -> override
     }
     ArrowPreference(
         title = label,
@@ -1646,7 +1856,7 @@ private fun OverrideText(
             dismissButton = {
                 Row {
                     DialogTextButton(
-                        text = stringResource(R.string.engine_settings_follow_global),
+                        text = clearLabel ?: stringResource(R.string.engine_settings_follow_global),
                         onClick = { onSet(null); showDialog = false },
                     )
                     DialogTextButton(

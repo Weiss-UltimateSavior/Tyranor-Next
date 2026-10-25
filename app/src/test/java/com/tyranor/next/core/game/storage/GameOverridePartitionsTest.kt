@@ -393,17 +393,21 @@ class GameOverridePartitionsTest {
     }
 
 
-    /** GL/GDI 预设经存储分区拆装后仍能还原成同一单游戏覆盖值。 */
+    /** 旧 GL/GDI 预设经存储分区拆装后原样保留，并在映射覆盖时归一到 wined3d + 对应渲染器。 */
     @Test
-    fun winlatorRendererPresetsSurvivePartitionAndOverrideRoundTrip() {
-        for (preset in listOf("wined3d_gl", "wined3d_gdi")) {
+    fun winlatorRendererPresetsMigrateToWineD3dOnOverrideMapping() {
+        for ((preset, renderer) in listOf("wined3d_gl" to "gl", "wined3d_gdi" to "gdi")) {
             val blob = JSONObject().put(PerGameSettingsStore.F_WINLATOR_DXWRAPPER, preset)
             val row = GameOverridePartitions.split("/games/winlator", blob, 1L)
             val restored = GameOverridePartitions.assemble(row)
 
             assertEquals(1, restored.length())
+            // 存储层仍原样保存旧值（不主动改写历史数据）。
             assertEquals(preset, restored.getString(PerGameSettingsStore.F_WINLATOR_DXWRAPPER))
-            assertEquals(preset, PerGameSettingsStore.toWinlatorOverride(restored)?.dxwrapper)
+            // 映射到运行时覆盖时迁移为「wrapper + renderer」，不再把旧预设当 dxwrapper 下发。
+            val override = PerGameSettingsStore.toWinlatorOverride(restored)
+            assertEquals("wined3d", override?.dxwrapper)
+            assertEquals(renderer, override?.wined3dRenderer)
         }
     }
 }

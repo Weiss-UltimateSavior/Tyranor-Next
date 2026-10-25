@@ -82,35 +82,58 @@ class WinlatorContractTest {
         assertFalse(WinlatorContract.extras(WinlatorContract.LaunchOptions(save = false)).containsKey(WinlatorContract.EXTRA_SAVE))
     }
 
-    /** 两种显式预设沿用 wined3d 协议，并把 renderer 放在首个配置槽。 */
+    /** WineD3D 渲染器只在 wrapper 为 wined3d 时下发到首个配置槽。 */
     @Test
-    fun explicitWineD3dPresetsUseTheExistingWrapperAndFirstConfigSlot() {
-        for ((preset, renderer) in listOf("wined3d_gl" to "gl", "wined3d_gdi" to "gdi")) {
-            val extras = WinlatorContract.extras(WinlatorContract.LaunchOptions(dxwrapper = preset))
-            val overrides = JSONObject(extras[WinlatorContract.EXTRA_OVERRIDES] as String)
+    fun wined3dRendererIsSentOnlyForWineD3dWrapper() {
+        val extras = WinlatorContract.extras(
+            WinlatorContract.LaunchOptions(
+                dxwrapper = WinlatorContract.DXWRAPPER_WINED3D,
+                wined3dRenderer = "gdi",
+            ),
+        )
+        val overrides = JSONObject(extras[WinlatorContract.EXTRA_OVERRIDES] as String)
 
-            assertEquals("wined3d", extras[WinlatorContract.EXTRA_DXWRAPPER])
-            assertEquals("renderer=$renderer", overrides.getString("dxwrapperConfig"))
-            assertEquals(1, overrides.length())
-            assertFalse(extras.containsKey(WinlatorContract.EXTRA_SAVE))
+        assertEquals("wined3d", extras[WinlatorContract.EXTRA_DXWRAPPER])
+        assertEquals("renderer=gdi", overrides.getString(WinlatorContract.OVERRIDE_DXWRAPPER_CONFIG))
+        assertEquals(1, overrides.length())
+        assertFalse(extras.containsKey(WinlatorContract.EXTRA_SAVE))
+    }
+
+    /** dxvk / 空 wrapper 时渲染器不参与下发，避免覆盖容器的 DXVK 配置。 */
+    @Test
+    fun rendererIsIgnoredOutsideWineD3dWrapper() {
+        for (wrapper in listOf("", "dxvk")) {
+            val extras = WinlatorContract.extras(
+                WinlatorContract.LaunchOptions(dxwrapper = wrapper, wined3dRenderer = "vulkan"),
+            )
+            assertFalse(extras.containsKey(WinlatorContract.EXTRA_OVERRIDES))
         }
     }
 
-    /** 渲染预设与 Box64 共存，开启 save 时保留持久化标志。 */
+    /** 渲染器、Box64、组件、音频、环境变量共用一个 overrides 对象，save 保留持久化标志。 */
     @Test
-    fun rendererPresetAndBox64AreMergedIntoOneOverridesObject() {
-        for ((preset, renderer) in listOf("wined3d_gl" to "gl", "wined3d_gdi" to "gdi")) {
-            val extras = WinlatorContract.extras(
-                WinlatorContract.LaunchOptions(dxwrapper = preset, box64Preset = "CUSTOM-3", save = true),
-            )
-            val overrides = JSONObject(extras[WinlatorContract.EXTRA_OVERRIDES] as String)
+    fun allOverridesAreMergedIntoOneJsonObject() {
+        val extras = WinlatorContract.extras(
+            WinlatorContract.LaunchOptions(
+                dxwrapper = WinlatorContract.DXWRAPPER_WINED3D,
+                wined3dRenderer = "gl",
+                box64Preset = "CUSTOM-3",
+                winComponents = "direct3d=1,xaudio=0",
+                audioDriver = "pulseaudio",
+                envVars = "DXVK_HUD=1",
+                save = true,
+            ),
+        )
+        val overrides = JSONObject(extras[WinlatorContract.EXTRA_OVERRIDES] as String)
 
-            assertEquals("wined3d", extras[WinlatorContract.EXTRA_DXWRAPPER])
-            assertEquals("renderer=$renderer", overrides.getString("dxwrapperConfig"))
-            assertEquals("CUSTOM-3", overrides.getString("box64Preset"))
-            assertEquals(2, overrides.length())
-            assertEquals(true, extras[WinlatorContract.EXTRA_SAVE])
-        }
+        assertEquals("wined3d", extras[WinlatorContract.EXTRA_DXWRAPPER])
+        assertEquals("renderer=gl", overrides.getString(WinlatorContract.OVERRIDE_DXWRAPPER_CONFIG))
+        assertEquals("CUSTOM-3", overrides.getString(WinlatorContract.OVERRIDE_BOX64_PRESET))
+        assertEquals("direct3d=1,xaudio=0", overrides.getString(WinlatorContract.OVERRIDE_WINCOMPONENTS))
+        assertEquals("pulseaudio", overrides.getString(WinlatorContract.OVERRIDE_AUDIO_DRIVER))
+        assertEquals("DXVK_HUD=1", overrides.getString(WinlatorContract.OVERRIDE_ENV_VARS))
+        assertEquals(5, overrides.length())
+        assertEquals(true, extras[WinlatorContract.EXTRA_SAVE])
     }
 
     /** 旧选项不覆盖容器渲染器，即使同时指定 Box64 预设。 */
@@ -126,8 +149,8 @@ class WinlatorContractTest {
                 WinlatorContract.LaunchOptions(dxwrapper = wrapper, box64Preset = "STABILITY"),
             )
             val overrides = JSONObject(withBox64[WinlatorContract.EXTRA_OVERRIDES] as String)
-            assertFalse(overrides.has("dxwrapperConfig"))
-            assertEquals("STABILITY", overrides.getString("box64Preset"))
+            assertFalse(overrides.has(WinlatorContract.OVERRIDE_DXWRAPPER_CONFIG))
+            assertEquals("STABILITY", overrides.getString(WinlatorContract.OVERRIDE_BOX64_PRESET))
         }
     }
 }

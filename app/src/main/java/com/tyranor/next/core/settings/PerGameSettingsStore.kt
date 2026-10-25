@@ -2,6 +2,7 @@ package com.tyranor.next.core.settings
 
 import android.content.Context
 import com.core.engine.EnginePrefs
+import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.game.storage.GameOverridePartitions
 import com.tyranor.next.core.game.storage.GameOverridesRepository
 import org.json.JSONObject
@@ -134,12 +135,18 @@ object PerGameSettingsStore {
     // Winlator 外置启动（null=跟随全局；字符串 "" = 显式不下发该参数）
     const val F_WINLATOR_CONTAINER_ID = "winlator_container_id"
     const val F_WINLATOR_CONTAINER_NAME = "winlator_container_name"
+    const val F_WINLATOR_SHORTCUT = "winlator_shortcut"
+    const val F_WINLATOR_SHORTCUT_CONTAINER_ID = "winlator_shortcut_container_id"
     const val F_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
     const val F_WINLATOR_DXWRAPPER = "winlator_dxwrapper"
+    const val F_WINLATOR_WINED3D_RENDERER = "winlator_wined3d_renderer"
     const val F_WINLATOR_SCREEN_SIZE = "winlator_screen_size"
     const val F_WINLATOR_LC_ALL = "winlator_lc_all"
     const val F_WINLATOR_TZ = "winlator_tz"
     const val F_WINLATOR_BOX64_PRESET = "winlator_box64_preset"
+    const val F_WINLATOR_WIN_COMPONENTS = "winlator_win_components"
+    const val F_WINLATOR_AUDIO_DRIVER = "winlator_audio_driver"
+    const val F_WINLATOR_ENV_VARS = "winlator_env_vars"
     const val F_WINLATOR_SAVE = "winlator_save"
 
     // Ren'Py 外置模块配置（settings extra 的 renpy 节 + app.cheats，null=跟随全局）
@@ -308,15 +315,26 @@ object PerGameSettingsStore {
         if (json == null) return null
         fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
         fun strOrNull(key: String): String? = if (json.has(key)) json.optString(key) else null
+        val rawDxWrapper = strOrNull(F_WINLATOR_DXWRAPPER)
+        // 旧版预设（wined3d_gl/gdi）读入即归一回 wined3d + renderer，渲染器的显式覆盖优先。
+        val legacyRenderer = EngineSettingsStore.winlatorLegacyRenderer(rawDxWrapper)
         val override = WinlatorOverride(
             containerId = strOrNull(F_WINLATOR_CONTAINER_ID),
             containerName = strOrNull(F_WINLATOR_CONTAINER_NAME),
             graphicsDriver = strOrNull(F_WINLATOR_GRAPHICS_DRIVER),
-            dxwrapper = strOrNull(F_WINLATOR_DXWRAPPER),
+            dxwrapper = if (legacyRenderer != null) WinlatorContract.DXWRAPPER_WINED3D else rawDxWrapper,
+            wined3dRenderer = if (legacyRenderer != null) {
+                strOrNull(F_WINLATOR_WINED3D_RENDERER) ?: legacyRenderer
+            } else {
+                strOrNull(F_WINLATOR_WINED3D_RENDERER)
+            },
             screenSize = strOrNull(F_WINLATOR_SCREEN_SIZE),
             lcAll = strOrNull(F_WINLATOR_LC_ALL),
             tz = strOrNull(F_WINLATOR_TZ),
             box64Preset = strOrNull(F_WINLATOR_BOX64_PRESET),
+            winComponents = strOrNull(F_WINLATOR_WIN_COMPONENTS),
+            audioDriver = strOrNull(F_WINLATOR_AUDIO_DRIVER),
+            envVars = strOrNull(F_WINLATOR_ENV_VARS),
             save = boolOrNull(F_WINLATOR_SAVE),
         )
         return override.takeIf { it != WinlatorOverride() }

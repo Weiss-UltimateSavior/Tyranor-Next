@@ -198,8 +198,11 @@ object EffectiveEngineSettings {
         global: EngineSettingsStore.Winlator,
         override: WinlatorOverride?,
     ): EngineSettingsStore.Winlator {
-        if (override == null) return global
-        return global.copy(
+        if (override == null) {
+            // 全局模式同样要忽略非 WineD3D 下残留的渲染器。
+            return if (global.dxwrapper == "wined3d") global else global.copy(wined3dRenderer = "")
+        }
+        val merged = global.copy(
             containerId = override.containerId?.let {
                 it.trim().filter(Char::isDigit).toIntOrNull()?.coerceAtLeast(0) ?: 0
             } ?: global.containerId,
@@ -210,6 +213,9 @@ object EffectiveEngineSettings {
             dxwrapper = override.dxwrapper?.let {
                 EngineSettingsStore.normalizeWinlatorDxWrapper(it)
             } ?: global.dxwrapper,
+            wined3dRenderer = override.wined3dRenderer?.let {
+                EngineSettingsStore.normalizeWinlatorWined3dRenderer(it)
+            } ?: global.wined3dRenderer,
             screenSize = override.screenSize?.let {
                 EngineSettingsStore.normalizeWinlatorScreenSize(it)
             } ?: global.screenSize,
@@ -218,8 +224,21 @@ object EffectiveEngineSettings {
             box64Preset = override.box64Preset?.let {
                 EngineSettingsStore.normalizeWinlatorBox64Preset(it)
             } ?: global.box64Preset,
+            winComponents = EngineSettingsStore.mergeWinlatorWinComponents(
+                global.winComponents,
+                override.winComponents,
+            ),
+            audioDriver = override.audioDriver?.let {
+                EngineSettingsStore.normalizeWinlatorAudioDriver(it)
+            } ?: global.audioDriver,
+            envVars = override.envVars?.let {
+                EngineSettingsStore.normalizeWinlatorEnvVars(it)
+            } ?: global.envVars,
             save = resolveBool(override.save, global.save),
         )
+        // 覆盖后同样按生效的图形加速归一：非 WineD3D 时不保留继承/覆盖来的渲染器，
+        // 否则两个分支的返回值语义不一致。
+        return if (merged.dxwrapper == "wined3d") merged else merged.copy(wined3dRenderer = "")
     }
 }
 
@@ -275,9 +294,13 @@ data class WinlatorOverride(
     val containerName: String? = null,
     val graphicsDriver: String? = null,
     val dxwrapper: String? = null,
+    val wined3dRenderer: String? = null,
     val screenSize: String? = null,
     val lcAll: String? = null,
     val tz: String? = null,
     val box64Preset: String? = null,
+    val winComponents: String? = null,
+    val audioDriver: String? = null,
+    val envVars: String? = null,
     val save: Boolean? = null,
 )
