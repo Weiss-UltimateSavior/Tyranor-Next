@@ -108,6 +108,7 @@ import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
+import com.tyranor.next.ui.save.WebDavSettingsActivity
 import com.tyranor.next.ui.settings.InputSettingsActivity
 import com.tyranor.next.ui.settings.SettingsScreen
 import kotlinx.coroutines.CancellationException
@@ -210,6 +211,15 @@ fun MainScreen(modifier: Modifier = Modifier) {
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context))
+      },
+    )
+    AppNavItem(
+      title = stringResource(R.string.webdav_title),
+      leadingIcon = R.drawable.ic_save_cloud,
+      containerColor = DialogItemSurface,
+      onClick = {
+        sidePanelOpen = false
+        startActivityWithPageTransition(context, WebDavSettingsActivity.createIntent(context))
       },
     )
     // 妙妙工具条目：输入与手柄（原设置页「输入与手柄」入口迁入）

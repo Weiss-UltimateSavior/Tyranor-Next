@@ -23,13 +23,13 @@ flowchart TD
     Core --> Engine["engine: 宿主 / 输入 / Web / JNI"]
     Core --> DB["Room / prefs / 文件"]
     Core --> External["外置模块 / 模拟器 / Android 应用"]
-    Core --> Network["封面 / OAuth / 补丁 / 更新服务"]
+    Core --> Network["封面 / OAuth / 补丁 / 更新 / WebDAV 云同步"]
     Engine --> Native["预编译运行库与本地编译桥"]
 ```
 
 ## 2. 应用启动与界面状态
 
-- [TyranorNextApplication.kt](app/src/main/java/com/tyranor/next/TyranorNextApplication.kt) 在最早阶段迁移共享 prefs 名称、配置 WebView profile、预热主进程游戏库，并在应用进入后台时安排更新检查。
+- [TyranorNextApplication.kt](app/src/main/java/com/tyranor/next/TyranorNextApplication.kt) 在最早阶段迁移共享 prefs 名称、配置 WebView profile、预热主进程游戏库，并在应用进入后台时安排更新检查；前后台切换同时驱动 WebDAV 存档同步的打开拉取与会话兜底（`core/game/save/sync/SaveSyncRuntime`）。
 - [MainActivity.kt](app/src/main/java/com/tyranor/next/MainActivity.kt) 承载主界面；[MainScreen.kt](app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt) 组合首页、游戏、引擎、设置四页。四页常驻，切换用水平位移与 alpha，避免重建列表。
 - [MainLibraryViewModel.kt](app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt) 通过 `StateFlow<MainLibraryUiState>` 发布游戏库快照，Channel 串行处理扫描/删除/刷新等命令；搜索防抖并拒绝过期结果。
 - 二级页通常复用 [AppScreen.kt](app/src/main/java/com/tyranor/next/ui/common/AppScreen.kt) 中的 `AppScreenActivity` / `AppScreenScaffold`，统一语言、主题、系统栏、背景与转场；正文由 `setAppScreenContent` 提供，主题包裹依次经过 `ProvideAppLocale`、`TyranorNextTheme` 与 `GlassBackground`。全屏按键编辑器保留明文例外。
@@ -99,6 +99,8 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 
 - 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理仍由 capability 关闭。
+- 存档云同步：`core/game/save/sync/SaveSyncService` 在既有 ZIP 导出/导入能力之上管理不可变历史，按相对路径和内容字节计算 SHA-256；按游戏串行、区分历史操作与活动存档锁。默认关闭、启用后默认手动；`SaveSnapshotStore` 负责每游戏 5 版与临时文件维护，`WebDavClient` 负责 WebDAV 传输、旧布局读取及 10/20/无上限的独立保留策略。拉取只写历史，手动切换才导入；同内容的旧版本通过更新时间和 `previousCreatedAt` 记录来源。
+  `SaveSyncRuntime` 从 Application 统计各引擎进程宿主 Activity，并结合会话票据、退出广播及 `SaveSyncWorker` 兜底上传；不修改 engine 模块。总开关在入口与请求前复核，关闭取消任务并保留配置；凭据由 AndroidKeyStore 加密并排除备份，界面通过类型化错误与一次性结果流接收状态。配置无法解密时保留密文，用户可确认重置；MV/MZ 手动切换采用事务标记，失败回滚或中止互通，避免反向覆盖。
 - 拆封包：`ui/archive` → `core/unpack` → `com.core.archive.Xp3Core` → Rust；SAF 不能映射路径时经 staging 中转。Artemis PFS 补丁解包不走该工具链。
 - 输入：UI → core 门面 → `engine/com.core.input`，按 canonical 键位注入每宿主的 `InputSink`；布局编辑器复用原生按键层。
 - 授权/更新：Hikarinagi OAuth 经 AppAuth 与 Keystore 保护的凭据存储；后台更新由 WorkManager 单次任务驱动，下载后经 FileProvider 交系统安装器。

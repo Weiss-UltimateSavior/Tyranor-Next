@@ -12,6 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -40,6 +43,10 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param leadingIcon 前导图标 drawable；null 用默认搜索图标，非搜索语义必须传对应图标
  * @param iconContentDescription 无障碍描述，跟随图标语义
  * @param textStyle 输入文字样式；null 用 miuix 默认 `main`（17sp），需要其他字号可传（如弹窗场景传 `bodyMedium`）
+ * @param visualTransformation 文本变换（如密码掩码 `PasswordVisualTransformation`）；默认恒等变换。
+ *   传入非恒等变换时，键盘建议类型切为 `KeyboardType.Password`（保留密码管理器与粘贴能力），
+ *   并改走支持掩码的内嵌输入实现（Miuix 0.9.2 的 `InputField` 不支持文本变换）；
+ *   清空按钮仍按原文判断与清空。普通搜索/输入无需传参，行为完全不变。
  */
 @Composable
 fun AppSearchField(
@@ -50,7 +57,10 @@ fun AppSearchField(
     leadingIcon: Painter? = null,
     iconContentDescription: String? = null,
     textStyle: TextStyle? = null,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
+    // 安全输入（掩码）走内嵌实现；其余场景维持原 Miuix InputField 路径
+    val secureInput = visualTransformation != VisualTransformation.None
     val resolvedIconContentDescription = iconContentDescription
         ?: androidx.compose.ui.res.stringResource(R.string.common_search_content_description)
     MiuixSettingsTheme {
@@ -83,19 +93,36 @@ fun AppSearchField(
                             textStyle = textStyle ?: MiuixTheme.textStyles.main,
                             leadingIcon = fieldLeadingIcon,
                             modifier = fieldModifier,
+                            visualTransformation = visualTransformation,
+                            keyboardType = if (secureInput) KeyboardType.Password else KeyboardType.Text,
+                            imeAction = if (secureInput) ImeAction.Done else ImeAction.Search,
                         )
                     } else {
-                        InputField(
-                            query = query,
-                            onQueryChange = onQueryChange,
-                            onSearch = { onSearch() },
-                            textStyle = textStyle ?: MiuixTheme.textStyles.main,
-                            expanded = false,
-                            onExpandedChange = { },
-                            leadingIcon = fieldLeadingIcon,
-                            // 描边位于 InputField 胶囊上，而不是外层 SearchBar 的布局间距。
-                            modifier = fieldModifier,
-                        )
+                        if (secureInput) {
+                            EmbeddedSearchInputField(
+                                query = query,
+                                onQueryChange = onQueryChange,
+                                onSearch = onSearch,
+                                textStyle = textStyle ?: MiuixTheme.textStyles.main,
+                                leadingIcon = fieldLeadingIcon,
+                                modifier = fieldModifier,
+                                visualTransformation = visualTransformation,
+                                keyboardType = KeyboardType.Password,
+                                imeAction = ImeAction.Done,
+                            )
+                        } else {
+                            InputField(
+                                query = query,
+                                onQueryChange = onQueryChange,
+                                onSearch = { onSearch() },
+                                textStyle = textStyle ?: MiuixTheme.textStyles.main,
+                                expanded = false,
+                                onExpandedChange = { },
+                                leadingIcon = fieldLeadingIcon,
+                                // 描边位于 InputField 胶囊上，而不是外层 SearchBar 的布局间距。
+                                modifier = fieldModifier,
+                            )
+                        }
                     }
                 },
                 expanded = false,

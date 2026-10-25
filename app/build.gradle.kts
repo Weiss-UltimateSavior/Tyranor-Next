@@ -404,6 +404,7 @@ dependencies {
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.exifinterface)
   implementation(libs.appauth)
+  implementation("com.squareup.okhttp3:okhttp:5.5.0")
 
   // Miuix 组件库（设置页 Card + Preference 体系）
   implementation(libs.miuix.ui)

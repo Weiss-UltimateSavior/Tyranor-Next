@@ -19,6 +19,7 @@ internal fun Throwable.toSaveErrorMessage(context: Context, fallback: String): S
         SaveErrorCode.CREATE_EXPORT_ZIP -> localized.getString(R.string.save_error_create_export_zip)
         SaveErrorCode.CREATE_SAVE_DIR -> localized.getString(R.string.save_error_create_save_dir)
         SaveErrorCode.SAVE_DIR_UNAVAILABLE -> localized.getString(R.string.save_error_save_dir_unavailable)
+        SaveErrorCode.SAVE_SELECTION_INCOMPLETE -> localized.getString(R.string.save_error_selection_incomplete)
         SaveErrorCode.NO_FILES_IN_ZIP -> localized.getString(R.string.save_error_no_files_in_zip)
         SaveErrorCode.READ_IMPORT_ZIP -> localized.getString(R.string.save_error_read_import_zip)
         SaveErrorCode.DUPLICATE_ZIP_ENTRY ->

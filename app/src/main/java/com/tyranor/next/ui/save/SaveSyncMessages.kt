@@ -1,0 +1,51 @@
+package com.tyranor.next.ui.save
+
+import android.content.Context
+import com.tyranor.next.R
+import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncReport
+import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
+import com.tyranor.next.core.i18n.AppLocaleController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+internal suspend fun shouldShowSaveSyncFeedback(context: Context): Boolean = withContext(Dispatchers.IO) {
+    try {
+        if (!WebDavSettingsStore.isEnabled(context)) return@withContext false
+        val config = WebDavSettingsStore.load(context)
+        config.active && config.showSyncFeedback
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) { false }
+}
+
+internal fun SaveSyncError.toSaveSyncMessage(context: Context): String = AppLocaleController.wrap(context).getString(when (this) {
+    SaveSyncError.NOT_CONFIGURED -> R.string.webdav_error_not_configured
+    SaveSyncError.INVALID_CONFIG -> R.string.webdav_error_invalid_config
+    SaveSyncError.CREDENTIALS_UNAVAILABLE -> R.string.webdav_error_credentials
+    SaveSyncError.AUTHENTICATION -> R.string.webdav_error_authentication
+    SaveSyncError.NETWORK -> R.string.webdav_error_network
+    SaveSyncError.SERVER -> R.string.webdav_error_server
+    SaveSyncError.INVALID_RESPONSE -> R.string.webdav_error_response
+    SaveSyncError.CORRUPT_ARCHIVE -> R.string.webdav_error_archive
+    SaveSyncError.LOCAL_IO -> R.string.webdav_error_local_io
+    SaveSyncError.SAVE_UNAVAILABLE -> R.string.webdav_error_no_save
+    SaveSyncError.GAME_RUNNING -> R.string.webdav_error_game_running
+    SaveSyncError.IDENTITY_CONFLICT -> R.string.webdav_error_identity_conflict
+})
+
+internal fun SaveSyncReport.toSaveSyncMessage(context: Context): String {
+    val localized = AppLocaleController.wrap(context)
+    if (failures.isEmpty()) {
+        return localized.getString(when {
+            uploaded + downloaded > 0 -> R.string.webdav_sync_success
+            busy > 0 -> R.string.webdav_error_game_running
+            else -> R.string.webdav_sync_unchanged
+        })
+    }
+    return localized.getString(
+        if (uploaded + downloaded > 0) R.string.webdav_sync_partial_failure else R.string.webdav_sync_failure,
+        failures.first().error.toSaveSyncMessage(context),
+    )
+}

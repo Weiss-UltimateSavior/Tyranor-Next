@@ -228,7 +228,7 @@ class GameSaveManager(private val context: Context) {
         return File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root))
     }
 
-    suspend fun listSaveFiles(game: ScanGame): List<File> {
+    suspend fun listSaveFiles(game: ScanGame, strict: Boolean = false): List<File> {
         if (game.engine == EngineType.ETHORNELL) {
             // Existing SaveUI refresh does not catch errors. Busy/disabled data
             // has no safe snapshot; action methods still throw typed failures.
@@ -247,9 +247,13 @@ class GameSaveManager(private val context: Context) {
             }
         }
         val directory = resolveSaveLocation(game).directory ?: return emptyList()
-        if (!directory.isDirectory) return emptyList()
+        if (!directory.exists()) return emptyList()
+        if (!directory.isDirectory) {
+            if (strict) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            return emptyList()
+        }
         return buildList {
-            collectFiles(directory, this, excludeFor(game.engine))
+            collectFiles(directory, this, excludeFor(game.engine), strict)
         }
     }
 
@@ -296,7 +300,7 @@ class GameSaveManager(private val context: Context) {
     }
 
     @Throws(IOException::class)
-    suspend fun importFromZip(game: ScanGame, sourceUri: Uri): Int {
+    suspend fun importFromZip(game: ScanGame, sourceUri: Uri, manualSelection: Boolean = false): Int {
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.import {
                 appContext.contentResolver.openInputStream(sourceUri)
@@ -306,13 +310,17 @@ class GameSaveManager(private val context: Context) {
         return synchronized(importLock) {
             // 锁序恒为 importLock → INTEROP_LOCK（sync 只取后者），无死锁环。
             synchronized(RpgSaveSyncState.INTEROP_LOCK) {
-                importFromZipLocked(game, sourceUri)
+                if (manualSelection && RpgSaveFormat.isRpgWebEngine(game.engine)) {
+                    RpgSaveSyncState.forContext(appContext).withManualSelection(game.uri) { onCommitted ->
+                        importFromZipLocked(game, sourceUri, onCommitted)
+                    }
+                } else importFromZipLocked(game, sourceUri)
             }
         }
     }
 
     @Throws(IOException::class)
-    private fun importFromZipLocked(game: ScanGame, sourceUri: Uri): Int {
+    private fun importFromZipLocked(game: ScanGame, sourceUri: Uri, onDirectoryCommitted: () -> Unit = {}): Int {
         val destination = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
 
         // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
@@ -365,6 +373,7 @@ class GameSaveManager(private val context: Context) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
             committed = true
+            onDirectoryCommitted()
             // Artemis 目标即游戏根：被排除的引擎资源（system/、*.pfs 等）不参与导入，
             // 交换后从备份移回；全部移回前备份绝不清理，失败可再次恢复
             // Artemis 引擎资源、MV/MZ 的 original/（互通留底）被排除在导入之外，
@@ -536,11 +545,16 @@ class GameSaveManager(private val context: Context) {
         }
     }
 
-    private fun collectFiles(directory: File, out: MutableList<File>, exclude: (String) -> Boolean) {
-        directory.listFiles().orEmpty().forEach { child ->
+    private fun collectFiles(directory: File, out: MutableList<File>, exclude: (String) -> Boolean, strict: Boolean = false) {
+        val children = directory.listFiles()
+        if (strict && children == null) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        children.orEmpty().forEach { child ->
             if (exclude(child.name)) return@forEach
+            if (strict && java.nio.file.Files.isSymbolicLink(child.toPath())) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
             when {
-                child.isDirectory -> collectFiles(child, out, exclude)
+                child.isDirectory -> collectFiles(child, out, exclude, strict)
                 child.isFile -> out.add(child)
             }
         }

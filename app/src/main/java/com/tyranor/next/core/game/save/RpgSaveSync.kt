@@ -21,6 +21,14 @@ import java.security.MessageDigest
  * - 仅 Tyranor 侧有：清单显示标准侧曾存在 ⇒（外部删除标准档）按既定策略**保留 Tyranor 并重新导出**，
  *   不删手机存档；否则视为 Tyranor 新存档 → 导出标准侧。
  *
+ * `preferTyranor = true`（用户在云端/ZIP 里**显式选中**某个存档版本，见
+ * [RpgSaveSyncState.markManualSelection]）时改为「以 Tyranor 侧为准」，不再按 mtime 判新旧：
+ * - 两侧都有：Tyranor 内容覆盖标准侧（字节已一致则跳过），被替换的标准侧副本**一律留底**
+ *   （`deleted/`），不受「已建立槽位不重复留底」的节流约束；
+ * - 仅标准侧有：归入 `deleted/`（保留文件），**不导入** Tyranor——用户没选它；
+ * - 仅 Tyranor 侧有：照常导出。
+ * 常规双向同步的判定与计数语义完全不受此标记影响。
+ *
  * 两侧都不存在的槽位不记录，避免「删档后被再次导入」。
  */
 object RpgSaveSync {
@@ -80,6 +88,9 @@ object RpgSaveSync {
      * @param tyranorDir Tyranor 侧有效存档目录（`<游戏根>/savedata`，或开启独立存档时的外部目录）。
      * @param stateStore 同步清单（区分「新建」与「已删除」）。
      * @param gameKey 清单键（用 game.uri 即可）。
+     * @param preferTyranor 用户显式选中 Tyranor 侧版本时置真：以 Tyranor 为准覆盖标准侧，
+     *   详见文件头「`preferTyranor`」段与 [RpgSaveSyncState.markManualSelection]。默认 false，
+     *   常规 mtime 判定不变。
      */
     fun sync(
         standardDir: File,
@@ -87,11 +98,13 @@ object RpgSaveSync {
         engine: EngineType,
         stateStore: RpgSaveSyncState,
         gameKey: String,
-    ): Result = sync(listOf(standardDir), tyranorDir, engine, stateStore, gameKey)
+        preferTyranor: Boolean = false,
+    ): Result = sync(listOf(standardDir), tyranorDir, engine, stateStore, gameKey, preferTyranor)
 
     /**
      * @param standardDirs 标准侧候选目录，第一个为默认写入目录（兼容 `save` / `Save`）；
      *   某个槽位若已存在于非首选目录，则就地更新，避免产生重复文件。
+     * @param preferTyranor 见单目录重载：为真时本轮「以 Tyranor 侧为准」，标准侧一律服从 Tyranor 内容。
      */
     fun sync(
         standardDirs: List<File>,
@@ -99,8 +112,9 @@ object RpgSaveSync {
         engine: EngineType,
         stateStore: RpgSaveSyncState,
         gameKey: String,
+        preferTyranor: Boolean = false,
     ): Result = synchronized(syncLock) {
-        syncLocked(standardDirs, tyranorDir, engine, stateStore, gameKey)
+        syncLocked(standardDirs, tyranorDir, engine, stateStore, gameKey, preferTyranor)
     }
 
     /** [sync] 的实际实现；进入前已持有 [syncLock]，故可安全读写清单与两侧文件。 */
@@ -110,6 +124,7 @@ object RpgSaveSync {
         engine: EngineType,
         stateStore: RpgSaveSyncState,
         gameKey: String,
+        preferTyranor: Boolean,
     ): Result {
         if (!RpgSaveFormat.isRpgWebEngine(engine)) return Result()
         if (standardDirs.isEmpty()) return Result()
@@ -126,7 +141,9 @@ object RpgSaveSync {
         }
 
         val preferredStandardDir = standardDirs.first()
-        val (standardFiles, quarantinedDuplicates) = collectStandard(standardDirs, engine)
+        val standardScan = collectStandard(standardDirs, engine)
+        val standardFiles = standardScan.selected
+        val quarantinedDuplicates = standardScan.quarantined
         val tyranorFiles = collectTyranor(tyranorDir, engine)
 
         var imported = 0
@@ -158,6 +175,21 @@ object RpgSaveSync {
             var record = true
             try {
                 when {
+                    std != null && tyr != null && preferTyranor -> {
+                        // 用户显式选了 Tyranor 侧版本：不看 mtime，标准侧一律服从 Tyranor 内容。
+                        // 被替换的标准副本**必须留底**（mustPreserve 恒真）——这份 PC 侧存档可能
+                        // 是唯一一份较旧进度，覆盖前不留底就再也找不回。
+                        // 同槽位在 save/ 与 Save/ 里的所有副本都要一并对齐：只刷新首选目录那份，
+                        // 另一份留在原地会在后续轮次被选中并把用户刚否定的旧内容带回（复活）。
+                        val copies = standardScan.copies[slot].orEmpty().ifEmpty { listOf(std) }
+                        if (alignStandardCopies(tyr, copies, preferredStandardDir) > 0) {
+                            toStandard++
+                        } else {
+                            skipped++
+                        }
+                        // 清单记实际落盘 mtime（对齐后应与 Tyranor 侧一致），下一轮才能干净跳过
+                        stdMtime = copies.firstOrNull { it.isFile }?.lastModified() ?: tyrMtime
+                    }
                     std != null && tyr != null -> {
                         val s = std.lastModified()
                         val t = tyr.lastModified()
@@ -207,7 +239,27 @@ object RpgSaveSync {
                         }
                     }
                     std != null -> {
-                        if (existedOnTyranor) {
+                        if (preferTyranor) {
+                            // 仅标准侧有 ⇒ 用户没选它：不导入 Tyranor，否则下一轮引擎读到的还是
+                            // 被否定的版本。文件归入 deleted/ 保留，绝不删除。
+                            // 与「Tyranor 侧已删除」同款语义，但这里不依赖清单：手动选择本身就是
+                            // 「标准侧这一份不要」的明示。同槽位的所有副本都要移走——漏掉任何一份，
+                            // 它下一轮都会被当成「新 PC 存档」导回 Tyranor，把已删槽位复活。
+                            val copies = standardScan.copies[slot].orEmpty().ifEmpty { listOf(std) }
+                            val moved = copies.count { candidate ->
+                                candidate.isFile &&
+                                    moveToDeleted(candidate, candidate.parentFile ?: preferredStandardDir)
+                            }
+                            if (moved == copies.size) {
+                                movedToDeleted += moved
+                                stdMtime = 0L
+                                stdExistsNow = false
+                            } else {
+                                failed++
+                                record = false
+                                keepPrevious(slot)
+                            }
+                        } else if (existedOnTyranor) {
                             // Tyranor 侧已删除该槽位 → 标准文件归入 deleted/，不再导回
                             if (moveToDeleted(std, std.parentFile ?: preferredStandardDir)) {
                                 movedToDeleted++; stdMtime = 0L; stdExistsNow = false
@@ -288,37 +340,104 @@ object RpgSaveSync {
      * 长期分叉），再以首选目录的文件为同步源。返回值第二项为隔离数量（映射到结果里的
      * movedToDeleted）；隔离失败则保留原位、以首选目录为准继续同步。
      */
-    private fun collectStandard(dirs: List<File>, engine: EngineType): Pair<Map<String, File>, Int> {
+    private fun collectStandard(dirs: List<File>, engine: EngineType): StandardScan {
         val out = mutableMapOf<String, File>()
+        // 每个槽位在标准侧的全部存活副本（含等价副本，按目录顺序）：手动选择模式下必须逐份对齐，
+        // 否则留在次要目录里的旧副本会在后续轮次被选中，把用户已经否定的内容带回（复活）
+        val all = linkedMapOf<String, MutableList<File>>()
         var quarantined = 0
         dirs.forEach { dir ->
             if (!dir.isDirectory) return@forEach
             dir.listFiles().orEmpty().forEach { file ->
                 if (!file.isFile) return@forEach
                 val slot = RpgSaveFormat.standardSlot(file.name, engine) ?: return@forEach
+                val copies = all.getOrPut(slot) { mutableListOf() }
                 val existing = out[slot]
                 if (existing == null) {
                     // 首选目录在前：先出现者胜
                     out[slot] = file
+                    copies += file
                     return@forEach
                 }
                 // 同一文件（大小写不敏感 FS 上 save==Save）不算重复
                 if (samePath(existing, file)) return@forEach
-                if (sameContent(existing, file)) return@forEach
+                if (sameContent(existing, file)) {
+                    // 等价副本：不算冲突、不隔离，但仍要登记，供手动选择模式一并刷新/移入 deleted/
+                    copies += file
+                    return@forEach
+                }
                 // 冲突副本：隔离到 deleted/ 留证，同步以首选目录文件为准
                 if (moveToDeleted(file, file.parentFile ?: dir)) {
                     quarantined++
+                } else {
+                    // 隔离失败：副本仍在原位，同样登记为待对齐对象（下一轮还会重试隔离）
+                    copies += file
                 }
             }
         }
-        return out to quarantined
+        return StandardScan(out, all.mapValues { it.value.toList() }, quarantined)
     }
+
+    /**
+     * 标准侧扫描结果。
+     *
+     * [selected] 沿用「首选目录先出现者胜」的同步源；[copies] 给出同槽位的全部存活副本，
+     * 仅手动选择模式（`preferTyranor`）需要逐份处理；[quarantined] 为内容冲突副本被隔离的数量。
+     */
+    private data class StandardScan(
+        val selected: Map<String, File>,
+        val copies: Map<String, List<File>>,
+        val quarantined: Int,
+    )
 
     /** 路径等价判定：优先 canonicalPath，失败退回大小写不敏感字符串比较。 */
     private fun samePath(a: File, b: File): Boolean = try {
         a.canonicalPath == b.canonicalPath
     } catch (_: Throwable) {
         a.absolutePath.equals(b.absolutePath, ignoreCase = true)
+    }
+
+    /**
+     * 手动选择模式（`preferTyranor`）下将标准侧同槽位的**全部副本**对齐到 [winner]（Tyranor 侧内容）。
+     *
+     * 为什么必须逐份处理：常规同步把内容一致的 `save`/`Save` 副本视为等价、只留一份在活动目录，
+     * 而本模式的目的正是「让用户选定的内容压过标准侧较新的 mtime」。只刷新首选目录那一份，另一份
+     * 旧副本会在标记清除后的下一轮按 mtime 被选中，把用户已经否定的内容重新带回 Tyranor 侧（复活）。
+     *
+     * 逐份规则：内容已一致 ⇒ 不重复写盘，只把 mtime 对齐到 [winner]（否则标记清除后下一轮仍会按
+     * 标准侧较新时间戳反向覆盖）；内容不同 ⇒ 走 [overwriteWithPreserve]，**mustPreserve 恒真**，
+     * 被替换的 PC 侧副本一律进 `deleted/` 留底——这里不能沿用常规「已建立槽位不再留底」的节流，
+     * 因为用户选定的内容与标准侧不同，标准侧那份就是唯一的一份旧进度。
+     *
+     * @return 内容被改写（原先与 [winner] 不一致）的副本数；0 表示所有副本已经一致。
+     * @throws IOException 任一副本留底或替换失败：由调用方按单槽位失败处理（保留清单历史、
+     *   下一轮重试），绝不允许留底失败后继续覆盖。
+     */
+    @Throws(IOException::class)
+    private fun alignStandardCopies(
+        winner: File,
+        copies: List<File>,
+        preferredStandardDir: File,
+    ): Int {
+        val winnerMtime = winner.lastModified()
+        var rewritten = 0
+        copies.forEach { copy ->
+            if (!copy.isFile) return@forEach
+            if (sameContent(winner, copy)) {
+                // 字节一致：只对齐时间戳，避免下一轮无谓反向覆盖
+                if (copy.lastModified() != winnerMtime) copy.setLastModified(winnerMtime)
+                return@forEach
+            }
+            overwriteWithPreserve(
+                winner = winner,
+                loser = copy,
+                loserDir = copy.parentFile ?: preferredStandardDir,
+                preserveLoserSide = true,
+                mustPreserve = true,
+            )
+            rewritten++
+        }
+        return rewritten
     }
 
     private fun collectTyranor(dir: File, engine: EngineType): Map<String, File> {

@@ -58,6 +58,8 @@ import com.tyranor.next.core.game.save.RpgSavePendingStore
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.RpgSaveSyncState
+import com.tyranor.next.core.game.save.sync.SaveSyncLocks
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
@@ -155,7 +157,17 @@ object EngineLauncher {
      *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
-        withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+        withContext(Dispatchers.IO) {
+            SaveSyncLocks.active(game.uri) {
+                val ticket = SaveSyncRuntime.prepareLaunch(context, game)
+                var success = false
+                try {
+                    launchInternal(context, game, patchChoice).also { success = it == LaunchResult.Success }
+                } finally {
+                    SaveSyncRuntime.finishLaunch(context, game, ticket, success)
+                }
+            }
+        }
 
     /**
      * 直接打开内置原生 Kirikiroid2 界面（`originMode`，不携带游戏路径）。
@@ -634,13 +646,22 @@ object EngineLauncher {
         ) ?: return null
         // 标准侧兼容 save / Save 两种拼写；首选写入目录为已存在的小写 save（默认）
         val standardDirs = RpgSaveFormat.standardSaveDirectories(gameDir)
-        return RpgSaveSync.sync(
-            standardDirs = standardDirs,
-            tyranorDir = tyranorDir,
-            engine = game.engine,
-            stateStore = RpgSaveSyncState.forContext(context),
-            gameKey = game.uri,
-        )
+        val state = RpgSaveSyncState.forContext(context)
+        return synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+            // Reading, applying and consuming a selection must not straddle another import.
+            val manualSelection = state.hasManualSelection(game.uri)
+            val result = RpgSaveSync.sync(
+                standardDirs = standardDirs,
+                tyranorDir = tyranorDir,
+                engine = game.engine,
+                stateStore = state,
+                gameKey = game.uri,
+                preferTyranor = manualSelection,
+            )
+            if (manualSelection && result.failed == 0 && !state.clearManualSelection(game.uri)) {
+                result.copy(failed = 1)
+            } else result
+        }
     }
 
     /** 记录待回写的游戏（应用回到前台时对已退出会话补一次同步）；写入失败如实记日志。 */
