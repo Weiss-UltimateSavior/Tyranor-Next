@@ -3,6 +3,10 @@ package com.tyranor.next.core.game.save
 import android.content.Context
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
+import java.nio.file.LinkOption
+import java.nio.file.NoSuchFileException
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 
 /**
@@ -62,6 +66,12 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
          * 会被当成「新建」，已删除的存档会被重新导入。调用方必须中止本轮同步。
          */
         data object Unreadable : LoadResult
+    }
+
+    private sealed interface ManualSelectionSnapshot {
+        data object Absent : ManualSelectionSnapshot
+        data class Preserved(val bytes: ByteArray) : ManualSelectionSnapshot
+        data object Unreadable : ManualSelectionSnapshot
     }
 
     fun load(gameKey: String): LoadResult = synchronized(INTEROP_LOCK) {
@@ -168,7 +178,23 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         // 游戏从库里真正移除时一并清掉手动版本标记：标记只服务于「下一轮同步」，
         // 游戏都没了还留着，会让同一 uri 被重新添加后凭空执行一次「以 Tyranor 为准」的定向同步。
         // 注意同步失败/进程被杀的路径不会走这里，标记因此天然跨失败保留。
-        runCatching { manualFileFor(gameKey).delete() }
+        val markerName = sha1(gameKey) + MANUAL_SUFFIX
+        listOf(File(manualStoreDir, markerName), File(storeDir, markerName))
+            .distinctBy { it.toPath().toAbsolutePath().normalize() }
+            .forEach { manualFile ->
+                try {
+                    if (manualSelectionAttributes(manualFile) != null) {
+                        java.nio.file.Files.deleteIfExists(manualFile.toPath())
+                    }
+                    if (manualSelectionAttributes(manualFile) != null) {
+                        throw manualSelectionUnavailable(manualFile)
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    throw manualSelectionUnavailable(manualFile, failure)
+                }
+            }
         Unit
     }
 
@@ -189,10 +215,7 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
             ManualSelectionState.Present -> true
             ManualSelectionState.Absent -> false
             ManualSelectionState.Pending -> throw GameSaveException(SaveErrorCode.SAVE_SELECTION_INCOMPLETE, detail = gameKey)
-            ManualSelectionState.Unreadable -> throw GameSaveException(
-                SaveErrorCode.SAVE_DIR_UNAVAILABLE,
-                detail = gameKey,
-            )
+            ManualSelectionState.Unreadable -> throw manualSelectionUnavailable(manualFileFor(gameKey))
         }
 
     /**
@@ -227,32 +250,21 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
     internal fun <T> withManualSelection(gameKey: String, block: (onDirectoryCommitted: () -> Unit) -> T): T =
         synchronized(INTEROP_LOCK) {
             val file = manualFileFor(gameKey)
-            val previous = try {
-                if (!file.exists()) null else {
-                    if (!file.isFile || file.length() > 64 * 1024) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-                    file.readBytes()
-                }
-            } catch (failure: Exception) {
-                if (failure is kotlinx.coroutines.CancellationException) throw failure
-                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, detail = gameKey).also {
-                    it.addSuppressed(failure)
-                }
-            }
+            val previous = captureManualSelection(file)
             val pending = JSONObject().put(KEY_MANUAL_SELECTION, "pending").toString().toByteArray(Charsets.UTF_8)
-            if (!writeManualSelection(gameKey, pending)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             var directoryCommitted = false
             try {
+                if (!writeManualSelection(gameKey, pending)) throw manualSelectionUnavailable(file)
                 val result = block { directoryCommitted = true }
                 if (!directoryCommitted || !markManualSelection(gameKey)) {
-                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                    throw manualSelectionUnavailable(file)
                 }
                 result
             } catch (failure: Throwable) {
                 // Once the directory changed, retain the pending marker so normal mtime sync
                 // cannot overwrite it. Before that point, restore even a previously damaged flag.
-                if (!directoryCommitted) {
-                    val restored = if (previous == null) clearManualSelection(gameKey) else writeManualSelection(gameKey, previous)
-                    if (!restored) failure.addSuppressed(GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE))
+                if (!directoryCommitted && !restoreManualSelection(gameKey, previous)) {
+                    failure.addSuppressed(manualSelectionUnavailable(file))
                 }
                 throw failure
             }
@@ -265,23 +277,70 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
      */
     fun clearManualSelection(gameKey: String): Boolean = synchronized(INTEROP_LOCK) {
         val file = manualFileFor(gameKey)
-        if (!file.isFile) return@synchronized !file.exists()
-        runCatching { file.delete() }.getOrDefault(false) && !file.exists()
+        try {
+            val attributes = manualSelectionAttributes(file) ?: return@synchronized true
+            if (!attributes.isRegularFile) return@synchronized false
+            java.nio.file.Files.deleteIfExists(file.toPath())
+            manualSelectionAttributes(file) == null
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun readManualSelection(gameKey: String): ManualSelectionState = synchronized(INTEROP_LOCK) {
-        val file = manualFileFor(gameKey)
-        if (!file.exists()) return@synchronized ManualSelectionState.Absent
-        if (!file.isFile) return@synchronized ManualSelectionState.Unreadable
-        runCatching {
+        try {
+            val file = manualFileFor(gameKey)
+            val attributes = manualSelectionAttributes(file) ?: return@synchronized ManualSelectionState.Absent
+            if (!attributes.isRegularFile || attributes.size() > MAX_MANUAL_SELECTION_BYTES) {
+                return@synchronized ManualSelectionState.Unreadable
+            }
             // 只有显式的 true 才算「已手动选择」；false 是明确的「无手动选择」，
             // 而缺键/null/类型不符/半截 JSON 都属损坏，交由调用方失败关闭
-            when (val value = JSONObject(file.readText(Charsets.UTF_8)).get(KEY_MANUAL_SELECTION)) {
+            when (val value = JSONObject(String(readManualSelectionBytes(file), Charsets.UTF_8)).get(KEY_MANUAL_SELECTION)) {
                 is Boolean -> if (value) ManualSelectionState.Present else ManualSelectionState.Absent
                 "pending" -> ManualSelectionState.Pending
                 else -> ManualSelectionState.Unreadable
             }
-        }.getOrDefault(ManualSelectionState.Unreadable)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            ManualSelectionState.Unreadable
+        }
+    }
+
+    private fun captureManualSelection(file: File): ManualSelectionSnapshot {
+        val attributes = try {
+            manualSelectionAttributes(file)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            return ManualSelectionSnapshot.Unreadable
+        } ?: return ManualSelectionSnapshot.Absent
+        if (attributes.isRegularFile) {
+            if (attributes.size() > MAX_MANUAL_SELECTION_BYTES) return ManualSelectionSnapshot.Unreadable
+            return try {
+                ManualSelectionSnapshot.Preserved(readManualSelectionBytes(file))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                ManualSelectionSnapshot.Unreadable
+            }
+        }
+        throw manualSelectionUnavailable(file)
+    }
+
+    private fun restoreManualSelection(gameKey: String, previous: ManualSelectionSnapshot): Boolean = try {
+        when (previous) {
+            ManualSelectionSnapshot.Absent -> clearManualSelection(gameKey)
+            is ManualSelectionSnapshot.Preserved -> writeManualSelection(gameKey, previous.bytes)
+            ManualSelectionSnapshot.Unreadable -> writeManualSelection(gameKey, UNREADABLE_MANUAL_SELECTION)
+        }
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
     }
 
     /** 临时文件 + 原子替换写入（与 [save] 同款）：标记被写成半截 JSON 就等于丢状态。 */
@@ -289,8 +348,10 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         gameKey: String,
         content: ByteArray = JSONObject().put(KEY_MANUAL_SELECTION, true).toString().toByteArray(Charsets.UTF_8),
     ): Boolean = synchronized(INTEROP_LOCK) {
+        val file = manualFileFor(gameKey)
+        val attributes = manualSelectionAttributes(file)
+        if (attributes != null && !attributes.isRegularFile) throw manualSelectionUnavailable(file)
         runCatching {
-            val file = manualFileFor(gameKey)
             val dir = file.parentFile ?: return@runCatching false
             if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return@runCatching false
             val tmp = File(dir, file.name + ".tmp." + System.nanoTime())
@@ -334,26 +395,108 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         val target = File(manualStoreDir, sha1(gameKey) + MANUAL_SUFFIX)
         val legacy = File(storeDir, target.name)
         // Preserve pending selections from early feature builds without backing up new markers.
-        if (manualStoreDir != storeDir && legacy.exists()) {
-            try {
-                if (!target.exists()) {
-                    if (!manualStoreDir.isDirectory && !manualStoreDir.mkdirs()) {
-                        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-                    }
+        if (manualStoreDir != storeDir) {
+            val legacyAttributes = manualSelectionAttributes(legacy)
+            if (legacyAttributes != null) {
+                if (!legacyAttributes.isRegularFile) throw manualSelectionUnavailable(legacy)
+                val targetAttributes = manualSelectionAttributes(target)
+                if (targetAttributes == null) {
                     try {
-                        java.nio.file.Files.move(legacy.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE)
-                    } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
-                        java.nio.file.Files.move(legacy.toPath(), target.toPath())
+                        if (!manualStoreDir.isDirectory && !manualStoreDir.mkdirs()) {
+                            throw manualSelectionUnavailable(target)
+                        }
+                        try {
+                            java.nio.file.Files.move(
+                                legacy.toPath(),
+                                target.toPath(),
+                                java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            )
+                        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+                            java.nio.file.Files.move(legacy.toPath(), target.toPath())
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        throw manualSelectionUnavailable(target, failure)
                     }
-                } else if (!legacy.delete()) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-            } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+                } else if (targetAttributes.isRegularFile) {
+                    try {
+                        java.nio.file.Files.deleteIfExists(legacy.toPath())
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (failure: Exception) {
+                        throw manualSelectionUnavailable(legacy, failure)
+                    }
+                }
             }
         }
         return target
     }
+
+    private fun manualSelectionAttributes(file: File): BasicFileAttributes? = try {
+        java.nio.file.Files.readAttributes(
+            file.toPath(),
+            BasicFileAttributes::class.java,
+            LinkOption.NOFOLLOW_LINKS,
+        )
+    } catch (_: NoSuchFileException) {
+        // Windows also reports a missing child when an ancestor is a regular file.
+        // Only an absent path below a usable directory represents an absent marker.
+        requireManualSelectionParent(file)
+        null
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        throw manualSelectionUnavailable(file, failure)
+    }
+
+    private fun requireManualSelectionParent(file: File) {
+        var parent = file.absoluteFile.parentFile
+        while (parent != null) {
+            try {
+                val attributes = java.nio.file.Files.readAttributes(
+                    parent.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS,
+                )
+                if (!attributes.isDirectory) throw manualSelectionUnavailable(file)
+                return
+            } catch (_: NoSuchFileException) {
+                parent = parent.parentFile
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                throw manualSelectionUnavailable(file, failure)
+            }
+        }
+        throw manualSelectionUnavailable(file)
+    }
+
+    private fun readManualSelectionBytes(file: File): ByteArray {
+        java.nio.file.Files.newInputStream(
+            file.toPath(),
+            java.nio.file.StandardOpenOption.READ,
+            LinkOption.NOFOLLOW_LINKS,
+        ).use { input ->
+            val bytes = ByteArray(MAX_MANUAL_SELECTION_BYTES + 1)
+            var size = 0
+            while (size < bytes.size) {
+                val read = input.read(bytes, size, bytes.size - size)
+                if (read < 0) break
+                if (read == 0) throw IOException("manual selection read made no progress")
+                size += read
+            }
+            if (size > MAX_MANUAL_SELECTION_BYTES) {
+                throw IOException("manual selection exceeds $MAX_MANUAL_SELECTION_BYTES bytes")
+            }
+            return bytes.copyOf(size)
+        }
+    }
+
+    private fun manualSelectionUnavailable(file: File, cause: Exception? = null): GameSaveException =
+        GameSaveException(
+            SaveErrorCode.SAVE_DIR_UNAVAILABLE,
+            detail = file.toPath().toAbsolutePath().normalize().toString(),
+            cause = cause,
+        )
 
     private fun sha1(value: String): String = MessageDigest.getInstance("SHA-1")
         .digest(value.toByteArray(Charsets.UTF_8))
@@ -376,6 +519,9 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         private const val KEY_MANUAL_SELECTION = "manual"
         private const val MANIFEST_SUFFIX = ".json"
         private const val MANUAL_SUFFIX = ".manual.json"
+        private const val MAX_MANUAL_SELECTION_BYTES = 64 * 1024
+        private val UNREADABLE_MANUAL_SELECTION =
+            JSONObject().put(KEY_MANUAL_SELECTION, "unreadable").toString().toByteArray(Charsets.UTF_8)
 
         /** 应用私有目录：`filesDir/rpg_save_sync/`。 */
         fun forContext(context: Context): RpgSaveSyncState =

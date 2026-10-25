@@ -72,6 +72,14 @@ internal class SaveActivationJournal(private val directory: File) {
         return File(directory, "archives/$key.zip")
     }
 
+    /** Clear an aborted attempt only after its directory recovery and source retention succeed. */
+    fun discardUncommitted(key: String, recover: (File, SaveVersion) -> Unit) {
+        val pending = load(key) ?: return
+        if (pending.committed) throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        recover(archive(key), pending.selected)
+        clear(key)
+    }
+
     fun clear(key: String) {
         records.remove(key)
         // A failed best-effort cleanup leaves at most one replaceable ZIP for this game.

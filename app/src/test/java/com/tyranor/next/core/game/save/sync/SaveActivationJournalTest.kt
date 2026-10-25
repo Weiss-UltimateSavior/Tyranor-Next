@@ -5,12 +5,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -102,6 +104,62 @@ class SaveActivationJournalTest {
         assertTrue(mismatched.isFile)
         assertNull(journal.load(KEY_A))
         assertFalse(journal.archive(KEY_A).exists())
+    }
+
+    @Test fun abortedImportRetainsEvictedSourceWithinHistoryLimitAndClearsIntent() {
+        val root = temp.newFolder("aborted")
+        val journal = SaveActivationJournal(File(root, "pending"))
+        val snapshots = SaveSnapshotStore(File(root, "history"))
+        val staging = archive(root, "selected")
+        val selected = version(staging)
+        snapshots.add(KEY_A, staging, selected.createdAt, selected.source, selected.contentHash)
+        journal.prepare(KEY_A, selected, staging, "active-before-import")
+        repeat(5) { index ->
+            snapshots.add(KEY_A, archive(root, "later-$index"), selected.createdAt + index + 1,
+                SaveVersionSource.LOCAL)
+        }
+        assertTrue(snapshots.list(KEY_A).none { it.contentHash == selected.contentHash })
+
+        journal.discardUncommitted(KEY_A) { source, version ->
+            snapshots.add(KEY_A, source, version.createdAt, version.source, version.contentHash,
+                restored = version.restored, previousCreatedAt = version.previousCreatedAt)
+        }
+
+        assertNull(journal.load(KEY_A))
+        assertFalse(journal.archive(KEY_A).exists())
+        assertEquals(5, snapshots.list(KEY_A).size)
+        assertTrue(snapshots.isValid(KEY_A, snapshots.list(KEY_A).single { it.id == selected.id }))
+    }
+
+    @Test fun failedAbortRecoveryKeepsIntentAndSourceForRetry() {
+        val root = temp.newFolder("abort-failure")
+        val journal = SaveActivationJournal(root)
+        val staging = archive(root, "selected")
+        val pending = journal.prepare(KEY_A, version(staging), staging, "before")
+        val failure = IOException("directory rollback failed")
+
+        assertSame(failure, assertThrows(IOException::class.java) {
+            journal.discardUncommitted(KEY_A) { _, _ -> throw failure }
+        })
+
+        assertEquals(pending, journal.load(KEY_A))
+        assertTrue(journal.archive(KEY_A).isFile)
+    }
+
+    @Test fun abortCannotDiscardCommittedSelection() {
+        val root = temp.newFolder("committed-abort")
+        val journal = SaveActivationJournal(root)
+        val staging = archive(root, "selected")
+        journal.prepare(KEY_A, version(staging), staging, "before")
+        val committed = journal.markCommitted(KEY_A)
+
+        val failure = assertThrows(SaveSyncException::class.java) {
+            journal.discardUncommitted(KEY_A) { _, _ -> error("must not discard a committed import") }
+        }
+
+        assertEquals(SaveSyncError.SELECTION_INCOMPLETE, failure.code)
+        assertEquals(committed, journal.load(KEY_A))
+        assertTrue(journal.archive(KEY_A).isFile)
     }
 
     @Test fun pendingGuardCannotOverwriteEarlierIntent() {

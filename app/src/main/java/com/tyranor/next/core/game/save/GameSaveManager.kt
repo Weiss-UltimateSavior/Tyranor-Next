@@ -356,7 +356,8 @@ class GameSaveManager(private val context: Context) {
         val path = directory.absoluteFile.toPath()
         // SDK-owned storage roots may themselves sit below system aliases. Resolve only
         // that trusted prefix; user-controlled save directories retain their link checks.
-        val anchor = listOfNotNull(appContext.filesDir, appContext.noBackupFilesDir, appContext.getExternalFilesDir(null))
+        val anchor = listOfNotNull(appContext.filesDir, appContext.noBackupFilesDir,
+            appContext.getExternalFilesDir(null), appContext.filesDir.parentFile)
             .firstOrNull { path.normalize().startsWith(it.absoluteFile.toPath().normalize()) }
         val candidate = if (anchor == null) directory else {
             if (java.nio.file.Files.isSymbolicLink(anchor.toPath())) {

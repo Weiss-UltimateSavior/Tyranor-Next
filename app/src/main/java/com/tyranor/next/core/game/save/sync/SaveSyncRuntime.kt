@@ -36,6 +36,8 @@ object SaveSyncRuntime {
     private val monitors = ConcurrentHashMap.newKeySet<String>()
     private val nativeLaunchGraceLock = Any()
     private val nativeLaunchGraceUntil = HashMap<String, Long>()
+    private val secondaryActivityProcessNamesLock = Any()
+    @Volatile private var cachedSecondaryActivityProcessNames: Set<String>? = null
     @Volatile private var leftUiSinceLastForeground = false
 
     internal data class LaunchTicket(val token: String, val previous: JSONObject?)
@@ -400,23 +402,29 @@ object SaveSyncRuntime {
     }
 
     private fun secondaryActivityProcessNames(context: Context): Set<String>? {
-        val packageInfo = try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.packageManager.getPackageInfo(
-                    context.packageName,
-                    PackageManager.PackageInfoFlags.of(PackageManager.GET_ACTIVITIES.toLong()),
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_ACTIVITIES)
+        cachedSecondaryActivityProcessNames?.let { return it }
+        return synchronized(secondaryActivityProcessNamesLock) {
+            cachedSecondaryActivityProcessNames?.let { return@synchronized it }
+            val appContext = context.applicationContext
+            val packageInfo = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    appContext.packageManager.getPackageInfo(
+                        appContext.packageName,
+                        PackageManager.PackageInfoFlags.of(PackageManager.GET_ACTIVITIES.toLong()),
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    appContext.packageManager.getPackageInfo(appContext.packageName, PackageManager.GET_ACTIVITIES)
+                }
+            } catch (_: Exception) {
+                return@synchronized null
             }
-        } catch (_: Exception) {
-            return null
+            val activities = packageInfo.activities ?: return@synchronized null
+            activities.map { normalizeActivityProcessName(appContext.packageName, it.processName) }
+                .filter { it.startsWith("${appContext.packageName}:") }
+                .toSet()
+                .also { cachedSecondaryActivityProcessNames = it }
         }
-        val activities = packageInfo.activities ?: return null
-        return activities.map { normalizeActivityProcessName(context.packageName, it.processName) }
-            .filter { it.startsWith("${context.packageName}:") }
-            .toSet()
     }
 
     private fun markNativeLaunchGrace(uri: String) = synchronized(nativeLaunchGraceLock) {

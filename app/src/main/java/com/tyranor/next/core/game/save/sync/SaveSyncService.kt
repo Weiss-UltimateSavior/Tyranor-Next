@@ -105,28 +105,51 @@ class SaveSyncService(context: Context) {
                     }
                     // Consume the protected staging copy before a sixth history version can evict S.
                     activations.prepare(key, selected, temp, before) { job.ensureActive() }
-                    captureLocked(game)
-                    job.ensureActive()
-                    requireEnabled()
-                    // Once the active save changes, leaving this page must not cancel its
-                    // matching version metadata or the pending automatic update.
-                    withContext(NonCancellable) {
-                        var committed = false
-                        try {
-                            manager.importFromZip(game, Uri.fromFile(activations.archive(key)), manualSelection = true,
-                                onDirectoryCommitted = { committed = true })
-                            tryFinishActivation(game, activations.markCommitted(key))
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (failure: Exception) {
-                            if (!committed) throw failure
-                            // The save is already active. Retain enough information to retry only
-                            // resource/metadata completion instead of claiming that import failed.
-                            try { activations.markCommitted(key) }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (_: Exception) { /* The staged source and prepared record remain. */ }
-                            SaveActivationResult.METADATA_PENDING
+                    var committed = false
+                    try {
+                        captureLocked(game)
+                        job.ensureActive()
+                        requireEnabled()
+                        // Once the active save changes, leaving this page must not cancel its
+                        // matching version metadata or the pending automatic update.
+                        withContext(NonCancellable) {
+                            try {
+                                manager.importFromZip(game, Uri.fromFile(activations.archive(key)), manualSelection = true,
+                                    onDirectoryCommitted = { committed = true })
+                                tryFinishActivation(game, activations.markCommitted(key))
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                if (!committed) throw failure
+                                // The save is already active. Retain enough information to retry only
+                                // resource/metadata completion instead of claiming that import failed.
+                                try { activations.markCommitted(key) }
+                                catch (cancelled: CancellationException) { throw cancelled }
+                                catch (_: Exception) { /* The staged source and prepared record remain. */ }
+                                SaveActivationResult.METADATA_PENDING
+                            }
                         }
+                    } catch (failure: Exception) {
+                        if (!committed) withContext(NonCancellable) {
+                            try {
+                                activations.discardUncommitted(key) { archive, version ->
+                                    manager.completePendingVersionImport(game)
+                                    snapshots.add(key, archive, version.createdAt, version.source, version.contentHash,
+                                        restored = version.restored, previousCreatedAt = version.previousCreatedAt)
+                                }
+                            } catch (cleanup: Exception) {
+                                if (cleanup !== failure) {
+                                    // Preserve the original cancellation object. A new cancellation
+                                    // still propagates, with the original failure retained as context.
+                                    if (cleanup is CancellationException && failure !is CancellationException) {
+                                        cleanup.addSuppressed(failure)
+                                        throw cleanup
+                                    }
+                                    failure.addSuppressed(cleanup)
+                                }
+                            }
+                        }
+                        throw failure
                     }
                 } finally {
                     SaveSyncTemporaryFiles.release(temp)

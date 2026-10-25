@@ -135,6 +135,136 @@ class RpgSaveManualSelectionTest {
     }
 
     @Test
+    fun oversizedMarkerRollsBackToUnreadableSentinelAndCanBeRepaired() {
+        val stateDir = temporaryFolder.newFolder("state_oversized")
+        val store = RpgSaveSyncState(stateDir)
+        assertTrue(store.markManualSelection("g"))
+        val marker = stateDir.markers().single()
+        marker.writeBytes(ByteArray(64 * 1024 + 1))
+
+        val oversized = assertThrows(GameSaveException::class.java) { store.hasManualSelection("g") }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, oversized.code)
+
+        val failure = IOException("directory swap failed")
+        assertSame(failure, assertThrows(IOException::class.java) {
+            store.withManualSelection<Unit>("g") { _ -> throw failure }
+        })
+        // 超大内容无法原样保留，但显式选择必须已原子替换它，并以不可读哨兵失败关闭。
+        assertTrue(marker.isFile)
+        assertTrue(marker.length() <= 64 * 1024)
+        val closed = assertThrows(GameSaveException::class.java) { store.hasManualSelection("g") }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, closed.code)
+        assertTrue(store.needsManualSelectionRecovery("g"))
+
+        store.withManualSelection("g") { onDirectoryCommitted -> onDirectoryCommitted() }
+        assertTrue(store.hasManualSelection("g"))
+    }
+
+    @Test
+    fun emptyAndNonEmptyMarkerDirectoriesArePreservedAndFailClosed() {
+        val stateDir = temporaryFolder.newFolder("state_empty_marker")
+        val store = RpgSaveSyncState(stateDir)
+        assertTrue(store.markManualSelection("g"))
+        val marker = stateDir.markers().single()
+        assertTrue(marker.delete())
+        assertTrue(marker.mkdir())
+        var blockCalled = false
+
+        val unavailable = assertThrows(GameSaveException::class.java) { store.hasManualSelection("g") }
+        assertEquals(marker.toPath().toAbsolutePath().normalize().toString(), unavailable.detail)
+        val marked = assertThrows(GameSaveException::class.java) { store.markManualSelection("g") }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, marked.code)
+        assertEquals(unavailable.detail, marked.detail)
+
+        val empty = assertThrows(GameSaveException::class.java) {
+            store.withManualSelection<Unit>("g") { blockCalled = true }
+        }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, empty.code)
+        assertEquals(marker.toPath().toAbsolutePath().normalize().toString(), empty.detail)
+        assertFalse(blockCalled)
+        assertTrue(marker.isDirectory)
+        assertTrue(checkNotNull(marker.listFiles()).isEmpty())
+        assertTrue(store.needsManualSelectionRecovery("g"))
+
+        val nonEmptyDir = temporaryFolder.newFolder("state_nonempty_marker")
+        val blocked = RpgSaveSyncState(nonEmptyDir)
+        assertTrue(blocked.markManualSelection("h"))
+        val nonEmptyMarker = nonEmptyDir.markers().single()
+        assertTrue(nonEmptyMarker.delete())
+        assertTrue(nonEmptyMarker.mkdir())
+        val child = File(nonEmptyMarker, "keep.txt").apply { writeText("keep") }
+        blockCalled = false
+
+        val nonEmpty = assertThrows(GameSaveException::class.java) {
+            blocked.withManualSelection<Unit>("h") { blockCalled = true }
+        }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, nonEmpty.code)
+        assertEquals(nonEmptyMarker.toPath().toAbsolutePath().normalize().toString(), nonEmpty.detail)
+        assertFalse(blockCalled)
+        assertTrue(nonEmptyMarker.isDirectory)
+        assertEquals("keep", child.readText())
+    }
+
+    @Test
+    fun metadataStatFailureIsUnreadableInsteadOfAbsent() {
+        val blockedParent = temporaryFolder.newFile("blocked_state_parent")
+        val store = RpgSaveSyncState(blockedParent)
+
+        val failure = assertThrows(GameSaveException::class.java) { store.hasManualSelection("g") }
+
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
+        assertTrue(store.needsManualSelectionRecovery("g"))
+    }
+
+    @Test
+    fun clearRaisesWhenManualMarkerCleanupCannotComplete() {
+        val stateDir = temporaryFolder.newFolder("state_clear_failure")
+        val store = RpgSaveSyncState(stateDir)
+        assertTrue(store.markManualSelection("g"))
+        val marker = stateDir.markers().single()
+        assertTrue(marker.delete())
+        assertTrue(marker.mkdir())
+        val child = File(marker, "keep.txt").apply { writeText("keep") }
+
+        assertFalse(store.clearManualSelection("g"))
+        val deleteFailure = assertThrows(GameSaveException::class.java) { store.clear("g") }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, deleteFailure.code)
+        assertEquals(marker.toPath().toAbsolutePath().normalize().toString(), deleteFailure.detail)
+        assertTrue(marker.isDirectory)
+        assertEquals("keep", child.readText())
+
+        val manifests = temporaryFolder.newFolder("state_migration_clear")
+        val legacy = RpgSaveSyncState(manifests)
+        assertTrue(legacy.markManualSelection("m"))
+        val legacyMarker = manifests.markers().single()
+        val blockedSelections = temporaryFolder.newFile("blocked_selections_parent")
+        val migrating = RpgSaveSyncState(manifests, blockedSelections)
+
+        val migrationFailure = assertThrows(GameSaveException::class.java) { migrating.clear("m") }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, migrationFailure.code)
+        assertTrue(legacyMarker.isFile)
+        assertTrue(legacy.hasManualSelection("m"))
+    }
+
+    @Test
+    fun clearDeletesCurrentEmptyDirectoryAndLegacyMarkerWithoutMigration() {
+        val manifests = temporaryFolder.newFolder("state_dual_clear_manifests")
+        val selections = temporaryFolder.newFolder("state_dual_clear_selections")
+        val legacy = RpgSaveSyncState(manifests)
+        assertTrue(legacy.markManualSelection("g"))
+        val legacyMarker = manifests.markers().single()
+        val currentMarker = File(selections, legacyMarker.name)
+        assertTrue(currentMarker.mkdir())
+        val current = RpgSaveSyncState(manifests, selections)
+
+        current.clear("g")
+
+        assertFalse(currentMarker.exists())
+        assertFalse(legacyMarker.exists())
+        assertFalse(current.hasManualSelection("g"))
+    }
+
+    @Test
     fun selectionMarkerMigratesWithoutMovingTheExistingManifest() {
         val manifests = temporaryFolder.newFolder("manifests")
         val selections = temporaryFolder.newFolder("no_backup_selections")
