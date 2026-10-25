@@ -1,8 +1,10 @@
 package com.tyranor.next.core.game.save.sync
 
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -129,6 +131,98 @@ class SaveSnapshotStoreTest {
             throw AssertionError("Wrong content hash accepted")
         } catch (expected: SaveSyncException) { assertEquals(SaveSyncError.CORRUPT_ARCHIVE, expected.code) }
         assertEquals(before, store.list(KEY_A))
+    }
+
+    @Test fun validIncomingRepairsCorruptSameHashArchiveWithoutDuplicate() {
+        val store = SaveSnapshotStore(temp.newFolder())
+        val incoming = archive(listOf("save" to "stable"))
+        val existing = store.add(KEY_A, incoming, 1L, SaveVersionSource.CLOUD)
+        val cached = store.file(KEY_A, existing.id)
+        val cloudMarker = File(cached.parentFile, cached.name + ".cloud")
+        cached.writeText("corrupt")
+        assertFalse(store.isValid(KEY_A, existing))
+
+        val repaired = store.add(KEY_A, incoming, 99L, SaveVersionSource.LOCAL)
+
+        assertEquals(existing.id, repaired.id)
+        assertEquals(existing.createdAt, repaired.createdAt)
+        assertEquals(SaveVersionSource.CLOUD, repaired.source)
+        assertEquals(listOf(repaired), store.list(KEY_A))
+        assertTrue(store.isValid(KEY_A, repaired))
+        assertTrue(cloudMarker.isFile)
+        assertFalse(cached.parentFile.listFiles().orEmpty().any { it.name.startsWith("snapshot_") })
+    }
+
+    @Test fun repairedArchiveStillAppliesRequestedRestoredMetadataRefresh() {
+        val store = SaveSnapshotStore(temp.newFolder())
+        val incoming = archive(listOf("save" to "restored"))
+        val existing = store.add(KEY_A, incoming, 1L, SaveVersionSource.LOCAL)
+        store.file(KEY_A, existing.id).writeText("corrupt")
+
+        val refreshed = store.add(
+            KEY_A,
+            incoming,
+            100L,
+            SaveVersionSource.CLOUD,
+            restored = true,
+            refreshExisting = true,
+            previousCreatedAt = existing.createdAt,
+        )
+
+        assertNotEquals(existing.id, refreshed.id)
+        assertTrue(refreshed.restored)
+        assertEquals(existing.createdAt, refreshed.previousCreatedAt)
+        assertEquals(listOf(refreshed), store.list(KEY_A))
+        assertTrue(store.isValid(KEY_A, refreshed))
+    }
+
+    @Test fun corruptIncomingLeavesCorruptCachedBytesUntouched() {
+        val store = SaveSnapshotStore(temp.newFolder())
+        val existing = store.add(KEY_A, archive(listOf("save" to "existing")), 1L, SaveVersionSource.LOCAL)
+        val cached = store.file(KEY_A, existing.id).apply { writeText("cached-corrupt") }
+        val cachedBytes = cached.readBytes()
+        val corruptIncoming = temp.newFile().apply { writeText("not a ZIP") }
+
+        try {
+            store.add(KEY_A, corruptIncoming, 2L, SaveVersionSource.CLOUD)
+            throw AssertionError("Corrupt archive accepted")
+        } catch (expected: SaveSyncException) {
+            assertEquals(SaveSyncError.CORRUPT_ARCHIVE, expected.code)
+        }
+
+        assertEquals(cachedBytes.toList(), cached.readBytes().toList())
+        assertFalse(cached.parentFile.listFiles().orEmpty().any { it.name.startsWith("snapshot_") })
+    }
+
+    @Test fun cachedArchiveIoFailureIsNotReportedAsCorruption() {
+        val store = SaveSnapshotStore(temp.newFolder())
+        val id = SaveVersionNames.create(1L, "a".repeat(64))
+        val missing = SaveVersion(id, "a".repeat(64), 1L, 1L)
+
+        try {
+            store.isValid(KEY_A, missing)
+            throw AssertionError("Missing cached archive accepted")
+        } catch (expected: SaveSyncException) {
+            assertEquals(SaveSyncError.LOCAL_IO, expected.code)
+        }
+    }
+
+    @Test fun cancellationDuringIncomingValidationPropagatesWithoutTouchingCache() {
+        val store = SaveSnapshotStore(temp.newFolder())
+        val incoming = archive(listOf("save" to "stable"))
+        val existing = store.add(KEY_A, incoming, 1L, SaveVersionSource.LOCAL)
+        val cachedBytes = store.file(KEY_A, existing.id).readBytes()
+        val cancelled = CancellationException("cancelled")
+
+        try {
+            store.add(KEY_A, incoming, 2L, SaveVersionSource.CLOUD, check = { throw cancelled })
+            throw AssertionError("Cancellation was swallowed")
+        } catch (actual: CancellationException) {
+            assertSame(cancelled, actual)
+        }
+
+        assertEquals(cachedBytes.toList(), store.file(KEY_A, existing.id).readBytes().toList())
+        assertTrue(store.isValid(KEY_A, existing))
     }
 
     @Test fun zipIdentityMatchesExportedFilesAndRejectsTraversal() {

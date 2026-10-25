@@ -1,6 +1,7 @@
 package com.tyranor.next.core.game.save.sync
 
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.Call
@@ -36,6 +37,7 @@ class WebDavClient(
     private val temporaryDirectory: File? = null,
     private val enabledCheck: (() -> Boolean)? = null,
 ) : AutoCloseable {
+    data class UploadResult(val uploaded: Boolean, val size: Long)
     private val config = WebDavSettingsStore.validated(config)
     private val base: HttpUrl = this.config.serverUrl.takeIf { it.isNotBlank() }?.toHttpUrl()?.let(::escapePathBrackets)
         ?: throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
@@ -65,7 +67,7 @@ class WebDavClient(
         }
     }
 
-    suspend fun upload(game: RemoteSaveGame, version: SaveVersion, source: File): Boolean {
+    suspend fun upload(game: RemoteSaveGame, version: SaveVersion, source: File): UploadResult {
         val parsed = SaveVersionNames.parse(version.id) ?: throw SaveSyncException(SaveSyncError.INVALID_CONFIG)
         if (parsed.contentHash != version.contentHash || parsed.createdAt != version.createdAt || source.length() > SaveContentHash.MAX_BYTES) {
             throw SaveSyncException(SaveSyncError.INVALID_CONFIG)
@@ -76,17 +78,47 @@ class WebDavClient(
             if (response.code != 412) requireStatus(response, 200, 201, 204)
             response.code
         }
-        if (code != 412) return true
+        if (code != 412) return UploadResult(true, source.length())
         val existing = list(game).firstOrNull { it.name == version.id && !it.legacy }
             ?: throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+        return if (verifyArchive(game, existing)) UploadResult(false, existing.size) else {
+            repairArchive(game, version, source, existing)
+            UploadResult(true, source.length())
+        }
+    }
+
+    /** Repairs a proven bad immutable object only while its strong ETag is unchanged. */
+    private suspend fun repairArchive(game: RemoteSaveGame, version: SaveVersion, source: File, existing: RemoteSaveVersion) {
+        val etag = strongEtag(existing.etag) ?: throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+        exchange(request(versionUrl(game, version.id)).header("If-Match", etag)
+            .put(source.asRequestBody(ZIP)).build()) { response, _ -> requireStatus(response, 200, 201, 204) }
+    }
+
+    private suspend fun verifyArchive(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean {
         val verification = SaveSyncTemporaryFiles.create("dav_collision_", ".zip", temporaryDirectory)
         try {
-            download(game, existing, verification)
-            if (SaveContentHash.archive(verification) != version.contentHash) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+            download(game, remote, verification)
+            val job = kotlinx.coroutines.currentCoroutineContext()
+            return SaveContentHash.archive(verification) { job.ensureActive() } == remote.contentHash
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (failure: SaveSyncException) {
+            if (failure.code == SaveSyncError.CORRUPT_ARCHIVE || failure.status == 404) return false
+            throw failure
         } finally {
             SaveSyncTemporaryFiles.release(verification)
         }
-        return false
+    }
+
+    internal suspend fun verifyVersion(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean = verifyArchive(game, remote)
+
+    /** Only a proven corrupt target owned by this pending publication may be retired. */
+    internal suspend fun discardCorruptPublication(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean {
+        if (remote.legacy) throw SaveSyncException(SaveSyncError.INVALID_CONFIG)
+        if (verifyArchive(game, remote)) return false
+        if (strongEtag(remote.etag) == null) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+        delete(game, remote)
+        return true
     }
 
     /** Promote identical bytes with a server-side rename when DAV MOVE is available. */
@@ -97,10 +129,16 @@ class WebDavClient(
             parsed.contentHash != publication.contentHash || parsed.createdAt != publication.createdAt
         ) throw SaveSyncException(SaveSyncError.INVALID_CONFIG)
         ensureGame(game)
+        if (!previous.legacy && previous.name == publication.id) {
+            if (verifyArchive(game, previous)) return previous.size
+            repairArchive(game, publication, source, previous)
+            return source.length()
+        }
+        if (!verifyArchive(game, previous)) return upload(game, publication, source).size
         val destination = versionUrl(game, publication.id)
         val move = request(versionUrl(game, previous.name, previous.legacy))
             .method("MOVE", null).header("Destination", destination.toString()).header("Overwrite", "F").apply {
-                previous.etag?.takeUnless { it.startsWith("W/") }?.let { header("If-Match", it) }
+                strongEtag(previous.etag)?.let { header("If-Match", it) }
             }.build()
         val code = exchange(move) { response, _ ->
             if (response.code !in setOf(404, 405, 412, 501)) requireStatus(response, 201, 204)
@@ -109,8 +147,7 @@ class WebDavClient(
         if (code == 201 || code == 204) return previous.size
         // Some DAV providers support PUT/DELETE but not MOVE. The caller confirms this new
         // immutable file before removing the old one, including after an interrupted MOVE.
-        upload(game, publication, source)
-        return source.length()
+        return upload(game, publication, source).size
     }
 
     suspend fun download(game: RemoteSaveGame, remote: RemoteSaveVersion, destination: File) {
@@ -140,7 +177,7 @@ class WebDavClient(
 
     suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion) {
         val request = request(versionUrl(game, remote.name, remote.legacy)).delete().apply {
-            remote.etag?.takeUnless { it.startsWith("W/") }?.let { header("If-Match", it) }
+            strongEtag(remote.etag)?.let { header("If-Match", it) }
         }.build()
         exchange(request) { response, _ -> requireStatus(response, 200, 204, 404) }
     }
@@ -244,8 +281,9 @@ class WebDavClient(
         cleanup: Boolean = false,
         consume: (Response, () -> Unit) -> T,
     ): T = suspendCancellableCoroutine { continuation ->
+        if (!continuation.isActive) return@suspendCancellableCoroutine
         if (!cleanup && enabledCheck?.invoke() == false) {
-            continuation.cancel(kotlinx.coroutines.CancellationException("WebDAV disabled"))
+            continuation.resumeWithException(SaveSyncException(SaveSyncError.DISABLED))
             return@suspendCancellableCoroutine
         }
         val call = client.newCall(request)
@@ -258,7 +296,10 @@ class WebDavClient(
             override fun onResponse(call: Call, response: Response) {
                 response.use {
                     try {
-                        val check = { if (!continuation.isActive) throw kotlinx.coroutines.CancellationException() }
+                        val check = {
+                            if (!continuation.isActive) throw kotlinx.coroutines.CancellationException()
+                            if (!cleanup && enabledCheck?.invoke() == false) throw SaveSyncException(SaveSyncError.DISABLED)
+                        }
                         check()
                         val value = consume(response, check)
                         if (continuation.isActive) continuation.resume(value)
@@ -281,6 +322,9 @@ class WebDavClient(
     }
 
     companion object {
+        private fun strongEtag(value: String?): String? = value?.takeIf {
+            it.length >= 2 && it.startsWith('"') && it.endsWith('"') && it.none { c -> c.code < 32 || c.code == 127 }
+        }
         private val XML = "application/xml; charset=utf-8".toMediaType()
         private val ZIP = "application/zip".toMediaType()
         private const val PROPFIND = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/><d:getcontentlength/><d:getetag/></d:prop></d:propfind>"

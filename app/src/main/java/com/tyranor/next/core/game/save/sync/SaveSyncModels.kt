@@ -29,12 +29,15 @@ data class WebDavConfig(
 ) {
     val configured: Boolean get() = serverUrl.isNotBlank()
     val active: Boolean get() = enabled && configured
+
+    override fun toString(): String =
+        "WebDavConfig(mode=$mode, remoteLimit=$remoteLimit, showSyncFeedback=$showSyncFeedback, enabled=$enabled, configured=$configured)"
 }
 
 enum class SaveSyncError {
     NOT_CONFIGURED, INVALID_CONFIG, CREDENTIALS_UNAVAILABLE, AUTHENTICATION, NETWORK,
     SERVER, INVALID_RESPONSE, CORRUPT_ARCHIVE, LOCAL_IO, SAVE_UNAVAILABLE, GAME_RUNNING,
-    IDENTITY_CONFLICT,
+    IDENTITY_CONFLICT, DISABLED, SELECTION_INCOMPLETE,
 }
 
 class SaveSyncException(
@@ -44,6 +47,8 @@ class SaveSyncException(
 ) : IOException(code.name, cause)
 
 enum class SaveVersionSource { LOCAL, CLOUD }
+
+enum class SaveActivationResult { UNCHANGED, APPLIED, METADATA_PENDING }
 
 data class SaveVersion(
     val id: String,
@@ -128,8 +133,10 @@ object SaveVersionNames {
         previousCreatedAt: Long? = null,
     ): String {
         require(createdAt > 0 && hash.matches(Regex("[a-f0-9]{64}")))
+        val date = Instant.ofEpochMilli(createdAt).atZone(zone)
+        if (date.year !in 1..9999) throw SaveSyncException(SaveSyncError.INVALID_CONFIG)
         return (if (restored) restoredPrefix(previousCreatedAt) else "") +
-            remoteTime.format(Instant.ofEpochMilli(createdAt).atZone(zone)) + "_" + hash + ".zip"
+            remoteTime.format(date) + "_" + hash + ".zip"
     }
 
     private fun restoredPrefix(previousCreatedAt: Long?): String {

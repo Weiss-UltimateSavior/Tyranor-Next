@@ -57,6 +57,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.MiuixTopBarBlurScaffold
+import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -106,6 +107,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
+    var refreshError by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showExportFormatPicker by remember { mutableStateOf(false) }
     // CreateDocument 系统页期间进程重建后仍按用户所选格式导出。
@@ -120,12 +122,19 @@ private fun SaveManagementScreen(game: ScanGame) {
 
     // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
     suspend fun refresh() {
-        val snapshot = withContext(Dispatchers.IO) {
-            manager.resolveSaveLocation(game) to manager.listSaveFiles(game).size
+        try {
+            val snapshot = withContext(Dispatchers.IO) {
+                manager.resolveSaveLocation(game) to manager.listSaveFiles(game).size
+            }
+            location = snapshot.first
+            fileCount = snapshot.second
+            refreshError = null
+            versionsRevision++
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            refreshError = failure.toSaveErrorMessage(context, saveOperationFailedMessage)
         }
-        location = snapshot.first
-        fileCount = snapshot.second
-        versionsRevision++
     }
 
     LaunchedEffect(game) {
@@ -158,18 +167,12 @@ private fun SaveManagementScreen(game: ScanGame) {
                         block()
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (t: Throwable) {
-                        if (t is SaveSyncException) t.code.toSaveSyncMessage(context)
-                        else t.toSaveErrorMessage(context, saveOperationFailedMessage)
+                    } catch (failure: Exception) {
+                        if (failure is SaveSyncException) failure.code.toSaveSyncMessage(context)
+                        else failure.toSaveErrorMessage(context, saveOperationFailedMessage)
                     }
                 }
-                try {
-                    refresh()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Throwable) {
-                    // Refreshing is supplementary; it must not replace the operation result.
-                }
+                refresh()
                 if (message != null) {
                     val duration = if (shortFeedback) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
                     Toast.makeText(context, message, duration).show()
@@ -238,6 +241,14 @@ private fun SaveManagementScreen(game: ScanGame) {
                                     modifier = Modifier.padding(top = 4.dp),
                                 )
                             }
+                            refreshError?.let { error ->
+                                Text(
+                                    error,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
                         }
                     }
                 }
@@ -252,6 +263,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                                 title = stringResource(R.string.save_export_zip),
                                 showLeadingIcon = false,
                                 showArrow = false,
+                                drawSurface = false,
                                 onClick = if (taskRunning) null else ({
                                     if (rpgWebGame) {
                                         showExportFormatPicker = true
@@ -266,6 +278,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                                     title = stringResource(R.string.save_sync_now),
                                     showLeadingIcon = false,
                                     showArrow = false,
+                                    drawSurface = false,
                                     onClick = if (taskRunning) null else ({
                                         runSaveTask {
                                             when (val op = EngineLauncher.syncRpgSaves(context, game)) {
@@ -283,6 +296,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                                 title = stringResource(R.string.save_import_zip),
                                 showLeadingIcon = false,
                                 showArrow = false,
+                                drawSurface = false,
                                 onClick = if (taskRunning) null else ({
                                     importLauncher.launch("application/zip")
                                 }),
@@ -291,6 +305,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                                 title = stringResource(R.string.save_delete_title),
                                 showLeadingIcon = false,
                                 showArrow = false,
+                                drawSurface = false,
                                 onClick = if (taskRunning) null else ({ showDeleteConfirm = true }),
                             )
                         }

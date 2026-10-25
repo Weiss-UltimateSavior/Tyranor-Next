@@ -120,4 +120,31 @@ class SaveSyncModelsTest {
         assertEquals(20, SaveSyncRetention.fromLegacy(20))
         assertEquals(0, SaveSyncRetention.fromLegacy(100))
     }
+
+    @Test fun configToStringRedactsEndpointAndCredentials() {
+        val endpoint = "https://private.example.invalid/dav/account-42"
+        val username = "private-user-42"
+        val password = "private-password-42"
+        val rendered = WebDavConfig(
+            serverUrl = endpoint,
+            username = username,
+            password = password,
+            enabled = true,
+        ).toString()
+
+        listOf(endpoint, username, password).forEach { secret ->
+            assertFalse(rendered, rendered.contains(secret))
+        }
+        assertTrue(rendered.contains("configured=true"))
+        assertTrue(rendered.contains("enabled=true"))
+    }
+
+    @Test fun createRemoteRejectsYear10000WithTypedInvalidConfig() {
+        val year10000 = Instant.parse("+10000-01-01T00:00:00Z").toEpochMilli()
+        val failure = assertThrows(SaveSyncException::class.java) {
+            SaveVersionNames.createRemote(year10000, "c".repeat(64), ZoneId.of("UTC"))
+        }
+
+        assertEquals(SaveSyncError.INVALID_CONFIG, failure.code)
+    }
 }

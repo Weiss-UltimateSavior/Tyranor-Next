@@ -15,7 +15,7 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassBackground
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.core.updater.UpdateNotificationManager
-import com.tyranor.next.ui.save.observeSaveSyncFeedback
+import com.tyranor.next.ui.common.observeSaveSyncFeedback
 
 class MainActivity : ComponentActivity() {
   private val notificationPermissionLauncher =

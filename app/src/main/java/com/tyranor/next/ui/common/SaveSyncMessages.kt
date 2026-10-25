@@ -1,4 +1,4 @@
-package com.tyranor.next.ui.save
+package com.tyranor.next.ui.common
 
 import android.content.Context
 import com.tyranor.next.R
@@ -22,6 +22,7 @@ internal suspend fun shouldShowSaveSyncFeedback(context: Context): Boolean = wit
 
 internal fun SaveSyncError.toSaveSyncMessage(context: Context): String = AppLocaleController.wrap(context).getString(when (this) {
     SaveSyncError.NOT_CONFIGURED -> R.string.webdav_error_not_configured
+    SaveSyncError.DISABLED -> R.string.webdav_error_not_configured
     SaveSyncError.INVALID_CONFIG -> R.string.webdav_error_invalid_config
     SaveSyncError.CREDENTIALS_UNAVAILABLE -> R.string.webdav_error_credentials
     SaveSyncError.AUTHENTICATION -> R.string.webdav_error_authentication
@@ -33,19 +34,25 @@ internal fun SaveSyncError.toSaveSyncMessage(context: Context): String = AppLoca
     SaveSyncError.SAVE_UNAVAILABLE -> R.string.webdav_error_no_save
     SaveSyncError.GAME_RUNNING -> R.string.webdav_error_game_running
     SaveSyncError.IDENTITY_CONFLICT -> R.string.webdav_error_identity_conflict
+    SaveSyncError.SELECTION_INCOMPLETE -> R.string.save_error_selection_incomplete
 })
 
 internal fun SaveSyncReport.toSaveSyncMessage(context: Context): String {
     val localized = AppLocaleController.wrap(context)
+    val transferred = uploaded + downloaded > 0
     if (failures.isEmpty()) {
-        return localized.getString(when {
-            uploaded + downloaded > 0 -> R.string.webdav_sync_success
-            busy > 0 -> R.string.webdav_error_game_running
-            else -> R.string.webdav_sync_unchanged
-        })
+        return when {
+            transferred && busy == 0 -> localized.getString(R.string.webdav_sync_success)
+            transferred -> localized.getString(
+                R.string.webdav_sync_partial_failure,
+                localized.getString(R.string.webdav_error_game_running),
+            )
+            busy > 0 -> localized.getString(R.string.webdav_error_game_running)
+            else -> localized.getString(R.string.webdav_sync_unchanged)
+        }
     }
     return localized.getString(
-        if (uploaded + downloaded > 0) R.string.webdav_sync_partial_failure else R.string.webdav_sync_failure,
+        if (transferred) R.string.webdav_sync_partial_failure else R.string.webdav_sync_failure,
         failures.first().error.toSaveSyncMessage(context),
     )
 }

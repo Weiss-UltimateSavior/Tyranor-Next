@@ -33,6 +33,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.sync.SaveSyncDirection
 import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.SaveSyncException
@@ -55,6 +56,8 @@ import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.MiuixTopBarBlurScaffold
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
+import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -102,6 +105,10 @@ private fun WebDavSettingsScreen() {
     var manualDirection by remember { mutableStateOf(SaveSyncDirection.PULL) }
     var showResetConfirm by remember { mutableStateOf(false) }
     val available = enabled && config.enabled && loaded && loadError == null && !busy
+    val saveOperationFailedMessage = stringResource(R.string.save_operation_failed)
+    val notSetMessage = stringResource(R.string.webdav_not_set)
+    val passwordSetMessage = stringResource(R.string.webdav_password_set)
+    val connectionOkMessage = stringResource(R.string.webdav_connection_ok)
     // 恢复入口只在「本机读不出已存载荷」时出现，且与其余配置一样受总开关与在途任务约束
     val canResetConfig = loadError != null && loaded && enabled && config.enabled &&
         !busy && masterTarget == null
@@ -109,9 +116,11 @@ private fun WebDavSettingsScreen() {
     val masterChecked = masterTarget ?: enabled
     val pageError = if (editing == null) configError ?: loadError else null
 
-    fun failureMessage(failure: Exception): String = if (failure is SaveSyncException) {
-        failure.code.toSaveSyncMessage(context)
-    } else context.getString(R.string.save_operation_failed)
+    fun failureMessage(failure: Exception): String = when (failure) {
+        is SaveSyncException -> failure.code.toSaveSyncMessage(context)
+        is GameSaveException -> failure.toSaveErrorMessage(context, saveOperationFailedMessage)
+        else -> saveOperationFailedMessage
+    }
 
     fun resetStoredConfig() {
         if (!canResetConfig || !WebDavSettingsStore.isEnabled(context)) return
@@ -345,6 +354,8 @@ private fun WebDavSettingsScreen() {
                                         title = stringResource(R.string.webdav_reset_config),
                                         showLeadingIcon = false,
                                         showArrow = false,
+                                        drawSurface = false,
+                                        titleColor = MaterialTheme.colorScheme.error,
                                         onClick = if (!canResetConfig) null else ({ showResetConfirm = true }),
                                     )
                                 }
@@ -361,9 +372,7 @@ private fun WebDavSettingsScreen() {
                             ArrowPreference(
                                 title = stringResource(R.string.webdav_server_url),
                                 endActions = {
-                                    PreferenceValue(config.serverUrl.ifBlank {
-                                        context.getString(R.string.webdav_not_set)
-                                    })
+                                    PreferenceValue(config.serverUrl.ifBlank { notSetMessage })
                                 },
                                 enabled = available,
                                 onClick = { beginEdit(WebDavTextField.URL) },
@@ -371,9 +380,7 @@ private fun WebDavSettingsScreen() {
                             ArrowPreference(
                                 title = stringResource(R.string.webdav_username),
                                 endActions = {
-                                    PreferenceValue(config.username.ifBlank {
-                                        context.getString(R.string.webdav_not_set)
-                                    })
+                                    PreferenceValue(config.username.ifBlank { notSetMessage })
                                 },
                                 enabled = available,
                                 onClick = { beginEdit(WebDavTextField.USERNAME) },
@@ -382,13 +389,7 @@ private fun WebDavSettingsScreen() {
                                 title = stringResource(R.string.webdav_password),
                                 endActions = {
                                     PreferenceValue(
-                                        context.getString(
-                                            if (config.password.isEmpty()) {
-                                                R.string.webdav_not_set
-                                            } else {
-                                                R.string.webdav_password_set
-                                            },
-                                        ),
+                                        if (config.password.isEmpty()) notSetMessage else passwordSetMessage,
                                     )
                                 },
                                 enabled = available,
@@ -398,11 +399,12 @@ private fun WebDavSettingsScreen() {
                                 title = stringResource(R.string.webdav_test_connection),
                                 showLeadingIcon = false,
                                 showArrow = false,
+                                drawSurface = false,
                                 onClick = if (!available) null else ({
                                     runOperation(requireServer = true) { value ->
                                         WebDavClient(value, context.cacheDir) { WebDavSettingsStore.isEnabled(context) }
                                             .use { it.testConnection() }
-                                        context.getString(R.string.webdav_connection_ok)
+                                        connectionOkMessage
                                     }
                                 }),
                             )
@@ -498,6 +500,7 @@ private fun WebDavSettingsScreen() {
                                 title = stringResource(R.string.save_sync_now),
                                 showLeadingIcon = false,
                                 showArrow = false,
+                                drawSurface = false,
                                 onClick = if (!available) null else ({
                                     val direction = manualDirection
                                     runOperation(requireServer = true, syncOperation = true) {

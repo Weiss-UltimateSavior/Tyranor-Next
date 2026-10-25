@@ -443,6 +443,7 @@ object EngineLauncher {
         currentCoroutineContext().ensureActive()
         return try {
             val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings)
+                .putExtra(LaunchContract.ROOT_URI, game.uri)
             // Intent 组装后、真正拉起引擎前最后一次确认，取消后不 startActivity
             currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

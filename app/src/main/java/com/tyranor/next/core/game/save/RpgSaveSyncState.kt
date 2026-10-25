@@ -196,7 +196,7 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         }
 
     /**
-     * 置位标记：用户在云端/ZIP 里**显式激活**某个存档版本后，下一轮互通同步以 Tyranor 侧为准
+     * 置位标记：用户在存档版本面板中**显式激活**某个版本后，下一轮互通同步以 Tyranor 侧为准
      * （对应 `RpgSaveSync.sync` 的 `preferTyranor`）。
      *
      * 没有这层标记时，用户刚选定的旧版本会在下次启动被标准侧较新的 mtime 反向覆盖——常规同步

@@ -5,9 +5,12 @@ import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.os.SystemClock
+import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveManager
@@ -17,11 +20,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -32,8 +34,9 @@ import java.util.concurrent.atomic.AtomicInteger
 object SaveSyncRuntime {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val monitors = ConcurrentHashMap.newKeySet<String>()
-    private val status = MutableStateFlow<SaveSyncReport?>(null)
-    val lastAutomaticReport = status.asStateFlow()
+    private val nativeLaunchGraceLock = Any()
+    private val nativeLaunchGraceUntil = HashMap<String, Long>()
+    @Volatile private var leftUiSinceLastForeground = false
 
     internal data class LaunchTicket(val token: String, val previous: JSONObject?)
 
@@ -41,6 +44,7 @@ object SaveSyncRuntime {
         val process = processName(application)
         if (process == application.packageName || !process.startsWith(application.packageName + ":")) return
         val activities = AtomicInteger(0)
+        val hostUris = ConcurrentHashMap.newKeySet<String>()
         val hostWrite = Mutex()
         val runtime = runtimeStore(application)
         val key = SaveContentHash.text(process)
@@ -48,7 +52,10 @@ object SaveSyncRuntime {
             scope.launch {
                 hostWrite.withLock {
                     try {
-                        runtime.save(key, JSONObject().put("pid", Process.myPid()).put("activities", activities.get()))
+                        runtime.save(key, JSONObject()
+                            .put("pid", Process.myPid())
+                            .put("activities", activities.get())
+                            .put("uris", JSONArray(hostUris.toList())))
                     } catch (_: Exception) {
                         // An unreadable/missing record is treated as busy by the reader.
                     }
@@ -57,7 +64,11 @@ object SaveSyncRuntime {
         }
         record()
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
-            override fun onActivityCreated(activity: Activity, state: Bundle?) { activities.incrementAndGet(); record() }
+            override fun onActivityCreated(activity: Activity, state: Bundle?) {
+                activity.intent?.getStringExtra(LaunchContract.ROOT_URI)?.takeIf { it.isNotBlank() }?.let(hostUris::add)
+                activities.incrementAndGet()
+                record()
+            }
             override fun onActivityDestroyed(activity: Activity) {
                 activities.updateAndGet { (it - 1).coerceAtLeast(0) }
                 record()
@@ -77,16 +88,19 @@ object SaveSyncRuntime {
     internal suspend fun prepareLaunch(context: Context, game: ScanGame): LaunchTicket? {
         try {
             if (!WebDavSettingsStore.isEnabled(context)) return null
-            val config = WebDavSettingsStore.load(context)
-            if (!config.active || !config.mode.uploads || !GameSaveManager(context).resolveSaveLocation(game).available) return null
+            if (!GameSaveManager(context).resolveSaveLocation(game).available) return null
             if (isGameRunning(context, game)) return null
+            // External YURIS has no in-package host handoff; its persisted returned-state path remains authoritative.
+            if (game.engine != EngineType.YURIS) markNativeLaunchGrace(game.uri)
+            val config = WebDavSettingsStore.load(context)
+            if (!config.active || !config.mode.uploads) return null
             val store = sessions(context)
             val key = SaveContentHash.text(game.uri)
             val previous = store.load(key).takeIf { it.has("token") }
             val baseline = previous?.optString("baseline") ?: SaveSyncService(context).fingerprint(game).orEmpty()
             val token = UUID.randomUUID().toString()
             store.save(key, JSONObject().put("uri", game.uri).put("baseline", baseline)
-                .put("token", token).put("startedAt", System.currentTimeMillis()))
+                .put("token", token).put("startedAt", System.currentTimeMillis()).put("ownerPid", Process.myPid()))
             return LaunchTicket(token, previous)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -97,6 +111,7 @@ object SaveSyncRuntime {
     }
 
     internal fun finishLaunch(context: Context, game: ScanGame, ticket: LaunchTicket?, success: Boolean) {
+        if (!success) clearNativeLaunchGrace(game.uri)
         if (ticket == null) return
         try {
             val store = sessions(context)
@@ -120,19 +135,26 @@ object SaveSyncRuntime {
         }
     }
 
-    /** An explicit restore is one pending change even if the next game session writes no bytes. */
-    internal fun recordRestoredVersion(context: Context, game: ScanGame, hash: String) {
+    /**
+     * An explicit restore is one pending change even if the next game session writes no bytes.
+     * Returns false only when session bookkeeping or work scheduling throws.
+     */
+    internal fun recordRestoredVersion(context: Context, game: ScanGame, hash: String): Boolean {
         try {
-            if (!WebDavSettingsStore.isEnabled(context)) return
+            if (!WebDavSettingsStore.isEnabled(context)) return true
             val config = WebDavSettingsStore.load(context)
-            if (!config.active || !config.mode.uploads) return
+            if (!config.active || !config.mode.uploads) return true
             sessions(context).save(SaveContentHash.text(game.uri), JSONObject()
                 .put("uri", game.uri).put("baseline", hash).put("token", UUID.randomUUID().toString())
                 .put("startedAt", 0L).put("returned", true))
             SaveSyncWorker.enqueue(context, pull = false)
+            return true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: Exception) {
             // The restored archive and promotion checkpoint remain available for the next retry.
             recordReport(SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, SaveSyncService.errorCode(failure)))))
+            return false
         }
     }
 
@@ -159,6 +181,8 @@ object SaveSyncRuntime {
 
     fun onForeground(context: Context) {
         if (processName(context) != context.packageName) return
+        val priorBackground = leftUiSinceLastForeground
+        leftUiSinceLastForeground = false
         val app = context.applicationContext
         scope.launch {
             try {
@@ -176,14 +200,20 @@ object SaveSyncRuntime {
                 for (key in store.keys()) {
                     val entry = store.load(key)
                     if (!entry.has("token")) continue
-                    // External Winlator has no host callback; returning to TYN is its fallback.
-                    if (entry.optBoolean("leftApp")) {
+                    val game = games[entry.optString("uri")]
+                    if (game != null && shouldMarkExternalYurisReturned(
+                            engine = game.engine,
+                            priorBackground = priorBackground,
+                            leftApp = entry.optBoolean("leftApp"),
+                            recordedOwnerPid = entry.optInt("ownerPid", -1),
+                            currentOwnerPid = Process.myPid(),
+                        )) {
                         SaveSyncLocks.active(entry.optString("uri")) {
                             val current = store.load(key)
                             if (current.has("token")) store.save(key, current.put("returned", true))
                         }
                     }
-                    games[entry.optString("uri")]?.let { monitor(app, it) }
+                    game?.let { monitor(app, it) }
                 }
                 if (config.active && (config.mode.pulls || config.mode.uploads)) {
                     SaveSyncWorker.enqueue(app, pull = config.mode.pulls)
@@ -198,6 +228,7 @@ object SaveSyncRuntime {
 
     fun onBackground(context: Context) {
         if (processName(context) != context.packageName) return
+        leftUiSinceLastForeground = true
         if (!WebDavSettingsStore.isEnabled(context)) return
         scope.launch {
             try {
@@ -302,7 +333,6 @@ object SaveSyncRuntime {
     }
 
     internal fun recordReport(report: SaveSyncReport) {
-        status.value = report
         SaveSyncFeedback.publish(report)
     }
 
@@ -314,31 +344,112 @@ object SaveSyncRuntime {
 
     internal fun isGameRunning(context: Context, game: ScanGame): Boolean {
         val entry = sessions(context).load(SaveContentHash.text(game.uri))
+        // External Winlator cannot expose a host-process registration callback.
+        if (game.engine == EngineType.YURIS) return entry.has("token") && !entry.optBoolean("returned")
+        if (launchGraceActive(game.uri)) return true
         val started = entry.optLong("startedAt")
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return true
-        val processes = manager.runningAppProcesses ?: return true
-        val suffixes = when (game.engine) {
-            EngineType.KIRIKIRI -> setOf("kirikiri2", "krkrsdl3")
-            EngineType.ONS -> setOf("ons")
-            EngineType.ARTEMIS -> setOf("artemis", "artemis.compat", "artemis.compat.v2", "artemis.v4", "artemis.v5", "artemis.v6", "artemis.clean")
-            EngineType.SIGLUS -> setOf("siglus")
-            EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2 -> setOf("fbgames")
-            EngineType.FVP -> setOf("fvp")
-            EngineType.XSYS35 -> setOf("xsys35")
-            EngineType.XSYS4 -> setOf("xsys4")
-            EngineType.TYRANO -> setOf("tyrano")
-            EngineType.RPG_MV, EngineType.RPG_MZ -> setOf("tyrano", "rpgmaker")
-            EngineType.ETHORNELL -> setOf("ethornell")
-            EngineType.YURIS -> return entry.has("token") && !entry.optBoolean("returned")
-            else -> emptySet()
+        val processes = try {
+            manager.runningAppProcesses
+        } catch (_: Exception) {
+            null
+        } ?: return true
+
+        val declaredHosts = secondaryActivityProcessNames(context)
+        val liveHosts = processes.filter { process ->
+            if (process.uid != Process.myUid()) return@filter false
+            val name = process.processName.orEmpty()
+            name.isBlank() || if (declaredHosts == null) {
+                name.startsWith("${context.packageName}:")
+            } else {
+                name in declaredHosts
+            }
         }
-        val live = processes.filter { it.uid == Process.myUid() && suffixes.any { suffix -> it.processName == "${context.packageName}:$suffix" } }
-        if (live.any { process ->
-                val state = runtimeStore(context).load(SaveContentHash.text(process.processName))
-                state.optInt("pid", -1) != process.pid || state.optInt("activities", 1) > 0
-            }) return true
+        if (liveHosts.any { process -> hostRecordRelation(context, process, game.uri) != HostRecordRelation.UNRELATED }) {
+            return true
+        }
         // Cover startActivity -> host registration without ever touching a running save directory.
-        return live.isEmpty() && entry.has("token") && System.currentTimeMillis() - started in 0..START_GRACE_MS
+        return entry.has("token") && System.currentTimeMillis() - started in 0..START_GRACE_MS
+    }
+
+    private fun hostRecordRelation(
+        context: Context,
+        process: ActivityManager.RunningAppProcessInfo,
+        gameUri: String,
+    ): HostRecordRelation {
+        val processName = process.processName.orEmpty()
+        if (processName.isBlank()) return HostRecordRelation.UNKNOWN
+        val state = try {
+            runtimeStore(context).load(SaveContentHash.text(processName))
+        } catch (_: Exception) {
+            return HostRecordRelation.UNKNOWN
+        }
+        val array = state.optJSONArray("uris") ?: return HostRecordRelation.UNKNOWN
+        val uris = ArrayList<String>(array.length())
+        for (index in 0 until array.length()) {
+            val uri = array.opt(index) as? String ?: return HostRecordRelation.UNKNOWN
+            if (uri.isBlank()) return HostRecordRelation.UNKNOWN
+            uris += uri
+        }
+        return classifyHostRecord(
+            livePid = process.pid,
+            recordedPid = state.optInt("pid", -1),
+            recordedUris = uris,
+            gameUri = gameUri,
+        )
+    }
+
+    private fun secondaryActivityProcessNames(context: Context): Set<String>? {
+        val packageInfo = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(PackageManager.GET_ACTIVITIES.toLong()),
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_ACTIVITIES)
+            }
+        } catch (_: Exception) {
+            return null
+        }
+        val activities = packageInfo.activities ?: return null
+        return activities.map { normalizeActivityProcessName(context.packageName, it.processName) }
+            .filter { it.startsWith("${context.packageName}:") }
+            .toSet()
+    }
+
+    private fun markNativeLaunchGrace(uri: String) = synchronized(nativeLaunchGraceLock) {
+        val now = SystemClock.elapsedRealtime()
+        val iterator = nativeLaunchGraceUntil.entries.iterator()
+        while (iterator.hasNext()) {
+            if (iterator.next().value <= now) iterator.remove()
+        }
+        nativeLaunchGraceUntil[uri] = now + START_GRACE_MS
+        while (nativeLaunchGraceUntil.size > MAX_LAUNCH_GRACE_ENTRIES) {
+            val oldest = nativeLaunchGraceUntil.minByOrNull { it.value } ?: break
+            nativeLaunchGraceUntil.remove(oldest.key)
+        }
+    }
+
+    private fun launchGraceActive(uri: String): Boolean {
+        return synchronized(nativeLaunchGraceLock) {
+            val until = nativeLaunchGraceUntil[uri]
+            when {
+                until == null -> false
+                until > SystemClock.elapsedRealtime() -> true
+                else -> {
+                    nativeLaunchGraceUntil.remove(uri)
+                    false
+                }
+            }
+        }
+    }
+
+    private fun clearNativeLaunchGrace(uri: String) {
+        synchronized(nativeLaunchGraceLock) {
+            nativeLaunchGraceUntil.remove(uri)
+        }
     }
 
     private fun sessions(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"))
@@ -348,4 +459,34 @@ object SaveSyncRuntime {
         manager?.runningAppProcesses?.firstOrNull { it.pid == Process.myPid() }?.processName.orEmpty()
     }
     private const val START_GRACE_MS = 15_000L
+    private const val MAX_LAUNCH_GRACE_ENTRIES = 32
+}
+
+internal enum class HostRecordRelation { MATCHING, UNRELATED, UNKNOWN }
+
+internal fun classifyHostRecord(
+    livePid: Int,
+    recordedPid: Int,
+    recordedUris: List<String>?,
+    gameUri: String,
+): HostRecordRelation {
+    if (livePid <= 0 || recordedPid != livePid || recordedUris.isNullOrEmpty() || gameUri.isBlank()) {
+        return HostRecordRelation.UNKNOWN
+    }
+    return if (gameUri in recordedUris) HostRecordRelation.MATCHING else HostRecordRelation.UNRELATED
+}
+
+internal fun shouldMarkExternalYurisReturned(
+    engine: EngineType,
+    priorBackground: Boolean,
+    leftApp: Boolean,
+    recordedOwnerPid: Int,
+    currentOwnerPid: Int,
+): Boolean = engine == EngineType.YURIS &&
+    (priorBackground || leftApp || recordedOwnerPid != currentOwnerPid)
+
+private fun normalizeActivityProcessName(packageName: String, declared: String): String = when {
+    declared.startsWith(":") -> packageName + declared
+    '.' !in declared -> "$packageName.$declared"
+    else -> declared
 }

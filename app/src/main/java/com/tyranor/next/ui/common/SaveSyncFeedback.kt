@@ -1,4 +1,4 @@
-package com.tyranor.next.ui.save
+package com.tyranor.next.ui.common
 
 import android.widget.Toast
 import androidx.activity.ComponentActivity

@@ -1,10 +1,14 @@
 package com.tyranor.next.core.game.save.sync
 
+import com.tyranor.next.core.game.save.SavePathSafety
+import java.io.EOFException
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.zip.ZipFile
+import java.util.zip.ZipException
 
 /** A save's identity includes relative paths and bytes, never ZIP order or modification times. */
 object SaveContentHash {
@@ -17,16 +21,15 @@ object SaveContentHash {
     fun files(root: File, files: List<File>, check: () -> Unit = {}): String? {
         if (files.isEmpty()) return null
         if (files.size > MAX_FILES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
-        val rootPath = root.canonicalFile.toPath()
+        val safeRoot = SavePathSafety.requireSafeRoot(root)
+        val rootPath = safeRoot.toPath()
         var total = 0L
         val entries = files.map { file ->
             check()
-            val path = file.canonicalFile.toPath()
-            if (!path.startsWith(rootPath) || path == rootPath || !file.isFile) {
-                throw SaveSyncException(SaveSyncError.LOCAL_IO)
-            }
+            val safeFile = SavePathSafety.requireSafeFile(safeRoot, file)
+            val path = safeFile.toPath()
             val name = validName(rootPath.relativize(path).toString().replace(File.separatorChar, '/'))
-            val entry = file.inputStream().buffered().use { read(name, it, check) }
+            val entry = safeFile.inputStream().buffered().use { read(name, it, check) }
             total += entry.size
             if (total > MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
             entry
@@ -63,8 +66,12 @@ object SaveContentHash {
             throw cancelled
         } catch (failure: SaveSyncException) {
             throw failure
-        } catch (failure: java.io.IOException) {
+        } catch (failure: ZipException) {
             throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE, cause = failure)
+        } catch (failure: EOFException) {
+            throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE, cause = failure)
+        } catch (failure: IOException) {
+            throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
         }
     }
 

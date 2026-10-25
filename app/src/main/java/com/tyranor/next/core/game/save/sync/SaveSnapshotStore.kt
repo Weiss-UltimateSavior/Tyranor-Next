@@ -34,6 +34,19 @@ class SaveSnapshotStore(private val root: File) {
         return File(directory(gameKey), id)
     }
 
+    /** Reads one cached ZIP on demand; false is limited to an archive-integrity failure. */
+    fun isValid(gameKey: String, version: SaveVersion, check: () -> Unit = {}): Boolean {
+        val nameHash = SaveVersionNames.parse(version.id)?.contentHash
+            ?: throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+        val archive = file(gameKey, version.id)
+        if (!archive.isFile) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        return try {
+            SaveContentHash.archive(archive, check) == nameHash
+        } catch (failure: SaveSyncException) {
+            if (failure.code == SaveSyncError.CORRUPT_ARCHIVE) false else throw failure
+        }
+    }
+
     fun add(
         gameKey: String,
         archive: File,
@@ -58,11 +71,16 @@ class SaveSnapshotStore(private val root: File) {
         SaveSyncTemporaryFiles.clean(directory, "snapshot_", ".tmp")
         removeOrphanMarkers(directory)
         existing.firstOrNull { it.contentHash == hash }?.let {
-            if (refreshExisting || (restored && !it.restored)) {
-                return refreshVersion(gameKey, it, if (refreshExisting) createdAt else it.createdAt,
-                    previousCreatedAt ?: if (refreshExisting) it.createdAt else null)
+            val current = if (isValid(gameKey, it, check)) {
+                it
+            } else {
+                replaceVerifiedArchive(gameKey, it, archive, hash, check)
             }
-            return it
+            if (refreshExisting || (restored && !current.restored)) {
+                return refreshVersion(gameKey, current, if (refreshExisting) createdAt else current.createdAt,
+                    previousCreatedAt ?: if (refreshExisting) current.createdAt else null)
+            }
+            return current
         }
         if (!directory.isDirectory && !directory.mkdirs()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         val id = if (restored) SaveVersionNames.createRestored(createdAt, hash, previousCreatedAt)
@@ -70,18 +88,7 @@ class SaveSnapshotStore(private val root: File) {
         val destination = file(gameKey, id)
         val temp = SaveSyncTemporaryFiles.create("snapshot_", ".tmp", directory)
         try {
-            archive.inputStream().use { input ->
-                java.io.FileOutputStream(temp).use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        check()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                    }
-                    output.fd.sync()
-                }
-            }
+            stageArchive(archive, temp, check)
             // Never replace an existing immutable version, even after an interrupted operation.
             try {
                 Files.move(temp.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE)
@@ -96,6 +103,52 @@ class SaveSnapshotStore(private val root: File) {
             return SaveVersion(id, hash, createdAt, destination.length(), source, restored, previousCreatedAt)
         } finally {
             SaveSyncTemporaryFiles.release(temp)
+        }
+    }
+
+    private fun replaceVerifiedArchive(
+        gameKey: String,
+        existing: SaveVersion,
+        archive: File,
+        expectedHash: String,
+        check: () -> Unit,
+    ): SaveVersion {
+        val directory = directory(gameKey)
+        val destination = file(gameKey, existing.id)
+        val temp = SaveSyncTemporaryFiles.create("snapshot_", ".tmp", directory)
+        try {
+            stageArchive(archive, temp, check)
+            if (SaveContentHash.archive(temp, check) != expectedHash) {
+                throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+            }
+            try {
+                Files.move(
+                    temp.toPath(),
+                    destination.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(temp.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            return existing.copy(size = destination.length())
+        } finally {
+            SaveSyncTemporaryFiles.release(temp)
+        }
+    }
+
+    private fun stageArchive(source: File, destination: File, check: () -> Unit) {
+        source.inputStream().use { input ->
+            java.io.FileOutputStream(destination).use { output ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    check()
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    output.write(buffer, 0, count)
+                }
+                output.fd.sync()
+            }
         }
     }
 

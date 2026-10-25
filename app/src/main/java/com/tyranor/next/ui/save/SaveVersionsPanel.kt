@@ -24,12 +24,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.sync.SaveActivationResult
 import com.tyranor.next.core.game.save.sync.SaveSyncDirection
-import com.tyranor.next.core.game.save.sync.SaveSyncException
-import com.tyranor.next.core.game.save.sync.SaveSyncService
-import com.tyranor.next.core.game.save.sync.SaveSyncReport
-import com.tyranor.next.core.game.save.sync.SaveSyncFailure
 import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
+import com.tyranor.next.core.game.save.sync.SaveSyncFailure
+import com.tyranor.next.core.game.save.sync.SaveSyncReport
+import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.save.sync.SaveVersion
 import com.tyranor.next.core.game.save.sync.SaveVersionSource
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
@@ -41,6 +43,8 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
+import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,6 +67,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
 
     val service = remember(context) { SaveSyncService(context) }
     var versions by remember(game.uri) { mutableStateOf(emptyList<SaveVersion>()) }
+    var loading by remember(game.uri) { mutableStateOf(true) }
     var loadError by remember(game.uri) { mutableStateOf<String?>(null) }
     var taskError by remember(game.uri) { mutableStateOf<String?>(null) }
     var pendingVersion by remember(game.uri) { mutableStateOf<SaveVersion?>(null) }
@@ -73,6 +78,8 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     val selectedIndex = versions.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
     val selectedVersion = versions.getOrNull(selectedIndex)
     val previousUnknown = stringResource(R.string.save_version_previous_unknown)
+    val saveOperationFailedMessage = stringResource(R.string.save_operation_failed)
+    val metadataPendingMessage = stringResource(R.string.save_version_metadata_pending)
 
     fun versionTimes(version: SaveVersion): Pair<String, String> {
         val newFull = dateFormat.format(Date(version.createdAt))
@@ -81,26 +88,26 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
         return (oldFull ?: previousUnknown) to if (sameDay) newFull.substringAfter(' ') else newFull
     }
 
-    fun runSilentTask(block: suspend () -> Unit, onSuccess: () -> Unit) {
+    fun <T> runSilentTask(block: suspend () -> T, onSuccess: (T) -> Unit) {
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
         taskError = null
         runTask {
             try {
                 if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
-                block()
+                val result = block()
                 if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
                 withContext(Dispatchers.Main) {
                     taskError = null
-                    onSuccess()
+                    onSuccess(result)
                 }
                 null
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                val message = if (failure is SaveSyncException) {
-                    failure.code.toSaveSyncMessage(context)
-                } else {
-                    context.getString(R.string.save_operation_failed)
+                val message = when (failure) {
+                    is SaveSyncException -> failure.code.toSaveSyncMessage(context)
+                    is GameSaveException -> failure.toSaveErrorMessage(context, saveOperationFailedMessage)
+                    else -> saveOperationFailedMessage
                 }
                 if (WebDavSettingsStore.isEnabled(context)) {
                     withContext(Dispatchers.Main) { taskError = message }
@@ -146,20 +153,32 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
         editedIdentity = identity
     }
 
+    fun saveIdentity() {
+        if (taskRunning || editedIdentity == null) return
+        val value = editedIdentity.orEmpty()
+        runSilentTask(
+            block = { service.setIdentity(game, value) },
+            onSuccess = { editedIdentity = null },
+        )
+    }
+
     LaunchedEffect(game.uri, revision) {
+        loading = true
+        loadError = null
         try {
             val loaded = withContext(Dispatchers.IO) { service.listVersions(game) to service.identity(game) }
             versions = loaded.first
             identity = loaded.second
-            loadError = null
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            loadError = if (failure is SaveSyncException) {
-                failure.code.toSaveSyncMessage(context)
-            } else {
-                context.getString(R.string.save_operation_failed)
+            loadError = when (failure) {
+                is SaveSyncException -> failure.code.toSaveSyncMessage(context)
+                is GameSaveException -> failure.toSaveErrorMessage(context, saveOperationFailedMessage)
+                else -> saveOperationFailedMessage
             }
+        } finally {
+            loading = false
         }
     }
 
@@ -180,52 +199,71 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
-        MiuixCard(Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-            Column(Modifier.padding(vertical = 4.dp)) {
-                OverlayDropdownPreference(
-                    title = stringResource(R.string.save_versions_title),
-                    summary = selectedVersion?.takeIf { it.restored }?.let { version ->
-                        val (oldTime, newTime) = versionTimes(version)
-                        stringResource(R.string.save_version_time_change, oldTime, newTime)
-                    },
-                    items = versions.map { version ->
-                        val source = stringResource(if (version.source == SaveVersionSource.CLOUD) R.string.save_version_cloud else R.string.save_version_local)
-                        val newFull = dateFormat.format(Date(version.createdAt))
-                        if (version.restored) {
-                            val (oldTime, newTime) = versionTimes(version)
-                            stringResource(
-                                R.string.save_version_restored_row,
-                                source,
-                                oldTime,
-                                newTime,
+        if (loadError == null) {
+            MiuixCard(Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    when {
+                        loading -> Text(
+                            stringResource(R.string.common_loading),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                        versions.isEmpty() -> Text(
+                            stringResource(R.string.save_versions_none),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                        else -> {
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.save_versions_title),
+                                summary = selectedVersion?.takeIf { it.restored }?.let { version ->
+                                    val (oldTime, newTime) = versionTimes(version)
+                                    stringResource(R.string.save_version_time_change, oldTime, newTime)
+                                },
+                                items = versions.map { version ->
+                                    val source = stringResource(if (version.source == SaveVersionSource.CLOUD) R.string.save_version_cloud else R.string.save_version_local)
+                                    val newFull = dateFormat.format(Date(version.createdAt))
+                                    if (version.restored) {
+                                        val (oldTime, newTime) = versionTimes(version)
+                                        stringResource(
+                                            R.string.save_version_restored_row,
+                                            source,
+                                            oldTime,
+                                            newTime,
+                                        )
+                                    } else {
+                                        stringResource(R.string.save_version_row, source, newFull)
+                                    }
+                                },
+                                selectedIndex = selectedIndex,
+                                enabled = !taskRunning,
+                                onSelectedIndexChange = { index ->
+                                    if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
+                                        versions.getOrNull(index)?.let { selectedId = it.id }
+                                    }
+                                },
                             )
-                        } else {
-                            stringResource(R.string.save_version_row, source, newFull)
+                            AppNavItem(
+                                title = stringResource(R.string.save_version_activate),
+                                showLeadingIcon = false,
+                                showArrow = false,
+                                drawSurface = false,
+                                onClick = if (taskRunning || selectedVersion == null) {
+                                    null
+                                } else {
+                                    {
+                                        if (WebDavSettingsStore.isEnabled(context)) {
+                                            taskError = null
+                                            pendingVersion = selectedVersion
+                                        }
+                                    }
+                                },
+                            )
                         }
-                    }.ifEmpty { listOf(stringResource(R.string.save_versions_none)) },
-                    selectedIndex = selectedIndex,
-                    enabled = !taskRunning && versions.isNotEmpty(),
-                    onSelectedIndexChange = { index ->
-                        if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
-                            versions.getOrNull(index)?.let { selectedId = it.id }
-                        }
-                    },
-                )
-                AppNavItem(
-                    title = stringResource(R.string.save_version_activate),
-                    showLeadingIcon = false,
-                    showArrow = false,
-                    onClick = if (taskRunning || selectedVersion == null) {
-                        null
-                    } else {
-                        {
-                            if (WebDavSettingsStore.isEnabled(context)) {
-                                taskError = null
-                                pendingVersion = selectedVersion
-                            }
-                        }
-                    },
-                )
+                    }
+                }
             }
         }
         MiuixCard(Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
@@ -234,6 +272,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                     title = stringResource(R.string.save_sync_execute),
                     showLeadingIcon = false,
                     showArrow = false,
+                    drawSurface = false,
                     onClick = if (taskRunning) null else ({ syncNow() }),
                 )
                 ArrowPreference(
@@ -267,8 +306,15 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
             },
             confirmButton = { DialogTextButton(stringResource(R.string.common_confirm), enabled = !taskRunning) {
                 runSilentTask(
-                    block = { service.activateVersion(game, version.id); Unit },
-                    onSuccess = { pendingVersion = null },
+                    block = { service.activateVersion(game, version.id) },
+                    onSuccess = { result ->
+                        pendingVersion = null
+                        taskError = when (result) {
+                            SaveActivationResult.UNCHANGED,
+                            SaveActivationResult.APPLIED -> null
+                            SaveActivationResult.METADATA_PENDING -> metadataPendingMessage
+                        }
+                    },
                 )
             } },
             dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) {
@@ -285,25 +331,26 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             CompositionLocalProvider(LocalIndication provides NoIndication) {
-                AppSearchField(query = editedIdentity.orEmpty(), onQueryChange = {
-                    if (!taskRunning) {
-                        editedIdentity = it
-                        taskError = null
-                    }
-                }, leadingIcon = painterResource(R.drawable.ic_sheet_rename),
+                AppSearchField(
+                    query = editedIdentity.orEmpty(),
+                    onQueryChange = {
+                        if (!taskRunning) {
+                            editedIdentity = it
+                            taskError = null
+                        }
+                    },
+                    onSearch = { saveIdentity() },
+                    leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                     iconContentDescription = stringResource(R.string.save_sync_identity),
-                    textStyle = MaterialTheme.typography.bodyMedium)
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                )
             }
             taskError?.let { error ->
                 Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             }
         } },
         confirmButton = { DialogTextButton(stringResource(R.string.common_save), enabled = !taskRunning) {
-            val value = editedIdentity.orEmpty()
-            runSilentTask(
-                block = { service.setIdentity(game, value) },
-                onSuccess = { editedIdentity = null },
-            )
+            saveIdentity()
         } },
         dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) {
             editedIdentity = null

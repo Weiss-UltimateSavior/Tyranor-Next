@@ -877,7 +877,7 @@
     <string name="webdav_test_connection">接続テスト</string>
     <string name="webdav_connection_ok">接続成功</string>
     <string name="webdav_url_hint">既存の WebDAV フォルダー URL を入力してください。HTTP ではログイン情報が暗号化されずに送信されるため、HTTPS の使用を推奨します。そのフォルダー内に TYN-saves を作成します。</string>
-    <string name="webdav_manual_all">ライブラリー全体を手動同期</string>
+    <string name="webdav_manual_all">ライブラリ全体を手動同期</string>
     <string name="webdav_manual_note">保存済みの設定を使用します。変更があるゲームのみ転送します。取得した履歴はローカルに保存され、使用中のセーブへの切替は手動です。</string>
     <string name="webdav_error_not_configured">WebDAV を設定してください</string>
     <string name="webdav_error_invalid_config">設定が無効です</string>
@@ -900,8 +900,9 @@
     <string name="save_version_switch_title">このセーブに切り替えますか？</string>
     <string name="save_sync_identity">クラウドのゲーム識別名</string>
     <string name="save_sync_identity_message">初期値はエンジン別のゲームフォルダー名です。各端末で同じ識別名を使い、別ゲームには異なる名前を設定してください。空欄で初期値に戻ります。既存の履歴は移動・削除されません。</string>
-    <string name="save_versions_none">履歴なし</string>
+    <string name="save_versions_none">履歴はまだありません。同期後にここに表示されます。</string>
     <string name="save_version_activate">選択した履歴に切り替え</string>
+    <string name="save_version_metadata_pending">切り替えました。バージョン情報は後で補完されます</string>
     <string name="save_sync_execute">今すぐ同期</string>
     <string name="save_sync_direction_pull">取得のみ</string>
     <string name="save_sync_direction_upload">アップロードのみ</string>

@@ -11,6 +11,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -41,11 +43,11 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param onQueryChange 输入变化回调（即时过滤场景在此更新过滤条件）
  * @param onSearch 键盘 IME 动作回调；即时过滤场景可不传（默认空实现）
  * @param leadingIcon 前导图标 drawable；null 用默认搜索图标，非搜索语义必须传对应图标
- * @param iconContentDescription 无障碍描述，跟随图标语义
+ * @param iconContentDescription 输入框的无障碍标签，跟随字段语义
  * @param textStyle 输入文字样式；null 用 miuix 默认 `main`（17sp），需要其他字号可传（如弹窗场景传 `bodyMedium`）
  * @param visualTransformation 文本变换（如密码掩码 `PasswordVisualTransformation`）；默认恒等变换。
- *   传入非恒等变换时，键盘建议类型切为 `KeyboardType.Password`（保留密码管理器与粘贴能力），
- *   并改走支持掩码的内嵌输入实现（Miuix 0.9.2 的 `InputField` 不支持文本变换）；
+ *   传入非恒等变换时，键盘建议类型切为 `KeyboardType.Password`，并改走支持掩码的内嵌输入实现
+ *   （Miuix 0.9.2 的 `InputField` 不支持文本变换）；本组件不额外声明 Android autofill 内容类型；
  *   清空按钮仍按原文判断与清空。普通搜索/输入无需传参，行为完全不变。
  */
 @Composable
@@ -70,7 +72,11 @@ fun AppSearchField(
         CompositionLocalProvider(LocalContentColor provides MiuixTheme.colorScheme.onBackground) {
             SearchBar(
                 inputField = {
-                    val fieldModifier = Modifier.fillMaxWidth().glassShadow(CircleShape).glassBorder(CircleShape)
+                    val fieldModifier = Modifier
+                        .fillMaxWidth()
+                        .glassShadow(CircleShape)
+                        .glassBorder(CircleShape)
+                        .semantics { contentDescription = resolvedIconContentDescription }
                     val fieldLeadingIcon: @Composable () -> Unit = {
                         Icon(
                             modifier = Modifier
@@ -78,7 +84,7 @@ fun AppSearchField(
                                 .size(26.dp),
                             painter = leadingIcon ?: painterResource(R.drawable.ic_game_search),
                             tint = MiuixTheme.colorScheme.primary,
-                            contentDescription = resolvedIconContentDescription,
+                            contentDescription = null,
                         )
                     }
                     if (secureInput || Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.O_MR1) {

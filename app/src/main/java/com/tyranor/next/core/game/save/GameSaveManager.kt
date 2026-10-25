@@ -246,7 +246,8 @@ class GameSaveManager(private val context: Context) {
                 }
             }
         }
-        val directory = resolveSaveLocation(game).directory ?: return emptyList()
+        val resolved = resolveSaveLocation(game).directory ?: return emptyList()
+        val directory = if (strict) checkedSyncDirectory(resolved) else resolved
         if (!directory.exists()) return emptyList()
         if (!directory.isDirectory) {
             if (strict) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
@@ -265,6 +266,7 @@ class GameSaveManager(private val context: Context) {
         game: ScanGame,
         destinationUri: Uri,
         format: ExportFormat = ExportFormat.TYRANOR,
+        strict: Boolean = false,
     ): Int {
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.export {
@@ -273,14 +275,15 @@ class GameSaveManager(private val context: Context) {
             }
         }
         val location = resolveSaveLocation(game)
-        val source = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val resolved = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val source = if (strict) checkedSyncDirectory(resolved) else resolved
         if (!source.isDirectory) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
         val rename = exportRename(game.engine, format)
         val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
             ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
         ZipOutputStream(output).use { zip ->
             val entries = mutableSetOf<String>()
-            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename)
+            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename, strict)
             if (count == 0) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
             return count
         }
@@ -300,23 +303,68 @@ class GameSaveManager(private val context: Context) {
     }
 
     @Throws(IOException::class)
-    suspend fun importFromZip(game: ScanGame, sourceUri: Uri, manualSelection: Boolean = false): Int {
+    suspend fun importFromZip(
+        game: ScanGame,
+        sourceUri: Uri,
+        manualSelection: Boolean = false,
+        onDirectoryCommitted: (() -> Unit)? = null,
+    ): Int {
+        if (manualSelection) {
+            resolveSaveLocation(game).directory?.let(::checkedSyncDirectory)
+        }
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.import {
                 appContext.contentResolver.openInputStream(sourceUri)
                     ?: throw GameSaveException(SaveErrorCode.READ_IMPORT_ZIP)
             }
-        }
+        }.also { onDirectoryCommitted?.invoke() }
         return synchronized(importLock) {
             // 锁序恒为 importLock → INTEROP_LOCK（sync 只取后者），无死锁环。
             synchronized(RpgSaveSyncState.INTEROP_LOCK) {
                 if (manualSelection && RpgSaveFormat.isRpgWebEngine(game.engine)) {
                     RpgSaveSyncState.forContext(appContext).withManualSelection(game.uri) { onCommitted ->
-                        importFromZipLocked(game, sourceUri, onCommitted)
+                        importFromZipLocked(game, sourceUri) {
+                            onCommitted()
+                            onDirectoryCommitted?.invoke()
+                        }
                     }
-                } else importFromZipLocked(game, sourceUri)
+                } else importFromZipLocked(game, sourceUri) { onDirectoryCommitted?.invoke() }
             }
         }
+    }
+
+    /** Completes excluded-resource recovery for an interrupted cloud version import, without importing again. */
+    internal fun completePendingVersionImport(game: ScanGame): Unit = synchronized(importLock) {
+        synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+            val destination = syncSaveDirectory(game)
+            val backup = File(destination.parentFile, destination.name + ".import_backup")
+            if (backup.isDirectory) {
+                if (!destination.exists()) {
+                    if (!backup.renameTo(destination)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                } else {
+                    if (restoresExcludedFromBackup(game.engine)) restoreExcludedFromBackup(backup, destination, game.engine)
+                    if (backup.exists() && !backup.deleteRecursively()) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                }
+            }
+        }
+    }
+
+    internal fun syncSaveDirectory(game: ScanGame): File = checkedSyncDirectory(
+        resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED))
+
+    private fun checkedSyncDirectory(directory: File): File {
+        val path = directory.absoluteFile.toPath()
+        // SDK-owned storage roots may themselves sit below system aliases. Resolve only
+        // that trusted prefix; user-controlled save directories retain their link checks.
+        val anchor = listOfNotNull(appContext.filesDir, appContext.noBackupFilesDir, appContext.getExternalFilesDir(null))
+            .firstOrNull { path.normalize().startsWith(it.absoluteFile.toPath().normalize()) }
+        val candidate = if (anchor == null) directory else {
+            if (java.nio.file.Files.isSymbolicLink(anchor.toPath())) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
+            File(anchor.canonicalFile, anchor.absoluteFile.toPath().relativize(path).toString())
+        }
+        return SavePathSafety.requireSafeRoot(candidate)
     }
 
     @Throws(IOException::class)
@@ -568,13 +616,16 @@ class GameSaveManager(private val context: Context) {
         entries: MutableSet<String>,
         exclude: (String) -> Boolean,
         rename: ((String) -> String)? = null,
+        strict: Boolean = false,
     ): Int {
         var written = 0
         directory.listFiles().orEmpty().forEach { child ->
             if (exclude(child.name)) return@forEach
             if (child.isDirectory) {
-                written += writeZipContents(root, child, zip, entries, exclude, rename)
+                if (strict) SavePathSafety.requireSafeRoot(child)
+                written += writeZipContents(root, child, zip, entries, exclude, rename, strict)
             } else if (child.isFile) {
+                if (strict) SavePathSafety.requireSafeFile(root, child)
                 val relative = root.toPath().relativize(child.toPath()).toString()
                     .replace(File.separatorChar, '/')
                 val renamedName = rename?.let { fn ->

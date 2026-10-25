@@ -63,6 +63,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  *   null 时保持默认行为（深色染白、浅色用原图）
  * @param titleMaxLines 标题最大行数；长预设名可允许换行，默认保持单行
  * @param titleColor 显式覆盖标题颜色（如危险条目用 error 色）；null 时用默认 [TextColor]
+ * @param drawSurface 是否绘制条目自身的圆角背景与描边；位于已有卡片表面的子条目可传 false
  */
 @Composable
 fun AppNavItem(
@@ -78,6 +79,7 @@ fun AppNavItem(
     titleColor: Color? = null,
     titleMaxLines: Int = 1,
     indication: Indication? = LocalIndication.current,
+    drawSurface: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
     val enabled = onClick != null
@@ -93,8 +95,9 @@ fun AppNavItem(
                 enabled = enabled,
                 onClick = { onClick?.invoke() },
             )
-            .background(containerColor)
-            .glassBorder()
+            .let { rowModifier ->
+                if (drawSurface) rowModifier.background(containerColor).glassBorder() else rowModifier
+            }
             .padding(horizontal = 16.dp, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
