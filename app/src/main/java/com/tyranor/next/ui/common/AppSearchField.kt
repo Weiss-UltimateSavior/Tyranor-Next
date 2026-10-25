@@ -59,7 +59,7 @@ fun AppSearchField(
     textStyle: TextStyle? = null,
     visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
-    // 安全输入（掩码）走内嵌实现；其余场景维持原 Miuix InputField 路径
+    // 安全输入（掩码）与 API 26/27 兼容场景走内嵌实现；其余普通输入维持原 Miuix InputField 路径
     val secureInput = visualTransformation != VisualTransformation.None
     val resolvedIconContentDescription = iconContentDescription
         ?: androidx.compose.ui.res.stringResource(R.string.common_search_content_description)
@@ -81,11 +81,9 @@ fun AppSearchField(
                             contentDescription = resolvedIconContentDescription,
                         )
                     }
-                    if (Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.O_MR1) {
-                        // 局部兼容豁免：Miuix 0.9.2 在 API 26/27 禁用折叠态 InputField。
-                        // 仅公共组件内部用兼容输入保持可编辑，沿用 Miuix 配色、胶囊与玻璃材质；
-                        // 不以展开启用输入（会自动聚焦和拉起键盘），也不在失焦时清空内容。
-                        // API 28+ 仍走原 InputField，页面不自行拼装此兼容分支。
+                    if (secureInput || Build.VERSION.SDK_INT in Build.VERSION_CODES.O..Build.VERSION_CODES.O_MR1) {
+                        // 掩码输入和 API 26/27 兼容输入共用内嵌实现，沿用 Miuix 配色、胶囊与玻璃材质；
+                        // API 28+ 的普通输入仍走原 InputField，页面不自行拼装此兼容分支。
                         EmbeddedSearchInputField(
                             query = query,
                             onQueryChange = onQueryChange,
@@ -98,31 +96,17 @@ fun AppSearchField(
                             imeAction = if (secureInput) ImeAction.Done else ImeAction.Search,
                         )
                     } else {
-                        if (secureInput) {
-                            EmbeddedSearchInputField(
-                                query = query,
-                                onQueryChange = onQueryChange,
-                                onSearch = onSearch,
-                                textStyle = textStyle ?: MiuixTheme.textStyles.main,
-                                leadingIcon = fieldLeadingIcon,
-                                modifier = fieldModifier,
-                                visualTransformation = visualTransformation,
-                                keyboardType = KeyboardType.Password,
-                                imeAction = ImeAction.Done,
-                            )
-                        } else {
-                            InputField(
-                                query = query,
-                                onQueryChange = onQueryChange,
-                                onSearch = { onSearch() },
-                                textStyle = textStyle ?: MiuixTheme.textStyles.main,
-                                expanded = false,
-                                onExpandedChange = { },
-                                leadingIcon = fieldLeadingIcon,
-                                // 描边位于 InputField 胶囊上，而不是外层 SearchBar 的布局间距。
-                                modifier = fieldModifier,
-                            )
-                        }
+                        InputField(
+                            query = query,
+                            onQueryChange = onQueryChange,
+                            onSearch = { onSearch() },
+                            textStyle = textStyle ?: MiuixTheme.textStyles.main,
+                            expanded = false,
+                            onExpandedChange = { },
+                            leadingIcon = fieldLeadingIcon,
+                            // 描边位于 InputField 胶囊上，而不是外层 SearchBar 的布局间距。
+                            modifier = fieldModifier,
+                        )
                     }
                 },
                 expanded = false,

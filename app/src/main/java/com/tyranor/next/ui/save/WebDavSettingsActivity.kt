@@ -418,6 +418,11 @@ private fun WebDavSettingsScreen() {
                             val modes = SaveSyncMode.entries
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.webdav_mode),
+                                summary = if (config.mode == SaveSyncMode.MANUAL) {
+                                    stringResource(R.string.webdav_manual_note)
+                                } else {
+                                    null
+                                },
                                 items = modes.map { stringResource(it.titleResource()) },
                                 selectedIndex = modes.indexOf(config.mode).coerceAtLeast(0),
                                 enabled = available,
@@ -434,6 +439,7 @@ private fun WebDavSettingsScreen() {
                             val retentionOptions = SaveSyncRetention.choices
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.webdav_retention),
+                                summary = stringResource(R.string.webdav_retention_hint),
                                 items = retentionOptions.map { limit ->
                                     if (limit == 0) {
                                         stringResource(R.string.webdav_unlimited)
@@ -515,6 +521,13 @@ private fun WebDavSettingsScreen() {
             title = { Text(stringResource(field.title), style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (field == WebDavTextField.URL) {
+                        Text(
+                            stringResource(R.string.webdav_url_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     CompositionLocalProvider(LocalIndication provides NoIndication) {
                         AppSearchField(
                             query = editText,

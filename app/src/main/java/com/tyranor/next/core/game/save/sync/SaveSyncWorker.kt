@@ -61,7 +61,8 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
                 .build()
             WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
                 if (pull) "webdav_save_open" else "webdav_save_exit",
-                if (delayed) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.REPLACE,
+                // Serialize non-delayed transfers so concurrent work cannot race on remote state.
+                if (delayed) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request,
             )
         }

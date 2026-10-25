@@ -22,39 +22,43 @@ object WebDavSettingsStore {
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val ENABLED = "enabled"
     private const val CONFIG = "config"
+    // Keystore work never holds enabledLock; combined operations take configLock first.
+    private val configLock = Any()
+    private val enabledLock = Any()
     private val enabledState = MutableStateFlow(false)
     val enabled = enabledState.asStateFlow()
 
-    @Synchronized
-    fun isEnabled(context: Context): Boolean {
+    fun isEnabled(context: Context): Boolean = synchronized(enabledLock) {
         val value = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getBoolean(ENABLED, false)
         enabledState.value = value
-        return value
+        value
     }
 
-    @Synchronized
-    fun setEnabled(context: Context, value: Boolean) {
-        if (!context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putBoolean(ENABLED, value).commit()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
-        enabledState.value = value
+    fun setEnabled(context: Context, value: Boolean): Unit = synchronized(configLock) {
+        synchronized(enabledLock) {
+            if (!context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putBoolean(ENABLED, value).commit()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+            enabledState.value = value
+        }
         if (!value) SaveSyncRuntime.onFeatureDisabled(context.applicationContext)
     }
 
-    @Synchronized
-    fun load(context: Context): WebDavConfig {
+    fun load(context: Context): WebDavConfig = synchronized(configLock) {
         val enabled = isEnabled(context)
         val encoded = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(CONFIG, null) ?: return WebDavConfig(enabled = enabled)
+            .getString(CONFIG, null) ?: return@synchronized WebDavConfig(enabled = enabled)
         try {
             val bytes = Base64.decode(encoded, Base64.NO_WRAP)
             if (bytes.size < 29) throw SaveSyncException(SaveSyncError.CREDENTIALS_UNAVAILABLE)
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.DECRYPT_MODE, key(create = false), GCMParameterSpec(128, bytes, 0, 12))
             val json = JSONObject(String(cipher.doFinal(bytes, 12, bytes.size - 12), Charsets.UTF_8))
-            return validated(WebDavConfig(json.getString("url"), json.getString("username"), json.getString("password"),
+            validated(WebDavConfig(json.getString("url"), json.getString("username"), json.getString("password"),
                 SaveSyncMode.valueOf(json.getString("mode")), SaveSyncRetention.fromLegacy(json.getInt("limit")),
                 json.optBoolean("showSyncFeedback", true), enabled))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: SaveSyncException) {
             throw failure
         } catch (failure: Exception) {
@@ -63,8 +67,7 @@ object WebDavSettingsStore {
         }
     }
 
-    @Synchronized
-    fun save(context: Context, config: WebDavConfig) {
+    fun save(context: Context, config: WebDavConfig): Unit = synchronized(configLock) {
         if (!isEnabled(context)) throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
         val value = validated(config)
         try {
@@ -78,6 +81,8 @@ object WebDavSettingsStore {
             if (!context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
                     .putString(CONFIG, Base64.encodeToString(data, Base64.NO_WRAP)).commit()
             ) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: SaveSyncException) {
             throw failure
         } catch (failure: Exception) {
@@ -89,8 +94,7 @@ object WebDavSettingsStore {
      * Discards only this feature's encrypted settings payload and Keystore alias. The master switch,
      * local version archives, checkpoints and cloud objects are owned elsewhere and stay untouched.
      */
-    @Synchronized
-    fun reset(context: Context) {
+    fun reset(context: Context): Unit = synchronized(configLock) {
         if (!isEnabled(context)) throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
         try {
             KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.deleteEntry(ALIAS)

@@ -136,7 +136,14 @@ class SaveSyncService(context: Context) {
         val config = WebDavSettingsStore.load(context)
         if (!config.configured) throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
         val collisions = GameLibraryFacade.loadGames(context).count {
-            manager.resolveSaveLocation(it).available && remoteKey(it) == remoteKey(game)
+            try {
+                manager.resolveSaveLocation(it).available && remoteKey(it) == remoteKey(game)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // An unavailable library entry must not block a different game's upload.
+                it.uri == game.uri
+            }
         }
         if (collisions > 1) throw SaveSyncException(SaveSyncError.IDENTITY_CONFLICT)
         WebDavClient(config, context.cacheDir) { WebDavSettingsStore.isEnabled(context) }

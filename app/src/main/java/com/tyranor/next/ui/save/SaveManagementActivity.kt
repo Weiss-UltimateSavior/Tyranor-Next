@@ -148,7 +148,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         return if (result.unmapped > 0) "$base\n${saveSyncUnmappedFormat.format(result.unmapped)}" else base
     }
 
-    fun runSaveTask(block: suspend () -> String?) {
+    fun runSaveTask(shortFeedback: Boolean = false, block: suspend () -> String?) {
         if (taskRunning) return
         scope.launch {
             taskRunning = true
@@ -170,7 +170,10 @@ private fun SaveManagementScreen(game: ScanGame) {
                 } catch (_: Throwable) {
                     // Refreshing is supplementary; it must not replace the operation result.
                 }
-                if (message != null) Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                if (message != null) {
+                    val duration = if (shortFeedback) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                    Toast.makeText(context, message, duration).show()
+                }
             } finally {
                 taskRunning = false
             }
@@ -295,7 +298,9 @@ private fun SaveManagementScreen(game: ScanGame) {
                 }
                 if (location?.available == true) {
                     item {
-                        SaveVersionsPanel(game, taskRunning, versionsRevision, ::runSaveTask)
+                        SaveVersionsPanel(game, taskRunning, versionsRevision) { block ->
+                            runSaveTask(block = block, shortFeedback = true)
+                        }
                     }
                 }
                 item { BottomInsetSpacer() }

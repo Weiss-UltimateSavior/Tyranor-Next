@@ -112,6 +112,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
 
     fun syncNow() {
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
+        taskError = null
         runTask {
             if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
             val report = try {
@@ -129,6 +130,12 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 )
             }
             if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
+            if (report.failures.firstOrNull()?.error == SaveSyncError.CREDENTIALS_UNAVAILABLE) {
+                withContext(Dispatchers.Main) {
+                    taskError = SaveSyncError.CREDENTIALS_UNAVAILABLE.toSaveSyncMessage(context)
+                }
+                return@runTask null
+            }
             if (shouldShowSaveSyncFeedback(context)) report.toSaveSyncMessage(context) else null
         }
     }
@@ -158,6 +165,14 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         loadError?.let { error ->
+            Text(
+                error,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+        }
+        taskError?.takeIf { pendingVersion == null && editedIdentity == null }?.let { error ->
             Text(
                 error,
                 style = MaterialTheme.typography.bodyMedium,
@@ -244,7 +259,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
             title = { Text(stringResource(R.string.save_version_switch_title), style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.save_version_switch_message), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.save_versions_policy), style = MaterialTheme.typography.bodyMedium)
                     taskError?.let { error ->
                         Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
@@ -264,6 +279,11 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     if (editedIdentity != null) AppAlertDialog(onDismissRequest = { if (!taskRunning) { editedIdentity = null; taskError = null } },
         title = { Text(stringResource(R.string.save_sync_identity), style = MaterialTheme.typography.titleMedium) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                stringResource(R.string.save_sync_identity_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             CompositionLocalProvider(LocalIndication provides NoIndication) {
                 AppSearchField(query = editedIdentity.orEmpty(), onQueryChange = {
                     if (!taskRunning) {
