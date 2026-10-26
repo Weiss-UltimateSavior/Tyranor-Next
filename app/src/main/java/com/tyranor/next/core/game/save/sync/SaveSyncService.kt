@@ -58,7 +58,27 @@ class SaveSyncService(context: Context) {
         }
     }
 
-    suspend fun activateVersion(game: ScanGame, id: String): SaveActivationResult = withContext(Dispatchers.IO) {
+    fun needsSelectionRecovery(game: ScanGame): Boolean = try {
+        activations.load(localKey(game)) != null ||
+            (RpgSaveFormat.isRpgWebEngine(game.engine) &&
+                RpgSaveSyncState.forContext(context).needsManualSelectionRecovery(game.uri))
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        true
+    }
+
+    /** Local recovery remains available after WebDAV is disabled; it never imports an archive. */
+    suspend fun recoverSelection(game: ScanGame) = withContext(Dispatchers.IO) {
+        SaveSyncLocks.versions(game.uri) {
+            SaveSyncLocks.active(game.uri) {
+                requireIdle(game)
+                if (needsSelectionRecovery(game)) abandonActivationLocked(game)
+            }
+        }
+    }
+
+    suspend fun activateVersion(game: ScanGame, id: String, discardPrevious: Boolean = false): SaveActivationResult = withContext(Dispatchers.IO) {
         SaveSyncLocks.versions(game.uri) {
             SaveSyncLocks.active(game.uri) {
                 requireEnabled()
@@ -83,19 +103,15 @@ class SaveSyncService(context: Context) {
                     var retryingPrepared = false
                     if (pending != null) {
                         manager.completePendingVersionImport(game)
-                        if (pending.canFinalize(fingerprint(game))) {
-                            val result = tryFinishActivation(game, pending)
-                            if (result != SaveActivationResult.APPLIED || pending.selected.contentHash == selected.contentHash) {
-                                return@active result
-                            }
-                        } else {
-                            // A new explicit choice can supersede a failed, uncommitted attempt.
-                            // Retain its source before releasing the one bounded staging ZIP.
-                            snapshots.add(key, activations.archive(key), pending.selected.createdAt,
-                                pending.selected.source, pending.selected.contentHash)
-                            activations.clear(key)
-                            retryingPrepared = true
-                        }
+                        val result = SaveActivationRecovery.beforeSelection(
+                            sameContent = pending.selected.contentHash == selected.contentHash,
+                            canFinalize = pending.canFinalize(fingerprint(game)),
+                            discardPrevious = discardPrevious,
+                            finish = { tryFinishActivation(game, pending) },
+                            discard = { abandonActivationLocked(game) },
+                        )
+                        if (result != null) return@active result
+                        retryingPrepared = true
                     }
                     val before = fingerprint(game)
                     val recoveryNeeded = RpgSaveFormat.isRpgWebEngine(game.engine) &&
@@ -156,6 +172,46 @@ class SaveSyncService(context: Context) {
                 }
             }
         }
+    }
+
+    /** Both game locks are held. Preserve usable data before abandoning only bookkeeping. */
+    private suspend fun abandonActivationLocked(game: ScanGame) {
+        manager.completePendingVersionImport(game)
+        val key = localKey(game)
+        val current = fingerprint(game)
+        val pending = try {
+            activations.load(key)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: SaveSyncException) {
+            null
+        }
+        if (pending != null) {
+            val archive = activations.archive(key)
+            val valid = try {
+                archive.isFile && SaveContentHash.archive(archive) == pending.selected.contentHash
+            } catch (failure: SaveSyncException) {
+                if (failure.code != SaveSyncError.CORRUPT_ARCHIVE) throw failure
+                false
+            }
+            if (valid) snapshots.add(key, archive, pending.selected.createdAt, pending.selected.source,
+                pending.selected.contentHash, restored = pending.selected.restored,
+                previousCreatedAt = pending.selected.previousCreatedAt)
+        }
+        // Retain the current save last so the five-version cap cannot evict its safety copy.
+        if (current != null) captureLocked(game, finalizeRestore = true)
+        if (RpgSaveFormat.isRpgWebEngine(game.engine)) {
+            val state = RpgSaveSyncState.forContext(context)
+            val repaired = if (current == null) state.clearManualSelection(game.uri) else state.markManualSelection(game.uri)
+            if (!repaired) throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        }
+        val state = states.load(key)
+        if (pending == null || state.optString("completedActivation") == pending.token) {
+            listOf("completedActivation", "activationHash", "promotionFromHash", "promotionFromTime", "promotionAt")
+                .forEach(state::remove)
+            states.save(key, state)
+        }
+        activations.clear(key)
     }
 
     private suspend fun tryFinishActivation(game: ScanGame, pending: SaveActivationJournal.Pending): SaveActivationResult =
@@ -326,6 +382,9 @@ class SaveSyncService(context: Context) {
                 if (version != null && checkpoint.optBoolean("needsPrune")) {
                     val intent = checkpoint.optString("publicationIntent").ifBlank { checkpoint.optString("promotionPublication") }
                     val target = remote.firstOrNull { !it.legacy && it.name == intent }
+                    if (SavePublicationPolicy.isBlocked(checkpoint, target)) {
+                        throw SaveSyncException(SaveSyncError.CLOUD_REPAIR_REQUIRED)
+                    }
                     val verified = target != null && client.verifyVersion(remoteGame, target)
                     checkpoint.put("publicationConfirmed", verified)
                     if (verified) {
@@ -339,11 +398,17 @@ class SaveSyncService(context: Context) {
                             remote = remote - excess.toSet()
                         }
                         checkpoint.remove("needsPrune")
-                    } else if (target != null && (target.contentHash != version.contentHash ||
-                            checkpoint.optLong("publicationPromotionAt") != if (promoting) promotionAt else 0L)) {
+                    } else if (target != null) {
                         // Do not append a succession of half-uploaded targets as the game advances.
                         // A conditional delete of this proven-bad target leaves all good sources intact.
-                        if (!client.discardCorruptPublication(remoteGame, target)) throw SaveSyncException(SaveSyncError.SERVER)
+                        try {
+                            if (!client.discardCorruptPublication(remoteGame, target)) throw SaveSyncException(SaveSyncError.SERVER)
+                        } catch (failure: SaveSyncException) {
+                            if (failure.code != SaveSyncError.CORRUPT_ARCHIVE) throw failure
+                            SavePublicationPolicy.block(checkpoint, target.name, target.etag)
+                            states.save(checkpointKey, checkpoint)
+                            throw SaveSyncException(SaveSyncError.CLOUD_REPAIR_REQUIRED, cause = failure)
+                        }
                         remote = remote - target
                         checkpoint.remove("publicationIntent")
                     }
@@ -392,14 +457,25 @@ class SaveSyncService(context: Context) {
                         requireEnabled()
                         val existingTarget = remote.firstOrNull { !it.legacy && it.name == publication.id }
                         val identical = remote.filter { it.contentHash == version.contentHash }.maxWithOrNull(REMOTE_ORDER)
-                        val expectedSize = when {
-                            promoting && existingTarget != null -> client.refresh(remoteGame, existingTarget, publication, archive)
-                            promoting && identical != null -> client.refresh(remoteGame, identical, publication, archive)
-                            else -> {
-                                val result = client.upload(remoteGame, publication, archive)
-                                if (result.uploaded) uploaded++
-                                result.size
+                        val expectedSize = try {
+                            when {
+                                promoting && existingTarget != null -> client.refresh(remoteGame, existingTarget, publication, archive)
+                                promoting && identical != null -> client.refresh(remoteGame, identical, publication, archive)
+                                else -> {
+                                    val result = client.upload(remoteGame, publication, archive)
+                                    if (result.uploaded) uploaded++
+                                    result.size
+                                }
                             }
+                        } catch (failure: SaveSyncException) {
+                            if (failure.code != SaveSyncError.CORRUPT_ARCHIVE) throw failure
+                            val failedTarget = client.list(remoteGame).firstOrNull { !it.legacy && it.name == publication.id }
+                            if (failedTarget != null) {
+                                SavePublicationPolicy.block(checkpoint, failedTarget.name, failedTarget.etag)
+                                states.save(checkpointKey, checkpoint)
+                                throw SaveSyncException(SaveSyncError.CLOUD_REPAIR_REQUIRED, cause = failure)
+                            }
+                            throw failure
                         }
                         // Reload after publishing: another device may have added a version meanwhile.
                         remote = client.list(remoteGame)
@@ -499,8 +575,11 @@ class SaveSyncService(context: Context) {
         }
     }
 
-    private fun nextTimestamp(game: ScanGame): Long =
-        maxOf(System.currentTimeMillis(), (snapshots.list(localKey(game)).firstOrNull()?.createdAt ?: 0L) + 1)
+    private fun nextTimestamp(game: ScanGame): Long {
+        val now = System.currentTimeMillis()
+        val previous = snapshots.list(localKey(game)).firstOrNull()?.createdAt ?: 0L
+        return maxOf(now, minOf(previous, now + 86_400_000L) + 1)
+    }
 
     private fun requireIdle(game: ScanGame) {
         if (SaveSyncRuntime.isGameRunning(context, game)) throw SaveSyncException(SaveSyncError.GAME_RUNNING)

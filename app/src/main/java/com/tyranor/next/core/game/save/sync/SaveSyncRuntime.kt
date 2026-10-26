@@ -19,7 +19,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -28,7 +30,6 @@ import org.json.JSONObject
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 /** App-side lifecycle adapter. Engine runtimes and their native save writers remain unchanged. */
 object SaveSyncRuntime {
@@ -41,23 +42,37 @@ object SaveSyncRuntime {
     @Volatile private var leftUiSinceLastForeground = false
 
     internal data class LaunchTicket(val token: String, val previous: JSONObject?)
+    private data class CachedBaseline(val contentHash: String, val metadataHash: String)
+    private data class SaveMetadataObservation(val root: File, val files: List<File>, val metadataHash: String)
+    private data class SaveTreeSnapshot(val contentHash: String?, val metadataHash: String)
+    private sealed interface FlushDecision {
+        data object Busy : FlushDecision
+        data object Unchanged : FlushDecision
+        data class Changed(val snapshot: SaveTreeSnapshot) : FlushDecision
+    }
 
     fun install(application: Application) {
         val process = processName(application)
         if (process == application.packageName || !process.startsWith(application.packageName + ":")) return
-        val activities = AtomicInteger(0)
-        val hostUris = ConcurrentHashMap.newKeySet<String>()
+        val hostActivities = HostActivityUriRegistry<Activity>()
         val hostWrite = Mutex()
         val runtime = runtimeStore(application)
         val key = SaveContentHash.text(process)
+        fun registerActivity(activity: Activity) {
+            val uri = activity.intent
+                ?.getStringExtra(LaunchContract.ROOT_URI)
+                ?.takeIf { it.isNotBlank() }
+            hostActivities.register(activity, uri)
+        }
         fun record() {
             scope.launch {
                 hostWrite.withLock {
                     try {
+                        val snapshot = hostActivities.snapshot()
                         runtime.save(key, JSONObject()
                             .put("pid", Process.myPid())
-                            .put("activities", activities.get())
-                            .put("uris", JSONArray(hostUris.toList())))
+                            .put("activities", snapshot.activities)
+                            .put("uris", JSONArray(snapshot.uris)))
                     } catch (_: Exception) {
                         // An unreadable/missing record is treated as busy by the reader.
                     }
@@ -67,14 +82,13 @@ object SaveSyncRuntime {
         record()
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, state: Bundle?) {
-                activity.intent?.getStringExtra(LaunchContract.ROOT_URI)?.takeIf { it.isNotBlank() }?.let(hostUris::add)
-                activities.incrementAndGet()
+                registerActivity(activity)
                 record()
             }
             override fun onActivityDestroyed(activity: Activity) {
-                activities.updateAndGet { (it - 1).coerceAtLeast(0) }
+                hostActivities.unregister(activity)
                 record()
-                if (activities.get() == 0 && !activity.isChangingConfigurations) {
+                if (hostActivities.activityCount() == 0 && !activity.isChangingConfigurations) {
                     application.sendBroadcast(Intent(application, SaveSyncExitReceiver::class.java))
                 }
             }
@@ -99,9 +113,30 @@ object SaveSyncRuntime {
             val store = sessions(context)
             val key = SaveContentHash.text(game.uri)
             val previous = store.load(key).takeIf { it.has("token") }
-            val baseline = previous?.optString("baseline") ?: SaveSyncService(context).fingerprint(game).orEmpty()
+            val previousBaseline = previous?.optString("baseline").orEmpty()
+            var baselineMetadata = previous?.optString("baselineMetadata").orEmpty()
+            val cached = if (previousBaseline.isBlank() || baselineMetadata.isBlank()) {
+                loadCachedBaseline(baselines(context), key, game.uri)
+            } else null
+            val baseline = if (previousBaseline.isNotBlank()) {
+                previousBaseline
+            } else {
+                val manager = GameSaveManager(context)
+                val snapshot = resolveBaselineSnapshot(manager, game, cached)
+                if (cached == null ||
+                    cached.contentHash != snapshot.contentHash ||
+                    cached.metadataHash != snapshot.metadataHash) {
+                    persistBaseline(context, game, snapshot)
+                }
+                baselineMetadata = snapshot.metadataHash
+                snapshot.contentHash.orEmpty()
+            }
+            if (baselineMetadata.isBlank() && previousBaseline.isNotBlank()) {
+                baselineMetadata = cached?.takeIf { it.contentHash == previousBaseline }?.metadataHash.orEmpty()
+            }
             val token = UUID.randomUUID().toString()
             store.save(key, JSONObject().put("uri", game.uri).put("baseline", baseline)
+                .put("baselineMetadata", baselineMetadata)
                 .put("token", token).put("startedAt", System.currentTimeMillis()).put("ownerPid", Process.myPid()))
             return LaunchTicket(token, previous)
         } catch (cancelled: CancellationException) {
@@ -291,24 +326,51 @@ object SaveSyncRuntime {
                     continue
                 }
                 val target = game
-                val changed = SaveSyncLocks.active(target.uri) {
-                    if (isGameRunning(context, target)) null
-                    else {
-                        val service = SaveSyncService(context)
-                        val current = service.fingerprint(target).orEmpty()
-                        current.isNotBlank() && (current != entry.optString("baseline") || service.hasPendingPromotion(target, config))
+                val baseline = entry.optString("baseline")
+                val manager = GameSaveManager(context)
+                val decision = SaveSyncLocks.active(target.uri) {
+                    if (isGameRunning(context, target)) {
+                        FlushDecision.Busy
+                    } else {
+                        val current = captureContentSnapshot(manager, target)
+                        val changed = current.contentHash != null &&
+                            (current.contentHash != baseline ||
+                                SaveSyncService(context).hasPendingPromotion(target, config))
+                        if (changed) {
+                            FlushDecision.Changed(current)
+                        } else if (store.load(key).optString("token") != token) {
+                            FlushDecision.Busy
+                        } else {
+                            persistBaseline(context, target, current)
+                            store.remove(key)
+                            FlushDecision.Unchanged
+                        }
                     }
                 }
-                if (changed == null) {
-                    report += SaveSyncReport(busy = 1)
-                    continue
-                }
-                val result = if (changed) SaveSyncService(context).syncGame(target, SaveSyncDirection.UPLOAD)
-                    else SaveSyncReport()
-                report += result
-                if (result.failures.isEmpty() && result.busy == 0) {
-                    SaveSyncLocks.active(target.uri) {
-                        if (store.load(key).optString("token") == token) store.remove(key)
+                when (decision) {
+                    FlushDecision.Busy -> report += SaveSyncReport(busy = 1)
+                    FlushDecision.Unchanged -> Unit
+                    is FlushDecision.Changed -> {
+                        val result = SaveSyncService(context).syncGame(target, SaveSyncDirection.UPLOAD)
+                        report += result
+                        if (result.failures.isEmpty() && result.busy == 0) {
+                            val committed = SaveSyncLocks.active(target.uri) {
+                                if (isGameRunning(context, target) ||
+                                    store.load(key).optString("token") != token) {
+                                    false
+                                } else {
+                                    val final = captureContentSnapshot(manager, target)
+                                    if (final.contentHash == decision.snapshot.contentHash) {
+                                        persistBaseline(context, target, final)
+                                        store.remove(key)
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                            }
+                            if (!committed) report += SaveSyncReport(busy = 1)
+                        }
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -396,6 +458,7 @@ object SaveSyncRuntime {
         return classifyHostRecord(
             livePid = process.pid,
             recordedPid = state.optInt("pid", -1),
+            recordedActivities = state.optInt("activities", -1),
             recordedUris = uris,
             gameUri = gameUri,
         )
@@ -460,14 +523,132 @@ object SaveSyncRuntime {
         }
     }
 
+    private fun loadCachedBaseline(store: SaveSyncStateStore, key: String, uri: String): CachedBaseline? {
+        val state = store.load(key)
+        if (state.length() == 0) return null
+        val contentHash = state.opt("contentHash") as? String ?: return null
+        val metadataHash = state.opt("metadataHash") as? String ?: return null
+        if (state.opt("uri") != uri ||
+            !HASH.matches(contentHash) ||
+            !HASH.matches(metadataHash)) {
+            return null
+        }
+        return CachedBaseline(contentHash, metadataHash)
+    }
+
+    private suspend fun resolveBaselineSnapshot(
+        manager: GameSaveManager,
+        game: ScanGame,
+        cached: CachedBaseline?,
+    ): SaveTreeSnapshot {
+        val observed = observeSaveMetadata(manager, game)
+        if (cached?.metadataHash == observed.metadataHash) {
+            return SaveTreeSnapshot(cached.contentHash, observed.metadataHash)
+        }
+        return hashStableContent(manager, game, observed)
+    }
+
+    private suspend fun captureContentSnapshot(
+        manager: GameSaveManager,
+        game: ScanGame,
+    ): SaveTreeSnapshot = hashStableContent(manager, game, observeSaveMetadata(manager, game))
+
+    private suspend fun observeSaveMetadata(
+        manager: GameSaveManager,
+        game: ScanGame,
+    ): SaveMetadataObservation {
+        val location = manager.resolveSaveLocation(game)
+        if (!location.available || location.directory == null) {
+            throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
+        }
+        val root = manager.syncSaveDirectory(game)
+        val files = manager.listSaveFiles(game, strict = true)
+        val job = currentCoroutineContext()
+        val metadataHash = SaveSyncMetadataFingerprint.fingerprint(root, files) { job.ensureActive() }
+        return SaveMetadataObservation(root, files, metadataHash)
+    }
+
+    private suspend fun hashStableContent(
+        manager: GameSaveManager,
+        game: ScanGame,
+        observed: SaveMetadataObservation,
+    ): SaveTreeSnapshot {
+        val job = currentCoroutineContext()
+        val contentHash = SaveContentHash.files(observed.root, observed.files) { job.ensureActive() }
+        val afterFiles = manager.listSaveFiles(game, strict = true)
+        val afterMetadata = SaveSyncMetadataFingerprint.fingerprint(observed.root, afterFiles) {
+            job.ensureActive()
+        }
+        if (afterMetadata != observed.metadataHash) {
+            // A cache entry is only authoritative for one stable tree state.
+            throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        }
+        return SaveTreeSnapshot(contentHash, observed.metadataHash)
+    }
+
+    private fun persistBaseline(context: Context, game: ScanGame, snapshot: SaveTreeSnapshot) {
+        val store = baselines(context)
+        val key = SaveContentHash.text(game.uri)
+        val contentHash = snapshot.contentHash
+        if (contentHash.isNullOrBlank()) {
+            store.remove(key)
+            return
+        }
+        if (!HASH.matches(contentHash) || !HASH.matches(snapshot.metadataHash)) {
+            throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        }
+        store.save(key, JSONObject()
+            .put("version", 1)
+            .put("uri", game.uri)
+            .put("contentHash", contentHash)
+            .put("metadataHash", snapshot.metadataHash))
+    }
+
     private fun sessions(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"))
+    private fun baselines(context: Context) =
+        SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/baselines"))
     private fun runtimeStore(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/hosts"))
     private fun processName(context: Context): String = if (Build.VERSION.SDK_INT >= 28) Application.getProcessName() else {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         manager?.runningAppProcesses?.firstOrNull { it.pid == Process.myPid() }?.processName.orEmpty()
     }
+    private val HASH = Regex("[a-f0-9]{64}")
     private const val START_GRACE_MS = 15_000L
     private const val MAX_LAUNCH_GRACE_ENTRIES = 32
+}
+
+internal data class HostActivityUriSnapshot(val activities: Int, val uris: List<String>)
+
+/** Tracks one URI per Activity instance so a destroyed screen cannot leave a stale host reference. */
+internal class HostActivityUriRegistry<T : Any> {
+    private val lock = Any()
+    private val activityUris = HashMap<T, String?>()
+    private val uriReferences = HashMap<String, Int>()
+
+    fun register(activity: T, uri: String?) {
+        synchronized(lock) {
+            activityUris.put(activity, uri)?.let(::releaseLocked)
+            if (uri != null) uriReferences[uri] = (uriReferences[uri] ?: 0) + 1
+        }
+    }
+
+    fun unregister(activity: T) {
+        synchronized(lock) {
+            activityUris.remove(activity)?.let(::releaseLocked)
+        }
+    }
+
+    fun snapshot(): HostActivityUriSnapshot = synchronized(lock) {
+        HostActivityUriSnapshot(activityUris.size,
+            if (activityUris.values.any { it == null }) emptyList() else uriReferences.keys.sorted())
+    }
+
+    fun activityCount(): Int = synchronized(lock) { activityUris.size }
+
+    private fun releaseLocked(uri: String) {
+        val remaining = (uriReferences[uri] ?: 1) - 1
+        if (remaining <= 0) uriReferences.remove(uri) else uriReferences[uri] = remaining
+    }
 }
 
 internal enum class HostRecordRelation { MATCHING, UNRELATED, UNKNOWN }
@@ -475,10 +656,12 @@ internal enum class HostRecordRelation { MATCHING, UNRELATED, UNKNOWN }
 internal fun classifyHostRecord(
     livePid: Int,
     recordedPid: Int,
+    recordedActivities: Int,
     recordedUris: List<String>?,
     gameUri: String,
 ): HostRecordRelation {
-    if (livePid <= 0 || recordedPid != livePid || recordedUris.isNullOrEmpty() || gameUri.isBlank()) {
+    if (livePid <= 0 || recordedPid != livePid || recordedActivities <= 0 ||
+        recordedUris.isNullOrEmpty() || gameUri.isBlank()) {
         return HostRecordRelation.UNKNOWN
     }
     return if (gameUri in recordedUris) HostRecordRelation.MATCHING else HostRecordRelation.UNRELATED

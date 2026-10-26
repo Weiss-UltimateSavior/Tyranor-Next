@@ -4,8 +4,23 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.json.JSONObject
 
 class SavePublicationPolicyTest {
+    @Test
+    fun ordinaryCorruptPublicationStaysBlockedUntilDeletedOrChanged() {
+        val checkpoint = JSONObject().put("publicationPromotionAt", 0L)
+        val damaged = RemoteSaveVersion("ordinary", "a".repeat(64), 100L, 10L, "W/\"etag\"")
+        SavePublicationPolicy.block(checkpoint, damaged.name, damaged.etag)
+        assertTrue(SavePublicationPolicy.isBlocked(checkpoint, damaged))
+        assertTrue(SavePublicationPolicy.isBlocked(checkpoint, damaged))
+        assertFalse(SavePublicationPolicy.isBlocked(checkpoint, damaged.copy(etag = "\"replaced\"")))
+        assertFalse(checkpoint.has("blockedPublication"))
+        SavePublicationPolicy.block(checkpoint, damaged.name, null)
+        assertTrue(SavePublicationPolicy.isBlocked(checkpoint, damaged.copy(etag = null)))
+        assertFalse(SavePublicationPolicy.isBlocked(checkpoint, null))
+    }
+
     private val selectedHash = "1".repeat(64)
     private val playedHash = "2".repeat(64)
     private val unrelatedHash = "3".repeat(64)

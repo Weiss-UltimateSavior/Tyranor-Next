@@ -16,6 +16,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.autofill.contentType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
@@ -33,14 +35,13 @@ import top.yukonga.miuix.kmp.theme.LocalContentColor
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 仅供 AppSearchField 在 API 26/27 内嵌使用：保留 Miuix 胶囊与键盘行为，
+ * 仅供 AppSearchField 的兼容路径内嵌使用：保留 Miuix 胶囊与键盘行为，
  * 不应用库 InputField 为展开式搜索页设计的禁用、自动聚焦或失焦清空逻辑。
  *
- * 另供安全输入（如 WebDAV 密码）使用：Miuix 0.9.2 的 `InputField` 不支持文本变换，
- * 掩码场景由 AppSearchField 统一改走本实现。清空按钮按原文判空与清空，展示文字由
- * [visualTransformation] 变换；键盘类型与 IME 动作由调用方决定（密码用
- * [KeyboardType.Password] + [ImeAction.Done]。本组件只设置键盘类型，不额外声明 Android
- * autofill 内容类型；普通文本粘贴由 BasicTextField 提供。
+ * API 26/27、非恒等文本变换以及需要显式键盘/IME/autofill 语义的场景由
+ * AppSearchField 统一改走本实现。清空按钮按原文判空与清空，展示文字由
+ * [visualTransformation] 变换；[autofillContentType] 与键盘类型、IME 动作彼此独立声明。
+ * 普通文本粘贴由 BasicTextField 提供。
  */
 @Composable
 internal fun EmbeddedSearchInputField(
@@ -53,11 +54,14 @@ internal fun EmbeddedSearchInputField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardType: KeyboardType = KeyboardType.Text,
     imeAction: ImeAction = ImeAction.Search,
+    autofillContentType: ContentType? = null,
 ) {
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = modifier,
+        modifier = modifier.then(
+            autofillContentType?.let { Modifier.contentType(it) } ?: Modifier,
+        ),
         singleLine = true,
         textStyle = MiuixTheme.textStyles.main.copy(fontWeight = FontWeight.Medium)
             .merge(textStyle).copy(color = LocalContentColor.current),

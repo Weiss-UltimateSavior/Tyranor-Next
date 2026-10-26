@@ -27,7 +27,6 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.SlidingTabRow
-import com.tyranor.next.ui.common.TopBarBlurHost
 import com.tyranor.next.ui.game.GameGrid
 import com.tyranor.next.ui.game.sortGames
 import com.tyranor.next.ui.main.MainLibraryUiState
@@ -99,35 +98,16 @@ internal fun CategoryWarehouseContent(
     val effectiveKey = if (categories.any { it.key == selectedKey }) selectedKey else HOME_CATEGORY_ALL
     val selected = categories.firstOrNull { it.key == effectiveKey } ?: categories.first()
 
-    val showCategoryTabs = !(libraryState.scanning || !libraryState.loaded) && libraryState.games.isNotEmpty()
-    val categoryTabLabels = remember(categories) { categories.map { it.label } }
-    TopBarBlurHost(modifier = modifier, topBar = {
-        // 分类栏放进 underTitle：与顶栏同属模糊背景区，网格滚动时不会在分类栏后面露出锐利内容
-        AppTopBar(
-            title = stringResource(R.string.nav_home),
-            underTitle = {
-                if (showCategoryTabs) {
-                    SlidingTabRow(
-                        tabs = categoryTabLabels,
-                        selectedIndex = categories.indexOfFirst { it.key == effectiveKey }.coerceAtLeast(0),
-                        onTabSelected = { index ->
-                            categories.getOrNull(index)?.let { selectedKey = it.key }
-                        },
-                        modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
-                        scrollable = true,
-                    )
-                }
-            },
-        )
-    }) { topInset ->
+    Column(modifier.fillMaxSize()) {
+        AppTopBar(title = stringResource(R.string.nav_home))
         when {
             libraryState.scanning || !libraryState.loaded -> {
-                Box(Modifier.fillMaxSize().padding(top = topInset), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
             libraryState.games.isEmpty() -> {
-                Box(Modifier.fillMaxSize().padding(top = topInset), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         stringResource(R.string.game_empty_title),
                         style = MaterialTheme.typography.bodyMedium,
@@ -136,8 +116,17 @@ internal fun CategoryWarehouseContent(
                 }
             }
             else -> {
+                SlidingTabRow(
+                    tabs = remember(categories) { categories.map { it.label } },
+                    selectedIndex = categories.indexOfFirst { it.key == effectiveKey }.coerceAtLeast(0),
+                    onTabSelected = { index ->
+                        categories.getOrNull(index)?.let { selectedKey = it.key }
+                    },
+                    modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                    scrollable = true,
+                )
                 if (selected.games.isEmpty()) {
-                    Box(Modifier.fillMaxSize().padding(top = topInset), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             stringResource(R.string.home_category_empty),
                             style = MaterialTheme.typography.bodyMedium,
@@ -154,7 +143,6 @@ internal fun CategoryWarehouseContent(
                             gridState = rememberLazyGridState(),
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
-                            topInset = topInset,
                         )
                     }
                 }

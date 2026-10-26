@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -56,13 +57,13 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
-import com.tyranor.next.ui.common.MiuixTopBarBlurScaffold
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class SaveManagementActivity : AppScreenActivity() {
@@ -203,8 +204,10 @@ private fun SaveManagementScreen(game: ScanGame) {
     }
 
     MiuixSettingsTheme {
-        MiuixTopBarBlurScaffold(
+        MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = ComposeColor.Transparent,
+            contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = stringResource(R.string.save_management_title),
@@ -212,10 +215,12 @@ private fun SaveManagementScreen(game: ScanGame) {
                     contentColor = MiuixTheme.colorScheme.onBackground,
                 )
             },
-        ) { topInset ->
+        ) { innerPadding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(top = 12.dp + topInset, bottom = 24.dp),
+                modifier = Modifier.fillMaxSize()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = innerPadding.calculateTopPadding()),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
@@ -336,6 +341,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,
                         showArrow = false,
+                        indication = null,
                         onClick = {
                             showExportFormatPicker = false
                             exportFormat = GameSaveManager.ExportFormat.STANDARD
@@ -348,6 +354,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,
                         showArrow = false,
+                        indication = null,
                         onClick = {
                             showExportFormatPicker = false
                             exportFormat = GameSaveManager.ExportFormat.TYRANOR

@@ -27,7 +27,7 @@ import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
-import com.tyranor.next.ui.common.MiuixTopBarBlurScaffold
+import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.launch
 
@@ -56,8 +56,9 @@ internal fun EthornellSettingsScreen() {
         }
     }
     MiuixSettingsTheme {
-        MiuixTopBarBlurScaffold(
-            modifier = Modifier.fillMaxSize(),
+        Scaffold(
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = stringResource(R.string.ethornell_settings_title),
@@ -72,10 +73,10 @@ internal fun EthornellSettingsScreen() {
                     },
                 )
             },
-        ) { topInset ->
+        ) { padding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, top = 16.dp + topInset, end = 16.dp, bottom = 16.dp),
+                modifier = Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()),
+                contentPadding = PaddingValues(16.dp),
             ) {
                 item {
                     EngineCard("Ethornell / BGI") {

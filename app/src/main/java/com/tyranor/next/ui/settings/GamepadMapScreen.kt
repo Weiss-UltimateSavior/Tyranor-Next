@@ -44,7 +44,7 @@ import com.tyranor.next.ui.common.NoRippleButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.tyranor.next.ui.common.MiuixTopBarBlurScaffold
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -81,8 +81,10 @@ internal fun GamepadMapScreen() {
     var editingStick by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     MiuixSettingsTheme {
-        MiuixTopBarBlurScaffold(
+        MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = ComposeColor.Transparent,
+            contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = stringResource(R.string.input_settings_gamepad_title),
@@ -90,10 +92,13 @@ internal fun GamepadMapScreen() {
                     contentColor = MiuixTheme.colorScheme.onBackground,
                 )
             },
-        ) { topInset ->
+        ) { innerPadding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(top = 12.dp + topInset, bottom = 24.dp),
+                // 顶栏透明：列表整体垫在顶栏下方（持久 padding），避免滚动时内容穿过顶栏
+                modifier = Modifier.fillMaxSize()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = innerPadding.calculateTopPadding()),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {

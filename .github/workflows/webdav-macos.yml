@@ -1,0 +1,47 @@
+name: WebDAV macOS regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/webdav-macos.yml"
+      - "app/src/main/java/com/tyranor/next/core/game/save/**"
+      - "app/src/test/java/com/tyranor/next/core/game/save/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webdav-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Full app JVM tests on macOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install build SDK
+        run: sdkmanager --channel=3 "platforms;android-36" "platforms;android-37.0" "build-tools;37.0.0" "ndk;28.0.13004108"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run full app JVM regression with native filesystem aliases
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+      - name: Keep test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webdav-macos-jvm-results
+          path: |
+            app/build/test-results/testDebugUnitTest
+            app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: warn

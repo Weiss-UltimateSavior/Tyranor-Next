@@ -3,18 +3,26 @@ package com.tyranor.next.core.game.save
 import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 
 /** Validates save paths without letting canonicalization hide symbolic-link ancestors. */
 internal object SavePathSafety {
-    /** Returns a canonical root; missing tails are allowed, existing non-directories are not. */
-    fun requireSafeRoot(root: File): File {
+    /**
+     * Returns a canonical root; missing tails are allowed, existing non-directories are not.
+     * [trustedRoot] may resolve aliases in its own prefix, while every segment below it is
+     * checked in the caller-supplied order so `link/..` cannot become harmless through normalize.
+     */
+    fun requireSafeRoot(root: File, trustedRoot: File? = null): File {
         val absolute = absolutePath(root)
+        if (trustedRoot != null) return requireTrustedRoot(absolute, absolutePath(trustedRoot))
+
         // Keep link/.. visible until every original component has been inspected.
         rejectSymbolicLinks(absolute)
         val normalized = absolute.normalize()
@@ -41,6 +49,70 @@ internal object SavePathSafety {
         if (!canonicalPath.startsWith(rootPath) || canonicalPath == rootPath || !canonical.isFile) {
             unavailable()
         }
+        return canonical
+    }
+
+    /**
+     * Deletes [root] and its descendants without following symbolic links. A symbolic link is
+     * deleted as an entry, leaving its target untouched.
+     */
+    fun deleteTreeNoFollow(root: File) {
+        val path = absolutePath(root)
+        if (attributesOrNull(path) == null) return
+        try {
+            Files.walkFileTree(path, object : SimpleFileVisitor<Path>() {
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    Files.deleteIfExists(file)
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(file: Path, failure: IOException): FileVisitResult {
+                    if (failure is NoSuchFileException) return FileVisitResult.CONTINUE
+                    throw failure
+                }
+
+                override fun postVisitDirectory(directory: Path, failure: IOException?): FileVisitResult {
+                    if (failure != null) throw failure
+                    Files.deleteIfExists(directory)
+                    return FileVisitResult.CONTINUE
+                }
+            })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: IOException) {
+            unavailable(failure)
+        } catch (failure: SecurityException) {
+            unavailable(failure)
+        }
+    }
+
+    /** Import sidecars must be actual directories; their existing parent retains its own policy. */
+    fun requirePlainDirectoryEntry(directory: File) {
+        val attributes = attributesOrNull(absolutePath(directory))
+        if (attributes != null && !attributes.isDirectory) unavailable()
+    }
+
+    private fun requireTrustedRoot(absolute: Path, trustedRoot: Path): File {
+        // The caller's original path must establish containment. Canonicalization starts only
+        // at the trusted boundary so it cannot erase a link or parent traversal below that root.
+        if (!absolute.startsWith(trustedRoot)) unavailable()
+
+        val canonicalTrusted = canonicalFile(trustedRoot)
+        val canonicalTrustedPath = canonicalTrusted.toPath()
+        validateDirectoryOrMissing(canonicalTrustedPath)
+
+        val candidate = canonicalTrustedPath.resolve(trustedRoot.relativize(absolute))
+        rejectSymbolicLinks(candidate, trustedRoot = canonicalTrustedPath)
+        val normalized = candidate.normalize()
+        if (!normalized.startsWith(canonicalTrustedPath)) unavailable()
+        if (normalized != candidate) {
+            rejectSymbolicLinks(normalized, trustedRoot = canonicalTrustedPath)
+        }
+
+        val canonical = canonicalFile(normalized)
+        val canonicalPath = canonical.toPath()
+        if (!canonicalPath.startsWith(canonicalTrustedPath)) unavailable()
+        validateDirectoryOrMissing(canonicalPath)
         return canonical
     }
 

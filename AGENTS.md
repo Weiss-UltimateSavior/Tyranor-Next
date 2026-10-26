@@ -154,7 +154,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 顶部栏由公共组件内部使用 **Column + Row**，页面不自行使用 Material3 `TopAppBar` 替代；Miuix 页面壳按下文约定接入。
 
-- 普通/降级路径由外层 `Column` 组装为「顶部栏 → 正文内容」；启用渐进模糊时交给 `TopBarBlurHost` / `MiuixTopBarBlurScaffold` 叠层托管并消费 `topInset`，不要强行改回上下分离布局。
+- 页面由外层 `Column` 组装为「顶部栏 → 正文内容」，Material 页与 Miuix 页均保持上下分离布局；Miuix 页由透明 `MiuixScaffold` 的 `topBar` 槽承载 `AppTopBar`，正文位于顶栏下方，不启用顶栏模糊叠层。
 
 - **禁止在顶部栏放置任何返回按钮/图标**。返回统一依赖系统返回键/手势（`Activity` 默认 `finish()`），不要通过 `onBack` 参数下发返回回调。
 
@@ -182,11 +182,6 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
   `contentPadding`），否则滚动内容会从顶栏下方穿过与标题重叠。设置类页面（MiuixScaffold）的
   `innerPadding` 顶部值一律加到列表 modifier 上，`contentPadding` 只保留额外的间距。
 
-- **默认外观风格的渐进模糊（仅默认风格，Android 12+）**：顶部栏背景仍是透明色，但页面经 `ui/common/TopBarBlur.kt` 的 `TopBarBlurHost`（Miuix 页用 `MiuixTopBarBlurScaffold`）托管时，正文铺满整页并垫在顶栏下方，顶栏背景层采样正文做模糊 + 页面底色半透明叠层，整体按竖向渐变遮罩——**顶端最实、底边完全透明**，形成「向上渐模糊」。
-  - 使用方式：`TopBarBlurHost(topBar = { AppTopBar(...) }) { topInset -> … }`；滚动列表把 `topInset` 加到 `contentPadding.top`，非滚动内容用 `padding(top = topInset)`。顶栏下方的固定条（分页/分类栏/搜索框）必须放进 `AppTopBar` 的 `underTitle`，才处于模糊区内。
-  - 玻璃系外观风格（复古/高级）与 Android 12 以下**不启用**：`TopBarBlurHost` 退化为「顶栏在上、正文在下」的 Column，`topInset = 0`，行为与原先一致。
-  - Web 首页（WebView）、解封包页不接入（WebView 不得录入采样层，见 `MainScreen.kt` 的 Web 首页采样降级说明）。
-
 - 禁止使用主题色 `primary` 作为顶部栏背景。
 
 ### 5. 状态栏
@@ -201,8 +196,6 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 不要自行给状态栏设置非透明背景色。
 
 ### 6. 位置顺序
-
-以下示意仅对应普通/模糊降级路径；默认风格 Android 12+ 的模糊宿主按第 4 节处理正文与顶栏叠层。
 
 ```
 Column(fillMaxSize)                                // 页面根
@@ -301,8 +294,10 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态（Miuix 风格，非展开内嵌式）
 
-- 组件内部固定为 `MiuixSettingsTheme + SearchBar + InputField` 模板，`expanded` 恒为
-  `false`（内嵌式），不使用 Miuix 的展开式全屏搜索页形态。
+- 组件内部固定为 `MiuixSettingsTheme + SearchBar` 模板，`expanded` 恒为
+  `false`（内嵌式），不使用 Miuix 的展开式全屏搜索页形态。默认参数组合走 `InputField`；
+  API 26/27 兼容、非恒等文本变换或显式键盘/IME/autofill 语义走组件内部
+  `EmbeddedSearchInputField`，页面不得自行复制该分支。
 
 - 前导图标固定 **26dp**，内边距固定 `SearchBarDefaults.LeadingIconStartPadding /
   LeadingIconEndPadding`，`tint` 统一取 `MiuixTheme.colorScheme.primary`——以上均由组件
@@ -315,10 +310,21 @@ Column(fillMaxSize)                                // 页面根
 - `onSearch`：键盘 IME 动作回调。本地即时过滤场景可不传（默认空实现）；
   需显式触发时传入（如网络请求、回车即保存）。
 
+- `imeAction`：键盘 IME 动作，默认 `ImeAction.Search`；普通搜索依赖默认值，用户名、URL、
+  密码及弹窗内其它非搜索身份输入显式传 `ImeAction.Done`。
+
+- `autofillContentType`：Compose autofill 内容类型，默认 `null`。用户名与现有密码按身份分别传
+  `ContentType.Username` / `ContentType.Password`；URL 等无对应语义的字段保持 `null`。
+  文本变换、键盘类型和 autofill 类型彼此独立，不得根据 `visualTransformation` 自动推断。
+
+- `keyboardType`：键盘类型，默认 `KeyboardType.Text`；URL 字段传 `KeyboardType.Uri`，密码字段传
+  `KeyboardType.Password`，用户名使用默认文本键盘。
+
 - `leadingIcon`：drawable 资源（`R.drawable.ic_*`）。搜索语义用默认 `ic_game_search`；
   其他语义必须传对应图标（如名称修改用 `ic_sheet_rename`），禁止搜索图标滥用。
 
-- `iconContentDescription`：无障碍描述，跟随图标语义。
+- `iconContentDescription`：保留此参数名以兼容既有调用；实际同时作为输入框的无障碍 label，
+  文案跟随字段语义，并不只描述前导图标。
 
 - `modifier`：仅用于布局微调（如外边距），宽度由组件内部 `fillMaxWidth` 保证。
 
@@ -375,6 +381,10 @@ Column(fillMaxSize)                                // 页面根
 - 排版固定：圆角 `AppComponentShape`（默认 8dp / 玻璃风格 32dp，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
 
 - 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明。「色调切换」开启时 `NavWhite`/`PageGrey` 同步互换，反差关系不变；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
+
+- `drawSurface`：是否绘制条目自身的圆角背景与描边，默认 `true`。条目已位于
+  `MiuixCard` 等卡片表面时传 `drawSurface = false`，使用卡内平面样式，避免卡片套卡片；
+  点击、内边距、图标与文字排版保持不变。
 
 - 标题用 `MaterialTheme.typography.bodyMedium`、颜色取 `TextColor`；摘要可选，用 `bodySmall` + 半透明辅助色。均不依赖 `colorScheme.surface*`（遵循「组件背景色统一规范」）。
 
@@ -586,18 +596,18 @@ Column(fillMaxSize)                                // 页面根
 
 使用 Android CLI 做设备审查前，先发现并阅读其中适用的审查技能；工具或技能不可用时记录缺失条件，继续可执行的本地审查，不编造已安装或已通过的结果。`--sdk=/tmp/androidsdk` 是既有验收环境示例，须替换为本机 SDK 路径。
 
-JVM 回归使用 JUnit 4，位于 app/engine 各自的 `src/test/`；覆盖扫描、设置解析、存档、输入、宿主生命周期与图形策略。测试聚焦行为和边界，不镜像实现，也不为纯文档修改新增业务测试。真机用例与 release R8 probe 的构建、安装和能力边界分别见 [androidTest](app/src/androidTest/README.md) 与 [releaseProbe](app/src/releaseProbe/README.md)；普通 Android CI 未自动运行设备验收。
-
-设备测试 JNI probe 的构建脚本当前只选择 Linux/macOS NDK host 路径，Windows 不能直接照搬这些测试 APK 构建命令；这不影响普通 App 构建与 JVM 测试命令的适用说明。
-
-Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既有 v1→v2 与降级恢复保留破坏性重建策略，不扩大例外。
-
-应由多个相互独立的 Agent 或 子Agent 从不同角度重新检查代码，例如：
+必须强制性多个相互独立的 Agent 或 子Agent 从不同角度重新检查代码，例如：
 代码逻辑审核：检查实现逻辑、状态流转、边界条件以及潜在逻辑错误。
 架构审核：检查模块职责、依赖关系、代码耦合以及是否破坏现有架构。
 代码健壮性审核：检查异常处理、空值、资源释放、线程安全、生命周期以及极端输入。
 回归风险审核：分析修改是否可能影响现有功能、其他引擎或既有调用链。
 代码规范审核：检查代码风格、命名、重复代码、无效代码以及是否符合 AGENTS.md 和项目现有规范。
+
+JVM 回归使用 JUnit 4，位于 app/engine 各自的 `src/test/`；覆盖扫描、设置解析、存档、输入、宿主生命周期与图形策略。测试聚焦行为和边界，不镜像实现，也不为纯文档修改新增业务测试。真机用例与 release R8 probe 的构建、安装和能力边界分别见 [androidTest](app/src/androidTest/README.md) 与 [releaseProbe](app/src/releaseProbe/README.md)；普通 Android CI 未自动运行设备验收。
+
+设备测试 JNI probe 的构建脚本当前只选择 Linux/macOS NDK host 路径，Windows 不能直接照搬这些测试 APK 构建命令；这不影响普通 App 构建与 JVM 测试命令的适用说明。
+
+Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既有 v1→v2 与降级恢复保留破坏性重建策略，不扩大例外。
 
 ***
 

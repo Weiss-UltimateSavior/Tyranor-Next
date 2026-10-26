@@ -916,4 +916,11 @@
     <string name="webdav_reset_config">Reset WebDAV settings on this device</string>
     <string name="webdav_reset_config_title">Reset WebDAV settings on this device?</string>
     <string name="webdav_reset_config_message">This device cannot read the saved server and credentials. Confirming clears only the server address, username, password and sync preferences stored on this device, and recreates the encryption key. The sync switch, local save versions and cloud versions are kept. Re-enter the server and credentials after resetting.</string>
+    <string name="save_version_choose">Choose a version</string>
+    <string name="save_version_previous_pending">The previous switch is incomplete. This selection has not been applied. Discard the previous metadata to continue.</string>
+    <string name="save_version_discard_switch">Discard and switch</string>
+    <string name="save_version_recover">Resolve incomplete switch</string>
+    <string name="save_version_recovery_policy">Keep the current save and clear the interrupted selection. The next local interop sync will use the current save.</string>
+    <string name="webdav_error_cloud_repair">Remove the damaged cloud save and retry</string>
+    <string name="save_sync_cleanup_failed">Game removed. Some save sync data could not be cleaned up</string>
 </resources>

@@ -1,6 +1,7 @@
 package com.tyranor.next.core.game.save.sync
 
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -25,6 +26,8 @@ import java.io.StringReader
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.Charset
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
@@ -152,26 +155,52 @@ class WebDavClient(
 
     suspend fun download(game: RemoteSaveGame, remote: RemoteSaveVersion, destination: File) {
         if (remote.size < 0 || remote.size > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
-        // Open before awaiting HTTP, so cancellation cannot recreate an already removed temp path.
-        destination.outputStream().use { output ->
-            exchange(request(versionUrl(game, remote.name, remote.legacy)).get().build()) { response, check ->
-                requireStatus(response, 200)
-                val body = response.body
-                if (body.contentLength() > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
-                var total = 0L
-                val buffer = ByteArray(64 * 1024)
-                body.byteStream().use { input ->
-                    while (true) {
-                        check()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        if (total > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
-                        output.write(buffer, 0, count)
-                    }
-                }
-                if (total != remote.size) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+        val target = destination.absoluteFile
+        val directory = target.parentFile ?: throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        val temp = try {
+            SaveSyncTemporaryFiles.create("dav_download_", ".part", directory)
+        } catch (failure: IOException) {
+            throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+        }
+        try {
+            val output = try {
+                temp.outputStream()
+            } catch (failure: IOException) {
+                throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
             }
+            output.use {
+                exchange(request(versionUrl(game, remote.name, remote.legacy)).get().build()) { response, check ->
+                    requireStatus(response, 200)
+                    val body = response.body
+                    if (body.contentLength() > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                    var total = 0L
+                    val buffer = ByteArray(64 * 1024)
+                    body.byteStream().use { input ->
+                        while (true) {
+                            check()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                    if (total != remote.size) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            try {
+                Files.move(
+                    temp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (failure: IOException) {
+                throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+            }
+        } finally {
+            SaveSyncTemporaryFiles.release(temp)
         }
     }
 
@@ -329,6 +358,7 @@ class WebDavClient(
         private val ZIP = "application/zip".toMediaType()
         private const val PROPFIND = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/><d:getcontentlength/><d:getetag/></d:prop></d:propfind>"
         private const val MAX_XML_BYTES = 16 * 1024 * 1024
+        private const val REMOTE_FUTURE_TOLERANCE_MS = 24L * 60 * 60 * 1000
 
         // OkHttp leaves path brackets literal; strict DAV servers require their URI escapes.
         private fun escapePathBrackets(url: HttpUrl): HttpUrl = url.newBuilder()
@@ -340,10 +370,20 @@ class WebDavClient(
         private fun sameCollection(left: HttpUrl, right: HttpUrl): Boolean =
             left.pathSegments.dropLastWhile { it.isEmpty() } == right.pathSegments.dropLastWhile { it.isEmpty() }
 
-        internal fun parseListing(folder: HttpUrl, bytes: ByteArray): List<RemoteSaveVersion> {
+        internal fun parseListing(
+            folder: HttpUrl,
+            bytes: ByteArray,
+            nowMillis: Long = System.currentTimeMillis(),
+        ): List<RemoteSaveVersion> {
             val root = parseXml(bytes)
             val out = LinkedHashMap<String, RemoteSaveVersion>()
             var collectionSeen = false
+            val now = nowMillis.coerceAtLeast(0)
+            val maxCreatedAt = if (now >= Long.MAX_VALUE - REMOTE_FUTURE_TOLERANCE_MS) {
+                Long.MAX_VALUE
+            } else {
+                now + REMOTE_FUTURE_TOLERANCE_MS
+            }
             for (response in children(root, "response")) {
                 val href = children(response, "href").singleOrNull()?.textContent?.trim()
                     ?: throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
@@ -362,7 +402,8 @@ class WebDavClient(
                     url.pathSegments.dropLast(1) != folder.pathSegments.dropLast(1)
                 ) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
                 val name = url.pathSegments.last()
-                if (SaveVersionNames.parse(name) == null) continue
+                val named = SaveVersionNames.parse(name) ?: continue
+                if (named.createdAt !in 0..maxCreatedAt) continue
                 val props = properties(response)
                 if (props.any { children(it, "resourcetype").any { type -> children(type, "collection").isNotEmpty() } }) continue
                 val lengths = props.flatMap { children(it, "getcontentlength") }

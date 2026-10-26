@@ -37,7 +37,7 @@ data class WebDavConfig(
 enum class SaveSyncError {
     NOT_CONFIGURED, INVALID_CONFIG, CREDENTIALS_UNAVAILABLE, AUTHENTICATION, NETWORK,
     SERVER, INVALID_RESPONSE, CORRUPT_ARCHIVE, LOCAL_IO, SAVE_UNAVAILABLE, GAME_RUNNING,
-    IDENTITY_CONFLICT, DISABLED, SELECTION_INCOMPLETE,
+    IDENTITY_CONFLICT, DISABLED, SELECTION_INCOMPLETE, CLOUD_REPAIR_REQUIRED,
 }
 
 class SaveSyncException(
@@ -48,7 +48,7 @@ class SaveSyncException(
 
 enum class SaveVersionSource { LOCAL, CLOUD }
 
-enum class SaveActivationResult { UNCHANGED, APPLIED, METADATA_PENDING }
+enum class SaveActivationResult { UNCHANGED, APPLIED, METADATA_PENDING, PREVIOUS_PENDING }
 
 data class SaveVersion(
     val id: String,
@@ -149,11 +149,11 @@ object SaveVersionNames {
         val payload = name.removePrefix(RESTORED_PREFIX)
         val previousTime = if (restored) previousTimePattern.find(payload) else null
         val previousCreatedAt = previousTime?.groupValues?.get(1)?.let {
-            it.toLongOrNull()?.takeIf { time -> time > 0 } ?: return null
+            it.toLongOrNull()?.takeIf { time -> time in 1..253402300799999L } ?: return null
         }
         val plainName = if (previousTime == null) payload else payload.removeRange(previousTime.range)
         pattern.matchEntire(plainName)?.let { match ->
-            val time = match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+            val time = match.groupValues[1].toLongOrNull()?.takeIf { it in 1..253402300799999L } ?: return null
             return RemoteSaveVersion(name, match.groupValues[2], time, size, etag,
                 restored = restored, previousCreatedAt = previousCreatedAt)
         }

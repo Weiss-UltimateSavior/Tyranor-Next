@@ -35,6 +35,7 @@ internal fun SaveSyncError.toSaveSyncMessage(context: Context): String = AppLoca
     SaveSyncError.GAME_RUNNING -> R.string.webdav_error_game_running
     SaveSyncError.IDENTITY_CONFLICT -> R.string.webdav_error_identity_conflict
     SaveSyncError.SELECTION_INCOMPLETE -> R.string.save_error_selection_incomplete
+    SaveSyncError.CLOUD_REPAIR_REQUIRED -> R.string.webdav_error_cloud_repair
 })
 
 internal fun SaveSyncReport.toSaveSyncMessage(context: Context): String {

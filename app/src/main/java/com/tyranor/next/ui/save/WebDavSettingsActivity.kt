@@ -8,6 +8,7 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,10 +25,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,7 +58,6 @@ import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
-import com.tyranor.next.ui.common.MiuixTopBarBlurScaffold
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
 import com.tyranor.next.ui.common.toSaveSyncMessage
@@ -65,6 +68,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -81,10 +85,25 @@ class WebDavSettingsActivity : AppScreenActivity() {
     }
 }
 
-private enum class WebDavTextField(val title: Int, val icon: Int) {
-    URL(R.string.webdav_server_url, R.drawable.ic_web_link),
-    USERNAME(R.string.webdav_username, R.drawable.ic_sheet_rename),
-    PASSWORD(R.string.webdav_password, R.drawable.ic_save_key),
+private enum class WebDavTextField(
+    val title: Int,
+    val icon: Int,
+    val keyboardType: KeyboardType,
+    val autofillContentType: ContentType? = null,
+) {
+    URL(R.string.webdav_server_url, R.drawable.ic_web_link, KeyboardType.Uri),
+    USERNAME(
+        R.string.webdav_username,
+        R.drawable.ic_sheet_rename,
+        KeyboardType.Text,
+        ContentType.Username,
+    ),
+    PASSWORD(
+        R.string.webdav_password,
+        R.drawable.ic_save_key,
+        KeyboardType.Password,
+        ContentType.Password,
+    ),
 }
 
 @Composable
@@ -305,8 +324,10 @@ private fun WebDavSettingsScreen() {
     }
 
     MiuixSettingsTheme {
-        MiuixTopBarBlurScaffold(
+        MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = ComposeColor.Transparent,
+            contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = stringResource(R.string.webdav_title),
@@ -314,10 +335,12 @@ private fun WebDavSettingsScreen() {
                     contentColor = MiuixTheme.colorScheme.onBackground,
                 )
             },
-        ) { topInset ->
+        ) { innerPadding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(top = 12.dp + topInset, bottom = 24.dp),
+                modifier = Modifier.fillMaxSize()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = innerPadding.calculateTopPadding()),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
@@ -542,6 +565,9 @@ private fun WebDavSettingsScreen() {
                             leadingIcon = painterResource(field.icon),
                             iconContentDescription = stringResource(field.title),
                             textStyle = MaterialTheme.typography.bodyMedium,
+                            imeAction = ImeAction.Done,
+                            autofillContentType = field.autofillContentType,
+                            keyboardType = field.keyboardType,
                             visualTransformation = if (field == WebDavTextField.PASSWORD) {
                                 PasswordVisualTransformation()
                             } else {

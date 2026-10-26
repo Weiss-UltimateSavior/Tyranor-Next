@@ -226,7 +226,7 @@ class SaveSnapshotStoreTest {
     }
 
     @Test fun zipIdentityMatchesExportedFilesAndRejectsTraversal() {
-        val root = temp.newFolder()
+        val root = temp.newFolder().canonicalFile
         val save = File(root, "slot/save.bin").apply { checkNotNull(parentFile).mkdirs(); writeText("progress") }
         assertEquals(SaveContentHash.files(root, listOf(save)), SaveContentHash.archive(archive(listOf("slot/save.bin" to "progress"))))
         try {

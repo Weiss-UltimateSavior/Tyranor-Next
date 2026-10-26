@@ -8,11 +8,46 @@ import org.junit.Test
 
 class SaveSyncRuntimePolicyTest {
     @Test
+    fun unknownActivityCannotMakeAnotherGameAppearIdle() {
+        val registry = HostActivityUriRegistry<String>()
+        registry.register("known", "game-a")
+        registry.register("unknown", null)
+        assertEquals(HostActivityUriSnapshot(2, emptyList()), registry.snapshot())
+        registry.unregister("unknown")
+        assertEquals(HostActivityUriSnapshot(1, listOf("game-a")), registry.snapshot())
+    }
+
+    @Test
     fun hostRecordRequiresLivePidAndKnownUris() {
-        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 19, listOf("game"), "game"))
-        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 20, emptyList(), "game"))
-        assertEquals(HostRecordRelation.MATCHING, classifyHostRecord(20, 20, listOf("other", "game"), "game"))
-        assertEquals(HostRecordRelation.UNRELATED, classifyHostRecord(20, 20, listOf("other"), "game"))
+        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 19, 1, listOf("game"), "game"))
+        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 20, 0, listOf("game"), "game"))
+        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 20, 1, emptyList(), "game"))
+        assertEquals(HostRecordRelation.MATCHING, classifyHostRecord(20, 20, 1, listOf("other", "game"), "game"))
+        assertEquals(HostRecordRelation.UNRELATED, classifyHostRecord(20, 20, 1, listOf("other"), "game"))
+    }
+
+    @Test
+    fun hostUriRegistryDropsDestroyedActivityUri() {
+        val registry = HostActivityUriRegistry<String>()
+        registry.register("activity-a", "game-a")
+        registry.register("activity-b", "game-b")
+
+        registry.unregister("activity-a")
+
+        assertEquals(HostActivityUriSnapshot(1, listOf("game-b")), registry.snapshot())
+    }
+
+    @Test
+    fun hostUriRegistryKeepsSharedUriUntilLastActivityIsDestroyed() {
+        val registry = HostActivityUriRegistry<String>()
+        registry.register("activity-a", "shared")
+        registry.register("activity-b", "shared")
+
+        registry.unregister("activity-a")
+        assertEquals(HostActivityUriSnapshot(1, listOf("shared")), registry.snapshot())
+
+        registry.unregister("activity-b")
+        assertEquals(HostActivityUriSnapshot(0, emptyList()), registry.snapshot())
     }
 
     @Test

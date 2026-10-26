@@ -73,7 +73,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
-import com.tyranor.next.ui.common.MiuixTopBarBlurScaffold
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -599,8 +599,10 @@ fun PerGameSettingsScreen(game: ScanGame) {
     }
 
     MiuixSettingsTheme {
-        MiuixTopBarBlurScaffold(
+        MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = ComposeColor.Transparent,
+            contentWindowInsets = WindowInsets(0.dp),
             topBar = {
                 AppTopBar(
                     title = game.title,
@@ -622,10 +624,13 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     },
                 )
             },
-        ) { topInset ->
+        ) { innerPadding ->
             LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(top = 12.dp + topInset, bottom = 24.dp),
+                // 顶栏透明：列表整体垫在顶栏下方（持久 padding），避免滚动时内容穿过顶栏
+                modifier = Modifier.fillMaxSize()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = innerPadding.calculateTopPadding()),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when (game.engine) {

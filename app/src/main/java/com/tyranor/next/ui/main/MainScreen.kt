@@ -53,6 +53,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.DialogTextButton
 import androidx.annotation.StringRes
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -136,6 +138,16 @@ fun MainScreen(modifier: Modifier = Modifier) {
   var selectedIndex by rememberSaveable { mutableStateOf(0) }
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
+  if (libraryState.cleanupError != null) {
+    AppAlertDialog(
+      onDismissRequest = libraryViewModel::dismissCleanupError,
+      title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
+      text = { Text(stringResource(R.string.save_sync_cleanup_failed), style = MaterialTheme.typography.bodyMedium) },
+      confirmButton = {
+        DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
+      },
+    )
+  }
   val interactScope = rememberCoroutineScope()
   val unselectedColor = UnselectedGrey
   // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）

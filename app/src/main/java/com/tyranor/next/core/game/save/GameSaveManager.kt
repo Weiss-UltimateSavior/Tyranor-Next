@@ -338,12 +338,13 @@ class GameSaveManager(private val context: Context) {
         synchronized(RpgSaveSyncState.INTEROP_LOCK) {
             val destination = syncSaveDirectory(game)
             val backup = File(destination.parentFile, destination.name + ".import_backup")
+            checkedSyncDirectory(backup)
             if (backup.isDirectory) {
                 if (!destination.exists()) {
                     if (!backup.renameTo(destination)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 } else {
                     if (restoresExcludedFromBackup(game.engine)) restoreExcludedFromBackup(backup, destination, game.engine)
-                    if (backup.exists() && !backup.deleteRecursively()) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                    SavePathSafety.deleteTreeNoFollow(backup)
                 }
             }
         }
@@ -354,18 +355,21 @@ class GameSaveManager(private val context: Context) {
 
     private fun checkedSyncDirectory(directory: File): File {
         val path = directory.absoluteFile.toPath()
-        // SDK-owned storage roots may themselves sit below system aliases. Resolve only
-        // that trusted prefix; user-controlled save directories retain their link checks.
-        val anchor = listOfNotNull(appContext.filesDir, appContext.noBackupFilesDir,
-            appContext.getExternalFilesDir(null), appContext.filesDir.parentFile)
-            .firstOrNull { path.normalize().startsWith(it.absoluteFile.toPath().normalize()) }
-        val candidate = if (anchor == null) directory else {
-            if (java.nio.file.Files.isSymbolicLink(anchor.toPath())) {
-                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-            }
-            File(anchor.canonicalFile, anchor.absoluteFile.toPath().relativize(path).toString())
-        }
-        return SavePathSafety.requireSafeRoot(candidate)
+        val ownRoots = listOfNotNull(appContext.filesDir, appContext.noBackupFilesDir, appContext.filesDir.parentFile)
+        val anchor = ownRoots.filter { path.startsWith(it.absoluteFile.toPath()) }
+            .maxByOrNull { it.absoluteFile.toPath().nameCount }
+            ?: SaveStorageRoots.forContext(appContext).filter { path.startsWith(it.absoluteFile.toPath()) }
+                .maxByOrNull { it.absoluteFile.toPath().nameCount }
+        return SavePathSafety.requireSafeRoot(directory, anchor)
+    }
+
+    private fun deleteImportTree(directory: File): Boolean = try {
+        SavePathSafety.deleteTreeNoFollow(directory)
+        true
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: GameSaveException) {
+        false
     }
 
     @Throws(IOException::class)
@@ -378,6 +382,8 @@ class GameSaveManager(private val context: Context) {
         // 移回全部成功才清理备份——任何失败路径下备份都保有完整恢复数据。
         val staging = File(destination.parentFile, destination.name + ".import_staging")
         val backup = File(destination.parentFile, destination.name + ".import_backup")
+        SavePathSafety.requirePlainDirectoryEntry(staging)
+        SavePathSafety.requirePlainDirectoryEntry(backup)
         // 上次导入的遗留备份恢复：必须在创建 destination 前完成，否则前一次
         // 在 destination.renameTo(backup) 与 staging.renameTo(destination) 之间
         // 中断会导致 destination 缺失；若先 mkdirs 会得到空目录并跳过恢复，
@@ -400,7 +406,7 @@ class GameSaveManager(private val context: Context) {
         try {
             val extracted = extractZip(sourceUri, temp)
             if (extracted == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
-            staging.deleteRecursively()
+            deleteImportTree(staging)
             if (!staging.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR)
             // 过滤引擎资源后可能一件存档都没有（如纯资源 ZIP）：必须在交换前拦截，
             // 否则会用空目录顶替目标并删掉备份，旧存档全部丢失
@@ -412,7 +418,7 @@ class GameSaveManager(private val context: Context) {
             if (copied == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
             if (destination.exists()) {
                 // 走到这里备份必已被开头恢复步骤消费（只剩旧存档或不存在），可安全删除
-                if (backup.exists() && !backup.deleteRecursively()) {
+                if (backup.exists() && !deleteImportTree(backup)) {
                     throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 }
                 if (!destination.renameTo(backup)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
@@ -433,10 +439,10 @@ class GameSaveManager(private val context: Context) {
             backupConsumed = true
             return copied
         } finally {
-            temp.deleteRecursively()
-            staging.deleteRecursively()
+            deleteImportTree(temp)
+            deleteImportTree(staging)
             // 仅在交换成功且备份内容已消费完毕后清理备份；否则保留备份数据供下次恢复
-            if (committed && backupConsumed) backup.deleteRecursively()
+            if (committed && backupConsumed) deleteImportTree(backup)
         }
     }
 
@@ -473,18 +479,28 @@ class GameSaveManager(private val context: Context) {
         }
         // 块体（审查跟进 #2）：表达式体 + 内部 return 会触发 KTLC-288 前向兼容告警，
         // Kotlin 2.5 起将变为错误
+        val failures = ArrayList<Exception>()
+        fun cleanup(action: () -> Unit) {
+            try {
+                action()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                failures += failure
+            }
+        }
         synchronized(RpgSaveSyncState.INTEROP_LOCK) {
             // 与存档互通同步互斥（H3）：删除独立存档目录与并发同步交错会让同步复制进一个
             // 正被删除的目录。clear/remove 内部同锁，可重入。
             // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
             // 为键。若随游戏删除留下旧清单，同一 uri 的游戏被重新添加后，标准侧存档会被误判为
             // 「Tyranor 侧已删除」而移入 deleted/；待回写记录则会在下次前台时指向已删除的游戏。
-            RpgSaveSyncState.forContext(appContext).clear(game.uri)
-            RpgSavePendingStore.remove(appContext, game.uri)
-            val root = resolveGameDirectory(game) ?: return
+            cleanup { RpgSaveSyncState.forContext(appContext).clear(game.uri) }
+            cleanup { RpgSavePendingStore.remove(appContext, game.uri) }
+            val root = resolveGameDirectory(game) ?: return@synchronized
             val targets = when (game.engine) {
                 EngineType.KIRIKIRI -> {
-                    val internal = appContext.filesDir ?: return
+                    val internal = appContext.filesDir ?: return@synchronized
                     val targetList = mutableListOf(
                         File(File(internal, "krkr_mirror"), GamePathUtils.safeSaveName(root)),
                     )
@@ -502,37 +518,42 @@ class GameSaveManager(private val context: Context) {
                     targetList
                 }
                 EngineType.ONS -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(File(File(external, "save"), File(root).name))
                 }
                 // System35（xsystem35）：独立存档目录在应用外部存储；独立存档关闭时存档在
                 // 游戏目录内，按规范不触碰（不清理游戏目录内文件）。
                 EngineType.XSYS35 -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(Xs35Paths.scopedSaveDir(external, root))
                 }
                 // System4：仅清理独立存档目录（游戏根 SaveFolder 位于游戏目录内，按规范不触碰）
                 EngineType.XSYS4 -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(Xs4Paths.scopedSaveDir(external, root))
                 }
                 EngineType.TYRANO,
                 EngineType.RPG_MV,
                 EngineType.RPG_MZ -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root)))
                 }
-                else -> return
+                else -> return@synchronized
             }
             val appInternal = appContext.filesDir.canonicalPath + File.separator
             // KrSafMirror 镜像根（games/）与 SAF 索引（no_backup/）位于 filesDir 的父目录（应用数据根）下
             val appDataRoot = appContext.filesDir.parentFile?.canonicalPath?.let { it + File.separator }
             val appExternal = appContext.getExternalFilesDir(null)?.canonicalPath
-            targets.forEach { target ->
+            targets.forEach { target -> cleanup {
                 val inAppStorage = target.canonicalPath.startsWith(appInternal) ||
                     (appDataRoot != null && target.canonicalPath.startsWith(appDataRoot)) ||
                     (appExternal != null && target.canonicalPath.startsWith(appExternal + File.separator))
-                if (inAppStorage) target.deleteRecursively()
+                if (inAppStorage) SavePathSafety.deleteTreeNoFollow(target)
+            } }
+        }
+        if (failures.isNotEmpty()) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failures.first()).also { result ->
+                failures.drop(1).forEach(result::addSuppressed)
             }
         }
     }
@@ -741,7 +762,7 @@ class GameSaveManager(private val context: Context) {
             }
             throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = t)
         }
-        backup.deleteRecursively()
+        deleteImportTree(backup)
     }
 
     private fun clearSaveDirectory(directory: File, engine: EngineType): Int {

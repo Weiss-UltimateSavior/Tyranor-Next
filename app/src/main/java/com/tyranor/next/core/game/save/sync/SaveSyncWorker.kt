@@ -25,6 +25,10 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
         val fallback = inputData.getBoolean(INPUT_FALLBACK, false)
         return try {
             if (!WebDavSettingsStore.isEnabled(applicationContext)) return Result.success()
+            if (SaveSyncWorkPolicy.fallbackAttemptsExhausted(fallback, runAttemptCount)) {
+                // Persisted sessions remain available to the next foreground or manual schedule.
+                return Result.failure()
+            }
             val config = WebDavSettingsStore.load(applicationContext)
             if (config.active && config.mode.uploads && SaveSyncRuntime.hasPending(applicationContext)) {
                 EngineLauncher.flushPendingSaveSync(applicationContext)
@@ -90,7 +94,11 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
             if (!WebDavSettingsStore.isEnabled(context)) return
             val request = OneTimeWorkRequestBuilder<SaveSyncWorker>()
                 .setInputData(workDataOf(INPUT_PULL to pull, INPUT_FALLBACK to delayed))
-                .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(SaveSyncWorkPolicy.AUTOMATIC_NETWORK_TYPE)
+                        .build(),
+                )
                 .setInitialDelay(if (delayed) 30 else 1, TimeUnit.SECONDS)
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.SECONDS)
                 .build()
@@ -112,7 +120,17 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
 internal enum class SaveSyncWorkOutcome { SUCCESS, FAILURE, RETRY }
 
 internal object SaveSyncWorkPolicy {
+    /**
+     * Every automatic worker may flush a pending upload even when pulling, so none should spend metered data.
+     * WorkManager's zero-based runAttemptCount therefore permits five fallback executions before failing.
+     */
+    internal val AUTOMATIC_NETWORK_TYPE = NetworkType.UNMETERED
+    internal const val MAX_FALLBACK_RUN_ATTEMPT_COUNT = 5
+
     private val retryable = setOf(SaveSyncError.NETWORK, SaveSyncError.SERVER, SaveSyncError.LOCAL_IO)
+
+    fun fallbackAttemptsExhausted(fallback: Boolean, runAttemptCount: Int): Boolean =
+        fallback && runAttemptCount >= MAX_FALLBACK_RUN_ATTEMPT_COUNT
 
     fun isDisabled(report: SaveSyncReport): Boolean =
         report.failures.any { it.error == SaveSyncError.DISABLED }

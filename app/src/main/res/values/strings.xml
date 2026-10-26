@@ -916,4 +916,11 @@
     <string name="webdav_reset_config">重置本机 WebDAV 设置</string>
     <string name="webdav_reset_config_title">重置本机 WebDAV 设置？</string>
     <string name="webdav_reset_config_message">本机无法读取已保存的服务器与凭据。确认后只清除本机保存的服务器地址、用户名、密码与同步偏好，并重建加密密钥；同步总开关、本地存档版本与云端版本均会保留。重置后请重新填写服务器与凭据。</string>
+    <string name="save_version_choose">选择版本</string>
+    <string name="save_version_previous_pending">上次切换未完成，本次尚未执行。可放弃上次版本信息后切换。</string>
+    <string name="save_version_discard_switch">放弃并切换</string>
+    <string name="save_version_recover">处理未完成切换</string>
+    <string name="save_version_recovery_policy">保留当前存档并清理中断状态。下次互通以当前存档为准。</string>
+    <string name="webdav_error_cloud_repair">云端存档异常，请清理后重试</string>
+    <string name="save_sync_cleanup_failed">游戏已移除，部分存档同步数据清理失败</string>
 </resources>

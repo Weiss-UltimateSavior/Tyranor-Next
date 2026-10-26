@@ -76,7 +76,7 @@ class WebDavClientTest {
                 zip.putNextEntry(ZipEntry("save.bin")); zip.write("progress".toByteArray()); zip.closeEntry()
             }
             val hash = SaveContentHash.archive(archive)
-            val createdAt = 1_800_000_000_789L
+            val createdAt = 1_700_000_000_789L
             val version = SaveVersion(
                 SaveVersionNames.createRemote(createdAt, hash, ZoneOffset.UTC),
                 hash,
@@ -140,7 +140,7 @@ class WebDavClientTest {
             zip.putNextEntry(ZipEntry("save.bin")); zip.write("restored progress".toByteArray()); zip.closeEntry()
         }
         val hash = SaveContentHash.archive(archive)
-        val previousAt = 1_800_000_000_000L
+        val previousAt = 1_700_000_000_000L
         val previousName = SaveVersionNames.createRemote(previousAt, hash, ZoneOffset.UTC)
         val previousPath = gameFolder + previousName
         files[previousPath] = archive.readBytes()
@@ -243,7 +243,7 @@ class WebDavClientTest {
             zip.putNextEntry(ZipEntry("save.bin")); zip.write("fallback progress".toByteArray()); zip.closeEntry()
         }
         val hash = SaveContentHash.archive(archive)
-        val previousAt = 1_800_000_100_000L
+        val previousAt = 1_700_000_100_000L
         val previousName = SaveVersionNames.createRemote(previousAt, hash, ZoneOffset.UTC)
         val previousPath = gameFolder + previousName
         files[previousPath] = archive.readBytes()
@@ -339,7 +339,7 @@ class WebDavClientTest {
         val sourceBytes = archive.readBytes()
         val corruptBytes = "corrupt target".toByteArray()
         val hash = SaveContentHash.archive(archive)
-        val previousAt = 1_800_000_200_000L
+        val previousAt = 1_700_000_200_000L
         val previousName = SaveVersionNames.createRemote(previousAt, hash, ZoneOffset.UTC)
         val previousPath = gameFolder + previousName
         val publicationAt = previousAt + 60_000
@@ -454,7 +454,7 @@ class WebDavClientTest {
         val sourceBytes = archive.readBytes()
         val corruptBytes = "corrupt source".toByteArray()
         val hash = SaveContentHash.archive(archive)
-        val previousAt = 1_800_000_300_000L
+        val previousAt = 1_700_000_300_000L
         val previousName = SaveVersionNames.createRemote(previousAt, hash, ZoneOffset.UTC)
         val previousPath = gameFolder + previousName
         val publicationAt = previousAt + 60_000
@@ -532,7 +532,7 @@ class WebDavClientTest {
             zip.putNextEntry(ZipEntry("save.bin")); zip.write("safe local progress".toByteArray()); zip.closeEntry()
         }
         val hash = SaveContentHash.archive(archive)
-        val createdAt = 1_800_000_400_000L
+        val createdAt = 1_700_000_400_000L
         val version = SaveVersion(
             SaveVersionNames.createRemote(createdAt, hash, ZoneOffset.UTC),
             hash,
@@ -619,7 +619,7 @@ class WebDavClientTest {
     }
 
     @Test fun discardCorruptPublicationRequiresStrongEtagAndConditionalDelete() = runBlocking {
-        val createdAt = 1_800_000_500_000L
+        val createdAt = 1_700_000_500_000L
         val contentHash = "c".repeat(64)
         val name = SaveVersionNames.createRemote(createdAt, contentHash, ZoneOffset.UTC)
         val gameFolder = "/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/"
@@ -766,6 +766,126 @@ class WebDavClientTest {
             releaseResponse.countDown()
             server.stop(0)
         }
+    }
+
+    @Test fun downloadHttpFailurePreservesExistingDestinationAndReleasesTempFile() = runBlocking {
+        val oldBytes = "existing local save".toByteArray()
+        val destination = temp.newFile().apply { writeBytes(oldBytes) }
+        val createdAt = 1_700_000_600_000L
+        val remote = RemoteSaveVersion(
+            SaveVersionNames.createRemote(createdAt, "a".repeat(64), ZoneOffset.UTC),
+            "a".repeat(64),
+            createdAt,
+            "replacement".toByteArray().size.toLong(),
+            "\"immutable\"",
+        )
+        var bytesDuringRequest: ByteArray? = null
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            bytesDuringRequest = destination.readBytes()
+            exchange.sendResponseHeaders(503, -1)
+            exchange.close()
+        }
+        server.start()
+        try {
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+            ).use { client ->
+                try {
+                    client.download(GAME, remote, destination)
+                    throw AssertionError("HTTP failure was accepted")
+                } catch (expected: SaveSyncException) {
+                    assertEquals(SaveSyncError.SERVER, expected.code)
+                }
+            }
+            assertArrayEquals(oldBytes, bytesDuringRequest)
+            assertArrayEquals(oldBytes, destination.readBytes())
+            assertTrue(checkNotNull(destination.parentFile).listFiles().orEmpty().none {
+                it.name.startsWith("dav_download_") && it.name.endsWith(".part")
+            })
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test fun cancelledDownloadPreservesExistingDestinationAndReleasesTempFile() = runBlocking {
+        val oldBytes = "existing local save".toByteArray()
+        val downloadedBytes = "partial replacement".toByteArray()
+        val destination = temp.newFile().apply { writeBytes(oldBytes) }
+        val createdAt = 1_700_000_700_000L
+        val remote = RemoteSaveVersion(
+            SaveVersionNames.createRemote(createdAt, "b".repeat(64), ZoneOffset.UTC),
+            "b".repeat(64),
+            createdAt,
+            downloadedBytes.size.toLong(),
+            "\"immutable\"",
+        )
+        val partialBodySent = CountDownLatch(1)
+        val releaseResponse = CountDownLatch(1)
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            exchange.sendResponseHeaders(200, remote.size)
+            exchange.responseBody.use { output ->
+                output.write(downloadedBytes, 0, downloadedBytes.size / 2)
+                output.flush()
+                partialBodySent.countDown()
+                releaseResponse.await(5, TimeUnit.SECONDS)
+                runCatching { output.write(downloadedBytes, downloadedBytes.size / 2, downloadedBytes.size - downloadedBytes.size / 2) }
+            }
+            exchange.close()
+        }
+        server.start()
+        try {
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+            ).use { client ->
+                var observed: Throwable? = null
+                val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                    try {
+                        client.download(GAME, remote, destination)
+                    } catch (failure: Throwable) {
+                        observed = failure
+                        throw failure
+                    }
+                }
+                assertTrue(partialBodySent.await(5, TimeUnit.SECONDS))
+                job.cancelAndJoin()
+                assertTrue(job.isCancelled)
+                assertTrue(observed is CancellationException)
+                assertFalse(observed is SaveSyncException)
+            }
+            assertArrayEquals(oldBytes, destination.readBytes())
+            assertTrue(checkNotNull(destination.parentFile).listFiles().orEmpty().none {
+                it.name.startsWith("dav_download_") && it.name.endsWith(".part")
+            })
+        } finally {
+            releaseResponse.countDown()
+            server.stop(0)
+        }
+    }
+
+    @Test fun listingIgnoresCreatedAtOutsideNowThroughNextDay() {
+        val now = 1_700_000_800_000L
+        val tolerance = TimeUnit.DAYS.toMillis(1)
+        val folder = "https://example.com/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/".toHttpUrl()
+        val historical = SaveVersionNames.createRemote(now - 1, "a".repeat(64), ZoneOffset.UTC)
+        val boundary = SaveVersionNames.createRemote(now + tolerance, "b".repeat(64), ZoneOffset.UTC)
+        val beyondTolerance = SaveVersionNames.createRemote(now + tolerance + 1, "c".repeat(64), ZoneOffset.UTC)
+        val absurdFuture = "9000000000000000000_${"d".repeat(64)}.zip"
+        val bytes = multistatus(
+            response(folder.encodedPath, true) +
+                response(folder.encodedPath + historical, false, 1) +
+                response(folder.encodedPath + boundary, false, 1) +
+                response(folder.encodedPath + beyondTolerance, false, 1) +
+                response(folder.encodedPath + absurdFuture, false, 1).replace(
+                    "<d:getcontentlength>1</d:getcontentlength>",
+                    "<d:getcontentlength>not-a-number</d:getcontentlength>",
+                ),
+        ).toByteArray()
+
+        val versions = WebDavClient.parseListing(folder, bytes, now)
+
+        assertEquals(listOf(boundary, historical), versions.map { it.name })
     }
 
     @Test fun listingRejectsForeignPathsAndDtdsIncludingUtf16() {
