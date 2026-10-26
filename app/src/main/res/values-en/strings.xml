@@ -411,9 +411,19 @@
     <string name="engine_settings_fvp_font_hint">FVP only. TTC uses the first face. Missing glyphs fall back to system fonts. Restart to apply.</string>
     <string name="engine_settings_fvp_font_import_failed">Font import failed: choose a ttf/otf/ttc file</string>
     <string name="engine_settings_winlator_title">Winlator external launch</string>
-    <string name="engine_settings_winlator_follow_container">Follow container config</string>
+    <string name="engine_settings_winlator_follow_container">Use container config</string>
+    <string name="engine_settings_winlator_group_container">Container matching</string>
     <string name="engine_settings_winlator_container_id_title">Container ID</string>
     <string name="engine_settings_winlator_container_id_summary">0 or empty = auto (last used / only / first container)</string>
+    <string name="engine_settings_winlator_mode_title">Run mode</string>
+    <string name="engine_settings_winlator_mode_global">Follow global</string>
+    <string name="engine_settings_winlator_mode_container">Follow container</string>
+    <string name="engine_settings_winlator_mode_custom">Custom</string>
+    <string name="engine_settings_winlator_global_entry">View or edit Winlator global settings</string>
+    <string name="engine_settings_winlator_global_entry_summary">Open Winlator external launch in engine settings</string>
+    <string name="engine_settings_winlator_container_id_auto_by_name">Auto (container name wins)</string>
+    <string name="engine_settings_winlator_container_id_summary_per_game">Empty (not overridden) inherits the global container ID; an explicit 0 sends no ID (container name or Winlator decides). An inherited ID is ignored when only the name is set</string>
+    <string name="engine_settings_winlator_container_name_summary_per_game">Blank = no name; container ID wins when both are set. A name-only override does not inherit the global container ID.</string>
     <string name="engine_settings_winlator_container_name_title">Container name</string>
     <string name="engine_settings_winlator_container_name_summary">Empty = auto; container ID takes precedence over the name</string>
     <string name="engine_settings_winlator_graphics_driver_title">Graphics driver</string>

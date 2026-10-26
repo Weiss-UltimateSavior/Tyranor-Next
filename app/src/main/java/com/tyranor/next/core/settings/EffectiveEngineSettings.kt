@@ -189,20 +189,38 @@ object EffectiveEngineSettings {
             ?: EngineSettingsStore.normalizeXs4MsgskipDelay(global)
 
     /**
+     * 只覆盖容器名（容器 ID 未覆盖）时会清除继承的全局 ID。
+     *
+     * UI 的摘要与 [mergeWinlator] 共用这一条规则，避免两处判断漂移。
+     */
+    fun isNameOnlyContainerOverride(override: WinlatorOverride?): Boolean =
+        override?.containerId == null && !override?.containerName.isNullOrBlank()
+
+    /**
      * Winlator 外置启动全局设置 + 单游戏覆盖合并。
      *
      * 覆盖字段带值即生效（""=显式不下发该参数，跟随容器配置）；字符串字段仍走各自的
      * 白名单/正则归一，非法覆盖值归一回空串而不是继承全局，避免全局与覆盖混搭出非法参数。
+     *
+     * 容器规则：`containerId` 与 `containerName` 同时存在时以 ID 为准；只覆盖名称时
+     * （`containerId == null` 且名称非空）会清除继承的全局 ID，否则 ID 优先会让名称覆盖失效。
      */
     fun mergeWinlator(
         global: EngineSettingsStore.Winlator,
         override: WinlatorOverride?,
     ): EngineSettingsStore.Winlator {
         if (override == null) return global
+        // 只覆盖容器名时不能再继承全局 ID：协议规定 container_id 优先于 container_name，
+        // 继承下来的 ID 会让逐游戏的名称覆盖失效。
+        val nameOnlyOverride = isNameOnlyContainerOverride(override)
         return global.copy(
-            containerId = override.containerId?.let {
-                it.trim().filter(Char::isDigit).toIntOrNull()?.coerceAtLeast(0) ?: 0
-            } ?: global.containerId,
+            containerId = when {
+                override.containerId != null ->
+                    override.containerId.trim().filter(Char::isDigit).toIntOrNull()?.coerceAtLeast(0) ?: 0
+
+                nameOnlyOverride -> 0
+                else -> global.containerId
+            },
             containerName = override.containerName?.trim() ?: global.containerName,
             graphicsDriver = override.graphicsDriver?.let {
                 EngineSettingsStore.normalizeWinlatorGraphicsDriver(it)
@@ -280,4 +298,29 @@ data class WinlatorOverride(
     val tz: String? = null,
     val box64Preset: String? = null,
     val save: Boolean? = null,
-)
+) {
+    companion object {
+        /**
+         * 「跟随容器」模式的基线覆盖：除容器 ID / 名称外，每个字段都取
+         * [EngineSettingsStore.Winlator] 的默认值（显式不下发、沿用容器），save 固定 false。
+         *
+         * 新增覆盖字段时仍需在此显式列出；测试
+         * `EngineSettingsResolverWinlatorTest.containerModeClearsEveryFieldExceptContainer`
+         * 会把全局夹具的每个非容器字段设成非默认值，漏更新时测试先红。
+         */
+        fun containerBaseline(containerId: String?, containerName: String?): WinlatorOverride {
+            val defaults = EngineSettingsStore.Winlator()
+            return WinlatorOverride(
+                containerId = containerId,
+                containerName = containerName,
+                graphicsDriver = defaults.graphicsDriver,
+                dxwrapper = defaults.dxwrapper,
+                screenSize = defaults.screenSize,
+                lcAll = defaults.lcAll,
+                tz = defaults.tz,
+                box64Preset = defaults.box64Preset,
+                save = false,
+            )
+        }
+    }
+}

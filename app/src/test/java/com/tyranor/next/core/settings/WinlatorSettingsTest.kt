@@ -92,6 +92,27 @@ class WinlatorSettingsTest {
         assertEquals(global, EffectiveEngineSettings.mergeWinlator(global, null))
     }
 
+    /** 只覆盖容器名时不能继承全局 ID：协议里 container_id 优先于 container_name。 */
+    @Test
+    fun mergeWinlatorClearsInheritedIdWhenOnlyNameIsOverridden() {
+        val global = EngineSettingsStore.Winlator(containerId = 5, containerName = "C")
+        val merged = EffectiveEngineSettings.mergeWinlator(global, WinlatorOverride(containerName = "D"))
+        assertEquals(0, merged.containerId)
+        assertEquals("D", merged.containerName)
+    }
+
+    /** 同时给出 ID 与名称时保留显式 ID。 */
+    @Test
+    fun mergeWinlatorKeepsExplicitIdAlongsideName() {
+        val global = EngineSettingsStore.Winlator(containerId = 5, containerName = "C")
+        val merged = EffectiveEngineSettings.mergeWinlator(
+            global,
+            WinlatorOverride(containerId = "9", containerName = "D"),
+        )
+        assertEquals(9, merged.containerId)
+        assertEquals("D", merged.containerName)
+    }
+
     /** 单游戏快照保留 GDI 选择、显式空值与 save，缺失字段仍表示继承。 */
     @Test
     fun perGameOverrideSnapshotMapsFlatKeys() {

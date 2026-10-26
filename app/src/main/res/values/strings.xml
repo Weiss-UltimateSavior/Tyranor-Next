@@ -411,9 +411,19 @@
     <string name="engine_settings_fvp_font_hint">仅对 FVP 生效；TTC 使用首个字面；缺字由系统字体回退兜底；修改后需重新进入游戏。</string>
     <string name="engine_settings_fvp_font_import_failed">字体导入失败：请选择 ttf/otf/ttc 文件</string>
     <string name="engine_settings_winlator_title">Winlator外置启动</string>
-    <string name="engine_settings_winlator_follow_container">跟随容器配置</string>
+    <string name="engine_settings_winlator_follow_container">按容器配置</string>
+    <string name="engine_settings_winlator_group_container">容器匹配</string>
     <string name="engine_settings_winlator_container_id_title">容器 ID</string>
     <string name="engine_settings_winlator_container_id_summary">0 或留空 = 自动（最近使用 / 唯一 / 第一个容器）</string>
+    <string name="engine_settings_winlator_mode_title">运行模式</string>
+    <string name="engine_settings_winlator_mode_global">跟随全局</string>
+    <string name="engine_settings_winlator_mode_container">跟随容器</string>
+    <string name="engine_settings_winlator_mode_custom">自定义</string>
+    <string name="engine_settings_winlator_global_entry">查看/修改 Winlator 全局设置</string>
+    <string name="engine_settings_winlator_global_entry_summary">打开引擎设置中的 Winlator 外置启动</string>
+    <string name="engine_settings_winlator_container_id_auto_by_name">自动（由容器名覆盖）</string>
+    <string name="engine_settings_winlator_container_id_summary_per_game">留空（未覆盖）继承全局容器 ID；显式填 0 表示不下发 ID（按容器名或 Winlator 自动选择）。只填容器名时会忽略继承的容器 ID</string>
+    <string name="engine_settings_winlator_container_name_summary_per_game">留空 = 未指定名称；两者都填时容器 ID 优先。只填容器名时，本游戏不继承全局容器 ID。</string>
     <string name="engine_settings_winlator_container_name_title">容器名</string>
     <string name="engine_settings_winlator_container_name_summary">留空 = 自动；容器 ID 优先于容器名</string>
     <string name="engine_settings_winlator_graphics_driver_title">图形驱动</string>

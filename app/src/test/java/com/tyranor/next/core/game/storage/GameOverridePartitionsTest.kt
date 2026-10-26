@@ -152,6 +152,78 @@ class GameOverridePartitionsTest {
     }
 
     @Test
+    fun winlatorModeIsPartitionedIntoTyrano() {
+        // 运行模式没有独立分区，必须显式建模进 tyrano；
+        // 只靠「未识别键兜底」会在未来收紧分区时静默丢键，把玩家的模式选择重置成推断值。
+        assertEquals(PerGameSettingsStore.F_WINLATOR_MODE, GameOverridePartitions.KEY_WINLATOR_MODE)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, GameOverridePartitions.KEY_WINLATOR_CONTAINER_ID)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, GameOverridePartitions.KEY_WINLATOR_CONTAINER_NAME)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, GameOverridePartitions.KEY_WINLATOR_GRAPHICS_DRIVER)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_DXWRAPPER, GameOverridePartitions.KEY_WINLATOR_DXWRAPPER)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE, GameOverridePartitions.KEY_WINLATOR_SCREEN_SIZE)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_LC_ALL, GameOverridePartitions.KEY_WINLATOR_LC_ALL)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_TZ, GameOverridePartitions.KEY_WINLATOR_TZ)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_BOX64_PRESET, GameOverridePartitions.KEY_WINLATOR_BOX64_PRESET)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_SAVE, GameOverridePartitions.KEY_WINLATOR_SAVE)
+        assertTrue(
+            "全部 Winlator 覆盖键必须显式属于 tyrano 分区",
+            GameOverridePartitions.TYRANO_KEYS.containsAll(PerGameSettingsStore.CURRENT_OVERRIDE_FIELDS) &&
+                GameOverridePartitions.KEY_WINLATOR_CONTAINER_ID in GameOverridePartitions.TYRANO_KEYS &&
+                GameOverridePartitions.KEY_WINLATOR_CONTAINER_NAME in GameOverridePartitions.TYRANO_KEYS &&
+                GameOverridePartitions.KEY_WINLATOR_SAVE in GameOverridePartitions.TYRANO_KEYS,
+        )
+        assertTrue(
+            "运行模式必须显式属于 tyrano 分区",
+            GameOverridePartitions.KEY_WINLATOR_MODE in GameOverridePartitions.TYRANO_KEYS,
+        )
+
+        val blob = JSONObject().put(PerGameSettingsStore.F_WINLATOR_MODE, PerGameSettingsStore.WINLATOR_MODE_CONTAINER)
+        val row = GameOverridePartitions.split("/games/winlator", blob, 1L)
+        val tyrano = JSONObject(row.tyranoJson!!)
+        assertEquals(PerGameSettingsStore.WINLATOR_MODE_CONTAINER, tyrano.optString(PerGameSettingsStore.F_WINLATOR_MODE))
+        val restored = GameOverridePartitions.assemble(row)
+        assertEquals(PerGameSettingsStore.WINLATOR_MODE_CONTAINER, restored.optString(PerGameSettingsStore.F_WINLATOR_MODE))
+        assertEquals(blob.length(), restored.length())
+    }
+
+    @Test
+    fun winlatorOverridesRoundTripWithTypesIntact() {
+        // 十个逐游戏 Winlator 键一起走 split → assemble → toWinlatorOverride：
+        // 既覆盖「全部键都在 tyrano 分区」，也锁住 save 的 Boolean 类型不退化。
+        val blob = JSONObject().apply {
+            put(PerGameSettingsStore.F_WINLATOR_MODE, PerGameSettingsStore.WINLATOR_MODE_CUSTOM)
+            put(PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, "5")
+            put(PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, "常規容器")
+            put(PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, "vulkan")
+            put(PerGameSettingsStore.F_WINLATOR_DXWRAPPER, "wined3d")
+            put(PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE, "1280x720")
+            put(PerGameSettingsStore.F_WINLATOR_LC_ALL, "ja_JP.UTF-8")
+            put(PerGameSettingsStore.F_WINLATOR_TZ, "Asia/Tokyo")
+            put(PerGameSettingsStore.F_WINLATOR_BOX64_PRESET, "PERFORMANCE")
+            put(PerGameSettingsStore.F_WINLATOR_SAVE, true)
+        }
+
+        val row = GameOverridePartitions.split("/games/winlator-roundtrip", blob, 1L)
+        val restored = GameOverridePartitions.assemble(row)
+
+        assertEquals(blob.length(), restored.length())
+        for (key in blob.keys()) {
+            assertEquals("键 $key", blob.get(key), restored.get(key))
+        }
+
+        val override = PerGameSettingsStore.toWinlatorOverride(restored)!!
+        assertEquals("5", override.containerId)
+        assertEquals("常規容器", override.containerName)
+        assertEquals("vulkan", override.graphicsDriver)
+        assertEquals("wined3d", override.dxwrapper)
+        assertEquals("1280x720", override.screenSize)
+        assertEquals("ja_JP.UTF-8", override.lcAll)
+        assertEquals("Asia/Tokyo", override.tz)
+        assertEquals("PERFORMANCE", override.box64Preset)
+        assertEquals(true, override.save)
+    }
+
+    @Test
     fun partitionKeysMatchPerGameSettingsStoreConstants() {
         // 字面量键集与 settings 层常量的契约约束（避免漂移）
         assertEquals(PerGameSettingsStore.F_ENGINE_VERSION, GameOverridePartitions.KEY_ENGINE_VERSION)

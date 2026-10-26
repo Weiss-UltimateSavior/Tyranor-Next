@@ -132,6 +132,10 @@ object PerGameSettingsStore {
     const val F_XSYS4_MSGSKIP_DELAY = "xsys4_msgskip_delay"
 
     // Winlator 外置启动（null=跟随全局；字符串 "" = 显式不下发该参数）
+    const val F_WINLATOR_MODE = "winlator_mode"
+    const val WINLATOR_MODE_GLOBAL = "global"
+    const val WINLATOR_MODE_CONTAINER = "container"
+    const val WINLATOR_MODE_CUSTOM = "custom"
     const val F_WINLATOR_CONTAINER_ID = "winlator_container_id"
     const val F_WINLATOR_CONTAINER_NAME = "winlator_container_name"
     const val F_WINLATOR_GRAPHICS_DRIVER = "winlator_graphics_driver"
@@ -301,6 +305,70 @@ object PerGameSettingsStore {
     }
 
     /**
+     * 1.61 的六个旧参数键：只用于「六键都存在且全为空串 → 跟随容器」的迁移判定。
+     * 新增覆盖字段时不要动这个列表，否则历史记录会被误判。
+     */
+    private val LEGACY_CONTAINER_FIELDS = listOf(
+        F_WINLATOR_GRAPHICS_DRIVER,
+        F_WINLATOR_DXWRAPPER,
+        F_WINLATOR_SCREEN_SIZE,
+        F_WINLATOR_LC_ALL,
+        F_WINLATOR_TZ,
+        F_WINLATOR_BOX64_PRESET,
+    )
+
+    /**
+     * 当前全部逐游戏参数覆盖键（独立清单，不等于旧六键）：新增字段必须同时登记到这里，
+     * 否则「只写了新字段」的记录会被判成全局。
+     */
+    internal val CURRENT_OVERRIDE_FIELDS = listOf(
+        F_WINLATOR_GRAPHICS_DRIVER,
+        F_WINLATOR_DXWRAPPER,
+        F_WINLATOR_SCREEN_SIZE,
+        F_WINLATOR_LC_ALL,
+        F_WINLATOR_TZ,
+        F_WINLATOR_BOX64_PRESET,
+    )
+
+    /**
+     * 单游戏运行模式：global（默认）/ container / custom。
+     * 旧数据严格按 1.61 的 null / "" / 值语义迁移。
+     */
+    fun getWinlatorMode(context: Context, gameId: String): String = inferWinlatorMode(load(context, gameId))
+
+    /** [getWinlatorMode] 的纯函数部分：按 1.61 的 null / "" / 值语义推断模式，便于 JVM 回归。 */
+    internal fun inferWinlatorMode(json: JSONObject): String {
+        val mode = json.optString(F_WINLATOR_MODE, "")
+        if (mode == WINLATOR_MODE_GLOBAL || mode == WINLATOR_MODE_CONTAINER || mode == WINLATOR_MODE_CUSTOM) {
+            return mode
+        }
+        // 未知的非空 mode 不直接判全局：继续走下面的字段推断，尽量保留可解释的旧数据。
+
+        val legacyPresent = LEGACY_CONTAINER_FIELDS.filter { json.has(it) }
+        val legacyAllBlank =
+            legacyPresent.size == LEGACY_CONTAINER_FIELDS.size &&
+                LEGACY_CONTAINER_FIELDS.all { json.optString(it).isEmpty() }
+        // 任一当前覆盖字段有值即自定义；用当前字段清单而不是「旧六键数量」，避免新增字段被漏判。
+        val anyNonEmptyCurrent = CURRENT_OVERRIDE_FIELDS.any { json.has(it) && json.optString(it).isNotEmpty() }
+        if (anyNonEmptyCurrent) return WINLATOR_MODE_CUSTOM
+        // 六个旧参数全空是「跟随容器」的强信号，必须优先于单独出现的容器字段判断：
+        // 这类记录在 1.61 里本来就走容器基线，若判成 custom 会把 save 继承成全局值。
+        if (legacyAllBlank) return WINLATOR_MODE_CONTAINER
+        if (legacyPresent.isNotEmpty()) return WINLATOR_MODE_CUSTOM
+        if (json.has(F_WINLATOR_CONTAINER_ID) || json.has(F_WINLATOR_CONTAINER_NAME)) {
+            return WINLATOR_MODE_CUSTOM
+        }
+        // save 是真实的逐游戏覆盖（仅「自定义」模式写入）：只有它一条的旧记录不能回落到全局，
+        // 否则会丢掉玩家原有的「写回容器配置」。
+        if (json.has(F_WINLATOR_SAVE)) return WINLATOR_MODE_CUSTOM
+        return WINLATOR_MODE_GLOBAL
+    }
+
+    fun setWinlatorMode(context: Context, gameId: String, mode: String) {
+        setStr(context, gameId, F_WINLATOR_MODE, mode)
+    }
+
+    /**
      * Winlator 外置启动覆盖快照 → 类型化模型（缺失字段=跟随全局；存在但为空串=显式不下发该参数，
      * 供 [EffectiveEngineSettings.mergeWinlator] 使用）。
      */
@@ -309,6 +377,8 @@ object PerGameSettingsStore {
         fun boolOrNull(key: String): Boolean? = if (json.has(key)) json.optBoolean(key) else null
         fun strOrNull(key: String): String? = if (json.has(key)) json.optString(key) else null
         val override = WinlatorOverride(
+            // 旧数据的 "" 与 null 语义不同："" = 显式不下发该字段（1.61 的弹窗确认空值），
+            // null = 未覆盖、继承全局。不能把空串归一成 null，否则升级后会改用全局容器。
             containerId = strOrNull(F_WINLATOR_CONTAINER_ID),
             containerName = strOrNull(F_WINLATOR_CONTAINER_NAME),
             graphicsDriver = strOrNull(F_WINLATOR_GRAPHICS_DRIVER),
