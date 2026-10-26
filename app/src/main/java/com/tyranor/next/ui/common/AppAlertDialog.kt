@@ -152,6 +152,9 @@ internal fun AppAlertDialog(
                         Box(
                             Modifier
                                 .fillMaxWidth()
+                                // Measure the title/actions first so long text cannot consume
+                                // their space in landscape or with a large system font.
+                                .then(if (textScrollEnabled) Modifier.weight(1f, fill = false) else Modifier)
                                 .heightIn(max = textMaxHeight)
                                 .then(
                                     if (textScrollEnabled) {
