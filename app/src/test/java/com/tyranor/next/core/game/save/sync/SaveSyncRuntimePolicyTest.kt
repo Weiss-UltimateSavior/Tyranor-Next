@@ -8,6 +8,15 @@ import org.junit.Test
 
 class SaveSyncRuntimePolicyTest {
     @Test
+    fun explicitRestoreBookkeepingDoesNotRequireAHostThatWasNeverLaunched() {
+        assertFalse(sessionRequiresHostEvidence(true, 0L, true))
+        assertTrue(sessionRequiresHostEvidence(true, 1_700_000_000_000L, true))
+        assertTrue(sessionRequiresHostEvidence(true, 0L, false))
+        assertTrue(sessionRequiresHostEvidence(true, -1L, true))
+        assertFalse(sessionRequiresHostEvidence(false, -1L, false))
+    }
+
+    @Test
     fun unknownActivityCannotMakeAnotherGameAppearIdle() {
         val registry = HostActivityUriRegistry<String>()
         registry.register("known", "game-a")

@@ -448,7 +448,11 @@ object SaveSyncRuntime {
                 } catch (_: Exception) { SaveHostIdentity.Unknown }
             }
         }
-        return hasRunningSaveHost(probe, game.uri, entry.has("token"), inGrace, SystemClock.elapsedRealtime())
+        // An explicit restore creates bookkeeping without launching a host. Missing host evidence
+        // must still block real launches, but cannot turn that restore into a permanent busy loop.
+        val needsHostEvidence = sessionRequiresHostEvidence(entry.has("token"),
+            entry.optLong("startedAt", -1L), entry.optBoolean("returned"))
+        return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime())
     }
 
     private fun secondaryActivityProcessNames(context: Context): Set<String>? {
@@ -620,6 +624,9 @@ object SaveSyncRuntime {
 }
 
 internal data class HostActivityUriSnapshot(val activities: Int, val uris: List<String>)
+
+internal fun sessionRequiresHostEvidence(hasToken: Boolean, startedAt: Long, returned: Boolean): Boolean =
+    hasToken && !(startedAt == 0L && returned)
 
 /** Tracks one URI per Activity instance so a destroyed screen cannot leave a stale host reference. */
 internal class HostActivityUriRegistry<T : Any> {
