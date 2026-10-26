@@ -39,7 +39,7 @@ object RpgSaveSync {
     /**
      * 进程级互斥：启动前同步、前台兜底回写、存档管理页「立即同步」可能并发触发，
      * 交错复制会破坏「较新者胜」的 mtime 判定并让同步清单互相覆盖。所有同步入口在此
-     * 串行化，并与 [RpgSaveSyncState] 的清单读写共用同一把锁（删除游戏时的 clear 也走它）。
+     * 串行化，并与清单、手动选择标记及导入/删除共用 [RpgSaveSyncState.INTEROP_LOCK]。
      * 调用方均在 IO 线程，锁内是阻塞文件 IO，串行不会阻塞主线程。
      */
     private val syncLock: Any = RpgSaveSyncState.INTEROP_LOCK
@@ -117,7 +117,34 @@ object RpgSaveSync {
         syncLocked(standardDirs, tyranorDir, engine, stateStore, gameKey, preferTyranor)
     }
 
-    /** [sync] 的实际实现；进入前已持有 [syncLock]，故可安全读写清单与两侧文件。 */
+    /**
+     * 在同一共享锁内读取并消费手动选择标记，再执行同步；失败时保留标记。
+     * 异常（含取消）原样传播。
+     */
+    internal fun syncWithManualSelection(
+        standardDirs: List<File>,
+        tyranorDir: File,
+        engine: EngineType,
+        stateStore: RpgSaveSyncState,
+        gameKey: String,
+    ): Result = synchronized(syncLock) {
+        val preferTyranor = stateStore.hasManualSelection(gameKey)
+        val result = syncLocked(
+            standardDirs = standardDirs,
+            tyranorDir = tyranorDir,
+            engine = engine,
+            stateStore = stateStore,
+            gameKey = gameKey,
+            preferTyranor = preferTyranor,
+        )
+        if (preferTyranor && result.failed == 0 && !stateStore.clearManualSelection(gameKey)) {
+            result.copy(failed = result.failed + 1)
+        } else {
+            result
+        }
+    }
+
+    /** [sync] 的实际实现；进入前已持有共享 INTEROP_LOCK，故可安全读写清单与两侧文件。 */
     private fun syncLocked(
         standardDirs: List<File>,
         tyranorDir: File,

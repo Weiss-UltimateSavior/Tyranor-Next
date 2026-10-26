@@ -23,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
@@ -121,7 +122,9 @@ private fun WebDavSettingsScreen() {
     var masterTarget by remember { mutableStateOf<Boolean?>(null) }
     var editing by remember { mutableStateOf<WebDavTextField?>(null) }
     var editText by remember { mutableStateOf("") }
-    var manualDirection by remember { mutableStateOf(SaveSyncDirection.PULL) }
+    var manualDirectionName by rememberSaveable { mutableStateOf(SaveSyncDirection.PULL.name) }
+    val manualDirection = SaveSyncDirection.entries.firstOrNull { it.name == manualDirectionName }
+        ?: SaveSyncDirection.PULL
     var showResetConfirm by remember { mutableStateOf(false) }
     val available = enabled && config.enabled && loaded && loadError == null && !busy
     val saveOperationFailedMessage = stringResource(R.string.save_operation_failed)
@@ -515,7 +518,7 @@ private fun WebDavSettingsScreen() {
                                 enabled = available,
                                 onSelectedIndexChange = { index ->
                                     if (canInteract()) {
-                                        directions.getOrNull(index)?.let { manualDirection = it }
+                                        directions.getOrNull(index)?.let { manualDirectionName = it.name }
                                     }
                                 },
                             )
@@ -609,6 +612,7 @@ private fun WebDavSettingsScreen() {
                 )
             },
             dismissButton = { DialogTextButton(stringResource(R.string.common_cancel)) { showResetConfirm = false } },
+            textScrollEnabled = true,
         )
     }
 }

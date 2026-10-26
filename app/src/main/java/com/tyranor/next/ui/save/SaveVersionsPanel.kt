@@ -85,13 +85,6 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     val metadataPendingMessage = stringResource(R.string.save_version_metadata_pending)
     val previousPendingMessage = stringResource(R.string.save_version_previous_pending)
 
-    fun versionTimes(version: SaveVersion): Pair<String, String> {
-        val newFull = dateFormat.format(Date(version.createdAt))
-        val oldFull = version.previousCreatedAt?.let { dateFormat.format(Date(it)) }
-        val sameDay = oldFull != null && oldFull.substringBefore(' ') == newFull.substringBefore(' ')
-        return (oldFull ?: previousUnknown) to if (sameDay) newFull.substringAfter(' ') else newFull
-    }
-
     fun <T> runSilentTask(block: suspend () -> T, onSuccess: (T) -> Unit) {
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
         taskError = null
@@ -223,23 +216,15 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.save_versions_title),
                                 summary = selectedVersion?.takeIf { it.restored }?.let { version ->
-                                    val (oldTime, newTime) = versionTimes(version)
+                                    val (oldTime, newTime) = saveVersionTimes(
+                                        version,
+                                        dateFormat,
+                                        previousUnknown,
+                                    )
                                     stringResource(R.string.save_version_time_change, oldTime, newTime)
                                 },
                                 items = listOf(stringResource(R.string.save_version_choose)) + versions.map { version ->
-                                    val source = stringResource(if (version.source == SaveVersionSource.CLOUD) R.string.save_version_cloud else R.string.save_version_local)
-                                    val newFull = dateFormat.format(Date(version.createdAt))
-                                    if (version.restored) {
-                                        val (oldTime, newTime) = versionTimes(version)
-                                        stringResource(
-                                            R.string.save_version_restored_row,
-                                            source,
-                                            oldTime,
-                                            newTime,
-                                        )
-                                    } else {
-                                        stringResource(R.string.save_version_row, source, newFull)
-                                    }
+                                    saveVersionDisplayText(version, dateFormat, previousUnknown)
                                 },
                                 selectedIndex = selectedIndex,
                                 enabled = !taskRunning,
@@ -304,9 +289,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        stringResource(R.string.save_version_row,
-                            stringResource(if (version.source == SaveVersionSource.CLOUD) R.string.save_version_cloud else R.string.save_version_local),
-                            dateFormat.format(Date(version.createdAt))),
+                        saveVersionDisplayText(version, dateFormat, previousUnknown),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(stringResource(R.string.save_versions_policy), style = MaterialTheme.typography.bodyMedium)
@@ -333,7 +316,9 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
             dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) {
                 pendingVersion = null
                 taskError = null
-            } })
+            } },
+            textScrollEnabled = true,
+        )
     }
     if (editedIdentity != null) AppAlertDialog(onDismissRequest = { if (!taskRunning) { editedIdentity = null; taskError = null } },
         title = { Text(stringResource(R.string.save_sync_identity), style = MaterialTheme.typography.titleMedium) },
@@ -369,7 +354,9 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
         dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) {
             editedIdentity = null
             taskError = null
-        } })
+        } },
+        textScrollEnabled = true,
+    )
 }
 
 @Composable
@@ -430,6 +417,41 @@ private fun SaveSelectionRecoveryPanel(
         },
         dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) { confirming = false } },
     )
+}
+
+internal fun saveVersionTimes(
+    version: SaveVersion,
+    dateFormat: SimpleDateFormat,
+    previousUnknown: String,
+): Pair<String, String> {
+    val newFull = dateFormat.format(Date(version.createdAt))
+    val oldFull = version.previousCreatedAt?.let { dateFormat.format(Date(it)) }
+    val sameDay = oldFull != null && oldFull.substringBefore(' ') == newFull.substringBefore(' ')
+    return (oldFull ?: previousUnknown) to if (sameDay) newFull.substringAfter(' ') else newFull
+}
+
+@Composable
+private fun saveVersionDisplayText(
+    version: SaveVersion,
+    dateFormat: SimpleDateFormat,
+    previousUnknown: String,
+): String {
+    val source = stringResource(
+        if (version.source == SaveVersionSource.CLOUD) {
+            R.string.save_version_cloud
+        } else {
+            R.string.save_version_local
+        },
+    )
+    if (!version.restored) {
+        return stringResource(
+            R.string.save_version_row,
+            source,
+            dateFormat.format(Date(version.createdAt)),
+        )
+    }
+    val (oldTime, newTime) = saveVersionTimes(version, dateFormat, previousUnknown)
+    return stringResource(R.string.save_version_restored_row, source, oldTime, newTime)
 }
 
 internal fun SaveSyncDirection.labelResource(): Int = when (this) {

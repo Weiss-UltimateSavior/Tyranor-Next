@@ -82,8 +82,8 @@ internal class SaveActivationJournal(private val directory: File) {
 
     fun clear(key: String) {
         records.remove(key)
-        // A failed best-effort cleanup leaves at most one replaceable ZIP for this game.
-        archive(key).delete()
+        val source = archive(key)
+        if (source.exists() && !source.delete()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
     }
 
     private fun encode(pending: Pending) = JSONObject()

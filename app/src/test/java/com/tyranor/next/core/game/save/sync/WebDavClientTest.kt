@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -729,6 +730,40 @@ class WebDavClientTest {
         } finally { respondingServer.stop(0) }
     }
 
+    @Test fun handlerThrowableAlwaysResolvesExchange() = runBlocking {
+        var checks = 0
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            val body = multistatus(response("/dav/TYN-saves/${GAME.engine}/", true)).toByteArray()
+            exchange.sendResponseHeaders(207, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+            exchange.close()
+        }
+        server.start()
+        try {
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+                enabledCheck = {
+                    checks++
+                    if (checks > 1) throw AssertionError("handler failure")
+                    true
+                },
+            ).use { client ->
+                val failure = try {
+                    withTimeout(5_000) { client.list(GAME) }
+                    null
+                } catch (caught: Throwable) {
+                    caught
+                }
+                assertTrue("Exchange did not resume after a handler Error", failure is AssertionError)
+                assertEquals("handler failure", failure?.message)
+            }
+            assertEquals(2, checks)
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test fun actualCancellationPropagatesInsteadOfBecomingDisabled() = runBlocking {
         val requestStarted = CountDownLatch(1)
         val releaseResponse = CountDownLatch(1)
@@ -927,6 +962,26 @@ class WebDavClientTest {
         assertEquals(listOf(name), versions.map { it.name })
     }
 
+    @Test fun listingRejectsExcessiveXmlResponseCountBeforeDom() {
+        val folder = "https://example.com/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/".toHttpUrl()
+        val responses = "<d:response/>".repeat(WebDavClient.MAX_XML_RESPONSES + 1)
+        assertInvalidListing(folder, multistatus(responses).toByteArray())
+    }
+
+    @Test fun listingRejectsExcessiveXmlDepthBeforeDom() {
+        val folder = "https://example.com/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/".toHttpUrl()
+        val nested = "<d:nested>".repeat(WebDavClient.MAX_XML_DEPTH) +
+            "</d:nested>".repeat(WebDavClient.MAX_XML_DEPTH)
+        assertInvalidListing(folder, multistatus(nested).toByteArray())
+    }
+
+    @Test fun listingRejectsExcessiveTotalXmlElementsBeforeDom() {
+        val folder = "https://example.com/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/".toHttpUrl()
+        val siblings = "<x:item/>".repeat(WebDavClient.MAX_XML_ELEMENTS)
+        val xml = "<d:multistatus xmlns:d=\"DAV:\" xmlns:x=\"urn:test\">$siblings</d:multistatus>"
+        assertInvalidListing(folder, xml.toByteArray())
+    }
+
     @Test fun authenticatedRequestsDoNotFollowRedirects() = runBlocking {
         var requests = 0
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -969,6 +1024,14 @@ class WebDavClientTest {
             .replace("+", "%2b")
         private fun decodedPath(value: String): String = URI(value).path
         private fun multistatus(inner: String) = "<d:multistatus xmlns:d=\"DAV:\">$inner</d:multistatus>"
+        private fun assertInvalidListing(folder: okhttp3.HttpUrl, bytes: ByteArray) {
+            try {
+                WebDavClient.parseListing(folder, bytes)
+                throw AssertionError("Invalid listing accepted")
+            } catch (expected: SaveSyncException) {
+                assertEquals(SaveSyncError.INVALID_RESPONSE, expected.code)
+            }
+        }
         private fun response(href: String, collection: Boolean, size: Int = 0, etag: String? = "\"immutable\"") =
             "<d:response><d:href>$href</d:href><d:propstat><d:prop><d:resourcetype>" +
                 (if (collection) "<d:collection/>" else "") + "</d:resourcetype><d:getcontentlength>$size</d:getcontentlength>" +

@@ -648,21 +648,13 @@ object EngineLauncher {
         // 标准侧兼容 save / Save 两种拼写；首选写入目录为已存在的小写 save（默认）
         val standardDirs = RpgSaveFormat.standardSaveDirectories(gameDir)
         val state = RpgSaveSyncState.forContext(context)
-        return synchronized(RpgSaveSyncState.INTEROP_LOCK) {
-            // Reading, applying and consuming a selection must not straddle another import.
-            val manualSelection = state.hasManualSelection(game.uri)
-            val result = RpgSaveSync.sync(
-                standardDirs = standardDirs,
-                tyranorDir = tyranorDir,
-                engine = game.engine,
-                stateStore = state,
-                gameKey = game.uri,
-                preferTyranor = manualSelection,
-            )
-            if (manualSelection && result.failed == 0 && !state.clearManualSelection(game.uri)) {
-                result.copy(failed = 1)
-            } else result
-        }
+        return RpgSaveSync.syncWithManualSelection(
+            standardDirs = standardDirs,
+            tyranorDir = tyranorDir,
+            engine = game.engine,
+            stateStore = state,
+            gameKey = game.uri,
+        )
     }
 
     /** 记录待回写的游戏（应用回到前台时对已退出会话补一次同步）；写入失败如实记日志。 */

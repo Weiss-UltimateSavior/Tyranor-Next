@@ -320,6 +320,11 @@ Column(fillMaxSize)                                // 页面根
 - `keyboardType`：键盘类型，默认 `KeyboardType.Text`；URL 字段传 `KeyboardType.Uri`，密码字段传
   `KeyboardType.Password`，用户名使用默认文本键盘。
 
+- `visualTransformation`：只控制文字显示变换，默认 `VisualTransformation.None`；密码掩码不代表
+  autofill 身份。密码字段必须另传 `keyboardType = KeyboardType.Password` 与
+  `autofillContentType = ContentType.Password`，内部按密码键盘/身份补充 `password()` 无障碍语义。
+  当前 API 没有 `secureInput` 参数；不得引用不存在的参数。
+
 - `leadingIcon`：drawable 资源（`R.drawable.ic_*`）。搜索语义用默认 `ic_game_search`；
   其他语义必须传对应图标（如名称修改用 `ic_sheet_rename`），禁止搜索图标滥用。
 
@@ -336,6 +341,9 @@ Column(fillMaxSize)                                // 页面根
 | VNDB 封面搜索   | `GameScreen.kt`（VndbSearchDialog）  | `ic_game_search`  | `search()` 网络请求 |
 | krkr 在线补丁过滤 | `KrkrOnlinePatchActivity.kt`（列表首项） | `ic_game_search`  | 即时过滤，不传         |
 | 名称修改        | `GameScreen.kt`（RenameGameDialog）  | `ic_sheet_rename` | 内容有效即保存         |
+| WebDAV 地址/用户名/密码 | `WebDavSettingsActivity.kt` | 对应字段语义图标 | Done，显式 Uri/Text/Password 与身份 autofill |
+| 云端游戏标识 | `SaveVersionsPanel.kt` | 标识图标 | Done，内容有效即保存 |
+| 目录/方案名称/端口/自定义 URL | `ui/settings/`、`EngineScreen.kt` | 对应字段语义图标 | Done；URL 为 Uri，端口为 Number |
 
 ***
 

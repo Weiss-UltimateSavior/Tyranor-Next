@@ -4,12 +4,21 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.os.storage.StorageManager
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.io.IOException
 
 /** Trust SDK storage boundaries, never a directory chosen by the game or the user. */
 internal object SaveStorageRoots {
-    fun forContext(context: Context): List<File> {
+    fun forContext(context: Context): List<File> = try {
+        resolve(context)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+    }
+
+    private fun resolve(context: Context): List<File> {
         val externalFiles = context.getExternalFilesDirs(null).filterNotNull()
         val volumes = mutableListOf(Environment.getExternalStorageDirectory())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -27,7 +36,7 @@ internal object SaveStorageRoots {
         val roots = listOfNotNull(context.filesDir, context.noBackupFilesDir, context.filesDir.parentFile) +
             externalFiles + volumes
         val canonicalVolumes = volumes.mapNotNull(::canonicalOrNull).toSet()
-        val aliases = listOf(File("/sdcard"), File("/mnt/sdcard"), File("/storage/self/primary"))
+        val aliases = listOf(File("/sdcard"), File("/mnt/sdcard"), File("/storage/self/primary"), File("/mnt/user/0/primary"))
             .filter { alias -> canonicalOrNull(alias)?.let { it in canonicalVolumes } == true }
         return (roots + aliases).distinctBy { it.absolutePath }
     }

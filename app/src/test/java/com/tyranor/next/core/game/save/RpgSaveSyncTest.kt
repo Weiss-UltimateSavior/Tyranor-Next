@@ -8,6 +8,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class RpgSaveSyncTest {
     @get:Rule
@@ -768,6 +772,97 @@ class RpgSaveSyncTest {
         assertTrue(marker.delete())
         assertTrue(marker.mkdir())
         assertTrue(runCatching { store.hasManualSelection("g") }.exceptionOrNull() is GameSaveException)
+    }
+
+    @Test
+    fun manualSelectionSyncConsumesMarkerOnlyAfterSuccessfulSync() {
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "NEW-PC", 9_000)
+        tyranor.writeAt(mvName("global.rpgsave"), "SELECTED-OLD", 1_000)
+        val state = store()
+        assertTrue(state.markManualSelection("g"))
+
+        val result = RpgSaveSync.syncWithManualSelection(
+            standardDirs = listOf(standard),
+            tyranorDir = tyranor,
+            engine = EngineType.RPG_MV,
+            stateStore = state,
+            gameKey = "g",
+        )
+
+        assertEquals(0, result.failed)
+        assertEquals(1, result.toStandard)
+        assertEquals("SELECTED-OLD", standard.resolve("global.rpgsave").readText())
+        assertFalse(state.hasManualSelection("g"))
+        assertEquals(0, RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, state, "g").changed)
+    }
+
+    @Test
+    fun manualSelectionSyncKeepsMarkerWhenSyncFails() {
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "NEW-PC", 9_000)
+        tyranor.writeAt(mvName("global.rpgsave"), "SELECTED-OLD", 1_000)
+        standard.resolve("deleted").writeText("block")
+        val state = store()
+        assertTrue(state.markManualSelection("g"))
+
+        val result = RpgSaveSync.syncWithManualSelection(
+            standardDirs = listOf(standard),
+            tyranorDir = tyranor,
+            engine = EngineType.RPG_MV,
+            stateStore = state,
+            gameKey = "g",
+        )
+
+        assertEquals(1, result.failed)
+        assertTrue(state.hasManualSelection("g"))
+        assertEquals("NEW-PC", standard.resolve("global.rpgsave").readText())
+    }
+
+    @Test
+    fun interopLockedAndDirectSyncConcurrentlyDoNotDeadlock() {
+        val executor = Executors.newFixedThreadPool(2) { task ->
+            Thread(task, "rpg-save-lock-regression").apply { isDaemon = true }
+        }
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "PC", 1_000)
+        val state = store()
+        val interopHeld = CountDownLatch(1)
+        val continueOuterSync = CountDownLatch(1)
+        val directThread = AtomicReference<Thread>()
+        try {
+            val interopLocked = executor.submit<RpgSaveSync.Result> {
+                synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+                    interopHeld.countDown()
+                    continueOuterSync.await()
+                    RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, state, "g")
+                }
+            }
+            assertTrue("interop lock holder did not start", interopHeld.await(10, TimeUnit.SECONDS))
+
+            val direct = executor.submit<RpgSaveSync.Result> {
+                directThread.set(Thread.currentThread())
+                RpgSaveSync.sync(standard, tyranor, EngineType.RPG_MV, state, "g")
+            }
+            val directReachedLock = waitUntilBlocked(directThread)
+            continueOuterSync.countDown()
+
+            assertTrue("direct sync did not reach the interop lock", directReachedLock)
+            assertEquals(0, interopLocked.get(10, TimeUnit.SECONDS).failed)
+            assertEquals(0, direct.get(10, TimeUnit.SECONDS).failed)
+        } finally {
+            continueOuterSync.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    private fun waitUntilBlocked(threadRef: AtomicReference<Thread>): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            if (threadRef.get()?.state == Thread.State.BLOCKED) return true
+            Thread.sleep(5)
+        }
+        return false
     }
 
     private fun standardAndTyranorSync(stateDir: File) {

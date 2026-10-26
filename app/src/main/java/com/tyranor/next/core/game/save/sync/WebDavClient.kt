@@ -16,9 +16,13 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.xml.sax.Attributes
+import org.xml.sax.EntityResolver
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 import org.xml.sax.SAXException
+import org.xml.sax.SAXParseException
+import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -31,6 +35,7 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import javax.xml.parsers.DocumentBuilderFactory
+import javax.xml.parsers.SAXParserFactory
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -334,10 +339,15 @@ class WebDavClient(
                         if (continuation.isActive) continuation.resume(value)
                     } catch (cancelled: kotlinx.coroutines.CancellationException) {
                         continuation.cancel(cancelled)
-                    } catch (failure: Exception) {
-                        if (continuation.isActive) continuation.resumeWithException(
-                            if (failure is SaveSyncException) failure else SaveSyncException(SaveSyncError.NETWORK, cause = failure),
-                        )
+                    } catch (failure: Throwable) {
+                        if (continuation.isActive) {
+                            val terminal = when {
+                                failure is SaveSyncException -> failure
+                                failure is Exception -> SaveSyncException(SaveSyncError.NETWORK, cause = failure)
+                                else -> failure
+                            }
+                            continuation.resumeWithException(terminal)
+                        }
                     }
                 }
             }
@@ -358,6 +368,9 @@ class WebDavClient(
         private val ZIP = "application/zip".toMediaType()
         private const val PROPFIND = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/><d:getcontentlength/><d:getetag/></d:prop></d:propfind>"
         private const val MAX_XML_BYTES = 16 * 1024 * 1024
+        internal const val MAX_XML_ELEMENTS = 32_768
+        internal const val MAX_XML_RESPONSES = 4_096
+        internal const val MAX_XML_DEPTH = 64
         private const val REMOTE_FUTURE_TOLERANCE_MS = 24L * 60 * 60 * 1000
 
         // OkHttp leaves path brackets literal; strict DAV servers require their URI escapes.
@@ -442,6 +455,7 @@ class WebDavClient(
                 val xml = charset.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                     .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString().removePrefix("\uFEFF")
                 if (xml.contains("<!DOCTYPE", ignoreCase = true)) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+                validateXmlStructure(xml)
                 val factory = DocumentBuilderFactory.newInstance().apply {
                     isNamespaceAware = true
                     isExpandEntityReferences = false
@@ -456,6 +470,55 @@ class WebDavClient(
                 val root = parser.parse(InputSource(StringReader(xml))).documentElement
                 if (root.namespaceURI != "DAV:" || root.localName != "multistatus") throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
                 return root
+            } catch (failure: SaveSyncException) {
+                throw failure
+            } catch (failure: Exception) {
+                throw SaveSyncException(SaveSyncError.INVALID_RESPONSE, cause = failure)
+            }
+        }
+
+        /**
+         * Bound attacker-controlled tree size before the DOM is materialized. The streaming
+         * pass also rejects the same DTD and external-entity surface as the DOM parser.
+         */
+        private fun validateXmlStructure(xml: String) {
+            var depth = 0
+            var elements = 0
+            var responses = 0
+            val handler = object : DefaultHandler() {
+                override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes?) {
+                    elements++
+                    if (elements > MAX_XML_ELEMENTS) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+                    depth++
+                    if (depth > MAX_XML_DEPTH) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+                    if (uri == "DAV:" && localName == "response") {
+                        responses++
+                        if (responses > MAX_XML_RESPONSES) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+                    }
+                }
+
+                override fun endElement(uri: String?, localName: String?, qName: String?) {
+                    depth--
+                }
+
+                override fun error(exception: SAXParseException) {
+                    throw exception
+                }
+
+                override fun fatalError(exception: SAXParseException) {
+                    throw exception
+                }
+            }
+            try {
+                val factory = SAXParserFactory.newInstance().apply {
+                    isNamespaceAware = true
+                    isValidating = false
+                }
+                factory.newSAXParser().xmlReader.apply {
+                    contentHandler = handler
+                    errorHandler = handler
+                    entityResolver = EntityResolver { _, _ -> throw SAXException("External entity") }
+                }.parse(InputSource(StringReader(xml)))
             } catch (failure: SaveSyncException) {
                 throw failure
             } catch (failure: Exception) {

@@ -51,6 +51,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -486,6 +488,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         onSearch = savePath,
                         leadingIcon = painterResource(R.drawable.ic_sheet_folder),
                         iconContentDescription = stringResource(R.string.settings_input_dir_title),
+                        imeAction = ImeAction.Done,
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
@@ -1272,6 +1275,7 @@ private fun LazyListPlaceholder(
                     value = webShellPort.toString(),
                     sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
                     validate = { it.isNotEmpty() && (it.toIntOrNull()?.let { port -> port in 1..65535 } == true) },
+                    keyboardType = KeyboardType.Number,
                     onValueChange = { onWebShellPort(it.toInt()) },
                 )
             }
@@ -1501,6 +1505,7 @@ private fun LazyListPlaceholder(
                     summaryHint = stringResource(R.string.engine_settings_winlator_container_id_summary),
                     value = if (winlator.containerId > 0) winlator.containerId.toString() else "",
                     sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                    keyboardType = KeyboardType.Number,
                     onValueChange = { text ->
                         onWinlator(winlator.copy(containerId = text.toIntOrNull()?.coerceAtLeast(0) ?: 0))
                     },
@@ -1574,6 +1579,7 @@ private fun WinlatorValueRow(
     onValueChange: (String) -> Unit,
     sanitize: ((String) -> String)? = null,
     validate: (String) -> Boolean = { true },
+    keyboardType: KeyboardType = KeyboardType.Text,
 ) {
     var showDialog by remember { mutableStateOf(false) }
     ArrowPreference(
@@ -1588,6 +1594,7 @@ private fun WinlatorValueRow(
             initial = value,
             sanitize = sanitize,
             validate = validate,
+            keyboardType = keyboardType,
             onDismiss = { showDialog = false },
             onConfirm = {
                 onValueChange(it)
@@ -1604,6 +1611,7 @@ private fun WinlatorValueDialog(
     initial: String,
     sanitize: ((String) -> String)?,
     validate: (String) -> Boolean,
+    keyboardType: KeyboardType,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
@@ -1623,6 +1631,8 @@ private fun WinlatorValueDialog(
                         onSearch = { if (canConfirm) onConfirm(normalized) },
                         leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                         iconContentDescription = title,
+                        imeAction = ImeAction.Done,
+                        keyboardType = keyboardType,
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                     Text(

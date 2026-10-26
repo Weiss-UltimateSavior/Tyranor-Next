@@ -138,6 +138,8 @@ class SaveSnapshotStore(private val root: File) {
     }
 
     private fun stageArchive(source: File, destination: File, check: () -> Unit) {
+        val parent = destination.parentFile ?: throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        requireSnapshotSpace(source.length(), parent.usableSpace)
         source.inputStream().use { input ->
             java.io.FileOutputStream(destination).use { output ->
                 val buffer = ByteArray(64 * 1024)
@@ -209,4 +211,12 @@ class SaveSnapshotStore(private val root: File) {
     }
 
     companion object { const val LOCAL_LIMIT = 5 }
+}
+
+/** Admission, not eviction: never sacrifice one of the five retained versions for disk space. */
+internal fun requireSnapshotSpace(archiveBytes: Long, usableBytes: Long) {
+    val reserve = 16L * 1024 * 1024
+    if (archiveBytes < 0 || usableBytes < reserve || archiveBytes > usableBytes - reserve) {
+        throw SaveSyncException(SaveSyncError.STORAGE_FULL)
+    }
 }

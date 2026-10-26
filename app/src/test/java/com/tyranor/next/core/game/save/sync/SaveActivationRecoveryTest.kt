@@ -29,9 +29,18 @@ class SaveActivationRecoveryTest {
     }
 
     @Test fun sameSelectionStillReportsAppliedSaveWithMetadataPending() = runBlocking {
-        val result = SaveActivationRecovery.beforeSelection(true, true, false,
+        val result = SaveActivationRecovery.beforeSelection(true, true, false, currentMatchesSelection = true,
             finish = { SaveActivationResult.METADATA_PENDING }, discard = { error("not confirmed") })
         assertEquals(SaveActivationResult.METADATA_PENDING, result)
+    }
+
+    @Test fun appliedPriorSelectionWithAdvancedBytesAuthorizesFreshImport() = runBlocking {
+        var finished = false
+        val result = SaveActivationRecovery.beforeSelection(true, true, false, currentMatchesSelection = false,
+            finish = { finished = true; SaveActivationResult.APPLIED },
+            discard = { error("fresh import required") })
+        assertTrue(finished)
+        assertNull(result)
     }
 
     @Test fun failedPreservationCannotAuthorizeNewImportAndCancellationIsUnchanged() = runBlocking {

@@ -880,6 +880,7 @@
     <string name="webdav_manual_all">全游戏库手动同步</string>
     <string name="webdav_manual_note">使用已保存的配置。仅传输有变化的游戏；拉取会保存为本地版本，不会切换当前存档。</string>
     <string name="webdav_error_not_configured">请先配置 WebDAV</string>
+    <string name="webdav_error_disabled">WebDAV 同步已关闭</string>
     <string name="webdav_error_invalid_config">配置有误</string>
     <string name="webdav_error_credentials">登录信息不可用</string>
     <string name="webdav_error_authentication">认证失败</string>
@@ -888,6 +889,7 @@
     <string name="webdav_error_response">服务器响应无效</string>
     <string name="webdav_error_archive">存档校验失败</string>
     <string name="webdav_error_local_io">本地存档读写失败</string>
+    <string name="webdav_error_storage_full">存储空间不足。请清理空间后重试；现有存档版本会保留。</string>
     <string name="webdav_error_identity_conflict">云端游戏标识重复</string>
     <string name="save_versions_title">存档版本</string>
     <string name="save_versions_policy">切换前会保留当前存档；每个游戏最多保留 5 个本地版本，超出时删除最旧版本。请先退出游戏。</string>

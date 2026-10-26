@@ -56,6 +56,7 @@ object SaveSyncRuntime {
         if (process == application.packageName || !process.startsWith(application.packageName + ":")) return
         val hostActivities = HostActivityUriRegistry<Activity>()
         val hostWrite = Mutex()
+        val idleSince = java.util.concurrent.atomic.AtomicLong(0L)
         val runtime = runtimeStore(application)
         val key = SaveContentHash.text(process)
         fun registerActivity(activity: Activity) {
@@ -72,6 +73,7 @@ object SaveSyncRuntime {
                         runtime.save(key, JSONObject()
                             .put("pid", Process.myPid())
                             .put("activities", snapshot.activities)
+                            .put("idleSince", idleSince.get())
                             .put("uris", JSONArray(snapshot.uris)))
                     } catch (_: Exception) {
                         // An unreadable/missing record is treated as busy by the reader.
@@ -82,11 +84,15 @@ object SaveSyncRuntime {
         record()
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, state: Bundle?) {
+                idleSince.set(0L)
                 registerActivity(activity)
                 record()
             }
             override fun onActivityDestroyed(activity: Activity) {
                 hostActivities.unregister(activity)
+                if (hostActivities.activityCount() == 0 && !activity.isChangingConfigurations) {
+                    idleSince.set(SystemClock.elapsedRealtime())
+                }
                 record()
                 if (hostActivities.activityCount() == 0 && !activity.isChangingConfigurations) {
                     application.sendBroadcast(Intent(application, SaveSyncExitReceiver::class.java))
@@ -410,58 +416,39 @@ object SaveSyncRuntime {
         val entry = sessions(context).load(SaveContentHash.text(game.uri))
         // External Winlator cannot expose a host-process registration callback.
         if (game.engine == EngineType.YURIS) return entry.has("token") && !entry.optBoolean("returned")
-        if (launchGraceActive(game.uri)) return true
-        val started = entry.optLong("startedAt")
-        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return true
-        val processes = try {
-            manager.runningAppProcesses
-        } catch (_: Exception) {
-            null
-        } ?: return true
-
+        val inGrace = launchGraceActive(game.uri) || (entry.has("token") &&
+            System.currentTimeMillis() - entry.optLong("startedAt") in 0..START_GRACE_MS)
         val declaredHosts = secondaryActivityProcessNames(context)
-        val liveHosts = processes.filter { process ->
-            if (process.uid != Process.myUid()) return@filter false
-            val name = process.processName.orEmpty()
-            name.isBlank() || if (declaredHosts == null) {
-                name.startsWith("${context.packageName}:")
-            } else {
-                name in declaredHosts
+        val probe = object : SaveHostProbe {
+            override fun visibleHosts(): List<SaveHostProcess>? {
+                val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return null
+                val processes = try { manager.runningAppProcesses } catch (_: Exception) { null }
+                if (processes.isNullOrEmpty()) return null
+                return processes.filter { process ->
+                    process.uid == Process.myUid() && (process.processName.isNullOrBlank() ||
+                        if (declaredHosts == null) process.processName.startsWith("${context.packageName}:")
+                        else process.processName in declaredHosts)
+                }.map { SaveHostProcess(it.pid, it.processName.orEmpty()) }
+            }
+            override fun records(): Map<String, JSONObject> {
+                val store = runtimeStore(context)
+                val known = declaredHosts?.map(SaveContentHash::text)?.toSet()
+                return store.keys().filter { known == null || it in known }.associateWith(store::load)
+            }
+            override fun identity(pid: Int): SaveHostIdentity {
+                return try {
+                    SaveHostIdentity.Live(readProcessName(File("/proc/$pid/cmdline")))
+                } catch (_: java.io.FileNotFoundException) {
+                    try {
+                        android.system.Os.kill(pid, 0)
+                        SaveHostIdentity.Unknown
+                    } catch (failure: android.system.ErrnoException) {
+                        if (failure.errno == android.system.OsConstants.ESRCH) SaveHostIdentity.Dead else SaveHostIdentity.Unknown
+                    } catch (_: Exception) { SaveHostIdentity.Unknown }
+                } catch (_: Exception) { SaveHostIdentity.Unknown }
             }
         }
-        if (liveHosts.any { process -> hostRecordRelation(context, process, game.uri) != HostRecordRelation.UNRELATED }) {
-            return true
-        }
-        // Cover startActivity -> host registration without ever touching a running save directory.
-        return entry.has("token") && System.currentTimeMillis() - started in 0..START_GRACE_MS
-    }
-
-    private fun hostRecordRelation(
-        context: Context,
-        process: ActivityManager.RunningAppProcessInfo,
-        gameUri: String,
-    ): HostRecordRelation {
-        val processName = process.processName.orEmpty()
-        if (processName.isBlank()) return HostRecordRelation.UNKNOWN
-        val state = try {
-            runtimeStore(context).load(SaveContentHash.text(processName))
-        } catch (_: Exception) {
-            return HostRecordRelation.UNKNOWN
-        }
-        val array = state.optJSONArray("uris") ?: return HostRecordRelation.UNKNOWN
-        val uris = ArrayList<String>(array.length())
-        for (index in 0 until array.length()) {
-            val uri = array.opt(index) as? String ?: return HostRecordRelation.UNKNOWN
-            if (uri.isBlank()) return HostRecordRelation.UNKNOWN
-            uris += uri
-        }
-        return classifyHostRecord(
-            livePid = process.pid,
-            recordedPid = state.optInt("pid", -1),
-            recordedActivities = state.optInt("activities", -1),
-            recordedUris = uris,
-            gameUri = gameUri,
-        )
+        return hasRunningSaveHost(probe, game.uri, entry.has("token"), inGrace, SystemClock.elapsedRealtime())
     }
 
     private fun secondaryActivityProcessNames(context: Context): Set<String>? {
@@ -604,13 +591,28 @@ object SaveSyncRuntime {
             .put("metadataHash", snapshot.metadataHash))
     }
 
-    private fun sessions(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"))
+    private fun sessions(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"), recoverCorrupt = true)
     private fun baselines(context: Context) =
-        SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/baselines"))
+        SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/baselines"), recoverCorrupt = true)
     private fun runtimeStore(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/hosts"))
     private fun processName(context: Context): String = if (Build.VERSION.SDK_INT >= 28) Application.getProcessName() else {
-        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        manager?.runningAppProcesses?.firstOrNull { it.pid == Process.myPid() }?.processName.orEmpty()
+        try {
+            readProcessName(File("/proc/self/cmdline"))
+        } catch (_: Exception) {
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            manager?.runningAppProcesses?.firstOrNull { it.pid == Process.myPid() }?.processName.orEmpty()
+        }
+    }
+
+    private fun readProcessName(file: File): String = file.inputStream().buffered().use { input ->
+        val bytes = java.io.ByteArrayOutputStream()
+        repeat(4096) {
+            val byte = input.read()
+            if (byte == 0 && bytes.size() > 0) return@use bytes.toString("UTF-8")
+            if (byte <= 0) throw java.io.IOException("Incomplete process identity")
+            bytes.write(byte)
+        }
+        throw java.io.IOException("Oversized process identity")
     }
     private val HASH = Regex("[a-f0-9]{64}")
     private const val START_GRACE_MS = 15_000L
@@ -659,11 +661,13 @@ internal fun classifyHostRecord(
     recordedActivities: Int,
     recordedUris: List<String>?,
     gameUri: String,
+    idleForMillis: Long = 2_000L,
 ): HostRecordRelation {
-    if (livePid <= 0 || recordedPid != livePid || recordedActivities <= 0 ||
-        recordedUris.isNullOrEmpty() || gameUri.isBlank()) {
+    if (livePid <= 0 || recordedPid != livePid || recordedActivities < 0 || gameUri.isBlank()) {
         return HostRecordRelation.UNKNOWN
     }
+    if (recordedActivities == 0) return if (idleForMillis >= 1_500L) HostRecordRelation.UNRELATED else HostRecordRelation.UNKNOWN
+    if (recordedUris.isNullOrEmpty()) return HostRecordRelation.UNKNOWN
     return if (gameUri in recordedUris) HostRecordRelation.MATCHING else HostRecordRelation.UNRELATED
 }
 

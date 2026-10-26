@@ -236,6 +236,10 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 cleanupDeletedGame(appContext, target)
             } catch (failure: GameSaveException) {
+                // Keep the library entry as a retry route if private-data cleanup is blocked.
+                GameLibraryFacade.updateGames(appContext) { games ->
+                    if (games.any { it.uri == target.uri }) games else games + target
+                }
                 _uiState.update { it.copy(cleanupError = failure.code) }
             }
         }

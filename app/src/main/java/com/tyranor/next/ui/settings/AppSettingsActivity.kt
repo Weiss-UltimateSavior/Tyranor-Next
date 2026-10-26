@@ -35,6 +35,8 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
@@ -600,6 +602,8 @@ private fun HomeWebCustomUrlDialog(
                         onSearch = confirm,
                         leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                         iconContentDescription = stringResource(R.string.settings_home_web_custom),
+                        imeAction = ImeAction.Done,
+                        keyboardType = KeyboardType.Uri,
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }

@@ -880,6 +880,7 @@
     <string name="webdav_manual_all">Sync the whole library manually</string>
     <string name="webdav_manual_note">Uses the saved configuration. Only changed games transfer data. Pulled versions are stored locally; active saves are switched manually.</string>
     <string name="webdav_error_not_configured">Configure WebDAV first</string>
+    <string name="webdav_error_disabled">WebDAV sync is disabled</string>
     <string name="webdav_error_invalid_config">Invalid settings</string>
     <string name="webdav_error_credentials">Credentials unavailable</string>
     <string name="webdav_error_authentication">Authentication failed</string>
@@ -888,6 +889,7 @@
     <string name="webdav_error_response">Invalid server response</string>
     <string name="webdav_error_archive">Save verification failed</string>
     <string name="webdav_error_local_io">Local save read/write failed</string>
+    <string name="webdav_error_storage_full">Not enough storage. Free some space and try again; existing save versions are preserved.</string>
     <string name="webdav_error_identity_conflict">Duplicate cloud game identity</string>
     <string name="save_versions_title">Save version</string>
     <string name="save_versions_policy">The current saves are kept before switching. Each game keeps up to 5 local versions; the oldest is removed beyond that. Exit the game first.</string>

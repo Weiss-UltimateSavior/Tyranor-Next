@@ -31,6 +31,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import androidx.compose.ui.graphics.Color as ComposeColor
@@ -1187,6 +1189,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
                                     allowEmpty = false,
                                     validate = { it.toIntOrNull()?.let { port -> port in 1..65535 } == true },
+                                    keyboardType = KeyboardType.Number,
                                 ) { webShellPort = it }
                             }
                         }
@@ -1270,6 +1273,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             override = winlatorContainerId,
                             hint = stringResource(R.string.engine_settings_winlator_container_id_summary),
                             sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
+                            keyboardType = KeyboardType.Number,
                         ) { winlatorContainerId = it }
                         OverrideText(
                             label = stringResource(R.string.engine_settings_winlator_container_name_title),
@@ -1599,6 +1603,7 @@ private fun OverrideText(
     sanitize: ((String) -> String)? = null,
     allowEmpty: Boolean = true,
     validate: (String) -> Boolean = { true },
+    keyboardType: KeyboardType = KeyboardType.Text,
     onSet: (String?) -> Unit,
 ) {
     var showDialog by remember { mutableStateOf(false) }
@@ -1630,6 +1635,8 @@ private fun OverrideText(
                             onSearch = { if (canConfirm) { onSet(normalized); showDialog = false } },
                             leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                             iconContentDescription = label,
+                            imeAction = ImeAction.Done,
+                            keyboardType = keyboardType,
                             textStyle = MaterialTheme.typography.bodyMedium,
                         )
                         Text(

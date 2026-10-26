@@ -21,6 +21,8 @@ import androidx.compose.ui.autofill.contentType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.password
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -59,9 +61,15 @@ internal fun EmbeddedSearchInputField(
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = modifier.then(
-            autofillContentType?.let { Modifier.contentType(it) } ?: Modifier,
-        ),
+        modifier = modifier
+            .then(autofillContentType?.let { Modifier.contentType(it) } ?: Modifier)
+            .then(
+                if (autofillContentType == ContentType.Password || keyboardType == KeyboardType.Password) {
+                    Modifier.semantics { password() }
+                } else {
+                    Modifier
+                },
+            ),
         singleLine = true,
         textStyle = MiuixTheme.textStyles.main.copy(fontWeight = FontWeight.Medium)
             .merge(textStyle).copy(color = LocalContentColor.current),

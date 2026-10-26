@@ -20,10 +20,19 @@ class SaveSyncRuntimePolicyTest {
     @Test
     fun hostRecordRequiresLivePidAndKnownUris() {
         assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 19, 1, listOf("game"), "game"))
-        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 20, 0, listOf("game"), "game"))
+        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(-1, -1, 1, listOf("game"), "game"))
+        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, -1, 1, listOf("game"), "game"))
+        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 20, -1, listOf("game"), "game"))
         assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 20, 1, emptyList(), "game"))
         assertEquals(HostRecordRelation.MATCHING, classifyHostRecord(20, 20, 1, listOf("other", "game"), "game"))
         assertEquals(HostRecordRelation.UNRELATED, classifyHostRecord(20, 20, 1, listOf("other"), "game"))
+    }
+
+    @Test
+    fun zeroActivitiesRequiresIdleGraceBeforeUnrelated() {
+        assertEquals(HostRecordRelation.UNRELATED, classifyHostRecord(20, 20, 0, listOf("game"), "game"))
+        assertEquals(HostRecordRelation.UNRELATED, classifyHostRecord(20, 20, 0, emptyList(), "game", 1_500L))
+        assertEquals(HostRecordRelation.UNKNOWN, classifyHostRecord(20, 20, 0, listOf("game"), "game", 1_499L))
     }
 
     @Test

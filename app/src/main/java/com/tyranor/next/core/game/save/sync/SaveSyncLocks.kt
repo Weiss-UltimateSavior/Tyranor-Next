@@ -3,10 +3,13 @@ package com.tyranor.next.core.game.save.sync
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** Version operations may wait for the network; active-save operations never hold that wait. */
+/** Network serialization never blocks local history/selection; lock order is versions -> active. */
 internal object SaveSyncLocks {
+    private val network = SaveSyncLockRegistry()
     private val versions = SaveSyncLockRegistry()
     private val active = SaveSyncLockRegistry()
+
+    suspend fun <T> network(uri: String, block: suspend () -> T): T = network.withLock(uri, block)
 
     suspend fun <T> versions(uri: String, block: suspend () -> T): T =
         versions.withLock(uri, block)

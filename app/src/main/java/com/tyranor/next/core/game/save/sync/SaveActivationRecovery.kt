@@ -6,16 +6,19 @@ internal object SaveActivationRecovery {
         sameContent: Boolean,
         canFinalize: Boolean,
         discardPrevious: Boolean,
+        currentMatchesSelection: Boolean = false,
         finish: suspend () -> SaveActivationResult,
         discard: suspend () -> Unit,
     ): SaveActivationResult? {
         if (canFinalize) {
             val result = finish()
             if (result == SaveActivationResult.APPLIED) {
-                return if (sameContent) result else null
+                // Finalizing an older transaction can publish a later N without importing S.
+                // A fresh explicit choice must still import S when the active bytes advanced.
+                return if (sameContent && currentMatchesSelection) result else null
             }
             if (!discardPrevious) {
-                return if (sameContent) SaveActivationResult.METADATA_PENDING else SaveActivationResult.PREVIOUS_PENDING
+                return if (sameContent && currentMatchesSelection) SaveActivationResult.METADATA_PENDING else SaveActivationResult.PREVIOUS_PENDING
             }
         }
         discard()

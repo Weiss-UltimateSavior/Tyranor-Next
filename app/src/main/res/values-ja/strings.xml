@@ -880,6 +880,7 @@
     <string name="webdav_manual_all">ライブラリ全体を手動同期</string>
     <string name="webdav_manual_note">保存済みの設定を使用します。変更があるゲームのみ転送します。取得した履歴はローカルに保存され、使用中のセーブへの切替は手動です。</string>
     <string name="webdav_error_not_configured">WebDAV を設定してください</string>
+    <string name="webdav_error_disabled">WebDAV 同期はオフです</string>
     <string name="webdav_error_invalid_config">設定が無効です</string>
     <string name="webdav_error_credentials">認証情報を利用できません</string>
     <string name="webdav_error_authentication">認証失敗</string>
@@ -888,6 +889,7 @@
     <string name="webdav_error_response">サーバー応答が無効です</string>
     <string name="webdav_error_archive">セーブ検証失敗</string>
     <string name="webdav_error_local_io">ローカルセーブの読み書き失敗</string>
+    <string name="webdav_error_storage_full">ストレージ容量が不足しています。空き容量を確保して再試行してください。既存のセーブ履歴は保持されます。</string>
     <string name="webdav_error_identity_conflict">クラウドゲーム識別名が重複しています</string>
     <string name="save_versions_title">セーブ履歴</string>
     <string name="save_versions_policy">切り替え前に現在のセーブを保持します。各ゲームのローカル履歴は最大 5 件で、超過時は最古の履歴を削除します。先にゲームを終了してください。</string>

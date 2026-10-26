@@ -20,9 +20,9 @@ internal suspend fun shouldShowSaveSyncFeedback(context: Context): Boolean = wit
     } catch (_: Exception) { false }
 }
 
-internal fun SaveSyncError.toSaveSyncMessage(context: Context): String = AppLocaleController.wrap(context).getString(when (this) {
+internal fun SaveSyncError.messageResource(): Int = when (this) {
     SaveSyncError.NOT_CONFIGURED -> R.string.webdav_error_not_configured
-    SaveSyncError.DISABLED -> R.string.webdav_error_not_configured
+    SaveSyncError.DISABLED -> R.string.webdav_error_disabled
     SaveSyncError.INVALID_CONFIG -> R.string.webdav_error_invalid_config
     SaveSyncError.CREDENTIALS_UNAVAILABLE -> R.string.webdav_error_credentials
     SaveSyncError.AUTHENTICATION -> R.string.webdav_error_authentication
@@ -31,12 +31,16 @@ internal fun SaveSyncError.toSaveSyncMessage(context: Context): String = AppLoca
     SaveSyncError.INVALID_RESPONSE -> R.string.webdav_error_response
     SaveSyncError.CORRUPT_ARCHIVE -> R.string.webdav_error_archive
     SaveSyncError.LOCAL_IO -> R.string.webdav_error_local_io
+    SaveSyncError.STORAGE_FULL -> R.string.webdav_error_storage_full
     SaveSyncError.SAVE_UNAVAILABLE -> R.string.webdav_error_no_save
     SaveSyncError.GAME_RUNNING -> R.string.webdav_error_game_running
     SaveSyncError.IDENTITY_CONFLICT -> R.string.webdav_error_identity_conflict
     SaveSyncError.SELECTION_INCOMPLETE -> R.string.save_error_selection_incomplete
     SaveSyncError.CLOUD_REPAIR_REQUIRED -> R.string.webdav_error_cloud_repair
-})
+}
+
+internal fun SaveSyncError.toSaveSyncMessage(context: Context): String =
+    AppLocaleController.wrap(context).getString(messageResource())
 
 internal fun SaveSyncReport.toSaveSyncMessage(context: Context): String {
     val localized = AppLocaleController.wrap(context)

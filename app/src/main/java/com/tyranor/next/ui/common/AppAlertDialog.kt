@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
@@ -63,6 +65,8 @@ internal fun AppAlertDialog(
     confirmButton: @Composable () -> Unit,
     dismissButton: (@Composable () -> Unit)? = null,
     buttonArrangement: Arrangement.Horizontal = Arrangement.spacedBy(8.dp, Alignment.End),
+    // Opt in only for plain text bodies; wrapping a self-scrolling list would pass infinite height constraints.
+    textScrollEnabled: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -70,6 +74,7 @@ internal fun AppAlertDialog(
     val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
     // 正文区域高度上限随屏幕自适应：固定 420dp 会在长列表（如 Artemis 全版本）末条截断
     val textMaxHeight = (configuration.screenHeightDp * 0.62f).dp.coerceIn(280.dp, 560.dp)
+    val textScrollState = rememberScrollState()
     val dimAlpha = remember { Animatable(0f) }
     val slideFraction = remember { Animatable(1f) }
     val dismissing = remember { mutableStateOf(false) }
@@ -144,7 +149,19 @@ internal fun AppAlertDialog(
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             title()
                         }
-                        Box(Modifier.fillMaxWidth().heightIn(max = textMaxHeight).padding(top = 14.dp)) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = textMaxHeight)
+                                .then(
+                                    if (textScrollEnabled) {
+                                        Modifier.verticalScroll(textScrollState)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .padding(top = 14.dp),
+                        ) {
                             text()
                         }
                         Row(

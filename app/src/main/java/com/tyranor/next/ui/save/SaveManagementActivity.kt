@@ -376,6 +376,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                 DialogTextButton(
                     text = stringResource(R.string.common_delete),
                     enabled = !taskRunning,
+                    contentColor = MaterialTheme.colorScheme.error,
                     onClick = {
                         showDeleteConfirm = false
                         runSaveTask {
