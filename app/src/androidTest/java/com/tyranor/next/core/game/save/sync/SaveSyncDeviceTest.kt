@@ -376,7 +376,7 @@ class SaveSyncDeviceTest {
             }
             attempt { WebDavSettingsStore.setEnabled(context, oldConfig.enabled) }
             failures.firstOrNull()?.let { first ->
-                failures.drop(1).forEach(first::addSuppressed)
+                failures.drop(1).filter { it !== first }.forEach(first::addSuppressed)
                 throw first
             }
         }
