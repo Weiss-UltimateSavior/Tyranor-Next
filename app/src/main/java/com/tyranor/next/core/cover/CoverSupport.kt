@@ -127,9 +127,18 @@ internal class CoverDownloadCancel {
         if (cancelled.get()) target.disconnect()
     }
 
-    fun cancel() {
+    fun markCancelled() {
         cancelled.set(true)
+    }
+
+    fun disconnect() {
         connection?.disconnect()
+    }
+
+    /** 供 IO 线程调用：置标志并断开连接（主线程请先 [markCancelled]，再把 [disconnect] 投递到 IO）。 */
+    fun cancel() {
+        markCancelled()
+        disconnect()
     }
 }
 

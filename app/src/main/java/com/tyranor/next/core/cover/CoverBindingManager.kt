@@ -52,11 +52,11 @@ object CoverBindingManager {
         onUpdated: (ScanGame) -> Unit,
     ) {
         val task = Task(context.applicationContext, game, candidate, onUpdated)
-        val previous = synchronized(lock) { tasks.put(game.uri, task) }
-        previous?.run?.let { run ->
-            run.cancel.cancel()
-            run.job?.cancel()
+        val previousRun = synchronized(lock) {
+            val old = tasks.put(game.uri, task)
+            old?.run.also { old?.run = null }
         }
+        previousRun?.let(::cancelRun)
         start(task)
     }
 
@@ -64,7 +64,15 @@ object CoverBindingManager {
     fun retry(uri: String) {
         val task = tasks[uri] ?: return
         if (_states.value[uri]?.failed != true) return
-        start(task)
+        val canStart = synchronized(lock) { tasks[uri] === task && task.run == null }
+        if (canStart) start(task)
+    }
+
+    /** 取消一次下载：标志同步置位（廉价），socket 断开投递到 IO，避免主线程做阻塞 IO。 */
+    private fun cancelRun(run: Run) {
+        run.cancel.markCancelled()
+        run.job?.cancel()
+        scope.launch(Dispatchers.IO) { run.cancel.disconnect() }
     }
 
     private fun start(task: Task) {
@@ -87,8 +95,9 @@ object CoverBindingManager {
                         if (now - lastEmit >= 100L || progress >= 0.95f) {
                             lastEmit = now
                             synchronized(lock) {
-                                // 换任务后旧协程仍可能回调，只有自己还是当前 run 才写入。
-                                if (task.run !== run) return@synchronized
+                                // 换任务/失效后旧协程仍可能回调：必须同时校验任务表归属与 run，
+                                // 否则旧任务会把过期进度写回一个已被移除的 uri。
+                                if (tasks[task.game.uri] !== task || task.run !== run) return@synchronized
                                 _states.value = _states.value +
                                     (task.game.uri to State(progress = progress, failed = false))
                             }
@@ -119,10 +128,10 @@ object CoverBindingManager {
                     }
                     task.onUpdated(updated)
                 } else {
-                    // 失败保留任务与候选，封面上的「重新下载」用它重试。
+                    // 失败保留任务与候选，封面上的「重新下载」用它重试；进度清零，
+                    // 避免「几乎满圈 + 重新下载」被误读成还在跑。
                     synchronized(lock) {
-                        val progress = _states.value[task.game.uri]?.progress ?: 0f
-                        _states.value = _states.value + (task.game.uri to State(progress, failed = true))
+                        _states.value = _states.value + (task.game.uri to State(progress = 0f, failed = true))
                     }
                 }
             }
@@ -141,10 +150,8 @@ object CoverBindingManager {
      */
     fun invalidate(uri: String) {
         val task = synchronized(lock) { tasks.remove(uri) } ?: return
-        task.run?.let { run ->
-            run.cancel.cancel()
-            run.job?.cancel()
-        }
+        val run = synchronized(lock) { task.run.also { task.run = null } }
+        run?.let(::cancelRun)
         synchronized(lock) { _states.value = _states.value - uri }
     }
 }

@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tyranor.next.R
+import com.tyranor.next.core.cover.CoverBindingManager
 import com.tyranor.next.core.cover.CoverScrapeTaskManager
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
@@ -184,6 +185,8 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
 
     fun replaceGame(updated: ScanGame) {
         val before = _uiState.value.games.firstOrNull { it.uri == updated.uri } ?: updated
+        // 封面被其它途径改过（批量抓取 / 自定义图）时清掉旧失败任务，避免「重新下载」用旧候选覆盖新封面。
+        if (before.coverUri != updated.coverUri) CoverBindingManager.invalidate(updated.uri)
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.replaceGame(it, updated) }
         enqueuePersistence(revision) {
@@ -226,6 +229,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun deleteGame(target: ScanGame) {
+        CoverBindingManager.invalidate(target.uri)
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.deleteGame(it, target.uri) }
         enqueuePersistence(revision) {
