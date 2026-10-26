@@ -39,4 +39,4 @@
 
 ### 说明
 
-- YU-RIS 的外部 Winlator 无可靠退出回调，须先退出外部游戏再返回；真机功能测试由用户在本地完成；多设备并发仍需独立验收。
+- YU-RIS 的外部 Winlator 无可靠退出回调，须先退出外部游戏再返回。Android 真机合成存档、应用生命周期与 UI 验证见 [WebDAV 设备验收记录](docs/WebDAV-device-acceptance.md)；真实游戏兼容性与多设备并发仍需独立验收。

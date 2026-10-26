@@ -98,6 +98,15 @@ val sharedEngineAssetNames = listOf(
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
 val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
+val webdavDeviceProbe = providers.gradleProperty("webdavDeviceProbe").orNull.let { value ->
+    require(value == null || value == "true" || value == "false") { "webdavDeviceProbe must be true or false" }
+    value == "true"
+}
+if (webdavDeviceProbe) {
+    require(tyranorApplicationId.startsWith("com.tyranor.next.webdavacceptance")) {
+        "The WebDAV device probe requires a dedicated webdavacceptance application ID"
+    }
+}
 val ethornellReleaseProbe = providers.gradleProperty("ethornellReleaseProbe").orNull.let { value ->
     require(value == null || value == "true" || value == "false") { "ethornellReleaseProbe must be true or false" }
     value == "true"
@@ -261,6 +270,12 @@ android {
 
     // 引擎原生插件先压缩为 assets/nativeplugins/<engine>.zip，首次启动自动安装到 app 私有目录
     sourceSets {
+      if (webdavDeviceProbe) {
+        getByName("debug") {
+          manifest.srcFile("src/webdavProbe/AndroidManifest.xml")
+          java.srcDir("src/webdavProbe/java")
+        }
+      }
       if (ethornellReleaseProbe) {
         // AGP's built-in Kotlin source set independently includes src/androidTest/java.
         // Clear BOTH languages on base and build-type test overlays; clearing Java alone
@@ -325,8 +340,14 @@ val compileEthornellTestProbe by tasks.registering(CompileEthornellTestProbe::cl
         ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
         ?: error("Android SDK required for instrumentation JNI probe")
     val ndk = providers.environmentVariable("ANDROID_NDK_HOME").orNull ?: "$sdk/ndk/28.0.13004108"
-    val host = if (System.getProperty("os.name").contains("Mac")) "darwin-x86_64" else "linux-x86_64"
-    compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/clang++")
+    val hostOs = System.getProperty("os.name")
+    val host = when {
+        hostOs.contains("Mac") -> "darwin-x86_64"
+        hostOs.contains("Windows") -> "windows-x86_64"
+        else -> "linux-x86_64"
+    }
+    val compiler = if (hostOs.contains("Windows")) "clang++.exe" else "clang++"
+    compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/$compiler")
 }
 androidComponents.onVariants(androidComponents.selector().withBuildType(ethornellTestBuildType)) { variant ->
     variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
