@@ -101,7 +101,12 @@ internal object SavePathSafety {
         val canonicalTrustedPath = canonicalTrusted.toPath()
         validateDirectoryOrMissing(canonicalTrustedPath)
 
-        val candidate = canonicalTrustedPath.resolve(trustedRoot.relativize(absolute))
+        // Path.relativize may normalize link/.. before the link can be inspected.
+        val candidate = if (absolute == trustedRoot) {
+            canonicalTrustedPath
+        } else {
+            canonicalTrustedPath.resolve(absolute.subpath(trustedRoot.nameCount, absolute.nameCount))
+        }
         rejectSymbolicLinks(candidate, trustedRoot = canonicalTrustedPath)
         val normalized = candidate.normalize()
         if (!normalized.startsWith(canonicalTrustedPath)) unavailable()
