@@ -31,7 +31,7 @@ object CoverBindingManager {
 
     private class Task(
         val context: Context,
-        val game: ScanGame,
+        var game: ScanGame,
         val candidate: CoverSearchCandidate,
         val onUpdated: (ScanGame) -> Unit,
     ) {
@@ -60,11 +60,20 @@ object CoverBindingManager {
         start(task)
     }
 
-    /** 失败后重试：沿用上次选中的候选重新下载；进行中的任务忽略。 */
-    fun retry(uri: String) {
+    /**
+     * 失败后重试：沿用上次选中的候选重新下载；进行中的任务忽略。
+     *
+     * [currentGame] 传入调用方当前持有的记录：失败态可能停留很久，期间用户可能改过标题/启动文件，
+     * 用绑定时快照会把后来的编辑回滚掉。
+     */
+    fun retry(uri: String, currentGame: ScanGame? = null) {
         val task = tasks[uri] ?: return
         if (_states.value[uri]?.failed != true) return
-        val canStart = synchronized(lock) { tasks[uri] === task && task.run == null }
+        val canStart = synchronized(lock) {
+            if (tasks[uri] !== task || task.run != null) return
+            if (currentGame != null) task.game = currentGame
+            true
+        }
         if (canStart) start(task)
     }
 
