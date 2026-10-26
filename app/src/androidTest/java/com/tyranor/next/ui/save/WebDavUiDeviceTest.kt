@@ -100,6 +100,8 @@ class WebDavUiDeviceTest {
     private lateinit var preferenceBaseline: Map<String, Map<String, *>>
     private var fixture: Fixture? = null
     private var gateAccepted = false
+    private val evidenceRun = safeName(InstrumentationRegistry.getArguments()
+        .getString("webdav_run") ?: UUID.randomUUID().toString())
 
     @Before
     fun setUp() {
@@ -158,8 +160,10 @@ class WebDavUiDeviceTest {
 
         fixture?.let { active ->
             runCatching {
+                runBlocking { SaveSyncService(appContext).clearGame(active.game) }
+            }.onFailure(failures::add)
+            runCatching {
                 runBlocking {
-                    runCatching { SaveSyncService(appContext).clearGame(active.game) }
                     GameLibraryFacade.removeGame(appContext, active.game.uri)
                     awaitLibraryCount(0)
                     withTimeout(LIBRARY_CLEANUP_TIMEOUT_MS) {
@@ -169,8 +173,8 @@ class WebDavUiDeviceTest {
                     val mirror = appContext.getSharedPreferences("game_scanner", Context.MODE_PRIVATE)
                     check(mirror.edit().putString("scan_games", mirror.getString("scan_games", "")).commit())
                 }
-                active.deleteOwnedFiles()
             }.onFailure(failures::add)
+            runCatching { active.deleteOwnedFiles() }.onFailure(failures::add)
         }
 
         runCatching {
@@ -457,9 +461,10 @@ class WebDavUiDeviceTest {
         val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot()) {
             "UiAutomation.takeScreenshot returned null for $name"
         }
-        val directory = requireNotNull(targetContext.getExternalFilesDir(EVIDENCE_DIRECTORY)) {
+        val evidenceRoot = requireNotNull(targetContext.getExternalFilesDir(EVIDENCE_DIRECTORY)) {
             "External evidence directory unavailable"
         }
+        val directory = File(evidenceRoot, evidenceRun)
         check(directory.isDirectory || directory.mkdirs())
         val profile = safeName(InstrumentationRegistry.getArguments()
             .getString("webdav_evidence_profile") ?: "phone")

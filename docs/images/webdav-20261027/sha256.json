@@ -63,5 +63,20 @@
     "file": "tablet-width-simulation-save-management-theme-default-light.png",
     "sha256": "a6e5a8177ff49d32d8d29a6cce7b77f7e48dd54d2660308e9a0bf8c680ba773b",
     "bytes": 306137
+  },
+  {
+    "file": "api26-save-management-theme-default-light.png",
+    "sha256": "23ac235edd009b9a07384f1986ea805bd4161769cdd6f31ba14d8d2461fb328e",
+    "bytes": 200281
+  },
+  {
+    "file": "api26-webdav-theme-default-light.png",
+    "sha256": "a0b3fb16ded990ef1537e6680b8cf0c5a5920e226d9ee9998c07a90a46481fc9",
+    "bytes": 204492
+  },
+  {
+    "file": "phone-talkback-password-label.png",
+    "sha256": "e7cd09d55b5377b3c3d30a33cd479c6d8f293860dfd8643d41ec03cd70538ea1",
+    "bytes": 304533
   }
 ]

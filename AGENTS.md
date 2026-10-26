@@ -613,7 +613,7 @@ Column(fillMaxSize)                                // 页面根
 
 JVM 回归使用 JUnit 4，位于 app/engine 各自的 `src/test/`；覆盖扫描、设置解析、存档、输入、宿主生命周期与图形策略。测试聚焦行为和边界，不镜像实现，也不为纯文档修改新增业务测试。真机用例与 release R8 probe 的构建、安装和能力边界分别见 [androidTest](app/src/androidTest/README.md) 与 [releaseProbe](app/src/releaseProbe/README.md)；普通 Android CI 未自动运行设备验收。
 
-设备测试 JNI probe 的构建脚本当前只选择 Linux/macOS NDK host 路径，Windows 不能直接照搬这些测试 APK 构建命令；这不影响普通 App 构建与 JVM 测试命令的适用说明。
+设备测试 JNI probe 的构建脚本按 Windows/Linux/macOS 选择 NDK host 与编译器文件名；本机须安装上述 NDK。WebDAV 专用设备验收与不加载原生库的旧版系统验证边界见 [WebDAV 设备记录](docs/WebDAV-device-acceptance.md)，不得把框架测试当作游戏运行库验收。
 
 Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既有 v1→v2 与降级恢复保留破坏性重建策略，不扩大例外。
 

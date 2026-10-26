@@ -1,5 +1,6 @@
 package com.tyranor.next.core.game.save.sync
 
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -7,6 +8,7 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.SystemClock
 import android.os.Bundle
+import android.os.Process
 import android.view.WindowManager
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -139,6 +141,7 @@ class SaveSyncDeviceTest {
 
     @Test
     fun explicitRestoreCanFlushWithoutEverLaunchingAGameHost() = runBlocking {
+        clearOwnedProbeEvidence()
         withFixture { fixture ->
             val hash = fixture.write("selected-before-first-launch")
             assertClean(fixture.service.syncGame(fixture.game, SaveSyncDirection.UPLOAD), uploaded = 1)
@@ -224,6 +227,24 @@ class SaveSyncDeviceTest {
         assumeTrue("Explicit device acceptance opt-in required",
             InstrumentationRegistry.getArguments().getString("webdav_device_acceptance") == "true")
         return context
+    }
+
+    private suspend fun clearOwnedProbeEvidence() {
+        val context = acceptanceContext()
+        val processName = context.packageName + ":webdav_acceptance_host"
+        val hosts = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/hosts"))
+        val key = SaveContentHash.text(processName)
+        val processes = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val probe = processes.runningAppProcesses.orEmpty().singleOrNull {
+            it.processName == processName && it.uid == Process.myUid()
+        }
+        if (probe != null) {
+            // Other methods may leave this test-only process cached in the same runner.
+            Process.killProcess(probe.pid)
+            await(5_000) { processes.runningAppProcesses.orEmpty().none { it.pid == probe.pid } }
+        }
+        hosts.remove(key)
+        assertTrue("The first-host regression must start without any host evidence", hosts.keys().isEmpty())
     }
 
     private fun assertClean(report: SaveSyncReport, uploaded: Int? = null) {
@@ -312,37 +333,51 @@ class SaveSyncDeviceTest {
                 return
             }
             stage("fixture: closing")
-            try {
+            val failures = mutableListOf<Throwable>()
+            suspend fun attempt(block: suspend () -> Unit) {
+                try {
+                    block()
+                } catch (failure: Throwable) {
+                    failures += failure
+                }
+            }
+            attempt {
                 WebDavSettingsStore.setEnabled(context, false)
                 stage("fixture: disabled")
+            }
+            attempt {
                 SaveSyncWorker.cancel(context)
-                // The opt-in host always finishes within ten seconds, including assertion failures.
                 val deadline = SystemClock.elapsedRealtime() + 20_000
                 while (SaveSyncRuntime.isGameRunning(context, game) && SystemClock.elapsedRealtime() < deadline) {
                     delay(200)
                 }
-                if (registered) {
-                    stage("fixture: clearing private game state")
-                    service.clearGame(game)
-                    GameLibraryFacade.removeGame(context, game.uri)
-                    withTimeout(5_000) {
-                        while (GameLibraryDatabase.get(context).gameLibraryDao().getAllGames().any { it.uri == game.uri } ||
-                            context.getSharedPreferences("game_scanner", Context.MODE_PRIVATE)
-                                .getString("scan_games", "").orEmpty().contains(game.uri)) delay(50)
-                    }
-                    val mirror = context.getSharedPreferences("game_scanner", Context.MODE_PRIVATE)
-                    check(mirror.edit().putString("scan_games", mirror.getString("scan_games", "")).commit())
-                    manager.cleanupAppData(game)
+            }
+            stage("fixture: clearing private game state")
+            attempt { service.clearGame(game) }
+            attempt { GameLibraryFacade.removeGame(context, game.uri) }
+            attempt {
+                withTimeout(5_000) {
+                    while (GameLibraryDatabase.get(context).gameLibraryDao().getAllGames().any { it.uri == game.uri } ||
+                        context.getSharedPreferences("game_scanner", Context.MODE_PRIVATE)
+                            .getString("scan_games", "").orEmpty().contains(game.uri)) delay(50)
                 }
-                root.deleteRecursively()
-            } finally {
-                stage("fixture: closing HTTP fixture")
-                server.close()
-                stage("fixture: restoring settings")
-                WebDavSettingsStore.setEnabled(context, true)
+                val mirror = context.getSharedPreferences("game_scanner", Context.MODE_PRIVATE)
+                check(mirror.edit().putString("scan_games", mirror.getString("scan_games", "")).commit())
+            }
+            attempt { manager.cleanupAppData(game) }
+            attempt { check(root.deleteRecursively()) }
+            stage("fixture: closing HTTP fixture")
+            attempt { server.close() }
+            stage("fixture: restoring settings")
+            attempt { WebDavSettingsStore.setEnabled(context, true) }
+            attempt {
                 if (oldConfig.configured) WebDavSettingsStore.save(context, oldConfig)
                 else WebDavSettingsStore.reset(context)
-                WebDavSettingsStore.setEnabled(context, oldConfig.enabled)
+            }
+            attempt { WebDavSettingsStore.setEnabled(context, oldConfig.enabled) }
+            failures.firstOrNull()?.let { first ->
+                failures.drop(1).forEach(first::addSuppressed)
+                throw first
             }
         }
     }

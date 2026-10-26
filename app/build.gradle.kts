@@ -107,6 +107,15 @@ if (webdavDeviceProbe) {
         "The WebDAV device probe requires a dedicated webdavacceptance application ID"
     }
 }
+val webdavFrameworkProbe = providers.gradleProperty("webdavFrameworkProbe").orNull.let { value ->
+    require(value == null || value == "true" || value == "false") { "webdavFrameworkProbe must be true or false" }
+    value == "true"
+}
+if (webdavFrameworkProbe) {
+    require(webdavDeviceProbe && gradle.startParameter.taskNames.none { it.contains("release", ignoreCase = true) }) {
+        "The framework-only WebDAV probe requires the dedicated debug device probe"
+    }
+}
 val ethornellReleaseProbe = providers.gradleProperty("ethornellReleaseProbe").orNull.let { value ->
     require(value == null || value == "true" || value == "false") { "ethornellReleaseProbe must be true or false" }
     value == "true"
@@ -262,6 +271,8 @@ android {
     packaging {
       jniLibs {
         useLegacyPackaging = true
+        // Old x86 emulators exercise Android storage/UI, never the arm64 game runtimes.
+        if (webdavFrameworkProbe) excludes += "**/*.so"
       }
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -349,9 +360,14 @@ val compileEthornellTestProbe by tasks.registering(CompileEthornellTestProbe::cl
     val compiler = if (hostOs.contains("Windows")) "clang++.exe" else "clang++"
     compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/$compiler")
 }
+androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) { variant ->
+    if (webdavFrameworkProbe) variant.enable = false
+}
 androidComponents.onVariants(androidComponents.selector().withBuildType(ethornellTestBuildType)) { variant ->
-    variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
-        compileEthornellTestProbe, CompileEthornellTestProbe::jniOutput)
+    if (!webdavFrameworkProbe) {
+        variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
+            compileEthornellTestProbe, CompileEthornellTestProbe::jniOutput)
+    }
     if (ethornellReleaseProbe) {
         variant.androidTest?.sources?.java?.addStaticSourceDirectory("src/releaseProbe/java")
     }
