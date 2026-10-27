@@ -17,6 +17,7 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
 import com.core.rpgmaker.parseRangeHeader
+import com.core.rpgmaker.RpgMakerFileIndex
 import com.core.web.AsarWebRoot
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
@@ -49,6 +50,11 @@ internal class TyranoLocalHttpServer(
     @Volatile
     private var running = true
     private val clients: ThreadPoolExecutor
+    private val pluginIndexToken = java.util.UUID.randomUUID().toString()
+    private val pluginIndexEnabled = this.scriptAppends.containsKey("js/plugins/dktools.js")
+    private val pluginFileIndex by lazy {
+        runCatching { RpgMakerFileIndex(this.root, asarPrefix = asarRootPrefix, legacyArchive = this.asar).build() }
+    }
 
     init {
         this.root = root.canonicalFile
@@ -135,6 +141,25 @@ internal class TyranoLocalHttpServer(
             uri = URLDecoder.decode(uri, StandardCharsets.UTF_8.name())
             if (uri == "/") uri = "/index.html"
             while (uri.startsWith("/")) uri = uri.substring(1)
+            if (uri == RpgMakerFileIndex.RESOURCE_PATH) {
+                if (!pluginIndexEnabled) {
+                    sendText(socket, 404, "Not Found", "not found")
+                    return
+                }
+                val authorized = headers["cookie"].orEmpty().split(';').any {
+                    it.trim() == "tyranorPluginIndex=$pluginIndexToken"
+                }
+                if (!authorized) {
+                    sendText(socket, 403, "Forbidden", "forbidden")
+                    return
+                }
+                val original = resolveRequestedFile("data/Stamp.json")
+                val bytes = if (original.file != null || original.asarPath != null) {
+                    "null".toByteArray(StandardCharsets.UTF_8)
+                } else pluginFileIndex.getOrThrow()
+                sendBytes(socket, bytes, uri, method.equals("HEAD", true))
+                return
+            }
             internalResources[uri.lowercase(Locale.ROOT)]?.let { resource ->
                 sendBytes(socket, resource, uri, method.equals("HEAD", true))
                 return
@@ -145,7 +170,9 @@ internal class TyranoLocalHttpServer(
             if (asarEntry != null) {
                 // 仅 index 注入与脚本追加需要整体字节；其余（含视频）按 Range 流式读取，避免大文件整体入内存。
                 if (isIndexHtml(uri)) sendInjectedIndex(socket, asar?.read(asarEntry), headOnly)
-                else if (hasScriptAppend(uri)) sendAppendedBytes(socket, asar?.read(asarEntry) ?: ByteArray(0), uri, headOnly)
+                else if (hasScriptAppend(uri) && !isOversizedDkTools(uri, asar?.fileSize(asarEntry) ?: 0L)) {
+                    sendAppendedBytes(socket, asar?.read(asarEntry) ?: ByteArray(0), uri, headOnly)
+                }
                 else sendAsarResource(socket, asarEntry, headers["range"], headOnly)
                 return
             }
@@ -272,7 +299,8 @@ internal class TyranoLocalHttpServer(
         val data = buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
         Log.i(TAG, "served injected index bytes=${data.size} hook=${tyranoHook.size}")
         val out = BufferedOutputStream(socket.getOutputStream())
-        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
+        val indexCookie = if (pluginIndexEnabled) "Set-Cookie: tyranorPluginIndex=$pluginIndexToken; Path=/; HttpOnly; SameSite=Strict\r\n" else ""
+        out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-cache\r\nAccess-Control-Allow-Origin: *\r\n${indexCookie}Content-Length: ${data.size}\r\nConnection: close\r\n\r\n").toByteArray(StandardCharsets.UTF_8))
         if (!headOnly) out.write(data)
         out.flush()
     }
@@ -280,7 +308,17 @@ internal class TyranoLocalHttpServer(
     private fun hasScriptAppend(uri: String): Boolean = scriptAppends.containsKey(uri.lowercase(Locale.ROOT))
 
     private fun sendAppendedFile(socket: Socket, file: File, uri: String, headOnly: Boolean) {
+        if (isOversizedDkTools(uri, file.length())) {
+            sendFile(socket, file, null, headOnly)
+            return
+        }
         sendAppendedBytes(socket, file.readBytes(), uri, headOnly)
+    }
+
+    private fun isOversizedDkTools(uri: String, size: Long): Boolean {
+        val oversized = uri.equals("js/plugins/dktools.js", true) && size > 8L * 1024 * 1024
+        if (oversized) Log.w(TAG, "DKTools hook skipped: script exceeds 8 MiB")
+        return oversized
     }
 
     private fun sendAppendedBytes(socket: Socket, original: ByteArray, uri: String, headOnly: Boolean) {

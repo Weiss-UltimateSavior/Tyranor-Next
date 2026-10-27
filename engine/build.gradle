@@ -130,3 +130,13 @@ def verifyGraphicsResources = tasks.register('verifyGraphicsResources', VerifyGr
 }
 tasks.named('preBuild') { dependsOn verifyGraphicsResources }
 tasks.named('check') { dependsOn verifyGraphicsResources }
+
+tasks.register('dkToolsHarness', Exec) {
+    description = 'Verifies browser DKTools filesystem-index compatibility.'
+    group = 'verification'
+    workingDir = layout.projectDirectory.dir('src/test/js')
+    commandLine 'node', 'dktools-compat.harness.js'
+    onlyIf { !skipJsHarness }
+}
+
+tasks.named('check') { dependsOn 'dkToolsHarness' }

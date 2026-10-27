@@ -168,6 +168,9 @@ class TyranoActivity : Activity() {
             }
             val hook = hookAsset?.let { assets.open(it).buffered().use { input -> input.readBytes() } } ?: ByteArray(0)
             val scriptAppends = mutableMapOf<String, ByteArray>()
+            if (webGameType == WebGameType.RPG_MV || webGameType == WebGameType.RPG_MZ) {
+                scriptAppends["js/plugins/dktools.js"] = loadAsset("rpgmaker/__dktools_compat.js")
+            }
             if (webGameType == WebGameType.RPG_MZ) {
                 scriptAppends["js/rmmz_core.js"] = loadAsset(RPG_MZ_CORE_HOOK_ASSET)
                 scriptAppends["js/rmmz_managers.js"] = loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET)

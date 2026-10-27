@@ -76,6 +76,21 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
         return e != null && e.directory
     }
 
+    /** Direct child metadata for browser plugin indexes; file contents remain in the archive. */
+    fun children(path: String): List<Pair<String, Boolean>> {
+        val prefix = normalize(path).trimEnd('/').let { if (it.isEmpty()) "" else "$it/" }
+        val children = linkedMapOf<String, Boolean>()
+        for ((key, entry) in entries) {
+            if (!key.startsWith(prefix)) continue
+            val relative = key.substring(prefix.length)
+            if (relative.isEmpty()) continue
+            val slash = relative.indexOf('/')
+            val name = if (slash < 0) relative else relative.substring(0, slash)
+            children[name] = (children[name] ?: false) || slash >= 0 || entry.directory
+        }
+        return children.map { it.key to it.value }
+    }
+
     fun read(path: String): ByteArray? {
         return try {
             val e = entries[normalize(path)] ?: return null

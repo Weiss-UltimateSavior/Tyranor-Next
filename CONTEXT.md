@@ -41,7 +41,7 @@ _Avoid_: 应用快捷方式、外置模拟器游戏
 _Avoid_: 外置模块（指 APK 引擎模块）、内置引擎
 
 **引擎网页壳（Tyranor Web 运行环境）**:
-内置 Web 运行时，承载 TyranoBuilder、WebOther、VN、RPG Maker MV/MZ 等网页形态游戏；各引擎共用同一颗网页壳版本（Tyranor-2.3.4，为原逆向 app 内置）。
+内置 Web 运行时，承载 TyranoBuilder、WebOther、VN、RPG Maker MV/MZ 等网页形态游戏；各引擎共用同一颗网页壳版本（Tyranor-2.3.4，为原逆向 app 内置）。MV/MZ 的 DKTools 缺少浏览器文件索引时，由对应宿主提供会话内只读目录索引；原有索引保持优先，不改写游戏文件，覆盖原版网页壳和 TynMV/TynMZ。
 _Avoid_: Chrome、NW.js 环境
 
 **TynMV / TynMZ**:
