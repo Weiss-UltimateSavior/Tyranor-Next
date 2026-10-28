@@ -683,6 +683,8 @@ internal fun GameActionsSheet(
     val drawerSaveManagementTitle = stringResource(R.string.game_save_management)
     val drawerOnlinePatchTitle = stringResource(R.string.game_online_patch)
     val drawerEngineSettingsTitle = stringResource(R.string.settings_engine_settings)
+    val drawerWinlatorShortcutTitle = stringResource(R.string.game_winlator_launch)
+    val drawerWinlatorShortcutSummary = stringResource(R.string.game_winlator_launch_summary)
     val drawerDeleteTitle = stringResource(R.string.game_delete_title)
     val drawerPrimaryColor = MaterialTheme.colorScheme.primary
     val drawerDangerColor = MaterialTheme.colorScheme.error
@@ -734,6 +736,20 @@ internal fun GameActionsSheet(
             } else {
                 launchWithSaveFormatGate(null)
             }
+        }
+    }
+
+    /**
+     * Winlator 快捷方式启动：只打开 Winlator 内已存在的 .desktop。
+     * 容器 ID / 快捷方式名由 [EngineLauncher.openWinlatorShortcut] 在自己的 IO 协程里回退读取，
+     * 这里不再先读一遍设置（`getStr` 会同步等待 DB/prefs 同步，避免阻塞主线程）。
+     */
+    fun launchWinlatorShortcut() {
+        scope.launch {
+            launchError = EngineLauncher
+                .openWinlatorShortcut(context, game)
+                .toErrorState(context)
+            if (launchError == null) onDismiss()
         }
     }
 
@@ -969,6 +985,21 @@ internal fun GameActionsSheet(
                         showArrow = false,
                         leadingIconTint = MaterialTheme.colorScheme.primary,
                         onClick = { showLaunchFilePicker = true },
+                    )
+                }
+            }
+            // Winlator 系引擎额外提供「打开已有快捷方式」入口：不重新下发 exe/参数，只跳转 .desktop。
+            if (ExternalEmulatorRegistry.forEngine(game.engine)?.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL) {
+                item {
+                    AppNavItem(
+                        title = drawerWinlatorShortcutTitle,
+                        summary = drawerWinlatorShortcutSummary,
+                        leadingIcon = R.drawable.ic_sheet_pc,
+                        containerColor = drawerItemSurface,
+                        verticalPadding = 17.dp,
+                        showArrow = false,
+                        leadingIconTint = MaterialTheme.colorScheme.primary,
+                        onClick = { launchWinlatorShortcut() },
                     )
                 }
             }

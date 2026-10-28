@@ -120,6 +120,43 @@ object ExternalEmulatorLauncher {
         }
     }
 
+    /**
+     * 打开 Winlator 中**已存在**的快捷方式（`.desktop`）：只传容器 ID + 快捷方式绝对路径，
+     * 不重新下发 `dir_path`/`exe_path` 与图形参数，也不写回容器配置。
+     *
+     * 错误码与 [launchWinlator] 一致。
+     */
+    fun launchWinlatorShortcut(
+        context: Context,
+        target: EmulatorTarget,
+        containerId: Int,
+        shortcutPath: String,
+        launchId: String?,
+    ): Result {
+        val app = context.applicationContext
+        if (!isInstalled(app, target)) return Result(false, CODE_PACKAGE_NOT_INSTALLED, target)
+        val component = ComponentName(target.packageName, target.activityName)
+        if (!resolvesComponent(app, component)) return Result(false, CODE_EXTERNAL_LAUNCH_UNSUPPORTED, target)
+        val intent = Intent().apply {
+            this.component = component
+            if (containerId > 0) putExtra(WinlatorContract.EXTRA_CONTAINER_ID, containerId)
+            putExtra(WinlatorContract.EXTRA_SHORTCUT_PATH, shortcutPath)
+            putExtra(WinlatorContract.EXTRA_CONFIRM, true)
+            launchId?.takeIf { it.isNotBlank() }?.let { putExtra(WinlatorContract.EXTRA_LAUNCH_ID, it) }
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return try {
+            app.startActivity(intent)
+            Result(true, "success", target)
+        } catch (_: ActivityNotFoundException) {
+            Result(false, CODE_ACTIVITY_NOT_FOUND, target)
+        } catch (_: SecurityException) {
+            Result(false, CODE_SECURITY_EXCEPTION, target)
+        } catch (_: Throwable) {
+            Result(false, CODE_LAUNCH_EXCEPTION, target)
+        }
+    }
+
     /** 目标组件是否可解析（包可见性由 manifest `<queries>` 保障）。 */
     private fun resolvesComponent(context: Context, component: ComponentName): Boolean = try {
         context.packageManager.resolveActivity(Intent().setComponent(component), 0) != null

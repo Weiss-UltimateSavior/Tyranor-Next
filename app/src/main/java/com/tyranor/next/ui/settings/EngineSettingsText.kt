@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import com.tyranor.next.R
-import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.GraphicsFilterCatalog
 import com.tyranor.next.core.settings.GraphicsFilterCategory
@@ -333,18 +332,70 @@ internal fun winlatorTimezoneOptions(): List<Pair<String, String>> =
     listOf("" to stringResource(R.string.engine_settings_winlator_follow_container)) +
         EngineSettingsStore.WINLATOR_TIMEZONES.map { it to it }
 
-/** 全局与单游戏共用的图形加速选项，区分容器渲染器与显式 OpenGL/GDI 预设。 */
+/** 全局与单游戏共用的图形加速选项；WineD3D 的渲染器由独立下拉细分。 */
 @Composable
 internal fun winlatorDxWrapperOptions(): List<Pair<String, String>> =
     EngineSettingsStore.WINLATOR_DXWRAPPERS.map { value ->
         value to when (value) {
             "" -> stringResource(R.string.engine_settings_winlator_follow_container)
-            "wined3d" -> stringResource(R.string.engine_settings_winlator_wined3d_container)
-            WinlatorContract.DXWRAPPER_WINED3D_GL -> stringResource(R.string.engine_settings_winlator_wined3d_gl)
-            WinlatorContract.DXWRAPPER_WINED3D_GDI -> stringResource(R.string.engine_settings_winlator_wined3d_gdi)
             else -> value
         }
     }
+
+/** WineD3D 渲染器（仅「图形加速 = wined3d」时展示/下发）。 */
+@Composable
+internal fun winlatorWined3dRendererOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_settings_winlator_follow_container)) +
+        EngineSettingsStore.WINLATOR_WINED3D_RENDERERS.map { it to winlatorWined3dRendererLabel(it) }
+
+internal fun winlatorWined3dRendererLabel(renderer: String): String = when (renderer) {
+    "gdi" -> "GDI"
+    "gl" -> "GL"
+    "vulkan" -> "Vulkan"
+    else -> renderer
+}
+
+/** 音频驱动（空串 = 跟随容器配置）。 */
+@Composable
+internal fun winlatorAudioDriverOptions(): List<Pair<String, String>> =
+    listOf("" to stringResource(R.string.engine_settings_winlator_follow_container)) +
+        EngineSettingsStore.WINLATOR_AUDIO_DRIVERS.map { it to winlatorAudioDriverLabel(it) }
+
+internal fun winlatorAudioDriverLabel(driver: String): String = when (driver) {
+    "alsa" -> "ALSA"
+    "pulseaudio" -> "PulseAudio"
+    else -> driver
+}
+
+/**
+ * Win Components 单组件三态：跟随容器配置（不下发）/ 内置 Wine / 外置 Windows。
+ * 取值与 winlator-cn `array/wincomponent_entries` 的下标一致：0 = 内置，1 = 外置。
+ */
+@Composable
+internal fun winlatorWinComponentOptions(): List<Pair<String, String>> = listOf(
+    "" to stringResource(R.string.engine_settings_winlator_follow_container),
+    EngineSettingsStore.WINLATOR_WIN_COMPONENT_BUILTIN to
+        stringResource(R.string.engine_settings_winlator_win_component_builtin),
+    EngineSettingsStore.WINLATOR_WIN_COMPONENT_NATIVE to
+        stringResource(R.string.engine_settings_winlator_win_component_native),
+)
+
+/** 组件标题（与 Winlator 容器设置「Win Components」页逐项对应）。 */
+@Composable
+internal fun winlatorWinComponentTitle(key: String): String = stringResource(
+    when (key) {
+        "direct3d" -> R.string.engine_settings_winlator_win_component_direct3d
+        "directsound" -> R.string.engine_settings_winlator_win_component_directsound
+        "directmusic" -> R.string.engine_settings_winlator_win_component_directmusic
+        "directshow" -> R.string.engine_settings_winlator_win_component_directshow
+        "directplay" -> R.string.engine_settings_winlator_win_component_directplay
+        "xaudio" -> R.string.engine_settings_winlator_win_component_xaudio
+        "vcrun2005" -> R.string.engine_settings_winlator_win_component_vcrun2005
+        "vcrun2010" -> R.string.engine_settings_winlator_win_component_vcrun2010
+        "wmdecoder" -> R.string.engine_settings_winlator_win_component_wmdecoder
+        else -> R.string.engine_settings_winlator_win_component_unknown
+    },
+)
 
 @Composable
 internal fun winlatorBox64PresetOptions(): List<Pair<String, String>> =
@@ -395,6 +446,16 @@ internal fun winlatorLcAllOptionsMap(): Map<String, String> = winlatorLcAllOptio
 
 @Composable
 internal fun winlatorTimezoneOptionsMap(): Map<String, String> = winlatorTimezoneOptions().toMap()
+
+@Composable
+internal fun winlatorWined3dRendererOptionsMap(): Map<String, String> =
+    winlatorWined3dRendererOptions().toMap()
+
+@Composable
+internal fun winlatorAudioDriverOptionsMap(): Map<String, String> = winlatorAudioDriverOptions().toMap()
+
+@Composable
+internal fun winlatorWinComponentOptionsMap(): Map<String, String> = winlatorWinComponentOptions().toMap()
 
 @Composable
 internal fun artPatchOptionsMap(): Map<String, String> = artPatchOptions().toMap()
