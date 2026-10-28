@@ -26,7 +26,15 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     private val raf: RandomAccessFile
     private val dataOffset: Long
     private val entries = HashMap<String, Entry>()
-    private val childrenIndex: AsarChildrenIndex
+    private val childrenIndexResult by lazy {
+        try {
+            Result.success(AsarChildrenIndex(entries.asSequence().map { it.key to it.value.directory }.asIterable()))
+        } catch (error: AsarChildrenIndex.LimitExceeded) {
+            // 归档元数据在会话中不变；只缓存确定的预算失败，中断仍允许重试。
+            Result.failure(error)
+        }
+    }
+    private val childrenIndex get() = childrenIndexResult.getOrThrow()
 
     init {
         archiveFile = file?.canonicalFile
@@ -52,7 +60,6 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
             opened.readFully(jsonBytes)
             parseNode("", JSONObject(String(jsonBytes, StandardCharsets.UTF_8)))
             validateEntries(opened.length(), parsedDataOffset)
-            childrenIndex = AsarChildrenIndex(entries.map { it.key to it.value.directory })
         } catch (error: Exception) {
             try { opened.close() } catch (_: Throwable) {
                 // 流关闭失败可安全忽略（资源由 GC 最终回收）
@@ -85,9 +92,10 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
      * 先读再判上限等于上限失效（本类允许单条目至 [MAX_ENTRY_BYTES]）。
      */
     fun entrySize(path: String?): Long? {
-        val e = entries[normalize(path)] ?: return null
+        val key = normalize(path)
+        val e = entries[key] ?: return null
         if (e.directory) return null
-        return e.size
+        return if (e.unpacked) resolveUnpackedFile(key)?.length() else e.size
     }
 
     /**
@@ -221,6 +229,8 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     fun getArchiveName(): String {
         return archiveFile?.name ?: ""
     }
+
+    fun getArchiveFile(): File = requireNotNull(archiveFile)
 
     @Throws(IOException::class)
     private fun validateEntries(archiveLength: Long, parsedDataOffset: Long) {
