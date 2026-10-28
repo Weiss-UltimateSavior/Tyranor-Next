@@ -755,6 +755,7 @@ class SaveSyncServiceTest {
             val report = withTimeout(5_000) { queued.await() }
             assertEquals(1, report.busy)
             assertTrue(report.failures.isEmpty())
+            assertTrue(harness.snapshots.list(key).isEmpty())
             assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
         }
     }
