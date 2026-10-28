@@ -83,6 +83,7 @@ tasks.register('jsHarness', RunJsHarness) {
     description = 'Runs the v2 compatibility-layer JS harness (requires Node.js).'
     group = 'verification'
     scriptFile.set(layout.projectDirectory.file('src/test/js/v2-fs-bridge.harness.js'))
+    inputs.files(fileTree('src/main/assets/rpgmaker') { include '*.js' })
     // 只有在显式传 -PskipJsHarness 时才跳过；其余情况一律执行
     onlyIf { !skipJsHarness }
 }
@@ -121,6 +122,8 @@ tasks.register('dkToolsHarness', RunJsHarness) {
     description = 'Verifies browser DKTools filesystem-index compatibility.'
     group = 'verification'
     scriptFile.set(layout.projectDirectory.file('src/test/js/dktools-compat.harness.js'))
+    inputs.file('src/main/assets/rpgmaker/__dktools_compat.js')
+    inputs.file('src/main/java/com/core/web/DkToolsCompat.kt')
     onlyIf { !skipJsHarness }
 }
 
