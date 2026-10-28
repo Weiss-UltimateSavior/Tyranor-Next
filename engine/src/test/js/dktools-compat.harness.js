@@ -3,10 +3,12 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const hook = fs.readFileSync(path.join(__dirname, '../../main/assets/rpgmaker/__dktools_compat.js'), 'utf8');
-function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 200 } = {}) {
+let scenarios = 0;
+function run({ index = { locales: {} }, nwjs = false, mode = 0, status = 200, stamp = {} } = {}) {
+    scenarios++;
     let originalCalls = 0;
     let requests = 0;
-    const io = { MODE_NWJS_STAMP: 0, mode, _stamp: {}, _loadStamp() { originalCalls++; } };
+    const io = { MODE_NWJS_STAMP: 0, mode, _stamp: stamp, _loadStamp() { originalCalls++; } };
     const context = vm.createContext({ DKTools: { IO: io }, Utils: { isNwjs: () => nwjs }, console,
         XMLHttpRequest: class {
             open(method, url, async) { assert.equal(url, '__tyranor_internal/dktools-index.json'); assert.equal(async, false); }
@@ -28,4 +30,10 @@ assert.equal(run({ nwjs: true }).requests, 0, 'Native Node IO remains unchanged'
 assert.equal(run({ mode: 1 }).requests, 0, 'Standard desktop IO mode remains unchanged');
 assert.equal(run({ status: 500 }).originalCalls, 1, 'Failed generation preserves the original error path');
 assert.equal(run({ index: [] }).originalCalls, 1, 'Malformed indexes are rejected');
-console.log('DKTools compatibility harness: 7 scenarios passed');
+const stamp = { locales: { existing: true } };
+const preserved = run({ stamp });
+assert.equal(preserved.requests, 0, 'An existing non-empty stamp must not fetch a replacement');
+assert.strictEqual(preserved.io._stamp, stamp);
+assert.equal(preserved.originalCalls, 1);
+assert.equal(run({ mode: 42 }).requests, 0, 'Unknown modes remain owned by the original plugin');
+console.log(`DKTools compatibility harness: ${scenarios} scenarios passed`);
