@@ -79,6 +79,14 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 
+      - name: Set up Node.js for web compatibility regression tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run web compatibility harnesses
+        run: ./gradlew :engine:jsHarness :engine:dkToolsHarness --no-daemon
+
   assemble-debug:
     name: Assemble Debug
     needs: [regression-checks, ethornell-native]
