@@ -16,6 +16,7 @@ import java.net.SocketException
 import java.nio.charset.StandardCharsets
 import java.util.HashMap
 import com.core.web.AsarWebRoot
+import com.core.web.DkToolsCompat
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -59,7 +60,10 @@ internal class RpgMakerLocalHttpServer(
     // Set-Cookie，其余请求必须携带匹配 token 的 Cookie，否则 403。
     private val authToken: String = newAuthToken()
     private val pluginFileIndex by lazy {
-        runCatching { RpgMakerFileIndex(this.root, this.asar, asarRootPrefix).build() }
+        val started = System.nanoTime()
+        RpgMakerFileIndex(this.root, this.asar, asarRootPrefix).build().also {
+            Log.i(TAG, "plugin file index ready bytes=${it.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+        }
     }
 
     init {
@@ -123,7 +127,6 @@ internal class RpgMakerLocalHttpServer(
         private const val MAX_REQUEST_LINE_CHARS = 8 * 1024
         private const val MAX_HEADER_LINE_CHARS = 16 * 1024
         private const val MAX_HEADER_COUNT = 100
-        private const val MAX_APPENDED_SCRIPT_BYTES = 8L * 1024 * 1024
 
         private fun newAuthToken(): String {
             val bytes = ByteArray(16)
@@ -207,7 +210,7 @@ internal class RpgMakerLocalHttpServer(
                 val hasOriginal = existing.file != null || existing.data != null || existing.stream != null
                 existing.stream?.close()
                 // Existing game indexes remain authoritative, including malformed ones.
-                val bytes = if (hasOriginal) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex.getOrThrow()
+                val bytes = if (hasOriginal) "null".toByteArray(Charsets.UTF_8) else pluginFileIndex
                 sendBytes(socket, bytes, uri, method.equals("HEAD", true))
                 return
             }
@@ -296,7 +299,7 @@ internal class RpgMakerLocalHttpServer(
                 val streamed = asar.openStream(p) ?: continue
                 // Plugin hooks also apply to packaged scripts, which often exceed the
                 // media streaming threshold. Keep this buffering explicitly bounded.
-                if (hasScriptAppend(uri) && streamed.second <= MAX_APPENDED_SCRIPT_BYTES) {
+                if (hasScriptAppend(uri) && streamed.second <= DkToolsCompat.MAX_SCRIPT_BYTES) {
                     return ResolvedFile(null, streamed.first.use { it.readBytes() })
                 }
                 if (streamed.second >= ASAR_STREAM_THRESHOLD) {
@@ -466,7 +469,7 @@ internal class RpgMakerLocalHttpServer(
     private fun hasScriptAppend(uri: String): Boolean = scriptAppends.containsKey(uri.lowercase(Locale.ROOT))
 
     private fun sendAppendedFile(socket: Socket, file: File, uri: String, headOnly: Boolean) {
-        if (uri.equals("js/plugins/dktools.js", true) && file.length() > MAX_APPENDED_SCRIPT_BYTES) {
+        if (uri.equals(DkToolsCompat.SCRIPT_PATH, true) && file.length() > DkToolsCompat.MAX_SCRIPT_BYTES) {
             Log.w(TAG, "DKTools hook skipped: script exceeds 8 MiB")
             sendFile(socket, file, null, headOnly)
             return

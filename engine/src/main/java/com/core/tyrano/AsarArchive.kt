@@ -1,6 +1,7 @@
 package com.core.tyrano
 
 import android.util.Log
+import com.core.web.AsarChildrenIndex
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.EOFException
@@ -26,6 +27,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     private val raf: RandomAccessFile
     private val dataOffset: Long
     private val entries = HashMap<String, Entry>()
+    private val childrenIndex: AsarChildrenIndex
 
     init {
         archiveFile = file?.canonicalFile
@@ -51,6 +53,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
             opened.readFully(jsonBytes)
             parseNode("", JSONObject(String(jsonBytes, StandardCharsets.UTF_8)))
             validateEntries(opened.length(), parsedDataOffset)
+            childrenIndex = AsarChildrenIndex(entries.map { it.key to it.value.directory }, includeEmptyNames = true)
         } catch (error: Exception) {
             try { opened.close() } catch (_: Throwable) {
                 // 流关闭失败可安全忽略（资源由 GC 最终回收）
@@ -78,17 +81,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
 
     /** Direct child metadata for browser plugin indexes; file contents remain in the archive. */
     fun children(path: String): List<Pair<String, Boolean>> {
-        val prefix = normalize(path).trimEnd('/').let { if (it.isEmpty()) "" else "$it/" }
-        val children = linkedMapOf<String, Boolean>()
-        for ((key, entry) in entries) {
-            if (!key.startsWith(prefix)) continue
-            val relative = key.substring(prefix.length)
-            if (relative.isEmpty()) continue
-            val slash = relative.indexOf('/')
-            val name = if (slash < 0) relative else relative.substring(0, slash)
-            children[name] = (children[name] ?: false) || slash >= 0 || entry.directory
-        }
-        return children.map { it.key to it.value }
+        return childrenIndex.children(normalize(path).trimEnd('/'))
     }
 
     fun read(path: String): ByteArray? {

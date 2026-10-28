@@ -1,5 +1,7 @@
 package com.core.rpgmaker
 
+import com.core.web.DkToolsCompat
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -245,7 +247,7 @@ class RpgMakerActivity : Activity() {
                 )
             } else {
                 emptyMap()
-            }) + mapOf("js/plugins/dktools.js" to loadAsset("rpgmaker/__dktools_compat.js"))
+            }) + mapOf(DkToolsCompat.SCRIPT_PATH to loadAsset(DkToolsCompat.ASSET_PATH))
             val modResources = if (rpgMakerModEnabled) {
                 mapOf(
                     RPG_MAKER_MOD_CORE_PATH to loadAsset(RPG_MAKER_MOD_CORE_ASSET),

@@ -6,6 +6,11 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.file.Files
+import java.nio.file.AccessDeniedException
+import java.nio.file.NoSuchFileException
+import java.nio.file.DirectoryStream
+import java.nio.file.DirectoryIteratorException
+import java.nio.file.Path
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Assume.assumeNoException
@@ -26,6 +31,118 @@ class RpgMakerFileIndexTest {
         assertEquals("file", language.getJSONObject("Map_zh-CN.json").getJSONObject("__stats__").getString("type"))
         assertFalse(index.toString().contains("not JSON"))
         assertFalse(File(root, "data/Stamp.json").exists())
+    }
+
+    @Test fun inaccessibleChildDoesNotHideReadableArchiveAndDiskResources() {
+        val root = temporary.newFolder("partial")
+        File(root, "denied").mkdir()
+        File(root, "good.json").writeText("{}")
+        val file = temporary.newFile("partial.asar")
+        writeTestAsar(file, packed = mapOf("denied/from-archive.json" to "{}"), emptyDirectories = setOf("denied"))
+        AsarArchive(file).use { archive ->
+            val bytes = RpgMakerFileIndex(root, archive, directoryReader = { directory ->
+                if (directory.name == "denied") throw AccessDeniedException(directory.path)
+                Files.newDirectoryStream(directory.toPath())
+            }).build()
+            val index = JSONObject(String(bytes))
+            assertTrue(index.has("good.json"))
+            assertTrue(index.getJSONObject("denied").has("from-archive.json"))
+        }
+    }
+
+    @Test fun disappearingChildDoesNotAbortOtherResources() {
+        val root = temporary.newFolder("disappearing")
+        File(root, "gone").mkdir()
+        File(root, "good.json").writeText("{}")
+        val bytes = RpgMakerFileIndex(root, directoryReader = { directory ->
+            if (directory.name == "gone") throw NoSuchFileException(directory.path)
+            Files.newDirectoryStream(directory.toPath())
+        }).build()
+        assertTrue(JSONObject(String(bytes)).has("good.json"))
+    }
+
+    @Test fun midIterationDenialClosesStreamAndKeepsArchiveFallback() {
+        val root = temporary.newFolder("iteration")
+        File(root, "partial").mkdir()
+        File(root, "partial/first.json").writeText("{}")
+        File(root, "good.json").writeText("{}")
+        val file = temporary.newFile("iteration.asar")
+        writeTestAsar(file, packed = mapOf("partial/archive.json" to "{}"), emptyDirectories = setOf("partial"))
+        var closed = false
+        AsarArchive(file).use { archive ->
+            val bytes = RpgMakerFileIndex(root, archive, directoryReader = { directory ->
+                val real = Files.newDirectoryStream(directory.toPath())
+                if (directory.name != "partial") real else object : DirectoryStream<Path> {
+                    override fun iterator(): MutableIterator<Path> {
+                        val iterator = real.iterator()
+                        var yielded = false
+                        return object : MutableIterator<Path> {
+                            override fun hasNext(): Boolean {
+                                if (yielded) throw DirectoryIteratorException(AccessDeniedException(directory.path))
+                                return iterator.hasNext()
+                            }
+                            override fun next(): Path = iterator.next().also { yielded = true }
+                            override fun remove() = throw UnsupportedOperationException()
+                        }
+                    }
+                    override fun close() { closed = true; real.close() }
+                }
+            }).build()
+            val index = JSONObject(String(bytes))
+            assertTrue(closed)
+            assertTrue(index.has("good.json"))
+            assertTrue(index.getJSONObject("partial").has("first.json"))
+            assertTrue(index.getJSONObject("partial").has("archive.json"))
+        }
+    }
+
+    @Test(expected = AccessDeniedException::class) fun unreadableRootStillFails() {
+        val root = temporary.newFolder("unreadable-root")
+        RpgMakerFileIndex(root, directoryReader = { throw AccessDeniedException(it.path) }).build()
+    }
+
+    @Test fun securityDeniedChildDoesNotAbortReadableResources() {
+        val root = temporary.newFolder("security-denied")
+        File(root, "denied").mkdir()
+        File(root, "good.json").writeText("{}")
+        val bytes = RpgMakerFileIndex(root, directoryReader = { directory ->
+            if (directory.name == "denied") throw SecurityException("denied")
+            Files.newDirectoryStream(directory.toPath())
+        }).build()
+        assertTrue(JSONObject(String(bytes)).has("good.json"))
+    }
+
+    @Test fun bothHostsRetryFailedBuildAndCacheOnlySuccessfulIndex() {
+        for (legacy in listOf(false, true)) {
+            val root = temporary.newFolder(if (legacy) "retry-legacy" else "retry-modern")
+            File(root, "index.html").writeText("<html></html>")
+            val deep = File(root, "deep")
+            File(deep, (1..66).joinToString("/") { "d" }).mkdirs()
+            val appends = mapOf("js/plugins/dktools.js" to "\n// hook".toByteArray())
+            val modernServer = if (!legacy) RpgMakerLocalHttpServer(root, null, scriptAppends = appends) else null
+            val legacyServer = if (legacy) com.core.tyrano.TyranoLocalHttpServer(root, null, scriptAppends = appends) else null
+            modernServer?.start()
+            legacyServer?.start()
+            val port = modernServer?.port ?: requireNotNull(legacyServer).port
+            try {
+                val entry = connection(port, "index.html")
+                val cookie = try {
+                    entry.inputStream.use { it.readBytes() }
+                    entry.getHeaderField("Set-Cookie").substringBefore(';')
+                } finally { entry.disconnect() }
+                assertEquals(500, request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie).first)
+                assertTrue(deep.renameTo(File(root.parentFile, root.name + "-deep-backup")))
+                File(root, "ready.json").writeText("{}")
+                val recovered = request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie)
+                assertEquals(200, recovered.first)
+                assertTrue(JSONObject(recovered.second).has("ready.json"))
+                File(root, "later.json").writeText("{}")
+                assertFalse(JSONObject(request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie).second).has("later.json"))
+            } finally {
+                modernServer?.stop()
+                legacyServer?.stop()
+            }
+        }
     }
 
     @Test fun skipsPrototypeKeysAndDevelopmentDirectories() {

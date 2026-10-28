@@ -19,6 +19,7 @@ import java.util.HashMap
 import com.core.rpgmaker.parseRangeHeader
 import com.core.rpgmaker.RpgMakerFileIndex
 import com.core.web.AsarWebRoot
+import com.core.web.DkToolsCompat
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
@@ -51,9 +52,12 @@ internal class TyranoLocalHttpServer(
     private var running = true
     private val clients: ThreadPoolExecutor
     private val pluginIndexToken = java.util.UUID.randomUUID().toString()
-    private val pluginIndexEnabled = this.scriptAppends.containsKey("js/plugins/dktools.js")
+    private val pluginIndexEnabled = this.scriptAppends.containsKey(DkToolsCompat.SCRIPT_PATH)
     private val pluginFileIndex by lazy {
-        runCatching { RpgMakerFileIndex(this.root, asarPrefix = asarRootPrefix, legacyArchive = this.asar).build() }
+        val started = System.nanoTime()
+        RpgMakerFileIndex(this.root, asarPrefix = asarRootPrefix, legacyArchive = this.asar).build().also {
+            Log.i(TAG, "plugin file index ready bytes=${it.size} elapsedMs=${(System.nanoTime() - started) / 1_000_000}")
+        }
     }
 
     init {
@@ -156,7 +160,7 @@ internal class TyranoLocalHttpServer(
                 val original = resolveRequestedFile("data/Stamp.json")
                 val bytes = if (original.file != null || original.asarPath != null) {
                     "null".toByteArray(StandardCharsets.UTF_8)
-                } else pluginFileIndex.getOrThrow()
+                } else pluginFileIndex
                 sendBytes(socket, bytes, uri, method.equals("HEAD", true))
                 return
             }
@@ -309,6 +313,7 @@ internal class TyranoLocalHttpServer(
 
     private fun sendAppendedFile(socket: Socket, file: File, uri: String, headOnly: Boolean) {
         if (isOversizedDkTools(uri, file.length())) {
+            Log.w(TAG, "DKTools hook skipped: script exceeds 8 MiB")
             sendFile(socket, file, null, headOnly)
             return
         }
@@ -316,9 +321,7 @@ internal class TyranoLocalHttpServer(
     }
 
     private fun isOversizedDkTools(uri: String, size: Long): Boolean {
-        val oversized = uri.equals("js/plugins/dktools.js", true) && size > 8L * 1024 * 1024
-        if (oversized) Log.w(TAG, "DKTools hook skipped: script exceeds 8 MiB")
-        return oversized
+        return uri.equals(DkToolsCompat.SCRIPT_PATH, true) && size > DkToolsCompat.MAX_SCRIPT_BYTES
     }
 
     private fun sendAppendedBytes(socket: Socket, original: ByteArray, uri: String, headOnly: Boolean) {

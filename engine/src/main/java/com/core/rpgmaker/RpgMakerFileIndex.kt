@@ -1,8 +1,14 @@
 package com.core.rpgmaker
 
+import android.util.Log
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.DirectoryStream
+import java.nio.file.Path
+import java.nio.file.AccessDeniedException
+import java.nio.file.NoSuchFileException
+import java.nio.file.DirectoryIteratorException
 import org.json.JSONObject
 
 /** Read-only, session-scoped directory metadata for browser plugins such as DKTools. */
@@ -14,6 +20,7 @@ internal class RpgMakerFileIndex(
     private val maxDepth: Int = 64,
     private val maxBytes: Int = 8 * 1024 * 1024,
     private val legacyArchive: com.core.tyrano.AsarArchive? = null,
+    private val directoryReader: (File) -> DirectoryStream<Path> = { Files.newDirectoryStream(it.toPath()) },
 ) {
     private val root = root.canonicalFile
     private fun archiveHas(path: String) = asar?.has(path) ?: (legacyArchive?.has(path) == true)
@@ -54,8 +61,16 @@ internal class RpgMakerFileIndex(
                     if (names.size > maxEntries - entries) throw IOException("Plugin file index exceeds directory entry limit")
                 }
                 if (disk?.isDirectory == true) {
-                    Files.newDirectoryStream(disk.toPath()).use { children ->
-                        children.forEach { addName(it.fileName.toString()) }
+                    try {
+                        directoryReader(disk).use { children ->
+                            children.forEach { addName(it.fileName.toString()) }
+                        }
+                    } catch (error: Exception) {
+                        val cause = if (error is DirectoryIteratorException) error.cause else error
+                        // Do not swallow quota/size/depth errors raised by addName().
+                        if (relative.isEmpty() ||
+                            (cause !is AccessDeniedException && cause !is NoSuchFileException && cause !is SecurityException)) throw error
+                        Log.w("YukiRpgMaker", "index skipped unreadable directory: $relative (${cause.javaClass.simpleName})")
                     }
                 }
                 if (relative.isEmpty() || archiveIsDirectory(archiveKey)) {
