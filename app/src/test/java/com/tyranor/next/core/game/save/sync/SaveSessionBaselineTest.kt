@@ -1,6 +1,7 @@
 package com.tyranor.next.core.game.save.sync
 
 import org.json.JSONObject
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -39,17 +40,17 @@ class SaveSessionBaselineTest {
     }
 
     @Test
-    fun explicitAliasSelectionRetiresOnlyOtherAliasesPendingGameplayBaselines() {
+    fun explicitAliasSelectionRetiresOnlyOtherAliasesPendingGameplayBaselines() = runBlocking {
         val sessions = SaveSyncStateStore(File(temp.root, "sessions"))
         val baselines = SaveSyncStateStore(File(temp.root, "baselines"))
         val selected = "alias-B"
         for (uri in listOf("alias-A", selected, "unrelated-C")) {
             val key = SaveContentHash.text(uri)
-            sessions.save(key, JSONObject().put("token", uri).put("baseline", "old-progress"))
-            baselines.save(key, JSONObject().put("contentHash", "old-progress"))
+            sessions.save(key, JSONObject().put("token", uri).put("baseline", "old-progress").put("activeKey", "directory-A"))
+            baselines.save(key, JSONObject().put("contentHash", "old-progress").put("activeKey", "directory-A"))
         }
 
-        clearRelatedSessionBaselines(selected, setOf("alias-A", selected), sessions, baselines)
+        clearRelatedSessionBaselines(selected, setOf("alias-A", selected), "directory-A", sessions, baselines)
 
         assertEquals(0, sessions.load(SaveContentHash.text("alias-A")).length())
         assertEquals(0, baselines.load(SaveContentHash.text("alias-A")).length())
@@ -57,5 +58,25 @@ class SaveSessionBaselineTest {
             assertEquals(uri, sessions.load(SaveContentHash.text(uri)).getString("token"))
             assertEquals("old-progress", baselines.load(SaveContentHash.text(uri)).getString("contentHash"))
         }
+    }
+
+    @Test
+    fun aliasRestoreDoesNotDeleteAnotherDirectoryOrLegacyPendingSession() = runBlocking {
+        val sessions = SaveSyncStateStore(File(temp.root, "sessions"))
+        val baselines = SaveSyncStateStore(File(temp.root, "baselines"))
+        val pendingKey = SaveContentHash.text("alias-pending-B")
+        val legacyKey = SaveContentHash.text("legacy")
+        sessions.save(pendingKey, JSONObject().put("token", "pending-B").put("activeKey", "directory-B"))
+        baselines.save(pendingKey, JSONObject().put("contentHash", "B").put("activeKey", "directory-B"))
+        sessions.save(legacyKey, JSONObject().put("token", "unbound-legacy"))
+        baselines.save(legacyKey, JSONObject().put("contentHash", "unknown"))
+
+        clearRelatedSessionBaselines("selected-A", setOf("selected-A", "alias-pending-B", "legacy"),
+            "directory-A", sessions, baselines)
+
+        assertEquals("pending-B", sessions.load(pendingKey).getString("token"))
+        assertEquals("B", baselines.load(pendingKey).getString("contentHash"))
+        assertEquals("unbound-legacy", sessions.load(legacyKey).getString("token"))
+        assertEquals("unknown", baselines.load(legacyKey).getString("contentHash"))
     }
 }

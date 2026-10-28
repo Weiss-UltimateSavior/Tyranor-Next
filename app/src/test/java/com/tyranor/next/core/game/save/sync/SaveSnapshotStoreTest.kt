@@ -301,6 +301,52 @@ class SaveSnapshotStoreTest {
         assertEquals(4, File(root, KEY_B).listFiles().orEmpty().count { SaveVersionNames.parse(it.name) != null })
     }
 
+    @Test fun corruptRecentVersionCannotEvictOldestValidVersionOnAdd() {
+        verifyCorruptQuota(maintain = false)
+    }
+
+    @Test fun maintenanceCountsOnlyValidVersionsBeforeEviction() {
+        verifyCorruptQuota(maintain = true)
+    }
+
+    @Test fun cancellationDuringEvictionValidationPreservesEveryHistoryFile() {
+        val store = SaveSnapshotStore(temp.newFolder())
+        for (time in 1L..5L) store.add(KEY_A, archive(listOf("save" to "$time")), time, SaveVersionSource.LOCAL)
+        val sixth = archive(listOf("save" to "sixth"))
+        val sixthId = SaveVersionNames.create(6L, SaveContentHash.archive(sixth))
+        sixth.copyTo(store.file(KEY_A, sixthId))
+        val before = store.list(KEY_A)
+        val cancelled = CancellationException("cancel eviction validation")
+        var checks = 0
+        try {
+            store.maintain(KEY_A) { if (++checks == 2) throw cancelled }
+            throw AssertionError("Cancellation was swallowed")
+        } catch (actual: CancellationException) { assertSame(cancelled, actual) }
+        assertEquals(before, store.list(KEY_A))
+        assertTrue(before.all { store.isValid(KEY_A, it) })
+    }
+
+    private fun verifyCorruptQuota(maintain: Boolean) {
+        val root = temp.newFolder()
+        val store = SaveSnapshotStore(root)
+        for (time in 1L..4L) store.add(KEY_A, archive(listOf("save" to "valid-$time")), time, SaveVersionSource.LOCAL)
+        val corrupt = store.add(KEY_A, archive(listOf("save" to "corrupt")), 5L, SaveVersionSource.CLOUD)
+        val corruptFile = store.file(KEY_A, corrupt.id).apply { writeText("damaged") }
+        val sixth = archive(listOf("save" to "valid-6"))
+        if (maintain) {
+            sixth.copyTo(File(corruptFile.parentFile, SaveVersionNames.create(6L, SaveContentHash.archive(sixth))))
+            store.maintain(KEY_A)
+        } else {
+            store.add(KEY_A, sixth, 6L, SaveVersionSource.LOCAL)
+        }
+        val retained = store.list(KEY_A)
+        assertEquals(listOf(6L, 4L, 3L, 2L, 1L), retained.map { it.createdAt })
+        assertTrue(retained.all { store.isValid(KEY_A, it) })
+        assertFalse(corruptFile.exists())
+        assertEquals("damaged", File(corruptFile.parentFile, corruptFile.name + ".corrupt").readText())
+        assertFalse(File(corruptFile.parentFile, corruptFile.name + ".cloud").exists())
+    }
+
     private fun archive(entries: List<Pair<String, String>>, time: Long = 1000L): File {
         val file = temp.newFile()
         ZipOutputStream(file.outputStream()).use { zip ->

@@ -7,6 +7,7 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.time.Instant
 import java.time.ZoneId
 
@@ -119,6 +120,24 @@ class SaveSyncModelsTest {
         assertEquals(20, SaveSyncRetention.fromLegacy(15))
         assertEquals(20, SaveSyncRetention.fromLegacy(20))
         assertEquals(0, SaveSyncRetention.fromLegacy(100))
+    }
+
+    @Test fun readableFolderTruncationPreservesWholeSupplementaryCharactersAndLayout() {
+        val emoji = "\uD83D\uDE00"
+        for ((identity, readable) in listOf(
+            "a".repeat(79) + emoji to "a".repeat(79),
+            "a".repeat(78) + emoji + "b" to "a".repeat(78) + emoji,
+            "a".repeat(81) to "a".repeat(80),
+            "a".repeat(78) + emoji to "a".repeat(78) + emoji,
+            "short" + emoji to "short" + emoji,
+        )) {
+            val game = RemoteSaveGame("ONS", identity)
+            assertEquals(readable + "--" + game.key.take(12), game.folderName)
+            val url = "https://dav.example/".toHttpUrl().newBuilder().addPathSegment(game.folderName).build()
+            assertEquals(game.folderName, url.pathSegments.last())
+            assertFalse(url.encodedPath.contains("%3F"))
+            if (emoji in readable) assertTrue(url.encodedPath.contains("%F0%9F%98%80"))
+        }
     }
 
     @Test fun configToStringRedactsEndpointAndCredentials() {

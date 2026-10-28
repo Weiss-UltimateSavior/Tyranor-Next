@@ -924,6 +924,7 @@
     <string name="webdav_sync_failure">Sync failed: %1$s</string>
     <string name="webdav_sync_partial_failure">Partial sync failure: %1$s</string>
     <string name="webdav_error_no_save">No saves to sync</string>
+    <string name="webdav_error_save_location_changed">The save location changed or an older session has no location record. The original task is retained. Restore the previous save setting and retry, or turn WebDAV off and on to track the current location again.</string>
     <string name="webdav_error_game_running">Exit the game first</string>
     <string name="webdav_reset_config">Reset WebDAV settings on this device</string>
     <string name="webdav_reset_config_title">Reset WebDAV settings on this device?</string>

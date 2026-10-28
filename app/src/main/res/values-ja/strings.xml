@@ -924,6 +924,7 @@
     <string name="webdav_sync_failure">同期失敗：%1$s</string>
     <string name="webdav_sync_partial_failure">一部同期失敗：%1$s</string>
     <string name="webdav_error_no_save">同期するセーブがありません</string>
+    <string name="webdav_error_save_location_changed">セーブ先が変更されたか、旧セッションに保存先の記録がありません。元のタスクは保持されています。保存設定を元に戻して再試行するか、WebDAV を一度オフにして再度オンにし、現在の保存先の追跡を再開してください。</string>
     <string name="webdav_error_game_running">ゲームを終了してください</string>
     <string name="webdav_reset_config">この端末の WebDAV 設定をリセット</string>
     <string name="webdav_reset_config_title">この端末の WebDAV 設定をリセットしますか？</string>

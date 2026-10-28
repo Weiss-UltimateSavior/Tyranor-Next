@@ -307,6 +307,7 @@ class GameSaveManager(private val context: Context) {
         game: ScanGame,
         sourceUri: Uri,
         manualSelection: Boolean = false,
+        expectedDirectory: File? = null,
         onDirectoryCommitted: (() -> Unit)? = null,
     ): Int {
         if (manualSelection) {
@@ -323,12 +324,12 @@ class GameSaveManager(private val context: Context) {
             synchronized(RpgSaveSyncState.INTEROP_LOCK) {
                 if (manualSelection && RpgSaveFormat.isRpgWebEngine(game.engine)) {
                     RpgSaveSyncState.forContext(appContext).withManualSelection(game.uri) { onCommitted ->
-                        importFromZipLocked(game, sourceUri) {
+                        importFromZipLocked(game, sourceUri, expectedDirectory) {
                             onCommitted()
                             onDirectoryCommitted?.invoke()
                         }
                     }
-                } else importFromZipLocked(game, sourceUri) { onDirectoryCommitted?.invoke() }
+                } else importFromZipLocked(game, sourceUri, expectedDirectory) { onDirectoryCommitted?.invoke() }
             }
         }
     }
@@ -392,8 +393,18 @@ class GameSaveManager(private val context: Context) {
     }
 
     @Throws(IOException::class)
-    private fun importFromZipLocked(game: ScanGame, sourceUri: Uri, onDirectoryCommitted: () -> Unit = {}): Int {
-        val destination = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+    private fun importFromZipLocked(
+        game: ScanGame,
+        sourceUri: Uri,
+        expectedDirectory: File? = null,
+        onDirectoryCommitted: () -> Unit = {},
+    ): Int {
+        val resolved = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val destination = if (expectedDirectory != null) {
+            val expected = checkedSyncDirectory(expectedDirectory)
+            if (checkedSyncDirectory(resolved) != expected) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            expected
+        } else resolved
 
         // 与目标目录同文件系统的暂存/备份目录：解压+复制阶段完全不触碰原存档；
         // 提交阶段用两次 rename 原子交换（旧目录改名留作备份 → 暂存目录顶替），

@@ -19,10 +19,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
@@ -146,7 +148,10 @@ object SaveSyncRuntime {
     }
 
     /** Called under the same active-save mutex as launch and explicit version selection. */
-    internal suspend fun prepareLaunch(context: Context, game: ScanGame): LaunchTicket? {
+    internal suspend fun prepareLaunch(context: Context, game: ScanGame): LaunchTicket? =
+        SaveSyncLocks.session(SaveContentHash.text(game.uri)) { prepareLaunchLocked(context, game) }
+
+    private suspend fun prepareLaunchLocked(context: Context, game: ScanGame): LaunchTicket? {
         try {
             if (!WebDavSettingsStore.isEnabled(context)) return null
             if (!GameSaveManager(context).resolveSaveLocation(game).available) return null
@@ -158,22 +163,25 @@ object SaveSyncRuntime {
             val store = sessions(context)
             val key = SaveContentHash.text(game.uri)
             val previous = store.load(key).takeIf { it.has("token") }
+            val directoryKey = activeKey(context, game)
+            // Keep the old task intact rather than relabelling directory A's baseline as B's.
+            previous?.let { requireSessionDirectory(it, directoryKey) }
             val inherited = inheritedSessionBaseline(previous)
             val previousBaseline = inherited.orEmpty()
             val inheritBaseline = inherited != null
             var baselineMetadata = previous?.optString("baselineMetadata").orEmpty()
             val cached = if (!inheritBaseline || baselineMetadata.isBlank()) {
-                loadCachedBaseline(baselines(context), key, game.uri)
+                loadCachedBaseline(baselines(context), key, game.uri, directoryKey)
             } else null
             val baseline = if (inheritBaseline) {
                 previousBaseline
             } else {
                 val manager = GameSaveManager(context)
-                val snapshot = resolveBaselineSnapshot(manager, game, cached)
+                val snapshot = resolveBaselineSnapshot(manager, game, cached, directoryKey)
                 if (cached == null ||
                     cached.contentHash != snapshot.contentHash ||
                     cached.metadataHash != snapshot.metadataHash) {
-                    persistBaseline(context, game, snapshot)
+                    persistBaseline(context, game, snapshot, directoryKey)
                 }
                 baselineMetadata = snapshot.metadataHash
                 snapshot.contentHash.orEmpty()
@@ -182,7 +190,9 @@ object SaveSyncRuntime {
                 baselineMetadata = cached?.takeIf { it.contentHash == previousBaseline }?.metadataHash.orEmpty()
             }
             val token = UUID.randomUUID().toString()
+            requireSameSaveDirectory(directoryKey, activeKey(context, game))
             store.save(key, JSONObject().put("uri", game.uri).put("baseline", baseline)
+                .put("activeKey", directoryKey)
                 .put("baselineMetadata", baselineMetadata)
                 .put("token", token).put("startedAt", System.currentTimeMillis()).put("ownerPid", Process.myPid()))
             return LaunchTicket(token, previous)
@@ -194,7 +204,12 @@ object SaveSyncRuntime {
         }
     }
 
-    internal fun finishLaunch(context: Context, game: ScanGame, ticket: LaunchTicket?, success: Boolean) {
+    internal suspend fun finishLaunch(context: Context, game: ScanGame, ticket: LaunchTicket?, success: Boolean) =
+        withContext(NonCancellable) {
+            SaveSyncLocks.session(SaveContentHash.text(game.uri)) { finishLaunchLocked(context, game, ticket, success) }
+        }
+
+    private fun finishLaunchLocked(context: Context, game: ScanGame, ticket: LaunchTicket?, success: Boolean) {
         if (!success) clearNativeLaunchGrace(game.uri)
         if (ticket == null) return
         try {
@@ -223,20 +238,33 @@ object SaveSyncRuntime {
      * An explicit restore is one pending change even if the next game session writes no bytes.
      * Returns false only when session bookkeeping or work scheduling throws.
      */
-    internal fun recordRestoredVersion(context: Context, game: ScanGame, hash: String): Boolean {
+    internal suspend fun recordRestoredVersion(
+        context: Context,
+        game: ScanGame,
+        hash: String,
+        directoryKey: String,
+    ): Boolean {
         try {
+            requireSameSaveDirectory(directoryKey, activeKey(context, game))
             val manager = GameSaveManager(context)
             val related = relatedSaveUris(game, GameLibraryFacade.loadGames(context)) { manager.resolveSaveLocation(it).directory }
             // The directory was explicitly replaced. An alias's old gameplay baseline must
             // not reinterpret this selection as progress to publish under another identity.
-            clearRelatedSessionBaselines(game.uri, related, sessions(context), baselines(context))
-            if (!WebDavSettingsStore.isEnabled(context)) return true
-            val config = WebDavSettingsStore.load(context)
-            if (!config.active || !config.mode.uploads) return true
-            sessions(context).save(SaveContentHash.text(game.uri), JSONObject()
-                .put("uri", game.uri).put("baseline", hash).put("token", UUID.randomUUID().toString())
-                .put("startedAt", 0L).put("returned", true))
-            SaveSyncWorker.enqueue(context, pull = false)
+            clearRelatedSessionBaselines(game.uri, related, directoryKey, sessions(context), baselines(context))
+            val key = SaveContentHash.text(game.uri)
+            val scheduled = SaveSyncLocks.session(key) {
+                // Recheck after waiting; a disabled sweep may have already completed.
+                if (!WebDavSettingsStore.isEnabled(context)) return@session false
+                val config = WebDavSettingsStore.load(context)
+                if (!config.active || !config.mode.uploads) return@session false
+                requireSameSaveDirectory(directoryKey, activeKey(context, game))
+                sessions(context).save(key, JSONObject()
+                    .put("uri", game.uri).put("baseline", hash).put("token", UUID.randomUUID().toString())
+                    .put("activeKey", directoryKey)
+                    .put("startedAt", 0L).put("returned", true))
+                true
+            }
+            if (scheduled) SaveSyncWorker.enqueue(context, pull = false)
             return true
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -259,7 +287,9 @@ object SaveSyncRuntime {
                 for (key in store.keys()) {
                     val uri = store.load(key).optString("uri")
                     SaveSyncLocks.active(activeKey(context, uri)) {
-                        if (!WebDavSettingsStore.isEnabled(context)) store.remove(key)
+                        SaveSyncLocks.session(key) {
+                            if (!WebDavSettingsStore.isEnabled(context)) store.remove(key)
+                        }
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -290,17 +320,10 @@ object SaveSyncRuntime {
                     val entry = store.load(key)
                     if (!entry.has("token")) continue
                     val game = games[entry.optString("uri")]
-                    if (game != null && shouldMarkExternalYurisReturned(
-                            engine = game.engine,
-                            priorBackground = priorBackground,
-                            leftApp = entry.optBoolean("leftApp"),
-                            recordedOwnerPid = entry.optInt("ownerPid", -1),
-                            currentOwnerPid = Process.myPid(),
-                        )) {
-                        SaveSyncLocks.active(activeKey(context, entry.optString("uri"))) {
-                            val current = store.load(key)
-                            if (current.has("token")) store.save(key, current.put("returned", true))
-                        }
+                    val binding = entry.optString("activeKey")
+                    if (game != null && binding.isNotBlank() && binding == activeKey(app, game)) {
+                        markSaveSessionForeground(store, key, entry, binding,
+                            game.engine, priorBackground, Process.myPid())
                     }
                     game?.let { monitor(app, it) }
                 }
@@ -324,9 +347,10 @@ object SaveSyncRuntime {
                 val store = sessions(context)
                 for (key in store.keys()) {
                     val entry = store.load(key)
-                    if (entry.has("token")) SaveSyncLocks.active(activeKey(context, entry.optString("uri"))) {
-                        val current = store.load(key)
-                        if (current.has("token")) store.save(key, current.put("leftApp", true))
+                    val binding = entry.optString("activeKey")
+                    if (entry.has("token") && binding.isNotBlank() &&
+                        binding == activeKey(context, entry.optString("uri"))) {
+                        markSaveSessionBackground(store, key, entry, binding)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -380,11 +404,13 @@ object SaveSyncRuntime {
                 val target = game
                 val baseline = entry.optString("baseline")
                 val manager = GameSaveManager(context)
-                val decision = SaveSyncLocks.active(activeKey(context, target)) {
-                    if (store.load(key).optString("token") != token || isGameRunning(context, target)) {
+                val directoryKey = entry.optString("activeKey").ifBlank { activeKey(context, target) }
+                val decision = withCurrentSaveSession(store, key, entry, directoryKey,
+                    resolveActiveKey = { activeKey(context, target) }) {
+                    if (isGameRunning(context, target)) {
                         FlushDecision.Busy
                     } else {
-                        val current = captureContentSnapshot(manager, target)
+                        val current = captureContentSnapshot(manager, target, directoryKey)
                         val changed = current.contentHash != null &&
                             (current.contentHash != baseline ||
                                 SaveSyncService(context).hasPendingPromotion(target, config))
@@ -393,36 +419,42 @@ object SaveSyncRuntime {
                         } else if (store.load(key).optString("token") != token) {
                             FlushDecision.Busy
                         } else {
-                            persistBaseline(context, target, current)
+                            persistBaseline(context, target, current, directoryKey)
                             store.remove(key)
                             FlushDecision.Unchanged
                         }
                     }
-                }
+                } ?: FlushDecision.Busy
                 when (decision) {
                     FlushDecision.Busy -> report += SaveSyncReport(busy = 1)
                     FlushDecision.Unchanged -> Unit
                     is FlushDecision.Changed -> {
-                        val result = SaveSyncService(context).syncGameIfCurrent(target, SaveSyncDirection.UPLOAD) {
-                            store.load(key).optString("token") == token
+                        val result = SaveSyncService(context).syncGameIfCurrent(target, SaveSyncDirection.UPLOAD,
+                            expectedActiveKey = directoryKey, expectedContentHash = decision.snapshot.contentHash) {
+                            val current = store.load(key)
+                            if (current.optString("token") != token) false else {
+                                requireSessionDirectory(current, activeKey(context, target))
+                                true
+                            }
                         }
                         report += result
                         if (result.failures.isEmpty() && result.busy == 0) {
-                            val committed = SaveSyncLocks.active(activeKey(context, target)) {
+                            val committed = withCurrentSaveSession(store, key, entry, directoryKey,
+                                resolveActiveKey = { activeKey(context, target) }) {
                                 if (isGameRunning(context, target) ||
                                     store.load(key).optString("token") != token) {
                                     false
                                 } else {
-                                    val final = captureContentSnapshot(manager, target)
+                                    val final = captureContentSnapshot(manager, target, directoryKey)
                                     if (final.contentHash == decision.snapshot.contentHash) {
-                                        persistBaseline(context, target, final)
+                                        persistBaseline(context, target, final, directoryKey)
                                         store.remove(key)
                                         true
                                     } else {
                                         false
                                     }
                                 }
-                            }
+                            } ?: false
                             if (!committed) report += SaveSyncReport(busy = 1)
                         }
                     }
@@ -443,10 +475,12 @@ object SaveSyncRuntime {
         entry: JSONObject,
         gameMissing: Boolean = false,
     ) = SaveSyncLocks.active(activeKey(context, entry.optString("uri"))) {
-        if (store.load(key).optString("token") == entry.optString("token")) {
-            val current = WebDavSettingsStore.load(context)
-            // A concurrent mode change and launch may already have replaced this ticket.
-            if (gameMissing || !current.active || !current.mode.uploads) store.remove(key)
+        SaveSyncLocks.session(key) {
+            if (store.load(key).optString("token") == entry.optString("token")) {
+                val current = WebDavSettingsStore.load(context)
+                // A concurrent mode change and launch may already have replaced this ticket.
+                if (gameMissing || !current.active || !current.mode.uploads) store.remove(key)
+            }
         }
     }
 
@@ -577,12 +611,12 @@ object SaveSyncRuntime {
         }
     }
 
-    private fun loadCachedBaseline(store: SaveSyncStateStore, key: String, uri: String): CachedBaseline? {
+    private fun loadCachedBaseline(store: SaveSyncStateStore, key: String, uri: String, activeKey: String): CachedBaseline? {
         val state = store.load(key)
         if (state.length() == 0) return null
         val contentHash = state.opt("contentHash") as? String ?: return null
         val metadataHash = state.opt("metadataHash") as? String ?: return null
-        if (state.opt("uri") != uri ||
+        if (state.opt("uri") != uri || state.optString("activeKey") != activeKey ||
             !HASH.matches(contentHash) ||
             !HASH.matches(metadataHash)) {
             return null
@@ -594,28 +628,32 @@ object SaveSyncRuntime {
         manager: GameSaveManager,
         game: ScanGame,
         cached: CachedBaseline?,
+        activeKey: String,
     ): SaveTreeSnapshot {
-        val observed = observeSaveMetadata(manager, game)
+        val observed = observeSaveMetadata(manager, game, activeKey)
         if (cached?.metadataHash == observed.metadataHash) {
             return SaveTreeSnapshot(cached.contentHash, observed.metadataHash)
         }
-        return hashStableContent(manager, game, observed)
+        return hashStableContent(manager, game, observed, activeKey)
     }
 
     private suspend fun captureContentSnapshot(
         manager: GameSaveManager,
         game: ScanGame,
-    ): SaveTreeSnapshot = hashStableContent(manager, game, observeSaveMetadata(manager, game))
+        activeKey: String,
+    ): SaveTreeSnapshot = hashStableContent(manager, game, observeSaveMetadata(manager, game, activeKey), activeKey)
 
     private suspend fun observeSaveMetadata(
         manager: GameSaveManager,
         game: ScanGame,
+        activeKey: String,
     ): SaveMetadataObservation {
         val location = manager.resolveSaveLocation(game)
         if (!location.available || location.directory == null) {
             throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
         }
         val root = manager.syncSaveDirectory(game)
+        requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) { root })
         val files = manager.listSaveFiles(game, strict = true)
         val job = currentCoroutineContext()
         val metadataHash = SaveSyncMetadataFingerprint.fingerprint(root, files) { job.ensureActive() }
@@ -626,6 +664,7 @@ object SaveSyncRuntime {
         manager: GameSaveManager,
         game: ScanGame,
         observed: SaveMetadataObservation,
+        activeKey: String,
     ): SaveTreeSnapshot {
         val job = currentCoroutineContext()
         val contentHash = SaveContentHash.files(observed.root, observed.files) { job.ensureActive() }
@@ -637,10 +676,14 @@ object SaveSyncRuntime {
             // A cache entry is only authoritative for one stable tree state.
             throw SaveSyncException(SaveSyncError.LOCAL_IO)
         }
+        requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) {
+            manager.resolveSaveLocation(it).directory
+        })
         return SaveTreeSnapshot(contentHash, observed.metadataHash)
     }
 
-    private fun persistBaseline(context: Context, game: ScanGame, snapshot: SaveTreeSnapshot) {
+    private fun persistBaseline(context: Context, game: ScanGame, snapshot: SaveTreeSnapshot, directoryKey: String) {
+        requireSameSaveDirectory(directoryKey, activeKey(context, game))
         val store = baselines(context)
         val key = SaveContentHash.text(game.uri)
         val contentHash = snapshot.contentHash
@@ -654,6 +697,7 @@ object SaveSyncRuntime {
         store.save(key, JSONObject()
             .put("version", 1)
             .put("uri", game.uri)
+            .put("activeKey", directoryKey)
             .put("contentHash", contentHash)
             .put("metadataHash", snapshot.metadataHash))
     }
@@ -692,16 +736,19 @@ internal data class HostActivityUriSnapshot(val activities: Int, val uris: List<
 internal fun inheritedSessionBaseline(previous: JSONObject?): String? =
     previous?.takeIf { it.has("token") && it.has("baseline") }?.getString("baseline")
 
-internal fun clearRelatedSessionBaselines(
+internal suspend fun clearRelatedSessionBaselines(
     selectedUri: String,
     relatedUris: Set<String>,
+    directoryKey: String,
     sessions: SaveSyncStateStore,
     baselines: SaveSyncStateStore,
 ) {
     for (uri in relatedUris - selectedUri) {
         val key = SaveContentHash.text(uri)
-        sessions.remove(key)
-        baselines.remove(key)
+        SaveSyncLocks.session(key) {
+            if (sessions.load(key).optString("activeKey") == directoryKey) sessions.remove(key)
+            if (baselines.load(key).optString("activeKey") == directoryKey) baselines.remove(key)
+        }
     }
 }
 

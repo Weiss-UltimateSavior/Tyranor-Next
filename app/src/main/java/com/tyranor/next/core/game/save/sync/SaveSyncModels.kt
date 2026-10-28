@@ -37,7 +37,7 @@ data class WebDavConfig(
 enum class SaveSyncError {
     NOT_CONFIGURED, INVALID_CONFIG, CREDENTIALS_UNAVAILABLE, AUTHENTICATION, NETWORK,
     SERVER, INVALID_RESPONSE, CORRUPT_ARCHIVE, LOCAL_IO, SAVE_UNAVAILABLE, GAME_RUNNING,
-    IDENTITY_CONFLICT, DISABLED, SELECTION_INCOMPLETE, CLOUD_REPAIR_REQUIRED, STORAGE_FULL,
+    IDENTITY_CONFLICT, DISABLED, SELECTION_INCOMPLETE, CLOUD_REPAIR_REQUIRED, STORAGE_FULL, SAVE_LOCATION_CHANGED,
 }
 
 class SaveSyncException(
@@ -75,9 +75,13 @@ data class RemoteSaveVersion(
 data class RemoteSaveGame(val engine: String, val identity: String) {
     val key: String get() = SaveContentHash.text(engine + "\n" + identity)
     val folderName: String get() {
-        val readable = Normalizer.normalize(identity, Normalizer.Form.NFC)
+        val normalized = Normalizer.normalize(identity, Normalizer.Form.NFC)
             .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")
-            .trim().trim('.').take(80).ifBlank { "game" }
+            .trim().trim('.')
+        // Keep the existing UTF-16 budget/layout without splitting a supplementary character.
+        val end = if (normalized.length > 80 && normalized[79].isHighSurrogate() &&
+            normalized[80].isLowSurrogate()) 79 else minOf(80, normalized.length)
+        val readable = normalized.take(end).ifBlank { "game" }
         return readable + "--" + key.take(12)
     }
 }

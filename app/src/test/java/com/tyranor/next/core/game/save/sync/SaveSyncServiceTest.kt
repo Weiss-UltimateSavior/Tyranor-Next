@@ -498,6 +498,192 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun corruptStagingRecoversUsingVerifiedHistoricalSource() = runBlocking {
+        verifyHistoricalRecovery(missing = false)
+    }
+
+    @Test
+    fun missingStagingRecoversUsingVerifiedHistoricalSource() = runBlocking {
+        verifyHistoricalRecovery(missing = true)
+    }
+
+    @Test
+    fun corruptHistoryCannotAuthorizeClearingAnInvalidStagingCopy() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("both-sources-invalid")
+        val key = harness.key(game)
+        val current = harness.setActive(game, "current-N")
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_090L)
+        harness.journal.prepare(key, selected, harness.archive("staging-S", "progress-selected-S"), current)
+        harness.journal.archive(key).writeText("damaged staging")
+        harness.snapshots.file(key, selected.id).writeText("damaged history")
+
+        try {
+            harness.service.recoverSelection(game)
+            fail("Invalid history was trusted by filename")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.CORRUPT_ARCHIVE, failure.code)
+        }
+        assertTrue(harness.journal.load(key) != null)
+        assertEquals("damaged staging", harness.journal.archive(key).readText())
+        assertEquals(current, harness.world.activeHash(game))
+    }
+
+    private suspend fun verifyHistoricalRecovery(missing: Boolean) {
+        val harness = Harness(temp)
+        val game = harness.addGame("historical-recovery")
+        harness.identify(game)
+        val key = harness.key(game)
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_090L)
+        val current = harness.setActive(game, "current-N")
+        val staging = harness.archive("staging-S", "progress-selected-S")
+        harness.journal.prepare(key, selected, staging, current)
+        if (missing) assertTrue(harness.journal.archive(key).delete())
+        else harness.journal.archive(key).writeText("damaged")
+
+        harness.service.recoverSelection(game)
+
+        assertNull(harness.journal.load(key))
+        assertFalse(harness.journal.archive(key).exists())
+        val retained = harness.snapshots.list(key)
+        for (hash in setOf(selected.contentHash, current)) {
+            assertTrue(harness.snapshots.isValid(key, retained.single { it.contentHash == hash }))
+        }
+        assertEquals(current, harness.world.activeHash(game))
+        assertEquals(0, harness.world.importCount(game))
+        assertTrue(harness.service.syncGame(game, SaveSyncDirection.UPLOAD).failures.isEmpty())
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+    }
+
+    @Test
+    fun validButMismatchedStagingPreservesBothActualBytesAndSelectedHistoryAtQuota() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("mismatched-valid-staging")
+        val key = harness.key(game)
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_010L)
+        harness.journal.prepare(key, selected, harness.archive("staging-S", "progress-selected-S"), "before")
+        repeat(3) { harness.addSnapshot(game, "other-$it", 1_700_000_001_000L + it) }
+        val replacement = harness.archive("replacement-T", "valid-but-different")
+        val replacementHash = SaveContentHash.archive(replacement)
+        replacement.copyTo(harness.journal.archive(key), overwrite = true)
+        val current = harness.setActive(game, "current-N")
+
+        harness.service.recoverSelection(game)
+
+        val retained = harness.snapshots.list(key)
+        assertEquals(5, retained.size)
+        for (hash in setOf(selected.contentHash, replacementHash, current)) {
+            assertTrue(harness.snapshots.isValid(key, retained.single { it.contentHash == hash }))
+        }
+        assertNull(harness.journal.load(key))
+    }
+
+    @Test
+    fun selectedBytesStillActiveCanRescueMissingStagingAndHistory() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("active-selected-recovery")
+        val key = harness.key(game)
+        val current = harness.setActive(game, "selected-S")
+        val staged = harness.archive("staging-S", "progress-selected-S")
+        val selected = harness.versionFor(staged)
+        harness.journal.prepare(key, selected, staged, "before")
+        assertTrue(harness.journal.archive(key).delete())
+
+        harness.service.recoverSelection(game)
+
+        assertTrue(harness.snapshots.isValid(key, harness.snapshots.list(key).single()))
+        assertEquals(current, harness.snapshots.list(key).single().contentHash)
+        assertEquals(0, harness.world.importCount(game))
+        assertNull(harness.journal.load(key))
+    }
+
+    @Test
+    fun sameCommittedTokenRecoveryPreservesSingleRestoredChainAfterSavingN() = runBlocking {
+        verifyCommittedChainRecovery(mismatchedStaging = false)
+    }
+
+    @Test
+    fun sameCommittedTokenWithValidButMismatchedStagingStillUsesVerifiedHistoricalS() = runBlocking {
+        verifyCommittedChainRecovery(mismatchedStaging = true)
+    }
+
+    private suspend fun verifyCommittedChainRecovery(mismatchedStaging: Boolean) {
+        val harness = Harness(temp)
+        val game = harness.addGame("committed-chain-recovery")
+        harness.identify(game)
+        harness.setActive(game, "before-selection")
+        val key = harness.key(game)
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_010L)
+        harness.transport.seed(harness.remoteGame(game), RemoteSaveVersion(selected.id, selected.contentHash,
+            selected.createdAt, selected.size), harness.snapshots.file(key, selected.id))
+        harness.world.failNextRestoredMetadata()
+        assertEquals(SaveActivationResult.METADATA_PENDING, harness.service.activateVersion(game, selected.id))
+        val token = harness.journal.load(key)!!.token
+        val current = harness.setActive(game, "played-N")
+        if (mismatchedStaging) {
+            harness.archive("different-valid-T", "unrelated-but-valid")
+                .copyTo(harness.journal.archive(key), overwrite = true)
+        }
+
+        harness.service.recoverSelection(game)
+
+        assertNull(harness.journal.load(key))
+        val state = harness.states.load(key)
+        assertEquals(token, state.getString("completedActivation"))
+        assertEquals(selected.contentHash, state.getString("promotionFromHash"))
+        assertTrue(state.getBoolean("promotionAwaitingChange"))
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(report.failures.toString(), report.failures.isEmpty())
+        val published = harness.transport.versions(harness.remoteGame(game)).single()
+        assertEquals(current, published.contentHash)
+        assertTrue(published.restored)
+        assertEquals(selected.createdAt, published.previousCreatedAt)
+        assertEquals(1, harness.world.importCount(game))
+    }
+
+    @Test
+    fun failedJournalRecordWriteCannotRetireThePreviousActiveRestoreChain() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("orphan-before-import")
+        harness.identify(game)
+        harness.setActive(game, "before-A")
+        val selected = harness.addSnapshot(game, "selected-A", 1_700_000_000_010L)
+        val key = harness.key(game)
+        harness.transport.seed(harness.remoteGame(game), RemoteSaveVersion(selected.id, selected.contentHash,
+            selected.createdAt, selected.size), harness.snapshots.file(key, selected.id))
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+        val continued = harness.setActive(game, "played-N")
+        val previousToken = harness.states.load(key).getString("completedActivation")
+        val records = File(harness.root, "pending/records")
+        assertTrue(records.delete())
+        records.writeText("simulate record-directory write failure")
+        val attempted = harness.archive("new-attempt-B", "new-attempt-B")
+        try {
+            harness.journal.prepare(key, harness.versionFor(attempted), attempted, continued, game.uri)
+            fail("Record write unexpectedly succeeded")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        }
+        assertFalse(attempted.exists())
+        assertTrue(harness.journal.archive(key).exists())
+        assertTrue(records.delete())
+        assertTrue(records.mkdir())
+        assertNull(harness.journal.load(key))
+
+        harness.service.recoverSelection(game)
+
+        assertEquals(previousToken, harness.states.load(key).getString("completedActivation"))
+        assertEquals(selected.contentHash, harness.states.load(key).getString("promotionFromHash"))
+        assertEquals(1, harness.world.importCount(game))
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(report.failures.toString(), report.failures.isEmpty())
+        val published = harness.transport.versions(harness.remoteGame(game)).single()
+        assertEquals(continued, published.contentHash)
+        assertTrue(published.restored)
+        assertEquals(selected.createdAt, published.previousCreatedAt)
+    }
+
+    @Test
     fun busyPruneRetryDoesNotReuseConfirmationAfterReplacementDisappears() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("busy-prune")
@@ -760,6 +946,143 @@ class SaveSyncServiceTest {
         }
     }
 
+    @Test
+    fun automaticUploadCannotAdoptDifferentBytesEvenWhenDirectoryIdentityMatchesAgain() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("automatic-content-binding")
+        harness.identify(game)
+        val decidedHash = harness.setActive(game, "directory-A-pending")
+        // Model B's tree observed during an A -> B -> A settings round trip.
+        harness.setActive(game, "directory-B-old")
+
+        val report = harness.service.syncGameIfCurrent(game, SaveSyncDirection.UPLOAD,
+            expectedActiveKey = game.uri, expectedContentHash = decidedHash) { true }
+
+        assertEquals(1, report.busy)
+        assertTrue(report.failures.isEmpty())
+        assertTrue(harness.snapshots.list(harness.key(game)).isEmpty())
+        assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
+    }
+
+    @Test
+    fun automaticUploadRejectsDifferentDirectoryBeforeReadingSaves() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("automatic-directory-binding")
+        harness.identify(game)
+        val expected = harness.setActive(game, "pending-A")
+
+        val report = harness.service.syncGameIfCurrent(game, SaveSyncDirection.UPLOAD,
+            expectedActiveKey = "original-directory-A", expectedContentHash = expected) { true }
+
+        assertEquals(listOf(SaveSyncError.SAVE_LOCATION_CHANGED), report.failures.map { it.error })
+        assertTrue(harness.snapshots.list(harness.key(game)).isEmpty())
+        assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
+    }
+
+    @Test
+    fun automaticUploadPublishesTheBoundDirectoryAndContent() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("automatic-matching-binding")
+        harness.identify(game)
+        val expected = harness.setActive(game, "pending-A")
+
+        val report = harness.service.syncGameIfCurrent(game, SaveSyncDirection.UPLOAD,
+            expectedActiveKey = game.uri, expectedContentHash = expected) { true }
+
+        assertEquals(1, report.uploaded)
+        assertTrue(report.failures.isEmpty())
+        assertEquals(expected, harness.transport.versions(harness.remoteGame(game)).single().contentHash)
+    }
+
+    @Test
+    fun activationRetryCannotRebindOriginalDirectoryToChangedSettings() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("activation-directory-binding")
+        harness.identify(game)
+        harness.setActive(game, "before-selection")
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_010L)
+        harness.world.failNextRestoredMetadata()
+        assertEquals(SaveActivationResult.METADATA_PENDING, harness.service.activateVersion(game, selected.id))
+        val key = harness.key(game)
+        assertEquals(game.uri, harness.journal.load(key)!!.activeKey)
+        harness.world.directoryKey = "changed-directory-B"
+        harness.setActive(game, "unrelated-B")
+        val stateBefore = harness.states.load(key).toString()
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(listOf(SaveSyncError.SELECTION_INCOMPLETE), report.failures.map { it.error })
+        assertEquals(game.uri, harness.journal.load(key)!!.activeKey)
+        assertEquals(1, harness.world.restoredMetadataCount(game))
+        assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
+        assertEquals(JSONObject(stateBefore).getString("promotionFromHash"),
+            harness.states.load(key).getString("promotionFromHash"))
+        try {
+            harness.service.recoverSelection(game)
+            fail("Recovery adopted changed directory")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.SAVE_LOCATION_CHANGED, failure.code)
+        }
+        // Reverting settings completes the original token without another import.
+        harness.world.directoryKey = null
+        harness.setActive(game, "selected-S")
+        assertTrue(harness.service.syncGame(game, SaveSyncDirection.UPLOAD).failures.isEmpty())
+        assertEquals(1, harness.world.importCount(game))
+        assertNull(harness.journal.load(key))
+    }
+
+    @Test
+    fun restoreBookkeepingKeepsImportDirectoryWhenSettingsChangeAtRecordBoundary() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("restore-bookkeeping-binding")
+        harness.identify(game)
+        harness.setActive(game, "before")
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_010L)
+        harness.world.changeDirectoryOnRecord = "directory-B"
+
+        assertEquals(SaveActivationResult.METADATA_PENDING, harness.service.activateVersion(game, selected.id))
+
+        assertEquals(game.uri, harness.world.lastRecordedDirectory)
+        assertEquals(game.uri, harness.journal.load(harness.key(game))!!.activeKey)
+        assertEquals(selected.contentHash, harness.world.activeHash(game))
+        assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
+    }
+
+    @Test
+    fun legacyUnboundJournalRequiresExplicitRescueBeforeTrackingCurrentDirectory() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("legacy-unbound-activation")
+        harness.identify(game)
+        val key = harness.key(game)
+        val selected = harness.addSnapshot(game, "old-selected-A", 1_700_000_000_010L)
+        harness.journal.prepare(key, selected, harness.archive("staged-A", "progress-old-selected-A"), "before-A")
+        harness.journal.markCommitted(key)
+        harness.world.directoryKey = "changed-directory-B"
+        val current = harness.setActive(game, "unrelated-current-B")
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(listOf(SaveSyncError.SELECTION_INCOMPLETE), report.failures.map { it.error })
+        assertTrue(harness.journal.load(key) != null)
+        assertEquals(0, harness.world.restoredMetadataCount(game))
+        assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
+        try {
+            harness.service.activateVersion(game, selected.id)
+            fail("Legacy activation was silently adopted")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.SELECTION_INCOMPLETE, failure.code)
+        }
+
+        // The explicit recovery action only rescues bytes and abandons unknown bookkeeping.
+        harness.service.recoverSelection(game)
+        assertNull(harness.journal.load(key))
+        assertEquals(current, harness.world.activeHash(game))
+        assertEquals(0, harness.world.importCount(game))
+        for (hash in setOf(selected.contentHash, current)) {
+            assertTrue(harness.snapshots.isValid(key, harness.snapshots.list(key).single { it.contentHash == hash }))
+        }
+        assertFalse(harness.states.load(key).has("promotionFromHash"))
+    }
+
     private class Harness(private val temp: TemporaryFolder) {
         val root: File = temp.newFolder("save-sync")
         private val cache: File = temp.newFolder("cache")
@@ -869,6 +1192,9 @@ class SaveSyncServiceTest {
         var isRunning = false
         @Volatile
         var recoveryNeeded = false
+        @Volatile var directoryKey: String? = null
+        var changeDirectoryOnRecord: String? = null
+        var lastRecordedDirectory: String? = null
         val unavailableUris = HashSet<String>()
         val activeKeyEntered = CompletableDeferred<Unit>()
 
@@ -878,7 +1204,7 @@ class SaveSyncServiceTest {
         override fun running(game: ScanGame): Boolean = isRunning
         override fun activeKey(game: ScanGame): String {
             activeKeyEntered.complete(Unit)
-            return game.uri
+            return directoryKey ?: game.uri
         }
 
         override suspend fun fingerprint(game: ScanGame): String? =
@@ -890,7 +1216,7 @@ class SaveSyncServiceTest {
             source.copyTo(archive, overwrite = true)
         }
 
-        override suspend fun import(game: ScanGame, archive: File, committed: () -> Unit) {
+        override suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit) {
             val destination = File(cacheDirectory.parentFile, "active-import-${activeSequence++}.zip")
             archive.copyTo(destination, overwrite = true)
             val hash = SaveContentHash.archive(destination)
@@ -906,8 +1232,11 @@ class SaveSyncServiceTest {
         override fun needsManualRecovery(game: ScanGame): Boolean = recoveryNeeded
         override fun repairManualSelection(game: ScanGame, hasCurrent: Boolean): Boolean = true
 
-        override fun recordRestored(game: ScanGame, hash: String): Boolean = synchronized(lock) {
+        override suspend fun recordRestored(game: ScanGame, hash: String, activeKey: String): Boolean = synchronized(lock) {
             restoredMetadataCounts[game.uri] = restoredMetadataCounts.getOrDefault(game.uri, 0) + 1
+            lastRecordedDirectory = activeKey
+            changeDirectoryOnRecord?.let { directoryKey = it; changeDirectoryOnRecord = null }
+            if (activeKey != (directoryKey ?: game.uri)) return@synchronized false
             if (recordFailures > 0) {
                 recordFailures--
                 false

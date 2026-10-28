@@ -17,6 +17,7 @@ internal class SaveActivationJournal(private val directory: File) {
         val selected: SaveVersion,
         val beforeHash: String?,
         val committed: Boolean = false,
+        val activeKey: String? = null,
     ) {
         fun canFinalize(currentHash: String?): Boolean =
             committed || (currentHash == selected.contentHash && currentHash != beforeHash)
@@ -34,6 +35,7 @@ internal class SaveActivationJournal(private val directory: File) {
                     SaveVersionSource.valueOf(state.getString("source")), parsed.restored, parsed.previousCreatedAt),
                 state.optString("before").takeIf { it.isNotBlank() },
                 state.optBoolean("committed"),
+                state.optString("activeKey").takeIf { it.isNotBlank() },
             )
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -43,7 +45,14 @@ internal class SaveActivationJournal(private val directory: File) {
     }
 
     /** Consumes an already-private staging ZIP after validating it; never pass a history file. */
-    fun prepare(key: String, selected: SaveVersion, staging: File, beforeHash: String?, check: () -> Unit = {}): Pending {
+    fun prepare(
+        key: String,
+        selected: SaveVersion,
+        staging: File,
+        beforeHash: String?,
+        activeKey: String? = null,
+        check: () -> Unit = {},
+    ): Pending {
         if (load(key) != null || archive(key).exists()) {
             throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
         }
@@ -59,7 +68,7 @@ internal class SaveActivationJournal(private val directory: File) {
         } catch (_: AtomicMoveNotSupportedException) {
             Files.move(staging.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
-        val pending = Pending(UUID.randomUUID().toString(), selected, beforeHash)
+        val pending = Pending(UUID.randomUUID().toString(), selected, beforeHash, activeKey = activeKey)
         records.save(key, encode(pending))
         return pending
     }
@@ -83,13 +92,15 @@ internal class SaveActivationJournal(private val directory: File) {
     }
 
     fun clear(key: String) {
-        records.remove(key)
         val source = archive(key)
         if (source.exists() && !source.delete()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        // Keep the token if deleting staging fails; a retry must retain the completed chain.
+        records.remove(key)
     }
 
     private fun encode(pending: Pending) = JSONObject()
         .put("token", pending.token).put("id", pending.selected.id)
         .put("source", pending.selected.source.name).put("before", pending.beforeHash.orEmpty())
         .put("committed", pending.committed)
+        .put("activeKey", pending.activeKey)
 }

@@ -924,6 +924,7 @@
     <string name="webdav_sync_failure">同步失败：%1$s</string>
     <string name="webdav_sync_partial_failure">部分同步失败：%1$s</string>
     <string name="webdav_error_no_save">暂无可同步存档</string>
+    <string name="webdav_error_save_location_changed">存档目录已变更或旧会话缺少目录记录，原任务已保留。请切回原存档设置重试；若要重新跟踪当前目录，请先关闭再开启 WebDAV。</string>
     <string name="webdav_error_game_running">请先退出游戏</string>
     <string name="webdav_reset_config">重置本机 WebDAV 设置</string>
     <string name="webdav_reset_config_title">重置本机 WebDAV 设置？</string>

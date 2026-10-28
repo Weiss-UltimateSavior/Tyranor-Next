@@ -8,6 +8,7 @@ internal object SaveSyncLocks {
     private val network = SaveSyncLockRegistry()
     private val versions = SaveSyncLockRegistry()
     private val active = SaveSyncLockRegistry()
+    private val sessions = SaveSyncLockRegistry()
 
     suspend fun <T> network(uri: String, block: suspend () -> T): T = network.withLock(uri, block)
 
@@ -16,6 +17,9 @@ internal object SaveSyncLocks {
 
     suspend fun <T> active(uri: String, block: suspend () -> T): T =
         active.withLock(uri, block)
+
+    /** Always acquired after active; one URI keeps its session even when its directory changes. */
+    suspend fun <T> session(key: String, block: suspend () -> T): T = sessions.withLock(key, block)
 }
 
 /**

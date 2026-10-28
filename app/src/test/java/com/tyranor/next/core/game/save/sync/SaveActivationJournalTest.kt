@@ -46,12 +46,13 @@ class SaveActivationJournalTest {
         val expectedBytes = staging.readBytes()
         val selected = version(staging)
 
-        val pending = journal.prepare(KEY_A, selected, staging, "before-s")
+        val pending = journal.prepare(KEY_A, selected, staging, "before-s", activeKey = "save-directory:A")
 
         assertFalse(staging.exists())
         assertTrue(journal.archive(KEY_A).isFile)
         assertArrayEquals(expectedBytes, journal.archive(KEY_A).readBytes())
         assertEquals("before-s", pending.beforeHash)
+        assertEquals("save-directory:A", SaveActivationJournal(root).load(KEY_A)!!.activeKey)
         assertEquals(pending, SaveActivationJournal(root).load(KEY_A))
     }
 
@@ -124,6 +125,30 @@ class SaveActivationJournalTest {
         assertTrue(mismatched.isFile)
         assertNull(journal.load(KEY_A))
         assertFalse(journal.archive(KEY_A).exists())
+    }
+
+    @Test fun failedStagingDeletionKeepsCompletedTokenForRetry() {
+        val root = temp.newFolder("failed-clear")
+        val journal = SaveActivationJournal(root)
+        val staging = archive(root, "selected")
+        val expectedBytes = staging.readBytes()
+        journal.prepare(KEY_A, version(staging), staging, null)
+        val pending = journal.markCommitted(KEY_A)
+        val source = journal.archive(KEY_A)
+        assertTrue(source.delete())
+        assertTrue(source.mkdir())
+        val blocker = File(source, "cannot-delete-nonempty-directory").apply { writeText("block") }
+
+        val failure = assertThrows(SaveSyncException::class.java) { journal.clear(KEY_A) }
+
+        assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        assertEquals(pending.token, journal.load(KEY_A)!!.token)
+        assertTrue(journal.load(KEY_A)!!.committed)
+        assertTrue(blocker.delete())
+        assertTrue(source.delete())
+        source.writeBytes(expectedBytes)
+        journal.clear(KEY_A)
+        assertNull(journal.load(KEY_A))
     }
 
     @Test fun abortedImportRetainsEvictedSourceWithinHistoryLimitAndClearsIntent() {

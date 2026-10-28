@@ -22,11 +22,11 @@ internal interface SaveSyncEnvironment {
     fun activeKey(game: ScanGame): String = game.uri
     suspend fun fingerprint(game: ScanGame): String?
     suspend fun export(game: ScanGame, archive: File)
-    suspend fun import(game: ScanGame, archive: File, committed: () -> Unit)
+    suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit)
     fun completeImport(game: ScanGame)
     fun needsManualRecovery(game: ScanGame): Boolean
     fun repairManualSelection(game: ScanGame, hasCurrent: Boolean): Boolean
-    fun recordRestored(game: ScanGame, hash: String): Boolean
+    suspend fun recordRestored(game: ScanGame, hash: String, activeKey: String): Boolean
     fun openClient(config: WebDavConfig): SaveSyncTransport
 }
 
@@ -62,8 +62,11 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
     override suspend fun export(game: ScanGame, archive: File) {
         manager.exportToZip(game, Uri.fromFile(archive), strict = true)
     }
-    override suspend fun import(game: ScanGame, archive: File, committed: () -> Unit) {
-        manager.importFromZip(game, Uri.fromFile(archive), manualSelection = true, onDirectoryCommitted = committed)
+    override suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit) {
+        val directory = manager.syncSaveDirectory(game)
+        requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) { directory })
+        manager.importFromZip(game, Uri.fromFile(archive), manualSelection = true,
+            expectedDirectory = directory, onDirectoryCommitted = committed)
     }
     override fun completeImport(game: ScanGame) = manager.completePendingVersionImport(game)
     override fun needsManualRecovery(game: ScanGame) = RpgSaveFormat.isRpgWebEngine(game.engine) &&
@@ -73,7 +76,8 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
         val state = RpgSaveSyncState.forContext(context)
         return if (hasCurrent) state.markManualSelection(game.uri) else state.clearManualSelection(game.uri)
     }
-    override fun recordRestored(game: ScanGame, hash: String) = SaveSyncRuntime.recordRestoredVersion(context, game, hash)
+    override suspend fun recordRestored(game: ScanGame, hash: String, activeKey: String) =
+        SaveSyncRuntime.recordRestoredVersion(context, game, hash, activeKey)
     override fun openClient(config: WebDavConfig): SaveSyncTransport {
         val client = WebDavClient(config, cacheDirectory) { enabled }
         return object : SaveSyncTransport {

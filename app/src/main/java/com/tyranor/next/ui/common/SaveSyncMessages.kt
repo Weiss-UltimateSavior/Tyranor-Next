@@ -33,6 +33,7 @@ internal fun SaveSyncError.messageResource(): Int = when (this) {
     SaveSyncError.LOCAL_IO -> R.string.webdav_error_local_io
     SaveSyncError.STORAGE_FULL -> R.string.webdav_error_storage_full
     SaveSyncError.SAVE_UNAVAILABLE -> R.string.webdav_error_no_save
+    SaveSyncError.SAVE_LOCATION_CHANGED -> R.string.webdav_error_save_location_changed
     SaveSyncError.GAME_RUNNING -> R.string.webdav_error_game_running
     SaveSyncError.IDENTITY_CONFLICT -> R.string.webdav_error_identity_conflict
     SaveSyncError.SELECTION_INCOMPLETE -> R.string.save_error_selection_incomplete
