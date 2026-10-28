@@ -493,7 +493,7 @@
     <string name="engine_settings_game_modifier">Game modifier</string>
     <string name="engine_settings_legacy_renderer">PIXI legacy renderer (only applies to TynMV engine sessions)</string>
     <string name="engine_settings_save_interop">Save interop (MV/MZ)</string>
-    <string name="save_sync_now">Sync saves now</string>
+    <string name="save_sync_now">Sync interoperable saves</string>
     <string name="save_sync_result">Sync done: imported %1$d, exported %2$d, overwritten %3$d, deleted %4$d</string>
     <string name="save_sync_result_no_change">Sync done: both sides already match</string>
     <string name="save_sync_result_failed">Sync finished, but %1$d save files failed</string>
@@ -578,7 +578,7 @@
     <string name="save_format_converted_count">Converted %1$d save files</string>
     <string name="save_format_converted_with_failures">Converted %1$d, %2$d failed</string>
     <string name="save_format_convert_failed">Save format conversion failed</string>
-    <string name="save_export_format_title">Export format</string>
+    <string name="save_export_format_title">Choose export format</string>
     <string name="save_export_format_standard">Standard mode</string>
     <string name="save_export_format_standard_summary">JoiPlay/PC compatible</string>
     <string name="save_export_format_tyranor">Tyranor mode</string>
@@ -915,7 +915,7 @@
     <string name="save_versions_none">No versions yet. They will appear after a sync.</string>
     <string name="save_version_activate">Activate selected version</string>
     <string name="save_version_metadata_pending">Switched; version details are pending</string>
-    <string name="save_sync_execute">Sync now</string>
+    <string name="save_sync_execute">WebDAV sync</string>
     <string name="save_sync_direction_pull">Pull only</string>
     <string name="save_sync_direction_upload">Upload only</string>
     <string name="save_sync_direction_both">Upload and pull</string>
@@ -934,5 +934,6 @@
     <string name="save_version_recover">Resolve incomplete switch</string>
     <string name="save_version_recovery_policy">Keep the current save and clear the interrupted selection. The next local interop sync will use the current save.</string>
     <string name="webdav_error_cloud_repair">Remove the damaged cloud save and retry</string>
-    <string name="save_sync_cleanup_failed">Game removed. Some save sync data could not be cleaned up</string>
+    <string name="save_sync_cleanup_failed">“%1$s” remains in the library. Save sync data cleanup failed; please retry</string>
+    <string name="webdav_sync_busy_skipped">Sync completed; running games were skipped</string>
 </resources>

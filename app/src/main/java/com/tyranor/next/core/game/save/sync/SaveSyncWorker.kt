@@ -140,10 +140,10 @@ internal object SaveSyncWorkPolicy {
 
     fun outcome(report: SaveSyncReport, fallback: Boolean): SaveSyncWorkOutcome {
         if (isDisabled(report)) return SaveSyncWorkOutcome.SUCCESS
-        if (report.failures.any { it.error !in retryable }) return SaveSyncWorkOutcome.FAILURE
         val retryableFailure = report.failures.any { it.error in retryable }
+        if (fallback && (report.busy > 0 || retryableFailure)) return SaveSyncWorkOutcome.RETRY
+        if (report.failures.any { it.error !in retryable }) return SaveSyncWorkOutcome.FAILURE
         if (report.busy == 0 && !retryableFailure) return SaveSyncWorkOutcome.SUCCESS
-        if (fallback) return SaveSyncWorkOutcome.RETRY
         return if (report.failures.isEmpty()) SaveSyncWorkOutcome.SUCCESS else SaveSyncWorkOutcome.FAILURE
     }
 }

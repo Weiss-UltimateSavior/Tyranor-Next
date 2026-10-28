@@ -1,9 +1,13 @@
 package com.core.siglus;
 
 /** One native owner per process across both direct and filtered presentation. */
-final class SiglusEngineAdmission {
+public final class SiglusEngineAdmission {
     static final SiglusEngineAdmission PROCESS = new SiglusEngineAdmission();
     private Permit active;
+    /** Cross-layer read-only evidence; only owner release confirms native destruction. */
+    public static boolean hasActiveOwner() {
+        synchronized (PROCESS) { return PROCESS.active != null; }
+    }
     synchronized Permit acquire() {
         if (active != null) return null;
         active = new Permit();

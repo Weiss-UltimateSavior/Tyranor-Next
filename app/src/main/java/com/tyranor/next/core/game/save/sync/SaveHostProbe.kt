@@ -24,6 +24,7 @@ internal fun hasRunningSaveHost(
     hasSession: Boolean,
     inStartGrace: Boolean,
     elapsedMillis: Long,
+    relatedUris: Set<String> = setOf(gameUri),
 ): Boolean {
     if (inStartGrace) return true
     val visible = probe.visibleHosts() ?: return true
@@ -35,8 +36,15 @@ internal fun hasRunningSaveHost(
             (array.opt(index) as? String)?.takeIf(String::isNotBlank) ?: return HostRecordRelation.UNKNOWN
         }
         val idleSince = record.optLong("idleSince")
-        return classifyHostRecord(pid, record.optInt("pid", -1), record.optInt("activities", -1), uris, gameUri,
-            idleForMillis = if (idleSince > 0) elapsedMillis - idleSince else -1L)
+        val idleFor = if (idleSince > 0) elapsedMillis - idleSince else -1L
+        val activities = record.optInt("activities", -1)
+        val effectiveActivities = if (record.optBoolean("nativeOwnerPending") && activities >= 0) {
+            maxOf(1, activities) // Retain owner URI correlation until native destruction ACK.
+        } else activities
+        return relatedUris.map { related ->
+            classifyHostRecord(pid, record.optInt("pid", -1), effectiveActivities, uris, related,
+                idleForMillis = idleFor)
+        }.firstOrNull { it != HostRecordRelation.UNRELATED } ?: HostRecordRelation.UNRELATED
     }
     if (visible.any { it.name.isBlank() || relation(it.pid, SaveContentHash.text(it.name)) != HostRecordRelation.UNRELATED }) {
         return true

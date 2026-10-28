@@ -121,10 +121,15 @@ class WebDavClient(
     internal suspend fun verifyVersion(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean = verifyArchive(game, remote)
 
     /** Only a proven corrupt target owned by this pending publication may be retired. */
-    internal suspend fun discardCorruptPublication(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean {
+    internal suspend fun discardCorruptPublication(
+        game: RemoteSaveGame,
+        remote: RemoteSaveVersion,
+        beforeDelete: suspend () -> Unit = {},
+    ): Boolean {
         if (remote.legacy) throw SaveSyncException(SaveSyncError.INVALID_CONFIG)
         if (verifyArchive(game, remote)) return false
         if (strongEtag(remote.etag) == null) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+        beforeDelete()
         delete(game, remote)
         return true
     }

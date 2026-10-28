@@ -19,6 +19,26 @@ import java.util.zip.ZipOutputStream
 class SaveActivationJournalTest {
     @get:Rule val temp = TemporaryFolder()
 
+    @Test fun orphanArchiveMustBeRecoveredBeforePreparingAnotherSelection() {
+        val root = temp.newFolder("orphan-journal")
+        val journal = SaveActivationJournal(root)
+        val previous = archive(root, "orphan-selected")
+        val protected = journal.archive(KEY_A)
+        protected.parentFile!!.mkdirs()
+        previous.copyTo(protected)
+        val expected = protected.readBytes()
+        val incoming = archive(root, "new-selection")
+
+        val failure = assertThrows(SaveSyncException::class.java) {
+            journal.prepare(KEY_A, version(incoming), incoming, "before")
+        }
+
+        assertEquals(SaveSyncError.SELECTION_INCOMPLETE, failure.code)
+        assertArrayEquals(expected, protected.readBytes())
+        assertTrue(incoming.exists())
+        assertNull(journal.load(KEY_A))
+    }
+
     @Test fun preparedZipMovesToDurablePerGameArchiveAndSurvivesNewInstance() {
         val root = temp.newFolder("journal")
         val journal = SaveActivationJournal(root)

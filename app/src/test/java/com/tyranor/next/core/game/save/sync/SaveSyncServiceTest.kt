@@ -7,9 +7,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -420,6 +422,315 @@ class SaveSyncServiceTest {
         return false
     }
 
+    @Test
+    fun recoveryAtFiveVersionsRetainsBothOldSelectedAndNewActiveBytes() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("full-recovery")
+        harness.identify(game)
+        val key = harness.key(game)
+        val selected = harness.addSnapshot(game, "oldest-S", 1_700_000_000_000L)
+        val staged = harness.archive("staged-S", "progress-oldest-S")
+        harness.journal.prepare(key, selected, staged, "before")
+        repeat(5) { harness.addSnapshot(game, "newer-$it", 1_700_000_001_000L + it) }
+        assertFalse(harness.snapshots.list(key).any { it.contentHash == selected.contentHash })
+        val current = harness.setActive(game, "current-N")
+
+        harness.service.recoverSelection(game)
+
+        val retained = harness.snapshots.list(key)
+        assertEquals(5, retained.size)
+        for (hash in setOf(selected.contentHash, current)) {
+            assertTrue(harness.snapshots.isValid(key, retained.single { it.contentHash == hash }))
+        }
+        assertEquals(current, harness.world.activeHash(game))
+        assertEquals(0, harness.world.importCount(game))
+        assertNull(harness.journal.load(key))
+        assertFalse(harness.journal.archive(key).exists())
+    }
+
+    @Test
+    fun parseableJournalWithWrongHashRescuesArchiveUsingItsActualContent() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("semantic-journal")
+        harness.identify(game)
+        val key = harness.key(game)
+        val current = harness.setActive(game, "current-N")
+        val staged = harness.archive("selected-S", "selected-S")
+        val selected = harness.versionFor(staged)
+        harness.journal.prepare(key, selected, staged, current)
+        val record = File(harness.root, "pending/records/$key.json")
+        val wrongHash = "a".repeat(64)
+        val damaged = JSONObject(record.readText()).put("id", SaveVersionNames.create(selected.createdAt, wrongHash))
+        record.writeText(damaged.toString())
+
+        harness.service.recoverSelection(game)
+
+        val retained = harness.snapshots.list(key)
+        assertTrue(harness.snapshots.isValid(key, retained.single { it.contentHash == selected.contentHash }))
+        assertTrue(harness.snapshots.isValid(key, retained.single { it.contentHash == current }))
+        assertFalse(retained.any { it.contentHash == wrongHash })
+        assertEquals(current, harness.world.activeHash(game))
+        assertFalse(harness.journal.archive(key).exists())
+        assertNull(harness.journal.load(key))
+    }
+
+    @Test
+    fun failedArchiveRescueKeepsJournalAndArchiveForRetry() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("unreadable-archive")
+        val key = harness.key(game)
+        val current = harness.setActive(game, "current-N")
+        val staged = harness.archive("selected-S", "selected-S")
+        harness.journal.prepare(key, harness.versionFor(staged), staged, current)
+        val source = harness.journal.archive(key)
+        source.writeText("damaged ZIP")
+
+        try {
+            harness.service.recoverSelection(game)
+            fail("Recovery must not clear an archive it could not rescue")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.CORRUPT_ARCHIVE, failure.code)
+        }
+
+        assertTrue(source.isFile)
+        assertTrue(harness.journal.load(key) != null)
+        assertEquals(current, harness.world.activeHash(game))
+    }
+
+    @Test
+    fun busyPruneRetryDoesNotReuseConfirmationAfterReplacementDisappears() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("busy-prune")
+        harness.identify(game)
+        val hash = harness.setActive(game, "current-N")
+        val remoteGame = harness.remoteGame(game)
+        repeat(11) { index ->
+            harness.transport.seed(remoteGame, RemoteSaveVersion("old-$index.zip",
+                (index + 1).toString(16).padStart(64, '0'), 1_700_000_000_000L + index, 10L))
+        }
+        harness.transport.failNextDelete()
+        val first = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(listOf(SaveSyncError.SERVER), first.failures.map { it.error })
+        assertTrue(harness.states.load(harness.checkpointKey(game)).getBoolean("publicationConfirmed"))
+        harness.transport.remove(remoteGame, hash)
+        harness.world.isRunning = true
+        val before = harness.transport.versions(remoteGame)
+        val verifies = harness.transport.verifyCount()
+        val deletes = harness.transport.deleteCount()
+
+        val retry = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(1, retry.busy)
+        assertTrue(retry.failures.isEmpty())
+        assertEquals(before, harness.transport.versions(remoteGame))
+        assertEquals(verifies, harness.transport.verifyCount())
+        assertEquals(deletes, harness.transport.deleteCount())
+        assertTrue(harness.states.load(harness.checkpointKey(game)).getBoolean("needsPrune"))
+    }
+
+    @Test
+    fun failedChildCleanupPreservesIdentityAndOwnershipUntilSuccessfulRetry() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("cleanup-retry")
+        harness.identify(game)
+        val key = harness.key(game)
+        val child = SaveContentHash.text("owned-unreadable-checkpoint")
+        harness.states.save(key, harness.states.load(key).put("checkpointKeys", JSONArray().put(child)))
+        val obstructed = File(harness.root, "checkpoints/$child.json")
+        assertTrue(obstructed.mkdir())
+        File(obstructed, "obstruction").writeText("cannot delete as a file")
+
+        try {
+            harness.service.clearGame(game)
+            fail("Child cleanup failure must remain retryable")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        }
+        assertEquals("identity-cleanup-retry", harness.service.identity(game))
+        assertEquals(child, harness.states.load(key).getJSONArray("checkpointKeys").getString(0))
+        assertTrue(obstructed.isDirectory)
+
+        assertTrue(File(obstructed, "obstruction").delete())
+        harness.service.clearGame(game)
+        assertFalse(obstructed.exists())
+        assertEquals(0, harness.states.load(key).length())
+    }
+
+    @Test
+    fun queuedSyncRechecksIdentityChangedWhileWaitingForNetworkLock() = runBlocking {
+        val harness = Harness(temp)
+        val first = harness.addGame("identity-A")
+        val second = harness.addGame("identity-B")
+        harness.identify(first)
+        harness.identify(second)
+        val hash = harness.setActive(first, "current-A")
+        coroutineScope {
+            lateinit var queued: kotlinx.coroutines.Deferred<SaveSyncReport>
+            SaveSyncLocks.network(first.uri) {
+                queued = async(Dispatchers.Default) { harness.service.syncGame(first, SaveSyncDirection.UPLOAD) }
+                withTimeout(5_000) { while (harness.world.openClientCount() == 0) delay(10) }
+                harness.service.setIdentity(first, harness.service.identity(second))
+            }
+            val report = withTimeout(5_000) { queued.await() }
+            assertEquals(listOf(SaveSyncError.IDENTITY_CONFLICT), report.failures.map { it.error })
+            assertEquals(0, harness.transport.uploadCount(hash))
+        }
+    }
+
+    @Test
+    fun unavailableGameStillReservesItsCloudIdentity() = runBlocking {
+        val harness = Harness(temp)
+        val first = harness.addGame("available")
+        val unavailable = harness.addGame("unavailable")
+        harness.service.setIdentity(first, "shared")
+        harness.service.setIdentity(unavailable, "shared")
+        val hash = harness.setActive(first, "current")
+        harness.world.unavailableUris += unavailable.uri
+
+        val single = harness.service.syncGame(first, SaveSyncDirection.UPLOAD)
+        val all = harness.service.syncAll(SaveSyncDirection.UPLOAD)
+
+        assertEquals(listOf(SaveSyncError.IDENTITY_CONFLICT), single.failures.map { it.error })
+        assertEquals(2, all.failures.count { it.error == SaveSyncError.IDENTITY_CONFLICT })
+        assertEquals(0, harness.transport.uploadCount(hash))
+    }
+
+    @Test
+    fun unavailableEntryWithoutPortableIdentityDoesNotBreakAnotherGamesSync() = runBlocking {
+        val harness = Harness(temp)
+        val first = harness.addGame("available")
+        val unsupported = ScanGame("unsupported", "androidapp://unresolvable",
+            EngineType.ANDROID_APP, "__game_dir__")
+        harness.world.addGame(unsupported)
+        harness.world.unavailableUris += unsupported.uri
+        harness.identify(first)
+        // The other unavailable entry has the same engine but no resolvable folder or custom ID.
+        val unknown = harness.addGame("unknown")
+        harness.world.unavailableUris += unknown.uri
+        harness.setActive(first, "current")
+
+        val single = harness.service.syncGame(first, SaveSyncDirection.UPLOAD)
+        val all = harness.service.syncAll(SaveSyncDirection.UPLOAD)
+
+        assertTrue(single.failures.isEmpty())
+        assertTrue(all.failures.isEmpty())
+        assertEquals(1, single.uploaded)
+    }
+
+    @Test
+    fun sameSizeUnverifiedPublicationCannotAuthorizeRetentionDeletes() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("unverified-publication")
+        harness.identify(game)
+        harness.setActive(game, "current-N")
+        val remote = harness.remoteGame(game)
+        repeat(11) { index ->
+            harness.transport.seed(remote, RemoteSaveVersion("old-$index.zip",
+                (index + 1).toString(16).padStart(64, '0'), 1_700_000_000_000L + index, 10L))
+        }
+        harness.transport.corruptNextUpload = true
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(listOf(SaveSyncError.SERVER), report.failures.map { it.error })
+        assertEquals(0, harness.transport.deleteCount())
+        assertEquals(12, harness.transport.versions(remote).size)
+        assertFalse(harness.states.load(harness.checkpointKey(game)).getBoolean("publicationConfirmed"))
+    }
+
+    @Test
+    fun committedUnfinishedNewSelectionDoesNotInheritAnOlderPromotionChain() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("old-promotion")
+        harness.identify(game)
+        val key = harness.key(game)
+        val current = harness.setActive(game, "new-selection-N")
+        val source = harness.archive("new-selection-S", "new-selected-bytes")
+        harness.journal.prepare(key, harness.versionFor(source), source, "before-new-selection")
+        harness.journal.markCommitted(key)
+        harness.states.save(key, harness.states.load(key).put("completedActivation", "older-token")
+            .put("promotionFromHash", "older-S").put("promotionFromTime", 1L).put("promotionAt", 2L)
+            .put("promotionAwaitingChange", true).put("promotionBaseHash", "old-base"))
+
+        harness.service.recoverSelection(game)
+
+        val state = harness.states.load(key)
+        for (field in listOf("completedActivation", "promotionFromHash", "promotionAt", "promotionAwaitingChange",
+            "promotionBaseHash")) assertFalse(state.has(field))
+        assertEquals(current, harness.world.activeHash(game))
+    }
+
+    @Test
+    fun damagedOwnershipIndexCannotDeleteReadableSiblingCheckpoint() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("cleanup-owner")
+        harness.identify(game)
+        val siblingKey = SaveContentHash.text("sibling-uri")
+        val child = SaveContentHash.text("sibling-checkpoint")
+        harness.states.save(child, JSONObject().put("gameKey", siblingKey).put("uploaded", "sibling-progress"))
+        harness.states.save(harness.key(game), harness.states.load(harness.key(game))
+            .put("checkpointKeys", JSONArray().put(child)))
+
+        harness.service.clearGame(game)
+
+        assertEquals("sibling-progress", harness.states.load(child).getString("uploaded"))
+        assertEquals(0, harness.states.load(harness.key(game)).length())
+    }
+
+    @Test
+    fun manualMarkerRecoveryPreservesValidPromotionFromSelectedSToPlayedN() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("manual-recovery-promotion")
+        harness.identify(game)
+        harness.setActive(game, "before-selection")
+        val key = harness.key(game)
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_010L)
+        harness.transport.seed(harness.remoteGame(game), RemoteSaveVersion(selected.id, selected.contentHash,
+            selected.createdAt, selected.size), harness.snapshots.file(key, selected.id))
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+        val current = harness.setActive(game, "played-N")
+        harness.world.recoveryNeeded = true
+
+        harness.service.recoverSelection(game)
+        assertEquals(selected.contentHash, harness.states.load(key).getString("promotionFromHash"))
+        assertTrue(harness.states.load(key).getBoolean("promotionAwaitingChange"))
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertTrue(report.failures.isEmpty())
+        val published = harness.transport.versions(harness.remoteGame(game)).single()
+        assertEquals(current, published.contentHash)
+        assertTrue(published.restored)
+        assertEquals(selected.createdAt, published.previousCreatedAt)
+    }
+
+    @Test
+    fun identityEditDuringCorruptTargetVerificationPreventsItsDelete() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("discard-identity-edit")
+        harness.identify(game)
+        harness.setActive(game, "current")
+        val remote = harness.remoteGame(game)
+        harness.transport.corruptNextUpload = true
+        assertEquals(listOf(SaveSyncError.SERVER),
+            harness.service.syncGame(game, SaveSyncDirection.UPLOAD).failures.map { it.error })
+        val target = harness.transport.versions(remote).single()
+        val gate = CompletableDeferred<Unit>()
+        harness.transport.discardGate = gate
+        coroutineScope {
+            val sync = async(Dispatchers.Default) { harness.service.syncGame(game, SaveSyncDirection.UPLOAD) }
+            withTimeout(5_000) { harness.transport.discardEntered.await() }
+            try {
+                harness.service.setIdentity(game, "new-identity")
+            } finally {
+                gate.complete(Unit)
+            }
+            val report = withTimeout(5_000) { sync.await() }
+            assertEquals(1, report.busy)
+            assertTrue(report.failures.isEmpty())
+            assertEquals(listOf(target), harness.transport.versions(remote))
+        }
+    }
+
     private class Harness(private val temp: TemporaryFolder) {
         val root: File = temp.newFolder("save-sync")
         private val cache: File = temp.newFolder("cache")
@@ -529,10 +840,11 @@ class SaveSyncServiceTest {
         var isRunning = false
         @Volatile
         var recoveryNeeded = false
+        val unavailableUris = HashSet<String>()
 
         override fun config(): WebDavConfig = webDavConfig
         override fun games(): List<ScanGame> = synchronized(lock) { games.toList() }
-        override fun available(game: ScanGame): Boolean = synchronized(lock) { game in games }
+        override fun available(game: ScanGame): Boolean = synchronized(lock) { game in games && game.uri !in unavailableUris }
         override fun running(game: ScanGame): Boolean = isRunning
 
         override suspend fun fingerprint(game: ScanGame): String? =
@@ -617,15 +929,22 @@ class SaveSyncServiceTest {
         private val uploads = HashMap<String, Int>()
         private var downloads = 0
         private var deleteFailures = 0
+        private var verifies = 0
+        private var deletes = 0
+        private val corruptTargets = HashSet<String>()
+        var corruptNextUpload = false
         private var closed = false
         @Volatile
         var listGate: CompletableDeferred<Unit>? = null
         @Volatile
         var uploadGate: CompletableDeferred<Unit>? = null
         @Volatile
+        var discardGate: CompletableDeferred<Unit>? = null
+        @Volatile
         var listFailure: Throwable? = null
         val listEntered = CompletableDeferred<Unit>()
         val uploadEntered = CompletableDeferred<Unit>()
+        val discardEntered = CompletableDeferred<Unit>()
 
         override suspend fun list(game: RemoteSaveGame): List<RemoteSaveVersion> {
             listEntered.complete(Unit)
@@ -667,6 +986,10 @@ class SaveSyncServiceTest {
                     previousCreatedAt = version.previousCreatedAt,
                 )
                 uploads[version.contentHash] = uploads.getOrDefault(version.contentHash, 0) + 1
+                if (corruptNextUpload) {
+                    corruptTargets += version.id
+                    corruptNextUpload = false
+                }
             }
             return WebDavClient.UploadResult(true, bytes.size.toLong())
         }
@@ -696,17 +1019,25 @@ class SaveSyncServiceTest {
         }
 
         override suspend fun verifyVersion(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean =
-            synchronized(lock) { this.remote[game.key]?.containsKey(remote.name) == true }
+            synchronized(lock) {
+                verifies++
+                this.remote[game.key]?.containsKey(remote.name) == true && remote.name !in corruptTargets
+            }
 
         override suspend fun discardCorruptPublication(
             game: RemoteSaveGame,
             remote: RemoteSaveVersion,
-        ): Boolean = synchronized(lock) {
-            this.remote[game.key]?.remove(remote.name) != null
+            beforeDelete: suspend () -> Unit,
+        ): Boolean {
+            discardEntered.complete(Unit)
+            discardGate?.await()
+            beforeDelete()
+            return synchronized(lock) { this.remote[game.key]?.remove(remote.name) != null }
         }
 
         override suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion) {
             synchronized(lock) {
+                deletes++
                 if (deleteFailures > 0) {
                     deleteFailures--
                     throw SaveSyncException(SaveSyncError.SERVER)
@@ -735,6 +1066,11 @@ class SaveSyncServiceTest {
         }
 
         fun downloadCount(): Int = synchronized(lock) { downloads }
+        fun verifyCount(): Int = synchronized(lock) { verifies }
+        fun deleteCount(): Int = synchronized(lock) { deletes }
+        fun remove(game: RemoteSaveGame, hash: String) = synchronized(lock) {
+            remote[game.key]?.entries?.removeAll { it.value.contentHash == hash }
+        }
 
         fun failNextDelete() = synchronized(lock) {
             deleteFailures++

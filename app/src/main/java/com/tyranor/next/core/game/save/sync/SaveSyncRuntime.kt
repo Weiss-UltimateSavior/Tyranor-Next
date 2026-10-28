@@ -57,27 +57,62 @@ object SaveSyncRuntime {
         val hostActivities = HostActivityUriRegistry<Activity>()
         val hostWrite = Mutex()
         val idleSince = java.util.concurrent.atomic.AtomicLong(0L)
+        val closingUris = ConcurrentHashMap.newKeySet<String>()
+        val reconciliationRunning = java.util.concurrent.atomic.AtomicBoolean(false)
         val runtime = runtimeStore(application)
         val key = SaveContentHash.text(process)
+        fun nativeOwnerPending(): Boolean = process == application.packageName + ":siglus" &&
+            com.core.siglus.SiglusEngineAdmission.hasActiveOwner()
         fun registerActivity(activity: Activity) {
             val uri = activity.intent
                 ?.getStringExtra(LaunchContract.ROOT_URI)
                 ?.takeIf { it.isNotBlank() }
             hostActivities.register(activity, uri)
         }
-        fun record() {
+        suspend fun recordNow(): Boolean =
+            hostWrite.withLock {
+                try {
+                    val snapshot = hostActivities.snapshot()
+                    val pending = nativeOwnerPending()
+                    val uris = if (pending) (snapshot.uris + closingUris).distinct() else snapshot.uris
+                    runtime.save(key, JSONObject()
+                        .put("pid", Process.myPid())
+                        .put("activities", snapshot.activities)
+                        .put("idleSince", idleSince.get())
+                        .put("nativeOwnerPending", pending)
+                        .put("uris", JSONArray(uris)))
+                    if (!pending) closingUris.clear()
+                    true
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // An unreadable/missing record is treated as busy by the reader.
+                    false
+                }
+            }
+        fun record() { scope.launch { recordNow() } }
+        fun reconcileOwner() {
+            if (!reconciliationRunning.compareAndSet(false, true)) return
             scope.launch {
-                hostWrite.withLock {
-                    try {
-                        val snapshot = hostActivities.snapshot()
-                        runtime.save(key, JSONObject()
-                            .put("pid", Process.myPid())
-                            .put("activities", snapshot.activities)
-                            .put("idleSince", idleSince.get())
-                            .put("uris", JSONArray(snapshot.uris)))
-                    } catch (_: Exception) {
-                        // An unreadable/missing record is treated as busy by the reader.
+                try {
+                    while (true) {
+                        while (nativeOwnerPending()) delay(200)
+                        if (hostActivities.activityCount() == 0) idleSince.set(SystemClock.elapsedRealtime())
+                        if (!recordNow()) {
+                            delay(1_000)
+                            continue
+                        }
+                        if (nativeOwnerPending()) continue
+                        if (hostActivities.activityCount() == 0) {
+                            application.sendBroadcast(Intent(application, SaveSyncExitReceiver::class.java))
+                        }
+                        break
                     }
+                } finally {
+                    reconciliationRunning.set(false)
+                }
+                if (nativeOwnerPending() || (hostActivities.activityCount() == 0 && idleSince.get() == 0L)) {
+                    reconcileOwner()
                 }
             }
         }
@@ -89,13 +124,17 @@ object SaveSyncRuntime {
                 record()
             }
             override fun onActivityDestroyed(activity: Activity) {
+                if (nativeOwnerPending()) closingUris += hostActivities.snapshot().uris
                 hostActivities.unregister(activity)
                 if (hostActivities.activityCount() == 0 && !activity.isChangingConfigurations) {
-                    idleSince.set(SystemClock.elapsedRealtime())
-                }
-                record()
-                if (hostActivities.activityCount() == 0 && !activity.isChangingConfigurations) {
-                    application.sendBroadcast(Intent(application, SaveSyncExitReceiver::class.java))
+                    // Always reconcile, even if the owner releases between the lifecycle
+                    // callback and this coroutine. One final record precedes the exit signal.
+                    idleSince.set(0L)
+                    record()
+                    reconcileOwner()
+                } else {
+                    record()
+                    if (nativeOwnerPending()) reconcileOwner()
                 }
             }
             override fun onActivityStarted(activity: Activity) = Unit
@@ -119,12 +158,14 @@ object SaveSyncRuntime {
             val store = sessions(context)
             val key = SaveContentHash.text(game.uri)
             val previous = store.load(key).takeIf { it.has("token") }
-            val previousBaseline = previous?.optString("baseline").orEmpty()
+            val inherited = inheritedSessionBaseline(previous)
+            val previousBaseline = inherited.orEmpty()
+            val inheritBaseline = inherited != null
             var baselineMetadata = previous?.optString("baselineMetadata").orEmpty()
-            val cached = if (previousBaseline.isBlank() || baselineMetadata.isBlank()) {
+            val cached = if (!inheritBaseline || baselineMetadata.isBlank()) {
                 loadCachedBaseline(baselines(context), key, game.uri)
             } else null
-            val baseline = if (previousBaseline.isNotBlank()) {
+            val baseline = if (inheritBaseline) {
                 previousBaseline
             } else {
                 val manager = GameSaveManager(context)
@@ -184,6 +225,11 @@ object SaveSyncRuntime {
      */
     internal fun recordRestoredVersion(context: Context, game: ScanGame, hash: String): Boolean {
         try {
+            val manager = GameSaveManager(context)
+            val related = relatedSaveUris(game, GameLibraryFacade.loadGames(context)) { manager.resolveSaveLocation(it).directory }
+            // The directory was explicitly replaced. An alias's old gameplay baseline must
+            // not reinterpret this selection as progress to publish under another identity.
+            clearRelatedSessionBaselines(game.uri, related, sessions(context), baselines(context))
             if (!WebDavSettingsStore.isEnabled(context)) return true
             val config = WebDavSettingsStore.load(context)
             if (!config.active || !config.mode.uploads) return true
@@ -212,7 +258,7 @@ object SaveSyncRuntime {
                 val store = sessions(context)
                 for (key in store.keys()) {
                     val uri = store.load(key).optString("uri")
-                    SaveSyncLocks.active(uri) {
+                    SaveSyncLocks.active(activeKey(context, uri)) {
                         if (!WebDavSettingsStore.isEnabled(context)) store.remove(key)
                     }
                 }
@@ -251,7 +297,7 @@ object SaveSyncRuntime {
                             recordedOwnerPid = entry.optInt("ownerPid", -1),
                             currentOwnerPid = Process.myPid(),
                         )) {
-                        SaveSyncLocks.active(entry.optString("uri")) {
+                        SaveSyncLocks.active(activeKey(context, entry.optString("uri"))) {
                             val current = store.load(key)
                             if (current.has("token")) store.save(key, current.put("returned", true))
                         }
@@ -278,7 +324,7 @@ object SaveSyncRuntime {
                 val store = sessions(context)
                 for (key in store.keys()) {
                     val entry = store.load(key)
-                    if (entry.has("token")) SaveSyncLocks.active(entry.optString("uri")) {
+                    if (entry.has("token")) SaveSyncLocks.active(activeKey(context, entry.optString("uri"))) {
                         val current = store.load(key)
                         if (current.has("token")) store.save(key, current.put("leftApp", true))
                     }
@@ -334,7 +380,7 @@ object SaveSyncRuntime {
                 val target = game
                 val baseline = entry.optString("baseline")
                 val manager = GameSaveManager(context)
-                val decision = SaveSyncLocks.active(target.uri) {
+                val decision = SaveSyncLocks.active(activeKey(context, target)) {
                     if (isGameRunning(context, target)) {
                         FlushDecision.Busy
                     } else {
@@ -360,7 +406,7 @@ object SaveSyncRuntime {
                         val result = SaveSyncService(context).syncGame(target, SaveSyncDirection.UPLOAD)
                         report += result
                         if (result.failures.isEmpty() && result.busy == 0) {
-                            val committed = SaveSyncLocks.active(target.uri) {
+                            val committed = SaveSyncLocks.active(activeKey(context, target)) {
                                 if (isGameRunning(context, target) ||
                                     store.load(key).optString("token") != token) {
                                     false
@@ -394,7 +440,7 @@ object SaveSyncRuntime {
         key: String,
         entry: JSONObject,
         gameMissing: Boolean = false,
-    ) = SaveSyncLocks.active(entry.optString("uri")) {
+    ) = SaveSyncLocks.active(activeKey(context, entry.optString("uri"))) {
         if (store.load(key).optString("token") == entry.optString("token")) {
             val current = WebDavSettingsStore.load(context)
             // A concurrent mode change and launch may already have replaced this ticket.
@@ -413,11 +459,19 @@ object SaveSyncRuntime {
     }
 
     internal fun isGameRunning(context: Context, game: ScanGame): Boolean {
-        val entry = sessions(context).load(SaveContentHash.text(game.uri))
+        val manager = GameSaveManager(context)
+        val library = GameLibraryFacade.loadGames(context).let { games ->
+            if (games.any { it.uri == game.uri }) games else games + game
+        }
+        val related = relatedSaveUris(game, library) { manager.resolveSaveLocation(it).directory }
+        val external = library.filter { it.uri in related && it.engine == EngineType.YURIS }.mapTo(HashSet()) { it.uri }
+        val entries = related.associateWith { sessions(context).load(SaveContentHash.text(it)) }
         // External Winlator cannot expose a host-process registration callback.
-        if (game.engine == EngineType.YURIS) return entry.has("token") && !entry.optBoolean("returned")
-        val inGrace = launchGraceActive(game.uri) || (entry.has("token") &&
-            System.currentTimeMillis() - entry.optLong("startedAt") in 0..START_GRACE_MS)
+        if (entries.any { (uri, entry) -> uri in external && entry.has("token") && !entry.optBoolean("returned") }) return true
+        val nativeEntries = entries.filterKeys { it !in external }.values
+        if (nativeEntries.isEmpty()) return false
+        val inGrace = related.any(::launchGraceActive) || nativeEntries.any { entry -> entry.has("token") &&
+            System.currentTimeMillis() - entry.optLong("startedAt") in 0..START_GRACE_MS }
         val declaredHosts = secondaryActivityProcessNames(context)
         val probe = object : SaveHostProbe {
             override fun visibleHosts(): List<SaveHostProcess>? {
@@ -450,10 +504,17 @@ object SaveSyncRuntime {
         }
         // An explicit restore creates bookkeeping without launching a host. Missing host evidence
         // must still block real launches, but cannot turn that restore into a permanent busy loop.
-        val needsHostEvidence = sessionRequiresHostEvidence(entry.has("token"),
-            entry.optLong("startedAt", -1L), entry.optBoolean("returned"))
-        return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime())
+        val needsHostEvidence = nativeEntries.any { entry -> sessionRequiresHostEvidence(entry.has("token"),
+            entry.optLong("startedAt", -1L), entry.optBoolean("returned")) }
+        return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime(), related)
     }
+
+    internal fun activeKey(context: Context, game: ScanGame): String = saveDirectoryIdentity(game) {
+        GameSaveManager(context).resolveSaveLocation(it).directory
+    }
+
+    private fun activeKey(context: Context, uri: String): String =
+        GameLibraryFacade.loadGames(context).firstOrNull { it.uri == uri }?.let { activeKey(context, it) } ?: uri
 
     private fun secondaryActivityProcessNames(context: Context): Set<String>? {
         cachedSecondaryActivityProcessNames?.let { return it }
@@ -624,6 +685,23 @@ object SaveSyncRuntime {
 }
 
 internal data class HostActivityUriSnapshot(val activities: Int, val uris: List<String>)
+
+/** Empty is a real pre-save baseline; null means there is no pending session to inherit. */
+internal fun inheritedSessionBaseline(previous: JSONObject?): String? =
+    previous?.takeIf { it.has("token") && it.has("baseline") }?.getString("baseline")
+
+internal fun clearRelatedSessionBaselines(
+    selectedUri: String,
+    relatedUris: Set<String>,
+    sessions: SaveSyncStateStore,
+    baselines: SaveSyncStateStore,
+) {
+    for (uri in relatedUris - selectedUri) {
+        val key = SaveContentHash.text(uri)
+        sessions.remove(key)
+        baselines.remove(key)
+    }
+}
 
 internal fun sessionRequiresHostEvidence(hasToken: Boolean, startedAt: Long, returned: Boolean): Boolean =
     hasToken && !(startedAt == 0L && returned)

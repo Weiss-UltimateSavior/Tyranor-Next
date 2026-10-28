@@ -50,6 +50,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -72,13 +74,13 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     var loading by remember(game.uri) { mutableStateOf(true) }
     var loadError by remember(game.uri) { mutableStateOf<String?>(null) }
     var taskError by remember(game.uri) { mutableStateOf<String?>(null) }
+    var taskInfo by remember(game.uri) { mutableStateOf<String?>(null) }
     var pendingVersion by remember(game.uri) { mutableStateOf<SaveVersion?>(null) }
     var discardPrevious by remember(game.uri) { mutableStateOf(false) }
     var selectedId by rememberSaveable(game.uri) { mutableStateOf("") }
     var identity by remember(game.uri) { mutableStateOf("") }
     var editedIdentity by remember(game.uri) { mutableStateOf<String?>(null) }
     val dateFormat = remember { SimpleDateFormat("yy.MM.dd HH:mm", Locale.ROOT) }
-    val selectedIndex = versions.indexOfFirst { it.id == selectedId } + 1
     val selectedVersion = versions.firstOrNull { it.id == selectedId }
     val previousUnknown = stringResource(R.string.save_version_previous_unknown)
     val saveOperationFailedMessage = stringResource(R.string.save_operation_failed)
@@ -88,6 +90,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     fun <T> runSilentTask(block: suspend () -> T, onSuccess: (T) -> Unit) {
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
         taskError = null
+        taskInfo = null
         runTask {
             try {
                 if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
@@ -95,6 +98,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
                 withContext(Dispatchers.Main) {
                     taskError = null
+                    taskInfo = null
                     onSuccess(result)
                 }
                 null
@@ -117,6 +121,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     fun syncNow() {
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
         taskError = null
+        taskInfo = null
         runTask {
             if (!WebDavSettingsStore.isEnabled(context)) return@runTask null
             val report = try {
@@ -147,6 +152,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     fun beginIdentityEdit() {
         if (taskRunning || !WebDavSettingsStore.isEnabled(context)) return
         taskError = null
+        taskInfo = null
         editedIdentity = identity
     }
 
@@ -196,6 +202,10 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
+        taskInfo?.takeIf { pendingVersion == null && editedIdentity == null }?.let { info ->
+            Text(info, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
+        }
         if (loadError == null) {
             MiuixCard(Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                 Column(Modifier.padding(vertical = 4.dp)) {
@@ -215,24 +225,24 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                         else -> {
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.save_versions_title),
-                                summary = selectedVersion?.takeIf { it.restored }?.let { version ->
-                                    val (oldTime, newTime) = saveVersionTimes(
-                                        version,
-                                        dateFormat,
-                                        previousUnknown,
-                                    )
-                                    stringResource(R.string.save_version_time_change, oldTime, newTime)
-                                },
-                                items = listOf(stringResource(R.string.save_version_choose)) + versions.map { version ->
-                                    saveVersionDisplayText(version, dateFormat, previousUnknown)
-                                },
-                                selectedIndex = selectedIndex,
+                                entry = DropdownEntry(
+                                    listOf(DropdownItem(
+                                        text = stringResource(R.string.save_version_choose),
+                                        enabled = false,
+                                        selected = selectedVersion == null,
+                                    )) + versions.map { version ->
+                                        DropdownItem(
+                                            text = saveVersionDisplayText(version, dateFormat, previousUnknown),
+                                            selected = version.id == selectedId,
+                                            onClick = {
+                                                if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
+                                                    selectedId = version.id
+                                                }
+                                            },
+                                        )
+                                    },
+                                ),
                                 enabled = !taskRunning,
-                                onSelectedIndexChange = { index ->
-                                    if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
-                                        selectedId = versions.getOrNull(index - 1)?.id.orEmpty()
-                                    }
-                                },
                             )
                             AppNavItem(
                                 title = stringResource(R.string.save_version_activate),
@@ -245,6 +255,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                                     {
                                         if (WebDavSettingsStore.isEnabled(context)) {
                                             taskError = null
+                                            taskInfo = null
                                             discardPrevious = false
                                             pendingVersion = selectedVersion
                                         }
@@ -284,7 +295,8 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
         }
     }
     pendingVersion?.let { version ->
-        AppAlertDialog(onDismissRequest = { if (!taskRunning) { pendingVersion = null; taskError = null } },
+        AppAlertDialog(onDismissRequest = { pendingVersion = null; taskError = null; taskInfo = null },
+            dismissEnabled = !taskRunning,
             title = { Text(stringResource(R.string.save_version_switch_title), style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -293,6 +305,9 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Text(stringResource(R.string.save_versions_policy), style = MaterialTheme.typography.bodyMedium)
+                    taskInfo?.let { info ->
+                        Text(info, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     taskError?.let { error ->
                         Text(error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                     }
@@ -304,7 +319,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                     onSuccess = { result ->
                         if (result != SaveActivationResult.PREVIOUS_PENDING) pendingVersion = null
                         discardPrevious = result == SaveActivationResult.PREVIOUS_PENDING
-                        taskError = when (result) {
+                        taskInfo = when (result) {
                             SaveActivationResult.UNCHANGED,
                             SaveActivationResult.APPLIED -> null
                             SaveActivationResult.METADATA_PENDING -> metadataPendingMessage
@@ -316,11 +331,13 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
             dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) {
                 pendingVersion = null
                 taskError = null
+                taskInfo = null
             } },
             textScrollEnabled = true,
         )
     }
-    if (editedIdentity != null) AppAlertDialog(onDismissRequest = { if (!taskRunning) { editedIdentity = null; taskError = null } },
+    if (editedIdentity != null) AppAlertDialog(onDismissRequest = { editedIdentity = null; taskError = null; taskInfo = null },
+        dismissEnabled = !taskRunning,
         title = { Text(stringResource(R.string.save_sync_identity), style = MaterialTheme.typography.titleMedium) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -335,6 +352,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                         if (!taskRunning) {
                             editedIdentity = it
                             taskError = null
+                            taskInfo = null
                         }
                     },
                     onSearch = { saveIdentity() },
@@ -354,6 +372,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
         dismissButton = { DialogTextButton(stringResource(R.string.common_cancel), enabled = !taskRunning) {
             editedIdentity = null
             taskError = null
+            taskInfo = null
         } },
         textScrollEnabled = true,
     )
@@ -387,7 +406,8 @@ private fun SaveSelectionRecoveryPanel(
         )
     }
     if (confirming) AppAlertDialog(
-        onDismissRequest = { if (!taskRunning) confirming = false },
+        onDismissRequest = { confirming = false; error = null },
+        dismissEnabled = !taskRunning,
         title = { Text(stringResource(R.string.save_version_recover), style = MaterialTheme.typography.titleMedium) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

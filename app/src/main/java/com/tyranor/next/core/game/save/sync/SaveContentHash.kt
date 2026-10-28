@@ -9,6 +9,7 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.zip.ZipFile
 import java.util.zip.ZipException
+import java.util.zip.ZipInputStream
 
 /** A save's identity includes relative paths and bytes, never ZIP order or modification times. */
 object SaveContentHash {
@@ -60,7 +61,33 @@ object SaveContentHash {
                     entries += content
                 }
                 if (entries.isEmpty()) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
-                return combine(entries)
+                val expected = combine(entries)
+                // Import reads local ZIP records. Reject extra/omitted/different records rather
+                // than trusting a central directory that describes a different set of save bytes.
+                val localNames = HashSet<String>()
+                val localEntries = ArrayList<Entry>()
+                var localTotal = 0L
+                ZipInputStream(file.inputStream().buffered()).use { local ->
+                    while (true) {
+                        check()
+                        val entry = local.nextEntry ?: break
+                        val name = validName(if (entry.isDirectory) entry.name.removeSuffix("/") else entry.name)
+                        if (!localNames.add(name) || localNames.size > MAX_FILES) {
+                            throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                        }
+                        if (!entry.isDirectory) {
+                            val content = read(name, local, check)
+                            localTotal += content.size
+                            if (localTotal > MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                            localEntries += content
+                        }
+                        local.closeEntry()
+                    }
+                }
+                if (localNames != names || combine(localEntries) != expected) {
+                    throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                }
+                return expected
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled

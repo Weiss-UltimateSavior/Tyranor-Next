@@ -44,7 +44,9 @@ internal class SaveActivationJournal(private val directory: File) {
 
     /** Consumes an already-private staging ZIP after validating it; never pass a history file. */
     fun prepare(key: String, selected: SaveVersion, staging: File, beforeHash: String?, check: () -> Unit = {}): Pending {
-        if (load(key) != null) throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        if (load(key) != null || archive(key).exists()) {
+            throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        }
         if (SaveContentHash.archive(staging, check) != selected.contentHash) {
             throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
         }

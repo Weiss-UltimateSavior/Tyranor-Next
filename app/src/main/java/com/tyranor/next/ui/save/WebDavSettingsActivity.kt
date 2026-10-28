@@ -523,7 +523,7 @@ private fun WebDavSettingsScreen() {
                                 },
                             )
                             AppNavItem(
-                                title = stringResource(R.string.save_sync_now),
+                                title = stringResource(R.string.save_sync_execute),
                                 showLeadingIcon = false,
                                 showArrow = false,
                                 drawSurface = false,

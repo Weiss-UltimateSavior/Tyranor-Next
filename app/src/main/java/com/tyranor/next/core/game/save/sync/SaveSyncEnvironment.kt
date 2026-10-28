@@ -19,6 +19,7 @@ internal interface SaveSyncEnvironment {
     fun games(): List<ScanGame>
     fun available(game: ScanGame): Boolean
     fun running(game: ScanGame): Boolean
+    fun activeKey(game: ScanGame): String = game.uri
     suspend fun fingerprint(game: ScanGame): String?
     suspend fun export(game: ScanGame, archive: File)
     suspend fun import(game: ScanGame, archive: File, committed: () -> Unit)
@@ -35,7 +36,11 @@ internal interface SaveSyncTransport : AutoCloseable {
     suspend fun upload(game: RemoteSaveGame, version: SaveVersion, source: File): WebDavClient.UploadResult
     suspend fun refresh(game: RemoteSaveGame, previous: RemoteSaveVersion, publication: SaveVersion, source: File): Long
     suspend fun verifyVersion(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean
-    suspend fun discardCorruptPublication(game: RemoteSaveGame, remote: RemoteSaveVersion): Boolean
+    suspend fun discardCorruptPublication(
+        game: RemoteSaveGame,
+        remote: RemoteSaveVersion,
+        beforeDelete: suspend () -> Unit = {},
+    ): Boolean
     suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion)
 }
 
@@ -47,6 +52,7 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
     override fun games() = GameLibraryFacade.loadGames(context)
     override fun available(game: ScanGame) = manager.resolveSaveLocation(game).available
     override fun running(game: ScanGame) = SaveSyncRuntime.isGameRunning(context, game)
+    override fun activeKey(game: ScanGame) = SaveSyncRuntime.activeKey(context, game)
     override suspend fun fingerprint(game: ScanGame): String? {
         val location = manager.resolveSaveLocation(game)
         if (!location.available || location.directory == null) throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
@@ -76,7 +82,8 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
             override suspend fun upload(game: RemoteSaveGame, version: SaveVersion, source: File) = client.upload(game, version, source)
             override suspend fun refresh(game: RemoteSaveGame, previous: RemoteSaveVersion, publication: SaveVersion, source: File) = client.refresh(game, previous, publication, source)
             override suspend fun verifyVersion(game: RemoteSaveGame, remote: RemoteSaveVersion) = client.verifyVersion(game, remote)
-            override suspend fun discardCorruptPublication(game: RemoteSaveGame, remote: RemoteSaveVersion) = client.discardCorruptPublication(game, remote)
+            override suspend fun discardCorruptPublication(game: RemoteSaveGame, remote: RemoteSaveVersion,
+                beforeDelete: suspend () -> Unit) = client.discardCorruptPublication(game, remote, beforeDelete)
             override suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion) = client.delete(game, remote)
             override fun close() = client.close()
         }

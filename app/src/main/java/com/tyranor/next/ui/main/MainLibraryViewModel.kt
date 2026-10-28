@@ -42,6 +42,7 @@ data class MainLibraryUiState(
     val scrapeEventId: Long = 0L,
     val scrapeMessage: String? = null,
     val cleanupError: SaveErrorCode? = null,
+    val cleanupGameTitle: String? = null,
     /** 已发布搜索结果的查询词；与页面当前查询词一致时结果才可用（迁移方案阶段 3）。 */
     val searchQuery: String = "",
     /** Room DAO 搜索结果（已按当前排序模式排序）；null 表示无可用的 DB 搜索结果。 */
@@ -240,13 +241,13 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
                 GameLibraryFacade.updateGames(appContext) { games ->
                     if (games.any { it.uri == target.uri }) games else games + target
                 }
-                _uiState.update { it.copy(cleanupError = failure.code) }
+                _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title) }
             }
         }
     }
 
     fun dismissCleanupError() {
-        _uiState.update { it.copy(cleanupError = null) }
+        _uiState.update { it.copy(cleanupError = null, cleanupGameTitle = null) }
     }
 
     fun removeRecentGame(target: ScanGame) {

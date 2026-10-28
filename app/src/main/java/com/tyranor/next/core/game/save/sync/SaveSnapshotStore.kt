@@ -8,10 +8,10 @@ import java.nio.file.AtomicMoveNotSupportedException
 /** Private, per-game immutable ZIP history. Only a successful new version can evict an old one. */
 class SaveSnapshotStore(private val root: File) {
     /** Recover interrupted writes without ever visiting a game's active save directory. */
-    fun maintain(gameKey: String) {
+    fun maintain(gameKey: String, protectedHashes: Set<String> = emptySet()) {
         val directory = directory(gameKey)
         SaveSyncTemporaryFiles.clean(directory, "snapshot_", ".tmp")
-        prune(gameKey)
+        prune(gameKey, protectedHashes = protectedHashes)
         removeOrphanMarkers(directory)
     }
 
@@ -56,6 +56,7 @@ class SaveSnapshotStore(private val root: File) {
         restored: Boolean = false,
         refreshExisting: Boolean = false,
         previousCreatedAt: Long? = null,
+        protectedHashes: Set<String> = emptySet(),
         check: () -> Unit = {},
     ): SaveVersion {
         val hash = SaveContentHash.archive(archive, check)
@@ -64,7 +65,7 @@ class SaveSnapshotStore(private val root: File) {
         // If an earlier write committed a sixth ZIP but could not prune it, do not keep
         // publishing further files while the same cleanup error persists.
         if (existing.size > LOCAL_LIMIT) {
-            prune(gameKey)
+            prune(gameKey, protectedHashes = protectedHashes + hash)
             existing = list(gameKey)
         }
         val directory = directory(gameKey)
@@ -98,7 +99,7 @@ class SaveSnapshotStore(private val root: File) {
             try {
                 if (source == SaveVersionSource.CLOUD) File(directory, id + ".cloud").writeText("")
             } finally {
-                prune(gameKey, keepId = id)
+                prune(gameKey, keepId = id, protectedHashes = protectedHashes)
             }
             return SaveVersion(id, hash, createdAt, destination.length(), source, restored, previousCreatedAt)
         } finally {
@@ -183,10 +184,13 @@ class SaveSnapshotStore(private val root: File) {
         return version.copy(id = id, createdAt = createdAt, restored = true, previousCreatedAt = previousCreatedAt)
     }
 
-    private fun prune(gameKey: String, keepId: String? = null) {
+    private fun prune(gameKey: String, keepId: String? = null, protectedHashes: Set<String> = emptySet()) {
         // A pull must remain selectable even if the remote device's clock is behind.
         // Evict the oldest prior profile only after the incoming archive has committed.
-        list(gameKey).filter { it.id != keepId }.drop(LOCAL_LIMIT - if (keepId == null) 0 else 1).forEach { old ->
+        val versions = list(gameKey)
+        val protected = versions.filter { it.id == keepId || it.contentHash in protectedHashes }.toSet()
+        if (protected.size > LOCAL_LIMIT) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        versions.filter { it !in protected }.drop(LOCAL_LIMIT - protected.size).forEach { old ->
             val archive = file(gameKey, old.id)
             if (!archive.delete()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
             File(archive.parentFile, archive.name + ".cloud").delete()

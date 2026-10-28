@@ -1277,6 +1277,7 @@ private fun RenameGameDialog(
                 query = title,
                 onQueryChange = { title = it },
                 onSearch = { if (canConfirm) onConfirm(normalizedTitle) },
+                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
                 leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                 iconContentDescription = stringResource(R.string.game_rename),
                 textStyle = MaterialTheme.typography.bodyMedium,

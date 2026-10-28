@@ -627,7 +627,7 @@ class WebDavClientTest {
         val targetPath = gameFolder + name
         val corruptBytes = "corrupt publication".toByteArray()
 
-        suspend fun exercise(etag: String?, expectDeleted: Boolean) {
+        suspend fun exercise(etag: String?, expectDeleted: Boolean, cancelDelete: Boolean = false) {
             val files = hashMapOf(targetPath to corruptBytes)
             val deletes = ArrayList<String?>()
             val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -655,7 +655,16 @@ class WebDavClientTest {
                 WebDavClient(
                     WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
                 ).use { client ->
-                    if (expectDeleted) {
+                    if (cancelDelete) {
+                        try {
+                            client.discardCorruptPublication(GAME, remote) {
+                                throw CancellationException("identity changed before delete")
+                            }
+                            throw AssertionError("DELETE ignored the final revision guard")
+                        } catch (expected: CancellationException) {
+                            assertEquals("identity changed before delete", expected.message)
+                        }
+                    } else if (expectDeleted) {
                         assertTrue(client.discardCorruptPublication(GAME, remote))
                     } else {
                         try {
@@ -678,6 +687,7 @@ class WebDavClientTest {
 
         exercise("\"strong\"", expectDeleted = true)
         exercise(null, expectDeleted = false)
+        exercise("\"strong\"", expectDeleted = false, cancelDelete = true)
     }
 
     @Test fun disabledCheckReturnsTypedErrorBeforeAndDuringResponse() = runBlocking {

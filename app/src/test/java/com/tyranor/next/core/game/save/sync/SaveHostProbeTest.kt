@@ -174,6 +174,40 @@ class SaveHostProbeTest {
         elapsedMillis = elapsedMillis,
     )
 
+    @Test
+    fun aliasOfActiveSaveDirectoryBlocksEvenWhenOriginalUriDiffers() {
+        val name = "com.tyranor.next:kirikiroid"
+        val pid = 110
+        val alias = "content://storage/overlapping-root/Demo"
+        val probe = FakeProbe(listOf(SaveHostProcess(pid, name)),
+            mapOf(key(name) to record(pid, 1, listOf(alias))), mapOf(pid to SaveHostIdentity.Live(name)))
+        assertTrue(hasRunningSaveHost(probe, TARGET_URI, false, false, 10_000L, setOf(TARGET_URI, alias)))
+    }
+
+    @Test
+    fun pendingNativeOwnerStaysBusyBeyondIdleGraceUntilAcknowledged() {
+        val name = "com.tyranor.next:siglus"
+        val pid = 111
+        val state = record(pid, 0, emptyList(), idleSince = 1L).put("nativeOwnerPending", true)
+        val probe = FakeProbe(listOf(SaveHostProcess(pid, name)),
+            mapOf(key(name) to state), mapOf(pid to SaveHostIdentity.Live(name)))
+        assertTrue(running(probe, elapsedMillis = 60_000L))
+        state.put("nativeOwnerPending", false).put("idleSince", 60_000L)
+        assertTrue(running(probe, elapsedMillis = 61_499L))
+        assertFalse(running(probe, elapsedMillis = 61_500L))
+    }
+
+    @Test
+    fun pendingOwnerForUnrelatedDirectoryDoesNotBlockTarget() {
+        val name = "com.tyranor.next:siglus"
+        val pid = 112
+        val state = record(pid, 0, listOf("content://saves/unrelated"), idleSince = 0L)
+            .put("nativeOwnerPending", true)
+        val probe = FakeProbe(listOf(SaveHostProcess(pid, name)),
+            mapOf(key(name) to state), mapOf(pid to SaveHostIdentity.Live(name)))
+        assertFalse(running(probe, elapsedMillis = 60_000L))
+    }
+
     private fun key(processName: String): String = SaveContentHash.text(processName)
 
     private fun record(

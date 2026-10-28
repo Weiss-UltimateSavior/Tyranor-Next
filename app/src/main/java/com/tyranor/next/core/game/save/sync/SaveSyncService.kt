@@ -59,28 +59,28 @@ class SaveSyncService internal constructor(
     /** Library removal clears only private metadata/history, never cloud or game files. */
     suspend fun clearGame(game: ScanGame) = withContext(Dispatchers.IO) {
         SaveSyncLocks.versions(game.uri) {
-            SaveSyncLocks.active(game.uri) {
+            SaveSyncLocks.active(environment.activeKey(game)) {
                 requireIdle(game)
                 val key = localKey(game)
                 val legacyCheckpoint = try { checkpointKey(game, environment.config()) }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { null }
-                val owned = try {
-                    val index = states.load(key).optJSONArray("checkpointKeys")
-                    (0 until (index?.length() ?: 0)).map { index!!.getString(it) }.toSet()
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { emptySet() }
+                // An unreadable ownership index cannot establish that cleanup is complete.
+                val index = states.load(key).optJSONArray("checkpointKeys")
+                val owned = (0 until (index?.length() ?: 0)).map { index!!.getString(it) }.toSet()
                 val failures = ArrayList<Exception>()
                 fun clear(action: () -> Unit) {
                     try { action() }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (failure: Exception) { failures += failure }
                 }
-                for (checkpoint in (states.keys() + owned + listOfNotNull(key, legacyCheckpoint)).distinct()) {
-                    val belongs = checkpoint == key || checkpoint == legacyCheckpoint || checkpoint in owned || try {
-                        states.load(checkpoint).optString("gameKey") == key
+                for (checkpoint in (states.keys() + owned + listOfNotNull(legacyCheckpoint)).distinct().filter { it != key }) {
+                    val declaredOwner = try {
+                        states.load(checkpoint).optString("gameKey").takeIf { it.isNotBlank() }
                     } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { false } // Never delete an unrelated unidentifiable record.
+                    catch (_: Exception) { null }
+                    val belongs = if (declaredOwner != null) declaredOwner == key
+                        else checkpoint == legacyCheckpoint || checkpoint in owned
                     if (belongs) clear { states.remove(checkpoint) }
                 }
                 clear { com.tyranor.next.core.game.save.SavePathSafety.deleteTreeNoFollow(File(root, "versions/$key")) }
@@ -92,6 +92,8 @@ class SaveSyncService internal constructor(
                         failures.drop(1).forEach(failure::addSuppressed)
                     }
                 }
+                // The identity and ownership index are the retry map for failed child cleanup.
+                states.remove(key)
             }
         }
     }
@@ -107,20 +109,25 @@ class SaveSyncService internal constructor(
 
     /** Local recovery remains available after WebDAV is disabled; it never imports an archive. */
     suspend fun recoverSelection(game: ScanGame) = withContext(Dispatchers.IO) {
-        SaveSyncLocks.versions(game.uri) {
-            SaveSyncLocks.active(game.uri) {
-                requireIdle(game)
-                if (needsSelectionRecovery(game)) {
-                    invalidateTransfers(game)
-                    abandonActivationLocked(game)
+        try {
+            SaveSyncLocks.versions(game.uri) {
+                SaveSyncLocks.active(environment.activeKey(game)) {
+                    requireIdle(game)
+                    if (needsSelectionRecovery(game)) {
+                        invalidateTransfers(game)
+                        abandonActivationLocked(game)
+                    }
                 }
             }
+        } catch (failure: java.io.IOException) {
+            if (failure is SaveSyncException || failure is com.tyranor.next.core.game.save.GameSaveException) throw failure
+            throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
         }
     }
 
     suspend fun activateVersion(game: ScanGame, id: String, discardPrevious: Boolean = false): SaveActivationResult = withContext(Dispatchers.IO) {
         SaveSyncLocks.versions(game.uri) {
-            SaveSyncLocks.active(game.uri) {
+            SaveSyncLocks.active(environment.activeKey(game)) {
                 requireEnabled()
                 requireIdle(game)
                 invalidateTransfers(game)
@@ -228,31 +235,38 @@ class SaveSyncService internal constructor(
             damagedRecord = true
             null
         }
-        if (pending != null) {
-            val archive = activations.archive(key)
-            val valid = try {
-                archive.isFile && SaveContentHash.archive(archive) == pending.selected.contentHash
-            } catch (failure: SaveSyncException) {
-                if (failure.code != SaveSyncError.CORRUPT_ARCHIVE) throw failure
-                false
-            }
-            if (valid) snapshots.add(key, archive, pending.selected.createdAt, pending.selected.source,
-                pending.selected.contentHash, restored = pending.selected.restored,
-                previousCreatedAt = pending.selected.previousCreatedAt)
-        } else if (damagedRecord || activations.archive(key).exists()) {
-            // Metadata is not evidence that its protected source can be discarded. Rescue the
-            // independently verified ZIP before removing a damaged/missing journal record.
-            val archive = activations.archive(key)
-            if (archive.exists()) snapshots.add(key, archive, maxOf(1L, archive.lastModified()), SaveVersionSource.LOCAL)
+        val archive = activations.archive(key)
+        // Parseable metadata can still lie about the ZIP's hash. Independently validate its bytes
+        // and keep the only protected source until both it and the active save are durable.
+        val archiveHash = if (archive.exists()) SaveContentHash.archive(archive) else null
+        if (pending != null && archiveHash == null) {
+            throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
         }
-        // Retain the current save last so the five-version cap cannot evict its safety copy.
-        if (current != null) captureLocked(game, finalizeRestore = true)
+        val protected = setOfNotNull(archiveHash, current)
+        if (current != null) captureLocked(game, finalizeRestore = true, protectedHashes = protected)
+        if (archiveHash != null) {
+            val trusted = pending?.selected?.takeIf { it.contentHash == archiveHash }
+            snapshots.add(key, archive, trusted?.createdAt ?: maxOf(1L, archive.lastModified()),
+                trusted?.source ?: SaveVersionSource.LOCAL, archiveHash,
+                restored = trusted?.restored ?: false, previousCreatedAt = trusted?.previousCreatedAt,
+                protectedHashes = protected)
+        } else if (damagedRecord) {
+            throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+        }
+        for (hash in protected) {
+            val retained = snapshots.list(key).firstOrNull { it.contentHash == hash }
+                ?: throw SaveSyncException(SaveSyncError.LOCAL_IO)
+            if (!snapshots.isValid(key, retained)) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+        }
         if (!environment.repairManualSelection(game, current != null)) {
             throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
         }
         val state = states.load(key)
-        if (pending == null || state.optString("completedActivation") == pending.token) {
-            listOf("completedActivation", "activationHash", "promotionFromHash", "promotionFromTime", "promotionAt")
+        val activationEvidence = pending != null || archiveHash != null || damagedRecord
+        if (activationEvidence && (pending == null || pending.selected.contentHash != archiveHash ||
+            pending.canFinalize(current) || state.optString("completedActivation") == pending.token)) {
+            listOf("completedActivation", "activationHash", "promotionFromHash", "promotionFromTime", "promotionAt",
+                "promotionBaseHash", "promotionAwaitingChange", "promotionContentHash")
                 .forEach(state::remove)
             states.save(key, state)
         }
@@ -291,7 +305,7 @@ class SaveSyncService internal constructor(
                 previousCreatedAt = pending.selected.createdAt)
             val active = if (current == selected.contentHash) selected else {
                 captureLocked(game, restored = true, refreshExisting = true, finalizeRestore = true,
-                    previousCreatedAt = pending.selected.createdAt)
+                    previousCreatedAt = pending.selected.createdAt, protectedHashes = setOf(selected.contentHash))
                     ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
             }
             state.put("promotionFromHash", pending.selected.contentHash)
@@ -319,7 +333,9 @@ class SaveSyncService internal constructor(
             currentCoroutineContext().ensureActive()
             requireEnabled()
             try {
-                if (environment.available(game)) keys.getOrPut(remoteKey(game)) { ArrayList() }.add(game)
+                val remoteKey = remoteKeyForConflict(game)
+                if (remoteKey != null) keys.getOrPut(remoteKey) { ArrayList() }.add(game)
+                else if (environment.available(game)) throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -342,17 +358,6 @@ class SaveSyncService internal constructor(
         requireEnabled()
         val config = environment.config()
         if (!config.configured) throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
-        val collisions = environment.games().count {
-            try {
-                environment.available(it) && remoteKey(it) == remoteKey(game)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // An unavailable library entry must not block a different game's upload.
-                it.uri == game.uri
-            }
-        }
-        if (collisions > 1) throw SaveSyncException(SaveSyncError.IDENTITY_CONFLICT)
         environment.openClient(config)
             .use { syncOne(game, direction, config, it) }
     }
@@ -377,6 +382,7 @@ class SaveSyncService internal constructor(
         var uploaded = 0
         var busy = 0
         try {
+            if (!local { environment.available(game) }) return@network SaveSyncReport()
             val remoteGame = local {
                 if (environment.games().none { it.uri == game.uri }) throw LocalStateChanged()
                 val state = states.load(key)
@@ -384,7 +390,13 @@ class SaveSyncService internal constructor(
                 state.put("revision", revision)
                 states.save(key, state)
                 snapshots.maintain(key)
-                RemoteSaveGame(game.engine.name, identity(game))
+                RemoteSaveGame(game.engine.name, identity(game)).also { adopted ->
+                    // This runs after network queue admission, under the same lock used to edit
+                    // this game's identity. Unavailable saves still own their portable identity.
+                    if (environment.games().any { other ->
+                        other.uri != game.uri && other.engine == game.engine && remoteKeyForConflict(other) == adopted.key
+                    }) throw SaveSyncException(SaveSyncError.IDENTITY_CONFLICT)
+                }
             }
             val remoteKey = remoteGame.key
             val checkpointKey = checkpointKey(game, config, remoteKey)
@@ -432,7 +444,7 @@ class SaveSyncService internal constructor(
                 }
             }
             if (direction.uploads) {
-                val version = local { SaveSyncLocks.active(game.uri) {
+                val version = local { SaveSyncLocks.active(environment.activeKey(game)) {
                     requireEnabled()
                     if (environment.running(game)) {
                         busy++
@@ -451,10 +463,14 @@ class SaveSyncService internal constructor(
                         }
                     }
                 } }
+                // A busy/empty game cannot authorize publication cleanup using a prior round's
+                // confirmation. Leave the complete checkpoint for a later idle retry.
+                if (version == null) return@network SaveSyncReport(downloaded = downloaded, busy = busy,
+                    unchanged = if (downloaded + busy == 0) 1 else 0)
                 val localState = local { states.load(key) }
                 val promotionAt = localState.optLong("promotionAt")
                 val promoting = promotionAt > checkpoint.optLong("promotedAt")
-                if (version != null && checkpoint.optBoolean("needsPrune")) {
+                if (checkpoint.optBoolean("needsPrune")) {
                     val intent = checkpoint.optString("publicationIntent").ifBlank { checkpoint.optString("promotionPublication") }
                     val target = remote.firstOrNull { !it.legacy && it.name == intent }
                     if (SavePublicationPolicy.isBlocked(checkpoint, target)) {
@@ -473,11 +489,16 @@ class SaveSyncService internal constructor(
                             remote = remote - excess.toSet()
                         }
                         checkpoint.remove("needsPrune")
+                        checkpoint.remove("publicationIntent")
+                        checkpoint.remove("publicationConfirmed")
+                        checkpoint.remove("publicationPromotionAt")
                     } else if (target != null) {
                         // Do not append a succession of half-uploaded targets as the game advances.
                         // A conditional delete of this proven-bad target leaves all good sources intact.
                         try {
-                            if (!client.discardCorruptPublication(remoteGame, target)) throw SaveSyncException(SaveSyncError.SERVER)
+                            if (!client.discardCorruptPublication(remoteGame, target, ::checkCurrent)) {
+                                throw SaveSyncException(SaveSyncError.SERVER)
+                            }
                         } catch (failure: SaveSyncException) {
                             if (failure.code != SaveSyncError.CORRUPT_ARCHIVE) throw failure
                             SavePublicationPolicy.block(checkpoint, target.name, target.etag)
@@ -492,8 +513,7 @@ class SaveSyncService internal constructor(
                 // Continuing to save after choosing S intentionally promotes the latest N from S.
                 val unfinished = checkpoint.optBoolean("needsPrune") && !checkpoint.optBoolean("publicationConfirmed")
                 if (SavePublicationPolicy.needsUpload(version, checkpoint.optString("uploaded"), promoting, remote) ||
-                    (version != null && unfinished)) {
-                    checkNotNull(version)
+                    unfinished) {
                     if (promoting || unfinished || remote.none { it.contentHash == version.contentHash }) {
                         val archive = checkNotNull(uploadArchive)
                         val job = currentCoroutineContext()
@@ -555,7 +575,9 @@ class SaveSyncService internal constructor(
                         // Reload after publishing: another device may have added a version meanwhile.
                         remote = client.list(remoteGame)
                         checkCurrent()
-                        if (remote.none { !it.legacy && it.name == publication.id && it.size == expectedSize }) {
+                        val confirmed = remote.firstOrNull { !it.legacy && it.name == publication.id &&
+                            it.size == expectedSize && it.contentHash == publication.contentHash }
+                        if (confirmed == null || !client.verifyVersion(remoteGame, confirmed)) {
                             // Never prune older cloud versions before the new archive is visible.
                             throw SaveSyncException(SaveSyncError.SERVER)
                         }
@@ -635,16 +657,18 @@ class SaveSyncService internal constructor(
         refreshExisting: Boolean = false,
         finalizeRestore: Boolean = false,
         previousCreatedAt: Long? = null,
+        protectedHashes: Set<String> = emptySet(),
     ): SaveVersion? {
         if (!finalizeRestore) requireEnabled()
-        snapshots.maintain(localKey(game))
+        snapshots.maintain(localKey(game), protectedHashes)
         val before = fingerprint(game) ?: return null
         val state = states.load(localKey(game))
         val continuingRestore = !finalizeRestore && !restored && state.optBoolean("promotionAwaitingChange") &&
             before != state.optString("promotionContentHash").ifBlank { state.optString("promotionBaseHash") }
         if (continuingRestore) {
             val version = captureLocked(game, restored = true, refreshExisting = true, finalizeRestore = true,
-                previousCreatedAt = state.optLong("promotionFromTime").takeIf { it > 0 })
+                previousCreatedAt = state.optLong("promotionFromTime").takeIf { it > 0 },
+                protectedHashes = protectedHashes)
             if (version != null) {
                 state.put("promotionAt", version.createdAt).put("promotionContentHash", version.contentHash)
                 states.save(localKey(game), state)
@@ -664,7 +688,8 @@ class SaveSyncService internal constructor(
             if (fingerprint(game) != before) throw SaveSyncException(SaveSyncError.GAME_RUNNING)
             val job = currentCoroutineContext()
             return snapshots.add(localKey(game), temp, nextTimestamp(game), SaveVersionSource.LOCAL, before,
-                restored = restored, refreshExisting = refreshExisting, previousCreatedAt = previousCreatedAt) { job.ensureActive() }
+                restored = restored, refreshExisting = refreshExisting, previousCreatedAt = previousCreatedAt,
+                protectedHashes = protectedHashes) { job.ensureActive() }
         } finally {
             SaveSyncTemporaryFiles.release(temp)
         }
@@ -700,6 +725,12 @@ class SaveSyncService internal constructor(
     }
 
     private fun remoteKey(game: ScanGame) = SaveContentHash.text(game.engine.name + "\n" + identity(game))
+    private fun remoteKeyForConflict(game: ScanGame): String? = try {
+        remoteKey(game)
+    } catch (failure: SaveSyncException) {
+        if (failure.code != SaveSyncError.SAVE_UNAVAILABLE) throw failure
+        null // No custom identity and no resolvable folder means no portable identity to reserve.
+    }
     private fun checkpointKey(game: ScanGame, config: WebDavConfig, remoteKey: String = remoteKey(game)) =
         SaveContentHash.text(config.serverUrl.trimEnd('/') + "\n" + config.username + "\n" + remoteKey + "\n" + game.uri)
     private fun localKey(game: ScanGame) = SaveContentHash.text(game.uri)

@@ -142,7 +142,8 @@ fun MainScreen(modifier: Modifier = Modifier) {
     AppAlertDialog(
       onDismissRequest = libraryViewModel::dismissCleanupError,
       title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
-      text = { Text(stringResource(R.string.save_sync_cleanup_failed), style = MaterialTheme.typography.bodyMedium) },
+      text = { Text(stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty()),
+        style = MaterialTheme.typography.bodyMedium) },
       confirmButton = {
         DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
       },

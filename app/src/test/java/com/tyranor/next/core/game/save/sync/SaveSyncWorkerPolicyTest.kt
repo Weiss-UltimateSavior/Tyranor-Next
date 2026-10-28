@@ -27,4 +27,16 @@ class SaveSyncWorkerPolicyTest {
 
         assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(transient, fallback = true))
     }
+
+    @Test
+    fun permanentFailureDoesNotCancelAnotherGamesTransientOrBusyRetry() {
+        val permanent = SaveSyncFailure("A", SaveSyncError.IDENTITY_CONFLICT)
+        val mixed = SaveSyncReport(failures = listOf(permanent, SaveSyncFailure("B", SaveSyncError.NETWORK)))
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(mixed, fallback = true))
+        assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(mixed, fallback = false))
+        val busy = SaveSyncReport(busy = 1, failures = listOf(permanent))
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+        assertEquals(SaveSyncWorkOutcome.FAILURE,
+            SaveSyncWorkPolicy.outcome(SaveSyncReport(failures = listOf(permanent)), fallback = true))
+    }
 }

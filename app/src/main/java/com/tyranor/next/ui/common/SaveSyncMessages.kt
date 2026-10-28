@@ -48,10 +48,7 @@ internal fun SaveSyncReport.toSaveSyncMessage(context: Context): String {
     if (failures.isEmpty()) {
         return when {
             transferred && busy == 0 -> localized.getString(R.string.webdav_sync_success)
-            transferred -> localized.getString(
-                R.string.webdav_sync_partial_failure,
-                localized.getString(R.string.webdav_error_game_running),
-            )
+            transferred -> localized.getString(R.string.webdav_sync_busy_skipped)
             busy > 0 -> localized.getString(R.string.webdav_error_game_running)
             else -> localized.getString(R.string.webdav_sync_unchanged)
         }
