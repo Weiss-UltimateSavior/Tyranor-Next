@@ -25,6 +25,8 @@ iOS版本计划中...
   <img src="https://contrib.rocks/image?repo=Weiss-UltimateSavior/Tyranor-Next" />
 </a>
 
+RPG Maker MV/MZ 的 DKTools 浏览器文件索引缺失时，可由宿主提供会话内只读索引，支持目录及 ASAR 游戏，并优先保留游戏已有索引。适用模式与验证边界见 [SPEC.md](SPEC.md#10-实验能力与证据边界)。
+
 ## 支持范围
 
 ### 引擎与游戏类型

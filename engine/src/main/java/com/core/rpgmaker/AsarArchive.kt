@@ -1,6 +1,7 @@
 package com.core.rpgmaker
 
 import android.util.Log
+import com.core.web.AsarChildrenIndex
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.EOFException
@@ -25,6 +26,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     private val raf: RandomAccessFile
     private val dataOffset: Long
     private val entries = HashMap<String, Entry>()
+    private val childrenIndex: AsarChildrenIndex
 
     init {
         archiveFile = file?.canonicalFile
@@ -50,6 +52,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
             opened.readFully(jsonBytes)
             parseNode("", JSONObject(String(jsonBytes, StandardCharsets.UTF_8)))
             validateEntries(opened.length(), parsedDataOffset)
+            childrenIndex = AsarChildrenIndex(entries.map { it.key to it.value.directory })
         } catch (error: Exception) {
             try { opened.close() } catch (_: Throwable) {
                 // 流关闭失败可安全忽略（资源由 GC 最终回收）
@@ -92,21 +95,7 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
      * 提供 readdir 语义——此前 asar 游戏的插件读不到任何目录内容。
      */
     fun children(path: String?): List<Pair<String, Boolean>> {
-        val prefix = normalize(path).trimEnd('/').let { if (it.isEmpty()) "" else "$it/" }
-        val out = LinkedHashMap<String, Boolean>()
-        for ((key, entry) in entries) {
-            if (key == prefix.trimEnd('/')) continue
-            if (!key.startsWith(prefix)) continue
-            val rest = key.substring(prefix.length)
-            if (rest.isEmpty()) continue
-            val slash = rest.indexOf('/')
-            val name = if (slash >= 0) rest.substring(0, slash) else rest
-            if (name.isEmpty()) continue
-            val isDir = slash >= 0 || entry.directory
-            // 同名既可能是文件也可能是目录前缀，目录优先
-            out[name] = (out[name] ?: false) || isDir
-        }
-        return out.map { it.key to it.value }
+        return childrenIndex.children(normalize(path).trimEnd('/'))
     }
 
     /**
@@ -116,16 +105,22 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
      */
     fun openStream(path: String): Pair<java.io.InputStream, Long>? {
         return try {
-            val e = entries[normalize(path)] ?: return null
+            val key = normalize(path)
+            val e = entries[key] ?: return null
             if (e.directory) return null
-            val raf = RandomAccessFile(archiveFile, "r")
+            val file = if (e.unpacked) resolveUnpackedFile(key) ?: return null else archiveFile
+            val raf = RandomAccessFile(file, "r")
+            val length: Long
             try {
-                raf.seek(dataOffset + e.offset)
+                // An unpacked entry's declared size can be stale. Use the opened file's
+                // length so HTTP buffering limits and Content-Length describe real bytes.
+                length = if (e.unpacked) raf.length() else e.size
+                raf.seek(if (e.unpacked) 0L else dataOffset + e.offset)
             } catch (t: Throwable) {
                 try { raf.close() } catch (_: Throwable) {}
                 return null
             }
-            Pair(EntryStream(raf, e.size), e.size)
+            Pair(EntryStream(raf, length), length)
         } catch (t: Throwable) {
             Log.w(TAG, "openStream failed path=$path", t)
             null
@@ -178,27 +173,32 @@ class AsarArchive @Throws(Exception::class) constructor(file: File?) : Closeable
     }
 
     /**
-     * 读取 unpacked 条目：数据位于 `<archive>.unpacked/` 下的同名相对路径。
+     * 解析 unpacked 条目的安全路径，供整文件读取和流式读取共用。
      *
      * 文件不存在（未随包分发）时返回 null，由调用方按「资源缺失」处理 ——
      * 不再像旧实现那样返回归档里其它文件的内容。
      */
-    private fun readUnpacked(key: String, entry: Entry): ByteArray? {
+    private fun resolveUnpackedFile(key: String): File? {
         val archive = archiveFile ?: return null
         val parent = archive.parentFile ?: return null
         val unpackedRoot = File(parent, archive.name + ".unpacked")
-        val target = File(unpackedRoot, key)
-        val insideRoot = try {
+        val target = try {
             val rootPath = unpackedRoot.canonicalFile.path
-            val targetPath = target.canonicalFile.path
-            targetPath == rootPath || targetPath.startsWith(rootPath + File.separator)
+            File(unpackedRoot, key).canonicalFile.takeIf {
+                it.path == rootPath || it.path.startsWith(rootPath + File.separator)
+            }
         } catch (_: Throwable) {
-            false
+            null
         }
-        if (!insideRoot || !target.isFile) {
+        if (target == null || !target.isFile) {
             Log.w(TAG, "unpacked entry missing on disk: $key")
             return null
         }
+        return target
+    }
+
+    private fun readUnpacked(key: String, entry: Entry): ByteArray? {
+        val target = resolveUnpackedFile(key) ?: return null
         return try {
             val data = target.readBytes()
             if (entry.size > 0L && data.size.toLong() != entry.size) {

@@ -606,6 +606,7 @@ Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既�
 | `python tools/check-hardcoded-ui-strings.py` | 离线检查三语言字符串键与 Kotlin CJK 字面量 |
 | `./gradlew -p buildSrc graphicsResourcesRegression --no-daemon` | 验证图形资源归属与校验逻辑 |
 | `./gradlew :engine:jsHarness --no-daemon` | 用本地 Node.js 验证 Web v2 桥；也接入 `:engine:check` |
+| `./gradlew :engine:dkToolsHarness --no-daemon` | 用本地 Node.js 验证 DKTools 索引接管、模式隔离与回退；也接入 `:engine:check` |
 | `cargo test --manifest-path engine/rust/Cargo.toml --locked` | 修改 XP3 Rust 时运行宿主测试 |
 | `./gradlew :app:printAppVersion --no-daemon` | 输出版本名与自动推导的 versionCode |
 

@@ -1,5 +1,7 @@
 package com.core.rpgmaker
 
+import com.core.web.DkToolsCompat
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -238,14 +240,14 @@ class RpgMakerActivity : Activity() {
                 else -> RPG_MV_HOOK_ASSET
             }
             val lateHook = loadAssetOrNull(hookAsset) ?: ByteArray(0)
-            val scriptAppends = if (webGameType == WebGameType.RPG_MZ) {
+            val scriptAppends = (if (webGameType == WebGameType.RPG_MZ) {
                 mapOf(
                     "js/rmmz_core.js" to loadAsset(RPG_MZ_CORE_HOOK_ASSET),
                     "js/rmmz_managers.js" to loadAsset(RPG_MZ_MANAGERS_HOOK_ASSET),
                 )
             } else {
                 emptyMap()
-            }
+            }) + mapOf(DkToolsCompat.SCRIPT_PATH to loadAsset(DkToolsCompat.ASSET_PATH))
             val modResources = if (rpgMakerModEnabled) {
                 mapOf(
                     RPG_MAKER_MOD_CORE_PATH to loadAsset(RPG_MAKER_MOD_CORE_ASSET),

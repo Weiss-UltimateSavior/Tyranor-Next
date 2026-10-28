@@ -58,6 +58,8 @@
 
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
 
+MV/MZ 的 Tyranor-2.3.4 与 TynMV/TynMZ 宿主为 DKTools 的 `MODE_NWJS_STAMP` 浏览器模式提供缺失文件索引兼容。游戏已有 `data/Stamp.json` 时继续交给原插件读取；缺失时使用会话内只读目录索引，支持磁盘及 ASAR 资源，不写回游戏文件。其他模式保留原行为，其他网页游戏不启用该兼容端点。
+
 ## 5. 设置、输入与图形
 
 - 应用设置、引擎设置、单游戏设置按作用域分离；单游戏未覆盖的字段跟随引擎全局设置，经 `EngineSettingsResolver` 统一解析。
@@ -107,6 +109,8 @@
 Hikarinagi OAuth 支持授权、回调校验及 token 刷新。应用检查 GitHub Releases，提供正式/预发布候选、下载与系统安装器跳转；后台任务在应用进入后台时安排，并受网络和系统调度限制，不保证固定时间完成。通知及未知来源安装受系统授权控制；失败不应阻断离线游戏库功能。
 
 ## 10. 实验能力与证据边界
+
+DKTools 索引兼容的自动化验证覆盖合成目录、packed/unpacked ASAR、鉴权、原索引优先与模式隔离；本地样本 DKTools 11.2.6 配置为 mode 0。该证据不等于 Android 实机运行通过，也不代表所有 DKTools 版本或所有 MV/MZ 插件已兼容。首次索引耗时和游戏画面、语言、存读档仍需按目标设备与样本单独验证。
 
 Ethornell 已接入扫描、设置与内置宿主，但真实游戏存读档及完整兼容尚未闭环。`EthornellSaveCapability` 当前 `DEVICE_SAVE_IO_VERIFIED=false`、`HOST_DISPATCH_PROTOCOL_VERIFIED=true`，故 `available=false`。不因合成夹具、ABI 加载、像素检查或 release probe 通过而开放管理。
 
