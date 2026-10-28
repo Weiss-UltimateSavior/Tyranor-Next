@@ -21,6 +21,108 @@ import org.junit.rules.TemporaryFolder
 class RpgMakerFileIndexTest {
     @get:Rule val temporary = TemporaryFolder()
 
+    @Test fun flatArchiveDirectoriesRemainVisibleInBothHosts() {
+        val root = temporary.newFolder("flat")
+        val file = temporary.newFile("flat.asar")
+        writeTestAsar(file, packed = mapOf("www/locales/en.json" to "{}"))
+        AsarArchive(file).use { modern ->
+            com.core.tyrano.AsarArchive(file).use { legacy ->
+                for (builder in listOf(RpgMakerFileIndex(root, modern, "www/"),
+                    RpgMakerFileIndex(root, asarPrefix = "www/", legacyArchive = legacy))) {
+                    assertTrue(JSONObject(String(builder.build())).getJSONObject("locales").has("en.json"))
+                }
+            }
+        }
+    }
+
+    @Test fun privateUserDirectoriesAreNotEnumeratedEvenAfterEntryPageBootstrap() {
+        for (legacy in listOf(false, true)) {
+            val root = temporary.newFolder("privacy-$legacy")
+            File(root, "index.html").writeText("<html></html>")
+            for (name in listOf("save", "SaveData", "backup", "backups", "config", "original", "deleted")) {
+                File(root, name).mkdir()
+                File(root, "$name/private.json").writeText("{}")
+            }
+            File(root, "locales").mkdir()
+            File(root, "locales/en.json").writeText("{}")
+            val appends = mapOf("js/plugins/dktools.js" to byteArrayOf())
+            val modern = if (!legacy) RpgMakerLocalHttpServer(root, null, scriptAppends = appends) else null
+            val old = if (legacy) com.core.tyrano.TyranoLocalHttpServer(root, null, scriptAppends = appends) else null
+            modern?.start(); old?.start()
+            val port = modern?.port ?: requireNotNull(old).port
+            try {
+                val entry = connection(port, "index.html")
+                val cookie = try { entry.inputStream.close(); entry.getHeaderField("Set-Cookie").substringBefore(';') }
+                    finally { entry.disconnect() }
+                val response = request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie)
+                assertEquals(200, response.first)
+                val index = JSONObject(response.second)
+                assertEquals(setOf("index.html", "locales"), index.keys().asSequence().toSet())
+            } finally { modern?.stop(); old?.stop() }
+        }
+    }
+
+    @Test fun productionArchiveLayoutDoesNotEnumerateContainerOrUnpackedMirror() {
+        val root = temporary.newFolder("production")
+        val file = File(root, "app.asar")
+        writeTestAsar(file, packed = mapOf("locales/en.json" to "{}"))
+        File(root, "app.asar.unpacked/locales").mkdirs()
+        File(root, "app.asar.unpacked/locales/mirror.json").writeText("{}")
+        AsarArchive(file).use { archive ->
+            val index = JSONObject(String(RpgMakerFileIndex(root, archive, maxEntries = 5).build()))
+            assertFalse(index.has("app.asar"))
+            assertFalse(index.has("app.asar.unpacked"))
+            assertTrue(index.getJSONObject("locales").has("en.json"))
+        }
+    }
+
+    @Test fun exclusionsDoNotHideNestedGameResourcesWithSimilarNames() {
+        val root = temporary.newFolder("nested-names")
+        val file = File(root, "app.asar")
+        writeTestAsar(file, packed = mapOf("data/config/name.json" to "{}", "data/app.asar" to "resource"))
+        AsarArchive(file).use { archive ->
+            val data = JSONObject(String(RpgMakerFileIndex(root, archive).build())).getJSONObject("data")
+            assertTrue(data.getJSONObject("config").has("name.json"))
+            assertTrue(data.has("app.asar"))
+        }
+    }
+
+    @Test fun selfReferentialAndInternalSymlinksAreOmittedWithoutBreakingOtherFiles() {
+        val root = temporary.newFolder("self-link")
+        File(root, "locales").mkdir()
+        File(root, "locales/en.json").writeText("{}")
+        try {
+            Files.createSymbolicLink(File(root, "self").toPath(), File(root, "self").toPath())
+            Files.createSymbolicLink(File(root, "alias").toPath(), File(root, "locales").toPath())
+        } catch (error: Exception) { assumeNoException(error) }
+        val index = JSONObject(String(RpgMakerFileIndex(root).build()))
+        assertTrue(index.getJSONObject("locales").has("en.json"))
+        assertFalse(index.has("self"))
+        assertFalse(index.has("alias"))
+    }
+
+    @Test fun archiveIsStillIndexedWhenDiskRootIsUnreadable() {
+        val root = temporary.newFolder("archive-only")
+        val file = temporary.newFile("readable.asar")
+        writeTestAsar(file, packed = mapOf("locales/en.json" to "{}"))
+        AsarArchive(file).use { archive ->
+            val index = JSONObject(String(RpgMakerFileIndex(root, archive,
+                directoryReader = { throw AccessDeniedException(it.path) }).build()))
+            assertTrue(index.getJSONObject("locales").has("en.json"))
+        }
+    }
+
+    @Test fun notDirectoryRaceDoesNotAbortOtherResources() {
+        val root = temporary.newFolder("not-directory")
+        File(root, "gone").mkdir()
+        File(root, "good.json").writeText("{}")
+        val bytes = RpgMakerFileIndex(root, directoryReader = { directory ->
+            if (directory.name == "gone") throw java.nio.file.NotDirectoryException(directory.path)
+            Files.newDirectoryStream(directory.toPath())
+        }).build()
+        assertTrue(JSONObject(String(bytes)).has("good.json"))
+    }
+
     @Test fun languageDirectoriesAreIndexedWithoutReadingTheirContents() {
         val root = temporary.newFolder("www")
         File(root, "locales/zh-CN").mkdirs()
@@ -112,10 +214,12 @@ class RpgMakerFileIndexTest {
         assertTrue(JSONObject(String(bytes)).has("good.json"))
     }
 
-    @Test fun bothHostsRetryFailedBuildAndCacheOnlySuccessfulIndex() {
+    @Test fun bothHostsKeepLanguageResourcesWhenFullIndexExceedsDepthLimit() {
         for (legacy in listOf(false, true)) {
             val root = temporary.newFolder(if (legacy) "retry-legacy" else "retry-modern")
             File(root, "index.html").writeText("<html></html>")
+            File(root, "locales").mkdir()
+            File(root, "locales/en.json").writeText("{}")
             val deep = File(root, "deep")
             File(deep, (1..66).joinToString("/") { "d" }).mkdirs()
             val appends = mapOf("js/plugins/dktools.js" to "\n// hook".toByteArray())
@@ -130,12 +234,16 @@ class RpgMakerFileIndexTest {
                     entry.inputStream.use { it.readBytes() }
                     entry.getHeaderField("Set-Cookie").substringBefore(';')
                 } finally { entry.disconnect() }
-                assertEquals(500, request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie).first)
+                val limited = request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie)
+                assertEquals(200, limited.first)
+                assertTrue(JSONObject(limited.second).getJSONObject("locales").has("en.json"))
+                assertFalse(JSONObject(limited.second).has("deep"))
                 assertTrue(deep.renameTo(File(root.parentFile, root.name + "-deep-backup")))
                 File(root, "ready.json").writeText("{}")
                 val recovered = request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie)
                 assertEquals(200, recovered.first)
-                assertTrue(JSONObject(recovered.second).has("ready.json"))
+                // 限额降级短时缓存；恢复后的全量重试由可控时钟用例验证。
+                assertFalse(JSONObject(recovered.second).has("ready.json"))
                 File(root, "later.json").writeText("{}")
                 assertFalse(JSONObject(request(port, RpgMakerFileIndex.RESOURCE_PATH, cookie).second).has("later.json"))
             } finally {

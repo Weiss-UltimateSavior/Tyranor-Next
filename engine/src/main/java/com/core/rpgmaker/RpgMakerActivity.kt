@@ -49,7 +49,8 @@ import org.json.JSONObject
  * 不影响 v0 路径。
  *
  * 本 Activity 位于 engine 模块的 com.core.rpgmaker 独立运行时包（不依赖 app 层），
- * 与 tyrano 宿主（com.core.tyrano，承载 v0）互不引用；v1/v2 专属运行时资产集中在
+ * 与 tyrano 宿主（com.core.tyrano，承载 v0）共用只读文件索引和 com.core.web 辅助；
+ * 两者分别适配各自 ASAR 读取器。v1/v2 专属运行时资产集中在
  * assets/rpgmaker/ 子目录，共享脚本（__rpg__.js、__rmmz__.js、触屏手柄、修改器等）
  * 仍以 engine assets 根为单份源头。用户偏好（UI 缩放、外网开关）直接读取共享的
  * tyranor_prefs，与 engine 内其他宿主同模式。
