@@ -228,7 +228,7 @@ class GameSaveManager(private val context: Context) {
         return File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root))
     }
 
-    suspend fun listSaveFiles(game: ScanGame, strict: Boolean = false): List<File> {
+    suspend fun listSaveFiles(game: ScanGame, strict: Boolean = false, expectedDirectory: File? = null): List<File> {
         if (game.engine == EngineType.ETHORNELL) {
             // Existing SaveUI refresh does not catch errors. Busy/disabled data
             // has no safe snapshot; action methods still throw typed failures.
@@ -248,6 +248,9 @@ class GameSaveManager(private val context: Context) {
         }
         val resolved = resolveSaveLocation(game).directory ?: return emptyList()
         val directory = if (strict) checkedSyncDirectory(resolved) else resolved
+        if (expectedDirectory != null && directory != checkedSyncDirectory(expectedDirectory)) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        }
         if (!directory.exists()) return emptyList()
         if (!directory.isDirectory) {
             if (strict) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
@@ -267,6 +270,7 @@ class GameSaveManager(private val context: Context) {
         destinationUri: Uri,
         format: ExportFormat = ExportFormat.TYRANOR,
         strict: Boolean = false,
+        expectedDirectory: File? = null,
     ): Int {
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.export {
@@ -277,6 +281,9 @@ class GameSaveManager(private val context: Context) {
         val location = resolveSaveLocation(game)
         val resolved = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
         val source = if (strict) checkedSyncDirectory(resolved) else resolved
+        if (expectedDirectory != null && source != checkedSyncDirectory(expectedDirectory)) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        }
         if (!source.isDirectory) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
         val rename = exportRename(game.engine, format)
         val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
@@ -335,9 +342,12 @@ class GameSaveManager(private val context: Context) {
     }
 
     /** Completes excluded-resource recovery for an interrupted cloud version import, without importing again. */
-    internal fun completePendingVersionImport(game: ScanGame): Unit = synchronized(importLock) {
+    internal fun completePendingVersionImport(game: ScanGame, expectedDirectory: File? = null): Unit = synchronized(importLock) {
         synchronized(RpgSaveSyncState.INTEROP_LOCK) {
             val destination = syncSaveDirectory(game)
+            if (expectedDirectory != null && destination != checkedSyncDirectory(expectedDirectory)) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
             val backup = File(destination.parentFile, destination.name + ".import_backup")
             checkedSyncDirectory(backup)
             recoverImportBackup(game, destination, backup)

@@ -908,7 +908,6 @@
     <string name="save_version_row">%1$s · %2$s</string>
     <string name="save_version_restored_row">%1$s · %2$s → %3$s</string>
     <string name="save_version_previous_unknown">不明</string>
-    <string name="save_version_time_change">%1$s → %2$s</string>
     <string name="save_version_switch_title">このセーブに切り替えますか？</string>
     <string name="save_sync_identity">クラウドのゲーム識別名</string>
     <string name="save_sync_identity_message">初期値はエンジン別のゲームフォルダー名です。各端末で同じ識別名を使い、別ゲームには異なる名前を設定してください。空欄で初期値に戻ります。既存の履歴は移動・削除されません。</string>

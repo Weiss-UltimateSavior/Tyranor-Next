@@ -40,39 +40,44 @@ class SaveSessionBaselineTest {
     }
 
     @Test
-    fun explicitAliasSelectionRetiresOnlyOtherAliasesPendingGameplayBaselines() = runBlocking {
+    fun directorySelectionRetiresEveryPersistedSessionAndBaselineForKey() = runBlocking {
         val sessions = SaveSyncStateStore(File(temp.root, "sessions"))
         val baselines = SaveSyncStateStore(File(temp.root, "baselines"))
-        val selected = "alias-B"
-        for (uri in listOf("alias-A", selected, "unrelated-C")) {
+        val sameDirectory = listOf("alias-A", "selected-alias-B", "unresolved-alias")
+        for (uri in sameDirectory) {
             val key = SaveContentHash.text(uri)
             sessions.save(key, JSONObject().put("token", uri).put("baseline", "old-progress").put("activeKey", "directory-A"))
             baselines.save(key, JSONObject().put("contentHash", "old-progress").put("activeKey", "directory-A"))
         }
+        val unrelatedKey = SaveContentHash.text("unrelated-C")
+        sessions.save(unrelatedKey, JSONObject().put("token", "unrelated-C")
+            .put("baseline", "unrelated-progress").put("activeKey", "directory-C"))
+        baselines.save(unrelatedKey, JSONObject().put("contentHash", "unrelated-progress")
+            .put("activeKey", "directory-C"))
 
-        clearRelatedSessionBaselines(selected, setOf("alias-A", selected), "directory-A", sessions, baselines)
+        clearDirectorySessionBaselines("directory-A", sessions, baselines)
 
-        assertEquals(0, sessions.load(SaveContentHash.text("alias-A")).length())
-        assertEquals(0, baselines.load(SaveContentHash.text("alias-A")).length())
-        for (uri in listOf(selected, "unrelated-C")) {
-            assertEquals(uri, sessions.load(SaveContentHash.text(uri)).getString("token"))
-            assertEquals("old-progress", baselines.load(SaveContentHash.text(uri)).getString("contentHash"))
+        for (uri in sameDirectory) {
+            val key = SaveContentHash.text(uri)
+            assertEquals(0, sessions.load(key).length())
+            assertEquals(0, baselines.load(key).length())
         }
+        assertEquals("unrelated-C", sessions.load(unrelatedKey).getString("token"))
+        assertEquals("unrelated-progress", baselines.load(unrelatedKey).getString("contentHash"))
     }
 
     @Test
-    fun aliasRestoreDoesNotDeleteAnotherDirectoryOrLegacyPendingSession() = runBlocking {
+    fun directorySelectionRetainsWrongDirectoryAndLegacyPendingSessions() = runBlocking {
         val sessions = SaveSyncStateStore(File(temp.root, "sessions"))
         val baselines = SaveSyncStateStore(File(temp.root, "baselines"))
         val pendingKey = SaveContentHash.text("alias-pending-B")
         val legacyKey = SaveContentHash.text("legacy")
-        sessions.save(pendingKey, JSONObject().put("token", "pending-B").put("activeKey", "directory-B"))
-        baselines.save(pendingKey, JSONObject().put("contentHash", "B").put("activeKey", "directory-B"))
+        sessions.save(pendingKey, JSONObject().put("token", "pending-B").put("activeKey", "directory-C"))
+        baselines.save(pendingKey, JSONObject().put("contentHash", "B").put("activeKey", "directory-C"))
         sessions.save(legacyKey, JSONObject().put("token", "unbound-legacy"))
         baselines.save(legacyKey, JSONObject().put("contentHash", "unknown"))
 
-        clearRelatedSessionBaselines("selected-A", setOf("selected-A", "alias-pending-B", "legacy"),
-            "directory-A", sessions, baselines)
+        clearDirectorySessionBaselines("directory-A", sessions, baselines)
 
         assertEquals("pending-B", sessions.load(pendingKey).getString("token"))
         assertEquals("B", baselines.load(pendingKey).getString("contentHash"))

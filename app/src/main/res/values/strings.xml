@@ -908,7 +908,6 @@
     <string name="save_version_row">%1$s · %2$s</string>
     <string name="save_version_restored_row">%1$s · %2$s → %3$s</string>
     <string name="save_version_previous_unknown">未知</string>
-    <string name="save_version_time_change">%1$s → %2$s</string>
     <string name="save_version_switch_title">切换到此存档版本？</string>
     <string name="save_sync_identity">云端游戏标识</string>
     <string name="save_sync_identity_message">默认使用游戏文件夹名称（并区分引擎）。不同设备需使用相同标识；同名的不同游戏需分别设置。留空恢复默认，仅改变云端归属，不移动或删除已有版本。</string>

@@ -16,6 +16,9 @@
 
 ### 修复
 
+- 修复同一实际存档目录的多别名并发：导入前持久化共享 owner/token/revision，旧启动、恢复与自动上传在清理完成前暂停，清理覆盖已无法解析的持久 alias。
+- 修复恢复链目录绑定与五版维护：保护 pending `selected` / `beforeHash`，跨目录或旧目录 revision 暂停 `SAVE_LOCATION_CHANGED`，不同 uncommitted token 不再清掉较早完成的 S→N；已证明的 precommit abort 恢复旧 revision，completed unbound promotion 可从“处理未完成切换”恢复 active N 与已验证历史 S，无需先临时激活 S。
+- 修复关闭 WebDAV 的清理竞态：同一 prefs 提交持久化关闭状态与 generation，旧 session 立即失效并跨重启保持失效；异步清理只移除精确捕获值，快速重新开启与在途 launch 不会误删 replacement，也不会继承旧 pending baseline。
 - 修复旧前后台事件污染新会话的竞争；自动上传及 baseline 缓存绑定实际存档目录，独立存档设置变更后保留任务并提示暂停，不误读新目录或丢弃旧进度。
 - 修复损坏 ZIP 挤占五版有效历史配额；超限淘汰前先校验并隔离坏文件。激活暂存损坏/缺失时允许复用有效历史源，同 token 恢复保留 S→N 单一更新链；可读云端目录名截断不再切断 Unicode 代理对。
 - 修复五版历史已满与记录哈希损坏时的激活恢复：同时保护所选源 S 与当前存档 N，校验保留完成后才清理恢复 ZIP；统一 ZIP 中央目录与实际导入条目校验。

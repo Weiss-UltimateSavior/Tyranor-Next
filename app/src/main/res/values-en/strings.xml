@@ -908,7 +908,6 @@
     <string name="save_version_row">%1$s · %2$s</string>
     <string name="save_version_restored_row">%1$s · %2$s → %3$s</string>
     <string name="save_version_previous_unknown">Unknown</string>
-    <string name="save_version_time_change">%1$s → %2$s</string>
     <string name="save_version_switch_title">Activate this save version?</string>
     <string name="save_sync_identity">Cloud game identity</string>
     <string name="save_sync_identity_message">Defaults to the game folder name, scoped by engine. Use the same identity on each device, and distinct identities for different games. Empty resets to default. Existing versions are not moved or removed.</string>

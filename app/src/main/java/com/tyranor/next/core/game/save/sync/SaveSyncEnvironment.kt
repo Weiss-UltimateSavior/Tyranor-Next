@@ -21,12 +21,27 @@ internal interface SaveSyncEnvironment {
     fun running(game: ScanGame): Boolean
     fun activeKey(game: ScanGame): String = game.uri
     suspend fun fingerprint(game: ScanGame): String?
+    suspend fun fingerprint(game: ScanGame, activeKey: String): String? {
+        requireSameSaveDirectory(activeKey, activeKey(game))
+        return fingerprint(game).also { requireSameSaveDirectory(activeKey, activeKey(game)) }
+    }
     suspend fun export(game: ScanGame, archive: File)
+    suspend fun export(game: ScanGame, archive: File, activeKey: String) {
+        requireSameSaveDirectory(activeKey, activeKey(game))
+        export(game, archive)
+        requireSameSaveDirectory(activeKey, activeKey(game))
+    }
     suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit)
     fun completeImport(game: ScanGame)
+    fun completeImport(game: ScanGame, activeKey: String) {
+        requireSameSaveDirectory(activeKey, activeKey(game))
+        completeImport(game)
+        requireSameSaveDirectory(activeKey, activeKey(game))
+    }
     fun needsManualRecovery(game: ScanGame): Boolean
     fun repairManualSelection(game: ScanGame, hasCurrent: Boolean): Boolean
     suspend fun recordRestored(game: ScanGame, hash: String, activeKey: String): Boolean
+    suspend fun retireSessions(game: ScanGame, activeKey: String) = Unit
     fun openClient(config: WebDavConfig): SaveSyncTransport
 }
 
@@ -53,14 +68,25 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
     override fun available(game: ScanGame) = manager.resolveSaveLocation(game).available
     override fun running(game: ScanGame) = SaveSyncRuntime.isGameRunning(context, game)
     override fun activeKey(game: ScanGame) = SaveSyncRuntime.activeKey(context, game)
-    override suspend fun fingerprint(game: ScanGame): String? {
+    override suspend fun fingerprint(game: ScanGame): String? = fingerprint(game, activeKey(game))
+    override suspend fun fingerprint(game: ScanGame, activeKey: String): String? {
         val location = manager.resolveSaveLocation(game)
         if (!location.available || location.directory == null) throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
         val job = currentCoroutineContext()
-        return SaveContentHash.files(manager.syncSaveDirectory(game), manager.listSaveFiles(game, strict = true)) { job.ensureActive() }
+        val directory = manager.syncSaveDirectory(game)
+        requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) { directory })
+        return SaveContentHash.files(directory, manager.listSaveFiles(game, strict = true, expectedDirectory = directory)) {
+            job.ensureActive()
+        }.also { requireSameSaveDirectory(activeKey, activeKey(game)) }
     }
     override suspend fun export(game: ScanGame, archive: File) {
-        manager.exportToZip(game, Uri.fromFile(archive), strict = true)
+        export(game, archive, activeKey(game))
+    }
+    override suspend fun export(game: ScanGame, archive: File, activeKey: String) {
+        val directory = manager.syncSaveDirectory(game)
+        requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) { directory })
+        manager.exportToZip(game, Uri.fromFile(archive), strict = true, expectedDirectory = directory)
+        requireSameSaveDirectory(activeKey, activeKey(game))
     }
     override suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit) {
         val directory = manager.syncSaveDirectory(game)
@@ -69,6 +95,12 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
             expectedDirectory = directory, onDirectoryCommitted = committed)
     }
     override fun completeImport(game: ScanGame) = manager.completePendingVersionImport(game)
+    override fun completeImport(game: ScanGame, activeKey: String) {
+        val directory = manager.syncSaveDirectory(game)
+        requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) { directory })
+        manager.completePendingVersionImport(game, expectedDirectory = directory)
+        requireSameSaveDirectory(activeKey, activeKey(game))
+    }
     override fun needsManualRecovery(game: ScanGame) = RpgSaveFormat.isRpgWebEngine(game.engine) &&
         RpgSaveSyncState.forContext(context).needsManualSelectionRecovery(game.uri)
     override fun repairManualSelection(game: ScanGame, hasCurrent: Boolean): Boolean {
@@ -78,6 +110,8 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
     }
     override suspend fun recordRestored(game: ScanGame, hash: String, activeKey: String) =
         SaveSyncRuntime.recordRestoredVersion(context, game, hash, activeKey)
+    override suspend fun retireSessions(game: ScanGame, activeKey: String) =
+        SaveSyncRuntime.retireDirectorySessions(context, activeKey)
     override fun openClient(config: WebDavConfig): SaveSyncTransport {
         val client = WebDavClient(config, cacheDirectory) { enabled }
         return object : SaveSyncTransport {

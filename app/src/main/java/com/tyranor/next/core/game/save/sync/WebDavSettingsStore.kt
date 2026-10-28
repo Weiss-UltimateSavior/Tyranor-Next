@@ -22,6 +22,7 @@ object WebDavSettingsStore {
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val ENABLED = "enabled"
     private const val CONFIG = "config"
+    private const val GENERATION = "disable_generation"
     // Keystore work never holds enabledLock; combined operations take configLock first.
     private val configLock = Any()
     private val enabledLock = Any()
@@ -37,12 +38,35 @@ object WebDavSettingsStore {
 
     fun setEnabled(context: Context, value: Boolean): Unit = synchronized(configLock) {
         synchronized(enabledLock) {
-            if (!context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                    .putBoolean(ENABLED, value).commit()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+            val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val edit = prefs.edit().putBoolean(ENABLED, value)
+            edit.putLong(GENERATION, saveSyncGenerationAfterToggle(
+                prefs.getLong(GENERATION, 0L).takeIf { prefs.contains(GENERATION) },
+                prefs.getBoolean(ENABLED, false), value))
+            if (!edit.commit()) throw SaveSyncException(SaveSyncError.LOCAL_IO)
             enabledState.value = value
         }
-        if (!value) SaveSyncRuntime.onFeatureDisabled(context.applicationContext)
+        if (!value) {
+            SaveSyncRuntime.onFeatureDisabled(context.applicationContext)
+        }
     }
+
+    internal fun enabledGeneration(context: Context): Long? = synchronized(configLock) {
+        sessionGeneration(context).takeIf { isEnabled(context) }
+    }
+
+    internal fun sessionGeneration(context: Context): Long = synchronized(configLock) {
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(GENERATION, 0L)
+    }
+
+    internal fun <T> whileEnabled(context: Context, generation: Long, action: () -> T): T? = synchronized(configLock) {
+        if (sessionGeneration(context) != generation || !isEnabled(context)) null else action()
+    }
+
+    internal fun disabledSessions(context: Context, store: SaveSyncStateStore): List<DisabledSaveSession> =
+        synchronized(configLock) {
+            if (isEnabled(context)) emptyList() else snapshotDisabledSaveSessions(store)
+        }
 
     fun load(context: Context): WebDavConfig = synchronized(configLock) {
         val enabled = isEnabled(context)
