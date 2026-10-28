@@ -381,7 +381,7 @@ object SaveSyncRuntime {
                 val baseline = entry.optString("baseline")
                 val manager = GameSaveManager(context)
                 val decision = SaveSyncLocks.active(activeKey(context, target)) {
-                    if (isGameRunning(context, target)) {
+                    if (store.load(key).optString("token") != token || isGameRunning(context, target)) {
                         FlushDecision.Busy
                     } else {
                         val current = captureContentSnapshot(manager, target)
@@ -403,7 +403,9 @@ object SaveSyncRuntime {
                     FlushDecision.Busy -> report += SaveSyncReport(busy = 1)
                     FlushDecision.Unchanged -> Unit
                     is FlushDecision.Changed -> {
-                        val result = SaveSyncService(context).syncGame(target, SaveSyncDirection.UPLOAD)
+                        val result = SaveSyncService(context).syncGameIfCurrent(target, SaveSyncDirection.UPLOAD) {
+                            store.load(key).optString("token") == token
+                        }
                         report += result
                         if (result.failures.isEmpty() && result.busy == 0) {
                             val committed = SaveSyncLocks.active(activeKey(context, target)) {

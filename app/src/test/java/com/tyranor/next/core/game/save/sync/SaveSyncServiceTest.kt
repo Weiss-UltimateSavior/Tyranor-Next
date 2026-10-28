@@ -731,6 +731,34 @@ class SaveSyncServiceTest {
         }
     }
 
+    @Test
+    fun retiredAliasSessionCannotCaptureReplacementAfterWaitingForDirectoryLock() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("retired-alias")
+        harness.identify(game)
+        val key = harness.key(game)
+        harness.sessions.save(key, JSONObject().put("token", "original-session"))
+        harness.setActive(game, "old-progress")
+        coroutineScope {
+            lateinit var queued: kotlinx.coroutines.Deferred<SaveSyncReport>
+            SaveSyncLocks.active(game.uri) {
+                queued = async(Dispatchers.Default) {
+                    harness.service.syncGameIfCurrent(game, SaveSyncDirection.UPLOAD) {
+                        harness.sessions.load(key).optString("token") == "original-session"
+                    }
+                }
+                withTimeout(5_000) { harness.world.activeKeyEntered.await() }
+                // Explicit selection through the shared directory retires the old alias ticket.
+                harness.sessions.remove(key)
+                harness.setActive(game, "replacement-selected-through-alias")
+            }
+            val report = withTimeout(5_000) { queued.await() }
+            assertEquals(1, report.busy)
+            assertTrue(report.failures.isEmpty())
+            assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
+        }
+    }
+
     private class Harness(private val temp: TemporaryFolder) {
         val root: File = temp.newFolder("save-sync")
         private val cache: File = temp.newFolder("cache")
@@ -841,11 +869,16 @@ class SaveSyncServiceTest {
         @Volatile
         var recoveryNeeded = false
         val unavailableUris = HashSet<String>()
+        val activeKeyEntered = CompletableDeferred<Unit>()
 
         override fun config(): WebDavConfig = webDavConfig
         override fun games(): List<ScanGame> = synchronized(lock) { games.toList() }
         override fun available(game: ScanGame): Boolean = synchronized(lock) { game in games && game.uri !in unavailableUris }
         override fun running(game: ScanGame): Boolean = isRunning
+        override fun activeKey(game: ScanGame): String {
+            activeKeyEntered.complete(Unit)
+            return game.uri
+        }
 
         override suspend fun fingerprint(game: ScanGame): String? =
             synchronized(lock) { activeHashes[game.uri] }

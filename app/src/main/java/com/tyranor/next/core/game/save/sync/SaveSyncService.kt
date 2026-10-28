@@ -354,12 +354,20 @@ class SaveSyncService internal constructor(
         report
     }
 
-    suspend fun syncGame(game: ScanGame, direction: SaveSyncDirection): SaveSyncReport = withContext(Dispatchers.IO) {
+    suspend fun syncGame(game: ScanGame, direction: SaveSyncDirection): SaveSyncReport =
+        syncGameIfCurrent(game, direction) { true }
+
+    /** Automatic flush must not adopt a newer selection after its session was retired. */
+    internal suspend fun syncGameIfCurrent(
+        game: ScanGame,
+        direction: SaveSyncDirection,
+        isCurrent: () -> Boolean,
+    ): SaveSyncReport = withContext(Dispatchers.IO) {
         requireEnabled()
         val config = environment.config()
         if (!config.configured) throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
         environment.openClient(config)
-            .use { syncOne(game, direction, config, it) }
+            .use { syncOne(game, direction, config, it, isCurrent) }
     }
 
     private suspend fun syncOne(
@@ -367,12 +375,14 @@ class SaveSyncService internal constructor(
         direction: SaveSyncDirection,
         config: WebDavConfig,
         client: SaveSyncTransport,
+        isCurrent: () -> Boolean = { true },
     ): SaveSyncReport = SaveSyncLocks.network(game.uri) {
         val key = localKey(game)
         var revision: String? = null
         var uploadArchive: File? = null
         suspend fun <T> local(block: suspend () -> T): T = SaveSyncLocks.versions(game.uri) {
             requireEnabled()
+            if (!isCurrent()) throw LocalStateChanged()
             if (revision != null && states.load(key).optString("revision") != revision) throw LocalStateChanged()
             block()
         }
@@ -446,6 +456,9 @@ class SaveSyncService internal constructor(
             if (direction.uploads) {
                 val version = local { SaveSyncLocks.active(environment.activeKey(game)) {
                     requireEnabled()
+                    // A related URI can retire this session while we wait for the shared
+                    // directory lock, after local() has already checked admission.
+                    if (!isCurrent()) throw LocalStateChanged()
                     if (environment.running(game)) {
                         busy++
                         null
