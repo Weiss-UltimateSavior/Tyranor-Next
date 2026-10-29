@@ -247,7 +247,6 @@ object GameLibraryRepository {
         }
 
     /** 命中集查询（排序口径见 [searchGamesConsistent]）：只保证「哪些标题命中」。 */
-
     suspend fun searchGames(context: Context, query: String, sortMode: String): List<ScanGame> =
         withContext(Dispatchers.IO) {
             ensureMigrated(context)
