@@ -78,3 +78,19 @@ internal object SaveSyncTemporaryFiles {
         file.delete()
     }
 }
+
+/** Injectable file operations for temporary ZIP creation/copy tests. */
+internal class SaveSyncTemporaryFileSystem(
+    val usableSpace: (File) -> Long = { it.usableSpace },
+    val createTempFile: (String, String, File?) -> File = { prefix, suffix, directory ->
+        File.createTempFile(prefix, suffix, directory)
+    },
+    val copyFile: (File, File) -> Unit = { source, target ->
+        source.copyTo(target, overwrite = true)
+        Unit
+    },
+) {
+    companion object {
+        val DEFAULT = SaveSyncTemporaryFileSystem()
+    }
+}

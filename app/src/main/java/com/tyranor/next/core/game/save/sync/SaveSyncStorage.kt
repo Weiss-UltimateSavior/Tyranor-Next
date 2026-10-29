@@ -75,12 +75,7 @@ private fun storageProvablyInsufficient(
 ): Boolean {
     return try {
         val usableBytes = usableSpace(directory)
-        try {
-            requireSnapshotSpace(remainingBytes.coerceAtLeast(0), usableBytes)
-            false
-        } catch (failure: SaveSyncException) {
-            failure.code == SaveSyncError.STORAGE_FULL
-        }
+        usableBytes < remainingBytes.coerceAtLeast(0L) + SAVE_SYNC_TRANSIENT_RESERVE_BYTES
     } catch (_: SecurityException) {
         false
     }
@@ -102,19 +97,3 @@ private val STORAGE_FULL_MESSAGES = listOf(
     "no space left",
     "not enough space on the disk",
 )
-
-/** Injectable file operations for temporary ZIP creation/copy tests. */
-internal class SaveSyncTemporaryFileSystem(
-    val usableSpace: (File) -> Long = { it.usableSpace },
-    val createTempFile: (String, String, File?) -> File = { prefix, suffix, directory ->
-        File.createTempFile(prefix, suffix, directory)
-    },
-    val copyFile: (File, File) -> Unit = { source, target ->
-        source.copyTo(target, overwrite = true)
-        Unit
-    },
-) {
-    companion object {
-        val DEFAULT = SaveSyncTemporaryFileSystem()
-    }
-}

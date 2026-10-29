@@ -884,6 +884,68 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun unquotedEtagDoesNotReuseConfirmation() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("unquoted-etag-cleanup")
+        harness.identify(game)
+        val key = harness.key(game)
+        val checkpointKey = harness.checkpointKey(game)
+        val hash = "d".repeat(64)
+        val name = SaveVersionNames.create(1_700_000_000_954L, hash)
+        harness.states.save(checkpointKey, JSONObject()
+            .put("gameKey", key)
+            .put("needsPrune", true)
+            .put("publicationIntent", name)
+            .put("publicationConfirmed", true)
+            .put("publicationTargetHash", hash)
+            .put("publicationTargetSize", 128L)
+            .put("publicationTargetEtag", "etag"))
+        val remoteGame = harness.remoteGame(game)
+        harness.transport.seed(remoteGame, RemoteSaveVersion(name, hash, 1_700_000_000_954L, 128L, "etag"))
+        harness.makeCacheUnusable()
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertTrue(report.failures.isEmpty())
+        assertEquals(1, harness.transport.verifyCount())
+        assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+    }
+
+    @Test
+    fun recoveryWaitsForMutationGateAndRechecksRunningAfterLaunch() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("mutation-gate-recovery")
+        harness.identify(game)
+        harness.setActive(game, "initial")
+        coroutineScope {
+            val held = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val gate = async {
+                SaveSyncLocks.mutation {
+                    held.complete(Unit)
+                    release.await()
+                }
+            }
+            held.await()
+            harness.world.isRunning = false
+            val recovery = async {
+                try {
+                    harness.service.recoverSelection(game)
+                    null
+                } catch (caught: SaveSyncException) {
+                    caught
+                }
+            }
+            delay(200)
+            harness.world.isRunning = true
+            release.complete(Unit)
+            gate.await()
+            val failure = recovery.await()
+            assertEquals(SaveSyncError.GAME_RUNNING, failure?.code)
+        }
+    }
+
+    @Test
     fun clearGameDeletesOnlyTargetPrivateStateAndNeverCloudOrActiveSave() = runBlocking {
         val harness = Harness(temp)
         val target = harness.addGame("clear-target")

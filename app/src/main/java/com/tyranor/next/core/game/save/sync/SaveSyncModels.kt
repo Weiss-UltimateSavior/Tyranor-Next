@@ -108,15 +108,23 @@ data class SaveSyncReport(
     val busy: Int = 0,
     val failures: List<SaveSyncFailure> = emptyList(),
     val cleanupPending: Int = 0,
+    val cleanupPendingGames: Set<String> = emptySet(),
 ) {
     operator fun plus(other: SaveSyncReport) = SaveSyncReport(
         uploaded + other.uploaded, downloaded + other.downloaded,
         unchanged + other.unchanged, busy + other.busy, failures + other.failures,
-        cleanupPending + other.cleanupPending,
+        cleanupPending + other.cleanupPending, cleanupPendingGames + other.cleanupPendingGames,
     )
 }
 
 data class SaveSyncFailure(val gameTitle: String, val error: SaveSyncError)
+
+/** A strong validator must be quoted, non-weak and free of control characters. */
+internal fun isStrongEtag(value: String?): Boolean {
+    val etag = value ?: return false
+    return etag.length >= 2 && etag.startsWith('"') && etag.endsWith('"') &&
+        !etag.startsWith("W/", ignoreCase = true) && etag.none { it.code < 32 || it.code == 127 }
+}
 
 /** Immutable names let devices publish independently without replacing a shared manifest. */
 object SaveVersionNames {

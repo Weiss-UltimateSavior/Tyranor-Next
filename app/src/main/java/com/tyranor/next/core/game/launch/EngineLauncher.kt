@@ -62,6 +62,7 @@ import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.RpgSaveSyncState
 import com.tyranor.next.core.game.save.sync.SaveSyncLocks
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.save.sync.isSaveDirectoryLaunchKey
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
@@ -163,10 +164,18 @@ object EngineLauncher {
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
         withContext(Dispatchers.IO) {
             val activeKey = SaveSyncRuntime.launchKey(context, game)
-            if (activeKey == null) {
-                // Optional sync is disabled; still serialize with an in-flight activation import
-                // without resolving the save directory.
-                return@withContext SaveSyncLocks.mutation { launchInternal(context, game, patchChoice) }
+            if (activeKey == null || !isSaveDirectoryLaunchKey(activeKey)) {
+                // Optional sync is disabled or its directory key could not be resolved. Still
+                // serialize with an in-flight activation import without resolving the directory.
+                return@withContext SaveSyncLocks.mutation {
+                    val grace = SaveSyncRuntime.prepareOptionalLaunchGrace(context, game)
+                    var success = false
+                    try {
+                        launchInternal(context, game, patchChoice).also { success = it == LaunchResult.Success }
+                    } finally {
+                        SaveSyncRuntime.finishOptionalLaunchGrace(game.uri, grace, success)
+                    }
+                }
             }
             SaveSyncLocks.active(activeKey) {
                 val ticket = SaveSyncRuntime.prepareLaunch(context, game)

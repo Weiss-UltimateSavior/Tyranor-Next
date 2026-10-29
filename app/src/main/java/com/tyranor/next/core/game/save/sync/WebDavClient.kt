@@ -451,9 +451,7 @@ class WebDavClient private constructor(
     }
 
     companion object {
-        private fun strongEtag(value: String?): String? = value?.takeIf {
-            it.length >= 2 && it.startsWith('"') && it.endsWith('"') && it.none { c -> c.code < 32 || c.code == 127 }
-        }
+        private fun strongEtag(value: String?): String? = value?.takeIf { isStrongEtag(it) }
         private val XML = "application/xml; charset=utf-8".toMediaType()
         private val ZIP = "application/zip".toMediaType()
         private const val PROPFIND = "<?xml version=\"1.0\" encoding=\"utf-8\"?><d:propfind xmlns:d=\"DAV:\"><d:prop><d:resourcetype/><d:getcontentlength/><d:getetag/></d:prop></d:propfind>"

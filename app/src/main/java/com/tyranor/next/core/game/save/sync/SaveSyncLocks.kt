@@ -23,8 +23,8 @@ internal object SaveSyncLocks {
     suspend fun <T> session(key: String, block: suspend () -> T): T = sessions.withLock(key, block)
 
     /**
-     * Serializes save-directory replacements (version activation/recovery/clear) with launches that
-     * do not hold the directory lock because the optional feature is disabled.
+     * Serializes save-directory replacements/backfills (activation import, recovery/failure
+     * cleanup, sync finish, clear) with launches that do not hold the directory lock.
      */
     suspend fun <T> mutation(block: suspend () -> T): T = mutations.withLock { block() }
 }

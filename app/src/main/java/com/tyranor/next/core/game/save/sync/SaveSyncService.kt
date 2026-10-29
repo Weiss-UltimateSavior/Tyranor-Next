@@ -62,6 +62,7 @@ class SaveSyncService internal constructor(
         SaveSyncLocks.versions(game.uri) {
             val directoryKey = environment.activeKey(game)
             SaveSyncLocks.active(directoryKey) {
+                SaveSyncLocks.mutation {
                 requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                 directoryActivations.owned(game.uri).forEach { requireSameSaveDirectory(it.activeKey, directoryKey) }
                 requireIdle(game)
@@ -111,6 +112,7 @@ class SaveSyncService internal constructor(
                 }
                 // The identity and ownership index are the retry map for failed child cleanup.
                 states.remove(key)
+                }
             }
         }
     }
@@ -131,10 +133,12 @@ class SaveSyncService internal constructor(
             SaveSyncLocks.versions(game.uri) {
                 val directoryKey = environment.activeKey(game)
                 SaveSyncLocks.active(directoryKey) {
-                    requireIdle(game)
-                    if (needsSelectionRecovery(game)) {
-                        invalidateTransfers(game)
-                        abandonActivationLocked(game, directoryKey)
+                    SaveSyncLocks.mutation {
+                        requireIdle(game)
+                        if (needsSelectionRecovery(game)) {
+                            invalidateTransfers(game)
+                            abandonActivationLocked(game, directoryKey)
+                        }
                     }
                 }
             }
@@ -181,16 +185,18 @@ class SaveSyncService internal constructor(
                     }
                     var retryingPrepared = false
                     if (pending != null) {
-                        environment.completeImport(game, directoryKey)
-                        val result = SaveActivationRecovery.beforeSelection(
-                            sameContent = pending.selected.contentHash == selected.contentHash,
-                            canFinalize = pending.canFinalize(environment.fingerprint(game, directoryKey)),
-                            discardPrevious = discardPrevious,
-                            currentMatchesSelection = environment.fingerprint(game, directoryKey) == selected.contentHash,
-                            finish = { tryFinishActivation(game, pending, directoryKey) },
-                            discard = { abandonActivationLocked(game, directoryKey) },
-                        )
-                        if (result != null) return@active result
+                        val earlyResult = SaveSyncLocks.mutation {
+                            environment.completeImport(game, directoryKey)
+                            SaveActivationRecovery.beforeSelection(
+                                sameContent = pending.selected.contentHash == selected.contentHash,
+                                canFinalize = pending.canFinalize(environment.fingerprint(game, directoryKey)),
+                                discardPrevious = discardPrevious,
+                                currentMatchesSelection = environment.fingerprint(game, directoryKey) == selected.contentHash,
+                                finish = { tryFinishActivation(game, pending, directoryKey) },
+                                discard = { abandonActivationLocked(game, directoryKey) },
+                            )
+                        }
+                        if (earlyResult != null) return@active earlyResult
                         retryingPrepared = true
                     }
                     val before = environment.fingerprint(game, directoryKey)
@@ -212,8 +218,8 @@ class SaveSyncService internal constructor(
                         requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                         // Once the active save changes, leaving this page must not cancel its
                         // matching version metadata or the pending automatic update.
-                        withContext(NonCancellable) {
-                            SaveSyncLocks.mutation {
+                        SaveSyncLocks.mutation {
+                            withContext(NonCancellable) {
                                 try {
                                     // Re-check after waiting for a disabled launch: it may have
                                     // started the engine, and the feature may have been disabled.
@@ -237,9 +243,10 @@ class SaveSyncService internal constructor(
                             }
                         }
                     } catch (failure: Exception) {
-                        if (!committed) withContext(NonCancellable) {
-                            try {
-                                activations.discardUncommitted(key) { archive, version ->
+                        if (!committed) SaveSyncLocks.mutation {
+                            withContext(NonCancellable) {
+                                try {
+                                    activations.discardUncommitted(key) { archive, version ->
                                     environment.completeImport(game, directoryKey)
                                     snapshots.add(key, archive, version.createdAt, version.source, version.contentHash,
                                         restored = version.restored, previousCreatedAt = version.previousCreatedAt,
@@ -258,6 +265,7 @@ class SaveSyncService internal constructor(
                                     failure.addSuppressed(cleanup)
                                 }
                             }
+                        }
                         }
                         throw failure
                     }
@@ -682,9 +690,11 @@ class SaveSyncService internal constructor(
                         false
                     } else {
                         finishPreparedDirectoryCleanup(game, directoryKey)
-                        activations.load(localKey(game))?.let { pending ->
-                            if (tryFinishActivation(game, pending, directoryKey) != SaveActivationResult.APPLIED) {
-                                throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+                        SaveSyncLocks.mutation {
+                            activations.load(localKey(game))?.let { pending ->
+                                if (tryFinishActivation(game, pending, directoryKey) != SaveActivationResult.APPLIED) {
+                                    throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+                                }
                             }
                         }
                         directoryActivations.requireAvailable(directoryKey)
@@ -770,8 +780,7 @@ class SaveSyncService internal constructor(
                     val confirmedSize = checkpoint.optLong("publicationTargetSize", -1L)
                     val confirmedEtag = checkpoint.optString("publicationTargetEtag")
                     val matchesConfirmed = checkpoint.optBoolean("publicationConfirmed") && target != null &&
-                        confirmedHash.isNotBlank() && confirmedEtag.isNotBlank() &&
-                        !confirmedEtag.startsWith("W/", ignoreCase = true) &&
+                        confirmedHash.isNotBlank() && isStrongEtag(confirmedEtag) && isStrongEtag(target.etag) &&
                         target.contentHash == confirmedHash && target.size == confirmedSize && target.etag == confirmedEtag
                     val verified = matchesConfirmed || (target != null && client.verifyVersion(remoteGame, target))
                     checkpoint.put("publicationConfirmed", verified)
@@ -817,7 +826,8 @@ class SaveSyncService internal constructor(
                     captureLocked(game, expectedContentHash = expectedContentHash, directoryKey = directoryKey)
                 }
                 if (cleanupPending > 0 && (version == null || version.contentHash == confirmedCleanupTarget?.contentHash)) {
-                    return@network SaveSyncReport(downloaded = downloaded, cleanupPending = 1)
+                    return@network SaveSyncReport(downloaded = downloaded, cleanupPending = 1,
+                        cleanupPendingGames = setOf(game.title))
                 }
                 if (version == null) {
                     if (checkpoint.optBoolean("needsPrune")) {
@@ -930,19 +940,24 @@ class SaveSyncService internal constructor(
                 }
             }
             SaveSyncReport(uploaded, downloaded, if (uploaded + downloaded + busy + cleanupPending == 0) 1 else 0, busy,
-                cleanupPending = cleanupPending)
+                cleanupPending = cleanupPending,
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
         } catch (_: CleanupPending) {
-            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy, cleanupPending = 1)
+            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy, cleanupPending = 1,
+                cleanupPendingGames = setOf(game.title))
         } catch (_: GameBecameBusy) {
-            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy + 1, cleanupPending = cleanupPending)
+            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy + 1, cleanupPending = cleanupPending,
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
         } catch (_: LocalStateChanged) {
             SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
-                failures = listOf(SaveSyncFailure(game.title, SaveSyncError.LOCAL_STATE_CHANGED)), cleanupPending = cleanupPending)
+                failures = listOf(SaveSyncFailure(game.title, SaveSyncError.LOCAL_STATE_CHANGED)), cleanupPending = cleanupPending,
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
-                failures = listOf(SaveSyncFailure(game.title, errorCode(failure))), cleanupPending = cleanupPending)
+                failures = listOf(SaveSyncFailure(game.title, errorCode(failure))), cleanupPending = cleanupPending,
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
         } finally {
             uploadArchive?.let(SaveSyncTemporaryFiles::release)
         }

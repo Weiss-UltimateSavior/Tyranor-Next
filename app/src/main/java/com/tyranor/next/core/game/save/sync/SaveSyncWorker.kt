@@ -136,9 +136,16 @@ internal object SaveSyncWorkPolicy {
     fun isDisabled(report: SaveSyncReport): Boolean =
         report.failures.any { it.error == SaveSyncError.DISABLED }
 
-    // One game may be out of space while another still has a cleanup round to finish; do not let
-    // the aggregate report suppress the fallback for the latter.
-    private fun cleanupCanRetry(report: SaveSyncReport): Boolean = report.cleanupPending > 0
+    // One game may be out of space while another still has a cleanup round to finish; only skip
+    // the storage-full game, not the whole aggregate report.
+    private fun cleanupCanRetry(report: SaveSyncReport): Boolean {
+        val pending = report.cleanupPendingGames.ifEmpty {
+            if (report.cleanupPending > 0) setOf("") else emptySet()
+        }
+        val storageFull = report.failures.filter { it.error == SaveSyncError.STORAGE_FULL }
+            .mapTo(HashSet()) { it.gameTitle }
+        return pending.any { it !in storageFull }
+    }
 
     fun shouldScheduleFallback(report: SaveSyncReport): Boolean =
         !isDisabled(report) && (report.busy > 0 || cleanupCanRetry(report) || report.failures.any { it.error in retryable })

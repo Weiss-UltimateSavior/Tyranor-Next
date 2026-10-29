@@ -449,7 +449,12 @@ object SaveSyncRuntime {
                             FlushDecision.Unchanged
                         }
                     }
-                } ?: FlushDecision.SessionReplaced
+                } ?: if (store.load(key).optString("token") != token) {
+                    FlushDecision.SessionReplaced
+                } else {
+                    // The binding/directory changed but the session was not replaced; report it.
+                    FlushDecision.StateChanged
+                }
                 when (decision) {
                     FlushDecision.Busy -> report += SaveSyncReport(busy = 1)
                     FlushDecision.SessionReplaced -> Unit
@@ -470,12 +475,14 @@ object SaveSyncRuntime {
                         report += result
                         if (result.failures.isEmpty() && result.busy == 0 && result.cleanupPending == 0) {
                             var gameBecameBusy = false
+                            var sessionReplaced = false
                             val committed = withCurrentSaveSession(store, key, entry, directoryKey,
                                 resolveActiveKey = { activeKey(context, target) }) {
                                 if (isGameRunning(context, target)) {
                                     gameBecameBusy = true
                                     false
                                 } else if (store.load(key).optString("token") != token) {
+                                    sessionReplaced = true
                                     false
                                 } else {
                                     val final = captureContentSnapshot(manager, target, directoryKey)
@@ -487,9 +494,16 @@ object SaveSyncRuntime {
                                         false
                                     }
                                 }
-                            } ?: false
-                            if (!committed) report += if (gameBecameBusy) SaveSyncReport(busy = 1) else
-                                SaveSyncReport(failures = listOf(SaveSyncFailure(target.title, SaveSyncError.LOCAL_STATE_CHANGED)))
+                            } ?: run {
+                                sessionReplaced = store.load(key).optString("token") != token
+                                false
+                            }
+                            if (!committed) {
+                                if (sessionReplaced) Unit
+                                else if (gameBecameBusy) report += SaveSyncReport(busy = 1)
+                                else report += SaveSyncReport(
+                                    failures = listOf(SaveSyncFailure(target.title, SaveSyncError.LOCAL_STATE_CHANGED)))
+                            }
                         }
                     }
                 }
@@ -583,23 +597,46 @@ object SaveSyncRuntime {
             entry.optLong("startedAt", -1L), entry.optBoolean("returned")) }
         if (nativeEntries.isEmpty()) {
             // WebDAV may be disabled while a native host is still running: detect its persisted
-            // record so version activation cannot replace a live save tree. Skip the probe when
-            // there is neither a launch hint nor any host record to keep save operations cheap.
-            if (!inGrace && probe.records().isEmpty()) return false
-            return hasRunningSaveHost(probe, game.uri, hasSession = false, inStartGrace = inGrace,
+            // record so version activation cannot replace a live save tree. When the process list
+            // is unavailable, evaluate the records directly instead of failing open/closed.
+            if (inGrace) return true
+            val visible = probe.visibleHosts()
+            val effectiveProbe = if (visible == null) {
+                object : SaveHostProbe by probe {
+                    override fun visibleHosts(): List<SaveHostProcess>? = emptyList()
+                    override fun records(): Map<String, JSONObject> =
+                        probe.records().filterValues { it.optInt("pid", -1) > 0 }
+                }
+            } else probe
+            return hasRunningSaveHost(effectiveProbe, game.uri, hasSession = false, inStartGrace = false,
                 elapsedMillis = SystemClock.elapsedRealtime(), relatedUris = related)
         }
         return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime(), related)
     }
 
-    internal fun launchKey(context: Context, game: ScanGame): String? {
-        val key = optionalSaveSyncLaunchKey(game.uri, { WebDavSettingsStore.isEnabled(context) }) { activeKey(context, game) }
-        if (key == null) {
-            // Keep a conservative native-start hint even when optional sync is disabled; it lets
-            // activation/recovery observe a launch that has no sync session.
-            markNativeLaunchGrace(game.uri, WebDavSettingsStore.sessionGeneration(context), UUID.randomUUID().toString())
+    internal fun launchKey(context: Context, game: ScanGame): String? =
+        optionalSaveSyncLaunchKey(game.uri, { WebDavSettingsStore.isEnabled(context) }) { activeKey(context, game) }
+
+    /**
+     * Start hint for a launch that does not use the directory lock. Marked while the caller holds
+     * the mutation gate, so activation/recovery can observe the launch without waiting for the
+     * whole optional-sync setup. Returns null when the hint cannot be persisted.
+     */
+    internal fun prepareOptionalLaunchGrace(context: Context, game: ScanGame): String? = try {
+        val token = UUID.randomUUID().toString()
+        markNativeLaunchGrace(game.uri, WebDavSettingsStore.sessionGeneration(context), token)
+        token
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
+
+    internal fun finishOptionalLaunchGrace(uri: String, token: String?, success: Boolean) {
+        if (success || token == null) return
+        synchronized(nativeLaunchGraceLock) {
+            if (nativeLaunchGraceUntil[uri]?.token == token) nativeLaunchGraceUntil.remove(uri)
         }
-        return key
     }
 
     internal fun activeKey(context: Context, game: ScanGame): String = saveDirectoryIdentity(game) {

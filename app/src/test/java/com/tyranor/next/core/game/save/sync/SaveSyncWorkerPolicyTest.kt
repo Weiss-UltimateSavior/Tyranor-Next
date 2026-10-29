@@ -55,6 +55,25 @@ class SaveSyncWorkerPolicyTest {
     }
 
     @Test
+    fun cleanupSkipsOnlyTheStorageFullGame() {
+        val onlyFull = SaveSyncReport(
+            cleanupPending = 1,
+            cleanupPendingGames = setOf("full"),
+            failures = listOf(SaveSyncFailure("full", SaveSyncError.STORAGE_FULL)),
+        )
+        assertFalse(SaveSyncWorkPolicy.shouldScheduleFallback(onlyFull))
+        assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(onlyFull, fallback = true))
+
+        val otherPending = SaveSyncReport(
+            cleanupPending = 1,
+            cleanupPendingGames = setOf("other"),
+            failures = listOf(SaveSyncFailure("full", SaveSyncError.STORAGE_FULL)),
+        )
+        assertTrue(SaveSyncWorkPolicy.shouldScheduleFallback(otherPending))
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(otherPending, fallback = true))
+    }
+
+    @Test
     fun cleanupPendingStillSchedulesFallbackWhenAnotherGameFailsPermanently() {
         val mixed = SaveSyncReport(
             cleanupPending = 1,
