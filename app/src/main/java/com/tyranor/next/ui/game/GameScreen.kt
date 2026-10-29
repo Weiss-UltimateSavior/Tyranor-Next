@@ -528,6 +528,11 @@ private fun GameLibraryContent(
             AppSettingsStore.setGameFilterEngine(context, AppSettingsStore.GAME_FILTER_ENGINE_ALL)
         }
     }
+    // 筛选/排序一换，列表内容整体换掉，原来的滚动位置没有意义：回到顶部，
+    // 否则从第 30 张筛到 3 张时会停在新列表的尾部（封面流的分页位置另见 GameCoverFlow）。
+    LaunchedEffect(engineFilter, playedFilter, gameSort) {
+        gridState.scrollToItem(0)
+    }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
     Column(modifier.fillMaxSize()) {
