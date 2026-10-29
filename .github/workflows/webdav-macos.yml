@@ -5,15 +5,50 @@ on:
   pull_request:
     paths:
       - ".github/workflows/webdav-macos.yml"
-      - "app/**"
-      - "engine/**"
+
+      # Save/WebDAV/path-safety code and the launch-side path logic it shares.
+      - "app/src/main/java/com/tyranor/next/core/game/save/**"
+      - "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/launch/EthornellOperationGate.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/manual/AndroidAppGames.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/EthornellPaths.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/GamePathUtils.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/Xs35Paths.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/Xs4Paths.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/EffectiveEngineSettings.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsStore.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/PerGameSettingsStore.kt"
+
+      # Narrow direct consumers of SaveSync, save management, and launch paths.
+      - "app/src/main/java/com/tyranor/next/TyranorNextApplication.kt"
+      - "app/src/main/java/com/tyranor/next/ui/common/SaveSyncFeedback.kt"
+      - "app/src/main/java/com/tyranor/next/ui/common/SaveSyncMessages.kt"
+      - "app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt"
+      - "app/src/main/java/com/tyranor/next/ui/game/GameShortcutActivity.kt"
+      - "app/src/main/java/com/tyranor/next/ui/game/RpgSaveFormatDialog.kt"
+      - "app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt"
+      - "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt"
+      - "app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt"
+      - "app/src/main/java/com/tyranor/next/ui/save/**"
+      - "app/src/main/java/com/tyranor/next/ui/settings/PerGameSettingsScreen.kt"
+
+      # JVM regressions that exercise the same filesystem behavior.
+      - "app/src/test/java/com/tyranor/next/core/game/save/**"
+      - "app/src/test/java/com/tyranor/next/core/game/launch/RpgSaveScanDirsTest.kt"
+      - "app/src/test/java/com/tyranor/next/ui/common/SaveSyncMessagesTest.kt"
+      - "app/src/test/java/com/tyranor/next/ui/save/**"
+
+      # Build-graph inputs for the full :app:testDebugUnitTest task.
+      - "app/build.gradle.kts"
+      - "engine/build.gradle"
       - "buildSrc/**"
       - "gradle/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
       - "gradlew"
-      - "gradlew.bat"
 
 permissions:
   contents: read
