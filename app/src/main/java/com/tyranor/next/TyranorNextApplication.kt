@@ -43,6 +43,9 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         // 游戏页筛选条件在 UI 可交互之前灌进内存态：放到 MainScreen 的 effect 里做的话，
         // 初始化读到的旧值可能在用户已经点过筛选之后才写回，把新选择覆盖掉。
         AppSettingsStore.initGameFilters(this)
+        // 排序与过滤同源：一起在首帧前灌入，否则进程重建时库可能先加载完、
+        // 排序仍是默认值，游戏页会把「排序刚就位」误判成条件变化而重置滚动位置。
+        AppSettingsStore.gameSortState.value = AppSettingsStore.getGameSort(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
