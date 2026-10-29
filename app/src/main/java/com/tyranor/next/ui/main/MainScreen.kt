@@ -147,6 +147,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
       text = { Text(stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty(), cleanupReason),
         style = MaterialTheme.typography.bodyMedium) },
+      textScrollEnabled = true,
       confirmButton = {
         DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
       },

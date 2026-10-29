@@ -18,7 +18,8 @@ object SaveSyncFeedback {
         if (report.failures.isEmpty() &&
             report.uploaded == 0 &&
             report.downloaded == 0 &&
-            report.unchanged == 0
+            report.unchanged == 0 &&
+            report.cleanupPending == 0
         ) return
         pending.update { Notice(nextId.incrementAndGet(), report) }
     }

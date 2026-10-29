@@ -3,7 +3,7 @@
 ## 验收基线与后续增量
 
 日期：2026-10-27，Asia/Shanghai。对应 PR #132，本文所有设备执行结果、
-截图与通过数均锁定在业务修复基线 `aad49a2`。当时 `SaveSyncDeviceTest` 为 6 项，
+截图与通过数均锁定在业务基线 `aad49a2` + 测试快照 `60690ad4`（`aad49a2` 本身尚未包含这两个设备测试文件）。当时 `SaveSyncDeviceTest` 为 6 项，
 `SaveRecoveryDeviceTest` 为 3 项；这两类历史结果是同轮 **9 通过、0 失败、0 跳过**，
 后文保留原记录，不因当前源码增加用例而改写历史计数。
 
@@ -46,7 +46,7 @@ UI 测试另要求初始游戏库为空、没有既有 WebDAV 加密载荷。各
 
 ### 存档与生命周期
 
-`aad49a2` 的 `SaveSyncDeviceTest` 6 项、`SaveRecoveryDeviceTest` 3 项，
+测试快照 `60690ad4` 的 `SaveSyncDeviceTest` 6 项、`SaveRecoveryDeviceTest` 3 项，
 最终同轮 **9 通过、0 失败、0 跳过**，
 耗时 39.568 秒。使用实际 Android Context、AndroidKeyStore、GameSaveManager、
 SaveSyncService、SaveSyncRuntime、WorkManager、OkHttp 与 Android XML 解析器。

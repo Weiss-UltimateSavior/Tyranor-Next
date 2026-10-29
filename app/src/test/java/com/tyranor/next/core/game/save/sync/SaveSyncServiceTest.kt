@@ -759,7 +759,7 @@ class SaveSyncServiceTest {
     }
 
     @Test
-    fun emptyActiveCleanupWithMissingReplacementReportsServer() = runBlocking {
+    fun emptyActiveCleanupRetiresMissingReplacement() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("missing-cleanup-replacement")
         harness.identify(game)
@@ -776,14 +776,111 @@ class SaveSyncServiceTest {
 
         val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
 
-        assertEquals(listOf(SaveSyncError.SERVER), report.failures.map { it.error })
+        assertTrue(report.failures.isEmpty())
         assertEquals(0, report.uploaded)
         assertEquals(0, report.downloaded)
         assertEquals(0, report.busy)
         assertEquals(0, report.cleanupPending)
         assertEquals(0, harness.transport.uploadInvocationCount(missingHash))
         assertEquals(0, harness.transport.downloadCount())
-        assertTrue(harness.states.load(checkpointKey).getBoolean("needsPrune"))
+        assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+    }
+
+    @Test
+    fun emptyActiveCleanupDiscardsCorruptReplacement() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("corrupt-cleanup-replacement")
+        harness.identify(game)
+        val key = harness.key(game)
+        val checkpointKey = harness.checkpointKey(game)
+        val corruptHash = "b".repeat(64)
+        val corruptName = SaveVersionNames.create(1_700_000_000_951L, corruptHash)
+        harness.states.save(checkpointKey, JSONObject()
+            .put("gameKey", key)
+            .put("needsPrune", true)
+            .put("publicationIntent", corruptName)
+            .put("publicationConfirmed", false))
+        val remoteGame = harness.remoteGame(game)
+        harness.transport.seed(remoteGame,
+            RemoteSaveVersion(corruptName, corruptHash, 1_700_000_000_951L, 128L, "\"etag\""))
+        harness.transport.markCorrupt(corruptName)
+        harness.makeCacheUnusable()
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertTrue(report.failures.isEmpty())
+        assertEquals(0, report.uploaded)
+        assertEquals(0, report.downloaded)
+        assertEquals(0, report.busy)
+        assertEquals(0, report.cleanupPending)
+        assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+        assertTrue(harness.transport.versions(remoteGame).isEmpty())
+        assertEquals(1, harness.transport.verifyCount())
+    }
+
+    @Test
+    fun confirmedCleanupTargetIsNotDownloadedAgain() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("confirmed-cleanup-target")
+        harness.identify(game)
+        val key = harness.key(game)
+        val checkpointKey = harness.checkpointKey(game)
+        val hash = "c".repeat(64)
+        val name = SaveVersionNames.create(1_700_000_000_953L, hash)
+        harness.states.save(checkpointKey, JSONObject()
+            .put("gameKey", key)
+            .put("needsPrune", true)
+            .put("publicationIntent", name)
+            .put("publicationConfirmed", true)
+            .put("publicationTargetHash", hash)
+            .put("publicationTargetSize", 128L)
+            .put("publicationTargetEtag", "\"etag\""))
+        val remoteGame = harness.remoteGame(game)
+        harness.transport.seed(remoteGame, RemoteSaveVersion(name, hash, 1_700_000_000_953L, 128L, "\"etag\""))
+        harness.makeCacheUnusable()
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertTrue(report.failures.isEmpty())
+        assertEquals(0, harness.transport.verifyCount())
+        assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+    }
+
+    @Test
+    fun activationWaitsForMutationGateAndRechecksRunningAfterLaunch() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("mutation-gate-activation")
+        harness.identify(game)
+        harness.setActive(game, "initial")
+        val selected = harness.addSnapshot(game, "selected-mutation", 1_700_000_000_010L)
+        coroutineScope {
+            val held = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val gate = async {
+                SaveSyncLocks.mutation {
+                    held.complete(Unit)
+                    release.await()
+                }
+            }
+            held.await()
+            harness.world.isRunning = false
+            val activation = async {
+                try {
+                    harness.service.activateVersion(game, selected.id)
+                    null
+                } catch (caught: SaveSyncException) {
+                    caught
+                }
+            }
+            withTimeout(5_000) {
+                while (harness.journal.load(harness.key(game)) == null) delay(10)
+            }
+            harness.world.isRunning = true
+            release.complete(Unit)
+            gate.await()
+            val failure = activation.await()
+            assertEquals(SaveSyncError.GAME_RUNNING, failure?.code)
+        }
     }
 
     @Test
@@ -3071,6 +3168,8 @@ class SaveSyncServiceTest {
                 if (source != null) archives[version.contentHash] = source.readBytes()
             }
         }
+
+        fun markCorrupt(name: String) = synchronized(lock) { corruptTargets += name }
 
         fun versions(game: RemoteSaveGame): List<RemoteSaveVersion> = synchronized(lock) {
             remote[game.key]?.values?.toList().orEmpty()

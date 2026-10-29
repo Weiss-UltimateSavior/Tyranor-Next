@@ -960,6 +960,86 @@ class WebDavClientTest {
         }
     }
 
+    @Test fun downloadRejectsBodyLongerThanListedSize() = runBlocking {
+        val oldBytes = "existing local save".toByteArray()
+        val body = ByteArray(4096) { (it % 251).toByte() }
+        val destination = temp.newFile().apply { writeBytes(oldBytes) }
+        val createdAt = 1_700_000_661_000L
+        val hash = "e".repeat(64)
+        val remote = RemoteSaveVersion(
+            SaveVersionNames.createRemote(createdAt, hash, ZoneOffset.UTC),
+            hash,
+            createdAt,
+            1024L,
+            "\"immutable\"",
+        )
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            runCatching { exchange.responseBody.use { it.write(body) } }
+            exchange.close()
+        }
+        server.start()
+        try {
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+                downloadFileSystem = WebDavDownloadFileSystem(usableSpace = { Long.MAX_VALUE }),
+            ).use { client ->
+                val failure = try {
+                    client.download(GAME, remote, destination)
+                    null
+                } catch (caught: SaveSyncException) {
+                    caught
+                }
+                assertEquals(SaveSyncError.INVALID_RESPONSE, failure?.code)
+            }
+            assertArrayEquals(oldBytes, destination.readBytes())
+            assertNoDownloadParts(destination)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test fun downloadRejectsChunkedBodyLongerThanListedSize() = runBlocking {
+        val oldBytes = "existing local save".toByteArray()
+        val body = ByteArray(4096) { (it % 241).toByte() }
+        val destination = temp.newFile().apply { writeBytes(oldBytes) }
+        val createdAt = 1_700_000_662_000L
+        val hash = "f".repeat(64)
+        val remote = RemoteSaveVersion(
+            SaveVersionNames.createRemote(createdAt, hash, ZoneOffset.UTC),
+            hash,
+            createdAt,
+            1024L,
+            "\"immutable\"",
+        )
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            exchange.sendResponseHeaders(200, 0)
+            runCatching { exchange.responseBody.use { it.write(body) } }
+            exchange.close()
+        }
+        server.start()
+        try {
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+                downloadFileSystem = WebDavDownloadFileSystem(usableSpace = { Long.MAX_VALUE }),
+            ).use { client ->
+                val failure = try {
+                    client.download(GAME, remote, destination)
+                    null
+                } catch (caught: SaveSyncException) {
+                    caught
+                }
+                assertEquals(SaveSyncError.INVALID_RESPONSE, failure?.code)
+            }
+            assertArrayEquals(oldBytes, destination.readBytes())
+            assertNoDownloadParts(destination)
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test fun downloadResponseReadFailureStaysNetworkAndSuppressesCloseFailure() = runBlocking {
         val oldBytes = "existing local save".toByteArray()
         val downloadedBytes = ByteArray(64 * 1024) { (it % 239).toByte() }

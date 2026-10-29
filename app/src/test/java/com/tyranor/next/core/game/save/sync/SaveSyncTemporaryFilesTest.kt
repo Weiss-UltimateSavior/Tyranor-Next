@@ -146,7 +146,6 @@ class SaveSyncTemporaryFilesTest {
         }
 
         assertEquals(SaveSyncError.STORAGE_FULL, failure.code)
-        assertEquals(3, spaceChecks)
         assertEquals(1, factoryCalls)
         assertTrue(cache.listFiles().orEmpty().isEmpty())
     }

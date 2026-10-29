@@ -1,6 +1,8 @@
 package com.tyranor.next.ui.common
 
 import com.tyranor.next.R
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.save.sync.SaveSyncFailure
@@ -65,6 +67,15 @@ class SaveSyncMessagesTest {
 
         assertEquals(SaveSyncError.LOCAL_IO, failure.code)
         assertSame(cause, failure.cause)
+    }
+
+    @Test
+    fun cleanupUsesSharedSaveErrorMapping() {
+        val unavailable = GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        assertEquals(SaveSyncError.SAVE_UNAVAILABLE, unavailable.toSaveSyncCleanupException().code)
+
+        val incomplete = GameSaveException(SaveErrorCode.SAVE_SELECTION_INCOMPLETE)
+        assertEquals(SaveSyncError.SELECTION_INCOMPLETE, incomplete.toSaveSyncCleanupException().code)
     }
 
     @Test

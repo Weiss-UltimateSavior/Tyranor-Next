@@ -94,11 +94,7 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
             if (!WebDavSettingsStore.isEnabled(context)) return
             val request = OneTimeWorkRequestBuilder<SaveSyncWorker>()
                 .setInputData(workDataOf(INPUT_PULL to pull, INPUT_FALLBACK to delayed))
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(SaveSyncWorkPolicy.AUTOMATIC_NETWORK_TYPE)
-                        .build(),
-                )
+                .setConstraints(automaticWorkConstraints())
                 .setInitialDelay(if (delayed) 30 else 1, TimeUnit.SECONDS)
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.SECONDS)
                 .build()
@@ -114,6 +110,10 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
                 request,
             )
         }
+
+        internal fun automaticWorkConstraints(): Constraints = Constraints.Builder()
+            .setRequiredNetworkType(SaveSyncWorkPolicy.AUTOMATIC_NETWORK_TYPE)
+            .build()
     }
 }
 
@@ -136,8 +136,9 @@ internal object SaveSyncWorkPolicy {
     fun isDisabled(report: SaveSyncReport): Boolean =
         report.failures.any { it.error == SaveSyncError.DISABLED }
 
-    private fun cleanupCanRetry(report: SaveSyncReport): Boolean = report.cleanupPending > 0 &&
-        report.failures.none { it.error == SaveSyncError.STORAGE_FULL }
+    // One game may be out of space while another still has a cleanup round to finish; do not let
+    // the aggregate report suppress the fallback for the latter.
+    private fun cleanupCanRetry(report: SaveSyncReport): Boolean = report.cleanupPending > 0
 
     fun shouldScheduleFallback(report: SaveSyncReport): Boolean =
         !isDisabled(report) && (report.busy > 0 || cleanupCanRetry(report) || report.failures.any { it.error in retryable })

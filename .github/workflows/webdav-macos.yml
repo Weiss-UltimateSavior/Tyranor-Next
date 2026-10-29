@@ -8,11 +8,13 @@ on:
 
       # Save/WebDAV/path-safety code and the launch-side path logic it shares.
       - "app/src/main/java/com/tyranor/next/core/game/save/**"
+      - "app/src/main/java/com/tyranor/next/core/engine/EngineType.kt"
       - "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt"
       - "app/src/main/java/com/tyranor/next/core/game/launch/EthornellOperationGate.kt"
       - "app/src/main/java/com/tyranor/next/core/game/manual/AndroidAppGames.kt"
       - "app/src/main/java/com/tyranor/next/core/game/model/EthornellPaths.kt"
       - "app/src/main/java/com/tyranor/next/core/game/model/GamePathUtils.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/ScanGame.kt"
       - "app/src/main/java/com/tyranor/next/core/game/model/Xs35Paths.kt"
       - "app/src/main/java/com/tyranor/next/core/game/model/Xs4Paths.kt"
       - "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt"

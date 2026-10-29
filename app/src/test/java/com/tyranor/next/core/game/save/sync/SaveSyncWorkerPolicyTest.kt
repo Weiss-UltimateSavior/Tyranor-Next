@@ -1,11 +1,27 @@
 package com.tyranor.next.core.game.save.sync
 
+import androidx.work.NetworkType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveSyncWorkerPolicyTest {
+    @Test
+    fun automaticWorkUsesUnmeteredNetwork() {
+        assertEquals(NetworkType.UNMETERED, SaveSyncWorker.automaticWorkConstraints().requiredNetworkType)
+    }
+
+    @Test
+    fun cleanupPendingRetriesEvenWhenAnotherGameIsOutOfSpace() {
+        val mixed = SaveSyncReport(
+            failures = listOf(SaveSyncFailure("out-of-space", SaveSyncError.STORAGE_FULL)),
+            cleanupPending = 1,
+        )
+
+        assertTrue(SaveSyncWorkPolicy.shouldScheduleFallback(mixed))
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(mixed, fallback = true))
+    }
     @Test
     fun fallbackStopsAtRunAttemptLimitWhileImmediateWorkIsUnaffected() {
         assertFalse(SaveSyncWorkPolicy.fallbackAttemptsExhausted(fallback = true, runAttemptCount = 0))
@@ -36,17 +52,6 @@ class SaveSyncWorkerPolicyTest {
 
         assertFalse(SaveSyncWorkPolicy.shouldScheduleFallback(storageFull))
         assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(storageFull, fallback = true))
-    }
-
-    @Test
-    fun storageFullSuppressesCleanupOnlyRetry() {
-        val blocked = SaveSyncReport(
-            cleanupPending = 1,
-            failures = listOf(SaveSyncFailure("game", SaveSyncError.STORAGE_FULL)),
-        )
-
-        assertFalse(SaveSyncWorkPolicy.shouldScheduleFallback(blocked))
-        assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(blocked, fallback = true))
     }
 
     @Test

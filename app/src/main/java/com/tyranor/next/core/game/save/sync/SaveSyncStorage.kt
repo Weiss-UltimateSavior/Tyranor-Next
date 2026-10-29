@@ -35,6 +35,24 @@ internal fun requireSaveSyncStorageSpace(
     requireSnapshotSpace(archiveBytes, usableBytes)
 }
 
+/** Cache temp files are transient; only the persistent history write keeps the full 16 MiB headroom. */
+internal fun requireSaveSyncTransientSpace(
+    archiveBytes: Long,
+    directory: File,
+    usableSpace: (File) -> Long = { it.usableSpace },
+) {
+    val usableBytes = try {
+        usableSpace(directory)
+    } catch (failure: SecurityException) {
+        throw classifySaveSyncStorageFailure(failure, directory, archiveBytes, usableSpace)
+    }
+    if (usableBytes < archiveBytes.coerceAtLeast(0L) + SAVE_SYNC_TRANSIENT_RESERVE_BYTES) {
+        throw SaveSyncException(SaveSyncError.STORAGE_FULL)
+    }
+}
+
+internal const val SAVE_SYNC_TRANSIENT_RESERVE_BYTES = 1L * 1024 * 1024
+
 internal fun <T> runSaveSyncStorageOperation(
     directory: File?,
     remainingBytes: Long,
@@ -68,7 +86,7 @@ private fun storageProvablyInsufficient(
     }
 }
 
-private fun Throwable.indicatesStorageFull(): Boolean {
+internal fun Throwable.indicatesStorageFull(): Boolean {
     var current: Throwable? = this
     while (current != null) {
         val details = listOfNotNull(current.message, (current as? FileSystemException)?.reason)
@@ -85,6 +103,7 @@ private val STORAGE_FULL_MESSAGES = listOf(
     "not enough space on the disk",
 )
 
+/** Injectable file operations for temporary ZIP creation/copy tests. */
 internal class SaveSyncTemporaryFileSystem(
     val usableSpace: (File) -> Long = { it.usableSpace },
     val createTempFile: (String, String, File?) -> File = { prefix, suffix, directory ->

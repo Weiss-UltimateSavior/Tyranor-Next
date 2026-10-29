@@ -194,7 +194,7 @@ class WebDavClient private constructor(
         if (!directory.isDirectory) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         val temp = SaveSyncTemporaryFiles.create("dav_download_", ".part", directory)
         try {
-            requireSaveSyncStorageSpace(remote.size, directory, downloadFileSystem.usableSpace)
+            requireSaveSyncTransientSpace(remote.size, directory, downloadFileSystem.usableSpace)
             val output = runSaveSyncStorageOperation(directory, remote.size, downloadFileSystem.usableSpace) {
                 downloadFileSystem.openOutput(temp)
             }
@@ -204,7 +204,11 @@ class WebDavClient private constructor(
                 exchange(request(versionUrl(game, remote.name, remote.legacy)).get().build()) { response, check ->
                     requireStatus(response, 200)
                     val body = response.body
-                    if (body.contentLength() > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                    val declaredLength = body.contentLength()
+                    if (declaredLength > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                    if (declaredLength >= 0L && declaredLength != remote.size) {
+                        throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
+                    }
                     var total = 0L
                     val buffer = ByteArray(64 * 1024)
                     body.byteStream().use { input ->
@@ -214,6 +218,8 @@ class WebDavClient private constructor(
                             if (count < 0) break
                             total += count
                             if (total > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                            // Never write past the size the listing reserved space for.
+                            if (total > remote.size) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
                             writeDownloadOutput(output, buffer, count, directory, remote.size - writtenBytes)
                             writtenBytes += count
                         }

@@ -55,6 +55,7 @@ object SaveSyncRuntime {
     private sealed interface FlushDecision {
         data object Busy : FlushDecision
         data object StateChanged : FlushDecision
+        data object SessionReplaced : FlushDecision
         data object Unchanged : FlushDecision
         data class Changed(val snapshot: SaveTreeSnapshot) : FlushDecision
     }
@@ -439,16 +440,19 @@ object SaveSyncRuntime {
                         if (changed) {
                             FlushDecision.Changed(current)
                         } else if (store.load(key).optString("token") != token) {
-                            FlushDecision.StateChanged
+                            // A newer launch owns the exit upload now; stay silent instead of
+                            // reporting a state change the user cannot act on.
+                            FlushDecision.SessionReplaced
                         } else {
                             persistBaseline(context, target, current, directoryKey)
                             store.remove(key)
                             FlushDecision.Unchanged
                         }
                     }
-                } ?: FlushDecision.StateChanged
+                } ?: FlushDecision.SessionReplaced
                 when (decision) {
                     FlushDecision.Busy -> report += SaveSyncReport(busy = 1)
+                    FlushDecision.SessionReplaced -> Unit
                     FlushDecision.StateChanged -> report += SaveSyncReport(failures = listOf(
                         SaveSyncFailure(target.title, SaveSyncError.LOCAL_STATE_CHANGED)))
                     FlushDecision.Unchanged -> Unit
@@ -541,7 +545,6 @@ object SaveSyncRuntime {
         // External Winlator cannot expose a host-process registration callback.
         if (entries.any { (uri, entry) -> uri in external && entry.has("token") && !entry.optBoolean("returned") }) return true
         val nativeEntries = entries.filterKeys { it !in external }.values
-        if (nativeEntries.isEmpty()) return false
         val inGrace = related.any { launchGraceActive(it, generation) } || nativeEntries.any { entry -> entry.has("token") &&
             System.currentTimeMillis() - entry.optLong("startedAt") in 0..START_GRACE_MS }
         val declaredHosts = secondaryActivityProcessNames(context)
@@ -578,11 +581,26 @@ object SaveSyncRuntime {
         // must still block real launches, but cannot turn that restore into a permanent busy loop.
         val needsHostEvidence = nativeEntries.any { entry -> sessionRequiresHostEvidence(entry.has("token"),
             entry.optLong("startedAt", -1L), entry.optBoolean("returned")) }
+        if (nativeEntries.isEmpty()) {
+            // WebDAV may be disabled while a native host is still running: detect its persisted
+            // record so version activation cannot replace a live save tree. Skip the probe when
+            // there is neither a launch hint nor any host record to keep save operations cheap.
+            if (!inGrace && probe.records().isEmpty()) return false
+            return hasRunningSaveHost(probe, game.uri, hasSession = false, inStartGrace = inGrace,
+                elapsedMillis = SystemClock.elapsedRealtime(), relatedUris = related)
+        }
         return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime(), related)
     }
 
-    internal fun launchKey(context: Context, game: ScanGame): String? =
-        optionalSaveSyncLaunchKey(game.uri, { WebDavSettingsStore.isEnabled(context) }) { activeKey(context, game) }
+    internal fun launchKey(context: Context, game: ScanGame): String? {
+        val key = optionalSaveSyncLaunchKey(game.uri, { WebDavSettingsStore.isEnabled(context) }) { activeKey(context, game) }
+        if (key == null) {
+            // Keep a conservative native-start hint even when optional sync is disabled; it lets
+            // activation/recovery observe a launch that has no sync session.
+            markNativeLaunchGrace(game.uri, WebDavSettingsStore.sessionGeneration(context), UUID.randomUUID().toString())
+        }
+        return key
+    }
 
     internal fun activeKey(context: Context, game: ScanGame): String = saveDirectoryIdentity(game) {
         GameSaveManager(context).resolveSaveLocation(it).directory

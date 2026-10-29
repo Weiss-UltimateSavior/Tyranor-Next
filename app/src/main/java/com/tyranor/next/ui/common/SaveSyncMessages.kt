@@ -5,6 +5,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.save.sync.SaveSyncReport
+import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
 import com.tyranor.next.core.i18n.AppLocaleController
 import kotlinx.coroutines.CancellationException
@@ -45,10 +46,10 @@ internal fun SaveSyncError.syncErrorResource(): Int = when (this) {
 internal fun SaveSyncError.toSaveSyncMessage(context: Context): String =
     AppLocaleController.wrap(context).getString(syncErrorResource())
 
-/** Preserve a typed sync failure; unrelated cleanup failures use the existing LOCAL_IO code. */
+/** Preserve a typed sync/save failure; unrelated cleanup failures use the existing LOCAL_IO code. */
 internal fun Exception.toSaveSyncCleanupException(): SaveSyncException {
     if (this is CancellationException) throw this
-    return this as? SaveSyncException ?: SaveSyncException(SaveSyncError.LOCAL_IO, cause = this)
+    return this as? SaveSyncException ?: SaveSyncException(SaveSyncService.errorCode(this), cause = this)
 }
 
 internal fun SaveSyncReport.syncMessageResource(): Int {

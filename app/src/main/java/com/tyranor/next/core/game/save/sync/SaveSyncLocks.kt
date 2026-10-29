@@ -9,6 +9,7 @@ internal object SaveSyncLocks {
     private val versions = SaveSyncLockRegistry()
     private val active = SaveSyncLockRegistry()
     private val sessions = SaveSyncLockRegistry()
+    private val mutations = Mutex()
 
     suspend fun <T> network(uri: String, block: suspend () -> T): T = network.withLock(uri, block)
 
@@ -20,6 +21,12 @@ internal object SaveSyncLocks {
 
     /** Always acquired after active; one URI keeps its session even when its directory changes. */
     suspend fun <T> session(key: String, block: suspend () -> T): T = sessions.withLock(key, block)
+
+    /**
+     * Serializes save-directory replacements (version activation/recovery/clear) with launches that
+     * do not hold the directory lock because the optional feature is disabled.
+     */
+    suspend fun <T> mutation(block: suspend () -> T): T = mutations.withLock { block() }
 }
 
 /**

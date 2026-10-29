@@ -213,20 +213,27 @@ class SaveSyncService internal constructor(
                         // Once the active save changes, leaving this page must not cancel its
                         // matching version metadata or the pending automatic update.
                         withContext(NonCancellable) {
-                            try {
-                                directoryActivations.begin(directoryKey, game.uri, activations.load(key)!!.token)
-                                environment.import(game, activations.archive(key), directoryKey) { committed = true }
-                                tryFinishActivation(game, activations.markCommitted(key), directoryKey)
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (failure: Exception) {
-                                if (!committed) throw failure
-                                // The save is already active. Retain enough information to retry only
-                                // resource/metadata completion instead of claiming that import failed.
-                                try { activations.markCommitted(key) }
-                                catch (cancelled: CancellationException) { throw cancelled }
-                                catch (_: Exception) { /* The staged source and prepared record remain. */ }
-                                SaveActivationResult.METADATA_PENDING
+                            SaveSyncLocks.mutation {
+                                try {
+                                    // Re-check after waiting for a disabled launch: it may have
+                                    // started the engine, and the feature may have been disabled.
+                                    requireIdle(game)
+                                    requireEnabled()
+                                    requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                                    directoryActivations.begin(directoryKey, game.uri, activations.load(key)!!.token)
+                                    environment.import(game, activations.archive(key), directoryKey) { committed = true }
+                                    tryFinishActivation(game, activations.markCommitted(key), directoryKey)
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (failure: Exception) {
+                                    if (!committed) throw failure
+                                    // The save is already active. Retain enough information to retry only
+                                    // resource/metadata completion instead of claiming that import failed.
+                                    try { activations.markCommitted(key) }
+                                    catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) { /* The staged source and prepared record remain. */ }
+                                    SaveActivationResult.METADATA_PENDING
+                                }
                             }
                         }
                     } catch (failure: Exception) {
@@ -546,7 +553,18 @@ class SaveSyncService internal constructor(
         var capturedRevision: String? = null
         var uploadPrepared = false
         var deleteAttempts = 0
-        suspend fun <T> local(block: suspend () -> T): T = SaveSyncLocks.versions(game.uri) {
+        var runningAtNanos = 0L
+        var runningValue = false
+        // Host probing resolves the library and every related save directory; cache it briefly so
+        // per-request admission does not repeat that work while still noticing a game start.
+        fun gameRunning(force: Boolean = false): Boolean {
+            val now = System.nanoTime()
+            if (!force && now - runningAtNanos in 0..RUNNING_PROBE_CACHE_NANOS) return runningValue
+            runningValue = environment.running(game)
+            runningAtNanos = now
+            return runningValue
+        }
+        suspend fun <T> local(forceRunning: Boolean = false, block: suspend () -> T): T = SaveSyncLocks.versions(game.uri) {
             suspend fun checked(): T {
                 requireEnabled()
                 if (environment.generation() != expectedGeneration) throw LocalStateChanged()
@@ -557,7 +575,7 @@ class SaveSyncService internal constructor(
                     if (capturedRevision != null && directoryActivations.revision(directory) != capturedRevision) throw LocalStateChanged()
                     if (uploadPrepared) {
                         directoryActivations.requireAvailable(directory)
-                        if (environment.running(game)) throw GameBecameBusy()
+                        if (gameRunning(forceRunning)) throw GameBecameBusy()
                     }
                     requireSameSaveDirectory(directory, environment.activeKey(game))
                 }
@@ -570,7 +588,8 @@ class SaveSyncService internal constructor(
         suspend fun checkCurrent() = local { Unit }
         suspend fun beforeDelete() {
             if (deleteAttempts >= MAX_REMOTE_DELETES_PER_ROUND) throw CleanupPending()
-            checkCurrent()
+            // Deletion is destructive: do not trust the short-lived running cache here.
+            local(forceRunning = true) { Unit }
             deleteAttempts++
         }
         suspend fun saveCheckpoint(key: String, value: org.json.JSONObject) = local { states.save(key, value) }
@@ -658,7 +677,7 @@ class SaveSyncService internal constructor(
                     // A related URI can retire this session while we wait for the shared
                     // directory lock, after local() has already checked admission.
                     if (!isCurrent()) throw LocalStateChanged()
-                    if (environment.running(game)) {
+                    if (gameRunning(force = true)) {
                         busy++
                         false
                     } else {
@@ -732,6 +751,9 @@ class SaveSyncService internal constructor(
                     checkpoint.remove("publicationIntent")
                     checkpoint.remove("publicationConfirmed")
                     checkpoint.remove("publicationPromotionAt")
+                    checkpoint.remove("publicationTargetHash")
+                    checkpoint.remove("publicationTargetSize")
+                    checkpoint.remove("publicationTargetEtag")
                     saveCheckpoint(checkpointKey, checkpoint)
                     cleanupPending = 0
                 }
@@ -744,8 +766,20 @@ class SaveSyncService internal constructor(
                     if (SavePublicationPolicy.isBlocked(checkpoint, target)) {
                         throw SaveSyncException(SaveSyncError.CLOUD_REPAIR_REQUIRED)
                     }
-                    val verified = target != null && client.verifyVersion(remoteGame, target)
+                    val confirmedHash = checkpoint.optString("publicationTargetHash")
+                    val confirmedSize = checkpoint.optLong("publicationTargetSize", -1L)
+                    val confirmedEtag = checkpoint.optString("publicationTargetEtag")
+                    val matchesConfirmed = checkpoint.optBoolean("publicationConfirmed") && target != null &&
+                        confirmedHash.isNotBlank() && confirmedEtag.isNotBlank() &&
+                        !confirmedEtag.startsWith("W/", ignoreCase = true) &&
+                        target.contentHash == confirmedHash && target.size == confirmedSize && target.etag == confirmedEtag
+                    val verified = matchesConfirmed || (target != null && client.verifyVersion(remoteGame, target))
                     checkpoint.put("publicationConfirmed", verified)
+                    if (verified && target != null) {
+                        checkpoint.put("publicationTargetHash", target.contentHash)
+                            .put("publicationTargetSize", target.size)
+                            .put("publicationTargetEtag", target.etag.orEmpty())
+                    }
                     saveCheckpoint(checkpointKey, checkpoint)
                     if (verified) {
                         confirmedCleanupTarget = checkNotNull(target)
@@ -756,22 +790,9 @@ class SaveSyncService internal constructor(
                         }
                     } else unverifiedTarget = target
                 }
-                val version = local {
-                    captureLocked(game, expectedContentHash = expectedContentHash, directoryKey = directoryKey)
-                }
-                if (cleanupPending > 0 && (version == null || version.contentHash == confirmedCleanupTarget?.contentHash)) {
-                    return@network SaveSyncReport(downloaded = downloaded, cleanupPending = 1)
-                }
-                if (version == null) {
-                    if (checkpoint.optBoolean("needsPrune")) throw SaveSyncException(SaveSyncError.SERVER)
-                    return@network SaveSyncReport(downloaded = downloaded, unchanged = if (downloaded == 0) 1 else 0)
-                }
-                val localState = local { states.load(key) }
-                val promotionAt = localState.optLong("promotionAt")
-                val promoting = promotionAt > checkpoint.optLong("promotedAt")
                 unverifiedTarget?.let { target ->
-                    // Do not append a succession of half-uploaded targets as the game advances.
-                    // A conditional delete of this proven-bad target leaves all good sources intact.
+                    // Retire a proven-bad target before the empty-save bail-out; otherwise a
+                    // corrupt publication would pin needsPrune and fail every later round.
                     try {
                         if (!client.discardCorruptPublication(remoteGame, target, ::beforeDelete)) {
                             throw SaveSyncException(SaveSyncError.SERVER)
@@ -784,8 +805,39 @@ class SaveSyncService internal constructor(
                     }
                     remote = remote - target
                     checkpoint.remove("publicationIntent")
+                    checkpoint.remove("needsPrune")
+                    checkpoint.remove("publicationConfirmed")
+                    checkpoint.remove("publicationPromotionAt")
+                    checkpoint.remove("publicationTargetHash")
+                    checkpoint.remove("publicationTargetSize")
+                    checkpoint.remove("publicationTargetEtag")
                     saveCheckpoint(checkpointKey, checkpoint)
                 }
+                val version = local {
+                    captureLocked(game, expectedContentHash = expectedContentHash, directoryKey = directoryKey)
+                }
+                if (cleanupPending > 0 && (version == null || version.contentHash == confirmedCleanupTarget?.contentHash)) {
+                    return@network SaveSyncReport(downloaded = downloaded, cleanupPending = 1)
+                }
+                if (version == null) {
+                    if (checkpoint.optBoolean("needsPrune")) {
+                        // A fresh listing already showed the intended publication is absent and
+                        // there is no local content to authorize a replacement; retire the stale
+                        // marker instead of failing every later sync.
+                        checkpoint.remove("needsPrune")
+                        checkpoint.remove("publicationIntent")
+                        checkpoint.remove("publicationConfirmed")
+                        checkpoint.remove("publicationPromotionAt")
+                        checkpoint.remove("publicationTargetHash")
+                        checkpoint.remove("publicationTargetSize")
+                        checkpoint.remove("publicationTargetEtag")
+                        saveCheckpoint(checkpointKey, checkpoint)
+                    }
+                    return@network SaveSyncReport(downloaded = downloaded, unchanged = if (downloaded == 0) 1 else 0)
+                }
+                val localState = local { states.load(key) }
+                val promotionAt = localState.optLong("promotionAt")
+                val promoting = promotionAt > checkpoint.optLong("promotedAt")
                 // Continuing to save after choosing S intentionally promotes the latest N from S.
                 val unfinished = checkpoint.optBoolean("needsPrune") && !checkpoint.optBoolean("publicationConfirmed")
                 if (SavePublicationPolicy.needsUpload(version, checkpoint.optString("uploaded"), promoting, remote) ||
@@ -861,6 +913,9 @@ class SaveSyncService internal constructor(
                             throw SaveSyncException(SaveSyncError.SERVER)
                         }
                         checkpoint.put("publicationConfirmed", true)
+                        checkpoint.put("publicationTargetHash", confirmed.contentHash)
+                            .put("publicationTargetSize", confirmed.size)
+                            .put("publicationTargetEtag", confirmed.etag.orEmpty())
                         saveCheckpoint(checkpointKey, checkpoint)
                         if (promoting && uploaded == 0) uploaded++ // A DAV MOVE is one completed logical upload.
                         finishPublicationCleanup(confirmed)
@@ -1041,6 +1096,7 @@ class SaveSyncService internal constructor(
 
     companion object {
         internal const val MAX_REMOTE_DELETES_PER_ROUND = 20
+        private const val RUNNING_PROBE_CACHE_NANOS = 1_000_000_000L
         private val REMOTE_ORDER = compareBy<RemoteSaveVersion> { it.createdAt }.thenBy { it.contentHash }
         internal fun errorCode(failure: Exception): SaveSyncError = when (failure) {
             is SaveSyncException -> failure.code
@@ -1054,9 +1110,9 @@ class SaveSyncService internal constructor(
                 com.tyranor.next.core.game.save.SaveErrorCode.TOO_MANY_ZIP_FILES,
                 com.tyranor.next.core.game.save.SaveErrorCode.ILLEGAL_ZIP_PATH,
                 com.tyranor.next.core.game.save.SaveErrorCode.ZIP_TOO_LARGE -> SaveSyncError.CORRUPT_ARCHIVE
-                else -> SaveSyncError.LOCAL_IO
+                else -> if (failure.indicatesStorageFull()) SaveSyncError.STORAGE_FULL else SaveSyncError.LOCAL_IO
             }
-            else -> SaveSyncError.LOCAL_IO
+            else -> if (failure.indicatesStorageFull()) SaveSyncError.STORAGE_FULL else SaveSyncError.LOCAL_IO
         }
     }
 }

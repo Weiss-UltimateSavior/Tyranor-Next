@@ -163,7 +163,11 @@ object EngineLauncher {
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
         withContext(Dispatchers.IO) {
             val activeKey = SaveSyncRuntime.launchKey(context, game)
-                ?: return@withContext launchInternal(context, game, patchChoice)
+            if (activeKey == null) {
+                // Optional sync is disabled; still serialize with an in-flight activation import
+                // without resolving the save directory.
+                return@withContext SaveSyncLocks.mutation { launchInternal(context, game, patchChoice) }
+            }
             SaveSyncLocks.active(activeKey) {
                 val ticket = SaveSyncRuntime.prepareLaunch(context, game)
                 var success = false

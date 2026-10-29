@@ -24,7 +24,7 @@ internal object SaveSyncTemporaryFiles {
         val temp = runSaveSyncStorageOperation(directory, 0, fileSystem.usableSpace) {
             if (directory != null) {
                 if (cleanFirst) clean(directory, prefix, suffix)
-                requireSaveSyncStorageSpace(0, directory, fileSystem.usableSpace)
+                requireSaveSyncTransientSpace(0, directory, fileSystem.usableSpace)
             }
             fileSystem.createTempFile(prefix, suffix, directory)
         }
@@ -44,12 +44,12 @@ internal object SaveSyncTemporaryFiles {
         runSaveSyncStorageOperation(directory, sourceBytes, fileSystem.usableSpace) {
             clean(directory, prefix, suffix)
         }
-        requireSaveSyncStorageSpace(sourceBytes, directory, fileSystem.usableSpace)
+        requireSaveSyncTransientSpace(sourceBytes, directory, fileSystem.usableSpace)
         var target: File? = null
         try {
             val created = createRegistered(prefix, suffix, directory, fileSystem, cleanFirst = false)
             target = created
-            requireSaveSyncStorageSpace(sourceBytes, directory, fileSystem.usableSpace)
+            requireSaveSyncTransientSpace(sourceBytes, directory, fileSystem.usableSpace)
             runSaveSyncStorageOperation(directory, sourceBytes, fileSystem.usableSpace) {
                 fileSystem.copyFile(source, created)
             }
