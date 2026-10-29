@@ -3,7 +3,7 @@ package com.tyranor.next.core.settings
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
-import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.GameFilterOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -104,35 +104,25 @@ object AppSettingsStore {
     /** 色调切换默认关闭：中性灰页面背景 + 白色组件。 */
     const val DEFAULT_TONE_SWITCH_ENABLED = false
 
-    /** 游戏排序：按标题字母/字符顺序。 */
-    const val GAME_SORT_ALPHA = "alpha"
-
-    /** 游戏排序：按标题中 【】/[] 标签内容分组。 */
-    const val GAME_SORT_BRACKET_TAG = "bracket_tag"
-
-    /** 游戏排序：按引擎类型分组（同组内按标题）。 */
-    const val GAME_SORT_ENGINE = "engine"
-
-    /** 游戏排序：最近游玩在前（从未打开过的排在最后，同序按标题）。 */
-    const val GAME_SORT_RECENT = "recent"
+    /** 游戏排序取值（唯一来源见 [GameFilterOptions]）。 */
+    const val GAME_SORT_ALPHA = GameFilterOptions.GAME_SORT_ALPHA
+    const val GAME_SORT_BRACKET_TAG = GameFilterOptions.GAME_SORT_BRACKET_TAG
+    const val GAME_SORT_ENGINE = GameFilterOptions.GAME_SORT_ENGINE
+    const val GAME_SORT_RECENT = GameFilterOptions.GAME_SORT_RECENT
 
     /** 游戏页过滤器：引擎类型（存 [com.tyranor.next.core.engine.EngineType.name]，空串表示全部）。 */
     const val KEY_GAME_FILTER_ENGINE = "game_filter_engine"
 
-    /** 引擎过滤的「全部」取值：与 [KEY_GAME_FILTER_ENGINE] 的空串语义对应，避免调用方散落字面量。 */
-    const val GAME_FILTER_ENGINE_ALL = ""
+    /** 引擎过滤的「全部」取值（唯一来源见 [GameFilterOptions]）。 */
+    const val GAME_FILTER_ENGINE_ALL = GameFilterOptions.GAME_FILTER_ENGINE_ALL
 
     /** 游戏页过滤器：游玩状态。 */
     const val KEY_GAME_FILTER_PLAYED = "game_filter_played"
 
-    /** 游玩状态过滤：全部。 */
-    const val GAME_FILTER_PLAYED_ALL = "all"
-
-    /** 游玩状态过滤：仅已游玩（openTime > 0）。 */
-    const val GAME_FILTER_PLAYED_ONLY = "played"
-
-    /** 游玩状态过滤：仅未游玩（openTime <= 0）。 */
-    const val GAME_FILTER_PLAYED_NONE = "unplayed"
+    /** 游玩状态过滤取值（唯一来源见 [GameFilterOptions]）。 */
+    const val GAME_FILTER_PLAYED_ALL = GameFilterOptions.GAME_FILTER_PLAYED_ALL
+    const val GAME_FILTER_PLAYED_ONLY = GameFilterOptions.GAME_FILTER_PLAYED_ONLY
+    const val GAME_FILTER_PLAYED_NONE = GameFilterOptions.GAME_FILTER_PLAYED_NONE
 
     /** 卡片隐藏名称标签默认值：开。 */
     const val DEFAULT_GAME_CARD_HIDE_TITLE_TAG = true
@@ -552,21 +542,19 @@ object AppSettingsStore {
         else -> GAME_SORT_ALPHA
     }
 
-    /** 游戏页引擎过滤器（EngineType.name；[GAME_FILTER_ENGINE_ALL] = 全部）。 */
+    /**
+     * 游戏页引擎过滤器（`EngineType.name`；[GAME_FILTER_ENGINE_ALL] = 全部）。
+     *
+     * 这里不校验取值：引擎名属于 `core/engine`，settings 反向 import 它会与 engine→settings
+     * 形成包级环。库里已不存在该引擎时，由游戏页的失效清理把条件清空。
+     */
     fun getGameFilterEngine(c: Context): String =
-        normalizeGameFilterEngine(prefs(c).getString(KEY_GAME_FILTER_ENGINE, GAME_FILTER_ENGINE_ALL))
+        prefs(c).getString(KEY_GAME_FILTER_ENGINE, GAME_FILTER_ENGINE_ALL).orEmpty().trim()
 
     fun setGameFilterEngine(c: Context, engine: String) {
-        val normalized = normalizeGameFilterEngine(engine)
+        val normalized = engine.trim()
         prefs(c).edit().putString(KEY_GAME_FILTER_ENGINE, normalized).apply()
         gameFilterEngineState.value = normalized
-    }
-
-    /** 引擎过滤归一化：未知引擎名回落为「全部」，避免持久化一个永远匹配不到的条件。 */
-    fun normalizeGameFilterEngine(engine: String?): String {
-        val value = engine.orEmpty().trim()
-        if (value.isEmpty()) return GAME_FILTER_ENGINE_ALL
-        return if (EngineType.entries.any { it.name == value }) value else GAME_FILTER_ENGINE_ALL
     }
 
     /** 游戏页游玩状态过滤器（all / played / unplayed）。 */
