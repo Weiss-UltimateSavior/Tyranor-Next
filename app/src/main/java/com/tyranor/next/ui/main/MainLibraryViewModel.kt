@@ -13,8 +13,8 @@ import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.scan.SiglusTitleFeedback
 import com.tyranor.next.core.game.scan.Xs35TitleFeedback
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.save.GameSaveException
-import com.tyranor.next.core.game.save.SaveErrorCode
+import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.cover.coverErrorMessage
 import com.tyranor.next.ui.game.cleanupDeletedGame
@@ -41,7 +41,7 @@ data class MainLibraryUiState(
     val scanning: Boolean = false,
     val scrapeEventId: Long = 0L,
     val scrapeMessage: String? = null,
-    val cleanupError: SaveErrorCode? = null,
+    val cleanupError: SaveSyncError? = null,
     val cleanupGameTitle: String? = null,
     /** 已发布搜索结果的查询词；与页面当前查询词一致时结果才可用（迁移方案阶段 3）。 */
     val searchQuery: String = "",
@@ -236,7 +236,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             GameLibraryFacade.removeGame(appContext, target.uri)
             try {
                 cleanupDeletedGame(appContext, target)
-            } catch (failure: GameSaveException) {
+            } catch (failure: SaveSyncException) {
                 // Keep the library entry as a retry route if private-data cleanup is blocked.
                 GameLibraryFacade.updateGames(appContext) { games ->
                     if (games.any { it.uri == target.uri }) games else games + target

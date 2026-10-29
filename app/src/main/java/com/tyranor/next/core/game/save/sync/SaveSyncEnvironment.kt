@@ -17,8 +17,10 @@ internal interface SaveSyncEnvironment {
     val cacheDirectory: File
     fun config(): WebDavConfig
     fun generation(): Long = 0L
-    fun admitGeneration(generation: Long, dispatch: () -> Unit) {
+    fun configRevision(): Long = config().revision
+    fun admitGeneration(generation: Long, configRevision: Long, dispatch: () -> Unit) {
         if (!enabled || generation() != generation) throw SaveSyncException(SaveSyncError.DISABLED)
+        if (configRevision() != configRevision) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
         dispatch()
     }
     fun games(): List<ScanGame>
@@ -72,9 +74,10 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
     override val cacheDirectory: File get() = context.cacheDir
     override fun config() = WebDavSettingsStore.load(context)
     override fun generation() = WebDavSettingsStore.sessionGeneration(context)
-    override fun admitGeneration(generation: Long, dispatch: () -> Unit) {
-        if (WebDavSettingsStore.whileEnabled(context, generation) { dispatch(); true } != true) {
-            throw SaveSyncException(SaveSyncError.DISABLED)
+    override fun configRevision() = WebDavSettingsStore.configurationRevision(context)
+    override fun admitGeneration(generation: Long, configRevision: Long, dispatch: () -> Unit) {
+        if (WebDavSettingsStore.whileEnabled(context, generation, configRevision) { dispatch(); true } != true) {
+            throw SaveSyncException(if (enabled) SaveSyncError.LOCAL_STATE_CHANGED else SaveSyncError.DISABLED)
         }
     }
     override fun games() = GameLibraryFacade.loadGames(context)

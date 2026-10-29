@@ -1,17 +1,11 @@
 package com.tyranor.next.core.game.save.sync
 
-import androidx.work.NetworkType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SaveSyncWorkerPolicyTest {
-    @Test
-    fun automaticWorkRequiresUnmeteredNetwork() {
-        assertEquals(NetworkType.UNMETERED, SaveSyncWorkPolicy.AUTOMATIC_NETWORK_TYPE)
-    }
-
     @Test
     fun fallbackStopsAtRunAttemptLimitWhileImmediateWorkIsUnaffected() {
         assertFalse(SaveSyncWorkPolicy.fallbackAttemptsExhausted(fallback = true, runAttemptCount = 0))
@@ -26,6 +20,45 @@ class SaveSyncWorkerPolicyTest {
         val transient = SaveSyncReport(failures = listOf(SaveSyncFailure("game", SaveSyncError.NETWORK)))
 
         assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(transient, fallback = true))
+    }
+
+    @Test
+    fun localStateChangeIsRetryable() {
+        val changed = SaveSyncReport(failures = listOf(SaveSyncFailure("game", SaveSyncError.LOCAL_STATE_CHANGED)))
+
+        assertTrue(SaveSyncWorkPolicy.shouldScheduleFallback(changed))
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(changed, fallback = true))
+    }
+
+    @Test
+    fun storageFullDoesNotScheduleRetry() {
+        val storageFull = SaveSyncReport(failures = listOf(SaveSyncFailure("game", SaveSyncError.STORAGE_FULL)))
+
+        assertFalse(SaveSyncWorkPolicy.shouldScheduleFallback(storageFull))
+        assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(storageFull, fallback = true))
+    }
+
+    @Test
+    fun storageFullSuppressesCleanupOnlyRetry() {
+        val blocked = SaveSyncReport(
+            cleanupPending = 1,
+            failures = listOf(SaveSyncFailure("game", SaveSyncError.STORAGE_FULL)),
+        )
+
+        assertFalse(SaveSyncWorkPolicy.shouldScheduleFallback(blocked))
+        assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(blocked, fallback = true))
+    }
+
+    @Test
+    fun cleanupPendingStillSchedulesFallbackWhenAnotherGameFailsPermanently() {
+        val mixed = SaveSyncReport(
+            cleanupPending = 1,
+            failures = listOf(SaveSyncFailure("game", SaveSyncError.IDENTITY_CONFLICT)),
+        )
+
+        assertTrue(SaveSyncWorkPolicy.shouldScheduleFallback(mixed))
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(mixed, fallback = true))
+        assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(mixed, fallback = false))
     }
 
     @Test

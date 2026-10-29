@@ -3,6 +3,7 @@ package com.tyranor.next.ui.common
 import android.content.Context
 import com.tyranor.next.R
 import com.tyranor.next.core.game.save.sync.SaveSyncError
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.save.sync.SaveSyncReport
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -20,7 +21,7 @@ internal suspend fun shouldShowSaveSyncFeedback(context: Context): Boolean = wit
     } catch (_: Exception) { false }
 }
 
-internal fun SaveSyncError.messageResource(): Int = when (this) {
+internal fun SaveSyncError.syncErrorResource(): Int = when (this) {
     SaveSyncError.NOT_CONFIGURED -> R.string.webdav_error_not_configured
     SaveSyncError.DISABLED -> R.string.webdav_error_disabled
     SaveSyncError.INVALID_CONFIG -> R.string.webdav_error_invalid_config
@@ -38,24 +39,41 @@ internal fun SaveSyncError.messageResource(): Int = when (this) {
     SaveSyncError.IDENTITY_CONFLICT -> R.string.webdav_error_identity_conflict
     SaveSyncError.SELECTION_INCOMPLETE -> R.string.save_error_selection_incomplete
     SaveSyncError.CLOUD_REPAIR_REQUIRED -> R.string.webdav_error_cloud_repair
+    SaveSyncError.LOCAL_STATE_CHANGED -> R.string.webdav_error_local_state_changed
 }
 
 internal fun SaveSyncError.toSaveSyncMessage(context: Context): String =
-    AppLocaleController.wrap(context).getString(messageResource())
+    AppLocaleController.wrap(context).getString(syncErrorResource())
+
+/** Preserve a typed sync failure; unrelated cleanup failures use the existing LOCAL_IO code. */
+internal fun Exception.toSaveSyncCleanupException(): SaveSyncException {
+    if (this is CancellationException) throw this
+    return this as? SaveSyncException ?: SaveSyncException(SaveSyncError.LOCAL_IO, cause = this)
+}
+
+internal fun SaveSyncReport.syncMessageResource(): Int {
+    val transferred = uploaded + downloaded > 0
+    return when {
+        failures.isNotEmpty() -> if (transferred) {
+            R.string.webdav_sync_partial_failure
+        } else {
+            R.string.webdav_sync_failure
+        }
+        cleanupPending > 0 -> if (transferred) {
+            R.string.webdav_sync_partial_cleanup_pending
+        } else {
+            R.string.webdav_sync_cleanup_pending
+        }
+        transferred && busy == 0 -> R.string.webdav_sync_success
+        transferred -> R.string.webdav_sync_busy_skipped
+        busy > 0 -> R.string.webdav_error_game_running
+        else -> R.string.webdav_sync_unchanged
+    }
+}
 
 internal fun SaveSyncReport.toSaveSyncMessage(context: Context): String {
     val localized = AppLocaleController.wrap(context)
-    val transferred = uploaded + downloaded > 0
-    if (failures.isEmpty()) {
-        return when {
-            transferred && busy == 0 -> localized.getString(R.string.webdav_sync_success)
-            transferred -> localized.getString(R.string.webdav_sync_busy_skipped)
-            busy > 0 -> localized.getString(R.string.webdav_error_game_running)
-            else -> localized.getString(R.string.webdav_sync_unchanged)
-        }
-    }
-    return localized.getString(
-        if (transferred) R.string.webdav_sync_partial_failure else R.string.webdav_sync_failure,
-        failures.first().error.toSaveSyncMessage(context),
-    )
+    val template = syncMessageResource()
+    val firstFailure = failures.firstOrNull() ?: return localized.getString(template)
+    return localized.getString(template, localized.getString(firstFailure.error.syncErrorResource()))
 }

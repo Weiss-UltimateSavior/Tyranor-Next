@@ -3,18 +3,67 @@ package com.tyranor.next.core.game.save.sync
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 class SaveDirectoryIdentityTest {
     @get:Rule val temp = TemporaryFolder()
+
+    @Test
+    fun disabledLaunchDoesNotResolveTheSaveDirectory() {
+        val key = optionalSaveSyncLaunchKey("game-uri", enabled = { false }) {
+            fail("A disabled opt-in feature must not resolve saves before launching")
+            throw IOException("inaccessible directory")
+        }
+        assertNull(key)
+    }
+
+    @Test
+    fun saveLocationAndCanonicalPathFailuresDoNotBlockOptionalLaunchAdmission() = runBlocking {
+        val uri = "content://games/launch"
+        val game = game(uri)
+        val brokenDirectory = object : File(temp.root, "unreadable") {
+            override fun getCanonicalPath(): String = throw IOException("canonical path failed")
+        }
+        val resolved = optionalSaveSyncLaunchKey(uri, enabled = { true }) {
+            saveDirectoryIdentity(game) { brokenDirectory }
+        }
+        assertEquals(uri, resolved)
+        assertEquals("launched", SaveSyncLocks.active(checkNotNull(resolved)) { "launched" })
+        assertEquals(uri, optionalSaveSyncLaunchKey(uri, enabled = { true }) { throw SecurityException("access revoked") })
+        assertEquals("save-directory:valid", optionalSaveSyncLaunchKey(uri, enabled = { true }) { "save-directory:valid" })
+    }
+
+    @Test
+    fun optionalLaunchResolutionPreservesCancellation() {
+        val cancelled = CancellationException("cancel launch")
+        try {
+            optionalSaveSyncLaunchKey("game-uri", enabled = { true }) { throw cancelled }
+            fail("Cancellation was swallowed")
+        } catch (caught: CancellationException) {
+            assertSame(cancelled, caught)
+        }
+    }
+
+    @Test
+    fun unreadableOptInSettingsSkipSaveIntegration() {
+        assertNull(optionalSaveSyncLaunchKey("game-uri", enabled = { throw SecurityException("prefs unavailable") }) {
+            fail("An unreadable optional switch must not resolve saves")
+            "unused"
+        })
+    }
 
     @Test
     fun overlappingSafRootsShareWriterAdmissionButKeepSeparateHistoryKeys() = runBlocking {

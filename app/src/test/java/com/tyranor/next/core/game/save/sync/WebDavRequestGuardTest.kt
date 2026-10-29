@@ -393,6 +393,41 @@ class WebDavRequestGuardTest {
 
     @Test
     fun serviceIdentityChangeDuringRefreshVerificationStopsNestedMove() = runBlocking {
+        val scenario = stalledServiceRefresh { game, service, _ ->
+            service.setIdentity(game, "request-guard-changed")
+        }
+
+        assertLocalStateChanged(scenario.report)
+        assertEquals(0, scenario.report.uploaded)
+        assertEquals("request-guard-changed", scenario.service.identity(scenario.game))
+        assertTrue(scenario.requests.any { it.method == "GET" && it.path == scenario.remotePath })
+        assertFalse(scenario.requests.any { it.method in setOf("MOVE", "PUT", "DELETE") })
+    }
+
+    @Test
+    fun serviceConfigRevisionChangeDuringRefreshVerificationStopsNestedMove() = runBlocking {
+        val scenario = stalledServiceRefresh { _, _, environment ->
+            val current = environment.config()
+            environment.updateConfig(
+                current.copy(
+                    serverUrl = current.serverUrl.trimEnd('/') + "-changed/",
+                    username = "other-user",
+                    revision = current.revision + 1,
+                ),
+            )
+        }
+
+        assertLocalStateChanged(scenario.report)
+        assertEquals(0, scenario.report.uploaded)
+        assertEquals(scenario.initialConfigRevision + 1, scenario.environment.config().revision)
+        assertEquals("other-user", scenario.environment.config().username)
+        assertTrue(scenario.requests.any { it.method == "GET" && it.path == scenario.remotePath })
+        assertFalse(scenario.requests.any { it.method in setOf("MOVE", "PUT", "DELETE") })
+    }
+
+    private suspend fun stalledServiceRefresh(
+        mutate: suspend (ScanGame, SaveSyncService, MinimalServiceEnvironment) -> Unit,
+    ): StalledServiceRefresh {
         val root = temp.newFolder("service-sync")
         val cache = temp.newFolder("service-cache")
         val game = ScanGame(
@@ -463,30 +498,40 @@ class WebDavRequestGuardTest {
             assertEquals(selectedHash, environment.activeHash())
             assertTrue("Activation unexpectedly used HTTP", requests.isEmpty())
 
+            lateinit var report: SaveSyncReport
             supervisorScope {
                 val sync = async(start = CoroutineStart.UNDISPATCHED) {
                     service.syncGame(game, SaveSyncDirection.UPLOAD)
                 }
                 withTimeout(5_000) { getEntered.await() }
 
-                service.setIdentity(game, "request-guard-changed")
-                releaseGet.countDown()
+                try {
+                    mutate(game, service, environment)
+                } finally {
+                    releaseGet.countDown()
+                }
 
-                val report = withTimeout(5_000) { sync.await() }
+                report = withTimeout(5_000) { sync.await() }
                 withTimeout(5_000) { getResponded.await() }
-                assertEquals(1, report.busy)
-                assertEquals(0, report.uploaded)
-                assertTrue(report.failures.isEmpty())
             }
-
-            assertEquals("request-guard-changed", service.identity(game))
-            val seen = requests.toList()
-            assertTrue(seen.any { it.method == "GET" && it.path == remotePath })
-            assertFalse(seen.any { it.method in setOf("MOVE", "PUT", "DELETE") })
+            return StalledServiceRefresh(
+                game = game,
+                service = service,
+                environment = environment,
+                report = report,
+                requests = requests.toList(),
+                remotePath = remotePath,
+                initialConfigRevision = syncConfig.revision,
+            )
         } finally {
             releaseGet.countDown()
             server.stop(0)
         }
+    }
+
+    private fun assertLocalStateChanged(report: SaveSyncReport) {
+        assertEquals(0, report.busy)
+        assertEquals(listOf(SaveSyncError.LOCAL_STATE_CHANGED), report.failures.map { it.error })
     }
 
     private fun archive(label: String, content: String): File {
@@ -558,7 +603,7 @@ class WebDavRequestGuardTest {
 
     private class MinimalServiceEnvironment(
         override val cacheDirectory: File,
-        private val webDavConfig: WebDavConfig,
+        webDavConfig: WebDavConfig,
         private val game: ScanGame,
         initialActive: File,
     ) : SaveSyncEnvironment {
@@ -566,10 +611,12 @@ class WebDavRequestGuardTest {
         private var active = initialActive.copyTo(File(cacheDirectory, "active-initial.zip"), overwrite = true)
         private var currentHash = SaveContentHash.archive(active)
         private var importIndex = 0
+        @Volatile
+        private var currentConfig = webDavConfig
 
         override val enabled = true
 
-        override fun config(): WebDavConfig = webDavConfig
+        override fun config(): WebDavConfig = currentConfig
         override fun games(): List<ScanGame> = listOf(game)
         override fun available(game: ScanGame): Boolean = game.uri == this.game.uri
         override fun running(game: ScanGame): Boolean = false
@@ -604,9 +651,22 @@ class WebDavRequestGuardTest {
             WebDavSaveSyncTransport(WebDavClient(config, cacheDirectory) { enabled })
 
         fun activeHash(): String = synchronized(lock) { currentHash }
+        fun updateConfig(config: WebDavConfig) {
+            currentConfig = config
+        }
     }
 
     private class InjectedStaleRequest : RuntimeException("request became stale")
+
+    private data class StalledServiceRefresh(
+        val game: ScanGame,
+        val service: SaveSyncService,
+        val environment: MinimalServiceEnvironment,
+        val report: SaveSyncReport,
+        val requests: List<ObservedRequest>,
+        val remotePath: String,
+        val initialConfigRevision: Long,
+    )
 
     private data class ObservedRequest(
         val method: String,

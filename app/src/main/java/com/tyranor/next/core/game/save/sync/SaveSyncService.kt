@@ -545,15 +545,20 @@ class SaveSyncService internal constructor(
         var capturedDirectory: String? = null
         var capturedRevision: String? = null
         var uploadPrepared = false
+        var deleteAttempts = 0
         suspend fun <T> local(block: suspend () -> T): T = SaveSyncLocks.versions(game.uri) {
             suspend fun checked(): T {
                 requireEnabled()
                 if (environment.generation() != expectedGeneration) throw LocalStateChanged()
+                if (environment.configRevision() != config.revision) throw LocalStateChanged()
                 if (!isCurrent()) throw LocalStateChanged()
                 if (revision != null && states.load(key).optString("revision") != revision) throw LocalStateChanged()
                 capturedDirectory?.let { directory ->
                     if (capturedRevision != null && directoryActivations.revision(directory) != capturedRevision) throw LocalStateChanged()
-                    if (uploadPrepared) directoryActivations.requireAvailable(directory)
+                    if (uploadPrepared) {
+                        directoryActivations.requireAvailable(directory)
+                        if (environment.running(game)) throw GameBecameBusy()
+                    }
                     requireSameSaveDirectory(directory, environment.activeKey(game))
                 }
                 return block()
@@ -563,13 +568,19 @@ class SaveSyncService internal constructor(
             if (directory == null) checked() else SaveSyncLocks.active(directory) { checked() }
         }
         suspend fun checkCurrent() = local { Unit }
+        suspend fun beforeDelete() {
+            if (deleteAttempts >= MAX_REMOTE_DELETES_PER_ROUND) throw CleanupPending()
+            checkCurrent()
+            deleteAttempts++
+        }
         suspend fun saveCheckpoint(key: String, value: org.json.JSONObject) = local { states.save(key, value) }
         var downloaded = 0
         var uploaded = 0
         var busy = 0
+        var cleanupPending = 0
         try {
             client.setRequestAdmission { dispatch -> local {
-                environment.admitGeneration(expectedGeneration) {
+                environment.admitGeneration(expectedGeneration, config.revision) {
                     if (!isCurrent()) throw LocalStateChanged()
                     dispatch()
                 }
@@ -640,7 +651,7 @@ class SaveSyncService internal constructor(
             }
             if (direction.uploads) {
                 val directoryKey = checkNotNull(capturedDirectory)
-                val version = local {
+                val admitted = local {
                     requireEnabled()
                     requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                     directoryActivations.requireAvailable(directoryKey, game.uri)
@@ -649,7 +660,7 @@ class SaveSyncService internal constructor(
                     if (!isCurrent()) throw LocalStateChanged()
                     if (environment.running(game)) {
                         busy++
-                        null
+                        false
                     } else {
                         finishPreparedDirectoryCleanup(game, directoryKey)
                         activations.load(localKey(game))?.let { pending ->
@@ -660,25 +671,73 @@ class SaveSyncService internal constructor(
                         directoryActivations.requireAvailable(directoryKey)
                         requireEnabled()
                         requirePromotionDirectory(states.load(key), checkpoint.optLong("promotedAt"), directoryKey)
-                        captureLocked(game, expectedContentHash = expectedContentHash, directoryKey = directoryKey)?.also { captured ->
-                            requireSameSaveDirectory(directoryKey, environment.activeKey(game))
-                            if (!isCurrent()) throw LocalStateChanged()
-                            capturedDirectory = directoryKey
-                            capturedRevision = directoryActivations.revision(directoryKey)
-                            uploadPrepared = true
-                            uploadArchive = temporaryZip().also { pinned ->
-                                snapshots.file(key, captured.id).copyTo(pinned, overwrite = true)
-                            }
-                        }
+                        capturedRevision = directoryActivations.revision(directoryKey)
+                        uploadPrepared = true
+                        true
                     }
                 }
-                // A busy/empty game cannot authorize publication cleanup using a prior round's
-                // confirmation. Leave the complete checkpoint for a later idle retry.
-                if (version == null) return@network SaveSyncReport(downloaded = downloaded, busy = busy,
-                    unchanged = if (downloaded + busy == 0) 1 else 0)
-                val localState = local { states.load(key) }
-                val promotionAt = localState.optLong("promotionAt")
-                val promoting = promotionAt > checkpoint.optLong("promotedAt")
+                if (!admitted) return@network SaveSyncReport(downloaded = downloaded, busy = busy)
+
+                // A fresh cloud verification authorizes cleanup independently of the active
+                // save tree and any upload copy. Every DELETE still rechecks the transaction.
+                suspend fun finishPublicationCleanup(publication: RemoteSaveVersion) {
+                    val state = local { states.load(key) }
+                    val publicationPromotionAt = if (checkpoint.has("publicationPromotionAt")) {
+                        checkpoint.optLong("publicationPromotionAt")
+                    } else if (checkpoint.optString("promotionPublication") == publication.name) {
+                        checkpoint.optLong("publishingPromotionAt")
+                    } else 0L
+                    val completesPromotion = publicationPromotionAt > 0 && state.optLong("promotionAt") == publicationPromotionAt
+                    if (completesPromotion) {
+                        val publishedVersion = SaveVersion(publication.name, publication.contentHash,
+                            publication.createdAt, publication.size, restored = publication.restored,
+                            previousCreatedAt = publication.previousCreatedAt)
+                        val superseded = SavePublicationPolicy.superseded(remote, publishedVersion, state.optString("promotionFromHash"))
+                        for (old in superseded) {
+                            beforeDelete()
+                            client.delete(remoteGame, old)
+                        }
+                        remote = remote - superseded.toSet()
+                    }
+                    if (config.remoteLimit > 0) {
+                        val excess = remote.sortedWith(REMOTE_ORDER.reversed()).drop(config.remoteLimit)
+                        for (old in excess) {
+                            beforeDelete()
+                            client.delete(remoteGame, old)
+                        }
+                        remote = remote - excess.toSet()
+                    }
+                    // A bounded partial round must not commit either side of the promotion.
+                    if (completesPromotion) {
+                        local {
+                            snapshots.list(key).firstOrNull { it.contentHash == publication.contentHash && snapshots.isValid(key, it) }
+                                ?.let { snapshots.refreshVersion(key, it, publication.createdAt, publication.previousCreatedAt) }
+                            if (state.optBoolean("promotionAwaitingChange") && publication.contentHash != state.optString("promotionBaseHash")) {
+                                state.put("promotionAwaitingChange", false)
+                                states.save(key, state)
+                            }
+                        }
+                        checkpoint.put("promotedAt", publicationPromotionAt)
+                    }
+                    if (checkpoint.optString("promotionPublication") == publication.name) {
+                        checkpoint.remove("promotionPublication")
+                        checkpoint.remove("publishingPromotionAt")
+                    }
+                    checkpoint.put("uploaded", publication.contentHash)
+                    remote.filter { it.contentHash == publication.contentHash }.maxWithOrNull(REMOTE_ORDER)?.let { head ->
+                        val seen = SaveVersionNames.parse(checkpoint.optString("seen"))
+                        if (seen == null || REMOTE_ORDER.compare(head, seen) > 0) checkpoint.put("seen", head.name)
+                    }
+                    checkpoint.remove("needsPrune")
+                    checkpoint.remove("publicationIntent")
+                    checkpoint.remove("publicationConfirmed")
+                    checkpoint.remove("publicationPromotionAt")
+                    saveCheckpoint(checkpointKey, checkpoint)
+                    cleanupPending = 0
+                }
+
+                var unverifiedTarget: RemoteSaveVersion? = null
+                var confirmedCleanupTarget: RemoteSaveVersion? = null
                 if (checkpoint.optBoolean("needsPrune")) {
                     val intent = checkpoint.optString("publicationIntent").ifBlank { checkpoint.optString("promotionPublication") }
                     val target = remote.firstOrNull { !it.legacy && it.name == intent }
@@ -687,36 +746,44 @@ class SaveSyncService internal constructor(
                     }
                     val verified = target != null && client.verifyVersion(remoteGame, target)
                     checkpoint.put("publicationConfirmed", verified)
+                    saveCheckpoint(checkpointKey, checkpoint)
                     if (verified) {
-                        // Retry a failed retention DELETE only while a good replacement exists.
-                        if (config.remoteLimit > 0) {
-                            val excess = remote.sortedWith(REMOTE_ORDER.reversed()).drop(config.remoteLimit)
-                            for (old in excess) {
-                                checkCurrent()
-                                client.delete(remoteGame, old)
-                            }
-                            remote = remote - excess.toSet()
-                        }
-                        checkpoint.remove("needsPrune")
-                        checkpoint.remove("publicationIntent")
-                        checkpoint.remove("publicationConfirmed")
-                        checkpoint.remove("publicationPromotionAt")
-                    } else if (target != null) {
-                        // Do not append a succession of half-uploaded targets as the game advances.
-                        // A conditional delete of this proven-bad target leaves all good sources intact.
+                        confirmedCleanupTarget = checkNotNull(target)
                         try {
-                            if (!client.discardCorruptPublication(remoteGame, target, ::checkCurrent)) {
-                                throw SaveSyncException(SaveSyncError.SERVER)
-                            }
-                        } catch (failure: SaveSyncException) {
-                            if (failure.code != SaveSyncError.CORRUPT_ARCHIVE) throw failure
-                            SavePublicationPolicy.block(checkpoint, target.name, target.etag)
-                            saveCheckpoint(checkpointKey, checkpoint)
-                            throw SaveSyncException(SaveSyncError.CLOUD_REPAIR_REQUIRED, cause = failure)
+                            finishPublicationCleanup(target)
+                        } catch (_: CleanupPending) {
+                            cleanupPending = 1
                         }
-                        remote = remote - target
-                        checkpoint.remove("publicationIntent")
+                    } else unverifiedTarget = target
+                }
+                val version = local {
+                    captureLocked(game, expectedContentHash = expectedContentHash, directoryKey = directoryKey)
+                }
+                if (cleanupPending > 0 && (version == null || version.contentHash == confirmedCleanupTarget?.contentHash)) {
+                    return@network SaveSyncReport(downloaded = downloaded, cleanupPending = 1)
+                }
+                if (version == null) {
+                    if (checkpoint.optBoolean("needsPrune")) throw SaveSyncException(SaveSyncError.SERVER)
+                    return@network SaveSyncReport(downloaded = downloaded, unchanged = if (downloaded == 0) 1 else 0)
+                }
+                val localState = local { states.load(key) }
+                val promotionAt = localState.optLong("promotionAt")
+                val promoting = promotionAt > checkpoint.optLong("promotedAt")
+                unverifiedTarget?.let { target ->
+                    // Do not append a succession of half-uploaded targets as the game advances.
+                    // A conditional delete of this proven-bad target leaves all good sources intact.
+                    try {
+                        if (!client.discardCorruptPublication(remoteGame, target, ::beforeDelete)) {
+                            throw SaveSyncException(SaveSyncError.SERVER)
+                        }
+                    } catch (failure: SaveSyncException) {
+                        if (failure.code != SaveSyncError.CORRUPT_ARCHIVE) throw failure
+                        SavePublicationPolicy.block(checkpoint, target.name, target.etag)
+                        saveCheckpoint(checkpointKey, checkpoint)
+                        throw SaveSyncException(SaveSyncError.CLOUD_REPAIR_REQUIRED, cause = failure)
                     }
+                    remote = remote - target
+                    checkpoint.remove("publicationIntent")
                     saveCheckpoint(checkpointKey, checkpoint)
                 }
                 // Continuing to save after choosing S intentionally promotes the latest N from S.
@@ -724,7 +791,10 @@ class SaveSyncService internal constructor(
                 if (SavePublicationPolicy.needsUpload(version, checkpoint.optString("uploaded"), promoting, remote) ||
                     unfinished) {
                     if (promoting || unfinished || remote.none { it.contentHash == version.contentHash }) {
-                        val archive = checkNotNull(uploadArchive)
+                        val archive = local {
+                            SaveSyncTemporaryFiles.copy(snapshots.file(key, version.id), "save_sync_", ".zip", environment.cacheDirectory)
+                                .also { uploadArchive = it }
+                        }
                         val job = currentCoroutineContext()
                         if (SaveContentHash.archive(archive) { job.ensureActive() } != version.contentHash) {
                             throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
@@ -792,29 +862,8 @@ class SaveSyncService internal constructor(
                         }
                         checkpoint.put("publicationConfirmed", true)
                         saveCheckpoint(checkpointKey, checkpoint)
-                        if (promoting) {
-                            // Only the explicitly selected old save and identical copies are superseded.
-                            // A newer concurrent publication is never deleted by this promotion.
-                            val old = SavePublicationPolicy.superseded(remote, publication, localState.optString("promotionFromHash"))
-                            for (candidate in old) {
-                                checkCurrent()
-                                client.delete(remoteGame, candidate)
-                            }
-                            remote = remote - old.toSet()
-                            local {
-                                snapshots.refreshVersion(key, version, publishedAt, publication.previousCreatedAt)
-                                if (localState.optBoolean("promotionAwaitingChange") &&
-                                    version.contentHash != localState.optString("promotionBaseHash")) {
-                                    val currentState = states.load(key)
-                                    currentState.put("promotionAwaitingChange", false)
-                                    states.save(key, currentState)
-                                }
-                            }
-                            checkpoint.put("promotedAt", promotionAt)
-                            checkpoint.remove("promotionPublication")
-                            checkpoint.remove("publishingPromotionAt")
-                            if (uploaded == 0) uploaded++ // A DAV MOVE is one completed logical upload.
-                        }
+                        if (promoting && uploaded == 0) uploaded++ // A DAV MOVE is one completed logical upload.
+                        finishPublicationCleanup(confirmed)
                     }
                     checkpoint.put("uploaded", version.contentHash)
                     // Our own upload must not be downloaded again on the next app opening.
@@ -824,29 +873,21 @@ class SaveSyncService internal constructor(
                     }
                     saveCheckpoint(checkpointKey, checkpoint)
                 }
-                // Retention is scoped to this changed game, never applied to unrelated games.
-                if (checkpoint.optBoolean("needsPrune") && checkpoint.optBoolean("publicationConfirmed")) {
-                    if (config.remoteLimit > 0) {
-                        remote.sortedWith(REMOTE_ORDER.reversed()).drop(config.remoteLimit).forEach {
-                            checkCurrent()
-                            client.delete(remoteGame, it)
-                        }
-                    }
-                    checkpoint.remove("needsPrune")
-                    checkpoint.remove("publicationIntent")
-                    checkpoint.remove("publicationConfirmed")
-                    checkpoint.remove("publicationPromotionAt")
-                    saveCheckpoint(checkpointKey, checkpoint)
-                }
             }
-            SaveSyncReport(uploaded, downloaded, if (uploaded + downloaded + busy == 0) 1 else 0, busy)
+            SaveSyncReport(uploaded, downloaded, if (uploaded + downloaded + busy + cleanupPending == 0) 1 else 0, busy,
+                cleanupPending = cleanupPending)
+        } catch (_: CleanupPending) {
+            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy, cleanupPending = 1)
+        } catch (_: GameBecameBusy) {
+            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy + 1, cleanupPending = cleanupPending)
         } catch (_: LocalStateChanged) {
-            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy + 1)
+            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
+                failures = listOf(SaveSyncFailure(game.title, SaveSyncError.LOCAL_STATE_CHANGED)), cleanupPending = cleanupPending)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
-                failures = listOf(SaveSyncFailure(game.title, errorCode(failure))))
+                failures = listOf(SaveSyncFailure(game.title, errorCode(failure))), cleanupPending = cleanupPending)
         } finally {
             uploadArchive?.let(SaveSyncTemporaryFiles::release)
         }
@@ -860,9 +901,11 @@ class SaveSyncService internal constructor(
         val directoryKey = environment.activeKey(game)
         directoryActivations.requireAvailable(directoryKey)
         val state = states.load(localKey(game))
-        val promotedAt = states.load(checkpointKey(game, config)).optLong("promotedAt")
+        val checkpoint = states.load(checkpointKey(game, config))
+        val promotedAt = checkpoint.optLong("promotedAt")
         requirePromotionDirectory(state, promotedAt, directoryKey)
-        return activations.load(localKey(game)) != null || state.optLong("promotionAt") > promotedAt
+        return activations.load(localKey(game)) != null || state.optLong("promotionAt") > promotedAt ||
+            checkpoint.optBoolean("needsPrune")
     }
 
     private fun requirePromotionDirectory(state: org.json.JSONObject, promotedAt: Long, directoryKey: String) {
@@ -960,6 +1003,8 @@ class SaveSyncService internal constructor(
     }
 
     private class LocalStateChanged : Exception()
+    private class CleanupPending : Exception()
+    private class GameBecameBusy : Exception()
 
     private fun invalidateTransfers(game: ScanGame) {
         val state = states.load(localKey(game))
@@ -995,6 +1040,7 @@ class SaveSyncService internal constructor(
     private fun temporaryZip(): File = SaveSyncTemporaryFiles.create("save_sync_", ".zip", environment.cacheDirectory)
 
     companion object {
+        internal const val MAX_REMOTE_DELETES_PER_ROUND = 20
         private val REMOTE_ORDER = compareBy<RemoteSaveVersion> { it.createdAt }.thenBy { it.contentHash }
         internal fun errorCode(failure: Exception): SaveSyncError = when (failure) {
             is SaveSyncException -> failure.code

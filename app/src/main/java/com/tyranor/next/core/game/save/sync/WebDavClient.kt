@@ -30,6 +30,7 @@ import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.OutputStream
 import java.io.StringReader
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -44,11 +45,25 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /** DAV requests are confined to one configured origin and this application's version namespace. */
-class WebDavClient(
+class WebDavClient private constructor(
     config: WebDavConfig,
-    private val temporaryDirectory: File? = null,
-    private val enabledCheck: (() -> Boolean)? = null,
+    private val temporaryDirectory: File?,
+    private val enabledCheck: (() -> Boolean)?,
+    private val downloadFileSystem: WebDavDownloadFileSystem,
 ) : AutoCloseable {
+    constructor(
+        config: WebDavConfig,
+        temporaryDirectory: File? = null,
+        enabledCheck: (() -> Boolean)? = null,
+    ) : this(config, temporaryDirectory, enabledCheck, WebDavDownloadFileSystem())
+
+    internal constructor(
+        config: WebDavConfig,
+        downloadFileSystem: WebDavDownloadFileSystem,
+        temporaryDirectory: File? = null,
+        enabledCheck: (() -> Boolean)? = null,
+    ) : this(config, temporaryDirectory, enabledCheck, downloadFileSystem)
+
     data class UploadResult(val uploaded: Boolean, val size: Long)
     private val config = WebDavSettingsStore.validated(config)
     private val base: HttpUrl = this.config.serverUrl.takeIf { it.isNotBlank() }?.toHttpUrl()?.let(::escapePathBrackets)
@@ -176,18 +191,16 @@ class WebDavClient(
         if (remote.size < 0 || remote.size > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
         val target = destination.absoluteFile
         val directory = target.parentFile ?: throw SaveSyncException(SaveSyncError.LOCAL_IO)
-        val temp = try {
-            SaveSyncTemporaryFiles.create("dav_download_", ".part", directory)
-        } catch (failure: IOException) {
-            throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
-        }
+        if (!directory.isDirectory) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        val temp = SaveSyncTemporaryFiles.create("dav_download_", ".part", directory)
         try {
-            val output = try {
-                temp.outputStream()
-            } catch (failure: IOException) {
-                throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+            requireSaveSyncStorageSpace(remote.size, directory, downloadFileSystem.usableSpace)
+            val output = runSaveSyncStorageOperation(directory, remote.size, downloadFileSystem.usableSpace) {
+                downloadFileSystem.openOutput(temp)
             }
-            output.use {
+            var primaryFailure: Throwable? = null
+            var writtenBytes = 0L
+            try {
                 exchange(request(versionUrl(game, remote.name, remote.legacy)).get().build()) { response, check ->
                     requireStatus(response, 200)
                     val body = response.body
@@ -201,26 +214,72 @@ class WebDavClient(
                             if (count < 0) break
                             total += count
                             if (total > SaveContentHash.MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
-                            output.write(buffer, 0, count)
+                            writeDownloadOutput(output, buffer, count, directory, remote.size - writtenBytes)
+                            writtenBytes += count
                         }
                     }
                     if (total != remote.size) throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
                 }
+                flushDownloadOutput(output, directory, remote.size - writtenBytes)
+            } catch (failure: Throwable) {
+                primaryFailure = failure
+                throw failure
+            } finally {
+                closeDownloadOutput(output, directory, remote.size - writtenBytes, primaryFailure)
             }
             currentCoroutineContext().ensureActive()
-            try {
+            runSaveSyncStorageOperation(directory, 0, downloadFileSystem.usableSpace) {
                 Files.move(
                     temp.toPath(),
                     target.toPath(),
                     StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING,
                 )
-            } catch (failure: IOException) {
-                throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
             }
         } finally {
             SaveSyncTemporaryFiles.release(temp)
         }
+    }
+
+    private fun writeDownloadOutput(
+        output: OutputStream,
+        bytes: ByteArray,
+        count: Int,
+        directory: File,
+        remainingBytes: Long,
+    ) {
+        runSaveSyncStorageOperation(directory, remainingBytes, downloadFileSystem.usableSpace) {
+            output.write(bytes, 0, count)
+        }
+    }
+
+    private fun flushDownloadOutput(output: OutputStream, directory: File, remainingBytes: Long) {
+        runSaveSyncStorageOperation(directory, remainingBytes, downloadFileSystem.usableSpace) {
+            output.flush()
+        }
+    }
+
+    private fun closeDownloadOutput(
+        output: OutputStream,
+        directory: File,
+        remainingBytes: Long,
+        primaryFailure: Throwable?,
+    ) {
+        try {
+            runSaveSyncStorageOperation(directory, remainingBytes, downloadFileSystem.usableSpace) {
+                output.close()
+            }
+        } catch (failure: SaveSyncException) {
+            handleDownloadCloseFailure(primaryFailure, failure)
+        }
+    }
+
+    private fun handleDownloadCloseFailure(
+        primaryFailure: Throwable?,
+        localFailure: SaveSyncException,
+    ) {
+        if (primaryFailure == null) throw localFailure
+        primaryFailure.addSuppressed(localFailure)
     }
 
     suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion) {
@@ -581,3 +640,9 @@ class WebDavClient(
         }
     }
 }
+
+/** File operations are injectable so download rollback and I/O classification stay JVM-testable. */
+internal class WebDavDownloadFileSystem(
+    val usableSpace: (File) -> Long = { it.usableSpace },
+    val openOutput: (File) -> OutputStream = { it.outputStream() },
+)

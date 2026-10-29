@@ -26,6 +26,8 @@ data class WebDavConfig(
     val remoteLimit: Int = 10,
     val showSyncFeedback: Boolean = true,
     val enabled: Boolean = false,
+    /** Read with the encrypted configuration; never supplied by the settings UI. */
+    internal val revision: Long = 0L,
 ) {
     val configured: Boolean get() = serverUrl.isNotBlank()
     val active: Boolean get() = enabled && configured
@@ -38,6 +40,7 @@ enum class SaveSyncError {
     NOT_CONFIGURED, INVALID_CONFIG, CREDENTIALS_UNAVAILABLE, AUTHENTICATION, NETWORK,
     SERVER, INVALID_RESPONSE, CORRUPT_ARCHIVE, LOCAL_IO, SAVE_UNAVAILABLE, GAME_RUNNING,
     IDENTITY_CONFLICT, DISABLED, SELECTION_INCOMPLETE, CLOUD_REPAIR_REQUIRED, STORAGE_FULL, SAVE_LOCATION_CHANGED,
+    LOCAL_STATE_CHANGED,
 }
 
 class SaveSyncException(
@@ -104,10 +107,12 @@ data class SaveSyncReport(
     val unchanged: Int = 0,
     val busy: Int = 0,
     val failures: List<SaveSyncFailure> = emptyList(),
+    val cleanupPending: Int = 0,
 ) {
     operator fun plus(other: SaveSyncReport) = SaveSyncReport(
         uploaded + other.uploaded, downloaded + other.downloaded,
         unchanged + other.unchanged, busy + other.busy, failures + other.failures,
+        cleanupPending + other.cleanupPending,
     )
 }
 

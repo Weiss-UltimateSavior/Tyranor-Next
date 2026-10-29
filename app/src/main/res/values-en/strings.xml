@@ -966,6 +966,9 @@
     <string name="save_version_recover">Resolve incomplete switch</string>
     <string name="save_version_recovery_policy">Keep the current saves and any valid historical sources; only interrupted switch records are cleared. No version is imported. Future WebDAV syncs use the current save contents.</string>
     <string name="webdav_error_cloud_repair">Remove the damaged cloud save and retry</string>
-    <string name="save_sync_cleanup_failed">“%1$s” remains in the library. Save sync data cleanup failed; please retry</string>
+    <string name="save_sync_cleanup_failed">“%1$s” remains in the library. Save sync data cleanup failed: %2$s</string>
+    <string name="webdav_error_local_state_changed">Local state changed. Try syncing again.</string>
+    <string name="webdav_sync_cleanup_pending">Cloud history cleanup is not complete yet. It will continue with a later sync.</string>
+    <string name="webdav_sync_partial_cleanup_pending">Some syncs completed; cloud history cleanup is not complete yet. It will continue with a later sync.</string>
     <string name="webdav_sync_busy_skipped">Sync completed; running games were skipped</string>
 </resources>

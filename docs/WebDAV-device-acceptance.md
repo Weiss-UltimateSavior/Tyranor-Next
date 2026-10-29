@@ -1,6 +1,17 @@
 # WebDAV Android 设备验收记录
 
-日期：2026-10-27，Asia/Shanghai。对应 PR #132，业务修复基线 `aad49a2`。
+## 验收基线与后续增量
+
+日期：2026-10-27，Asia/Shanghai。对应 PR #132，本文所有设备执行结果、
+截图与通过数均锁定在业务修复基线 `aad49a2`。当时 `SaveSyncDeviceTest` 为 6 项，
+`SaveRecoveryDeviceTest` 为 3 项；这两类历史结果是同轮 **9 通过、0 失败、0 跳过**，
+后文保留原记录，不因当前源码增加用例而改写历史计数。
+
+`a528183` 起 `SaveSyncDeviceTest` 新增 2 项、总数增至 8 项，新增
+`oldNativeLaunchEvidenceCannotRejectReplacementAfterQuickReenable` 与
+`oldExternalYurisTicketCannotRejectReplacementAfterQuickReenable`。这两项 quick-reenable
+用例以及该提交及后续修复只完成编译，尚未在本文记录的真机、AVD 或独立服务器场景
+中执行，不能计入上述设备通过数。
 
 ## 环境与隔离边界
 
@@ -35,7 +46,8 @@ UI 测试另要求初始游戏库为空、没有既有 WebDAV 加密载荷。各
 
 ### 存档与生命周期
 
-`SaveSyncDeviceTest` 6 项、`SaveRecoveryDeviceTest` 3 项，最终同轮 **9 通过、0 失败、0 跳过**，
+`aad49a2` 的 `SaveSyncDeviceTest` 6 项、`SaveRecoveryDeviceTest` 3 项，
+最终同轮 **9 通过、0 失败、0 跳过**，
 耗时 39.568 秒。使用实际 Android Context、AndroidKeyStore、GameSaveManager、
 SaveSyncService、SaveSyncRuntime、WorkManager、OkHttp 与 Android XML 解析器。
 独立复核后补强首次宿主用例的空记录前提并再次执行，真机仍为 **9 通过、0 跳过**；

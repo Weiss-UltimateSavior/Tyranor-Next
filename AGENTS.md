@@ -339,12 +339,14 @@ Column(fillMaxSize)                                // 页面根
 | ----------- | ---------------------------------- | ----------------- | --------------- |
 | 游戏库过滤       | `GameScreen.kt`（顶栏下方）              | `ic_game_search`  | 即时过滤，不传         |
 | VNDB 封面搜索   | `GameScreen.kt`（VndbSearchDialog）  | `ic_game_search`  | `search()` 网络请求 |
+| 安卓游戏选择过滤 | `AndroidGameAddDialog.kt`（已安装应用列表） | `ic_game_search` | 即时过滤，不传 |
 | krkr 在线补丁过滤 | `KrkrOnlinePatchActivity.kt`（列表首项） | `ic_game_search`  | 即时过滤，不传         |
 | 名称修改        | `GameScreen.kt`（RenameGameDialog）  | `ic_sheet_rename` | Done，内容有效即保存         |
 | WebDAV 地址/用户名/密码 | `WebDavSettingsActivity.kt` | 对应字段语义图标 | Done，显式 Uri/Text/Password 与身份 autofill |
-| 云端游戏标识 | `SaveVersionsPanel.kt` | 标识图标 | Done，内容有效即保存 |
+| 云端游戏标识 | `SaveVersionsPanel.kt`（身份编辑） | `ic_sheet_rename` | Done，内容有效即保存 |
 | 图形倍率 | `GraphicsNodeParameters.kt` | `ic_graphics_parameters` | Done，Decimal 键盘 |
-| 目录/方案名称/端口/自定义 URL | `ui/settings/`、`EngineScreen.kt` | 对应字段语义图标 | Done；URL 为 Uri，端口为 Number |
+| 输入目录 | `SettingsScreen.kt`（路径弹窗） | `ic_sheet_folder` | Done，内容有效即保存 |
+| 目录/方案名称/端口/自定义 URL | `SettingsScreen.kt`（通用文本弹窗）、`PerGameSettingsScreen.kt`（`OverrideText`）、`InputSettingsScreen.kt`、`AppSettingsActivity.kt` | 当前为 `ic_sheet_rename` | Done；URL 为 Uri，端口为 Number |
 
 ***
 

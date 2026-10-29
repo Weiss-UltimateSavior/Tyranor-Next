@@ -64,6 +64,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     val context = LocalContext.current
     val enabled by WebDavSettingsStore.enabled.collectAsState()
     LaunchedEffect(Unit) {
+        // Refresh the shared flow from persisted settings when this panel is first opened.
         withContext(Dispatchers.IO) { WebDavSettingsStore.isEnabled(context) }
     }
     SaveSelectionRecoveryPanel(game, taskRunning, revision, runTask)

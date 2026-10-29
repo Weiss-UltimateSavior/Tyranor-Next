@@ -162,13 +162,8 @@ object EngineLauncher {
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
         withContext(Dispatchers.IO) {
-            val activeKey = try {
-                SaveSyncRuntime.activeKey(context, game)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                return@withContext LaunchResult.Failure.StartFailed(null)
-            }
+            val activeKey = SaveSyncRuntime.launchKey(context, game)
+                ?: return@withContext launchInternal(context, game, patchChoice)
             SaveSyncLocks.active(activeKey) {
                 val ticket = SaveSyncRuntime.prepareLaunch(context, game)
                 var success = false

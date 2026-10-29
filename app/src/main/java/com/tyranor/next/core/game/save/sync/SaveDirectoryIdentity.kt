@@ -1,11 +1,31 @@
 package com.tyranor.next.core.game.save.sync
 
 import com.tyranor.next.core.game.model.ScanGame
+import kotlinx.coroutines.CancellationException
 import java.io.File
 
 /** History stays URI-scoped; writers and launch admission share the actual save directory. */
 internal fun saveDirectoryIdentity(game: ScanGame, directory: (ScanGame) -> File?): String =
     directory(game)?.canonicalPath?.let { "save-directory:$it" } ?: game.uri
+
+/** Optional launch bookkeeping must neither resolve saves while disabled nor prevent an engine start. */
+internal fun optionalSaveSyncLaunchKey(uri: String, enabled: () -> Boolean, resolve: () -> String): String? {
+    val optedIn = try {
+        enabled()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        false
+    }
+    if (!optedIn) return null
+    return try {
+        resolve()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        uri
+    }
+}
 
 internal fun relatedSaveUris(
     game: ScanGame,

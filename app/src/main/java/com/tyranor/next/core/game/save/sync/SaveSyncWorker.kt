@@ -127,7 +127,8 @@ internal object SaveSyncWorkPolicy {
     internal val AUTOMATIC_NETWORK_TYPE = NetworkType.UNMETERED
     internal const val MAX_FALLBACK_RUN_ATTEMPT_COUNT = 5
 
-    private val retryable = setOf(SaveSyncError.NETWORK, SaveSyncError.SERVER, SaveSyncError.LOCAL_IO)
+    private val retryable = setOf(SaveSyncError.NETWORK, SaveSyncError.SERVER, SaveSyncError.LOCAL_IO,
+        SaveSyncError.LOCAL_STATE_CHANGED)
 
     fun fallbackAttemptsExhausted(fallback: Boolean, runAttemptCount: Int): Boolean =
         fallback && runAttemptCount >= MAX_FALLBACK_RUN_ATTEMPT_COUNT
@@ -135,13 +136,16 @@ internal object SaveSyncWorkPolicy {
     fun isDisabled(report: SaveSyncReport): Boolean =
         report.failures.any { it.error == SaveSyncError.DISABLED }
 
+    private fun cleanupCanRetry(report: SaveSyncReport): Boolean = report.cleanupPending > 0 &&
+        report.failures.none { it.error == SaveSyncError.STORAGE_FULL }
+
     fun shouldScheduleFallback(report: SaveSyncReport): Boolean =
-        !isDisabled(report) && (report.busy > 0 || report.failures.any { it.error in retryable })
+        !isDisabled(report) && (report.busy > 0 || cleanupCanRetry(report) || report.failures.any { it.error in retryable })
 
     fun outcome(report: SaveSyncReport, fallback: Boolean): SaveSyncWorkOutcome {
         if (isDisabled(report)) return SaveSyncWorkOutcome.SUCCESS
         val retryableFailure = report.failures.any { it.error in retryable }
-        if (fallback && (report.busy > 0 || retryableFailure)) return SaveSyncWorkOutcome.RETRY
+        if (fallback && (report.busy > 0 || cleanupCanRetry(report) || retryableFailure)) return SaveSyncWorkOutcome.RETRY
         if (report.failures.any { it.error !in retryable }) return SaveSyncWorkOutcome.FAILURE
         if (report.busy == 0 && !retryableFailure) return SaveSyncWorkOutcome.SUCCESS
         return if (report.failures.isEmpty()) SaveSyncWorkOutcome.SUCCESS else SaveSyncWorkOutcome.FAILURE

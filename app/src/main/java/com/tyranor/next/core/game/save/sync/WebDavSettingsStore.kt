@@ -23,6 +23,7 @@ object WebDavSettingsStore {
     private const val ENABLED = "enabled"
     private const val CONFIG = "config"
     private const val GENERATION = "disable_generation"
+    private const val CONFIG_REVISION = "config_revision"
     // Keystore work never holds enabledLock; combined operations take configLock first.
     private val configLock = Any()
     private val enabledLock = Any()
@@ -59,8 +60,18 @@ object WebDavSettingsStore {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(GENERATION, 0L)
     }
 
-    internal fun <T> whileEnabled(context: Context, generation: Long, action: () -> T): T? = synchronized(configLock) {
-        if (sessionGeneration(context) != generation || !isEnabled(context)) null else action()
+    internal fun configurationRevision(context: Context): Long = synchronized(configLock) {
+        context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(CONFIG_REVISION, 0L)
+    }
+
+    internal fun <T> whileEnabled(
+        context: Context,
+        generation: Long,
+        configurationRevision: Long? = null,
+        action: () -> T,
+    ): T? = synchronized(configLock) {
+        if (sessionGeneration(context) != generation || !isEnabled(context) ||
+            (configurationRevision != null && configurationRevision(context) != configurationRevision)) null else action()
     }
 
     internal fun disabledSessions(context: Context, store: SaveSyncStateStore): List<DisabledSaveSession> =
@@ -71,7 +82,7 @@ object WebDavSettingsStore {
     fun load(context: Context): WebDavConfig = synchronized(configLock) {
         val enabled = isEnabled(context)
         val encoded = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(CONFIG, null) ?: return@synchronized WebDavConfig(enabled = enabled)
+            .getString(CONFIG, null) ?: return@synchronized WebDavConfig(enabled = enabled, revision = configurationRevision(context))
         try {
             val bytes = Base64.decode(encoded, Base64.NO_WRAP)
             if (bytes.size < 29) throw SaveSyncException(SaveSyncError.CREDENTIALS_UNAVAILABLE)
@@ -80,7 +91,7 @@ object WebDavSettingsStore {
             val json = JSONObject(String(cipher.doFinal(bytes, 12, bytes.size - 12), Charsets.UTF_8))
             validated(WebDavConfig(json.getString("url"), json.getString("username"), json.getString("password"),
                 SaveSyncMode.valueOf(json.getString("mode")), SaveSyncRetention.fromLegacy(json.getInt("limit")),
-                json.optBoolean("showSyncFeedback", true), enabled))
+                json.optBoolean("showSyncFeedback", true), enabled, configurationRevision(context)))
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: SaveSyncException) {
@@ -103,7 +114,8 @@ object WebDavSettingsStore {
             if (cipher.iv.size != 12) throw SaveSyncException(SaveSyncError.CREDENTIALS_UNAVAILABLE)
             val data = cipher.iv + cipher.doFinal(json.toString().toByteArray(Charsets.UTF_8))
             if (!context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                    .putString(CONFIG, Base64.encodeToString(data, Base64.NO_WRAP)).commit()
+                    .putString(CONFIG, Base64.encodeToString(data, Base64.NO_WRAP))
+                    .putLong(CONFIG_REVISION, configurationRevision(context) + 1L).commit()
             ) throw SaveSyncException(SaveSyncError.LOCAL_IO)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -128,7 +140,7 @@ object WebDavSettingsStore {
             throw SaveSyncException(SaveSyncError.CREDENTIALS_UNAVAILABLE, cause = failure)
         }
         if (!context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .remove(CONFIG).commit()
+                .remove(CONFIG).putLong(CONFIG_REVISION, configurationRevision(context) + 1L).commit()
         ) throw SaveSyncException(SaveSyncError.LOCAL_IO)
     }
 

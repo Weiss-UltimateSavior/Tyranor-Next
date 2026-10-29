@@ -54,6 +54,7 @@ object SaveSyncRuntime {
     private data class SaveTreeSnapshot(val contentHash: String?, val metadataHash: String)
     private sealed interface FlushDecision {
         data object Busy : FlushDecision
+        data object StateChanged : FlushDecision
         data object Unchanged : FlushDecision
         data class Changed(val snapshot: SaveTreeSnapshot) : FlushDecision
     }
@@ -427,28 +428,29 @@ object SaveSyncRuntime {
                 val directoryKey = entry.optString("activeKey").ifBlank { activeKey(context, target) }
                 val decision = withCurrentSaveSession(store, key, entry, directoryKey,
                     resolveActiveKey = { activeKey(context, target) }) {
-                    if (!saveSessionGenerationMatches(it, WebDavSettingsStore.sessionGeneration(context))) return@withCurrentSaveSession FlushDecision.Busy
+                    if (!saveSessionGenerationMatches(it, WebDavSettingsStore.sessionGeneration(context))) return@withCurrentSaveSession FlushDecision.StateChanged
                     directoryActivations(context).requireAvailable(directoryKey)
                     if (isGameRunning(context, target)) {
                         FlushDecision.Busy
                     } else {
                         val current = captureContentSnapshot(manager, target, directoryKey)
-                        val changed = current.contentHash != null &&
-                            (current.contentHash != baseline ||
-                                SaveSyncService(context).hasPendingPromotion(target, config))
+                        val changed = SaveSyncService(context).hasPendingPromotion(target, config) ||
+                            (current.contentHash != null && current.contentHash != baseline)
                         if (changed) {
                             FlushDecision.Changed(current)
                         } else if (store.load(key).optString("token") != token) {
-                            FlushDecision.Busy
+                            FlushDecision.StateChanged
                         } else {
                             persistBaseline(context, target, current, directoryKey)
                             store.remove(key)
                             FlushDecision.Unchanged
                         }
                     }
-                } ?: FlushDecision.Busy
+                } ?: FlushDecision.StateChanged
                 when (decision) {
                     FlushDecision.Busy -> report += SaveSyncReport(busy = 1)
+                    FlushDecision.StateChanged -> report += SaveSyncReport(failures = listOf(
+                        SaveSyncFailure(target.title, SaveSyncError.LOCAL_STATE_CHANGED)))
                     FlushDecision.Unchanged -> Unit
                     is FlushDecision.Changed -> {
                         val result = SaveSyncService(context).syncGameIfCurrent(target, SaveSyncDirection.UPLOAD,
@@ -462,11 +464,14 @@ object SaveSyncRuntime {
                             }
                         }
                         report += result
-                        if (result.failures.isEmpty() && result.busy == 0) {
+                        if (result.failures.isEmpty() && result.busy == 0 && result.cleanupPending == 0) {
+                            var gameBecameBusy = false
                             val committed = withCurrentSaveSession(store, key, entry, directoryKey,
                                 resolveActiveKey = { activeKey(context, target) }) {
-                                if (isGameRunning(context, target) ||
-                                    store.load(key).optString("token") != token) {
+                                if (isGameRunning(context, target)) {
+                                    gameBecameBusy = true
+                                    false
+                                } else if (store.load(key).optString("token") != token) {
                                     false
                                 } else {
                                     val final = captureContentSnapshot(manager, target, directoryKey)
@@ -479,7 +484,8 @@ object SaveSyncRuntime {
                                     }
                                 }
                             } ?: false
-                            if (!committed) report += SaveSyncReport(busy = 1)
+                            if (!committed) report += if (gameBecameBusy) SaveSyncReport(busy = 1) else
+                                SaveSyncReport(failures = listOf(SaveSyncFailure(target.title, SaveSyncError.LOCAL_STATE_CHANGED)))
                         }
                     }
                 }
@@ -574,6 +580,9 @@ object SaveSyncRuntime {
             entry.optLong("startedAt", -1L), entry.optBoolean("returned")) }
         return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime(), related)
     }
+
+    internal fun launchKey(context: Context, game: ScanGame): String? =
+        optionalSaveSyncLaunchKey(game.uri, { WebDavSettingsStore.isEnabled(context) }) { activeKey(context, game) }
 
     internal fun activeKey(context: Context, game: ScanGame): String = saveDirectoryIdentity(game) {
         GameSaveManager(context).resolveSaveLocation(it).directory

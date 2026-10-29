@@ -257,7 +257,7 @@ class SaveSyncServiceTest {
                 gate.complete(Unit)
             }
             val report = withTimeout(5_000) { sync.await() }
-            assertEquals(1, report.busy)
+            assertLocalStateChanged(report)
         }
     }
 
@@ -290,7 +290,7 @@ class SaveSyncServiceTest {
                 gate.complete(Unit)
             }
             val report = withTimeout(5_000) { sync.await() }
-            assertEquals(1, report.busy)
+            assertLocalStateChanged(report)
 
             val after = harness.states.load(key)
             assertEquals(expectedRevision, after.getString("revision"))
@@ -350,6 +350,440 @@ class SaveSyncServiceTest {
         assertEquals(1, harness.transport.uploadCount(currentHash))
         assertEquals(10, harness.transport.versions(harness.remoteGame(game)).size)
         assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+    }
+
+    @Test
+    fun cleanupBudgetConvergesOverRoundsAndPublishesNewVersionOnce() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("cleanup-budget")
+        harness.identify(game)
+        val newHash = harness.setActive(game, "new-version")
+        val remoteGame = harness.remoteGame(game)
+        seedCleanupHistory(harness, game, count = 65)
+        val checkpointKey = harness.checkpointKey(game)
+
+        val first = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val firstDeletes = harness.transport.deleteCount()
+        val firstRemote = harness.transport.versions(remoteGame)
+        val published = firstRemote.single { it.contentHash == newHash }
+
+        assertEquals(1, first.uploaded)
+        assertEquals(1, first.cleanupPending)
+        assertEquals(0, first.busy)
+        assertTrue(first.failures.isEmpty())
+        assertEquals(20, firstDeletes)
+        assertEquals(46, firstRemote.size)
+        assertTrue(firstRemote.any { it.name == published.name })
+        assertTrue(harness.states.load(checkpointKey).getBoolean("needsPrune"))
+        assertTrue(harness.hasPendingPromotion(game))
+
+        harness.world.clearActive(game)
+        assertFalse(harness.world.hasActive(game))
+        val secondVerifies = harness.transport.verifyCount()
+        val second = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val secondDeletes = harness.transport.deleteCount() - firstDeletes
+        val secondRemote = harness.transport.versions(remoteGame)
+
+        assertEquals(0, second.uploaded)
+        assertEquals(1, second.cleanupPending)
+        assertEquals(0, second.busy)
+        assertTrue(second.failures.isEmpty())
+        assertEquals(20, secondDeletes)
+        assertEquals(26, secondRemote.size)
+        assertTrue(secondRemote.any { it.name == published.name && it.contentHash == newHash })
+        assertTrue(harness.states.load(checkpointKey).getBoolean("needsPrune"))
+        assertTrue(harness.hasPendingPromotion(game))
+        assertEquals(1, harness.transport.verifyCount() - secondVerifies)
+        assertEquals(1, harness.transport.uploadCount(newHash))
+
+        val finalVerifies = harness.transport.verifyCount()
+        val final = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val finalDeletes = harness.transport.deleteCount() - firstDeletes - secondDeletes
+        val finalRemote = harness.transport.versions(remoteGame)
+
+        assertEquals(0, final.uploaded)
+        assertEquals(0, final.cleanupPending)
+        assertEquals(0, final.busy)
+        assertTrue(final.failures.isEmpty())
+        assertEquals(16, finalDeletes)
+        assertEquals(10, finalRemote.size)
+        assertTrue(finalRemote.any { it.name == published.name && it.contentHash == newHash })
+        assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+        assertFalse(harness.hasPendingPromotion(game))
+        assertEquals(1, harness.transport.verifyCount() - finalVerifies)
+        assertFalse(harness.world.hasActive(game))
+        assertEquals(1, harness.transport.uploadCount(newHash))
+    }
+
+    @Test
+    fun unlimitedRestoredPromotionDrainsSupersededSourcesInDeleteBatches() = runBlocking {
+        val harness = Harness(temp, remoteLimit = 0)
+        val game = harness.addGame("unlimited-promotion-cleanup")
+        harness.identify(game)
+        harness.setActive(game, "before-S")
+        val selectedTime = 1_700_000_000_010L
+        val selected = harness.addSnapshot(game, "selected-S", selectedTime)
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+
+        val remoteGame = harness.remoteGame(game)
+        repeat(65) { index ->
+            val createdAt = 1_700_000_010_000L + index
+            harness.transport.seed(
+                remoteGame,
+                RemoteSaveVersion(
+                    name = SaveVersionNames.create(createdAt, selected.contentHash),
+                    contentHash = selected.contentHash,
+                    createdAt = createdAt,
+                    size = selected.size,
+                ),
+            )
+        }
+        val newHash = harness.setActive(game, "played-N")
+        val key = harness.key(game)
+        val checkpointKey = harness.checkpointKey(game)
+        val partialDeletes = listOf(20, 20, 20)
+        val partialRemoteSizes = listOf(46, 26, 6)
+        var deletesBefore = harness.transport.deleteCount()
+        lateinit var publicationName: String
+        var promotionAt = 0L
+
+        partialDeletes.forEachIndexed { round, expectedDeletes ->
+            val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+            val deletes = harness.transport.deleteCount() - deletesBefore
+            deletesBefore += deletes
+            val remote = harness.transport.versions(remoteGame)
+            val publication = remote.single { it.contentHash == newHash }
+
+            assertEquals(expectedDeletes, deletes)
+            assertEquals(partialRemoteSizes[round], remote.size)
+            assertEquals(1, remote.count { it.contentHash == newHash })
+            assertEquals(1, report.cleanupPending)
+            assertEquals(0, report.busy)
+            assertTrue(report.failures.isEmpty())
+            assertEquals(1, harness.transport.uploadInvocationCount(newHash))
+            if (round == 0) publicationName = publication.name
+            else assertEquals(publicationName, publication.name)
+
+            assertTrue(harness.hasPendingPromotion(game))
+            val state = harness.states.load(key)
+            if (round == 0) promotionAt = state.getLong("promotionAt")
+            else assertEquals(promotionAt, state.getLong("promotionAt"))
+            assertTrue(promotionAt > 0)
+            assertTrue(state.getBoolean("promotionAwaitingChange"))
+            val checkpoint = harness.states.load(checkpointKey)
+            assertEquals(publicationName, checkpoint.getString("promotionPublication"))
+            assertEquals(promotionAt, checkpoint.getLong("publishingPromotionAt"))
+            assertTrue(checkpoint.optLong("promotedAt") < promotionAt)
+        }
+
+        val finalReport = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val finalDeletes = harness.transport.deleteCount() - deletesBefore
+        val finalRemote = harness.transport.versions(remoteGame)
+        val finalState = harness.states.load(key)
+        val finalCheckpoint = harness.states.load(checkpointKey)
+
+        assertEquals(5, finalDeletes)
+        assertEquals(1, finalRemote.size)
+        assertEquals(0, finalReport.cleanupPending)
+        assertFalse(harness.hasPendingPromotion(game))
+        assertEquals(listOf(newHash), finalRemote.map { it.contentHash })
+        assertTrue(finalRemote.none { it.contentHash == selected.contentHash })
+        assertEquals(1, harness.transport.uploadInvocationCount(newHash))
+        assertFalse(finalState.getBoolean("promotionAwaitingChange"))
+        assertEquals(promotionAt, finalCheckpoint.getLong("promotedAt"))
+    }
+
+    @Test
+    fun retentionBudgetCapDoesNotCommitRestoredPromotionBeforeNextVersion() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("promotion-retention-cap")
+        harness.identify(game)
+        harness.setActive(game, "before-S")
+        val selectedTime = 1_700_000_000_010L
+        val selected = harness.addSnapshot(game, "selected-S", selectedTime)
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+
+        val remoteGame = harness.remoteGame(game)
+        repeat(3) { index ->
+            val createdAt = selectedTime + index + 1
+            harness.transport.seed(
+                remoteGame,
+                RemoteSaveVersion(
+                    name = SaveVersionNames.create(createdAt, selected.contentHash),
+                    contentHash = selected.contentHash,
+                    createdAt = createdAt,
+                    size = selected.size,
+                ),
+            )
+        }
+        seedCleanupHistory(harness, game, count = 65)
+        val firstHash = harness.setActive(game, "played-N")
+        val key = harness.key(game)
+        val checkpointKey = harness.checkpointKey(game)
+
+        val first = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val firstRemote = harness.transport.versions(remoteGame)
+        val firstCheckpoint = harness.states.load(checkpointKey)
+        val firstState = harness.states.load(key)
+
+        assertEquals(1, first.cleanupPending)
+        assertEquals(1, first.uploaded)
+        assertEquals(20, harness.transport.deleteCount())
+        assertEquals(1, firstRemote.count { it.contentHash == firstHash })
+        assertEquals(0, firstRemote.count { it.contentHash == selected.contentHash })
+        assertTrue(firstState.getBoolean("promotionAwaitingChange"))
+        assertFalse(firstCheckpoint.has("promotedAt"))
+        assertTrue(firstCheckpoint.getBoolean("needsPrune"))
+
+        val laterHash = harness.setActive(game, "played-M")
+        val deletesBefore = harness.transport.deleteCount()
+        val second = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val secondDeletes = harness.transport.deleteCount() - deletesBefore
+        val secondRemote = harness.transport.versions(remoteGame)
+        val secondCheckpoint = harness.states.load(checkpointKey)
+        val secondState = harness.states.load(key)
+        val later = secondRemote.single { it.contentHash == laterHash }
+
+        assertEquals(1, second.cleanupPending)
+        assertEquals(1, second.uploaded)
+        assertTrue(second.failures.isEmpty())
+        assertEquals(20, secondDeletes)
+        assertTrue(later.restored)
+        assertEquals(selectedTime, later.previousCreatedAt)
+        assertTrue(secondState.getBoolean("promotionAwaitingChange"))
+        assertFalse(secondCheckpoint.has("promotedAt"))
+        assertTrue(secondCheckpoint.getBoolean("needsPrune"))
+        assertTrue(harness.hasPendingPromotion(game))
+        assertEquals(1, harness.transport.uploadInvocationCount(firstHash))
+        assertEquals(1, harness.transport.uploadInvocationCount(laterHash))
+    }
+
+    @Test
+    fun emptyActiveCleanupDoesNotCreateUploadPinWhenCacheHasNoSpace() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("empty-active-low-space-cleanup")
+        harness.identify(game)
+        val newHash = harness.setActive(game, "new-version")
+        seedCleanupHistory(harness, game, count = 65)
+        val remoteGame = harness.remoteGame(game)
+        val checkpointKey = harness.checkpointKey(game)
+
+        val first = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val firstDeletes = harness.transport.deleteCount()
+        val firstRemote = harness.transport.versions(remoteGame)
+        assertEquals(1, first.cleanupPending)
+        assertEquals(0, first.busy)
+        assertTrue(first.failures.isEmpty())
+        assertEquals(20, firstDeletes)
+        assertEquals(46, firstRemote.size)
+        assertEquals(1, firstRemote.count { it.contentHash == newHash })
+        assertEquals(1, harness.transport.uploadInvocationCount(newHash))
+
+        harness.world.clearActive(game)
+        val unusableCache = harness.makeCacheUnusable()
+        assertEquals(0L, unusableCache.usableSpace)
+        assertFalse(harness.world.hasActive(game))
+
+        val secondVerifies = harness.transport.verifyCount()
+        val second = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val secondDeletes = harness.transport.deleteCount() - firstDeletes
+        val secondRemote = harness.transport.versions(remoteGame)
+
+        assertEquals(1, second.cleanupPending)
+        assertEquals(0, second.busy)
+        assertEquals(0, second.downloaded)
+        assertTrue(second.failures.isEmpty())
+        assertEquals(20, secondDeletes)
+        assertEquals(26, secondRemote.size)
+        assertEquals(1, secondRemote.count { it.contentHash == newHash })
+        assertEquals(1, harness.transport.verifyCount() - secondVerifies)
+        assertTrue(harness.states.load(checkpointKey).getBoolean("needsPrune"))
+        assertTrue(harness.hasPendingPromotion(game))
+
+        val finalVerifies = harness.transport.verifyCount()
+        val final = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val finalDeletes = harness.transport.deleteCount() - firstDeletes - secondDeletes
+        val finalRemote = harness.transport.versions(remoteGame)
+
+        assertEquals(0, final.cleanupPending)
+        assertEquals(0, final.busy)
+        assertEquals(0, final.downloaded)
+        assertTrue(final.failures.isEmpty())
+        assertEquals(16, finalDeletes)
+        assertEquals(10, finalRemote.size)
+        assertEquals(1, finalRemote.count { it.contentHash == newHash })
+        assertEquals(1, harness.transport.verifyCount() - finalVerifies)
+        assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+        assertFalse(harness.hasPendingPromotion(game))
+        assertEquals(1, harness.transport.uploadInvocationCount(newHash))
+        assertEquals(0, harness.transport.downloadCount())
+        assertFalse(harness.world.hasActive(game))
+    }
+
+    @Test
+    fun cleanupBudgetDoesNotStarveNewActiveVersionInLaterRound() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("cleanup-new-version")
+        harness.identify(game)
+        val firstHash = harness.setActive(game, "first-new-version")
+        seedCleanupHistory(harness, game, count = 65)
+        val remoteGame = harness.remoteGame(game)
+        val checkpointKey = harness.checkpointKey(game)
+
+        val first = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val firstDeletes = harness.transport.deleteCount()
+        assertEquals(1, first.cleanupPending)
+        assertEquals(1, first.uploaded)
+        assertEquals(20, firstDeletes)
+        assertEquals(1, harness.transport.versions(remoteGame).count { it.contentHash == firstHash })
+
+        val laterHash = harness.setActive(game, "later-new-version")
+        val secondDeletesBefore = harness.transport.deleteCount()
+        val second = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val secondDeletes = harness.transport.deleteCount() - secondDeletesBefore
+        val secondRemote = harness.transport.versions(remoteGame)
+
+        assertEquals(1, second.cleanupPending)
+        assertEquals(1, second.uploaded)
+        assertEquals(0, second.busy)
+        assertTrue(second.failures.isEmpty())
+        assertEquals(20, secondDeletes)
+        assertEquals(1, secondRemote.count { it.contentHash == firstHash })
+        assertEquals(1, secondRemote.count { it.contentHash == laterHash })
+        assertEquals(1, harness.transport.uploadInvocationCount(firstHash))
+        assertEquals(1, harness.transport.uploadInvocationCount(laterHash))
+        assertTrue(harness.states.load(checkpointKey).getBoolean("needsPrune"))
+        assertTrue(harness.hasPendingPromotion(game))
+
+        val finalDeletesBefore = harness.transport.deleteCount()
+        val final = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val finalDeletes = harness.transport.deleteCount() - finalDeletesBefore
+        val finalRemote = harness.transport.versions(remoteGame)
+
+        assertEquals(0, final.cleanupPending)
+        assertEquals(0, final.uploaded)
+        assertEquals(0, final.busy)
+        assertTrue(final.failures.isEmpty())
+        assertEquals(17, finalDeletes)
+        assertEquals(10, finalRemote.size)
+        assertEquals(1, finalRemote.count { it.contentHash == firstHash })
+        assertEquals(1, finalRemote.count { it.contentHash == laterHash })
+        assertEquals(1, harness.transport.uploadInvocationCount(firstHash))
+        assertEquals(1, harness.transport.uploadInvocationCount(laterHash))
+        assertFalse(harness.states.load(checkpointKey).optBoolean("needsPrune"))
+        assertFalse(harness.hasPendingPromotion(game))
+    }
+
+    @Test
+    fun cleanupPendingSurvivesNewVersionUploadFailure() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("cleanup-upload-failure")
+        harness.identify(game)
+        harness.setActive(game, "first-version")
+        seedCleanupHistory(harness, game, count = 65)
+        val remoteGame = harness.remoteGame(game)
+        val first = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(1, first.cleanupPending)
+        assertEquals(1, first.uploaded)
+
+        val laterHash = harness.setActive(game, "failed-later-version")
+        harness.transport.failNextUpload(SaveSyncException(SaveSyncError.NETWORK))
+        val deletesBefore = harness.transport.deleteCount()
+        val failed = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(1, failed.cleanupPending)
+        assertEquals(0, failed.uploaded)
+        assertEquals(listOf(SaveSyncError.NETWORK), failed.failures.map { it.error })
+        assertEquals(20, harness.transport.deleteCount() - deletesBefore)
+        assertEquals(1, harness.transport.uploadInvocationCount(laterHash))
+        assertTrue(harness.transport.versions(remoteGame).none { it.contentHash == laterHash })
+        assertTrue(harness.hasPendingPromotion(game))
+    }
+
+    @Test
+    fun gameStartingAfterFirstCleanupDeleteStopsRemainingDeletesAsBusy() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("cleanup-game-started")
+        harness.identify(game)
+        val activeHash = harness.setActive(game, "current-version")
+        seedCleanupHistory(harness, game, count = 65)
+        val checkpointKey = harness.checkpointKey(game)
+        val first = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(1, first.cleanupPending)
+
+        val deletesBefore = harness.transport.deleteCount()
+        var callbacks = 0
+        harness.transport.onDelete = {
+            callbacks++
+            harness.world.isRunning = true
+        }
+        val blocked = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        val deletes = harness.transport.deleteCount() - deletesBefore
+
+        assertEquals(1, blocked.busy)
+        assertEquals(0, blocked.cleanupPending)
+        assertTrue(blocked.failures.isEmpty())
+        assertEquals(1, callbacks)
+        assertEquals(1, deletes)
+        assertEquals(1, harness.transport.versions(harness.remoteGame(game)).count { it.contentHash == activeHash })
+        assertTrue(harness.states.load(checkpointKey).getBoolean("needsPrune"))
+        assertTrue(harness.hasPendingPromotion(game))
+    }
+
+    @Test
+    fun downloadTemporaryLowSpaceReturnsStorageFullBeforeNetworkDownload() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("download-low-space")
+        harness.identify(game)
+        harness.setActive(game, "current")
+        val cloud = harness.archive("cloud-download", "cloud bytes")
+        val cloudHash = SaveContentHash.archive(cloud)
+        val cloudAt = 1_700_000_000_900L
+        val remote = RemoteSaveVersion(
+            name = SaveVersionNames.create(cloudAt, cloudHash),
+            contentHash = cloudHash,
+            createdAt = cloudAt,
+            size = cloud.length(),
+        )
+        harness.transport.seed(harness.remoteGame(game), remote, cloud)
+        assertEquals(0L, harness.makeCacheUnusable().usableSpace)
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.PULL)
+
+        assertEquals(listOf(SaveSyncError.STORAGE_FULL), report.failures.map { it.error })
+        assertEquals(0, report.downloaded)
+        assertEquals(0, report.busy)
+        assertEquals(0, harness.transport.downloadCount())
+        assertFalse(SaveSyncWorkPolicy.shouldScheduleFallback(report))
+        assertEquals(SaveSyncWorkOutcome.FAILURE, SaveSyncWorkPolicy.outcome(report, fallback = true))
+    }
+
+    @Test
+    fun emptyActiveCleanupWithMissingReplacementReportsServer() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("missing-cleanup-replacement")
+        harness.identify(game)
+        val key = harness.key(game)
+        val checkpointKey = harness.checkpointKey(game)
+        val missingHash = "a".repeat(64)
+        val missingName = SaveVersionNames.create(1_700_000_000_950L, missingHash)
+        harness.states.save(checkpointKey, JSONObject()
+            .put("gameKey", key)
+            .put("needsPrune", true)
+            .put("publicationIntent", missingName)
+            .put("publicationConfirmed", false))
+        assertEquals(0L, harness.makeCacheUnusable().usableSpace)
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(listOf(SaveSyncError.SERVER), report.failures.map { it.error })
+        assertEquals(0, report.uploaded)
+        assertEquals(0, report.downloaded)
+        assertEquals(0, report.busy)
+        assertEquals(0, report.cleanupPending)
+        assertEquals(0, harness.transport.uploadInvocationCount(missingHash))
+        assertEquals(0, harness.transport.downloadCount())
+        assertTrue(harness.states.load(checkpointKey).getBoolean("needsPrune"))
     }
 
     @Test
@@ -1237,8 +1671,7 @@ class SaveSyncServiceTest {
                 gate.complete(Unit)
             }
             val report = withTimeout(5_000) { sync.await() }
-            assertEquals(1, report.busy)
-            assertTrue(report.failures.isEmpty())
+            assertLocalStateChanged(report)
             assertEquals(listOf(target), harness.transport.versions(remote))
         }
     }
@@ -1265,8 +1698,7 @@ class SaveSyncServiceTest {
                 harness.setActive(game, "replacement-selected-through-alias")
             }
             val report = withTimeout(5_000) { queued.await() }
-            assertEquals(1, report.busy)
-            assertTrue(report.failures.isEmpty())
+            assertLocalStateChanged(report)
             assertTrue(harness.snapshots.list(key).isEmpty())
             assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
         }
@@ -1284,8 +1716,7 @@ class SaveSyncServiceTest {
         val report = harness.service.syncGameIfCurrent(game, SaveSyncDirection.UPLOAD,
             expectedActiveKey = game.uri, expectedContentHash = decidedHash) { true }
 
-        assertEquals(1, report.busy)
-        assertTrue(report.failures.isEmpty())
+        assertLocalStateChanged(report)
         assertTrue(harness.snapshots.list(harness.key(game)).isEmpty())
         assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
     }
@@ -1580,12 +2011,8 @@ class SaveSyncServiceTest {
         }
 
         assertEquals(0, stale.uploaded)
-        assertTrue(
-            stale.toString(),
-            stale.busy > 0 || stale.failures.any {
-                it.error == SaveSyncError.SELECTION_INCOMPLETE || it.error == SaveSyncError.SAVE_LOCATION_CHANGED
-            },
-        )
+        assertEquals(0, stale.busy)
+        assertEquals(listOf(SaveSyncError.SELECTION_INCOMPLETE), stale.failures.map { it.error })
         assertEquals(revisionB, activationStore.revision(sharedDirectory))
         assertEquals(selectedB.contentHash, harness.world.activeHash(gameA))
         assertEquals(listOf(remoteA), harness.transport.versions(harness.remoteGame(gameA)))
@@ -1921,8 +2348,7 @@ class SaveSyncServiceTest {
             harness.sessions.load(aliasKey).optString("token") == aliasToken
         }
 
-        assertEquals(1, stale.busy)
-        assertTrue(stale.failures.isEmpty())
+        assertLocalStateChanged(stale)
         assertEquals(0, harness.transport.uploadCount(aliasHash))
         assertTrue(harness.transport.versions(harness.remoteGame(alias)).isEmpty())
         assertFalse(harness.snapshots.list(aliasKey).any { it.contentHash == aliasHash })
@@ -2205,7 +2631,29 @@ class SaveSyncServiceTest {
         assertFalse(harness.states.load(key).has("promotionFromHash"))
     }
 
-    private class Harness(private val temp: TemporaryFolder) {
+    private fun assertLocalStateChanged(report: SaveSyncReport) {
+        assertEquals(0, report.busy)
+        assertEquals(listOf(SaveSyncError.LOCAL_STATE_CHANGED), report.failures.map { it.error })
+    }
+
+    private fun seedCleanupHistory(harness: Harness, game: ScanGame, count: Int) {
+        val remoteGame = harness.remoteGame(game)
+        repeat(count) { index ->
+            val createdAt = 1_700_000_000_000L + index
+            val hash = (index + 1).toString(16).padStart(64, '0')
+            harness.transport.seed(
+                remoteGame,
+                RemoteSaveVersion(
+                    name = SaveVersionNames.create(createdAt, hash),
+                    contentHash = hash,
+                    createdAt = createdAt,
+                    size = 10,
+                ),
+            )
+        }
+    }
+
+    private class Harness(private val temp: TemporaryFolder, remoteLimit: Int = 10) {
         val root: File = temp.newFolder("save-sync")
         private val cache: File = temp.newFolder("cache")
         private val work: File = temp.newFolder("work")
@@ -2214,7 +2662,7 @@ class SaveSyncServiceTest {
             username = "tester",
             password = "secret",
             mode = SaveSyncMode.BIDIRECTIONAL,
-            remoteLimit = 10,
+            remoteLimit = remoteLimit,
             enabled = true,
         )
         val transport = FakeTransport()
@@ -2312,14 +2760,25 @@ class SaveSyncServiceTest {
                 config.serverUrl.trimEnd('/') + "\n" + config.username + "\n" + remoteKey + "\n" + game.uri,
             )
         }
+
+        fun hasPendingPromotion(game: ScanGame): Boolean =
+            service.hasPendingPromotion(game, config)
+
+        fun makeCacheUnusable(): File {
+            val unusable = LowSpaceFile(cache)
+            world.setCacheDirectory(unusable)
+            return unusable
+        }
     }
 
     private class FakeEnvironment(
-        override val cacheDirectory: File,
+        initialCacheDirectory: File,
         private val webDavConfig: WebDavConfig,
         private val transport: FakeTransport,
     ) : SaveSyncEnvironment {
         private val lock = Any()
+        @Volatile
+        private var currentCacheDirectory = initialCacheDirectory
         private val games = mutableListOf<ScanGame>()
         private val active = HashMap<String, File>()
         private val activeHashes = HashMap<String, String>()
@@ -2342,6 +2801,7 @@ class SaveSyncServiceTest {
         @Volatile
         var onRetireDirectory: (suspend (String) -> Unit)? = null
 
+        override val cacheDirectory: File get() = currentCacheDirectory
         override fun config(): WebDavConfig = webDavConfig
         override fun games(): List<ScanGame> = synchronized(lock) { games.toList() }
         override fun available(game: ScanGame): Boolean = synchronized(lock) { game in games && game.uri !in unavailableUris }
@@ -2423,6 +2883,21 @@ class SaveSyncServiceTest {
             }
         }
 
+        fun clearActive(game: ScanGame) {
+            synchronized(lock) {
+                active.remove(game.uri)
+                activeHashes.remove(game.uri)
+            }
+        }
+
+        fun hasActive(game: ScanGame): Boolean = synchronized(lock) {
+            game.uri in active
+        }
+
+        fun setCacheDirectory(directory: File) {
+            currentCacheDirectory = directory
+        }
+
         fun activeHash(game: ScanGame): String = synchronized(lock) {
             checkNotNull(activeHashes[game.uri])
         }
@@ -2446,11 +2921,16 @@ class SaveSyncServiceTest {
         fun openClientCount(): Int = synchronized(lock) { openedClients }
     }
 
+    private class LowSpaceFile(file: File) : File(file.path) {
+        override fun getUsableSpace(): Long = 0L
+    }
+
     private class FakeTransport : SaveSyncTransport {
         private val lock = Any()
         private val remote = HashMap<String, LinkedHashMap<String, RemoteSaveVersion>>()
         private val archives = HashMap<String, ByteArray>()
         private val uploads = HashMap<String, Int>()
+        private val uploadInvocations = HashMap<String, Int>()
         private var downloads = 0
         private var deleteFailures = 0
         private var verifies = 0
@@ -2466,6 +2946,10 @@ class SaveSyncServiceTest {
         var discardGate: CompletableDeferred<Unit>? = null
         @Volatile
         var listFailure: Throwable? = null
+        @Volatile
+        private var uploadFailure: Throwable? = null
+        @Volatile
+        var onDelete: (() -> Unit)? = null
         val listEntered = CompletableDeferred<Unit>()
         val uploadEntered = CompletableDeferred<Unit>()
         val discardEntered = CompletableDeferred<Unit>()
@@ -2496,7 +2980,12 @@ class SaveSyncServiceTest {
             version: SaveVersion,
             source: File,
         ): WebDavClient.UploadResult {
+            val failure = synchronized(lock) {
+                uploadInvocations[version.contentHash] = uploadInvocations.getOrDefault(version.contentHash, 0) + 1
+                uploadFailure.also { uploadFailure = null }
+            }
             uploadEntered.complete(Unit)
+            failure?.let { throw it }
             uploadGate?.await()
             val bytes = source.readBytes()
             synchronized(lock) {
@@ -2560,14 +3049,16 @@ class SaveSyncServiceTest {
         }
 
         override suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion) {
-            synchronized(lock) {
+            val callback = synchronized(lock) {
                 deletes++
                 if (deleteFailures > 0) {
                     deleteFailures--
                     throw SaveSyncException(SaveSyncError.SERVER)
                 }
                 this.remote[game.key]?.remove(remote.name)
+                onDelete
             }
+            callback?.invoke()
         }
 
         override fun close() {
@@ -2588,6 +3079,9 @@ class SaveSyncServiceTest {
         fun uploadCount(hash: String): Int = synchronized(lock) {
             uploads.getOrDefault(hash, 0)
         }
+        fun uploadInvocationCount(hash: String): Int = synchronized(lock) {
+            uploadInvocations.getOrDefault(hash, 0)
+        }
 
         fun downloadCount(): Int = synchronized(lock) { downloads }
         fun verifyCount(): Int = synchronized(lock) { verifies }
@@ -2598,6 +3092,10 @@ class SaveSyncServiceTest {
 
         fun failNextDelete() = synchronized(lock) {
             deleteFailures++
+        }
+
+        fun failNextUpload(failure: Throwable) = synchronized(lock) {
+            uploadFailure = failure
         }
     }
 }

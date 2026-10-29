@@ -6,10 +6,58 @@ import java.io.File
 internal object SaveSyncTemporaryFiles {
     private val active = HashSet<String>()
 
+    fun create(
+        prefix: String,
+        suffix: String,
+        directory: File?,
+        fileSystem: SaveSyncTemporaryFileSystem = SaveSyncTemporaryFileSystem.DEFAULT,
+    ): File = createRegistered(prefix, suffix, directory, fileSystem, cleanFirst = true)
+
     @Synchronized
-    fun create(prefix: String, suffix: String, directory: File?): File {
-        if (directory != null) clean(directory, prefix, suffix)
-        return File.createTempFile(prefix, suffix, directory).also { active.add(it.absolutePath) }
+    private fun createRegistered(
+        prefix: String,
+        suffix: String,
+        directory: File?,
+        fileSystem: SaveSyncTemporaryFileSystem,
+        cleanFirst: Boolean,
+    ): File {
+        val temp = runSaveSyncStorageOperation(directory, 0, fileSystem.usableSpace) {
+            if (directory != null) {
+                if (cleanFirst) clean(directory, prefix, suffix)
+                requireSaveSyncStorageSpace(0, directory, fileSystem.usableSpace)
+            }
+            fileSystem.createTempFile(prefix, suffix, directory)
+        }
+        return temp.also { active.add(it.absolutePath) }
+    }
+
+    fun copy(
+        source: File,
+        prefix: String,
+        suffix: String,
+        directory: File,
+        fileSystem: SaveSyncTemporaryFileSystem = SaveSyncTemporaryFileSystem.DEFAULT,
+    ): File {
+        val sourceBytes = runSaveSyncStorageOperation(directory, 0, fileSystem.usableSpace) {
+            source.length()
+        }
+        runSaveSyncStorageOperation(directory, sourceBytes, fileSystem.usableSpace) {
+            clean(directory, prefix, suffix)
+        }
+        requireSaveSyncStorageSpace(sourceBytes, directory, fileSystem.usableSpace)
+        var target: File? = null
+        try {
+            val created = createRegistered(prefix, suffix, directory, fileSystem, cleanFirst = false)
+            target = created
+            requireSaveSyncStorageSpace(sourceBytes, directory, fileSystem.usableSpace)
+            runSaveSyncStorageOperation(directory, sourceBytes, fileSystem.usableSpace) {
+                fileSystem.copyFile(source, created)
+            }
+            return created
+        } catch (failure: Throwable) {
+            target?.let(::release)
+            throw failure
+        }
     }
 
     @Synchronized

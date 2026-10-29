@@ -96,6 +96,7 @@ import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.rememberSidePanelSwipeModifier
+import com.tyranor.next.ui.common.syncErrorResource
 import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
@@ -138,11 +139,13 @@ fun MainScreen(modifier: Modifier = Modifier) {
   var selectedIndex by rememberSaveable { mutableStateOf(0) }
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
-  if (libraryState.cleanupError != null) {
+  val cleanupError = libraryState.cleanupError
+  if (cleanupError != null) {
+    val cleanupReason = stringResource(cleanupError.syncErrorResource())
     AppAlertDialog(
       onDismissRequest = libraryViewModel::dismissCleanupError,
       title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
-      text = { Text(stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty()),
+      text = { Text(stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty(), cleanupReason),
         style = MaterialTheme.typography.bodyMedium) },
       confirmButton = {
         DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)

@@ -15,11 +15,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.URI
 import java.time.ZoneOffset
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -853,6 +858,162 @@ class WebDavClientTest {
         }
     }
 
+    @Test fun downloadOutputFailuresAreClassifiedAndPreserveDestination() = runBlocking {
+        val oldBytes = "existing local save".toByteArray()
+        val downloadedBytes = ByteArray(64 * 1024) { (it % 251).toByte() }
+        val createdAt = 1_700_000_650_000L
+        val remote = RemoteSaveVersion(
+            SaveVersionNames.createRemote(createdAt, "c".repeat(64), ZoneOffset.UTC),
+            "c".repeat(64),
+            createdAt,
+            downloadedBytes.size.toLong(),
+            "\"immutable\"",
+        )
+        val requests = AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            requests.incrementAndGet()
+            exchange.sendResponseHeaders(200, downloadedBytes.size.toLong())
+            exchange.responseBody.use { it.write(downloadedBytes) }
+            exchange.close()
+        }
+        server.start()
+        val outputFailure = AtomicReference(DownloadOutputFailure.WRITE)
+        val spaceChecks = AtomicInteger()
+        try {
+            val fileSystem = WebDavDownloadFileSystem(
+                usableSpace = {
+                    if (outputFailure.get() == DownloadOutputFailure.WRITE_SPACE_RECHECK_FULL &&
+                        spaceChecks.getAndIncrement() > 0
+                    ) downloadedBytes.size.toLong() else Long.MAX_VALUE
+                },
+                openOutput = { file -> FailingDownloadOutputStream(file.outputStream()) { outputFailure.get() } },
+            )
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+                downloadFileSystem = fileSystem,
+            ).use { client ->
+                for (plan in DownloadOutputFailure.entries) {
+                    outputFailure.set(plan)
+                    spaceChecks.set(0)
+                    val destination = temp.newFile("target-${plan.name}").apply { writeBytes(oldBytes) }
+                    val failure = try {
+                        client.download(GAME, remote, destination)
+                        null
+                    } catch (caught: SaveSyncException) {
+                        caught
+                    }
+                    assertEquals(plan.name, plan.expected, failure?.code)
+                    assertArrayEquals(oldBytes, destination.readBytes())
+                    assertNoDownloadParts(destination)
+                }
+            }
+            assertEquals(DownloadOutputFailure.entries.size, requests.get())
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test fun downloadSpaceAdmissionFailsBeforeGetAndPreservesDestination() = runBlocking {
+        val oldBytes = "existing local save".toByteArray()
+        val downloadedBytes = ByteArray(64 * 1024)
+        val destination = temp.newFile().apply { writeBytes(oldBytes) }
+        val createdAt = 1_700_000_660_000L
+        val remote = RemoteSaveVersion(
+            SaveVersionNames.createRemote(createdAt, "d".repeat(64), ZoneOffset.UTC),
+            "d".repeat(64),
+            createdAt,
+            downloadedBytes.size.toLong(),
+            "\"immutable\"",
+        )
+        val requests = AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            requests.incrementAndGet()
+            exchange.sendResponseHeaders(200, downloadedBytes.size.toLong())
+            exchange.responseBody.use { it.write(downloadedBytes) }
+            exchange.close()
+        }
+        server.start()
+        try {
+            val fileSystem = WebDavDownloadFileSystem(
+                usableSpace = { downloadedBytes.size.toLong() },
+                openOutput = { throw AssertionError("Insufficient space opened the part stream") },
+            )
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+                downloadFileSystem = fileSystem,
+            ).use { client ->
+                val failure = try {
+                    client.download(GAME, remote, destination)
+                    null
+                } catch (caught: SaveSyncException) {
+                    caught
+                }
+                assertEquals(SaveSyncError.STORAGE_FULL, failure?.code)
+            }
+            assertEquals(0, requests.get())
+            assertArrayEquals(oldBytes, destination.readBytes())
+            assertNoDownloadParts(destination)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test fun downloadResponseReadFailureStaysNetworkAndSuppressesCloseFailure() = runBlocking {
+        val oldBytes = "existing local save".toByteArray()
+        val downloadedBytes = ByteArray(64 * 1024) { (it % 239).toByte() }
+        val destination = temp.newFile().apply { writeBytes(oldBytes) }
+        val createdAt = 1_700_000_670_000L
+        val remote = RemoteSaveVersion(
+            SaveVersionNames.createRemote(createdAt, "e".repeat(64), ZoneOffset.UTC),
+            "e".repeat(64),
+            createdAt,
+            downloadedBytes.size.toLong(),
+            "\"immutable\"",
+        )
+        val requests = AtomicInteger()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { exchange ->
+            requests.incrementAndGet()
+            exchange.sendResponseHeaders(200, downloadedBytes.size.toLong())
+            exchange.responseBody.use { output ->
+                output.write(downloadedBytes, 0, downloadedBytes.size / 2)
+                output.flush()
+            }
+            exchange.close()
+        }
+        server.start()
+        try {
+            val fileSystem = WebDavDownloadFileSystem(
+                usableSpace = { Long.MAX_VALUE },
+                openOutput = { file ->
+                    FailingDownloadOutputStream(file.outputStream()) { DownloadOutputFailure.CLOSE }
+                },
+            )
+            WebDavClient(
+                WebDavConfig("http://127.0.0.1:${server.address.port}/dav/", "user", "password"),
+                downloadFileSystem = fileSystem,
+            ).use { client ->
+                val failure = try {
+                    client.download(GAME, remote, destination)
+                    null
+                } catch (caught: SaveSyncException) {
+                    caught
+                }
+                assertEquals(SaveSyncError.NETWORK, failure?.code)
+                assertTrue(failure?.suppressed.orEmpty().any {
+                    it is SaveSyncException && it.code == SaveSyncError.LOCAL_IO
+                })
+            }
+            assertEquals(1, requests.get())
+            assertArrayEquals(oldBytes, destination.readBytes())
+            assertNoDownloadParts(destination)
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test fun cancelledDownloadPreservesExistingDestinationAndReleasesTempFile() = runBlocking {
         val oldBytes = "existing local save".toByteArray()
         val downloadedBytes = "partial replacement".toByteArray()
@@ -1026,6 +1187,58 @@ class WebDavClientTest {
             val ifNoneMatch: String?,
             val ifMatch: String?,
         )
+        private enum class DownloadFailurePoint { WRITE, FLUSH, CLOSE }
+        private enum class DownloadOutputFailure(
+            val trigger: DownloadFailurePoint,
+            val expected: SaveSyncError,
+            val message: String = "simulated ${trigger.name.lowercase()} failure",
+        ) {
+            WRITE(DownloadFailurePoint.WRITE, SaveSyncError.LOCAL_IO),
+            FLUSH(DownloadFailurePoint.FLUSH, SaveSyncError.LOCAL_IO),
+            CLOSE(DownloadFailurePoint.CLOSE, SaveSyncError.LOCAL_IO),
+            WRITE_ENOSPC(
+                DownloadFailurePoint.WRITE,
+                SaveSyncError.STORAGE_FULL,
+                "ENOSPC: No space left on device",
+            ),
+            WRITE_SPACE_RECHECK_FULL(DownloadFailurePoint.WRITE, SaveSyncError.STORAGE_FULL),
+        }
+        private class FailingDownloadOutputStream(
+            private val delegate: OutputStream,
+            private val outputFailure: () -> DownloadOutputFailure,
+        ) : OutputStream() {
+            override fun write(b: Int) {
+                failIf(DownloadFailurePoint.WRITE)
+                delegate.write(b)
+            }
+
+            override fun write(b: ByteArray, off: Int, len: Int) {
+                failIf(DownloadFailurePoint.WRITE)
+                delegate.write(b, off, len)
+            }
+
+            override fun flush() {
+                delegate.flush()
+                failIf(DownloadFailurePoint.FLUSH)
+            }
+
+            override fun close() {
+                delegate.close()
+                failIf(DownloadFailurePoint.CLOSE)
+            }
+
+            private fun failIf(point: DownloadFailurePoint) {
+                val failure = outputFailure()
+                if (failure.trigger == point) throw IOException(failure.message)
+            }
+        }
+
+        private fun assertNoDownloadParts(destination: File) {
+            assertTrue(checkNotNull(destination.parentFile).listFiles().orEmpty().none {
+                it.name.startsWith("dav_download_") && it.name.endsWith(".part")
+            })
+        }
+
         private fun encodedHref(path: String): String = URI(null, null, path, null).toASCIIString()
         private fun alternateHref(path: String): String = Regex("%[0-9A-F]{2}")
             .replace(encodedHref(path)) { it.value.lowercase() }
