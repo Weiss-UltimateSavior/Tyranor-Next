@@ -18,7 +18,7 @@ import java.nio.file.LinkOption.NOFOLLOW_LINKS
 
 class GameSaveRecoverySafetyTest {
     @get:Rule
-    val temporary = TemporaryFolder()
+    val temporary = TemporaryFolder(File(System.getProperty("java.io.tmpdir")).canonicalFile)
 
     @Test
     fun invalidPreservePreviousEvidenceFailsCommitAndRecoveryKeepsOriginalBytes() {

@@ -14,7 +14,7 @@ import java.io.IOException
 
 class GameSaveManagerTransactionIntegrationTest {
     @get:Rule
-    val temporary = TemporaryFolder()
+    val temporary = TemporaryFolder(File(System.getProperty("java.io.tmpdir")).canonicalFile)
 
     @Test
     fun markerCommitIsVisibleToCallbackAndClearedAfterSuccess() {
