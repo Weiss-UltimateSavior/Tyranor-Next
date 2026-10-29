@@ -58,6 +58,7 @@ import com.tyranor.next.core.settings.EffectiveEngineSettings
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
+import com.tyranor.next.core.settings.RuffleOverride
 import com.tyranor.next.core.settings.WinlatorOverride
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassShadow
@@ -161,6 +162,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
         mutableStateOf(PerGameSettingsStore.toRenPyOverride(PerGameSettingsStore.load(ctx, gid)))
     }
     val renpy = renpyOverride ?: RenPyOverride()
+    var ruffleOverride by remember(gid) {
+        mutableStateOf(
+            if (game.engine == EngineType.RUFFLE) {
+                PerGameSettingsStore.toRuffleOverride(PerGameSettingsStore.load(ctx, gid))
+            } else {
+                null
+            },
+        )
+    }
+    val ruffle = ruffleOverride ?: RuffleOverride()
 
     val onsOverride = remember { mutableStateOf(PerGameSettingsStore.loadOnsOverride(ctx, gid) ?: JSONObject()) }
     var onsScoped by remember { mutableStateOf(onsBool(onsOverride.value, "scopedsavedir")) }
@@ -426,6 +437,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val winlatorTimezoneMap = winlatorTimezoneOptionsMap()
     val winlatorBox64PresetMap = winlatorBox64PresetOptionsMap()
     val globalRenpy = remember { EngineSettingsStore.loadRenPy(ctx) }
+    val globalRuffle = remember { EngineSettingsStore.loadRuffle(ctx) }
     val globalRpg = remember { EngineSettingsStore.loadRpgMaker(ctx) }
     val rpgWindowMap = rpgWindowSizeOptionsMap()
     val rpgSpeedUpMap = rpgSpeedUpOptionsMap()
@@ -457,6 +469,11 @@ fun PerGameSettingsScreen(game: ScanGame) {
     val artToggleMap = artToggleOptionsMap()
     val artSurfaceCacheMap = artSurfaceCacheOptionsMap()
     val artFontCacheMap = artFontCacheOptionsMap()
+    val ruffleBackendMap = ruffleBackendOptionsMap()
+    val ruffleQualityMap = ruffleQualityOptionsMap()
+    val ruffleScaleModeMap = ruffleScaleModeOptionsMap()
+    val ruffleLoadBehaviorMap = ruffleLoadBehaviorOptionsMap()
+    val ruffleScreenTimeoutMap = ruffleScreenTimeoutOptionsMap()
     val engineDefault = stringResource(R.string.engine_option_engine_default)
     val builtinFont = stringResource(R.string.engine_settings_builtin_font)
     val auto = stringResource(R.string.common_auto)
@@ -635,6 +652,46 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_LESS_UPDATES, renpy.lessUpdates)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_DONT_USE_GL2, renpy.dontUseGl2)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_RENPY_RECOMPILE, renpy.recompile)
+        // Ruffle 覆盖只写 Ruffle 游戏：无条件写会把 ruffle_* 键塞进其它游戏的覆盖 blob。
+        if (game.engine == EngineType.RUFFLE) {
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_RUFFLE_SCREEN_TIMEOUT,
+                ruffle.screenTimeout?.trim()?.toIntOrNull()
+                    ?.takeIf { it in EngineSettingsStore.RUFFLE_SCREEN_TIMEOUTS }?.toString(),
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_RUFFLE_BACKEND,
+                ruffle.backend?.takeIf { it in EngineSettingsStore.RUFFLE_BACKENDS },
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_RUFFLE_QUALITY,
+                ruffle.quality?.takeIf { it in EngineSettingsStore.RUFFLE_QUALITIES },
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_RUFFLE_SCALE_MODE,
+                ruffle.scaleMode?.takeIf { it in EngineSettingsStore.RUFFLE_SCALE_MODES },
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_RUFFLE_LETTERBOX,
+                ruffle.letterbox?.takeIf { it in EngineSettingsStore.RUFFLE_LETTERBOXES },
+            )
+            PerGameSettingsStore.setStr(
+                ctx,
+                gid,
+                PerGameSettingsStore.F_RUFFLE_LOAD_BEHAVIOR,
+                ruffle.loadBehavior?.takeIf { it in EngineSettingsStore.RUFFLE_LOAD_BEHAVIORS },
+            )
+        }
     }
 
     MiuixSettingsTheme {
@@ -881,6 +938,63 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             }
                             Text(
                                 stringResource(R.string.engine_settings_renpy_module_description),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.RUFFLE -> item {
+                        SectionCard(stringResource(R.string.engine_settings_ruffle_title)) {
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_ruffle_backend),
+                                ruffleBackendMap,
+                                globalRuffle.backend,
+                                ruffle.backend,
+                            ) { ruffleOverride = ruffle.copy(backend = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_ruffle_quality),
+                                ruffleQualityMap,
+                                globalRuffle.quality,
+                                ruffle.quality,
+                            ) { ruffleOverride = ruffle.copy(quality = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_ruffle_scale_mode),
+                                ruffleScaleModeMap,
+                                globalRuffle.scaleMode,
+                                ruffle.scaleMode,
+                            ) { ruffleOverride = ruffle.copy(scaleMode = it) }
+                            OverrideSwitch(
+                                stringResource(R.string.engine_settings_ruffle_letterbox),
+                                EngineSettingsStore.normalizeRuffleLetterbox(globalRuffle.letterbox) ==
+                                    EngineSettingsStore.RUFFLE_LETTERBOX_ON,
+                                ruffle.letterbox?.let {
+                                    EngineSettingsStore.normalizeRuffleLetterbox(it) ==
+                                        EngineSettingsStore.RUFFLE_LETTERBOX_ON
+                                },
+                            ) { enabled ->
+                                ruffleOverride = ruffle.copy(
+                                    letterbox = when (enabled) {
+                                        null -> null
+                                        true -> EngineSettingsStore.RUFFLE_LETTERBOX_ON
+                                        false -> "off"
+                                    },
+                                )
+                            }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_ruffle_load_behavior),
+                                ruffleLoadBehaviorMap,
+                                globalRuffle.loadBehavior,
+                                ruffle.loadBehavior,
+                            ) { ruffleOverride = ruffle.copy(loadBehavior = it) }
+                            OverrideChoice(
+                                stringResource(R.string.engine_settings_ruffle_screen_timeout),
+                                ruffleScreenTimeoutMap,
+                                globalRuffle.screenTimeout.toString(),
+                                ruffle.screenTimeout,
+                            ) { ruffleOverride = ruffle.copy(screenTimeout = it) }
+                            Text(
+                                stringResource(R.string.engine_settings_ruffle_module_description),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

@@ -149,6 +149,7 @@
     <string name="engine_desc_web_other_vn">WebOther/VN，globalData.vndata 或通用 index.html 网页游戏</string>
     <string name="engine_desc_artemis">Artemis，system.ini 与 .pfs 归档游戏</string>
     <string name="engine_desc_renpy">Ren’Py 外置 APK 模块，检测安装状态后启动</string>
+    <string name="engine_desc_ruffle">Ruffle 外置 APK 模块，SWF / Flash 游戏</string>
     <string name="engine_desc_siglus">SiglusEngine（Key/VisualArts 系），Gameexe 与 Scene.pck 游戏</string>
     <string name="engine_desc_fvp">FVPEngine（FAVORITE 系），.hcb/.bch 脚本与 graph/voice 封包游戏</string>
     <string name="engine_desc_reallive">RealLive（VisualArt’s 系），Kanon SE/CLANNAD/Little Busters! 等</string>
@@ -271,6 +272,7 @@
     <string name="engine_settings_rpg_maker_title">RPG Maker引擎设置</string>
     <string name="engine_settings_tyrano_title">Tyrano引擎设置</string>
     <string name="engine_settings_renpy_title">Ren’Py引擎设置</string>
+    <string name="engine_settings_ruffle_title">Ruffle引擎设置</string>
     <string name="engine_settings_siglus_title">Siglus引擎设置</string>
     <string name="engine_settings_siglus_language_title">游戏语言</string>
     <string name="engine_settings_siglus_language_auto">跟随引擎默认（JP）</string>
@@ -503,6 +505,7 @@
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；以下设置默认跟随全局，可按游戏单独覆盖。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。</string>
+    <string name="engine_settings_ruffle_module_description">Ruffle 使用外置 APK 引擎模块承载 SWF 游戏，以下设置默认跟随全局。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z 通过外置 RPGM 模块启动，以下设置默认跟随全局，可按游戏单独覆盖。</string>
     <string name="engine_settings_follow_global">跟随全局</string>
     <string name="engine_settings_follow_global_with_value">跟随全局 · %1$s</string>
@@ -661,6 +664,8 @@
     <string name="external_engine_denied">%1$s 启动被系统拒绝，请检查模块权限</string>
     <string name="external_engine_launch_failed">%1$s 启动失败，请检查模块权限</string>
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
+    <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
+    <string name="external_ruffle_resolve_swf_failed">无法定位 SWF 启动文件，Ruffle 模块无法启动</string>
     <string name="external_rpgm_resolve_dir_failed">无法解析 RPGM 游戏目录真实路径，外置 RPGM 模块无法启动</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS 外置模块</string>
@@ -736,6 +741,33 @@
     <string name="engine_settings_renpy_dont_use_gl2">禁用模型渲染（GL2）</string>
     <string name="engine_settings_renpy_recompile">重新编译脚本</string>
     <string name="engine_settings_renpy_cheats">金手指</string>
+
+    <string name="engine_settings_ruffle_card">Ruffle 外置模块</string>
+    <string name="engine_settings_ruffle_module_status">模块状态</string>
+    <string name="engine_settings_ruffle_module_get">下载模块</string>
+    <string name="engine_settings_ruffle_backend">渲染后端</string>
+    <string name="engine_settings_ruffle_backend_auto">自动</string>
+    <string name="engine_settings_ruffle_backend_opengl">OpenGL</string>
+    <string name="engine_settings_ruffle_backend_vulkan">Vulkan</string>
+    <string name="engine_settings_ruffle_quality">画质</string>
+    <string name="engine_settings_ruffle_quality_low">低</string>
+    <string name="engine_settings_ruffle_quality_medium">中</string>
+    <string name="engine_settings_ruffle_quality_high">高</string>
+    <string name="engine_settings_ruffle_quality_best">最佳</string>
+    <string name="engine_settings_ruffle_scale_mode">缩放模式</string>
+    <string name="engine_settings_ruffle_scale_exactfit">精确适配</string>
+    <string name="engine_settings_ruffle_scale_noborder">无边框</string>
+    <string name="engine_settings_ruffle_scale_noscale">不缩放</string>
+    <string name="engine_settings_ruffle_scale_showall">显示全部</string>
+    <string name="engine_settings_ruffle_letterbox">黑边填充</string>
+    <string name="engine_settings_ruffle_load_behavior">加载方式</string>
+    <string name="engine_settings_ruffle_load_streaming">流式加载</string>
+    <string name="engine_settings_ruffle_load_delayed">延迟加载</string>
+    <string name="engine_settings_ruffle_load_blocking">阻塞加载</string>
+    <string name="engine_settings_ruffle_screen_timeout">自动关闭（分钟）</string>
+    <string name="engine_settings_ruffle_screen_timeout_off">不自动关闭</string>
+    <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d 分钟</string>
+    <string name="engine_settings_ruffle_note">SWF 记录指向文件时会自动取其所在目录启动；启动前需要为本应用授予「所有文件访问」权限以解析游戏目录，Ruffle 插件可能另行申请自身存储权限。插件固定横屏显示；自动关闭设为 0 表示不自动关闭。</string>
 
     <string name="plugin_unknown_engine">未知引擎插件：%1$s</string>
     <string name="plugin_install_failed">引擎插件安装失败，请重启应用或检查安装包完整性</string>

@@ -27,7 +27,7 @@
 来源：[EngineScanner](app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt)、[GameLibraryDao](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDao.kt)、`ui/game/`。
 
 - 用户添加扫描根后递归识别游戏；默认扫描深度 3，可设置 1–5。支持差量扫描与重新扫描，手动添加的 PC/安卓记录在重扫后保留。
-- 游戏身份、引擎、目录 URI、启动目标与封面元数据落入 Room；记录既可来自目录，也可来自单个 ROM。无法识别为受支持引擎的目录不作为普通扫描候选入库。
+- 游戏身份、引擎、目录或入口文件 URI、启动目标与封面元数据落入 Room；记录既可来自目录，也可来自单个文件（ROM / SWF）。无法识别为受支持引擎的目录不作为普通扫描候选入库。
 - 游戏页提供搜索、排序、卡片样式、改名、封面操作、启动文件选择及适用的单游戏设置/存档操作；可清理已不存在的游戏记录。
 - 快捷启动最多 **3** 项；最近游戏最多读取 **20** 项。桌面快捷方式经独立入口回到统一启动链。
 - PC 游戏由用户选择目录和启动 exe 手动添加；安卓游戏从已安装可启动应用选择，以 `androidapp://<包名>` 标识，卸载后启动返回缺失结果。
@@ -50,6 +50,7 @@
 | RPG Maker MV / MZ | `rpg_core.js` / `rmmz_core.js`、`www/` 等 | 内置 Web 运行环境，支持适用的 Asar 包 |
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5 / 7.7.1 |
+| Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
 | PSP / Nintendo Switch | `.pbp/.cso/.iso/.chd` / `.nsp/.xci/.nca/.nro` | 外置 PPSSPP（标准/黄金）/ Eden，一 ROM 一条记录 |
@@ -57,6 +58,16 @@
 外置模块与模拟器必须先安装；主 App 显示安装状态及获取入口。启动前检查目标、权限和目录，失败由类型化结果映射 UI 文案。设置中的“自动”按当前运行时规则解析，不承诺回退能修复不受支持的脚本或资源。
 
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
+
+Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动边界如下：
+
+- 扫描目录的直接子项中，每个顶层 `.swf` 默认是一条记录：uri 为文件 URI，`launchTarget` 为文件名，别名 `internal.flash`。
+- 包装目录：叶子目录、根含 `index.html/index.htm`、恰有一个顶层 `.swf`，且没有子目录、KRKR/ONS/XSYS4/主机 ROM 或 Tyrano/RPGM/VN/Node 特征时，整个目录作为一条记录（uri 为目录 URI，`launchTarget` 为 SWF 文件名）。
+- 无根 index 的单 SWF 仍按文件记录；同目录多个 SWF 逐条入库；含子目录的目录不自动识别为包装游戏。单 SWF 标题取父目录名（缺失回退文件主名），多个 SWF 取文件主名。
+- 启动：文件记录先解析入口所在目录，模块收到 `game`（title/id/folder/execFile，`type=flash`）与 `settings`（`app.screenTimeout.int` 及 `ruffle.backend/quality/scaleMode/letterbox/loadBehavior.string`）。未安装返回类型化失败；安装入口打开项目托管的 RufflePlugin-1.02.00.apk 直链。
+- 设置：全局与单游戏覆盖，默认 `opengl / high / showall / on / streaming / 0`（0 = 不自动关闭）；允许值分别为 auto/opengl/vulkan、low/medium/high/best、exactfit/noborder/noscale/showall、on/off、streaming/delayed/blocking、0/5/10/15/30/45/60 分钟。
+- `configuration.json`：游戏目录位于主外部存储根的子目录时，插件优先读取 `<游戏目录>/configuration.json`；其它情况（含存储根、可移动存储）读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件存在时覆盖 intent settings；主 App 仅在文件已存在且为合法 JSON 对象时同步受管键，不创建/删除，跳过共享多 SWF 目录与存储根，原子写并限制 1 MiB。
+- 无统一存档管理，插件自管运行时/存档；不提供虚拟按键重映射；插件固定横屏。设备/插件运行验证尚未执行。
 
 ## 5. 设置、输入与图形
 
@@ -88,7 +99,7 @@
 
 - 按引擎和生效设置解析目录，为支持的引擎提供存档镜像导出、导入与删除。独立存档、Kirikiri 镜像等各有规则，不统一硬编码为 `<游戏根>/save`。
 - ZIP 导入检查路径安全，最多 **20,000 个条目（含目录）**、展开内容 **1 GiB**；MV/MZ 可剥除最多 **3 层**单目录包装。适用的会话/操作门禁阻止运行中冲突。
-- **YU-RIS 为外置跳转中的存档例外**：统一管理其游戏根 `save/`。PSP、Switch、CatSystem2、PC、安卓游戏、Ren'Py、RPG Maker RGSS、VN 与 WebOther 当前不提供该统一文件存档接口；外置启动不意味着所有引擎都不能管理存档。
+- **YU-RIS 为外置跳转中的存档例外**：统一管理其游戏根 `save/`。PSP、Switch、CatSystem2、PC、安卓游戏、Ren'Py、RPG Maker RGSS、Ruffle、VN 与 WebOther 当前不提供该统一文件存档接口；外置启动不意味着所有引擎都不能管理存档。
 - MV/MZ 标准格式与 Tyranor 格式仅作文件名映射，不重新编码内容；MV 支持哈希名及历史键名，MZ 使用 `fileN.bin` 等 ASCII 键名。
 - 启动时发现适用标准存档可询问转化，已有目标不覆盖，原件留在 `original/`。
 - MV/MZ 存档互通默认关闭，支持全局/单游戏设置；开启后启动前与回前台进行双向同步，并等待引擎会话结束。按槽位比较时间与哈希；删除副本隔离到 `deleted/`，同步清单损坏时中止文件修改。
@@ -171,6 +182,7 @@ Ethornell 已接入扫描、设置与内置宿主，但真实游戏存读档及�
 | 启动/设置 | 缺权限/文件/模块、生效覆盖、取消后不启动、成功发起与首帧区分 |
 | Winlator 运行模式 | 跟随全局/跟随容器/自定义三分支、`null / "" / 值` 迁移推断、只覆盖容器名时的 ID 清除、模式键分区往返 |
 | Winlator 图形加速 | GL/GDI 第一配置槽映射、旧 WineD3D 保留容器渲染器、Box64 合并、全局/单游戏继承与空值、备份往返、save 开关及 GDI 游戏实机验证 |
+| Ruffle / SWF | 一 SWF 一条与包装目录边界（根 index、唯一 SWF、无子目录、既有引擎信号优先）、文件 URI→父目录、`game`/`settings` 契约与类型包装、模块未安装/入口缺失、全局与单游戏覆盖、`configuration.json` 只同步不创建、无存档入口与横屏限制；设备/插件验证待执行 |
 | 宿主/JNI | 暂停恢复、Surface 重挂/旧世代、正常退出 ACK 后重入、owner 线程与资源释放 |
 | 存档 | ZIP 路径/数量/体积限制、目标冲突、MV/MZ 名称与目录、互通删除/清单损坏、Ethornell gate 关闭 |
 | 存档同步 | WebDAV 总开关默认关、关闭时不联网/隐藏版本同步身份但保留恢复入口/保留独立配置、关闭在同一 prefs 提交中持久化 `enabled=false` 与 `disable_generation`、session 记录 enabledGeneration 且旧 ticket 立即失效并跨重启保持失效、新 launch 不继承关闭前 pending baseline、关闭同步捕获旧 token 且异步清理不误删 replacement、`whileEnabled` 复核持久 generation、整库手动三方向与单游戏固定双向、只拉取每个游戏最新云端版本且不批量恢复远端历史、打开/退出即时与 fallback 四条任务链相互独立、每游戏至多一份待处理记录与 staging ZIP、导入前持久目录 owner/token/revision、同一目录所有 alias 等到清理成功后才放行、清理扫描持久 activeKey 包含不可解析 alias、committed 完成保留 revision 使旧传输失效、已证明 precommit abort 恢复 previousRevision 并保留旧链 epoch、promotionActiveKey + promotionDirectoryRevision 绑定目录与目录 epoch、另一 URI 成功选择后暂停旧 alias promotion、跨目录或旧 revision 以 SAVE_LOCATION_CHANGED 暂停、导入前同字节不算提交证据、不同 uncommitted token 不清除更早 completed S→N、完成 token 防重复 promotion、恢复重试只补元数据不自动导入、completed unbound promotion 暴露“处理未完成切换”、恢复捕获 active N 与已验证历史 S 且不导入、清除未知 ancestry 后普通 N 同步且不误替换远端 S、当前同版本显式重选作为可选重建路径、10/20/无上限保留与旧值迁移不删历史、新旧云端目录合并读取且按时间+哈希比较、内容哈希幂等去重、标识冲突拒答、运行中禁止上传/切换而拉取放行、5 版上限只计 ZIP 版本且维护/新增前保护 pending selected 与 beforeHash、无独立保存版本入口、旧版本 S 恢复后保存 N 仍按 S→N 单一更新链处理、普通 ZIP 导入保持原行为、早期 Debug 选择标记与保留量迁移、结果 Toast 受同步提示开关控制、YU-RIS 需先退出外部游戏且 PC 不参与 |

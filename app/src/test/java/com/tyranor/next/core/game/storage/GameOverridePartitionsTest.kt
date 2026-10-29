@@ -7,6 +7,7 @@ import com.tyranor.next.core.settings.GraphicsSettingsCodec
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.core.settings.RuffleOverride
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -411,6 +412,49 @@ class GameOverridePartitionsTest {
         }
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }
+    @Test
+    fun ruffleKeysArePartitionedIntoTyrano() {
+        val pairs = listOf(
+            GameOverridePartitions.KEY_RUFFLE_SCREEN_TIMEOUT to PerGameSettingsStore.F_RUFFLE_SCREEN_TIMEOUT,
+            GameOverridePartitions.KEY_RUFFLE_BACKEND to PerGameSettingsStore.F_RUFFLE_BACKEND,
+            GameOverridePartitions.KEY_RUFFLE_QUALITY to PerGameSettingsStore.F_RUFFLE_QUALITY,
+            GameOverridePartitions.KEY_RUFFLE_SCALE_MODE to PerGameSettingsStore.F_RUFFLE_SCALE_MODE,
+            GameOverridePartitions.KEY_RUFFLE_LETTERBOX to PerGameSettingsStore.F_RUFFLE_LETTERBOX,
+            GameOverridePartitions.KEY_RUFFLE_LOAD_BEHAVIOR to PerGameSettingsStore.F_RUFFLE_LOAD_BEHAVIOR,
+        )
+        pairs.forEach { (partitionKey, perGameKey) ->
+            assertEquals(perGameKey, partitionKey)
+            assertTrue("Ruffle 分区缺少字段 $perGameKey", perGameKey in GameOverridePartitions.TYRANO_KEYS)
+        }
+
+        val blob = JSONObject()
+            .put(PerGameSettingsStore.F_RUFFLE_SCREEN_TIMEOUT, "30")
+            .put(PerGameSettingsStore.F_RUFFLE_BACKEND, "vulkan")
+            .put(PerGameSettingsStore.F_RUFFLE_QUALITY, "best")
+            .put(PerGameSettingsStore.F_RUFFLE_SCALE_MODE, "noborder")
+            .put(PerGameSettingsStore.F_RUFFLE_LETTERBOX, "off")
+            .put(PerGameSettingsStore.F_RUFFLE_LOAD_BEHAVIOR, "blocking")
+
+        val row = GameOverridePartitions.split("/games/ruffle", blob, 1L)
+        val tyranoPartition = JSONObject(row.tyranoJson!!)
+        for (key in blob.keys()) {
+            assertTrue("Ruffle 键 $key 未落入 tyrano 分区", tyranoPartition.has(key))
+            assertEquals(blob.opt(key)?.toString(), GameOverridePartitions.assemble(row).opt(key)?.toString())
+        }
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+        assertEquals(
+            RuffleOverride(
+                screenTimeout = "30",
+                backend = "vulkan",
+                quality = "best",
+                scaleMode = "noborder",
+                letterbox = "off",
+                loadBehavior = "blocking",
+            ),
+            PerGameSettingsStore.toRuffleOverride(GameOverridePartitions.assemble(row)),
+        )
+    }
+
     @Test
     fun graphicsFamilyMarkersAndOrderedListsSurviveOwnedPartitionsWithoutLosingLegacyKeys() {
         val blob = JSONObject().put("anime4k_mode", "soft_l").put("art_graphics_monitor", true)

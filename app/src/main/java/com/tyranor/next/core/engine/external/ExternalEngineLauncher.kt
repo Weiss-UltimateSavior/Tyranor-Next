@@ -36,6 +36,7 @@ object ExternalEngineLauncher {
                 ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED,
                 moduleNameRes = module.displayNameRes,
                 moduleNameFallback = module.displayName,
+                installUrl = module.installUrl,
             )
         }
         module.prepareForLaunch(context, request)?.let { return it }
@@ -54,6 +55,7 @@ object ExternalEngineLauncher {
                 ExternalEngineErrorCode.ACTIVITY_NOT_FOUND,
                 moduleNameRes = module.displayNameRes,
                 moduleNameFallback = module.displayName,
+                installUrl = module.installUrl,
             )
         } catch (_: SecurityException) {
             ExternalEngineLaunchResult.failure(

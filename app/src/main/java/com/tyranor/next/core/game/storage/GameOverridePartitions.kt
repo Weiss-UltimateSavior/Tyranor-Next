@@ -117,6 +117,13 @@ internal object GameOverridePartitions {
     const val KEY_RENPY_LESS_UPDATES = "renpy_less_updates"
     const val KEY_RENPY_DONT_USE_GL2 = "renpy_dont_use_gl2"
     const val KEY_RENPY_RECOMPILE = "renpy_recompile"
+    // Ruffle 外置模块配置覆盖键（与 PerGameSettingsStore.F_RUFFLE_*、EngineSettingsStore.KEY_RUFFLE_* 字面量锚定）
+    const val KEY_RUFFLE_SCREEN_TIMEOUT = "ruffle_screen_timeout"
+    const val KEY_RUFFLE_BACKEND = "ruffle_backend"
+    const val KEY_RUFFLE_QUALITY = "ruffle_quality"
+    const val KEY_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
+    const val KEY_RUFFLE_LETTERBOX = "ruffle_letterbox"
+    const val KEY_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
     const val ONS_OBJECT_KEY = "ons"
 
     /** Read-only legacy migration key; keep old KR values in their own partition until frozen. */
@@ -166,6 +173,8 @@ internal object GameOverridePartitions {
         KEY_XSYS4_SCOPED_SAVE_DIR, KEY_XSYS4_ENCODING,
         KEY_XSYS4_FONT_GOTHIC_PATH, KEY_XSYS4_FONT_MINCHO_PATH,
         KEY_XSYS4_JOYPAD, KEY_XSYS4_MSGSKIP_DELAY,
+        KEY_RUFFLE_SCREEN_TIMEOUT, KEY_RUFFLE_BACKEND, KEY_RUFFLE_QUALITY,
+        KEY_RUFFLE_SCALE_MODE, KEY_RUFFLE_LETTERBOX, KEY_RUFFLE_LOAD_BEHAVIOR,
     )
     // Ren'Py 分区：版本选择 + 外置模块配置，显式建模防止未来收紧分区时丢键
     val RENPY_KEYS: Set<String> = setOf(

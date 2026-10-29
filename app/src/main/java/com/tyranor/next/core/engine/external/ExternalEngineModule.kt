@@ -23,6 +23,13 @@ interface ExternalEngineModule {
     /** 是否需要解析游戏目录真实路径。独立插件（仅拉起插件主界面）可覆写为 false。 */
     val requiresGameDirectoryPath: Boolean get() = true
 
+    /**
+     * 游戏记录指向单个入口文件而非目录（如 SWF）。
+     * 启动时先由 [requiresGameDirectoryPath] 的目录解析改为解析入口文件所在目录；
+     * 仅 Ruffle 等文件型外置模块覆写为 true，Ren'Py / RPG Maker 保持既有目录语义。
+     */
+    val launchEntryIsFile: Boolean get() = false
+
     fun prepareForLaunch(context: Context, request: ExternalEngineLaunchRequest): ExternalEngineLaunchResult? = null
 
     fun buildLaunchIntent(request: ExternalEngineLaunchRequest): Intent

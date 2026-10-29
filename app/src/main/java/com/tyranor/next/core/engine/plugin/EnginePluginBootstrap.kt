@@ -98,6 +98,7 @@ object EnginePluginBootstrap {
             EngineType.ANDROID_APP,
             EngineType.RPGMAKER,
             EngineType.RENPY,
+            EngineType.RUFFLE,
             EngineType.PSP,
             EngineType.NINTENDO_SWITCH,
             EngineType.UNKNOWN -> return null

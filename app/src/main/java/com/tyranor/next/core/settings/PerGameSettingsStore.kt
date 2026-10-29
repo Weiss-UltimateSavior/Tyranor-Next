@@ -5,6 +5,7 @@ import com.core.engine.EnginePrefs
 import com.tyranor.next.core.game.storage.GameOverridePartitions
 import com.tyranor.next.core.game.storage.GameOverridesRepository
 import org.json.JSONObject
+import java.util.Locale
 
 /**
  * 单游戏（应用级）引擎设置覆盖层。参考 Rinne 的 Per-game 实现：
@@ -157,6 +158,14 @@ object PerGameSettingsStore {
     const val F_RENPY_DONT_USE_GL2 = "renpy_dont_use_gl2"
     const val F_RENPY_RECOMPILE = "renpy_recompile"
 
+    // Ruffle 外置模块配置覆盖（与全局键同名；null=跟随全局）
+    const val F_RUFFLE_SCREEN_TIMEOUT = "ruffle_screen_timeout"
+    const val F_RUFFLE_BACKEND = "ruffle_backend"
+    const val F_RUFFLE_QUALITY = "ruffle_quality"
+    const val F_RUFFLE_SCALE_MODE = "ruffle_scale_mode"
+    const val F_RUFFLE_LETTERBOX = "ruffle_letterbox"
+    const val F_RUFFLE_LOAD_BEHAVIOR = "ruffle_load_behavior"
+
     // ONS 子对象键
     const val ONS_KEY = "ons"
 
@@ -302,6 +311,27 @@ object PerGameSettingsStore {
             recompile = boolOrNull(F_RENPY_RECOMPILE),
         )
         return override.takeIf { it != RenPyOverride() }
+    }
+
+    /**
+     * Ruffle 外置模块覆盖快照 → 类型化模型（缺失字段=跟随全局，
+     * 供 [EffectiveEngineSettings.mergeRuffle] 使用）。screenTimeout 按字符串存储以保持覆盖层一致。
+     */
+    fun toRuffleOverride(json: JSONObject?): RuffleOverride? {
+        if (json == null) return null
+        // 五个枚举字段统一 trim/lowercase，保证 load → merge → save 使用同一比较口径；
+        // screenTimeout 是数值字符串，交给 mergeRuffle 自行 trim + toIntOrNull。
+        fun strOrNull(key: String): String? =
+            if (json.has(key)) json.optString(key).trim().lowercase(Locale.ROOT) else null
+        val override = RuffleOverride(
+            screenTimeout = if (json.has(F_RUFFLE_SCREEN_TIMEOUT)) json.optString(F_RUFFLE_SCREEN_TIMEOUT) else null,
+            backend = strOrNull(F_RUFFLE_BACKEND),
+            quality = strOrNull(F_RUFFLE_QUALITY),
+            scaleMode = strOrNull(F_RUFFLE_SCALE_MODE),
+            letterbox = strOrNull(F_RUFFLE_LETTERBOX),
+            loadBehavior = strOrNull(F_RUFFLE_LOAD_BEHAVIOR),
+        )
+        return override.takeIf { it != RuffleOverride() }
     }
 
     /**

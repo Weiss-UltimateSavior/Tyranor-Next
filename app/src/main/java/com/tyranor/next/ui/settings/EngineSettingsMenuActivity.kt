@@ -115,6 +115,7 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int, @param:Drawabl
     RPG_MAKER(R.string.engine_settings_rpg_maker_title, R.drawable.ic_settings_engine),
     TYRANO(R.string.engine_settings_tyrano_title, R.drawable.ic_settings_engine),
     RENPY(R.string.engine_settings_renpy_title, R.drawable.ic_settings_engine),
+    RUFFLE(R.string.engine_settings_ruffle_title, R.drawable.ic_settings_engine),
     SIGLUS(R.string.engine_settings_siglus_title, R.drawable.ic_settings_engine),
     FRAMEBUFFER(R.string.engine_settings_framebuffer_title, R.drawable.ic_settings_engine),
     FVP(R.string.engine_settings_fvp_title, R.drawable.ic_settings_engine),

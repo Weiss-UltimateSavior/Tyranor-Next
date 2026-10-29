@@ -13,6 +13,7 @@
 - 同步结果提示默认开启且可关闭；配置保存与版本操作保持静默。关闭总开关会隐藏单游戏版本选择、同步与身份配置（未完成切换恢复入口保留）、停止同步并保留配置和历史。
 - 打开与退出的立即任务及 fallback 任务使用四条独立 WorkManager 链，fallback 不再与立即任务共用唯一名称。
 - 补齐 WebDAV 专用设备验收：真机存档/恢复/Worker、实际 TalkBack 密码焦点反馈、API 26/27 框架与 UI、独立 WsgiDAV 的真机/模拟器并发；证据与未覆盖边界见 [设备记录](docs/WebDAV-device-acceptance.md)。
+- 新增 Ruffle（SWF / Flash）外置 APK 引擎模块接入：引擎页「网页」分类与安装状态、默认每个顶层 `.swf` 一条记录（根 `index.html/index.htm` + 唯一 SWF 的叶子目录识别为包装游戏）、`game` / `settings` 启动协议、全局与单游戏设置（渲染后端 / 画质 / 缩放 / 黑边 / 加载方式 / 自动关闭）及 `configuration.json` 受管键同步；不提供统一存档管理与虚拟按键重映射。设备与插件运行验证尚未执行。
 
 ### 修复
 

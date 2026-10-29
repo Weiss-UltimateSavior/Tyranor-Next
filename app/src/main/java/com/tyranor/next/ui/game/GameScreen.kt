@@ -2226,6 +2226,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.PC -> Color(0xFF455A64)
     EngineType.ANDROID_APP -> Color(0xFF2E7D32)
     EngineType.RENPY -> Color(0xFFE35B84)
+    EngineType.RUFFLE -> Color(0xFFC62828)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
     EngineType.UNKNOWN -> Color(0xFF607D8B)

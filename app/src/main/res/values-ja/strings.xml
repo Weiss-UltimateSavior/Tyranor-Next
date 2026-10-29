@@ -149,6 +149,7 @@
     <string name="engine_desc_web_other_vn">WebOther/VN、globalData.vndata または汎用 index.html Web ゲーム</string>
     <string name="engine_desc_artemis">Artemis、system.ini と .pfs アーカイブのゲーム</string>
     <string name="engine_desc_renpy">Ren’Py 外部 APK モジュール。インストール状態を確認して起動</string>
+    <string name="engine_desc_ruffle">Ruffle 外部 APK モジュール。SWF / Flash ゲーム</string>
     <string name="engine_desc_siglus">SiglusEngine（Key/VisualArts 系）。Gameexe と Scene.pck のゲーム</string>
     <string name="engine_desc_fvp">FVPEngine（FAVORITE 系）。.hcb/.bch スクリプトと graph/voice パッケージのゲーム</string>
     <string name="engine_desc_reallive">RealLive（VisualArt’s 系）。Kanon SE / CLANNAD / Little Busters! など</string>
@@ -271,6 +272,7 @@
     <string name="engine_settings_rpg_maker_title">RPG Maker エンジン設定</string>
     <string name="engine_settings_tyrano_title">Tyrano エンジン設定</string>
     <string name="engine_settings_renpy_title">Ren’Py エンジン設定</string>
+    <string name="engine_settings_ruffle_title">Ruffle エンジン設定</string>
     <string name="engine_settings_siglus_title">Siglus エンジン設定</string>
     <string name="engine_settings_siglus_language_title">ゲーム言語</string>
     <string name="engine_settings_siglus_language_auto">エンジン既定（JP）</string>
@@ -503,6 +505,7 @@
     <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。</string>
+    <string name="engine_settings_ruffle_module_description">Ruffle は外部 APK エンジンモジュールで SWF ゲームを実行します。以下の設定は既定で全体設定に従います。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z は外部 RPGM モジュールで起動します。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>
     <string name="engine_settings_follow_global">全体設定に従う</string>
     <string name="engine_settings_follow_global_with_value">全体設定に従う · %1$s</string>
@@ -661,6 +664,8 @@
     <string name="external_engine_denied">%1$s の起動がシステムに拒否されました。モジュール権限を確認してください</string>
     <string name="external_engine_launch_failed">%1$s の起動に失敗しました。モジュール権限を確認してください</string>
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
+    <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
+    <string name="external_ruffle_resolve_swf_failed">SWF 起動ファイルを特定できないため、Ruffle モジュールを起動できません</string>
     <string name="external_rpgm_resolve_dir_failed">RPGM ゲームフォルダ実パスを解析できないため、外部 RPGM モジュールを起動できません</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS モジュール</string>
@@ -736,6 +741,33 @@
     <string name="engine_settings_renpy_dont_use_gl2">モデルベース描画を無効化（GL2）</string>
     <string name="engine_settings_renpy_recompile">スクリプトを再コンパイル</string>
     <string name="engine_settings_renpy_cheats">チート</string>
+
+    <string name="engine_settings_ruffle_card">Ruffle 外部モジュール</string>
+    <string name="engine_settings_ruffle_module_status">モジュールの状態</string>
+    <string name="engine_settings_ruffle_module_get">モジュールをダウンロード</string>
+    <string name="engine_settings_ruffle_backend">レンダリングバックエンド</string>
+    <string name="engine_settings_ruffle_backend_auto">自動</string>
+    <string name="engine_settings_ruffle_backend_opengl">OpenGL</string>
+    <string name="engine_settings_ruffle_backend_vulkan">Vulkan</string>
+    <string name="engine_settings_ruffle_quality">画質</string>
+    <string name="engine_settings_ruffle_quality_low">低</string>
+    <string name="engine_settings_ruffle_quality_medium">中</string>
+    <string name="engine_settings_ruffle_quality_high">高</string>
+    <string name="engine_settings_ruffle_quality_best">最高</string>
+    <string name="engine_settings_ruffle_scale_mode">スケールモード</string>
+    <string name="engine_settings_ruffle_scale_exactfit">完全一致</string>
+    <string name="engine_settings_ruffle_scale_noborder">ボーダーなし</string>
+    <string name="engine_settings_ruffle_scale_noscale">拡大縮小なし</string>
+    <string name="engine_settings_ruffle_scale_showall">全体表示</string>
+    <string name="engine_settings_ruffle_letterbox">レターボックス</string>
+    <string name="engine_settings_ruffle_load_behavior">読み込み方式</string>
+    <string name="engine_settings_ruffle_load_streaming">ストリーミング</string>
+    <string name="engine_settings_ruffle_load_delayed">遅延読み込み</string>
+    <string name="engine_settings_ruffle_load_blocking">ブロッキング</string>
+    <string name="engine_settings_ruffle_screen_timeout">自動終了（分）</string>
+    <string name="engine_settings_ruffle_screen_timeout_off">自動終了しない</string>
+    <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d 分</string>
+    <string name="engine_settings_ruffle_note">SWF がファイルを指す場合は自動的にそのフォルダーから起動します。起動前にゲームフォルダーを解決するため、このアプリへ「すべてのファイルへのアクセス」を許可してください。Ruffle プラグインが別途独自のストレージ権限を要求する場合があります。プラグインは常に横向きで表示されます。自動終了を 0 にすると無効になります。</string>
 
     <string name="plugin_unknown_engine">不明なエンジンプラグイン：%1$s</string>
     <string name="plugin_install_failed">エンジンプラグインのインストールに失敗しました。アプリを再起動するか、インストールパッケージの完全性を確認してください</string>

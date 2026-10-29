@@ -47,6 +47,15 @@ class GameSaveManager(private val context: Context) {
                 false,
             )
         }
+        // Ruffle 的 SWF 记录指向文件本身，且外置模块没有 App 可管理的文件存档接口；
+        // 先于目录解析返回，避免 SWF 文件 URI 落到「无法解析游戏目录」的误导文案。
+        if (game.engine == EngineType.RUFFLE) {
+            return SaveLocation(
+                null,
+                text(R.string.save_location_engine_no_file_interface, game.engine.displayName),
+                false,
+            )
+        }
         // Exact private identity root even when the resource volume is absent.
         // Admission remains disabled until the device save-IO fixture is accepted.
         if (game.engine == EngineType.ETHORNELL) {
@@ -134,6 +143,8 @@ class GameSaveManager(private val context: Context) {
                 }
             }
             EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
+            // RUFFLE 在函数开头已提前返回（外置模块无 App 可管理的文件存档接口），此分支仅为 when 完备性
+            EngineType.RUFFLE,
             // ETHORNELL returns its exact private user root above; exhaustive fallback only.
             EngineType.ETHORNELL,
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,

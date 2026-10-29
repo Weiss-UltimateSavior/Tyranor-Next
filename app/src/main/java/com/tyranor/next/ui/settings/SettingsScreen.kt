@@ -707,6 +707,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         EthornellSettingsScreen()
         return
     }
+    if (kind == EngineSettingsKind.RUFFLE) {
+        RuffleSettingsScreen()
+        return
+    }
     val ctx = LocalContext.current
     val graphicsFamily = kind.graphicsFamily()
     var graphics by remember(kind) {

@@ -20,6 +20,7 @@ enum class ExternalEngineErrorCode {
  *
  * [moduleNameRes] / [messageRes] 为各模块自定义文案的资源引用，UI 层优先取资源，
  * 否则回退 [moduleNameFallback] / [detail]；[detail] 只承载底层异常信息，不是文案。
+ * [installUrl] 仅在模块缺失/入口不兼容时携带，供 UI 提供「去下载」动作。
  */
 data class ExternalEngineLaunchResult(
     val success: Boolean,
@@ -29,6 +30,7 @@ data class ExternalEngineLaunchResult(
     val engineName: String? = null,
     @param:StringRes val messageRes: Int? = null,
     val detail: String? = null,
+    val installUrl: String? = null,
 ) {
     companion object {
         fun success(): ExternalEngineLaunchResult = ExternalEngineLaunchResult(success = true)
@@ -40,6 +42,7 @@ data class ExternalEngineLaunchResult(
             engineName: String? = null,
             @StringRes messageRes: Int? = null,
             detail: String? = null,
+            installUrl: String? = null,
         ): ExternalEngineLaunchResult = ExternalEngineLaunchResult(
             success = false,
             error = error,
@@ -48,6 +51,7 @@ data class ExternalEngineLaunchResult(
             engineName = engineName,
             messageRes = messageRes,
             detail = detail,
+            installUrl = installUrl,
         )
     }
 }
