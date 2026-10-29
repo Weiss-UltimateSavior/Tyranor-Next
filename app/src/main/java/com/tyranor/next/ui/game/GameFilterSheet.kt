@@ -264,6 +264,8 @@ private fun FilterChoiceBase(
     val accent = MaterialTheme.colorScheme.primary
     Box(
         modifier = modifier
+            // 选择卡 46dp / 空心标签 40dp 都低于 48dp 最小触控区：补齐触控区，卡片本身尺寸不变
+            .minimumInteractiveComponentSize()
             .clip(AppComponentShape)
             .background(
                 when {
