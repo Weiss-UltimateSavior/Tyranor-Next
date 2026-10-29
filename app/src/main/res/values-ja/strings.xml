@@ -572,7 +572,7 @@
     <string name="save_import_zip">ZIP を上書きインポート</string>
     <string name="save_delete_title">セーブを削除</string>
     <string name="save_delete_message">「%1$s」の現在管理可能なセーブファイルを削除します。この操作は元に戻せません。</string>
-    <string name="save_deleted_count">%1$d 件のセーブ項目を削除しました</string>
+    <string name="save_deleted_count">%1$d 件のセーブファイルを削除しました</string>
     <string name="save_format_convert_title">現在のセーブ形式は互換性がありません</string>
     <string name="save_format_convert_message">%1$d 個の JoiPlay/PC 標準形式のセーブデータを検出しました。Tyranor 形式に変換しますか？</string>
     <string name="save_format_convert_hashed_note">他に %1$d 個のハッシュセーブ（key_sha256）は変換されません</string>
@@ -612,6 +612,7 @@
     <string name="save_error_resolve_actual_dir">実際のセーブフォルダを解析できません</string>
     <string name="save_error_create_save_dir">セーブフォルダを作成できません</string>
     <string name="save_error_save_dir_unavailable">セーブフォルダを使用できません</string>
+    <string name="save_error_resource_restore_conflict">削除を取り消しました：インポートトランザクション内のゲームリソースを保護するため（復元の競合またはディレクトリ判読不可）、セーブは削除されていません。解消してから再試行してください</string>
     <string name="save_error_no_files_in_zip">ZIP 内にセーブファイルが見つかりません</string>
     <string name="save_error_read_import_zip">インポート ZIP を読み取れません</string>
     <string name="save_error_duplicate_zip_entry">ZIP に重複ファイルが含まれています：%1$s</string>

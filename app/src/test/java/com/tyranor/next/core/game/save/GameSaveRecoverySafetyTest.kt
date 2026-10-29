@@ -93,7 +93,7 @@ class GameSaveRecoverySafetyTest {
             }
         }
 
-        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
+        assertEquals(SaveErrorCode.RESOURCE_RESTORE_CONFLICT, failure.code)
         assertEquals(0, restoreCalls)
         assertEquals("outside asset", outside.resolve("system.pfs").readText())
         assertEquals("live save", destination.resolve("slot.sav").readText())

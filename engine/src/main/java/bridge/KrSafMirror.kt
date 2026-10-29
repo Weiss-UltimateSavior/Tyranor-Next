@@ -604,12 +604,6 @@ object KrSafMirror {
             ?.firstOrNull()?.first ?: stable
     }
 
-    /** Load valid rows even when individual index rows are corrupt. Overrides are relative keys. */
-    @JvmStatic
-    fun loadIndex(indexPath: String?, mirrorRoot: File? = null): Map<String, MirrorEntry> =
-        loadIndexed(indexPath, mirrorRoot) { uri -> Uri.parse(uri) }.documents
-            .mapValues { (_, holder) -> MirrorEntry(holder.uri, holder.size) }
-
     internal data class IndexedLoad<T>(val documents: Map<String, MirrorEntryHolder<T>>, val rawCount: Int)
 
     /**

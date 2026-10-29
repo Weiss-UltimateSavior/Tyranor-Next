@@ -245,6 +245,25 @@ class KrMirrorOpenRouterTest {
     }
 
     @Test
+    fun `tombstoned read open with O_CREAT fails closed instead of leaving an unowned file`() {
+        // Audit of b49080ab, N1: a tombstoned key opened read-only WITH O_CREAT falls
+        // back to native creation of an unowned 0-byte file that the degraded gate
+        // would then block for the rest of the launch — fail closed for this narrow
+        // combination; the plain-read ENOENT fallback above is unchanged.
+        val fixture = fixture()
+        fixture.session.runMutation(fixture.key, fixture.file) {
+            check(fixture.file.delete())
+            0L
+        }
+        assertEquals(KrMirrorOpenRouter.FAILED,
+            fixture.router().open(fixture.key, fixture.file, KrMirrorOpenRouter.Intent.READ_ONLY, allowCreate = true))
+        assertFalse(fixture.file.exists())
+        assertTrue(fixture.sourceOpens.isEmpty())
+        assertTrue(fixture.localOpens.isEmpty())
+        assertFalse(fixture.session.readFailed(fixture.key))
+    }
+
+    @Test
     fun `stale ownership marker with a missing local file reads the source instead of failing`() {
         // R10 #15: a durable marker whose local file was removed externally must not
         // turn a pure read into EIO while the source document is still readable.

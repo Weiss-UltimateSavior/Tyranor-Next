@@ -572,7 +572,7 @@
     <string name="save_import_zip">覆盖导入 ZIP</string>
     <string name="save_delete_title">删除存档</string>
     <string name="save_delete_message">将删除“%1$s”当前可管理的存档文件。此操作不可撤销。</string>
-    <string name="save_deleted_count">已删除 %1$d 个存档条目</string>
+    <string name="save_deleted_count">已删除 %1$d 个存档文件</string>
     <string name="save_format_convert_title">当前存档格式不兼容</string>
     <string name="save_format_convert_message">检测到 %1$d 个 JoiPlay/PC 标准格式存档。是否转化为 Tyranor 格式？</string>
     <string name="save_format_convert_hashed_note">另有 %1$d 个哈希存档（key_sha256）不会转化</string>
@@ -612,6 +612,7 @@
     <string name="save_error_resolve_actual_dir">无法解析实际存档目录</string>
     <string name="save_error_create_save_dir">无法创建存档目录</string>
     <string name="save_error_save_dir_unavailable">存档目录不可用</string>
+    <string name="save_error_resource_restore_conflict">删除已取消：为保护导入事务目录中的游戏资源（恢复冲突或目录不可读），存档未被删除；请处理后重试</string>
     <string name="save_error_no_files_in_zip">压缩包中未找到存档文件</string>
     <string name="save_error_read_import_zip">无法读取导入压缩包</string>
     <string name="save_error_duplicate_zip_entry">压缩包包含重复文件：%1$s</string>

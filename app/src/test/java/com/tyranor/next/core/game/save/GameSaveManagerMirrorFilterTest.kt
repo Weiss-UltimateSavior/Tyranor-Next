@@ -362,7 +362,7 @@ class GameSaveManagerMirrorFilterTest {
         val backup = transactionPath(live, "backup")
         assertFalse(live.resolve("foo/data.pfs").exists())
         assertEquals("sole game resource", backup.resolve("foo/data.pfs").readText())
-        expectImportError(SaveErrorCode.SAVE_DIR_UNAVAILABLE) {
+        expectImportError(SaveErrorCode.RESOURCE_RESTORE_CONFLICT) {
             GameSaveManager.deleteSaveDirectory(live, exclude, restore)
         }
         assertEquals("sole game resource", backup.resolve("foo/data.pfs").readText())
@@ -413,7 +413,7 @@ class GameSaveManagerMirrorFilterTest {
             resolve("data.pfs").writeText("unique recovery version")
         }
         val exclude: (String) -> Boolean = { it.endsWith(".pfs") }
-        expectImportError(SaveErrorCode.SAVE_DIR_UNAVAILABLE) {
+        expectImportError(SaveErrorCode.RESOURCE_RESTORE_CONFLICT) {
             GameSaveManager.deleteSaveDirectory(live, exclude) { from, to ->
                 GameSaveManager.restoreExcludedContents(from, to, exclude, rejectExisting = true)
             }

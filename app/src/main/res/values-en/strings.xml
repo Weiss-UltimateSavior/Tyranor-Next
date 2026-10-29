@@ -572,7 +572,7 @@
     <string name="save_import_zip">Import ZIP and overwrite</string>
     <string name="save_delete_title">Delete saves</string>
     <string name="save_delete_message">This will delete the currently manageable save files for “%1$s”. This cannot be undone.</string>
-    <string name="save_deleted_count">Deleted %1$d save entries</string>
+    <string name="save_deleted_count">Deleted %1$d save files</string>
     <string name="save_format_convert_title">Current save format is incompatible</string>
     <string name="save_format_convert_message">Found %1$d JoiPlay/PC standard-format save files. Convert them to Tyranor format?</string>
     <string name="save_format_convert_hashed_note">%1$d hashed saves (key_sha256) will not be converted</string>
@@ -612,6 +612,7 @@
     <string name="save_error_resolve_actual_dir">Unable to resolve the actual save directory</string>
     <string name="save_error_create_save_dir">Unable to create save directory</string>
     <string name="save_error_save_dir_unavailable">Save directory is unavailable</string>
+    <string name="save_error_resource_restore_conflict">Deletion cancelled: game resources inside the import transaction directories are protected (restore conflict or unreadable directory), so the saves were not deleted; resolve the issue and retry</string>
     <string name="save_error_no_files_in_zip">No save files found in the ZIP</string>
     <string name="save_error_read_import_zip">Unable to read import ZIP</string>
     <string name="save_error_duplicate_zip_entry">ZIP contains a duplicate file: %1$s</string>

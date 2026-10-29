@@ -51,6 +51,13 @@ internal class KrMirrorOpenRouter<T>(
                     localDescriptor(file, intent).takeIf { it >= 0 } ?: FAILED
                 } else if (source != null) {
                     readSource(key, source)
+                } else if (allowCreate) {
+                    // A tombstoned key opened read-only WITH O_CREAT would fall back to
+                    // native creation of an unowned 0-byte file that the degraded gate
+                    // then blocks for the rest of the launch (audit of b49080ab, N1).
+                    // Fail closed for this narrow combination; plain read probes (no
+                    // O_CREAT) keep the NOT_ROUTED ENOENT path below.
+                    FAILED
                 } else {
                     // Unlinked this session with no local file left: a pure read is a
                     // plain miss. Return NOT_ROUTED so native open reports ENOENT the
