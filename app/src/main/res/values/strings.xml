@@ -202,6 +202,19 @@
     <string name="game_empty_message">点击添加文件夹并扫描</string>
     <string name="game_add_folder">添加文件夹</string>
     <string name="game_no_match">未找到匹配的游戏</string>
+    <string name="game_filter_content_description">筛选与排序</string>
+    <string name="game_filter_active_state">筛选或排序已启用</string>
+    <string name="game_filter_title">筛选与排序</string>
+    <string name="game_filter_reset">重置</string>
+    <string name="game_filter_sort_section">排序方式</string>
+    <string name="game_filter_engine_section">引擎</string>
+    <string name="game_filter_all">全部</string>
+    <string name="game_filter_engine_empty">暂无可筛选的引擎</string>
+    <string name="game_filter_played_section">游玩状态</string>
+    <string name="game_filter_played_only">已游玩</string>
+    <string name="game_filter_played_none">未游玩</string>
+    <string name="game_sort_engine">引擎</string>
+    <string name="game_sort_recent">最近游玩</string>
     <string name="game_auto_patch_title">应用自动补丁</string>
     <string name="game_auto_patch_message">「%1$s」的启动文件打包在 .pfs 归档内，首次启动需要解出少量基础文件（system.ini、窗口配置与视频）并适配 Android 平台。是否应用补丁？</string>
     <string name="game_patch_always">总是</string>
@@ -256,6 +269,7 @@
     <string name="game_launch_file_empty">目录中未找到 xp3 或 exe 文件</string>
 
     <string name="home_recent_empty">暂无最近打开的游戏</string>
+    <string name="home_recent_clear_play_record">清除游玩记录</string>
     <string name="home_quick_launch">快捷启动</string>
     <string name="home_category_all">全部</string>
     <string name="home_category_quick">快捷</string>

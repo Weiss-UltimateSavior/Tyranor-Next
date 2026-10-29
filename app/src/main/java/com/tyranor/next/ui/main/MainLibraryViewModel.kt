@@ -41,7 +41,7 @@ data class MainLibraryUiState(
     val scrapeMessage: String? = null,
     /** 已发布搜索结果的查询词；与页面当前查询词一致时结果才可用（迁移方案阶段 3）。 */
     val searchQuery: String = "",
-    /** Room DAO 搜索结果（已按当前排序模式排序）；null 表示无可用的 DB 搜索结果。 */
+    /** Room DAO 搜索结果（命中集；engine/recent 排序会回落到标题序，展示顺序由 UI 内存重排）。null 表示无可用的 DB 搜索结果。 */
     val searchResults: List<ScanGame>? = null,
 )
 
@@ -216,7 +216,11 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     fun addManualGame(game: ScanGame): Boolean {
         if (_uiState.value.games.any { it.uri == game.uri }) return false
         val revision = stateRevision.incrementAndGet()
-        _uiState.update { MainLibraryStateReducer.acceptGames(it, it.games + game) }
+        // 手动添加只是增量，不能把「完整库已加载」置真：冷启动加载期间添加会让游戏页误判
+        // 库已就绪，进而把仍然有效的引擎筛选当成失效条件清掉（见 GameScreen 的失效清理）。
+        _uiState.update { state ->
+            MainLibraryStateReducer.acceptGames(state, state.games + game).copy(loaded = state.loaded)
+        }
         enqueuePersistence(revision) {
             GameLibraryFacade.updateGames(appContext) { games ->
                 if (games.any { it.uri == game.uri }) games else games + game

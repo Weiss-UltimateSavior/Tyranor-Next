@@ -202,6 +202,19 @@
     <string name="game_empty_message">Add a folder and scan it</string>
     <string name="game_add_folder">Add folder</string>
     <string name="game_no_match">No matching games found</string>
+    <string name="game_filter_content_description">Filter and sort</string>
+    <string name="game_filter_active_state">Filters or sorting applied</string>
+    <string name="game_filter_title">Filter and sort</string>
+    <string name="game_filter_reset">Reset</string>
+    <string name="game_filter_sort_section">Sort by</string>
+    <string name="game_filter_engine_section">Engine</string>
+    <string name="game_filter_all">All</string>
+    <string name="game_filter_engine_empty">No engines to filter</string>
+    <string name="game_filter_played_section">Play status</string>
+    <string name="game_filter_played_only">Played</string>
+    <string name="game_filter_played_none">Unplayed</string>
+    <string name="game_sort_engine">Engine</string>
+    <string name="game_sort_recent">Recently played</string>
     <string name="game_auto_patch_title">Apply automatic patch</string>
     <string name="game_auto_patch_message">The launch file for “%1$s” is packed inside a .pfs archive. On first launch, Tyranor Next needs to extract several base files (system.ini, window configuration, and videos) and adapt them for Android. Apply the patch?</string>
     <string name="game_patch_always">Always</string>
@@ -256,6 +269,7 @@
     <string name="game_launch_file_empty">No xp3 or exe files found in this folder</string>
 
     <string name="home_recent_empty">No recently opened games</string>
+    <string name="home_recent_clear_play_record">Clear play record</string>
     <string name="home_quick_launch">Quick launch</string>
     <string name="home_category_all">All</string>
     <string name="home_category_quick">Quick</string>

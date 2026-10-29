@@ -235,12 +235,18 @@ object GameLibraryRepository {
 
     /**
      * 与写入串行化的一致性搜索：先切到单线程写调度器排队（严格晚于已排队的写），
-     * 再经写互斥兜住挂起恢复后的乱序；返回已按 sortMode 排序的结果。
+     * 再经写互斥兜住挂起恢复后的乱序。
+     *
+     * 排序只覆盖「字母」「括号标签」两种（对应两条 DAO 查询）；`GAME_SORT_ENGINE` /
+     * `GAME_SORT_RECENT` 没有对应 SQL 列，会回落到标题序，**调用方必须自行按当前模式重排**。
+     * 返回的是「命中集」，不是最终展示顺序。
      */
     suspend fun searchGamesConsistent(context: Context, query: String, sortMode: String): List<ScanGame> =
         withContext(writeDispatcher) {
             writeMutex.withLock { searchGames(context, query, sortMode) }
         }
+
+    /** 命中集查询（排序口径见 [searchGamesConsistent]）：只保证「哪些标题命中」。 */
 
     suspend fun searchGames(context: Context, query: String, sortMode: String): List<ScanGame> =
         withContext(Dispatchers.IO) {

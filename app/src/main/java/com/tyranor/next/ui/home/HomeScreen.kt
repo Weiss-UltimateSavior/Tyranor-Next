@@ -149,7 +149,12 @@ fun HomeScreen(
         onGameDeleted(target)
     }
 
-    /** 仅删除该条最近游玩记录，不影响游戏库。 */
+    /**
+     * 清除该游戏的游玩记录：把 `openTime` 归零，游戏本身仍留在库中。
+     *
+     * 注意 `openTime` 同时是游戏页「已游玩」筛选与「最近游玩」排序的判据，
+     * 所以这个动作会让游戏变成「未游玩」并在最近排序中沉底（见 SPEC「游戏库」一节）。
+     */
     fun removeRecentRecord(target: ScanGame) {
         onRecentRemoved(target)
     }
@@ -707,7 +712,8 @@ private fun RecentGameRow(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
-                            contentDescription = stringResource(R.string.common_delete),
+                            // 语义如实说明这是「清除游玩记录」，不是仅隐藏列表项
+                            contentDescription = stringResource(R.string.home_recent_clear_play_record),
                             tint = Color.White,
                         )
                     }

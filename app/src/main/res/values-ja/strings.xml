@@ -202,6 +202,19 @@
     <string name="game_empty_message">フォルダを追加してスキャンしてください</string>
     <string name="game_add_folder">フォルダを追加</string>
     <string name="game_no_match">一致するゲームが見つかりません</string>
+    <string name="game_filter_content_description">絞り込みと並び替え</string>
+    <string name="game_filter_active_state">絞り込みまたは並び替えを適用中</string>
+    <string name="game_filter_title">絞り込みと並び替え</string>
+    <string name="game_filter_reset">リセット</string>
+    <string name="game_filter_sort_section">並び替え</string>
+    <string name="game_filter_engine_section">エンジン</string>
+    <string name="game_filter_all">すべて</string>
+    <string name="game_filter_engine_empty">絞り込めるエンジンがありません</string>
+    <string name="game_filter_played_section">プレイ状況</string>
+    <string name="game_filter_played_only">プレイ済み</string>
+    <string name="game_filter_played_none">未プレイ</string>
+    <string name="game_sort_engine">エンジン</string>
+    <string name="game_sort_recent">最近プレイ</string>
     <string name="game_auto_patch_title">自動パッチを適用</string>
     <string name="game_auto_patch_message">「%1$s」の起動ファイルは .pfs アーカイブ内にあります。初回起動時に一部の基本ファイル（system.ini、ウィンドウ設定、動画）を展開し、Android 向けに適用する必要があります。パッチを適用しますか？</string>
     <string name="game_patch_always">常に</string>
@@ -256,6 +269,7 @@
     <string name="game_launch_file_empty">フォルダ内に xp3 または exe ファイルが見つかりません</string>
 
     <string name="home_recent_empty">最近開いたゲームはありません</string>
+    <string name="home_recent_clear_play_record">プレイ記録を消去</string>
     <string name="home_quick_launch">クイック起動</string>
     <string name="home_category_all">すべて</string>
     <string name="home_category_quick">クイック</string>

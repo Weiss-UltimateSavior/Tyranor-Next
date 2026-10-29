@@ -48,13 +48,11 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -79,7 +77,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -122,14 +119,11 @@ import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
-import com.tyranor.next.theme.AdvancedGlassBorder
 import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
-import com.tyranor.next.theme.GlassBorder
 import com.tyranor.next.theme.GlassPanel
-import com.tyranor.next.theme.GlassPanelSolid
 import com.tyranor.next.theme.GlassSurfaceSolid
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
@@ -139,13 +133,14 @@ import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.CoverBadgeText
 import com.tyranor.next.theme.CoverBadgeBackground
-import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppBottomSheet
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.appSheetMaxHeight
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
@@ -419,7 +414,41 @@ internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> 
                 .thenBy { GameSortKeys.tagKey(it.title) }
                 .thenBy { GameSortKeys.titleKey(it.title) },
         )
+        // 按引擎分组：枚举声明顺序即展示顺序（GAL 引擎在前、UNKNOWN 在后），组内按标题。
+        AppSettingsStore.GAME_SORT_ENGINE -> games.sortedWith(
+            compareBy<ScanGame> { it.engine.ordinal }
+                .thenBy { GameSortKeys.titleKey(it.title) },
+        )
+        // 最近游玩在前；从未打开过（openTime = 0）自然排在末尾，同序按标题。
+        AppSettingsStore.GAME_SORT_RECENT -> games.sortedWith(
+            compareByDescending<ScanGame> { it.openTime }
+                .thenBy { GameSortKeys.titleKey(it.title) },
+        )
         else -> games.sortedBy { GameSortKeys.titleKey(it.title) }
+    }
+}
+
+/**
+ * 游戏页过滤器：引擎类型（[engineFilter] 为 `EngineType.name`，空串表示全部）+ 游玩状态
+ * （已游玩判据为 `openTime > 0`）。
+ *
+ * internal：仅游戏页与其单测使用。首页分类仓库只共用 [sortGames]（排序），不套用本过滤——
+ * 首页有自己的「全部/快捷/最近/各引擎」分类轴，两处筛选叠加会互相打架。
+ */
+internal fun filterGames(
+    games: List<ScanGame>,
+    engineFilter: String,
+    playedFilter: String,
+): List<ScanGame> {
+    if (engineFilter.isEmpty() && playedFilter == AppSettingsStore.GAME_FILTER_PLAYED_ALL) return games
+    return games.filter { game ->
+        val engineMatched = engineFilter.isEmpty() || game.engine.name == engineFilter
+        val playedMatched = when (playedFilter) {
+            AppSettingsStore.GAME_FILTER_PLAYED_ONLY -> game.openTime > 0
+            AppSettingsStore.GAME_FILTER_PLAYED_NONE -> game.openTime <= 0
+            else -> true
+        }
+        engineMatched && playedMatched
     }
 }
 
@@ -478,7 +507,11 @@ private fun GameLibraryContent(
     // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
     var addGameStep by remember { mutableStateOf<AddGameStep?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
+    var showFilterSheet by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     val gameSort by AppSettingsStore.gameSortState.collectAsState()
+    val engineFilter by AppSettingsStore.gameFilterEngineState.collectAsState()
+    val playedFilter by AppSettingsStore.gameFilterPlayedState.collectAsState()
     val sortedGames = remember(games, gameSort) { sortGames(games, gameSort) }
     val fallbackFiltered = remember(sortedGames, query) {
         val q = query.trim()
@@ -488,12 +521,55 @@ private fun GameLibraryContent(
     // DB 结果未返回（防抖窗口内）时先用内存过滤兜底，行为与旧版一致。
     // 已知差异：SQLite LIKE 仅对 ASCII 折叠大小写，全角拉丁/带音符字符的命中可能与
     // 内存过滤（Unicode）略有出入；后续如需完全对齐可引入 FTS5（方案阶段 3 的预留路径）。
-    LaunchedEffect(query, gameSort) { onSearchQueryChanged(query) }
+    // 排序不再依赖 SQL：DB 只负责「哪些标题命中」（ORDER BY 仅作兜底），切换排序无需重新查库。
+    LaunchedEffect(query) { onSearchQueryChanged(query) }
     val dbResults = if (query.isNotBlank() && dbSearchQuery == query) dbSearchResults else null
-    val filteredGames = when {
+    val searchedGames = when {
         query.isBlank() -> sortedGames
         dbResults != null -> dbResults
         else -> fallbackFiltered
+    }
+    // 过滤器与排序统一在搜索命中集之后收敛：Room 分支只负责「哪些标题命中」，
+    // 排序/过滤一律走内存，避免搜索时绕过过滤器（DB 的两种排序查询仅覆盖字母序/括号标签）。
+    // filter 保序：无搜索时 searchedGames 已按当前排序排好，筛完直接可用；
+    // 走 DB 分支（dbResults）时结果顺序未按当前排序，必须再排一次。
+    val searchedGamesIsSorted = query.isBlank()
+    val filteredGames = remember(
+        searchedGames,
+        gameSort,
+        engineFilter,
+        playedFilter,
+        searchedGamesIsSorted,
+    ) {
+        val filtered = filterGames(searchedGames, engineFilter, playedFilter)
+        if (searchedGamesIsSorted) filtered else sortGames(filtered, gameSort)
+    }
+    // 引擎过滤器只列出库中实际存在的引擎（与首页分类仓库同口径）。
+    val availableEngines = remember(games) {
+        games.map { it.engine }.distinct().sortedBy { it.ordinal }
+    }
+    // 与「重置」同口径：非默认排序也算「有条件生效」，否则改了排序圆点不亮、重置却会动它
+    val hasActiveCondition = engineFilter.isNotEmpty() ||
+        playedFilter != AppSettingsStore.GAME_FILTER_PLAYED_ALL ||
+        gameSort != AppSettingsStore.GAME_SORT_ALPHA
+    // 「重置」统一恢复默认排序 + 全部引擎 + 全部状态：按钮位于抽屉标题栏、覆盖两个 section，
+    // 只清过滤器会让排序停在非默认值，与「筛选与排序」的口径不符。
+    val resetFilters = {
+        AppSettingsStore.setGameSort(context, AppSettingsStore.GAME_SORT_ALPHA)
+        AppSettingsStore.setGameFilterEngine(context, "")
+        AppSettingsStore.setGameFilterPlayed(context, AppSettingsStore.GAME_FILTER_PLAYED_ALL)
+    }
+    // 引擎过滤可能失效（该引擎的游戏被全部删除）：库已加载、未在扫描且已无该引擎时自动清空，
+    // 避免列表停在「未找到匹配的游戏」而抽屉里看不出原因。
+    // 判据用 loaded/scanning 而非 games.isEmpty()：冷启动与扫描中库可能瞬时为空，此时清空会
+    // 误删持久化条件；而删光最后一款游戏后库同样为空，恰恰必须清理。
+    // loaded 的语义是「完整库快照已发布」，手动添加游戏不会把它置真（见 addManualGame）。
+    val engineFilterStale = engineFilter.isNotEmpty() &&
+        availableEngines.none { it.name == engineFilter }
+    LaunchedEffect(availableEngines, engineFilter, loaded, scanning) {
+        if (loaded && !scanning && engineFilterStale) {
+            AppSettingsStore.setGameFilterEngine(context, "")
+        }
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
@@ -519,6 +595,30 @@ private fun GameLibraryContent(
                 TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
                     showSearch = !showSearch
                     if (!showSearch) query = ""
+                }
+                // 筛选与排序入口：有生效条件时右上角补一个小圆点（不额外占用顶栏宽度）。
+                // 圆点贴触控区外沿（top/end = 1dp）：34dp 触控区里图像油墨从 4dp 起，
+                // 原来的 8dp 内缩正好压在漏斗顶边上。
+                Box(contentAlignment = Alignment.TopEnd) {
+                    TopBarIcon(
+                        painterResource(R.drawable.ic_game_filter),
+                        stringResource(R.string.game_filter_content_description),
+                        MaterialTheme.colorScheme.primary,
+                        stateDescription = if (hasActiveCondition) {
+                            stringResource(R.string.game_filter_active_state)
+                        } else {
+                            null
+                        },
+                    ) { showFilterSheet = true }
+                    if (hasActiveCondition) {
+                        Box(
+                            Modifier
+                                .padding(top = 1.dp, end = 1.dp)
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
+                    }
                 }
                 if (scrapingCovers) {
                     Box(
@@ -571,12 +671,24 @@ private fun GameLibraryContent(
                 }
                 else -> {
                     if (filteredGames.isEmpty()) {
-                        Text(
-                            stringResource(R.string.game_no_match),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Column(
                             modifier = Modifier.align(Alignment.Center),
-                        )
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                stringResource(R.string.game_no_match),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            // 有生效条件时，空态直接给一个出口，省得再去顶栏翻抽屉
+                            if (hasActiveCondition) {
+                                com.tyranor.next.ui.common.NoRippleButton(
+                                    text = stringResource(R.string.game_filter_reset),
+                                    onClick = resetFilters,
+                                    modifier = Modifier.padding(top = 12.dp),
+                                )
+                            }
+                        }
                     } else {
                         val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
                         if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) {
@@ -619,6 +731,20 @@ private fun GameLibraryContent(
         )
 
         null -> Unit
+    }
+
+    if (showFilterSheet) {
+        GameFilterSheet(
+            sortMode = gameSort,
+            engineFilter = engineFilter,
+            playedFilter = playedFilter,
+            availableEngines = availableEngines,
+            onSortChange = { AppSettingsStore.setGameSort(context, it) },
+            onEngineChange = { AppSettingsStore.setGameFilterEngine(context, it) },
+            onPlayedChange = { AppSettingsStore.setGameFilterPlayed(context, it) },
+            onReset = resetFilters,
+            onDismiss = { showFilterSheet = false },
+        )
     }
 
 }
@@ -847,90 +973,24 @@ internal fun GameActionsSheet(
         }
     }
 
-    // 玻璃系风格抽屉：高级玻璃用页面背景取色渐变；复古玻璃用不透明色，任何一层都不透底
+    // 玻璃系风格抽屉内条目材质：高级玻璃用页面背景取色渐变；复古玻璃用不透明色，任何一层都不透底
     val drawerItemSurface = when {
         AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
         AppThemeColors.isGlass -> GlassSurfaceSolid
         else -> NavWhite
     }
-    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
-    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
-    ModalBottomSheet(
+    AppBottomSheet(
         onDismissRequest = {
             // 关闭抽屉时一并清除裁切弹窗状态，避免 rememberSaveable 在下一次打开时残留旧弹窗
             shortcutCropUriText = null
             shortcutPickerForNoCover = false
             onDismiss()
         },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        // 关闭抽屉拖拽手势：M3 默认「位移 > 56dp 或速度 > 125dp/s」即关闭，用户快速滑动内容时
-        // 极易误关（列表到顶后的剩余手势/惯性会转交抽屉）。关闭后仅能通过遮罩/返回键关闭，
-        // 内容滚动与点击不受影响。参见 AGENTS.md「游戏操作抽屉」约定。
-        sheetGesturesEnabled = false,
-        // 高级玻璃面板底色透明，取色渐变画在内容层（不能挂 Surface 外层 modifier：
-        // 抽屉位置由内部 anchors 布局偏移决定，外层绘制会落在未偏移位置，与玻璃描边踩过同一个坑）；
-        // 复古玻璃用不透明面板色（GlassPanel 带 10% 透明度会透出底层内容）
-        containerColor = when {
-            AppThemeColors.isAdvancedGlass -> Color.Transparent
-            AppThemeColors.isGlass -> GlassPanelSolid
-            else -> MaterialTheme.colorScheme.background
-        },
-        // 玻璃系风格加深化背景，避免抽屉与底层内容混在一起被看成半透明
-        scrimColor = when {
-            AppThemeColors.isAdvancedGlass -> Color.Black.copy(alpha = 0.6f)
-            AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
-            else -> Color.Black.copy(alpha = 0.32f)
-        },
-        contentWindowInsets = { WindowInsets(0.dp) },
-        // 顶部圆角与弹窗内条目圆角（AppNavItem 8dp）保持一致
-        shape = AppSheetTopShape,
-        // 玻璃描边只能画在抽屉真实顶边（dragHandle 槽首位）；不能挂 Surface 外层 modifier，
-        // 否则描边会按未偏移的布局位置落到背景里形成一条白线。
-        // 高级玻璃的把手条用面板渐变的顶端取色铺底，与下方内容层的渐变无缝衔接。
-        dragHandle = {
-            // Column 默认水平 Start 对齐会让把手贴左；需显式居中，描边线仍铺满整宽
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (advancedPanelSurface != null) {
-                            Modifier.background(advancedPanelSurface.topColor)
-                        } else {
-                            Modifier
-                        },
-                    ),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (AppThemeColors.isGlass) {
-                    Box(
-                        Modifier.fillMaxWidth().height(0.5.dp).background(
-                            if (AppThemeColors.isAdvancedGlass) AdvancedGlassBorder else GlassBorder,
-                        ),
-                    )
-                }
-                BottomSheetDefaults.DragHandle()
-            }
-        },
     ) {
-        // 小平板横屏下屏幕高度可能 < 560dp，硬编码会导致抽屉填满屏幕，
-        // SwipeableState 无法区分滚动/收起，快速滑动时高速振荡（issue #27）。
-        val sheetMaxHeight = with(LocalConfiguration.current) {
-            val available = (screenHeightDp - 120).dp
-            available.coerceIn(200.dp, 560.dp)
-        }
         LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = sheetMaxHeight)
-                // 高级玻璃取色渐变画在内容层（随抽屉偏移一起移动）
-                .then(
-                    if (advancedPanelSurface != null) {
-                        Modifier.background(advancedPanelSurface.brush)
-                    } else {
-                        Modifier
-                    },
-                ),
+            // 小平板横屏下屏幕高度可能 < 560dp，硬编码会让抽屉填满屏幕并触发手势误判（issue #27）
+            modifier = Modifier.fillMaxWidth().heightIn(max = appSheetMaxHeight()),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
