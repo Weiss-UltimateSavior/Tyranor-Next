@@ -1,5 +1,6 @@
 package com.tyranor.next.core.settings
 
+import com.tyranor.next.core.engine.EngineType
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -49,6 +50,22 @@ class GameFilterSettingsTest {
             AppSettingsStore.GAME_FILTER_PLAYED_NONE,
             AppSettingsStore.normalizeGameFilterPlayed(AppSettingsStore.GAME_FILTER_PLAYED_NONE),
         )
+    }
+
+    @Test
+    fun engineFilterKeepsKnownEnginesAndFallsBackToAll() {
+        assertEquals(
+            EngineType.KIRIKIRI.name,
+            AppSettingsStore.normalizeGameFilterEngine(EngineType.KIRIKIRI.name),
+        )
+        assertEquals(
+            AppSettingsStore.GAME_FILTER_ENGINE_ALL,
+            AppSettingsStore.normalizeGameFilterEngine(AppSettingsStore.GAME_FILTER_ENGINE_ALL),
+        )
+        // 未知/损坏的引擎名不能留下一个永远匹配不到的条件
+        assertEquals(AppSettingsStore.GAME_FILTER_ENGINE_ALL, AppSettingsStore.normalizeGameFilterEngine(null))
+        assertEquals(AppSettingsStore.GAME_FILTER_ENGINE_ALL, AppSettingsStore.normalizeGameFilterEngine("  "))
+        assertEquals(AppSettingsStore.GAME_FILTER_ENGINE_ALL, AppSettingsStore.normalizeGameFilterEngine("Kirikiri2"))
     }
 
     @Test
