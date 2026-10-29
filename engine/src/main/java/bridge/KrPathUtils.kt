@@ -1,15 +1,19 @@
 package bridge
 
-import android.content.Intent
-import android.net.Uri
 import android.util.Log
 import com.core.engine.LaunchContract
 import org.tvp.kirikiri2.KR2Activity
 import java.io.File
-import java.util.Locale
 
 object KrPathUtils {
     private const val TAG = "KrPathUtils"
+
+    /** Mount spellings of the emulated primary volume the engine may use interchangeably. */
+    private val STORAGE_ROOT_ALIASES = listOf(
+        "/storage/emulated/0",
+        "/sdcard",
+        "/storage/self/primary",
+    )
 
     @JvmStatic
     fun currentActivity(): KR2Activity? {
@@ -70,43 +74,93 @@ object KrPathUtils {
     @JvmStatic
     fun redirectScopedSavePath(path: String?): String? {
         return try {
-            val activity = currentActivity()
-            if (activity == null || activity.intent == null) return null
-            if (!activity.intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) return null
-            if (path == null || path.trim().isEmpty()) return null
-            val p = normalizeFilePath(path)!!
-            val lower = p.lowercase(Locale.ROOT)
-            var idx = lower.indexOf("/savedata/")
-            val len = if (idx < 0) {
-                if (lower.endsWith("/savedata")) {
-                    idx = lower.length - "/savedata".length
-                    "/savedata".length
-                } else {
-                    return null
-                }
-            } else "/savedata/".length
-            val rel = if (p.length > idx + len) p.substring(idx + len) else ""
-            var root = normalizeFilePath(activity.intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT))
-            if (root != null && root.trim().isNotEmpty() && root.startsWith("/")) {
-                val dir = File(root)
-                val out = if (rel.isEmpty()) dir else File(dir, rel)
-                val parent = if (out.isDirectory) out else out.parentFile
-                if (parent != null && !parent.exists()) parent.mkdirs()
-                Log.i(TAG, "redirect KR save $p -> ${out.absolutePath}")
-                return out.absolutePath
-            }
-            root = normalizeFilePath(activity.intent.getStringExtra(LaunchContract.PROJECT_ROOT))
-            if (root == null || root.trim().isEmpty()) root = normalizeFilePath(activity.intent.getStringExtra(LaunchContract.GAME_DIR))
-            if (root == null || root.trim().isEmpty() || !root.startsWith("/")) return null
-            val dir = File(root, "savedata")
-            val out = if (rel.isEmpty()) dir else File(dir, rel)
+            val intent = currentActivity()?.intent ?: return null
+            if (!intent.getBooleanExtra(LaunchContract.SCOPED_SAVE_DIR, false)) return null
+            val out = resolveScopedSavePath(
+                path,
+                intent.getStringExtra(LaunchContract.PROJECT_ROOT),
+                intent.getStringExtra(LaunchContract.GAME_DIR),
+                intent.getStringExtra(LaunchContract.SCOPED_SAVE_ROOT),
+            ) ?: return null
             val parent = if (out.isDirectory) out else out.parentFile
             if (parent != null && !parent.exists()) parent.mkdirs()
-            Log.i(TAG, "redirect KR save $p -> ${out.absolutePath}")
+            Log.i(TAG, "redirect KR save $path -> ${out.absolutePath}")
             out.absolutePath
         } catch (t: Throwable) {
             Log.w(TAG, "redirect KR save failed path=$path", t)
             null
         }
+    }
+
+    /** Source savedata and the independent destination are distinct anchors. */
+    internal fun resolveScopedSavePath(
+        path: String?,
+        projectRoot: String?,
+        gameDirectory: String?,
+        scopedSaveRoot: String?,
+    ): File? {
+        val requested = normalizeFilePath(path)?.replace(File.separatorChar, '/')
+            ?.takeIf { it.isNotBlank() && File(it).isAbsolute } ?: return null
+        fun absoluteDirectory(value: String?): File? = normalizeFilePath(value)
+            ?.takeIf { it.isNotBlank() && File(it).isAbsolute }?.let { File(it) }
+        val sourceProject = absoluteDirectory(projectRoot) ?: absoluteDirectory(gameDirectory)
+        val source = sourceProject?.let { File(it, "savedata") }
+        val destination = absoluteDirectory(scopedSaveRoot) ?: source ?: return null
+        return try {
+            val destinationCanonical = destination.canonicalFile
+            // Already redirected paths are idempotent. Only the game's top-level
+            // savedata is a source; resources such as data/savedata stay untouched.
+            for (anchor in listOfNotNull(destination, source).distinct()) {
+                for (alias in anchorSpellings(anchor).distinct()) {
+                    val prefix = alias.path.replace(File.separatorChar, '/').trimEnd('/')
+                    val relative = when {
+                        requested.equals(prefix, ignoreCase = true) -> ""
+                        requested.startsWith(prefix + "/", ignoreCase = true) -> requested.substring(prefix.length + 1)
+                        else -> continue
+                    }
+                    val out = if (relative.isEmpty()) destinationCanonical else File(destinationCanonical, relative).canonicalFile
+                    if (out == destinationCanonical || out.path.startsWith(destinationCanonical.path + File.separator)) {
+                        return out
+                    }
+                    return null
+                }
+            }
+            null
+        } catch (_: java.io.IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
+    }
+
+    /**
+     * The engine may spell the same storage root through its mount aliases
+     * (`/sdcard`, `/storage/self/primary`, `/storage/emulated/0`). Anchor matching
+     * must cover them or internal saves silently stop redirecting (review round 9,
+     * #14). Only the leading mount segment is swapped; the game-relative remainder
+     * and the containment check stay unchanged. Pure string expansion for JVM tests.
+     */
+    internal fun expandStorageRootAliases(path: String): List<String> {
+        val normalized = path.replace(File.separatorChar, '/').trimEnd('/')
+        val result = LinkedHashSet<String>()
+        result += normalized
+        for (alias in STORAGE_ROOT_ALIASES) {
+            if (normalized.startsWith("$alias/")) {
+                val remainder = normalized.substring(alias.length)
+                for (other in STORAGE_ROOT_ALIASES) {
+                    if (other != alias) result += other + remainder
+                }
+            }
+        }
+        return result.toList()
+    }
+
+    private fun anchorSpellings(anchor: File): List<File> {
+        val spellings = LinkedHashSet<String>()
+        spellings += expandStorageRootAliases(anchor.path)
+        spellings += runCatching {
+            expandStorageRootAliases(anchor.canonicalFile.path)
+        }.getOrDefault(emptyList())
+        return spellings.map(::File)
     }
 }

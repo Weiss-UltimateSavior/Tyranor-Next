@@ -134,6 +134,8 @@ private fun SaveManagementScreen(game: ScanGame) {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
+            location = null
+            fileCount = 0
             refreshError = failure.toSaveErrorMessage(context, saveOperationFailedMessage)
         }
     }
@@ -239,6 +241,14 @@ private fun SaveManagementScreen(game: ScanGame) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 8.dp),
                                 )
+                                if (loadedLocation.mirrorForced) {
+                                    Text(
+                                        stringResource(R.string.krkr_mirror_save_import_hint),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
                                 Text(
                                     if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
                                     style = MaterialTheme.typography.bodyMedium,

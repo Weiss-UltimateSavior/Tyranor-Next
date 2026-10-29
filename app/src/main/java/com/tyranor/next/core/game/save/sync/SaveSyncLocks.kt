@@ -3,7 +3,7 @@ package com.tyranor.next.core.game.save.sync
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** Network serialization never blocks local history/selection; lock order is versions -> active. */
+/** Network waits hold no local locks; local order is versions -> active -> mutation -> session. */
 internal object SaveSyncLocks {
     private val network = SaveSyncLockRegistry()
     private val versions = SaveSyncLockRegistry()

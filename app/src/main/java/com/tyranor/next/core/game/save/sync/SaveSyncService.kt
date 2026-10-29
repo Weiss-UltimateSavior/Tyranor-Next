@@ -63,55 +63,55 @@ class SaveSyncService internal constructor(
             val directoryKey = environment.activeKey(game)
             SaveSyncLocks.active(directoryKey) {
                 SaveSyncLocks.mutation {
-                requireSameSaveDirectory(directoryKey, environment.activeKey(game))
-                directoryActivations.owned(game.uri).forEach { requireSameSaveDirectory(it.activeKey, directoryKey) }
-                requireIdle(game)
-                val key = localKey(game)
-                val directoryOwners = directoryActivations.owned(game.uri)
-                for (owner in directoryOwners) {
-                    val committed = owner.committed ?: true
-                    if (committed) environment.retireSessions(game, directoryKey)
-                    directoryActivations.prepareCompletion(directoryKey, game.uri, owner.token, committed)
-                }
-                val legacyCheckpoint = try { checkpointKey(game, environment.config()) }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { null }
-                // An unreadable ownership index cannot establish that cleanup is complete.
-                val index = states.load(key).optJSONArray("checkpointKeys")
-                val owned = (0 until (index?.length() ?: 0)).map { index!!.getString(it) }.toSet()
-                val failures = ArrayList<Exception>()
-                suspend fun clear(action: suspend () -> Unit) {
-                    try { action() }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (failure: Exception) { failures += failure }
-                }
-                for (checkpoint in (states.keys() + owned + listOfNotNull(legacyCheckpoint)).distinct().filter { it != key }) {
-                    val declaredOwner = try {
-                        states.load(checkpoint).optString("gameKey").takeIf { it.isNotBlank() }
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { null }
-                    val belongs = if (declaredOwner != null) declaredOwner == key
-                        else checkpoint == legacyCheckpoint || checkpoint in owned
-                    if (belongs) clear { states.remove(checkpoint) }
-                }
-                clear { com.tyranor.next.core.game.save.SavePathSafety.deleteTreeNoFollow(File(root, "versions/$key")) }
-                clear { activations.clear(key) }
-                SaveSyncLocks.session(key) {
-                    clear { SaveSyncStateStore(File(root, "sessions")).remove(key) }
-                }
-                clear { SaveSyncStateStore(File(root, "baselines")).remove(key) }
-                for (pending in directoryOwners) {
-                    if (failures.isEmpty()) clear {
-                        directoryActivations.complete(pending.activeKey, game.uri, pending.token, pending.committed ?: true)
+                    requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                    directoryActivations.owned(game.uri).forEach { requireSameSaveDirectory(it.activeKey, directoryKey) }
+                    requireIdle(game)
+                    val key = localKey(game)
+                    val directoryOwners = directoryActivations.owned(game.uri)
+                    for (owner in directoryOwners) {
+                        val committed = owner.committed ?: true
+                        if (committed) environment.retireSessions(game, directoryKey)
+                        directoryActivations.prepareCompletion(directoryKey, game.uri, owner.token, committed)
                     }
-                }
-                if (failures.isNotEmpty()) {
-                    throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failures.first()).also { failure ->
-                        failures.drop(1).forEach(failure::addSuppressed)
+                    val legacyCheckpoint = try { checkpointKey(game, environment.config()) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { null }
+                    // An unreadable ownership index cannot establish that cleanup is complete.
+                    val index = states.load(key).optJSONArray("checkpointKeys")
+                    val owned = (0 until (index?.length() ?: 0)).map { index!!.getString(it) }.toSet()
+                    val failures = ArrayList<Exception>()
+                    suspend fun clear(action: suspend () -> Unit) {
+                        try { action() }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (failure: Exception) { failures += failure }
                     }
-                }
-                // The identity and ownership index are the retry map for failed child cleanup.
-                states.remove(key)
+                    for (checkpoint in (states.keys() + owned + listOfNotNull(legacyCheckpoint)).distinct().filter { it != key }) {
+                        val declaredOwner = try {
+                            states.load(checkpoint).optString("gameKey").takeIf { it.isNotBlank() }
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { null }
+                        val belongs = if (declaredOwner != null) declaredOwner == key
+                            else checkpoint == legacyCheckpoint || checkpoint in owned
+                        if (belongs) clear { states.remove(checkpoint) }
+                    }
+                    clear { com.tyranor.next.core.game.save.SavePathSafety.deleteTreeNoFollow(File(root, "versions/$key")) }
+                    clear { activations.clear(key) }
+                    SaveSyncLocks.session(key) {
+                        clear { SaveSyncStateStore(File(root, "sessions")).remove(key) }
+                    }
+                    clear { SaveSyncStateStore(File(root, "baselines")).remove(key) }
+                    for (pending in directoryOwners) {
+                        if (failures.isEmpty()) clear {
+                            directoryActivations.complete(pending.activeKey, game.uri, pending.token, pending.committed ?: true)
+                        }
+                    }
+                    if (failures.isNotEmpty()) {
+                        throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failures.first()).also { failure ->
+                            failures.drop(1).forEach(failure::addSuppressed)
+                        }
+                    }
+                    // The identity and ownership index are the retry map for failed child cleanup.
+                    states.remove(key)
                 }
             }
         }
@@ -186,6 +186,9 @@ class SaveSyncService internal constructor(
                     var retryingPrepared = false
                     if (pending != null) {
                         val earlyResult = SaveSyncLocks.mutation {
+                            requireIdle(game)
+                            requireEnabled()
+                            requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                             environment.completeImport(game, directoryKey)
                             SaveActivationRecovery.beforeSelection(
                                 sameContent = pending.selected.contentHash == selected.contentHash,
@@ -212,13 +215,14 @@ class SaveSyncService internal constructor(
                     activations.prepare(key, selected, temp, before, directoryKey) { job.ensureActive() }
                     var committed = false
                     try {
-                        captureLocked(game, finalizeRestore = true, directoryKey = directoryKey)
-                        job.ensureActive()
-                        requireEnabled()
-                        requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                         // Once the active save changes, leaving this page must not cancel its
                         // matching version metadata or the pending automatic update.
                         SaveSyncLocks.mutation {
+                            requireIdle(game)
+                            requireEnabled()
+                            requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                            captureLocked(game, finalizeRestore = true, directoryKey = directoryKey)
+                            job.ensureActive()
                             withContext(NonCancellable) {
                                 try {
                                     // Re-check after waiting for a disabled launch: it may have
@@ -243,29 +247,32 @@ class SaveSyncService internal constructor(
                             }
                         }
                     } catch (failure: Exception) {
-                        if (!committed) SaveSyncLocks.mutation {
-                            withContext(NonCancellable) {
+                        if (!committed) withContext(NonCancellable) {
+                            SaveSyncLocks.mutation {
                                 try {
+                                    // Disabling/cancelling does not cancel required rollback.
+                                    // A launch or a directory change does: keep the recovery material.
+                                    requireIdle(game)
+                                    requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                                     activations.discardUncommitted(key) { archive, version ->
-                                    environment.completeImport(game, directoryKey)
-                                    snapshots.add(key, archive, version.createdAt, version.source, version.contentHash,
-                                        restored = version.restored, previousCreatedAt = version.previousCreatedAt,
-                                        protectedHashes = pendingProtection(game))
-                                    prepareDirectoryRollback(game, directoryKey)
-                                }
-                                finishPreparedDirectoryCleanup(game, directoryKey)
-                            } catch (cleanup: Exception) {
-                                if (cleanup !== failure) {
-                                    // Preserve the original cancellation object. A new cancellation
-                                    // still propagates, with the original failure retained as context.
-                                    if (cleanup is CancellationException && failure !is CancellationException) {
-                                        cleanup.addSuppressed(failure)
-                                        throw cleanup
+                                        environment.completeImport(game, directoryKey)
+                                        snapshots.add(key, archive, version.createdAt, version.source, version.contentHash,
+                                            restored = version.restored, previousCreatedAt = version.previousCreatedAt,
+                                            protectedHashes = pendingProtection(game))
+                                        prepareDirectoryRollback(game, directoryKey)
                                     }
-                                    failure.addSuppressed(cleanup)
+                                    finishPreparedDirectoryCleanup(game, directoryKey)
+                                } catch (cleanup: Exception) {
+                                    if (cleanup !== failure) {
+                                        // Preserve the original cancellation object.
+                                        if (cleanup is CancellationException && failure !is CancellationException) {
+                                            cleanup.addSuppressed(failure)
+                                            throw cleanup
+                                        }
+                                        failure.addSuppressed(cleanup)
+                                    }
                                 }
                             }
-                        }
                         }
                         throw failure
                     }
@@ -492,7 +499,7 @@ class SaveSyncService internal constructor(
         return SaveActivationResult.APPLIED
     }
 
-    suspend fun syncAll(direction: SaveSyncDirection): SaveSyncReport = withContext(Dispatchers.IO) {
+    suspend fun syncAll(direction: SaveSyncDirection, excludedUris: Set<String> = emptySet()): SaveSyncReport = withContext(Dispatchers.IO) {
         requireEnabled()
         // Validate once before walking the library. No archive transfer is needed for unchanged games.
         val config = environment.config()
@@ -510,15 +517,18 @@ class SaveSyncService internal constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                report += SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, errorCode(failure))))
+                if (game.uri !in excludedUris) {
+                    report += SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, errorCode(failure), game.uri)))
+                }
             }
         }
         environment.openClient(config).use { client ->
             for ((_, games) in keys) for (game in games) {
                 currentCoroutineContext().ensureActive()
                 requireEnabled()
+                if (game.uri in excludedUris) continue
                 report += if (games.size > 1) {
-                    SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, SaveSyncError.IDENTITY_CONFLICT)))
+                    SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, SaveSyncError.IDENTITY_CONFLICT, game.uri)))
                 } else syncOne(game, direction, config, client, expectedGeneration = generation)
             }
         }
@@ -689,8 +699,12 @@ class SaveSyncService internal constructor(
                         busy++
                         false
                     } else {
-                        finishPreparedDirectoryCleanup(game, directoryKey)
                         SaveSyncLocks.mutation {
+                            if (gameRunning(force = true)) throw GameBecameBusy()
+                            requireEnabled()
+                            requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                            if (!isCurrent()) throw LocalStateChanged()
+                            finishPreparedDirectoryCleanup(game, directoryKey)
                             activations.load(localKey(game))?.let { pending ->
                                 if (tryFinishActivation(game, pending, directoryKey) != SaveActivationResult.APPLIED) {
                                     throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
@@ -780,7 +794,7 @@ class SaveSyncService internal constructor(
                     val confirmedSize = checkpoint.optLong("publicationTargetSize", -1L)
                     val confirmedEtag = checkpoint.optString("publicationTargetEtag")
                     val matchesConfirmed = checkpoint.optBoolean("publicationConfirmed") && target != null &&
-                        confirmedHash.isNotBlank() && isStrongEtag(confirmedEtag) && isStrongEtag(target.etag) &&
+                        confirmedHash.isNotBlank() && isStrongEtag(confirmedEtag) &&
                         target.contentHash == confirmedHash && target.size == confirmedSize && target.etag == confirmedEtag
                     val verified = matchesConfirmed || (target != null && client.verifyVersion(remoteGame, target))
                     checkpoint.put("publicationConfirmed", verified)
@@ -823,11 +837,17 @@ class SaveSyncService internal constructor(
                     saveCheckpoint(checkpointKey, checkpoint)
                 }
                 val version = local {
-                    captureLocked(game, expectedContentHash = expectedContentHash, directoryKey = directoryKey)
+                    SaveSyncLocks.mutation {
+                        if (gameRunning(force = true)) throw GameBecameBusy()
+                        requireEnabled()
+                        requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+                        if (!isCurrent()) throw LocalStateChanged()
+                        captureLocked(game, expectedContentHash = expectedContentHash, directoryKey = directoryKey)
+                    }
                 }
                 if (cleanupPending > 0 && (version == null || version.contentHash == confirmedCleanupTarget?.contentHash)) {
                     return@network SaveSyncReport(downloaded = downloaded, cleanupPending = 1,
-                        cleanupPendingGames = setOf(game.title))
+                        cleanupPendingGames = setOf(game.uri))
                 }
                 if (version == null) {
                     if (checkpoint.optBoolean("needsPrune")) {
@@ -941,23 +961,23 @@ class SaveSyncService internal constructor(
             }
             SaveSyncReport(uploaded, downloaded, if (uploaded + downloaded + busy + cleanupPending == 0) 1 else 0, busy,
                 cleanupPending = cleanupPending,
-                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.uri) else emptySet())
         } catch (_: CleanupPending) {
             SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy, cleanupPending = 1,
-                cleanupPendingGames = setOf(game.title))
+                cleanupPendingGames = setOf(game.uri))
         } catch (_: GameBecameBusy) {
             SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy + 1, cleanupPending = cleanupPending,
-                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.uri) else emptySet())
         } catch (_: LocalStateChanged) {
             SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
-                failures = listOf(SaveSyncFailure(game.title, SaveSyncError.LOCAL_STATE_CHANGED)), cleanupPending = cleanupPending,
-                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
+                failures = listOf(SaveSyncFailure(game.title, SaveSyncError.LOCAL_STATE_CHANGED, game.uri)), cleanupPending = cleanupPending,
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.uri) else emptySet())
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
-                failures = listOf(SaveSyncFailure(game.title, errorCode(failure))), cleanupPending = cleanupPending,
-                cleanupPendingGames = if (cleanupPending > 0) setOf(game.title) else emptySet())
+                failures = listOf(SaveSyncFailure(game.title, errorCode(failure), game.uri)), cleanupPending = cleanupPending,
+                cleanupPendingGames = if (cleanupPending > 0) setOf(game.uri) else emptySet())
         } finally {
             uploadArchive?.let(SaveSyncTemporaryFiles::release)
         }

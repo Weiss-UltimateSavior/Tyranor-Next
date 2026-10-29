@@ -22,19 +22,6 @@ internal fun classifySaveSyncStorageFailure(
     )
 }
 
-internal fun requireSaveSyncStorageSpace(
-    archiveBytes: Long,
-    directory: File,
-    usableSpace: (File) -> Long = { it.usableSpace },
-) {
-    val usableBytes = try {
-        usableSpace(directory)
-    } catch (failure: SecurityException) {
-        throw classifySaveSyncStorageFailure(failure, directory, archiveBytes, usableSpace)
-    }
-    requireSnapshotSpace(archiveBytes, usableBytes)
-}
-
 /** Cache temp files are transient; only the persistent history write keeps the full 16 MiB headroom. */
 internal fun requireSaveSyncTransientSpace(
     archiveBytes: Long,
@@ -46,7 +33,7 @@ internal fun requireSaveSyncTransientSpace(
     } catch (failure: SecurityException) {
         throw classifySaveSyncStorageFailure(failure, directory, archiveBytes, usableSpace)
     }
-    if (usableBytes < archiveBytes.coerceAtLeast(0L) + SAVE_SYNC_TRANSIENT_RESERVE_BYTES) {
+    if (!hasSaveSyncTransientSpace(archiveBytes, usableBytes)) {
         throw SaveSyncException(SaveSyncError.STORAGE_FULL)
     }
 }
@@ -74,11 +61,16 @@ private fun storageProvablyInsufficient(
     usableSpace: (File) -> Long,
 ): Boolean {
     return try {
-        val usableBytes = usableSpace(directory)
-        usableBytes < remainingBytes.coerceAtLeast(0L) + SAVE_SYNC_TRANSIENT_RESERVE_BYTES
+        !hasSaveSyncTransientSpace(remainingBytes, usableSpace(directory))
     } catch (_: SecurityException) {
         false
     }
+}
+
+private fun hasSaveSyncTransientSpace(requiredBytes: Long, usableBytes: Long): Boolean {
+    val required = requiredBytes.coerceAtLeast(0L)
+    return usableBytes >= SAVE_SYNC_TRANSIENT_RESERVE_BYTES &&
+        required <= usableBytes - SAVE_SYNC_TRANSIENT_RESERVE_BYTES
 }
 
 internal fun Throwable.indicatesStorageFull(): Boolean {

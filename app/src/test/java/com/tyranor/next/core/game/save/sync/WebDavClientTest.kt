@@ -550,7 +550,14 @@ class WebDavClientTest {
         val targetPath = gameFolder + version.id
         val corruptBytes = "corrupt target".toByteArray()
 
-        listOf<String?>("W/\"weak\"", null).forEach { etag ->
+        listOf(
+            "W/\"weak\"" to SaveSyncError.CORRUPT_ARCHIVE,
+            null to SaveSyncError.CORRUPT_ARCHIVE,
+            "\"inner space\"" to SaveSyncError.INVALID_RESPONSE,
+            "\"inner\"quote\"" to SaveSyncError.CORRUPT_ARCHIVE,
+            "\"del\u007f\"" to SaveSyncError.INVALID_RESPONSE,
+            "\"non-byte\u0100\"" to SaveSyncError.INVALID_RESPONSE,
+        ).forEach { (etag, expectedCode) ->
             val folders = hashSetOf("/dav/TYN-saves/", engineFolder, gameFolder)
             val files = hashMapOf(targetPath to corruptBytes)
             val methods = ArrayList<Pair<String, String>>()
@@ -612,11 +619,16 @@ class WebDavClientTest {
                         client.upload(GAME, version, archive)
                         throw AssertionError("Corrupt target without a strong ETag was repaired")
                     } catch (expected: SaveSyncException) {
-                        assertEquals(SaveSyncError.CORRUPT_ARCHIVE, expected.code)
+                        assertEquals(expectedCode, expected.code)
                     }
                 }
-                assertTrue(methods.any { it.first == "GET" && it.second == targetPath })
+                // The initial conditional PUT is safe even when the later listing is malformed.
                 assertEquals(listOf(PutRequest(targetPath, "*", null)), puts)
+                if (expectedCode == SaveSyncError.INVALID_RESPONSE) {
+                    assertFalse(methods.any { it.first == "GET" && it.second == targetPath })
+                } else {
+                    assertTrue(methods.any { it.first == "GET" && it.second == targetPath })
+                }
                 assertTrue(moves.isEmpty())
                 assertFalse(deleted)
                 assertArrayEquals(corruptBytes, files.getValue(targetPath))
@@ -632,7 +644,12 @@ class WebDavClientTest {
         val targetPath = gameFolder + name
         val corruptBytes = "corrupt publication".toByteArray()
 
-        suspend fun exercise(etag: String?, expectDeleted: Boolean, cancelDelete: Boolean = false) {
+        suspend fun exercise(
+            etag: String?,
+            expectDeleted: Boolean,
+            cancelDelete: Boolean = false,
+            expectedIfMatch: String = "\"strong\"",
+        ) {
             val files = hashMapOf(targetPath to corruptBytes)
             val deletes = ArrayList<String?>()
             val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -681,7 +698,7 @@ class WebDavClientTest {
                     }
                 }
                 if (expectDeleted) {
-                    assertEquals(listOf("\"strong\""), deletes)
+                    assertEquals(listOf(expectedIfMatch), deletes)
                     assertFalse(targetPath in files)
                 } else {
                     assertTrue(deletes.isEmpty())
@@ -691,6 +708,7 @@ class WebDavClientTest {
         }
 
         exercise("\"strong\"", expectDeleted = true)
+        exercise("\"\"", expectDeleted = true, expectedIfMatch = "\"\"")
         exercise(null, expectDeleted = false)
         exercise("\"strong\"", expectDeleted = false, cancelDelete = true)
     }
@@ -1211,6 +1229,31 @@ class WebDavClientTest {
             multistatus(response(selfHref, true) + response(fileHref, false, 3)).toByteArray(),
         )
         assertEquals(listOf(name), versions.map { it.name })
+    }
+
+    @Test fun listingPreservesRawStrongEtagBytesAndRejectsNonByteText() {
+        val gameFolder = "/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/"
+        val folder = "https://example.com$gameFolder".toHttpUrl()
+        val name = SaveVersionNames.createRemote(1, "a".repeat(64), ZoneOffset.UTC)
+        val href = encodedHref(gameFolder + name)
+        val rawEtag = "\"!\u0080\u00ff~\""
+
+        val versions = WebDavClient.parseListing(
+            folder,
+            multistatus(response(encodedHref(gameFolder), true) + response(href, false, 3, rawEtag)).toByteArray(),
+        )
+        assertEquals(rawEtag, versions.single().etag)
+
+        listOf(
+            "\"inner space\"",
+            "\"del\u007f\"",
+            "\"non-byte\u0100\"",
+        ).forEach { invalid ->
+            assertInvalidListing(
+                folder,
+                multistatus(response(encodedHref(gameFolder), true) + response(href, false, 3, invalid)).toByteArray(),
+            )
+        }
     }
 
     @Test fun listingRejectsExcessiveXmlResponseCountBeforeDom() {

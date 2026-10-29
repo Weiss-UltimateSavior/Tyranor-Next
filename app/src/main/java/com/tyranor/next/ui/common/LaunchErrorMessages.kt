@@ -53,6 +53,9 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
             MirrorPrepareStage.SOURCE_UNRESOLVED ->
                 localized.getString(R.string.launch_prepare_krkr_sd_mirror_failed)
 
+            MirrorPrepareStage.EMPTY_MIRROR ->
+                localized.getString(R.string.launch_empty_krkr_sd_mirror)
+
             MirrorPrepareStage.CREATE_FAILED -> localized.getString(
                 R.string.launch_create_krkr_mirror_failed,
                 name ?: localized.getString(R.string.launch_create_krkr_mirror_unknown_path),

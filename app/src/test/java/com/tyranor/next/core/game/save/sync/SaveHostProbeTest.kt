@@ -2,6 +2,7 @@ package com.tyranor.next.core.game.save.sync
 
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
@@ -53,13 +54,89 @@ class SaveHostProbeTest {
         )
 
         assertTrue(running(probe, hasSession = false))
+        assertEquals(1, probe.visibleHostsCalls)
     }
 
     @Test
-    fun unavailableProcessListFailsClosed() {
+    fun unavailableProcessListWithoutRequiredSessionAndWithoutRecordsIsIdle() {
         val probe = FakeProbe(visibleHosts = null)
 
+        assertFalse(running(probe, hasSession = false))
+        assertEquals(1, probe.visibleHostsCalls)
+    }
+
+    @Test
+    fun unavailableProcessListWithRequiredSessionIsBusy() {
+        val name = "com.tyranor.next:kirikiroid"
+        val pid = 108
+        val probe = FakeProbe(
+            visibleHosts = null,
+            records = mapOf(
+                key(name) to record(pid, activities = 1, uris = listOf(TARGET_URI)),
+            ),
+            identities = mapOf(pid to SaveHostIdentity.Dead),
+        )
+
+        assertTrue(running(probe, hasSession = true))
+        assertEquals(1, probe.visibleHostsCalls)
+    }
+
+    @Test
+    fun unavailableProcessListStillEvaluatesLivePersistedHosts() {
+        val name = "com.tyranor.next:kirikiroid"
+        val pid = 109
+        val probe = FakeProbe(
+            visibleHosts = null,
+            records = mapOf(
+                key(name) to record(pid, activities = 1, uris = listOf(TARGET_URI)),
+            ),
+            identities = mapOf(pid to SaveHostIdentity.Live(name)),
+        )
+
         assertTrue(running(probe, hasSession = false))
+        assertEquals(1, probe.visibleHostsCalls)
+    }
+
+    @Test
+    fun unavailableProcessListIgnoresLiveHostForAnotherSaveDirectory() {
+        val name = "com.tyranor.next:kirikiroid"
+        val pid = 113
+        val probe = FakeProbe(
+            visibleHosts = null,
+            records = mapOf(
+                key(name) to record(pid, activities = 1, uris = listOf("content://saves/other-game")),
+            ),
+            identities = mapOf(pid to SaveHostIdentity.Live(name)),
+        )
+
+        assertFalse(running(probe, hasSession = false))
+    }
+
+    @Test
+    fun unavailableProcessListStillEvaluatesPendingNativeOwner() {
+        val name = "com.tyranor.next:siglus"
+        val pid = 114
+        val state = record(pid, activities = 0, uris = listOf(TARGET_URI), idleSince = 1L)
+            .put("nativeOwnerPending", true)
+        val probe = FakeProbe(
+            visibleHosts = null,
+            records = mapOf(key(name) to state),
+            identities = mapOf(pid to SaveHostIdentity.Live(name)),
+        )
+
+        assertTrue(running(probe, elapsedMillis = 60_000L, hasSession = false))
+    }
+
+    @Test
+    fun externalOnlySessionDoesNotRequireMissingNativeHostEvidence() {
+        val probe = FakeProbe(visibleHosts = null)
+        val nativeSessionRequiresHostEvidence = sessionRequiresHostEvidence(
+            hasToken = false,
+            startedAt = 0L,
+            returned = true,
+        )
+
+        assertFalse(running(probe, hasSession = nativeSessionRequiresHostEvidence))
     }
 
     @Test
@@ -98,7 +175,7 @@ class SaveHostProbeTest {
         val name = "com.tyranor.next:kirikiroid"
         val pid = 105
         val probe = FakeProbe(
-            visibleHosts = emptyList(),
+            visibleHosts = null,
             records = mapOf(
                 key(name) to record(pid, activities = 1, uris = listOf(TARGET_URI)),
             ),
@@ -106,6 +183,47 @@ class SaveHostProbeTest {
         )
 
         assertTrue(running(probe, hasSession = false))
+    }
+
+    @Test
+    fun malformedPersistedRecordStaysBusyWithoutVisibleProcesses() {
+        val name = "com.tyranor.next:kirikiroid"
+        val probe = FakeProbe(
+            visibleHosts = null,
+            records = mapOf(
+                key(name) to record(pid = 0, activities = 1, uris = listOf(TARGET_URI)),
+            ),
+        )
+
+        assertTrue(running(probe, hasSession = false))
+    }
+
+    @Test
+    fun corruptRecordSnapshotIsConservativeOnceThenQuarantinedAbsenceCanBeIdle() {
+        val name = "com.tyranor.next:kirikiroid"
+        val records = mutableMapOf(key(name) to JSONObject())
+        val probe = FakeProbe(
+            visibleHosts = null,
+            records = records,
+        )
+
+        assertTrue(running(probe, hasSession = false))
+        assertEquals(1, probe.visibleHostsCalls)
+
+        records.clear()
+        assertFalse(running(probe, hasSession = false))
+        assertEquals(2, probe.visibleHostsCalls)
+    }
+
+    @Test
+    fun startGraceIsBusyWithoutReadingAnUnavailableProcessList() {
+        val probe = FakeProbe(
+            visibleHosts = null,
+            recordsFailure = IllegalStateException("must not read records during grace"),
+        )
+
+        assertTrue(running(probe, inStartGrace = true))
+        assertEquals(0, probe.visibleHostsCalls)
     }
 
     @Test
@@ -232,7 +350,13 @@ class SaveHostProbeTest {
         private val identities: Map<Int, SaveHostIdentity> = emptyMap(),
         private val recordsFailure: RuntimeException? = null,
     ) : SaveHostProbe {
-        override fun visibleHosts(): List<SaveHostProcess>? = visibleHosts
+        var visibleHostsCalls: Int = 0
+            private set
+
+        override fun visibleHosts(): List<SaveHostProcess>? {
+            visibleHostsCalls++
+            return visibleHosts
+        }
 
         override fun records(): Map<String, JSONObject> =
             recordsFailure?.let { throw it } ?: records

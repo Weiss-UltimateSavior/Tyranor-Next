@@ -10,9 +10,10 @@ internal suspend fun <T> withCurrentSaveSession(
     observed: JSONObject,
     activeKey: String,
     resolveActiveKey: (() -> String)? = null,
+    guardMutation: Boolean = false,
     action: suspend (JSONObject) -> T,
 ): T? = SaveSyncLocks.active(activeKey) {
-    SaveSyncLocks.session(key) {
+    suspend fun current(): T? = SaveSyncLocks.session(key) {
         val token = observed.optString("token")
         val current = store.load(key)
         if (token.isBlank() || current.optString("token") != token) return@session null
@@ -20,6 +21,7 @@ internal suspend fun <T> withCurrentSaveSession(
         if (current.optString("activeKey") != activeKey) return@session null
         action(current)
     }
+    if (guardMutation) SaveSyncLocks.mutation { current() } else current()
 }
 
 /** Missing bindings from an older build also require an explicit selection to re-establish ownership. */

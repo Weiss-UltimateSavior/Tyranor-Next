@@ -108,6 +108,7 @@ data class SaveSyncReport(
     val busy: Int = 0,
     val failures: List<SaveSyncFailure> = emptyList(),
     val cleanupPending: Int = 0,
+    /** Stable game URIs whose cleanup remains pending. */
     val cleanupPendingGames: Set<String> = emptySet(),
 ) {
     operator fun plus(other: SaveSyncReport) = SaveSyncReport(
@@ -117,13 +118,21 @@ data class SaveSyncReport(
     )
 }
 
-data class SaveSyncFailure(val gameTitle: String, val error: SaveSyncError)
+data class SaveSyncFailure(
+    val gameTitle: String,
+    val error: SaveSyncError,
+    val gameUri: String = "",
+)
 
-/** A strong validator must be quoted, non-weak and free of control characters. */
+/** A strong entity-tag uses the RFC 7232 quoted `etagc` byte grammar. */
 internal fun isStrongEtag(value: String?): Boolean {
     val etag = value ?: return false
-    return etag.length >= 2 && etag.startsWith('"') && etag.endsWith('"') &&
-        !etag.startsWith("W/", ignoreCase = true) && etag.none { it.code < 32 || it.code == 127 }
+    if (etag.length < 2 || etag.first() != '"' || etag.last() != '"') return false
+    for (index in 1 until etag.lastIndex) {
+        val code = etag[index].code
+        if (code != 0x21 && code !in 0x23..0x7e && code !in 0x80..0xff) return false
+    }
+    return true
 }
 
 /** Immutable names let devices publish independently without replacing a shared manifest. */

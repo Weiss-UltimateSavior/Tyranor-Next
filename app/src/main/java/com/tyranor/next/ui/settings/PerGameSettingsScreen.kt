@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.settings
 
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -255,11 +256,29 @@ fun PerGameSettingsScreen(game: ScanGame) {
         }
     }
     // System35 / System4 生效存档路径展示：resolveSaveLocation 内含游戏目录解析与三级设置合并
-    // （磁盘 + DB 读），挂起在 IO 线程取结果，避免组合期阻塞
+    // （磁盘 + DB 读），挂起在 IO 线程取结果，避免组合期阻塞。
+    // KRKR 亦需加载：SD 卡镜像强制接管存档路径时，独立存档开关要置灰并显示引导。
+    // 镜像判定未就绪（null）前开关保持禁用，避免首帧把 SD 游戏误判为机内存储。
+    var saveLocationReady by remember(gid) { mutableStateOf(false) }
+    var saveLocationLoadFailed by remember(gid) { mutableStateOf(false) }
     LaunchedEffect(gid) {
-        if (game.engine != EngineType.XSYS35 && game.engine != EngineType.XSYS4) return@LaunchedEffect
-        saveLocation = withContext(Dispatchers.IO) {
-            GameSaveManager(ctx).resolveSaveLocation(game)
+        if (game.engine != EngineType.XSYS35 && game.engine != EngineType.XSYS4 && game.engine != EngineType.KIRIKIRI) {
+            saveLocationReady = true
+            return@LaunchedEffect
+        }
+        try {
+            val loaded = withContext(Dispatchers.IO) {
+                GameSaveManager(ctx).resolveSaveLocation(game)
+            }
+            saveLocation = loaded
+            saveLocationLoadFailed = loaded.directory == null || !loaded.available
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (t: Throwable) {
+            saveLocationLoadFailed = true
+            Log.w("PerGameSettings", "resolve save location failed gid=$gid", t)
+        } finally {
+            saveLocationReady = true
         }
     }
     var rpgmOverride by remember(gid) {
@@ -707,11 +726,25 @@ fun PerGameSettingsScreen(game: ScanGame) {
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.common_save), MiuixTheme.colorScheme.primary) {
                             save()
-                            // 存档路径展示与实际生效设置同源：保存后按新值重解一次（磁盘 + DB 读，走 IO）
-                            if (game.engine == EngineType.XSYS35 || game.engine == EngineType.XSYS4) {
+                            // 存档路径展示与实际生效设置同源：保存后按新值重解一次（磁盘 + DB 读，走 IO）。
+                            // KRKR 同样重解：解析失败提示（loadFailed）在用户改回设置并保存后应当立即
+                            // 解除，而不是滞留到重进页面（本地审计 84e1d22，P3-5 第三轮裁决）
+                            if (game.engine == EngineType.XSYS35 || game.engine == EngineType.XSYS4 || game.engine == EngineType.KIRIKIRI) {
                                 scope.launch {
-                                    saveLocation = withContext(Dispatchers.IO) {
-                                        GameSaveManager(ctx).resolveSaveLocation(game)
+                                    try {
+                                        val loaded = withContext(Dispatchers.IO) {
+                                            GameSaveManager(ctx).resolveSaveLocation(game)
+                                        }
+                                        saveLocation = loaded
+                                        saveLocationLoadFailed = loaded.directory == null || !loaded.available
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                        throw cancelled
+                                    } catch (t: Throwable) {
+                                        // 对齐入口 (:256-257) 与 SaveManagementActivity.refresh
+                                        // 的兄弟模式：重解失败同样置失败态，不静默滞留旧快照
+                                        // （审计 of fe3d057, FA1）
+                                        saveLocationLoadFailed = true
+                                        Log.w("PerGameSettings", "resolve save location failed gid=$gid", t)
                                     }
                                 }
                             }
@@ -731,16 +764,48 @@ fun PerGameSettingsScreen(game: ScanGame) {
             ) {
                 when (game.engine) {
 	                    EngineType.KIRIKIRI -> {
+                        // SD 卡镜像强制接管存档路径：独立存档开关不生效，置灰并显示引导；
+                        // 镜像判定加载完成前保持禁用，避免首帧误判为机内存储
+                        val krMirrorForced = saveLocation?.mirrorForced == true
                         item {
                             SectionCard("KRKR") {
-                                OverrideSwitch(stringResource(R.string.engine_settings_scoped_save_dir), globalKrScoped, krScoped) { krScoped = it }
+                                OverrideSwitch(
+                                    stringResource(R.string.engine_settings_scoped_save_dir),
+                                    globalKrScoped,
+                                    krScoped,
+                                    // 存档位置解析失败不得禁用本开关：改回 <游戏根>/savedata
+                                    // 正是解除失败状态的手段，禁用会形成自锁（审查第十轮 #6；
+                                    // 运行期仍会回退 filesDir/save，开关并非不可用）
+                                    enabled = saveLocationReady && !krMirrorForced,
+                                ) { krScoped = it }
+                                if (saveLocationLoadFailed || krMirrorForced) {
+                                    Text(
+                                        stringResource(
+                                            if (saveLocationLoadFailed) R.string.save_location_load_failed_note
+                                            else R.string.krkr_mirror_save_forced_note,
+                                        ),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                    )
+                                }
                                 OverrideSwitch(
                                     stringResource(R.string.engine_settings_skip_startup_dialogs),
                                     globalKrSkipStartupDialogs,
                                     krSkipStartupDialogs,
                                 ) { krSkipStartupDialogs = it }
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_version), krVersionMap, globalKrVersion, krVersion) { krVersion = it }
-                                OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, globalKrKernel, krKernel) { krKernel = it }
+                                // SD 卡镜像在运行时强制 KR2 内核（EffectiveEngineSettings.resolveKrKernel），
+                                // 下拉保留存储值展示但置灰，避免用户选择实际不生效的 krkrsdl3；
+                                // 存档位置解析失败不得禁用内核行：改回 KR2 正是解除失败的
+                                // 手段，禁用会形成 krkrsdl3 自锁（审查第九轮 #10）
+                                OverrideChoice(
+                                    stringResource(R.string.engine_settings_engine_kernel),
+                                    krKernelMap,
+                                    globalKrKernel,
+                                    krKernel,
+                                    enabled = saveLocationReady && !krMirrorForced,
+                                ) { krKernel = it }
                                 if (!isSdl3) {
                                     OverrideChoice(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, globalKrPatchOverlayMode, krPatchOverlayMode) { krPatchOverlayMode = it }
                                 }

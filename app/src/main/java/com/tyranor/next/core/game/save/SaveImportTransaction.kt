@@ -12,9 +12,10 @@ internal class SaveImportTransaction(private val destination: File, private val 
     private val record = File(destination.parentFile, destination.name + ".import_transaction")
     private val marker get() = File(destination, MARKER)
 
-    fun prepare(staging: File) {
+    fun prepare(staging: File, preservePrevious: Boolean = false) {
         val token = UUID.randomUUID().toString()
-        val state = JSONObject().put("uri", gameUri).put("token", token).toString()
+        val state = JSONObject().put("uri", gameUri).put("token", token)
+            .put("preservePrevious", preservePrevious).toString()
         writeSynced(File(staging, MARKER), state)
         val temp = File.createTempFile("import_", ".tmp", destination.parentFile)
         try {
@@ -23,27 +24,40 @@ internal class SaveImportTransaction(private val destination: File, private val 
         } finally { temp.delete() }
     }
 
-    fun committed(): Boolean = try {
+    fun committed(): Boolean = committedRecord() != null
+
+    private fun committedRecord(): JSONObject? = try {
         if (!record.isFile || Files.isSymbolicLink(record.toPath()) || record.length() > 4096 ||
-            !marker.isFile || Files.isSymbolicLink(marker.toPath()) || marker.length() > 4096) false
+            !marker.isFile || Files.isSymbolicLink(marker.toPath()) || marker.length() > 4096) null
         else {
             val expected = JSONObject(record.readText())
             val actual = JSONObject(marker.readText())
-            expected.getString("uri") == gameUri && actual.getString("uri") == gameUri &&
-                expected.getString("token").isNotBlank() && expected.getString("token") == actual.getString("token")
+            val preserveMatches = if (expected.has("preservePrevious") || actual.has("preservePrevious")) {
+                expected.opt("preservePrevious") is Boolean && actual.opt("preservePrevious") is Boolean &&
+                    expected.getBoolean("preservePrevious") == actual.getBoolean("preservePrevious")
+            } else true
+            expected.takeIf {
+                preserveMatches && expected.getString("uri") == gameUri && actual.getString("uri") == gameUri &&
+                    expected.getString("token").isNotBlank() && expected.getString("token") == actual.getString("token")
+            }
         }
     } catch (cancelled: CancellationException) { throw cancelled }
-    catch (_: Exception) { false }
+    catch (_: Exception) { null }
 
     fun recoverBackup(backup: File, restoreCommitted: () -> Unit, copyMissingResources: () -> Unit) {
+        SavePathSafety.requirePlainDirectoryEntry(backup)
+        SavePathSafety.requirePlainDirectoryEntry(destination)
         if (backup.isDirectory) {
+            val committedState = committedRecord()
             when {
                 !destination.exists() -> if (!backup.renameTo(destination)) {
                     throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 }
-                committed() -> {
+                committedState != null -> {
                     restoreCommitted()
-                    SavePathSafety.deleteTreeNoFollow(backup)
+                    if (committedState.optBoolean("preservePrevious")) {
+                        preserveUnprovenBackup(backup)
+                    } else SavePathSafety.deleteTreeNoFollow(backup)
                 }
                 else -> {
                     // Keep the indexed backup until every atomic resource copy succeeds.

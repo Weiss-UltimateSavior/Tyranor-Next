@@ -5,6 +5,7 @@
 #include <link.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <stdio_ext.h>
 
 #include <cstdarg>
 #include <cerrno>
@@ -12,8 +13,10 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <vector>
 #include <cstdint>
 #include <atomic>
+#include <algorithm>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <time.h>
@@ -21,6 +24,8 @@
 namespace {
 
 constexpr const char* kTag = "KrkrBridge";
+// NativeBridge.open ABI: do not retry an indexed mirror I/O failure through libc.
+constexpr int kMirrorOpenFailed = -2;
 constexpr const char* kGetSceneSymbol = "_ZN12TVPMainScene11GetInstanceEv";
 constexpr const char* kStartupSymbol = "_ZN12TVPMainScene11startupFromERKSs";
 constexpr const char* kUpdateSymbol = "_ZN12TVPMainScene6updateEf";
@@ -75,6 +80,7 @@ using Update = void (*)(void*, float);
 using UiFormCount = int (*)(void*);
 using OpenFn = int (*)(const char*, int, ...);
 using FopenFn = FILE* (*)(const char*, const char*);
+using FreopenFn = FILE* (*)(const char*, const char*, FILE*);
 using StatFn = int (*)(const char*, struct stat*);
 using Stat64Fn = int (*)(const char*, struct stat64*);
 using AccessFn = int (*)(const char*, int);
@@ -96,10 +102,17 @@ JavaVM* gVm = nullptr;
 std::mutex gMutex;
 GameApi gGame;
 std::string gPathPrefix;
+// Mirror-only prefix: set for SD mirror launches only. gPathPrefix is a storage-volume
+// prefix in internal-storage scoped/overlay scenarios; using it for relative-path rewriting
+// would misjoin paths under the volume root. The atomic flag gives hot hooks a lock-free fast path.
+std::string gMirrorPrefix;
+std::atomic<bool> gMirrorActive{false};
 OpenFn gOriginalOpen = nullptr;
 OpenFn gOriginalOpen64 = nullptr;
 FopenFn gOriginalFopen = nullptr;
 FopenFn gOriginalFopen64 = nullptr;
+FreopenFn gOriginalFreopen = nullptr;
+FreopenFn gOriginalFreopen64 = nullptr;
 StatFn gOriginalStat = nullptr;
 StatFn gOriginalLstat = nullptr;
 Stat64Fn gOriginalStat64 = nullptr;
@@ -389,12 +402,86 @@ bool pathMatchesPrefix(const char* path) {
     if (std::strncmp(normalized, "file://", 7) == 0) normalized += 7;
     while (std::strncmp(normalized, "./", 2) == 0) normalized += 2;
     // Some Windows Steam wrappers read root config files through relative paths
-    // (for example "ds.ini") after chdir/gamedir setup. Keep this whitelist tight:
+    // (for example "ds.ini"). Keep this whitelist tight:
     // Java will still redirect only when the matching overlay has been configured.
     if (std::strcmp(normalized, "ds.ini") == 0 || std::strcmp(normalized, "patch.tjs") == 0) return true;
     if (std::strncmp(normalized, gPathPrefix.c_str(), gPathPrefix.size()) == 0) return true;
     return gPathPrefix[0] == '/'
             && std::strncmp(normalized, gPathPrefix.c_str() + 1, gPathPrefix.size() - 1) == 0;
+}
+
+std::string callJavaPathMethod(const char* path, const char* methodName);
+
+// The engine does not chdir to the game directory. Only mirror launches rebase
+// relative resource paths, using the configured mirror root rather than process CWD.
+// Keep non-mirror paths and absolute paths untouched; the latter need no mutex.
+std::string resolveEnginePath(const char* path) {
+    if (path == nullptr) return {};
+    if (!gMirrorActive.load(std::memory_order_acquire)) return std::string(path);
+    std::string relative(path);
+    if (relative.compare(0, 7, "file://") == 0) relative.erase(0, 7);
+    if (!relative.empty() && relative[0] == '/') return relative;
+    if (relative.empty()) return relative;
+
+    std::string base;
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
+        base = gMirrorPrefix;
+    }
+    if (base.empty()) return std::string(path);
+    while (base.size() > 1 && base.back() == '/') base.pop_back();
+
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (start <= relative.size()) {
+        const size_t end = relative.find('/', start);
+        const std::string part = relative.substr(start, end - start);
+        if (part == "..") {
+            // Do not turn ../outside into a routed <mirror>/../outside path. Leave
+            // the original path to libc, preserving its non-mirror CWD semantics.
+            if (parts.empty()) return std::string(path);
+            parts.pop_back();
+        } else if (!part.empty() && part != ".") {
+            parts.push_back(part);
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    std::string suffix;
+    for (const auto& part : parts) {
+        if (!suffix.empty()) suffix += "/";
+        suffix += part;
+    }
+    auto asciiLower = [](std::string value) {
+        for (char& character : value) {
+            if (character >= 'A' && character <= 'Z') character += 'a' - 'A';
+        }
+        return value;
+    };
+    // Source savedata is excluded from the mirror. Its actual local filename case
+    // belongs to the scoped-save redirect, not the lowercased source asset tree.
+    if (!parts.empty() && asciiLower(parts.front()) == "savedata") {
+        // When the scoped-save redirect is unavailable (activity gone, missing extra),
+        // the mirror-local directory spelling is lowercase: normalize only the anchor
+        // segment and keep the remaining segments' case (review round 10, #18).
+        parts[0] = "savedata";
+        std::string normalized;
+        for (const auto& part : parts) {
+            if (!normalized.empty()) normalized += "/";
+            normalized += part;
+        }
+        return base + "/" + normalized;
+    }
+    if (!parts.empty()) {
+        const bool hasUnicode = std::any_of(suffix.begin(), suffix.end(),
+                [](unsigned char byte) { return byte >= 0x80; });
+        suffix = asciiLower(suffix);
+        if (hasUnicode) {
+            const std::string folded = callJavaPathMethod(suffix.c_str(), "normalizeMirrorCase");
+            if (!folded.empty()) suffix = folded;
+        }
+    }
+    return suffix.empty() ? base : base + "/" + suffix;
 }
 
 int callOriginal(OpenFn original, const char* path, int flags, mode_t mode) {
@@ -427,7 +514,7 @@ int callJavaOpen(const char* path, int flags) {
     }
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
-        fd = -1;
+        fd = gMirrorActive.load(std::memory_order_acquire) ? kMirrorOpenFailed : -1;
     }
     if (attached) gVm->DetachCurrentThread();
     return fd;
@@ -521,9 +608,84 @@ std::string callJavaScopedSaveRedirect(const char* path) {
     return callJavaPathMethod(path, "redirectScopedSave");
 }
 
-int hookOpenCommon(OpenFn original, const char* path, int flags, va_list arguments) {
+// Cached JNI lookup for the hot metadataSize call: FindClass/GetStaticMethodID once,
+// the class is kept as a global ref (this library lives for the process lifetime).
+jlong callJavaMetadataSize(const char* path) {
+    if (gVm == nullptr || path == nullptr) return -1;
+    static std::mutex lookupMutex;
+    static jclass cachedClass = nullptr;
+    static jmethodID cachedMethod = nullptr;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (gVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return -1;
+        attached = true;
+    }
+
+    jlong size = -1;
+    jclass clazz;
+    jmethodID method;
+    {
+        std::lock_guard<std::mutex> lock(lookupMutex);
+        if (cachedClass == nullptr || cachedMethod == nullptr) {
+            jclass local = env->FindClass("bridge/NativeBridge");
+            if (local != nullptr) {
+                jmethodID localMethod = env->GetStaticMethodID(local, "metadataSize", "(Ljava/lang/String;)J");
+                if (localMethod != nullptr) {
+                    cachedClass = static_cast<jclass>(env->NewGlobalRef(local));
+                    if (cachedClass != nullptr) cachedMethod = localMethod;
+                }
+                env->DeleteLocalRef(local);
+            }
+        }
+        // Failed worker-thread class-loader lookups may succeed on a later Java
+        // callback. Cache only successful bindings, without racing global refs.
+        clazz = cachedClass;
+        method = cachedMethod;
+    }
+    if (clazz != nullptr && method != nullptr) {
+        jstring javaPath = env->NewStringUTF(path);
+        if (javaPath != nullptr) {
+            size = env->CallStaticLongMethod(clazz, method, javaPath);
+            env->DeleteLocalRef(javaPath);
+        }
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        size = -1;
+    }
+    if (attached) gVm->DetachCurrentThread();
+    return size;
+}
+
+// Mirror placeholders are 0 bytes on disk; engines that allocate buffers by stat size or
+// match plugin DLLs would treat them as empty (plugin load failures, broken saves).
+// Override st_size with the indexed size after a successful stat.
+template<typename StatStruct>
+void applyMirrorSizeOverride(const char* path, StatStruct* info) {
+    if (info == nullptr) return;
+    // Fast path: non-mirror launches have no index to query, skip the JNI entirely.
+    if (!gMirrorActive.load(std::memory_order_acquire)) return;
+    // stat is a hot call: only 0-byte regular files can be placeholders, filter first.
+    if (info->st_size != 0 || !S_ISREG(info->st_mode)) return;
+    const jlong size = callJavaMetadataSize(path);
+    if (size < 0) return;
+    info->st_size = static_cast<decltype(info->st_size)>(size);
+    info->st_blocks = static_cast<decltype(info->st_blocks)>((size + 511) / 512);
+    // Diagnostic probe: log the first 32 overrides to verify the hook chain, then stay quiet.
+    static std::atomic<int> overrideLogCount{0};
+    const int seen = overrideLogCount.fetch_add(1);
+    if (seen < 32) {
+        __android_log_print(ANDROID_LOG_INFO, kTag, "stat size override %lld <- %s",
+                            static_cast<long long>(size), path);
+    }
+}
+
+int hookOpenCommon(OpenFn original, const char* rawPath, int flags, va_list arguments) {
     mode_t mode = 0;
     if ((flags & O_CREAT) != 0) mode = static_cast<mode_t>(va_arg(arguments, int));
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return callOriginal(original, path, flags, mode);
 
     const std::string scopedSave = callJavaScopedSaveRedirect(path);
@@ -533,6 +695,10 @@ int hookOpenCommon(OpenFn original, const char* path, int flags, va_list argumen
     // zero-byte placeholders that libc can open, while Java supplies real content.
     const int fd = callJavaOpen(path, flags);
     if (fd >= 0) return fd;
+    if (fd == kMirrorOpenFailed) {
+        errno = EIO;
+        return -1;
+    }
 
     const std::string redirected = callJavaOpenRedirect(path, flags);
     return callOriginal(original, redirected.empty() ? path : redirected.c_str(), flags, mode);
@@ -569,7 +735,19 @@ int fopenModeToFlags(const char* mode) {
     }
 }
 
-FILE* hookFopenCommon(FopenFn original, const char* path, const char* mode) {
+// A bounded/failed update copy-up may deliberately return a read-only SAF fd.
+// Match FILE permissions to that fd; subsequent writes fail rather than touch SD.
+const char* compatibleStreamMode(int fd, int flags, const char* requestedMode) {
+    if ((flags & O_ACCMODE) == O_RDWR) {
+        const int actual = fcntl(fd, F_GETFL);
+        if (actual >= 0 && (actual & O_ACCMODE) == O_RDONLY) return "r";
+    }
+    return requestedMode;
+}
+
+FILE* hookFopenCommon(FopenFn original, const char* rawPath, const char* mode) {
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return original == nullptr ? nullptr : original(path, mode);
     const std::string scopedSave = callJavaScopedSaveRedirect(path);
     if (!scopedSave.empty()) {
@@ -579,10 +757,19 @@ FILE* hookFopenCommon(FopenFn original, const char* path, const char* mode) {
     const int flags = fopenModeToFlags(mode);
     if (flags >= 0) {
         const int fd = callJavaOpen(path, flags);
+        if (fd == kMirrorOpenFailed) {
+            errno = EIO;
+            return nullptr;
+        }
         if (fd >= 0) {
-            FILE* stream = fdopen(fd, mode);
+            FILE* stream = fdopen(fd, compatibleStreamMode(fd, flags, mode));
             if (stream != nullptr) return stream;
+            const int streamError = errno;
             close(fd);
+            if (gMirrorActive.load(std::memory_order_acquire)) {
+                errno = streamError;
+                return nullptr;
+            }
         }
     }
 
@@ -599,64 +786,277 @@ FILE* hookedFopen64(const char* path, const char* mode) {
     return hookFopenCommon(gOriginalFopen64, path, mode);
 }
 
+// freopen semantics: the original stream is closed whether the reopen succeeds or not.
+// Mirror routing mirrors fopen's priority: scoped save redirect → Java open (SAF content)
+// → open redirect fallback → original implementation. path == nullptr keeps the
+// freopen(NULL, mode, stream) mode-change-only semantics. The 64-bit variant shares this
+// implementation (both variants are hooked; each carries its own GOT original).
+FILE* hookedFreopenCommon(const char* path, const char* mode, FILE* stream, FreopenFn original);
+
+FILE* hookedFreopen(const char* path, const char* mode, FILE* stream) {
+    return hookedFreopenCommon(path, mode, stream, gOriginalFreopen);
+}
+
+FILE* hookedFreopen64(const char* path, const char* mode, FILE* stream) {
+    return hookedFreopenCommon(path, mode, stream, gOriginalFreopen64);
+}
+
+// Common freopen implementation; `original` is the caller's GOT-original symbol
+// (freopen/freopen64 respectively).
+FILE* hookedFreopenCommon(const char* path, const char* mode, FILE* stream, FreopenFn original) {
+    if (stream == nullptr) return nullptr;
+    if (path == nullptr) {
+        // freopen(NULL, mode, stream): change the mode only, keep the file
+        if (original == nullptr) {
+            fclose(stream);
+            return nullptr;
+        }
+        return original(nullptr, mode, stream);
+    }
+    const std::string resolved = resolveEnginePath(path);
+    const char* p = resolved.c_str();
+    if (!pathMatchesPrefix(p)) {
+        if (original == nullptr) {
+            fclose(stream);
+            return nullptr;
+        }
+        return original(p, mode, stream);
+    }
+    const std::string scopedSave = callJavaScopedSaveRedirect(p);
+    if (!scopedSave.empty()) {
+        if (original == nullptr) {
+            fclose(stream);
+            return nullptr;
+        }
+        return original(scopedSave.c_str(), mode, stream);
+    }
+    const int flags = fopenModeToFlags(mode);
+    if (flags >= 0) {
+        // Flush before opening/truncating the new fd. Otherwise buffered output
+        // from this FILE can be written back after an O_TRUNC open of the same file.
+        // Pure read-only FILEs must not be fflush'ed on Bionic (EOF/EBADF).
+        if (__fwritable(stream) && fflush(stream) != 0) {
+            const int flushError = errno;
+            fclose(stream);
+            errno = flushError;
+            return nullptr;
+        }
+        const int fd = callJavaOpen(p, flags);
+        if (fd == kMirrorOpenFailed) {
+            fclose(stream);
+            errno = EIO;
+            return nullptr;
+        }
+        if (fd >= 0) {
+            // Descriptor access flags do not describe FILE permissions: Java may
+            // return O_RDWR for a pure-write fdopen stream. Rebuild through libc to
+            // reset append, access, buffering, orientation and EOF state together.
+            const char* streamMode = compatibleStreamMode(fd, flags, mode);
+            char fdPath[64];
+            std::snprintf(fdPath, sizeof(fdPath), "/proc/self/fd/%d", fd);
+            if (original != nullptr) {
+                FILE* rebuilt = original(fdPath, streamMode, stream);
+                if (rebuilt != nullptr) {
+                    close(fd);
+                    return rebuilt;
+                }
+                const int reopenError = errno;
+                // A failed freopen has closed the caller's FILE. A fresh fdopen
+                // object cannot preserve that stream identity, so report failure
+                // rather than return a different FILE as a successful reopen.
+                close(fd);
+                __android_log_print(ANDROID_LOG_WARN, kTag,
+                                    "freopen procfs reopen failed errno=%d", reopenError);
+                errno = reopenError;
+            } else {
+                close(fd);
+                fclose(stream);
+                errno = ENOSYS;
+            }
+            return nullptr;
+        }
+    }
+    const std::string redirected =
+            flags >= 0 ? callJavaOpenRedirect(p, flags) : callJavaRedirect(p);
+    if (original == nullptr) {
+        fclose(stream);
+        return nullptr;
+    }
+    return original(redirected.empty() ? p : redirected.c_str(), mode, stream);
+}
+
 template<typename Fn, typename... Args>
-int hookSinglePath(Fn original, const char* path, Args... args) {
+int hookSinglePath(Fn original, const char* rawPath, Args... args) {
     if (original == nullptr) return -1;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return original(path, args...);
     const std::string redirected = callJavaRedirect(path);
     return original(redirected.empty() ? path : redirected.c_str(), args...);
 }
 
-int hookedStat(const char* path, struct stat* info) {
+int hookedStat(const char* rawPath, struct stat* info) {
     if (gOriginalStat == nullptr) return -1;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return gOriginalStat(path, info);
     const std::string redirected = callJavaReadMetadataRedirect(path);
-    return gOriginalStat(redirected.empty() ? path : redirected.c_str(), info);
+    const int result = gOriginalStat(redirected.empty() ? path : redirected.c_str(), info);
+    // The size override is decided by the Java session (savedata and non-indexed
+    // keys answer "no override"), never by comparing redirect spellings: legacy
+    // mixed-case roots redirect under their original-case name while `path` is
+    // the lowercased mirror spelling, and the placeholder still needs the
+    // indexed size (review round 9, #4).
+    if (result == 0) applyMirrorSizeOverride(path, info);
+    return result;
 }
 
-int hookedLstat(const char* path, struct stat* info) {
+int hookedLstat(const char* rawPath, struct stat* info) {
     if (gOriginalLstat == nullptr) return -1;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return gOriginalLstat(path, info);
     const std::string redirected = callJavaReadMetadataRedirect(path);
-    return gOriginalLstat(redirected.empty() ? path : redirected.c_str(), info);
+    const int result = gOriginalLstat(redirected.empty() ? path : redirected.c_str(), info);
+    if (result == 0) applyMirrorSizeOverride(path, info);
+    return result;
 }
 
-int hookedStat64(const char* path, struct stat64* info) {
+int hookedStat64(const char* rawPath, struct stat64* info) {
     if (gOriginalStat64 == nullptr) return -1;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return gOriginalStat64(path, info);
     const std::string redirected = callJavaReadMetadataRedirect(path);
-    return gOriginalStat64(redirected.empty() ? path : redirected.c_str(), info);
+    const int result = gOriginalStat64(redirected.empty() ? path : redirected.c_str(), info);
+    if (result == 0) applyMirrorSizeOverride(path, info);
+    return result;
 }
 
-int hookedLstat64(const char* path, struct stat64* info) {
+int hookedLstat64(const char* rawPath, struct stat64* info) {
     if (gOriginalLstat64 == nullptr) return -1;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return gOriginalLstat64(path, info);
     const std::string redirected = callJavaReadMetadataRedirect(path);
-    return gOriginalLstat64(redirected.empty() ? path : redirected.c_str(), info);
+    const int result = gOriginalLstat64(redirected.empty() ? path : redirected.c_str(), info);
+    if (result == 0) applyMirrorSizeOverride(path, info);
+    return result;
 }
 
-int hookedAccess(const char* path, int mode) {
+int hookedAccess(const char* rawPath, int mode) {
     if (gOriginalAccess == nullptr) return -1;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return gOriginalAccess(path, mode);
     const std::string redirected = callJavaReadMetadataRedirect(path);
     return gOriginalAccess(redirected.empty() ? path : redirected.c_str(), mode);
 }
 
-int hookedRename(const char* from, const char* to) {
+constexpr jlong kMutationNotRouted = INT64_MIN;
+constexpr int kMutationRename = 0;
+constexpr int kMutationUnlink = 1;
+constexpr int kMutationRemove = 2;
+
+jlong packMutationResult(int result, int errorNumber) {
+    return static_cast<jlong>((static_cast<uint64_t>(static_cast<uint32_t>(errorNumber)) << 32)
+            | static_cast<uint32_t>(result));
+}
+
+// Java holds the same ordered file locks as copy-up while calling back into
+// executeOriginalMirrorMutation. No lock/monitor escapes a JNI attach lifetime.
+jlong callJavaMirrorMutation(int operation, const char* from, const char* to) {
+    if (!gMirrorActive.load(std::memory_order_acquire) || gVm == nullptr || from == nullptr) {
+        return kMutationNotRouted;
+    }
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (gVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        if (gVm->AttachCurrentThread(&env, nullptr) != JNI_OK) return kMutationNotRouted;
+        attached = true;
+    }
+    // Class/method/string lookup failures mean the JNI infrastructure is unavailable
+    // (typically a native thread whose class loader cannot see bridge/NativeBridge):
+    // FindClass/GetStaticMethodID leave a pending NoClassDefFoundError/NoSuchMethodError
+    // that must be cleared, and the caller degrades to the original syscall instead of
+    // failing every rename/unlink with EIO — even standard savedata renames would break
+    // (review round 10, #5). Only an exception thrown by the Java routing itself fails
+    // closed with EIO: the syscall state is then unknown, which also covers a Java-side
+    // CancellationException rethrown by runMirrorMutation (deliberate fail-closed).
+    jclass clazz = env->FindClass("bridge/NativeBridge");
+    if (clazz == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        if (attached) gVm->DetachCurrentThread();
+        return kMutationNotRouted;
+    }
+    jmethodID method = env->GetStaticMethodID(clazz, "runMirrorMutation",
+            "(ILjava/lang/String;Ljava/lang/String;)J");
+    if (method == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(clazz);
+        if (attached) gVm->DetachCurrentThread();
+        return kMutationNotRouted;
+    }
+    jstring javaFrom = env->NewStringUTF(from);
+    jstring javaTo = to == nullptr ? nullptr : env->NewStringUTF(to);
+    if (javaFrom == nullptr || (to != nullptr && javaTo == nullptr)) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        if (javaFrom != nullptr) env->DeleteLocalRef(javaFrom);
+        if (javaTo != nullptr) env->DeleteLocalRef(javaTo);
+        env->DeleteLocalRef(clazz);
+        if (attached) gVm->DetachCurrentThread();
+        return kMutationNotRouted;
+    }
+    jlong result = env->CallStaticLongMethod(clazz, method, operation, javaFrom, javaTo);
+    env->DeleteLocalRef(javaFrom);
+    if (javaTo != nullptr) env->DeleteLocalRef(javaTo);
+    env->DeleteLocalRef(clazz);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        result = packMutationResult(-1, EIO);
+    }
+    if (attached) gVm->DetachCurrentThread();
+    return result;
+}
+
+int unpackMutationResult(jlong packed) {
+    errno = static_cast<int>(static_cast<uint64_t>(packed) >> 32);
+    return static_cast<int32_t>(static_cast<uint32_t>(packed));
+}
+
+int hookedRename(const char* rawFrom, const char* rawTo) {
     if (gOriginalRename == nullptr) return -1;
+    const std::string resolvedFrom = resolveEnginePath(rawFrom);
+    const std::string resolvedTo = resolveEnginePath(rawTo);
+    const char* from = resolvedFrom.c_str();
+    const char* to = resolvedTo.c_str();
     const std::string redirectedFrom = pathMatchesPrefix(from) ? callJavaRedirect(from) : std::string();
     const std::string redirectedTo = pathMatchesPrefix(to) ? callJavaRedirect(to) : std::string();
-    return gOriginalRename(
-            redirectedFrom.empty() ? from : redirectedFrom.c_str(),
-            redirectedTo.empty() ? to : redirectedTo.c_str());
+    const char* actualFrom = redirectedFrom.empty() ? from : redirectedFrom.c_str();
+    const char* actualTo = redirectedTo.empty() ? to : redirectedTo.c_str();
+    const jlong transaction = callJavaMirrorMutation(kMutationRename, actualFrom, actualTo);
+    if (transaction != kMutationNotRouted) return unpackMutationResult(transaction);
+    return gOriginalRename(actualFrom, actualTo);
+}
+
+template<typename Fn>
+int hookRemoveFile(Fn original, const char* rawPath, int operation) {
+    if (original == nullptr) return -1;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
+    const std::string redirected = pathMatchesPrefix(path) ? callJavaRedirect(path) : std::string();
+    const char* actual = redirected.empty() ? path : redirected.c_str();
+    const jlong transaction = callJavaMirrorMutation(operation, actual, nullptr);
+    if (transaction != kMutationNotRouted) return unpackMutationResult(transaction);
+    return original(actual);
 }
 
 int hookedUnlink(const char* path) {
-    return hookSinglePath(gOriginalUnlink, path);
+    return hookRemoveFile(gOriginalUnlink, path, kMutationUnlink);
 }
 
 int hookedRemove(const char* path) {
-    return hookSinglePath(gOriginalRemove, path);
+    return hookRemoveFile(gOriginalRemove, path, kMutationRemove);
 }
 
 int hookedMkdir(const char* path, mode_t mode) {
@@ -667,8 +1067,10 @@ int hookedRmdir(const char* path) {
     return hookSinglePath(gOriginalRmdir, path);
 }
 
-DIR* hookedOpendir(const char* path) {
+DIR* hookedOpendir(const char* rawPath) {
     if (gOriginalOpendir == nullptr) return nullptr;
+    const std::string resolved = resolveEnginePath(rawPath);
+    const char* path = resolved.c_str();
     if (!pathMatchesPrefix(path)) return gOriginalOpendir(path);
     const std::string redirected = callJavaRedirect(path);
     return gOriginalOpendir(redirected.empty() ? path : redirected.c_str());
@@ -839,6 +1241,19 @@ Java_bridge_NativeBridge_interceptor(JNIEnv* env, jclass, jstring prefix) {
     __android_log_print(ANDROID_LOG_INFO, kTag, "SAF open prefix=%s", gPathPrefix.c_str());
 }
 
+// Mirror-only relative-path base; reset on every launch, including non-mirror launches.
+extern "C" JNIEXPORT void JNICALL
+Java_bridge_NativeBridge_setMirrorPrefix(JNIEnv* env, jclass, jstring prefix) {
+    const std::string value = takeString(env, prefix);
+    {
+        std::lock_guard<std::mutex> lock(gMutex);
+        gMirrorPrefix = value;
+    }
+    gMirrorActive.store(!value.empty(), std::memory_order_release);
+    __android_log_print(ANDROID_LOG_INFO, kTag, "SAF mirror prefix=%s active=%d",
+                        value.empty() ? "(unset)" : value.c_str(), !value.empty() ? 1 : 0);
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_bridge_NativeBridge_relocate(JNIEnv*, jclass) {
     std::string library;
@@ -860,6 +1275,10 @@ Java_bridge_NativeBridge_relocate(JNIEnv*, jclass) {
             || hookGotSymbol(library, "fopen", reinterpret_cast<void*>(hookedFopen), &gOriginalFopen);
     const bool fopen64Hooked = gOriginalFopen64 != nullptr
             || hookGotSymbol(library, "fopen64", reinterpret_cast<void*>(hookedFopen64), &gOriginalFopen64);
+    const bool freopenHooked = gOriginalFreopen != nullptr
+            || hookGotSymbol(library, "freopen", reinterpret_cast<void*>(hookedFreopen), &gOriginalFreopen);
+    const bool freopen64Hooked = gOriginalFreopen64 != nullptr
+            || hookGotSymbol(library, "freopen64", reinterpret_cast<void*>(hookedFreopen64), &gOriginalFreopen64);
     const bool statHooked = gOriginalStat != nullptr
             || hookGotSymbol(library, "stat", reinterpret_cast<void*>(hookedStat), &gOriginalStat);
     const bool lstatHooked = gOriginalLstat != nullptr
@@ -889,7 +1308,35 @@ Java_bridge_NativeBridge_relocate(JNIEnv*, jclass) {
             | (renameHooked ? 256 : 0) | (unlinkHooked ? 512 : 0)
             | (removeHooked ? 1024 : 0) | (mkdirHooked ? 2048 : 0)
             | (rmdirHooked ? 4096 : 0) | (opendirHooked ? 8192 : 0)
-            | (stat64Hooked ? 16384 : 0);
+            | (stat64Hooked ? 16384 : 0) | (freopenHooked ? 32768 : 0)
+            | (freopen64Hooked ? 65536 : 0);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_bridge_NativeBridge_executeOriginalMirrorMutation(
+        JNIEnv* env, jclass, jint operation, jstring from, jstring to) {
+    const std::string source = takeString(env, from);
+    const std::string target = takeString(env, to);
+    if (source.empty()) return packMutationResult(-1, EINVAL);
+    int result = -1;
+    switch (operation) {
+        case kMutationRename:
+            if (gOriginalRename == nullptr) return packMutationResult(-1, ENOSYS);
+            result = gOriginalRename(source.c_str(), target.c_str());
+            break;
+        case kMutationUnlink:
+            if (gOriginalUnlink == nullptr) return packMutationResult(-1, ENOSYS);
+            result = gOriginalUnlink(source.c_str());
+            break;
+        case kMutationRemove:
+            if (gOriginalRemove == nullptr) return packMutationResult(-1, ENOSYS);
+            result = gOriginalRemove(source.c_str());
+            break;
+        default:
+            return packMutationResult(-1, EINVAL);
+    }
+    const int operationErrno = errno;
+    return packMutationResult(result, operationErrno);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -944,10 +1391,15 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
              reinterpret_cast<void*>(Java_bridge_NativeBridge_isLaunchSceneReady)},
             {const_cast<char*>("interceptor"), const_cast<char*>("(Ljava/lang/String;)V"),
              reinterpret_cast<void*>(Java_bridge_NativeBridge_interceptor)},
+            {const_cast<char*>("setMirrorPrefix"), const_cast<char*>("(Ljava/lang/String;)V"),
+             reinterpret_cast<void*>(Java_bridge_NativeBridge_setMirrorPrefix)},
             {const_cast<char*>("relocate"), const_cast<char*>("()I"),
              reinterpret_cast<void*>(Java_bridge_NativeBridge_relocate)},
             {const_cast<char*>("write"), const_cast<char*>("(Ljava/lang/String;[B)Z"),
              reinterpret_cast<void*>(Java_bridge_NativeBridge_write)},
+            {const_cast<char*>("executeOriginalMirrorMutation"),
+             const_cast<char*>("(ILjava/lang/String;Ljava/lang/String;)J"),
+             reinterpret_cast<void*>(Java_bridge_NativeBridge_executeOriginalMirrorMutation)},
     };
     if (env->RegisterNatives(bridge, methods, sizeof(methods) / sizeof(methods[0])) != JNI_OK) {
         env->ExceptionClear();

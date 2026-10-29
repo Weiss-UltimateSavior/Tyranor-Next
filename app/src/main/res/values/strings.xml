@@ -592,7 +592,10 @@
     <string name="save_error_app_internal_unavailable">应用内部存储目录不可用</string>
     <string name="save_location_krkr_scoped">KRKR 独立存档目录</string>
     <string name="save_location_krkr_game_dir">KRKR 游戏目录存档</string>
-    <string name="save_location_krkr_sd_mirror">KRKR SD 卡镜像存档（应用专属目录）</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SD 卡 SAF 镜像存档（应用专属目录）</string>
+    <string name="krkr_mirror_save_forced_note">SD 卡游戏存档由 SAF 镜像目录接管，本开关不生效。游戏内与存档管理均读写应用专属目录；向游戏目录手动放置 savedata 不会被读取。</string>
+    <string name="save_location_load_failed_note">存档位置解析失败，本页显示的信息可能不完整或滞后，可稍后重试更新。</string>
+    <string name="krkr_mirror_save_import_hint">SD 卡游戏的存档经此处导入/导出（应用专属 SAF 镜像目录）；手动放入游戏目录的 savedata 不会被引擎读取。</string>
     <string name="save_error_ons_external_unavailable">ONS 应用独立存储目录不可用</string>
     <string name="save_location_ons_scoped">ONS 应用独立存档目录</string>
     <string name="save_location_ons_game_dir">ONS 游戏内存档目录</string>
@@ -971,4 +974,5 @@
     <string name="webdav_sync_cleanup_pending">云端历史清理尚未完成，将在后续同步继续</string>
     <string name="webdav_sync_partial_cleanup_pending">部分同步已完成；云端历史清理尚未完成，将在后续同步继续</string>
     <string name="webdav_sync_busy_skipped">同步完成，已跳过正在运行的游戏</string>
+    <string name="launch_empty_krkr_sd_mirror">未能读取到 SD 卡游戏资源，请检查目录授权与存储状态后重试</string>
 </resources>

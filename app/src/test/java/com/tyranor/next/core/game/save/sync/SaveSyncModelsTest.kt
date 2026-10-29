@@ -97,6 +97,43 @@ class SaveSyncModelsTest {
         assertNotEquals(ons.folderName, reallive.folderName)
     }
 
+    @Test fun strongEtagEnforcesEntityTagGrammarExactly() {
+        listOf(
+            "\"\"",
+            "\"!\"",
+            "\"#\"",
+            "\"~\"",
+            "\"\u0080\"",
+            "\"\u00ff\"",
+            "\"opaque-._~:/?#[]@!$&'()*+,;=\"",
+        ).forEach { etag ->
+            assertTrue("Valid strong ETag was rejected: $etag", isStrongEtag(etag))
+        }
+
+        listOf(
+            null,
+            "",
+            "\"",
+            "unquoted",
+            "\"unterminated",
+            "unterminated\"",
+            "W/\"weak\"",
+            "w/\"weak\"",
+            " \"quoted\"",
+            "\"quoted\" ",
+            "\"inner space\"",
+            "\"nul\u0000\"",
+            "\"inner\ttab\"",
+            "\"inner\nline\"",
+            "\"inner\"quote\"",
+            "\"del\u007f\"",
+            "\"non-byte\u0100\"",
+            "\"emoji\uD83D\uDE00\"",
+        ).forEach { etag ->
+            assertFalse("Invalid strong ETag was accepted: $etag", isStrongEtag(etag))
+        }
+    }
+
     @Test fun retentionUsesStableChoicesAndLegacyMigrationNeverTightens() {
         assertEquals(SaveSyncMode.MANUAL, WebDavConfig().mode)
         assertFalse(WebDavConfig().enabled)

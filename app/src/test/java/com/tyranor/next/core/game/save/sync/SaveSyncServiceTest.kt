@@ -31,6 +31,41 @@ class SaveSyncServiceTest {
     val temp = TemporaryFolder()
 
     @Test
+    fun excludedGameIsSkippedByUriWhileSameTitleGameStillUploads() = runBlocking {
+        val harness = Harness(temp)
+        val excluded = harness.addGame("same-title")
+        val other = harness.addGame("same-title")
+        harness.service.setIdentity(excluded, "excluded-identity")
+        harness.service.setIdentity(other, "other-identity")
+        harness.setActive(excluded, "excluded-active")
+        harness.setActive(other, "other-active")
+
+        val report = harness.service.syncAll(SaveSyncDirection.UPLOAD, excludedUris = setOf(excluded.uri))
+
+        assertTrue(report.failures.isEmpty())
+        assertEquals(1, report.uploaded)
+        assertTrue(harness.transport.versions(harness.remoteGame(excluded)).isEmpty())
+        assertEquals(1, harness.transport.versions(harness.remoteGame(other)).size)
+    }
+
+    @Test
+    fun excludedGameStillReservesItsRemoteIdentityDuringConflictCheck() = runBlocking {
+        val harness = Harness(temp)
+        val excluded = harness.addGame("excluded-conflict")
+        val other = harness.addGame("other-conflict")
+        harness.service.setIdentity(excluded, "shared-identity")
+        harness.service.setIdentity(other, "shared-identity")
+        harness.setActive(other, "other-active")
+
+        val report = harness.service.syncAll(SaveSyncDirection.UPLOAD, excludedUris = setOf(excluded.uri))
+
+        assertEquals(listOf(SaveSyncError.IDENTITY_CONFLICT), report.failures.map { it.error })
+        assertEquals(listOf(other.uri), report.failures.map { it.gameUri })
+        assertEquals(0, report.uploaded)
+        assertTrue(harness.transport.versions(harness.remoteGame(other)).isEmpty())
+    }
+
+    @Test
     fun committedSelectionAfterSaveAdvancesStillImportsExplicitlyReselectedVersion() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("comitted-reselect")
@@ -936,13 +971,192 @@ class SaveSyncServiceTest {
                     caught
                 }
             }
-            delay(200)
+            withTimeout(5_000) { harness.world.activeKeyEntered.await() }
             harness.world.isRunning = true
             release.complete(Unit)
             gate.await()
             val failure = recovery.await()
             assertEquals(SaveSyncError.GAME_RUNNING, failure?.code)
         }
+    }
+
+    @Test
+    fun pendingActivationRetryRechecksRunningBeforeEarlyCompletionTouchesSaveState() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("mutation-gate-pending-retry")
+        harness.identify(game)
+        val selected = prepareMetadataPendingActivation(
+            harness,
+            game,
+            before = "before-pending-retry",
+            selected = "selected-pending-retry",
+            selectedAt = 1_700_000_000_011L,
+        )
+        val key = harness.key(game)
+        val pendingBefore = checkNotNull(harness.journal.load(key))
+        val archiveBefore = harness.journal.archive(key).readBytes()
+        val snapshotsBefore = harness.snapshots.list(key).map { it.id }
+        val activeBefore = harness.world.activeHash(game)
+        val exportBefore = harness.world.exportCount()
+        val completeImportBefore = harness.world.completeImportCount()
+        val restoredBefore = harness.world.restoredMetadataCount(game)
+        val initialIdleCheck = CompletableDeferred<Unit>()
+        harness.world.onRunning = { initialIdleCheck.complete(Unit) }
+
+        coroutineScope {
+            val held = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val gate = async {
+                SaveSyncLocks.mutation {
+                    held.complete(Unit)
+                    release.await()
+                }
+            }
+            held.await()
+            val activation = async(Dispatchers.Default) {
+                try {
+                    harness.service.activateVersion(game, selected.id)
+                    null
+                } catch (caught: SaveSyncException) {
+                    caught
+                }
+            }
+            withTimeout(5_000) { initialIdleCheck.await() }
+            harness.world.isRunning = true
+            release.complete(Unit)
+            gate.await()
+            val failure = withTimeout(5_000) { activation.await() }
+            assertEquals(SaveSyncError.GAME_RUNNING, failure?.code)
+        }
+
+        assertEquals(pendingBefore, harness.journal.load(key))
+        assertTrue(harness.journal.archive(key).readBytes().contentEquals(archiveBefore))
+        assertEquals(snapshotsBefore, harness.snapshots.list(key).map { it.id })
+        assertEquals(activeBefore, harness.world.activeHash(game))
+        assertEquals(exportBefore, harness.world.exportCount())
+        assertEquals(completeImportBefore, harness.world.completeImportCount())
+        assertEquals(restoredBefore, harness.world.restoredMetadataCount(game))
+        assertTrue(harness.service.needsSelectionRecovery(game))
+    }
+
+    @Test
+    fun cancelledPrecommitActivationCleansUpAfterMutationWaitWhenIdle() = runBlocking {
+        verifyPrecommitCancellationAfterMutationWait(runningAfterWait = false)
+    }
+
+    @Test
+    fun cancelledPrecommitActivationKeepsPendingWhenGameStartsAfterMutationWait() = runBlocking {
+        verifyPrecommitCancellationAfterMutationWait(runningAfterWait = true)
+    }
+
+    private suspend fun verifyPrecommitCancellationAfterMutationWait(runningAfterWait: Boolean) {
+        val harness = Harness(temp)
+        val game = harness.addGame(if (runningAfterWait) "precommit-cancel-running" else "precommit-cancel-idle")
+        harness.identify(game)
+        harness.setActive(game, "before-precancel")
+        val selected = harness.addSnapshot(game, "selected-precancel", 1_700_000_000_012L)
+        val key = harness.key(game)
+        val activeBefore = harness.world.activeHash(game)
+        val importBefore = harness.world.importCount(game)
+        val restoredBefore = harness.world.restoredMetadataCount(game)
+
+        coroutineScope {
+            val held = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val gate = async {
+                SaveSyncLocks.mutation {
+                    held.complete(Unit)
+                    release.await()
+                }
+            }
+            held.await()
+            val activation = async(Dispatchers.Default) {
+                harness.service.activateVersion(game, selected.id)
+            }
+            withTimeout(5_000) {
+                while (harness.journal.load(key) == null) yield()
+            }
+            val pendingBefore = checkNotNull(harness.journal.load(key))
+            val archiveBefore = harness.journal.archive(key).readBytes()
+            val exportAtCancellation = harness.world.exportCount()
+            val completeImportBefore = harness.world.completeImportCount()
+
+            activation.cancel()
+            harness.world.enabled = false
+            harness.world.isRunning = runningAfterWait
+            release.complete(Unit)
+            gate.await()
+            withTimeout(5_000) { activation.join() }
+
+            assertEquals(activeBefore, harness.world.activeHash(game))
+            assertEquals(importBefore, harness.world.importCount(game))
+            assertEquals(exportAtCancellation, harness.world.exportCount())
+            assertEquals(restoredBefore, harness.world.restoredMetadataCount(game))
+            if (runningAfterWait) {
+                assertEquals(pendingBefore, harness.journal.load(key))
+                assertTrue(harness.journal.archive(key).readBytes().contentEquals(archiveBefore))
+                assertEquals(completeImportBefore, harness.world.completeImportCount())
+                assertTrue(harness.service.needsSelectionRecovery(game))
+            } else {
+                assertNull(harness.journal.load(key))
+                assertFalse(harness.journal.archive(key).exists())
+                assertEquals(completeImportBefore + 1, harness.world.completeImportCount())
+                assertFalse(harness.service.needsSelectionRecovery(game))
+            }
+        }
+    }
+
+    @Test
+    fun uploadSyncPendingCompletionRechecksRunningAfterMutationWait() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("mutation-gate-sync-finish")
+        harness.identify(game)
+        prepareMetadataPendingActivation(
+            harness,
+            game,
+            before = "before-sync-finish",
+            selected = "selected-sync-finish",
+            selectedAt = 1_700_000_000_013L,
+        )
+        val key = harness.key(game)
+        val pendingBefore = checkNotNull(harness.journal.load(key))
+        val archiveBefore = harness.journal.archive(key).readBytes()
+        val exportBefore = harness.world.exportCount()
+        val completeImportBefore = harness.world.completeImportCount()
+        val restoredBefore = harness.world.restoredMetadataCount(game)
+        val admissionCheck = CompletableDeferred<Unit>()
+        harness.world.onRunning = { admissionCheck.complete(Unit) }
+
+        coroutineScope {
+            val held = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val gate = async {
+                SaveSyncLocks.mutation {
+                    held.complete(Unit)
+                    release.await()
+                }
+            }
+            held.await()
+            val syncing = async(Dispatchers.Default) {
+                harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+            }
+            withTimeout(5_000) { admissionCheck.await() }
+            harness.world.isRunning = true
+            release.complete(Unit)
+            gate.await()
+            val report = withTimeout(5_000) { syncing.await() }
+
+            assertEquals(1, report.busy)
+            assertEquals(0, report.uploaded)
+            assertTrue(report.failures.isEmpty())
+        }
+
+        assertEquals(pendingBefore, harness.journal.load(key))
+        assertTrue(harness.journal.archive(key).readBytes().contentEquals(archiveBefore))
+        assertEquals(exportBefore, harness.world.exportCount())
+        assertEquals(completeImportBefore, harness.world.completeImportCount())
+        assertEquals(restoredBefore, harness.world.restoredMetadataCount(game))
+        assertTrue(harness.service.needsSelectionRecovery(game))
     }
 
     @Test
@@ -1014,6 +1228,26 @@ class SaveSyncServiceTest {
             current = current.cause
         }
         return false
+    }
+
+    private suspend fun prepareMetadataPendingActivation(
+        harness: Harness,
+        game: ScanGame,
+        before: String,
+        selected: String,
+        selectedAt: Long,
+    ): SaveVersion {
+        harness.setActive(game, before)
+        val version = harness.addSnapshot(game, selected, selectedAt)
+        harness.world.failNextRestoredMetadata()
+        assertEquals(
+            SaveActivationResult.METADATA_PENDING,
+            harness.service.activateVersion(game, version.id),
+        )
+        assertEquals(1, harness.world.importCount(game))
+        assertTrue(harness.journal.load(harness.key(game)) != null)
+        assertTrue(harness.journal.archive(harness.key(game)).isFile)
+        return version
     }
 
     @Test
@@ -2945,6 +3179,8 @@ class SaveSyncServiceTest {
         private val restoredMetadataCounts = HashMap<String, Int>()
         private var recordFailures = 0
         private var openedClients = 0
+        private var exports = 0
+        private var completeImports = 0
         private var activeSequence = 0
         @Volatile
         override var enabled = true
@@ -2955,6 +3191,7 @@ class SaveSyncServiceTest {
         @Volatile var directoryKey: String? = null
         var changeDirectoryOnRecord: String? = null
         var lastRecordedDirectory: String? = null
+        @Volatile var onRunning: (() -> Unit)? = null
         val unavailableUris = HashSet<String>()
         val activeKeyEntered = CompletableDeferred<Unit>()
         @Volatile
@@ -2964,7 +3201,11 @@ class SaveSyncServiceTest {
         override fun config(): WebDavConfig = webDavConfig
         override fun games(): List<ScanGame> = synchronized(lock) { games.toList() }
         override fun available(game: ScanGame): Boolean = synchronized(lock) { game in games && game.uri !in unavailableUris }
-        override fun running(game: ScanGame): Boolean = isRunning
+        override fun running(game: ScanGame): Boolean {
+            val value = isRunning
+            onRunning?.invoke()
+            return value
+        }
         override fun activeKey(game: ScanGame): String {
             val key = directoryKey ?: game.uri
             activeKeyEntered.complete(Unit)
@@ -2978,6 +3219,9 @@ class SaveSyncServiceTest {
             val source = synchronized(lock) { active[game.uri] }
                 ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
             source.copyTo(archive, overwrite = true)
+            synchronized(lock) {
+                exports++
+            }
         }
 
         override suspend fun import(game: ScanGame, archive: File, activeKey: String, committed: () -> Unit) {
@@ -2992,7 +3236,9 @@ class SaveSyncServiceTest {
             committed()
         }
 
-        override fun completeImport(game: ScanGame) = Unit
+        override fun completeImport(game: ScanGame) {
+            synchronized(lock) { completeImports++ }
+        }
         override fun needsManualRecovery(game: ScanGame): Boolean = recoveryNeeded
         override fun repairManualSelection(game: ScanGame, hasCurrent: Boolean): Boolean = true
 
@@ -3072,6 +3318,10 @@ class SaveSyncServiceTest {
         fun restoredMetadataCount(game: ScanGame): Int = synchronized(lock) {
             restoredMetadataCounts.getOrDefault(game.uri, 0)
         }
+
+        fun exportCount(): Int = synchronized(lock) { exports }
+
+        fun completeImportCount(): Int = synchronized(lock) { completeImports }
 
         fun failNextRestoredMetadata() = synchronized(lock) {
             recordFailures++

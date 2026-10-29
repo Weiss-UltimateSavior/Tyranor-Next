@@ -17,21 +17,23 @@
 
 ### 修复
 
+- 修复 [#129](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/129)：完善 Kirikiri SD 卡 SAF 镜像元数据与内容路由，实现写入 copy-up 与分片所有权标记维护，增加 sticky 镜像根目录与存档导入恢复保护，并修复 libc stdio 与 open GOT 钩子对缺失路径的错误码保留和未索引写入路由。
+- 修复 [#133](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/133)：撤回默认风格顶栏渐进模糊及其宿主接入（`c71f57d`、`3dd5d02`），恢复顶栏与正文上下分离布局，以处理切页性能回归。底栏/侧栏/悬浮按钮的玻璃采样、默认主题渐变与 WebView 采样修复保留。
 - 修复 WebDAV 版本激活与恢复的事务一致性：同一实际存档目录的多个 URI 共用 owner/token/revision，journal 删除前持久化提交结果；旧 token 不能回退另一别名的新 revision。存储别名只在 SDK 可信边界解析；显式恢复只保留当前存档和可验证的历史源，不自动导入，中断选择须显式恢复或再次确认新选择；目录、revision 或恢复链归属不明时暂停处理，解决已提交切换后重选同版本的假成功。
 - 修复恢复材料与五版历史保护：待处理选择、`beforeHash` 和可恢复 promotion source 在维护、写入与恢复前均受保护，超限淘汰前校验并隔离损坏 ZIP；staging 丢失或损坏时可用内容一致的历史副本恢复，ZIP 中央目录与实际导入条目必须一致，无法验证的恢复材料继续保留供重试。
-- 修复关闭、重开、配置修改及前后台切换时的会话竞态：关闭状态与 generation 在同一提交中持久化，旧 session、旧 ticket 与旧前后台事件不能清理或拒绝快速重开后的 replacement，也不会继承关闭前的 pending baseline；配置保存/重置以独立 `config_revision` 与加密 payload 同次提交推进，不推进关闭 generation，因此既有 session 与启动宽限保留。零 Activity 宿主经退出宽限视为空闲，进程列表为空时失败关闭，并以持久 PID/进程身份补证。
+- 修复关闭、重开、配置修改及前后台切换时的会话竞态：关闭状态与 generation 在同一提交中持久化，旧 session、旧 ticket 与旧前后台事件不能清理或拒绝快速重开后的 replacement，也不会继承关闭前的 pending baseline；配置保存/重置以独立 `config_revision` 与加密 payload 同次提交推进，不推进关闭 generation，因此既有 session 与启动宽限保留。零 Activity 宿主经退出宽限视为空闲；系统不给进程列表时按有效会话与持久宿主记录判断，损坏缓存隔离后重建，未知 live 宿主仍保持保护。
 - 修复 WebDAV 请求的事务边界：整库与单游戏的顶层及嵌套 exchange 在每次请求前重新准入，并在本地事务入口与真实 HTTP enqueue 两处复核 `config_revision`；网络等待不持有本地版本或目录锁。上传使用固定副本，切换版本、修改配置或身份、删除游戏、关闭功能或目录 revision 变化后，旧传输不能继续回写，宿主 URI 与按游戏锁及时回收，已淘汰的最新云端版本仍可重新拉取。
 - 修复启动隔离、自动同步与状态判断：WebDAV 关闭时启动游戏不解析存档目录、不进入同步目录锁，但仍与在途激活导入共享独立变更门禁；启用时可选启动记账解析失败只回退游戏 URI，正常同步仍严格校验目录。首次启动前恢复或手动切换版本不会因缺少宿主记录永久判忙；游戏忙碌或无可捕获版本时跳过上传与裁剪，混合永久/临时失败仍处理其它可重试游戏。配置、session 或目录状态变化使用独立 `LOCAL_STATE_CHANGED`，不冒充 `GAME_RUNNING`。
-- 修复删除游戏和导入中断后的清理：本地版本、检查点、pending、session、baseline 与身份归属按 URI 清理，单项失败保留可重试入口且不阻断其它项，也不删除云端历史；清理保留原始 `SaveSyncError`，UI 按码区分运行中、本地 IO、选择未完成等原因。导入无提交证据时保留 `import_orphan`，损坏 journal 先从独立 archive 救档，随后才允许清理。
+- 修复删除游戏和导入中断后的清理：本地版本、检查点、pending、session、baseline 与身份归属按 URI 清理，单项失败保留可重试入口且不阻断其它项，也不删除云端历史；清理保留原始 `SaveSyncError`，UI 按码区分运行中、本地 IO、选择未完成等原因。导入无提交证据或全零文件导入时保留 `import_orphan`，保留决定在交换前持久化且中断后仍有效，损坏 journal 先从独立 archive 救档，随后才允许清理。
 - 修复激活提交前失败的收尾：保留所选版本，清理成功时释放待处理记录，清理失败时保留记录并附带清理错误；手动选择标记缺失、损坏或清理失败按独立状态处理并可经显式选择恢复。普通 ZIP 文件导入保持原有行为，不写入云端版本激活的手动选择标记。
 - 修复 MV/MZ 手动切换与同步结果：拉取保留云端版本时间，手动切换后下一次互通遵从用户选择，导入失败不遗留方向标记；恢复时间确认、同步方向在 Activity 重建后的还原以及短提示/长提示边界重新对齐。
 - 修复 WebDAV 地址、目录和响应兼容性：支持中文、方括号及等价百分号转义，拒绝用户目录中的符号链接，限制 XML 结构与深度，并隐藏调试输出中的服务器和凭据。云端游戏标识、地址与保留策略说明同步补齐。
 - 修复云端对象和本地缓存的故障恢复：普通上传和恢复上传均可按强 ETag 退役已证实损坏的目标，无修复依据时停止重复整包传输；下载前检查可用空间，写入/刷新/关闭/替换按 `STORAGE_FULL` 或 `LOCAL_IO` 分类，空间不足不进入自动网络重试。上传 pin 复制失败会释放临时文件，下载校验后原子替换并过滤异常云端时间，损坏的本地缓存与可读目录名边界可安全修复。
 - 修复目录已切换后的恢复记录：按游戏只保留一份待补齐版本信息，上传重试先验证替代版本再裁剪；兼容应用数据根下的 KRKR 镜像目录，并缓存已读取的宿主进程清单。
 - 补齐最终审查修复：空存档下损坏/缺失的待裁剪目标可安全退役；下载拒绝超过 listing 声明尺寸的 body；已确认 publication 复用强 ETag 校验，避免每轮整包重下；临时文件按小余量预检，持久历史仍保留 16 MiB；删除/清理/本地状态错误码、反馈与手动清理续跑对齐；macOS 回归补充模型路径触发。
-- 修复后台任务与错误提示：打开/退出的立即与 fallback 任务使用独立队列，运行中的新请求排队而不取消在途传输。每游戏每轮所有经 `SaveSyncService` 发起的远程 DELETE 合计最多 20 次，超限保留 `needsPrune` / `publicationConfirmed` checkpoint，以 `cleanupPending` 继续 fallback，保留 session 与同字节清理意图并在下轮确认有效替换后裁剪，不拆断已有 S→N 链。关闭功能、真实取消、凭据不可读、删除失败和无关游戏异常分别反馈，非搜索输入统一使用 Done/对应键盘与 autofill 语义。macOS 全量 app JVM 回归改为按相关存档、启动、UI/测试与构建输入路径触发。Service 已确认的 `needsPrune` 在 capture/pin 前 fresh verify，active 为空或 pin 创建失败仍可续清，但验证空间与 checkpoint 持久化必须成功、失败不删旧版本；pending cleanup 优先于非空 hash，20 次预算保留 marker，新 M 可同轮发布，create/copy ENOSPC 统一为不重试的 `STORAGE_FULL`。
+- 修复后台任务与错误提示：打开/退出的立即与 fallback 任务使用独立队列，运行中的新请求排队而不取消在途传输。每游戏每轮所有经 `SaveSyncService` 发起的远程 DELETE 合计最多 20 次，超限保留 `needsPrune` / `publicationConfirmed` checkpoint，以 `cleanupPending` 继续 fallback（按 URI 跳过本链已报存储不足的游戏，同名游戏互不影响），保留 session 与同字节清理意图并在下轮确认有效替换后裁剪，不拆断已有 S→N 链。关闭功能、真实取消、凭据不可读、删除失败和无关游戏异常分别反馈，非搜索输入统一使用 Done/对应键盘与 autofill 语义。macOS 全量 app JVM 回归改为按相关存档、启动、UI/测试与构建输入路径触发。Service 已确认的 `needsPrune` 在 capture/pin 前 fresh verify，active 为空或 pin 创建失败仍可续清，但验证空间与 checkpoint 持久化必须成功、失败不删旧版本；pending cleanup 优先于非空 hash，20 次预算保留 marker，新 M 可同轮发布，create/copy ENOSPC 统一为不重试的 `STORAGE_FULL`。
+- 修复等待存档写入门禁期间启动游戏的竞态：激活重试、导入前捕获、失败回滚、同步收尾与自动会话捕获在锁内重新检查；取消后的必要回滚等锁不可取消，运行中保留恢复材料。外置 YU-RIS 的运行标记独立于上传模式与总开关，延迟前台事件不会清除后来启动；启动准入改为类型化，不受管理的外置游戏不占用同步门禁；已发出启动后的记账失败及重复启动不会误撤销保护。
 - 修复 WebDAV 界面与无障碍：密码输入具备正确 label、遮罩和 `Password` 语义，长确认弹窗可滚动且按钮固定可见，任务中弹窗不能经遮罩或返回误关闭；同步方向、待补齐信息、真实失败与危险色分别呈现。
-- 修复 [#133](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/133)：撤回默认风格顶栏渐进模糊及其宿主接入（`c71f57d`、`3dd5d02`），恢复顶栏与正文上下分离布局，以处理切页性能回归。下拉弹层宿主、底栏/侧栏/悬浮按钮的玻璃采样、默认主题渐变与 WebView 采样修复保留。
 
 ### 说明
 

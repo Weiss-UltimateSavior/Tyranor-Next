@@ -9,7 +9,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -23,46 +22,111 @@ class SaveDirectoryIdentityTest {
 
     @Test
     fun disabledLaunchDoesNotResolveTheSaveDirectory() {
-        val key = optionalSaveSyncLaunchKey("game-uri", enabled = { false }) {
+        var resolved = false
+        val admission = optionalSaveSyncLaunchAdmission(enabled = { false }) {
+            resolved = true
             fail("A disabled opt-in feature must not resolve saves before launching")
-            throw IOException("inaccessible directory")
+            null
         }
-        assertNull(key)
+        assertSame(SaveSyncLaunchAdmission.Disabled, admission)
+        assertFalse(resolved)
     }
 
     @Test
-    fun saveLocationAndCanonicalPathFailuresDoNotBlockOptionalLaunchAdmission() = runBlocking {
-        val uri = "content://games/launch"
-        val game = game(uri)
+    fun unreadableOptInSettingsSkipResolutionAndReturnDisabled() {
+        var resolved = false
+        val admission = optionalSaveSyncLaunchAdmission(enabled = {
+            throw SecurityException("prefs unavailable")
+        }) {
+            resolved = true
+            fail("An unreadable optional switch must not resolve saves")
+            null
+        }
+        assertSame(SaveSyncLaunchAdmission.Disabled, admission)
+        assertFalse(resolved)
+    }
+
+    @Test
+    fun nullAndNonCancellationResolutionFailuresReturnUnresolved() {
+        assertSame(
+            SaveSyncLaunchAdmission.Unresolved,
+            optionalSaveSyncLaunchAdmission(enabled = { true }) { null },
+        )
+        assertSame(
+            SaveSyncLaunchAdmission.Unresolved,
+            optionalSaveSyncLaunchAdmission(enabled = { true }) {
+                throw SecurityException("access revoked")
+            },
+        )
+
+        val game = game("content://games/launch")
         val brokenDirectory = object : File(temp.root, "unreadable") {
             override fun getCanonicalPath(): String = throw IOException("canonical path failed")
         }
-        val resolved = optionalSaveSyncLaunchKey(uri, enabled = { true }) {
-            saveDirectoryIdentity(game) { brokenDirectory }
-        }
-        assertEquals(uri, resolved)
-        assertEquals("launched", SaveSyncLocks.active(checkNotNull(resolved)) { "launched" })
-        assertEquals(uri, optionalSaveSyncLaunchKey(uri, enabled = { true }) { throw SecurityException("access revoked") })
-        assertEquals("save-directory:valid", optionalSaveSyncLaunchKey(uri, enabled = { true }) { "save-directory:valid" })
+        assertSame(
+            SaveSyncLaunchAdmission.Unresolved,
+            optionalSaveSyncLaunchAdmission(enabled = { true }) {
+                saveDirectoryIdentity(game) { brokenDirectory }
+            },
+        )
     }
 
     @Test
-    fun optionalLaunchResolutionPreservesCancellation() {
-        val cancelled = CancellationException("cancel launch")
+    fun nonNullResolutionBecomesDirectoryWithoutPrefixInference() {
+        assertEquals(
+            SaveSyncLaunchAdmission.Directory("opaque-launch-key"),
+            optionalSaveSyncLaunchAdmission(enabled = { true }) { "opaque-launch-key" },
+        )
+        assertEquals(
+            SaveSyncLaunchAdmission.Directory("$SAVE_DIRECTORY_KEY_PREFIX/saves/demo"),
+            optionalSaveSyncLaunchAdmission(enabled = { true }) { "$SAVE_DIRECTORY_KEY_PREFIX/saves/demo" },
+        )
+    }
+
+    @Test
+    fun launchAdmissionBranchesRemainDistinctTypedStates() {
+        val admissions = listOf<SaveSyncLaunchAdmission>(
+            SaveSyncLaunchAdmission.Disabled,
+            SaveSyncLaunchAdmission.Unmanaged,
+            SaveSyncLaunchAdmission.Unresolved,
+            SaveSyncLaunchAdmission.Directory("opaque-launch-key"),
+        )
+
+        val branches = admissions.map { admission ->
+            when (admission) {
+                SaveSyncLaunchAdmission.Disabled -> "disabled"
+                SaveSyncLaunchAdmission.Unmanaged -> "unmanaged"
+                SaveSyncLaunchAdmission.Unresolved -> "unresolved"
+                is SaveSyncLaunchAdmission.Directory -> "directory:${admission.key}"
+            }
+        }
+
+        assertEquals(
+            listOf("disabled", "unmanaged", "unresolved", "directory:opaque-launch-key"),
+            branches,
+        )
+    }
+
+    @Test
+    fun optionalLaunchAdmissionPreservesCancellationFromSwitchAndResolver() {
+        val switchCancellation = CancellationException("cancel switch")
         try {
-            optionalSaveSyncLaunchKey("game-uri", enabled = { true }) { throw cancelled }
-            fail("Cancellation was swallowed")
+            optionalSaveSyncLaunchAdmission(enabled = { throw switchCancellation }) {
+                fail("Cancelled settings must not resolve saves")
+                null
+            }
+            fail("Switch cancellation was swallowed")
         } catch (caught: CancellationException) {
-            assertSame(cancelled, caught)
+            assertSame(switchCancellation, caught)
         }
-    }
 
-    @Test
-    fun unreadableOptInSettingsSkipSaveIntegration() {
-        assertNull(optionalSaveSyncLaunchKey("game-uri", enabled = { throw SecurityException("prefs unavailable") }) {
-            fail("An unreadable optional switch must not resolve saves")
-            "unused"
-        })
+        val resolverCancellation = CancellationException("cancel resolver")
+        try {
+            optionalSaveSyncLaunchAdmission(enabled = { true }) { throw resolverCancellation }
+            fail("Resolver cancellation was swallowed")
+        } catch (caught: CancellationException) {
+            assertSame(resolverCancellation, caught)
+        }
     }
 
     @Test

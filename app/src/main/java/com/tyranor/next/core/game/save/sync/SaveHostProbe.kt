@@ -1,6 +1,22 @@
 package com.tyranor.next.core.game.save.sync
 
 import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
+
+/** A damaged cache is unknown host evidence until a lifecycle record rebuilds it. */
+internal fun loadSaveHostRecords(
+    store: SaveSyncStateStore,
+    knownKeys: Set<String>? = null,
+): Map<String, JSONObject> = store.keys().filter { knownKeys == null || it in knownKeys }.associateWith { key ->
+    try {
+        store.load(key)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: SaveSyncException) {
+        if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+        JSONObject()
+    }
+}
 
 internal data class SaveHostProcess(val pid: Int, val name: String)
 internal sealed interface SaveHostIdentity {
@@ -17,7 +33,10 @@ internal interface SaveHostProbe {
     fun identity(pid: Int): SaveHostIdentity
 }
 
-/** Used by launch, manual selection and exit upload, not only by a policy-only test. */
+/**
+ * Used by launch, manual selection and exit upload.
+ * [hasSession] is true only for native work that still needs host-process evidence.
+ */
 internal fun hasRunningSaveHost(
     probe: SaveHostProbe,
     gameUri: String,
@@ -27,7 +46,8 @@ internal fun hasRunningSaveHost(
     relatedUris: Set<String> = setOf(gameUri),
 ): Boolean {
     if (inStartGrace) return true
-    val visible = probe.visibleHosts() ?: return true
+    val visible = probe.visibleHosts()
+    if (visible == null && hasSession) return true
     val records = probe.records()
     fun relation(pid: Int, key: String): HostRecordRelation {
         val record = records[key] ?: return HostRecordRelation.UNKNOWN
@@ -46,10 +66,16 @@ internal fun hasRunningSaveHost(
                 idleForMillis = idleFor)
         }.firstOrNull { it != HostRecordRelation.UNRELATED } ?: HostRecordRelation.UNRELATED
     }
-    if (visible.any { it.name.isBlank() || relation(it.pid, SaveContentHash.text(it.name)) != HostRecordRelation.UNRELATED }) {
+    val visibleProcesses = visible.orEmpty()
+    if (visibleProcesses.any { process ->
+            process.name.isBlank() ||
+                relation(process.pid, SaveContentHash.text(process.name)) != HostRecordRelation.UNRELATED
+        }) {
         return true
     }
-    var observed = visible.isNotEmpty()
+    var observed = visibleProcesses.isNotEmpty()
+    // Never discard a malformed record: without a usable PID or identity, it cannot prove that
+    // the host which owns the save tree has stopped.
     for ((key, record) in records) {
         val pid = record.optInt("pid", -1)
         if (pid <= 0) return true
@@ -59,7 +85,8 @@ internal fun hasRunningSaveHost(
             is SaveHostIdentity.Live -> {
                 // A reused PID is evidence that the registered process ended, not that it runs.
                 observed = true
-                if (SaveContentHash.text(identity.name) == key && relation(pid, key) != HostRecordRelation.UNRELATED) return true
+                if (SaveContentHash.text(identity.name) == key &&
+                    relation(pid, key) != HostRecordRelation.UNRELATED) return true
             }
         }
     }

@@ -592,7 +592,10 @@
     <string name="save_error_app_internal_unavailable">アプリ内部ストレージを使用できません</string>
     <string name="save_location_krkr_scoped">KRKR 個別セーブフォルダ</string>
     <string name="save_location_krkr_game_dir">KRKR ゲームフォルダ内セーブ</string>
-    <string name="save_location_krkr_sd_mirror">KRKR SDカード ミラーセーブ（アプリ専用領域）</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SDカード SAFミラーセーブ（アプリ専用領域）</string>
+    <string name="krkr_mirror_save_forced_note">SDカード上のゲームのセーブはSAFミラーディレクトリで管理されるため、このスイッチは無効です。エンジンとセーブ管理の両方がアプリ専用領域を読み書きします。ゲームディレクトリに手動で置いた savedata は読み込まれません。</string>
+    <string name="save_location_load_failed_note">セーブ位置の解決に失敗したため、このページの情報は不完全または古い可能性があります。後ほど再試行して更新してください。</string>
+    <string name="krkr_mirror_save_import_hint">SDカード上のゲームのセーブはここからインポート/エクスポートしてください（アプリ専用SAFミラーディレクトリ）。ゲームディレクトリに手動で置いた savedata はエンジンに読み込まれません。</string>
     <string name="save_error_ons_external_unavailable">ONS のアプリ個別ストレージを使用できません</string>
     <string name="save_location_ons_scoped">ONS アプリ個別セーブフォルダ</string>
     <string name="save_location_ons_game_dir">ONS ゲーム内セーブフォルダ</string>
@@ -971,4 +974,5 @@
     <string name="webdav_sync_cleanup_pending">クラウド履歴の整理はまだ完了していません。次回以降の同期で続行します。</string>
     <string name="webdav_sync_partial_cleanup_pending">一部の同期が完了しました。クラウド履歴の整理はまだ完了していません。次回以降の同期で続行します。</string>
     <string name="webdav_sync_busy_skipped">同期が完了しました。実行中のゲームはスキップしました</string>
+    <string name="launch_empty_krkr_sd_mirror">SD カードのゲームデータを読み取れませんでした。フォルダーへのアクセス権とストレージを確認して再試行してください。</string>
 </resources>
