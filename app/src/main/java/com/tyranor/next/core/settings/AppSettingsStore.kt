@@ -3,6 +3,7 @@ package com.tyranor.next.core.settings
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
+import com.tyranor.next.core.engine.EngineType
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -117,6 +118,9 @@ object AppSettingsStore {
 
     /** 游戏页过滤器：引擎类型（存 [com.tyranor.next.core.engine.EngineType.name]，空串表示全部）。 */
     const val KEY_GAME_FILTER_ENGINE = "game_filter_engine"
+
+    /** 引擎过滤的「全部」取值：与 [KEY_GAME_FILTER_ENGINE] 的空串语义对应，避免调用方散落字面量。 */
+    const val GAME_FILTER_ENGINE_ALL = ""
 
     /** 游戏页过滤器：游玩状态。 */
     const val KEY_GAME_FILTER_PLAYED = "game_filter_played"
@@ -548,14 +552,21 @@ object AppSettingsStore {
         else -> GAME_SORT_ALPHA
     }
 
-    /** 游戏页引擎过滤器（EngineType.name；空串 = 全部）。 */
+    /** 游戏页引擎过滤器（EngineType.name；[GAME_FILTER_ENGINE_ALL] = 全部）。 */
     fun getGameFilterEngine(c: Context): String =
-        prefs(c).getString(KEY_GAME_FILTER_ENGINE, "").orEmpty().trim()
+        normalizeGameFilterEngine(prefs(c).getString(KEY_GAME_FILTER_ENGINE, GAME_FILTER_ENGINE_ALL))
 
     fun setGameFilterEngine(c: Context, engine: String) {
-        val normalized = engine.trim()
+        val normalized = normalizeGameFilterEngine(engine)
         prefs(c).edit().putString(KEY_GAME_FILTER_ENGINE, normalized).apply()
         gameFilterEngineState.value = normalized
+    }
+
+    /** 引擎过滤归一化：未知引擎名回落为「全部」，避免持久化一个永远匹配不到的条件。 */
+    fun normalizeGameFilterEngine(engine: String?): String {
+        val value = engine.orEmpty().trim()
+        if (value.isEmpty()) return GAME_FILTER_ENGINE_ALL
+        return if (EngineType.entries.any { it.name == value }) value else GAME_FILTER_ENGINE_ALL
     }
 
     /** 游戏页游玩状态过滤器（all / played / unplayed）。 */

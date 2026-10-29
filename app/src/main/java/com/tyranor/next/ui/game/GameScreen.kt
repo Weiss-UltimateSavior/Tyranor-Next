@@ -139,6 +139,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.appSheetMaxHeight
 import com.tyranor.next.ui.common.glassNavBottomInset
@@ -556,7 +557,7 @@ private fun GameLibraryContent(
     // 只清过滤器会让排序停在非默认值，与「筛选与排序」的口径不符。
     val resetFilters = {
         AppSettingsStore.setGameSort(context, AppSettingsStore.GAME_SORT_ALPHA)
-        AppSettingsStore.setGameFilterEngine(context, "")
+        AppSettingsStore.setGameFilterEngine(context, AppSettingsStore.GAME_FILTER_ENGINE_ALL)
         AppSettingsStore.setGameFilterPlayed(context, AppSettingsStore.GAME_FILTER_PLAYED_ALL)
     }
     // 引擎过滤可能失效（该引擎的游戏被全部删除）：库已加载、未在扫描且已无该引擎时自动清空，
@@ -568,7 +569,7 @@ private fun GameLibraryContent(
         availableEngines.none { it.name == engineFilter }
     LaunchedEffect(availableEngines, engineFilter, loaded, scanning) {
         if (loaded && !scanning && engineFilterStale) {
-            AppSettingsStore.setGameFilterEngine(context, "")
+            AppSettingsStore.setGameFilterEngine(context, AppSettingsStore.GAME_FILTER_ENGINE_ALL)
         }
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
@@ -662,7 +663,7 @@ private fun GameLibraryContent(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
                         )
-                        com.tyranor.next.ui.common.NoRippleButton(
+                        NoRippleButton(
                             text = stringResource(R.string.game_add_folder),
                             onClick = { dirPickerLaunch() },
                             modifier = Modifier.padding(top = 16.dp),
@@ -682,7 +683,7 @@ private fun GameLibraryContent(
                             )
                             // 有生效条件时，空态直接给一个出口，省得再去顶栏翻抽屉
                             if (hasActiveCondition) {
-                                com.tyranor.next.ui.common.NoRippleButton(
+                                NoRippleButton(
                                     text = stringResource(R.string.game_filter_reset),
                                     onClick = resetFilters,
                                     modifier = Modifier.padding(top = 12.dp),

@@ -164,7 +164,7 @@ internal fun GameFilterSheet(
                     FilterChipCard(
                         label = engineAllLabel,
                         selected = engineFilter.isEmpty(),
-                        onClick = { onEngineChange("") },
+                        onClick = { onEngineChange(AppSettingsStore.GAME_FILTER_ENGINE_ALL) },
                     )
                     availableEngines.forEach { engine ->
                         FilterChipCard(
