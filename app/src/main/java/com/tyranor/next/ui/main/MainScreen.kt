@@ -145,7 +145,6 @@ fun MainScreen(modifier: Modifier = Modifier) {
       AppSettingsStore.getGameSort(context)
     }
     AppSettingsStore.gameSortState.value = gameSort
-    withContext(Dispatchers.IO) { AppSettingsStore.initGameFilters(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }

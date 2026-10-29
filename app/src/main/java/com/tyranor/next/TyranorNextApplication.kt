@@ -8,6 +8,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.tyranor.next.core.game.storage.GameLibraryRepository
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
@@ -39,6 +40,9 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         GitHubUpdateChecker.restoreState(this)
         // 游戏库 Room 迁移检查 + 首页缓存预热，避免主线程首次读库阻塞（迁移方案阶段 0）。
         GameLibraryRepository.init(this)
+        // 游戏页筛选条件在 UI 可交互之前灌进内存态：放到 MainScreen 的 effect 里做的话，
+        // 初始化读到的旧值可能在用户已经点过筛选之后才写回，把新选择覆盖掉。
+        AppSettingsStore.initGameFilters(this)
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
