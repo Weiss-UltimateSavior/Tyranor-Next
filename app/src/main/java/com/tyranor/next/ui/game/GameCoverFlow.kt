@@ -22,7 +22,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +57,8 @@ import kotlin.math.min
 @Composable
 internal fun GameCoverFlow(
     games: List<ScanGame>,
+    /** 筛选/排序条件签名：变化时回到第一页，不变（含进程重建）时保留恢复的页码。 */
+    resetKey: String,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
 ) {
@@ -62,10 +67,18 @@ internal fun GameCoverFlow(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    // 过滤/搜索导致列表缩短时收敛到最后一页
-    LaunchedEffect(games.size) {
+    // 条件变化 → 回到第一页；条件不变（含进程重建）→ 保留 pagerState 恢复的位置。
+    // 列表缩短 → 收敛到最后一页。两者放同一个 effect，避免两条协程抢同一个 pagerState。
+    var lastResetKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(resetKey, games.size) {
+        val previous = lastResetKey
+        lastResetKey = resetKey
         if (games.isEmpty()) return@LaunchedEffect
-        if (pagerState.currentPage > games.lastIndex) pagerState.scrollToPage(games.lastIndex)
+        if (previous != null && previous != resetKey) {
+            pagerState.scrollToPage(0)
+        } else if (pagerState.currentPage > games.lastIndex) {
+            pagerState.scrollToPage(games.lastIndex)
+        }
     }
 
     // 背景随页面（不单独铺色）
