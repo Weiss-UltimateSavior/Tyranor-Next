@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -21,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -80,6 +84,14 @@ internal fun GameFilterSheet(
         AppSettingsStore.GAME_FILTER_PLAYED_ONLY to stringResource(R.string.game_filter_played_only),
         AppSettingsStore.GAME_FILTER_PLAYED_NONE to stringResource(R.string.game_filter_played_none),
     )
+    // 引擎多时已选标签可能落在右侧视口外，打开抽屉先把选中项滚进来，
+    // 否则用户看不到当前生效的引擎筛选（全部固定在最左，无需处理）。
+    val selectedChipRequester = remember { BringIntoViewRequester() }
+    LaunchedEffect(engineFilter) {
+        if (engineFilter != AppSettingsStore.GAME_FILTER_ENGINE_ALL) {
+            selectedChipRequester.bringIntoView()
+        }
+    }
     val engineAllLabel = stringResource(R.string.game_filter_all)
     // 引擎名与首页分类/卡片角标同一套口径：UNKNOWN 走本地化文案，其余用品牌名
     val unknownEngineLabel = stringResource(R.string.engine_name_unknown)
@@ -167,10 +179,16 @@ internal fun GameFilterSheet(
                         onClick = { onEngineChange(AppSettingsStore.GAME_FILTER_ENGINE_ALL) },
                     )
                     availableEngines.forEach { engine ->
+                        val selected = engineFilter == engine.name
                         FilterChipCard(
                             label = if (engine == EngineType.UNKNOWN) unknownEngineLabel else engine.displayName,
-                            selected = engineFilter == engine.name,
+                            selected = selected,
                             onClick = { onEngineChange(engine.name) },
+                            modifier = if (selected) {
+                                Modifier.bringIntoViewRequester(selectedChipRequester)
+                            } else {
+                                Modifier
+                            },
                         )
                     }
                 }
@@ -233,12 +251,13 @@ private fun FilterChipCard(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     FilterChoiceBase(
         label = label,
         selected = selected,
         onClick = onClick,
-        modifier = Modifier.height(48.dp),
+        modifier = modifier.height(48.dp),
         horizontalPadding = 14.dp,
         hollow = true,
     )
