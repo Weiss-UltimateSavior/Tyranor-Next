@@ -93,8 +93,10 @@ internal fun GameFilterSheet(
         }
     }
     val engineAllLabel = stringResource(R.string.game_filter_all)
-    // 引擎名与首页分类/卡片角标同一套口径：UNKNOWN 走本地化文案，其余用品牌名
+    // 引擎名与首页分类/卡片角标同一套口径：UNKNOWN 与 RUNTIME_MODULE 走本地化文案，
+    // 其余用品牌名（目前三者取值恰好都等于 displayName，但资源化后本地化能生效）
     val unknownEngineLabel = stringResource(R.string.engine_name_unknown)
+    val runtimeModuleLabel = stringResource(R.string.engine_name_runtime_module)
 
     AppBottomSheet(onDismissRequest = onDismiss) {
         Column(
@@ -181,7 +183,11 @@ internal fun GameFilterSheet(
                     availableEngines.forEach { engine ->
                         val selected = engineFilter == engine.name
                         FilterChipCard(
-                            label = if (engine == EngineType.UNKNOWN) unknownEngineLabel else engine.displayName,
+                            label = when (engine) {
+                                EngineType.UNKNOWN -> unknownEngineLabel
+                                EngineType.RUNTIME_MODULE -> runtimeModuleLabel
+                                else -> engine.displayName
+                            },
                             selected = selected,
                             onClick = { onEngineChange(engine.name) },
                             modifier = if (selected) {
