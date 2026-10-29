@@ -110,6 +110,8 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.model.GameSortKeys
+import com.tyranor.next.core.game.model.filterGames
+import com.tyranor.next.core.game.model.sortGames
 import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.cover.VndbCoverService
@@ -406,52 +408,6 @@ fun GameScreen(
     }
 }
 
-// 排序键与 Room 预计算列共用 GameSortKeys，保证 SQL 排序与内存排序结果一致（迁移方案阶段 3）。
-// internal：分类仓库首页复用同一排序（与游戏页展示顺序一致）。
-internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
-    return when (sortMode) {
-        AppSettingsStore.GAME_SORT_BRACKET_TAG -> games.sortedWith(
-            compareBy<ScanGame> { GameSortKeys.bracketTag(it.title).isBlank() }
-                .thenBy { GameSortKeys.tagKey(it.title) }
-                .thenBy { GameSortKeys.titleKey(it.title) },
-        )
-        // 按引擎分组：枚举声明顺序即展示顺序（GAL 引擎在前、UNKNOWN 在后），组内按标题。
-        AppSettingsStore.GAME_SORT_ENGINE -> games.sortedWith(
-            compareBy<ScanGame> { it.engine.ordinal }
-                .thenBy { GameSortKeys.titleKey(it.title) },
-        )
-        // 最近游玩在前；从未打开过（openTime = 0）自然排在末尾，同序按标题。
-        AppSettingsStore.GAME_SORT_RECENT -> games.sortedWith(
-            compareByDescending<ScanGame> { it.openTime }
-                .thenBy { GameSortKeys.titleKey(it.title) },
-        )
-        else -> games.sortedBy { GameSortKeys.titleKey(it.title) }
-    }
-}
-
-/**
- * 游戏页过滤器：引擎类型（[engineFilter] 为 `EngineType.name`，空串表示全部）+ 游玩状态
- * （已游玩判据为 `openTime > 0`）。
- *
- * internal：仅游戏页与其单测使用。首页分类仓库只共用 [sortGames]（排序），不套用本过滤——
- * 首页有自己的「全部/快捷/最近/各引擎」分类轴，两处筛选叠加会互相打架。
- */
-internal fun filterGames(
-    games: List<ScanGame>,
-    engineFilter: String,
-    playedFilter: String,
-): List<ScanGame> {
-    if (engineFilter.isEmpty() && playedFilter == AppSettingsStore.GAME_FILTER_PLAYED_ALL) return games
-    return games.filter { game ->
-        val engineMatched = engineFilter.isEmpty() || game.engine.name == engineFilter
-        val playedMatched = when (playedFilter) {
-            AppSettingsStore.GAME_FILTER_PLAYED_ONLY -> game.openTime > 0
-            AppSettingsStore.GAME_FILTER_PLAYED_NONE -> game.openTime <= 0
-            else -> true
-        }
-        engineMatched && playedMatched
-    }
-}
 
 /** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
 internal fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {

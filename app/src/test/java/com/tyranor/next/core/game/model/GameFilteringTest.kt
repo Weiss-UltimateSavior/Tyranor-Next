@@ -1,14 +1,13 @@
-package com.tyranor.next.ui.game
+package com.tyranor.next.core.game.model
 
 import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
 import org.junit.Test
 
 /** 游戏页过滤器/排序的纯函数回归（issue #118）。 */
-class GameFilterTest {
+class GameFilteringTest {
     private fun game(
         title: String,
         engine: EngineType = EngineType.KIRIKIRI,
