@@ -187,9 +187,11 @@
     <string name="launch_emulator_failed">%1$s 启动失败</string>
     <string name="launch_yuris_exe_missing">未找到可启动的程序（.exe）；可在游戏详情「启动文件」中手动指定</string>
     <string name="launch_android_app_missing">未找到该应用，可能已被卸载</string>
+    <string name="launch_engine_unknown">游戏引擎未知或运行时模块已不可用，请重新扫描</string>
     <string name="launch_emulator_unsupported">%1$s 版本过旧，不支持外置启动，请更新（需含外置启动功能的 winlator-cn）</string>
     <string name="engine_name_unknown">未知引擎</string>
     <string name="engine_name_switch">Switch</string>
+    <string name="engine_name_runtime_module">Plugin</string>
     <string name="engine_name_web">Web 游戏</string>
 
     <string name="game_title">游戏</string>
@@ -586,7 +588,7 @@
     <string name="save_import_zip">覆盖导入 ZIP</string>
     <string name="save_delete_title">删除存档</string>
     <string name="save_delete_message">将删除“%1$s”当前可管理的存档文件。此操作不可撤销。</string>
-    <string name="save_deleted_count">已删除 %1$d 个存档条目</string>
+    <string name="save_deleted_count">已删除 %1$d 个存档文件</string>
     <string name="save_format_convert_title">当前存档格式不兼容</string>
     <string name="save_format_convert_message">检测到 %1$d 个 JoiPlay/PC 标准格式存档。是否转化为 Tyranor 格式？</string>
     <string name="save_format_convert_hashed_note">另有 %1$d 个哈希存档（key_sha256）不会转化</string>
@@ -606,7 +608,10 @@
     <string name="save_error_app_internal_unavailable">应用内部存储目录不可用</string>
     <string name="save_location_krkr_scoped">KRKR 独立存档目录</string>
     <string name="save_location_krkr_game_dir">KRKR 游戏目录存档</string>
-    <string name="save_location_krkr_sd_mirror">KRKR SD 卡镜像存档（应用专属目录）</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SD 卡 SAF 镜像存档（应用专属目录）</string>
+    <string name="krkr_mirror_save_forced_note">SD 卡游戏存档由 SAF 镜像目录接管，本开关不生效。游戏内与存档管理均读写应用专属目录；向游戏目录手动放置 savedata 不会被读取。</string>
+    <string name="save_location_load_failed_note">存档位置解析失败，本页显示的信息可能不完整或滞后，可稍后重试更新。</string>
+    <string name="krkr_mirror_save_import_hint">SD 卡游戏的存档经此处导入/导出（应用专属 SAF 镜像目录）；手动放入游戏目录的 savedata 不会被引擎读取。</string>
     <string name="save_error_ons_external_unavailable">ONS 应用独立存储目录不可用</string>
     <string name="save_location_ons_scoped">ONS 应用独立存档目录</string>
     <string name="save_location_ons_game_dir">ONS 游戏内存档目录</string>
@@ -623,6 +628,7 @@
     <string name="save_error_resolve_actual_dir">无法解析实际存档目录</string>
     <string name="save_error_create_save_dir">无法创建存档目录</string>
     <string name="save_error_save_dir_unavailable">存档目录不可用</string>
+    <string name="save_error_resource_restore_conflict">删除已取消：为保护导入事务目录中的游戏资源（恢复冲突或目录不可读），存档未被删除；请处理后重试</string>
     <string name="save_error_no_files_in_zip">压缩包中未找到存档文件</string>
     <string name="save_error_read_import_zip">无法读取导入压缩包</string>
     <string name="save_error_duplicate_zip_entry">压缩包包含重复文件：%1$s</string>
@@ -912,4 +918,30 @@
     <string name="ethornell_error_bootstrap">未找到受支持的 system.arc 与 ipl._bp 启动索引。</string>
     <string name="ethornell_error_font">字体无效或不可读取，请重新导入 TTF、TTC、OTF 或 OTC 字体。</string>
     <string name="ethornell_error_userdata">无法创建 Ethornell 私有用户数据目录，请检查可用空间。</string>
+    <string name="launch_empty_krkr_sd_mirror">未能读取到 SD 卡游戏资源，请检查目录授权与存储状态后重试</string>
+
+    <string name="side_panel_engine_module_title">引擎模块管理</string>
+    <string name="engine_module_management_title">引擎模块管理</string>
+    <string name="engine_module_management_refresh">刷新模块列表</string>
+    <string name="engine_module_management_empty">未发现模块</string>
+    <string name="engine_module_management_summary">%1$s · %2$s · 协议 %3$d · %4$s · %5$d 个游戏</string>
+    <string name="engine_module_management_scan_supported">支持扫描</string>
+    <string name="engine_module_management_scan_unsupported">未声明扫描特征</string>
+    <string name="engine_module_management_enabled_toast">已启用，请回游戏页重新扫描</string>
+    <string name="engine_module_management_enabled_no_scan_toast">已启用；该模块未声明扫描特征，无法自动入库</string>
+    <string name="engine_module_management_disabled_toast">已禁用，%1$d 个游戏已降级为未知</string>
+    <string name="engine_module_management_operation_failed">操作失败，请重试</string>
+    <string name="engine_module_management_degraded_toast">运行时模块不可用，部分游戏已降级为未知；安装或启用后重新扫描可恢复</string>
+    <string name="engine_module_management_disable_title">禁用模块</string>
+    <string name="engine_module_management_disable_message">禁用后该模块的 %1$d 个游戏将降级为未知，需要重新启用并扫描。</string>
+    <string name="engine_module_management_disable_confirm">禁用</string>
+    <string name="engine_module_management_load_failed">模块列表加载失败</string>
+    <string name="engine_settings_runtime_module_hint">该游戏由第三方运行时模块运行；模块设置与存档由模块自身管理。</string>
+    <string name="engine_desc_runtime_module">第三方 APK 运行时模块；由模块自行扫描与运行，主 App 只负责发现、启用和传入文件夹路径。</string>
+    <string name="launch_runtime_module_missing">运行时模块不可用，游戏已降级为未知，请重新扫描</string>
+    <string name="launch_runtime_module_disabled">运行时模块未启用，游戏已降级为未知；请到「引擎模块管理」启用后重新扫描</string>
+    <string name="launch_runtime_module_entry_missing">运行时模块入口不可用，游戏已降级为未知；更新模块后重新扫描</string>
+    <string name="launch_runtime_module_path_unresolved">无法解析游戏文件夹路径；该模块只接受真实文件夹路径</string>
+    <string name="launch_runtime_module_denied">运行时模块拒绝启动或权限不足</string>
+    <string name="launch_runtime_module_failed">运行时模块启动失败</string>
 </resources>

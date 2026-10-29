@@ -98,6 +98,8 @@ private fun SaveManagementScreen(game: ScanGame) {
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
+    // 位置解析失败标记：页面至少要给出可见提示而不是一张空卡片（审查第十轮 #7）
+    var loadFailed by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     // MV/MZ 导出格式选择（标准模式 / Tyranor 模式）；其他引擎直接导出。
     // 用 rememberSaveable：CreateDocument 系统页期间进程重建后仍按用户所选格式导出。
@@ -112,11 +114,23 @@ private fun SaveManagementScreen(game: ScanGame) {
 
     // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
     suspend fun refresh() {
-        val snapshot = withContext(Dispatchers.IO) {
-            manager.resolveSaveLocation(game) to manager.listSaveFiles(game).size
+        // 解析失败（如镜像根暂不可用）按「位置未知」呈现而不是让页面初始化崩溃；
+        // 取消不是失败，必须原样向上传播（审查第十轮 #7；AGENTS 错误协议）
+        try {
+            val snapshot = withContext(Dispatchers.IO) {
+                manager.resolveSaveLocation(game) to manager.listSaveFiles(game).size
+            }
+            location = snapshot.first
+            fileCount = snapshot.second
+            loadFailed = false
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            location = null
+            fileCount = 0
+            loadFailed = true
+            android.util.Log.w("SaveManagement", "save location resolve failed", error)
         }
-        location = snapshot.first
-        fileCount = snapshot.second
     }
 
     LaunchedEffect(game) {
@@ -197,6 +211,14 @@ private fun SaveManagementScreen(game: ScanGame) {
                 ) {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (loadFailed && location == null) {
+                            Text(
+                                stringResource(R.string.save_location_load_failed_note),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
                         location?.let { loadedLocation ->
                             Text(
                                 loadedLocation.description,
@@ -204,6 +226,14 @@ private fun SaveManagementScreen(game: ScanGame) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
+                            if (loadedLocation.mirrorForced) {
+                                Text(
+                                    stringResource(R.string.krkr_mirror_save_import_hint),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 4.dp),
+                                )
+                            }
                             Text(
                                 if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
                                 style = MaterialTheme.typography.bodyMedium,

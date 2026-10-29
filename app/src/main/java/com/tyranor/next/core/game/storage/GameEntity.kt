@@ -19,6 +19,7 @@ import com.tyranor.next.core.game.model.ScanGame
         Index("engine"),
         Index("sort_title"),
         Index("last_opened_at"),
+        Index("runtime_module_package"),
     ],
 )
 internal data class GameEntity(
@@ -34,6 +35,7 @@ internal data class GameEntity(
     @ColumnInfo(name = "metadata_title") val metadataTitle: String?,
     @ColumnInfo(name = "external_module_alias") val externalModuleAlias: String?,
     @ColumnInfo(name = "detected_renpy_version") val detectedRenpyVersion: String?,
+    @ColumnInfo(name = "runtime_module_package") val runtimeModulePackage: String?,
     @ColumnInfo(name = "last_opened_at") val lastOpenedAt: Long,
     @ColumnInfo(name = "discovered_at") val discoveredAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
@@ -51,6 +53,7 @@ internal data class GameEntity(
         metadataTitle = metadataTitle,
         externalModuleAlias = externalModuleAlias,
         detectedRenpyVersion = detectedRenpyVersion,
+        runtimeModulePackage = runtimeModulePackage,
         launchFile = launchFile,
         openTime = lastOpenedAt,
     )
@@ -78,6 +81,7 @@ internal data class GameEntity(
             metadataTitle = game.metadataTitle,
             externalModuleAlias = game.externalModuleAlias,
             detectedRenpyVersion = game.detectedRenpyVersion,
+            runtimeModulePackage = game.runtimeModulePackage,
             lastOpenedAt = game.openTime,
             discoveredAt = discoveredAt,
             updatedAt = updatedAt,

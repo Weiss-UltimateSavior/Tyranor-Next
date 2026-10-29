@@ -187,9 +187,11 @@
     <string name="launch_emulator_failed">%1$s failed to launch</string>
     <string name="launch_yuris_exe_missing">No runnable .exe was found; pick one via "Launch file" in game details</string>
     <string name="launch_android_app_missing">App not found; it may have been uninstalled</string>
+    <string name="launch_engine_unknown">The game engine is unknown or its runtime module is unavailable; scan again</string>
     <string name="launch_emulator_unsupported">%1$s is too old for external launch; please update to a winlator-cn build with external launch support</string>
     <string name="engine_name_unknown">Unknown engine</string>
     <string name="engine_name_switch">Switch</string>
+    <string name="engine_name_runtime_module">Plugin</string>
     <string name="engine_name_web">Web game</string>
 
     <string name="game_title">Games</string>
@@ -586,7 +588,7 @@
     <string name="save_import_zip">Import ZIP and overwrite</string>
     <string name="save_delete_title">Delete saves</string>
     <string name="save_delete_message">This will delete the currently manageable save files for “%1$s”. This cannot be undone.</string>
-    <string name="save_deleted_count">Deleted %1$d save entries</string>
+    <string name="save_deleted_count">Deleted %1$d save files</string>
     <string name="save_format_convert_title">Current save format is incompatible</string>
     <string name="save_format_convert_message">Found %1$d JoiPlay/PC standard-format save files. Convert them to Tyranor format?</string>
     <string name="save_format_convert_hashed_note">%1$d hashed saves (key_sha256) will not be converted</string>
@@ -606,7 +608,10 @@
     <string name="save_error_app_internal_unavailable">App internal storage is unavailable</string>
     <string name="save_location_krkr_scoped">KRKR isolated save directory</string>
     <string name="save_location_krkr_game_dir">KRKR game-directory saves</string>
-    <string name="save_location_krkr_sd_mirror">KRKR SD-card mirror saves (app-specific storage)</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SD-card SAF mirror saves (app-specific storage)</string>
+    <string name="krkr_mirror_save_forced_note">Saves for SD-card games are managed by the SAF mirror directory and this switch has no effect. Both the engine and save management read/write the app-specific directory; savedata manually placed in the game directory is ignored.</string>
+    <string name="save_location_load_failed_note">Save location resolution failed; the information on this page may be incomplete or stale. Retry later to refresh it.</string>
+    <string name="krkr_mirror_save_import_hint">Import/export SD-card game saves here (app-specific SAF mirror directory); savedata manually placed in the game directory is not read by the engine.</string>
     <string name="save_error_ons_external_unavailable">ONS app-specific storage is unavailable</string>
     <string name="save_location_ons_scoped">ONS app-specific save directory</string>
     <string name="save_location_ons_game_dir">ONS in-game save directory</string>
@@ -623,6 +628,7 @@
     <string name="save_error_resolve_actual_dir">Unable to resolve the actual save directory</string>
     <string name="save_error_create_save_dir">Unable to create save directory</string>
     <string name="save_error_save_dir_unavailable">Save directory is unavailable</string>
+    <string name="save_error_resource_restore_conflict">Deletion cancelled: game resources inside the import transaction directories are protected (restore conflict or unreadable directory), so the saves were not deleted; resolve the issue and retry</string>
     <string name="save_error_no_files_in_zip">No save files found in the ZIP</string>
     <string name="save_error_read_import_zip">Unable to read import ZIP</string>
     <string name="save_error_duplicate_zip_entry">ZIP contains a duplicate file: %1$s</string>
@@ -912,4 +918,30 @@
     <string name="ethornell_error_bootstrap">No supported system.arc index with an ipl._bp bootstrap was found.</string>
     <string name="ethornell_error_font">Invalid or unreadable font. Import a TTF, TTC, OTF or OTC font again.</string>
     <string name="ethornell_error_userdata">Cannot create private Ethornell user data. Check available storage space.</string>
+    <string name="launch_empty_krkr_sd_mirror">No SD-card game resources could be read. Check directory access and storage, then retry.</string>
+
+    <string name="side_panel_engine_module_title">Engine modules</string>
+    <string name="engine_module_management_title">Engine modules</string>
+    <string name="engine_module_management_refresh">Refresh module list</string>
+    <string name="engine_module_management_empty">No modules found</string>
+    <string name="engine_module_management_summary">%1$s · %2$s · Protocol %3$d · %4$s · %5$d games</string>
+    <string name="engine_module_management_scan_supported">Scan supported</string>
+    <string name="engine_module_management_scan_unsupported">No scan signature declared</string>
+    <string name="engine_module_management_enabled_toast">Enabled. Return to the games page and scan again</string>
+    <string name="engine_module_management_enabled_no_scan_toast">Enabled, but this module declares no scan metadata, so it cannot add games automatically</string>
+    <string name="engine_module_management_disabled_toast">Disabled. %1$d games were downgraded to unknown</string>
+    <string name="engine_module_management_operation_failed">Operation failed; try again</string>
+    <string name="engine_module_management_degraded_toast">Runtime modules are unavailable; some games were downgraded to unknown. Install or enable the module and scan again to recover</string>
+    <string name="engine_module_management_disable_title">Disable module</string>
+    <string name="engine_module_management_disable_message">Disabling will downgrade %1$d games from this module to unknown. Re-enable the module and scan again to restore them.</string>
+    <string name="engine_module_management_disable_confirm">Disable</string>
+    <string name="engine_module_management_load_failed">Failed to load the module list</string>
+    <string name="engine_settings_runtime_module_hint">This game runs in a third-party runtime module; the module manages its own settings and saves.</string>
+    <string name="engine_desc_runtime_module">Third-party APK runtime module. The module scans and runs its own games; the main app only discovers, enables, and passes the folder path.</string>
+    <string name="launch_runtime_module_missing">The runtime module is unavailable. The game was downgraded to unknown; scan again</string>
+    <string name="launch_runtime_module_disabled">The runtime module is not enabled. The game was downgraded to unknown; enable it in “Engine modules” and scan again</string>
+    <string name="launch_runtime_module_entry_missing">The runtime module entry point is unavailable. The game was downgraded to unknown; update the module and scan again</string>
+    <string name="launch_runtime_module_path_unresolved">Unable to resolve the game folder path; this module only accepts a real folder path</string>
+    <string name="launch_runtime_module_denied">The runtime module refused to launch or permission is insufficient</string>
+    <string name="launch_runtime_module_failed">Failed to launch the runtime module</string>
 </resources>

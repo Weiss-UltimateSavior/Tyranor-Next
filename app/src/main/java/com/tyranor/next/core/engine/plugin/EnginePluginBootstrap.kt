@@ -101,6 +101,7 @@ object EnginePluginBootstrap {
             EngineType.RUFFLE,
             EngineType.PSP,
             EngineType.NINTENDO_SWITCH,
+            EngineType.RUNTIME_MODULE,
             EngineType.UNKNOWN -> return null
         }
         val app = context.applicationContext

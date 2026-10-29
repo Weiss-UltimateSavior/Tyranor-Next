@@ -3,17 +3,21 @@ package com.tyranor.next.core.game.launch
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
 
 /**
  * KRKR 可移动存储镜像准备的失败阶段（app 侧视图模型）。
  *
- * 是 engine 侧 `KrSafMirror.Stage`（5 个细分阶段）按**用户处置方式**的收窄映射，
+ * 是 engine 侧 `KrSafMirror.Stage` 按**用户处置方式**的收窄映射，
  * 不复用其类型：ui 层按三层架构不得 import `bridge` 包，core 负责在这一层做映射
  * （见 `EngineLauncher`）。
  */
 enum class MirrorPrepareStage {
     /** 无法解析 SD 卡/SAF 源目录（授权失效或目录已被移动）→ 需重新授权。 */
     SOURCE_UNRESOLVED,
+
+    /** SAF listing produced no usable game resources. */
+    EMPTY_MIRROR,
 
     /** 无法创建镜像根目录 / SAF 索引目录 / 镜像子项 → 需检查存储空间与权限。 */
     CREATE_FAILED,
@@ -84,6 +88,12 @@ sealed interface LaunchResult {
 
         /** 外置主机模拟器跳转失败（PPSSPP / Eden / Winlator）；携带目标与错误码，文案由 UI 映射。 */
         data class ExternalEmulatorFailed(val result: ExternalEmulatorLauncher.Result) : Failure
+
+        /** 第三方 APK 运行时模块启动失败；携带模块层类型化结果，文案由 UI 映射。 */
+        data class RuntimeModuleFailed(val result: RuntimeModuleLaunchResult) : Failure
+
+        /** 游戏引擎未知（含运行时模块卸载/禁用后降级的条目）；应重新扫描。 */
+        data object EngineUnknown : Failure
 
         /** YU-RIS：游戏目录内没有可启动的 .exe（可由单游戏「启动文件」手动指定）。 */
         data object YurisExeMissing : Failure
