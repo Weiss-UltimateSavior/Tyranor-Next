@@ -25,7 +25,7 @@ Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（Real
 _Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
-以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py 与 RPG Maker RGSS 等游戏。
+以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS 与 Ruffle（SWF / Flash）等游戏。主 App 只负责扫描、安装状态与启动协议，运行与存档由模块自身负责。
 _Avoid_: 插件、引擎 DLC
 
 **PC 游戏（手动添加）**:
@@ -112,16 +112,20 @@ _Avoid_: 配置分辨率、引擎循环帧率
 _Avoid_: 导入、索引
 
 **扫描候选（ScanGame）**:
-一次扫描/加载产出的单条游戏记录：标题、目录 URI、引擎、启动目标，以及封面/元数据/外置模块别名等附属字段。
+一次扫描/加载产出的单条游戏记录：标题、目录 URI 或入口文件 URI、引擎、启动目标，以及封面/元数据/外置模块别名等附属字段。
 _Avoid_: 游戏条目、GameItem
 
 **启动目标（launchTarget）**:
-按引擎语义解释的启动载荷：自动探测的文件路径 / ROM 文件名 / 手动添加 PC 的目录哨兵 / 手动添加安卓游戏的包名；文件型入口可被单游戏设置的「启动文件」（launchFile）手动覆盖。
+按引擎语义解释的启动载荷：自动探测的文件路径 / ROM 文件名 / 外置模块入口文件名（如 SWF）/ 手动添加 PC 的目录哨兵 / 手动添加安卓游戏的包名；适用时可由单游戏设置的「启动文件」（launchFile）覆盖。
 _Avoid_: 入口文件（与 launchFile 混淆时）
 
 **外置模块别名（externalModuleAlias）**:
-同一引擎下不同子运行时的内部标识（如 `internal.rpgmxp`），用于解析具体外部模块；Ren'Py 改由单游戏版本设置决定，不写该字段。
+同一引擎下不同子运行时或外置模块记录保存的内部标识（如 `internal.rpgmxp`、Ruffle 的 `internal.flash`）：RPG Maker 用它选择子运行时；Ren'Py 改由单游戏版本设置决定，Ruffle 主要作为扫描标记。
 _Avoid_: 模块 ID
+
+**文件型外置入口（launchEntryIsFile）**:
+外置模块游戏记录指向单个入口文件而非目录的启动形态（当前为 Ruffle SWF）：扫描以入口文件 URI 为记录身份，启动前解析其父目录，再以 `folder` + `execFile` 交给模块。
+_Avoid_: 单文件游戏（与手动添加的单文件记录混淆时）、目录型外置入口
 
 **最近游戏 / 快捷启动**:
 游戏库首页的两类聚合列表：最近打开（按时间戳展示）与用户固定（quickLaunch，数量上限由 DAO 常量约束）。
@@ -150,8 +154,12 @@ _Avoid_: 设置优先级、全局设置
 _Avoid_: 设置合并、覆盖层
 
 **引擎设置种类（EngineSettingsKind）**:
-引擎设置页的分类入口（KRKR / ONS / ARTEMIS / RPG_MAKER / TYRANO / RENPY / SIGLUS / FRAMEBUFFER / FVP / XSYS35 / XSYS4 / ETHORNELL / PPSSPP / WINLATOR），各自提供该引擎族专属参数项。
+引擎设置页的分类入口（KRKR / ONS / ARTEMIS / RPG_MAKER / TYRANO / RENPY / RUFFLE / SIGLUS / FRAMEBUFFER / FVP / XSYS35 / XSYS4 / ETHORNELL / PPSSPP / WINLATOR），各自提供该引擎族专属参数项。
 _Avoid_: 引擎设置 Tab
+
+**运行模式（Winlator Run Mode）**:
+单游戏 Winlator 设置的三态取值：「跟随全局」（默认，直接用全局参数）、「跟随容器」（以全局为基线，清空六个图形/运行参数、固定不写回容器，容器 ID/名称先继承再覆盖）、「自定义」（按填写的参数覆盖）。模式键为 `winlator_mode`；旧记录按 1.61 的 `null / "" / 值` 语义推断后即以保存值为准（空串 = 显式不下发，与「未覆盖」不同）；切换模式保存不会删除另一种模式的已填值。参数行里的「按容器配置」是单项空值语义，不是运行模式。
+_Avoid_: 全局/容器/自定义三档（易与外观档位混淆）、跟随容器配置（参数级文案）
 
 **导航样式（Nav Style）**:
 底部导航栏样式的四档取值：「经典 MD」（原「默认」，Material3 导航栏；玻璃系外观下为悬浮圆角玻璃条）、「液态玻璃 · 经典」（小圆角玻璃栏）、「液态玻璃 · 透镜」（折射透镜）、「悬浮按钮」；未手动选择时，仅默认外观采用透镜（Android 13 以下回退液态玻璃经典），复古/高级玻璃保留经典 MD 的玻璃条形态。手动选择优先于外观风格，切换外观不覆盖选择；平板/大窗口的侧边形态见「平板侧栏」。
@@ -212,6 +220,10 @@ _Avoid_: 图片加载器（通用概念不入表）
 **存档位置解析（Save Location）**:
 按「引擎家族 + 单游戏 scoped 开关 + 可用性回退」解析游戏存档目录的规则（GameSaveManager.resolveSaveLocation）。
 _Avoid_: 存档路径
+
+**SD 强制镜像存档（Mirror-Forced Save）**:
+可移动存储上的 Kirikiri 游戏将存档固定在应用专属 SAF 镜像目录，独立存档开关不改变位置，游戏目录内手动放置的存档须经存档管理导入。此处镜像指源游戏文件的 SAF 镜像目录，与「存档镜像（Save Mirror，ZIP 导入导出）」不同，用户可见文案使用「SAF 镜像目录」限定语境。
+_Avoid_: SD 卡存档互通、自动迁移、ZIP 存档镜像
 
 **存档镜像（Save Mirror）**:
 将游戏存档目录导出 / 导入为 zip 的备份能力（exportToZip / importFromZip），含文件数与体积上限保护。

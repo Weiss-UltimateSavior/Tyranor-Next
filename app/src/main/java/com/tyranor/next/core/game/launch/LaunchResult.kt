@@ -7,13 +7,16 @@ import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 /**
  * KRKR 可移动存储镜像准备的失败阶段（app 侧视图模型）。
  *
- * 是 engine 侧 `KrSafMirror.Stage`（5 个细分阶段）按**用户处置方式**的收窄映射，
+ * 是 engine 侧 `KrSafMirror.Stage` 按**用户处置方式**的收窄映射，
  * 不复用其类型：ui 层按三层架构不得 import `bridge` 包，core 负责在这一层做映射
  * （见 `EngineLauncher`）。
  */
 enum class MirrorPrepareStage {
     /** 无法解析 SD 卡/SAF 源目录（授权失效或目录已被移动）→ 需重新授权。 */
     SOURCE_UNRESOLVED,
+
+    /** SAF listing produced no usable game resources. */
+    EMPTY_MIRROR,
 
     /** 无法创建镜像根目录 / SAF 索引目录 / 镜像子项 → 需检查存储空间与权限。 */
     CREATE_FAILED,

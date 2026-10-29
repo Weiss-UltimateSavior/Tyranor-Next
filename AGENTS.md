@@ -154,7 +154,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 顶部栏由公共组件内部使用 **Column + Row**，页面不自行使用 Material3 `TopAppBar` 替代；Miuix 页面壳按下文约定接入。
 
-- 普通/降级路径由外层 `Column` 组装为「顶部栏 → 正文内容」；启用渐进模糊时交给 `TopBarBlurHost` / `MiuixTopBarBlurScaffold` 叠层托管并消费 `topInset`，不要强行改回上下分离布局。
+- 页面由外层 `Column` 组装为「顶部栏 → 正文内容」，Material 页与 Miuix 页均保持上下分离布局；Miuix 页由透明 `MiuixScaffold` 的 `topBar` 槽承载 `AppTopBar`，正文位于顶栏下方，不启用顶栏模糊叠层。
 
 - **禁止在顶部栏放置任何返回按钮/图标**。返回统一依赖系统返回键/手势（`Activity` 默认 `finish()`），不要通过 `onBack` 参数下发返回回调。
 
@@ -182,11 +182,6 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
   `contentPadding`），否则滚动内容会从顶栏下方穿过与标题重叠。设置类页面（MiuixScaffold）的
   `innerPadding` 顶部值一律加到列表 modifier 上，`contentPadding` 只保留额外的间距。
 
-- **默认外观风格的渐进模糊（仅默认风格，Android 12+）**：顶部栏背景仍是透明色，但页面经 `ui/common/TopBarBlur.kt` 的 `TopBarBlurHost`（Miuix 页用 `MiuixTopBarBlurScaffold`）托管时，正文铺满整页并垫在顶栏下方，顶栏背景层采样正文做模糊 + 页面底色半透明叠层，整体按竖向渐变遮罩——**顶端最实、底边完全透明**，形成「向上渐模糊」。
-  - 使用方式：`TopBarBlurHost(topBar = { AppTopBar(...) }) { topInset -> … }`；滚动列表把 `topInset` 加到 `contentPadding.top`，非滚动内容用 `padding(top = topInset)`。顶栏下方的固定条（分页/分类栏/搜索框）必须放进 `AppTopBar` 的 `underTitle`，才处于模糊区内。
-  - 玻璃系外观风格（复古/高级）与 Android 12 以下**不启用**：`TopBarBlurHost` 退化为「顶栏在上、正文在下」的 Column，`topInset = 0`，行为与原先一致。
-  - Web 首页（WebView）、解封包页不接入（WebView 不得录入采样层，见 `MainScreen.kt` 的 Web 首页采样降级说明）。
-
 - 禁止使用主题色 `primary` 作为顶部栏背景。
 
 ### 5. 状态栏
@@ -201,8 +196,6 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 不要自行给状态栏设置非透明背景色。
 
 ### 6. 位置顺序
-
-以下示意仅对应普通/模糊降级路径；默认风格 Android 12+ 的模糊宿主按第 4 节处理正文与顶栏叠层。
 
 ```
 Column(fillMaxSize)                                // 页面根

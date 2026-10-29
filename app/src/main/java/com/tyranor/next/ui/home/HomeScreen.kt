@@ -84,7 +84,6 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TimeFormats
-import com.tyranor.next.ui.common.TopBarBlurHost
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
@@ -360,9 +359,9 @@ private fun NativeHomeContent(
 ) {
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
-    TopBarBlurHost(modifier = modifier, topBar = {
+    Column(modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.nav_home))
-    }) { topInset ->
+
         // ===== 快捷启动卡与最近打开列表合并为同一个滚动列表 =====
         // 水平内边距统一由 contentPadding 提供（覆盖快捷启动区与列表行）
         LazyColumn(
@@ -370,7 +369,7 @@ private fun NativeHomeContent(
             contentPadding = PaddingValues(
                 start = 12.dp,
                 end = 12.dp,
-                top = 4.dp + topInset,
+                top = 4.dp,
                 bottom = 16.dp + glassNavBottomInset(),
             ),
             verticalArrangement = Arrangement.spacedBy(10.dp),

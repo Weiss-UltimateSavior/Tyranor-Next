@@ -4,7 +4,7 @@
   <img src="screenshots/index.png" alt="Tyranor Next" width="850" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis / Siglus / RealLive / AVG32 / UK2 / FVP / System35 / System4 等原生与 Web 运行环境，另含 Ethornell / BGI 实验接入，并支持 Ren'Py、RPG Maker RGSS 外置 APK 引擎模块与外置模拟器跳转（PPSSPP / Eden / Winlator），提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
+基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis / Siglus / RealLive / AVG32 / UK2 / FVP / System35 / System4 等原生与 Web 运行环境，另含 Ethornell / BGI 实验接入，并支持 Ren'Py、RPG Maker RGSS、Ruffle（SWF / Flash）外置 APK 引擎模块与外置模拟器跳转（PPSSPP / Eden / Winlator），提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
 mac原生版本如下：
 
@@ -54,6 +54,7 @@ iOS版本计划中...
 | VN                   | `globalData.vndata`                                                 | 内置 Web 运行环境                  |
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块              |
+| Ruffle / Flash       | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录                   | 外置 Ruffle APK 模块              |
 | PSP                  | `.pbp`、`.cso`、`.iso`、`.chd`                                         | 外置 PPSSPP 模拟器                 |
 | Nintendo Switch      | `.nsp`、`.xci`、`.nca`、`.nro`                                         | 外置 Eden 模拟器                   |
 
@@ -65,7 +66,10 @@ YU-RIS（Windows）游戏通过外置 Winlator（winlator-cn）运行：扫描�
 
 内置 Web 运行环境同时支持部分以 `app.asar` 打包的 NW\.js 游戏；启动时会根据归档内容进一步识别具体类型。
 Ren'Py 与 RPG Maker XP/VX/VX Ace/mkxp-z 当前通过外置 APK 模块运行：Ren'Py 支持 8.5 / 7.7.1 版本，可在全局或单游戏设置中选择引擎版本；自动模式会读取 Ren'Py `script_version` 与 Python2 运行库特征，在 8.5 / 7.7.1 模块间匹配。主 App 默认启用该能力，仅在引擎页检查目标模块是否已安装；未安装时引擎 item 显示打叉并提示下载安装。RPG Maker MV/MZ 属于 Web runtime，继续使用内置 Web 运行环境。
-PC 游戏（任意 Windows 程序）通过游戏页顶栏「添加 PC 游戏」手动入库（不参与扫描）：选择目录并从目录检索 exe、指定启动程序；启动经外置 Winlator，启动文件可在游戏详情中随时切换。PC 游戏不纳入统一存档管理；可在单游戏设置中逐项覆盖 Winlator 参数，并选择 WineD3D + GDI 预设。
+
+Ruffle（SWF / Flash）同样通过外置 APK 模块运行：扫描默认把每个顶层 `.swf` 作为一条游戏记录（文件 URI，启动时取所在目录）；仅当目录是叶子目录、根含 `index.html/index.htm` 且恰有一个顶层 `.swf`，并且没有子目录、KRKR/ONS/XSYS4/主机 ROM 或 Tyrano/RPGM/VN/Node 特征时，才把整个目录识别为一条包装游戏。无根 index 的单 SWF、同目录多个 SWF 均按文件逐条入库，包装目录含子目录时不会自动展开；单 SWF 标题取父目录名，多 SWF 取文件主名。模块需单独安装，引擎页展示安装状态（分类显示时归入「网页」），未安装时入口打开项目托管的 RufflePlugin-1.02.00.apk 直链；启动向模块下发 `game`（`type=flash`）与带 `int`/`string` 包装的 `settings`。设置支持全局与单游戏覆盖渲染后端、画质、缩放、黑边、加载方式与自动关闭；`configuration.json` 仅在文件已存在且为合法 JSON 对象时同步受管键（不创建、不删除，跳过共享多 SWF 目录与存储根）。插件自管运行时与存档，主 App 不提供统一存档管理与虚拟按键重映射；插件固定横屏，首次启动可能需要主 App「所有文件访问」以解析真实路径。设备/插件运行验证尚未执行，不能据此声明 SWF 兼容。协议与边界见 [外置 Ruffle 模块接入方案](docs/外置Ruffle模块接入方案.md)。
+
+PC 游戏（任意 Windows 程序）通过游戏页顶栏「添加 PC 游戏」手动入库（不参与扫描）：选择目录并从目录检索 exe、指定启动程序；启动经外置 Winlator，启动文件可在游戏详情中随时切换。PC 游戏不纳入统一存档管理；单游戏 Winlator 设置提供「跟随全局 / 跟随容器 / 自定义」三种运行模式，自定义下可逐项覆盖参数；容器同时填写 ID 与名称时以 ID 为准，只填名称时会清除继承的容器 ID。**从 1.61 升级时注意**：只填过容器名的旧记录会改为按名称选择容器，不再沿用全局容器 ID；六项参数全空的旧记录会归为「跟随容器」，其 `save` 固定为不写回容器（1.61 会继承记录或全局的 `save`）。 切换运行模式并保存不会清空另一种模式已填的参数，切回即可恢复；若把数据降级到忽略 `winlator_mode` 的旧版本，这些隐藏值会重新生效。
 
 PSP 与 Nintendo Switch 游戏通过外置模拟器跳转运行：扫描按 ROM 扩展名识别并逐条入库（.iso/.cso/.pbp/.chd、.nsp/.xci/.nca/.nro），启动时按类型拉起已安装的 PPSSPP / Eden（显式组件 + 读取授权，使用 SAF 内容 URI；文件回退路径经 FileProvider 转换）。这两类游戏的存档与设置由模拟器自行管理，主 App 不接管；引擎页「外置跳转支持」入口可查看安装状态并跳转下载页。引擎页可在应用设置中开启「引擎页分类显示」，按 GAL / RPGM / 主机 / 网页 分页展示引擎项。
 
@@ -151,6 +155,7 @@ UI 层按页面域继续拆分：
 - **语言**：Kotlin（引擎层含 Java 桥接代码）
 - **UI**：Jetpack Compose + Material 3 + [Miuix](https://github.com/compose-miuix-ui/miuix)
 - **导航**：底部导航 `NavigationBar`；主 Tab 内容页使用水平移动切换，详情/设置等独立 Activity 进入使用向上翻页、退出使用向下翻页
+- **顶栏与外观**：顶栏与正文恢复上下分离，不叠加顶栏渐进模糊（[#133](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/133)）；默认背景渐变与底栏/侧栏/悬浮按钮的玻璃效果不变
 - **构建**：Gradle 9.5.1 / AGP 9.2.1 / Kotlin 2.x + Compose Compiler，`compileSdk 37`、`minSdk 26`、`targetSdk 36`
 - **持久化**：Room v2（游戏库、扫描根、最近打开时间、快捷启动、单游戏覆盖与识别缓存）+ SharedPreferences（应用/引擎设置、跨进程配置及旧库恢复镜像）
 - **文件访问**：Storage Access Framework（SAF）管理外部游戏目录，`documentFile` 库辅助
@@ -161,7 +166,7 @@ UI 层按页面域继续拆分：
 - 共享 Native 插件 `.so` 的源头位于 `engine/src/main/nativeplugins`；app 侧仅维护插件 `manifest.json` 和 app-only 插件。构建时由 Gradle 合并生成 `app/build/generated/assets/nativeplugins/*.zip`
 - 共享 RPG Maker 注入脚本源头位于 `engine/src/main/assets`；app 侧只保留应用专属注入脚本，构建时由 Gradle 同步生成到 app assets，避免两边手工维护重复文件
 - `app` 模块通过 `core/game/launch/EngineLauncher` 将扫描结果映射到对应引擎 Activity 启动（SAF URI → 真实路径转换）
-- Ren'Py、RPG Maker RGSS 等外置 APK 引擎模块由 `core/engine/external` 统一注册、检测安装状态并按 intent 协议拉起；主 App 不维护手动启用开关，模块安装即视为可用
+- Ren'Py、RPG Maker RGSS、Ruffle 等外置 APK 引擎模块由 `core/engine/external` 统一注册、检测安装状态并按 intent 协议拉起；主 App 不维护手动启用开关，模块安装即视为可用。Ruffle 使用 `launchEntryIsFile` 的文件型入口，启动前把 SWF 文件记录解析为父目录再下发
 - PSP / Nintendo Switch 由 `core/engine/external` 的 `ExternalEmulatorRegistry` / `ExternalEmulatorLauncher` 跳转外置 PPSSPP / Eden：扫描识别 ROM 后逐条入库（一 ROM 一条），运行时在目录解析前分流、按显式组件与读取授权启动；引擎页「外置跳转支持」项展示安装状态并可跳下载页，Manifest `<queries>` 已声明对应包名
 - Tyrano 运行环境内置本地 HTTP 服务器、Asar 归档解析与 JS 钩子脚本（`__tyrano__.js` 等），无需外部依赖即可运行网页式脚本游戏
 - FVP（rfvp）宿主为 Java `SurfaceView` + `Choreographer` 主循环驱动 Rust 引擎（`librfvp.so` + 自研桥接库），随 APK 打包；支持 `*.hcb` 原版与 `*.bch` 汉化脚本，文本编码（Shift-JIS/GBK/UTF-8）、系统字体回退与文本 HiDPI 可在引擎设置中按全局/单游戏调整

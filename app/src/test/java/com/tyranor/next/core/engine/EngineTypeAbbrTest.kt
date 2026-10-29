@@ -39,6 +39,7 @@ class EngineTypeAbbrTest {
         assertEquals("VN", EngineType.VN.abbr)
         // 未在约定清单中的引擎：补全映射，避免角标空文案
         assertEquals("RPY", EngineType.RENPY.abbr)
+        assertEquals("SWF", EngineType.RUFFLE.abbr)
         assertEquals("YR", EngineType.YURIS.abbr)
         assertEquals("PC", EngineType.PC.abbr)
         assertEquals("UNK", EngineType.UNKNOWN.abbr)

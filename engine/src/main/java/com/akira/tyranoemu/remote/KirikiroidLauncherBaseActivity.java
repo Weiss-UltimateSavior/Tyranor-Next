@@ -101,7 +101,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         launchOrientationGuardEnabled = !getIntent().getBooleanExtra(LaunchContract.ORIGIN_MODE, false);
         applyKrkrRequestedOrientation();
         doSetSystemUiVisibility();
-        NativeBridge.configureSafMirror(getIntent().getStringExtra(LaunchContract.SAF_MIRROR_INDEX));
+        NativeBridge.configureSafMirror(
+                getIntent().getStringExtra(LaunchContract.SAF_MIRROR_INDEX),
+                getIntent().getStringExtra(LaunchContract.SAF_MIRROR_ROOT));
         // Anime4K 后处理：必须在 super.onCreate（GL SurfaceView 构造，EGL 版本定型）前配置
         com.core.gl.Anime4kRuntime.configureFromIntent(this, getIntent());
         // Must run before super.onCreate (native library loading and preference singleton construction).
@@ -523,6 +525,14 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
 
         NativeBridge.configurePatchOverlay(patchOverlayTarget, patchOverlayPath);
         NativeBridge.configureSteamConfigOverlay(steamConfigOverlayTarget, steamConfigOverlayPath);
+
+        // Mirror-only prefix (base for relative-path rewriting) must be refreshed on every
+        // launch, including the early-exit path below: gMirrorPrefix is a process-level
+        // static in krkr_bridge_v2.so, so a second KR activity in the same process (another
+        // kernel variant, "launch kr2 native") would otherwise inherit the previous game's
+        // mirror prefix and misroute internal-storage relative paths.
+        String mirrorRootForPrefix = normalizeKrPath(intent.getStringExtra(LaunchContract.SAF_MIRROR_ROOT));
+        NativeBridge.setMirrorPrefix(mirrorRootForPrefix.toLowerCase(Locale.ROOT));
 
         if (!scopedSaveDir && !safFileFallback && !patchOverlay && !steamConfigOverlay) {
             Log.i(TAG, "native interceptor skipped: save redirect, SAF fallback and read-only overlay disabled");

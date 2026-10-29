@@ -39,7 +39,9 @@ import com.tyranor.next.core.engine.graphics.putGraphicsExtras
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
+import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchRequest
+import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -97,6 +99,7 @@ object EngineLauncher {
     private const val TAG = "EngineLauncher"
     private const val KR_LEGACY_PATCH_MARKER = "// TYRANOR_NEXT_KRKR_LEGACY_PATCH_V1"
     private const val KR_FBF_STEAM_STUB_MARKER = "// TYRANOR_NEXT_FBF_STEAM_STUB_V1"
+    private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
     /** 承载输入重映射（虚拟按键 + 手柄映射）的 Web 系引擎：旧触屏手柄数据迁移仅对这些引擎触发。 */
     private val WEB_INPUT_ENGINES = setOf(
@@ -136,6 +139,7 @@ object EngineLauncher {
         EngineType.FVP,
         EngineType.ETHORNELL,
         EngineType.RENPY,
+        EngineType.RUFFLE,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
         EngineType.YURIS,
         EngineType.CATSYSTEM2,
@@ -283,15 +287,34 @@ object EngineLauncher {
             }
             return LaunchResult.Failure.ExternalEmulatorFailed(result)
         }
-        val path = resolveGameDirectory(context, game)
+        // 外置模块先于内置目录解析确定路径：文件型入口（SWF）取所在目录，其余保持目录解析
+        val defaultModule = ExternalEngineModuleRegistry.moduleForEngine(game.engine)
+        val path = if (defaultModule?.launchEntryIsFile == true) {
+            resolveLaunchEntryDirectory(context, game) ?: return LaunchResult.Failure.GameDirUnresolved
+        } else {
+            resolveGameDirectory(context, game)
+        }
         // 三级设置（应用级 + 单游戏覆盖）一次性解析，后续 Intent 组装只消费生效值（P0-3）
         val settings = EngineSettingsResolver.resolve(context, game, path)
-        ExternalEngineModuleRegistry.moduleForEngine(game.engine)?.let { defaultModule ->
+        defaultModule?.let { defaultModule ->
             val module = ExternalEngineModuleRegistry.resolveModule(
                 game.engine,
                 if (game.engine == EngineType.RENPY) settings.renpyVersion else null,
                 detectedRenpyVersion = game.detectedRenpyVersion,
             ) ?: defaultModule
+            // 先确认模块已安装，再走目录/权限门禁：否则未安装时会把用户先送去「所有文件访问」，
+            // 真正的缺失原因（应安装模块）反而看不到。
+            if (!ExternalEngineLauncher.isPackageInstalled(context, module)) {
+                return LaunchResult.Failure.ExternalModuleFailed(
+                    ExternalEngineLaunchResult.failure(
+                        ExternalEngineErrorCode.PACKAGE_NOT_INSTALLED,
+                        moduleNameRes = module.displayNameRes,
+                        moduleNameFallback = module.displayName,
+                        engineName = game.engine.displayName,
+                        installUrl = module.installUrl,
+                    ),
+                )
+            }
             if (module.requiresGameDirectoryPath && path == null) {
                 return LaunchResult.Failure.GameDirUnresolved
             }
@@ -363,7 +386,7 @@ object EngineLauncher {
         ) {
             try {
                 withContext(Dispatchers.IO) {
-                    KrSafMirror.prepare(context.applicationContext, game.uri, path, game.title)
+                    KrSafMirror.prepare(context.applicationContext, game.uri, path)
                 }
             } catch (ce: CancellationException) {
                 throw ce // 取消不是启动失败，原样传播给调用方
@@ -375,10 +398,10 @@ object EngineLauncher {
                 // UI 回落到「未知路径」），因为此时连失败发生在哪一步都无法断言
                 val failure = t as? KrSafMirror.PrepareException
                 return LaunchResult.Failure.KrkrMirrorPrepareFailed(
-                    stage = if (failure?.stage == KrSafMirror.Stage.SOURCE_UNRESOLVED) {
-                        MirrorPrepareStage.SOURCE_UNRESOLVED
-                    } else {
-                        MirrorPrepareStage.CREATE_FAILED
+                    stage = when (failure?.stage) {
+                        KrSafMirror.Stage.SOURCE_UNRESOLVED -> MirrorPrepareStage.SOURCE_UNRESOLVED
+                        KrSafMirror.Stage.EMPTY_MIRROR -> MirrorPrepareStage.EMPTY_MIRROR
+                        else -> MirrorPrepareStage.CREATE_FAILED
                     },
                     name = failure?.name,
                 )
@@ -780,6 +803,8 @@ object EngineLauncher {
     private fun requestAllFilesAccessIfNeeded(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         if (Environment.isExternalStorageManager()) return null
+        // A persisted SAF tree grant is sufficient for the mirror itself. Direct
+        // directory/MediaStore supplementation remains best-effort on restricted ROMs.
         if (game.engine == EngineType.KIRIKIRI && GamePathUtils.isRemovableStoragePath(path)) return null
         if (!needsAllFilesAccess(path)) return null
 
@@ -895,7 +920,8 @@ object EngineLauncher {
             EngineType.ETHORNELL -> buildEthornellIntent(context, path, game, settings)
 
             EngineType.RPGMAKER,
-            EngineType.RENPY -> error("${engine.displayName} is handled by external engine launcher")
+            EngineType.RENPY,
+            EngineType.RUFFLE -> error("${engine.displayName} is handled by external engine launcher")
 
             // YURIS / CatSystem2 / PC 由外置 Winlator 承载，在 launchInternalChecked 前置分流，不会走到这里
             EngineType.YURIS,
@@ -1389,8 +1415,13 @@ object EngineLauncher {
         val effectiveScoped = scoped || safMirror != null
         val defaultFont = settings.krDefaultFont
         val forceFont = settings.krForceDefaultFont
-        val patchOverlay = prepareKrPatchOverlay(context, engineRoot, settings.krPatchOverlayMode)
-        val steamConfigOverlay = prepareKrSteamConfigOverlay(context, engineRoot, settings.krPatchOverlayMode)
+        val mirrorOverlayReader = if (settings.krPatchOverlayMode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) {
+            null
+        } else {
+            safMirror?.let { createKrMirrorOverlayReader(context, it) }
+        }
+        val patchOverlay = prepareKrPatchOverlay(context, engineRoot, settings.krPatchOverlayMode, mirrorOverlayReader, isMirror = safMirror != null)
+        val steamConfigOverlay = prepareKrSteamConfigOverlay(context, engineRoot, settings.krPatchOverlayMode, mirrorOverlayReader)
         return Intent(context, activity).apply {
             // KR2 引擎把 path 视为“启动条目”，gamedir = path 的父目录。
             putExtra(LaunchContract.PATH, launchEntry)
@@ -1418,6 +1449,7 @@ object EngineLauncher {
                 putExtra(LaunchContract.SAF_MIRROR_ROOT, it.mirrorRoot.absolutePath)
                 putExtra(LaunchContract.SAF_MIRROR_INDEX, it.indexFile.absolutePath)
                 putExtra(LaunchContract.SAF_MIRROR_FILES, it.fileCount)
+                // 诊断汇总由 engine 侧 prepare 输出一次（审查第十轮 #21），不再重复打印
             }
             putExtra(LaunchContract.ORIENTATION, 6)
             putExtra(LaunchContract.SCOPED_SAVE_DIR, effectiveScoped)
@@ -1870,6 +1902,8 @@ object EngineLauncher {
         val hadUserContent: Boolean,
         val cleanedManagedBlock: Boolean,
         val hadManagedMarker: Boolean,
+        /** 镜像占位的 patch.tjs 经 SAF 读取失败：真实内容不可判定，必须跳过 overlay 合成。 */
+        val mirrorReadFailed: Boolean = false,
     )
 
     private data class KrPatchOverlay(
@@ -1888,13 +1922,25 @@ object EngineLauncher {
      *
      * 不再直接向用户游戏目录写入兼容脚本；只在 app 私有目录生成合成 patch.tjs，
      * 再由 KRKR 文件 hook 在读取游戏 patch.tjs 时做只读重定向。
+     *
+     * SD 卡镜像游戏的本体 patch.tjs 在镜像里是 0 字节占位：用户 patch 检测必须经
+     * SAF 索引读真实内容，否则会把游戏自带的 patch.tjs（含插件引导）误判为不存在、
+     * 用基础 overlay 顶掉，游戏插件链失效（issue #129 的 GamepadPort 崩溃）。
      */
-    private fun prepareKrPatchOverlay(context: Context, engineRoot: String, mode: String): KrPatchOverlay? {
+    private fun prepareKrPatchOverlay(context: Context, engineRoot: String, mode: String, mirrorReader: KrMirrorOverlayReader?, isMirror: Boolean): KrPatchOverlay? {
+        if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) {
+            // Preserve legacy local managed-block cleanup when overlays are disabled.
+            // Mirror placeholders must never be inspected as source patch contents here.
+            if (!isMirror) cleanupTyranorManagedKrPatchScript(File(engineRoot), null)
+            return null
+        }
         val root = File(engineRoot)
         if (!root.isDirectory || engineRoot.startsWith("content://")) return null
-        val cleanup = cleanupTyranorManagedKrPatchScript(root)
-        if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
-
+        val cleanup = cleanupTyranorManagedKrPatchScript(root, mirrorReader)
+        if (cleanup?.mirrorReadFailed == true) {
+            Log.i(TAG, "KRKR patch overlay skipped: mirror patch.tjs unreadable via SAF root=$engineRoot")
+            return null
+        }
         val hasSteamPlugin = rootContainsFbfSteamPlugin(root)
         val force = mode == EngineSettingsStore.KR_PATCH_OVERLAY_FORCE
         val includeBasicPatch = force || cleanup?.hadUserContent != true
@@ -1936,6 +1982,7 @@ object EngineLauncher {
             )
             KrPatchOverlay(target, overlay, mode)
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             Log.w(TAG, "KRKR patch overlay prepare failed root=$engineRoot", error)
         }.getOrNull()
     }
@@ -1943,16 +1990,37 @@ object EngineLauncher {
     /**
      * 部分 Windows Steam 版 KRKR 移植包会带 ds.ini，并用 Language=xxx 决定 UI 语言。
      * 不直接修改用户游戏目录，只在 app 私有目录生成 schinese 版本并由 NativeBridge 只读映射。
+     * SD 镜像下 ds.ini 是 0 字节占位：经 SAF 索引读真实内容做基底；读不到真实内容时
+     * 不生成 overlay（最小配置会顶掉真实 ds.ini 的其余配置，比没有更糟）。
      */
-    private fun prepareKrSteamConfigOverlay(context: Context, engineRoot: String, mode: String): KrSteamConfigOverlay? {
+    private fun prepareKrSteamConfigOverlay(
+        context: Context,
+        engineRoot: String,
+        mode: String,
+        mirrorReader: KrMirrorOverlayReader?,
+    ): KrSteamConfigOverlay? {
         val root = File(engineRoot)
         if (!root.isDirectory || engineRoot.startsWith("content://") || !rootContainsFbfSteamPlugin(root)) return null
         if (mode == EngineSettingsStore.KR_PATCH_OVERLAY_OFF) return null
 
         val config = File(root, "ds.ini")
-        if (!config.isFile) return null
+        if (!config.isFile && mirrorReader == null) return null
         return runCatching {
-            val bytes = config.readBytes()
+            val localSize = if (config.isFile) config.length() else 0L
+            val mirrored = if (localSize == 0L && mirrorReader != null) {
+                mirrorReader.read("ds.ini", 1024 * 1024)
+            } else {
+                null
+            }
+            when (mirrored) {
+                KrMirrorOverlayReader.Result.Absent -> return null
+                KrMirrorOverlayReader.Result.Unavailable -> {
+                    Log.w(TAG, "KRKR ds.ini source unreadable, skipping steam config overlay root=$engineRoot")
+                    return null
+                }
+                else -> Unit
+            }
+            val bytes = (mirrored as? KrMirrorOverlayReader.Result.Content)?.bytes ?: config.readBytes()
             val charset = detectKrPatchCharset(bytes)
             val text = bytes.toString(charset)
             val languageRegex = Regex("(?im)^(\\s*Language\\s*=\\s*)[^\\r\\n]*")
@@ -1977,6 +2045,7 @@ object EngineLauncher {
             )
             KrSteamConfigOverlay(config, overlay)
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             Log.w(TAG, "KRKR Steam config overlay prepare failed root=${root.absolutePath}", error)
         }.getOrNull()
     }
@@ -1985,11 +2054,32 @@ object EngineLauncher {
      * PR 44b6be2 曾在启动时向游戏目录 patch.tjs 自动追加 Tyranor Next 兼容脚本。
      * 这里只清理历史版本写入的精确托管块，并返回清理后的原始 patch 内容供 overlay 合成。
      */
-    private fun cleanupTyranorManagedKrPatchScript(root: File): KrPatchCleanupResult? {
+    private fun cleanupTyranorManagedKrPatchScript(root: File, mirrorReader: KrMirrorOverlayReader?): KrPatchCleanupResult? {
         val patch = File(root, "patch.tjs")
-        if (!patch.isFile) return null
+        if (!patch.isFile && mirrorReader == null) return null
         return runCatching {
-            val original = patch.readBytes()
+            // A missing placeholder is not proof that the source bootstrap is absent.
+            // Only a successful SAF absence probe permits synthesis of the basic patch.
+            val localSize = if (patch.isFile) patch.length() else 0L
+            val mirrored = if (localSize == 0L && mirrorReader != null) {
+                mirrorReader.read("patch.tjs", 4 * 1024 * 1024)
+            } else {
+                null
+            }
+            if (mirrored == KrMirrorOverlayReader.Result.Absent) return null
+            if (mirrored == KrMirrorOverlayReader.Result.Unavailable) {
+                Log.w(TAG, "KRKR patch.tjs source unreadable, skipping overlay synthesis root=${root.absolutePath}")
+                return KrPatchCleanupResult(
+                    patchFile = patch,
+                    bytes = ByteArray(0),
+                    hadUserContent = false,
+                    cleanedManagedBlock = false,
+                    hadManagedMarker = false,
+                    mirrorReadFailed = true,
+                )
+            }
+            val safBytes = (mirrored as? KrMirrorOverlayReader.Result.Content)?.bytes
+            val original = safBytes ?: patch.readBytes()
             val blocks = listOf(
                 krLegacyPatchScript(fontScale = 1.0f),
                 krFbfSteamStubScript(),
@@ -1999,7 +2089,7 @@ object EngineLauncher {
                 cleaned = removeAllByteSequences(cleaned, block.toByteArray(Charsets.UTF_8))
                 cleaned = removeAllByteSequences(cleaned, block.toByteArray(Charsets.UTF_16LE))
             }
-            if (!cleaned.contentEquals(original)) {
+            if (safBytes == null && !cleaned.contentEquals(original)) {
                 patch.writeBytes(cleaned)
                 Log.i(TAG, "KRKR managed patch.tjs block cleaned root=${root.absolutePath} bytes=${original.size - cleaned.size}")
             } else if (
@@ -2021,9 +2111,14 @@ object EngineLauncher {
                     original.containsByteSequence(KR_FBF_STEAM_STUB_MARKER.toByteArray(Charsets.UTF_16LE)),
             )
         }.onFailure { error ->
+            if (error is CancellationException) throw error
             Log.w(TAG, "KRKR managed patch.tjs cleanup failed root=${root.absolutePath}", error)
         }.getOrNull()
     }
+
+    /** Build the bounded reader from the engine payload without reparsing the resource index. */
+    private fun createKrMirrorOverlayReader(context: Context, prepared: KrSafMirror.Prepared): KrMirrorOverlayReader =
+        KrMirrorOverlayReader.fromPrepared(prepared) { uri -> context.contentResolver.openInputStream(Uri.parse(uri)) }
 
     private fun rootContainsFbfSteamPlugin(root: File): Boolean {
         val files = root.listFiles() ?: return false
@@ -2058,7 +2153,7 @@ object EngineLauncher {
         |
     """.trimMargin()
 
-    private fun hasMeaningfulPatchContent(bytes: ByteArray): Boolean =
+    internal fun hasMeaningfulPatchContent(bytes: ByteArray): Boolean =
         bytes.any { byte ->
             val value = byte.toInt() and 0xFF
             value > 0x20 && value != 0xFE && value != 0xFF
@@ -2248,6 +2343,99 @@ object EngineLauncher {
     }
 
     /**
+     * 文件型外置入口（SWF）→ 入口所在目录。用于 [ExternalEngineModule.launchEntryIsFile]：
+     * 游戏记录 uri 指向文件本身，插件需要 `folder` 目录 + `execFile` 文件名。
+     *
+     * 路径来源按 provider 区分：
+     * - `com.android.externalstorage.documents`：优先 SAF documentId 映射，失败再用 `_data`；
+     * - 其它 `content://`（Downloads / 媒体库等）：`documentId` 不是真实路径，**禁止**
+     *   经 [GamePathUtils.safUriToPath] 拼成 `/storage/<docid>`，只信任 `_data`；
+     * - `file://` / 绝对路径：直接使用。
+     *
+     * 空白或相对 URI 没有可靠的真实路径语义，直接拒绝。
+     */
+    private fun resolveLaunchEntryDirectory(context: Context, game: ScanGame): String? {
+        val uriText = game.uri.trim()
+        if (uriText.isEmpty()) return null
+        val uri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return null
+        val scheme = uri.scheme?.lowercase(Locale.ROOT)
+        if (scheme == null && !uriText.startsWith('/')) return null
+        val isContent = scheme == "content"
+        val isExternalStorage = isContent && uri.authority == EXTERNAL_STORAGE_AUTHORITY
+        // 只有外部存储 provider 的 documentId 能安全映射为真实路径。
+        val safMapped = if (isExternalStorage) GamePathUtils.safUriToPath(uriText) else null
+        // 其它 provider 或外部存储映射失败时才查 `_data`（provider 自己报告的真实路径）。
+        val dataPath = if (isContent && (safMapped == null || !isExternalStorage)) {
+            queryDocumentDataPath(context, uriText)
+        } else {
+            null
+        }
+        return resolveLaunchEntryPath(uriText, safMapped, dataPath, game.launchTarget)
+    }
+
+    /**
+     * 入口 URI → 目录的纯决策函数（无 Android 依赖，供 JVM 单测）。
+     *
+     * [safMappedPath] 仅对 `com.android.externalstorage.documents` 有效；[dataPath] 为
+     * provider `_data` 查询结果。两者都不可用或映射结果不是绝对路径时返回 null。
+     */
+    internal fun resolveLaunchEntryPath(
+        uriText: String,
+        safMappedPath: String?,
+        dataPath: String?,
+        launchTarget: String,
+    ): String? {
+        val text = uriText.trim()
+        if (text.isEmpty()) return null
+        val lower = text.lowercase(Locale.ROOT)
+        val mapped = when {
+            text.startsWith('/') -> text
+            lower.startsWith("file:") -> runCatching { java.net.URI(text).path }.getOrNull()
+            lower.startsWith("content://") -> {
+                if (isExternalStorageDocumentUri(text)) safMappedPath ?: dataPath else dataPath
+            }
+            else -> null
+        }?.trim().orEmpty()
+        if (mapped.isEmpty() || !mapped.startsWith('/')) return null
+        val entry = File(mapped)
+        // 纯 tree URI（无 /document/ 段）映射的是目录；带 /document/ 的混合 URI 仍是文件文档，
+        // 不能因为路径里出现过 /tree/ 就当成目录。
+        val isPureTreeUri = text.contains("/tree/") && !text.contains("/document/")
+        // 包装目录记录（uri=目录、launchTarget=目录内 SWF）与单文件记录（uri=SWF）都会带
+        // .swf 的 launchTarget；只有映射路径本身就是该入口文件时才取父目录，否则目录会丢一级。
+        val launchName = launchTarget.substringAfterLast('/').trim()
+        val mappedIsEntryFile = mapped.endsWith(".swf", ignoreCase = true) ||
+            (launchName.endsWith(".swf", ignoreCase = true) && entry.name.equals(launchName, ignoreCase = true))
+        // 刻意在确认文件存在之前返回目录：缺少「所有文件访问」权限时 File.isDirectory/isFile
+        // 都会失败，若在此提前返回 null，权限门禁（requestAllFilesAccessIfNeeded）就没机会运行。
+        return when {
+            isPureTreeUri -> mapped
+            entry.isDirectory -> entry.absolutePath
+            entry.isFile -> entry.parentFile?.absolutePath
+            mappedIsEntryFile -> entry.parentFile?.absolutePath
+            else -> mapped
+        }
+    }
+
+    private fun isExternalStorageDocumentUri(uriText: String): Boolean =
+        uriText.substringAfter("://", "").substringBefore('/')
+            .equals(EXTERNAL_STORAGE_AUTHORITY, ignoreCase = true)
+
+    /** `_data` 兜底查询（文件型入口用；目录解析仍走 [resolveGameDirectory] 的既有逻辑）。 */
+    private fun queryDocumentDataPath(context: Context, uriText: String): String? {
+        return try {
+            val uri = Uri.parse(uriText) ?: return null
+            context.contentResolver.query(uri, arrayOf("_data"), null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val dataIdx = cursor.getColumnIndex("_data")
+                if (dataIdx >= 0) cursor.getString(dataIdx) else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * 将游戏 URI 解析为真实文件路径。优先按 SAF documentId 映射（主存储→/storage/emulated/0），
      * 映射失败再用 _data 查询兜底。引擎 native 需要真实文件路径。
      */
@@ -2297,19 +2485,7 @@ object EngineLauncher {
         return try {
             val doc = DocumentFile.fromTreeUri(context, uri)
             if (doc == null || !doc.exists()) return null
-            val cursor = context.contentResolver.query(uri, arrayOf("_data"), null, null, null)
-            if (cursor == null) {
-                null
-            } else {
-                cursor.use { c ->
-                    if (c.moveToFirst()) {
-                        val dataIdx = c.getColumnIndex("_data")
-                        if (dataIdx >= 0) c.getString(dataIdx) else null
-                    } else {
-                        null
-                    }
-                }
-            }
+            queryDocumentDataPath(context, uriText)
         } catch (e: Exception) {
             null
         }

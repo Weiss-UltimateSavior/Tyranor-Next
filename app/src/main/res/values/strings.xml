@@ -149,6 +149,7 @@
     <string name="engine_desc_web_other_vn">WebOther/VN，globalData.vndata 或通用 index.html 网页游戏</string>
     <string name="engine_desc_artemis">Artemis，system.ini 与 .pfs 归档游戏</string>
     <string name="engine_desc_renpy">Ren’Py 外置 APK 模块，检测安装状态后启动</string>
+    <string name="engine_desc_ruffle">Ruffle 外置 APK 模块，SWF / Flash 游戏</string>
     <string name="engine_desc_siglus">SiglusEngine（Key/VisualArts 系），Gameexe 与 Scene.pck 游戏</string>
     <string name="engine_desc_fvp">FVPEngine（FAVORITE 系），.hcb/.bch 脚本与 graph/voice 封包游戏</string>
     <string name="engine_desc_reallive">RealLive（VisualArt’s 系），Kanon SE/CLANNAD/Little Busters! 等</string>
@@ -271,6 +272,7 @@
     <string name="engine_settings_rpg_maker_title">RPG Maker引擎设置</string>
     <string name="engine_settings_tyrano_title">Tyrano引擎设置</string>
     <string name="engine_settings_renpy_title">Ren’Py引擎设置</string>
+    <string name="engine_settings_ruffle_title">Ruffle引擎设置</string>
     <string name="engine_settings_siglus_title">Siglus引擎设置</string>
     <string name="engine_settings_siglus_language_title">游戏语言</string>
     <string name="engine_settings_siglus_language_auto">跟随引擎默认（JP）</string>
@@ -411,9 +413,19 @@
     <string name="engine_settings_fvp_font_hint">仅对 FVP 生效；TTC 使用首个字面；缺字由系统字体回退兜底；修改后需重新进入游戏。</string>
     <string name="engine_settings_fvp_font_import_failed">字体导入失败：请选择 ttf/otf/ttc 文件</string>
     <string name="engine_settings_winlator_title">Winlator外置启动</string>
-    <string name="engine_settings_winlator_follow_container">跟随容器配置</string>
+    <string name="engine_settings_winlator_follow_container">按容器配置</string>
+    <string name="engine_settings_winlator_group_container">容器匹配</string>
     <string name="engine_settings_winlator_container_id_title">容器 ID</string>
     <string name="engine_settings_winlator_container_id_summary">0 或留空 = 自动（最近使用 / 唯一 / 第一个容器）</string>
+    <string name="engine_settings_winlator_mode_title">运行模式</string>
+    <string name="engine_settings_winlator_mode_global">跟随全局</string>
+    <string name="engine_settings_winlator_mode_container">跟随容器</string>
+    <string name="engine_settings_winlator_mode_custom">自定义</string>
+    <string name="engine_settings_winlator_global_entry">查看/修改 Winlator 全局设置</string>
+    <string name="engine_settings_winlator_global_entry_summary">打开引擎设置中的 Winlator 外置启动</string>
+    <string name="engine_settings_winlator_container_id_auto_by_name">自动（由容器名覆盖）</string>
+    <string name="engine_settings_winlator_container_id_summary_per_game">留空（未覆盖）继承全局容器 ID；显式填 0 表示不下发 ID（按容器名或 Winlator 自动选择）。只填容器名时会忽略继承的容器 ID</string>
+    <string name="engine_settings_winlator_container_name_summary_per_game">留空 = 未指定名称；两者都填时容器 ID 优先。只填容器名时，本游戏不继承全局容器 ID。</string>
     <string name="engine_settings_winlator_container_name_title">容器名</string>
     <string name="engine_settings_winlator_container_name_summary">留空 = 自动；容器 ID 优先于容器名</string>
     <string name="engine_settings_winlator_graphics_driver_title">图形驱动</string>
@@ -493,6 +505,7 @@
     <string name="engine_settings_engine_version_mz">引擎版本 - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件；以下设置默认跟随全局，可按游戏单独覆盖。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py 使用外置 APK 引擎模块，按指定版本打开对应的插件。</string>
+    <string name="engine_settings_ruffle_module_description">Ruffle 使用外置 APK 引擎模块承载 SWF 游戏，以下设置默认跟随全局。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z 通过外置 RPGM 模块启动，以下设置默认跟随全局，可按游戏单独覆盖。</string>
     <string name="engine_settings_follow_global">跟随全局</string>
     <string name="engine_settings_follow_global_with_value">跟随全局 · %1$s</string>
@@ -559,7 +572,7 @@
     <string name="save_import_zip">覆盖导入 ZIP</string>
     <string name="save_delete_title">删除存档</string>
     <string name="save_delete_message">将删除“%1$s”当前可管理的存档文件。此操作不可撤销。</string>
-    <string name="save_deleted_count">已删除 %1$d 个存档条目</string>
+    <string name="save_deleted_count">已删除 %1$d 个存档文件</string>
     <string name="save_format_convert_title">当前存档格式不兼容</string>
     <string name="save_format_convert_message">检测到 %1$d 个 JoiPlay/PC 标准格式存档。是否转化为 Tyranor 格式？</string>
     <string name="save_format_convert_hashed_note">另有 %1$d 个哈希存档（key_sha256）不会转化</string>
@@ -579,7 +592,10 @@
     <string name="save_error_app_internal_unavailable">应用内部存储目录不可用</string>
     <string name="save_location_krkr_scoped">KRKR 独立存档目录</string>
     <string name="save_location_krkr_game_dir">KRKR 游戏目录存档</string>
-    <string name="save_location_krkr_sd_mirror">KRKR SD 卡镜像存档（应用专属目录）</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SD 卡 SAF 镜像存档（应用专属目录）</string>
+    <string name="krkr_mirror_save_forced_note">SD 卡游戏存档由 SAF 镜像目录接管，本开关不生效。游戏内与存档管理均读写应用专属目录；向游戏目录手动放置 savedata 不会被读取。</string>
+    <string name="save_location_load_failed_note">存档位置解析失败，本页显示的信息可能不完整或滞后，可稍后重试更新。</string>
+    <string name="krkr_mirror_save_import_hint">SD 卡游戏的存档经此处导入/导出（应用专属 SAF 镜像目录）；手动放入游戏目录的 savedata 不会被引擎读取。</string>
     <string name="save_error_ons_external_unavailable">ONS 应用独立存储目录不可用</string>
     <string name="save_location_ons_scoped">ONS 应用独立存档目录</string>
     <string name="save_location_ons_game_dir">ONS 游戏内存档目录</string>
@@ -596,6 +612,7 @@
     <string name="save_error_resolve_actual_dir">无法解析实际存档目录</string>
     <string name="save_error_create_save_dir">无法创建存档目录</string>
     <string name="save_error_save_dir_unavailable">存档目录不可用</string>
+    <string name="save_error_resource_restore_conflict">删除已取消：为保护导入事务目录中的游戏资源（恢复冲突或目录不可读），存档未被删除；请处理后重试</string>
     <string name="save_error_no_files_in_zip">压缩包中未找到存档文件</string>
     <string name="save_error_read_import_zip">无法读取导入压缩包</string>
     <string name="save_error_duplicate_zip_entry">压缩包包含重复文件：%1$s</string>
@@ -650,6 +667,8 @@
     <string name="external_engine_denied">%1$s 启动被系统拒绝，请检查模块权限</string>
     <string name="external_engine_launch_failed">%1$s 启动失败，请检查模块权限</string>
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
+    <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
+    <string name="external_ruffle_resolve_swf_failed">无法定位 SWF 启动文件，Ruffle 模块无法启动</string>
     <string name="external_rpgm_resolve_dir_failed">无法解析 RPGM 游戏目录真实路径，外置 RPGM 模块无法启动</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS 外置模块</string>
@@ -725,6 +744,33 @@
     <string name="engine_settings_renpy_dont_use_gl2">禁用模型渲染（GL2）</string>
     <string name="engine_settings_renpy_recompile">重新编译脚本</string>
     <string name="engine_settings_renpy_cheats">金手指</string>
+
+    <string name="engine_settings_ruffle_card">Ruffle 外置模块</string>
+    <string name="engine_settings_ruffle_module_status">模块状态</string>
+    <string name="engine_settings_ruffle_module_get">下载模块</string>
+    <string name="engine_settings_ruffle_backend">渲染后端</string>
+    <string name="engine_settings_ruffle_backend_auto">自动</string>
+    <string name="engine_settings_ruffle_backend_opengl">OpenGL</string>
+    <string name="engine_settings_ruffle_backend_vulkan">Vulkan</string>
+    <string name="engine_settings_ruffle_quality">画质</string>
+    <string name="engine_settings_ruffle_quality_low">低</string>
+    <string name="engine_settings_ruffle_quality_medium">中</string>
+    <string name="engine_settings_ruffle_quality_high">高</string>
+    <string name="engine_settings_ruffle_quality_best">最佳</string>
+    <string name="engine_settings_ruffle_scale_mode">缩放模式</string>
+    <string name="engine_settings_ruffle_scale_exactfit">精确适配</string>
+    <string name="engine_settings_ruffle_scale_noborder">无边框</string>
+    <string name="engine_settings_ruffle_scale_noscale">不缩放</string>
+    <string name="engine_settings_ruffle_scale_showall">显示全部</string>
+    <string name="engine_settings_ruffle_letterbox">黑边填充</string>
+    <string name="engine_settings_ruffle_load_behavior">加载方式</string>
+    <string name="engine_settings_ruffle_load_streaming">流式加载</string>
+    <string name="engine_settings_ruffle_load_delayed">延迟加载</string>
+    <string name="engine_settings_ruffle_load_blocking">阻塞加载</string>
+    <string name="engine_settings_ruffle_screen_timeout">自动关闭（分钟）</string>
+    <string name="engine_settings_ruffle_screen_timeout_off">不自动关闭</string>
+    <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d 分钟</string>
+    <string name="engine_settings_ruffle_note">SWF 记录指向文件时会自动取其所在目录启动；启动前需要为本应用授予「所有文件访问」权限以解析游戏目录，Ruffle 插件可能另行申请自身存储权限。插件固定横屏显示；自动关闭设为 0 表示不自动关闭。</string>
 
     <string name="plugin_unknown_engine">未知引擎插件：%1$s</string>
     <string name="plugin_install_failed">引擎插件安装失败，请重启应用或检查安装包完整性</string>
@@ -856,7 +902,6 @@
     <string name="ethornell_error_bootstrap">未找到受支持的 system.arc 与 ipl._bp 启动索引。</string>
     <string name="ethornell_error_font">字体无效或不可读取，请重新导入 TTF、TTC、OTF 或 OTC 字体。</string>
     <string name="ethornell_error_userdata">无法创建 Ethornell 私有用户数据目录，请检查可用空间。</string>
-
     <!-- First-launch quick start -->
     <string name="onboarding_title">快速入门</string>
     <string name="onboarding_welcome_title">欢迎使用 Tyranor Next</string>
@@ -888,4 +933,5 @@
     <string name="onboarding_coach_engine_body">在“引擎”页查看内置引擎、外置模块和模拟器。</string>
     <string name="onboarding_coach_settings_title">随时调整设置</string>
     <string name="onboarding_coach_settings_body">在“设置”中调整外观、导航、扫描和输入。</string>
+    <string name="launch_empty_krkr_sd_mirror">未能读取到 SD 卡游戏资源，请检查目录授权与存储状态后重试</string>
 </resources>

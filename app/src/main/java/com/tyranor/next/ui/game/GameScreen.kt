@@ -147,7 +147,6 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.TopBarBlurHost
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.onboarding.CoachAnchor
@@ -505,7 +504,7 @@ private fun GameLibraryContent(
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
-    TopBarBlurHost(modifier = modifier, topBar = {
+    Column(modifier.fillMaxSize()) {
         // ===== 顶部栏：统一 AppTopBar（标题居左 + 右侧图标 + 折叠搜索框） =====
         AppTopBar(
             title = stringResource(R.string.game_title),
@@ -580,16 +579,16 @@ private fun GameLibraryContent(
                 }
             },
         )
-    }) { topInset ->
+
         // ===== 内容区 =====
         Box(Modifier.fillMaxSize()) {
             when {
                 scanning || !loaded -> {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center).padding(top = topInset))
+                    CircularProgressIndicator(Modifier.align(Alignment.Center))
                 }
                 games.isEmpty() -> {
                     Column(
-                        Modifier.align(Alignment.Center).padding(top = topInset),
+                        Modifier.align(Alignment.Center),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Text(stringResource(R.string.game_empty_title), style = MaterialTheme.typography.bodyMedium)
@@ -612,26 +611,23 @@ private fun GameLibraryContent(
                             stringResource(R.string.game_no_match),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.align(Alignment.Center).padding(top = topInset),
+                            modifier = Modifier.align(Alignment.Center),
                         )
                     } else {
                         val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
                         if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) {
-                            // 「列表」风格：封面流横向轮播（列表/搜索/排序数据源相同），不滚动穿过顶栏
-                            Box(Modifier.fillMaxSize().padding(top = topInset)) {
-                                GameCoverFlow(
-                                    games = filteredGames,
-                                    onGameClick = onGameClick,
-                                    onGameLongClick = onGameLongClick,
-                                )
-                            }
+                            // 「列表」风格：封面流横向轮播（列表/搜索/排序数据源相同）
+                            GameCoverFlow(
+                                games = filteredGames,
+                                onGameClick = onGameClick,
+                                onGameLongClick = onGameLongClick,
+                            )
                         } else {
                             GameGrid(
                                 games = filteredGames,
                                 gridState = gridState,
                                 onGameClick = onGameClick,
                                 onGameLongClick = onGameLongClick,
-                                topInset = topInset,
                             )
                         }
                     }
@@ -1931,7 +1927,6 @@ internal fun GameGrid(
     gridState: LazyGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
-    topInset: Dp = 0.dp,
 ) {
     // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度，滚动到底时最后一行可完全露出不被遮挡；
     // 滚动过程中内容仍可经过玻璃后面（沉浸）
@@ -1949,7 +1944,7 @@ internal fun GameGrid(
         columns = GridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp + topInset, bottom = 12.dp + glassBottomInset),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -2257,6 +2252,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.PC -> Color(0xFF455A64)
     EngineType.ANDROID_APP -> Color(0xFF2E7D32)
     EngineType.RENPY -> Color(0xFFE35B84)
+    EngineType.RUFFLE -> Color(0xFFC62828)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
     EngineType.UNKNOWN -> Color(0xFF607D8B)

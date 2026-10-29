@@ -149,6 +149,7 @@
     <string name="engine_desc_web_other_vn">WebOther/VN、globalData.vndata または汎用 index.html Web ゲーム</string>
     <string name="engine_desc_artemis">Artemis、system.ini と .pfs アーカイブのゲーム</string>
     <string name="engine_desc_renpy">Ren’Py 外部 APK モジュール。インストール状態を確認して起動</string>
+    <string name="engine_desc_ruffle">Ruffle 外部 APK モジュール。SWF / Flash ゲーム</string>
     <string name="engine_desc_siglus">SiglusEngine（Key/VisualArts 系）。Gameexe と Scene.pck のゲーム</string>
     <string name="engine_desc_fvp">FVPEngine（FAVORITE 系）。.hcb/.bch スクリプトと graph/voice パッケージのゲーム</string>
     <string name="engine_desc_reallive">RealLive（VisualArt’s 系）。Kanon SE / CLANNAD / Little Busters! など</string>
@@ -271,6 +272,7 @@
     <string name="engine_settings_rpg_maker_title">RPG Maker エンジン設定</string>
     <string name="engine_settings_tyrano_title">Tyrano エンジン設定</string>
     <string name="engine_settings_renpy_title">Ren’Py エンジン設定</string>
+    <string name="engine_settings_ruffle_title">Ruffle エンジン設定</string>
     <string name="engine_settings_siglus_title">Siglus エンジン設定</string>
     <string name="engine_settings_siglus_language_title">ゲーム言語</string>
     <string name="engine_settings_siglus_language_auto">エンジン既定（JP）</string>
@@ -411,9 +413,19 @@
     <string name="engine_settings_fvp_font_hint">FVP のみ有効。TTC は先頭フェイスのみ。欠け字形はシステムフォントで補完。変更後は再起動が必要です。</string>
     <string name="engine_settings_fvp_font_import_failed">フォントの読み込みに失敗しました：ttf/otf/ttc を選択してください</string>
     <string name="engine_settings_winlator_title">Winlator 外部起動</string>
-    <string name="engine_settings_winlator_follow_container">コンテナ設定に従う</string>
+    <string name="engine_settings_winlator_follow_container">コンテナ設定を使用</string>
+    <string name="engine_settings_winlator_group_container">コンテナマッチング</string>
     <string name="engine_settings_winlator_container_id_title">コンテナ ID</string>
     <string name="engine_settings_winlator_container_id_summary">0 または空欄 = 自動（最近使用 / 唯一 / 最初のコンテナ）</string>
+    <string name="engine_settings_winlator_mode_title">実行モード</string>
+    <string name="engine_settings_winlator_mode_global">全体設定に従う</string>
+    <string name="engine_settings_winlator_mode_container">コンテナに従う</string>
+    <string name="engine_settings_winlator_mode_custom">カスタム</string>
+    <string name="engine_settings_winlator_global_entry">Winlator の全体設定を表示・変更</string>
+    <string name="engine_settings_winlator_global_entry_summary">エンジン設定の Winlator 外部起動を開く</string>
+    <string name="engine_settings_winlator_container_id_auto_by_name">自動（コンテナ名が優先）</string>
+    <string name="engine_settings_winlator_container_id_summary_per_game">空欄（未指定）はグローバル ID を継承します。明示的な 0 は ID を送信しません（コンテナ名または Winlator が選択）。名前のみ指定時は継承 ID を無視します</string>
+    <string name="engine_settings_winlator_container_name_summary_per_game">空欄 = 名前未指定。両方入力時はコンテナ ID を優先。名前のみの場合はグローバルコンテナ ID を継承しません。</string>
     <string name="engine_settings_winlator_container_name_title">コンテナ名</string>
     <string name="engine_settings_winlator_container_name_summary">空欄 = 自動。コンテナ ID がコンテナ名より優先されます</string>
     <string name="engine_settings_winlator_graphics_driver_title">グラフィックドライバ</string>
@@ -493,6 +505,7 @@
     <string name="engine_settings_engine_version_mz">エンジンバージョン - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py は外部 APK エンジンモジュールを使用し、指定バージョンに対応するプラグインで開きます。</string>
+    <string name="engine_settings_ruffle_module_description">Ruffle は外部 APK エンジンモジュールで SWF ゲームを実行します。以下の設定は既定で全体設定に従います。</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z は外部 RPGM モジュールで起動します。以下の設定は既定で全体設定に従い、ゲームごとに個別に上書きできます。</string>
     <string name="engine_settings_follow_global">全体設定に従う</string>
     <string name="engine_settings_follow_global_with_value">全体設定に従う · %1$s</string>
@@ -559,7 +572,7 @@
     <string name="save_import_zip">ZIP を上書きインポート</string>
     <string name="save_delete_title">セーブを削除</string>
     <string name="save_delete_message">「%1$s」の現在管理可能なセーブファイルを削除します。この操作は元に戻せません。</string>
-    <string name="save_deleted_count">%1$d 件のセーブ項目を削除しました</string>
+    <string name="save_deleted_count">%1$d 件のセーブファイルを削除しました</string>
     <string name="save_format_convert_title">現在のセーブ形式は互換性がありません</string>
     <string name="save_format_convert_message">%1$d 個の JoiPlay/PC 標準形式のセーブデータを検出しました。Tyranor 形式に変換しますか？</string>
     <string name="save_format_convert_hashed_note">他に %1$d 個のハッシュセーブ（key_sha256）は変換されません</string>
@@ -579,7 +592,10 @@
     <string name="save_error_app_internal_unavailable">アプリ内部ストレージを使用できません</string>
     <string name="save_location_krkr_scoped">KRKR 個別セーブフォルダ</string>
     <string name="save_location_krkr_game_dir">KRKR ゲームフォルダ内セーブ</string>
-    <string name="save_location_krkr_sd_mirror">KRKR SDカード ミラーセーブ（アプリ専用領域）</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SDカード SAFミラーセーブ（アプリ専用領域）</string>
+    <string name="krkr_mirror_save_forced_note">SDカード上のゲームのセーブはSAFミラーディレクトリで管理されるため、このスイッチは無効です。エンジンとセーブ管理の両方がアプリ専用領域を読み書きします。ゲームディレクトリに手動で置いた savedata は読み込まれません。</string>
+    <string name="save_location_load_failed_note">セーブ位置の解決に失敗したため、このページの情報は不完全または古い可能性があります。後ほど再試行して更新してください。</string>
+    <string name="krkr_mirror_save_import_hint">SDカード上のゲームのセーブはここからインポート/エクスポートしてください（アプリ専用SAFミラーディレクトリ）。ゲームディレクトリに手動で置いた savedata はエンジンに読み込まれません。</string>
     <string name="save_error_ons_external_unavailable">ONS のアプリ個別ストレージを使用できません</string>
     <string name="save_location_ons_scoped">ONS アプリ個別セーブフォルダ</string>
     <string name="save_location_ons_game_dir">ONS ゲーム内セーブフォルダ</string>
@@ -596,6 +612,7 @@
     <string name="save_error_resolve_actual_dir">実際のセーブフォルダを解析できません</string>
     <string name="save_error_create_save_dir">セーブフォルダを作成できません</string>
     <string name="save_error_save_dir_unavailable">セーブフォルダを使用できません</string>
+    <string name="save_error_resource_restore_conflict">削除を取り消しました：インポートトランザクション内のゲームリソースを保護するため（復元の競合またはディレクトリ判読不可）、セーブは削除されていません。解消してから再試行してください</string>
     <string name="save_error_no_files_in_zip">ZIP 内にセーブファイルが見つかりません</string>
     <string name="save_error_read_import_zip">インポート ZIP を読み取れません</string>
     <string name="save_error_duplicate_zip_entry">ZIP に重複ファイルが含まれています：%1$s</string>
@@ -650,6 +667,8 @@
     <string name="external_engine_denied">%1$s の起動がシステムに拒否されました。モジュール権限を確認してください</string>
     <string name="external_engine_launch_failed">%1$s の起動に失敗しました。モジュール権限を確認してください</string>
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
+    <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
+    <string name="external_ruffle_resolve_swf_failed">SWF 起動ファイルを特定できないため、Ruffle モジュールを起動できません</string>
     <string name="external_rpgm_resolve_dir_failed">RPGM ゲームフォルダ実パスを解析できないため、外部 RPGM モジュールを起動できません</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS モジュール</string>
@@ -725,6 +744,33 @@
     <string name="engine_settings_renpy_dont_use_gl2">モデルベース描画を無効化（GL2）</string>
     <string name="engine_settings_renpy_recompile">スクリプトを再コンパイル</string>
     <string name="engine_settings_renpy_cheats">チート</string>
+
+    <string name="engine_settings_ruffle_card">Ruffle 外部モジュール</string>
+    <string name="engine_settings_ruffle_module_status">モジュールの状態</string>
+    <string name="engine_settings_ruffle_module_get">モジュールをダウンロード</string>
+    <string name="engine_settings_ruffle_backend">レンダリングバックエンド</string>
+    <string name="engine_settings_ruffle_backend_auto">自動</string>
+    <string name="engine_settings_ruffle_backend_opengl">OpenGL</string>
+    <string name="engine_settings_ruffle_backend_vulkan">Vulkan</string>
+    <string name="engine_settings_ruffle_quality">画質</string>
+    <string name="engine_settings_ruffle_quality_low">低</string>
+    <string name="engine_settings_ruffle_quality_medium">中</string>
+    <string name="engine_settings_ruffle_quality_high">高</string>
+    <string name="engine_settings_ruffle_quality_best">最高</string>
+    <string name="engine_settings_ruffle_scale_mode">スケールモード</string>
+    <string name="engine_settings_ruffle_scale_exactfit">完全一致</string>
+    <string name="engine_settings_ruffle_scale_noborder">ボーダーなし</string>
+    <string name="engine_settings_ruffle_scale_noscale">拡大縮小なし</string>
+    <string name="engine_settings_ruffle_scale_showall">全体表示</string>
+    <string name="engine_settings_ruffle_letterbox">レターボックス</string>
+    <string name="engine_settings_ruffle_load_behavior">読み込み方式</string>
+    <string name="engine_settings_ruffle_load_streaming">ストリーミング</string>
+    <string name="engine_settings_ruffle_load_delayed">遅延読み込み</string>
+    <string name="engine_settings_ruffle_load_blocking">ブロッキング</string>
+    <string name="engine_settings_ruffle_screen_timeout">自動終了（分）</string>
+    <string name="engine_settings_ruffle_screen_timeout_off">自動終了しない</string>
+    <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d 分</string>
+    <string name="engine_settings_ruffle_note">SWF がファイルを指す場合は自動的にそのフォルダーから起動します。起動前にゲームフォルダーを解決するため、このアプリへ「すべてのファイルへのアクセス」を許可してください。Ruffle プラグインが別途独自のストレージ権限を要求する場合があります。プラグインは常に横向きで表示されます。自動終了を 0 にすると無効になります。</string>
 
     <string name="plugin_unknown_engine">不明なエンジンプラグイン：%1$s</string>
     <string name="plugin_install_failed">エンジンプラグインのインストールに失敗しました。アプリを再起動するか、インストールパッケージの完全性を確認してください</string>
@@ -856,7 +902,6 @@
     <string name="ethornell_error_bootstrap">ipl._bp 起動項目を含む対応 system.arc 索引が見つかりません。</string>
     <string name="ethornell_error_font">フォントが無効、または読み取れません。TTF、TTC、OTF、OTC フォントを再度取り込んでください。</string>
     <string name="ethornell_error_userdata">Ethornell 専用ユーザーデータを作成できません。空き容量を確認してください。</string>
-
     <!-- First-launch quick start -->
     <string name="onboarding_title">クイックスタート</string>
     <string name="onboarding_welcome_title">Tyranor Next へようこそ</string>
@@ -888,4 +933,5 @@
     <string name="onboarding_coach_engine_body">ここで内蔵エンジン、外部モジュール、エミュレーターを確認できます。</string>
     <string name="onboarding_coach_settings_title">設定はいつでも変更可能</string>
     <string name="onboarding_coach_settings_body">「設定」で外観、ナビゲーション、スキャン、入力を調整できます。</string>
+    <string name="launch_empty_krkr_sd_mirror">SD カードのゲームデータを読み取れませんでした。フォルダーへのアクセス権とストレージを確認して再試行してください。</string>
 </resources>

@@ -76,6 +76,9 @@ jobs:
         run: python3 tools/check-hardcoded-ui-strings.py
 
       # 单元测试：输入内核（键位/配置/迁移/RTP 语义）等回归全靠它，此前 CI 只构建不测试
+      - name: Check KRKR mirror stdio semantics
+        run: python3 tools/test_krkr_mirror_stdio.py
+
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon
 

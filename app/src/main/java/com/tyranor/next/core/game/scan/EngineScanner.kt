@@ -31,7 +31,7 @@ import java.util.Locale
 
 /**
  * 精简版游戏扫描器，识别逻辑移植自 RinneMobile 的 EngineDetector/GameScanner。
- * 支持引擎：Kirikiri、ONS、Tyrano、RPG Maker XP/VX/VX Ace、RPG Maker MV/MZ、VN、WebOther、Artemis、Ren'Py。
+ * 支持引擎：Kirikiri、ONS、Tyrano、RPG Maker XP/VX/VX Ace、RPG Maker MV/MZ、VN、WebOther、Artemis、Ren'Py、Ruffle（SWF）。
  *
  * 职责边界（架构优化 P0-1）：本类只负责「扫描 + 引擎识别」；游戏库 CRUD / 最近游玩 /
  * 快捷启动 / 扫描根等持久化门面职责见 [GameLibraryFacade]，路径工具见 [GamePathUtils]。
@@ -263,7 +263,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -276,7 +276,7 @@ object EngineScanner {
             return
         }
         // 未识别引擎：按 ROM 文件逐条入库（已存在的 ROM uri 由 known 剪枝），再递归子目录
-        out.addAll(romGamesForSaf(children, findLocalCoverUri(children), known))
+        out.addAll(romGamesForSaf(children, findLocalCoverUri(children), known, dir.name))
         for (child in children) {
             if (child.isDirectory) {
                 scanRootIncremental(context, session, child, level + 1, maxDepth, known, out)
@@ -324,7 +324,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.uri.toString(),
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -339,7 +339,7 @@ object EngineScanner {
         }
 
         // 2) 未识别引擎：按 ROM 文件逐条入库（PSP / Switch），再递归子目录
-        out.addAll(romGamesForSaf(children, findLocalCoverUri(children)))
+        out.addAll(romGamesForSaf(children, findLocalCoverUri(children), directoryName = dir.name))
 
         // 3) 否则递归子目录
         for (child in children) {
@@ -489,18 +489,26 @@ object EngineScanner {
         }
     }
 
-    // ============ ROM 文件型游戏（PSP / Nintendo Switch） ============
+    // ============ ROM 文件型游戏（PSP / Nintendo Switch / Ruffle SWF） ============
     // 一 ROM 一条游戏：uri = ROM 文件自身（SAF document URI / 真实路径），launchTarget = 文件名。
     // uri 作为游戏库主键天然唯一；目录归属由 GameRootMatcher 的 documentId 前缀匹配兜住。
+    // Ruffle 包装目录（根 index.html + 叶子目录 + 唯一 SWF）由 detectEngine 识别为目录型游戏；
+    // 散装 SWF（含无 index.html 的单文件目录）与其它 ROM 一样按文件逐条入库。
 
     private val PSP_ROM_EXTENSIONS = setOf("pbp", "cso", "iso", "chd")
     private val SWITCH_ROM_EXTENSIONS = setOf("nsp", "xci", "nca", "nro")
 
+    /** 目录内出现即视为「主机 ROM 目录」的引擎：Ruffle 包装判定必须让位，按 ROM 逐条入库。 */
+    private val CONSOLE_ROM_ENGINES = setOf(EngineType.PSP, EngineType.NINTENDO_SWITCH)
+
     internal fun romEngineOf(name: String): EngineType? {
+        // 隐藏文件（macOS 的 ._foo.swf、.nomedia 等）不是可启动 ROM。
+        if (name.startsWith(".")) return null
         val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when (ext) {
             in PSP_ROM_EXTENSIONS -> EngineType.PSP
             in SWITCH_ROM_EXTENSIONS -> EngineType.NINTENDO_SWITCH
+            "swf" -> EngineType.RUFFLE
             else -> null
         }
     }
@@ -539,24 +547,45 @@ object EngineScanner {
     private fun romTitle(name: String): String =
         name.substringBeforeLast('.').takeIf { it.isNotBlank() } ?: name
 
+    /** 扫描标题：识别期标题 > 目录名；Ruffle 包装目录在目录名缺失时回退 SWF 文件主名。 */
+    private fun scanTitle(context: Context, detected: Detection, dirName: String): String {
+        val ruffleFallback = if (detected.engine == EngineType.RUFFLE) {
+            romTitle(detected.launchTarget).takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+        return detected.titleHint
+            ?: dirName.takeIf { it.isNotBlank() }
+            ?: ruffleFallback
+            ?: localizedText(context, R.string.scan_unnamed_game)
+    }
+
     private fun romGamesForSaf(
         children: List<SafNode>,
         coverUri: String?,
         known: Set<String>? = null,
+        directoryName: String? = null,
     ): List<ScanGame> {
         val roms = children.filter { child ->
             !child.isDirectory &&
                 romEngineOf(child.name) != null &&
+                (romEngineOf(child.name) != EngineType.RUFFLE || child.size == null || child.size > 0L) &&
                 (known == null || child.uri.toString() !in known)
         }
         if (roms.isEmpty()) return emptyList()
-        val singleCover = if (roms.size == 1) coverUri else null
+        // 单封面按目录内 ROM 总数判定（含已入库条目），与标题策略保持同一口径。
+        val totalRoms = children.count { !it.isDirectory && romEngineOf(it.name) != null }
+        val singleCover = if (totalRoms == 1) coverUri else null
+        // 标题策略按目录内 SWF 总数判定（含已入库条目），增量扫描不会把多 SWF 误判为单入口
+        val singleSwf = children.count { !it.isDirectory && romEngineOf(it.name) == EngineType.RUFFLE } == 1
         return roms.map { node ->
+            val engine = romEngineOf(node.name)!!
             ScanGame(
-                title = romTitle(node.name),
+                title = romTitleFor(engine, node.name, singleSwf, directoryName),
                 uri = node.uri.toString(),
-                engine = romEngineOf(node.name)!!,
+                engine = engine,
                 launchTarget = node.name,
+                externalModuleAlias = romModuleAlias(engine),
                 coverUri = singleCover,
                 coverSource = if (singleCover.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
             )
@@ -567,25 +596,59 @@ object EngineScanner {
         children: Array<File>,
         coverUri: String?,
         known: Set<String>? = null,
+        directoryName: String? = null,
     ): List<ScanGame> {
         val roms = children.filter { child ->
             child.isFile &&
                 romEngineOf(child.name) != null &&
+                (romEngineOf(child.name) != EngineType.RUFFLE || child.length() > 0L) &&
                 (known == null || child.absolutePath !in known)
         }
         if (roms.isEmpty()) return emptyList()
-        val singleCover = if (roms.size == 1) coverUri else null
+        // 单封面按目录内 ROM 总数判定（含已入库条目），与标题策略保持同一口径。
+        val totalRoms = children.count { it.isFile && romEngineOf(it.name) != null }
+        val singleCover = if (totalRoms == 1) coverUri else null
+        // 标题策略按目录内 SWF 总数判定（含已入库条目），增量扫描不会把多 SWF 误判为单入口
+        val singleSwf = children.count { it.isFile && romEngineOf(it.name) == EngineType.RUFFLE } == 1
         return roms.map { rom ->
+            val engine = romEngineOf(rom.name)!!
             ScanGame(
-                title = romTitle(rom.name),
+                title = romTitleFor(engine, rom.name, singleSwf, directoryName),
                 uri = rom.absolutePath,
-                engine = romEngineOf(rom.name)!!,
+                engine = engine,
                 launchTarget = rom.name,
+                externalModuleAlias = romModuleAlias(engine),
                 coverUri = singleCover,
                 coverSource = if (singleCover.isNullOrBlank()) null else AppSettingsStore.COVER_SOURCE_LOCAL,
             )
         }
     }
+
+    /**
+     * 单个 Ruffle SWF 以父目录名作为标题（目录名缺失时回退文件主名）；
+     * 同目录多个 SWF 或其它 ROM 保持文件主名。
+     */
+    private fun romTitleFor(
+        engine: EngineType,
+        fileName: String,
+        singleSwf: Boolean,
+        directoryName: String?,
+    ): String =
+        if (engine == EngineType.RUFFLE && singleSwf) {
+            directoryName?.takeIf { it.isNotBlank() } ?: romTitle(fileName)
+        } else {
+            romTitle(fileName)
+        }
+
+    private fun romModuleAlias(engine: EngineType): String? =
+        if (engine == EngineType.RUFFLE) RUFFLE_MODULE_ALIAS else null
+
+    /**
+     * 扫描写入的 Ruffle 模块别名，与 `RuffleExternalEngineModule.defaultAlias` 保持同值。
+     * 扫描层不直接依赖 external 模块（避免 game-scan → engine-external 的耦合/循环），
+     * 两处如需改名必须同步。
+     */
+    private const val RUFFLE_MODULE_ALIAS = "internal.flash"
 
     private fun detectRenpyVersionIfNeeded(
         detection: Detection,
@@ -655,7 +718,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -667,7 +730,7 @@ object EngineScanner {
             )
             return
         }
-        out.addAll(romGamesForFile(children, findLocalCoverUri(children), known))
+        out.addAll(romGamesForFile(children, findLocalCoverUri(children), known, dir.name))
         children.filter { it.isDirectory }.forEach { child ->
             scanRootIncrementalFile(context, session, child, level + 1, maxDepth, known, out)
         }
@@ -689,7 +752,7 @@ object EngineScanner {
             val coverUri = findLocalCoverUri(children)
             out.add(
                 ScanGame(
-                    title = detected.titleHint ?: dir.name.takeIf { it.isNotBlank() } ?: localizedText(context, R.string.scan_unnamed_game),
+                    title = scanTitle(context, detected, dir.name),
                     uri = dir.absolutePath,
                     engine = detected.engine,
                     launchTarget = detected.launchTarget,
@@ -701,7 +764,7 @@ object EngineScanner {
             )
             return
         }
-        out.addAll(romGamesForFile(children, findLocalCoverUri(children)))
+        out.addAll(romGamesForFile(children, findLocalCoverUri(children), directoryName = dir.name))
         children.filter { it.isDirectory }.forEach { child ->
             traverseFileDirectories(context, session, child, level + 1, maxDepth, out)
         }
@@ -797,6 +860,8 @@ object EngineScanner {
         var hasStartupTjs = false
         var hasConfigTjs = false
         var hasIndex = false
+        var hasRootIndex = false
+        var hasChildDirectory = false
         var hasAppAsar = false
         var hasTyranoDir = false
         var hasRpgMvCore = false
@@ -840,6 +905,8 @@ object EngineScanner {
         var firstRgssad: String? = null
         var firstRgss2a: String? = null
         var firstRgss3a: String? = null
+        var firstSwf: String? = null
+        var swfCount = 0
         var hasGameIni = false
         var hasRxdata = false
         var hasRvdata = false
@@ -869,6 +936,7 @@ object EngineScanner {
             if (lower.isEmpty()) return
             val childRel = if (rel.isEmpty()) lower else "$rel/$lower"
             if (isDirectory(entry)) {
+                hasChildDirectory = true
                 if (lower == "tyrano") hasTyranoDir = true
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
@@ -915,7 +983,10 @@ object EngineScanner {
                     if (ethornellSystemNode != null) ambiguousEthornellSystem = true
                     ethornellSystemNode = entry
                 }
-                lower == "index.html" || lower == "index.htm" -> hasIndex = true
+                lower == "index.html" || lower == "index.htm" -> {
+                    hasIndex = true
+                    if (rel.isEmpty()) hasRootIndex = true
+                }
                 childRel == "js/rpg_core.js" || childRel.endsWith("/js/rpg_core.js") -> hasRpgMvCore = true
                 childRel == "js/rmmz_core.js" || childRel.endsWith("/js/rmmz_core.js") -> hasRpgMzCore = true
                 lower == "globaldata.vndata" -> hasVnData = true
@@ -968,6 +1039,10 @@ object EngineScanner {
                 lower.endsWith(".rgssad") -> if (firstRgssad == null) firstRgssad = childRel
                 lower.endsWith(".rgss2a") -> if (firstRgss2a == null) firstRgss2a = childRel
                 lower.endsWith(".rgss3a") -> if (firstRgss3a == null) firstRgss3a = childRel
+                rel.isEmpty() && lower.endsWith(".swf") && !lower.startsWith(".") -> {
+                    swfCount++
+                    if (firstSwf == null) firstSwf = nameOf(entry)
+                }
                 rel.isEmpty() && lower.startsWith("x64-msvcrt-ruby") && lower.endsWith(".dll") ->
                     hasMkxpZRubyRuntime = true
                 childRel.startsWith("data/") && lower.endsWith(".rxdata") -> hasRxdata = true
@@ -1086,7 +1161,7 @@ object EngineScanner {
             return Detection(EngineType.CATSYSTEM2, cs2Score, LAUNCH_TARGET_GAME_DIR)
         }
         // System4（xsystem4）：根目录 System40.ini / AliceStart.ini 为硬特征，*.ain 为辅助。
-        // 判定规则放在本函数末尾（所有既有引擎与 ONS 之后），此处只计算 XSYS35 护栏用的 isSystem4。
+        // 判定规则放在本函数末尾（所有既有引擎与 ONS 之后），此处只计算 XSYS35 / Ruffle 护栏用的 isSystem4。
         // 护栏用 !hasSystem39Marker 而非 hasXs35Support：后者含 .alk，System 4 同样用 ALK 资源包。
         // 嵌套目录（data/System40.ini）不构成特征，见 collect 的 rel.isEmpty() 约束。
         val system4IniNode = system40IniNode ?: aliceStartIniNode
@@ -1158,6 +1233,23 @@ object EngineScanner {
             }
             // Ren'Py 版本由单游戏设置选择，扫描不写死版本别名（避免误导为固定 8.5 模块）
             return Detection(EngineType.RENPY, confidence, LAUNCH_TARGET_GAME_DIR)
+        }
+        // Flash 包装目录：根目录 index.html/htm + 叶子目录（无子目录）+ 唯一顶层 SWF。
+        // 必须排在通用 hasIndex -> WEB_OTHER 之前，但不得覆盖 Tyrano/RPGM/VN/Node 等既有判定，
+        // 也不得抢走其后才判定的 KRKR/ONS/XSYS4 或 PSP/Switch ROM：
+        // - 无根 index 的散装 SWF 由 romGamesForSaf/romGamesForFile 按文件入库；
+        // - 有子目录的扫描根不能再被当成一个包装游戏吞掉整棵目录。
+        val ruffleSwf = firstSwf
+        val hasConsoleRomChild = children.any { child ->
+            !isDirectory(child) && romEngineOf(nameOf(child)) in CONSOLE_ROM_ENGINES
+        }
+        if (
+            hasRootIndex && !hasChildDirectory && swfCount == 1 && ruffleSwf != null &&
+            !hasTyranoDir && !hasRpgMvCore && !hasRpgMzCore && !hasVnData && !hasAppAsar &&
+            xp3Files.isEmpty() && !hasStartupTjs && !hasConfigTjs &&
+            !hasOnsScript && !hasOnsArchive && !isSystem4 && !hasConsoleRomChild
+        ) {
+            return Detection(EngineType.RUFFLE, 88, ruffleSwf, RUFFLE_MODULE_ALIAS)
         }
         if (hasIndex) {
             return Detection(EngineType.WEB_OTHER, 70, LAUNCH_TARGET_GAME_DIR)

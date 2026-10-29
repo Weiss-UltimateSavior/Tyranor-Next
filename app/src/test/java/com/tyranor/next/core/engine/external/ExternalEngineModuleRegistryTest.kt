@@ -3,6 +3,7 @@ package com.tyranor.next.core.engine.external
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.settings.EngineSettingsStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -92,5 +93,26 @@ class ExternalEngineModuleRegistryTest {
         assertSame(RpgMakerExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RpgMakerExternalEngineModule.packageName))
         assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RPGMAKER))
         assertTrue(RpgMakerExternalEngineModule.installUrl.orEmpty().endsWith("/RPGM-Plugin.apk"))
+        assertFalse(RpgMakerExternalEngineModule.launchEntryIsFile)
+    }
+
+    @Test
+    fun resolvesRuffleByEngineAndAliases() {
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForEngine(EngineType.RUFFLE))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("internal.flash"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.flash"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("internal.ruffle"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias("external.ruffle"))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.moduleForAlias(RuffleExternalEngineModule.packageName))
+        assertSame(RuffleExternalEngineModule, ExternalEngineModuleRegistry.resolveModule(EngineType.RUFFLE))
+        assertTrue(ExternalEngineModuleRegistry.isExternalEngine(EngineType.RUFFLE))
+        assertTrue(RuffleExternalEngineModule.requiresGameDirectoryPath)
+        assertTrue(RuffleExternalEngineModule.launchEntryIsFile)
+        assertEquals(
+            "https://github.com/Weiss-UltimateSavior/RinneMobile/releases/download/test/RufflePlugin-1.02.00.apk",
+            RuffleExternalEngineModule.installUrl,
+        )
+        assertFalse(RenPyExternalEngineModule.launchEntryIsFile)
+        assertFalse(RenPy77ExternalEngineModule.launchEntryIsFile)
     }
 }

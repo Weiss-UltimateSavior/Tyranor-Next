@@ -7,6 +7,7 @@ import com.tyranor.next.core.settings.GraphicsSettingsCodec
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
+import com.tyranor.next.core.settings.RuffleOverride
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -149,6 +150,78 @@ class GameOverridePartitionsTest {
         val row = GameOverridePartitions.split("/games/migrated", blob, 1L)
         assertTrue(JSONObject(row.tyranoJson!!).has(PerGameSettingsStore.F_LEGACY_MIGRATED))
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+    }
+
+    @Test
+    fun winlatorModeIsPartitionedIntoTyrano() {
+        // 运行模式没有独立分区，必须显式建模进 tyrano；
+        // 只靠「未识别键兜底」会在未来收紧分区时静默丢键，把玩家的模式选择重置成推断值。
+        assertEquals(PerGameSettingsStore.F_WINLATOR_MODE, GameOverridePartitions.KEY_WINLATOR_MODE)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, GameOverridePartitions.KEY_WINLATOR_CONTAINER_ID)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, GameOverridePartitions.KEY_WINLATOR_CONTAINER_NAME)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, GameOverridePartitions.KEY_WINLATOR_GRAPHICS_DRIVER)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_DXWRAPPER, GameOverridePartitions.KEY_WINLATOR_DXWRAPPER)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE, GameOverridePartitions.KEY_WINLATOR_SCREEN_SIZE)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_LC_ALL, GameOverridePartitions.KEY_WINLATOR_LC_ALL)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_TZ, GameOverridePartitions.KEY_WINLATOR_TZ)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_BOX64_PRESET, GameOverridePartitions.KEY_WINLATOR_BOX64_PRESET)
+        assertEquals(PerGameSettingsStore.F_WINLATOR_SAVE, GameOverridePartitions.KEY_WINLATOR_SAVE)
+        assertTrue(
+            "全部 Winlator 覆盖键必须显式属于 tyrano 分区",
+            GameOverridePartitions.TYRANO_KEYS.containsAll(PerGameSettingsStore.CURRENT_OVERRIDE_FIELDS) &&
+                GameOverridePartitions.KEY_WINLATOR_CONTAINER_ID in GameOverridePartitions.TYRANO_KEYS &&
+                GameOverridePartitions.KEY_WINLATOR_CONTAINER_NAME in GameOverridePartitions.TYRANO_KEYS &&
+                GameOverridePartitions.KEY_WINLATOR_SAVE in GameOverridePartitions.TYRANO_KEYS,
+        )
+        assertTrue(
+            "运行模式必须显式属于 tyrano 分区",
+            GameOverridePartitions.KEY_WINLATOR_MODE in GameOverridePartitions.TYRANO_KEYS,
+        )
+
+        val blob = JSONObject().put(PerGameSettingsStore.F_WINLATOR_MODE, PerGameSettingsStore.WINLATOR_MODE_CONTAINER)
+        val row = GameOverridePartitions.split("/games/winlator", blob, 1L)
+        val tyrano = JSONObject(row.tyranoJson!!)
+        assertEquals(PerGameSettingsStore.WINLATOR_MODE_CONTAINER, tyrano.optString(PerGameSettingsStore.F_WINLATOR_MODE))
+        val restored = GameOverridePartitions.assemble(row)
+        assertEquals(PerGameSettingsStore.WINLATOR_MODE_CONTAINER, restored.optString(PerGameSettingsStore.F_WINLATOR_MODE))
+        assertEquals(blob.length(), restored.length())
+    }
+
+    @Test
+    fun winlatorOverridesRoundTripWithTypesIntact() {
+        // 十个逐游戏 Winlator 键一起走 split → assemble → toWinlatorOverride：
+        // 既覆盖「全部键都在 tyrano 分区」，也锁住 save 的 Boolean 类型不退化。
+        val blob = JSONObject().apply {
+            put(PerGameSettingsStore.F_WINLATOR_MODE, PerGameSettingsStore.WINLATOR_MODE_CUSTOM)
+            put(PerGameSettingsStore.F_WINLATOR_CONTAINER_ID, "5")
+            put(PerGameSettingsStore.F_WINLATOR_CONTAINER_NAME, "常規容器")
+            put(PerGameSettingsStore.F_WINLATOR_GRAPHICS_DRIVER, "vulkan")
+            put(PerGameSettingsStore.F_WINLATOR_DXWRAPPER, "wined3d")
+            put(PerGameSettingsStore.F_WINLATOR_SCREEN_SIZE, "1280x720")
+            put(PerGameSettingsStore.F_WINLATOR_LC_ALL, "ja_JP.UTF-8")
+            put(PerGameSettingsStore.F_WINLATOR_TZ, "Asia/Tokyo")
+            put(PerGameSettingsStore.F_WINLATOR_BOX64_PRESET, "PERFORMANCE")
+            put(PerGameSettingsStore.F_WINLATOR_SAVE, true)
+        }
+
+        val row = GameOverridePartitions.split("/games/winlator-roundtrip", blob, 1L)
+        val restored = GameOverridePartitions.assemble(row)
+
+        assertEquals(blob.length(), restored.length())
+        for (key in blob.keys()) {
+            assertEquals("键 $key", blob.get(key), restored.get(key))
+        }
+
+        val override = PerGameSettingsStore.toWinlatorOverride(restored)!!
+        assertEquals("5", override.containerId)
+        assertEquals("常規容器", override.containerName)
+        assertEquals("vulkan", override.graphicsDriver)
+        assertEquals("wined3d", override.dxwrapper)
+        assertEquals("1280x720", override.screenSize)
+        assertEquals("ja_JP.UTF-8", override.lcAll)
+        assertEquals("Asia/Tokyo", override.tz)
+        assertEquals("PERFORMANCE", override.box64Preset)
+        assertEquals(true, override.save)
     }
 
     @Test
@@ -339,6 +412,49 @@ class GameOverridePartitionsTest {
         }
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }
+    @Test
+    fun ruffleKeysArePartitionedIntoTyrano() {
+        val pairs = listOf(
+            GameOverridePartitions.KEY_RUFFLE_SCREEN_TIMEOUT to PerGameSettingsStore.F_RUFFLE_SCREEN_TIMEOUT,
+            GameOverridePartitions.KEY_RUFFLE_BACKEND to PerGameSettingsStore.F_RUFFLE_BACKEND,
+            GameOverridePartitions.KEY_RUFFLE_QUALITY to PerGameSettingsStore.F_RUFFLE_QUALITY,
+            GameOverridePartitions.KEY_RUFFLE_SCALE_MODE to PerGameSettingsStore.F_RUFFLE_SCALE_MODE,
+            GameOverridePartitions.KEY_RUFFLE_LETTERBOX to PerGameSettingsStore.F_RUFFLE_LETTERBOX,
+            GameOverridePartitions.KEY_RUFFLE_LOAD_BEHAVIOR to PerGameSettingsStore.F_RUFFLE_LOAD_BEHAVIOR,
+        )
+        pairs.forEach { (partitionKey, perGameKey) ->
+            assertEquals(perGameKey, partitionKey)
+            assertTrue("Ruffle 分区缺少字段 $perGameKey", perGameKey in GameOverridePartitions.TYRANO_KEYS)
+        }
+
+        val blob = JSONObject()
+            .put(PerGameSettingsStore.F_RUFFLE_SCREEN_TIMEOUT, "30")
+            .put(PerGameSettingsStore.F_RUFFLE_BACKEND, "vulkan")
+            .put(PerGameSettingsStore.F_RUFFLE_QUALITY, "best")
+            .put(PerGameSettingsStore.F_RUFFLE_SCALE_MODE, "noborder")
+            .put(PerGameSettingsStore.F_RUFFLE_LETTERBOX, "off")
+            .put(PerGameSettingsStore.F_RUFFLE_LOAD_BEHAVIOR, "blocking")
+
+        val row = GameOverridePartitions.split("/games/ruffle", blob, 1L)
+        val tyranoPartition = JSONObject(row.tyranoJson!!)
+        for (key in blob.keys()) {
+            assertTrue("Ruffle 键 $key 未落入 tyrano 分区", tyranoPartition.has(key))
+            assertEquals(blob.opt(key)?.toString(), GameOverridePartitions.assemble(row).opt(key)?.toString())
+        }
+        assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
+        assertEquals(
+            RuffleOverride(
+                screenTimeout = "30",
+                backend = "vulkan",
+                quality = "best",
+                scaleMode = "noborder",
+                letterbox = "off",
+                loadBehavior = "blocking",
+            ),
+            PerGameSettingsStore.toRuffleOverride(GameOverridePartitions.assemble(row)),
+        )
+    }
+
     @Test
     fun graphicsFamilyMarkersAndOrderedListsSurviveOwnedPartitionsWithoutLosingLegacyKeys() {
         val blob = JSONObject().put("anime4k_mode", "soft_l").put("art_graphics_monitor", true)

@@ -3,6 +3,10 @@
    for details.
 -->
 <full-backup-content>
+    <!-- Keep the default backup domains, including root/games and ordinary preferences,
+         files and other engine saves. A lone include would turn this into an allowlist
+         and omit unrelated app data. Preserve the exclusions below; quota/transport
+         policy still applies, so users should explicitly export important saves. -->
     <exclude domain="sharedpref" path="hikarinagi_auth.xml" />
     <!-- OAuth 令牌加密库：Keystore 密钥换机不可解密，必须排除 -->
     <exclude domain="sharedpref" path="hikarinagi_auth_secure.xml" />

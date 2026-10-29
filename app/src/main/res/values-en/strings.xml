@@ -149,6 +149,7 @@
     <string name="engine_desc_web_other_vn">WebOther/VN games using globalData.vndata or generic index.html pages</string>
     <string name="engine_desc_artemis">Artemis games using system.ini and .pfs archives</string>
     <string name="engine_desc_renpy">Ren’Py external APK module, launched after install-state detection</string>
+    <string name="engine_desc_ruffle">Ruffle external APK module for SWF / Flash games</string>
     <string name="engine_desc_siglus">SiglusEngine (Key / VisualArts), Gameexe and Scene.pck games</string>
     <string name="engine_desc_fvp">FVPEngine (FAVORITE), .hcb/.bch scripts with graph/voice packs</string>
     <string name="engine_desc_reallive">RealLive (VisualArt’s). Kanon SE / CLANNAD / Little Busters! and more</string>
@@ -271,6 +272,7 @@
     <string name="engine_settings_rpg_maker_title">RPG Maker engine settings</string>
     <string name="engine_settings_tyrano_title">Tyrano engine settings</string>
     <string name="engine_settings_renpy_title">Ren’Py engine settings</string>
+    <string name="engine_settings_ruffle_title">Ruffle engine settings</string>
     <string name="engine_settings_siglus_title">Siglus engine settings</string>
     <string name="engine_settings_siglus_language_title">Game language</string>
     <string name="engine_settings_siglus_language_auto">Engine default (JP)</string>
@@ -411,9 +413,19 @@
     <string name="engine_settings_fvp_font_hint">FVP only. TTC uses the first face. Missing glyphs fall back to system fonts. Restart to apply.</string>
     <string name="engine_settings_fvp_font_import_failed">Font import failed: choose a ttf/otf/ttc file</string>
     <string name="engine_settings_winlator_title">Winlator external launch</string>
-    <string name="engine_settings_winlator_follow_container">Follow container config</string>
+    <string name="engine_settings_winlator_follow_container">Use container config</string>
+    <string name="engine_settings_winlator_group_container">Container matching</string>
     <string name="engine_settings_winlator_container_id_title">Container ID</string>
     <string name="engine_settings_winlator_container_id_summary">0 or empty = auto (last used / only / first container)</string>
+    <string name="engine_settings_winlator_mode_title">Run mode</string>
+    <string name="engine_settings_winlator_mode_global">Follow global</string>
+    <string name="engine_settings_winlator_mode_container">Follow container</string>
+    <string name="engine_settings_winlator_mode_custom">Custom</string>
+    <string name="engine_settings_winlator_global_entry">View or edit Winlator global settings</string>
+    <string name="engine_settings_winlator_global_entry_summary">Open Winlator external launch in engine settings</string>
+    <string name="engine_settings_winlator_container_id_auto_by_name">Auto (container name wins)</string>
+    <string name="engine_settings_winlator_container_id_summary_per_game">Empty (not overridden) inherits the global container ID; an explicit 0 sends no ID (container name or Winlator decides). An inherited ID is ignored when only the name is set</string>
+    <string name="engine_settings_winlator_container_name_summary_per_game">Blank = no name; container ID wins when both are set. A name-only override does not inherit the global container ID.</string>
     <string name="engine_settings_winlator_container_name_title">Container name</string>
     <string name="engine_settings_winlator_container_name_summary">Empty = auto; container ID takes precedence over the name</string>
     <string name="engine_settings_winlator_graphics_driver_title">Graphics driver</string>
@@ -493,6 +505,7 @@
     <string name="engine_settings_engine_version_mz">Engine version - MZ</string>
     <string name="engine_settings_renpy_module_description">Ren’Py uses an external APK engine module and opens the plugin matching the selected version. The options below follow the global values by default and can be overridden per game.</string>
     <string name="engine_settings_renpy_module_description_global">Ren’Py uses an external APK engine module and opens the plugin matching the selected version.</string>
+    <string name="engine_settings_ruffle_module_description">Ruffle uses an external APK engine module to run SWF games. The options below follow the global values by default.</string>
     <string name="engine_settings_rpgmaker_module_description">RPG Maker XP/VX/VX Ace/mkxp-z runs through the external RPGM module. The options below follow the global values by default and can be overridden per game.</string>
     <string name="engine_settings_follow_global">Follow global</string>
     <string name="engine_settings_follow_global_with_value">Follow global · %1$s</string>
@@ -559,7 +572,7 @@
     <string name="save_import_zip">Import ZIP and overwrite</string>
     <string name="save_delete_title">Delete saves</string>
     <string name="save_delete_message">This will delete the currently manageable save files for “%1$s”. This cannot be undone.</string>
-    <string name="save_deleted_count">Deleted %1$d save entries</string>
+    <string name="save_deleted_count">Deleted %1$d save files</string>
     <string name="save_format_convert_title">Current save format is incompatible</string>
     <string name="save_format_convert_message">Found %1$d JoiPlay/PC standard-format save files. Convert them to Tyranor format?</string>
     <string name="save_format_convert_hashed_note">%1$d hashed saves (key_sha256) will not be converted</string>
@@ -579,7 +592,10 @@
     <string name="save_error_app_internal_unavailable">App internal storage is unavailable</string>
     <string name="save_location_krkr_scoped">KRKR isolated save directory</string>
     <string name="save_location_krkr_game_dir">KRKR game-directory saves</string>
-    <string name="save_location_krkr_sd_mirror">KRKR SD-card mirror saves (app-specific storage)</string>
+    <string name="save_location_krkr_sd_mirror">KRKR SD-card SAF mirror saves (app-specific storage)</string>
+    <string name="krkr_mirror_save_forced_note">Saves for SD-card games are managed by the SAF mirror directory and this switch has no effect. Both the engine and save management read/write the app-specific directory; savedata manually placed in the game directory is ignored.</string>
+    <string name="save_location_load_failed_note">Save location resolution failed; the information on this page may be incomplete or stale. Retry later to refresh it.</string>
+    <string name="krkr_mirror_save_import_hint">Import/export SD-card game saves here (app-specific SAF mirror directory); savedata manually placed in the game directory is not read by the engine.</string>
     <string name="save_error_ons_external_unavailable">ONS app-specific storage is unavailable</string>
     <string name="save_location_ons_scoped">ONS app-specific save directory</string>
     <string name="save_location_ons_game_dir">ONS in-game save directory</string>
@@ -596,6 +612,7 @@
     <string name="save_error_resolve_actual_dir">Unable to resolve the actual save directory</string>
     <string name="save_error_create_save_dir">Unable to create save directory</string>
     <string name="save_error_save_dir_unavailable">Save directory is unavailable</string>
+    <string name="save_error_resource_restore_conflict">Deletion cancelled: game resources inside the import transaction directories are protected (restore conflict or unreadable directory), so the saves were not deleted; resolve the issue and retry</string>
     <string name="save_error_no_files_in_zip">No save files found in the ZIP</string>
     <string name="save_error_read_import_zip">Unable to read import ZIP</string>
     <string name="save_error_duplicate_zip_entry">ZIP contains a duplicate file: %1$s</string>
@@ -650,6 +667,8 @@
     <string name="external_engine_denied">%1$s launch was denied by the system. Check the module permissions</string>
     <string name="external_engine_launch_failed">%1$s launch failed. Check the module permissions</string>
     <string name="external_rpgm_module_name">RPGM-1.22.00</string>
+    <string name="external_ruffle_module_name">Ruffle-1.02.00</string>
+    <string name="external_ruffle_resolve_swf_failed">Unable to locate the SWF launch file, so the Ruffle module cannot start</string>
     <string name="external_rpgm_resolve_dir_failed">Unable to resolve the real path for the RPGM game directory, so the external RPGM module cannot start</string>
 
     <string name="engine_settings_rpgm_module_card">RPG Maker RGSS Module</string>
@@ -725,6 +744,33 @@
     <string name="engine_settings_renpy_dont_use_gl2">Disable model-based rendering (GL2)</string>
     <string name="engine_settings_renpy_recompile">Recompile scripts</string>
     <string name="engine_settings_renpy_cheats">Cheats</string>
+
+    <string name="engine_settings_ruffle_card">Ruffle module</string>
+    <string name="engine_settings_ruffle_module_status">Module status</string>
+    <string name="engine_settings_ruffle_module_get">Download module</string>
+    <string name="engine_settings_ruffle_backend">Render backend</string>
+    <string name="engine_settings_ruffle_backend_auto">Auto</string>
+    <string name="engine_settings_ruffle_backend_opengl">OpenGL</string>
+    <string name="engine_settings_ruffle_backend_vulkan">Vulkan</string>
+    <string name="engine_settings_ruffle_quality">Quality</string>
+    <string name="engine_settings_ruffle_quality_low">Low</string>
+    <string name="engine_settings_ruffle_quality_medium">Medium</string>
+    <string name="engine_settings_ruffle_quality_high">High</string>
+    <string name="engine_settings_ruffle_quality_best">Best</string>
+    <string name="engine_settings_ruffle_scale_mode">Scale mode</string>
+    <string name="engine_settings_ruffle_scale_exactfit">Exact fit</string>
+    <string name="engine_settings_ruffle_scale_noborder">No border</string>
+    <string name="engine_settings_ruffle_scale_noscale">No scale</string>
+    <string name="engine_settings_ruffle_scale_showall">Show all</string>
+    <string name="engine_settings_ruffle_letterbox">Letterbox</string>
+    <string name="engine_settings_ruffle_load_behavior">Load behavior</string>
+    <string name="engine_settings_ruffle_load_streaming">Streaming</string>
+    <string name="engine_settings_ruffle_load_delayed">Delayed</string>
+    <string name="engine_settings_ruffle_load_blocking">Blocking</string>
+    <string name="engine_settings_ruffle_screen_timeout">Auto-close (minutes)</string>
+    <string name="engine_settings_ruffle_screen_timeout_off">Never auto-close</string>
+    <string name="engine_settings_ruffle_screen_timeout_minutes">%1$d min</string>
+    <string name="engine_settings_ruffle_note">When a SWF record points at a file, its folder is used automatically. Grant “All files access” to this app before launch so it can resolve the game folder; the Ruffle plugin may request its own storage permission separately. The plugin always runs in landscape. Set auto-close to 0 to disable it.</string>
 
     <string name="plugin_unknown_engine">Unknown engine plugin: %1$s</string>
     <string name="plugin_install_failed">Engine plugin installation failed. Restart the app or check that the install package is complete</string>
@@ -856,7 +902,6 @@
     <string name="ethornell_error_bootstrap">No supported system.arc index with an ipl._bp bootstrap was found.</string>
     <string name="ethornell_error_font">Invalid or unreadable font. Import a TTF, TTC, OTF or OTC font again.</string>
     <string name="ethornell_error_userdata">Cannot create private Ethornell user data. Check available storage space.</string>
-
     <!-- First-launch quick start -->
     <string name="onboarding_title">Quick start</string>
     <string name="onboarding_welcome_title">Welcome to Tyranor Next</string>
@@ -888,4 +933,5 @@
     <string name="onboarding_coach_engine_body">Check built-in engines, external modules, and emulators here.</string>
     <string name="onboarding_coach_settings_title">Adjust settings anytime</string>
     <string name="onboarding_coach_settings_body">Adjust appearance, navigation, scanning, and input from Settings.</string>
+    <string name="launch_empty_krkr_sd_mirror">No SD-card game resources could be read. Check directory access and storage, then retry.</string>
 </resources>
