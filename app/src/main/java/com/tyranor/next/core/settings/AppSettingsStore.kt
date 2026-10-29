@@ -206,7 +206,7 @@ object AppSettingsStore {
     val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
 
     /** 游戏页引擎过滤器内存态（EngineType.name，空串表示全部）。 */
-    val gameFilterEngineState: MutableStateFlow<String> = MutableStateFlow("")
+    val gameFilterEngineState: MutableStateFlow<String> = MutableStateFlow(GAME_FILTER_ENGINE_ALL)
 
     /** 游戏页游玩状态过滤器内存态（all / played / unplayed）。 */
     val gameFilterPlayedState: MutableStateFlow<String> = MutableStateFlow(GAME_FILTER_PLAYED_ALL)

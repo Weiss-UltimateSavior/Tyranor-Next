@@ -4,8 +4,11 @@ package com.tyranor.next.core.game.model
  * 游戏库排序 / 过滤的取值常量（issue #118）。
  *
  * 放在 model 层而不是设置层：排序/过滤的纯函数（[sortGames] / [filterGames]）与
- * `AppSettingsStore` 共用同一套取值，谁都不必反向 import 对方，core 内部保持
- * `settings → model`、`engine → model` 的单向依赖。
+ * `AppSettingsStore` 共用同一套取值，两边都不必 import 对方。
+ *
+ * 注意：这只去掉了「排序/过滤」这一条反向依赖，core 内部既有的包间环（`game.model ↔ engine`
+ * 由 `ScanGame` 依赖 `EngineType` 构成，`settings ↔ engine` 由引擎设置解析构成）依然存在，
+ * 不在本 PR 的处理范围内。
  */
 object GameFilterOptions {
 

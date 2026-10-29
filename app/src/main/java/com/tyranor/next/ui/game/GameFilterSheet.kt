@@ -252,7 +252,7 @@ private fun FilterChipCard(
  *   画 0.5dp 发丝边），用于横向划屏的引擎行，避免一排实心白块压过排序卡；
  * - 否则：白卡底（抽屉面板是页面灰底，白卡形成反差）+ 玻璃风格的发丝边。
  *
- * 高度统一 48dp：既是视觉尺寸也是最小触控区（AGENTS 交互区域要求）。
+ * 高度统一 48dp：视觉尺寸即触控区，避免「看起来 46dp、实际可点区域更小」的偏差。
  */
 @Composable
 private fun FilterChoiceBase(

@@ -6,7 +6,7 @@ package com.tyranor.next.core.game.model
 // （否则会出现 `ui/home → ui/game` 这种横向依赖）。两者都是纯函数，不依赖 Compose，
 // 也不读写任何状态，测试可以直接在 JVM 上跑。取值常量见同包 [GameFilterOptions]。
 
-/** 按 [sortMode]（`AppSettingsStore.GAME_SORT_*`）排序；未知模式回落为字母序。 */
+/** 按 [sortMode]（[GameFilterOptions.GAME_SORT_ALPHA] 等）排序；未知模式回落为字母序。 */
 fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
     return when (sortMode) {
         GameFilterOptions.GAME_SORT_BRACKET_TAG -> games.sortedWith(

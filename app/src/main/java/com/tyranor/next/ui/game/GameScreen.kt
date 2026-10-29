@@ -531,8 +531,8 @@ private fun GameLibraryContent(
     // 否则从第 30 张筛到 3 张时会停在新列表的尾部（封面流的分页位置另见 GameCoverFlow）。
     // 条件用 rememberSaveable 记住：旋转或进程重建后 effect 会重跑，但条件没变，
     // 此时应保留 gridState 自己恢复的滚动位置，不能无条件拉回顶部。
-    // 等库加载完成再记签名：进程重建后首帧的 gameSort 还是默认值（由 MainScreen 异步灌入），
-    // 直接比对会把「条件变了」误判出来，把 gridState 刚恢复的滚动位置清掉。
+    // 等库加载完成再记签名：排序与过滤虽已在 Application.onCreate 灌入，但库是异步加载的，
+    // 首帧直接比对仍可能把「条件刚就位」误判成变化，清掉 gridState 恢复的滚动位置。
     val filterSignature = "$engineFilter|$playedFilter|$gameSort"
     var lastFilterSignature by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(filterSignature, loaded) {
