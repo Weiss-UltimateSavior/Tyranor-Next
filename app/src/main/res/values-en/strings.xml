@@ -964,7 +964,7 @@
     <string name="save_version_previous_pending">The previous switch is incomplete. This selection has not been applied. Discard the previous metadata to continue.</string>
     <string name="save_version_discard_switch">Discard and switch</string>
     <string name="save_version_recover">Resolve incomplete switch</string>
-    <string name="save_version_recovery_policy">Keep the current save and clear the interrupted selection. The next local interop sync will use the current save.</string>
+    <string name="save_version_recovery_policy">Keep the current saves and any valid historical sources; only interrupted switch records are cleared. No version is imported. Future WebDAV syncs use the current save contents.</string>
     <string name="webdav_error_cloud_repair">Remove the damaged cloud save and retry</string>
     <string name="save_sync_cleanup_failed">“%1$s” remains in the library. Save sync data cleanup failed; please retry</string>
     <string name="webdav_sync_busy_skipped">Sync completed; running games were skipped</string>

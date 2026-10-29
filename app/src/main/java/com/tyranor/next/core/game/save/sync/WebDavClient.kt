@@ -1,6 +1,10 @@
 package com.tyranor.next.core.game.save.sync
 
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -56,6 +60,11 @@ class WebDavClient(
         .callTimeout(10, TimeUnit.MINUTES).retryOnConnectionFailure(false).build()
     private var homeReady = false
     private val knownFolders = HashSet<String>()
+    private var requestAdmission: suspend (() -> Unit) -> Unit = { dispatch -> dispatch() }
+
+    internal fun setRequestAdmission(admit: suspend (() -> Unit) -> Unit) {
+        requestAdmission = admit
+    }
 
     suspend fun list(game: RemoteSaveGame): List<RemoteSaveVersion> {
         val current = listFolder(folder(game))
@@ -319,44 +328,55 @@ class WebDavClient(
         request: Request,
         cleanup: Boolean = false,
         consume: (Response, () -> Unit) -> T,
-    ): T = suspendCancellableCoroutine { continuation ->
-        if (!continuation.isActive) return@suspendCancellableCoroutine
-        if (!cleanup && enabledCheck?.invoke() == false) {
-            continuation.resumeWithException(SaveSyncException(SaveSyncError.DISABLED))
-            return@suspendCancellableCoroutine
-        }
-        val call = client.newCall(request)
-        if (cleanup) call.timeout().timeout(5, TimeUnit.SECONDS)
-        continuation.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                if (continuation.isActive) continuation.resumeWithException(SaveSyncException(SaveSyncError.NETWORK, cause = e))
-            }
-            override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    try {
-                        val check = {
-                            if (!continuation.isActive) throw kotlinx.coroutines.CancellationException()
-                            if (!cleanup && enabledCheck?.invoke() == false) throw SaveSyncException(SaveSyncError.DISABLED)
-                        }
-                        check()
-                        val value = consume(response, check)
-                        if (continuation.isActive) continuation.resume(value)
-                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                        continuation.cancel(cancelled)
-                    } catch (failure: Throwable) {
-                        if (continuation.isActive) {
-                            val terminal = when {
-                                failure is SaveSyncException -> failure
-                                failure is Exception -> SaveSyncException(SaveSyncError.NETWORK, cause = failure)
-                                else -> failure
-                            }
-                            continuation.resumeWithException(terminal)
-                        }
+    ): T = supervisorScope {
+        currentCoroutineContext().ensureActive()
+        var response: Deferred<T>? = null
+        requestAdmission {
+            check(response == null)
+            // UNDISPATCHED enqueues while the admission locks are held; await is outside.
+            response = async(start = CoroutineStart.UNDISPATCHED) {
+                suspendCancellableCoroutine { continuation ->
+                    if (!continuation.isActive) return@suspendCancellableCoroutine
+                    if (!cleanup && enabledCheck?.invoke() == false) {
+                        continuation.resumeWithException(SaveSyncException(SaveSyncError.DISABLED))
+                        return@suspendCancellableCoroutine
                     }
+                    val call = client.newCall(request)
+                    if (cleanup) call.timeout().timeout(5, TimeUnit.SECONDS)
+                    continuation.invokeOnCancellation { call.cancel() }
+                    call.enqueue(object : Callback {
+                        override fun onFailure(call: Call, e: IOException) {
+                            if (continuation.isActive) continuation.resumeWithException(SaveSyncException(SaveSyncError.NETWORK, cause = e))
+                        }
+                        override fun onResponse(call: Call, response: Response) {
+                            response.use {
+                                try {
+                                    val check = {
+                                        if (!continuation.isActive) throw kotlinx.coroutines.CancellationException()
+                                        if (!cleanup && enabledCheck?.invoke() == false) throw SaveSyncException(SaveSyncError.DISABLED)
+                                    }
+                                    check()
+                                    val value = consume(response, check)
+                                    if (continuation.isActive) continuation.resume(value)
+                                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                    continuation.cancel(cancelled)
+                                } catch (failure: Throwable) {
+                                    if (continuation.isActive) {
+                                        val terminal = when {
+                                            failure is SaveSyncException -> failure
+                                            failure is Exception -> SaveSyncException(SaveSyncError.NETWORK, cause = failure)
+                                            else -> failure
+                                        }
+                                        continuation.resumeWithException(terminal)
+                                    }
+                                }
+                            }
+                        }
+                    })
                 }
             }
-        })
+        }
+        checkNotNull(response).await()
     }
 
     override fun close() {

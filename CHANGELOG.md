@@ -17,9 +17,9 @@
 
 ### 修复
 
-- 修复同一实际存档目录的多别名并发：导入前持久化共享 owner/token/revision，旧启动、恢复与自动上传在清理完成前暂停，清理覆盖已无法解析的持久 alias。
-- 修复恢复链目录绑定与五版维护：保护 pending `selected` / `beforeHash`，跨目录或旧目录 revision 暂停 `SAVE_LOCATION_CHANGED`，不同 uncommitted token 不再清掉较早完成的 S→N；已证明的 precommit abort 恢复旧 revision，completed unbound promotion 可从“处理未完成切换”恢复 active N 与已验证历史 S，无需先临时激活 S。
-- 修复关闭 WebDAV 的清理竞态：同一 prefs 提交持久化关闭状态与 generation，旧 session 立即失效并跨重启保持失效；异步清理只移除精确捕获值，快速重新开启与在途 launch 不会误删 replacement，也不会继承旧 pending baseline。
+- 修复同一实际存档目录的多别名并发：导入前持久化共享 owner/token/revision，owner 保留到 journal 清理成功；清理前持久化 `completionCommitted`，即使 journal 已删除而 owner 残留，也能按已知结果释放。旧 token 只能续接自身或 legacy 空 epoch，不能回退较新的 alias revision。
+- 修复恢复链目录绑定与五版维护：保护 pending `selected` / `beforeHash` 及仍可恢复的 legacy/stale promotion source，跨目录或旧目录 revision 暂停 `SAVE_LOCATION_CHANGED`，不同 uncommitted token 不再清掉较早完成的 S→N；已证明的 precommit abort 恢复旧 revision。completed promotion 的目录或 revision 缺失、为空或不匹配时，“处理未完成切换”统一恢复所有已接入统一存档管理引擎的 active N 与已验证历史 S，不导入存档；MV/MZ 互通仍受独立开关与格式边界约束。
+- 修复关闭 WebDAV 的清理竞态：同一 prefs 提交持久化关闭状态与 generation，旧 session 立即失效并跨重启保持失效；启动前忙碌判定忽略旧 generation 的 ticket 与启动宽限，但保留独立宿主进程探测。异步清理只移除精确捕获值，快速重新开启与在途 launch 不会误删 replacement，也不会继承旧 pending baseline。
 - 修复旧前后台事件污染新会话的竞争；自动上传及 baseline 缓存绑定实际存档目录，独立存档设置变更后保留任务并提示暂停，不误读新目录或丢弃旧进度。
 - 修复损坏 ZIP 挤占五版有效历史配额；超限淘汰前先校验并隔离坏文件。激活暂存损坏/缺失时允许复用有效历史源，同 token 恢复保留 S→N 单一更新链；可读云端目录名截断不再切断 Unicode 代理对。
 - 修复五版历史已满与记录哈希损坏时的激活恢复：同时保护所选源 S 与当前存档 N，校验保留完成后才清理恢复 ZIP；统一 ZIP 中央目录与实际导入条目校验。
@@ -30,7 +30,7 @@
 - 修复游戏首次启动前手动切换版本时，自动上传因缺少宿主记录而持续判为运行中的问题。
 - 修正已提交切换在继续游玩后再次选择同一版本时的假成功；保留先上传 S 再保存 N 的恢复链，补充真实服务编排回归。
 - 缓存宿主零 Activity 经退出宽限视为空闲；进程列表为空时失败关闭，并补充持久 PID/进程身份探测。损坏的 session/baseline 隔离后重建，持久 journal 不静默重置。
-- 网络等待不再占本地版本锁；上传源固定副本，切换/身份修改/删除使旧传输收尾失效。最新云端版本被本地淘汰后可重新拉取。
+- 每个 WebDAV exchange（含嵌套请求）在发出前按持久 generation 与当前 revision/目录归属重新准入，网络 I/O 不持有本地版本或目录锁；上传源固定副本，切换/身份修改/删除使旧传输的后续请求失效。最新云端版本被本地淘汰后可重新拉取。
 - 删除游戏清理其全部本地同步数据并保留失败重试入口，不删除云端历史；导入中断时以 URI/token 证明提交，无证据的旧备份留存为 import_orphan，损坏 journal 的 archive 先救档再清理。
 - 补齐密码无障碍、非搜索输入 IME、长弹窗滚动、恢复时间确认、同步方向状态恢复与危险色；加固 WebDAV XML 结构上限并扩大 macOS CI 触发范围。
 

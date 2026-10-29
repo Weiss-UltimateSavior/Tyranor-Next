@@ -149,4 +149,49 @@ class SaveDirectoryActivationStoreTest {
         assertEquals(priorCompleteToken, reopened.revision(activeKey))
         assertTrue(reopened.owned("alias-B").isEmpty())
     }
+
+    @Test
+    fun completedOutcomeSurvivesRestartWithoutReleasingOtherAliasesBeforeJournalCleanup() {
+        val root = temp.newFolder("pending-cleanup")
+        val store = SaveDirectoryActivationStore(root)
+        store.begin("directory", "alias-A", "token-A")
+        store.prepareCompletion("directory", "alias-A", "token-A", committed = true)
+
+        val reopened = SaveDirectoryActivationStore(root)
+        assertEquals(true, reopened.owned("alias-A").single().committed)
+        assertEquals(SaveSyncError.SELECTION_INCOMPLETE, assertThrows(SaveSyncException::class.java) {
+            reopened.begin("directory", "alias-B", "token-B")
+        }.code)
+        reopened.resume("directory", "alias-A", "token-A")
+        assertEquals(true, reopened.owned("alias-A").single().committed)
+        reopened.complete("directory", "alias-A", "token-A")
+        reopened.begin("directory", "alias-B", "token-B")
+        reopened.complete("directory", "alias-B", "token-B")
+
+        assertEquals(SaveSyncError.SELECTION_INCOMPLETE, assertThrows(SaveSyncException::class.java) {
+            reopened.resume("directory", "alias-A", "token-A")
+        }.code)
+        assertEquals("token-B", reopened.revision("directory"))
+        assertTrue(reopened.owned("alias-A").isEmpty())
+    }
+
+    @Test
+    fun abortedOutcomeRetainsFenceAndOriginalRevisionUntilJournalCleanupCompletes() {
+        val root = temp.newFolder("aborted-cleanup")
+        val store = SaveDirectoryActivationStore(root)
+        store.begin("directory", "alias-A", "previous")
+        store.complete("directory", "alias-A", "previous")
+        store.begin("directory", "alias-A", "aborted")
+        store.prepareCompletion("directory", "alias-A", "aborted", committed = false)
+
+        val reopened = SaveDirectoryActivationStore(root)
+        assertEquals(false, reopened.owned("alias-A").single().committed)
+        assertEquals("aborted", reopened.revision("directory"))
+        assertEquals(SaveSyncError.SELECTION_INCOMPLETE, assertThrows(SaveSyncException::class.java) {
+            reopened.complete("directory", "alias-A", "aborted", committed = true)
+        }.code)
+        reopened.complete("directory", "alias-A", "aborted", committed = false)
+        assertEquals("previous", reopened.revision("directory"))
+        assertTrue(reopened.owned("alias-A").isEmpty())
+    }
 }

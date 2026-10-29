@@ -964,7 +964,7 @@
     <string name="save_version_previous_pending">前回の切り替えが未完了のため、今回は実行されていません。前回の情報を破棄して切り替えられます。</string>
     <string name="save_version_discard_switch">破棄して切り替え</string>
     <string name="save_version_recover">未完了の切り替えを修復</string>
-    <string name="save_version_recovery_policy">現在のセーブを保持して中断状態を解除します。次回の相互同期は現在のセーブを優先します。</string>
+    <string name="save_version_recovery_policy">現在のセーブと有効な過去のソースを保持し、中断された切り替え記録だけを削除します。バージョンはインポートされません。以降の WebDAV 同期では現在のセーブ内容を使用します。</string>
     <string name="webdav_error_cloud_repair">クラウドの破損セーブを削除して再試行してください</string>
     <string name="save_sync_cleanup_failed">「%1$s」はライブラリに保持されています。セーブ同期データの削除に失敗しました。再試行してください</string>
     <string name="webdav_sync_busy_skipped">同期が完了しました。実行中のゲームはスキップしました</string>

@@ -14,6 +14,25 @@ internal fun saveSyncGenerationAfterToggle(previous: Long?, wasEnabled: Boolean,
         else -> previous ?: 0L
     }
 
+/** Keep every URI key so native host probing remains independent of session generation. */
+internal fun generationFilteredSessionEvidence(
+    relatedUris: Collection<String>,
+    generation: Long,
+    loadSession: (String) -> JSONObject,
+): Map<String, JSONObject> = relatedUris.associateWith { uri ->
+    loadSession(uri).takeIf { saveSessionGenerationMatches(it, generation) } ?: JSONObject()
+}
+
+/** An ephemeral native-start hint belongs to the same enable epoch as launch admission. */
+internal data class NativeLaunchGrace(val generation: Long, val untilMillis: Long, val token: String)
+
+internal fun nativeLaunchGraceActive(grace: NativeLaunchGrace?, generation: Long, nowMillis: Long): Boolean =
+    // A caller with an older snapshot must still respect a newer admitted launch.
+    grace != null && grace.generation >= generation && grace.untilMillis > nowMillis
+
+internal fun nativeLaunchGraceOwnedBy(grace: NativeLaunchGrace?, generation: Long, token: String): Boolean =
+    grace != null && grace.generation == generation && grace.token == token
+
 /** A ticket identity captured when save sync is disabled. */
 internal data class DisabledSaveSession(
     val key: String,

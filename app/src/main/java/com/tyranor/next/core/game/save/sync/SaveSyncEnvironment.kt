@@ -16,6 +16,11 @@ internal interface SaveSyncEnvironment {
     val enabled: Boolean
     val cacheDirectory: File
     fun config(): WebDavConfig
+    fun generation(): Long = 0L
+    fun admitGeneration(generation: Long, dispatch: () -> Unit) {
+        if (!enabled || generation() != generation) throw SaveSyncException(SaveSyncError.DISABLED)
+        dispatch()
+    }
     fun games(): List<ScanGame>
     fun available(game: ScanGame): Boolean
     fun running(game: ScanGame): Boolean
@@ -46,6 +51,8 @@ internal interface SaveSyncEnvironment {
 }
 
 internal interface SaveSyncTransport : AutoCloseable {
+    /** A transaction supplies its live admission check, including nested DAV requests. */
+    fun setRequestAdmission(admit: suspend (() -> Unit) -> Unit) = Unit
     suspend fun list(game: RemoteSaveGame): List<RemoteSaveVersion>
     suspend fun download(game: RemoteSaveGame, remote: RemoteSaveVersion, destination: File)
     suspend fun upload(game: RemoteSaveGame, version: SaveVersion, source: File): WebDavClient.UploadResult
@@ -64,6 +71,12 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
     override val enabled get() = WebDavSettingsStore.isEnabled(context)
     override val cacheDirectory: File get() = context.cacheDir
     override fun config() = WebDavSettingsStore.load(context)
+    override fun generation() = WebDavSettingsStore.sessionGeneration(context)
+    override fun admitGeneration(generation: Long, dispatch: () -> Unit) {
+        if (WebDavSettingsStore.whileEnabled(context, generation) { dispatch(); true } != true) {
+            throw SaveSyncException(SaveSyncError.DISABLED)
+        }
+    }
     override fun games() = GameLibraryFacade.loadGames(context)
     override fun available(game: ScanGame) = manager.resolveSaveLocation(game).available
     override fun running(game: ScanGame) = SaveSyncRuntime.isGameRunning(context, game)
@@ -114,16 +127,20 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
         SaveSyncRuntime.retireDirectorySessions(context, activeKey)
     override fun openClient(config: WebDavConfig): SaveSyncTransport {
         val client = WebDavClient(config, cacheDirectory) { enabled }
-        return object : SaveSyncTransport {
-            override suspend fun list(game: RemoteSaveGame) = client.list(game)
-            override suspend fun download(game: RemoteSaveGame, remote: RemoteSaveVersion, destination: File) = client.download(game, remote, destination)
-            override suspend fun upload(game: RemoteSaveGame, version: SaveVersion, source: File) = client.upload(game, version, source)
-            override suspend fun refresh(game: RemoteSaveGame, previous: RemoteSaveVersion, publication: SaveVersion, source: File) = client.refresh(game, previous, publication, source)
-            override suspend fun verifyVersion(game: RemoteSaveGame, remote: RemoteSaveVersion) = client.verifyVersion(game, remote)
-            override suspend fun discardCorruptPublication(game: RemoteSaveGame, remote: RemoteSaveVersion,
-                beforeDelete: suspend () -> Unit) = client.discardCorruptPublication(game, remote, beforeDelete)
-            override suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion) = client.delete(game, remote)
-            override fun close() = client.close()
-        }
+        return WebDavSaveSyncTransport(client)
     }
+}
+
+/** The same request-guard forwarding is used on Android and in service/HTTP regressions. */
+internal class WebDavSaveSyncTransport(private val client: WebDavClient) : SaveSyncTransport {
+    override fun setRequestAdmission(admit: suspend (() -> Unit) -> Unit) = client.setRequestAdmission(admit)
+    override suspend fun list(game: RemoteSaveGame) = client.list(game)
+    override suspend fun download(game: RemoteSaveGame, remote: RemoteSaveVersion, destination: File) = client.download(game, remote, destination)
+    override suspend fun upload(game: RemoteSaveGame, version: SaveVersion, source: File) = client.upload(game, version, source)
+    override suspend fun refresh(game: RemoteSaveGame, previous: RemoteSaveVersion, publication: SaveVersion, source: File) = client.refresh(game, previous, publication, source)
+    override suspend fun verifyVersion(game: RemoteSaveGame, remote: RemoteSaveVersion) = client.verifyVersion(game, remote)
+    override suspend fun discardCorruptPublication(game: RemoteSaveGame, remote: RemoteSaveVersion,
+        beforeDelete: suspend () -> Unit) = client.discardCorruptPublication(game, remote, beforeDelete)
+    override suspend fun delete(game: RemoteSaveGame, remote: RemoteSaveVersion) = client.delete(game, remote)
+    override fun close() = client.close()
 }

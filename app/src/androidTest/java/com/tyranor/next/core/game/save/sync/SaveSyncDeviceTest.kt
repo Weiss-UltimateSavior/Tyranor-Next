@@ -25,8 +25,10 @@ import com.tyranor.next.ui.save.WebDavSettingsActivity
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -139,6 +141,46 @@ class SaveSyncDeviceTest {
         }
     }
 
+    @Test(timeout = 60_000)
+    fun oldNativeLaunchEvidenceCannotRejectReplacementAfterQuickReenable() = runBlocking {
+        clearOwnedProbeEvidence()
+        withFixture { fixture ->
+            fixture.write("native-replacement-baseline")
+            fixture.configure(SaveSyncMode.UPLOAD_ONLY)
+
+            assertReplacementSurvivesDisableSweep(fixture, fixture.game)
+            assertEquals(0, fixture.server.requestCount("PUT"))
+        }
+    }
+
+    @Test(timeout = 60_000)
+    fun oldExternalYurisTicketCannotRejectReplacementAfterQuickReenable() = runBlocking {
+        clearOwnedProbeEvidence()
+        withFixture { fixture ->
+            val yurisRoot = File(fixture.root, "yuris-game").apply { require(mkdirs()) }
+            val yurisSave = File(yurisRoot, "save").apply { require(mkdirs()) }
+            File(yurisSave, "slot.dat").writeText("yuris-replacement-baseline")
+            val yuris = ScanGame(
+                title = "WebDAV acceptance YURIS ${yurisRoot.name}",
+                uri = Uri.fromFile(yurisRoot).toString(),
+                engine = EngineType.YURIS,
+                launchTarget = yurisRoot.absolutePath,
+            )
+            fixture.configure(SaveSyncMode.UPLOAD_ONLY)
+            GameLibraryFacade.updateGames(fixture.context) { it + yuris }
+            try {
+                assertReplacementSurvivesDisableSweep(fixture, yuris)
+                assertEquals(0, fixture.server.requestCount("PUT"))
+            } finally {
+                try {
+                    fixture.service.clearGame(yuris)
+                } finally {
+                    GameLibraryFacade.removeGame(fixture.context, yuris.uri)
+                }
+            }
+        }
+    }
+
     @Test
     fun explicitRestoreCanFlushWithoutEverLaunchingAGameHost() = runBlocking {
         clearOwnedProbeEvidence()
@@ -201,6 +243,92 @@ class SaveSyncDeviceTest {
                 assertNull(fixture.server.failure)
             }
         }
+    }
+
+    private suspend fun assertReplacementSurvivesDisableSweep(
+        fixture: Fixture,
+        game: ScanGame,
+    ) {
+        val context = fixture.context
+        val sessions = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"))
+        val key = SaveContentHash.text(game.uri)
+        val activeKey = SaveSyncRuntime.activeKey(context, game)
+        var replacement: SaveSyncRuntime.LaunchTicket? = null
+        try {
+            val observed = SaveSyncLocks.active(activeKey) {
+                val oldGeneration = WebDavSettingsStore.sessionGeneration(context)
+                val oldTicketOrNull = SaveSyncRuntime.prepareLaunch(context, game)
+                assertNotNull("The old launch must create its session evidence", oldTicketOrNull)
+                val oldTicket = oldTicketOrNull ?: error("Old launch ticket was null")
+                val seededAt = System.currentTimeMillis()
+                val previous = sessions.load(key)
+                    .put("returned", false)
+                    .put("startedAt", seededAt)
+                sessions.save(key, previous)
+                assertEquals(oldTicket.token, previous.optString("token"))
+                assertEquals(oldGeneration, previous.optLong("enabledGeneration", -1L))
+                assertEquals(activeKey, previous.optString("activeKey"))
+                assertFalse(previous.optBoolean("returned", false))
+                assertEquals(seededAt, previous.optLong("startedAt"))
+                assertTrue(
+                    "The old launch must still be inside its start grace",
+                    System.currentTimeMillis() - seededAt in 0..15_000L,
+                )
+                assertTrue(
+                    "The old evidence must initially make the real coordinator report busy",
+                    SaveSyncRuntime.isGameRunning(context, game),
+                )
+
+                val observedBeforeDisable = snapshotDisabledSaveSessions(sessions)
+                assertTrue(observedBeforeDisable.any { it.key == key && it.token == oldTicket.token })
+
+                WebDavSettingsStore.setEnabled(context, false)
+                WebDavSettingsStore.setEnabled(context, true)
+                val enabledGeneration = WebDavSettingsStore.sessionGeneration(context)
+                assertEquals(oldGeneration + 1L, enabledGeneration)
+                assertFalse(
+                    "After re-enable, the old generation must not supply launch evidence",
+                    SaveSyncRuntime.isGameRunning(context, game),
+                )
+
+                val ticketOrNull = SaveSyncRuntime.prepareLaunch(context, game)
+                assertNotNull("The replacement launch must receive a ticket", ticketOrNull)
+                val ticket = ticketOrNull ?: error("Replacement launch ticket was null")
+                replacement = ticket
+                val current = sessions.load(key)
+                assertNotEquals(oldTicket.token, ticket.token)
+                assertEquals(ticket.token, current.optString("token"))
+                assertEquals(enabledGeneration, current.optLong("enabledGeneration", -1L))
+                assertEquals(activeKey, current.optString("activeKey"))
+                if (game.engine != EngineType.YURIS) {
+                    // Leave only the new in-memory grace as native startup evidence.
+                    sessions.save(key, current.put("startedAt", 0L).put("returned", true))
+                }
+                SaveSyncRuntime.finishLaunch(context, game, oldTicket, success = false)
+                SaveSyncRuntime.finishLaunch(context, game, null, success = false)
+                assertEquals(ticket.token, sessions.load(key).optString("token"))
+                assertTrue("Old or missing tickets must not clear the replacement launch grace",
+                    SaveSyncRuntime.isGameRunning(context, game))
+                observedBeforeDisable
+            }
+
+            // setEnabled(false) queued this same snapshot; replay it after release to make
+            // the active-lock race deterministic before checking the replacement token.
+            discardDisabledSaveSessions(sessions, observed)
+            val afterSweep = sessions.load(key)
+            assertEquals("The queued disable sweep must retain the replacement token",
+                replacement!!.token, afterSweep.optString("token"))
+            assertEquals(WebDavSettingsStore.sessionGeneration(context),
+                afterSweep.optLong("enabledGeneration", -1L))
+        } finally {
+            SaveSyncRuntime.finishLaunch(context, game, replacement, success = false)
+        }
+
+        assertFalse(
+            "Failed launch cleanup must remove the replacement session",
+            sessions.load(key).has("token"),
+        )
+        assertFalse(SaveSyncRuntime.isGameRunning(context, game))
     }
 
     private fun stage(message: String) {

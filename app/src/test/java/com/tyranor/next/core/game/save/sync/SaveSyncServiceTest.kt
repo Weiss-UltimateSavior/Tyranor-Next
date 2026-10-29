@@ -512,6 +512,107 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun listVersionsThenRecoveryProtectsLegacyUnboundPromotionSourceAtSixVersionOverflow() = runBlocking {
+        verifyLegacyPromotionOverflowRecovery(legacyUnbound = true)
+    }
+
+    @Test
+    fun listVersionsThenRecoveryProtectsStaleBoundPromotionSourceAtSixVersionOverflow() = runBlocking {
+        verifyLegacyPromotionOverflowRecovery(legacyUnbound = false)
+    }
+
+    @Test
+    fun listVersionsThenRecoveryProtectsPromotionWithEmptyDirectoryEpoch() = runBlocking {
+        verifyLegacyPromotionOverflowRecovery(legacyUnbound = false, emptyEpoch = true)
+    }
+
+    private suspend fun verifyLegacyPromotionOverflowRecovery(legacyUnbound: Boolean, emptyEpoch: Boolean = false) {
+        val harness = Harness(temp)
+        val game = harness.addGame(if (legacyUnbound) "legacy-unbound-overflow" else "stale-bound-overflow")
+        harness.identify(game)
+        val key = harness.key(game)
+        val selectedTime = 1_700_000_000_000L
+        val selected = harness.addSnapshot(game, "oldest-only-S", selectedTime)
+        repeat(5) { index ->
+            harness.stageSnapshot(game, "newer-$index", selectedTime + index + 1)
+        }
+        assertEquals(6, harness.snapshots.list(key).size)
+        assertEquals(1, harness.snapshots.list(key).count { it.contentHash == selected.contentHash })
+        for (version in harness.snapshots.list(key)) {
+            assertTrue(harness.snapshots.isValid(key, version))
+        }
+        val current = harness.setActive(game, "active-only-N")
+        assertFalse(harness.snapshots.list(key).any { it.contentHash == current })
+        val state = harness.states.load(key)
+            .put("promotionFromHash", selected.contentHash)
+            .put("promotionFromTime", selected.createdAt)
+            .put("promotionAt", selected.createdAt + 100L)
+            .put("promotionBaseHash", selected.contentHash)
+            .put("promotionAwaitingChange", true)
+            .put("promotionContentHash", selected.contentHash)
+        if (legacyUnbound) {
+            state.remove("promotionActiveKey")
+            state.remove("promotionDirectoryRevision")
+        } else {
+            val activationKey = game.uri
+            val priorOwner = "prior-directory-owner"
+            val priorToken = "prior-directory-revision"
+            if (!emptyEpoch) {
+                SaveDirectoryActivationStore(harness.root).apply {
+                    begin(activationKey, priorOwner, priorToken)
+                    complete(activationKey, priorOwner, priorToken)
+                }
+            }
+            state.put("promotionActiveKey", activationKey)
+                .put("promotionDirectoryRevision", if (emptyEpoch) "" else "stale-$priorToken")
+        }
+        harness.states.save(key, state)
+        assertNull(harness.journal.load(key))
+        assertFalse(harness.journal.archive(key).exists())
+        assertTrue(harness.service.needsSelectionRecovery(game))
+        val importCount = harness.world.importCount(game)
+
+        val listed = harness.service.listVersions(game)
+
+        assertEquals(5, listed.size)
+        assertTrue(harness.snapshots.isValid(
+            key,
+            listed.single { it.contentHash == selected.contentHash },
+        ))
+        assertEquals(current, harness.world.activeHash(game))
+        assertEquals(importCount, harness.world.importCount(game))
+
+        harness.service.recoverSelection(game)
+
+        assertEquals(importCount, harness.world.importCount(game))
+        assertEquals(current, harness.world.activeHash(game))
+        val retained = harness.snapshots.list(key)
+        assertEquals(5, retained.size)
+        for (hash in setOf(selected.contentHash, current)) {
+            assertTrue(harness.snapshots.isValid(
+                key,
+                retained.single { it.contentHash == hash },
+            ))
+        }
+        val recoveredState = harness.states.load(key)
+        for (field in listOf(
+            "completedActivation",
+            "activationHash",
+            "promotionFromHash",
+            "promotionFromTime",
+            "promotionAt",
+            "promotionBaseHash",
+            "promotionAwaitingChange",
+            "promotionContentHash",
+            "promotionActiveKey",
+            "promotionDirectoryRevision",
+        )) {
+            assertFalse(field, recoveredState.has(field))
+        }
+        assertFalse(harness.service.needsSelectionRecovery(game))
+    }
+
+    @Test
     fun parseableJournalWithWrongHashRescuesArchiveUsingItsActualContent() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("semantic-journal")
@@ -1068,7 +1169,7 @@ class SaveSyncServiceTest {
     }
 
     @Test
-    fun manualMarkerRecoveryPreservesValidPromotionFromSelectedSToPlayedN() = runBlocking {
+    fun manualMarkerRecoveryAtSixVersionOverflowPreservesValidPromotionFromSelectedSToPlayedN() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("manual-recovery-promotion")
         harness.identify(game)
@@ -1078,10 +1179,31 @@ class SaveSyncServiceTest {
         harness.transport.seed(harness.remoteGame(game), RemoteSaveVersion(selected.id, selected.contentHash,
             selected.createdAt, selected.size), harness.snapshots.file(key, selected.id))
         assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+        val selectedHistory = harness.snapshots.list(key).single { it.contentHash == selected.contentHash }
+        for (version in harness.snapshots.list(key).filter { it.contentHash != selected.contentHash }) {
+            assertTrue(harness.snapshots.file(key, version.id).delete())
+        }
+        repeat(5) { index ->
+            harness.stageSnapshot(game, "newer-manual-history-$index", selectedHistory.createdAt + index + 1L)
+        }
+        assertEquals(6, harness.snapshots.list(key).size)
+        assertEquals(selected.contentHash, harness.snapshots.list(key).minBy { it.createdAt }.contentHash)
+        val bound = harness.states.load(key)
+        assertEquals(game.uri, bound.getString("promotionActiveKey"))
+        assertEquals(SaveDirectoryActivationStore(harness.root).revision(game.uri),
+            bound.getString("promotionDirectoryRevision"))
         val current = harness.setActive(game, "played-N")
         harness.world.recoveryNeeded = true
+        val imports = harness.world.importCount(game)
 
         harness.service.recoverSelection(game)
+        assertEquals(imports, harness.world.importCount(game))
+        assertEquals(current, harness.world.activeHash(game))
+        val retained = harness.snapshots.list(key)
+        assertEquals(5, retained.size)
+        for (hash in setOf(selected.contentHash, current)) {
+            assertTrue(harness.snapshots.isValid(key, retained.single { it.contentHash == hash }))
+        }
         assertEquals(selected.contentHash, harness.states.load(key).getString("promotionFromHash"))
         assertTrue(harness.states.load(key).getBoolean("promotionAwaitingChange"))
         val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
@@ -1215,7 +1337,7 @@ class SaveSyncServiceTest {
 
         val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
 
-        assertEquals(listOf(SaveSyncError.SELECTION_INCOMPLETE), report.failures.map { it.error })
+        assertEquals(listOf(SaveSyncError.SAVE_LOCATION_CHANGED), report.failures.map { it.error })
         assertEquals(game.uri, harness.journal.load(key)!!.activeKey)
         assertEquals(1, harness.world.restoredMetadataCount(game))
         assertTrue(harness.transport.versions(harness.remoteGame(game)).isEmpty())
@@ -1334,6 +1456,401 @@ class SaveSyncServiceTest {
         assertTrue(harness.transport.versions(harness.remoteGame(aliasGame)).isEmpty())
         assertFalse(harness.snapshots.list(aliasKey).any { it.contentHash == aliasHash })
         assertTrue(harness.journal.load(activationKey) != null)
+    }
+
+    @Test
+    fun committedActivationCleanupFailureKeepsAliasBlockedAndStaleTokenCannotPublishSiblingBytes() = runBlocking {
+        val harness = Harness(temp)
+        val gameA = harness.addGame("cleanup-owner-A")
+        val gameB = harness.addGame("cleanup-alias-B")
+        harness.identify(gameA)
+        harness.identify(gameB)
+        val sharedDirectory = "shared-cleanup-directory"
+        harness.world.directoryKey = sharedDirectory
+        harness.setActive(gameA, "before-A")
+        harness.setActive(gameB, "before-B")
+        val keyA = harness.key(gameA)
+        val keyB = harness.key(gameB)
+        val selectedA = harness.addSnapshot(gameA, "selected-A-S", 1_700_000_000_010L)
+        val selectedB = harness.addSnapshot(gameB, "selected-B-S", 1_700_000_000_020L)
+        val remoteA = RemoteSaveVersion(
+            selectedA.id,
+            selectedA.contentHash,
+            selectedA.createdAt,
+            selectedA.size,
+        )
+        harness.transport.seed(
+            harness.remoteGame(gameA),
+            remoteA,
+            harness.snapshots.file(keyA, selectedA.id),
+        )
+        val activationStore = SaveDirectoryActivationStore(harness.root)
+        val journalArchive = harness.journal.archive(keyA)
+        val journalRecord = File(harness.root, "pending/records/$keyA.json")
+        val archiveBackup = File(harness.root, "blocked-staging-backup.zip")
+        var obstructCleanup = true
+        lateinit var staleToken: String
+        harness.world.onRetireDirectory = { directoryKey ->
+            assertEquals(sharedDirectory, directoryKey)
+            if (obstructCleanup) {
+                obstructCleanup = false
+                val pending = requireNotNull(harness.journal.load(keyA))
+                staleToken = pending.token
+                harness.sessions.save(keyA, JSONObject()
+                    .put("token", staleToken)
+                    .put("baseline", selectedA.contentHash)
+                    .put("activeKey", sharedDirectory)
+                    .put("returned", true))
+                journalArchive.copyTo(archiveBackup, overwrite = true)
+                check(journalArchive.delete())
+                check(journalArchive.mkdir())
+                File(journalArchive, "blocked").writeText("cleanup blocked", Charsets.UTF_8)
+            }
+        }
+
+        assertEquals(
+            SaveActivationResult.METADATA_PENDING,
+            harness.service.activateVersion(gameA, selectedA.id),
+        )
+
+        assertEquals(1, harness.world.importCount(gameA))
+        assertEquals(selectedA.contentHash, harness.world.activeHash(gameA))
+        assertEquals(staleToken, harness.states.load(keyA).getString("completedActivation"))
+        assertEquals(staleToken, activationStore.revision(sharedDirectory))
+        assertTrue(journalArchive.isDirectory)
+        assertTrue(harness.journal.load(keyA) != null)
+        val committedJournalText = journalRecord.readText(Charsets.UTF_8)
+        assertTrue(JSONObject(committedJournalText).getBoolean("committed"))
+        val owned = activationStore.owned(gameA.uri).single()
+        assertEquals(sharedDirectory, owned.activeKey)
+        assertEquals(gameA.uri, owned.uri)
+        assertEquals(staleToken, owned.token)
+        val importCountB = harness.world.importCount(gameB)
+        val activeHashB = harness.world.activeHash(gameB)
+
+        try {
+            harness.service.activateVersion(gameB, selectedB.id)
+            fail("An alias activation must wait for the owner's committed cleanup")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.SELECTION_INCOMPLETE, failure.code)
+        }
+
+        assertEquals(importCountB, harness.world.importCount(gameB))
+        assertEquals(activeHashB, harness.world.activeHash(gameB))
+        assertEquals(staleToken, activationStore.revision(sharedDirectory))
+
+        assertTrue(File(journalArchive, "blocked").delete())
+        assertTrue(journalArchive.delete())
+        archiveBackup.copyTo(journalArchive, overwrite = true)
+        assertTrue(
+            harness.service.activateVersion(gameA, selectedA.id) in
+                setOf(SaveActivationResult.APPLIED, SaveActivationResult.UNCHANGED),
+        )
+        assertEquals(staleToken, activationStore.revision(sharedDirectory))
+        assertTrue(activationStore.owned(gameA.uri).isEmpty())
+        assertNull(harness.journal.load(keyA))
+
+        assertEquals(
+            SaveActivationResult.APPLIED,
+            harness.service.activateVersion(gameB, selectedB.id),
+        )
+        val revisionB = harness.states.load(keyB).getString("completedActivation")
+        assertTrue(revisionB != staleToken)
+        assertEquals(revisionB, activationStore.revision(sharedDirectory))
+        assertEquals(1, harness.world.importCount(gameB))
+        assertEquals(selectedB.contentHash, harness.world.activeHash(gameB))
+
+        harness.world.setActive(gameA, harness.world.activeFile(gameB))
+        journalRecord.writeText(committedJournalText, Charsets.UTF_8)
+        archiveBackup.copyTo(journalArchive, overwrite = true)
+        assertEquals(committedJournalText, journalRecord.readText(Charsets.UTF_8))
+        assertTrue(JSONObject(journalRecord.readText()).getBoolean("committed"))
+        val staleManual = harness.service.syncGame(gameA, SaveSyncDirection.UPLOAD)
+
+        assertEquals(0, staleManual.uploaded)
+        assertEquals(listOf(SaveSyncError.SELECTION_INCOMPLETE), staleManual.failures.map { it.error })
+        assertEquals(revisionB, activationStore.revision(sharedDirectory))
+        assertEquals(selectedB.contentHash, harness.world.activeHash(gameA))
+        assertEquals(listOf(remoteA), harness.transport.versions(harness.remoteGame(gameA)))
+        assertEquals(0, harness.transport.uploadCount(selectedB.contentHash))
+        assertFalse(harness.snapshots.list(keyA).any { it.contentHash == selectedB.contentHash })
+
+        val stale = harness.service.syncGameIfCurrent(gameA, SaveSyncDirection.UPLOAD) {
+            harness.sessions.load(keyA).optString("token") == staleToken
+        }
+
+        assertEquals(0, stale.uploaded)
+        assertTrue(
+            stale.toString(),
+            stale.busy > 0 || stale.failures.any {
+                it.error == SaveSyncError.SELECTION_INCOMPLETE || it.error == SaveSyncError.SAVE_LOCATION_CHANGED
+            },
+        )
+        assertEquals(revisionB, activationStore.revision(sharedDirectory))
+        assertEquals(selectedB.contentHash, harness.world.activeHash(gameA))
+        assertEquals(listOf(remoteA), harness.transport.versions(harness.remoteGame(gameA)))
+        assertEquals(0, harness.transport.uploadCount(selectedB.contentHash))
+        assertFalse(harness.snapshots.list(keyA).any { it.contentHash == selectedB.contentHash })
+        assertTrue(harness.snapshots.isValid(
+            keyA,
+            harness.snapshots.list(keyA).single { it.contentHash == selectedA.contentHash },
+        ))
+    }
+
+    @Test
+    fun siblingActivationRevisionMakesOlderPromotionRecoverableWithoutImportOrRestoredPublication() = runBlocking {
+        val harness = Harness(temp)
+        val gameA = harness.addGame("ancestry-A")
+        val gameB = harness.addGame("ancestry-B")
+        harness.identify(gameA)
+        harness.identify(gameB)
+        val sharedDirectory = "shared-ancestry-directory"
+        harness.world.directoryKey = sharedDirectory
+        harness.setActive(gameA, "before-A")
+        harness.setActive(gameB, "before-B")
+        val keyA = harness.key(gameA)
+        val selectedA = harness.addSnapshot(gameA, "selected-A-S", 1_700_000_000_010L)
+        val selectedB = harness.addSnapshot(gameB, "selected-B-S", 1_700_000_000_020L)
+        val remoteA = RemoteSaveVersion(
+            selectedA.id,
+            selectedA.contentHash,
+            selectedA.createdAt,
+            selectedA.size,
+        )
+        harness.transport.seed(
+            harness.remoteGame(gameA),
+            remoteA,
+            harness.snapshots.file(keyA, selectedA.id),
+        )
+        val activationStore = SaveDirectoryActivationStore(harness.root)
+
+        assertEquals(
+            SaveActivationResult.APPLIED,
+            harness.service.activateVersion(gameA, selectedA.id),
+        )
+        val revisionA = harness.states.load(keyA).getString("promotionDirectoryRevision")
+        assertEquals(revisionA, activationStore.revision(sharedDirectory))
+        assertEquals(
+            SaveActivationResult.APPLIED,
+            harness.service.activateVersion(gameB, selectedB.id),
+        )
+        val revisionB = harness.states.load(harness.key(gameB)).getString("completedActivation")
+        assertTrue(revisionB != revisionA)
+        assertEquals(revisionB, activationStore.revision(sharedDirectory))
+        val activeN = harness.setActive(gameA, "active-only-N")
+        harness.world.setActive(gameB, harness.world.activeFile(gameA))
+        assertFalse(harness.snapshots.list(keyA).any { it.contentHash == activeN })
+        assertTrue(harness.service.needsSelectionRecovery(gameA))
+        val importCount = harness.world.importCount(gameA)
+        val restoredMetadataCount = harness.world.restoredMetadataCount(gameA)
+
+        harness.service.recoverSelection(gameA)
+
+        assertEquals(importCount, harness.world.importCount(gameA))
+        assertEquals(restoredMetadataCount, harness.world.restoredMetadataCount(gameA))
+        assertEquals(activeN, harness.world.activeHash(gameA))
+        val recoveredHistory = harness.snapshots.list(keyA)
+        for (hash in setOf(selectedA.contentHash, activeN)) {
+            assertTrue(harness.snapshots.isValid(
+                keyA,
+                recoveredHistory.single { it.contentHash == hash },
+            ))
+        }
+        val recoveredState = harness.states.load(keyA)
+        for (field in listOf(
+            "completedActivation",
+            "activationHash",
+            "promotionFromHash",
+            "promotionFromTime",
+            "promotionAt",
+            "promotionBaseHash",
+            "promotionAwaitingChange",
+            "promotionContentHash",
+            "promotionActiveKey",
+            "promotionDirectoryRevision",
+        )) {
+            assertFalse(field, recoveredState.has(field))
+        }
+        assertFalse(harness.service.needsSelectionRecovery(gameA))
+
+        val report = harness.service.syncGame(gameA, SaveSyncDirection.UPLOAD)
+
+        assertTrue(report.failures.toString(), report.failures.isEmpty())
+        assertEquals(1, report.uploaded)
+        val remote = harness.transport.versions(harness.remoteGame(gameA))
+        val publishedN = remote.single { it.contentHash == activeN }
+        assertFalse(publishedN.restored)
+        assertNull(publishedN.previousCreatedAt)
+        assertTrue(remote.any { it.contentHash == selectedA.contentHash })
+        assertEquals(restoredMetadataCount, harness.world.restoredMetadataCount(gameA))
+        assertEquals(revisionB, activationStore.revision(sharedDirectory))
+    }
+
+    @Test
+    fun abortedPreparedCleanupRestoresPriorRevisionAndKeepsCompletedPromotionChain() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("aborted-prepared-cleanup")
+        harness.identify(game)
+        val key = harness.key(game)
+        val directoryKey = game.uri
+        harness.setActive(game, "before-A")
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_010L)
+        lateinit var completedToken: String
+        harness.world.onRetireDirectory = { retiredDirectory ->
+            assertEquals(directoryKey, retiredDirectory)
+            val pending = harness.journal.load(key)
+            if (pending != null) {
+                completedToken = pending.token
+                harness.sessions.save(key, JSONObject()
+                    .put("token", completedToken)
+                    .put("baseline", selected.contentHash)
+                    .put("activeKey", directoryKey)
+                    .put("returned", true))
+            }
+        }
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+        val activationStore = SaveDirectoryActivationStore(harness.root)
+        assertEquals(completedToken, activationStore.revision(directoryKey))
+        val currentN = harness.setActive(game, "current-N")
+        val stateBeforeAbort = JSONObject(harness.states.load(key).toString())
+        val sessionBeforeAbort = JSONObject(harness.sessions.load(key).toString())
+        val abandonedSource = harness.archive("aborted-Y", "aborted-Y")
+        val abandoned = harness.versionFor(abandonedSource)
+        val aborted = harness.journal.prepare(key, abandoned, abandonedSource, currentN, directoryKey)
+        activationStore.begin(directoryKey, game.uri, aborted.token)
+        activationStore.prepareCompletion(directoryKey, game.uri, aborted.token, committed = false)
+        harness.journal.clear(key)
+
+        assertFalse(harness.journal.archive(key).exists())
+        assertEquals(currentN, harness.world.activeHash(game))
+        assertTrue(activationStore.revision(directoryKey) != completedToken)
+        assertTrue(activationStore.owned(game.uri).single().committed == false)
+        val importCount = harness.world.importCount(game)
+        val restoredMetadataCount = harness.world.restoredMetadataCount(game)
+
+        harness.service.recoverSelection(game)
+
+        assertEquals(importCount, harness.world.importCount(game))
+        assertEquals(restoredMetadataCount, harness.world.restoredMetadataCount(game))
+        assertEquals(currentN, harness.world.activeHash(game))
+        assertEquals(completedToken, activationStore.revision(directoryKey))
+        assertTrue(activationStore.owned(game.uri).isEmpty())
+        val stateAfterRecovery = harness.states.load(key)
+        for (field in listOf(
+            "completedActivation",
+            "activationHash",
+            "promotionFromHash",
+            "promotionFromTime",
+            "promotionAt",
+            "promotionBaseHash",
+            "promotionAwaitingChange",
+            "promotionContentHash",
+            "promotionActiveKey",
+            "promotionDirectoryRevision",
+        )) {
+            assertEquals(field, stateBeforeAbort.opt(field), stateAfterRecovery.opt(field))
+        }
+        val sessionAfterRecovery = harness.sessions.load(key)
+        for (field in listOf("token", "baseline", "activeKey", "returned")) {
+            assertEquals(field, sessionBeforeAbort.opt(field), sessionAfterRecovery.opt(field))
+        }
+        assertTrue(harness.snapshots.isValid(
+            key,
+            harness.snapshots.list(key).single { it.contentHash == currentN },
+        ))
+        assertFalse(harness.service.needsSelectionRecovery(game))
+
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertTrue(report.failures.toString(), report.failures.isEmpty())
+        assertEquals(1, report.uploaded)
+        val published = harness.transport.versions(harness.remoteGame(game)).single()
+        assertEquals(currentN, published.contentHash)
+        assertTrue(published.restored)
+        assertEquals(selected.createdAt, published.previousCreatedAt)
+    }
+
+    @Test
+    fun committedPreparedCleanupWithoutJournalRetainsChainAndSessionBeforeRelease() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("committed-prepared-cleanup")
+        harness.identify(game)
+        val key = harness.key(game)
+        val directoryKey = game.uri
+        harness.setActive(game, "before-A")
+        val selected = harness.addSnapshot(game, "selected-S", 1_700_000_000_010L)
+        val journalArchive = harness.journal.archive(key)
+        val archiveBackup = File(harness.root, "committed-cleanup-backup.zip")
+        var obstructCleanup = true
+        lateinit var completedToken: String
+        harness.world.onRetireDirectory = { retiredDirectory ->
+            assertEquals(directoryKey, retiredDirectory)
+            val pending = harness.journal.load(key)
+            if (pending != null) {
+                completedToken = pending.token
+                harness.sessions.save(key, JSONObject()
+                    .put("token", completedToken)
+                    .put("baseline", selected.contentHash)
+                    .put("activeKey", directoryKey)
+                    .put("returned", true))
+            }
+            if (obstructCleanup) {
+                obstructCleanup = false
+                journalArchive.copyTo(archiveBackup, overwrite = true)
+                check(journalArchive.delete())
+                check(journalArchive.mkdir())
+                File(journalArchive, "blocked").writeText("cleanup blocked", Charsets.UTF_8)
+            }
+        }
+
+        assertEquals(
+            SaveActivationResult.METADATA_PENDING,
+            harness.service.activateVersion(game, selected.id),
+        )
+        val activationStore = SaveDirectoryActivationStore(harness.root)
+        val stateBeforeRecovery = JSONObject(harness.states.load(key).toString())
+        val sessionBeforeRecovery = JSONObject(harness.sessions.load(key).toString())
+        assertEquals(completedToken, activationStore.revision(directoryKey))
+        assertTrue(activationStore.owned(game.uri).single().committed == true)
+        assertTrue(File(journalArchive, "blocked").delete())
+        assertTrue(journalArchive.delete())
+        archiveBackup.copyTo(journalArchive, overwrite = true)
+        harness.journal.clear(key)
+        val currentN = harness.setActive(game, "current-N")
+        val importCount = harness.world.importCount(game)
+        assertNull(harness.journal.load(key))
+        assertTrue(activationStore.owned(game.uri).single().committed == true)
+
+        harness.service.recoverSelection(game)
+
+        assertEquals(importCount, harness.world.importCount(game))
+        assertEquals(currentN, harness.world.activeHash(game))
+        assertEquals(completedToken, activationStore.revision(directoryKey))
+        assertTrue(activationStore.owned(game.uri).isEmpty())
+        val stateAfterRecovery = harness.states.load(key)
+        for (field in listOf(
+            "completedActivation",
+            "activationHash",
+            "promotionFromHash",
+            "promotionFromTime",
+            "promotionAt",
+            "promotionBaseHash",
+            "promotionAwaitingChange",
+            "promotionContentHash",
+            "promotionActiveKey",
+            "promotionDirectoryRevision",
+        )) {
+            assertEquals(field, stateBeforeRecovery.opt(field), stateAfterRecovery.opt(field))
+        }
+        val sessionAfterRecovery = harness.sessions.load(key)
+        for (field in listOf("token", "baseline", "activeKey", "returned")) {
+            assertEquals(field, sessionBeforeRecovery.opt(field), sessionAfterRecovery.opt(field))
+        }
+        assertTrue(harness.snapshots.isValid(
+            key,
+            harness.snapshots.list(key).single { it.contentHash == currentN },
+        ))
+        assertFalse(harness.service.needsSelectionRecovery(game))
     }
 
     @Test

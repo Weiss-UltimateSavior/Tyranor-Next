@@ -66,6 +66,12 @@ class SaveSyncService internal constructor(
                 directoryActivations.owned(game.uri).forEach { requireSameSaveDirectory(it.activeKey, directoryKey) }
                 requireIdle(game)
                 val key = localKey(game)
+                val directoryOwners = directoryActivations.owned(game.uri)
+                for (owner in directoryOwners) {
+                    val committed = owner.committed ?: true
+                    if (committed) environment.retireSessions(game, directoryKey)
+                    directoryActivations.prepareCompletion(directoryKey, game.uri, owner.token, committed)
+                }
                 val legacyCheckpoint = try { checkpointKey(game, environment.config()) }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { null }
@@ -93,9 +99,10 @@ class SaveSyncService internal constructor(
                     clear { SaveSyncStateStore(File(root, "sessions")).remove(key) }
                 }
                 clear { SaveSyncStateStore(File(root, "baselines")).remove(key) }
-                for (pending in directoryActivations.owned(game.uri)) {
-                    clear { environment.retireSessions(game, pending.activeKey) }
-                    if (failures.isEmpty()) clear { directoryActivations.complete(pending.activeKey, game.uri, pending.token) }
+                for (pending in directoryOwners) {
+                    if (failures.isEmpty()) clear {
+                        directoryActivations.complete(pending.activeKey, game.uri, pending.token, pending.committed ?: true)
+                    }
                 }
                 if (failures.isNotEmpty()) {
                     throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failures.first()).also { failure ->
@@ -111,7 +118,7 @@ class SaveSyncService internal constructor(
     fun needsSelectionRecovery(game: ScanGame): Boolean = try {
         activations.load(localKey(game)) != null || activations.archive(localKey(game)).exists() ||
             environment.needsManualRecovery(game) || directoryActivations.owned(game.uri).isNotEmpty() ||
-            hasUnboundPromotion(states.load(localKey(game)))
+            promotionNeedsRecovery(game, states.load(localKey(game)))
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
@@ -146,6 +153,7 @@ class SaveSyncService internal constructor(
                 requireIdle(game)
                 directoryActivations.requireAvailable(directoryKey, game.uri)
                 invalidateTransfers(game)
+                val completedCleanup = finishPreparedDirectoryCleanup(game, directoryKey)
                 maintainSnapshots(game)
                 val key = localKey(game)
                 val pending = activations.load(key)
@@ -192,7 +200,7 @@ class SaveSyncService internal constructor(
                         (previousState.optString("promotionActiveKey") != directoryKey ||
                             previousState.optString("promotionDirectoryRevision") != directoryActivations.revision(directoryKey))
                     if (!retryingPrepared && !recoveryNeeded && !unboundRestore && before == selected.contentHash) {
-                        return@active SaveActivationResult.UNCHANGED
+                        return@active if (completedCleanup) SaveActivationResult.APPLIED else SaveActivationResult.UNCHANGED
                     }
                     // Consume the protected staging copy before a sixth history version can evict S.
                     activations.prepare(key, selected, temp, before, directoryKey) { job.ensureActive() }
@@ -229,8 +237,9 @@ class SaveSyncService internal constructor(
                                     snapshots.add(key, archive, version.createdAt, version.source, version.contentHash,
                                         restored = version.restored, previousCreatedAt = version.previousCreatedAt,
                                         protectedHashes = pendingProtection(game))
-                                    rollbackDirectoryActivation(game, directoryKey)
+                                    prepareDirectoryRollback(game, directoryKey)
                                 }
+                                finishPreparedDirectoryCleanup(game, directoryKey)
                             } catch (cleanup: Exception) {
                                 if (cleanup !== failure) {
                                     // Preserve the original cancellation object. A new cancellation
@@ -295,9 +304,12 @@ class SaveSyncService internal constructor(
             throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
         }
         val state = states.load(key)
-        val unboundPromotion = hasUnboundPromotion(state)
+        val unboundPromotion = promotionNeedsRecovery(game, state)
+        val directoryOwner = directoryActivations.owned(game.uri).firstOrNull { it.activeKey == directoryKey }
         val legacySource = state.optString("promotionFromHash").takeIf { hash ->
-            unboundPromotion && snapshots.list(key).any { it.contentHash == hash && snapshots.isValid(key, it) { job.ensureActive() } }
+            (unboundPromotion || directoryOwner != null || state.optBoolean("promotionAwaitingChange")) && snapshots.list(key).any {
+                it.contentHash == hash && snapshots.isValid(key, it) { job.ensureActive() }
+            }
         }
         val beforeSource = pending?.beforeHash?.takeIf { hash ->
             hash == current || snapshots.list(key).any { it.contentHash == hash && snapshots.isValid(key, it) { job.ensureActive() } }
@@ -327,17 +339,22 @@ class SaveSyncService internal constructor(
         // selected S or prove that an orphaned, uncommitted choice replaced the prior chain.
         val selectedHash = pending?.selected?.contentHash?.takeIf { it in protected }
         val activationEvidence = pending != null || damagedRecord || unboundPromotion
-        val sameCommittedChain = pending != null &&
-            pending.activeKey != null &&
+        val priorChainSurvivesAbort = directoryOwner?.committed == false &&
+            state.optString("promotionActiveKey") == directoryKey &&
+            state.has("promotionDirectoryRevision") &&
+            state.optString("promotionDirectoryRevision") == directoryOwner.previousRevision.orEmpty()
+        val sameCommittedChain =
             state.optString("promotionActiveKey") == directoryKey &&
             state.optString("promotionDirectoryRevision") == directoryActivations.revision(directoryKey) &&
-            state.optString("completedActivation") == pending.token &&
-            selectedHash != null &&
-            state.optString("promotionFromHash") == selectedHash &&
-            state.optLong("promotionFromTime") == pending.selected.createdAt &&
+            ((pending != null && pending.activeKey != null && state.optString("completedActivation") == pending.token &&
+                selectedHash != null && state.optString("promotionFromHash") == selectedHash &&
+                state.optLong("promotionFromTime") == pending.selected.createdAt) ||
+                (pending == null && directoryOwner?.committed == true &&
+                    state.optString("completedActivation") == directoryOwner.token)) &&
             state.optLong("promotionAt") > 0L
-        if (activationEvidence && !sameCommittedChain && (pending == null ||
-            pending.canFinalize(current) || state.optString("completedActivation") == pending.token)) {
+        val committed = directoryOwner?.committed ?: (pending == null || pending.canFinalize(current))
+        if (activationEvidence && !sameCommittedChain && !priorChainSurvivesAbort && (pending == null ||
+            committed || state.optString("completedActivation") == pending.token)) {
             listOf("completedActivation", "activationHash", "promotionFromHash", "promotionFromTime", "promotionAt",
                 "promotionBaseHash", "promotionAwaitingChange", "promotionContentHash", "promotionActiveKey",
                 "promotionDirectoryRevision")
@@ -347,9 +364,8 @@ class SaveSyncService internal constructor(
         if (sameCommittedChain && !environment.recordRestored(game, state.getString("activationHash"), directoryKey)) {
             throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
         }
-        completeDirectoryActivation(game, directoryKey, committed = pending == null || pending.canFinalize(current),
+        completeDirectoryActivation(game, directoryKey, committed = committed,
             retireSessions = !sameCommittedChain)
-        activations.clear(key)
     }
 
     private suspend fun completeDirectoryActivation(
@@ -358,18 +374,38 @@ class SaveSyncService internal constructor(
         committed: Boolean,
         retireSessions: Boolean = true,
     ) {
-        for (pending in directoryActivations.owned(game.uri)) {
+        val owners = directoryActivations.owned(game.uri)
+        for (pending in owners) {
             requireSameSaveDirectory(pending.activeKey, directoryKey)
             if (committed && retireSessions) environment.retireSessions(game, directoryKey)
+            directoryActivations.prepareCompletion(directoryKey, game.uri, pending.token, committed)
+        }
+        activations.clear(localKey(game))
+        for (pending in owners) {
             directoryActivations.complete(directoryKey, game.uri, pending.token, committed)
         }
     }
 
-    private fun rollbackDirectoryActivation(game: ScanGame, directoryKey: String) {
+    private fun prepareDirectoryRollback(game: ScanGame, directoryKey: String) {
         for (pending in directoryActivations.owned(game.uri)) {
             requireSameSaveDirectory(pending.activeKey, directoryKey)
-            directoryActivations.complete(directoryKey, game.uri, pending.token, committed = false)
+            directoryActivations.prepareCompletion(directoryKey, game.uri, pending.token, committed = false)
         }
+    }
+
+    /** Also handles a crash after the journal disappeared but before the shared fence released. */
+    private fun finishPreparedDirectoryCleanup(game: ScanGame, directoryKey: String): Boolean {
+        var completed = false
+        for (owner in directoryActivations.owned(game.uri)) {
+            requireSameSaveDirectory(owner.activeKey, directoryKey)
+            val committed = owner.committed ?: continue
+            val pending = activations.load(localKey(game))
+            if (pending != null && pending.token != owner.token) throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+            activations.clear(localKey(game))
+            directoryActivations.complete(directoryKey, game.uri, owner.token, committed)
+            completed = completed || committed
+        }
+        return completed
     }
 
     private suspend fun tryFinishActivation(
@@ -395,7 +431,7 @@ class SaveSyncService internal constructor(
         requireSameSaveDirectory(boundDirectory, directoryKey)
         requireSameSaveDirectory(directoryKey, environment.activeKey(game))
         val key = localKey(game)
-        directoryActivations.begin(directoryKey, game.uri, pending.token)
+        directoryActivations.resume(directoryKey, game.uri, pending.token)
         environment.completeImport(game, directoryKey)
         val state = states.load(key)
         if (state.optString("completedActivation") != pending.token) {
@@ -437,8 +473,7 @@ class SaveSyncService internal constructor(
         if (!environment.recordRestored(game, state.getString("activationHash"), directoryKey)) {
             return SaveActivationResult.METADATA_PENDING
         }
-        directoryActivations.complete(directoryKey, game.uri, pending.token)
-        activations.clear(key)
+        completeDirectoryActivation(game, directoryKey, committed = true, retireSessions = false)
         return SaveActivationResult.APPLIED
     }
 
@@ -446,6 +481,7 @@ class SaveSyncService internal constructor(
         requireEnabled()
         // Validate once before walking the library. No archive transfer is needed for unchanged games.
         val config = environment.config()
+        val generation = environment.generation()
         if (!config.configured) throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
         var report = SaveSyncReport()
         val keys = LinkedHashMap<String, MutableList<ScanGame>>()
@@ -468,7 +504,7 @@ class SaveSyncService internal constructor(
                 requireEnabled()
                 report += if (games.size > 1) {
                     SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, SaveSyncError.IDENTITY_CONFLICT)))
-                } else syncOne(game, direction, config, client)
+                } else syncOne(game, direction, config, client, expectedGeneration = generation)
             }
         }
         report
@@ -487,9 +523,10 @@ class SaveSyncService internal constructor(
     ): SaveSyncReport = withContext(Dispatchers.IO) {
         requireEnabled()
         val config = environment.config()
+        val generation = environment.generation()
         if (!config.configured) throw SaveSyncException(SaveSyncError.NOT_CONFIGURED)
         environment.openClient(config)
-            .use { syncOne(game, direction, config, it, isCurrent, expectedActiveKey, expectedContentHash) }
+            .use { syncOne(game, direction, config, it, isCurrent, expectedActiveKey, expectedContentHash, generation) }
     }
 
     private suspend fun syncOne(
@@ -500,20 +537,23 @@ class SaveSyncService internal constructor(
         isCurrent: () -> Boolean = { true },
         expectedActiveKey: String? = null,
         expectedContentHash: String? = null,
+        expectedGeneration: Long = environment.generation(),
     ): SaveSyncReport = SaveSyncLocks.network(game.uri) {
         val key = localKey(game)
         var revision: String? = null
         var uploadArchive: File? = null
         var capturedDirectory: String? = null
         var capturedRevision: String? = null
+        var uploadPrepared = false
         suspend fun <T> local(block: suspend () -> T): T = SaveSyncLocks.versions(game.uri) {
             suspend fun checked(): T {
                 requireEnabled()
+                if (environment.generation() != expectedGeneration) throw LocalStateChanged()
                 if (!isCurrent()) throw LocalStateChanged()
                 if (revision != null && states.load(key).optString("revision") != revision) throw LocalStateChanged()
                 capturedDirectory?.let { directory ->
-                    if (directoryActivations.revision(directory) != capturedRevision) throw LocalStateChanged()
-                    directoryActivations.requireAvailable(directory)
+                    if (capturedRevision != null && directoryActivations.revision(directory) != capturedRevision) throw LocalStateChanged()
+                    if (uploadPrepared) directoryActivations.requireAvailable(directory)
                     requireSameSaveDirectory(directory, environment.activeKey(game))
                 }
                 return block()
@@ -528,8 +568,16 @@ class SaveSyncService internal constructor(
         var uploaded = 0
         var busy = 0
         try {
+            client.setRequestAdmission { dispatch -> local {
+                environment.admitGeneration(expectedGeneration) {
+                    if (!isCurrent()) throw LocalStateChanged()
+                    dispatch()
+                }
+            } }
             if (!local { environment.available(game) }) return@network SaveSyncReport()
+            local { capturedDirectory = expectedActiveKey ?: environment.activeKey(game) }
             val remoteGame = local {
+                capturedRevision = directoryActivations.revision(checkNotNull(capturedDirectory))
                 if (environment.games().none { it.uri == game.uri }) throw LocalStateChanged()
                 val state = states.load(key)
                 revision = state.optString("revision").ifBlank { UUID.randomUUID().toString() }
@@ -591,8 +639,8 @@ class SaveSyncService internal constructor(
                 }
             }
             if (direction.uploads) {
-                val directoryKey = expectedActiveKey ?: environment.activeKey(game)
-                val version = local { SaveSyncLocks.active(directoryKey) {
+                val directoryKey = checkNotNull(capturedDirectory)
+                val version = local {
                     requireEnabled()
                     requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                     directoryActivations.requireAvailable(directoryKey, game.uri)
@@ -603,6 +651,7 @@ class SaveSyncService internal constructor(
                         busy++
                         null
                     } else {
+                        finishPreparedDirectoryCleanup(game, directoryKey)
                         activations.load(localKey(game))?.let { pending ->
                             if (tryFinishActivation(game, pending, directoryKey) != SaveActivationResult.APPLIED) {
                                 throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
@@ -616,12 +665,13 @@ class SaveSyncService internal constructor(
                             if (!isCurrent()) throw LocalStateChanged()
                             capturedDirectory = directoryKey
                             capturedRevision = directoryActivations.revision(directoryKey)
+                            uploadPrepared = true
                             uploadArchive = temporaryZip().also { pinned ->
                                 snapshots.file(key, captured.id).copyTo(pinned, overwrite = true)
                             }
                         }
                     }
-                } }
+                }
                 // A busy/empty game cannot authorize publication cleanup using a prior round's
                 // confirmation. Leave the complete checkpoint for a later idle retry.
                 if (version == null) return@network SaveSyncReport(downloaded = downloaded, busy = busy,
@@ -824,8 +874,10 @@ class SaveSyncService internal constructor(
         }
     }
 
-    private fun hasUnboundPromotion(state: org.json.JSONObject): Boolean = state.optLong("promotionAt") > 0L &&
-        (state.optString("promotionActiveKey").isBlank() || !state.has("promotionDirectoryRevision"))
+    private fun promotionNeedsRecovery(game: ScanGame, state: org.json.JSONObject): Boolean = state.optLong("promotionAt") > 0L &&
+        (state.optString("promotionActiveKey").isBlank() || state.optString("promotionDirectoryRevision").isBlank() ||
+            state.optString("promotionActiveKey") != environment.activeKey(game) ||
+            state.optString("promotionDirectoryRevision") != directoryActivations.revision(environment.activeKey(game)))
 
     private suspend fun captureLocked(
         game: ScanGame,
@@ -894,7 +946,11 @@ class SaveSyncService internal constructor(
             // An unreadable journal cannot prove which historical source is expendable.
             throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
         }
-        return if (pending != null) setOfNotNull(pending.selected.contentHash, pending.beforeHash) else emptySet()
+        val state = states.load(key)
+        val promotionSource = state.optString("promotionFromHash").takeIf {
+            it.isNotBlank() && (state.optBoolean("promotionAwaitingChange") || promotionNeedsRecovery(game, state))
+        }
+        return setOfNotNull(pending?.selected?.contentHash, pending?.beforeHash, promotionSource)
     }
 
     private fun nextTimestamp(game: ScanGame): Long {

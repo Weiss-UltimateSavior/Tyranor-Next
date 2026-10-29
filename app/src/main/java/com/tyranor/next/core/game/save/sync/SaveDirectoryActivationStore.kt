@@ -7,7 +7,13 @@ import java.io.File
 internal class SaveDirectoryActivationStore(root: File) {
     private val states = SaveSyncStateStore(File(root, "directory_selections"))
 
-    data class Pending(val activeKey: String, val uri: String, val token: String)
+    data class Pending(
+        val activeKey: String,
+        val uri: String,
+        val token: String,
+        val committed: Boolean? = null,
+        val previousRevision: String? = null,
+    )
 
     fun revision(activeKey: String): String = load(activeKey).optString("revision")
 
@@ -27,16 +33,36 @@ internal class SaveDirectoryActivationStore(root: File) {
             .put("revision", token).put("ownerUri", uri).put("ownerToken", token))
     }
 
+    /** A retry may resume its own epoch, but can never rewind a later alias's selection. */
+    fun resume(activeKey: String, uri: String, token: String) {
+        val state = load(activeKey)
+        val revision = state.optString("revision")
+        if (revision.isNotBlank() && revision != token) throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        begin(activeKey, uri, token)
+    }
+
+    /** Persist the outcome while retaining ownership until journal deletion has succeeded. */
+    fun prepareCompletion(activeKey: String, uri: String, token: String, committed: Boolean) {
+        val state = load(activeKey)
+        requireOwner(state, uri, token)
+        if (state.has("completionCommitted") && state.getBoolean("completionCommitted") != committed) {
+            throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        }
+        states.save(SaveContentHash.text(activeKey), state.put("completionCommitted", committed))
+    }
+
     fun complete(activeKey: String, uri: String, token: String, committed: Boolean = true) {
         val state = load(activeKey)
         if (state.optString("ownerUri").isBlank()) return
-        if (state.optString("ownerUri") != uri || state.optString("ownerToken") != token) {
+        requireOwner(state, uri, token)
+        if (state.has("completionCommitted") && state.getBoolean("completionCommitted") != committed) {
             throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
         }
         state.remove("ownerUri")
         state.remove("ownerToken")
         if (!committed) state.put("revision", state.optString("previousRevision"))
         state.remove("previousRevision")
+        state.remove("completionCommitted")
         // Keep the revision: an older pinned transfer must stay stale after cleanup succeeds.
         states.save(SaveContentHash.text(activeKey), state)
     }
@@ -44,7 +70,15 @@ internal class SaveDirectoryActivationStore(root: File) {
     fun owned(uri: String): List<Pending> = states.keys().mapNotNull { key ->
         val state = states.load(key)
         if (state.optString("ownerUri") != uri) null else Pending(
-            state.getString("activeKey"), uri, state.getString("ownerToken"))
+            state.getString("activeKey"), uri, state.getString("ownerToken"),
+            if (state.has("completionCommitted")) state.getBoolean("completionCommitted") else null,
+            state.optString("previousRevision").takeIf { it.isNotBlank() })
+    }
+
+    private fun requireOwner(state: JSONObject, uri: String, token: String) {
+        if (state.optString("ownerUri") != uri || state.optString("ownerToken") != token) {
+            throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        }
     }
 
     private fun load(activeKey: String): JSONObject = states.load(SaveContentHash.text(activeKey))
