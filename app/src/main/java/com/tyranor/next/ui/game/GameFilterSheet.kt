@@ -222,7 +222,7 @@ private fun FilterChoiceCard(
         label = label,
         selected = selected,
         onClick = onClick,
-        modifier = modifier.height(46.dp),
+        modifier = modifier.height(48.dp),
         horizontalPadding = 12.dp,
     )
 }
@@ -238,7 +238,7 @@ private fun FilterChipCard(
         label = label,
         selected = selected,
         onClick = onClick,
-        modifier = Modifier.height(40.dp),
+        modifier = Modifier.height(48.dp),
         horizontalPadding = 14.dp,
         hollow = true,
     )
@@ -251,6 +251,8 @@ private fun FilterChipCard(
  * - [hollow] = true 且未选中：**空心标签**（透明底 + 1dp outline；玻璃风格由 `glassBorder()`
  *   画 0.5dp 发丝边），用于横向划屏的引擎行，避免一排实心白块压过排序卡；
  * - 否则：白卡底（抽屉面板是页面灰底，白卡形成反差）+ 玻璃风格的发丝边。
+ *
+ * 高度统一 48dp：既是视觉尺寸也是最小触控区（AGENTS 交互区域要求）。
  */
 @Composable
 private fun FilterChoiceBase(
@@ -264,8 +266,6 @@ private fun FilterChoiceBase(
     val accent = MaterialTheme.colorScheme.primary
     Box(
         modifier = modifier
-            // 选择卡 46dp / 空心标签 40dp 都低于 48dp 最小触控区：补齐触控区，卡片本身尺寸不变
-            .minimumInteractiveComponentSize()
             .clip(AppComponentShape)
             .background(
                 when {
