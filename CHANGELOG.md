@@ -11,6 +11,11 @@
 ### 重构
 
 - 底部抽屉外壳抽取为公共组件 `ui/common/AppBottomSheet`（面板色 / 遮罩 / `AppSheetTopShape` / 玻璃描边 / 关闭手势 / 导航栏间距收敛到单点），`GameActionsSheet` 与新的筛选抽屉共用；同时修复抽屉内容被系统导航栏遮挡 31px 的问题。
+- 游戏页排序/过滤的纯函数下沉到 `core/game/model`，消除 `ui/home → ui/game` 的横向依赖；抽屉遮罩色收口到 `theme/Color.kt`。
+
+### 修复
+
+- 游戏页筛选收尾（[#118](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/118)）：空态「重置」同时清空搜索词（此前只清筛选，列表仍空且按钮消失）；切换筛选/排序后网格回到顶部；引擎 chip 与选择卡触控区补到 48dp；引擎过滤值在 UI 可交互前加载，避免冷启动把旧值写回覆盖用户选择；未知引擎名回落为「全部」，不再持久化一个永远匹配不到的条件。
 
 ### 修复
 
