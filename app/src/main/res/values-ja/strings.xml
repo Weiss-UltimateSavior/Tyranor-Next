@@ -856,4 +856,36 @@
     <string name="ethornell_error_bootstrap">ipl._bp 起動項目を含む対応 system.arc 索引が見つかりません。</string>
     <string name="ethornell_error_font">フォントが無効、または読み取れません。TTF、TTC、OTF、OTC フォントを再度取り込んでください。</string>
     <string name="ethornell_error_userdata">Ethornell 専用ユーザーデータを作成できません。空き容量を確認してください。</string>
+
+    <!-- First-launch quick start -->
+    <string name="onboarding_title">クイックスタート</string>
+    <string name="onboarding_welcome_title">Tyranor Next へようこそ</string>
+    <string name="onboarding_welcome_body">ビジュアルノベルのゲームライブラリを管理し、内蔵エンジン、外部 APK エンジンモジュール、外部エミュレーターで起動できます。商用ゲームは同梱されていません。ゲームファイルを別途用意してください。</string>
+    <string name="onboarding_add_title">ゲームを追加</string>
+    <string name="onboarding_add_body">「ゲーム」画面でゲーム追加アイコンをタップし、ゲームフォルダーの項目を選んでください。システムのファイル選択画面でアクセスを許可するとスキャンして追加できます。ライブラリが空の場合はフォルダー追加ボタンも使えます。アクセス権限を維持してください。</string>
+    <string name="onboarding_engine_title">実行環境を選択</string>
+    <string name="onboarding_engine_body">「エンジン」画面で内蔵エンジン、外部 APK エンジンモジュール、外部エミュレーターの状態を確認できます。必要な外部アプリを先にインストールしてください。ゲームの検出は動作の保証ではありません。</string>
+    <string name="onboarding_play_title">ゲームをプレイ</string>
+    <string name="onboarding_play_body">「ゲーム」画面のゲームカードをタップすると操作パネルが開きます。ゲームの起動やカバーの変更、対応するゲームの個別設定やセーブ管理ができます。</string>
+    <string name="onboarding_progress">%1$d / %2$d ページ</string>
+    <string name="onboarding_previous">前へ</string>
+    <string name="onboarding_next">次へ</string>
+    <string name="onboarding_start">利用を開始</string>
+    <string name="onboarding_skip">今はスキップ</string>
+    <string name="onboarding_save_failed">進行状況を保存できませんでした。空き容量を確認して再試行してください。</string>
+    <string name="onboarding_retry">再試行</string>
+    <string name="onboarding_coach_home_title">まずはホームから</string>
+    <string name="onboarding_coach_home_body">ここからお気に入りを起動し、最近開いたゲームも確認できます。</string>
+    <string name="onboarding_coach_games_title">ゲームを追加</string>
+    <string name="onboarding_coach_games_body">「ゲームを追加」でゲームフォルダーを選択して保存します。追加後に自動でスキャンされます。</string>
+    <string name="onboarding_coach_games_search_title">ゲームを探す</string>
+    <string name="onboarding_coach_games_search_body">検索欄でライブラリ内のゲームを名前から絞り込めます。</string>
+    <string name="onboarding_coach_games_cover_title">カバーを補完</string>
+    <string name="onboarding_coach_games_cover_body">クラウドボタンでカバーのないゲームのカバーを取得します。</string>
+    <string name="onboarding_coach_games_scan_title">フォルダーを再スキャン</string>
+    <string name="onboarding_coach_games_scan_body">循環矢印で登録済みフォルダーを再確認します。フォルダーの追加は行いません。</string>
+    <string name="onboarding_coach_engine_title">実行環境を確認</string>
+    <string name="onboarding_coach_engine_body">ここで内蔵エンジン、外部モジュール、エミュレーターを確認できます。</string>
+    <string name="onboarding_coach_settings_title">設定はいつでも変更可能</string>
+    <string name="onboarding_coach_settings_body">「設定」で外観、ナビゲーション、スキャン、入力を調整できます。</string>
 </resources>

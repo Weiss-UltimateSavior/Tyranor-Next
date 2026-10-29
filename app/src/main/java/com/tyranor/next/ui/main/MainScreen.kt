@@ -39,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -110,6 +111,7 @@ import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.settings.InputSettingsActivity
 import com.tyranor.next.ui.settings.SettingsScreen
+import com.tyranor.next.ui.onboarding.CoachAnchor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -130,9 +132,16 @@ private val tabItems = listOf(
 )
 
 @Composable
-fun MainScreen(modifier: Modifier = Modifier) {
+fun MainScreen(
+  modifier: Modifier = Modifier,
+  coachPage: Int? = null,
+  onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
+) {
   val context = LocalContext.current
   var selectedIndex by rememberSaveable { mutableStateOf(0) }
+  LaunchedEffect(coachPage) {
+    if (coachPage != null) selectedIndex = coachPage.coerceIn(tabItems.indices)
+  }
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()
@@ -412,6 +421,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
             pageTransition = pageTransition,
             libraryState = libraryState,
             libraryViewModel = libraryViewModel,
+            onCoachAnchorChanged = onCoachAnchorChanged,
           )
         }
       }
@@ -422,6 +432,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           pageTransition = pageTransition,
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
+            onCoachAnchorChanged = onCoachAnchorChanged,
         )
         if (!liquidGlass && !floatingDefaultNav && !floatingButtonActive) {
           DefaultBottomNavigationBar(
@@ -574,6 +585,7 @@ private fun ColumnScope.MainTabPages(
   pageTransition: Transition<Int>,
   libraryState: MainLibraryUiState,
   libraryViewModel: MainLibraryViewModel,
+  onCoachAnchorChanged: (Int, Rect) -> Unit,
 ) {
     Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
       WithoutPressIndication {
@@ -627,6 +639,7 @@ private fun ColumnScope.MainTabPages(
                 onGameDeleted = libraryViewModel::deleteGame,
                 onRecentRemoved = libraryViewModel::removeRecentGame,
                 onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
+                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.HOME, it) },
                 isActive = page == selectedIndex,
               )
               1 -> GameScreen(
@@ -639,9 +652,16 @@ private fun ColumnScope.MainTabPages(
                 onScrapeEventShown = libraryViewModel::acknowledgeScrapeEvent,
                 onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
                 onAddManualGame = libraryViewModel::addManualGame,
+                onCoachAnchorChanged = onCoachAnchorChanged,
               )
-              2 -> EngineScreen(Modifier.fillMaxSize())
-              3 -> SettingsScreen(Modifier.fillMaxSize())
+              2 -> EngineScreen(
+                Modifier.fillMaxSize(),
+                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
+              )
+              3 -> SettingsScreen(
+                Modifier.fillMaxSize(),
+                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.SETTINGS, it) },
+              )
             }
           }
         }

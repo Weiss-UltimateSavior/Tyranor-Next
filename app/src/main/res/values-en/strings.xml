@@ -856,4 +856,36 @@
     <string name="ethornell_error_bootstrap">No supported system.arc index with an ipl._bp bootstrap was found.</string>
     <string name="ethornell_error_font">Invalid or unreadable font. Import a TTF, TTC, OTF or OTC font again.</string>
     <string name="ethornell_error_userdata">Cannot create private Ethornell user data. Check available storage space.</string>
+
+    <!-- First-launch quick start -->
+    <string name="onboarding_title">Quick start</string>
+    <string name="onboarding_welcome_title">Welcome to Tyranor Next</string>
+    <string name="onboarding_welcome_body">Manage your visual novel library and launch games with built-in engines, external APK engine modules, or external emulators. The app does not include commercial games. Prepare your game files first.</string>
+    <string name="onboarding_add_title">Add games</string>
+    <string name="onboarding_add_body">Open Games, tap Add game, and choose the game folder option. Grant folder access through the system file picker to scan and add games. In an empty library, you can also tap Add folder. Keep access to the folder enabled.</string>
+    <string name="onboarding_engine_title">Choose a runtime</string>
+    <string name="onboarding_engine_body">Open Engines to check built-in engines, external APK engine modules, and external emulators. Install the required external app when needed. Detecting a game does not guarantee compatibility.</string>
+    <string name="onboarding_play_title">Start playing</string>
+    <string name="onboarding_play_body">Tap a game card in Games to open its action panel. Launch the game, change its cover, or open per-game settings and save management where supported.</string>
+    <string name="onboarding_progress">Page %1$d of %2$d</string>
+    <string name="onboarding_previous">Previous</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Get started</string>
+    <string name="onboarding_skip">Skip for now</string>
+    <string name="onboarding_save_failed">Could not save your progress. Check available storage and try again.</string>
+    <string name="onboarding_retry">Retry</string>
+    <string name="onboarding_coach_home_title">Start from Home</string>
+    <string name="onboarding_coach_home_body">Jump back into favorites here and see what you opened recently.</string>
+    <string name="onboarding_coach_games_title">Add your games</string>
+    <string name="onboarding_coach_games_body">Use Add game to choose and save a game folder. It is scanned after you add it.</string>
+    <string name="onboarding_coach_games_search_title">Find a game</string>
+    <string name="onboarding_coach_games_search_body">Use search to filter the games in your library by name.</string>
+    <string name="onboarding_coach_games_cover_title">Fill in covers</string>
+    <string name="onboarding_coach_games_cover_body">Tap the cloud button to fetch covers for games that are missing them.</string>
+    <string name="onboarding_coach_games_scan_title">Rescan folders</string>
+    <string name="onboarding_coach_games_scan_body">Tap the circular arrows to recheck folders you already added. It does not add folders.</string>
+    <string name="onboarding_coach_engine_title">Check runtimes</string>
+    <string name="onboarding_coach_engine_body">Check built-in engines, external modules, and emulators here.</string>
+    <string name="onboarding_coach_settings_title">Adjust settings anytime</string>
+    <string name="onboarding_coach_settings_body">Adjust appearance, navigation, scanning, and input from Settings.</string>
 </resources>

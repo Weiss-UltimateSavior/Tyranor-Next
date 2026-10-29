@@ -34,6 +34,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -76,7 +79,10 @@ import android.widget.Toast
 
 /** 引擎页：列表行展示已集成的游戏引擎。 */
 @Composable
-fun EngineScreen(modifier: Modifier = Modifier) {
+fun EngineScreen(
+    modifier: Modifier = Modifier,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
+) {
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
@@ -118,7 +124,9 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         stringResource(R.string.engine_tab_web),
                     )
                     MiuixSettingsTheme {
-                        val tabModifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
+                        val tabModifier = Modifier
+                            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
+                            .onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
                         if (AppThemeColors.isGlass) {
                             // 玻璃外观：Miuix TabRow 不支持指示器描边，改用统一标签栏组件
                             // （亮卡指示器 + 滑动动画 + 0.5dp 描边，见 AGENTS.md「标签栏统一规范」）
@@ -190,6 +198,11 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                     engine = engine,
                     statusTextRes = statusRes,
                     installed = installed,
+                    modifier = if (engine == tabEngines.firstOrNull()) {
+                        Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
+                    } else {
+                        Modifier
+                    },
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     onClick = {
@@ -355,11 +368,12 @@ private fun EngineRow(
     engine: EngineType,
     @StringRes statusTextRes: Int,
     installed: Boolean,
+    modifier: Modifier = Modifier,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .glassShadow()

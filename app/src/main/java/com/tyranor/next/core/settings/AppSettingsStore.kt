@@ -11,6 +11,32 @@ import kotlinx.coroutines.flow.MutableStateFlow
  */
 object AppSettingsStore {
 
+    const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
+
+    private var onboardingPreferences: OnboardingPreferences? = null
+
+    @Synchronized
+    private fun onboarding(context: Context): OnboardingPreferences =
+        onboardingPreferences ?: OnboardingPreferences(prefs(context)).also { onboardingPreferences = it }
+
+    /** 在主进程的偏好迁移/游戏库预热前调用；显式 false 防止中途退出被识别为老用户。 */
+    fun initializeOnboarding(context: Context): OnboardingWriteResult {
+        val settings = prefs(context)
+        return onboarding(context).initialize {
+            settings.all.isNotEmpty() ||
+                listOf("tyranor_prefs", "yukihub_prefs", "game_scanner").any { name ->
+                    context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
+                } || context.getDatabasePath("game_library.db").exists()
+        }
+    }
+
+    fun isOnboardingCompleted(context: Context): Boolean =
+        onboarding(context).isCompleted()
+
+    /** IO 线程调用；只有写入成功才能离开引导，失败允许用户重试。 */
+    fun setOnboardingCompleted(context: Context): OnboardingWriteResult =
+        onboarding(context).complete()
+
     const val KEY_THEME_COLOR = "theme_color"
     const val KEY_NAV_STYLE = "nav_style"
     const val KEY_LIQUID_GLASS_ENHANCE = "liquid_glass_enhance"

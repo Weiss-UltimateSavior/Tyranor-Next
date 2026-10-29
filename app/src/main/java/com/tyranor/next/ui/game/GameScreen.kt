@@ -78,7 +78,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -147,6 +150,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarBlurHost
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.onboarding.CoachAnchor
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
@@ -185,6 +189,7 @@ fun GameScreen(
     onScrapeEventShown: (Long) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
@@ -298,6 +303,7 @@ fun GameScreen(
         dbSearchQuery = libraryState.searchQuery,
         dbSearchResults = libraryState.searchResults,
         onAddManualGame = onAddManualGame,
+        onCoachAnchorChanged = onCoachAnchorChanged,
                 onSearchQueryChanged = onSearchQueryChanged,
     )
 
@@ -474,6 +480,7 @@ private fun GameLibraryContent(
     dbSearchResults: List<ScanGame>?,
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Int, Rect) -> Unit,
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
     // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
@@ -512,18 +519,35 @@ private fun GameLibraryContent(
                 }
             },
             trailing = {
-                TopBarIcon(
-                    painterResource(R.drawable.ic_game_add),
-                    stringResource(R.string.game_add_content_description),
-                    MaterialTheme.colorScheme.primary,
-                ) { addGameStep = AddGameStep.CHOICE }
-                TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
-                    showSearch = !showSearch
-                    if (!showSearch) query = ""
+                Box(
+                    Modifier.onGloballyPositioned {
+                        onCoachAnchorChanged(CoachAnchor.GAME_ADD, it.boundsInRoot())
+                    },
+                ) {
+                    TopBarIcon(
+                        painterResource(R.drawable.ic_game_add),
+                        stringResource(R.string.game_add_content_description),
+                        MaterialTheme.colorScheme.primary,
+                    ) { addGameStep = AddGameStep.CHOICE }
+                }
+                Box(
+                    Modifier.onGloballyPositioned {
+                        onCoachAnchorChanged(CoachAnchor.GAME_SEARCH, it.boundsInRoot())
+                    },
+                ) {
+                    TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
+                        showSearch = !showSearch
+                        if (!showSearch) query = ""
+                    }
                 }
                 if (scrapingCovers) {
                     Box(
-                        modifier = Modifier.padding(start = 2.dp).size(34.dp),
+                        modifier = Modifier
+                            .padding(start = 2.dp)
+                            .size(34.dp)
+                            .onGloballyPositioned {
+                                onCoachAnchorChanged(CoachAnchor.GAME_COVER, it.boundsInRoot())
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(
@@ -535,12 +559,24 @@ private fun GameLibraryContent(
                         )
                     }
                 } else {
-                    TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
-                        syncMissingCovers()
+                    Box(
+                        Modifier.onGloballyPositioned {
+                            onCoachAnchorChanged(CoachAnchor.GAME_COVER, it.boundsInRoot())
+                        },
+                    ) {
+                        TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
+                            syncMissingCovers()
+                        }
                     }
                 }
-                TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
-                    refreshGames()
+                Box(
+                    Modifier.onGloballyPositioned {
+                        onCoachAnchorChanged(CoachAnchor.GAME_SCAN, it.boundsInRoot())
+                    },
+                ) {
+                    TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
+                        refreshGames()
+                    }
                 }
             },
         )

@@ -54,7 +54,10 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -112,6 +115,7 @@ fun HomeScreen(
     onGameDeleted: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
     onQuickLaunchToggle: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
     /** 首页 Tab 是否处于前台（四页常驻：Web 首页据此暂停/恢复，避免后台耗电）。 */
     isActive: Boolean = true,
 ) {
@@ -253,6 +257,7 @@ fun HomeScreen(
             onGameClick = { selectedGame = it },
             onGameLongClick = { launchGame(it) },
             onRecentRemoved = { removeRecentRecord(it) },
+            onCoachAnchorChanged = onCoachAnchorChanged,
         )
     }
 
@@ -351,6 +356,7 @@ private fun NativeHomeContent(
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
+    onCoachAnchorChanged: (Rect) -> Unit,
 ) {
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
@@ -377,6 +383,7 @@ private fun NativeHomeContent(
                             quickLaunch = quickLaunch,
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
+                            onCoachAnchorChanged = onCoachAnchorChanged,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
@@ -390,6 +397,7 @@ private fun NativeHomeContent(
                             quickLaunch = quickLaunch,
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
+                            onCoachAnchorChanged = onCoachAnchorChanged,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text(
@@ -406,6 +414,7 @@ private fun NativeHomeContent(
                         quickLaunch = quickLaunch,
                         onGameClick = onGameClick,
                         onGameLongClick = onGameLongClick,
+                        onCoachAnchorChanged = onCoachAnchorChanged,
                     )
                 }
                 items(
@@ -434,9 +443,12 @@ private fun QuickLaunchSection(
     quickLaunch: List<ScanGame>,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
 ) {
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onGloballyPositioned {
+            onCoachAnchorChanged(it.boundsInRoot())
+        },
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {
