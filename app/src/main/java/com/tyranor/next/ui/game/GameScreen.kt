@@ -641,7 +641,13 @@ private fun GameLibraryContent(
                             if (hasActiveCondition) {
                                 NoRippleButton(
                                     text = stringResource(R.string.game_filter_reset),
-                                    onClick = resetFilters,
+                                    // 空态也可能是「搜索 + 筛选」共同造成的：只清筛选仍然空着、
+                                    // 按钮还会因为条件失效而消失，所以这里连搜索词一起清
+                                    //（抽屉内的「重置」不动搜索，两者语义不同）。
+                                    onClick = {
+                                        resetFilters()
+                                        query = ""
+                                    },
                                     modifier = Modifier.padding(top = 12.dp),
                                 )
                             }
