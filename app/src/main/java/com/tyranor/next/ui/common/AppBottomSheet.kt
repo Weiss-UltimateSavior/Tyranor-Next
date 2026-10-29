@@ -26,6 +26,8 @@ import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassBorder
 import com.tyranor.next.theme.GlassPanelSolid
+import com.tyranor.next.theme.SheetScrimDefault
+import com.tyranor.next.theme.SheetScrimGlass
 import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 
 /**
@@ -80,11 +82,8 @@ fun AppBottomSheet(
             AppThemeColors.isGlass -> GlassPanelSolid
             else -> MaterialTheme.colorScheme.background
         },
-        scrimColor = when {
-            AppThemeColors.isAdvancedGlass -> Color.Black.copy(alpha = 0.6f)
-            AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
-            else -> Color.Black.copy(alpha = 0.32f)
-        },
+        // 玻璃系（复古/高级）共用加深遮罩，默认外观用常规强度；两个玻璃分支值相同，不必分开写
+        scrimColor = if (AppThemeColors.isGlass) SheetScrimGlass else SheetScrimDefault,
         contentWindowInsets = { WindowInsets(0.dp) },
         shape = AppSheetTopShape,
         // 不用 dragHandle 槽：Material3 1.4 会给该槽套一层 clickable，Expanded 状态下点击把手
