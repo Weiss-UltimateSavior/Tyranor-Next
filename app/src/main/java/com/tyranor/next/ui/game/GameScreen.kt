@@ -109,7 +109,6 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
-import com.tyranor.next.core.game.model.GameSortKeys
 import com.tyranor.next.core.game.model.filterGames
 import com.tyranor.next.core.game.model.sortGames
 import com.tyranor.next.core.game.model.GameTitleTags
@@ -532,13 +531,15 @@ private fun GameLibraryContent(
     // 否则从第 30 张筛到 3 张时会停在新列表的尾部（封面流的分页位置另见 GameCoverFlow）。
     // 条件用 rememberSaveable 记住：旋转或进程重建后 effect 会重跑，但条件没变，
     // 此时应保留 gridState 自己恢复的滚动位置，不能无条件拉回顶部。
+    // 等库加载完成再记签名：进程重建后首帧的 gameSort 还是默认值（由 MainScreen 异步灌入），
+    // 直接比对会把「条件变了」误判出来，把 gridState 刚恢复的滚动位置清掉。
     val filterSignature = "$engineFilter|$playedFilter|$gameSort"
-    var lastFilterSignature by rememberSaveable { mutableStateOf(filterSignature) }
-    LaunchedEffect(filterSignature) {
-        if (lastFilterSignature != filterSignature) {
-            lastFilterSignature = filterSignature
-            gridState.scrollToItem(0)
-        }
+    var lastFilterSignature by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(filterSignature, loaded) {
+        if (!loaded) return@LaunchedEffect
+        val previous = lastFilterSignature
+        lastFilterSignature = filterSignature
+        if (previous != null && previous != filterSignature) gridState.scrollToItem(0)
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
