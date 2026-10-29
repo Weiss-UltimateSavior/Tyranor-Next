@@ -530,8 +530,15 @@ private fun GameLibraryContent(
     }
     // 筛选/排序一换，列表内容整体换掉，原来的滚动位置没有意义：回到顶部，
     // 否则从第 30 张筛到 3 张时会停在新列表的尾部（封面流的分页位置另见 GameCoverFlow）。
-    LaunchedEffect(engineFilter, playedFilter, gameSort) {
-        gridState.scrollToItem(0)
+    // 条件用 rememberSaveable 记住：旋转或进程重建后 effect 会重跑，但条件没变，
+    // 此时应保留 gridState 自己恢复的滚动位置，不能无条件拉回顶部。
+    val filterSignature = "$engineFilter|$playedFilter|$gameSort"
+    var lastFilterSignature by rememberSaveable { mutableStateOf(filterSignature) }
+    LaunchedEffect(filterSignature) {
+        if (lastFilterSignature != filterSignature) {
+            lastFilterSignature = filterSignature
+            gridState.scrollToItem(0)
+        }
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
