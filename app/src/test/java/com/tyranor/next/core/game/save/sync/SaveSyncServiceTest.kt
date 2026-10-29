@@ -22,6 +22,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.FileNotFoundException
+import java.nio.file.AccessDeniedException
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -907,9 +909,7 @@ class SaveSyncServiceTest {
                     caught
                 }
             }
-            withTimeout(5_000) {
-                while (harness.journal.load(harness.key(game)) == null) delay(10)
-            }
+            awaitPreparedActivation(harness, harness.key(game))
             harness.world.isRunning = true
             release.complete(Unit)
             gate.await()
@@ -1073,10 +1073,7 @@ class SaveSyncServiceTest {
             val activation = async(Dispatchers.Default) {
                 harness.service.activateVersion(game, selected.id)
             }
-            withTimeout(5_000) {
-                while (harness.journal.load(key) == null) yield()
-            }
-            val pendingBefore = checkNotNull(harness.journal.load(key))
+            val pendingBefore = awaitPreparedActivation(harness, key)
             val archiveBefore = harness.journal.archive(key).readBytes()
             val exportAtCancellation = harness.world.exportCount()
             val completeImportBefore = harness.world.completeImportCount()
@@ -1229,6 +1226,22 @@ class SaveSyncServiceTest {
         }
         return false
     }
+
+    private suspend fun awaitPreparedActivation(harness: Harness, key: String): SaveActivationJournal.Pending =
+        withTimeout(5_000) {
+            var pending: SaveActivationJournal.Pending? = null
+            while (pending == null) {
+                try {
+                    pending = harness.journal.load(key)
+                } catch (failure: SaveSyncException) {
+                    // Windows may briefly deny a reader while the atomic rename publishes the
+                    // record. Permanent I/O/corruption still fails this bounded observation.
+                    if (failure.cause !is FileNotFoundException && failure.cause !is AccessDeniedException) throw failure
+                }
+                if (pending == null) yield()
+            }
+            pending
+        }
 
     private suspend fun prepareMetadataPendingActivation(
         harness: Harness,
