@@ -41,7 +41,7 @@ data class MainLibraryUiState(
     val scrapeMessage: String? = null,
     /** 已发布搜索结果的查询词；与页面当前查询词一致时结果才可用（迁移方案阶段 3）。 */
     val searchQuery: String = "",
-    /** Room DAO 搜索结果（已按当前排序模式排序）；null 表示无可用的 DB 搜索结果。 */
+    /** Room DAO 搜索结果（命中集；engine/recent 排序会回落到标题序，展示顺序由 UI 内存重排）。null 表示无可用的 DB 搜索结果。 */
     val searchResults: List<ScanGame>? = null,
 )
 
@@ -216,7 +216,11 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
     fun addManualGame(game: ScanGame): Boolean {
         if (_uiState.value.games.any { it.uri == game.uri }) return false
         val revision = stateRevision.incrementAndGet()
-        _uiState.update { MainLibraryStateReducer.acceptGames(it, it.games + game) }
+        // 手动添加只是增量，不能把「完整库已加载」置真：冷启动加载期间添加会让游戏页误判
+        // 库已就绪，进而把仍然有效的引擎筛选当成失效条件清掉（见 GameScreen 的失效清理）。
+        _uiState.update { state ->
+            MainLibraryStateReducer.acceptGames(state, state.games + game).copy(loaded = state.loaded)
+        }
         enqueuePersistence(revision) {
             GameLibraryFacade.updateGames(appContext) { games ->
                 if (games.any { it.uri == game.uri }) games else games + game
@@ -418,9 +422,29 @@ internal object MainLibraryStateReducer {
         quickLaunch = state.quickLaunch.filterNot { it.uri == uri },
     )
 
-    fun removeRecent(state: MainLibraryUiState, uri: String): MainLibraryUiState = state.copy(
-        recentGames = state.recentGames.filterNot { it.uri == uri },
-    )
+    /**
+     * 清除游玩记录：最近列表移除该项，同时把 [MainLibraryUiState.games] 里同一游戏的
+     * [ScanGame.openTime] 归零。
+     *
+     * 游戏页的「已游玩」筛选与「最近游玩」排序都读 games，只改 recentGames 的话，
+     * 在持久化命令发布新快照之前，被清除的游戏仍算「已游玩」并保持原排序位置。
+     *
+     * 落库侧 [GameLibraryFacade.removeRecentGame] 对缓存做同样的事，两处取值一致，
+     * 因此随后的快照不会把这里清掉的值又写回正数。
+     */
+    fun removeRecent(state: MainLibraryUiState, uri: String): MainLibraryUiState {
+        // 无命中时原样返回，避免换掉 games 引用让下游 remember(games) 的排序整库重算。
+        val inLibrary = state.games.any { it.uri == uri }
+        if (!inLibrary && state.recentGames.none { it.uri == uri }) return state
+        return state.copy(
+            games = if (inLibrary) {
+                state.games.map { if (it.uri == uri) it.copy(openTime = 0L) else it }
+            } else {
+                state.games
+            },
+            recentGames = state.recentGames.filterNot { it.uri == uri },
+        )
+    }
 
     fun toggleQuickLaunch(state: MainLibraryUiState, game: ScanGame): MainLibraryUiState {
         val exists = state.quickLaunch.any { it.uri == game.uri }

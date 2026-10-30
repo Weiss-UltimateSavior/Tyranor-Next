@@ -24,11 +24,11 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.model.sortGames
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.game.GameGrid
-import com.tyranor.next.ui.game.sortGames
 import com.tyranor.next.ui.main.MainLibraryUiState
 
 /** 分类栏「全部」分类的 key。 */
