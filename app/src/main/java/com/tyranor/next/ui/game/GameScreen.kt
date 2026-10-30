@@ -1144,8 +1144,8 @@ internal fun GameActionsSheet(
                 }
             }
 
-            // 底部安全区留白
-            item { Box(Modifier.fillMaxWidth().navigationBarsPadding().height(16.dp)) }
+            // 底部留白：导航栏间距已由 AppBottomSheet 统一加在内容层，这里只补 16dp 视觉余量
+            item { Box(Modifier.fillMaxWidth().height(16.dp)) }
         }
     }
 
