@@ -1,6 +1,5 @@
 package com.tyranor.next.core.game.save.sync
 
-import com.tyranor.next.core.engine.EngineType
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
@@ -10,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -20,14 +20,17 @@ class SaveSyncSessionTest {
     private val key = SaveContentHash.text("game-uri")
 
     @Test
-    fun oldForegroundWaitingForLaunchCannotMarkNewYurisSessionReturned() = runBlocking {
+    fun oldConfirmationWaitingForLaunchCannotMarkNewYurisSessionReturned() = runBlocking {
         val store = SaveSyncStateStore(temp.root)
         val old = session("old").put("leftApp", true)
         store.save(key, old)
         lateinit var event: kotlinx.coroutines.Deferred<Unit?>
         SaveSyncLocks.active("directory-A") {
             event = async(start = CoroutineStart.UNDISPATCHED) {
-                markSaveSessionForeground(store, key, old, "directory-A", EngineType.YURIS, true, 7)
+                withCurrentSaveSession(store, key, old, "directory-A") { current ->
+                    requireExternalConfirmationSession(current, "old", "directory-A")
+                    store.save(key, current.put("returned", true).put("externalExitConfirmedToken", "old"))
+                }
             }
             store.save(key, session("new"))
         }
@@ -87,15 +90,16 @@ class SaveSyncSessionTest {
     }
 
     @Test
-    fun foregroundUsesCurrentRecordEvidenceAfterWaitingForLock() = runBlocking {
-        val store = SaveSyncStateStore(temp.root)
-        val observed = session("same").put("leftApp", true).put("ownerPid", 6)
-        store.save(key, session("same"))
-        markSaveSessionForeground(store, key, observed, "directory-A", EngineType.YURIS, false, 7)
-        assertFalse(store.load(key).optBoolean("returned"))
-        markSaveSessionBackground(store, key, observed, "directory-A")
-        markSaveSessionForeground(store, key, observed, "directory-A", EngineType.YURIS, false, 7)
-        assertTrue(store.load(key).getBoolean("returned"))
+    fun externalConfirmationRejectsChangedTokenOrDirectoryBinding() {
+        val current = session("current")
+        for ((token, directory) in listOf("old" to "directory-A", "current" to "directory-B")) {
+            val failure = assertThrows(SaveSyncException::class.java) {
+                requireExternalConfirmationSession(current, token, directory)
+            }
+            assertEquals(SaveSyncError.LOCAL_STATE_CHANGED, failure.code)
+            assertFalse(current.optBoolean("returned"))
+        }
+        requireExternalConfirmationSession(current, "current", "directory-A")
     }
 
     @Test

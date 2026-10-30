@@ -1,24 +1,32 @@
 package com.tyranor.next.core.game.save.sync
 
 import org.json.JSONObject
+import org.json.JSONException
 import kotlinx.coroutines.CancellationException
 
-/** A damaged cache entry is reconstructible and ignored until a lifecycle record rewrites it. */
+/** Damaged known-host evidence remains unknown until a lifecycle record rewrites it. */
 internal fun loadSaveHostRecords(
     store: SaveSyncStateStore,
-    knownKeys: Set<String>? = null,
+    knownKeys: Set<String>,
 ): Map<String, JSONObject> = buildMap {
     for (key in store.keys()) {
-        if (knownKeys != null && key !in knownKeys) continue
+        if (key !in knownKeys) continue
         val state = try {
-            store.load(key)
+            store.load(key) { record ->
+                val pid = (record.opt("pid") as? Number)?.toString()?.toIntOrNull()
+                val activities = (record.opt("activities") as? Number)?.toString()?.toIntOrNull()
+                val uris = record.optJSONArray("uris")
+                if (pid == null || pid <= 0 || activities == null || activities < 0 || uris == null ||
+                    (0 until uris.length()).any { (uris.opt(it) as? String).isNullOrBlank() }) {
+                    throw JSONException("Invalid save host record")
+                }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: SaveSyncException) {
             if (failure.code != SaveSyncError.LOCAL_IO) throw failure
-            continue
+            JSONObject() // Strict loading preserves the original and its quarantine copy.
         }
-        if (state.length() == 0 || state.optInt("pid", -1) <= 0) continue
         put(key, state)
     }
 }

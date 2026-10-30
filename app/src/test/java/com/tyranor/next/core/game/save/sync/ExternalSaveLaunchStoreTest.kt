@@ -73,7 +73,7 @@ class ExternalSaveLaunchStoreTest {
     }
 
     @Test
-    fun foregroundRetiresOldOwnerButPreservesCurrentPreparedMarker() {
+    fun preparedEvidenceSurvivesOwnerChangeUntilExplicitConfirmation() {
         val root = temp.newFolder("root")
         val oldUri = "content://games/old"
         val preparedUri = "content://games/prepared"
@@ -81,14 +81,15 @@ class ExternalSaveLaunchStoreTest {
         ExternalSaveLaunchStore(root, "old-owner").prepare(oldUri, "old-token", "old-directory")
         current.prepare(preparedUri, "prepared-token", "prepared-directory")
 
-        current.foreground(sequenceCutoff = 0L, returned = false, liveTokens = setOf("prepared-token"))
-
-        assertFalse(current.hasActive(setOf(oldUri), "old-directory"))
+        assertTrue(current.hasActive(setOf(oldUri), "old-directory"))
         assertTrue(current.hasActive(setOf(preparedUri), "unrelated-directory"))
+        current.confirmExit(current.confirmation(oldUri), liveTokens = setOf("prepared-token")) {}
+        assertFalse(current.hasActive(setOf(oldUri), "old-directory"))
+        assertTrue(current.hasActive(setOf(preparedUri), "prepared-directory"))
     }
 
     @Test
-    fun returnedForegroundUsesCapturedSequenceAndHonorsLaterCalls() {
+    fun confirmationIsScopedAndCannotRetireDispatchAfterDialogOpened() {
         val root = temp.newFolder("root")
         val dueUri = "content://games/due"
         val futureUri = "content://games/future"
@@ -96,13 +97,17 @@ class ExternalSaveLaunchStoreTest {
         store.dispatched(dueUri, "due-token", "due-directory", sequence = 5L)
         store.dispatched(futureUri, "future-token", "future-directory", sequence = 6L)
 
-        store.foreground(sequenceCutoff = 5L, returned = true)
-
+        val snapshot = store.confirmation(dueUri)
+        store.dispatched(dueUri, "new-token", "due-directory", sequence = 7L)
+        val failure = assertThrows(SaveSyncException::class.java) {
+            store.confirmExit(snapshot, liveTokens = emptySet()) { throw AssertionError("stale confirmation committed") }
+        }
+        assertEquals(SaveSyncError.LOCAL_STATE_CHANGED, failure.code)
+        assertTrue(store.hasActive(setOf(dueUri), "due-directory"))
+        assertTrue(store.hasActive(setOf(futureUri), "future-directory"))
+        ExternalSaveLaunchStore(root, "restarted-owner").confirmExit(store.confirmation(dueUri), emptySet()) {}
         assertFalse(store.hasActive(setOf(dueUri), "due-directory"))
         assertTrue(store.hasActive(setOf(futureUri), "future-directory"))
-
-        store.foreground(sequenceCutoff = 6L, returned = true)
-        assertFalse(store.hasActive(setOf(futureUri), "future-directory"))
     }
 
     @Test
@@ -135,27 +140,44 @@ class ExternalSaveLaunchStoreTest {
         val activeFailure = assertThrows(SaveSyncException::class.java) {
             store.hasActive(setOf(uri), "known-directory")
         }
-        store.foreground(sequenceCutoff = Long.MAX_VALUE, returned = true)
         assertFalse(store.hasActive(setOf("content://games/unrelated"), "known-directory"))
 
         assertEquals(SaveSyncError.LOCAL_IO, activeFailure.code)
         assertTrue(marker.isFile)
 
-        store.remove(uri)
+        store.confirmExit(store.confirmation(uri), liveTokens = emptySet()) {}
         assertFalse(store.hasActive(setOf(uri), "known-directory"))
     }
 
     @Test
-    fun foregroundRetiresPreparedMarkerWhenNoLiveTokenRemains() {
+    fun livePreparedTokenCannotBeConfirmedBeforeDispatchFinishes() {
         val root = temp.newFolder("root")
         val uri = "content://games/prepared-stale"
         val store = ExternalSaveLaunchStore(root, "owner")
         store.prepare(uri, "stale-token", "directory")
 
-        store.foreground(sequenceCutoff = 0L, returned = false, liveTokens = emptySet())
-
+        val snapshot = store.confirmation(uri)
+        val failure = assertThrows(SaveSyncException::class.java) {
+            store.confirmExit(snapshot, liveTokens = setOf("stale-token")) { throw AssertionError("live prepare cleared") }
+        }
+        assertEquals(SaveSyncError.GAME_RUNNING, failure.code)
+        assertTrue(store.hasActive(setOf(uri), "directory"))
+        store.confirmExit(store.confirmation(uri), liveTokens = emptySet()) {}
         assertFalse(store.hasActive(setOf(uri), "directory"))
         assertFalse(markerFile(root, uri).exists())
+    }
+
+    @Test
+    fun confirmingHealthyRunsDoesNotAccumulateRetiredMarkersOrReceiptLinks() {
+        val root = temp.newFolder("repeated-confirmation")
+        val uri = "content://games/repeated"
+        val store = ExternalSaveLaunchStore(root, "owner")
+        repeat(8) { sequence ->
+            store.dispatched(uri, "token-$sequence", "directory", sequence.toLong() + 1)
+            store.confirmExit(store.confirmation(uri), emptySet()) {}
+            assertFalse(store.hasActive(setOf(uri), "directory"))
+        }
+        assertTrue(markerFile(root, uri).parentFile.listFiles().orEmpty().isEmpty())
     }
 
     @Test
@@ -237,6 +259,112 @@ class ExternalSaveLaunchStoreTest {
         assertLocalIo { store.hasActive(setOf(uri), "directory") }
         assertLocalIo { store.prepare(uri, "prepared-token", "directory") }
         assertTrue(marker.isDirectory)
+    }
+
+    @Test
+    fun corruptedNonemptyDirectoryIsQuarantinedOnlyForConfirmedUri() {
+        val root = temp.newFolder("recovery")
+        val uri = "content://games/corrupt-directory"
+        val other = "content://games/other-corrupt-directory"
+        val marker = markerFile(root, uri).apply { check(mkdirs()) }
+        val otherMarker = markerFile(root, other).apply { check(mkdirs()) }
+        File(marker, "recover-me.dat").writeText("original-data")
+        File(otherMarker, "other.dat").writeText("other-data")
+        val store = ExternalSaveLaunchStore(root, "owner")
+        val snapshot = store.confirmation(uri)
+        assertTrue(marker.isDirectory)
+        assertLocalIo { store.hasActive(setOf(uri), "directory") }
+        store.confirmExit(snapshot, emptySet()) {}
+        assertFalse(store.hasActive(setOf(uri), "directory"))
+        assertLocalIo { store.hasActive(setOf(other), "directory") }
+        val quarantine = marker.parentFile.listFiles()!!.single { it.name.startsWith("${marker.name}.confirmed-") }
+        assertEquals("original-data", File(quarantine, "recover-me.dat").readText())
+        assertEquals("other-data", File(otherMarker, "other.dat").readText())
+    }
+
+    @Test
+    fun identicalCorruptReplacementCannotReuseOldDialogSnapshot() {
+        val root = temp.newFolder("replacement")
+        val uri = "content://games/corrupt-replaced"
+        val marker = markerFile(root, uri)
+        check(marker.parentFile.mkdirs())
+        marker.writeText("{broken")
+        val store = ExternalSaveLaunchStore(root, "owner")
+        val snapshot = store.confirmation(uri)
+        val originalAttributes = Files.readAttributes(marker.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java)
+        val replacement = File(marker.parentFile, "replacement.tmp")
+        Files.copy(marker.toPath(), replacement.toPath(), java.nio.file.StandardCopyOption.COPY_ATTRIBUTES)
+        Files.getFileAttributeView(replacement.toPath(), java.nio.file.attribute.BasicFileAttributeView::class.java)
+            .setTimes(originalAttributes.lastModifiedTime(), originalAttributes.lastAccessTime(), originalAttributes.creationTime())
+        Files.move(replacement.toPath(), marker.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        val failure = assertThrows(SaveSyncException::class.java) {
+            store.confirmExit(snapshot, emptySet()) { throw AssertionError("replacement accepted") }
+        }
+        assertEquals(SaveSyncError.LOCAL_STATE_CHANGED, failure.code)
+        assertEquals("{broken", marker.readText())
+    }
+
+    @Test
+    fun copiedCorruptDirectoryCannotReuseSnapshotEvenWithReceiptAndPreservedTimes() {
+        val root = temp.newFolder("copied-directory")
+        val uri = "content://games/directory-replaced"
+        val marker = markerFile(root, uri).apply { check(mkdirs()) }
+        File(marker, "save.dat").writeText("precious")
+        val store = ExternalSaveLaunchStore(root, "owner")
+        val snapshot = store.confirmation(uri)
+        val attributes = Files.readAttributes(marker.toPath(), java.nio.file.attribute.BasicFileAttributes::class.java)
+        val retained = File(marker.parentFile, "retained-original")
+        Files.move(marker.toPath(), retained.toPath())
+        check(marker.mkdir())
+        for (child in retained.listFiles()!!) {
+            Files.copy(child.toPath(), File(marker, child.name).toPath(), java.nio.file.StandardCopyOption.COPY_ATTRIBUTES)
+        }
+        Files.getFileAttributeView(marker.toPath(), java.nio.file.attribute.BasicFileAttributeView::class.java)
+            .setTimes(attributes.lastModifiedTime(), attributes.lastAccessTime(), attributes.creationTime())
+        val failure = assertThrows(SaveSyncException::class.java) {
+            store.confirmExit(snapshot, emptySet()) { throw AssertionError("copied directory accepted") }
+        }
+        assertEquals(SaveSyncError.LOCAL_STATE_CHANGED, failure.code)
+        assertEquals("precious", File(marker, "save.dat").readText())
+        assertEquals("precious", File(retained, "save.dat").readText())
+    }
+
+    @Test
+    fun symlinkRecoveryRenamesLinkAndLeavesTargetUntouched() {
+        val root = temp.newFolder("link-recovery")
+        val uri = "content://games/link-recovery"
+        val marker = markerFile(root, uri)
+        check(marker.parentFile.mkdirs())
+        val outside = temp.newFile("outside-data").apply { writeText("precious") }
+        createSymbolicLink(marker, outside)
+        val store = ExternalSaveLaunchStore(root, "owner")
+        store.confirmExit(store.confirmation(uri), emptySet()) {}
+        assertEquals("precious", outside.readText())
+        assertFalse(Files.exists(marker.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+        assertTrue(marker.parentFile.listFiles()!!.any { Files.isSymbolicLink(it.toPath()) })
+    }
+
+    @Test
+    fun missingMarkerSnapshotCannotClearNewEvidence() {
+        val root = temp.newFolder("initially-missing")
+        val uri = "content://games/new-dispatch"
+        val store = ExternalSaveLaunchStore(root, "owner")
+        val snapshot = store.confirmation(uri)
+        assertFalse(snapshot.hasEvidence)
+        store.dispatched(uri, "new-token", "directory", 1L)
+        val failure = assertThrows(SaveSyncException::class.java) { store.confirmExit(snapshot, emptySet()) {} }
+        assertEquals(SaveSyncError.LOCAL_STATE_CHANGED, failure.code)
+        assertTrue(store.hasActive(setOf(uri), "directory"))
+    }
+
+    @Test
+    fun failureWhileCommittingSessionRetainsMarkerForRestart() {
+        val root = temp.newFolder("failed-commit")
+        val uri = "content://games/commit-failure"
+        val store = ExternalSaveLaunchStore(root, "owner")
+        store.dispatched(uri, "token", "directory", 1L)
+        assertLocalIo { store.confirmExit(store.confirmation(uri), emptySet()) { throw IOException("disk failure") } }
+        assertTrue(ExternalSaveLaunchStore(root, "restarted").hasActive(setOf(uri), "directory"))
     }
 
     private fun writeRecord(file: File, uri: String) {

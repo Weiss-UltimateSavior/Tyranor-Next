@@ -16,7 +16,7 @@ class SaveHostCacheRecoveryTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun malformedHostRecordIsIgnoredUntilLifecycleRewrite() {
+    fun malformedHostRecordRemainsUnknownBusyUntilLifecycleRewrite() {
         val hosts = temp.newFolder("hosts")
         val corrupt = File(hosts, "${SaveContentHash.text(HOST_PROCESS)}.json").apply {
             writeText(CORRUPT_JSON)
@@ -27,13 +27,13 @@ class SaveHostCacheRecoveryTest {
             identities = mapOf(DEAD_PID to SaveHostIdentity.Dead),
         )
 
-        assertFalse(running(probe))
+        assertTrue(running(probe))
         assertEquals(1, probe.visibleHostsCalls)
         assertTrue(corrupt.isFile)
         assertTrue(File(hosts, "${corrupt.name}.corrupt").exists())
         assertEquals(listOf(KEY), probe.store.keys())
 
-        assertFalse(running(probe))
+        assertTrue(running(probe))
         assertEquals(2, probe.visibleHostsCalls)
         assertTrue(corrupt.isFile)
         assertEquals(CORRUPT_JSON, File(hosts, "${corrupt.name}.corrupt").readText())
@@ -46,6 +46,31 @@ class SaveHostCacheRecoveryTest {
         assertFalse(running(probe))
         assertEquals(3, probe.visibleHostsCalls)
         assertTrue(File(hosts, "${corrupt.name}.corrupt").exists())
+    }
+
+    @Test
+    fun emptyAndNonpositivePidKnownRecordsRemainBusyOnRepeatedReads() {
+        for ((index, text) in listOf("", "{}", "{\"pid\":0}", "{\"pid\":-12}").withIndex()) {
+            val hosts = temp.newFolder("invalid-$index")
+            val original = File(hosts, "$KEY.json").apply { writeText(text) }
+            val probe = StoredHostProbe(SaveSyncStateStore(hosts), emptyList())
+            repeat(2) {
+                assertTrue(running(probe))
+                assertEquals(text, original.readText())
+            }
+            probe.store.save(KEY, hostRecord(DEAD_PID, 0))
+            assertFalse(running(StoredHostProbe(probe.store, emptyList(), mapOf(DEAD_PID to SaveHostIdentity.Dead))))
+        }
+    }
+
+    @Test
+    fun unrelatedCorruptKeyCannotMasqueradeAsKnownHost() {
+        val hosts = temp.newFolder("unknown-key")
+        val unknown = File(hosts, "${SaveContentHash.text("not-a-host")}.json").apply { writeText(CORRUPT_JSON) }
+        val probe = StoredHostProbe(SaveSyncStateStore(hosts), emptyList())
+        assertFalse(running(probe))
+        assertEquals(CORRUPT_JSON, unknown.readText())
+        assertFalse(File(hosts, "${unknown.name}.corrupt").exists())
     }
 
     @Test
@@ -135,7 +160,7 @@ class SaveHostCacheRecoveryTest {
         }
 
         override fun records(): Map<String, JSONObject> =
-            loadSaveHostRecords(store)
+            loadSaveHostRecords(store, setOf(KEY))
 
         override fun identity(pid: Int): SaveHostIdentity =
             identities[pid] ?: SaveHostIdentity.Unknown

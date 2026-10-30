@@ -234,17 +234,14 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.deleteGame(it, target.uri) }
         enqueuePersistence(revision) {
-            withContext(NonCancellable) {
-                GameLibraryFacade.removeGame(appContext, target.uri)
-                try {
-                    cleanupDeletedGame(appContext, target)
-                } catch (failure: SaveSyncException) {
-                    // Keep the library entry as a retry route if private-data cleanup is blocked.
-                    GameLibraryFacade.updateGames(appContext) { games ->
-                        if (games.any { it.uri == target.uri }) games else games + target
-                    }
-                    _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title) }
+            try {
+                cleanupDeletedGame(appContext, target)
+                withContext(NonCancellable) {
+                    GameLibraryFacade.removeGame(appContext, target.uri)
                 }
+            } catch (failure: SaveSyncException) {
+                // Keep the persistent library entry as the retry route when cleanup is blocked.
+                _uiState.update { it.copy(cleanupError = failure.code, cleanupGameTitle = target.title) }
             }
         }
     }

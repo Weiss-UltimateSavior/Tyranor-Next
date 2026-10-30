@@ -1,6 +1,5 @@
 package com.tyranor.next.core.game.save.sync
 
-import com.tyranor.next.core.engine.EngineType
 import org.json.JSONObject
 
 /** A delayed callback may mutate only the session it observed before waiting for the lock. */
@@ -21,7 +20,7 @@ internal suspend fun <T> withCurrentSaveSession(
         if (current.optString("activeKey") != activeKey) return@session null
         action(current)
     }
-    if (guardMutation) SaveSyncLocks.mutation { current() } else current()
+    if (guardMutation) SaveSyncLocks.mutation(activeKey) { current() } else current()
 }
 
 /** Missing bindings from an older build also require an explicit selection to re-establish ownership. */
@@ -35,18 +34,18 @@ internal fun requireSameSaveDirectory(expected: String, current: String) {
     }
 }
 
-internal suspend fun markSaveSessionForeground(
-    store: SaveSyncStateStore,
-    key: String,
-    observed: JSONObject,
-    activeKey: String,
-    engine: EngineType,
-    priorBackground: Boolean,
-    ownerPid: Int,
-) = withCurrentSaveSession(store, key, observed, activeKey) { current ->
-    if (shouldMarkExternalYurisReturned(engine, priorBackground, current.optBoolean("leftApp"),
-            current.optInt("ownerPid", -1), ownerPid)) {
-        store.save(key, current.put("returned", true))
+/** Historical returned/leftApp/ownerPid hints cannot prove an independent external host exited. */
+internal fun externalSessionNeedsExitConfirmation(session: JSONObject): Boolean {
+    val token = session.optString("token")
+    if (token.isBlank()) return false
+    if (session.optString("externalExitConfirmedToken") == token) return false
+    // Explicit local restore bookkeeping never launched Winlator.
+    return !(session.has("startedAt") && session.optLong("startedAt", -1L) == 0L && session.optBoolean("returned"))
+}
+
+internal fun requireExternalConfirmationSession(session: JSONObject, token: String, activeKey: String) {
+    if (session.optString("token") != token || session.optString("activeKey") != activeKey) {
+        throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
     }
 }
 

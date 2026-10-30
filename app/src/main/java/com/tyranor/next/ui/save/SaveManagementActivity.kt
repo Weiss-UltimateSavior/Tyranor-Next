@@ -37,10 +37,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.sync.SaveSyncException
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
@@ -105,6 +107,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveDirUnavailableMessage = stringResource(R.string.save_error_tyrano_external_unavailable)
     // 会话运行中/启动中：手动同步被拒绝的提示
     val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
+    val externalExitDoneMessage = stringResource(R.string.save_external_exit_done)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
@@ -120,6 +123,9 @@ private fun SaveManagementScreen(game: ScanGame) {
     // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
     var taskRunning by remember { mutableStateOf(false) }
     var versionsRevision by remember { mutableIntStateOf(0) }
+    var externalExitConfirmation by remember(game) {
+        mutableStateOf<SaveSyncRuntime.ExternalExitConfirmation?>(null)
+    }
 
     // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
     suspend fun refresh() {
@@ -274,6 +280,21 @@ private fun SaveManagementScreen(game: ScanGame) {
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
+                            if (game.engine == EngineType.YURIS) {
+                                AppNavItem(
+                                    title = stringResource(R.string.save_external_exit_title),
+                                    summary = stringResource(R.string.save_external_exit_summary),
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    drawSurface = false,
+                                    onClick = if (taskRunning) null else ({
+                                        runSaveTask {
+                                            externalExitConfirmation = SaveSyncRuntime.externalExitConfirmation(context, game)
+                                            if (externalExitConfirmation == null) externalExitDoneMessage else null
+                                        }
+                                    }),
+                                )
+                            }
                             AppNavItem(
                                 title = stringResource(R.string.save_export_zip),
                                 showLeadingIcon = false,
@@ -336,6 +357,33 @@ private fun SaveManagementScreen(game: ScanGame) {
                 item { BottomInsetSpacer() }
             }
         }
+    }
+
+    externalExitConfirmation?.let { confirmation ->
+        AppAlertDialog(
+            onDismissRequest = { externalExitConfirmation = null },
+            title = { Text(stringResource(R.string.save_external_exit_title), style = MaterialTheme.typography.titleMedium) },
+            text = { Text(stringResource(R.string.save_external_exit_message, game.title), style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_confirm),
+                    enabled = !taskRunning,
+                    onClick = {
+                        externalExitConfirmation = null
+                        runSaveTask {
+                            SaveSyncRuntime.confirmExternalExit(context, game, confirmation)
+                            externalExitDoneMessage
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { externalExitConfirmation = null },
+                )
+            },
+        )
     }
 
     // MV/MZ 导出格式选择：保留原有的格式确认与说明。

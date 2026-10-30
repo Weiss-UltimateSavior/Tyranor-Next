@@ -1003,4 +1003,8 @@
     <string name="launch_runtime_module_path_unresolved">无法解析游戏文件夹路径；该模块只接受真实文件夹路径</string>
     <string name="launch_runtime_module_denied">运行时模块拒绝启动或权限不足</string>
     <string name="launch_runtime_module_failed">运行时模块启动失败</string>
+    <string name="save_external_exit_title">确认已退出外部游戏</string>
+    <string name="save_external_exit_summary">在 Winlator 中退出游戏后，确认结束本次存档保护</string>
+    <string name="save_external_exit_message">请先在 Winlator 中完全退出“%1$s”，并确认共用存档目录的其他游戏也已退出。仅切回 Tyranor 不代表游戏退出。确认后将解除本次运行标记，允许上传、切换存档和删除；若游戏仍在写入，可能造成存档丢失。</string>
+    <string name="save_external_exit_done">已确认外部游戏退出，可继续管理存档</string>
 </resources>

@@ -199,7 +199,7 @@ class SaveHostProbeTest {
     }
 
     @Test
-    fun corruptRecordSnapshotIsConservativeOnceThenQuarantinedAbsenceCanBeIdle() {
+    fun corruptRecordSnapshotRemainsConservativeAcrossRepeatedChecks() {
         val name = "com.tyranor.next:kirikiroid"
         val records = mutableMapOf(key(name) to JSONObject())
         val probe = FakeProbe(
@@ -210,8 +210,7 @@ class SaveHostProbeTest {
         assertTrue(running(probe, hasSession = false))
         assertEquals(1, probe.visibleHostsCalls)
 
-        records.clear()
-        assertFalse(running(probe, hasSession = false))
+        assertTrue(running(probe, hasSession = false))
         assertEquals(2, probe.visibleHostsCalls)
     }
 

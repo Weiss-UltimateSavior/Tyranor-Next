@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.save.sync
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -10,6 +11,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
@@ -162,6 +164,47 @@ class SaveDirectoryIdentityTest {
         release.complete(Unit)
         withTimeout(5_000) { first.await(); second.await() }
         Unit
+    }
+
+    @Test
+    fun nestedGamesShareRunningEvidenceAndCannotLaunchDuringParentReplacement() = runBlocking {
+        val root = temp.newFolder("nested-games")
+        val parent = game("parent-game")
+        val child = game("nested-game")
+        val disjoint = game("other-game")
+        fun directory(game: ScanGame) = when (game.uri) {
+            parent.uri -> root
+            child.uri -> File(root, "B/savedata")
+            else -> File(root.parentFile, root.name + "-other")
+        }
+        assertEquals(setOf(parent.uri, child.uri), relatedSaveUris(parent, listOf(parent, child, disjoint), ::directory))
+        assertEquals(setOf(parent.uri, child.uri), relatedSaveUris(child, listOf(parent, child, disjoint), ::directory))
+        val parentKey = saveDirectoryIdentity(parent, ::directory)
+        val childKey = saveDirectoryIdentity(child, ::directory)
+        val disjointKey = saveDirectoryIdentity(disjoint, ::directory)
+        val childEntered = CompletableDeferred<Unit>()
+        val otherEntered = CompletableDeferred<Unit>()
+        lateinit var childLaunch: kotlinx.coroutines.Deferred<Unit>
+        SaveSyncLocks.active(parentKey) {
+            childLaunch = async(start = CoroutineStart.UNDISPATCHED) {
+                withSaveSyncLaunchAdmission(
+                    resolve = { SaveSyncLaunchAdmission.Directory(childKey) },
+                    managed = { childEntered.complete(Unit); Unit },
+                    unmanaged = { fail("Nested game bypassed directory admission") },
+                )
+            }
+            withTimeout(5_000) {
+                withSaveSyncLaunchAdmission(
+                    resolve = { SaveSyncLaunchAdmission.Directory(disjointKey) },
+                    managed = { otherEntered.complete(Unit); Unit },
+                    unmanaged = { fail("Resolved game bypassed directory admission") },
+                )
+            }
+            assertFalse(childEntered.isCompleted)
+            assertTrue(otherEntered.isCompleted)
+        }
+        withTimeout(5_000) { childLaunch.await() }
+        assertTrue(childEntered.isCompleted)
     }
 
     private fun game(uri: String) = ScanGame("Demo", uri, EngineType.ONS, "__game_dir__")

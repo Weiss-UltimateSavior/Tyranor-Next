@@ -11,6 +11,22 @@ import java.io.File
 
 internal const val SAVE_DIRECTORY_KEY_PREFIX = "save-directory:"
 
+/** Replacing a parent save tree also changes every nested game's save directory. */
+internal fun saveDirectoryScopesOverlap(first: String, second: String): Boolean {
+    if (first == second) return true
+    if (!first.startsWith(SAVE_DIRECTORY_KEY_PREFIX) || !second.startsWith(SAVE_DIRECTORY_KEY_PREFIX)) return false
+    val firstPath = first.removePrefix(SAVE_DIRECTORY_KEY_PREFIX)
+    val secondPath = second.removePrefix(SAVE_DIRECTORY_KEY_PREFIX)
+    if (firstPath.isBlank() || secondPath.isBlank()) return true
+    return try {
+        val a = File(firstPath).toPath().toAbsolutePath().normalize()
+        val b = File(secondPath).toPath().toAbsolutePath().normalize()
+        a.startsWith(b) || b.startsWith(a)
+    } catch (_: java.nio.file.InvalidPathException) {
+        true // A malformed managed scope cannot establish independence.
+    }
+}
+
 /** Launch admission and whole-library sync only manage engines with a usable save interface. */
 internal fun supportsManagedSave(engine: EngineType): Boolean =
     GameSaveManager.supportsFileSaves(engine) &&
@@ -39,7 +55,7 @@ internal suspend fun <T> withSaveSyncLaunchAdmission(
             return Completed(managed((admission as? SaveSyncLaunchAdmission.Directory)?.key))
         }
         val completed = if (admission is SaveSyncLaunchAdmission.Directory) {
-            SaveSyncLocks.active(admission.key) { SaveSyncLocks.mutation { admitted() } }
+            SaveSyncLocks.active(admission.key) { SaveSyncLocks.mutation(admission.key) { admitted() } }
         } else SaveSyncLocks.mutation { admitted() }
         if (completed != null) return completed.value
     }
@@ -79,6 +95,6 @@ internal fun relatedSaveUris(
 ): Set<String> {
     val target = saveDirectoryIdentity(game, directory)
     return library.filter { other ->
-        other.uri == game.uri || saveDirectoryIdentity(other, directory) == target
+        other.uri == game.uri || saveDirectoryScopesOverlap(saveDirectoryIdentity(other, directory), target)
     }.mapTo(mutableSetOf(game.uri)) { it.uri }
 }

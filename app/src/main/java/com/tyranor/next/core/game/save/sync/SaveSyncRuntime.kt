@@ -44,13 +44,21 @@ object SaveSyncRuntime {
     private val externalLaunches = HashMap<String, ExternalSaveLaunch>()
     private val secondaryActivityProcessNamesLock = Any()
     @Volatile private var cachedSecondaryActivityProcessNames: Set<String>? = null
-    @Volatile private var leftUiSinceLastForeground = false
 
     internal data class LaunchTicket(
         val token: String,
         val previous: JSONObject?,
         val generation: Long,
         val tracksSession: Boolean = true,
+    )
+    /** Opaque dialog snapshot; a later launch or marker replacement makes it unusable. */
+    internal class ExternalExitConfirmation internal constructor(
+        internal val uri: String,
+        internal val activeKey: String,
+        internal val marker: ExternalSaveLaunchStore.Confirmation,
+        internal val launches: List<ExternalSaveLaunch>,
+        internal val sessionToken: String,
+        internal val sessionActiveKey: String,
     )
     private data class CachedBaseline(val contentHash: String, val metadataHash: String)
     private data class SaveMetadataObservation(val root: File, val files: List<File>, val metadataHash: String)
@@ -214,7 +222,7 @@ object SaveSyncRuntime {
                     .put("enabledGeneration", enabledGeneration)
                     .put("baselineMetadata", baselineMetadata)
                     .put("token", token).put("startedAt", System.currentTimeMillis()).put("ownerPid", Process.myPid()))
-                // External YURIS uses its persisted returned-state path instead of a host handoff.
+                // External YURIS needs independent exit evidence or explicit confirmation.
                 if (game.engine != EngineType.YURIS) markNativeLaunchGrace(game.uri, enabledGeneration, token)
                 LaunchTicket(token, previous, enabledGeneration)
             }
@@ -324,25 +332,9 @@ object SaveSyncRuntime {
 
     fun onForeground(context: Context) {
         if (processName(context) != context.packageName) return
-        val priorBackground = leftUiSinceLastForeground
-        leftUiSinceLastForeground = false
-        val externalReturnSequence = externalDispatchSequence.get()
         val app = context.applicationContext
         scope.launch {
             try {
-                synchronized(externalLaunchLock) {
-                    if (priorBackground) externalLaunches.entries.removeAll { (_, entry) ->
-                        entry.dispatchSequence in 1..externalReturnSequence
-                    }
-                }
-                updateExternalLaunch(null) {
-                    val liveTokens = synchronized(externalLaunchLock) { externalLaunches.keys.toSet() }
-                    externalLaunchStore(app).foreground(
-                        externalReturnSequence,
-                        returned = priorBackground,
-                        liveTokens = liveTokens,
-                    )
-                }
                 if (!WebDavSettingsStore.isEnabled(app)) {
                     onFeatureDisabled(app)
                     return@launch
@@ -358,11 +350,6 @@ object SaveSyncRuntime {
                     val entry = store.load(key)
                     if (!entry.has("token") || !saveSessionGenerationMatches(entry, WebDavSettingsStore.sessionGeneration(app))) continue
                     val game = games[entry.optString("uri")]
-                    val binding = entry.optString("activeKey")
-                    if (game != null && binding.isNotBlank() && binding == activeKey(app, game)) {
-                        markSaveSessionForeground(store, key, entry, binding,
-                            game.engine, priorBackground, Process.myPid())
-                    }
                     game?.let { monitor(app, it) }
                 }
                 if (config.active && (config.mode.pulls || config.mode.uploads)) {
@@ -378,7 +365,6 @@ object SaveSyncRuntime {
 
     fun onBackground(context: Context) {
         if (processName(context) != context.packageName) return
-        leftUiSinceLastForeground = true
         if (!WebDavSettingsStore.isEnabled(context)) return
         scope.launch {
             try {
@@ -563,7 +549,10 @@ object SaveSyncRuntime {
         return store.keys().any { key -> store.load(key).let { it.has("token") && saveSessionGenerationMatches(it, generation) } }
     }
 
-    internal fun isGameRunning(context: Context, game: ScanGame): Boolean {
+    internal fun isGameRunning(context: Context, game: ScanGame): Boolean =
+        isGameRunning(context, game, includeExternal = true)
+
+    private fun isGameRunning(context: Context, game: ScanGame, includeExternal: Boolean): Boolean {
         val manager = GameSaveManager(context)
         val library = GameLibraryFacade.loadGames(context).let { games ->
             if (games.any { it.uri == game.uri }) games else games + game
@@ -572,12 +561,12 @@ object SaveSyncRuntime {
         val directoryKey = saveDirectoryIdentity(game) { manager.resolveSaveLocation(it).directory }
         val externalBusy = synchronized(externalLaunchLock) {
             externalLaunches.values.any {
-                it.uri in related || it.activeKey.isNullOrBlank() || it.activeKey == directoryKey
+                it.uri in related || it.activeKey.isNullOrBlank() || saveDirectoryScopesOverlap(it.activeKey, directoryKey)
             }
         }
-        if (externalBusy) return true
+        if (includeExternal && externalBusy) return true
         try {
-            if (externalLaunchStore(context).hasActive(related, directoryKey)) return true
+            if (includeExternal && externalLaunchStore(context).hasActive(related, directoryKey)) return true
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -591,11 +580,14 @@ object SaveSyncRuntime {
             store.load(SaveContentHash.text(uri))
         }
         // External Winlator cannot expose a host-process registration callback.
-        if (entries.any { (uri, entry) -> uri in external && entry.has("token") && !entry.optBoolean("returned") }) return true
+        if (includeExternal && entries.any { (uri, entry) ->
+                uri in external && externalSessionNeedsExitConfirmation(entry)
+            }) return true
         val nativeEntries = entries.filterKeys { it !in external }.values.filter { it.has("token") }
         val inGrace = related.any { launchGraceActive(it, generation) } || nativeEntries.any { entry -> entry.has("token") &&
             System.currentTimeMillis() - entry.optLong("startedAt") in 0..START_GRACE_MS }
         val declaredHosts = secondaryActivityProcessNames(context)
+            ?: return true // Unknown manifest host membership cannot establish native idleness.
         val probe = object : SaveHostProbe {
             override fun visibleHosts(): List<SaveHostProcess>? {
                 val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return null
@@ -603,13 +595,12 @@ object SaveSyncRuntime {
                 if (processes.isNullOrEmpty()) return null
                 return processes.filter { process ->
                     process.uid == Process.myUid() && (process.processName.isNullOrBlank() ||
-                        if (declaredHosts == null) process.processName.startsWith("${context.packageName}:")
-                        else process.processName in declaredHosts)
+                        process.processName in declaredHosts)
                 }.map { SaveHostProcess(it.pid, it.processName.orEmpty()) }
             }
             override fun records(): Map<String, JSONObject> {
                 val store = runtimeStore(context)
-                val known = declaredHosts?.map(SaveContentHash::text)?.toSet()
+                val known = declaredHosts.map(SaveContentHash::text).toSet()
                 return loadSaveHostRecords(store, known)
             }
             override fun identity(pid: Int): SaveHostIdentity {
@@ -632,6 +623,59 @@ object SaveSyncRuntime {
         return hasRunningSaveHost(probe, game.uri, needsHostEvidence, inGrace, SystemClock.elapsedRealtime(), related)
     }
 
+    /** Read on IO before showing the explicit Winlator-exit dialog, even with WebDAV disabled. */
+    internal fun externalExitConfirmation(context: Context, game: ScanGame): ExternalExitConfirmation? {
+        if (game.engine != EngineType.YURIS) return null
+        val directoryKey = activeKey(context, game)
+        return synchronized(externalLaunchLock) {
+            val marker = externalLaunchStore(context).confirmation(game.uri)
+            val launches = externalLaunches.values.filter { it.uri == game.uri }.sortedBy { it.token }
+            val session = sessions(context, recoverCorrupt = false).load(SaveContentHash.text(game.uri))
+            if (!marker.hasEvidence && launches.isEmpty() && !externalSessionNeedsExitConfirmation(session)) null
+            else ExternalExitConfirmation(game.uri, directoryKey, marker, launches,
+                session.optString("token"), session.optString("activeKey"))
+        }
+    }
+
+    /** Never confirms a different URI, newer dispatch, changed marker, or replacement session. */
+    internal suspend fun confirmExternalExit(
+        context: Context,
+        game: ScanGame,
+        confirmation: ExternalExitConfirmation,
+    ) = withContext(Dispatchers.IO) {
+        if (game.engine != EngineType.YURIS || game.uri != confirmation.uri) {
+            throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+        }
+        SaveSyncLocks.active(confirmation.activeKey) {
+            SaveSyncLocks.mutation(confirmation.activeKey) {
+                SaveSyncLocks.session(SaveContentHash.text(game.uri)) {
+                    requireSameSaveDirectory(confirmation.activeKey, activeKey(context, game))
+                    synchronized(externalLaunchLock) {
+                        val launches = externalLaunches.values.filter { it.uri == game.uri }.sortedBy { it.token }
+                        if (launches != confirmation.launches) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+                        if (launches.any { it.dispatchSequence == 0L } ||
+                            isGameRunning(context, game, includeExternal = false)) {
+                            throw SaveSyncException(SaveSyncError.GAME_RUNNING)
+                        }
+                        val store = sessions(context, recoverCorrupt = false)
+                        val key = SaveContentHash.text(game.uri)
+                        val session = store.load(key)
+                        requireExternalConfirmationSession(session, confirmation.sessionToken, confirmation.sessionActiveKey)
+                        externalLaunchStore(context).confirmExit(confirmation.marker, externalLaunches.keys.toSet()) {
+                            if (confirmation.sessionToken.isNotBlank()) {
+                                store.save(key, session.put("returned", true)
+                                    .put("externalExitConfirmedToken", confirmation.sessionToken))
+                            }
+                        }
+                        externalLaunches.entries.removeAll { it.value.uri == game.uri }
+                    }
+                }
+            }
+        }
+        // Reuse normal foreground scheduling after durable confirmation; no network work under locks.
+        onForeground(context)
+    }
+
     internal fun launchAdmission(context: Context, game: ScanGame): SaveSyncLaunchAdmission {
         if (!supportsManagedSave(game.engine)) return SaveSyncLaunchAdmission.Unmanaged
         return optionalSaveSyncLaunchAdmission({ WebDavSettingsStore.isEnabled(context) }) {
@@ -648,14 +692,14 @@ object SaveSyncRuntime {
         if (game.engine == EngineType.YURIS) {
             synchronized(externalLaunchLock) {
                 externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner)
-            }
-            try {
-                updateExternalLaunch(game) { externalLaunchStore(context).prepare(game.uri, token, directoryKey) }
-            } catch (cancelled: CancellationException) {
-                synchronized(externalLaunchLock) { externalLaunches.remove(token) }
-                try { externalLaunchStore(context).failed(game.uri, token) }
-                catch (cleanup: Exception) { if (cleanup !== cancelled) cancelled.addSuppressed(cleanup) }
-                throw cancelled
+                try {
+                    updateExternalLaunch(game) { externalLaunchStore(context).prepare(game.uri, token, directoryKey) }
+                } catch (cancelled: CancellationException) {
+                    externalLaunches.remove(token)
+                    try { externalLaunchStore(context).failed(game.uri, token) }
+                    catch (cleanup: Exception) { if (cleanup !== cancelled) cancelled.addSuppressed(cleanup) }
+                    throw cancelled
+                }
             }
             return token
         }
@@ -674,26 +718,13 @@ object SaveSyncRuntime {
     internal fun optionalLaunchDispatched(context: Context, game: ScanGame, token: String?, directoryKey: String?) {
         if (token == null) return
         if (game.engine == EngineType.YURIS) {
-            val sequence = externalDispatchSequence.incrementAndGet()
             synchronized(externalLaunchLock) {
+                val sequence = externalDispatchSequence.incrementAndGet()
                 externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner, sequence)
-            }
-            val persisted = try {
-                externalLaunchStore(context).dispatched(game.uri, token, directoryKey, sequence)
-                true
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                recordReport(SaveSyncReport(failures = listOf(
-                    SaveSyncFailure(game.title, SaveSyncService.errorCode(failure), game.uri))))
-                false
-            }
-            if (!persisted) {
-                // The in-memory entry keeps the launch protected. Remove the sequence-zero marker
-                // so a later foreground cannot interpret it as a permanently running host.
-                try { externalLaunchStore(context).failed(game.uri, token) }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { /* Foreground retires a stale sequence-zero marker by token. */ }
+                // A failed ACK write must retain the prepared marker across app/process restarts.
+                updateExternalLaunch(game) {
+                    externalLaunchStore(context).dispatched(game.uri, token, directoryKey, sequence)
+                }
             }
         } else {
             val generation = try {
@@ -708,17 +739,11 @@ object SaveSyncRuntime {
         if (success || token == null) return
         nativeLaunchGraces.clear(game.uri, token)
         if (game.engine == EngineType.YURIS) {
-            synchronized(externalLaunchLock) { externalLaunches.remove(token) }
-            updateExternalLaunch(game) { externalLaunchStore(context).failed(game.uri, token) }
+            synchronized(externalLaunchLock) {
+                updateExternalLaunch(game) { externalLaunchStore(context).failed(game.uri, token) }
+                externalLaunches.remove(token)
+            }
         }
-    }
-
-    /** Game deletion must be able to release its own external launch evidence. */
-    internal fun clearExternalLaunchEvidence(context: Context, game: ScanGame) {
-        synchronized(externalLaunchLock) {
-            externalLaunches.entries.removeAll { it.value.uri == game.uri }
-        }
-        updateExternalLaunch(game) { externalLaunchStore(context).remove(game.uri) }
     }
 
     private fun updateExternalLaunch(game: ScanGame?, action: () -> Unit) {
@@ -868,7 +893,8 @@ object SaveSyncRuntime {
             .put("metadataHash", snapshot.metadataHash))
     }
 
-    private fun sessions(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"), recoverCorrupt = true)
+    private fun sessions(context: Context, recoverCorrupt: Boolean = true) =
+        SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"), recoverCorrupt = recoverCorrupt)
     private fun directoryActivations(context: Context) =
         SaveDirectoryActivationStore(File(context.noBackupFilesDir, "save_sync"))
     private fun baselines(context: Context) =
@@ -911,8 +937,8 @@ internal suspend fun clearDirectorySessionBaselines(
 ) {
     for (key in (sessions.keys() + baselines.keys()).distinct()) {
         SaveSyncLocks.session(key) {
-            if (sessions.load(key).optString("activeKey") == directoryKey) sessions.remove(key)
-            if (baselines.load(key).optString("activeKey") == directoryKey) baselines.remove(key)
+            if (saveDirectoryScopesOverlap(sessions.load(key).optString("activeKey"), directoryKey)) sessions.remove(key)
+            if (saveDirectoryScopesOverlap(baselines.load(key).optString("activeKey"), directoryKey)) baselines.remove(key)
         }
     }
 }
@@ -969,15 +995,6 @@ internal fun classifyHostRecord(
     if (recordedUris.isNullOrEmpty()) return HostRecordRelation.UNKNOWN
     return if (gameUri in recordedUris) HostRecordRelation.MATCHING else HostRecordRelation.UNRELATED
 }
-
-internal fun shouldMarkExternalYurisReturned(
-    engine: EngineType,
-    priorBackground: Boolean,
-    leftApp: Boolean,
-    recordedOwnerPid: Int,
-    currentOwnerPid: Int,
-): Boolean = engine == EngineType.YURIS &&
-    (priorBackground || leftApp || recordedOwnerPid != currentOwnerPid)
 
 private fun normalizeActivityProcessName(packageName: String, declared: String): String = when {
     declared.startsWith(":") -> packageName + declared

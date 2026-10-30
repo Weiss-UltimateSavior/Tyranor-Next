@@ -20,7 +20,29 @@ import java.nio.file.Files
 
 class SaveImportTransactionTest {
     @get:Rule
-    val temporary = TemporaryFolder()
+    val temporary = TemporaryFolder(File(System.getProperty("java.io.tmpdir")).canonicalFile)
+
+    @Test
+    fun explicitSaveDeletionRestoresResourcesAndClearsExactOrphanRecoverySlots() {
+        val parent = temporary.newFolder("delete_orphans")
+        val destination = File(parent, "saves").apply { mkdirs() }
+        File(destination, "slot.sav").writeText("current-save")
+        val orphan = File(parent, "saves.import_orphan_00000000-0000-0000-0000-000000000000").apply { mkdirs() }
+        File(orphan, "game.pfs").writeText("only-resource-copy")
+        File(orphan, "old.sav").writeText("old-save")
+        val unrelated = File(parent, "saves.import_orphan_notes").apply { mkdirs() }
+        File(unrelated, "keep").writeText("user-data")
+        val exclude: (String) -> Boolean = { it.endsWith(".pfs") }
+
+        assertEquals(1, GameSaveManager.deleteSaveDirectory(destination, exclude) { from, to ->
+            GameSaveManager.restoreExcludedContents(from, to, exclude, rejectExisting = true)
+        })
+
+        assertEquals("only-resource-copy", File(destination, "game.pfs").readText())
+        assertFalse(orphan.exists())
+        assertEquals("user-data", File(unrelated, "keep").readText())
+        assertTrue(SaveImportTransaction.recoveryCopies(destination).isEmpty())
+    }
 
     @Test
     fun markerMovedWithStagingProvesCommit() {
@@ -308,6 +330,128 @@ class SaveImportTransactionTest {
         assertFalse(committed.marker.exists())
         assertFalse(committed.record.exists())
         assertFalse(committed.transaction.committed())
+    }
+
+    @Test
+    fun fullRecoverySlotsKeepUniqueIndexedBackupAndProofForRetry() {
+        val recovery = ambiguousRecovery("bounded_recovery")
+        repeat(SaveImportTransaction.MAX_RECOVERY_COPIES) { index ->
+            val backup = File(recovery.parent, "previous-$index").apply {
+                mkdirs()
+                resolve("old.bin").writeText("unique-$index")
+            }
+            recovery.transaction.preserveUnprovenBackup(backup)
+        }
+
+        val failure = assertThrows(GameSaveException::class.java) {
+            recovery.transaction.recoverBackup(recovery.backup, {}, {})
+        }
+
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
+        assertEquals(SaveImportTransaction.MAX_RECOVERY_COPIES, recovery.orphans().size)
+        assertEquals("old", recovery.backup.resolve("old.bin").readText())
+        assertEquals("new", recovery.destination.resolve("new.bin").readText())
+        assertTrue(recovery.record.isFile)
+
+        // After the user backs up/removes one retained copy, the original recovery can finish.
+        SavePathSafety.deleteTreeNoFollow(recovery.orphans().first())
+        recovery.transaction.recoverBackup(recovery.backup, {}, {})
+        assertFalse(recovery.backup.exists())
+        assertFalse(recovery.record.exists())
+        assertEquals(SaveImportTransaction.MAX_RECOVERY_COPIES, recovery.orphans().size)
+    }
+
+    @Test
+    fun repeatedIdenticalRecoveryReusesCopyWithoutGrowingOrphans() {
+        val parent = temporary.newFolder("duplicate_recovery")
+        val transaction = SaveImportTransaction(File(parent, "saves"), GAME_URI)
+        val retained = mutableSetOf<File>()
+        repeat(8) { index ->
+            val backup = File(parent, "saves.import_backup").apply {
+                mkdirs()
+                resolve("nested").mkdirs()
+                resolve("nested/progress.bin").writeText("only recovery data")
+                resolve(SaveImportTransaction.MARKER).writeText("proof-$index")
+            }
+            retained += transaction.preserveUnprovenBackup(backup)
+            assertFalse(backup.exists())
+        }
+        assertEquals(1, retained.size)
+        assertEquals(1, SaveImportTransaction.recoveryCopies(File(parent, "saves")).size)
+        assertEquals("only recovery data", retained.single().resolve("nested/progress.bin").readText())
+    }
+
+    @Test
+    fun emptyImportRefusesFullRecoverySlotsBeforeWritingCommitProof() {
+        val parent = temporary.newFolder("bounded_prepare")
+        val destination = File(parent, "saves").apply {
+            mkdirs()
+            resolve("progress.bin").writeText("live")
+        }
+        val transaction = SaveImportTransaction(destination, GAME_URI)
+        repeat(SaveImportTransaction.MAX_RECOVERY_COPIES) { index ->
+            val backup = File(parent, "previous-$index").apply {
+                mkdirs()
+                resolve("progress.bin").writeText("previous-$index")
+            }
+            transaction.preserveUnprovenBackup(backup)
+        }
+        val staging = File(parent, "staging").apply { mkdirs() }
+
+        assertThrows(GameSaveException::class.java) { transaction.prepare(staging, preservePrevious = true) }
+
+        assertEquals("live", destination.resolve("progress.bin").readText())
+        assertFalse(recordFor(destination).exists())
+        assertFalse(staging.resolve(SaveImportTransaction.MARKER).exists())
+    }
+
+    @Test
+    fun cleanupCompactsLegacyDuplicatesAndLeavesUnrelatedSiblingNamesAlone() {
+        val parent = temporary.newFolder("legacy_duplicates")
+        val destination = File(parent, "saves")
+        val pattern = "saves.import_orphan_00000000-0000-0000-0000-00000000000"
+        repeat(5) { index ->
+            File(parent, pattern + index).apply {
+                mkdirs()
+                resolve("progress.bin").writeText("same")
+            }
+        }
+        val unrelated = File(parent, "saves.import_orphan_notes").apply {
+            mkdirs()
+            resolve("keep.bin").writeText("user data")
+        }
+        val backup = File(parent, "saves.import_backup").apply {
+            mkdirs()
+            resolve("progress.bin").writeText("new unique")
+        }
+
+        SaveImportTransaction(destination, GAME_URI).preserveUnprovenBackup(backup)
+
+        assertEquals(2, SaveImportTransaction.recoveryCopies(destination).size)
+        assertEquals("user data", unrelated.resolve("keep.bin").readText())
+    }
+
+    @Test
+    fun symlinkRecoveryCopyFailsClosedWithoutDeletingIndexedBackup() {
+        val parent = temporary.newFolder("orphan_symlink")
+        val destination = File(parent, "saves")
+        val outside = File(parent, "outside").apply {
+            mkdirs()
+            resolve("keep.bin").writeText("external")
+        }
+        val orphan = File(parent, "saves.import_orphan_00000000-0000-0000-0000-000000000000")
+        createSymbolicLink(orphan, outside)
+        val backup = File(parent, "saves.import_backup").apply {
+            mkdirs()
+            resolve("progress.bin").writeText("old")
+        }
+
+        assertThrows(GameSaveException::class.java) {
+            SaveImportTransaction(destination, GAME_URI).preserveUnprovenBackup(backup)
+        }
+
+        assertEquals("old", backup.resolve("progress.bin").readText())
+        assertEquals("external", outside.resolve("keep.bin").readText())
     }
 
     private fun committed(name: String): CommittedTransaction {

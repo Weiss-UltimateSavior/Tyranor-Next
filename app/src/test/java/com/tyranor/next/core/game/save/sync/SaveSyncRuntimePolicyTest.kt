@@ -1,6 +1,6 @@
 package com.tyranor.next.core.game.save.sync
 
-import com.tyranor.next.core.engine.EngineType
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -69,13 +69,25 @@ class SaveSyncRuntimePolicyTest {
     }
 
     @Test
-    fun externalYurisReturnUsesBackgroundOrOwnerEvidence() {
-        assertTrue(shouldMarkExternalYurisReturned(EngineType.YURIS, true, false, 7, 7))
-        assertTrue(shouldMarkExternalYurisReturned(EngineType.YURIS, false, true, 7, 7))
-        assertTrue(shouldMarkExternalYurisReturned(EngineType.YURIS, false, false, 7, 8))
-        assertTrue(shouldMarkExternalYurisReturned(EngineType.YURIS, false, false, -1, 8))
-        assertFalse(shouldMarkExternalYurisReturned(EngineType.YURIS, false, false, 8, 8))
-        assertFalse(shouldMarkExternalYurisReturned(EngineType.TYRANO, true, true, 7, 8))
+    fun externalYurisRequiresConfirmationDespiteLegacyForegroundAndOwnerHints() {
+        val session = JSONObject().put("token", "launch").put("startedAt", 1000L)
+        assertTrue(externalSessionNeedsExitConfirmation(session))
+        session.put("leftApp", true).put("returned", true).put("ownerPid", -1)
+        assertTrue(externalSessionNeedsExitConfirmation(session))
+        session.put("externalExitConfirmedToken", "older-launch")
+        assertTrue(externalSessionNeedsExitConfirmation(session))
+        session.put("externalExitConfirmedToken", "launch")
+        assertFalse(externalSessionNeedsExitConfirmation(session))
+        session.put("token", "new-launch")
+        assertTrue(externalSessionNeedsExitConfirmation(session))
+    }
+
+    @Test
+    fun explicitRestoreDoesNotNeedExternalExitConfirmationButUnknownLegacyLaunchDoes() {
+        assertFalse(externalSessionNeedsExitConfirmation(JSONObject()))
+        assertTrue(externalSessionNeedsExitConfirmation(JSONObject().put("token", "legacy").put("returned", true)))
+        assertFalse(externalSessionNeedsExitConfirmation(JSONObject().put("token", "restore")
+            .put("startedAt", 0L).put("returned", true)))
     }
 
     @Test

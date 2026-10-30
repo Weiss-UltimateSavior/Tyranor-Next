@@ -22,6 +22,9 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 class SaveSyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
+    private val fallbackStateKey: String
+        get() = inputData.getString(INPUT_FALLBACK_CHAIN) ?: id.toString()
+
     override suspend fun doWork(): Result {
         val pull = inputData.getBoolean(INPUT_PULL, false)
         val fallback = inputData.getBoolean(INPUT_FALLBACK, false)
@@ -30,16 +33,21 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
         var exclusionStateFailure = false
         val report = try {
             if (!WebDavSettingsStore.isEnabled(applicationContext)) {
-                removeFallbackState(stateStore, id.toString())
+                removeFallbackState(stateStore, fallbackStateKey, id.toString())
+                return Result.success()
+            }
+            if (fallback && inputData.getString(INPUT_FALLBACK_CHAIN) != null &&
+                stateStore.isSuperseded(fallbackStateKey, id.toString())) {
                 return Result.success()
             }
             if (SaveSyncWorkPolicy.fallbackAttemptsExhausted(fallback, runAttemptCount)) {
                 // Persisted sessions remain available to the next foreground or manual schedule.
-                removeFallbackState(stateStore, id.toString())
-                return Result.failure()
+                removeFallbackState(stateStore, fallbackStateKey, id.toString())
+                // A terminal failed predecessor would also fail an already queued successor.
+                return Result.success()
             }
             if (fallback) {
-                val persisted = loadFallbackState(stateStore, id.toString())
+                val persisted = loadFallbackState(stateStore, fallbackStateKey)
                 if (persisted == null) {
                     exclusionStateFailure = true
                 } else {
@@ -58,8 +66,9 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
                 if (fallback && mergedExclusions != excludedUris) {
                     exclusionStateFailure = !saveFallbackState(
                         stateStore,
-                        id.toString(),
+                        fallbackStateKey,
                         mergedExclusions,
+                        sharedChain = inputData.getString(INPUT_FALLBACK_CHAIN) != null,
                     )
                 }
                 excludedUris = mergedExclusions
@@ -88,21 +97,23 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
         exclusionStateFailure: Boolean,
     ): Result {
         val stateStore = fallbackStates(applicationContext)
-        val workerId = id.toString()
+        val workerId = fallbackStateKey
         if (!WebDavSettingsStore.isEnabled(applicationContext) || SaveSyncWorkPolicy.isDisabled(report)) {
-            removeFallbackState(stateStore, workerId)
+            removeFallbackState(stateStore, workerId, id.toString())
             return Result.success()
         }
         if (exclusionStateFailure) return failForFallbackState(report, stateStore, workerId)
         val outcome = SaveSyncWorkPolicy.outcome(report, fallback)
         val mergedExclusions = excludedUris + SaveSyncWorkPolicy.storageFullUris(report)
         if (fallback) {
-            if (outcome == SaveSyncWorkOutcome.RETRY && mergedExclusions.isNotEmpty()) {
-                if (!saveFallbackState(stateStore, workerId, mergedExclusions)) {
-                    return failForFallbackState(report, stateStore, workerId)
-                }
-            } else {
-                removeFallbackState(stateStore, workerId)
+            try {
+                stateStore.complete(workerId, id.toString(), outcome == SaveSyncWorkOutcome.RETRY,
+                    mergedExclusions, sharedChain = inputData.getString(INPUT_FALLBACK_CHAIN) != null)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Log.w(TAG, "Fallback outcome persistence failed", failure)
+                return failForFallbackState(report, stateStore, workerId)
             }
         } else {
             if (SaveSyncWorkPolicy.shouldScheduleFallback(report)) {
@@ -120,12 +131,12 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
                     return failForFallbackState(report, stateStore, workerId)
                 }
             }
-            removeFallbackState(stateStore, workerId)
+            removeFallbackState(stateStore, workerId, id.toString())
         }
         SaveSyncRuntime.recordReport(report)
         return when (outcome) {
             SaveSyncWorkOutcome.SUCCESS -> Result.success()
-            SaveSyncWorkOutcome.FAILURE -> Result.failure()
+            SaveSyncWorkOutcome.FAILURE -> if (fallback) Result.success() else Result.failure()
             SaveSyncWorkOutcome.RETRY -> if (WebDavSettingsStore.isEnabled(applicationContext)) {
                 Result.retry()
             } else {
@@ -139,18 +150,19 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
         stateStore: SaveSyncFallbackStateStore,
         workerId: String,
     ): Result {
-        removeFallbackState(stateStore, workerId)
+        removeFallbackState(stateStore, workerId, id.toString())
         val failed = report + SaveSyncReport(
             failures = listOf(SaveSyncFailure("", SaveSyncError.LOCAL_IO)),
         )
         SaveSyncRuntime.recordReport(failed)
-        return Result.failure()
+        return if (inputData.getBoolean(INPUT_FALLBACK, false)) Result.success() else Result.failure()
     }
 
     companion object {
         private const val TAG = "SaveSyncWorker"
         internal const val INPUT_PULL = "pull"
         internal const val INPUT_FALLBACK = "fallback"
+        internal const val INPUT_FALLBACK_CHAIN = "fallback_chain"
         internal const val WORK_NAME_OPEN_NOW = "webdav_save_open_now"
         internal const val WORK_NAME_EXIT_NOW = "webdav_save_exit_now"
         internal const val WORK_NAME_OPEN_FALLBACK = "webdav_save_open_fallback"
@@ -184,29 +196,32 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
         ) {
             if (!WebDavSettingsStore.isEnabled(context)) return
             val excludedUris = SaveSyncFallbackStateStore.normalize(initialExcludedUris)
+            val workName = when {
+                delayed && pull -> WORK_NAME_OPEN_FALLBACK
+                delayed -> WORK_NAME_EXIT_FALLBACK
+                pull -> WORK_NAME_OPEN_NOW
+                else -> WORK_NAME_EXIT_NOW
+            }
             val input = Data.Builder()
                 .putBoolean(INPUT_PULL, pull)
                 .putBoolean(INPUT_FALLBACK, delayed)
+            if (delayed) input.putString(INPUT_FALLBACK_CHAIN, workName)
             val request = OneTimeWorkRequestBuilder<SaveSyncWorker>()
                 .setInputData(input.build())
                 .setConstraints(automaticWorkConstraints())
                 .setInitialDelay(if (delayed) 30 else 1, TimeUnit.SECONDS)
                 .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.SECONDS)
                 .build()
-            if (delayed && excludedUris.isNotEmpty()) {
-                fallbackStates(context).save(request.id.toString(), excludedUris)
+            val manager = WorkManager.getInstance(context.applicationContext)
+            if (delayed) {
+                fallbackStates(context).schedule(workName, request.id.toString(), excludedUris) {
+                    // KEEP can silently discard this UUID at the completion boundary. Append
+                    // without canceling a running transfer; superseded queued workers skip IO.
+                    manager.enqueueUniqueWork(workName, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+                }
+            } else {
+                manager.enqueueUniqueWork(workName, ExistingWorkPolicy.APPEND_OR_REPLACE, request)
             }
-            WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-                when {
-                    delayed && pull -> WORK_NAME_OPEN_FALLBACK
-                    delayed -> WORK_NAME_EXIT_FALLBACK
-                    pull -> WORK_NAME_OPEN_NOW
-                    else -> WORK_NAME_EXIT_NOW
-                },
-                // Immediate chains stay short; only the separate delayed chain may remain in retry.
-                if (delayed) ExistingWorkPolicy.KEEP else ExistingWorkPolicy.APPEND_OR_REPLACE,
-                request,
-            )
         }
 
         internal fun automaticWorkConstraints(): Constraints = Constraints.Builder()
@@ -234,8 +249,9 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
             stateStore: SaveSyncFallbackStateStore,
             workerId: String,
             excludedUris: Set<String>,
+            sharedChain: Boolean,
         ): Boolean = try {
-            stateStore.save(workerId, excludedUris)
+            stateStore.merge(workerId, excludedUris, sharedChain)
             true
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -247,9 +263,10 @@ class SaveSyncWorker(context: Context, parameters: WorkerParameters) : Coroutine
         private fun removeFallbackState(
             stateStore: SaveSyncFallbackStateStore,
             workerId: String,
+            owner: String,
         ) {
             try {
-                stateStore.remove(workerId)
+                stateStore.remove(workerId, owner)
             } catch (failure: Exception) {
                 Log.w(TAG, "Fallback state could not be removed", failure)
             }
@@ -262,7 +279,8 @@ internal enum class SaveSyncWorkOutcome { SUCCESS, FAILURE, RETRY }
 internal object SaveSyncWorkPolicy {
     /**
      * Every automatic worker may flush a pending upload even when pulling, so none should spend metered data.
-     * WorkManager's zero-based runAttemptCount therefore permits five fallback executions before failing.
+     * Five zero-based fallback attempts are allowed; exhaustion completes successfully so a queued
+     * successor remains runnable, while persisted sessions wait for the next scheduling event.
      */
     internal val AUTOMATIC_NETWORK_TYPE = NetworkType.UNMETERED
     internal const val MAX_FALLBACK_RUN_ATTEMPT_COUNT = 5

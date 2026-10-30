@@ -426,23 +426,25 @@ internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> 
     }
 }
 
-/** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
-internal suspend fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) =
-    withContext(NonCancellable) {
-        try {
-            // Do not delete an active save while a host or an activation still owns it.
-            SaveSyncService(context).clearGame(target)
+/**
+ * 清理应用内关联数据，不触碰游戏目录。等待存档门禁可取消且有时限；取得门禁后的存档清理及
+ * 后续设置清理不可取消。清理失败时调用方须保留游戏库条目，供用户重试。
+ */
+internal suspend fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
+    try {
+        SaveSyncService(context).clearGame(target)
+        withContext(NonCancellable) {
             PerGameSettingsStore.clear(context, target.uri)
             GameLibraryFacade.removeRecentGame(context, target.uri)
             GameLibraryFacade.removeQuickLaunch(context, target.uri)
             deleteCoverFile(context, target.coverUri)
-            GameSaveManager(context).cleanupAppData(target)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            throw failure.toSaveSyncCleanupException()
         }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        throw failure.toSaveSyncCleanupException()
     }
+}
 
 private fun deleteCoverFile(context: android.content.Context, coverUri: String?) {
     if (coverUri.isNullOrBlank()) return

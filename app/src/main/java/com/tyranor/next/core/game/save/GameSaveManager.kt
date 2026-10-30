@@ -468,10 +468,12 @@ class GameSaveManager(private val context: Context) {
     }
 
     /**
-     * 删除游戏时清理应用内数据（独立/镜像存档目录），
-     * 仅触碰应用专属存储，绝不删除游戏目录内的任何文件。
+     * 删除游戏时只清理当前生效的应用内存档目录。旧独立目录、镜像父目录及其它根继续保留，
+     * 避免在当前目录的门禁内删除另一个入口正在使用的数据；不触碰游戏目录内的文件。
      */
-    fun cleanupAppData(game: ScanGame) {
+    fun cleanupAppData(game: ScanGame) = cleanupAppData(game, resolveSaveLocation(game).directory)
+
+    internal fun cleanupAppData(game: ScanGame, expectedDirectory: File?) {
         if (game.engine == EngineType.ETHORNELL) {
             // Retain on busy, disabled, damaged path, or incomplete recovery.
             // Library removal is not permission to delete an uncertain tree.
@@ -500,6 +502,11 @@ class GameSaveManager(private val context: Context) {
             }
         }
         synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+            val currentDirectory = resolveSaveLocation(game).directory
+            if (currentDirectory?.canonicalPath != expectedDirectory?.canonicalPath) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
+            val guardedDirectory = currentDirectory?.let(::checkedSyncDirectory)
             // 与存档互通同步互斥（H3）：删除独立存档目录与并发同步交错会让同步复制进一个
             // 正被删除的目录。clear/remove 内部同锁，可重入。
             // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
@@ -564,18 +571,13 @@ class GameSaveManager(private val context: Context) {
                 }
                 else -> return@synchronized
             }
-            val appInternal = appContext.filesDir.canonicalPath + File.separator
-            // KrSafMirror 镜像根（games/）与 SAF 索引（no_backup/）位于 filesDir 的父目录（应用数据根）下
-            val appDataRoot = appContext.filesDir.parentFile?.canonicalPath?.let { it + File.separator }
-            val appExternal = appContext.getExternalFilesDir(null)?.canonicalPath
-            targets.forEach { target -> cleanup {
-                val inAppStorage = target.canonicalPath.startsWith(appInternal) ||
-                    (appDataRoot != null && target.canonicalPath.startsWith(appDataRoot)) ||
-                    (appExternal != null && target.canonicalPath.startsWith(appExternal + File.separator))
-                if (inAppStorage) {
-                    SavePathSafety.deleteTreeNoFollow(target)
-                    transactionSiblings(target).forEach(SavePathSafety::deleteTreeNoFollow)
-                }
+            val appRoots = listOfNotNull(appContext.filesDir.parentFile, appContext.getExternalFilesDir(null))
+            targets.distinctBy { it.canonicalPath }.forEach { candidate -> cleanup {
+                // The resolved save directory can be inside a KRKR mirror root. Only that
+                // directory is fenced; deleting its parent would also remove unfenced data.
+                val target = appDataCleanupTarget(guardedDirectory, candidate, appRoots) ?: return@cleanup
+                SavePathSafety.deleteTreeNoFollow(target)
+                transactionSiblings(target).forEach(SavePathSafety::deleteTreeNoFollow)
             } }
         }
         if (failures.isNotEmpty()) {
@@ -752,6 +754,19 @@ class GameSaveManager(private val context: Context) {
         localizedContext.getString(id, *args)
 
     companion object {
+        /** Only the admitted active directory may be deleted, never an inactive sibling/root. */
+        internal fun appDataCleanupTarget(guardedDirectory: File?, candidate: File, appRoots: List<File>): File? {
+            val guarded = guardedDirectory?.canonicalFile ?: return null
+            val path = guarded.toPath()
+            if (!path.startsWith(candidate.canonicalFile.toPath())) return null
+            return guarded.takeIf {
+                appRoots.any { root ->
+                    val rootPath = root.canonicalFile.toPath()
+                    path != rootPath && path.startsWith(rootPath)
+                }
+            }
+        }
+
         internal fun supportsFileSaves(engine: EngineType): Boolean = when (engine) {
             EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
             EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
@@ -867,7 +882,8 @@ class GameSaveManager(private val context: Context) {
                 directory.name + ".import_backup_retained",
                 directory.name + ".import_backup_retained1",
                 directory.name + ".import_backup_retained2",
-            ).map { File(parent, it) }.filter { Files.exists(it.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS) }
+            ).map { File(parent, it) }.filter { Files.exists(it.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS) } +
+                SaveImportTransaction.recoveryCopies(directory)
         }
 
         /** Parse the actual import stream independently of Android URI acquisition. */

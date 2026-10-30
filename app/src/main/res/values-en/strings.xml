@@ -1003,4 +1003,8 @@
     <string name="launch_runtime_module_path_unresolved">Unable to resolve the game folder path; this module only accepts a real folder path</string>
     <string name="launch_runtime_module_denied">The runtime module refused to launch or permission is insufficient</string>
     <string name="launch_runtime_module_failed">Failed to launch the runtime module</string>
+    <string name="save_external_exit_title">Confirm external game has exited</string>
+    <string name="save_external_exit_summary">After quitting the game in Winlator, confirm to end save protection</string>
+    <string name="save_external_exit_message">Fully quit “%1$s” in Winlator first, along with any other game sharing its save folder. Switching back to Tyranor does not mean the game has exited. Confirming clears this run’s protection and allows uploads, save selection and removal. If the game is still writing, saves may be lost.</string>
+    <string name="save_external_exit_done">External game exit confirmed. Save management is available</string>
 </resources>

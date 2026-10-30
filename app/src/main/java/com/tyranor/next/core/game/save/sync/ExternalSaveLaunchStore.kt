@@ -9,6 +9,11 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.NoSuchFileException
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.StandardOpenOption.READ
+import java.security.MessageDigest
+import java.util.UUID
 
 internal data class ExternalSaveLaunch(
     val uri: String,
@@ -21,10 +26,9 @@ internal data class ExternalSaveLaunch(
 /**
  * Durable external-host launch evidence independent of upload mode and configuration generation.
  *
- * A prepared marker exists before dispatch. A foreground pass may retire old process-instance
- * owners immediately and current-owner dispatches only through the sequence captured at foreground.
- * Markers left at sequence zero by a failed dispatch write are retired when no live in-memory token
- * still owns them. Corrupt markers are isolated to their own key instead of blocking every game.
+ * Prepared evidence also survives owner changes: dispatch may have succeeded before its ACK was
+ * persisted. Returning to Tyranor says nothing about Winlator's independent process lifetime.
+ * Only failed dispatch or explicit confirmation can retire evidence. Corruption is scoped by URI.
  */
 internal class ExternalSaveLaunchStore(
     private val root: File,
@@ -54,35 +58,9 @@ internal class ExternalSaveLaunchStore(
         if (remaining.size != existing.size) persist(disk, uri, remaining)
     }
 
-    fun foreground(
-        sequenceCutoff: Long,
-        returned: Boolean,
-        liveTokens: Set<String> = emptySet(),
-    ) = withDiskLock { disk ->
-        for (marker in markerKeys(disk)) {
-            if (!marker.regular) continue
-            val key = marker.key
-            val entries = try {
-                decode(key, disk.states.load(key))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: SaveSyncException) {
-                // A damaged marker must not stop other markers from being retired.
-                continue
-            }
-            val remaining = entries.filterNot { entry ->
-                entry.owner != owner ||
-                    (entry.owner == owner && entry.dispatchSequence == 0L && entry.token !in liveTokens) ||
-                    (returned && entry.owner == owner &&
-                        entry.dispatchSequence > 0L && entry.dispatchSequence <= sequenceCutoff)
-            }
-            if (remaining != entries) persistKey(disk, key, remaining)
-        }
-    }
-
     fun hasActive(relatedUris: Set<String>, activeKey: String): Boolean = withDiskLock { disk ->
         val entries = ArrayList<ExternalSaveLaunch>()
-        for (marker in markerKeys(disk)) {
+        for (marker in markers(disk)) {
             val key = marker.key
             val related = activeKey.isBlank() || relatedUris.any { SaveContentHash.text(it) == key }
             if (!marker.regular) {
@@ -101,19 +79,189 @@ internal class ExternalSaveLaunchStore(
             }
             entries += decoded
         }
-        if (entries.isEmpty()) return@withDiskLock false
-        if (activeKey.isBlank()) return@withDiskLock true
         entries.any { entry ->
-            entry.uri in relatedUris ||
+            activeKey.isBlank() || entry.uri in relatedUris ||
                 entry.activeKey.isNullOrBlank() ||
-                entry.activeKey == activeKey
+                saveDirectoryScopesOverlap(entry.activeKey, activeKey)
         }
     }
 
-    /** Explicit local cleanup for a game that no longer exists. Never decodes the marker. */
-    fun remove(uri: String) = withDiskLock { disk ->
-        require(uri.isNotBlank()) { "uri must not be blank" }
-        disk.states.remove(SaveContentHash.text(uri))
+    /** Captured before showing the dialog. Never interprets unreadable bytes as missing evidence. */
+    fun confirmation(uri: String): Confirmation = withDiskLock { disk ->
+        require(uri.isNotBlank())
+        val key = SaveContentHash.text(uri)
+        val marker = markerFile(disk.directory, key)
+        retirePreviousReceipts(disk, key, marker)
+        val observed = evidence(marker)
+        val identity = if (observed != null && observed.fileKey == null) {
+            // Windows BasicFileAttributes legitimately omits fileKey. Hard links retain identity
+            // independently of bytes/timestamps, including a copy made with COPY_ATTRIBUTES.
+            if (!observed.regular && !observed.directory) throw localIo()
+            val receiptName = ".exit-confirmation-$key-${UUID.randomUUID()}.receipt"
+            val source = if (observed.directory) {
+                SavePathSafety.requireSafeRoot(marker, trustedRoot = disk.directory)
+                File(marker, receiptName).also { Files.createFile(it.toPath()) }
+            } else marker
+            val anchor = File(disk.directory, receiptName)
+            try {
+                Files.createLink(anchor.toPath(), source.toPath())
+            } catch (failure: Exception) {
+                if (observed.directory) Files.deleteIfExists(source.toPath())
+                throw failure
+            }
+            MarkerIdentity(anchor, if (observed.directory) source.name else null)
+        } else null
+        val snapshot = Confirmation(uri, evidence(marker), identity)
+        try {
+            requireCurrent(disk, snapshot)
+        } catch (failure: Exception) {
+            identity?.let { releaseIdentity(marker, it) }
+            throw failure
+        }
+        snapshot
+    }
+
+    /** Caller fences native hosts, sessions and in-memory launches for this URI. */
+    fun confirmExit(
+        confirmation: Confirmation,
+        liveTokens: Set<String>,
+        beforeRetire: () -> Unit,
+    ) = withDiskLock { disk ->
+        val key = SaveContentHash.text(confirmation.uri)
+        val marker = markerFile(disk.directory, key)
+        var retired = marker
+        try {
+            requireCurrent(disk, confirmation)
+            val raw = if (confirmation.evidence?.regular == true) {
+                Files.newByteChannel(marker.toPath(), setOf(READ, NOFOLLOW_LINKS)).use { channel ->
+                    java.nio.channels.Channels.newInputStream(channel).readBytes().toString(Charsets.UTF_8)
+                }
+            } else null
+            val entries = try {
+                raw?.let { decode(key, JSONObject(it)) }.orEmpty()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: SaveSyncException) {
+                if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+                emptyList()
+            } catch (_: org.json.JSONException) {
+                emptyList()
+            }
+            if (entries.any { it.token in liveTokens && it.dispatchSequence == 0L }) {
+                throw SaveSyncException(SaveSyncError.GAME_RUNNING)
+            }
+            requireCurrent(disk, confirmation)
+            beforeRetire()
+            if (confirmation.evidence != null) {
+                if (entries.isNotEmpty()) {
+                    // Confirmed healthy launches need no recovery copy on every play session.
+                    Files.delete(marker.toPath())
+                } else {
+                    // Preserve damaged entries by renaming them without traversing their contents.
+                    val quarantine = File(disk.directory, "$key.json.confirmed-${UUID.randomUUID()}")
+                    try {
+                        Files.move(marker.toPath(), quarantine.toPath(), ATOMIC_MOVE)
+                    } catch (_: AtomicMoveNotSupportedException) {
+                        Files.move(marker.toPath(), quarantine.toPath())
+                    }
+                    retired = quarantine
+                }
+            }
+        } finally {
+            confirmation.identity?.let { releaseIdentity(retired, it) }
+        }
+    }
+
+    internal class Confirmation internal constructor(
+        internal val uri: String,
+        internal val evidence: MarkerEvidence?,
+        internal val identity: MarkerIdentity?,
+    ) {
+        val hasEvidence: Boolean get() = evidence != null
+    }
+
+    internal class MarkerIdentity(val anchor: File, val directoryReceiptName: String?)
+
+    /** One outstanding receipt per URI; a newer dialog invalidates older dialogs across restarts. */
+    private fun retirePreviousReceipts(disk: DiskContext, key: String, marker: File) {
+        if (!disk.directory.exists()) return
+        for (anchor in disk.directory.listFiles() ?: throw localIo()) {
+            if (!anchor.name.startsWith(".exit-confirmation-$key-") || !anchor.name.endsWith(".receipt")) continue
+            releaseIdentity(marker, MarkerIdentity(anchor, anchor.name))
+        }
+    }
+
+    private fun releaseIdentity(marker: File, identity: MarkerIdentity) {
+        try {
+            if (identity.directoryReceiptName != null && Files.isDirectory(marker.toPath(), NOFOLLOW_LINKS)) {
+                val receipt = File(marker, identity.directoryReceiptName)
+                if (Files.isRegularFile(receipt.toPath(), NOFOLLOW_LINKS) &&
+                    Files.isRegularFile(identity.anchor.toPath(), NOFOLLOW_LINKS) &&
+                    Files.isSameFile(receipt.toPath(), identity.anchor.toPath())) {
+                    Files.deleteIfExists(receipt.toPath())
+                }
+            }
+        } finally {
+            Files.deleteIfExists(identity.anchor.toPath())
+        }
+    }
+
+    private fun requireCurrent(disk: DiskContext, confirmation: Confirmation) {
+        val marker = markerFile(disk.directory, SaveContentHash.text(confirmation.uri))
+        if (evidence(marker) != confirmation.evidence) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+        confirmation.identity?.let { identity ->
+            val source = identity.directoryReceiptName?.let { File(marker, it) } ?: marker
+            val (attributes, anchorAttributes) = try {
+                Files.readAttributes(source.toPath(), BasicFileAttributes::class.java, NOFOLLOW_LINKS) to
+                    Files.readAttributes(identity.anchor.toPath(), BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+            } catch (_: NoSuchFileException) {
+                throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+            }
+            if (!attributes.isRegularFile || !anchorAttributes.isRegularFile ||
+                !Files.isSameFile(source.toPath(), identity.anchor.toPath())) {
+                throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+            }
+        }
+    }
+
+    internal data class MarkerEvidence(
+        val fileKey: String?,
+        val created: String,
+        val modified: String,
+        val size: Long,
+        val regular: Boolean,
+        val directory: Boolean,
+        val symlink: Boolean,
+        val contentHash: String?,
+    )
+
+    private fun evidence(marker: File): MarkerEvidence? {
+        fun attributes(): BasicFileAttributes = Files.readAttributes(
+            marker.toPath(), BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+        val before = try { attributes() } catch (_: NoSuchFileException) { return null }
+        val hash = when {
+            before.isRegularFile -> {
+                val digest = MessageDigest.getInstance("SHA-256")
+                Files.newByteChannel(marker.toPath(), setOf(READ, NOFOLLOW_LINKS)).use { channel ->
+                    val buffer = java.nio.ByteBuffer.allocate(8192)
+                    while (channel.read(buffer) != -1) {
+                        buffer.flip()
+                        digest.update(buffer)
+                        buffer.clear()
+                    }
+                }
+                digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            }
+            before.isSymbolicLink -> SaveContentHash.text(Files.readSymbolicLink(marker.toPath()).toString())
+            else -> null
+        }
+        fun describe(attributes: BasicFileAttributes) = MarkerEvidence(
+            attributes.fileKey()?.toString(),
+            attributes.creationTime().toString(), attributes.lastModifiedTime().toString(),
+            attributes.size(), attributes.isRegularFile, attributes.isDirectory, attributes.isSymbolicLink, hash)
+        val result = describe(before)
+        if (result != describe(attributes())) throw SaveSyncException(SaveSyncError.LOCAL_STATE_CHANGED)
+        return result
     }
 
     private fun load(disk: DiskContext, uri: String): List<ExternalSaveLaunch> {
@@ -182,7 +330,7 @@ internal class ExternalSaveLaunchStore(
 
     private data class Marker(val key: String, val regular: Boolean)
 
-    private fun markerKeys(disk: DiskContext): List<Marker> {
+    private fun markers(disk: DiskContext): List<Marker> {
         if (!disk.directory.exists()) return emptyList()
         val files = disk.directory.listFiles() ?: throw localIo()
         return files.filter { it.name.endsWith(".json") }.mapNotNull { file ->

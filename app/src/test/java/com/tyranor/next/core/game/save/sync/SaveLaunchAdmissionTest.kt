@@ -4,6 +4,7 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.save.EthornellSaveCapability
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -24,7 +25,7 @@ class SaveLaunchAdmissionTest {
     }
 
     @Test
-    fun commonMutationGateSerializesResolvedBaselineWithDisabledAndUnresolvedLaunches() = runBlocking {
+    fun operationGateSerializesResolvedBaselineWithDisabledAndUnresolvedLaunches() = runBlocking {
         val baselineEntered = CompletableDeferred<String?>()
         val releaseBaseline = CompletableDeferred<Unit>()
         val baseline = launch(start = CoroutineStart.UNDISPATCHED) {
@@ -83,6 +84,118 @@ class SaveLaunchAdmissionTest {
         assertNull(unresolvedEntered.await())
         assertEquals(1, disabledCallbacks)
         assertEquals(1, unresolvedCallbacks)
+    }
+
+    @Test
+    fun slowResolvedLaunchAllowsOtherDirectoryLaunchCaptureAndActivationButFencesAliases() = runBlocking {
+        val slowKey = "admission-slow-directory"
+        val slowEntered = CompletableDeferred<Unit>()
+        val slow = launch(start = CoroutineStart.UNDISPATCHED) {
+            withSaveSyncLaunchAdmission<Unit>(
+                resolve = { SaveSyncLaunchAdmission.Directory(slowKey) },
+                managed = { slowEntered.complete(Unit); awaitCancellation() },
+                unmanaged = { throw AssertionError("Resolved launch bypassed admission") },
+            )
+        }
+        withTimeout(5_000) { slowEntered.await() }
+        val events = mutableListOf<String>()
+        val alias = launch(start = CoroutineStart.UNDISPATCHED) {
+            SaveSyncLocks.active(slowKey) {
+                SaveSyncLocks.mutation(slowKey) { events += "alias" }
+            }
+        }
+        withTimeout(5_000) {
+            withSaveSyncLaunchAdmission<Unit>(
+                resolve = { SaveSyncLaunchAdmission.Directory("admission-other-launch") },
+                managed = { events += "launch" },
+                unmanaged = { throw AssertionError("Resolved launch bypassed admission") },
+            )
+            for (operation in listOf("capture", "activation")) {
+                SaveSyncLocks.versions("other-$operation") {
+                    SaveSyncLocks.active("other-$operation") {
+                        SaveSyncLocks.mutation("other-$operation") { events += operation }
+                    }
+                }
+            }
+        }
+        assertEquals(listOf("launch", "capture", "activation"), events)
+        slow.cancelAndJoin()
+        withTimeout(5_000) { alias.join() }
+        assertEquals(listOf("launch", "capture", "activation", "alias"), events)
+    }
+
+    @Test
+    fun unresolvedAndDisabledLaunchesExcludeEveryDirectoryUntilDispatchFinishes() = runBlocking {
+        for (admission in listOf(SaveSyncLaunchAdmission.Unresolved, SaveSyncLaunchAdmission.Disabled)) {
+            val entered = CompletableDeferred<Unit>()
+            val unknown = launch(start = CoroutineStart.UNDISPATCHED) {
+                withSaveSyncLaunchAdmission<Unit>(
+                    resolve = { admission },
+                    managed = { entered.complete(Unit); awaitCancellation() },
+                    unmanaged = { throw AssertionError("Unknown launch bypassed admission") },
+                )
+            }
+            withTimeout(5_000) { entered.await() }
+            var replacementEntered = false
+            val replacement = launch(start = CoroutineStart.UNDISPATCHED) {
+                SaveSyncLocks.active("unknown-replacement") {
+                    SaveSyncLocks.mutation("unknown-replacement") { replacementEntered = true }
+                }
+            }
+            var knownLaunchEntered = false
+            val known = launch(start = CoroutineStart.UNDISPATCHED) {
+                withSaveSyncLaunchAdmission<Unit>(
+                    resolve = { SaveSyncLaunchAdmission.Directory("unknown-other-launch") },
+                    managed = { knownLaunchEntered = true },
+                    unmanaged = { throw AssertionError("Known launch bypassed admission") },
+                )
+            }
+            assertFalse(replacementEntered)
+            assertFalse(knownLaunchEntered)
+            unknown.cancelAndJoin()
+            withTimeout(5_000) { replacement.join(); known.join() }
+            assertTrue(replacementEntered)
+            assertTrue(knownLaunchEntered)
+        }
+    }
+
+    @Test
+    fun unresolvedAdmissionThatBecomesResolvedReleasesExclusiveAndPinsNewDirectory() = runBlocking {
+        val admission = AtomicReference<SaveSyncLaunchAdmission>(SaveSyncLaunchAdmission.Unresolved)
+        val gateHolder = launch(start = CoroutineStart.UNDISPATCHED) {
+            SaveSyncLocks.mutation { awaitCancellation() }
+        }
+        val managedKeys = mutableListOf<String?>()
+        val callbackEntered = CompletableDeferred<Unit>()
+        val managedLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
+            withSaveSyncLaunchAdmission<Unit>(
+                resolve = { admission.get() },
+                managed = { key ->
+                    managedKeys += key
+                    callbackEntered.complete(Unit)
+                    awaitCancellation()
+                },
+                unmanaged = { throw AssertionError("Resolved admission bypassed its active lock") },
+            )
+        }
+        admission.set(SaveSyncLaunchAdmission.Directory("readmitted-directory"))
+        gateHolder.cancelAndJoin()
+        withTimeout(5_000) { callbackEntered.await() }
+        assertEquals(listOf("readmitted-directory"), managedKeys)
+        var aliasEntered = false
+        val alias = launch(start = CoroutineStart.UNDISPATCHED) {
+            SaveSyncLocks.active("readmitted-directory") { aliasEntered = true }
+        }
+        assertFalse(aliasEntered)
+        // Re-admission must release the exclusive permit, not retain it around the known launch.
+        withTimeout(5_000) {
+            SaveSyncLocks.active("readmitted-unrelated") {
+                SaveSyncLocks.mutation("readmitted-unrelated") {}
+            }
+        }
+        managedLaunch.cancelAndJoin()
+        withTimeout(5_000) { alias.join() }
+        assertTrue(aliasEntered)
     }
 
     @Test

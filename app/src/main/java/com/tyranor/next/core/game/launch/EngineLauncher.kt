@@ -174,7 +174,7 @@ object EngineLauncher {
             )
         }
 
-    /** Called under mutation, and under the pinned directory lock when it is known. */
+    /** Known directories share the operation fence; unknown directories hold it exclusively. */
     private suspend fun launchManaged(
         context: Context,
         game: ScanGame,

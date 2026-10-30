@@ -1003,4 +1003,8 @@
     <string name="launch_runtime_module_path_unresolved">ゲームフォルダーのパスを解決できません。このモジュールは実際のフォルダーパスのみを受け付けます</string>
     <string name="launch_runtime_module_denied">ランタイムモジュールが起動を拒否したか、権限が不足しています</string>
     <string name="launch_runtime_module_failed">ランタイムモジュールの起動に失敗しました</string>
+    <string name="save_external_exit_title">外部ゲームの終了を確認</string>
+    <string name="save_external_exit_summary">Winlator でゲームを終了してから、セーブ保護の解除を確認します</string>
+    <string name="save_external_exit_message">先に Winlator で「%1$s」と同じセーブフォルダーを共有するすべてのゲームを完全に終了してください。Tyranor に戻るだけでは終了を確認できません。確認すると今回の実行マーカーを解除し、アップロード・セーブの切り替え・削除を許可します。書き込み中の場合、セーブを失うおそれがあります。</string>
+    <string name="save_external_exit_done">外部ゲームの終了を確認しました。セーブを管理できます</string>
 </resources>

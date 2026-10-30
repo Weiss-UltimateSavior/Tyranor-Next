@@ -4,8 +4,10 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -1216,6 +1218,349 @@ class SaveSyncServiceTest {
         assertEquals(listOf(targetRemote), harness.transport.versions(targetRemoteGame))
         assertEquals(listOf(siblingRemote), harness.transport.versions(siblingRemoteGame))
         assertEquals(0, harness.world.openClientCount())
+    }
+
+    @Test
+    fun clearGamePreservesUnrelatedCorruptAndUnreadableRecordsAndTheirQuarantine() = runBlocking {
+        val harness = Harness(temp)
+        val target = harness.addGame("isolated-removal")
+        harness.identify(target)
+        val sibling = harness.addGame("damaged-sibling")
+        val siblingKey = harness.key(sibling)
+        val corrupt = File(harness.root, "checkpoints/$siblingKey.json")
+        corrupt.writeText("{broken sibling identity")
+        val quarantine = File(corrupt.parentFile, corrupt.name + ".corrupt")
+        quarantine.writeText("original recovery copy")
+        val unreadable = File(harness.root, "checkpoints/${SaveContentHash.text("unrelated-io")}.json")
+        assertTrue(unreadable.mkdir())
+        File(unreadable, "child").writeText("must survive")
+        val selections = File(harness.root, "directory_selections").apply { mkdirs() }
+        val badSelection = File(selections, "${SaveContentHash.text("unrelated-directory")}.json")
+        badSelection.writeText("{broken selection")
+
+        harness.service.clearGame(target)
+
+        assertEquals("{broken sibling identity", corrupt.readText())
+        assertEquals("original recovery copy", quarantine.readText())
+        assertEquals("must survive", File(unreadable, "child").readText())
+        assertEquals("{broken selection", badSelection.readText())
+        assertFalse(File(selections, badSelection.name + ".corrupt").exists())
+        assertEquals(0, harness.states.load(harness.key(target)).length())
+    }
+
+    @Test
+    fun runningExternalPullOnlyGameCannotEraseItsOwnEvidenceOnRemovalOrRetry() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("external-pull-only").copy(engine = EngineType.YURIS)
+        harness.identify(game)
+        harness.world.externalRunning = true
+        repeat(2) {
+            try {
+                harness.service.clearGame(game)
+                fail("A live external writer must block removal even without an upload session")
+            } catch (failure: SaveSyncException) {
+                assertEquals(SaveSyncError.GAME_RUNNING, failure.code)
+            }
+            assertTrue(harness.world.externalRunning)
+            assertEquals("identity-external-pull-only", harness.service.identity(game))
+        }
+    }
+
+    @Test
+    fun rejectedDirectoryCleanupPreservesExternalEvidence() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("changed-removal-directory")
+        harness.identify(game)
+        SaveDirectoryActivationStore(harness.root).begin("old-directory", game.uri, "selection")
+
+        try {
+            harness.service.clearGame(game)
+            fail("An old selection owner must block cleanup in another directory")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.SAVE_LOCATION_CHANGED, failure.code)
+        }
+        assertEquals("identity-changed-removal-directory", harness.service.identity(game))
+    }
+
+    @Test
+    fun cleanupAppDataRetainsDirectoryFenceUntilFilesHaveBeenRemoved() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("fenced-removal")
+        harness.identify(game)
+        val cleanupEntered = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        val launchEntered = CompletableDeferred<Unit>()
+        harness.world.onCleanupAppData = {
+            cleanupEntered.complete(Unit)
+            releaseCleanup.await()
+        }
+        coroutineScope {
+            val removal = async(Dispatchers.Default) { harness.service.clearGame(game) }
+            withTimeout(5_000) { cleanupEntered.await() }
+            val launch = async(start = CoroutineStart.UNDISPATCHED) {
+                withSaveSyncLaunchAdmission(
+                    resolve = { SaveSyncLaunchAdmission.Directory(game.uri) },
+                    managed = { launchEntered.complete(Unit) },
+                    unmanaged = { fail("Managed game bypassed its directory fence") },
+                )
+            }
+            yield()
+            assertFalse(launchEntered.isCompleted)
+            releaseCleanup.complete(Unit)
+            withTimeout(5_000) { removal.await(); launch.await() }
+            assertTrue(launchEntered.isCompleted)
+        }
+    }
+
+    @Test
+    fun appDataFailurePreservesIdentityAndExternalEvidenceForRetry() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("appdata-retry")
+        harness.identify(game)
+        harness.world.onCleanupAppData = { throw FileNotFoundException("temporary storage failure") }
+        try {
+            harness.service.clearGame(game)
+            fail("App-data cleanup must be part of the retryable removal transaction")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        }
+        assertEquals("identity-appdata-retry", harness.service.identity(game))
+        harness.world.onCleanupAppData = null
+        harness.service.clearGame(game)
+        assertEquals(0, harness.states.load(harness.key(game)).length())
+    }
+
+    @Test
+    fun deletingGameWithCorruptIdentityPreservesRecoveryCopyAndSiblingIdentity() = runBlocking {
+        val harness = Harness(temp)
+        val target = harness.addGame("corrupt-own-identity")
+        val sibling = harness.addGame("valid-sibling-identity")
+        harness.identify(target)
+        harness.identify(sibling)
+        val record = File(harness.root, "checkpoints/${harness.key(target)}.json")
+        record.writeText("{broken own identity")
+
+        harness.service.clearGame(target)
+
+        assertFalse(record.exists())
+        assertEquals("{broken own identity", File(record.parentFile, record.name + ".corrupt").readText())
+        assertEquals("identity-valid-sibling-identity", harness.service.identity(sibling))
+    }
+
+    @Test
+    fun schemaInvalidOwnershipIndexCannotBlockRemovalOrClaimSiblingState() = runBlocking {
+        val harness = Harness(temp)
+        val target = harness.addGame("invalid-index-types")
+        val sibling = harness.addGame("index-sibling")
+        harness.identify(target)
+        harness.identify(sibling)
+        val siblingCheckpoint = SaveContentHash.text("typed-sibling-checkpoint")
+        harness.states.save(siblingCheckpoint, JSONObject().put("gameKey", harness.key(sibling)).put("seen", "keep"))
+        harness.states.save(harness.key(target), harness.states.load(harness.key(target)).put("checkpointKeys",
+            JSONArray().put(7).put(JSONObject.NULL).put(JSONObject()).put("../bad").put(siblingCheckpoint)))
+
+        harness.service.clearGame(target)
+
+        assertEquals("keep", harness.states.load(siblingCheckpoint).getString("seen"))
+        assertEquals("identity-index-sibling", harness.service.identity(sibling))
+        assertEquals(0, harness.states.load(harness.key(target)).length())
+    }
+
+    @Test
+    fun ownCheckpointReadFailureIsNotMisclassifiedAsCorruption() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("own-read-failure")
+        harness.identify(game)
+        val record = File(harness.root, "checkpoints/${harness.key(game)}.json")
+        assertTrue(record.delete())
+        assertTrue(record.mkdir())
+        val obstruction = File(record, "unreadable-record").apply { writeText("preserve") }
+        var appDataTouched = false
+        harness.world.onCleanupAppData = { appDataTouched = true }
+
+        try {
+            harness.service.clearGame(game)
+            fail("I/O failure cannot authorize metadata removal")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        }
+
+        assertEquals("preserve", obstruction.readText())
+        assertFalse(appDataTouched)
+        assertFalse(File(record.parentFile, record.name + ".corrupt").exists())
+    }
+
+    @Test
+    fun schemaInvalidCurrentSelectionIsQuarantinedAndReplacedWithNewRevisionDuringRemoval() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("invalid-current-selection")
+        harness.identify(game)
+        val directory = File(harness.root, "directory_selections").apply { mkdirs() }
+        val record = File(directory, "${SaveContentHash.text(game.uri)}.json")
+        val damaged = JSONObject().put("ownerUri", game.uri).put("ownerToken", "old-token")
+            .put("completionCommitted", "not-a-boolean").toString()
+        record.writeText(damaged)
+
+        harness.service.clearGame(game)
+
+        val repaired = JSONObject(record.readText())
+        assertEquals(game.uri, repaired.getString("activeKey"))
+        assertTrue(repaired.getString("revision").isNotBlank())
+        assertFalse(repaired.has("ownerUri"))
+        assertEquals(damaged, File(directory, record.name + ".corrupt").readText())
+    }
+
+    @Test
+    fun malformedOldSelectionCannotBlockAnotherDirectoryOrBeMutatedByItsRemoval() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("invalid-old-selection")
+        harness.identify(game)
+        val directory = File(harness.root, "directory_selections").apply { mkdirs() }
+        val oldRecord = File(directory, "${SaveContentHash.text("old-directory")}.json")
+        val damaged = JSONObject().put("ownerUri", game.uri).put("ownerToken", 42).toString()
+        oldRecord.writeText(damaged)
+
+        harness.service.clearGame(game)
+
+        assertEquals(damaged, oldRecord.readText())
+        assertFalse(File(directory, oldRecord.name + ".corrupt").exists())
+        assertEquals(0, harness.states.load(harness.key(game)).length())
+    }
+
+    @Test
+    fun slowUploadCaptureDoesNotBlockSelectionInAnUnrelatedDirectory() = runBlocking {
+        val harness = Harness(temp)
+        val slow = harness.addGame("slow-capture")
+        val other = harness.addGame("independent-selection")
+        harness.identify(slow)
+        harness.identify(other)
+        harness.setActive(slow, "slow-active")
+        harness.setActive(other, "other-active")
+        val selected = harness.addSnapshot(other, "other-selected", 1_700_000_000_999L)
+        val exporting = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        harness.world.onExport = { game ->
+            if (game.uri == slow.uri) {
+                exporting.complete(Unit)
+                release.await()
+            }
+        }
+        coroutineScope {
+            val upload = async(Dispatchers.Default) { harness.service.syncGame(slow, SaveSyncDirection.UPLOAD) }
+            try {
+                withTimeout(5_000) { exporting.await() }
+                assertEquals(SaveActivationResult.APPLIED,
+                    withTimeout(5_000) { harness.service.activateVersion(other, selected.id) })
+                assertEquals(selected.contentHash, harness.world.activeHash(other))
+            } finally {
+                release.complete(Unit)
+            }
+            assertEquals(1, withTimeout(5_000) { upload.await() }.uploaded)
+        }
+    }
+
+    @Test
+    fun canceledRemovalWaitingForDirectoryDoesNotEnterIrreversibleCleanup() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("cancel-removal-admission")
+        harness.identify(game)
+        var appDataTouched = false
+        harness.world.onCleanupAppData = { appDataTouched = true }
+        coroutineScope {
+            SaveSyncLocks.active(game.uri) {
+                val removal = async(Dispatchers.Default) { harness.service.clearGame(game) }
+                withTimeout(5_000) { harness.world.activeKeyEntered.await() }
+                removal.cancelAndJoin()
+            }
+        }
+        assertFalse(appDataTouched)
+        assertEquals("identity-cancel-removal-admission", harness.service.identity(game))
+    }
+
+    @Test
+    fun removalCannotClearAnotherAliasPendingSelectionOrItsAppData() = runBlocking {
+        val harness = Harness(temp)
+        val target = harness.addGame("removal-alias")
+        val owner = harness.addGame("selection-owner")
+        harness.identify(target)
+        harness.identify(owner)
+        harness.world.directoryKey = "shared-removal-selection"
+        val selections = SaveDirectoryActivationStore(harness.root)
+        selections.begin("shared-removal-selection", owner.uri, "owner-selection")
+        var appDataTouched = false
+        harness.world.onCleanupAppData = { appDataTouched = true }
+
+        try {
+            harness.service.clearGame(target)
+            fail("A pending selection held by another alias must block app-data removal")
+        } catch (failure: SaveSyncException) {
+            assertEquals(SaveSyncError.SELECTION_INCOMPLETE, failure.code)
+        }
+
+        assertFalse(appDataTouched)
+        assertEquals("identity-removal-alias", harness.service.identity(target))
+        assertEquals("owner-selection", selections.owned(owner.uri).single().token)
+    }
+
+    @Test
+    fun damagedIndexCannotClaimAnotherGamesMasterRecordOrUnknownMasterSchema() = runBlocking {
+        val harness = Harness(temp)
+        val target = harness.addGame("bad-master-index")
+        val sibling = harness.addGame("master-index-sibling")
+        harness.identify(target)
+        harness.identify(sibling)
+        val orphanMaster = SaveContentHash.text("not-in-library-anymore")
+        harness.states.save(orphanMaster, JSONObject().put("identity", "retained-master").put("revision", "retained-revision"))
+        harness.states.save(harness.key(target), harness.states.load(harness.key(target)).put("checkpointKeys",
+            JSONArray().put(harness.key(sibling)).put(orphanMaster)))
+
+        harness.service.clearGame(target)
+
+        assertEquals("identity-master-index-sibling", harness.service.identity(sibling))
+        assertEquals("retained-master", harness.states.load(orphanMaster).getString("identity"))
+        assertEquals("retained-revision", harness.states.load(orphanMaster).getString("revision"))
+    }
+
+    @Test
+    fun failedRemovalInvalidatesPinnedUploadBeforeItCanPruneCloudHistory() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("remove-pinned-upload")
+        harness.identify(game)
+        harness.setActive(game, "new-active")
+        val remote = harness.remoteGame(game)
+        repeat(11) { index ->
+            harness.transport.seed(remote, RemoteSaveVersion("old-$index.zip",
+                (index + 1).toString(16).padStart(64, '0'), 1_700_000_000_000L + index, 1L))
+        }
+        val releaseUpload = CompletableDeferred<Unit>()
+        harness.transport.uploadGate = releaseUpload
+        coroutineScope {
+            val upload = async(Dispatchers.Default) { harness.service.syncGame(game, SaveSyncDirection.UPLOAD) }
+            try {
+                withTimeout(5_000) { harness.transport.uploadEntered.await() }
+                val key = harness.key(game)
+                val before = harness.states.load(key)
+                val previousRevision = before.getString("revision")
+                val obstructionKey = SaveContentHash.text("owned-removal-obstruction")
+                before.getJSONArray("checkpointKeys").put(obstructionKey)
+                harness.states.save(key, before)
+                val obstruction = File(harness.root, "checkpoints/$obstructionKey.json").apply { mkdir() }
+                File(obstruction, "retained-child").writeText("blocked")
+                try {
+                    harness.service.clearGame(game)
+                    fail("A nonempty owned obstruction must leave cleanup retryable")
+                } catch (failure: SaveSyncException) {
+                    assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+                }
+                assertTrue(previousRevision != harness.states.load(key).getString("revision"))
+                assertEquals("identity-remove-pinned-upload", harness.service.identity(game))
+            } finally {
+                releaseUpload.complete(Unit)
+            }
+            val report = withTimeout(5_000) { upload.await() }
+            assertEquals(listOf(SaveSyncError.LOCAL_STATE_CHANGED), report.failures.map { it.error })
+            assertEquals(0, harness.transport.deleteCount())
+        }
     }
 
     private fun causeChainContains(actual: Throwable, expected: Throwable): Boolean {
@@ -3239,6 +3584,9 @@ class SaveSyncServiceTest {
         override var enabled = true
         @Volatile
         var isRunning = false
+        @Volatile var externalRunning = false
+        var onCleanupAppData: (suspend () -> Unit)? = null
+        var onExport: (suspend (ScanGame) -> Unit)? = null
         @Volatile
         var recoveryNeeded = false
         @Volatile var directoryKey: String? = null
@@ -3255,7 +3603,7 @@ class SaveSyncServiceTest {
         override fun games(): List<ScanGame> = synchronized(lock) { games.toList() }
         override fun available(game: ScanGame): Boolean = synchronized(lock) { game in games && game.uri !in unavailableUris }
         override fun running(game: ScanGame): Boolean {
-            val value = isRunning
+            val value = isRunning || externalRunning
             onRunning?.invoke()
             return value
         }
@@ -3269,6 +3617,7 @@ class SaveSyncServiceTest {
             synchronized(lock) { activeHashes[game.uri] }
 
         override suspend fun export(game: ScanGame, archive: File) {
+            onExport?.invoke(game)
             val source = synchronized(lock) { active[game.uri] }
                 ?: throw SaveSyncException(SaveSyncError.SAVE_UNAVAILABLE)
             source.copyTo(archive, overwrite = true)
@@ -3322,6 +3671,11 @@ class SaveSyncServiceTest {
 
         override suspend fun retireSessions(game: ScanGame, activeKey: String) {
             onRetireDirectory?.invoke(activeKey)
+        }
+
+        override suspend fun cleanupAppData(game: ScanGame, activeKey: String) {
+            requireSameSaveDirectory(activeKey, activeKey(game))
+            onCleanupAppData?.invoke()
         }
 
         override fun openClient(config: WebDavConfig): SaveSyncTransport = synchronized(lock) {

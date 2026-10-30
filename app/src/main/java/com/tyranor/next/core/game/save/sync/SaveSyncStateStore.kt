@@ -6,6 +6,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.StandardCopyOption
 
 /** Small checkpoints survive process death; they never authorize changing an active save. */
@@ -14,21 +15,35 @@ internal class SaveSyncStateStore(
     /** Only reconstructible runtime caches may recover as missing; durable records stay strict. */
     private val recoverCorrupt: Boolean = false,
 ) {
-    fun load(key: String): JSONObject {
+    fun load(key: String): JSONObject = read(key, {}, recoverCorrupt)
+
+    fun load(key: String, validate: (JSONObject) -> Unit): JSONObject =
+        read(key, validate, recoverCorrupt)
+
+    /** Ownership scans must leave unrelated malformed records and recovery copies untouched. */
+    fun inspect(key: String): JSONObject = read(key, {}, recover = false, quarantineCorrupt = false)
+
+    private fun read(
+        key: String,
+        validate: (JSONObject) -> Unit,
+        recover: Boolean,
+        quarantineCorrupt: Boolean = true,
+    ): JSONObject {
         val file = file(key)
-        if (!file.exists()) return JSONObject()
         val text = try {
-            file.readText(Charsets.UTF_8)
+            String(Files.readAllBytes(file.toPath()), Charsets.UTF_8)
+        } catch (_: NoSuchFileException) {
+            return JSONObject()
         } catch (failure: IOException) {
             throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
         } catch (failure: SecurityException) {
             throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
         }
         return try {
-            JSONObject(text)
+            JSONObject(text).also(validate)
         } catch (failure: JSONException) {
-            quarantine(file, consumeOriginal = recoverCorrupt)
-            if (recoverCorrupt) JSONObject()
+            if (quarantineCorrupt) quarantine(file, consumeOriginal = recover)
+            if (recover) JSONObject()
             else throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
         }
     }
@@ -58,30 +73,48 @@ internal class SaveSyncStateStore(
             .mapNotNull { it.name.removeSuffix(".json").takeIf { key -> it.name.endsWith(".json") && key.matches(KEY) } }
     }
 
-    fun remove(key: String) {
-        val state = file(key)
-        if (!directory.exists()) return
-        val candidates = (directory.listFiles() ?: throw SaveSyncException(SaveSyncError.LOCAL_IO))
-            .filter { it.name == state.name || isQuarantineName(key, it.name) }
-        var deletionFailed = false
-        for (candidate in candidates) {
-            if (candidate.exists() && !candidate.delete()) deletionFailed = true
+    /** Remove only the live record; recovery copies remain available for inspection. */
+    fun remove(key: String) = deleteRecord(key, allowEmptyDirectory = false)
+
+    /**
+     * The caller must establish ownership independently. A known empty-directory obstruction
+     * can be removed on retry; ordinary file read failures still fail closed.
+     */
+    fun removeOwned(key: String) {
+        if (!Files.isDirectory(file(key).toPath())) {
+            try {
+                read(key, {}, recover = false)
+            } catch (failure: SaveSyncException) {
+                if (failure.cause !is JSONException) throw failure
+            }
         }
-        if (deletionFailed) throw SaveSyncException(SaveSyncError.LOCAL_IO)
+        deleteRecord(key, allowEmptyDirectory = true)
+    }
+
+    private fun deleteRecord(key: String, allowEmptyDirectory: Boolean) {
+        val state = file(key)
+        try {
+            if (!allowEmptyDirectory && Files.isDirectory(state.toPath())) throw IOException("State record is a directory")
+            Files.deleteIfExists(state.toPath())
+        } catch (failure: IOException) {
+            throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+        } catch (failure: SecurityException) {
+            throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+        }
     }
 
     /**
-     * Explicit repair path for unreadable durable state. Only files that cannot be parsed are
-     * removed; valid records are never touched.
+     * Repair a known owned key only. JSON/schema corruption is quarantined before removal;
+     * read failures propagate and valid records are untouched, including reconstructible caches.
      */
-    fun discardCorrupt() {
-        for (key in keys()) {
-            try {
-                load(key)
-            } catch (failure: SaveSyncException) {
-                if (failure.code != SaveSyncError.LOCAL_IO) throw failure
-                remove(key)
-            }
+    fun discardCorrupt(key: String, validate: (JSONObject) -> Unit = {}): Boolean {
+        try {
+            read(key, validate, recover = false)
+            return false
+        } catch (failure: SaveSyncException) {
+            if (failure.cause !is JSONException) throw failure
+            remove(key)
+            return true
         }
     }
 
@@ -115,15 +148,6 @@ internal class SaveSyncStateStore(
             Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
         } catch (_: AtomicMoveNotSupportedException) {
             Files.move(source.toPath(), target.toPath())
-        }
-    }
-
-    private fun isQuarantineName(key: String, name: String): Boolean {
-        val prefix = "$key.json.corrupt"
-        if (name == prefix) return true
-        if (!name.startsWith("$prefix-")) return false
-        return name.removePrefix("$prefix-").let { suffix ->
-            suffix.isNotEmpty() && suffix.all { it in '0'..'9' }
         }
     }
 

@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.util.UUID
 
 /** The marker moves with staging; a recreated destination cannot prove the swap committed. */
@@ -13,6 +14,9 @@ internal class SaveImportTransaction(private val destination: File, private val 
     private val marker get() = File(destination, MARKER)
 
     fun prepare(staging: File, preservePrevious: Boolean = false) {
+        // Refuse an all-empty import before swapping the live directory when no safe
+        // recovery slot is available. A directory's existence never proves redundancy.
+        if (preservePrevious) requireRecoveryCapacity(destination)
         val token = UUID.randomUUID().toString()
         val state = JSONObject().put("uri", gameUri).put("token", token)
             .put("preservePrevious", preservePrevious).toString()
@@ -70,9 +74,62 @@ internal class SaveImportTransaction(private val destination: File, private val 
     }
 
     fun preserveUnprovenBackup(backup: File): File {
+        SavePathSafety.requirePlainDirectoryEntry(backup)
+        val duplicate = requireRecoveryCapacity(backup)
+        if (duplicate != null) {
+            SavePathSafety.deleteTreeNoFollow(backup)
+            return duplicate
+        }
         val orphan = File(backup.parentFile, destination.name + ".import_orphan_" + UUID.randomUUID())
         if (!backup.renameTo(orphan)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
         return orphan
+    }
+
+    /** Only byte-identical recovery trees may be recycled; unique older saves remain recoverable. */
+    private fun requireRecoveryCapacity(backup: File): File? {
+        val copies = recoveryCopies(destination)
+        val unique = linkedMapOf<Map<String, String>, File>()
+        for (copy in copies) {
+            val fingerprint = recoveryFingerprint(copy)
+            if (unique.containsKey(fingerprint)) SavePathSafety.deleteTreeNoFollow(copy)
+            else unique[fingerprint] = copy
+        }
+        if (backup.isDirectory) unique[recoveryFingerprint(backup)]?.let { return it }
+        if (unique.size >= MAX_RECOVERY_COPIES) {
+            // The indexed backup and transaction proof remain available for a retry.
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        }
+        return null
+    }
+
+    private fun recoveryFingerprint(root: File): Map<String, String> {
+        SavePathSafety.requirePlainDirectoryEntry(root)
+        val entries = sortedMapOf<String, String>()
+        fun visit(directory: File, prefix: String) {
+            val children = directory.listFiles() ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            for (child in children) {
+                if (Files.isSymbolicLink(child.toPath())) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                if (prefix.isEmpty() && child.name == MARKER && child.isFile && child.length() <= 4096) continue
+                val path = prefix + child.name
+                if (child.isDirectory) {
+                    entries["$path/"] = "directory"
+                    visit(child, "$path/")
+                } else if (child.isFile) {
+                    val digest = MessageDigest.getInstance("SHA-256")
+                    child.inputStream().use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            digest.update(buffer, 0, count)
+                        }
+                    }
+                    entries[path] = digest.digest().joinToString("") { "%02x".format(it) }
+                } else throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
+        }
+        visit(root, "")
+        return entries
     }
 
     fun clear() {
@@ -87,7 +144,21 @@ internal class SaveImportTransaction(private val destination: File, private val 
         }
     }
 
-    companion object { const val MARKER = ".tyranor_import_commit" }
+    companion object {
+        const val MARKER = ".tyranor_import_commit"
+        internal const val MAX_RECOVERY_COPIES = 3
+
+        /** Exact UUID sidecars only; callers must restore excluded resources before deleting them. */
+        internal fun recoveryCopies(destination: File): List<File> {
+            val parent = destination.parentFile ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            SavePathSafety.requireSafeRoot(parent)
+            if (Files.notExists(parent.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)) return emptyList()
+            val pattern = Regex(Regex.escape(destination.name) +
+                "\\.import_orphan_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+            return (parent.listFiles() ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE))
+                .filter { pattern.matches(it.name) }.sortedBy { it.name }
+        }
+    }
 }
 
 internal fun copyMissingImportResource(source: File, target: File, root: File, skip: (String) -> Boolean) {
