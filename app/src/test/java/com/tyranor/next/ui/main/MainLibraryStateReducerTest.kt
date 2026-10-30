@@ -4,6 +4,7 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -72,12 +73,13 @@ class MainLibraryStateReducerTest {
     }
 
     @Test
-    fun removeRecentAlsoClearsThePlayedFlagOnTheLibraryCopy() {
+    fun removeRecentAlsoClearsOpenTimeOnTheLibraryCopy() {
         // 「已游玩」筛选与「最近游玩」排序都读 games，清除游玩记录必须同时归零 openTime，
         // 否则持久化快照发布前这两处仍按旧值显示。
+        val other = first.copy(openTime = 120L)
         val played = second.copy(openTime = 300L)
         val state = MainLibraryUiState(
-            games = listOf(first, played),
+            games = listOf(other, played),
             recentGames = listOf(played),
             loaded = true,
         )
@@ -86,7 +88,15 @@ class MainLibraryStateReducerTest {
 
         assertTrue(result.recentGames.isEmpty())
         assertEquals(0L, result.games.single { it.uri == played.uri }.openTime)
-        assertEquals(first.openTime, result.games.single { it.uri == first.uri }.openTime)
+        assertEquals(120L, result.games.single { it.uri == other.uri }.openTime)
+    }
+
+    @Test
+    fun removeRecentLeavesStateUntouchedWhenTheUriIsAbsent() {
+        // 无命中时返回原引用，避免下游按 games 身份做的排序整库重算。
+        val state = MainLibraryUiState(games = listOf(first), recentGames = listOf(first), loaded = true)
+
+        assertSame(state, MainLibraryStateReducer.removeRecent(state, "content://games/missing"))
     }
 
     @Test
