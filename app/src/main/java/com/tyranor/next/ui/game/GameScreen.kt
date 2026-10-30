@@ -650,8 +650,10 @@ private fun GameLibraryContent(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            // 有生效条件时，空态直接给一个出口，省得再去顶栏翻抽屉
-                            if (hasActiveCondition) {
+                            // 结果为空且「有搜索词或条件生效」时给一个出口：只按 hasActiveCondition 判断会漏掉
+                            // 「仅搜索无命中」，以及「从抽屉重置后搜索词仍在」——后者条件已复位、按钮会消失，
+                            // 用户被留在空列表里。
+                            if (query.isNotBlank() || hasActiveCondition) {
                                 NoRippleButton(
                                     text = stringResource(R.string.game_filter_reset),
                                     // 空态也可能是「搜索 + 筛选」共同造成的：只清筛选仍然空着、
