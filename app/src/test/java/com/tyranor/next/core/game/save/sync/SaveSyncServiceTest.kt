@@ -1953,7 +1953,8 @@ class SaveSyncServiceTest {
         val harness = Harness(temp)
         fun runtimeGame(parent: String) = ScanGame(
             title = "runtime-$parent",
-            uri = "file:///library/$parent/shared-game",
+            // Raw absolute paths exercise the production mapper without Android's JVM Uri stub.
+            uri = "/library/$parent/shared-game",
             engine = EngineType.RUNTIME_MODULE,
             launchTarget = "__game_dir__",
             runtimeModulePackage = "com.example.runtime",
