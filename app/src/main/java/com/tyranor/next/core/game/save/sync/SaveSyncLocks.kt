@@ -24,7 +24,8 @@ internal object SaveSyncLocks {
 
     /**
      * Serializes save-directory replacements/backfills (activation import, recovery/failure
-     * cleanup, sync finish, clear) with launches that do not hold the directory lock.
+     * cleanup, sync finish) and private-state clear with launches that do not hold the directory
+     * lock.
      */
     suspend fun <T> mutation(block: suspend () -> T): T = mutations.withLock { block() }
 }

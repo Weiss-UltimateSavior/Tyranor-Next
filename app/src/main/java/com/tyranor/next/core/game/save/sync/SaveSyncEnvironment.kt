@@ -49,6 +49,7 @@ internal interface SaveSyncEnvironment {
     fun repairManualSelection(game: ScanGame, hasCurrent: Boolean): Boolean
     suspend fun recordRestored(game: ScanGame, hash: String, activeKey: String): Boolean
     suspend fun retireSessions(game: ScanGame, activeKey: String) = Unit
+    fun clearExternalLaunchEvidence(game: ScanGame) = Unit
     fun openClient(config: WebDavConfig): SaveSyncTransport
 }
 
@@ -128,6 +129,8 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
         SaveSyncRuntime.recordRestoredVersion(context, game, hash, activeKey)
     override suspend fun retireSessions(game: ScanGame, activeKey: String) =
         SaveSyncRuntime.retireDirectorySessions(context, activeKey)
+    override fun clearExternalLaunchEvidence(game: ScanGame) =
+        SaveSyncRuntime.clearExternalLaunchEvidence(context, game)
     override fun openClient(config: WebDavConfig): SaveSyncTransport {
         val client = WebDavClient(config, cacheDirectory) { enabled }
         return WebDavSaveSyncTransport(client)

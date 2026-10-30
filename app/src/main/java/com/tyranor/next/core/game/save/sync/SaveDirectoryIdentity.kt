@@ -1,12 +1,20 @@
 package com.tyranor.next.core.game.save.sync
 
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.EthornellSaveCapability
+import com.tyranor.next.core.game.save.GameSaveManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
 
 internal const val SAVE_DIRECTORY_KEY_PREFIX = "save-directory:"
+
+/** Launch admission and whole-library sync only manage engines with a usable save interface. */
+internal fun supportsManagedSave(engine: EngineType): Boolean =
+    GameSaveManager.supportsFileSaves(engine) &&
+        (engine != EngineType.ETHORNELL || EthornellSaveCapability.available)
 
 internal sealed interface SaveSyncLaunchAdmission {
     data object Disabled : SaveSyncLaunchAdmission

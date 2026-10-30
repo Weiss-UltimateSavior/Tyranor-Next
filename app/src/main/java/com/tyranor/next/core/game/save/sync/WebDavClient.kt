@@ -510,7 +510,8 @@ class WebDavClient private constructor(
                 val lengths = props.flatMap { children(it, "getcontentlength") }
                 val size = lengths.singleOrNull()?.textContent?.trim()?.toLongOrNull()
                     ?.takeIf { it in 0..SaveContentHash.MAX_BYTES } ?: throw SaveSyncException(SaveSyncError.INVALID_RESPONSE)
-                val etag = props.flatMap { children(it, "getetag") }.singleOrNull()?.textContent?.takeIf { it.isNotEmpty() }
+                val etag = props.flatMap { children(it, "getetag") }.singleOrNull()?.textContent
+                    ?.trim()?.takeIf { it.isNotEmpty() }
                 if (etag != null && (etag.length > 1024 ||
                     etag.any { it.code < 0x21 || it.code == 0x7f || it.code > 0xff })
                 ) {

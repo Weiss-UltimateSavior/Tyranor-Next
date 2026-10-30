@@ -17,7 +17,7 @@ class SaveSyncFallbackStateTest {
         val directory = File(temp.root, "workers")
         val store = SaveSyncFallbackStateStore(directory)
         store.save("worker-a", listOf("content://first"))
-        store.addAll("worker-a", listOf("", "content://second"))
+        store.save("worker-a", store.load("worker-a") + setOf("content://second"))
         store.save("worker-b", listOf("content://independent"))
 
         assertEquals(

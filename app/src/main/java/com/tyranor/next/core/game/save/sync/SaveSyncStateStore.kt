@@ -70,6 +70,21 @@ internal class SaveSyncStateStore(
         if (deletionFailed) throw SaveSyncException(SaveSyncError.LOCAL_IO)
     }
 
+    /**
+     * Explicit repair path for unreadable durable state. Only files that cannot be parsed are
+     * removed; valid records are never touched.
+     */
+    fun discardCorrupt() {
+        for (key in keys()) {
+            try {
+                load(key)
+            } catch (failure: SaveSyncException) {
+                if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+                remove(key)
+            }
+        }
+    }
+
     private fun quarantine(file: File, consumeOriginal: Boolean) {
         val base = File(directory, file.name + ".corrupt")
         try {

@@ -33,11 +33,6 @@ internal class SaveSyncFallbackStateStore(
         })
     }
 
-    fun addAll(workId: String, excludedUris: Iterable<String>) {
-        val combined = load(workId).toMutableSet().apply { addAll(normalize(excludedUris)) }
-        save(workId, combined)
-    }
-
     fun save(workId: String, excludedUris: Iterable<String>) {
         pruneExpired()
         val uris = normalize(excludedUris)

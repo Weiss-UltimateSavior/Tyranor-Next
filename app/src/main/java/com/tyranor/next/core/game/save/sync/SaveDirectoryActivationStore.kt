@@ -75,6 +75,9 @@ internal class SaveDirectoryActivationStore(root: File) {
             state.optString("previousRevision").takeIf { it.isNotBlank() })
     }
 
+    /** Explicit deletion repair: unreadable selections are dropped instead of blocking removal. */
+    fun discardCorrupt() = states.discardCorrupt()
+
     private fun requireOwner(state: JSONObject, uri: String, token: String) {
         if (state.optString("ownerUri") != uri || state.optString("ownerToken") != token) {
             throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)

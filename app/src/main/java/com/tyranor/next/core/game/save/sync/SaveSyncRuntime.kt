@@ -336,7 +336,12 @@ object SaveSyncRuntime {
                     }
                 }
                 updateExternalLaunch(null) {
-                    externalLaunchStore(app).foreground(externalReturnSequence, returned = priorBackground)
+                    val liveTokens = synchronized(externalLaunchLock) { externalLaunches.keys.toSet() }
+                    externalLaunchStore(app).foreground(
+                        externalReturnSequence,
+                        returned = priorBackground,
+                        liveTokens = liveTokens,
+                    )
                 }
                 if (!WebDavSettingsStore.isEnabled(app)) {
                     onFeatureDisabled(app)
@@ -628,16 +633,15 @@ object SaveSyncRuntime {
     }
 
     internal fun launchAdmission(context: Context, game: ScanGame): SaveSyncLaunchAdmission {
-        if (!GameSaveManager.supportsFileSaves(game.engine)) return SaveSyncLaunchAdmission.Unmanaged
+        if (!supportsManagedSave(game.engine)) return SaveSyncLaunchAdmission.Unmanaged
         return optionalSaveSyncLaunchAdmission({ WebDavSettingsStore.isEnabled(context) }) {
             GameSaveManager(context).resolveSaveLocation(game).directory?.canonicalPath?.let { SAVE_DIRECTORY_KEY_PREFIX + it }
         }
     }
 
     /**
-     * Start hint for a launch that does not use the directory lock. Marked while the caller holds
-     * the mutation gate, so activation/recovery can observe the launch without waiting for the
-     * whole optional-sync setup. Returns null when the hint cannot be persisted.
+     * Start hint for every managed launch. Always returns a token, even when optional persistence
+     * fails; the caller must keep the in-memory protection and only clear it on a failed launch.
      */
     internal fun prepareOptionalLaunchGrace(context: Context, game: ScanGame, directoryKey: String? = null): String {
         val token = UUID.randomUUID().toString()
@@ -674,8 +678,22 @@ object SaveSyncRuntime {
             synchronized(externalLaunchLock) {
                 externalLaunches[token] = ExternalSaveLaunch(game.uri, token, directoryKey, externalLaunchOwner, sequence)
             }
-            updateExternalLaunch(game) {
+            val persisted = try {
                 externalLaunchStore(context).dispatched(game.uri, token, directoryKey, sequence)
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                recordReport(SaveSyncReport(failures = listOf(
+                    SaveSyncFailure(game.title, SaveSyncService.errorCode(failure), game.uri))))
+                false
+            }
+            if (!persisted) {
+                // The in-memory entry keeps the launch protected. Remove the sequence-zero marker
+                // so a later foreground cannot interpret it as a permanently running host.
+                try { externalLaunchStore(context).failed(game.uri, token) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* Foreground retires a stale sequence-zero marker by token. */ }
             }
         } else {
             val generation = try {
@@ -693,6 +711,14 @@ object SaveSyncRuntime {
             synchronized(externalLaunchLock) { externalLaunches.remove(token) }
             updateExternalLaunch(game) { externalLaunchStore(context).failed(game.uri, token) }
         }
+    }
+
+    /** Game deletion must be able to release its own external launch evidence. */
+    internal fun clearExternalLaunchEvidence(context: Context, game: ScanGame) {
+        synchronized(externalLaunchLock) {
+            externalLaunches.entries.removeAll { it.value.uri == game.uri }
+        }
+        updateExternalLaunch(game) { externalLaunchStore(context).remove(game.uri) }
     }
 
     private fun updateExternalLaunch(game: ScanGame?, action: () -> Unit) {

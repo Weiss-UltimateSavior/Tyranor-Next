@@ -23,6 +23,8 @@ internal data class ExternalSaveLaunch(
  *
  * A prepared marker exists before dispatch. A foreground pass may retire old process-instance
  * owners immediately and current-owner dispatches only through the sequence captured at foreground.
+ * Markers left at sequence zero by a failed dispatch write are retired when no live in-memory token
+ * still owns them. Corrupt markers are isolated to their own key instead of blocking every game.
  */
 internal class ExternalSaveLaunchStore(
     private val root: File,
@@ -52,11 +54,25 @@ internal class ExternalSaveLaunchStore(
         if (remaining.size != existing.size) persist(disk, uri, remaining)
     }
 
-    fun foreground(sequenceCutoff: Long, returned: Boolean) = withDiskLock { disk ->
-        val records = markerKeys(disk).map { key -> key to decode(key, disk.states.load(key)) }
-        for ((key, entries) in records) {
+    fun foreground(
+        sequenceCutoff: Long,
+        returned: Boolean,
+        liveTokens: Set<String> = emptySet(),
+    ) = withDiskLock { disk ->
+        for (marker in markerKeys(disk)) {
+            if (!marker.regular) continue
+            val key = marker.key
+            val entries = try {
+                decode(key, disk.states.load(key))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: SaveSyncException) {
+                // A damaged marker must not stop other markers from being retired.
+                continue
+            }
             val remaining = entries.filterNot { entry ->
                 entry.owner != owner ||
+                    (entry.owner == owner && entry.dispatchSequence == 0L && entry.token !in liveTokens) ||
                     (returned && entry.owner == owner &&
                         entry.dispatchSequence > 0L && entry.dispatchSequence <= sequenceCutoff)
             }
@@ -65,7 +81,26 @@ internal class ExternalSaveLaunchStore(
     }
 
     fun hasActive(relatedUris: Set<String>, activeKey: String): Boolean = withDiskLock { disk ->
-        val entries = markerKeys(disk).flatMap { key -> decode(key, disk.states.load(key)) }
+        val entries = ArrayList<ExternalSaveLaunch>()
+        for (marker in markerKeys(disk)) {
+            val key = marker.key
+            val related = activeKey.isBlank() || relatedUris.any { SaveContentHash.text(it) == key }
+            if (!marker.regular) {
+                if (related) throw localIo()
+                continue
+            }
+            val decoded = try {
+                decode(key, disk.states.load(key))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: SaveSyncException) {
+                // Fail closed only for the affected key; one damaged marker must not block
+                // unrelated games.
+                if (related) throw localIo()
+                continue
+            }
+            entries += decoded
+        }
         if (entries.isEmpty()) return@withDiskLock false
         if (activeKey.isBlank()) return@withDiskLock true
         entries.any { entry ->
@@ -73,6 +108,12 @@ internal class ExternalSaveLaunchStore(
                 entry.activeKey.isNullOrBlank() ||
                 entry.activeKey == activeKey
         }
+    }
+
+    /** Explicit local cleanup for a game that no longer exists. Never decodes the marker. */
+    fun remove(uri: String) = withDiskLock { disk ->
+        require(uri.isNotBlank()) { "uri must not be blank" }
+        disk.states.remove(SaveContentHash.text(uri))
     }
 
     private fun load(disk: DiskContext, uri: String): List<ExternalSaveLaunch> {
@@ -139,15 +180,27 @@ internal class ExternalSaveLaunchStore(
         }
     }
 
-    private fun markerKeys(disk: DiskContext): List<String> {
+    private data class Marker(val key: String, val regular: Boolean)
+
+    private fun markerKeys(disk: DiskContext): List<Marker> {
         if (!disk.directory.exists()) return emptyList()
         val files = disk.directory.listFiles() ?: throw localIo()
-        return files
-            .filter { it.name.endsWith(".json") }
-            .map { file ->
+        return files.filter { it.name.endsWith(".json") }.mapNotNull { file ->
+            val key = file.name.removeSuffix(".json")
+            if (!key.matches(KEY_PATTERN)) return@mapNotNull null
+            val regular = try {
                 requireRegularMarker(disk.directory, file)
-                file.name.removeSuffix(".json").takeIf { it.matches(KEY_PATTERN) } ?: throw localIo()
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: NoSuchFileException) {
+                return@mapNotNull null
+            } catch (_: Exception) {
+                // Never follow a symlink or read a non-regular marker; isolate it instead.
+                false
             }
+            Marker(key, regular)
+        }
     }
 
     private fun readMarker(disk: DiskContext, key: String): JSONObject? {

@@ -11,6 +11,7 @@ on:
       - "app/src/main/java/com/tyranor/next/core/engine/EngineType.kt"
       - "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt"
       - "app/src/main/java/com/tyranor/next/core/game/launch/GameLaunchCompletion.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/launch/KrMirrorOverlayReader.kt"
       - "app/src/main/java/com/tyranor/next/core/game/launch/EthornellOperationGate.kt"
       - "app/src/main/java/com/tyranor/next/core/game/manual/AndroidAppGames.kt"
       - "app/src/main/java/com/tyranor/next/core/game/model/EthornellPaths.kt"
@@ -41,6 +42,7 @@ on:
       - "app/src/test/java/com/tyranor/next/core/game/save/**"
       - "app/src/test/java/com/tyranor/next/core/game/launch/RpgSaveScanDirsTest.kt"
       - "app/src/test/java/com/tyranor/next/core/game/launch/GameLaunchCompletionTest.kt"
+      - "app/src/test/java/com/tyranor/next/core/game/launch/KrMirrorOverlayReaderTest.kt"
       - "app/src/test/java/com/tyranor/next/ui/common/SaveSyncMessagesTest.kt"
       - "app/src/test/java/com/tyranor/next/ui/save/**"
 

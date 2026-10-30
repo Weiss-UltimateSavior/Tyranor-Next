@@ -81,7 +81,7 @@ class ExternalSaveLaunchStoreTest {
         ExternalSaveLaunchStore(root, "old-owner").prepare(oldUri, "old-token", "old-directory")
         current.prepare(preparedUri, "prepared-token", "prepared-directory")
 
-        current.foreground(sequenceCutoff = 0L, returned = false)
+        current.foreground(sequenceCutoff = 0L, returned = false, liveTokens = setOf("prepared-token"))
 
         assertFalse(current.hasActive(setOf(oldUri), "old-directory"))
         assertTrue(current.hasActive(setOf(preparedUri), "unrelated-directory"))
@@ -124,7 +124,7 @@ class ExternalSaveLaunchStoreTest {
     }
 
     @Test
-    fun malformedRecordFailsStrictlyAndRemainsOnDisk() {
+    fun malformedRecordIsIsolatedToItsKey() {
         val root = temp.newFolder("root")
         val uri = "content://games/corrupt"
         val store = ExternalSaveLaunchStore(root, "owner")
@@ -135,13 +135,27 @@ class ExternalSaveLaunchStoreTest {
         val activeFailure = assertThrows(SaveSyncException::class.java) {
             store.hasActive(setOf(uri), "known-directory")
         }
-        val foregroundFailure = assertThrows(SaveSyncException::class.java) {
-            store.foreground(sequenceCutoff = Long.MAX_VALUE, returned = true)
-        }
+        store.foreground(sequenceCutoff = Long.MAX_VALUE, returned = true)
+        assertFalse(store.hasActive(setOf("content://games/unrelated"), "known-directory"))
 
         assertEquals(SaveSyncError.LOCAL_IO, activeFailure.code)
-        assertEquals(SaveSyncError.LOCAL_IO, foregroundFailure.code)
         assertTrue(marker.isFile)
+
+        store.remove(uri)
+        assertFalse(store.hasActive(setOf(uri), "known-directory"))
+    }
+
+    @Test
+    fun foregroundRetiresPreparedMarkerWhenNoLiveTokenRemains() {
+        val root = temp.newFolder("root")
+        val uri = "content://games/prepared-stale"
+        val store = ExternalSaveLaunchStore(root, "owner")
+        store.prepare(uri, "stale-token", "directory")
+
+        store.foreground(sequenceCutoff = 0L, returned = false, liveTokens = emptySet())
+
+        assertFalse(store.hasActive(setOf(uri), "directory"))
+        assertFalse(markerFile(root, uri).exists())
     }
 
     @Test

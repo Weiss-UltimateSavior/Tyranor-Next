@@ -90,7 +90,7 @@ class SaveSyncWorkerPolicyTest {
     }
 
     @Test
-    fun sameUriStorageFullDoesNotSuppressItsOwnCleanup() {
+    fun sameUriStorageFullSkipsItsOwnCleanupWithoutFallback() {
         val report = SaveSyncReport(
             cleanupPending = 1,
             cleanupPendingGames = setOf("content://same-uri"),

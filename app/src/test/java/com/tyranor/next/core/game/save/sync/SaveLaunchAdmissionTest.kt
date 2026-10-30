@@ -1,5 +1,7 @@
 package com.tyranor.next.core.game.save.sync
 
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.save.EthornellSaveCapability
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.cancelAndJoin
@@ -14,6 +16,13 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicReference
 
 class SaveLaunchAdmissionTest {
+    @Test
+    fun enginesWithoutUsableSaveInterfaceStayUnmanaged() {
+        assertEquals(EthornellSaveCapability.available, supportsManagedSave(EngineType.ETHORNELL))
+        assertTrue(supportsManagedSave(EngineType.KIRIKIRI))
+        assertFalse(supportsManagedSave(EngineType.RUFFLE))
+    }
+
     @Test
     fun commonMutationGateSerializesResolvedBaselineWithDisabledAndUnresolvedLaunches() = runBlocking {
         val baselineEntered = CompletableDeferred<String?>()

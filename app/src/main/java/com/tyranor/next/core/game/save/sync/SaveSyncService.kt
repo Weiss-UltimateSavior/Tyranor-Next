@@ -3,7 +3,6 @@ package com.tyranor.next.core.game.save.sync
 import android.content.Context
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.save.GameSaveManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -64,6 +63,11 @@ class SaveSyncService internal constructor(
             val directoryKey = environment.activeKey(game)
             SaveSyncLocks.active(directoryKey) {
                 SaveSyncLocks.mutation {
+                    // A single unreadable checkpoint/selection record must not make game removal
+                    // retry forever. Corrupt files are quarantined; valid records are untouched.
+                    states.discardCorrupt()
+                    directoryActivations.discardCorrupt()
+                    environment.clearExternalLaunchEvidence(game)
                     requireSameSaveDirectory(directoryKey, environment.activeKey(game))
                     directoryActivations.owned(game.uri).forEach { requireSameSaveDirectory(it.activeKey, directoryKey) }
                     requireIdle(game)
@@ -511,9 +515,9 @@ class SaveSyncService internal constructor(
         for (game in environment.games()) {
             currentCoroutineContext().ensureActive()
             requireEnabled()
-            // Engines without a file-save interface have no cloud identity to reserve.
+            // Engines without a usable file-save interface have no cloud identity to reserve.
             // Supported games with temporarily unavailable storage must still participate.
-            if (!GameSaveManager.supportsFileSaves(game.engine)) continue
+            if (!supportsManagedSave(game.engine)) continue
             try {
                 val remoteKey = remoteKeyForConflict(game)
                 if (remoteKey != null) keys.getOrPut(remoteKey) { ArrayList() }.add(game)

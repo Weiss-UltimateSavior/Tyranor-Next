@@ -163,6 +163,7 @@ import com.tyranor.next.ui.settings.PerGameSettingsActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -426,21 +427,22 @@ internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> 
 }
 
 /** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
-internal suspend fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
-    try {
-        // Do not delete an active save while a host or an activation still owns it.
-        SaveSyncService(context).clearGame(target)
-        PerGameSettingsStore.clear(context, target.uri)
-        GameLibraryFacade.removeRecentGame(context, target.uri)
-        GameLibraryFacade.removeQuickLaunch(context, target.uri)
-        deleteCoverFile(context, target.coverUri)
-        GameSaveManager(context).cleanupAppData(target)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: Exception) {
-        throw failure.toSaveSyncCleanupException()
+internal suspend fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) =
+    withContext(NonCancellable) {
+        try {
+            // Do not delete an active save while a host or an activation still owns it.
+            SaveSyncService(context).clearGame(target)
+            PerGameSettingsStore.clear(context, target.uri)
+            GameLibraryFacade.removeRecentGame(context, target.uri)
+            GameLibraryFacade.removeQuickLaunch(context, target.uri)
+            deleteCoverFile(context, target.coverUri)
+            GameSaveManager(context).cleanupAppData(target)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            throw failure.toSaveSyncCleanupException()
+        }
     }
-}
 
 private fun deleteCoverFile(context: android.content.Context, coverUri: String?) {
     if (coverUri.isNullOrBlank()) return

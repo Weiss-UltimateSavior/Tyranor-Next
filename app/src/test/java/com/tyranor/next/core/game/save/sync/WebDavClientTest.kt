@@ -1256,6 +1256,23 @@ class WebDavClientTest {
         }
     }
 
+    @Test fun listingTrimsWhitespaceAroundEtag() {
+        val gameFolder = "/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/"
+        val folder = "https://example.com$gameFolder".toHttpUrl()
+        val name = SaveVersionNames.createRemote(1, "a".repeat(64), ZoneOffset.UTC)
+        val href = encodedHref(gameFolder + name)
+
+        val versions = WebDavClient.parseListing(
+            folder,
+            multistatus(
+                response(encodedHref(gameFolder), true) +
+                    response(href, false, 3, "\n  \"padded\"\n"),
+            ).toByteArray(),
+        )
+
+        assertEquals("\"padded\"", versions.single().etag)
+    }
+
     @Test fun listingRejectsExcessiveXmlResponseCountBeforeDom() {
         val folder = "https://example.com/dav/TYN-saves/${GAME.engine}/${GAME.folderName}/".toHttpUrl()
         val responses = "<d:response/>".repeat(WebDavClient.MAX_XML_RESPONSES + 1)

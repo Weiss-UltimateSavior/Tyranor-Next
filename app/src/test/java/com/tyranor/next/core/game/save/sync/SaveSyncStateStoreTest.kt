@@ -89,6 +89,19 @@ class SaveSyncStateStoreTest {
         assertTrue(preserved.all { it.exists() })
     }
 
+    @Test fun discardCorruptRemovesOnlyUnreadableState() {
+        val directory = temp.newFolder("discard")
+        val corrupt = File(directory, "$KEY.json").apply { writeText("{not-json") }
+        val valid = File(directory, "$OTHER_KEY.json").apply { writeText("{\"token\":\"keep\"}") }
+        val store = SaveSyncStateStore(directory)
+
+        store.discardCorrupt()
+
+        assertFalse(corrupt.exists())
+        assertTrue(valid.isFile)
+        assertEquals("keep", store.load(OTHER_KEY).getString("token"))
+    }
+
     companion object {
         private val KEY = "a".repeat(64)
         private val OTHER_KEY = "b".repeat(64)

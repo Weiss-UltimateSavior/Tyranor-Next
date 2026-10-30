@@ -3,18 +3,23 @@ package com.tyranor.next.core.game.save.sync
 import org.json.JSONObject
 import kotlinx.coroutines.CancellationException
 
-/** A damaged cache is unknown host evidence until a lifecycle record rebuilds it. */
+/** A damaged cache entry is reconstructible and ignored until a lifecycle record rewrites it. */
 internal fun loadSaveHostRecords(
     store: SaveSyncStateStore,
     knownKeys: Set<String>? = null,
-): Map<String, JSONObject> = store.keys().filter { knownKeys == null || it in knownKeys }.associateWith { key ->
-    try {
-        store.load(key)
-    } catch (cancelled: CancellationException) {
-        throw cancelled
-    } catch (failure: SaveSyncException) {
-        if (failure.code != SaveSyncError.LOCAL_IO) throw failure
-        JSONObject()
+): Map<String, JSONObject> = buildMap {
+    for (key in store.keys()) {
+        if (knownKeys != null && key !in knownKeys) continue
+        val state = try {
+            store.load(key)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: SaveSyncException) {
+            if (failure.code != SaveSyncError.LOCAL_IO) throw failure
+            continue
+        }
+        if (state.length() == 0 || state.optInt("pid", -1) <= 0) continue
+        put(key, state)
     }
 }
 

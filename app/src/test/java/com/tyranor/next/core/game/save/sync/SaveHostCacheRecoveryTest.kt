@@ -16,7 +16,7 @@ class SaveHostCacheRecoveryTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun malformedStrictHostRecordStaysConservativeUntilLifecycleRewriteAndDeadPid() {
+    fun malformedHostRecordIsIgnoredUntilLifecycleRewrite() {
         val hosts = temp.newFolder("hosts")
         val corrupt = File(hosts, "${SaveContentHash.text(HOST_PROCESS)}.json").apply {
             writeText(CORRUPT_JSON)
@@ -27,13 +27,13 @@ class SaveHostCacheRecoveryTest {
             identities = mapOf(DEAD_PID to SaveHostIdentity.Dead),
         )
 
-        assertTrue(running(probe))
+        assertFalse(running(probe))
         assertEquals(1, probe.visibleHostsCalls)
         assertTrue(corrupt.isFile)
         assertTrue(File(hosts, "${corrupt.name}.corrupt").exists())
         assertEquals(listOf(KEY), probe.store.keys())
 
-        assertTrue(running(probe))
+        assertFalse(running(probe))
         assertEquals(2, probe.visibleHostsCalls)
         assertTrue(corrupt.isFile)
         assertEquals(CORRUPT_JSON, File(hosts, "${corrupt.name}.corrupt").readText())
@@ -46,6 +46,23 @@ class SaveHostCacheRecoveryTest {
         assertFalse(running(probe))
         assertEquals(3, probe.visibleHostsCalls)
         assertTrue(File(hosts, "${corrupt.name}.corrupt").exists())
+    }
+
+    @Test
+    fun malformedHostRecordStillBlocksSessionEvidence() {
+        val hosts = temp.newFolder("hosts-session")
+        File(hosts, "${SaveContentHash.text(HOST_PROCESS)}.json").apply { writeText(CORRUPT_JSON) }
+        val probe = StoredHostProbe(store = SaveSyncStateStore(hosts), visibleHosts = null)
+
+        assertTrue(
+            hasRunningSaveHost(
+                probe = probe,
+                gameUri = TARGET_URI,
+                hasSession = true,
+                inStartGrace = false,
+                elapsedMillis = 0L,
+            ),
+        )
     }
 
     @Test
