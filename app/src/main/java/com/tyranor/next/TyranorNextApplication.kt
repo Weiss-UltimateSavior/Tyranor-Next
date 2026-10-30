@@ -55,13 +55,21 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
-    /** 引擎子进程（:tyrano/:rpgmaker 等）复用同一 Application 类，设置只在主进程预热。 */
+    /**
+     * 引擎子进程（:tyrano/:rpgmaker 等）复用同一 Application 类，设置只在主进程预热。
+     *
+     * API 28 以下没有 `Application.getProcessName()`，只能查 `runningAppProcesses`：必须比较
+     * processName，`pid == myPid()` 对任何进程都成立。列表拿不到时按主进程处理——多读一次 prefs
+     * 只是浪费，而误判成子进程会让主进程跳过初始化，用户保存的排序/筛选就永久回落默认值。
+     */
     private fun isMainProcess(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             return Application.getProcessName() == packageName
         }
-        val am = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return false
-        return am.runningAppProcesses?.any { it.pid == Process.myPid() } == true
+        val am = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return true
+        val processes = am.runningAppProcesses ?: return true
+        val self = processes.firstOrNull { it.pid == Process.myPid() } ?: return true
+        return self.processName == packageName
     }
 
     override fun onStop(owner: LifecycleOwner) {
