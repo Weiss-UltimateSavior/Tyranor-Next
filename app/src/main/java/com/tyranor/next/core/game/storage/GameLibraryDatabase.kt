@@ -4,19 +4,22 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * 游戏库 Room 数据库单例。主进程专用；引擎子进程不访问本库。
  * v2 新增 game_overrides / engine_detection_cache（迁移方案阶段 4/5）。
+ * v3 新增 games.runtime_module_package（第三方 APK 运行时模块绑定）。
  * 降级（用户回滚旧版本后再次升级）无迁移路径可走时破坏性重建是安全的：games/scan_roots/
  * quick_launch 由 prefs 镜像 + 启动修复导入恢复，game_overrides 由 syncFromPrefs 恢复；
  * engine_detection_cache 为可重建缓存，Artemis 记忆丢失后经一次特征识别 + 一次成功启动
  * 自动重学（已知取舍）。
  *
- * 升级路径（m7）：已启用 exportSchema 并导出到 `app/schemas`。破坏性升级**仅对 v1→v2 历史
- * 过渡开放**（`.fallbackToDestructiveMigrationFrom(1)`，老安装直升 v2 时仍可安全重建）；
- * 未来任何 version+n 变更必须注册显式 Migration，缺失时启动即抛异常（在开发/CI 阶段暴露），
- * 不再静默清空整库。
+ * 升级路径（m7）：已启用 exportSchema 并导出到 `app/schemas`。破坏性升级**仅对从 v1 起的旧安装
+ * 历史过渡开放**（`.fallbackToDestructiveMigrationFrom(1)`，老安装可重建后直升当前版本）；
+ * v2→v3 已有显式 Migration；未来任何 version+n 变更必须注册显式 Migration，缺失时启动即抛异常
+ * （在开发/CI 阶段暴露），不再静默清空整库。
  */
 @Database(
     entities = [
@@ -26,7 +29,7 @@ import androidx.room.RoomDatabase
         GameOverrideEntity::class,
         EngineDetectionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 internal abstract class GameLibraryDatabase : RoomDatabase() {
@@ -35,6 +38,17 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
 
     companion object {
         private const val DB_NAME = "game_library.db"
+
+        /** v2→v3：新增第三方 APK 运行时模块绑定列及其索引（旧行为 null）。 */
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE games ADD COLUMN runtime_module_package TEXT")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_games_runtime_module_package " +
+                        "ON games(runtime_module_package)",
+                )
+            }
+        }
 
         @Volatile
         private var instance: GameLibraryDatabase? = null
@@ -49,6 +63,7 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                 // 仅 v1→v2 历史过渡允许破坏性重建；未来版本缺 Migration 必须显式暴露（m7）。
                 .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)
+                .addMigrations(MIGRATION_2_3)
                 .build()
                 .also { instance = it }
         }

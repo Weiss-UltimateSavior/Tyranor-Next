@@ -4,6 +4,7 @@ import android.content.Context
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.external.ExternalEngineErrorCode
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
 import com.tyranor.next.core.game.launch.LaunchResult
 import com.tyranor.next.core.game.launch.EthornellPrepareError
 import com.tyranor.next.core.game.launch.MirrorPrepareStage
@@ -151,8 +152,38 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.YurisExeMissing ->
             localized.getString(R.string.launch_yuris_exe_missing)
 
+        // 第三方运行时模块：文案按模块层类型化结果映射；StartFailed 的 detail 仅在非空时优先。
+        is LaunchResult.Failure.RuntimeModuleFailed -> when (val outcome = result) {
+            RuntimeModuleLaunchResult.ModuleMissing ->
+                localized.getString(R.string.launch_runtime_module_missing)
+
+            RuntimeModuleLaunchResult.ModuleDisabled ->
+                localized.getString(R.string.launch_runtime_module_disabled)
+
+            RuntimeModuleLaunchResult.EntryMissing ->
+                localized.getString(R.string.launch_runtime_module_entry_missing)
+
+            RuntimeModuleLaunchResult.PathUnresolved ->
+                localized.getString(R.string.launch_runtime_module_path_unresolved)
+
+            RuntimeModuleLaunchResult.SecurityDenied ->
+                localized.getString(R.string.launch_runtime_module_denied)
+
+            is RuntimeModuleLaunchResult.StartFailed -> {
+                android.util.Log.w("LaunchErrorMessages", "runtime module start failed: ${outcome.detail.orEmpty()}")
+                localized.getString(R.string.launch_runtime_module_failed)
+            }
+
+            // Dispatched 不应作为失败出现：给通用失败文案兜底。
+            RuntimeModuleLaunchResult.Dispatched ->
+                localized.getString(R.string.launch_runtime_module_failed)
+        }
+
         LaunchResult.Failure.AndroidAppMissing ->
             localized.getString(R.string.launch_android_app_missing)
+
+        LaunchResult.Failure.EngineUnknown ->
+            localized.getString(R.string.launch_engine_unknown)
 
         is LaunchResult.Failure.StartFailed ->
             detail ?: localized.getString(R.string.launch_failed)

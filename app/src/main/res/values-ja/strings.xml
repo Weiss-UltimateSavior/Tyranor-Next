@@ -187,9 +187,11 @@
     <string name="launch_emulator_failed">%1$s の起動に失敗しました</string>
     <string name="launch_yuris_exe_missing">起動可能な .exe が見つかりません。ゲーム詳細の「起動ファイル」で指定してください</string>
     <string name="launch_android_app_missing">アプリが見つかりません。アンインストールされた可能性があります</string>
+    <string name="launch_engine_unknown">ゲームエンジンが不明、またはランタイムモジュールを利用できません。再スキャンしてください</string>
     <string name="launch_emulator_unsupported">%1$s のバージョンが古く、外部起動に対応していません。外置起動対応の winlator-cn に更新してください</string>
     <string name="engine_name_unknown">不明なエンジン</string>
     <string name="engine_name_switch">Switch</string>
+    <string name="engine_name_runtime_module">Plugin</string>
     <string name="engine_name_web">Web ゲーム</string>
 
     <string name="game_title">ゲーム</string>
@@ -976,4 +978,29 @@
     <string name="webdav_sync_partial_cleanup_pending">一部の同期が完了しました。クラウド履歴の整理はまだ完了していません。次回以降の同期で続行します。</string>
     <string name="webdav_sync_busy_skipped">同期が完了しました。実行中のゲームはスキップしました</string>
     <string name="launch_empty_krkr_sd_mirror">SD カードのゲームデータを読み取れませんでした。フォルダーへのアクセス権とストレージを確認して再試行してください。</string>
+
+    <string name="side_panel_engine_module_title">エンジンモジュール管理</string>
+    <string name="engine_module_management_title">エンジンモジュール管理</string>
+    <string name="engine_module_management_refresh">モジュール一覧を更新</string>
+    <string name="engine_module_management_empty">モジュールが見つかりません</string>
+    <string name="engine_module_management_summary">%1$s · %2$s · プロトコル %3$d · %4$s · %5$d 件のゲーム</string>
+    <string name="engine_module_management_scan_supported">スキャン対応</string>
+    <string name="engine_module_management_scan_unsupported">スキャン特徴が未宣言</string>
+    <string name="engine_module_management_enabled_toast">有効にしました。ゲームページで再スキャンしてください</string>
+    <string name="engine_module_management_enabled_no_scan_toast">有効にしましたが、このモジュールはスキャン特徴を宣言していないため自動登録できません</string>
+    <string name="engine_module_management_disabled_toast">無効にしました。%1$d 件のゲームが不明に降格されました</string>
+    <string name="engine_module_management_operation_failed">操作に失敗しました。もう一度お試しください</string>
+    <string name="engine_module_management_degraded_toast">ランタイムモジュールを利用できません。一部のゲームが不明に降格されました。インストールまたは有効化後に再スキャンすると復元できます</string>
+    <string name="engine_module_management_disable_title">モジュールを無効化</string>
+    <string name="engine_module_management_disable_message">無効化すると、このモジュールの %1$d 件のゲームが不明に降格されます。再度有効化してスキャンし直してください。</string>
+    <string name="engine_module_management_disable_confirm">無効化</string>
+    <string name="engine_module_management_load_failed">モジュール一覧の読み込みに失敗しました</string>
+    <string name="engine_settings_runtime_module_hint">このゲームはサードパーティのランタイムモジュールで動作します。モジュールの設定とセーブデータはモジュール側で管理されます。</string>
+    <string name="engine_desc_runtime_module">サードパーティ APK ランタイムモジュール。スキャンと実行はモジュールが行い、本体アプリは検出・有効化・フォルダーパスの受け渡しのみを担当します。</string>
+    <string name="launch_runtime_module_missing">ランタイムモジュールを利用できません。ゲームは不明に降格されました。再スキャンしてください</string>
+    <string name="launch_runtime_module_disabled">ランタイムモジュールが有効になっていません。ゲームは不明に降格されました。「エンジンモジュール管理」で有効化してから再スキャンしてください</string>
+    <string name="launch_runtime_module_entry_missing">ランタイムモジュールの起動エントリを利用できません。ゲームは不明に降格されました。モジュール更新後に再スキャンしてください</string>
+    <string name="launch_runtime_module_path_unresolved">ゲームフォルダーのパスを解決できません。このモジュールは実際のフォルダーパスのみを受け付けます</string>
+    <string name="launch_runtime_module_denied">ランタイムモジュールが起動を拒否したか、権限が不足しています</string>
+    <string name="launch_runtime_module_failed">ランタイムモジュールの起動に失敗しました</string>
 </resources>

@@ -1949,6 +1949,45 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun runtimeModulesWithSharedLeafNameAreSkippedByWholeLibrarySync() = runBlocking {
+        val harness = Harness(temp)
+        fun runtimeGame(parent: String) = ScanGame(
+            title = "runtime-$parent",
+            uri = "file:///library/$parent/shared-game",
+            engine = EngineType.RUNTIME_MODULE,
+            launchTarget = "__game_dir__",
+            runtimeModulePackage = "com.example.runtime",
+        )
+        val runtimeA = runtimeGame("a")
+        val runtimeB = runtimeGame("b")
+        harness.world.addGame(runtimeA)
+        harness.world.addGame(runtimeB)
+        harness.world.unavailableUris += listOf(runtimeA.uri, runtimeB.uri)
+
+        val supported = harness.addGame("supported")
+        harness.identify(supported)
+        val supportedHash = harness.setActive(supported, "current")
+        val supportedRemote = harness.remoteGame(supported)
+        val runtimeRemoteA = harness.remoteGame(runtimeA)
+        val runtimeRemoteB = harness.remoteGame(runtimeB)
+        assertEquals(runtimeRemoteA, runtimeRemoteB)
+
+        val upload = harness.service.syncAll(SaveSyncDirection.UPLOAD)
+        val pull = harness.service.syncAll(SaveSyncDirection.PULL)
+
+        assertTrue(upload.toString(), upload.failures.isEmpty())
+        assertTrue(pull.toString(), pull.failures.isEmpty())
+        assertFalse(upload.failures.any { it.error == SaveSyncError.IDENTITY_CONFLICT })
+        assertFalse(pull.failures.any { it.error == SaveSyncError.IDENTITY_CONFLICT })
+        assertEquals(1, upload.uploaded)
+        assertEquals(1, pull.unchanged)
+        assertEquals(1, harness.transport.versions(supportedRemote).count { it.contentHash == supportedHash })
+        assertEquals(0, harness.transport.listInvocationCount(runtimeRemoteA))
+        assertTrue(harness.transport.listInvocationCount(supportedRemote) > 0)
+        assertTrue(harness.transport.versions(runtimeRemoteA).isEmpty())
+    }
+
+    @Test
     fun sameSizeUnverifiedPublicationCannotAuthorizeRetentionDeletes() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("unverified-publication")
@@ -3353,6 +3392,7 @@ class SaveSyncServiceTest {
         private val archives = HashMap<String, ByteArray>()
         private val uploads = HashMap<String, Int>()
         private val uploadInvocations = HashMap<String, Int>()
+        private val listInvocations = HashMap<String, Int>()
         private var downloads = 0
         private var deleteFailures = 0
         private var verifies = 0
@@ -3377,6 +3417,9 @@ class SaveSyncServiceTest {
         val discardEntered = CompletableDeferred<Unit>()
 
         override suspend fun list(game: RemoteSaveGame): List<RemoteSaveVersion> {
+            synchronized(lock) {
+                listInvocations[game.key] = listInvocations.getOrDefault(game.key, 0) + 1
+            }
             listEntered.complete(Unit)
             listGate?.await()
             listFailure?.let { throw it }
@@ -3505,6 +3548,9 @@ class SaveSyncServiceTest {
         }
         fun uploadInvocationCount(hash: String): Int = synchronized(lock) {
             uploadInvocations.getOrDefault(hash, 0)
+        }
+        fun listInvocationCount(game: RemoteSaveGame): Int = synchronized(lock) {
+            listInvocations.getOrDefault(game.key, 0)
         }
 
         fun downloadCount(): Int = synchronized(lock) { downloads }

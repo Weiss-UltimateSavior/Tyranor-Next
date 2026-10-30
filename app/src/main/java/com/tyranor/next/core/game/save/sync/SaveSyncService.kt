@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.save.sync
 import android.content.Context
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -510,6 +511,9 @@ class SaveSyncService internal constructor(
         for (game in environment.games()) {
             currentCoroutineContext().ensureActive()
             requireEnabled()
+            // Engines without a file-save interface have no cloud identity to reserve.
+            // Supported games with temporarily unavailable storage must still participate.
+            if (!GameSaveManager.supportsFileSaves(game.engine)) continue
             try {
                 val remoteKey = remoteKeyForConflict(game)
                 if (remoteKey != null) keys.getOrPut(remoteKey) { ArrayList() }.add(game)
