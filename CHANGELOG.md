@@ -17,5 +17,5 @@
 ### 修复
 
 - 修复 [#129](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/129)：完善 Kirikiri SD 卡 SAF 镜像元数据与内容路由，实现写入 copy-up 与分片所有权标记维护，增加 sticky 镜像根目录与存档导入恢复保护，并修复 libc stdio 与 open GOT 钩子对缺失路径的错误码保留和未索引写入路由。
-- 游戏页筛选收尾（[#118](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/118)）：空态「重置」同时清空搜索词（此前只清筛选，列表仍空且按钮消失）；切换筛选/排序后网格回到顶部、封面流回到第一页；引擎 chip 与选择卡触控区补到 48dp；引擎过滤值在 UI 可交互前加载，避免冷启动把旧值写回覆盖用户选择；库里已不存在的引擎条件由游戏页自动清空。
+- 游戏页筛选收尾（[#118](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/118)）：空态「重置」同时清空搜索词（此前只清筛选，列表仍空且按钮消失）；切换筛选/排序后网格回到顶部、封面流回到第一页；抽屉打开时把已选引擎标签滚入视口，重置回「全部」时滚回行首；引擎 chip 与选择卡触控区补到 48dp；引擎过滤值在 UI 可交互前加载，避免冷启动把旧值写回覆盖用户选择；库里已不存在的引擎条件由游戏页自动清空；首页「清除游玩记录」同步把库内该游戏的游玩时间归零，避免持久化快照发布前仍显示为已游玩。
 - 修复 [#133](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/133)：撤回默认风格顶栏渐进模糊及其宿主接入（`c71f57d`、`3dd5d02`），恢复顶栏与正文上下分离布局，以处理切页性能回归。底栏/侧栏/悬浮按钮的玻璃采样、默认主题渐变与 WebView 采样修复保留。

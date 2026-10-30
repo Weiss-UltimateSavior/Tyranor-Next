@@ -57,7 +57,7 @@ import com.tyranor.next.ui.common.appSheetMaxHeight
  * 选中态用主题色描边 + 淡主题色底，与设置页的选中卡片同一套语汇。
  *
  * @param sortMode 当前排序模式（`AppSettingsStore.GAME_SORT_*`）
- * @param engineFilter 引擎过滤（`EngineType.name`，空串 = 全部）
+ * @param engineFilter 引擎过滤（`EngineType.name`，[AppSettingsStore.GAME_FILTER_ENGINE_ALL] = 全部）
  * @param playedFilter 游玩状态过滤（`AppSettingsStore.GAME_FILTER_PLAYED_*`）
  * @param availableEngines 库中实际存在的引擎（调用方去重并按枚举顺序排好）
  */
