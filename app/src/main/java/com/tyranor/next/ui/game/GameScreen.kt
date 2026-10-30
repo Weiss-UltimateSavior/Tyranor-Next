@@ -189,6 +189,7 @@ fun GameScreen(
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
     onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
+    isActive: Boolean = true,
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
@@ -303,7 +304,8 @@ fun GameScreen(
         dbSearchResults = libraryState.searchResults,
         onAddManualGame = onAddManualGame,
         onCoachAnchorChanged = onCoachAnchorChanged,
-                onSearchQueryChanged = onSearchQueryChanged,
+        onSearchQueryChanged = onSearchQueryChanged,
+        isActive = isActive,
     )
 
     // ===== 点击游戏卡片的底部抽屉栏 =====
@@ -480,6 +482,7 @@ private fun GameLibraryContent(
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
     onCoachAnchorChanged: (Int, Rect) -> Unit,
+    isActive: Boolean,
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
     // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
@@ -519,9 +522,15 @@ private fun GameLibraryContent(
             },
             trailing = {
                 Box(
-                    Modifier.onGloballyPositioned {
-                        onCoachAnchorChanged(CoachAnchor.GAME_ADD, it.boundsInRoot())
-                    },
+                    Modifier.then(
+                        if (isActive) {
+                            Modifier.onGloballyPositioned {
+                                onCoachAnchorChanged(CoachAnchor.GAME_ADD, it.boundsInRoot())
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 ) {
                     TopBarIcon(
                         painterResource(R.drawable.ic_game_add),
@@ -530,9 +539,15 @@ private fun GameLibraryContent(
                     ) { addGameStep = AddGameStep.CHOICE }
                 }
                 Box(
-                    Modifier.onGloballyPositioned {
-                        onCoachAnchorChanged(CoachAnchor.GAME_SEARCH, it.boundsInRoot())
-                    },
+                    Modifier.then(
+                        if (isActive) {
+                            Modifier.onGloballyPositioned {
+                                onCoachAnchorChanged(CoachAnchor.GAME_SEARCH, it.boundsInRoot())
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 ) {
                     TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
                         showSearch = !showSearch
@@ -544,9 +559,15 @@ private fun GameLibraryContent(
                         modifier = Modifier
                             .padding(start = 2.dp)
                             .size(34.dp)
-                            .onGloballyPositioned {
-                                onCoachAnchorChanged(CoachAnchor.GAME_COVER, it.boundsInRoot())
-                            },
+                            .then(
+                                if (isActive) {
+                                    Modifier.onGloballyPositioned {
+                                        onCoachAnchorChanged(CoachAnchor.GAME_COVER, it.boundsInRoot())
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(
@@ -559,9 +580,15 @@ private fun GameLibraryContent(
                     }
                 } else {
                     Box(
-                        Modifier.onGloballyPositioned {
-                            onCoachAnchorChanged(CoachAnchor.GAME_COVER, it.boundsInRoot())
-                        },
+                        Modifier.then(
+                            if (isActive) {
+                                Modifier.onGloballyPositioned {
+                                    onCoachAnchorChanged(CoachAnchor.GAME_COVER, it.boundsInRoot())
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
                     ) {
                         TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
                             syncMissingCovers()
@@ -569,9 +596,15 @@ private fun GameLibraryContent(
                     }
                 }
                 Box(
-                    Modifier.onGloballyPositioned {
-                        onCoachAnchorChanged(CoachAnchor.GAME_SCAN, it.boundsInRoot())
-                    },
+                    Modifier.then(
+                        if (isActive) {
+                            Modifier.onGloballyPositioned {
+                                onCoachAnchorChanged(CoachAnchor.GAME_SCAN, it.boundsInRoot())
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 ) {
                     TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
                         refreshGames()

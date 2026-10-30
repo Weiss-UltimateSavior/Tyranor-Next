@@ -30,7 +30,7 @@ flowchart TD
 ## 2. 应用启动与界面状态
 
 - [TyranorNextApplication.kt](app/src/main/java/com/tyranor/next/TyranorNextApplication.kt) 在主进程偏好迁移之前经 `AppSettingsStore` 初始化首次引导标记；失败时暂停初始化并由入口提供重试。随后迁移共享 prefs 名称、配置 WebView profile，并在应用进入后台时安排更新检查。主进程游戏库通过幂等入口初始化，保证真实主页教练层及保存后的 Activity 重建都能拿到预热状态。
-- [MainActivity.kt](app/src/main/java/com/tyranor/next/MainActivity.kt) 在语言、主题与背景内门控首次引导；未完成时仍创建真实主导航，在其上叠加 `OnboardingCoachOverlay` 的聚焦框、连接线与气泡，并通过 `coachPage` 驱动游戏/引擎/设置页面切换。各真实控件通过 `onGloballyPositioned` 上报 root 坐标，覆盖层不再按屏幕比例猜位置；完成标记落盘后移除覆盖层并请求通知权限。完成标记由 core 的 `AppSettingsStore` / `OnboardingPreferences` 管理；[MainScreen.kt](app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt) 组合首页、游戏、引擎、设置四页。四页常驻，切换用水平位移与 alpha，避免重建列表。
+- [MainActivity.kt](app/src/main/java/com/tyranor/next/MainActivity.kt) 在语言、主题与背景内门控首次引导；未完成时仍创建真实主导航，在其上叠加 `OnboardingCoachOverlay` 的聚焦框、连接线与气泡，并通过 `coachPage` 驱动游戏/引擎/设置页面切换。各真实控件在对应页面处于前台时通过 `onGloballyPositioned` 上报 root 坐标；在首帧或页面尚未完成测量时，覆盖层才按步骤提供的 `fallbackBounds` 做比例回退，避免把暂时不可用的坐标误当作真实位置。完成标记落盘后移除覆盖层并请求通知权限。完成标记由 core 的 `AppSettingsStore` / `OnboardingPreferences` 管理；[MainScreen.kt](app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt) 组合首页、游戏、引擎、设置四页。四页常驻，切换用水平位移与 alpha，避免重建列表。
 - [MainLibraryViewModel.kt](app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt) 通过 `StateFlow<MainLibraryUiState>` 发布游戏库快照，Channel 串行处理扫描/删除/刷新等命令；搜索防抖并拒绝过期结果。
 - 二级页通常复用 [AppScreen.kt](app/src/main/java/com/tyranor/next/ui/common/AppScreen.kt) 中的 `AppScreenActivity` / `AppScreenScaffold`，统一语言、主题、系统栏、背景与转场；正文由 `setAppScreenContent` 提供，主题包裹依次经过 `ProvideAppLocale`、`TyranorNextTheme` 与 `GlassBackground`。全屏按键编辑器保留明文例外。
 

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -192,6 +194,7 @@ fun OnboardingCoachOverlay(
                 .padding(horizontal = 16.dp)
                 .padding(top = maxHeight * if (safeStep == 0) 0.40f else 0.54f)
                 .shadow(10.dp, AppComponentShape)
+                .verticalScroll(rememberScrollState())
                 .onGloballyPositioned { coordinates ->
                     val bounds = coordinates.boundsInRoot()
                     if (tooltipBounds != bounds) tooltipBounds = bounds

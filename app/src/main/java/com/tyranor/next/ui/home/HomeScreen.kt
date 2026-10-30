@@ -257,6 +257,7 @@ fun HomeScreen(
             onGameLongClick = { launchGame(it) },
             onRecentRemoved = { removeRecentRecord(it) },
             onCoachAnchorChanged = onCoachAnchorChanged,
+            isActive = isActive,
         )
     }
 
@@ -356,6 +357,7 @@ private fun NativeHomeContent(
     onGameLongClick: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
     onCoachAnchorChanged: (Rect) -> Unit,
+    isActive: Boolean,
 ) {
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
@@ -383,6 +385,7 @@ private fun NativeHomeContent(
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
                             onCoachAnchorChanged = onCoachAnchorChanged,
+                            isActive = isActive,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
@@ -397,6 +400,7 @@ private fun NativeHomeContent(
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
                             onCoachAnchorChanged = onCoachAnchorChanged,
+                            isActive = isActive,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text(
@@ -414,6 +418,7 @@ private fun NativeHomeContent(
                         onGameClick = onGameClick,
                         onGameLongClick = onGameLongClick,
                         onCoachAnchorChanged = onCoachAnchorChanged,
+                        isActive = isActive,
                     )
                 }
                 items(
@@ -443,11 +448,16 @@ private fun QuickLaunchSection(
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     onCoachAnchorChanged: (Rect) -> Unit = {},
+    isActive: Boolean = true,
 ) {
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth().onGloballyPositioned {
-            onCoachAnchorChanged(it.boundsInRoot())
-        },
+        modifier = Modifier.fillMaxWidth().then(
+            if (isActive) {
+                Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
+            } else {
+                Modifier
+            },
+        ),
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {

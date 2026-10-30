@@ -606,7 +606,8 @@ private fun ColumnScope.MainTabPages(
             transitionSpec = { tween(durationMillis = 160) },
             label = "mainTabAlpha$page",
           ) { activePage -> if (page == activePage) 1f else 0f }
-          val pageInteractive = page == selectedIndex && !pageTransition.isRunning
+          val pageActive = page == selectedIndex && !pageTransition.isRunning
+          val pageInteractive = pageActive
           Box(
             Modifier
               .fillMaxSize()
@@ -640,7 +641,7 @@ private fun ColumnScope.MainTabPages(
                 onRecentRemoved = libraryViewModel::removeRecentGame,
                 onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
                 onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.HOME, it) },
-                isActive = page == selectedIndex,
+                isActive = pageActive,
               )
               1 -> GameScreen(
                 modifier = Modifier.fillMaxSize(),
@@ -653,14 +654,17 @@ private fun ColumnScope.MainTabPages(
                 onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
                 onAddManualGame = libraryViewModel::addManualGame,
                 onCoachAnchorChanged = onCoachAnchorChanged,
+                isActive = pageActive,
               )
               2 -> EngineScreen(
                 Modifier.fillMaxSize(),
                 onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
+                isActive = pageActive,
               )
               3 -> SettingsScreen(
                 Modifier.fillMaxSize(),
                 onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.SETTINGS, it) },
+                isActive = pageActive,
               )
             }
           }

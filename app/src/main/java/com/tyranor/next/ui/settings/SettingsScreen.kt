@@ -129,6 +129,7 @@ private fun formatUpdateBytes(bytes: Long): String = ByteFormats.formatBinarySiz
 fun SettingsScreen(
     modifier: Modifier = Modifier,
     onCoachAnchorChanged: (Rect) -> Unit = {},
+    isActive: Boolean = true,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -273,7 +274,13 @@ fun SettingsScreen(
                     MiuixCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
+                            .then(
+                                if (isActive) {
+                                    Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
+                                } else {
+                                    Modifier
+                                },
+                            )
                             .glassShadow()
                             .glassBorder(),
                         cornerRadius = AppComponentCornerRadius,

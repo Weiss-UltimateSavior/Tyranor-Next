@@ -94,9 +94,25 @@ class MainActivity : ComponentActivity() {
     var saving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
     var coachAnchors by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
+    val coachPage = when (coachStep) {
+      CoachAnchor.HOME -> 0
+      in CoachAnchor.GAME_ADD..CoachAnchor.GAME_SCAN -> 1
+      CoachAnchor.ENGINE -> 2
+      else -> 3
+    }
     val scope = rememberCoroutineScope()
+    fun pageForAnchor(index: Int): Int = when (index) {
+      CoachAnchor.HOME -> 0
+      in CoachAnchor.GAME_ADD..CoachAnchor.GAME_SCAN -> 1
+      CoachAnchor.ENGINE -> 2
+      else -> 3
+    }
+    LaunchedEffect(coachPage) {
+      // 四页常驻组合会保留隐藏页；切页时丢弃旧页坐标，避免把屏外矩形用于新页面。
+      coachAnchors = coachAnchors.filterKeys { pageForAnchor(it) == coachPage }
+    }
     val reportCoachAnchor: (Int, Rect) -> Unit = { index, rect ->
-      if (coachAnchors[index] != rect) {
+      if (pageForAnchor(index) == coachPage && coachAnchors[index] != rect) {
         coachAnchors = coachAnchors + (index to rect)
       }
     }
@@ -109,14 +125,8 @@ class MainActivity : ComponentActivity() {
           notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
       }
-      MainNavigation(onCoachAnchorChanged = reportCoachAnchor)
+      MainNavigation(onCoachAnchorChanged = {})
     } else {
-      val coachPage = when (coachStep) {
-        CoachAnchor.HOME -> 0
-        in CoachAnchor.GAME_ADD..CoachAnchor.GAME_SCAN -> 1
-        CoachAnchor.ENGINE -> 2
-        else -> 3
-      }
       LaunchedEffect(Unit) {
         // 教练层展示真实主界面，因此先确保其游戏库依赖按正常入口初始化。
         app.initializeMainLibrary()
