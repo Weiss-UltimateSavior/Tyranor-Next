@@ -505,7 +505,7 @@ private fun GameLibraryContent(
         games.map { it.engine }.distinct().sortedBy { it.ordinal }
     }
     // 与「重置」同口径：非默认排序也算「有条件生效」，否则改了排序圆点不亮、重置却会动它
-    val hasActiveCondition = engineFilter.isNotEmpty() ||
+    val hasActiveCondition = engineFilter != AppSettingsStore.GAME_FILTER_ENGINE_ALL ||
         playedFilter != AppSettingsStore.GAME_FILTER_PLAYED_ALL ||
         gameSort != AppSettingsStore.GAME_SORT_ALPHA
     // 「重置」统一恢复默认排序 + 全部引擎 + 全部状态：按钮位于抽屉标题栏、覆盖两个 section，
@@ -520,7 +520,7 @@ private fun GameLibraryContent(
     // 判据用 loaded/scanning 而非 games.isEmpty()：冷启动与扫描中库可能瞬时为空，此时清空会
     // 误删持久化条件；而删光最后一款游戏后库同样为空，恰恰必须清理。
     // loaded 的语义是「完整库快照已发布」，手动添加游戏不会把它置真（见 addManualGame）。
-    val engineFilterStale = engineFilter.isNotEmpty() &&
+    val engineFilterStale = engineFilter != AppSettingsStore.GAME_FILTER_ENGINE_ALL &&
         availableEngines.none { it.name == engineFilter }
     LaunchedEffect(availableEngines, engineFilter, loaded, scanning) {
         if (loaded && !scanning && engineFilterStale) {
