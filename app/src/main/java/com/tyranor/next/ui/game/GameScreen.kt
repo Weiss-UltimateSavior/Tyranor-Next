@@ -538,8 +538,10 @@ private fun GameLibraryContent(
     LaunchedEffect(filterSignature, loaded) {
         if (!loaded) return@LaunchedEffect
         val previous = lastFilterSignature
-        lastFilterSignature = filterSignature
+        // 滚动之后才记签名：若这次 effect 被下一次条件变化取消，下次仍会重试回到顶部
+        // （与 GameCoverFlow 的 lastResetKey 同一处理）。
         if (previous != null && previous != filterSignature) gridState.scrollToItem(0)
+        lastFilterSignature = filterSignature
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
 
