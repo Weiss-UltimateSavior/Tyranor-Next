@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
           notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
       }
-      MainNavigation(onCoachAnchorChanged = {})
+      MainNavigation(onCoachAnchorChanged = { _, _ -> })
     } else {
       LaunchedEffect(Unit) {
         // 教练层展示真实主界面，因此先确保其游戏库依赖按正常入口初始化。
