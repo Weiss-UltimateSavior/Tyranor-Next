@@ -15,6 +15,18 @@ import java.io.IOException
 class SaveSyncStateStoreTest {
     @get:Rule val temp = TemporaryFolder()
 
+    @Test fun existingNonDirectoryRootIsAnIoFailureRatherThanMissingState() {
+        val root = temp.newFile("blocked-store-root").apply { writeText("keep obstruction") }
+        val store = SaveSyncStateStore(root)
+
+        val failure = assertThrows(SaveSyncException::class.java) { store.load(KEY) }
+
+        assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        assertFalse(failure.cause is JSONException)
+        assertEquals("keep obstruction", root.readText())
+        assertFalse(File(root.parentFile, root.name + ".corrupt").exists())
+    }
+
     @Test fun validStateRoundTrips() {
         val directory = temp.newFolder("valid")
         val store = SaveSyncStateStore(directory)

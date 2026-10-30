@@ -32,7 +32,12 @@ internal class SaveSyncStateStore(
         val file = file(key)
         val text = try {
             String(Files.readAllBytes(file.toPath()), Charsets.UTF_8)
-        } catch (_: NoSuchFileException) {
+        } catch (failure: NoSuchFileException) {
+            // Windows may report PATH_NOT_FOUND where Unix reports ENOTDIR. An existing
+            // non-directory store root is an I/O failure on either platform, not missing state.
+            if (Files.exists(directory.toPath()) && !Files.isDirectory(directory.toPath())) {
+                throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
+            }
             return JSONObject()
         } catch (failure: IOException) {
             throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)

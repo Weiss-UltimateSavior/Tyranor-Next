@@ -5,12 +5,14 @@ import org.json.JSONObject
 import java.io.File
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 /** One recoverable activation per game; its ZIP is staging, not another history version. */
 internal class SaveActivationJournal(private val directory: File) {
-    private val records = SaveSyncStateStore(File(directory, "records"))
+    private val recordDirectory = File(directory, "records")
+    private val records = SaveSyncStateStore(recordDirectory)
 
     data class Pending(
         val token: String,
@@ -53,7 +55,11 @@ internal class SaveActivationJournal(private val directory: File) {
         activeKey: String? = null,
         check: () -> Unit = {},
     ): Pending {
-        if (load(key) != null || archive(key).exists()) {
+        // A regular-file obstruction proves no per-key journal can exist beneath it. Preserve
+        // the validated private ZIP first, then let the record write fail with LOCAL_IO below.
+        // Other read failures remain strict and cannot authorize replacing a pending archive.
+        val obstructedRecords = Files.isRegularFile(recordDirectory.toPath(), NOFOLLOW_LINKS)
+        if ((!obstructedRecords && load(key) != null) || archive(key).exists()) {
             throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
         }
         if (SaveContentHash.archive(staging, check) != selected.contentHash) {

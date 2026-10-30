@@ -225,6 +225,29 @@ class SaveActivationJournalTest {
         assertEquals(first, journal.load(KEY_A))
     }
 
+    @Test fun regularFileRecordRootKeepsValidatedArchiveAndFailsClosed() {
+        val root = temp.newFolder("obstructed-records")
+        val journal = SaveActivationJournal(root)
+        val records = File(root, "records")
+        assertTrue(records.createNewFile())
+        records.writeText("obstruction")
+        val staging = archive(root, "selected")
+        val expectedBytes = staging.readBytes()
+
+        val failure = assertThrows(SaveSyncException::class.java) {
+            journal.prepare(KEY_A, version(staging), staging, "before")
+        }
+
+        // The unreadable root cannot hold a pending intent, so the validated ZIP must survive in
+        // the durable archive instead of being released with the staging copy.
+        assertEquals(SaveSyncError.LOCAL_IO, failure.code)
+        assertFalse(staging.exists())
+        assertArrayEquals(expectedBytes, journal.archive(KEY_A).readBytes())
+        assertTrue(records.isFile)
+        assertEquals("obstruction", records.readText())
+        assertThrows(SaveSyncException::class.java) { journal.load(KEY_A) }
+    }
+
     @Test fun keysIsolateRecordsAndArchives() {
         val root = temp.newFolder("journal")
         val journal = SaveActivationJournal(root)

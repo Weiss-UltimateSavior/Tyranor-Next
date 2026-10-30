@@ -173,7 +173,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 
 - 已上传恢复版 S 不会消耗恢复链：首次产生新内容 N 后继续以 S→N 发布，成功确认后才消费该链起点；无变化的重试不刷新 promotion 时间或重复上传。
 - 网络同步与本地版本操作分锁；每个顶层及嵌套 DAV exchange 都重新执行事务准入并复核持久 generation、`config_revision` 与已固定的 revision/目录归属，检查与请求入队在同一短临界区内完成，网络响应等待不持有本地锁，后续请求再次准入。上传使用受保护的私有 ZIP 副本；用户切换、修改配置或身份、删除游戏后，旧传输的后续请求不再回写本地元数据或继续裁剪。自动回传同时绑定原 session token，在等待目录锁后再次复核，已被换版或别名操作撤销的会话不捕获或上传新选择内容。
-- 旧 journal 已提交但活动存档已前进时，再次明确选择同一 S 必须实际重新导入 S，不能把完成 N 的元数据登记当作切换成功。journal 损坏先从独立 archive 救入历史，救档失败不删除 archive。
+- 旧 journal 已提交但活动存档已前进时，再次明确选择同一 S 必须实际重新导入 S，不能把完成 N 的元数据登记当作切换成功。journal 损坏先从独立 archive 救入历史，救档失败不删除 archive。状态目录（journal 记录、检查点、session、baseline、hosts、目录选择）本身被普通文件占位时按 `LOCAL_IO` 失败关闭，Windows 的子项「路径不存在」不等同于无状态；待处理激活仍把已校验的 ZIP 保留在专属 archive 中供恢复流程救回。
 - 删除游戏同时清理该 URI 的本地版本、检查点、pending、session、baseline 与同步身份，不删除云端版本或游戏目录文件；先持久化新 revision 使在途传输失效；子项清理失败保留身份和检查点归属索引，恢复游戏库条目，允许退出游戏/修复路径后重试。清理保留原始 `SaveSyncError`，UI 按 `GAME_RUNNING`、`LOCAL_IO`、`SELECTION_INCOMPLETE` 等代码映射提示，不再统一伪装成存档目录不可用。关闭 WebDAV 不影响该清理。
 - ZIP 导入的 backup 仅在匹配 URI/token/保留标记的 staging 提交标记证明成功且不要求保留旧档时删除；中断后 destination 被重建而缺少证据时，旧存档留在相邻 `.import_orphan_<UUID>`，不会静默丢弃。全零文件导入在目录交换前持久化保留旧档标记，回调或资源恢复中断后的收尾仍保留旧档。不确定的备份不计为同步历史，不自动裁剪。
 
