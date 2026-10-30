@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -1414,6 +1416,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
                                     allowEmpty = false,
                                     validate = { it.toIntOrNull()?.let { port -> port in 1..65535 } == true },
+                                    keyboardType = KeyboardType.Number,
                                 ) { webShellPort = it }
                             }
                         }
@@ -1886,6 +1889,7 @@ private fun WinlatorContainerRows(
         hint = stringResource(R.string.engine_settings_winlator_container_id_summary_per_game),
         sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
         summaryOverride = idSummaryOverride,
+        keyboardType = KeyboardType.Number,
     ) { onContainerIdChange(it?.takeIf { value -> value.isNotBlank() }) }
     OverrideText(
         label = stringResource(R.string.engine_settings_winlator_container_name_title),
@@ -1910,6 +1914,7 @@ private fun OverrideText(
     sanitize: ((String) -> String)? = null,
     allowEmpty: Boolean = true,
     validate: (String) -> Boolean = { true },
+    keyboardType: KeyboardType = KeyboardType.Text,
     summaryOverride: String? = null,
     onSet: (String?) -> Unit,
 ) {
@@ -1942,6 +1947,8 @@ private fun OverrideText(
                             onSearch = { if (canConfirm) { onSet(normalized); showDialog = false } },
                             leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                             iconContentDescription = label,
+                            imeAction = ImeAction.Done,
+                            keyboardType = keyboardType,
                             textStyle = MaterialTheme.typography.bodyMedium,
                         )
                         Text(

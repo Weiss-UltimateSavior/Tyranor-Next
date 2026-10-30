@@ -98,6 +98,24 @@ val sharedEngineAssetNames = listOf(
 )
 val hikarinagiClientId = configValue("HIKARINAGI_CLIENT_ID")
 val tyranorApplicationId = configValue("TYRANOR_APPLICATION_ID").ifBlank { "com.tyranor.next" }
+val webdavDeviceProbe = providers.gradleProperty("webdavDeviceProbe").orNull.let { value ->
+    require(value == null || value == "true" || value == "false") { "webdavDeviceProbe must be true or false" }
+    value == "true"
+}
+if (webdavDeviceProbe) {
+    require(tyranorApplicationId.startsWith("com.tyranor.next.webdavacceptance")) {
+        "The WebDAV device probe requires a dedicated webdavacceptance application ID"
+    }
+}
+val webdavFrameworkProbe = providers.gradleProperty("webdavFrameworkProbe").orNull.let { value ->
+    require(value == null || value == "true" || value == "false") { "webdavFrameworkProbe must be true or false" }
+    value == "true"
+}
+if (webdavFrameworkProbe) {
+    require(webdavDeviceProbe && gradle.startParameter.taskNames.none { it.contains("release", ignoreCase = true) }) {
+        "The framework-only WebDAV probe requires the dedicated debug device probe"
+    }
+}
 val ethornellReleaseProbe = providers.gradleProperty("ethornellReleaseProbe").orNull.let { value ->
     require(value == null || value == "true" || value == "false") { "ethornellReleaseProbe must be true or false" }
     value == "true"
@@ -253,6 +271,8 @@ android {
     packaging {
       jniLibs {
         useLegacyPackaging = true
+        // Old x86 emulators exercise Android storage/UI, never the arm64 game runtimes.
+        if (webdavFrameworkProbe) excludes += "**/*.so"
       }
       resources {
         excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -261,6 +281,12 @@ android {
 
     // 引擎原生插件先压缩为 assets/nativeplugins/<engine>.zip，首次启动自动安装到 app 私有目录
     sourceSets {
+      if (webdavDeviceProbe) {
+        getByName("debug") {
+          manifest.srcFile("src/webdavProbe/AndroidManifest.xml")
+          java.srcDir("src/webdavProbe/java")
+        }
+      }
       if (ethornellReleaseProbe) {
         // AGP's built-in Kotlin source set independently includes src/androidTest/java.
         // Clear BOTH languages on base and build-type test overlays; clearing Java alone
@@ -325,12 +351,23 @@ val compileEthornellTestProbe by tasks.registering(CompileEthornellTestProbe::cl
         ?: providers.environmentVariable("ANDROID_SDK_ROOT").orNull
         ?: error("Android SDK required for instrumentation JNI probe")
     val ndk = providers.environmentVariable("ANDROID_NDK_HOME").orNull ?: "$sdk/ndk/28.0.13004108"
-    val host = if (System.getProperty("os.name").contains("Mac")) "darwin-x86_64" else "linux-x86_64"
-    compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/clang++")
+    val hostOs = System.getProperty("os.name")
+    val host = when {
+        hostOs.contains("Mac") -> "darwin-x86_64"
+        hostOs.contains("Windows") -> "windows-x86_64"
+        else -> "linux-x86_64"
+    }
+    val compiler = if (hostOs.contains("Windows")) "clang++.exe" else "clang++"
+    compilerPath.set("$ndk/toolchains/llvm/prebuilt/$host/bin/$compiler")
+}
+androidComponents.beforeVariants(androidComponents.selector().withBuildType("release")) { variant ->
+    if (webdavFrameworkProbe) variant.enable = false
 }
 androidComponents.onVariants(androidComponents.selector().withBuildType(ethornellTestBuildType)) { variant ->
-    variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
-        compileEthornellTestProbe, CompileEthornellTestProbe::jniOutput)
+    if (!webdavFrameworkProbe) {
+        variant.androidTest?.sources?.jniLibs?.addGeneratedSourceDirectory(
+            compileEthornellTestProbe, CompileEthornellTestProbe::jniOutput)
+    }
     if (ethornellReleaseProbe) {
         variant.androidTest?.sources?.java?.addStaticSourceDirectory("src/releaseProbe/java")
     }
@@ -404,6 +441,7 @@ dependencies {
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.exifinterface)
   implementation(libs.appauth)
+  implementation(libs.okhttp)
 
   // Miuix 组件库（设置页 Card + Preference 体系）
   implementation(libs.miuix.ui)

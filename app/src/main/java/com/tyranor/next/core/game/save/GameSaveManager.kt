@@ -246,7 +246,7 @@ class GameSaveManager(private val context: Context) {
         return File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root))
     }
 
-    suspend fun listSaveFiles(game: ScanGame): List<File> {
+    suspend fun listSaveFiles(game: ScanGame, strict: Boolean = false, expectedDirectory: File? = null): List<File> {
         if (game.engine == EngineType.ETHORNELL) {
             // Existing SaveUI refresh does not catch errors. Busy/disabled data
             // has no safe snapshot; action methods still throw typed failures.
@@ -265,10 +265,18 @@ class GameSaveManager(private val context: Context) {
             }
         }
         val location = resolveSaveLocation(game)
-        val directory = location.directory ?: return emptyList()
-        if (!directory.isDirectory) return emptyList()
+        val resolved = location.directory ?: return emptyList()
+        val directory = if (strict) checkedSyncDirectory(resolved) else resolved
+        if (expectedDirectory != null && directory != checkedSyncDirectory(expectedDirectory)) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        }
+        if (!directory.exists()) return emptyList()
+        if (!directory.isDirectory) {
+            if (strict) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            return emptyList()
+        }
         return buildList {
-            collectFiles(directory, this, excludeFor(game.engine), location.mirrorForced)
+            collectFiles(directory, this, excludeFor(game.engine), location.mirrorForced, strict)
         }
     }
 
@@ -280,6 +288,8 @@ class GameSaveManager(private val context: Context) {
         game: ScanGame,
         destinationUri: Uri,
         format: ExportFormat = ExportFormat.TYRANOR,
+        strict: Boolean = false,
+        expectedDirectory: File? = null,
     ): Int {
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.export {
@@ -288,14 +298,18 @@ class GameSaveManager(private val context: Context) {
             }
         }
         val location = resolveSaveLocation(game)
-        val source = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val resolved = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val source = if (strict) checkedSyncDirectory(resolved) else resolved
+        if (expectedDirectory != null && source != checkedSyncDirectory(expectedDirectory)) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        }
         if (!source.isDirectory) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
         val rename = exportRename(game.engine, format)
         val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
             ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
         ZipOutputStream(output).use { zip ->
             val entries = mutableSetOf<String>()
-            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename, location.mirrorForced)
+            val count = writeZipContents(source, source, zip, entries, excludeFor(game.engine), rename, location.mirrorForced, strict)
             if (count == 0) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
             return count
         }
@@ -315,43 +329,128 @@ class GameSaveManager(private val context: Context) {
     }
 
     @Throws(IOException::class)
-    suspend fun importFromZip(game: ScanGame, sourceUri: Uri): Int {
+    suspend fun importFromZip(
+        game: ScanGame,
+        sourceUri: Uri,
+        manualSelection: Boolean = false,
+        expectedDirectory: File? = null,
+        onDirectoryCommitted: (() -> Unit)? = null,
+    ): Int {
+        if (manualSelection) {
+            resolveSaveLocation(game).directory?.let(::checkedSyncDirectory)
+        }
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.import {
                 appContext.contentResolver.openInputStream(sourceUri)
                     ?: throw GameSaveException(SaveErrorCode.READ_IMPORT_ZIP)
             }
-        }
+        }.also { onDirectoryCommitted?.invoke() }
         return synchronized(importLock) {
             // 锁序恒为 importLock → INTEROP_LOCK（sync 只取后者），无死锁环。
             synchronized(RpgSaveSyncState.INTEROP_LOCK) {
-                importFromZipLocked(game, sourceUri)
+                if (manualSelection && RpgSaveFormat.isRpgWebEngine(game.engine)) {
+                    RpgSaveSyncState.forContext(appContext).withManualSelection(game.uri) { onCommitted ->
+                        importFromZipLocked(game, sourceUri, expectedDirectory) {
+                            onCommitted()
+                            onDirectoryCommitted?.invoke()
+                        }
+                    }
+                } else importFromZipLocked(game, sourceUri, expectedDirectory) { onDirectoryCommitted?.invoke() }
             }
         }
     }
 
-    @Throws(IOException::class)
-    private fun importFromZipLocked(game: ScanGame, sourceUri: Uri): Int {
-        val location = resolveSaveLocation(game)
-        val destination = location.directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+    /** Completes excluded-resource recovery for an interrupted cloud version import, without importing again. */
+    internal fun completePendingVersionImport(game: ScanGame, expectedDirectory: File? = null): Unit = synchronized(importLock) {
+        synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+            val destination = syncSaveDirectory(game)
+            if (expectedDirectory != null && destination != checkedSyncDirectory(expectedDirectory)) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
+            val backup = File(destination.parentFile, destination.name + ".import_backup")
+            checkedSyncDirectory(backup)
+            recoverImportBackup(game, destination, backup)
+        }
+    }
 
+    private fun recoverImportBackup(game: ScanGame, destination: File, backup: File) {
+        checkedSyncDirectory(destination)
+        val transaction = SaveImportTransaction(destination, game.uri)
+        transaction.recoverBackup(backup,
+            restoreCommitted = {
+                if (restoresExcludedFromBackup(game.engine)) restoreExcludedFromBackup(backup, destination, game.engine)
+            },
+            copyMissingResources = {
+                if (restoresExcludedFromBackup(game.engine)) copyMissingExcluded(backup, destination, game.engine, destination)
+            },
+        )
+    }
+
+    private fun copyMissingExcluded(source: File, destination: File, engine: EngineType, root: File) {
+        SavePathSafety.requireSafeRoot(destination, root)
+        source.listFiles()?.forEach { child ->
+            if (java.nio.file.Files.isSymbolicLink(child.toPath())) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            val target = File(destination, child.name)
+            if (recoverableImportResource(engine, child.name)) {
+                copyMissingImportResource(child, target, root) { name ->
+                    name == SaveImportTransaction.MARKER || isTransientTmpName(name.lowercase(Locale.ROOT))
+                }
+            } else if (child.isDirectory && !excludeFor(engine)(child.name)) copyMissingExcluded(child, target, engine, root)
+        } ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+    }
+
+    internal fun syncSaveDirectory(game: ScanGame): File = checkedSyncDirectory(
+        resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED))
+
+    private fun checkedSyncDirectory(directory: File): File {
+        val path = directory.absoluteFile.toPath()
+        val ownRoots = listOfNotNull(appContext.filesDir, appContext.noBackupFilesDir, appContext.filesDir.parentFile)
+        val anchor = ownRoots.filter { path.startsWith(it.absoluteFile.toPath()) }
+            .maxByOrNull { it.absoluteFile.toPath().nameCount }
+            ?: SaveStorageRoots.forContext(appContext).filter { path.startsWith(it.absoluteFile.toPath()) }
+                .maxByOrNull { it.absoluteFile.toPath().nameCount }
+        return SavePathSafety.requireSafeRoot(directory, anchor)
+    }
+
+    private fun deleteImportTree(directory: File): Boolean = try {
+        SavePathSafety.deleteTreeNoFollow(directory)
+        true
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+    } catch (_: GameSaveException) {
+        false
+    }
+
+    @Throws(IOException::class)
+    private fun importFromZipLocked(
+        game: ScanGame,
+        sourceUri: Uri,
+        expectedDirectory: File? = null,
+        onDirectoryCommitted: () -> Unit = {},
+    ): Int {
+        val resolved = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val destination = if (expectedDirectory != null) {
+            val expected = checkedSyncDirectory(expectedDirectory)
+            if (checkedSyncDirectory(resolved) != expected) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            expected
+        } else checkedSyncDirectory(resolved)
+        val backup = File(destination.parentFile, destination.name + ".import_backup")
+        SavePathSafety.requirePlainDirectoryEntry(backup)
+        recoverImportBackup(game, destination, backup)
         var temp: File? = null
         try {
             val restoreExcluded: ((File, File) -> Unit)? = if (restoresExcludedFromBackup(game.engine)) {
-                { backup, target -> restoreExcludedFromBackup(backup, target, game.engine) }
-            } else {
-                null
-            }
-            return importSaveDirectory(destination, excludeFor(game.engine), restoreExcluded) {
-                // Recovery completes before extraction creates a cache directory.
-                val extractedDirectory = createTemporaryDirectory().also { temp = it }
-                if (extractZip(sourceUri, extractedDirectory) == 0) {
-                    throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
-                }
-                unwrapOuterDirs(extractedDirectory, game.engine)
+                { previous, target -> restoreExcludedFromBackup(previous, target, game.engine) }
+            } else null
+            return importSaveDirectory(destination, excludeFor(game.engine), restoreExcluded,
+                transaction = SaveImportTransaction(destination, game.uri),
+                onDirectoryCommitted = onDirectoryCommitted) {
+                val extracted = createTemporaryDirectory().also { temp = it }
+                if (extractZip(sourceUri, extracted) == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
+                unwrapOuterDirs(extracted, game.engine)
             }
         } finally {
-            temp?.deleteRecursively()
+            temp?.let(::deleteImportTree)
         }
     }
 
@@ -360,21 +459,21 @@ class GameSaveManager(private val context: Context) {
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { it.delete() }
         return synchronized(RpgSaveSyncState.INTEROP_LOCK) {
             // 与存档互通同步互斥（H3）：删除与并发同步交错会产生半删状态
-            val directory = resolveSaveLocation(game).directory ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+            val directory = syncSaveDirectory(game)
             val restoreExcluded: ((File, File) -> Unit)? = if (restoresExcludedFromBackup(game.engine)) {
-                { backup, target -> restoreExcludedContents(backup, target, excludeFor(game.engine), rejectExisting = true) }
-            } else {
-                null
-            }
+                { backup, target -> restoreExcludedContents(backup, target, { name -> recoverableImportResource(game.engine, name) }, rejectExisting = true) }
+            } else null
             deleteSaveDirectory(directory, excludeFor(game.engine), restoreExcluded)
         }
     }
 
     /**
-     * 删除游戏时清理应用内数据（独立/镜像存档目录），
-     * 仅触碰应用专属存储，绝不删除游戏目录内的任何文件。
+     * 删除游戏时只清理当前生效的应用内存档目录。旧独立目录、镜像父目录及其它根继续保留，
+     * 避免在当前目录的门禁内删除另一个入口正在使用的数据；不触碰游戏目录内的文件。
      */
-    fun cleanupAppData(game: ScanGame) {
+    fun cleanupAppData(game: ScanGame) = cleanupAppData(game, resolveSaveLocation(game).directory)
+
+    internal fun cleanupAppData(game: ScanGame, expectedDirectory: File?) {
         if (game.engine == EngineType.ETHORNELL) {
             // Retain on busy, disabled, damaged path, or incomplete recovery.
             // Library removal is not permission to delete an uncertain tree.
@@ -392,18 +491,33 @@ class GameSaveManager(private val context: Context) {
         }
         // 块体（审查跟进 #2）：表达式体 + 内部 return 会触发 KTLC-288 前向兼容告警，
         // Kotlin 2.5 起将变为错误
+        val failures = ArrayList<Exception>()
+        fun cleanup(action: () -> Unit) {
+            try {
+                action()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                failures += failure
+            }
+        }
         synchronized(RpgSaveSyncState.INTEROP_LOCK) {
+            val currentDirectory = resolveSaveLocation(game).directory
+            if (currentDirectory?.canonicalPath != expectedDirectory?.canonicalPath) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
+            val guardedDirectory = currentDirectory?.let(::checkedSyncDirectory)
             // 与存档互通同步互斥（H3）：删除独立存档目录与并发同步交错会让同步复制进一个
             // 正被删除的目录。clear/remove 内部同锁，可重入。
             // 存档互通残留必须先清：同步清单（区分「新建」与「已删除」）与待回写登记都以 game.uri
             // 为键。若随游戏删除留下旧清单，同一 uri 的游戏被重新添加后，标准侧存档会被误判为
             // 「Tyranor 侧已删除」而移入 deleted/；待回写记录则会在下次前台时指向已删除的游戏。
-            RpgSaveSyncState.forContext(appContext).clear(game.uri)
-            RpgSavePendingStore.remove(appContext, game.uri)
-            val root = resolveGameDirectory(game) ?: return
+            cleanup { RpgSaveSyncState.forContext(appContext).clear(game.uri) }
+            cleanup { RpgSavePendingStore.remove(appContext, game.uri) }
+            val root = resolveGameDirectory(game) ?: return@synchronized
             val targets = when (game.engine) {
                 EngineType.KIRIKIRI -> {
-                    val internal = appContext.filesDir ?: return
+                    val internal = appContext.filesDir ?: return@synchronized
                     val targetList = mutableListOf(
                         File(File(internal, "krkr_mirror"), GamePathUtils.safeSaveName(root)),
                     )
@@ -435,42 +549,40 @@ class GameSaveManager(private val context: Context) {
                     targetList
                 }
                 EngineType.ONS -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(File(File(external, "save"), File(root).name))
                 }
                 // System35（xsystem35）：独立存档目录在应用外部存储；独立存档关闭时存档在
                 // 游戏目录内，按规范不触碰（不清理游戏目录内文件）。
                 EngineType.XSYS35 -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(Xs35Paths.scopedSaveDir(external, root))
                 }
                 // System4：仅清理独立存档目录（游戏根 SaveFolder 位于游戏目录内，按规范不触碰）
                 EngineType.XSYS4 -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(Xs4Paths.scopedSaveDir(external, root))
                 }
                 EngineType.TYRANO,
                 EngineType.RPG_MV,
                 EngineType.RPG_MZ -> {
-                    val external = appContext.getExternalFilesDir(null) ?: return
+                    val external = appContext.getExternalFilesDir(null) ?: return@synchronized
                     listOf(File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root)))
                 }
-                else -> return
+                else -> return@synchronized
             }
-            val appInternal = appContext.filesDir.canonicalPath + File.separator
-            // KrSafMirror 镜像根（games/）与 SAF 索引（no_backup/）位于 filesDir 的父目录（应用数据根）下
-            val appDataRoot = appContext.filesDir.parentFile?.canonicalPath?.let { it + File.separator }
-            val appExternal = appContext.getExternalFilesDir(null)?.canonicalPath
-            targets.forEach { target ->
-                val inAppStorage = target.canonicalPath.startsWith(appInternal) ||
-                    (appDataRoot != null && target.canonicalPath.startsWith(appDataRoot)) ||
-                    (appExternal != null && target.canonicalPath.startsWith(appExternal + File.separator))
-                if (inAppStorage) {
-                    target.deleteRecursively()
-                    // 事务兄弟目录（staging/backup/retained）与目标同级：遗留的旧存档
-                    // 不能在删除游戏后继续留在外部存储（审查第十轮 #13）
-                    transactionSiblings(target).forEach { it.deleteRecursively() }
-                }
+            val appRoots = listOfNotNull(appContext.filesDir.parentFile, appContext.getExternalFilesDir(null))
+            targets.distinctBy { it.canonicalPath }.forEach { candidate -> cleanup {
+                // The resolved save directory can be inside a KRKR mirror root. Only that
+                // directory is fenced; deleting its parent would also remove unfenced data.
+                val target = appDataCleanupTarget(guardedDirectory, candidate, appRoots) ?: return@cleanup
+                SavePathSafety.deleteTreeNoFollow(target)
+                transactionSiblings(target).forEach(SavePathSafety::deleteTreeNoFollow)
+            } }
+        }
+        if (failures.isNotEmpty()) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failures.first()).also { result ->
+                failures.drop(1).forEach(result::addSuppressed)
             }
         }
     }
@@ -548,13 +660,41 @@ class GameSaveManager(private val context: Context) {
      */
     @Throws(IOException::class)
     private fun restoreExcludedFromBackup(backup: File, destination: File, engine: EngineType) {
-        restoreExcludedContents(backup, destination, excludeFor(engine))
+        val moved = mutableListOf<Pair<File, File>>()
+        try {
+            fun restoreRecursive(currentBackup: File, currentDest: File) {
+                SavePathSafety.requireSafeRoot(currentDest, destination)
+                val children = currentBackup.listFiles() ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                children.forEach { child ->
+                    if (java.nio.file.Files.isSymbolicLink(child.toPath())) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                    if (recoverableImportResource(engine, child.name)) {
+                        val target = File(currentDest, child.name)
+                        target.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name) }
+                        if (!child.renameTo(target)) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name)
+                        moved += child to target
+                    } else if (child.isDirectory && !excludeFor(engine)(child.name)) {
+                        val subDest = File(currentDest, child.name)
+                        restoreRecursive(child, subDest)
+                    }
+                }
+            }
+            restoreRecursive(backup, destination)
+        } catch (t: Throwable) {
+            moved.forEach { (backupFile, destinationFile) ->
+                if (!destinationFile.renameTo(backupFile)) {
+                    t.addSuppressed(GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, detail = destinationFile.path))
+                }
+            }
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = t)
+        }
     }
 
     private fun excludeFor(engine: EngineType): (String) -> Boolean = { name ->
         val lower = name.lowercase(Locale.ROOT)
         // MV/MZ 存档目录内的 original/ 是格式转化/互通留底，不参与列表计数/导出/导入/删除
-        (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
+        lower == SaveImportTransaction.MARKER ||
+            (RpgSaveFormat.isRpgWebEngine(engine) && lower == RpgSaveFormat.ORIGINAL_DIR) ||
             isTransientTmpName(lower) ||
             (engine == EngineType.ARTEMIS && isArtemisResourceName(name)) ||
             // AVG32/UK2 存档目录即游戏根：白名单之外的文件（含游戏资源）一律排除，
@@ -562,6 +702,9 @@ class GameSaveManager(private val context: Context) {
             (engine == EngineType.AVG32 && lower != AVG32_SAVE_FILE_NAME) ||
             (engine == EngineType.UK2 && !UK2_SAVE_NAME_RE.matches(lower))
     }
+
+    private fun recoverableImportResource(engine: EngineType, name: String): Boolean =
+        name != SaveImportTransaction.MARKER && !isTransientTmpName(name.lowercase(Locale.ROOT)) && excludeFor(engine)(name)
 
     /** AVG32 默认存档文件名（`#SAVEFILE` 自定义名暂不识别）。 */
     private val AVG32_SAVE_FILE_NAME = "save.ini"
@@ -575,7 +718,7 @@ class GameSaveManager(private val context: Context) {
      * 恰好包含这些子串的合法存档（审查意见：导入时被跳过的合法文件会随目录交换丢失）。
      */
     private fun isTransientTmpName(lower: String): Boolean =
-        listOf(".sync_tmp.", ".fmt_tmp.").any { marker ->
+        isImportRecoveryTemporary(lower) || listOf(".sync_tmp.", ".fmt_tmp.").any { marker ->
             val suffix = lower.substringAfterLast(marker, "")
             suffix.isNotEmpty() && suffix.all(Char::isDigit)
         }
@@ -611,12 +754,33 @@ class GameSaveManager(private val context: Context) {
         localizedContext.getString(id, *args)
 
     companion object {
+        /** Only the admitted active directory may be deleted, never an inactive sibling/root. */
+        internal fun appDataCleanupTarget(guardedDirectory: File?, candidate: File, appRoots: List<File>): File? {
+            val guarded = guardedDirectory?.canonicalFile ?: return null
+            val path = guarded.toPath()
+            if (!path.startsWith(candidate.canonicalFile.toPath())) return null
+            return guarded.takeIf {
+                appRoots.any { root ->
+                    val rootPath = root.canonicalFile.toPath()
+                    path != rootPath && path.startsWith(rootPath)
+                }
+            }
+        }
+
+        internal fun supportsFileSaves(engine: EngineType): Boolean = when (engine) {
+            EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
+            EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
+            EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL -> true
+            else -> false
+        }
+
         /** Restore resources before deleting any saves or transaction recovery copies. */
         internal fun deleteSaveDirectory(
             directory: File,
             exclude: (String) -> Boolean,
             restoreExcluded: ((File, File) -> Unit)? = null,
         ): Int {
+            SavePathSafety.requireSafeRoot(directory)
             val siblings = transactionSiblings(directory)
             // A failed import may leave the only game assets in any recovery slot.
             // A collision/unreadable tree must fail before destructive save cleanup.
@@ -625,8 +789,9 @@ class GameSaveManager(private val context: Context) {
             // unavailable save directory (audit of 28eb330f, AF2).
             if (restoreExcluded != null) {
                 for (sibling in siblings) {
-                    if (!sibling.isDirectory) throw GameSaveException(SaveErrorCode.RESOURCE_RESTORE_CONFLICT)
                     try {
+                        SavePathSafety.requirePlainDirectoryEntry(sibling)
+                        if (!sibling.isDirectory) throw GameSaveException(SaveErrorCode.RESOURCE_RESTORE_CONFLICT)
                         restoreExcluded(sibling, directory)
                     } catch (error: GameSaveException) {
                         if (error.code == SaveErrorCode.RESOURCE_RESTORE_CONFLICT) throw error
@@ -638,7 +803,7 @@ class GameSaveManager(private val context: Context) {
             }
             val deleted = if (directory.isDirectory) clearSaveDirectory(directory, exclude) else 0
             for (sibling in siblings) {
-                if (!sibling.deleteRecursively()) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                SavePathSafety.deleteTreeNoFollow(sibling)
             }
             return deleted
         }
@@ -668,16 +833,27 @@ class GameSaveManager(private val context: Context) {
             exclude: (String) -> Boolean,
             rejectExisting: Boolean = false,
         ) {
+            val parent = SavePathSafety.requireSafeRoot(
+                destination.parentFile ?: throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE))
+            SavePathSafety.requireSafeRoot(backup, parent)
+            SavePathSafety.requireSafeRoot(destination, parent)
+            SavePathSafety.requirePlainDirectoryEntry(backup)
+            SavePathSafety.requirePlainDirectoryEntry(destination)
             val moved = mutableListOf<Pair<File, File>>()
             try {
                 fun restoreRecursive(currentBackup: File, currentDest: File) {
+                    SavePathSafety.requireSafeRoot(currentBackup, backup)
+                    SavePathSafety.requireSafeRoot(currentDest, destination)
                     // 不可读的备份目录不是「无可恢复」：必须保留备份并报错（#11）
                     val children = currentBackup.listFiles()
                         ?: throw IOException("Backup directory unreadable: " + currentBackup.path)
                     children.forEach { child ->
+                        if (Files.isSymbolicLink(child.toPath())) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                         if (exclude(child.name)) {
                             val target = File(currentDest, child.name)
-                            if (rejectExisting && target.exists()) throw GameSaveException(SaveErrorCode.RESOURCE_RESTORE_CONFLICT)
+                            if (Files.isSymbolicLink(target.toPath()) || (rejectExisting && target.exists())) {
+                                throw GameSaveException(SaveErrorCode.RESOURCE_RESTORE_CONFLICT)
+                            }
                             target.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name) }
                             if (!child.renameTo(target)) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR_NAMED, detail = child.name)
                             moved += child to target
@@ -706,7 +882,8 @@ class GameSaveManager(private val context: Context) {
                 directory.name + ".import_backup_retained",
                 directory.name + ".import_backup_retained1",
                 directory.name + ".import_backup_retained2",
-            ).map { File(parent, it) }.filter { it.exists() }
+            ).map { File(parent, it) }.filter { Files.exists(it.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS) } +
+                SaveImportTransaction.recoveryCopies(directory)
         }
 
         /** Parse the actual import stream independently of Android URI acquisition. */
@@ -759,10 +936,15 @@ class GameSaveManager(private val context: Context) {
             exclude: (String) -> Boolean,
             restoreExcluded: ((File, File) -> Unit)? = null,
             rename: (File, File) -> Boolean = { from, to -> from.renameTo(to) },
+            transaction: SaveImportTransaction? = null,
+            onDirectoryCommitted: () -> Unit = {},
             sourceProvider: () -> File,
         ): Int {
             val staging = File(destination.parentFile, destination.name + ".import_staging")
             val backup = File(destination.parentFile, destination.name + ".import_backup")
+            SavePathSafety.requireSafeRoot(destination)
+            SavePathSafety.requirePlainDirectoryEntry(staging)
+            SavePathSafety.requirePlainDirectoryEntry(backup)
             // Recover an interrupted exchange before making an empty destination. Otherwise
             // the next import could discard the sole remaining copy of the previous saves.
             if (backup.isDirectory) {
@@ -798,9 +980,7 @@ class GameSaveManager(private val context: Context) {
             var backupConsumed = false
             try {
                 val source = sourceProvider()
-                if (staging.exists() && !staging.deleteRecursively()) {
-                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-                }
+                SavePathSafety.deleteTreeNoFollow(staging)
                 if (!staging.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_SAVE_DIR)
                 val copied = stageImportContents(source, staging, exclude)
                 // Judge the imported content BEFORE the exchange: for restoreExcluded
@@ -808,9 +988,8 @@ class GameSaveManager(private val context: Context) {
                 // which must not flip an all-empty import into a backup deletion
                 // (local audit of df6984c, P2-B).
                 val stagedAllEmpty = isDirectoryContentEmpty(staging)
-                if (backup.exists() && !backup.deleteRecursively()) {
-                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
-                }
+                transaction?.prepare(staging, preservePrevious = stagedAllEmpty)
+                SavePathSafety.deleteTreeNoFollow(backup)
                 if (!rename(destination, backup)) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 if (!rename(staging, destination)) {
                     // Failed rollback retains backup for the recovery above on the next import.
@@ -818,17 +997,20 @@ class GameSaveManager(private val context: Context) {
                     throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 }
                 committed = true
+                onDirectoryCommitted()
                 // Artemis resources and RPG Maker interop originals stay excluded from
                 // imported saves. Retain backup until all those resources are restored.
                 restoreExcluded?.invoke(backup, destination)
                 // An all-empty import (the user chose a zero-byte ZIP) replaces a possibly
                 // non-empty live directory: keep the previous saves in the backup until the
                 // next import resolves it, so an accidental clear stays recoverable on disk.
+                if (stagedAllEmpty && transaction != null) transaction.preserveUnprovenBackup(backup)
+                transaction?.clear()
                 backupConsumed = !stagedAllEmpty
                 return copied
             } finally {
-                staging.deleteRecursively()
-                if (committed && backupConsumed) backup.deleteRecursively()
+                SavePathSafety.deleteTreeNoFollow(staging)
+                if (committed && backupConsumed) SavePathSafety.deleteTreeNoFollow(backup)
             }
         }
 
@@ -851,12 +1033,13 @@ class GameSaveManager(private val context: Context) {
             )
             for (suffix in slots) {
                 val target = File(parent, suffix)
-                if (!target.exists() && rename(backup, target)) return
+                if (!Files.exists(target.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS) && rename(backup, target)) return
             }
             // All retention slots are taken: the oldest retained copy is superseded by
             // two newer unique copies, so reusing its slot keeps the mechanism bounded.
             val oldest = File(parent, slots[0])
-            if (!oldest.deleteRecursively() || !rename(backup, oldest)) {
+            SavePathSafety.deleteTreeNoFollow(oldest)
+            if (!rename(backup, oldest)) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
         }
@@ -917,11 +1100,15 @@ class GameSaveManager(private val context: Context) {
             out: MutableList<File>,
             exclude: (String) -> Boolean,
             mirrorForced: Boolean = false,
+            strict: Boolean = false,
         ) {
-            directory.listFiles().orEmpty().forEach { child ->
+            val children = directory.listFiles()
+            if (strict && children == null) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            children.orEmpty().forEach { child ->
                 if (exclude(child.name)) return@forEach
+                if (strict && Files.isSymbolicLink(child.toPath())) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 when {
-                    child.isDirectory -> collectFiles(child, out, exclude, mirrorForced)
+                    child.isDirectory -> collectFiles(child, out, exclude, mirrorForced, strict)
                     child.isFile && includesSaveFile(child, mirrorForced) -> out.add(child)
                 }
             }
@@ -936,13 +1123,19 @@ class GameSaveManager(private val context: Context) {
             exclude: (String) -> Boolean,
             rename: ((String) -> String)? = null,
             mirrorForced: Boolean = false,
+            strict: Boolean = false,
         ): Int {
             var written = 0
-            directory.listFiles().orEmpty().forEach { child ->
+            val children = directory.listFiles()
+            if (strict && children == null) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            children.orEmpty().forEach { child ->
                 if (exclude(child.name)) return@forEach
+                if (strict && Files.isSymbolicLink(child.toPath())) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 if (child.isDirectory) {
-                    written += writeZipContents(root, child, zip, entries, exclude, rename, mirrorForced)
+                    if (strict) SavePathSafety.requireSafeRoot(child)
+                    written += writeZipContents(root, child, zip, entries, exclude, rename, mirrorForced, strict)
                 } else if (child.isFile && includesSaveFile(child, mirrorForced)) {
+                    if (strict) SavePathSafety.requireSafeFile(root, child)
                     val relative = root.toPath().relativize(child.toPath()).toString()
                         .replace(File.separatorChar, '/')
                     val renamedName = rename?.let { fn ->

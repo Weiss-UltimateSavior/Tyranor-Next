@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,26 +24,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.RpgSaveSync
+import com.tyranor.next.core.game.save.sync.SaveSyncException
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.theme.NavWhite
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -51,10 +59,14 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.Card as MiuixCard
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class SaveManagementActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,15 +107,14 @@ private fun SaveManagementScreen(game: ScanGame) {
     val saveDirUnavailableMessage = stringResource(R.string.save_error_tyrano_external_unavailable)
     // 会话运行中/启动中：手动同步被拒绝的提示
     val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
+    val externalExitDoneMessage = stringResource(R.string.save_external_exit_done)
     val manager = remember { GameSaveManager(context) }
     var location by remember { mutableStateOf<GameSaveManager.SaveLocation?>(null) }
     var fileCount by remember { mutableStateOf(0) }
-    // 位置解析失败标记：页面至少要给出可见提示而不是一张空卡片（审查第十轮 #7）
-    var loadFailed by remember { mutableStateOf(false) }
+    var refreshError by remember { mutableStateOf<String?>(null) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    // MV/MZ 导出格式选择（标准模式 / Tyranor 模式）；其他引擎直接导出。
-    // 用 rememberSaveable：CreateDocument 系统页期间进程重建后仍按用户所选格式导出。
     var showExportFormatPicker by remember { mutableStateOf(false) }
+    // CreateDocument 系统页期间进程重建后仍按用户所选格式导出。
     var exportFormat by rememberSaveable { mutableStateOf(GameSaveManager.ExportFormat.TYRANOR) }
     val rpgWebGame = RpgSaveFormat.isRpgWebEngine(game.engine)
     // 存档互通生效值（单游戏覆盖 > 全局）：L7——关闭时隐藏「立即同步」，
@@ -111,25 +122,27 @@ private fun SaveManagementScreen(game: ScanGame) {
     var saveInteropEnabled by remember { mutableStateOf(false) }
     // 导入/导出/删除互斥：并发任务会互相清掉对方的暂存目录，破坏导入的原子性
     var taskRunning by remember { mutableStateOf(false) }
+    var versionsRevision by remember { mutableIntStateOf(0) }
+    var externalExitConfirmation by remember(game) {
+        mutableStateOf<SaveSyncRuntime.ExternalExitConfirmation?>(null)
+    }
 
     // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
     suspend fun refresh() {
-        // 解析失败（如镜像根暂不可用）按「位置未知」呈现而不是让页面初始化崩溃；
-        // 取消不是失败，必须原样向上传播（审查第十轮 #7；AGENTS 错误协议）
         try {
             val snapshot = withContext(Dispatchers.IO) {
                 manager.resolveSaveLocation(game) to manager.listSaveFiles(game).size
             }
             location = snapshot.first
             fileCount = snapshot.second
-            loadFailed = false
-        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            refreshError = null
+            versionsRevision++
+        } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Throwable) {
+        } catch (failure: Exception) {
             location = null
             fileCount = 0
-            loadFailed = true
-            android.util.Log.w("SaveManagement", "save location resolve failed", error)
+            refreshError = failure.toSaveErrorMessage(context, saveOperationFailedMessage)
         }
     }
 
@@ -153,7 +166,7 @@ private fun SaveManagementScreen(game: ScanGame) {
         return if (result.unmapped > 0) "$base\n${saveSyncUnmappedFormat.format(result.unmapped)}" else base
     }
 
-    fun runSaveTask(block: suspend () -> String) {
+    fun runSaveTask(shortFeedback: Boolean = false, block: suspend () -> String?) {
         if (taskRunning) return
         scope.launch {
             taskRunning = true
@@ -163,12 +176,16 @@ private fun SaveManagementScreen(game: ScanGame) {
                         block()
                     } catch (cancelled: CancellationException) {
                         throw cancelled
-                    } catch (t: Throwable) {
-                        t.toSaveErrorMessage(context, saveOperationFailedMessage)
+                    } catch (failure: Exception) {
+                        if (failure is SaveSyncException) failure.code.toSaveSyncMessage(context)
+                        else failure.toSaveErrorMessage(context, saveOperationFailedMessage)
                     }
                 }
                 refresh()
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                if (message != null) {
+                    val duration = if (shortFeedback) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
+                    Toast.makeText(context, message, duration).show()
+                }
             } finally {
                 taskRunning = false
             }
@@ -194,113 +211,182 @@ private fun SaveManagementScreen(game: ScanGame) {
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.save_management_title))
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    colors = CardDefaults.cardColors(containerColor = NavWhite),
-                    shape = AppComponentShape,
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (loadFailed && location == null) {
-                            Text(
-                                stringResource(R.string.save_location_load_failed_note),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 8.dp),
-                            )
-                        }
-                        location?.let { loadedLocation ->
-                            Text(
-                                loadedLocation.description,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 8.dp),
-                            )
-                            if (loadedLocation.mirrorForced) {
+    MiuixSettingsTheme {
+        MiuixScaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = ComposeColor.Transparent,
+            contentWindowInsets = WindowInsets(0.dp),
+            topBar = {
+                AppTopBar(
+                    title = stringResource(R.string.save_management_title),
+                    background = ComposeColor.Transparent,
+                    contentColor = MiuixTheme.colorScheme.onBackground,
+                )
+            },
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier.fillMaxSize()
+                    .padding(horizontal = 12.dp)
+                    .padding(top = innerPadding.calculateTopPadding()),
+                contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        colors = CardDefaults.cardColors(containerColor = NavWhite),
+                        shape = AppComponentShape,
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                            Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            location?.let { loadedLocation ->
                                 Text(
-                                    stringResource(R.string.krkr_mirror_save_import_hint),
+                                    loadedLocation.description,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                                if (loadedLocation.mirrorForced) {
+                                    Text(
+                                        stringResource(R.string.krkr_mirror_save_import_hint),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
+                                Text(
+                                    if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 4.dp),
                                 )
                             }
-                            Text(
-                                if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 4.dp),
+                            refreshError?.let { error ->
+                                Text(
+                                    error,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    MiuixCard(
+                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        cornerRadius = AppComponentCornerRadius,
+                    ) {
+                        Column(Modifier.padding(vertical = 4.dp)) {
+                            if (game.engine == EngineType.YURIS) {
+                                AppNavItem(
+                                    title = stringResource(R.string.save_external_exit_title),
+                                    summary = stringResource(R.string.save_external_exit_summary),
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    drawSurface = false,
+                                    onClick = if (taskRunning) null else ({
+                                        runSaveTask {
+                                            externalExitConfirmation = SaveSyncRuntime.externalExitConfirmation(context, game)
+                                            if (externalExitConfirmation == null) externalExitDoneMessage else null
+                                        }
+                                    }),
+                                )
+                            }
+                            AppNavItem(
+                                title = stringResource(R.string.save_export_zip),
+                                showLeadingIcon = false,
+                                showArrow = false,
+                                drawSurface = false,
+                                onClick = if (taskRunning) null else ({
+                                    if (rpgWebGame) {
+                                        showExportFormatPicker = true
+                                    } else {
+                                        exportFormat = GameSaveManager.ExportFormat.TYRANOR
+                                        exportLauncher.launch(defaultArchiveName(game))
+                                    }
+                                }),
+                            )
+                            if (rpgWebGame && saveInteropEnabled) {
+                                AppNavItem(
+                                    title = stringResource(R.string.save_sync_now),
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    drawSurface = false,
+                                    onClick = if (taskRunning) null else ({
+                                        runSaveTask {
+                                            when (val op = EngineLauncher.syncRpgSaves(context, game)) {
+                                                is EngineLauncher.RpgSaveOpResult.Done -> formatSyncResult(op.value)
+                                                // 会话运行中/启动中：未触碰存档，提示先退出游戏
+                                                EngineLauncher.RpgSaveOpResult.Busy -> saveBusyEngineRunningMessage
+                                                // 独立存档目录不可用：如实报告，绝不能显示「同步完成」
+                                                EngineLauncher.RpgSaveOpResult.SaveDirUnavailable -> saveDirUnavailableMessage
+                                            }
+                                        }
+                                    }),
+                                )
+                            }
+                            AppNavItem(
+                                title = stringResource(R.string.save_import_zip),
+                                showLeadingIcon = false,
+                                showArrow = false,
+                                drawSurface = false,
+                                onClick = if (taskRunning) null else ({
+                                    importLauncher.launch("application/zip")
+                                }),
+                            )
+                            AppNavItem(
+                                title = stringResource(R.string.save_delete_title),
+                                showLeadingIcon = false,
+                                showArrow = false,
+                                drawSurface = false,
+                                onClick = if (taskRunning) null else ({ showDeleteConfirm = true }),
                             )
                         }
                     }
                 }
-            }
-
-            item {
-                AppNavItem(
-                    title = stringResource(R.string.save_export_zip),
-                    showLeadingIcon = false,
-                    showArrow = false,
-                    onClick = {
-                        if (rpgWebGame) {
-                            showExportFormatPicker = true
-                        } else {
-                            exportFormat = GameSaveManager.ExportFormat.TYRANOR
-                            exportLauncher.launch(defaultArchiveName(game))
+                if (location?.available == true) {
+                    item {
+                        SaveVersionsPanel(game, taskRunning, versionsRevision) { block ->
+                            runSaveTask(block = block, shortFeedback = true)
                         }
-                    },
-                )
-            }
-            if (rpgWebGame && saveInteropEnabled) {
-                item {
-                    AppNavItem(
-                        title = stringResource(R.string.save_sync_now),
-                        showLeadingIcon = false,
-                        showArrow = false,
-                        onClick = {
-                            runSaveTask {
-                                when (val op = EngineLauncher.syncRpgSaves(context, game)) {
-                                    is EngineLauncher.RpgSaveOpResult.Done -> formatSyncResult(op.value)
-                                    // 会话运行中/启动中：未触碰存档，提示先退出游戏
-                                    EngineLauncher.RpgSaveOpResult.Busy -> saveBusyEngineRunningMessage
-                                    // 独立存档目录不可用：如实报告，绝不能显示「同步完成」
-                                    EngineLauncher.RpgSaveOpResult.SaveDirUnavailable -> saveDirUnavailableMessage
-                                }
-                            }
-                        },
-                    )
+                    }
                 }
+                item { BottomInsetSpacer() }
             }
-            item {
-                AppNavItem(
-                    title = stringResource(R.string.save_import_zip),
-                    showLeadingIcon = false,
-                    showArrow = false,
-                    onClick = { importLauncher.launch("application/zip") },
-                )
-            }
-            item {
-                AppNavItem(
-                    title = stringResource(R.string.save_delete_title),
-                    showLeadingIcon = false,
-                    showArrow = false,
-                    onClick = { showDeleteConfirm = true },
-                )
-            }
-            item { BottomInsetSpacer() }
         }
     }
 
-    // MV/MZ 导出格式选择：标准模式（JoiPlay/PC 兼容）/ Tyranor 模式；选项用 AppNavItem（弹窗内反色）
+    externalExitConfirmation?.let { confirmation ->
+        AppAlertDialog(
+            onDismissRequest = { externalExitConfirmation = null },
+            title = { Text(stringResource(R.string.save_external_exit_title), style = MaterialTheme.typography.titleMedium) },
+            text = { Text(stringResource(R.string.save_external_exit_message, game.title), style = MaterialTheme.typography.bodyMedium) },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_confirm),
+                    enabled = !taskRunning,
+                    onClick = {
+                        externalExitConfirmation = null
+                        runSaveTask {
+                            SaveSyncRuntime.confirmExternalExit(context, game, confirmation)
+                            externalExitDoneMessage
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { externalExitConfirmation = null },
+                )
+            },
+        )
+    }
+
+    // MV/MZ 导出格式选择：保留原有的格式确认与说明。
     if (showExportFormatPicker) {
         AppAlertDialog(
             onDismissRequest = { showExportFormatPicker = false },
@@ -313,6 +399,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,
                         showArrow = false,
+                        indication = null,
                         onClick = {
                             showExportFormatPicker = false
                             exportFormat = GameSaveManager.ExportFormat.STANDARD
@@ -325,6 +412,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                         leadingIcon = R.drawable.ic_save_export_format,
                         containerColor = DialogItemSurface,
                         showArrow = false,
+                        indication = null,
                         onClick = {
                             showExportFormatPicker = false
                             exportFormat = GameSaveManager.ExportFormat.TYRANOR
@@ -345,6 +433,8 @@ private fun SaveManagementScreen(game: ScanGame) {
             confirmButton = {
                 DialogTextButton(
                     text = stringResource(R.string.common_delete),
+                    enabled = !taskRunning,
+                    contentColor = MaterialTheme.colorScheme.error,
                     onClick = {
                         showDeleteConfirm = false
                         runSaveTask {

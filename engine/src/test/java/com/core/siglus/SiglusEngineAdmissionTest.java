@@ -4,6 +4,18 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public final class SiglusEngineAdmissionTest {
+    @Test public void runtimeEvidenceRemainsBusyUntilActualProcessOwnerRelease() {
+        assertFalse(SiglusEngineAdmission.hasActiveOwner());
+        SiglusEngineAdmission.Permit owner = SiglusEngineAdmission.PROCESS.acquire();
+        try {
+            for (int attempt = 0; attempt < 100; attempt++) {
+                assertTrue(SiglusEngineAdmission.hasActiveOwner());
+            }
+        } finally {
+            owner.release();
+        }
+        assertFalse(SiglusEngineAdmission.hasActiveOwner());
+    }
     @Test public void directAndFilteredOwnersCannotOverlap() {
         SiglusEngineAdmission process = new SiglusEngineAdmission();
         SiglusEngineAdmission.Permit filtered = process.acquire();

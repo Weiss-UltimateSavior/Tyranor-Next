@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
@@ -37,6 +39,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -53,7 +57,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Miuix 风格弹窗：小屏底部弹入 + 窗口变暗 + 标题居中。
- * 背景白色、圆角 8dp 遵循项目规范（AGENTS.md），动画节奏复刻 miuix OverlayDialog。
+ * 面板和圆角跟随动态主题，动画节奏复刻 miuix OverlayDialog。
+ * dismissEnabled 在退场前阻止关闭；已接受的退场始终交付 onDismissRequest。
  */
 @Composable
 internal fun AppAlertDialog(
@@ -63,6 +68,9 @@ internal fun AppAlertDialog(
     confirmButton: @Composable () -> Unit,
     dismissButton: (@Composable () -> Unit)? = null,
     buttonArrangement: Arrangement.Horizontal = Arrangement.spacedBy(8.dp, Alignment.End),
+    // Opt in only for plain text bodies; wrapping a self-scrolling list would pass infinite height constraints.
+    textScrollEnabled: Boolean = false,
+    dismissEnabled: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
@@ -70,16 +78,20 @@ internal fun AppAlertDialog(
     val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
     // 正文区域高度上限随屏幕自适应：固定 420dp 会在长列表（如 Artemis 全版本）末条截断
     val textMaxHeight = (configuration.screenHeightDp * 0.62f).dp.coerceIn(280.dp, 560.dp)
+    val textScrollState = rememberScrollState()
     val dimAlpha = remember { Animatable(0f) }
     val slideFraction = remember { Animatable(1f) }
     val dismissing = remember { mutableStateOf(false) }
     val currentOnDismiss by rememberUpdatedState(onDismissRequest)
+    val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
+    val focusManager = LocalFocusManager.current
     // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
     val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
     fun dismiss() {
-        if (dismissing.value) return
+        if (!currentDismissEnabled || dismissing.value) return
         dismissing.value = true
+        focusManager.clearFocus(force = true)
         scope.launch {
             launch { dimAlpha.animateTo(0f, tween(250, easing = FastOutLinearInEasing)) }
             slideFraction.animateTo(1f, tween(260, easing = FastOutLinearInEasing))
@@ -89,7 +101,8 @@ internal fun AppAlertDialog(
 
     Dialog(
         onDismissRequest = { dismiss() },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false,
+            dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
     ) {
         // 窗口变暗遮罩，点击关闭；高级玻璃面板为较高不透明度的灰玻璃膜，遮罩略加深即可
         val scrimAlpha = if (AppThemeColors.isAdvancedGlass) 0.6f else 0.5f
@@ -98,6 +111,7 @@ internal fun AppAlertDialog(
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = scrimAlpha * dimAlpha.value))
                 .clickable(
+                    enabled = currentDismissEnabled,
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = { dismiss() },
@@ -116,6 +130,7 @@ internal fun AppAlertDialog(
                     }
                     // 消费卡片区域点击，避免穿透到遮罩
                     .pointerInput(Unit) { detectTapGestures { } }
+                    .then(if (dismissing.value) Modifier.clearAndSetSemantics {} else Modifier)
                     .glassShadow()
                     .then(
                         if (advancedPanelSurface != null) {
@@ -144,7 +159,22 @@ internal fun AppAlertDialog(
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             title()
                         }
-                        Box(Modifier.fillMaxWidth().heightIn(max = textMaxHeight).padding(top = 14.dp)) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                // Measure the title/actions first so long text cannot consume
+                                // their space in landscape or with a large system font.
+                                .then(if (textScrollEnabled) Modifier.weight(1f, fill = false) else Modifier)
+                                .heightIn(max = textMaxHeight)
+                                .then(
+                                    if (textScrollEnabled) {
+                                        Modifier.verticalScroll(textScrollState)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .padding(top = 14.dp),
+                        ) {
                             text()
                         }
                         Row(
@@ -157,6 +187,9 @@ internal fun AppAlertDialog(
                         }
                     }
                 }
+            }
+            if (dismissing.value) {
+                Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } })
             }
         }
     }

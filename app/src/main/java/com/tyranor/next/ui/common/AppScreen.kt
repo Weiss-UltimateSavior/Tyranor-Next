@@ -27,6 +27,7 @@ abstract class AppScreenActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        observeSaveSyncFeedback()
         // 玻璃系外观风格背景固定深色画面，系统栏恒用浅色图标
         applySystemBarStyle(
             AppSettingsStore.isDarkEffective(this) ||

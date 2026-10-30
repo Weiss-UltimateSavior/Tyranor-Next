@@ -1,5 +1,7 @@
 # Ethornell device instrumentation
 
+WebDAV 存档同步、恢复与 Compose UI 的独立验收入口见 [WebDAV 设备验收记录](../../../docs/WebDAV-device-acceptance.md)。这些测试要求专用 application ID 与显式 opt-in；其纯框架辅助 Activity 不证明原生游戏兼容性。
+
 R8 release-native 动态验证使用可选的纯Java runner，见 [`../releaseProbe/README.md`](../releaseProbe/README.md)。不得把默认debug AndroidX测试APK与release target混装；默认本页命令仍针对debug，省略 `ethornellReleaseProbe` 属性即可。
 
 这些是 **真实 Android JNI/VM/GPU** 测试，不使用 mock Backend，不更改生产 Activity 的 exported 或添加 Intent backdoor。默认合成数据由测试 Java 在专用 app 私有目录生成，不含商业资产。测试代码直接访问 engine 是仪器层边界测试，非 UI 业务依赖。
@@ -148,3 +150,9 @@ failed identity_sha256=<64hex> token=<session token>
 render 像素增强交付：已从工具 owner 指定临时目录复制上述两个原创 assets，并核对 archive SHA256；新 consumer shader/FBO/readback 和测试源码独立 javac 编译通过。**尚未由本 agent 运行 Gradle 打包或真实 Android VM/GPU，fixture 预期能否实际呈现待父 session 执行**。单独执行增强测试可传 `-e class com.core.ethornell.EthornellDeviceTest#gpuPresentDetachReattachAndGeneration`，其余 runner/包名保持上文命令。
 
 已阅读项目方案、生产 Activity/Session/JNI、外部权威 ABI header 与工具 fixture README；通过 Android CLI 发现并阅读 `android-permissions-security` 审查技能及官方 OpenGL 环境文档。独立 `javac -source 17 -target 17`（真实 android-37.0/android.jar、现有 engine 编译产物和 AndroidX/JUnit 缓存）编译三份 Java 测试源码成功；NDK r28 arm64/API26 `clang++ -fsyntax-only` 通过（包括 ABI size/offset 静态断言）。父 session 后续反馈主构建成功且 configuration cache stored、隔离 app APK 与 test APK 已安装；该反馈不代表本次修改后的设备测试通过。当前新增 ACK 退出后重进测试还需最终安全修复库及生产只读日志后由父验收者执行。未 spawn、未自行安装、未并发 assemble、未提交/push。**本文件是执行说明，不是已通过的设备验收记录；构建/执行结果由主验收者追加。**
+
+## WebDAV 弹窗忙碌状态回归
+
+`ui/save/SaveDialogDismissDeviceTest` 补充两个隔离目标用例：任务中点击遮罩/返回保持弹窗可见，任务结束后允许关闭；退场动画已经开始后 busy 改变仍清除父状态。执行沿用 `com.tyranor.next.webdavacceptance*` 与 `-e webdav_device_acceptance true` 的双重门槛。
+
+2026-10-27 本轮仅编译该测试和普通 AndroidTest APK，按用户要求未连接设备、未执行新增 UI 用例；原有截图与设备报告不代表这两个新增用例已执行。

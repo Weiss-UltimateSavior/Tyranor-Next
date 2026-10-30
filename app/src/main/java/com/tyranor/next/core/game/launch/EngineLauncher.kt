@@ -65,6 +65,8 @@ import com.tyranor.next.core.game.save.RpgSavePendingStore
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.RpgSaveSyncState
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.save.sync.withSaveSyncLaunchAdmission
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
@@ -164,7 +166,45 @@ object EngineLauncher {
      *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
-        withContext(Dispatchers.IO) { launchInternal(context, game, patchChoice) }
+        withContext(Dispatchers.IO) {
+            withSaveSyncLaunchAdmission(
+                resolve = { SaveSyncRuntime.launchAdmission(context, game) },
+                managed = { key -> launchManaged(context, game, patchChoice, key) },
+                unmanaged = { launchInternal(context, game, patchChoice) },
+            )
+        }
+
+    /** Known directories share the operation fence; unknown directories hold it exclusively. */
+    private suspend fun launchManaged(
+        context: Context,
+        game: ScanGame,
+        patchChoice: ArtemisPatchChoice?,
+        directoryKey: String?,
+    ): LaunchResult {
+        var ticket: SaveSyncRuntime.LaunchTicket? = null
+        var grace: String? = null
+        var dispatched = false
+        try {
+            ticket = directoryKey?.let { SaveSyncRuntime.prepareLaunch(context, game, it) }
+            // Optional persistence may fail; every actual start still needs a protected handoff.
+            grace = SaveSyncRuntime.prepareOptionalLaunchGrace(context, game, directoryKey)
+            return launchInternal(context, game, patchChoice) {
+                dispatched = true
+                SaveSyncRuntime.optionalLaunchDispatched(context, game, grace, directoryKey)
+            }
+        } finally {
+            try {
+                SaveSyncRuntime.finishLaunch(context, game, ticket, dispatched)
+            } finally {
+                SaveSyncRuntime.finishOptionalLaunchGrace(context, game, grace, dispatched)
+            }
+        }
+    }
+
+    private fun completeLaunch(context: Context, game: ScanGame, onDispatched: () -> Unit): LaunchResult =
+        completeDispatchedGameLaunch(onDispatched, { GameLibraryFacade.recordRecentGame(context, game) }) {
+            Log.w(TAG, "Could not record a dispatched game launch", it)
+        }
 
     /**
      * 直接打开内置原生 Kirikiroid2 界面（`originMode`，不携带游戏路径）。
@@ -226,11 +266,11 @@ object EngineLauncher {
     private val launchingUris: MutableSet<String> =
         Collections.newSetFromMap(ConcurrentHashMap<String, Boolean>())
 
-    private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
+    private suspend fun launchInternal(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?, onDispatched: () -> Unit = {}): LaunchResult {
         if (game.engine == EngineType.ETHORNELL) {
             return EthornellOperationGate.exclusive {
                 try {
-                    launchTracked(context, game, patchChoice)
+                    launchTracked(context, game, patchChoice, onDispatched)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: java.io.IOException) {
@@ -240,19 +280,19 @@ object EngineLauncher {
                 }
             }
         }
-        return launchTracked(context, game, patchChoice)
+        return launchTracked(context, game, patchChoice, onDispatched)
     }
 
-    private suspend fun launchTracked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
+    private suspend fun launchTracked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?, onDispatched: () -> Unit): LaunchResult {
         launchingUris.add(game.uri)
         try {
-            return launchInternalChecked(context, game, patchChoice)
+            return launchInternalChecked(context, game, patchChoice, onDispatched)
         } finally {
             launchingUris.remove(game.uri)
         }
     }
 
-    private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
+    private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?, onDispatched: () -> Unit): LaunchResult {
         // 未知引擎（含第三方运行时模块卸载/禁用后的降级条目）不再落入 Tyrano 宿主兜底；请用户重新扫描。
         if (game.engine == EngineType.UNKNOWN) return LaunchResult.Failure.EngineUnknown
         if (game.engine == EngineType.ETHORNELL) {
@@ -261,7 +301,7 @@ object EngineLauncher {
             val alive = EngineSessionRegistry.isHostAlive(context, EngineSessionRegistry.HOST_ETHORNELL)
             val busy = EthornellOperationGate.isBusy(context)
             when (EthornellLaunchPolicy.decide(game.uri, live, alive)) {
-                EthornellLaunchPolicy.Action.RESTORE_EXISTING -> return restoreEthornell(context, game)
+                EthornellLaunchPolicy.Action.RESTORE_EXISTING -> return restoreEthornell(context, game).also { if (it == LaunchResult.Success) onDispatched() }
                 EthornellLaunchPolicy.Action.BUSY -> return LaunchResult.Failure.EthornellPrepareFailed(EthornellPrepareError.SESSION_BUSY)
                 EthornellLaunchPolicy.Action.START_NEW -> if (busy) {
                     return LaunchResult.Failure.EthornellPrepareFailed(EthornellPrepareError.SESSION_BUSY)
@@ -270,18 +310,18 @@ object EngineLauncher {
         }
         // 手动添加的安卓游戏：无引擎会话/存档/权限前置，按包名直接跳转（必须在目录解析之前分流）
         if (AndroidAppGames.isAndroidApp(game)) {
-            return launchAndroidApp(context, game)
+            return launchAndroidApp(context, game).also { if (it == LaunchResult.Success) onDispatched() }
         }
         // 第三方 APK 运行时模块：按包名交给显式组件启动，不进入目录解析/设置/插件链
         if (game.engine == EngineType.RUNTIME_MODULE) {
-            return launchRuntimeModule(context, game)
+            return launchRuntimeModule(context, game, onDispatched)
         }
         // 外置模拟器跳转：PSP / Switch 为 ROM 文件型（不解析目录），
         // YURIS 为 Windows 游戏（目录 + 主 exe，经 Winlator 外置启动协议挂载目录）
         ExternalEmulatorRegistry.forEngine(game.engine)?.let { target ->
             currentCoroutineContext().ensureActive()
             if (target.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL) {
-                return launchWindowsViaWinlator(context, game, target)
+                return launchWindowsViaWinlator(context, game, target, onDispatched)
             }
             // PSP：按三级设置的「PPSSPP 版本」解析标准版/黄金版目标；其余目标（Eden）固定
             val resolvedTarget = if (target.supports(EngineType.PSP)) {
@@ -293,8 +333,7 @@ object EngineLauncher {
             }
             val result = ExternalEmulatorLauncher.launch(context, resolvedTarget, game.uri)
             if (result.success) {
-                GameLibraryFacade.recordRecentGame(context, game)
-                return LaunchResult.Success
+                return completeLaunch(context, game, onDispatched)
             }
             return LaunchResult.Failure.ExternalEmulatorFailed(result)
         }
@@ -346,9 +385,7 @@ object EngineLauncher {
                 ),
             )
             if (result.success) {
-                currentCoroutineContext().ensureActive()
-                GameLibraryFacade.recordRecentGame(context, game)
-                return LaunchResult.Success
+                return completeLaunch(context, game, onDispatched)
             }
             return LaunchResult.Failure.ExternalModuleFailed(result)
         }
@@ -465,6 +502,7 @@ object EngineLauncher {
         currentCoroutineContext().ensureActive()
         return try {
             val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings)
+                .putExtra(LaunchContract.ROOT_URI, game.uri)
             // Intent 组装后、真正拉起引擎前最后一次确认，取消后不 startActivity
             currentCoroutineContext().ensureActive()
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -472,8 +510,7 @@ object EngineLauncher {
                 intent.putExtra(LaunchContract.ETHORNELL_DISPATCH_TOKEN, EthornellOperationGate.issue(context, game.uri))
             }
             context.startActivity(intent)
-            GameLibraryFacade.recordRecentGame(context, game)
-            LaunchResult.Success
+            completeLaunch(context, game, onDispatched)
         } catch (ce: CancellationException) {
             throw ce // 取消不是启动失败，原样传播给调用方
         } catch (e: Exception) {
@@ -488,7 +525,7 @@ object EngineLauncher {
      * [RuntimeModuleLaunchResult.ModuleMissing] / [ModuleDisabled] 会把游戏降级为 UNKNOWN；
      * [RuntimeModuleLaunchResult.PathUnresolved] 不请求「所有文件访问」——模块自己负责存储权限。
      */
-    private suspend fun launchRuntimeModule(context: Context, game: ScanGame): LaunchResult {
+    private suspend fun launchRuntimeModule(context: Context, game: ScanGame, onDispatched: () -> Unit): LaunchResult {
         // 发现查询失败不是「模块缺失」：直接上报通用失败，避免把全部绑定误降级。
         when (val discovery = RuntimeModuleRegistry.refresh(context)) {
             is RuntimeModuleDiscoveryResult.Failure ->
@@ -519,10 +556,7 @@ object EngineLauncher {
             ?: return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.PathUnresolved)
         currentCoroutineContext().ensureActive()
         return when (val result = RuntimeModuleLauncher.launch(context, module, game, path)) {
-            RuntimeModuleLaunchResult.Dispatched -> {
-                GameLibraryFacade.recordRecentGame(context, game)
-                LaunchResult.Success
-            }
+            RuntimeModuleLaunchResult.Dispatched -> completeLaunch(context, game, onDispatched)
 
             RuntimeModuleLaunchResult.ModuleMissing,
             RuntimeModuleLaunchResult.ModuleDisabled,
@@ -733,11 +767,12 @@ object EngineLauncher {
         ) ?: return null
         // 标准侧兼容 save / Save 两种拼写；首选写入目录为已存在的小写 save（默认）
         val standardDirs = RpgSaveFormat.standardSaveDirectories(gameDir)
-        return RpgSaveSync.sync(
+        val state = RpgSaveSyncState.forContext(context)
+        return RpgSaveSync.syncWithManualSelection(
             standardDirs = standardDirs,
             tyranorDir = tyranorDir,
             engine = game.engine,
-            stateStore = RpgSaveSyncState.forContext(context),
+            stateStore = state,
             gameKey = game.uri,
         )
     }
@@ -1083,6 +1118,7 @@ object EngineLauncher {
         context: Context,
         game: ScanGame,
         target: ExternalEmulatorTarget,
+        onDispatched: () -> Unit,
     ): LaunchResult {
         val path = resolveGameDirectory(context, game) ?: return LaunchResult.Failure.GameDirUnresolved
         requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
@@ -1109,8 +1145,7 @@ object EngineLauncher {
             ),
         )
         if (result.success) {
-            GameLibraryFacade.recordRecentGame(context, game)
-            return LaunchResult.Success
+            return completeLaunch(context, game, onDispatched)
         }
         return LaunchResult.Failure.ExternalEmulatorFailed(result)
     }
