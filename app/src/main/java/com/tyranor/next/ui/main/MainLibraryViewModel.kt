@@ -422,7 +422,15 @@ internal object MainLibraryStateReducer {
         quickLaunch = state.quickLaunch.filterNot { it.uri == uri },
     )
 
+    /**
+     * 清除游玩记录：最近列表移除该项，同时把 [MainLibraryUiState.games] 里同一游戏的
+     * [ScanGame.openTime] 归零。
+     *
+     * 游戏页的「已游玩」筛选与「最近游玩」排序都读 games，只改 recentGames 的话，
+     * 在持久化命令发布新快照之前，被清除的游戏仍算「已游玩」并保持原排序位置。
+     */
     fun removeRecent(state: MainLibraryUiState, uri: String): MainLibraryUiState = state.copy(
+        games = state.games.map { if (it.uri == uri) it.copy(openTime = 0L) else it },
         recentGames = state.recentGames.filterNot { it.uri == uri },
     )
 

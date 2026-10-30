@@ -72,6 +72,24 @@ class MainLibraryStateReducerTest {
     }
 
     @Test
+    fun removeRecentAlsoClearsThePlayedFlagOnTheLibraryCopy() {
+        // 「已游玩」筛选与「最近游玩」排序都读 games，清除游玩记录必须同时归零 openTime，
+        // 否则持久化快照发布前这两处仍按旧值显示。
+        val played = second.copy(openTime = 300L)
+        val state = MainLibraryUiState(
+            games = listOf(first, played),
+            recentGames = listOf(played),
+            loaded = true,
+        )
+
+        val result = MainLibraryStateReducer.removeRecent(state, played.uri)
+
+        assertTrue(result.recentGames.isEmpty())
+        assertEquals(0L, result.games.single { it.uri == played.uri }.openTime)
+        assertEquals(first.openTime, result.games.single { it.uri == first.uri }.openTime)
+    }
+
+    @Test
     fun mergeChangedFieldsKeepsConcurrentCoverWhenOnlyTitleChanged() {
         val before = first.copy(coverUri = "file:///old.jpg", coverSource = "old")
         val scraped = before.copy(coverUri = "file:///new.jpg", coverSource = "vndb")
