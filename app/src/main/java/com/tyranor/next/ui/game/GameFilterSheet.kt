@@ -85,10 +85,15 @@ internal fun GameFilterSheet(
         AppSettingsStore.GAME_FILTER_PLAYED_NONE to stringResource(R.string.game_filter_played_none),
     )
     // 引擎多时已选标签可能落在右侧视口外，打开抽屉先把选中项滚进来，
-    // 否则用户看不到当前生效的引擎筛选（全部固定在最左，无需处理）。
+    // 否则用户看不到当前生效的引擎筛选。
+    // 回到「全部」时要滚回行首：「全部」固定在最左，而抽屉是常开的，
+    // 重置后行的滚动偏移还停在右侧，选中的「全部」标签就落在视口外，看起来像没生效。
     val selectedChipRequester = remember { BringIntoViewRequester() }
+    val engineRowScroll = rememberScrollState()
     LaunchedEffect(engineFilter) {
-        if (engineFilter != AppSettingsStore.GAME_FILTER_ENGINE_ALL) {
+        if (engineFilter == AppSettingsStore.GAME_FILTER_ENGINE_ALL) {
+            engineRowScroll.animateScrollTo(0)
+        } else {
             selectedChipRequester.bringIntoView()
         }
     }
@@ -171,13 +176,13 @@ internal fun GameFilterSheet(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
+                        .horizontalScroll(engineRowScroll)
                         .selectableGroup(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     FilterChipCard(
                         label = engineAllLabel,
-                        selected = engineFilter.isEmpty(),
+                        selected = engineFilter == AppSettingsStore.GAME_FILTER_ENGINE_ALL,
                         onClick = { onEngineChange(AppSettingsStore.GAME_FILTER_ENGINE_ALL) },
                     )
                     availableEngines.forEach { engine ->
