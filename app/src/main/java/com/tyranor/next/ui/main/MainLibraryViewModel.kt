@@ -428,11 +428,23 @@ internal object MainLibraryStateReducer {
      *
      * 游戏页的「已游玩」筛选与「最近游玩」排序都读 games，只改 recentGames 的话，
      * 在持久化命令发布新快照之前，被清除的游戏仍算「已游玩」并保持原排序位置。
+     *
+     * 落库侧 [GameLibraryFacade.removeRecentGame] 对缓存做同样的事，两处取值一致，
+     * 因此随后的快照不会把这里清掉的值又写回正数。
      */
-    fun removeRecent(state: MainLibraryUiState, uri: String): MainLibraryUiState = state.copy(
-        games = state.games.map { if (it.uri == uri) it.copy(openTime = 0L) else it },
-        recentGames = state.recentGames.filterNot { it.uri == uri },
-    )
+    fun removeRecent(state: MainLibraryUiState, uri: String): MainLibraryUiState {
+        // 无命中时原样返回，避免换掉 games 引用让下游 remember(games) 的排序整库重算。
+        val inLibrary = state.games.any { it.uri == uri }
+        if (!inLibrary && state.recentGames.none { it.uri == uri }) return state
+        return state.copy(
+            games = if (inLibrary) {
+                state.games.map { if (it.uri == uri) it.copy(openTime = 0L) else it }
+            } else {
+                state.games
+            },
+            recentGames = state.recentGames.filterNot { it.uri == uri },
+        )
+    }
 
     fun toggleQuickLaunch(state: MainLibraryUiState, game: ScanGame): MainLibraryUiState {
         val exists = state.quickLaunch.any { it.uri == game.uri }
