@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -103,6 +106,14 @@ private fun coachFallbackRect(step: Int, width: Float, height: Float): Rect {
     )
 }
 
+private fun Modifier.consumeCoachTouches(step: Int): Modifier = pointerInput(step) {
+    awaitPointerEventScope {
+        while (true) {
+            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+        }
+    }
+}
+
 @Composable
 fun OnboardingStorageError(onRetry: () -> Unit) {
     Column(
@@ -160,6 +171,20 @@ fun OnboardingCoachOverlay(
     val primary = MaterialTheme.colorScheme.primary
     var tooltipBounds by remember(safeStep) { mutableStateOf<Rect?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val overlayWidthPx = with(density) { maxWidth.toPx() }
+        val overlayHeightPx = with(density) { maxHeight.toPx() }
+        val targetRect = targetBounds ?: coachFallbackRect(safeStep, overlayWidthPx, overlayHeightPx)
+        val targetLeft = targetRect.left.coerceIn(0f, overlayWidthPx)
+        val targetTop = targetRect.top.coerceIn(0f, overlayHeightPx)
+        val targetRight = targetRect.right.coerceIn(targetLeft, overlayWidthPx)
+        val targetBottom = targetRect.bottom.coerceIn(targetTop, overlayHeightPx)
+        val targetLeftDp = with(density) { targetLeft.toDp() }
+        val targetTopDp = with(density) { targetTop.toDp() }
+        val targetRightDp = with(density) { targetRight.toDp() }
+        val targetBottomDp = with(density) { targetBottom.toDp() }
+        val targetHeightDp = with(density) { (targetBottom - targetTop).toDp() }
+
         Canvas(
             Modifier
                 .fillMaxSize()
@@ -167,59 +192,40 @@ fun OnboardingCoachOverlay(
                     // 让被讲解的真实控件保持清晰，避免整屏灰蒙蒙。
                     compositingStrategy = CompositingStrategy.Offscreen
                 }
-                .pointerInput(safeStep, targetBounds, tooltipBounds) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { change ->
-                                val target = targetBounds ?: coachFallbackRect(
-                                    safeStep,
-                                    size.width.toFloat(),
-                                    size.height.toFloat(),
-                                )
-                                // 引导期间只允许操作当前高亮目标或提示气泡，避免误触底部导航、
-                                // 当前页面控件后页面与引导步骤失配。
-                                if (!target.contains(change.position) && tooltipBounds?.contains(change.position) != true) {
-                                    change.consume()
-                                }
-                            }
-                        }
-                    }
-                },
         ) {
             // 优先使用真实控件上报的 root 坐标；首帧尚未测量时才使用保守回退值。
             val fallbackRect = coachFallbackRect(safeStep, size.width, size.height)
-            val targetRect = targetBounds ?: fallbackRect
-            val targetLeft = targetRect.left
-            val targetTop = targetRect.top
-            val targetWidth = targetRect.width
-            val targetHeight = targetRect.height
+            val drawnTarget = targetBounds ?: fallbackRect
+            val drawnTargetLeft = drawnTarget.left
+            val drawnTargetTop = drawnTarget.top
+            val targetWidth = drawnTarget.width
+            val targetHeight = drawnTarget.height
             val cornerRadius = minOf(18.dp.toPx(), targetHeight * 0.22f)
             val targetSize = Size(targetWidth, targetHeight)
             drawRect(Color.Black.copy(alpha = 0.46f))
             drawRoundRect(
                 color = Color.Transparent,
-                topLeft = Offset(targetLeft, targetTop),
+                topLeft = Offset(drawnTargetLeft, drawnTargetTop),
                 size = targetSize,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
                 blendMode = BlendMode.Clear,
             )
             drawRoundRect(
                 color = primary.copy(alpha = 0.86f),
-                topLeft = Offset(targetLeft, targetTop),
+                topLeft = Offset(drawnTargetLeft, drawnTargetTop),
                 size = targetSize,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
                 style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
             )
             tooltipBounds?.let { tooltip ->
-                val targetRect = Rect(targetLeft, targetTop, targetLeft + targetWidth, targetTop + targetHeight)
-                val connector = if (targetRect.bottom <= tooltip.top) {
-                    Offset(tooltip.center.x.coerceIn(targetRect.left, targetRect.right), tooltip.top) to
-                        Offset(targetRect.center.x, targetRect.bottom)
-                } else if (targetRect.top >= tooltip.bottom) {
-                    Offset(tooltip.center.x.coerceIn(targetRect.left, targetRect.right), tooltip.bottom) to
-                        Offset(targetRect.center.x, targetRect.top)
+                val connector = if (drawnTarget.bottom <= tooltip.top) {
+                    Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.top) to
+                        Offset(drawnTarget.center.x, drawnTarget.bottom)
+                } else if (drawnTarget.top >= tooltip.bottom) {
+                    Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.bottom) to
+                        Offset(drawnTarget.center.x, drawnTarget.top)
                 } else {
-                    Offset(tooltip.left, tooltip.center.y) to Offset(targetRect.right, targetRect.center.y)
+                    Offset(tooltip.left, tooltip.center.y) to Offset(drawnTarget.right, drawnTarget.center.y)
                 }
                 drawLine(
                     color = primary.copy(alpha = 0.72f),
@@ -230,6 +236,36 @@ fun OnboardingCoachOverlay(
                 )
             }
         }
+
+        // Canvas 仍负责绘制整屏遮罩，但不参与命中测试。外围四块拦截区阻止误触，
+        // 高亮矩形中间保持为空，事件才能继续传递到真实控件。
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(targetTopDp)
+                .consumeCoachTouches(safeStep),
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .offset(y = targetBottomDp)
+                .height((maxHeight - targetBottomDp).coerceAtLeast(0.dp))
+                .consumeCoachTouches(safeStep),
+        )
+        Box(
+            Modifier
+                .offset(y = targetTopDp)
+                .width(targetLeftDp)
+                .height(targetHeightDp)
+                .consumeCoachTouches(safeStep),
+        )
+        Box(
+            Modifier
+                .offset(x = targetRightDp, y = targetTopDp)
+                .width((maxWidth - targetRightDp).coerceAtLeast(0.dp))
+                .height(targetHeightDp)
+                .consumeCoachTouches(safeStep),
+        )
 
         Column(
             modifier = Modifier
