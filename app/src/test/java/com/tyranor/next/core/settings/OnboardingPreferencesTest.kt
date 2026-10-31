@@ -8,9 +8,15 @@ import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 class OnboardingPreferencesTest {
+    @Before
+    fun resetAppSettingsOnboardingCache() {
+        AppSettingsStore.resetOnboardingForTests()
+    }
+
     @Test
     fun `application initialization uses persisted install evidence`() {
         val appSettings = MemoryPreferences()
@@ -22,6 +28,17 @@ class OnboardingPreferencesTest {
         )
         assertEquals(OnboardingWriteResult.SAVED, AppSettingsStore.initializeOnboarding(context))
         assertTrue(AppSettingsStore.isOnboardingCompleted(context))
+    }
+
+    @Test
+    fun `application initialization keeps a fresh install in onboarding`() {
+        val context = OnboardingContext(
+            appSettings = MemoryPreferences().preferences,
+            stores = emptyMap(),
+            gameLibrary = File("missing-game-library.db"),
+        )
+        assertEquals(OnboardingWriteResult.SAVED, AppSettingsStore.initializeOnboarding(context))
+        assertFalse(AppSettingsStore.isOnboardingCompleted(context))
     }
 
     @Test

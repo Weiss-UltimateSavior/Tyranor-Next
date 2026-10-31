@@ -45,8 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -80,6 +78,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.onboarding.coachAnchor
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
@@ -274,13 +273,7 @@ fun SettingsScreen(
                     MiuixCard(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .then(
-                                if (isActive) {
-                                    Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
-                                } else {
-                                    Modifier
-                                },
-                            )
+                            .coachAnchor(isActive, onCoachAnchorChanged)
                             .glassShadow()
                             .glassBorder(),
                         cornerRadius = AppComponentCornerRadius,

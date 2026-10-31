@@ -77,6 +77,13 @@ internal object CoachAnchor {
     const val GAME_SCAN = 4
     const val ENGINE = 5
     const val SETTINGS = 6
+
+    fun pageOf(index: Int): Int = when (index) {
+        HOME -> 0
+        in GAME_ADD..GAME_SCAN -> 1
+        ENGINE -> 2
+        else -> 3
+    }
 }
 
 private val coachSteps = listOf(
@@ -113,6 +120,9 @@ private fun Modifier.consumeCoachTouches(step: Int): Modifier = pointerInput(ste
         }
     }
 }
+
+internal fun Modifier.coachAnchor(enabled: Boolean, onBounds: (Rect) -> Unit): Modifier =
+    if (enabled) onGloballyPositioned { onBounds(it.boundsInRoot()) } else this
 
 @Composable
 fun OnboardingStorageError(onRetry: () -> Unit) {
@@ -174,11 +184,20 @@ fun OnboardingCoachOverlay(
         val density = androidx.compose.ui.platform.LocalDensity.current
         val overlayWidthPx = with(density) { maxWidth.toPx() }
         val overlayHeightPx = with(density) { maxHeight.toPx() }
-        val targetRect = targetBounds ?: coachFallbackRect(safeStep, overlayWidthPx, overlayHeightPx)
+        val needsMeasuredTarget = safeStep == CoachAnchor.ENGINE || safeStep == CoachAnchor.SETTINGS
+        val hasMeasuredTarget = targetBounds?.isEmpty == false
+        val showTarget = !needsMeasuredTarget || hasMeasuredTarget
+        val targetRect = if (showTarget) {
+            targetBounds ?: coachFallbackRect(safeStep, overlayWidthPx, overlayHeightPx)
+        } else {
+            Rect.Zero
+        }
         val targetLeft = targetRect.left.coerceIn(0f, overlayWidthPx)
         val targetTop = targetRect.top.coerceIn(0f, overlayHeightPx)
         val targetRight = targetRect.right.coerceIn(targetLeft, overlayWidthPx)
         val targetBottom = targetRect.bottom.coerceIn(targetTop, overlayHeightPx)
+        val targetWidth = targetRight - targetLeft
+        val targetHeight = targetBottom - targetTop
         val targetLeftDp = with(density) { targetLeft.toDp() }
         val targetTopDp = with(density) { targetTop.toDp() }
         val targetRightDp = with(density) { targetRight.toDp() }
@@ -194,78 +213,79 @@ fun OnboardingCoachOverlay(
                 }
         ) {
             // 优先使用真实控件上报的 root 坐标；首帧尚未测量时才使用保守回退值。
-            val fallbackRect = coachFallbackRect(safeStep, size.width, size.height)
-            val drawnTarget = targetBounds ?: fallbackRect
-            val drawnTargetLeft = drawnTarget.left
-            val drawnTargetTop = drawnTarget.top
-            val targetWidth = drawnTarget.width
-            val targetHeight = drawnTarget.height
             val cornerRadius = minOf(18.dp.toPx(), targetHeight * 0.22f)
-            val targetSize = Size(targetWidth, targetHeight)
             drawRect(Color.Black.copy(alpha = 0.46f))
-            drawRoundRect(
-                color = Color.Transparent,
-                topLeft = Offset(drawnTargetLeft, drawnTargetTop),
-                size = targetSize,
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
-                blendMode = BlendMode.Clear,
-            )
-            drawRoundRect(
-                color = primary.copy(alpha = 0.86f),
-                topLeft = Offset(drawnTargetLeft, drawnTargetTop),
-                size = targetSize,
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
-            )
-            tooltipBounds?.let { tooltip ->
-                val connector = if (drawnTarget.bottom <= tooltip.top) {
-                    Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.top) to
-                        Offset(drawnTarget.center.x, drawnTarget.bottom)
-                } else if (drawnTarget.top >= tooltip.bottom) {
-                    Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.bottom) to
-                        Offset(drawnTarget.center.x, drawnTarget.top)
-                } else {
-                    Offset(tooltip.left, tooltip.center.y) to Offset(drawnTarget.right, drawnTarget.center.y)
-                }
-                drawLine(
-                    color = primary.copy(alpha = 0.72f),
-                    start = connector.first,
-                    end = connector.second,
-                    strokeWidth = 2.5.dp.toPx(),
-                    cap = StrokeCap.Round,
+            if (showTarget) {
+                val targetSize = Size(targetWidth, targetHeight)
+                drawRoundRect(
+                    color = Color.Transparent,
+                    topLeft = Offset(targetLeft, targetTop),
+                    size = targetSize,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
+                    blendMode = BlendMode.Clear,
                 )
+                drawRoundRect(
+                    color = primary.copy(alpha = 0.86f),
+                    topLeft = Offset(targetLeft, targetTop),
+                    size = targetSize,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
+                )
+                tooltipBounds?.let { tooltip ->
+                    val drawnTarget = Rect(targetLeft, targetTop, targetRight, targetBottom)
+                    val connector = if (drawnTarget.bottom <= tooltip.top) {
+                        Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.top) to
+                            Offset(drawnTarget.center.x, drawnTarget.bottom)
+                    } else if (drawnTarget.top >= tooltip.bottom) {
+                        Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.bottom) to
+                            Offset(drawnTarget.center.x, drawnTarget.top)
+                    } else {
+                        Offset(tooltip.left, tooltip.center.y) to Offset(drawnTarget.right, drawnTarget.center.y)
+                    }
+                    drawLine(
+                        color = primary.copy(alpha = 0.72f),
+                        start = connector.first,
+                        end = connector.second,
+                        strokeWidth = 2.5.dp.toPx(),
+                        cap = StrokeCap.Round,
+                    )
+                }
             }
         }
 
         // Canvas 仍负责绘制整屏遮罩，但不参与命中测试。外围四块拦截区阻止误触，
         // 高亮矩形中间保持为空，事件才能继续传递到真实控件。
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(targetTopDp)
-                .consumeCoachTouches(safeStep),
-        )
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .offset(y = targetBottomDp)
-                .height((maxHeight - targetBottomDp).coerceAtLeast(0.dp))
-                .consumeCoachTouches(safeStep),
-        )
-        Box(
-            Modifier
-                .offset(y = targetTopDp)
-                .width(targetLeftDp)
-                .height(targetHeightDp)
-                .consumeCoachTouches(safeStep),
-        )
-        Box(
-            Modifier
-                .offset(x = targetRightDp, y = targetTopDp)
-                .width((maxWidth - targetRightDp).coerceAtLeast(0.dp))
-                .height(targetHeightDp)
-                .consumeCoachTouches(safeStep),
-        )
+        if (!showTarget) {
+            Box(Modifier.fillMaxSize().consumeCoachTouches(safeStep))
+        } else {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(targetTopDp)
+                    .consumeCoachTouches(safeStep),
+            )
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .offset(y = targetBottomDp)
+                    .height((maxHeight - targetBottomDp).coerceAtLeast(0.dp))
+                    .consumeCoachTouches(safeStep),
+            )
+            Box(
+                Modifier
+                    .offset(y = targetTopDp)
+                    .width(targetLeftDp)
+                    .height(targetHeightDp)
+                    .consumeCoachTouches(safeStep),
+            )
+            Box(
+                Modifier
+                    .offset(x = targetRightDp, y = targetTopDp)
+                    .width((maxWidth - targetRightDp).coerceAtLeast(0.dp))
+                    .height(targetHeightDp)
+                    .consumeCoachTouches(safeStep),
+            )
+        }
 
         Column(
             modifier = Modifier

@@ -3,6 +3,7 @@ package com.tyranor.next.core.settings
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -42,6 +43,11 @@ object AppSettingsStore {
         legacyPreferencesHaveData: Boolean,
         gameLibraryExists: Boolean,
     ): Boolean = appSettingsHasData || legacyPreferencesHaveData || gameLibraryExists
+
+    @VisibleForTesting
+    internal fun resetOnboardingForTests() {
+        onboardingPreferences = null
+    }
 
     fun isOnboardingCompleted(context: Context): Boolean =
         onboarding(context).isCompleted()

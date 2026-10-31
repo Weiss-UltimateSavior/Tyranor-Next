@@ -32,12 +32,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +70,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.onboarding.coachAnchor
 import com.tyranor.next.ui.settings.artVersionOptions
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
@@ -84,6 +84,7 @@ fun EngineScreen(
     onCoachAnchorChanged: (Rect) -> Unit = {},
     isActive: Boolean = true,
 ) {
+    val latestOnCoachAnchorChanged = rememberUpdatedState(onCoachAnchorChanged)
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
@@ -170,7 +171,7 @@ fun EngineScreen(
                 if (isCoachTarget) {
                     DisposableEffect(engine) {
                         onDispose {
-                            onCoachAnchorChanged(Rect.Zero)
+                            latestOnCoachAnchorChanged.value(Rect.Zero)
                         }
                     }
                 }
@@ -202,11 +203,10 @@ fun EngineScreen(
                     engine = engine,
                     statusTextRes = statusRes,
                     installed = installed,
-                    modifier = if (engine == tabEngines.firstOrNull() && isActive) {
-                        Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
-                    } else {
-                        Modifier
-                    },
+                    modifier = Modifier.coachAnchor(
+                        enabled = engine == tabEngines.firstOrNull() && isActive,
+                        onBounds = onCoachAnchorChanged,
+                    ),
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     onClick = {

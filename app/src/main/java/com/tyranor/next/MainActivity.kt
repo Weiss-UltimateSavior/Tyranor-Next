@@ -96,25 +96,14 @@ class MainActivity : ComponentActivity() {
     var saving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
     var coachAnchors by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
-    val coachPage = when (coachStep) {
-      CoachAnchor.HOME -> 0
-      in CoachAnchor.GAME_ADD..CoachAnchor.GAME_SCAN -> 1
-      CoachAnchor.ENGINE -> 2
-      else -> 3
-    }
+    val coachPage = CoachAnchor.pageOf(coachStep)
     val scope = rememberCoroutineScope()
-    fun pageForAnchor(index: Int): Int = when (index) {
-      CoachAnchor.HOME -> 0
-      in CoachAnchor.GAME_ADD..CoachAnchor.GAME_SCAN -> 1
-      CoachAnchor.ENGINE -> 2
-      else -> 3
-    }
     LaunchedEffect(coachPage) {
       // 四页常驻组合会保留隐藏页；切页时丢弃旧页坐标，避免把屏外矩形用于新页面。
-      coachAnchors = coachAnchors.filterKeys { pageForAnchor(it) == coachPage }
+      coachAnchors = coachAnchors.filterKeys { CoachAnchor.pageOf(it) == coachPage }
     }
     val reportCoachAnchor: (Int, Rect) -> Unit = { index, rect ->
-      if (pageForAnchor(index) == coachPage) {
+      if (CoachAnchor.pageOf(index) == coachPage) {
         coachAnchors = if (rect.isEmpty) {
           coachAnchors - index
         } else if (coachAnchors[index] != rect) {

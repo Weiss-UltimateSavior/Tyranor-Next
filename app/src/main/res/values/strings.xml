@@ -904,16 +904,7 @@
     <string name="ethornell_error_userdata">无法创建 Ethornell 私有用户数据目录，请检查可用空间。</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">快速入门</string>
-    <string name="onboarding_welcome_title">欢迎使用 Tyranor Next</string>
-    <string name="onboarding_welcome_body">管理你的视觉小说游戏库，并通过内置引擎、外置 APK 引擎模块或外置模拟器启动游戏。应用不包含商业游戏内容，请先准备好游戏文件。</string>
-    <string name="onboarding_add_title">添加游戏</string>
-    <string name="onboarding_add_body">打开“游戏”页面，点击“添加游戏”并选择游戏文件夹，通过系统文件选择器授权目录后扫描添加。空游戏库也可点击“添加文件夹”。请保留目录的访问权限。</string>
-    <string name="onboarding_engine_title">选择运行环境</string>
-    <string name="onboarding_engine_body">在“引擎”页面查看内置引擎、外置 APK 引擎模块和外置模拟器的状态。需要外置运行环境时，请先安装对应应用；识别到游戏不代表一定兼容。</string>
-    <string name="onboarding_play_title">开始游玩</string>
-    <string name="onboarding_play_body">在“游戏”页面点击游戏卡片，打开操作面板。你可以启动游戏、修改封面，并按游戏支持情况进入单游戏设置和存档管理。</string>
     <string name="onboarding_progress">第 %1$d 页，共 %2$d 页</string>
-    <string name="onboarding_previous">上一步</string>
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_start">开始使用</string>
     <string name="onboarding_skip">暂时跳过</string>

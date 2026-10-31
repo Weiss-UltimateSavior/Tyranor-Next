@@ -904,16 +904,7 @@
     <string name="ethornell_error_userdata">Cannot create private Ethornell user data. Check available storage space.</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">Quick start</string>
-    <string name="onboarding_welcome_title">Welcome to Tyranor Next</string>
-    <string name="onboarding_welcome_body">Manage your visual novel library and launch games with built-in engines, external APK engine modules, or external emulators. The app does not include commercial games. Prepare your game files first.</string>
-    <string name="onboarding_add_title">Add games</string>
-    <string name="onboarding_add_body">Open Games, tap Add game, and choose the game folder option. Grant folder access through the system file picker to scan and add games. In an empty library, you can also tap Add folder. Keep access to the folder enabled.</string>
-    <string name="onboarding_engine_title">Choose a runtime</string>
-    <string name="onboarding_engine_body">Open Engines to check built-in engines, external APK engine modules, and external emulators. Install the required external app when needed. Detecting a game does not guarantee compatibility.</string>
-    <string name="onboarding_play_title">Start playing</string>
-    <string name="onboarding_play_body">Tap a game card in Games to open its action panel. Launch the game, change its cover, or open per-game settings and save management where supported.</string>
     <string name="onboarding_progress">Page %1$d of %2$d</string>
-    <string name="onboarding_previous">Previous</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start">Get started</string>
     <string name="onboarding_skip">Skip for now</string>

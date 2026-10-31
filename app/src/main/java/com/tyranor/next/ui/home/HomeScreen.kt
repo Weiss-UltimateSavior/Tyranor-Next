@@ -57,8 +57,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -83,6 +81,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.onboarding.coachAnchor
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
@@ -244,13 +243,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = glassNavBottomInset())
-                    .then(
-                        if (isActive) {
-                            Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .coachAnchor(isActive, onCoachAnchorChanged),
             )
         }
         return
@@ -259,13 +252,7 @@ fun HomeScreen(
     // ===== 原生 / 分类仓库：按应用设置「首页样式」二选一（Web 已在上面分支返回） =====
     if (homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY) {
         CategoryWarehouseContent(
-            modifier = modifier.then(
-                if (isActive) {
-                    Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
-                } else {
-                    Modifier
-                },
-            ),
+            modifier = modifier.coachAnchor(isActive, onCoachAnchorChanged),
             libraryState = libraryState,
             onGameClick = { selectedGame = it },
             onGameLongClick = { launchGame(it) },
@@ -472,13 +459,7 @@ private fun QuickLaunchSection(
     isActive: Boolean = true,
 ) {
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth().then(
-            if (isActive) {
-                Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
-            } else {
-                Modifier
-            },
-        ),
+        modifier = Modifier.fillMaxWidth().coachAnchor(isActive, onCoachAnchorChanged),
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {

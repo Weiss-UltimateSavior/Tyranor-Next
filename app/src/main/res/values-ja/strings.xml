@@ -904,16 +904,7 @@
     <string name="ethornell_error_userdata">Ethornell 専用ユーザーデータを作成できません。空き容量を確認してください。</string>
     <!-- First-launch quick start -->
     <string name="onboarding_title">クイックスタート</string>
-    <string name="onboarding_welcome_title">Tyranor Next へようこそ</string>
-    <string name="onboarding_welcome_body">ビジュアルノベルのゲームライブラリを管理し、内蔵エンジン、外部 APK エンジンモジュール、外部エミュレーターで起動できます。商用ゲームは同梱されていません。ゲームファイルを別途用意してください。</string>
-    <string name="onboarding_add_title">ゲームを追加</string>
-    <string name="onboarding_add_body">「ゲーム」画面でゲーム追加アイコンをタップし、ゲームフォルダーの項目を選んでください。システムのファイル選択画面でアクセスを許可するとスキャンして追加できます。ライブラリが空の場合はフォルダー追加ボタンも使えます。アクセス権限を維持してください。</string>
-    <string name="onboarding_engine_title">実行環境を選択</string>
-    <string name="onboarding_engine_body">「エンジン」画面で内蔵エンジン、外部 APK エンジンモジュール、外部エミュレーターの状態を確認できます。必要な外部アプリを先にインストールしてください。ゲームの検出は動作の保証ではありません。</string>
-    <string name="onboarding_play_title">ゲームをプレイ</string>
-    <string name="onboarding_play_body">「ゲーム」画面のゲームカードをタップすると操作パネルが開きます。ゲームの起動やカバーの変更、対応するゲームの個別設定やセーブ管理ができます。</string>
     <string name="onboarding_progress">%1$d / %2$d ページ</string>
-    <string name="onboarding_previous">前へ</string>
     <string name="onboarding_next">次へ</string>
     <string name="onboarding_start">利用を開始</string>
     <string name="onboarding_skip">今はスキップ</string>
