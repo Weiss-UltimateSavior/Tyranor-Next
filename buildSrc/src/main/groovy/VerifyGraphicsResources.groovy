@@ -46,6 +46,29 @@ abstract class VerifyGraphicsResources extends DefaultTask {
                     VerifyGraphicsResources.verifyFile(engine, inputs, verified, new File(directory, item.file), item.sha256)
                 }
             }
+            // localPath is repository-root relative. External-only source metadata remains descriptive.
+            (data.sources ?: []).each { source ->
+                boolean retained = source.verification == 'retained'
+                if (retained && (!(source.files instanceof List) || source.files.isEmpty()
+                        || !(source.license instanceof Map) || !source.license.localPath)) {
+                    throw new GradleException('Missing retained graphics sources or license: ' + manifest)
+                }
+                def records = (source.files ?: []) + (source.license?.localPath ? [source.license] : [])
+                records.each { item ->
+                    if (retained && !item.containsKey('localPath')) {
+                        throw new GradleException('Missing retained graphics source localPath: ' + manifest)
+                    }
+                    if (item.containsKey('localPath')) {
+                        if (!(item.localPath instanceof String) || !item.localPath.trim()
+                                || new File(item.localPath).isAbsolute() || item.localPath.startsWith('/')
+                                || item.localPath ==~ /(?i)^[a-z]:.*/ || item.localPath.startsWith('\\')) {
+                            throw new GradleException('Invalid graphics source localPath: ' + item.localPath)
+                        }
+                        VerifyGraphicsResources.verifyFile(engine, inputs, verified,
+                                new File(engine.parentFile, item.localPath), item.sha256)
+                    }
+                }
+            }
             (data.patches ?: []).each { item ->
                 VerifyGraphicsResources.verifyFile(engine, inputs, verified, new File(manifest.parentFile, item.file), item.sha256)
             }

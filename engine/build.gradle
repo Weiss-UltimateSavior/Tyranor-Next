@@ -125,7 +125,8 @@ def verifyGraphicsResources = tasks.register('verifyGraphicsResources', VerifyGr
     descriptorsDirectory.set(layout.projectDirectory.dir('src/main/graphicsfilters'))
     engineDirectory.set(layout.projectDirectory)
     artifacts.from(fileTree('src/main/assets') { include '**/*.glsl', '**/LICENSE*' })
-    artifacts.from(fileTree('patches') { include '**/*.patch', '**/previous-exports.txt' })
+    // Retained GLSL sources must be inputs for verifyFile() membership and cache invalidation.
+    artifacts.from(fileTree('patches') { include '**/*.patch', '**/previous-exports.txt', '**/*.glsl' })
     artifacts.from(file('src/main/jniLibs/arm64-v8a/libsiglus.so'))
 }
 tasks.named('preBuild') { dependsOn verifyGraphicsResources }

@@ -30,7 +30,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "m",
@@ -62,7 +63,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "l",
@@ -94,7 +96,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "soft_s",
@@ -126,7 +129,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "soft_m",
@@ -158,7 +162,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "soft_l",
@@ -190,7 +195,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "deblur",
@@ -222,7 +228,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "lanczos",

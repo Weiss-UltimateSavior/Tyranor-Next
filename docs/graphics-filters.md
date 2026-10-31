@@ -14,7 +14,7 @@
 
 适应缩放按照输入比例计算当前屏幕内可容纳的最大尺寸；固定原生倍率的模型保留训练输出倍率，超出屏幕时由显示层 Resize 等比适配。自定义缩放仅提供一个 0.25–4 倍的等比倍率；旧版横纵不同的配置按较小倍率统一，沿用已有存储和启动协议字段。CAS 额外提供锐度参数。
 
-性能分析器使用顶部或底部居中的单行条：GPU / 帧率与输入尺寸 → 带简称、非 1X 倍率 `(2X)` 和 GPU 用时的滤镜色卡 → 必要时灰色 Resize 色卡 → 最终显示尺寸。仅在滤镜启用且所选内核支持时可选；数据刷新间隔使用预设菜单，默认两秒。颜色来自各滤镜定义，与排序无关；蓝色用于线条重建，绿色用于降噪，橙色用于锐化，灰色 Resize 表示未计时的默认显示处理。未提供可靠 GPU 时间时显示缺失值，不代用 CPU 提交时间。单节点及总 GPU 耗时丢弃超过 1000 ms 的异常数据，不计入均值或清空已有正常样本；汇总超过同一上限时显示缺失值。计时失效事件仍清空对应样本，零值与 1000 ms 边界正常统计。
+性能分析器使用顶部或底部居中的单行条：GPU / 帧率与输入尺寸 → 带简称、非 1X 倍率 `(2X)` 和 GPU 用时的滤镜色卡 → 必要时灰色 Resize 色卡 → 最终显示尺寸。仅在滤镜启用且所选内核支持时可选；数据刷新间隔使用预设菜单，默认两秒。颜色来自各滤镜定义，与排序无关；蓝色用于线条重建，紫色用于 VN-SR，绿色用于降噪，橙色用于锐化，灰色 Resize 表示未计时的默认显示处理。未提供可靠 GPU 时间时显示缺失值，不代用 CPU 提交时间。单节点及总 GPU 耗时丢弃超过 1000 ms 的异常数据，不计入均值或清空已有正常样本；汇总超过同一上限时显示缺失值。计时失效事件仍清空对应样本，零值与 1000 ms 边界正常统计。
 
 ## 引擎接入与支持范围
 
@@ -64,8 +64,7 @@ owner 确认断开显示，再由 engine owner 确认替换私有 producer，最
 
 宿主不恢复密钥、读取 EXE/汉化 `.chs`，不写游戏目录，也不猜默认舞台尺寸。
 尺寸来自配置和原接口契约，不宣称回读库内部 viewport；不重编引擎、不新增舞台 ABI。
-详见 [原库接入说明](../engine/patches/siglus/README.md) 与
-[关闭滤镜路径复核](reviews/PR108-siglus-disabled-review-20261019.md)。本轮没有新的实机验收。
+详见 [原库接入说明](../engine/patches/siglus/README.md)。本轮没有新的实机验收。
 
 ### 官方 Artemis
 
@@ -100,6 +99,7 @@ owner 确认断开显示，再由 engine owner 确认替换私有 producer，最
 
 新增滤镜按来源独立提交：
 
+- VN-SR：独立描述符、资源、来源清单和离线生成器，来源及MIT许可见[说明](vnsr-filters.md)。
 - Anime4K 五项扩展：双边均值 / 中值 / 众数降噪、Thin HQ、Darken HQ。固定来源与文件哈希见 `engine/patches/anime4k-extra-filters.json`；上游 MIT 许可文本随资源保留。
 - CAS：固定 GPUOpen FidelityFX-CAS 来源、GLES 适配、锐度和缩放参数、六个旧预设映射、生成器及 MIT 许可；来源见 `engine/patches/cas-filters.json`。
 
@@ -133,7 +133,7 @@ python tools/generate-cas-filters.py --sources build/filter-sources/cas --check
 
 `prepare-filter-sources.py` 从完整提交读取原始 blob，不受检出换行转换影响；CAS 生成器固定 revision 并验证 blob。普通构建的 `verifyGraphicsResources` 核对各贡献本地 SHA-256、Anime4K 补充资源、CAS 生成资源及许可、Siglus 原库及配置读取器的来源许可。它不下载上游，不替代生成器重建；原 Anime4K GLSL 全部采用字节保留属性。Android CI 执行 app / engine JVM 回归和普通原库哈希校验，不再重建 Siglus Rust 运行库；CAS 的来源生成复核仍按下方命令独立执行。
 
-描述符的 `asset` 必须是完整的相对 `.glsl` 路径（例如 `anime4k/Anime4K_Restore_CNN_S.glsl`），不能依赖目录或扩展名拼接。生成器中的路径规则同时生成到运行时目录，普通构建检查路径、文件存在性与来源记录；贡献所有权目录及其子目录内的未登记 GLSL 阻止构建；所有权由清单的 `assetDirectory` 或已校验 generated GLSL 的父目录确定，按 canonical 路径边界判断。独立引擎着色器仍作为任务输入，但无需登记为滤镜贡献；描述器实际引用的每份资源仍必须有来源记录。Android CI 的 `graphicsResourcesRegression` 直接调用生产校验逻辑，覆盖 11 项目录、描述器与哈希回归。该校验针对已提交滤镜资源及补丁清单，不是全仓文件清点。Siglus 当前安装库由 `siglus-bundled.json` 的 `librarySha256` 核验，文件与固定 TYN 上游提交保持一致；旧补丁库与 ABI 锚点已撤回。
+描述符的 `asset` 必须是完整的相对 `.glsl` 路径（例如 `anime4k/Anime4K_Restore_CNN_S.glsl`），不能依赖目录或扩展名拼接。生成器中的路径规则同时生成到运行时目录，普通构建检查路径、文件存在性与来源记录；贡献所有权目录及其子目录内的未登记 GLSL 阻止构建；所有权由清单的 `assetDirectory` 或已校验 generated GLSL 的父目录确定，按 canonical 路径边界判断。独立引擎着色器仍作为任务输入，但无需登记为滤镜贡献；描述器实际引用的每份资源仍必须有来源记录。Android CI 的 `graphicsResourcesRegression` 直接调用生产校验逻辑，覆盖目录、描述器、来源路径与哈希回归。该校验针对已提交滤镜资源及补丁清单，不是全仓文件清点。Siglus 当前安装库由 `siglus-bundled.json` 的 `librarySha256` 核验，文件与固定 TYN 上游提交保持一致；旧补丁库与 ABI 锚点已撤回。
 
 ## 验证边界
 
@@ -142,4 +142,8 @@ python tools/generate-cas-filters.py --sources build/filter-sources/cas --check
 Siglus 原库、配置解析和专用 owner 线程路线候选在 2026-10-18 获提交者测试通过；该结论不覆盖后续 TextureView 窗口所有权修复，也不套用旧重编库结果。
 本轮只通过 CI 执行项目测试与构建，具体候选 SHA 和运行链接记录在本地交付索引。
 
-完整静态复核见 [新基线与原库接入审查报告](reviews/PR108-keytoml-review-20261018.md)。
+## VN-SR
+
+独立贡献提供 C08/C12/C16 三种原生2X滤镜，采用MIT许可，公开来源与固定revision见清单；名称、倍率和颜色随描述符提供，保留来源及许可证按localPath校验，详见[来源与适配](vnsr-filters.md)。
+
+纹理方向、KR2宿主识别和每贡献的逻辑坐标约定见[方向接口](graphics-filter-coordinates.md)。

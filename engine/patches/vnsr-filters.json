@@ -1,0 +1,53 @@
+{
+  "assetDirectory": "vnsr",
+  "sources": [
+    {
+      "description": "VN-SR 0.1.0 GLES exports. The three retained source shaders and MIT license were byte-verified against the public repository at the pinned revision.",
+      "version": "0.1.0",
+      "license": {
+        "spdx": "MIT",
+        "path": "LICENSE",
+        "sha256": "6d725fbc95d8f6760ac2ab1087f99e4447056dbce7617fcb5c996947581cd20c",
+        "localPath": "engine/src/main/assets/vnsr/LICENSE-MIT"
+      },
+      "files": [
+        {
+          "path": "shaders/gles/vnsr-c08-x2.glsl",
+          "sha256": "bd59396a8d0355ebf9748e9c4c10dbcde6f761bc07d3a74d47ed88edcf42c470",
+          "localPath": "engine/patches/vnsr/sources/vnsr-c08-x2.glsl"
+        },
+        {
+          "path": "shaders/gles/vnsr-c12-x2.glsl",
+          "sha256": "b3927528e96671a5342b736a536382737f0dd3b4f9984964dd8f854a8c94a228",
+          "localPath": "engine/patches/vnsr/sources/vnsr-c12-x2.glsl"
+        },
+        {
+          "path": "shaders/gles/vnsr-c16-x2.glsl",
+          "sha256": "029a71c924ee6e648556dfee18bb60060bf5989aa37764851515e15c60cea4e5",
+          "localPath": "engine/patches/vnsr/sources/vnsr-c16-x2.glsl"
+        }
+      ],
+      "repository": "https://github.com/AAAA1111-Lab/VN-SR",
+      "revision": "014d9145b935b1ead465f795b91b7bdf68176fcf",
+      "verification": "retained"
+    }
+  ],
+  "generated": [
+    {
+      "file": "vnsr/LICENSE-MIT",
+      "sha256": "6d725fbc95d8f6760ac2ab1087f99e4447056dbce7617fcb5c996947581cd20c"
+    },
+    {
+      "file": "vnsr/vnsr-c08-x2.glsl",
+      "sha256": "bd59396a8d0355ebf9748e9c4c10dbcde6f761bc07d3a74d47ed88edcf42c470"
+    },
+    {
+      "file": "vnsr/vnsr-c12-x2.glsl",
+      "sha256": "b3927528e96671a5342b736a536382737f0dd3b4f9984964dd8f854a8c94a228"
+    },
+    {
+      "file": "vnsr/vnsr-c16-x2.glsl",
+      "sha256": "029a71c924ee6e648556dfee18bb60060bf5989aa37764851515e15c60cea4e5"
+    }
+  ]
+}

@@ -8,7 +8,7 @@ import java.util.List;
 public final class GraphicsFilterDefinition {
     public final String id, category, shortName, shaderAsset, defaultScaleMode, migrationTarget;
     public final int categoryOrder, order, color, nativeScale, haloPerPass, maxOutputScale;
-    public final boolean sharpnessAdjustable, outputSized, forceParameters, visible;
+    public final boolean sharpnessAdjustable, outputSized, forceParameters, visible, topLeftCoordinates;
     public final double defaultSharpness;
     public final List<String> scaleModes;
     private final String[] titles, categoryTitles;
@@ -18,6 +18,16 @@ public final class GraphicsFilterDefinition {
             int haloPerPass, boolean sharpnessAdjustable, String[] scaleModes, String defaultScaleMode,
             double defaultSharpness, boolean outputSized, boolean forceParameters, boolean visible,
             String migrationTarget, int maxOutputScale) {
+        this(id, category, categoryOrder, order, titles, categoryTitles, shortName, color, shaderAsset,
+                nativeScale, haloPerPass, sharpnessAdjustable, scaleModes, defaultScaleMode,
+                defaultSharpness, outputSized, forceParameters, visible, migrationTarget, maxOutputScale, false);
+    }
+    GraphicsFilterDefinition(String id, String category, int categoryOrder, int order, String[] titles,
+            String[] categoryTitles, String shortName, int color, String shaderAsset, int nativeScale,
+            int haloPerPass, boolean sharpnessAdjustable, String[] scaleModes, String defaultScaleMode,
+            double defaultSharpness, boolean outputSized, boolean forceParameters, boolean visible,
+            String migrationTarget, int maxOutputScale, boolean topLeftCoordinates) {
+        this.topLeftCoordinates = topLeftCoordinates;
         this.id = id; this.category = category; this.categoryOrder = categoryOrder; this.order = order;
         this.titles = titles.clone(); this.categoryTitles = categoryTitles.clone(); this.shortName = shortName;
         this.color = color; this.shaderAsset = shaderAsset; this.nativeScale = nativeScale;

@@ -70,6 +70,16 @@ public final class GraphicsFilterChainTest {
         assertEquals("v1:", GraphicsFilterChain.fromLegacy("off").encode());
         assertThrows(UnsupportedOperationException.class, () -> paused.steps().clear());
     }
+    @Test public void vnsrNativeReconstructionPrecedesDisplayResampling() {
+        GraphicsFilterPlan plan = GraphicsFilterPlan.create(
+                GraphicsFilterChain.parse("v1:vnsr_c16_x2,lanczos"), 1920, 1080, 1920, 1080);
+        assertEquals(3840, plan.outputWidths[0]);
+        assertEquals(2160, plan.outputHeights[0]);
+        assertEquals(1920, plan.outputWidths[1]);
+        assertEquals(1080, plan.outputHeights[1]);
+        assertNull(GraphicsFilterChain.parse("v1:vnsr_c24_x2"));
+        assertNull(GraphicsFilterChain.parse("v1:vnsr_c32_x2"));
+    }
     @Test public void orderedGeometryRestoresAfterScaleAndSkipsRepeatedIdentityScale() {
         GraphicsFilterPlan plan = GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:lanczos,s,lanczos,!deblur"),
                 1280, 720, 2560, 1600);

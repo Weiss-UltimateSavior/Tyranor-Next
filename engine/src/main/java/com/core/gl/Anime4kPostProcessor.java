@@ -70,7 +70,7 @@ public final class Anime4kPostProcessor {
         final int program;
         final int[] samplerLoc;
         final int[] sizeLoc;
-        final int outputSizeLoc, sharpnessLoc, outputSizedLoc;
+        final int outputSizeLoc, sharpnessLoc, outputSizedLoc, flipYLoc;
 
         PassProgram(MpvHookShader.Pass pass, int program, int[] samplerLoc, int[] sizeLoc, int outputSizeLoc) {
             this.pass = pass;
@@ -78,6 +78,7 @@ public final class Anime4kPostProcessor {
             this.samplerLoc = samplerLoc;
             this.sizeLoc = sizeLoc;
             this.outputSizeLoc = outputSizeLoc;
+            flipYLoc = GLES30.glGetUniformLocation(program, "u_FLIP_Y");
             sharpnessLoc = GLES30.glGetUniformLocation(program, "u_SHARPNESS");
             outputSizedLoc = GLES30.glGetUniformLocation(program, "u_OUTPUT_SIZED");
         }
@@ -190,6 +191,15 @@ public final class Anime4kPostProcessor {
     private final int[] mDimensionQuery = new int[2];
     private AssetManager mAssets;
     private boolean mScaleOnly, mOutputSizedShader;
+    private boolean mTopLeftCoordinates, mInputTopLeft;
+
+    void setInputTopLeft(boolean value) { mInputTopLeft = value; }
+
+    /** u_FLIP_Y flips shader-logical sampling only when the declared row order and the host's physical rows disagree. */
+    static int flipYUniform(boolean declaredTopLeft, boolean inputTopLeft) {
+        return declaredTopLeft != inputTopLeft ? 1 : 0;
+    }
+
     private int mNativeScale = 1, mMaxOutputScale = 1, mHaloPerPass;
     private List<MpvHookShader.Pass> mParsedPasses;
     private int mPresentProgram, mPresentSamplerLoc;
@@ -234,6 +244,7 @@ public final class Anime4kPostProcessor {
         GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(step.id);
         if (definition.shaderAsset == null) return forLanczos(context);
         Anime4kPostProcessor processor = new Anime4kPostProcessor(context, definition.shaderAsset);
+        processor.mTopLeftCoordinates = definition.topLeftCoordinates;
         processor.mNativeScale = definition.nativeScale;
         processor.mMaxOutputScale = definition.maxOutputScale;
         processor.mHaloPerPass = definition.haloPerPass;
@@ -997,6 +1008,7 @@ public final class Anime4kPostProcessor {
             GLES30.glBindFramebuffer(GLES30.GL_DRAW_FRAMEBUFFER, target.fbo[0]);
             GLES30.glViewport(0, 0, target.width, target.height);
             GLES30.glUseProgram(pp.program);
+            if (pp.flipYLoc >= 0) GLES30.glUniform1i(pp.flipYLoc, flipYUniform(mTopLeftCoordinates, mInputTopLeft));
             if (pp.outputSizeLoc >= 0) GLES30.glUniform2f(pp.outputSizeLoc, target.width, target.height);
             if (pp.sharpnessLoc >= 0) GLES30.glUniform1f(pp.sharpnessLoc, (float) mSharpness);
             if (pp.outputSizedLoc >= 0) GLES30.glUniform1i(pp.outputSizedLoc, mOutputSizedShader ? 1 : 0);

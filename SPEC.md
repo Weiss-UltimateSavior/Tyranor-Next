@@ -167,3 +167,7 @@ Ethornell 已接入扫描、设置与内置宿主，但真实游戏存读档及�
 | 发布 | 推导 versionCode 递增、签名、R8、实际 APK 内 Native 字节与来源清单 |
 
 JVM 单测、Node harness、Rust 宿主测试、设备仪器及 release probe 各自覆盖不同层面；不能以一种结果代替其它层面的验收。
+
+## VN-SR 滤镜集
+
+VN-SR 分类提供 C08 / C12 / C16 三种原生2X滤镜，沿用共用滤镜链、内核能力门禁与显示Resize，具体来源及适配边界见[说明](docs/vnsr-filters.md)。

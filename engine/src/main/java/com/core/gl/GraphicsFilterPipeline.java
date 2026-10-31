@@ -13,9 +13,10 @@ public final class GraphicsFilterPipeline {
     private final int[] inputWidths, inputHeights, outputWidths, outputHeights;
     private final boolean[] execute;
     private boolean geometryKnown, planValid, temporaryFailed, failed, hasExecution;
+    private boolean inputTopLeft;
     private int sourceWidth, sourceHeight, boundWidth, boundHeight;
     private int actualWidth, actualHeight, bypassReason;
-    private long targetBytes;
+    private long targetBytes, extraOwnedBytes;
     private ArtemisGraphicsStats stats;
     private boolean gpuProfiling, profilingStarted;
     private GraphicsGpuTimer timer;
@@ -55,6 +56,7 @@ public final class GraphicsFilterPipeline {
     }
 
     public int renderTexture(int texture, int sw, int sh, int screenWidth, int screenHeight) {
+        inputTopLeft = false;
         actualWidth = sw; actualHeight = sh;
         if (texture == 0 || !prepareGeometry(sw, sh, screenWidth, screenHeight)) return texture;
         return run(texture, sw, sh);
@@ -70,6 +72,7 @@ public final class GraphicsFilterPipeline {
             if (!execute[i]) continue;
             Anime4kPostProcessor node = nodes[i];
             int output;
+            node.setInputTopLeft(inputTopLeft);
             if (timer != null) timer.begin(i);
             boolean unexpected = false;
             try { output = node.renderTexture(current, inputWidths[i], inputHeights[i], outputWidths[i], outputHeights[i]); }
@@ -109,6 +112,13 @@ public final class GraphicsFilterPipeline {
 
     public int renderCroppedTexture(int texture, int sw, int sh, float u0, float v0,
                                     float u1, float v1, int bw, int bh) {
+        return renderCroppedTexture(texture, sw, sh, u0, v0, u1, v1, bw, bh, false);
+    }
+
+    /** Input and output retain the engine's physical row order; shader coordinates are adapted per node. */
+    public int renderCroppedTexture(int texture, int sw, int sh, float u0, float v0,
+                                    float u1, float v1, int bw, int bh, boolean topLeft) {
+        inputTopLeft = topLeft;
         actualWidth = sw; actualHeight = sh;
         boolean crop = u0 != 0 || v0 != 0 || u1 != 1 || v1 != 1;
         long extra = crop ? ownedSurfaceBytes(sw, sh) : 0;
@@ -142,7 +152,6 @@ public final class GraphicsFilterPipeline {
         if (stats == null) return;
         stats.nodeFrame(inputWidths, inputHeights, outputWidths, outputHeights, execute);
     }
-    private long extraOwnedBytes;
     private boolean prepareGeometry(int sw, int sh, int bw, int bh) {
         return prepareGeometry(sw, sh, bw, bh, 0);
     }
