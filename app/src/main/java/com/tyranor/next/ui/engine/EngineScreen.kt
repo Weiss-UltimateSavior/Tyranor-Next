@@ -125,13 +125,6 @@ fun EngineScreen(
             MiuixSettingsTheme {
                 val tabModifier = Modifier
                     .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
-                    .then(
-                        if (isActive) {
-                            Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
-                        } else {
-                            Modifier
-                        },
-                    )
                 if (AppThemeColors.isGlass) {
                     // 玻璃外观：Miuix TabRow 不支持指示器描边，改用统一标签栏组件
                     // （亮卡指示器 + 滑动动画 + 0.5dp 发丝描边，见 AGENTS.md「标签栏统一规范」）

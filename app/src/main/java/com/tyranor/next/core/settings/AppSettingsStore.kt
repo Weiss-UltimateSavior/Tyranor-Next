@@ -23,12 +23,25 @@ object AppSettingsStore {
     fun initializeOnboarding(context: Context): OnboardingWriteResult {
         val settings = prefs(context)
         return onboarding(context).initialize {
-            settings.all.isNotEmpty() ||
-                listOf("tyranor_prefs", "yukihub_prefs", "game_scanner").any { name ->
+            hasExistingOnboardingData(
+                appSettingsHasData = settings.all.isNotEmpty(),
+                legacyPreferencesHaveData = listOf("tyranor_prefs", "yukihub_prefs", "game_scanner").any { name ->
                     context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
-                } || context.getDatabasePath("game_library.db").exists()
+                },
+                gameLibraryExists = context.getDatabasePath("game_library.db").exists(),
+            )
         }
     }
+
+    /**
+     * Centralizes the legacy-install evidence used by [initializeOnboarding]. Keeping this
+     * decision pure makes the upgrade/first-install boundary directly regression-testable.
+     */
+    internal fun hasExistingOnboardingData(
+        appSettingsHasData: Boolean,
+        legacyPreferencesHaveData: Boolean,
+        gameLibraryExists: Boolean,
+    ): Boolean = appSettingsHasData || legacyPreferencesHaveData || gameLibraryExists
 
     fun isOnboardingCompleted(context: Context): Boolean =
         onboarding(context).isCompleted()

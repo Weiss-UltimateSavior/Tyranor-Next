@@ -48,6 +48,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.tyranor.next.R
@@ -83,6 +85,23 @@ private val coachSteps = listOf(
     CoachStep(R.string.onboarding_coach_engine_title, R.string.onboarding_coach_engine_body),
     CoachStep(R.string.onboarding_coach_settings_title, R.string.onboarding_coach_settings_body),
 )
+
+private fun coachFallbackRect(step: Int, width: Float, height: Float): Rect {
+    val fractions = when (step) {
+        0 -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
+        1 -> floatArrayOf(0.29f, 0.02f, 0.51f, 0.10f)
+        2 -> floatArrayOf(0.51f, 0.02f, 0.63f, 0.10f)
+        3 -> floatArrayOf(0.63f, 0.02f, 0.76f, 0.10f)
+        4 -> floatArrayOf(0.76f, 0.02f, 0.95f, 0.10f)
+        else -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
+    }
+    return Rect(
+        left = width * fractions[0],
+        top = height * fractions[1],
+        right = width * fractions[2],
+        bottom = height * fractions[3],
+    )
+}
 
 @Composable
 fun OnboardingStorageError(onRetry: () -> Unit) {
@@ -142,26 +161,38 @@ fun OnboardingCoachOverlay(
     var tooltipBounds by remember(safeStep) { mutableStateOf<Rect?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         Canvas(
-            Modifier.fillMaxSize().graphicsLayer {
-                // 让被讲解的真实控件保持清晰，避免整屏灰蒙蒙。
-                compositingStrategy = CompositingStrategy.Offscreen
-            },
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    // 让被讲解的真实控件保持清晰，避免整屏灰蒙蒙。
+                    compositingStrategy = CompositingStrategy.Offscreen
+                }
+                .pointerInput(safeStep, targetBounds, tooltipBounds) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { change ->
+                                val target = targetBounds ?: coachFallbackRect(
+                                    safeStep,
+                                    size.width.toFloat(),
+                                    size.height.toFloat(),
+                                )
+                                // 引导期间只允许操作当前高亮目标或提示气泡，避免误触底部导航、
+                                // 当前页面控件后页面与引导步骤失配。
+                                if (!target.contains(change.position) && tooltipBounds?.contains(change.position) != true) {
+                                    change.consume()
+                                }
+                            }
+                        }
+                    }
+                },
         ) {
             // 优先使用真实控件上报的 root 坐标；首帧尚未测量时才使用保守回退值。
-            val fallbackBounds = when (safeStep) {
-                0 -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
-                1 -> floatArrayOf(0.29f, 0.02f, 0.51f, 0.10f)
-                2 -> floatArrayOf(0.51f, 0.02f, 0.63f, 0.10f)
-                3 -> floatArrayOf(0.63f, 0.02f, 0.76f, 0.10f)
-                4 -> floatArrayOf(0.76f, 0.02f, 0.95f, 0.10f)
-                5 -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
-                6 -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
-                else -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
-            }
-            val targetLeft = targetBounds?.left ?: size.width * fallbackBounds[0]
-            val targetTop = targetBounds?.top ?: size.height * fallbackBounds[1]
-            val targetWidth = targetBounds?.width ?: size.width * (fallbackBounds[2] - fallbackBounds[0])
-            val targetHeight = targetBounds?.height ?: size.height * (fallbackBounds[3] - fallbackBounds[1])
+            val fallbackRect = coachFallbackRect(safeStep, size.width, size.height)
+            val targetRect = targetBounds ?: fallbackRect
+            val targetLeft = targetRect.left
+            val targetTop = targetRect.top
+            val targetWidth = targetRect.width
+            val targetHeight = targetRect.height
             val cornerRadius = minOf(18.dp.toPx(), targetHeight * 0.22f)
             val targetSize = Size(targetWidth, targetHeight)
             drawRect(Color.Black.copy(alpha = 0.46f))

@@ -1,6 +1,9 @@
 package com.tyranor.next.core.settings
 
 import android.content.SharedPreferences
+import android.content.Context
+import android.content.ContextWrapper
+import java.io.File
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -8,6 +11,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class OnboardingPreferencesTest {
+    @Test
+    fun `application initialization uses persisted install evidence`() {
+        val appSettings = MemoryPreferences()
+        val legacySettings = MemoryPreferences(mapOf("legacy_key" to true))
+        val context = OnboardingContext(
+            appSettings = appSettings.preferences,
+            stores = mapOf("tyranor_prefs" to legacySettings.preferences),
+            gameLibrary = File("missing-game-library.db"),
+        )
+        assertEquals(OnboardingWriteResult.SAVED, AppSettingsStore.initializeOnboarding(context))
+        assertTrue(AppSettingsStore.isOnboardingCompleted(context))
+    }
+
+    @Test
+    fun `application initialization predicate requires any persisted evidence`() {
+        assertTrue(AppSettingsStore.hasExistingOnboardingData(true, false, false))
+        assertTrue(AppSettingsStore.hasExistingOnboardingData(false, true, false))
+        assertTrue(AppSettingsStore.hasExistingOnboardingData(false, false, true))
+        assertFalse(AppSettingsStore.hasExistingOnboardingData(false, false, false))
+    }
+
     @Test
     fun `fresh install remains incomplete after initialization and a later restart`() {
         val storage = MemoryPreferences()
@@ -105,6 +129,7 @@ class OnboardingPreferencesTest {
             when (method) {
                 "contains" -> memory.containsKey(args[0])
                 "getBoolean" -> memory[args[0]] ?: args[1]
+                "getAll" -> memory.toMap()
                 "edit" -> editor()
                 else -> error("Unexpected preferences method: $method")
             }
@@ -130,6 +155,21 @@ class OnboardingPreferencesTest {
             }
             return editor
         }
+    }
+
+    private class OnboardingContext(
+        appSettings: SharedPreferences,
+        private val stores: Map<String, SharedPreferences>,
+        private val gameLibrary: File,
+    ) : ContextWrapper(null) {
+        private val appSettings = appSettings
+
+        override fun getApplicationContext(): Context = this
+
+        override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
+            if (name == "app_settings") appSettings else stores[name] ?: MemoryPreferences().preferences
+
+        override fun getDatabasePath(name: String): File = gameLibrary
     }
 
     companion object {
