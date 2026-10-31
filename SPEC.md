@@ -22,6 +22,13 @@
 
 页面统一为顶栏在上、正文在下的上下分离布局（Material 页为 `AppTopBar` + `Column`，Miuix 页为透明 `MiuixScaffold` + `AppTopBar`），不启用顶栏模糊叠层。全屏按键编辑器固定横屏、不设顶栏，其它页面使用公共顶栏、输入框、标签栏与弹窗组件。
 
+### 首次使用引导
+
+- 新安装或清除数据且未检测到既有应用设置、旧版偏好或游戏库时，在真实主界面上显示七步教练层；已有任一既有数据的升级用户直接跳过。
+- 七步依次定位首页、游戏页的添加游戏、搜索、抓取封面、重新扫描、引擎页和设置页；引导期间页面切换由当前步骤驱动，目标控件测量完成前不绘制虚假的引导目标。
+- 「暂时跳过」和最后一步「开始使用」都会写入完成标记；存储写入失败时保留引导并显示重试入口，不因 Activity 重建而绕过引导。
+- 完成引导后才请求通知权限；通知权限请求失败或被拒绝不影响引导完成状态。
+
 ## 3. 游戏库
 
 来源：[EngineScanner](app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt)、[GameLibraryDao](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDao.kt)、`ui/game/`。

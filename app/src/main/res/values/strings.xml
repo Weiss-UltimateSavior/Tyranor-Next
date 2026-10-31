@@ -904,6 +904,32 @@
     <string name="ethornell_error_bootstrap">未找到受支持的 system.arc 与 ipl._bp 启动索引。</string>
     <string name="ethornell_error_font">字体无效或不可读取，请重新导入 TTF、TTC、OTF 或 OTC 字体。</string>
     <string name="ethornell_error_userdata">无法创建 Ethornell 私有用户数据目录，请检查可用空间。</string>
+    <!-- First-launch quick start -->
+    <string name="onboarding_title">快速入门</string>
+    <string name="onboarding_progress">第 %1$d 页，共 %2$d 页</string>
+    <string name="onboarding_next">下一步</string>
+    <string name="onboarding_start">开始使用</string>
+    <string name="onboarding_skip">暂时跳过</string>
+    <string name="onboarding_save_failed">无法保存引导状态，请检查存储空间后重试。</string>
+    <string name="onboarding_retry">重试</string>
+    <string name="onboarding_coach_home_title">先从首页开始</string>
+    <string name="onboarding_coach_home_body">这里可以快速进入常玩游戏，也能查看最近打开的内容。</string>
+    <string name="onboarding_coach_home_web_title">浏览网页首页</string>
+    <string name="onboarding_coach_home_web_body">这里展示你配置的网页首页内容。</string>
+    <string name="onboarding_coach_home_category_title">浏览游戏分类</string>
+    <string name="onboarding_coach_home_category_body">这里可以按分类浏览和启动游戏。</string>
+    <string name="onboarding_coach_games_title">添加你的游戏</string>
+    <string name="onboarding_coach_games_body">点击“添加游戏”选择并保存游戏目录；首次添加后会自动扫描。</string>
+    <string name="onboarding_coach_games_search_title">查找游戏</string>
+    <string name="onboarding_coach_games_search_body">用搜索框按名称筛选游戏库中的内容。</string>
+    <string name="onboarding_coach_games_cover_title">补全封面</string>
+    <string name="onboarding_coach_games_cover_body">点击云朵按钮，为缺少封面的游戏获取封面。</string>
+    <string name="onboarding_coach_games_scan_title">重新扫描目录</string>
+    <string name="onboarding_coach_games_scan_body">点击循环箭头重新检查已经添加的目录，不会新增目录。</string>
+    <string name="onboarding_coach_engine_title">查看运行环境</string>
+    <string name="onboarding_coach_engine_body">在“引擎”页查看内置引擎、外置模块和模拟器。</string>
+    <string name="onboarding_coach_settings_title">随时调整设置</string>
+    <string name="onboarding_coach_settings_body">在“设置”中调整外观、导航、扫描和输入。</string>
     <string name="launch_empty_krkr_sd_mirror">未能读取到 SD 卡游戏资源，请检查目录授权与存储状态后重试</string>
 
     <string name="side_panel_engine_module_title">引擎模块管理</string>

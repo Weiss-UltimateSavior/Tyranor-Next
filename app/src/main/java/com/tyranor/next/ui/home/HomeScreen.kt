@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +55,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -79,6 +81,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.onboarding.coachAnchor
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
@@ -111,6 +114,7 @@ fun HomeScreen(
     onGameDeleted: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
     onQuickLaunchToggle: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
     /** 首页 Tab 是否处于前台（四页常驻：Web 首页据此暂停/恢复，避免后台耗电）。 */
     isActive: Boolean = true,
 ) {
@@ -119,6 +123,11 @@ fun HomeScreen(
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    DisposableEffect(homeStyle) {
+        onDispose {
+            onCoachAnchorChanged(Rect.Zero)
+        }
+    }
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     var webReloadSignal by remember { mutableIntStateOf(0) }
     var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
@@ -231,7 +240,10 @@ fun HomeScreen(
                 isActive = isActive,
                 reloadSignal = webReloadSignal,
                 // 悬浮玻璃底栏不占布局：网页底部留白避免内容被永久遮挡（侧栏布局该函数返回 0）
-                modifier = Modifier.fillMaxSize().padding(bottom = glassNavBottomInset()),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = glassNavBottomInset())
+                    .coachAnchor(isActive, onCoachAnchorChanged),
             )
         }
         return
@@ -240,7 +252,7 @@ fun HomeScreen(
     // ===== 原生 / 分类仓库：按应用设置「首页样式」二选一（Web 已在上面分支返回） =====
     if (homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY) {
         CategoryWarehouseContent(
-            modifier = modifier,
+            modifier = modifier.coachAnchor(isActive, onCoachAnchorChanged),
             libraryState = libraryState,
             onGameClick = { selectedGame = it },
             onGameLongClick = { launchGame(it) },
@@ -252,6 +264,8 @@ fun HomeScreen(
             onGameClick = { selectedGame = it },
             onGameLongClick = { launchGame(it) },
             onRecentRemoved = { removeRecentRecord(it) },
+            onCoachAnchorChanged = onCoachAnchorChanged,
+            isActive = isActive,
         )
     }
 
@@ -350,6 +364,8 @@ private fun NativeHomeContent(
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
+    onCoachAnchorChanged: (Rect) -> Unit,
+    isActive: Boolean,
 ) {
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
@@ -376,6 +392,8 @@ private fun NativeHomeContent(
                             quickLaunch = quickLaunch,
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
+                            onCoachAnchorChanged = onCoachAnchorChanged,
+                            isActive = isActive,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
@@ -389,6 +407,8 @@ private fun NativeHomeContent(
                             quickLaunch = quickLaunch,
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
+                            onCoachAnchorChanged = onCoachAnchorChanged,
+                            isActive = isActive,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text(
@@ -405,6 +425,8 @@ private fun NativeHomeContent(
                         quickLaunch = quickLaunch,
                         onGameClick = onGameClick,
                         onGameLongClick = onGameLongClick,
+                        onCoachAnchorChanged = onCoachAnchorChanged,
+                        isActive = isActive,
                     )
                 }
                 items(
@@ -433,9 +455,11 @@ private fun QuickLaunchSection(
     quickLaunch: List<ScanGame>,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
+    isActive: Boolean = true,
 ) {
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().coachAnchor(isActive, onCoachAnchorChanged),
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {

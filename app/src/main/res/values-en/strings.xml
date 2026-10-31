@@ -904,6 +904,32 @@
     <string name="ethornell_error_bootstrap">No supported system.arc index with an ipl._bp bootstrap was found.</string>
     <string name="ethornell_error_font">Invalid or unreadable font. Import a TTF, TTC, OTF or OTC font again.</string>
     <string name="ethornell_error_userdata">Cannot create private Ethornell user data. Check available storage space.</string>
+    <!-- First-launch quick start -->
+    <string name="onboarding_title">Quick start</string>
+    <string name="onboarding_progress">Page %1$d of %2$d</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Get started</string>
+    <string name="onboarding_skip">Skip for now</string>
+    <string name="onboarding_save_failed">Could not save your progress. Check available storage and try again.</string>
+    <string name="onboarding_retry">Retry</string>
+    <string name="onboarding_coach_home_title">Start from Home</string>
+    <string name="onboarding_coach_home_body">Jump back into favorites here and see what you opened recently.</string>
+    <string name="onboarding_coach_home_web_title">Explore the web home</string>
+    <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
+    <string name="onboarding_coach_home_category_title">Browse game categories</string>
+    <string name="onboarding_coach_home_category_body">Browse and launch games by category here.</string>
+    <string name="onboarding_coach_games_title">Add your games</string>
+    <string name="onboarding_coach_games_body">Use Add game to choose and save a game folder. It is scanned after you add it.</string>
+    <string name="onboarding_coach_games_search_title">Find a game</string>
+    <string name="onboarding_coach_games_search_body">Use search to filter the games in your library by name.</string>
+    <string name="onboarding_coach_games_cover_title">Fill in covers</string>
+    <string name="onboarding_coach_games_cover_body">Tap the cloud button to fetch covers for games that are missing them.</string>
+    <string name="onboarding_coach_games_scan_title">Rescan folders</string>
+    <string name="onboarding_coach_games_scan_body">Tap the circular arrows to recheck folders you already added. It does not add folders.</string>
+    <string name="onboarding_coach_engine_title">Check runtimes</string>
+    <string name="onboarding_coach_engine_body">Check built-in engines, external modules, and emulators here.</string>
+    <string name="onboarding_coach_settings_title">Adjust settings anytime</string>
+    <string name="onboarding_coach_settings_body">Adjust appearance, navigation, scanning, and input from Settings.</string>
     <string name="launch_empty_krkr_sd_mirror">No SD-card game resources could be read. Check directory access and storage, then retry.</string>
 
     <string name="side_panel_engine_module_title">Engine modules</string>

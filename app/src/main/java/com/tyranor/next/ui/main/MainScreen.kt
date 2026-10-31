@@ -39,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -113,6 +114,7 @@ import com.tyranor.next.ui.home.HomeScreen
 import com.tyranor.next.ui.runtime.EngineModuleManagementActivity
 import com.tyranor.next.ui.settings.InputSettingsActivity
 import com.tyranor.next.ui.settings.SettingsScreen
+import com.tyranor.next.ui.onboarding.CoachAnchor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -134,9 +136,19 @@ private val tabItems = listOf(
 )
 
 @Composable
-fun MainScreen(modifier: Modifier = Modifier) {
+fun MainScreen(
+  modifier: Modifier = Modifier,
+  coachPage: Int? = null,
+  onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
+) {
   val context = LocalContext.current
   var selectedIndex by rememberSaveable { mutableStateOf(0) }
+  LaunchedEffect(coachPage) {
+    if (coachPage != null) selectedIndex = coachPage.coerceIn(tabItems.indices)
+  }
+  // 引导步骤切页时直接使用目标页作为本帧转场目标，不等待 LaunchedEffect
+  // 下一帧同步 selectedIndex，避免提示层与页面动画错开一帧。
+  val displayedSelectedIndex = coachPage?.coerceIn(tabItems.indices) ?: selectedIndex
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val interactScope = rememberCoroutineScope()
@@ -321,7 +333,10 @@ fun MainScreen(modifier: Modifier = Modifier) {
   val enhancedBarActive = enhanceLiquidGlass && liquidBottomActive && bottomBackdropActive &&
     GlassShaderSupport.isRuntimeShaderUsable
 
-  val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
+  val pageTransition = updateTransition(
+    targetState = displayedSelectedIndex,
+    label = "mainTabTransition",
+  )
   fun selectPage(index: Int) {
     // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
     if (index !in tabItems.indices) return
@@ -386,7 +401,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // currentState/targetState 只在转场起止变化（currentState 保持起点直到转场结束），不逐帧重组。
     val webHomeInvolved = bottomBackdropActive &&
       homeStyle == AppSettingsStore.HOME_STYLE_WEB &&
-      (selectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
+      (displayedSelectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
     // 底栏采样源：Web 首页参与绘制时为仅背景层，其余为内容层（两者同一坐标空间，可直接替换）。
     val navBackdrop = if (webHomeInvolved) backgroundBackdrop else backdrop
     // 仅背景层：默认外观绘制页面根背景（原直接挂在根 Box 上的 DefaultPageBackgroundLayer）；
@@ -435,7 +450,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       // 平板/大窗口：主导航移到侧边，按外观风格取该主题「默认导航栏」形态
       Row(Modifier.fillMaxSize()) {
         AppNavigationRail(
-          selectedIndex = selectedIndex,
+          selectedIndex = displayedSelectedIndex,
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
           backdrop = if (railBackdropActive) railBackdrop else null,
@@ -443,24 +458,28 @@ fun MainScreen(modifier: Modifier = Modifier) {
         )
         Column(Modifier.weight(1f).fillMaxHeight().then(contentLayerModifier)) {
           MainTabPages(
-            selectedIndex = selectedIndex,
+            selectedIndex = displayedSelectedIndex,
             pageTransition = pageTransition,
+            onboarding = coachPage != null,
             libraryState = libraryState,
             libraryViewModel = libraryViewModel,
+            onCoachAnchorChanged = onCoachAnchorChanged,
           )
         }
       }
     } else {
       Column(Modifier.fillMaxSize().then(contentLayerModifier)) {
         MainTabPages(
-          selectedIndex = selectedIndex,
+          selectedIndex = displayedSelectedIndex,
           pageTransition = pageTransition,
+          onboarding = coachPage != null,
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
+            onCoachAnchorChanged = onCoachAnchorChanged,
         )
         if (!liquidGlass && !floatingDefaultNav && !floatingButtonActive) {
           DefaultBottomNavigationBar(
-            selectedIndex = selectedIndex,
+            selectedIndex = displayedSelectedIndex,
             tabLabels = tabLabels,
             unselectedColor = unselectedColor,
             onSelectPage = { selectPage(it) },
@@ -479,7 +498,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
         EnhancedLiquidGlassNavigationBar(
           backdrop = navBackdrop,
           // 权威选中值先夹取到合法槽位，避免越界值把透镜放到栏外（组件内部也会再夹一次）
-          selectedIndex = selectedIndex.coerceIn(liquidGlassTabItems.indices),
+          selectedIndex = displayedSelectedIndex.coerceIn(liquidGlassTabItems.indices),
           colors = rememberGlassBottomBarColors(unselectedColor),
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
@@ -491,7 +510,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       } else {
         LiquidGlassNavigationBar(
           backdrop = navBackdrop,
-          selectedIndex = selectedIndex,
+          selectedIndex = displayedSelectedIndex,
           primaryColor = MaterialTheme.colorScheme.primary,
           unselectedColor = unselectedColor,
           items = liquidGlassTabItems,
@@ -542,7 +561,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           .padding(horizontal = 12.dp, vertical = 12.dp),
       ) {
         DefaultBottomNavigationBar(
-          selectedIndex = selectedIndex,
+          selectedIndex = displayedSelectedIndex,
           tabLabels = tabLabels,
           unselectedColor = unselectedColor,
           onSelectPage = { selectPage(it) },
@@ -576,7 +595,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       FloatingGlassNavButton(
         backdrop = if (floatingButtonBackdrop) navBackdrop else null,
         items = liquidGlassTabItems,
-        selectedIndex = selectedIndex.coerceIn(liquidGlassTabItems.indices),
+        selectedIndex = displayedSelectedIndex.coerceIn(liquidGlassTabItems.indices),
         primaryColor = MaterialTheme.colorScheme.primary,
         onItemClick = { selectPage(it) },
         // 组件在安全区内自行摆放（长按可拖动、位置持久化），宿主只负责占满可用区域
@@ -607,8 +626,10 @@ fun MainScreen(modifier: Modifier = Modifier) {
 private fun ColumnScope.MainTabPages(
   selectedIndex: Int,
   pageTransition: Transition<Int>,
+  onboarding: Boolean,
   libraryState: MainLibraryUiState,
   libraryViewModel: MainLibraryViewModel,
+  onCoachAnchorChanged: (Int, Rect) -> Unit,
 ) {
     Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
       WithoutPressIndication {
@@ -616,7 +637,7 @@ private fun ColumnScope.MainTabPages(
         // 中间 Tab 的 alpha 在任意状态均为 0，因此跨页时只显示起点和终点的直接水平动画。
         tabItems.indices.forEach { page ->
           val pageOffset by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = 200) },
+            transitionSpec = { tween(durationMillis = if (onboarding) 0 else 200) },
             label = "mainTabOffset$page",
           ) { activePage ->
             when {
@@ -626,10 +647,11 @@ private fun ColumnScope.MainTabPages(
             }
           }
           val pageAlpha by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = 160) },
+            transitionSpec = { tween(durationMillis = if (onboarding) 0 else 160) },
             label = "mainTabAlpha$page",
           ) { activePage -> if (page == activePage) 1f else 0f }
-          val pageInteractive = page == selectedIndex && !pageTransition.isRunning
+          val pageActive = page == selectedIndex && !pageTransition.isRunning
+          val pageInteractive = pageActive
           Box(
             Modifier
               .fillMaxSize()
@@ -662,7 +684,8 @@ private fun ColumnScope.MainTabPages(
                 onGameDeleted = libraryViewModel::deleteGame,
                 onRecentRemoved = libraryViewModel::removeRecentGame,
                 onQuickLaunchToggle = libraryViewModel::toggleQuickLaunch,
-                isActive = page == selectedIndex,
+                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.HOME, it) },
+                isActive = pageActive,
               )
               1 -> GameScreen(
                 modifier = Modifier.fillMaxSize(),
@@ -674,9 +697,19 @@ private fun ColumnScope.MainTabPages(
                 onScrapeEventShown = libraryViewModel::acknowledgeScrapeEvent,
                 onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
                 onAddManualGame = libraryViewModel::addManualGame,
+                onCoachAnchorChanged = onCoachAnchorChanged,
+                isActive = pageActive,
               )
-              2 -> EngineScreen(Modifier.fillMaxSize())
-              3 -> SettingsScreen(Modifier.fillMaxSize())
+              2 -> EngineScreen(
+                Modifier.fillMaxSize(),
+                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
+                isActive = pageActive,
+              )
+              3 -> SettingsScreen(
+                Modifier.fillMaxSize(),
+                onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.SETTINGS, it) },
+                isActive = pageActive,
+              )
             }
           }
         }

@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -146,6 +147,8 @@ import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.onboarding.CoachAnchor
+import com.tyranor.next.ui.onboarding.coachAnchor
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
@@ -184,6 +187,8 @@ fun GameScreen(
     onScrapeEventShown: (Long) -> Unit,
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
+    isActive: Boolean = true,
 ) {
     val context = LocalContext.current
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
@@ -297,7 +302,9 @@ fun GameScreen(
         dbSearchQuery = libraryState.searchQuery,
         dbSearchResults = libraryState.searchResults,
         onAddManualGame = onAddManualGame,
-                onSearchQueryChanged = onSearchQueryChanged,
+        onCoachAnchorChanged = onCoachAnchorChanged,
+        onSearchQueryChanged = onSearchQueryChanged,
+        isActive = isActive,
     )
 
     // ===== 点击游戏卡片的底部抽屉栏 =====
@@ -473,6 +480,8 @@ private fun GameLibraryContent(
     dbSearchResults: List<ScanGame>?,
     onSearchQueryChanged: (String) -> Unit,
     onAddManualGame: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Int, Rect) -> Unit,
+    isActive: Boolean,
 ) {
     var showSearch by rememberSaveable { mutableStateOf(false) }
     // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
@@ -511,18 +520,35 @@ private fun GameLibraryContent(
                 }
             },
             trailing = {
-                TopBarIcon(
-                    painterResource(R.drawable.ic_game_add),
-                    stringResource(R.string.game_add_content_description),
-                    MaterialTheme.colorScheme.primary,
-                ) { addGameStep = AddGameStep.CHOICE }
-                TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
-                    showSearch = !showSearch
-                    if (!showSearch) query = ""
+                Box(
+                    Modifier.coachAnchor(isActive) {
+                        onCoachAnchorChanged(CoachAnchor.GAME_ADD, it)
+                    },
+                ) {
+                    TopBarIcon(
+                        painterResource(R.drawable.ic_game_add),
+                        stringResource(R.string.game_add_content_description),
+                        MaterialTheme.colorScheme.primary,
+                    ) { addGameStep = AddGameStep.CHOICE }
+                }
+                Box(
+                    Modifier.coachAnchor(isActive) {
+                        onCoachAnchorChanged(CoachAnchor.GAME_SEARCH, it)
+                    },
+                ) {
+                    TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
+                        showSearch = !showSearch
+                        if (!showSearch) query = ""
+                    }
                 }
                 if (scrapingCovers) {
                     Box(
-                        modifier = Modifier.padding(start = 2.dp).size(34.dp),
+                        modifier = Modifier
+                            .padding(start = 2.dp)
+                            .size(34.dp)
+                            .coachAnchor(isActive) {
+                                onCoachAnchorChanged(CoachAnchor.GAME_COVER, it)
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         CircularProgressIndicator(
@@ -534,12 +560,24 @@ private fun GameLibraryContent(
                         )
                     }
                 } else {
-                    TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
-                        syncMissingCovers()
+                    Box(
+                        Modifier.coachAnchor(isActive) {
+                            onCoachAnchorChanged(CoachAnchor.GAME_COVER, it)
+                        },
+                    ) {
+                        TopBarIcon(painterResource(R.drawable.ic_game_cover), stringResource(R.string.game_scrape_covers_content_description), MaterialTheme.colorScheme.primary) {
+                            syncMissingCovers()
+                        }
                     }
                 }
-                TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
-                    refreshGames()
+                Box(
+                    Modifier.coachAnchor(isActive) {
+                        onCoachAnchorChanged(CoachAnchor.GAME_SCAN, it)
+                    },
+                ) {
+                    TopBarIcon(painterResource(R.drawable.ic_game_scan), stringResource(R.string.game_scan_content_description), MaterialTheme.colorScheme.primary) {
+                        refreshGames()
+                    }
                 }
             },
         )
