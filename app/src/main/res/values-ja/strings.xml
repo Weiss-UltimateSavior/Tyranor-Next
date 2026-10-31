@@ -921,6 +921,10 @@
     <string name="onboarding_retry">再試行</string>
     <string name="onboarding_coach_home_title">まずはホームから</string>
     <string name="onboarding_coach_home_body">ここからお気に入りを起動し、最近開いたゲームも確認できます。</string>
+    <string name="onboarding_coach_home_web_title">ウェブホームを見る</string>
+    <string name="onboarding_coach_home_web_body">設定したウェブホームをここに表示します。</string>
+    <string name="onboarding_coach_home_category_title">ゲームを分類で見る</string>
+    <string name="onboarding_coach_home_category_body">ここでゲームを分類ごとに閲覧して起動できます。</string>
     <string name="onboarding_coach_games_title">ゲームを追加</string>
     <string name="onboarding_coach_games_body">「ゲームを追加」でゲームフォルダーを選択して保存します。追加後に自動でスキャンされます。</string>
     <string name="onboarding_coach_games_search_title">ゲームを探す</string>

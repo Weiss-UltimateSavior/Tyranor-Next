@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import com.tyranor.next.R
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
@@ -112,6 +113,7 @@ fun OnboardingStorageError(onRetry: () -> Unit) {
 @Composable
 fun OnboardingCoachOverlay(
     step: Int,
+    homeStyle: String = AppSettingsStore.DEFAULT_HOME_STYLE,
     saving: Boolean,
     saveFailed: Boolean,
     targetBounds: Rect?,
@@ -119,6 +121,18 @@ fun OnboardingCoachOverlay(
     onSkip: () -> Unit,
 ) {
     val safeStep = step.coerceIn(coachSteps.indices)
+    val titleRes = when {
+        safeStep != CoachAnchor.HOME -> coachSteps[safeStep].title
+        homeStyle == AppSettingsStore.HOME_STYLE_WEB -> R.string.onboarding_coach_home_web_title
+        homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY -> R.string.onboarding_coach_home_category_title
+        else -> coachSteps[safeStep].title
+    }
+    val bodyRes = when {
+        safeStep != CoachAnchor.HOME -> coachSteps[safeStep].body
+        homeStyle == AppSettingsStore.HOME_STYLE_WEB -> R.string.onboarding_coach_home_web_body
+        homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY -> R.string.onboarding_coach_home_category_body
+        else -> coachSteps[safeStep].body
+    }
     val contentDescription = stringResource(
         R.string.onboarding_progress,
         safeStep + 1,
@@ -210,14 +224,14 @@ fun OnboardingCoachOverlay(
             ) {
                 Box(Modifier.size(9.dp).background(primary, CircleShape))
                 Text(
-                    stringResource(coachSteps[safeStep].title),
+                    stringResource(titleRes),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = TextColor,
                 )
             }
             Text(
-                stringResource(coachSteps[safeStep].body),
+                stringResource(bodyRes),
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextColor,
             )

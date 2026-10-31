@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -172,6 +173,14 @@ fun EngineScreen(
                 key = { it.name },
                 contentType = { "engine" },
             ) { engine ->
+                val isCoachTarget = engine == tabEngines.firstOrNull()
+                if (isCoachTarget) {
+                    DisposableEffect(engine) {
+                        onDispose {
+                            onCoachAnchorChanged(Rect.Zero)
+                        }
+                    }
+                }
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
                 val emulator = ExternalEmulatorRegistry.forEngine(engine)
                 val installed = when {

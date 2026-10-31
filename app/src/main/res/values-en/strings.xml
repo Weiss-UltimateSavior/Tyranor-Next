@@ -921,6 +921,10 @@
     <string name="onboarding_retry">Retry</string>
     <string name="onboarding_coach_home_title">Start from Home</string>
     <string name="onboarding_coach_home_body">Jump back into favorites here and see what you opened recently.</string>
+    <string name="onboarding_coach_home_web_title">Explore the web home</string>
+    <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
+    <string name="onboarding_coach_home_category_title">Browse game categories</string>
+    <string name="onboarding_coach_home_category_body">Browse and launch games by category here.</string>
     <string name="onboarding_coach_games_title">Add your games</string>
     <string name="onboarding_coach_games_body">Use Add game to choose and save a game folder. It is scanned after you add it.</string>
     <string name="onboarding_coach_games_search_title">Find a game</string>

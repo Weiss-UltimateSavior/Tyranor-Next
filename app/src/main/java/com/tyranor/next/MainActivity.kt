@@ -12,6 +12,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,6 +92,7 @@ class MainActivity : ComponentActivity() {
     }
     var completed by remember { mutableStateOf(AppSettingsStore.isOnboardingCompleted(this)) }
     var coachStep by rememberSaveable { mutableStateOf(0) }
+    val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
     var saving by remember { mutableStateOf(false) }
     var saveFailed by remember { mutableStateOf(false) }
     var coachAnchors by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
@@ -112,8 +114,14 @@ class MainActivity : ComponentActivity() {
       coachAnchors = coachAnchors.filterKeys { pageForAnchor(it) == coachPage }
     }
     val reportCoachAnchor: (Int, Rect) -> Unit = { index, rect ->
-      if (pageForAnchor(index) == coachPage && coachAnchors[index] != rect) {
-        coachAnchors = coachAnchors + (index to rect)
+      if (pageForAnchor(index) == coachPage) {
+        coachAnchors = if (rect.isEmpty) {
+          coachAnchors - index
+        } else if (coachAnchors[index] != rect) {
+          coachAnchors + (index to rect)
+        } else {
+          coachAnchors
+        }
       }
     }
 
@@ -138,6 +146,7 @@ class MainActivity : ComponentActivity() {
         )
         OnboardingCoachOverlay(
           step = coachStep,
+          homeStyle = homeStyle,
           saving = saving,
           saveFailed = saveFailed,
           targetBounds = coachAnchors[coachStep],

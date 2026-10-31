@@ -921,6 +921,10 @@
     <string name="onboarding_retry">重试</string>
     <string name="onboarding_coach_home_title">先从首页开始</string>
     <string name="onboarding_coach_home_body">这里可以快速进入常玩游戏，也能查看最近打开的内容。</string>
+    <string name="onboarding_coach_home_web_title">浏览网页首页</string>
+    <string name="onboarding_coach_home_web_body">这里展示你配置的网页首页内容。</string>
+    <string name="onboarding_coach_home_category_title">浏览游戏分类</string>
+    <string name="onboarding_coach_home_category_body">这里可以按分类浏览和启动游戏。</string>
     <string name="onboarding_coach_games_title">添加你的游戏</string>
     <string name="onboarding_coach_games_body">点击“添加游戏”选择并保存游戏目录；首次添加后会自动扫描。</string>
     <string name="onboarding_coach_games_search_title">查找游戏</string>

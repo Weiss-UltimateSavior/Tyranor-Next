@@ -35,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -123,6 +124,11 @@ fun HomeScreen(
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    DisposableEffect(homeStyle) {
+        onDispose {
+            onCoachAnchorChanged(Rect.Zero)
+        }
+    }
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     var webReloadSignal by remember { mutableIntStateOf(0) }
     var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
@@ -235,7 +241,16 @@ fun HomeScreen(
                 isActive = isActive,
                 reloadSignal = webReloadSignal,
                 // 悬浮玻璃底栏不占布局：网页底部留白避免内容被永久遮挡（侧栏布局该函数返回 0）
-                modifier = Modifier.fillMaxSize().padding(bottom = glassNavBottomInset()),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = glassNavBottomInset())
+                    .then(
+                        if (isActive) {
+                            Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
         }
         return
@@ -244,7 +259,13 @@ fun HomeScreen(
     // ===== 原生 / 分类仓库：按应用设置「首页样式」二选一（Web 已在上面分支返回） =====
     if (homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY) {
         CategoryWarehouseContent(
-            modifier = modifier,
+            modifier = modifier.then(
+                if (isActive) {
+                    Modifier.onGloballyPositioned { onCoachAnchorChanged(it.boundsInRoot()) }
+                } else {
+                    Modifier
+                },
+            ),
             libraryState = libraryState,
             onGameClick = { selectedGame = it },
             onGameLongClick = { launchGame(it) },
