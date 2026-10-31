@@ -38,6 +38,7 @@
 - 游戏页提供搜索、排序、卡片样式、改名、封面操作、启动文件选择及适用的单游戏设置/存档操作；可清理已不存在的游戏记录。
 - 快捷启动最多 **3** 项；最近游戏最多读取 **20** 项。桌面快捷方式经独立入口回到统一启动链。
 - PC 游戏由用户选择目录和启动 exe 手动添加；安卓游戏从已安装可启动应用选择，以 `androidapp://<包名>` 标识，卸载后启动返回缺失结果。
+- 第三方 APK 运行时模块游戏只能经扫描入库：模块须先安装并在「引擎模块管理」启用，且声明扫描特征；主 App 不提供该类型的手动添加、模块选择、目录导入或拖入入口。
 
 ## 4. 引擎识别与运行路线
 
@@ -58,11 +59,12 @@
 | RPG Maker RGSS | XP/VX/VX Ace 资源或 mkxp-z 模块选择 | 外置 RPGM APK 模块 |
 | Ren'Py | `.rpa`、`.rpy/.rpyc` 等组合 | 外置 Ren'Py APK；自动或指定 8.5 / 7.7.1 |
 | Ruffle / Flash | 顶层 `.swf`；根 `index.html/index.htm` + 唯一 SWF 的叶子目录 | 外置 Ruffle APK；一 SWF 一条记录 |
+| 第三方运行时模块 | 已安装的 `com.tyranor.runtime.*` APK + 模块 `res/raw` 扫描描述 | 显式组件交棒游戏文件夹，模块自行运行 |
 | YU-RIS / CatSystem2 | YPF/DLL/配置或 INT/CST/HG3 等组合 | 外置 Winlator |
 | PC / 安卓游戏 | 手动添加目录+exe / 应用包名 | 外置 Winlator / 直接启动应用 |
 | PSP / Nintendo Switch | `.pbp/.cso/.iso/.chd` / `.nsp/.xci/.nca/.nro` | 外置 PPSSPP（标准/黄金）/ Eden，一 ROM 一条记录 |
 
-外置模块与模拟器必须先安装；主 App 显示安装状态及获取入口。启动前检查目标、权限和目录，失败由类型化结果映射 UI 文案。设置中的“自动”按当前运行时规则解析，不承诺回退能修复不受支持的脚本或资源。
+JoiPlay 外置模块与模拟器必须先安装；主 App 显示安装状态及获取入口。第三方 APK 运行时模块同样由用户自行安装，但主 App 不提供下载/安装器，只在「引擎模块管理」中列出并管理启用状态。启动前检查目标、权限和目录，失败由类型化结果映射 UI 文案。设置中的“自动”按当前运行时规则解析，不承诺回退能修复不受支持的脚本或资源。
 
 外置模拟器跳转使用显式组件启动目标应用：YU-RIS / CatSystem2 / PC 通过 Winlator 的 `dir_path` 与 `exe_path` 传递游戏目录和主程序；PSP / Nintendo Switch 则传递 ROM URI 及读取授权。具体协议见 [外置模拟器接入说明](docs/外置主机模拟器跳转接入方案.md)。
 
@@ -75,6 +77,19 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - 设置：全局与单游戏覆盖，默认 `opengl / high / showall / on / streaming / 0`（0 = 不自动关闭）；允许值分别为 auto/opengl/vulkan、low/medium/high/best、exactfit/noborder/noscale/showall、on/off、streaming/delayed/blocking、0/5/10/15/30/45/60 分钟。
 - `configuration.json`：游戏目录位于主外部存储根的子目录时，插件优先读取 `<游戏目录>/configuration.json`；其它情况（含存储根、可移动存储）读取 `/storage/emulated/0/JoiPlay/games/<id>/configuration.json`。文件存在时覆盖 intent settings；主 App 仅在文件已存在且为合法 JSON 对象时同步受管键，不创建/删除，跳过共享多 SWF 目录与存储根，原子写并限制 1 MiB。
 - 无统一存档管理，插件自管运行时/存档；不提供虚拟按键重映射；插件固定横屏。设备/插件运行验证尚未执行。
+
+### 第三方 APK 运行时模块
+
+来源：`core/engine/runtime/`、`ui/runtime/`。
+
+- **发现**：Manifest `<queries>` 声明 `com.tyranor.runtime.action.LAUNCH`（含 `CATEGORY_DEFAULT`），主 App 按 action 查询可见应用并只保留包名前缀 `com.tyranor.runtime.`；不申请 `QUERY_ALL_PACKAGES`，也不校验签名、版本或包内容。一个包只取一个入口 Activity：优先带 `com.tyranor.runtime.MANIFEST` meta-data 的，否则按 Activity 名排序取第一个。
+- **启用默认关**：发现结果只用于侧边栏「妙妙工具 → 引擎模块管理」列表与模块名展示，不写入扫描索引或游戏库；开关默认关闭。游戏库卡片对这类游戏统一显示「Plugin」，不显示模块名。启用只把包名写入 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），不触发扫描、不立即写库。同包名更新/重装保留开关；包名变更视为新模块，默认关闭。
+- **扫描描述**：模块可选提供 `res/raw/tyranor_runtime.json`，声明 `extensions` / `markers` / `match`（`any` 或 `all`）；这是自动扫描的唯一特征来源，主 App 不根据包名、应用名、图标或内置第三方特征库猜测，也不执行模块代码；扩展名只匹配目录直接子文件，marker 支持直接子项与单层路径（如 `data/*.pak`），不递归。描述缺失、读取/解析失败或没有有效模式时只关闭该模块的自动扫描能力，模块仍可被发现、启用和启动。
+- **扫描接入**：扫描开始时快照「已发现 + 已启用 + 有扫描描述」的模块；仅当内置识别结果为 `UNKNOWN` 或 `WEB_OTHER` 时才尝试模块匹配，KRKR / ONS / RPGM / Ren'Py 等强特征结果不被覆盖。多模块命中按「`all` 优先于 `any` → marker 数量多 → 包名」选择；重扫对同一 URI 优先保留旧绑定，扫描深度沿用现有上限。
+- **唯一入库入口**：扫描是第三方运行时游戏唯一入库入口；管理页、添加游戏对话框和游戏页均不提供手动添加、模块选择、目录导入或拖入，也不提供手动绑定/重绑或模块缺失修复页。
+- **绑定与降级**：`ScanGame.runtimeModulePackage`（Room `games.runtime_module_package`，v3）记录「游戏 → 模块包名」；模块卸载、禁用、入口不再可发现或包名为空时，绑定游戏降级为 `EngineType.UNKNOWN`，但保留最后已知包名（用于重扫合并，不作为启动依据），保留标题、封面与最近时间。发现查询失败不降级。重新安装/启用后重新扫描可恢复，不支持自动或手动改绑。
+- **启动交棒**：`EngineType.RUNTIME_MODULE` 由 `RuntimeModuleLauncher` 以显式 `ComponentName` 启动，只传当前游戏文件夹绝对路径、标题与协议版本；不传 `game` / `settings` JSON，也不附加 URI 读写授权。`Dispatched` 只表示 Intent 已交棒，不保证模块进入游戏或未崩溃；模块缺失、未启用、入口缺失、路径无法解析、安全拒绝与其它异常返回类型化结果。模块缺失或未启用（存在绑定包名时）会触发该游戏降级；路径无法解析时不请求「所有文件访问」，存储权限由模块自行负责。
+- **能力边界**：`RUNTIME_MODULE` 不进入 `EngineLauncher.supportedEngines`，不出现在引擎页引擎列表；不接管存档（`GameSaveManager` 无统一接口）、虚拟按键/手柄重映射、引擎或单游戏设置。运行时、设置与存档均由模块自身管理。管理页的刷新只重新发现模块，不触发游戏库扫描；禁用仍有绑定游戏的模块前先确认，确认后降级。
 
 ## 5. 设置、输入与图形
 
@@ -113,7 +128,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - **镜像写入 copy-up**：非只读打开（含截断/追加/仅写）对已索引占位先复制完整源内容到本地（上限 64 MiB、临时文件 + 原子发布 + fsync，失败回滚占位并不留所有权标记），再提供可写本地描述符；保护范围限于尚未交付可写描述符的 copy-up 准备/发布事务：失败不发布半成品或新所有权。可写描述符已交付后，合法截断及随后写入按本地语义执行，崩溃或空间不足可能留下空/部分覆写与标记，不自动用源内容覆盖这些本地结果。追加日志类文件同样先复制（其源通常为引擎自建文件，代价小）。
 - **SAF 镜像备份取舍**：`<数据根>/games/` 同时包含可重建占位树、真实存档/本地覆写文件及对应控制标记，控制标记随同一镜像根参加备份与清理。恢复仅含 exclude 的默认备份范围，保留 root、files、sharedpref、database、external 等域的默认候选；不添加只覆盖 games 的单独 include，以免把应用设置、游戏库 prefs 镜像及其他引擎存档排除。鉴权与 Room 数据库排除项不变，索引仍位于 noBackupFilesDir。系统备份仍受容量、设备与传输策略限制，不保证保存或恢复这些存档（`bmgr` 实测待办），用户仍应主动导出 ZIP。
 - ZIP 导入检查路径安全，最多 **20,000 个条目（含目录）**、展开内容 **1 GiB**；MV/MZ 可剥除最多 **3 层**单目录包装。适用的会话/操作门禁阻止运行中冲突。
-- **YU-RIS 为外置跳转中的存档例外**：统一管理其游戏根 `save/`。PSP、Switch、CatSystem2、PC、安卓游戏、Ren'Py、RPG Maker RGSS、Ruffle、VN 与 WebOther 当前不提供该统一文件存档接口；外置启动不意味着所有引擎都不能管理存档。
+- **YU-RIS 为外置跳转中的存档例外**：统一管理其游戏根 `save/`。PSP、Switch、CatSystem2、PC、安卓游戏、Ren'Py、RPG Maker RGSS、Ruffle、第三方运行时模块、VN 与 WebOther 当前不提供该统一文件存档接口；外置启动不意味着所有引擎都不能管理存档。
 - MV/MZ 标准格式与 Tyranor 格式仅作文件名映射，不重新编码内容；MV 支持哈希名及历史键名，MZ 使用 `fileN.bin` 等 ASCII 键名。
 - 启动时发现适用标准存档可询问转化，已有目标不覆盖，原件留在 `original/`。
 - MV/MZ 存档互通默认关闭，支持全局/单游戏设置；开启后启动前与回前台进行双向同步，并等待引擎会话结束。按槽位比较时间与哈希；删除副本隔离到 `deleted/`，同步清单损坏时中止文件修改。
@@ -150,6 +165,7 @@ Ethornell 已接入扫描、设置与内置宿主，但真实游戏存读档及�
 | Winlator 运行模式 | 跟随全局/跟随容器/自定义三分支、`null / "" / 值` 迁移推断、只覆盖容器名时的 ID 清除、模式键分区往返 |
 | Winlator 图形加速 | GL/GDI 第一配置槽映射、旧 WineD3D 保留容器渲染器、Box64 合并、全局/单游戏继承与空值、备份往返、save 开关及 GDI 游戏实机验证 |
 | Ruffle / SWF | 一 SWF 一条与包装目录边界（根 index、唯一 SWF、无子目录、既有引擎信号优先）、文件 URI→父目录、`game`/`settings` 契约与类型包装、模块未安装/入口缺失、全局与单游戏覆盖、`configuration.json` 只同步不创建、无存档入口与横屏限制；设备/插件验证待执行 |
+| 第三方运行时模块 | action/前缀发现、默认关闭、启用只写开关、仅已启用模块参与扫描、描述匹配只补 `UNKNOWN`/`WEB_OTHER`、旧绑定优先、改名/封面更新不丢绑定、卸载/禁用降级与重扫恢复、显式组件交棒、无存档/按键/设置入口 |
 | 宿主/JNI | 暂停恢复、Surface 重挂/旧世代、正常退出 ACK 后重入、owner 线程与资源释放 |
 | 存档 | ZIP 路径/数量/体积限制、目标冲突、MV/MZ 名称与目录、互通删除/清单损坏、Ethornell gate 关闭 |
 | 图形/外观 | 支持/不支持内核、无效/空链回退、关闭滤镜原路径、GPU 数据缺失、手机/平板和深浅色 |

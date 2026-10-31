@@ -25,6 +25,11 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- 第三方运行时模块发现（包名前缀 com.tyranor.runtime. + 该 action；不申请 QUERY_ALL_PACKAGES） -->
+        <intent>
+            <action android:name="com.tyranor.runtime.action.LAUNCH" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent>
     </queries>
 
     <application
@@ -86,6 +91,9 @@
             android:exported="false" />
         <activity
             android:name=".ui.settings.EngineSettingsMenuActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ui.runtime.EngineModuleManagementActivity"
             android:exported="false" />
         <activity
             android:name=".ui.settings.PerGameSettingsActivity"

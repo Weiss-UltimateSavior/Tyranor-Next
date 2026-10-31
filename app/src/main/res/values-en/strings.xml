@@ -187,9 +187,11 @@
     <string name="launch_emulator_failed">%1$s failed to launch</string>
     <string name="launch_yuris_exe_missing">No runnable .exe was found; pick one via "Launch file" in game details</string>
     <string name="launch_android_app_missing">App not found; it may have been uninstalled</string>
+    <string name="launch_engine_unknown">The game engine is unknown or its runtime module is unavailable; scan again</string>
     <string name="launch_emulator_unsupported">%1$s is too old for external launch; please update to a winlator-cn build with external launch support</string>
     <string name="engine_name_unknown">Unknown engine</string>
     <string name="engine_name_switch">Switch</string>
+    <string name="engine_name_runtime_module">Plugin</string>
     <string name="engine_name_web">Web game</string>
 
     <string name="game_title">Games</string>
@@ -929,4 +931,29 @@
     <string name="onboarding_coach_settings_title">Adjust settings anytime</string>
     <string name="onboarding_coach_settings_body">Adjust appearance, navigation, scanning, and input from Settings.</string>
     <string name="launch_empty_krkr_sd_mirror">No SD-card game resources could be read. Check directory access and storage, then retry.</string>
+
+    <string name="side_panel_engine_module_title">Engine modules</string>
+    <string name="engine_module_management_title">Engine modules</string>
+    <string name="engine_module_management_refresh">Refresh module list</string>
+    <string name="engine_module_management_empty">No modules found</string>
+    <string name="engine_module_management_summary">%1$s · %2$s · Protocol %3$d · %4$s · %5$d games</string>
+    <string name="engine_module_management_scan_supported">Scan supported</string>
+    <string name="engine_module_management_scan_unsupported">No scan signature declared</string>
+    <string name="engine_module_management_enabled_toast">Enabled. Return to the games page and scan again</string>
+    <string name="engine_module_management_enabled_no_scan_toast">Enabled, but this module declares no scan metadata, so it cannot add games automatically</string>
+    <string name="engine_module_management_disabled_toast">Disabled. %1$d games were downgraded to unknown</string>
+    <string name="engine_module_management_operation_failed">Operation failed; try again</string>
+    <string name="engine_module_management_degraded_toast">Runtime modules are unavailable; some games were downgraded to unknown. Install or enable the module and scan again to recover</string>
+    <string name="engine_module_management_disable_title">Disable module</string>
+    <string name="engine_module_management_disable_message">Disabling will downgrade %1$d games from this module to unknown. Re-enable the module and scan again to restore them.</string>
+    <string name="engine_module_management_disable_confirm">Disable</string>
+    <string name="engine_module_management_load_failed">Failed to load the module list</string>
+    <string name="engine_settings_runtime_module_hint">This game runs in a third-party runtime module; the module manages its own settings and saves.</string>
+    <string name="engine_desc_runtime_module">Third-party APK runtime module. The module scans and runs its own games; the main app only discovers, enables, and passes the folder path.</string>
+    <string name="launch_runtime_module_missing">The runtime module is unavailable. The game was downgraded to unknown; scan again</string>
+    <string name="launch_runtime_module_disabled">The runtime module is not enabled. The game was downgraded to unknown; enable it in “Engine modules” and scan again</string>
+    <string name="launch_runtime_module_entry_missing">The runtime module entry point is unavailable. The game was downgraded to unknown; update the module and scan again</string>
+    <string name="launch_runtime_module_path_unresolved">Unable to resolve the game folder path; this module only accepts a real folder path</string>
+    <string name="launch_runtime_module_denied">The runtime module refused to launch or permission is insufficient</string>
+    <string name="launch_runtime_module_failed">Failed to launch the runtime module</string>
 </resources>

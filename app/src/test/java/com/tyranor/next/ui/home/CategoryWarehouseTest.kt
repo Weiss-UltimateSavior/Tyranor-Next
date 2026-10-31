@@ -59,6 +59,7 @@ class CategoryWarehouseTest {
             recentLabel = "recent",
             unknownEngineName = "unknown",
             switchEngineName = "switch",
+            runtimeModuleName = "runtime",
         )
         assertEquals(
             listOf("all", "quick", "recent", "engine:KIRIKIRI", "engine:NINTENDO_SWITCH", "engine:UNKNOWN"),
