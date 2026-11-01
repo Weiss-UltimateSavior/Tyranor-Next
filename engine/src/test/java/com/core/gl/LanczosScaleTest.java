@@ -157,6 +157,10 @@ public final class LanczosScaleTest {
         String off = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0);
         assertFalse(off.contains("ringLo"));
         assertFalse(off.contains("mix(fragColor"));
+        // Wire values that round to zero at the 4-decimal bake omit the identity mix block too.
+        String tiny = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0.00001);
+        assertFalse(tiny.contains("ringLo"));
+        assertFalse(tiny.contains("mix(fragColor"));
         String antiring = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0.5);
         assertTrue(antiring.contains("vec3 ringLo = vec3(1e30); vec3 ringHi = vec3(-1e30);"));
         assertTrue(antiring.contains("if (coordinate == base || coordinate == base + 1) "

@@ -80,7 +80,10 @@ final class LanczosScale {
         String radius = Integer.toString(kernel.radius);
         // Anti-ringing: clamp the normalized result to the nearest-2 texel extremes; the
         // strength is baked per node instance (sharpness is fixed when the program builds).
-        boolean antiring = kernel == ResampleKernel.LANCZOS2 && sharpness > 0.0;
+        // The flag reads the rounded bake so tiny wire values (e.g. 0.00001) that round to
+        // zero do not emit an identity mix block.
+        double strength = rounded(sharpness);
+        boolean antiring = kernel == ResampleKernel.LANCZOS2 && strength > 0.0;
         String shader = TEMPLATE
                 .replace("@@EXTRA_UNIFORMS@@", resample ? "uniform ivec2 uOutputSize;\n" : "")
                 .replace("@@WEIGHT_HELPERS@@", weightHelpers(kernel, sharpness))
@@ -152,8 +155,12 @@ final class LanczosScale {
         return helpers.toString();
     }
 
+    private static double rounded(double value) {
+        return Math.round(value * 10000.0) / 10000.0;
+    }
+
     private static String baked(double value) {
-        return Double.toString(Math.round(value * 10000.0) / 10000.0);
+        return Double.toString(rounded(value));
     }
 
     static final class Plan {
