@@ -1,13 +1,16 @@
 package com.tyranor.next
 
+import android.app.ActivityManager
 import android.app.Application
 import android.os.Build
+import android.os.Process
 import android.webkit.WebView
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.tyranor.next.core.game.storage.GameLibraryRepository
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
@@ -39,7 +42,34 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         GitHubUpdateChecker.restoreState(this)
         // 游戏库 Room 迁移检查 + 首页缓存预热，避免主线程首次读库阻塞（迁移方案阶段 0）。
         GameLibraryRepository.init(this)
+        // 游戏页的排序与过滤在 UI 可交互之前灌进内存态：
+        // 1) 放到 MainScreen 的 effect 里做的话，初始化读到的旧值可能在用户已经点过筛选之后
+        //    才写回，把新选择覆盖掉；
+        // 2) 排序也要同步就位，否则进程重建时库可能先加载完、排序仍是默认值，游戏页会把
+        //    「排序刚就位」误判成条件变化而重置滚动位置。
+        // 引擎子进程不展示游戏页，跳过这两次 prefs 读取。
+        if (isMainProcess()) {
+            AppSettingsStore.initGameFilters(this)
+            AppSettingsStore.initGameSort(this)
+        }
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+    }
+
+    /**
+     * 引擎子进程（:tyrano/:rpgmaker 等）复用同一 Application 类，设置只在主进程预热。
+     *
+     * API 28 以下没有 `Application.getProcessName()`，只能查 `runningAppProcesses`：必须比较
+     * processName，`pid == myPid()` 对任何进程都成立。列表拿不到时按主进程处理——多读一次 prefs
+     * 只是浪费，而误判成子进程会让主进程跳过初始化，用户保存的排序/筛选就永久回落默认值。
+     */
+    private fun isMainProcess(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return Application.getProcessName() == packageName
+        }
+        val am = getSystemService(ACTIVITY_SERVICE) as? ActivityManager ?: return true
+        val processes = am.runningAppProcesses ?: return true
+        val self = processes.firstOrNull { it.pid == Process.myPid() } ?: return true
+        return self.processName == packageName
     }
 
     override fun onStop(owner: LifecycleOwner) {

@@ -64,6 +64,12 @@ val GlassPanelSolid = Color(0xFF141518)
 /** 玻璃抽屉内条目的不透明玻璃面：与 NavWhite 玻璃态在底板上的合成色一致，但无任何透明度。 */
 val GlassSurfaceSolid = Color(0xFF181A1E)
 
+/** 底部抽屉遮罩（玻璃系）：60% 黑，与不透明底板形成层次。 */
+val SheetScrimGlass = Color(0x99000000)
+
+/** 底部抽屉遮罩（默认外观）：32% 黑，保持常规强度。 */
+val SheetScrimDefault = Color(0x52000000)
+
 /** 玻璃悬浮默认导航条底色：95% 深色，比普通卡片更实，保证图标清晰且几乎不透出底层内容。 */
 val GlassNavSurface = Color(0xF21A1C20)
 

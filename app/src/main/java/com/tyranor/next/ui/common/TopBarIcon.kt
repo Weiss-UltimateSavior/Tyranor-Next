@@ -11,6 +11,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 
 /**
@@ -20,12 +22,16 @@ import androidx.compose.ui.unit.dp
  * tint 由调用方传当前主题色（Material 页面传 MaterialTheme.colorScheme.primary，
  * Miuix 页面传 MiuixTheme.colorScheme.primary）。
  * 全 App 顶部栏图标按钮必须使用本组件，禁止自行用 IconButton/Icon 拼装。
+ *
+ * @param stateDescription 可选的「当前状态」朗读（如「筛选已启用」）；仅影响无障碍，
+ *   视觉状态（如角标圆点）仍由调用方绘制。
  */
 @Composable
 fun TopBarIcon(
     painter: Painter,
     contentDescription: String?,
     tint: Color,
+    stateDescription: String? = null,
     onClick: () -> Unit,
 ) {
     Image(
@@ -37,6 +43,13 @@ fun TopBarIcon(
             .size(34.dp)
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
+            .then(
+                if (stateDescription == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics { this.stateDescription = stateDescription }
+                },
+            )
             .padding(4.dp),
     )
 }
