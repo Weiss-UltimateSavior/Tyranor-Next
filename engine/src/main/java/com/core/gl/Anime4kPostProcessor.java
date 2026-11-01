@@ -236,13 +236,23 @@ public final class Anime4kPostProcessor {
         processor.mAssets = context.getAssets();
         processor.mScaleOnly = true;
         processor.mMaxBindings = 1;
+        // The surface adapter keeps the historical no-anti-ringing shader; auto-resize is
+        // independent of the user-selected filter presets.
+        processor.mSharpness = 0;
         return processor;
     }
 
     private double mSharpness = 0.4;
+    private LanczosScale.ResampleKernel mScaleKernel = LanczosScale.DEFAULT_KERNEL;
     static Anime4kPostProcessor forFilter(Context context, GraphicsFilterChain.Step step) {
         GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(step.id);
-        if (definition.shaderAsset == null) return forLanczos(context);
+        if (definition.shaderAsset == null) {
+            Anime4kPostProcessor processor = forLanczos(context);
+            processor.mScaleKernel = LanczosScale.kernelOf(definition.resampleKernel);
+            // Scale-only presets: sharpness is the bicubic baseline / Lanczos anti-ringing strength.
+            processor.mSharpness = step.sharpness;
+            return processor;
+        }
         Anime4kPostProcessor processor = new Anime4kPostProcessor(context, definition.shaderAsset);
         processor.mTopLeftCoordinates = definition.topLeftCoordinates;
         processor.mNativeScale = definition.nativeScale;
@@ -778,7 +788,8 @@ public final class Anime4kPostProcessor {
     }
 
     private void buildScaleProgram() {
-        int fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER, LanczosScale.RESAMPLE_FRAGMENT_SHADER);
+        int fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER,
+                LanczosScale.resampleFragmentShader(mScaleKernel, mSharpness));
         int program = GLES30.glCreateProgram();
         try {
             requireName(program, "Lanczos program");

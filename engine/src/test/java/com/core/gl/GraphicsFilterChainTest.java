@@ -120,4 +120,43 @@ public final class GraphicsFilterChainTest {
         assertEquals(Long.MAX_VALUE, GraphicsFilterPipeline.addBytes(Long.MAX_VALUE, 1));
         assertEquals(8294400L, GraphicsFilterPipeline.ownedSurfaceBytes(1920, 1080));
     }
+    @Test public void scalePresetDefinitionsCarryKernelsAndStayWireCompatible() {
+        GraphicsFilterDefinition lanczos = GraphicsFilterDefinitions.find("lanczos");
+        assertTrue(lanczos.sharpnessAdjustable);
+        assertEquals(0.5, lanczos.defaultSharpness, 0);
+        assertEquals("lanczos2", lanczos.resampleKernel);
+        GraphicsFilterDefinition bilinear = GraphicsFilterDefinitions.find("bilinear");
+        assertEquals("bilinear", bilinear.resampleKernel);
+        assertFalse(bilinear.sharpnessAdjustable);
+        assertTrue(bilinear.visible);
+        GraphicsFilterDefinition bicubic = GraphicsFilterDefinitions.find("bicubic");
+        assertEquals("bicubic", bicubic.resampleKernel);
+        assertTrue(bicubic.sharpnessAdjustable);
+        assertEquals(0.4, bicubic.defaultSharpness, 0);
+        // Menu order follows performance cost: bilinear -> bicubic -> lanczos.
+        assertTrue(bilinear.categoryOrder < bicubic.categoryOrder);
+        assertTrue(bicubic.categoryOrder < lanczos.categoryOrder);
+        // Pure resample presets reuse the whole fit/factor planning path of lanczos.
+        GraphicsFilterPlan lanczosPlan = GraphicsFilterPlan.create(
+                GraphicsFilterChain.parse("v1:lanczos"), 1600, 900, 2400, 1200);
+        GraphicsFilterPlan bilinearPlan = GraphicsFilterPlan.create(
+                GraphicsFilterChain.parse("v1:bilinear"), 1600, 900, 2400, 1200);
+        GraphicsFilterPlan bicubicPlan = GraphicsFilterPlan.create(
+                GraphicsFilterChain.parse("v1:bicubic"), 1600, 900, 2400, 1200);
+        assertEquals(lanczosPlan.outputWidths[0], bilinearPlan.outputWidths[0]);
+        assertEquals(lanczosPlan.outputHeights[0], bicubicPlan.outputHeights[0]);
+        assertTrue(bilinearPlan.execute[0]);
+        assertTrue(bicubicPlan.execute[0]);
+        // Resampling at identity geometry is a no-op pass: every scale-only preset skips it.
+        assertFalse(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:bicubic"), 1920, 1080, 1920, 1080).execute[0]);
+        assertFalse(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:lanczos"), 1920, 1080, 1920, 1080).execute[0]);
+        // Shader filters with their own in-place effect (CAS) must keep running at identity.
+        assertTrue(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:cas"), 1920, 1080, 1920, 1080).execute[0]);
+        // Wire round trips carry the adjustable sharpness (bicubic baseline / lanczos anti-ringing).
+        assertEquals("v2:bicubic~0.8~fit~1.0~1.0",
+                GraphicsFilterChain.parse("v2:bicubic~0.8~fit~1.0~1.0").encode());
+        assertEquals("v2:lanczos~0.7~fit~1.0~1.0",
+                GraphicsFilterChain.parse("v2:lanczos~0.7~fit~1.0~1.0").encode());
+        assertEquals("v1:", GraphicsFilterChain.fromLegacy("lanczos").encode());
+    }
 }

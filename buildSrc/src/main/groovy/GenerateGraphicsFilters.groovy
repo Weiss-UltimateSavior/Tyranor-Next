@@ -33,6 +33,7 @@ abstract class GenerateGraphicsFilters extends DefaultTask {
             if (!(d.categoryOrder instanceof Integer) || !(d.order instanceof Integer)) GenerateGraphicsFilters.fail('invalid order')
             ['sharpnessAdjustable','outputSized','forceParameters','visible'].each { if (!(d[it] instanceof Boolean)) GenerateGraphicsFilters.fail('invalid flag') }
             if (d.topLeftCoordinates != null && !(d.topLeftCoordinates instanceof Boolean)) GenerateGraphicsFilters.fail('invalid coordinate origin')
+            if (d.resampleKernel != null && !(d.resampleKernel in ['bilinear', 'bicubic', 'lanczos2'])) GenerateGraphicsFilters.fail('invalid resample kernel')
             if (d.visible && d.migrationTarget != null) GenerateGraphicsFilters.fail('migration nodes must be hidden')
         }
         definitions.each { d ->
@@ -46,7 +47,8 @@ abstract class GenerateGraphicsFilters extends DefaultTask {
                 strings(['zh','en','ja'].collect { d.title[it] }), strings(['zh','en','ja'].collect { d.categoryTitle[it] }),
                 quoted(d.shortName), '0x' + d.color.substring(1), quoted(d.asset), d.nativeScale, d.haloPerPass,
                 d.sharpnessAdjustable, strings(d.scaleModes), quoted(d.defaultScaleMode), d.defaultSharpness,
-                d.outputSized, d.forceParameters, d.visible, quoted(d.migrationTarget), d.maxOutputScale, d.topLeftCoordinates ?: false]
+                d.outputSized, d.forceParameters, d.visible, quoted(d.migrationTarget), d.maxOutputScale,
+                d.topLeftCoordinates ?: false, quoted(d.resampleKernel ?: 'lanczos2')]
             '            new GraphicsFilterDefinition(' + args.join(', ') + ')'
         }
         def source = 'package com.core.gl;\n\n// Generated from engine/src/main/graphicsfilters; do not edit.\n' +

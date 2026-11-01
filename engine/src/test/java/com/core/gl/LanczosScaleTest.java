@@ -111,4 +111,93 @@ public final class LanczosScaleTest {
                 Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, 8, 0, false));
         assertEquals(Long.MAX_VALUE, LanczosScale.estimatedOwnedBytes(100, 100, 200, 200, -1, 0, false));
     }
+
+    @Test public void scaleShadersBakeKernelWeightsWithoutTemplateResidue() {
+        String lanczos = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0.5);
+        assertTrue(lanczos.contains("if (abs(x) >= 2.0) return 0.0;"));
+        assertTrue(lanczos.contains("return sinc(x) * sinc(x / 2.0);"));
+        assertTrue(lanczos.contains("int support = int(ceil(2.0 * scale));"));
+        assertTrue(lanczos.contains("for (int tap = 1 - support; tap <= support; ++tap)"));
+        assertTrue(lanczos.contains("weight((center - float(coordinate)) / scale)"));
+        assertTrue(lanczos.contains("if (w == 0.0) continue;"));
+        assertFalse(lanczos.contains("@@"));
+
+        String bilinear = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.BILINEAR, 0.4);
+        assertTrue(bilinear.contains("return max(0.0, 1.0 - abs(x));"));
+        assertTrue(bilinear.contains("int support = int(ceil(1.0 * scale));"));
+        assertFalse(bilinear.contains("sinc("));
+        assertFalse(bilinear.contains("PI"));
+        assertFalse(bilinear.contains("@@"));
+
+        String bicubic = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.BICUBIC, 0.4);
+        assertTrue(bicubic.contains("int support = int(ceil(2.0 * scale));"));
+        // Default sharpness 0.4 bakes the Mitchell baseline B=C=0.33.
+        assertTrue(bicubic.contains("(12.0 - 9.0 * 0.33 - 6.0 * 0.33)"));
+        assertTrue(bicubic.contains("(-0.33 - 6.0 * 0.33)"));
+        assertFalse(bicubic.contains("sinc("));
+        assertFalse(bicubic.contains("ringLo"));
+        assertFalse(bicubic.contains("@@"));
+    }
+
+    @Test public void upscaleVariantKeepsConstantTapsAndSharperBicubicBake() {
+        String upscale = LanczosScale.fragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0.5);
+        assertTrue(upscale.contains("for (int tap = -1; tap <= 2; ++tap)"));
+        assertTrue(upscale.contains("weight(center - float(coordinate))"));
+        assertFalse(upscale.contains("uOutputSize"));
+        assertFalse(upscale.contains("@@"));
+        // Sharper slider end: sharpness 1.0 bakes B=C=0.03; the smooth end 0.0 bakes 0.53.
+        String sharp = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.BICUBIC, 1.0);
+        assertTrue(sharp.contains("(12.0 - 9.0 * 0.03 - 6.0 * 0.03)"));
+        String smooth = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.BICUBIC, 0.0);
+        assertTrue(smooth.contains("(12.0 - 9.0 * 0.53 - 6.0 * 0.53)"));
+    }
+
+    @Test public void lanczosAntiRingingBakesStrengthAndIsOmittedAtZero() {
+        // Sharpness 0 (surface adapter / explicit off): no clamp code at all — historical shader.
+        String off = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0);
+        assertFalse(off.contains("ringLo"));
+        assertFalse(off.contains("mix(fragColor"));
+        String antiring = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0.5);
+        assertTrue(antiring.contains("vec3 ringLo = vec3(1e30); vec3 ringHi = vec3(-1e30);"));
+        assertTrue(antiring.contains("if (coordinate == base || coordinate == base + 1) "
+                + "{ ringLo = min(ringLo, tapColor.rgb); ringHi = max(ringHi, tapColor.rgb); }"));
+        assertTrue(antiring.contains("mix(fragColor.rgb, clamp(fragColor.rgb, ringLo, ringHi), 0.5)"));
+        String full = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 1.0);
+        assertTrue(full.contains("clamp(fragColor.rgb, ringLo, ringHi), 1.0)"));
+        assertFalse(LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.BILINEAR, 1.0).contains("ringLo"));
+    }
+
+    @Test public void kernelMappingFailsClosedOnUnknownDescriptorStrings() {
+        assertEquals(LanczosScale.ResampleKernel.LANCZOS2, LanczosScale.kernelOf(null));
+        assertEquals(LanczosScale.ResampleKernel.LANCZOS2, LanczosScale.kernelOf("lanczos2"));
+        assertEquals(LanczosScale.ResampleKernel.BILINEAR, LanczosScale.kernelOf("bilinear"));
+        assertEquals(LanczosScale.ResampleKernel.BICUBIC, LanczosScale.kernelOf("bicubic"));
+        assertThrows(IllegalArgumentException.class, () -> LanczosScale.kernelOf("lanczos3"));
+        assertThrows(IllegalArgumentException.class, () -> LanczosScale.kernelOf(""));
+        assertThrows(IllegalArgumentException.class, () -> LanczosScale.kernelOf("lanczos"));
+    }
+
+    /** GLSL compile errors cannot surface on the JVM; delimiter balance is the next best gate. */
+    @Test public void everyGeneratedShaderHasBalancedDelimiters() {
+        for (LanczosScale.ResampleKernel kernel : LanczosScale.ResampleKernel.values()) {
+            for (double sharpness : new double[]{0.0, 0.4, 0.5, 1.0}) {
+                assertBalanced(LanczosScale.fragmentShader(kernel, sharpness));
+                assertBalanced(LanczosScale.resampleFragmentShader(kernel, sharpness));
+            }
+        }
+    }
+
+    private static void assertBalanced(String shader) {
+        int parens = 0, braces = 0;
+        for (int i = 0; i < shader.length(); i++) {
+            char c = shader.charAt(i);
+            if (c == '(') parens++;
+            if (c == ')') parens--;
+            if (c == '{') braces++;
+            if (c == '}') braces--;
+            assertTrue("unbalanced delimiter at " + i + " in " + shader, parens >= 0 && braces >= 0);
+        }
+        assertEquals("unbalanced () in " + shader, 0, parens);
+        assertEquals("unbalanced {} in " + shader, 0, braces);
+    }
 }
