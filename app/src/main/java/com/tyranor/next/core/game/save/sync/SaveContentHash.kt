@@ -53,7 +53,11 @@ object SaveContentHash {
                     if (!names.add(name) || names.size > MAX_FILES) {
                         throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
                     }
-                    if (entry.isDirectory) continue
+                    if (entry.isDirectory) {
+                        if (entry.size != 0L) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
+                        zip.getInputStream(entry).use { requireEmptyDirectory(it, check) }
+                        continue
+                    }
                     val content = zip.getInputStream(entry).buffered().use { read(name, it, check) }
                     if (entry.size != content.size) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
                     total += content.size
@@ -75,7 +79,11 @@ object SaveContentHash {
                         if (!localNames.add(name) || localNames.size > MAX_FILES) {
                             throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
                         }
-                        if (!entry.isDirectory) {
+                        if (entry.isDirectory) {
+                            // A trailing slash does not guarantee an empty ZIP entry. In
+                            // particular, data descriptors can leave size unknown here.
+                            requireEmptyDirectory(local, check)
+                        } else {
                             val content = read(name, local, check)
                             localTotal += content.size
                             if (localTotal > MAX_BYTES) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
@@ -100,6 +108,12 @@ object SaveContentHash {
         } catch (failure: IOException) {
             throw SaveSyncException(SaveSyncError.LOCAL_IO, cause = failure)
         }
+    }
+
+    private fun requireEmptyDirectory(input: InputStream, check: () -> Unit) {
+        check()
+        // Never let closeEntry drain an unchecked directory payload outside MAX_BYTES/check.
+        if (input.read() != -1) throw SaveSyncException(SaveSyncError.CORRUPT_ARCHIVE)
     }
 
     private fun read(name: String, input: InputStream, check: () -> Unit): Entry {
