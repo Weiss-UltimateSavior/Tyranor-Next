@@ -165,6 +165,11 @@ object SaveSyncRuntime {
         })
     }
 
+    /** Mandatory launch safety, independent of optional upload-session bookkeeping. */
+    internal fun requireLaunchAvailable(context: Context, directoryKey: String) {
+        directoryActivations(context).requireAvailable(directoryKey)
+    }
+
     /** Called under the same active-save mutex as launch and explicit version selection. */
     internal suspend fun prepareLaunch(context: Context, game: ScanGame,
         expectedActiveKey: String = activeKey(context, game)): LaunchTicket? =
@@ -189,7 +194,6 @@ object SaveSyncRuntime {
             val key = SaveContentHash.text(game.uri)
             val previous = store.load(key).takeIf { it.has("token") && saveSessionGenerationMatches(it, enabledGeneration) }
             val directoryKey = expectedActiveKey
-            directoryActivations(context).requireAvailable(directoryKey)
             // Keep the old task intact rather than relabelling directory A's baseline as B's.
             previous?.let { requireSessionDirectory(it, directoryKey) }
             val inherited = inheritedSessionBaseline(previous)

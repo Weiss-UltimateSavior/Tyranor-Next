@@ -66,6 +66,7 @@ import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.RpgSaveSyncState
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.save.sync.withSaveSyncLaunchAdmission
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
@@ -181,6 +182,13 @@ object EngineLauncher {
         patchChoice: ArtemisPatchChoice?,
         directoryKey: String?,
     ): LaunchResult {
+        try {
+            // A pending selection owns this directory even in manual/pull-only mode.
+            // Keep this outside prepareLaunch's best-effort bookkeeping error handler.
+            directoryKey?.let { SaveSyncRuntime.requireLaunchAvailable(context, it) }
+        } catch (failure: SaveSyncException) {
+            return LaunchResult.Failure.SavePreparationFailed(failure.code)
+        }
         var ticket: SaveSyncRuntime.LaunchTicket? = null
         var grace: String? = null
         var dispatched = false
