@@ -35,6 +35,13 @@ public final class GraphicsFilterChainTest {
         assertEquals(GraphicsFilterChain.MAX_STEPS, GraphicsFilterChain.of(
                 Collections.nCopies(GraphicsFilterChain.MAX_STEPS, step)).steps().size());
     }
+    @Test public void legacyStepConstructorValidatesSharpnessForNonAdjustableFilters() {
+        new GraphicsFilterChain.Step("s", true, GraphicsFilterChain.defaultCasSharpness("s"), "none", 1.0, 1.0);
+        assertThrows(IllegalArgumentException.class,
+                () -> new GraphicsFilterChain.Step("s", true, 0.9, "none", 1.0, 1.0));
+        assertThrows(IllegalArgumentException.class,
+                () -> new GraphicsFilterChain.Step("s", true, Double.NaN, "none", 1.0, 1.0));
+    }
     @Test public void assetPathsAreFullAndCannotEscapeBundledResources() {
         assertTrue(GraphicsFilterDefinitions.isValidAssetPath("anime4k/Anime4K_Restore_CNN_S.glsl"));
         assertTrue(GraphicsFilterDefinitions.isValidAssetPath("filter/Example.glsl"));

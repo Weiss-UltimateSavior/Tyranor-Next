@@ -21,7 +21,7 @@ public final class GraphicsFilterChain {
         }
         public Step(String id, boolean enabled, double sharpness, String scaleMode, double widthScale, double heightScale) {
             this(id, enabled,
-                    "cas".equals(id) ? sharpness : defaultCasSharpness(id),
+                    ("bicubic".equals(id) || "lanczos".equals(id)) ? defaultCasSharpness(id) : sharpness,
                     "bicubic".equals(id) ? sharpness : defaultBicubicB(id),
                     "bicubic".equals(id) ? sharpness : defaultBicubicC(id),
                     "lanczos".equals(id) ? sharpness : defaultLanczosAntiRingingStrength(id),
