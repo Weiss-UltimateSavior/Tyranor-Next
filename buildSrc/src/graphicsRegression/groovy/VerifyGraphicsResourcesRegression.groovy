@@ -114,6 +114,12 @@ class VerifyGraphicsResourcesRegression {
                     license: [localPath: 'engine/src/main/assets/local/LICENSE-MIT', sha256: '0' * 64]]]])
                 expectFailure('Graphics artifact SHA-256 mismatch:') { fixture.verify() }
             },
+            'unknown verification values fail closed': { Fixture fixture ->
+                ['Retained', 'retain', 'external'].each { value ->
+                    fixture.manifest([sources: [[verification: value, files: [[localPath: 'engine/source.glsl']]]]])
+                    expectFailure('Unknown graphics source verification:') { fixture.verify() }
+                }
+            },
             'external source metadata without localPath remains compatible': { Fixture fixture ->
                 fixture.manifest([sources: [[files: [[path: 'external/source.glsl', sha256: '0' * 64]]]]])
                 fixture.verify()

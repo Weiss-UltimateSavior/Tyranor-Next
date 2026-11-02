@@ -19,6 +19,25 @@ class GraphicsSettingsCodecTest {
         assertFalse(codec.legacyGlobal(GraphicsFamily.SIGLUS).enabled)
     }
 
+    @Test fun legacyLanczosSharpnessJsonDoesNotBecomeAntiRinging() {
+        // The pre-micro-parameter encoder wrote an inert sharpness 0.4 for lanczos that was never
+        // user-facing; it must migrate to the definition default, not become the AR strength.
+        val raw = JSONObject().put("version", 2).put("enabled", true)
+            .put("chain", JSONArray().put(JSONObject().put("id", "lanczos").put("enabled", true)
+                .put("sharpness", 0.4).put("scaleMode", "fit").put("widthScale", 1.0).put("heightScale", 1.0)))
+        val decoded = codec.decodeSettings(raw.toString())!!
+        assertEquals(0.5, decoded.chain[0].lanczosAntiRingingStrength, 0.0)
+    }
+
+    @Test fun encodedChainsCarryTheSharpnessDowngradeMirror() {
+        val settings = GraphicsSettings(true, listOf(GraphicsNode("lanczos", lanczosAntiRingingStrength = 0.7)), true)
+        val node = codec.encode(settings).let(::JSONObject).getJSONArray("chain").getJSONObject(0)
+        assertEquals(0.7, node.optDouble("lanczosAntiRingingStrength"), 0.0)
+        // Pre-micro-parameter readers decode `sharpness` for every adjustable node; the mirror
+        // keeps a rollback from resetting the whole chain to defaults.
+        assertEquals(0.7, node.optDouble("sharpness"), 0.0)
+    }
+
     @Test fun authoritativeGlobalDoesNotReadLegacyEvenWhenMalformed() {
         var reads = 0
         val legacy = { reads++; GraphicsSettings(true, listOf(GraphicsNode("l")), true) }

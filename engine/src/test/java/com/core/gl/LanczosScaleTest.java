@@ -2,6 +2,7 @@ package com.core.gl;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
@@ -163,12 +164,117 @@ public final class LanczosScaleTest {
         assertFalse(tiny.contains("mix(fragColor"));
         String antiring = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0.33, 0.33, 0.5);
         assertTrue(antiring.contains("vec3 ringLo = vec3(1e30); vec3 ringHi = vec3(-1e30);"));
-        assertTrue(antiring.contains("if (coordinate == base || coordinate == base + 1) "
-                + "{ ringLo = min(ringLo, tapColor.rgb); ringHi = max(ringHi, tapColor.rgb); }"));
+        assertTrue(antiring.contains("ringLo = min(ringLo, tapColor.rgb); ringHi = max(ringHi, tapColor.rgb);"));
+        assertFalse(antiring.contains("coordinate == base")); // window = the full fetched support
         assertTrue(antiring.contains("mix(fragColor.rgb, clamp(fragColor.rgb, ringLo, ringHi), 0.5)"));
         String full = LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.LANCZOS2, 0.33, 0.33, 1.0);
         assertTrue(full.contains("clamp(fragColor.rgb, ringLo, ringHi), 1.0)"));
         assertFalse(LanczosScale.resampleFragmentShader(LanczosScale.ResampleKernel.BILINEAR, 0.33, 0.33, 1.0).contains("ringLo"));
+    }
+
+    /**
+     * Java transcription of the separable Lanczos2 downscale with anti-ringing (the GLSL cannot
+     * run on the JVM). Pins the audit's thin-line/checkerboard scenarios: the full-support clamp
+     * window only removes out-of-range overshoot — unlike the previous nearest-2 window, which
+     * widened 2x checkerboard contrast and darkened 1px line peaks at 4x reductions.
+     */
+    @Test public void antiRingingDownscaleClampsToTheFullSupportRange() {
+        int size = 32;
+        double[][] checker = new double[size][size];
+        double[][] line = new double[size][size];
+        for (int y = 0; y < size; y++) {
+            for (int x = 0; x < size; x++) {
+                checker[y][x] = ((x / 2 + y / 2) % 2 == 0) ? 0.86 : 0.07;
+                line[y][x] = x == size / 2 ? 0.86 : 0.07;
+            }
+        }
+        for (int factor : new int[]{2, 4}) {
+            double[][] checkerPlain = reduce(checker, factor, 0.0);
+            double[][] checkerReduced = reduce(checker, factor, 0.5);
+            // The plain 2x/4x checkerboard reduction already lands inside the support window, so
+            // the full-support anti-ringing must be a no-op (the nearest-2 window was not).
+            assertEquals(checkerPlain.length, checkerReduced.length);
+            for (int row = 0; row < checkerPlain.length; row++) {
+                assertArrayEquals(checkerPlain[row], checkerReduced[row], 0.0);
+            }
+            double[][] linePlain = reduce(line, factor, 0.0);
+            double[][] lineReduced = reduce(line, factor, 0.5);
+            // The line peak is inside its window: preserved (1 ulp arithmetic drift allowed),
+            // never darkened; the undershoot floor is raised toward the window, never lowered.
+            assertEquals(maxOf(linePlain), maxOf(lineReduced), 1e-9);
+            assertTrue(minOf(lineReduced) >= minOf(linePlain) - 1e-9);
+            // Hard clamp keeps every output inside the input range in every scenario.
+            double[][] hard = reduce(line, factor, 1.0);
+            for (double[] row : hard) {
+                for (double value : row) {
+                    assertTrue(value >= 0.07 - 1e-9 && value <= 0.86 + 1e-9);
+                }
+            }
+        }
+    }
+
+    /** One lanczos2 value column: separable passes with a per-pass support of ceil(2 * scale). */
+    private static double[][] reduce(double[][] source, int factor, double antiRinging) {
+        double[][] horizontal = reduceAxis(source, source[0].length / factor, antiRinging, true);
+        return reduceAxis(horizontal, source.length / factor, antiRinging, false);
+    }
+
+    private static double[][] reduceAxis(double[][] source, int outSize, double antiRinging, boolean horizontal) {
+        int inSize = horizontal ? source[0].length : source.length;
+        double scale = Math.max((double) inSize / outSize, 1.0);
+        int support = (int) Math.ceil(2.0 * scale);
+        int crossCount = horizontal ? source.length : source[0].length;
+        double[][] out = new double[horizontal ? source.length : outSize][horizontal ? outSize : source[0].length];
+        for (int outIndex = 0; outIndex < outSize; outIndex++) {
+            double center = (outIndex + 0.5) * (inSize / (double) outSize) - 0.5;
+            int base = (int) Math.floor(center);
+            for (int cross = 0; cross < crossCount; cross++) {
+                double total = 0.0;
+                double sum = 0.0;
+                double lo = 1e30;
+                double hi = -1e30;
+                for (int tap = 1 - support; tap <= support; tap++) {
+                    int coordinate = base + tap;
+                    double w = weightLanczos2((center - coordinate) / scale);
+                    if (w == 0.0) continue;
+                    int clamped = Math.min(inSize - 1, Math.max(0, coordinate));
+                    double value = horizontal ? source[cross][clamped] : source[clamped][cross];
+                    sum += value * w;
+                    lo = Math.min(lo, value);
+                    hi = Math.max(hi, value);
+                    total += w;
+                }
+                double value = sum / total;
+                double windowClamped = Math.min(hi, Math.max(lo, value));
+                value += (windowClamped - value) * antiRinging;
+                if (horizontal) out[cross][outIndex] = value;
+                else out[outIndex][cross] = value;
+            }
+        }
+        return out;
+    }
+
+    private static double weightLanczos2(double x) {
+        if (Math.abs(x) >= 2.0) return 0.0;
+        return sinc(x) * sinc(x / 2.0);
+    }
+
+    private static double sinc(double x) {
+        if (Math.abs(x) < 1e-5) return 1.0;
+        double p = Math.PI * x;
+        return Math.sin(p) / p;
+    }
+
+    private static double minOf(double[][] matrix) {
+        double lo = Double.MAX_VALUE;
+        for (double[] row : matrix) for (double value : row) lo = Math.min(lo, value);
+        return lo;
+    }
+
+    private static double maxOf(double[][] matrix) {
+        double hi = -Double.MAX_VALUE;
+        for (double[] row : matrix) for (double value : row) hi = Math.max(hi, value);
+        return hi;
     }
 
     @Test public void kernelMappingFailsClosedOnUnknownDescriptorStrings() {

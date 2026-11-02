@@ -59,10 +59,13 @@ data class GraphicsNode(
     ) : this(
         id = id,
         enabled = enabled,
-        casSharpness = sharpness,
-        bicubicB = if (id == "bicubic") sharpness else GraphicsFilterChain.defaultBicubicB(id),
-        bicubicC = if (id == "bicubic") sharpness else GraphicsFilterChain.defaultBicubicC(id),
-        lanczosAntiRingingStrength = if (id == "lanczos") sharpness else GraphicsFilterChain.defaultLanczosAntiRingingStrength(id),
+        // Legacy wire shape: cas keeps the sharpness value (its dedicated parameter), while bicubic
+        // and lanczos ignore it and apply their definition defaults (B=C=0.33, AR=0.50) —
+        // legacy sharpness must not migrate into filter parameters.
+        casSharpness = if (id == "cas") sharpness else GraphicsFilterChain.defaultCasSharpness(id),
+        bicubicB = GraphicsFilterChain.defaultBicubicB(id),
+        bicubicC = GraphicsFilterChain.defaultBicubicC(id),
+        lanczosAntiRingingStrength = GraphicsFilterChain.defaultLanczosAntiRingingStrength(id),
         scaleMode = scaleMode,
         widthScale = widthScale,
         heightScale = heightScale,
@@ -299,6 +302,9 @@ object GraphicsSettingsCodec {
                         put("widthScale", node.widthScale).put("heightScale", node.heightScale)
                     }
                     if (GraphicsFilterCatalog.parametersAdjustable(node.id)) {
+                        // Downgrade mirror: pre-micro-parameter readers decode `sharpness` for every
+                        // adjustable node; without it a rollback would reset the whole chain.
+                        put("sharpness", node.sharpness)
                         when (node.id) {
                             "bicubic" -> {
                                 put("bicubicB", node.bicubicB)
@@ -358,22 +364,20 @@ object GraphicsSettingsCodec {
 
                 when (canonicalId) {
                     "bicubic" -> {
+                        // Legacy sharpness is not migrated into B/C; definition defaults apply (B=C=0.33)
+                        // when dedicated keys are absent.
                         if (node.has("bicubicB")) {
                             nodeBicubicB = (node.opt("bicubicB") as? Number)?.toDouble() ?: return null
-                        } else if (node.has("sharpness")) {
-                            nodeBicubicB = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
                         }
                         if (node.has("bicubicC")) {
                             nodeBicubicC = (node.opt("bicubicC") as? Number)?.toDouble() ?: return null
-                        } else if (node.has("sharpness")) {
-                            nodeBicubicC = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
                         }
                     }
                     "lanczos" -> {
+                        // Legacy sharpness is not migrated into anti-ringing; definition default applies (0.50)
+                        // when dedicated lanczosAntiRingingStrength is absent.
                         if (node.has("lanczosAntiRingingStrength")) {
                             nodeLanczosAntiRinging = (node.opt("lanczosAntiRingingStrength") as? Number)?.toDouble() ?: return null
-                        } else if (node.has("sharpness")) {
-                            nodeLanczosAntiRinging = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
                         }
                     }
                     "cas" -> {

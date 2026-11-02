@@ -27,10 +27,11 @@ final class GraphicsFilterPlan {
                         ? GraphicsOutputSize.fit(width, height, bw, bh) : null;
                 int targetWidth = dimension((base == null ? width : base.width) * step.widthScale);
                 int targetHeight = dimension((base == null ? height : base.height) * step.heightScale);
-                // Resampling at identity geometry is a no-op pass: scale-only presets (null
-                // asset) skip it, while shader filters (e.g. CAS) run their effect in place.
+                // Resampling at 1:1 geometry has no size to compute: scale-only presets (null
+                // asset) skip it, while shader filters with an in-place effect (CAS, the hidden
+                // cas_scale_* family; CNN presets take the none-mode path before this rule) run.
                 active = width != targetWidth || height != targetHeight
-                        || (definition.sharpnessAdjustable && definition.shaderAsset != null);
+                        || definition.shaderAsset != null;
                 if (active) { width = targetWidth; height = targetHeight; }
             }
             execute[i] = active;

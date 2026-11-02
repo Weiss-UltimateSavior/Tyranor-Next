@@ -225,6 +225,6 @@ App 私有 user-root 存档管理与 native 全局 user-data 已通过设备验�
 
 JVM 单测、Node harness、Rust 宿主测试、设备仪器及 release probe 各自覆盖不同层面；不能以一种结果代替其它层面的验收。
 
-## VN-SR 滤镜集
+## 12. VN-SR 滤镜集
 
 VN-SR 分类提供 C08 / C12 / C16 三种原生2X滤镜，沿用共用滤镜链、内核能力门禁与显示Resize，具体来源及适配边界见[说明](docs/vnsr-filters.md)。

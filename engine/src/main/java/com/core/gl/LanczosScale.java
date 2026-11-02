@@ -81,8 +81,9 @@ final class LanczosScale {
 
     private static String shader(ResampleKernel kernel, double bicubicB, double bicubicC, double lanczosAntiRingingStrength, boolean resample) {
         String radius = Integer.toString(kernel.radius);
-        // Anti-ringing: clamp the normalized result to the nearest-2 texel extremes; the
-        // strength is baked per node instance.
+        // Anti-ringing: clamp the normalized result to the min/max of every fetched tap in the
+        // support window (nearest-2 would widen contrast and darken thin lines on reductions);
+        // the strength is baked per node instance.
         // The flag reads the rounded bake so tiny wire values (e.g. 0.00001) that round to
         // zero do not emit an identity mix block.
         double strength = rounded(lanczosAntiRingingStrength);
@@ -102,8 +103,7 @@ final class LanczosScale {
                 .replace("@@AR_DECLARE@@", antiring
                         ? "    vec3 ringLo = vec3(1e30); vec3 ringHi = vec3(-1e30);\n" : "")
                 .replace("@@AR_ACCUMULATE@@", antiring
-                        ? "        if (coordinate == base || coordinate == base + 1) "
-                        + "{ ringLo = min(ringLo, tapColor.rgb); ringHi = max(ringHi, tapColor.rgb); }\n" : "")
+                        ? "        ringLo = min(ringLo, tapColor.rgb); ringHi = max(ringHi, tapColor.rgb);\n" : "")
                 .replace("@@AR_APPLY@@", antiring
                         ? "    fragColor.rgb = mix(fragColor.rgb, clamp(fragColor.rgb, ringLo, ringHi), "
                         + baked(lanczosAntiRingingStrength) + ");\n" : "");

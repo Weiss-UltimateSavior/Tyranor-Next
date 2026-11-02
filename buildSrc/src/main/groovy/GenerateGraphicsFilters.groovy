@@ -50,8 +50,9 @@ abstract class GenerateGraphicsFilters extends DefaultTask {
                 strings(['zh','en','ja'].collect { d.title[it] }), strings(['zh','en','ja'].collect { d.categoryTitle[it] }),
                 quoted(d.shortName), '0x' + d.color.substring(1), quoted(d.asset), d.nativeScale, d.haloPerPass,
                 d.sharpnessAdjustable, strings(d.scaleModes), quoted(d.defaultScaleMode), d.defaultSharpness,
-                d.defaultBicubicB ?: 0.33, d.defaultBicubicC ?: 0.33,
-                d.defaultLanczosAntiRingingStrength ?: 0.5,
+                d.defaultBicubicB != null ? d.defaultBicubicB : 0.33,
+                d.defaultBicubicC != null ? d.defaultBicubicC : 0.33,
+                d.defaultLanczosAntiRingingStrength != null ? d.defaultLanczosAntiRingingStrength : 0.5,
                 d.outputSized, d.forceParameters, d.visible, quoted(d.migrationTarget), d.maxOutputScale,
                 d.topLeftCoordinates ?: false, quoted(d.resampleKernel ?: 'lanczos2')]
             '            new GraphicsFilterDefinition(' + args.join(', ') + ')'

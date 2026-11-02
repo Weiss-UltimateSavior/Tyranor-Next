@@ -20,9 +20,13 @@ VN-SR 声明 `verification: retained`，来源文件和许可证必须提供loca
 ## 宿主适配
 
 使用来源项目 `shaders/gles` 版本：原尺寸RGBA4特征、四个部分更新块、12通道RGB残差及2X重建。
-C24/C32 不再提供，也不打包其资源或保留其生成输入。
+C24/C32 为本 PR 未引入的通道规模（不打包其资源或保留其生成输入）；来源项目在该 pinned revision
+未提供对应的 GLES 导出，如需其它规模应按同一描述符规范另行贡献。
 旁路特征继续引用上一层纹理，不增加复制绘制；各规模分别需要10/15/20个片元pass，
 C16最宽pass需要4个输入纹理绑定；既有 `compileChain()` 会与设备 `GL_MAX_TEXTURE_IMAGE_UNITS` 比较，超限走原有失败处理。
+KR2 1.2.6 的 carrier 预留按 NPOT 上取整（1080p 2× 输出约 128 MiB、1440p 2× 约 256 MiB，已达
+共享纹理预算上限），高分屏下 VN-SR 可能整链不可用或只能分块（C16 1080p 分块约 2.16× 计算量）；
+该限制未做设备实测，属[设备验收缺口](graphics-filter-coordinates.md)。
 
 `tools/generate-vnsr-filters.py` 保留原始GLES字节；描述符声明顶左逻辑坐标，
 由[公共方向接口](graphics-filter-coordinates.md)同时适配采样与PixelShuffle相位，避免资产预翻转。

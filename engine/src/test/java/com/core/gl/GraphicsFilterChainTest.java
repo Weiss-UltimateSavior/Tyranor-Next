@@ -20,7 +20,11 @@ public final class GraphicsFilterChainTest {
         assertThrows(UnsupportedOperationException.class, () -> chain.steps().clear());
 
         GraphicsFilterChain parameters = GraphicsFilterChain.of(List.of(
-                new GraphicsFilterChain.Step("lanczos", true, 0.4, "factor", 1.5, 1.5)));
+                new GraphicsFilterChain.Step("lanczos", true,
+                        GraphicsFilterChain.defaultCasSharpness("lanczos"),
+                        GraphicsFilterChain.defaultBicubicB("lanczos"),
+                        GraphicsFilterChain.defaultBicubicC("lanczos"),
+                        0.4, "factor", 1.5, 1.5)));
         assertEquals("v2:lanczos~0.4~factor~1.5~1.5", parameters.encode());
         assertEquals(parameters.encode(), GraphicsFilterChain.parse(parameters.encode()).encode());
         assertEquals("v1:", GraphicsFilterChain.of(List.of()).encode());
@@ -139,7 +143,7 @@ public final class GraphicsFilterChainTest {
         GraphicsFilterDefinition bicubic = GraphicsFilterDefinitions.find("bicubic");
         assertEquals("bicubic", bicubic.resampleKernel);
         assertTrue(bicubic.sharpnessAdjustable);
-        assertEquals(0.4, bicubic.defaultSharpness, 0);
+        assertEquals(0.33, bicubic.defaultSharpness, 0);
         // Menu order follows performance cost: bilinear -> bicubic -> lanczos.
         assertTrue(bilinear.categoryOrder < bicubic.categoryOrder);
         assertTrue(bicubic.categoryOrder < lanczos.categoryOrder);
@@ -154,16 +158,19 @@ public final class GraphicsFilterChainTest {
         assertEquals(lanczosPlan.outputHeights[0], bicubicPlan.outputHeights[0]);
         assertTrue(bilinearPlan.execute[0]);
         assertTrue(bicubicPlan.execute[0]);
-        // Resampling at identity geometry is a no-op pass: every scale-only preset skips it.
+        // Resampling at 1:1 geometry has nothing to compute: every scale-only preset skips it
+        // (its kernel would only smooth, not act); shader filters keep running their effect.
         assertFalse(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:bicubic"), 1920, 1080, 1920, 1080).execute[0]);
         assertFalse(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:lanczos"), 1920, 1080, 1920, 1080).execute[0]);
-        // Shader filters with their own in-place effect (CAS) must keep running at identity.
+        // Shader filters with their own in-place effect (CAS, incl. the hidden cas_scale_* family)
+        // must keep running at identity — their scaling parameter can still change the image.
         assertTrue(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:cas"), 1920, 1080, 1920, 1080).execute[0]);
+        assertTrue(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:cas_scale_standard"), 1920, 1080, 1920, 1080).execute[0]);
         // Wire round trips carry the adjustable parameters (bicubic B/C / lanczos anti-ringing).
         assertEquals("v2:bicubic~0.5~0.25~fit~1.0~1.0",
                 GraphicsFilterChain.parse("v2:bicubic~0.5~0.25~fit~1.0~1.0").encode());
-        // Legacy 5-token bicubic wire maps to bicubic B=C.
-        assertEquals("v2:bicubic~0.8~0.8~fit~1.0~1.0",
+        // Legacy 5-token bicubic wire does not migrate sharpness to B/C; defaults apply.
+        assertEquals("v1:bicubic",
                 GraphicsFilterChain.parse("v2:bicubic~0.8~fit~1.0~1.0").encode());
         assertEquals("v2:lanczos~0.7~fit~1.0~1.0",
                 GraphicsFilterChain.parse("v2:lanczos~0.7~fit~1.0~1.0").encode());

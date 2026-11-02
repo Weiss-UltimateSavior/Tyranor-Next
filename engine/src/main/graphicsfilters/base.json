@@ -325,7 +325,7 @@
         "factor"
       ],
       "defaultScaleMode": "fit",
-      "defaultSharpness": 0.4,
+      "defaultSharpness": 0.33,
       "defaultBicubicB": 0.33,
       "defaultBicubicC": 0.33,
       "outputSized": false,

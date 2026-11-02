@@ -146,7 +146,7 @@ private fun ScaleParameter(title: String, value: String, onChange: (String) -> U
         AppSearchField(query = value, onQueryChange = onChange, modifier = Modifier.weight(1f),
             imeAction = androidx.compose.ui.text.input.ImeAction.Done,
             keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-            leadingIcon = androidx.compose.ui.res.painterResource(R.drawable.ic_graphics_scale),
+            leadingIcon = androidx.compose.ui.res.painterResource(R.drawable.ic_graphics_parameters),
             iconContentDescription = title, textStyle = MaterialTheme.typography.bodyMedium)
         DialogTextButton(stringResource(R.string.graphics_filter_decrease), enabled = (validScale(value) ?: 1.0) > 0.25) {
             onChange(formatScale(((validScale(value) ?: 1.0) - 0.25).coerceAtLeast(0.25)))

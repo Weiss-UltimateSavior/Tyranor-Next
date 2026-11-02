@@ -48,6 +48,11 @@ abstract class VerifyGraphicsResources extends DefaultTask {
             }
             // localPath is repository-root relative. External-only source metadata remains descriptive.
             (data.sources ?: []).each { source ->
+                // Fail closed on mistyped verification: unknown values must not silently
+                // downgrade a retained source to descriptive-only handling.
+                if (source.verification != null && !(source.verification in ['retained', 'external-only'])) {
+                    throw new GradleException('Unknown graphics source verification: ' + source.verification)
+                }
                 boolean retained = source.verification == 'retained'
                 if (retained && (!(source.files instanceof List) || source.files.isEmpty()
                         || !(source.license instanceof Map) || !source.license.localPath)) {

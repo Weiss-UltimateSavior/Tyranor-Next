@@ -96,7 +96,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 | `app/src/main/assets/` | App 自有资源，当前主要为 `rtp/`；不在此手工保存生成插件 zip |
 | `engine/src/main/jniLibs/arm64-v8a/` | 随 APK 分发的预编译运行库 |
 | `engine/src/main/cpp/` | CMake 现场编译 JNI/图形桥，动态连接既有运行库 |
-| `engine/src/main/graphicsfilters/*.json`、`engine/patches/*.json` | 描述滤镜贡献与固定来源；buildSrc 生成目录并校验资源、许可与相关库哈希 |
+| `engine/src/main/graphicsfilters/*.json`、`engine/patches/*.json` | 描述滤镜贡献与固定来源；buildSrc 生成目录并校验资源、许可与相关库哈希。滤镜资产按描述符声明顶左/底左行序契约（见 docs/graphics-filter-coordinates.md）；`asset: null` 的条目为纯重采样节点（Bilinear/Bicubic/Lanczos），不加载卷积着色器 |
 
 普通 Gradle 构建不会重编大部分引擎，也不会执行 Rust 构建：
 

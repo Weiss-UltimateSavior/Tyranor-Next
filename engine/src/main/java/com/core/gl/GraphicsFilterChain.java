@@ -22,9 +22,9 @@ public final class GraphicsFilterChain {
         public Step(String id, boolean enabled, double sharpness, String scaleMode, double widthScale, double heightScale) {
             this(id, enabled,
                     ("bicubic".equals(id) || "lanczos".equals(id)) ? defaultCasSharpness(id) : sharpness,
-                    "bicubic".equals(id) ? sharpness : defaultBicubicB(id),
-                    "bicubic".equals(id) ? sharpness : defaultBicubicC(id),
-                    "lanczos".equals(id) ? sharpness : defaultLanczosAntiRingingStrength(id),
+                    defaultBicubicB(id),
+                    defaultBicubicC(id),
+                    defaultLanczosAntiRingingStrength(id),
                     scaleMode, widthScale, heightScale);
         }
         public Step(String id, boolean enabled, double casSharpness, double bicubicB, double bicubicC,
@@ -132,7 +132,8 @@ public final class GraphicsFilterChain {
                 } else if (parameters && fields.length == 5) {
                     double val = Double.parseDouble(fields[1]);
                     if ("bicubic".equals(fields[0])) {
-                        result.add(new Step(fields[0], enabled, defaultCasSharpness(fields[0]), val, val,
+                        result.add(new Step(fields[0], enabled, defaultCasSharpness(fields[0]),
+                                defaultBicubicB(fields[0]), defaultBicubicC(fields[0]),
                                 defaultLanczosAntiRingingStrength(fields[0]), fields[2],
                                 Double.parseDouble(fields[3]), Double.parseDouble(fields[4])));
                     } else if ("lanczos".equals(fields[0])) {

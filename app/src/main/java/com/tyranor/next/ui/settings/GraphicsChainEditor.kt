@@ -8,7 +8,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +28,7 @@ import com.tyranor.next.core.settings.GraphicsNode
 import com.tyranor.next.core.settings.GraphicsSettingsCodec
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.NoRippleTextButton
@@ -134,7 +134,7 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
                                 .padding(horizontal = 2.dp)
                                 .width(1.dp)
                                 .height(20.dp)
-                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                .background(TextColor.copy(alpha = if (enabled) 0.5f else 0.2f))
                         )
                         GraphicsNodeAction(
                             R.drawable.ic_graphics_up,
@@ -188,12 +188,14 @@ private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick:
     Box(
         modifier = Modifier
             .size(40.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .border(
-                1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (enabled) 0.5f else 0.2f),
-                RoundedCornerShape(8.dp)
+            .clip(AppComponentShape)
+            // 默认风格描边取动态常量 TextColor（AGENTS 3.5 禁止弹窗内读 colorScheme）；
+            // 玻璃风格的 0.5dp 发丝描边由 glassBorder 负责，两种风格不叠加。
+            .then(
+                if (AppThemeColors.isGlass) Modifier
+                else Modifier.border(1.dp, TextColor.copy(alpha = if (enabled) 0.5f else 0.2f), AppComponentShape)
             )
+            .glassBorder(AppComponentShape)
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },

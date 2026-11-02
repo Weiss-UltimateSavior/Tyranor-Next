@@ -483,7 +483,10 @@ public final class Anime4kPostProcessor {
                             + TARGET_MEMORY_BUDGET_BYTES, false));
         }
         LanczosScale.Plan scale = LanczosScale.resample(geometry.width, geometry.height, outWidth, outHeight);
-        if ((scale.horizontal || scale.vertical) && mScaleProgram == 0) buildScaleProgram();
+        // Identity passes are currently planned away for scale-only presets, but the program
+        // must exist if runScale is ever reached with unchanged sizes (drawing and uploading
+        // uniforms with program 0 would fail the node).
+        if ((mScaleOnly || scale.horizontal || scale.vertical) && mScaleProgram == 0) buildScaleProgram();
         if (mQuadVao[0] == 0) createQuad();
         releaseTargets();
         mWidth = width;
