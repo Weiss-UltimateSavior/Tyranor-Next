@@ -33,8 +33,10 @@
     <string name="settings_appearance_style">外観スタイル</string>
     <string name="settings_appearance_style_default">デフォルト</string>
     <string name="settings_appearance_style_glass">レトロガラス</string>
+    <string name="settings_app_corner_radius">アプリの角丸調整</string>
+    <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">ガラス外観スタイルでは使用できません</string>
-    <string name="settings_theme_mode">外観モード</string>
+    <string name="settings_theme_mode">明暗切り替え</string>
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
     <string name="settings_engine_tabs">エンジンページを分類表示</string>

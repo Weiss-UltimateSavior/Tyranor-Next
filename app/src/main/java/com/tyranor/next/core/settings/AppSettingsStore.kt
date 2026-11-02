@@ -16,6 +16,7 @@ object AppSettingsStore {
     const val KEY_LIQUID_GLASS_ENHANCE = "liquid_glass_enhance"
     const val KEY_APPEARANCE_STYLE = "appearance_style"
     const val KEY_SCAN_DEPTH = "scan_depth"
+    const val KEY_APP_CORNER_RADIUS = "app_corner_radius"
     const val KEY_LANGUAGE = "language"
     const val KEY_THEME_MODE = "theme_mode"
     const val KEY_GAME_SORT = "game_sort"
@@ -99,6 +100,12 @@ object AppSettingsStore {
 
     /** 文件夹扫描深度默认值（层级，1..5）。 */
     const val DEFAULT_SCAN_DEPTH = 3
+
+    /** 应用统一圆角可选档位（dp）：5..50，步长 5，共十档。 */
+    val APP_CORNER_RADIUS_STEPS: List<Int> = listOf(5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
+
+    /** 应用统一圆角默认值（dp）：15dp 档。 */
+    const val DEFAULT_APP_CORNER_RADIUS = 15
 
     /** 游戏排序：按标题字母/字符顺序。 */
     const val GAME_SORT_ALPHA = "alpha"
@@ -390,6 +397,21 @@ object AppSettingsStore {
 
     fun setScanDepth(c: Context, depth: Int) =
         prefs(c).edit().putInt(KEY_SCAN_DEPTH, depth.coerceIn(1, 5)).apply()
+
+    /**
+     * 应用统一圆角归一：吸附到 [APP_CORNER_RADIUS_STEPS] 中最近的档位
+     * （纯函数，便于 JVM 单测；非法/越界值同样收敛到档位内）。
+     */
+    fun normalizeAppCornerRadius(value: Int): Int =
+        APP_CORNER_RADIUS_STEPS.minByOrNull { kotlin.math.abs(it.toLong() - value) }
+            ?: DEFAULT_APP_CORNER_RADIUS
+
+    fun getAppCornerRadius(c: Context): Int =
+        normalizeAppCornerRadius(prefs(c).getInt(KEY_APP_CORNER_RADIUS, DEFAULT_APP_CORNER_RADIUS))
+
+    fun setAppCornerRadius(c: Context, radius: Int) {
+        prefs(c).edit().putInt(KEY_APP_CORNER_RADIUS, normalizeAppCornerRadius(radius)).apply()
+    }
 
     /** 首次组合时从持久化加载「卡片隐藏名称标签」到内存态（幂等）。 */
     fun initGameCardHideTitleTag(c: Context) {

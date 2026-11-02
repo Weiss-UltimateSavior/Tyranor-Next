@@ -33,8 +33,10 @@
     <string name="settings_appearance_style">Appearance style</string>
     <string name="settings_appearance_style_default">Default</string>
     <string name="settings_appearance_style_glass">Retro glass</string>
+    <string name="settings_app_corner_radius">App corner radius</string>
+    <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">Unavailable in glass appearance styles</string>
-    <string name="settings_theme_mode">Appearance</string>
+    <string name="settings_theme_mode">Light/dark mode</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
     <string name="settings_engine_tabs">Categorize engine page</string>

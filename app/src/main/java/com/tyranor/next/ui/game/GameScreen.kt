@@ -880,7 +880,7 @@ internal fun GameActionsSheet(
             Color.Black.copy(alpha = 0.32f)
         },
         contentWindowInsets = { WindowInsets(0.dp) },
-        // 顶部圆角与弹窗内条目圆角（AppNavItem 8dp）保持一致
+        // 顶部圆角与组件统一圆角保持一致
         shape = AppSheetTopShape,
         // 玻璃描边只能画在抽屉真实顶边（dragHandle 槽首位）；不能挂 Surface 外层 modifier，
         // 否则描边会按未偏移的布局位置落到背景里形成一条白线。

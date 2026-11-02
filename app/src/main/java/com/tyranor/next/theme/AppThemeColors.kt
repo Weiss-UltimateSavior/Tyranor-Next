@@ -29,6 +29,13 @@ object AppThemeColors {
         private set
 
     /**
+     * 应用统一圆角（dp，5..50 共十档）：风格无关，卡片/条目/弹窗/抽屉统一取本值。
+     * 变化时全 App 重组（`theme/AppShapes.kt` 的 getter 直接读取）。
+     */
+    var appCornerRadius by mutableStateOf(AppSettingsStore.DEFAULT_APP_CORNER_RADIUS)
+        private set
+
+    /**
      * 是否处于玻璃系外观（复古玻璃）：透明页面背景、玻璃面、禁用外观模式等规则共用。
      * 派生自 [appearanceStyle]，供既有调用点零改动沿用。
      */
@@ -54,6 +61,7 @@ object AppThemeColors {
         appearanceStyle = AppSettingsStore.getAppearanceStyle(context)
         primary = parseColorHex(AppSettingsStore.getThemeColorHex(context))
         isDark = appearanceStyle.isGlass || AppSettingsStore.isDarkEffective(context)
+        appCornerRadius = AppSettingsStore.getAppCornerRadius(context)
         // 同步主题色快照给 core 启动编排（EngineLauncher 注入引擎 Intent 用），
         // 维持 core 层不反向依赖 theme 的依赖方向。
         ThemeColorPayloadStore.current = ThemeColorPayload(
@@ -76,6 +84,11 @@ object AppThemeColors {
                 else -> 0xFF82908A.toInt()
             },
         )
+    }
+
+    /** 设置页调整圆角时的即时生效（仅内存；持久化由调用方 `setAppCornerRadius` 负责）。 */
+    fun applyAppCornerRadius(radius: Int) {
+        appCornerRadius = AppSettingsStore.normalizeAppCornerRadius(radius)
     }
 }
 

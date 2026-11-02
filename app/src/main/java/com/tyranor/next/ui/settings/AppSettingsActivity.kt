@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,12 +30,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +68,8 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
+import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -221,7 +227,45 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 状态驱动选中项：跟随系统时系统深浅不变也不会漏刷新下拉展示
+                            // 应用圆角调整：默认外观与复古玻璃共用同一数值；拖动即时生效并逐档落盘
+                            val radiusSteps = AppSettingsStore.APP_CORNER_RADIUS_STEPS
+                            val cornerRadius = AppThemeColors.appCornerRadius
+                            val cornerRadiusLabel = stringResource(R.string.settings_app_corner_radius)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    cornerRadiusLabel,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Text(
+                                    stringResource(R.string.settings_app_corner_radius_value, cornerRadius),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Slider(
+                                value = cornerRadius.toFloat(),
+                                onValueChange = { raw ->
+                                    val snapped = AppSettingsStore.normalizeAppCornerRadius(raw.roundToInt())
+                                    if (snapped != AppThemeColors.appCornerRadius) {
+                                        AppThemeColors.applyAppCornerRadius(snapped)
+                                        AppSettingsStore.setAppCornerRadius(ctx, snapped)
+                                    }
+                                },
+                                valueRange = radiusSteps.first().toFloat()..radiusSteps.last().toFloat(),
+                                steps = radiusSteps.size - 2,
+                                showKeyPoints = true,
+                                hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                modifier = Modifier
+                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                    .semantics { contentDescription = cornerRadiusLabel },
+                            )
+                            // 深浅色切换（原「外观模式」）：状态驱动选中项，跟随系统时系统深浅不变也不会漏刷新下拉展示
                             var themeMode by remember { mutableStateOf(AppSettingsStore.getThemeMode(ctx)) }
                             val themeModes = listOf(
                                 AppSettingsStore.THEME_MODE_SYSTEM to stringResource(R.string.common_follow_system),

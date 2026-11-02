@@ -190,8 +190,16 @@ _Avoid_: 玻璃（单独出现时指本档）
 _Avoid_: 导航抽屉（NavigationDrawer）、侧边栏（与抽屉混淆时）
 
 **外观模式（Appearance）**:
-明/暗/跟随系统的主题选择；实际生效值以 `AppSettingsStore.isDarkEffective()` 为唯一事实源。
+明/暗/跟随系统的主题选择（应用设置中显示为「深浅色切换」）；实际生效值以 `AppSettingsStore.isDarkEffective()` 为唯一事实源。
 _Avoid_: 深色模式（仅指其一）
+
+**应用圆角（App Corner Radius）**:
+应用设置的统一圆角数值（5–50dp，十档，默认 15dp），默认外观与复古玻璃共用；卡片、条目、弹窗与抽屉经 `theme/AppShapes.kt` 的 `AppComponentShape` / `AppComponentCornerRadius` / `AppSheetTopShape` 统一取值，不再按外观风格分档。
+_Avoid_: 组件圆角、卡片圆角（仅指其一）
+
+**背景粒子（Floating Particles）**:
+默认外观风格页面背景上的主题色缓慢漂浮圆点（约 30fps、仅在绘制阶段更新，系统关闭动画时静止），随「色调轮盘」整体换色；玻璃外观风格不绘制。
+_Avoid_: 动态壁纸、粒子特效（仅指本背景）
 
 **三语言支持**:
 zh / ja / en 三套 `strings.xml` 由工具强制键值一致（`checkHardcodedUiStrings`），禁止 Kotlin 源码硬编码 CJK 文案。

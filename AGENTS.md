@@ -174,7 +174,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 ### 4. 背景色
 
-- 顶部栏背景**恒为透明**（`AppTopBar` 默认 `Color.Transparent`），露出页面根部背景层：默认外观风格为纯色底（`PageGrey`，见 `theme/DefaultPageBackground.kt`），玻璃系风格为玻璃页面渐变。标题与图标统一使用 `colorScheme.onBackground`。
+- 顶部栏背景**恒为透明**（`AppTopBar` 默认 `Color.Transparent`），露出页面根部背景层：默认外观风格为纯色底（`PageGrey`）+ 主题色粒子缓慢漂浮（`theme/DefaultPageBackground.kt`，约 30fps、仅在绘制阶段更新，系统关闭动画时静止），玻璃系风格为玻璃页面渐变。标题与图标统一使用 `colorScheme.onBackground`。
 - 页面根容器（`MiuixScaffold(containerColor = …)`、页面级 Box）同样**不得铺不透明背景色**（一律 `Color.Transparent`），背景由根部背景层负责；否则会把根部背景整片盖掉。
 
 - **玻璃系外观风格（复古玻璃）**：玻璃下页面背景透明，顶栏保持透明（露出渐变/色斑与环境光）。
@@ -233,13 +233,13 @@ Column(fillMaxSize)                                // 页面根
 
 - 页面切换动画必须保持统一：主 Screen 四个 Tab 间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
 
-- 组件统一圆角数值为 **8dp**；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
-  `AppComponentShape`（默认 8dp / 玻璃外观风格与悬浮导航一致 32dp）、Miuix 组件用 `AppComponentCornerRadius`、
+- 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观与复古玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
+  `AppComponentShape`、Miuix 组件用 `AppComponentCornerRadius`、
   抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。
 
 - **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「经典 MD 导航栏」（原「默认导航栏」）形态，液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
 
-- **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（8dp 基础上加大 8dp），为有意设计，不受 8dp 条款约束；其余组件不得援引此豁免。
+- **圆角豁免**：液态玻璃导航（`ui/common/LiquidGlassNavigation.kt`）的栏体与导航项胶囊使用 **16dp**（固定值，不随应用圆角调整），为有意设计，不受统一圆角条款约束；其余组件不得援引此豁免。
 
 - **圆角豁免（液态玻璃 · 透镜底栏）**：应用设置「导航栏样式」选到「液态玻璃 · 透镜」后挂载的
   `ui/common/glass/EnhancedLiquidGlassNavigation.kt`（栏体 / 图标副本行 / 移动透镜三处）使用
@@ -262,7 +262,7 @@ Column(fillMaxSize)                                // 页面根
   触觉反馈保留展开/收起、确认选中、长按进入移动与实际落位；接近、移入或切换子控件候选时不得震动。
   悬浮按钮在平板也保持圆球导航，弧形半径与选项尺寸按安全区自适应；其它样式的平板侧栏规则不变。
 
-- 所有应用弹窗使用 `AppAlertDialog`，背景与圆角由动态主题常量决定：默认浅色通常为白底 8dp，深色模式使用 `NavWhite`，玻璃风格使用对应面板材质与 32dp；统一引用 `AppComponentShape`，不得写死白色或 8dp。原生按键编辑器的明文豁免仍仅限该页与游戏内按键层。
+- 所有应用弹窗使用 `AppAlertDialog`，背景由动态主题常量决定、圆角统一取 `AppComponentShape`：默认浅色通常为白底，深色模式使用 `NavWhite`，玻璃风格使用对应面板材质；不得写死白色或圆角数值。原生按键编辑器的明文豁免仍仅限该页与游戏内按键层。
 
 ## 页面内容文字尺寸规范
 
@@ -388,7 +388,7 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态与参数
 
-- 排版固定：圆角 `AppComponentShape`（默认 8dp / 玻璃风格 32dp，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
+- 排版固定：圆角 `AppComponentShape`（统一取「应用圆角调整」值，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
 
 - 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
 

@@ -129,7 +129,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         tabs = tabs,
                         selectedTabIndex = selectedTab,
                         onTabSelected = { selectedTab = it },
-                        // 圆角与组件统一入口同源：默认 8dp
+                        // 圆角与组件统一入口同源：取「应用圆角调整」值
                         cornerRadius = AppComponentCornerRadius,
                         // 容器背景透明（只保留选中指示器）：Miuix 默认取 surface，深色下呈不透明黑块
                         colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent),
