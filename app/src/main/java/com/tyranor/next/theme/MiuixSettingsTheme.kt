@@ -25,8 +25,8 @@ private val TyranorMiuixTextStyles = defaultTextStyles(
 )
 
 /**
- * 设置页专用 Miuix 主题：配色与 TyranorNextTheme 对齐，深/浅色由应用设置「外观模式」控制
- * 页面背景与组件色由应用设置「色调切换」控制是否互换。
+ * 设置页专用 Miuix 主题：配色与 TyranorNextTheme 对齐，深/浅色由应用设置「外观模式」控制，
+ * 页面背景与组件色统一取 `theme/Color.kt` 常量（玻璃外观风格使用玻璃材质）。
  * primaryColor 由应用设置「色调轮盘」提供，默认蓝与 TyranorNextTheme 一致。
  */
 @Composable
@@ -65,26 +65,23 @@ fun MiuixSettingsTheme(
             sliderKeyPointForeground = Color.White,
         )
     }
-    // 玻璃系外观风格：输入框/浮层/分割线/遮罩改用玻璃色板（高级玻璃更透、描边更亮）；
+    // 玻璃系外观风格：输入框/浮层/分割线/遮罩改用玻璃色板；
     // 卡片底色（surfaceContainer）与文字（onSurface*）已由动态色常量自动覆盖。
     val colors = if (glass) {
-        val advanced = AppThemeColors.isAdvancedGlass
-        val secondaryText = if (advanced) AdvancedGlassTextSecondary else GlassTextSecondary
         baseColors.copy(
-            surfaceContainerHigh = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
-            surfaceContainerHighest = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
-            secondaryContainer = if (advanced) AdvancedGlassSurfaceHigh else GlassSurfaceHigh,
+            surfaceContainerHigh = GlassSurfaceHigh,
+            surfaceContainerHighest = GlassSurfaceHigh,
+            secondaryContainer = GlassSurfaceHigh,
             onSurfaceContainerHigh = TextColor,
             onSurfaceContainerHighest = TextColor,
             onSecondaryContainer = TextColor,
-            onSurfaceContainerVariant = secondaryText,
-            onBackgroundVariant = secondaryText,
-            onSurfaceSecondary = secondaryText,
-            onSurfaceVariantSummary = secondaryText,
-            onSurfaceVariantActions = secondaryText.copy(alpha = 0.6f),
-            outline = if (advanced) AdvancedGlassBorder else GlassBorder,
-            dividerLine = if (advanced) AdvancedGlassBorder else GlassBorder,
-            // 高级玻璃浮层为较高不透明度的灰玻璃膜，遮罩与复古一致
+            onSurfaceContainerVariant = GlassTextSecondary,
+            onBackgroundVariant = GlassTextSecondary,
+            onSurfaceSecondary = GlassTextSecondary,
+            onSurfaceVariantSummary = GlassTextSecondary,
+            onSurfaceVariantActions = GlassTextSecondary.copy(alpha = 0.6f),
+            outline = GlassBorder,
+            dividerLine = GlassBorder,
             windowDimming = Color.Black.copy(alpha = 0.6f),
         )
     } else {

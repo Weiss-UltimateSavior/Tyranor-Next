@@ -54,7 +54,6 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
@@ -357,7 +356,6 @@ private fun EngineRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
-            .glassShadow()
             .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),
@@ -414,7 +412,6 @@ private fun ExternalJumpRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .glassShadow()
             .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),

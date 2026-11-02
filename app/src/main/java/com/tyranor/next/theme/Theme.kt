@@ -36,7 +36,7 @@ fun TyranorNextTheme(
       primary = primary,
       secondary = Teal40,
       tertiary = Amber40,
-      // 页面背景与组件色由应用设置「色调切换」控制
+      // 页面背景与组件色取 theme/Color.kt 常量（随深色模式 / 玻璃外观切换）
       background = PageGrey,
       surface = PageGrey,
       onBackground = TextColor,

@@ -17,6 +17,12 @@
 - 新增 Ruffle（SWF / Flash）外置 APK 引擎模块接入：引擎页「网页」分类与安装状态、默认每个顶层 `.swf` 一条记录（根 `index.html/index.htm` + 唯一 SWF 的叶子目录识别为包装游戏）、`game` / `settings` 启动协议、全局与单游戏设置（渲染后端 / 画质 / 缩放 / 黑边 / 加载方式 / 自动关闭）及 `configuration.json` 受管键同步；不提供统一存档管理与虚拟按键重映射。设备与插件运行验证尚未执行。
 - 升级 Ethornell / BGI 内置宿主到上游 `0cfff1d` ABI v1：15 个导出（含 `request_payload`）、kind 5 输入对话框与 JSON 回答、engine 原生四类对话框；同步 ABI header、provenance 与 Release R8 probe。当前随包库为 `043fef05…`（27,259,224 B，provenance `dirty=true`、1 个本地补丁；`--local-static` 与 debug/release APK 精确库字节检查通过，严格来源审计未通过）。App 存档管理开放为 App 私有 user-root 备份/恢复/删除（单文件 64 MiB；不导入资源根 `UserData`，不承诺商业游戏槽位或 PC 存档互通）。设备核心 6/6（1.426s）、暂停 3/3（2.999s）、存档 9/9（`pm clear` 后，2.047s）、release probe SJIS/GBK 各 3/3；真实样本语言点击后宿主仍存活并生成 `BGI.gdb`（约 123,802 B），仅验证启动期全局数据写入，16KB/API26 完整重跑未执行。
 
+### 移除
+
+- 移除应用设置「色调切换」与「默认主题渐变」：默认外观恢复为纯色页面背景，组件色只随外观模式取档；历史键 `tone_switch` / `default_theme_gradient` 不再读取。
+- 移除「首页样式」中的「分类仓库」：首页只保留默认与网页两种形态；历史值 `category` 归一回默认。
+- 移除「外观风格」中的「高级玻璃」：外观只保留默认与复古玻璃；删除 `AdvancedGlassStyle`、`AmbientBackdrop` 与 `glassShadow()`，历史值 `glass_advanced` 归一回默认。
+
 ### 修复
 
 - 合并 Ethornell 存档 capability 开放后，严格同步快照复用现有存档操作门禁并校验固定目录；宿主忙碌、目录错误或读取失败会向上传播，不再被当作空存档而结束待上传任务。普通存档列表的容错显示保持不变。

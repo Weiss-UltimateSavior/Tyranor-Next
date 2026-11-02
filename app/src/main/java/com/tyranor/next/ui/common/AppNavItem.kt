@@ -48,7 +48,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  *   标题用 [TextColor]、摘要用半透明辅助色；进入跳转的 icon 一律 `KeyboardArrowRight`。
  * - 背景色约定：页面上条目默认 [NavWhite]（页面背景 PageGrey 灰底白卡）；弹窗内条目传 [DialogItemSurface]，
  *   与弹窗背景形成层次反差（AGENTS.md 界面规范，勿回退 PageGrey——玻璃外观下 PageGrey 透明会丢失卡片层次）。
- * - 「色调切换」遵循统一规范：背景引用 `theme/Color.kt` 常量，前景取 [TextColor]，
+ * - 容器色约定：背景引用 `theme/Color.kt` 常量，前景取 [TextColor]，
  *   不依赖 `colorScheme.surface*`，保证弹窗作用域内外一致。
  *
  * @param title 条目标题

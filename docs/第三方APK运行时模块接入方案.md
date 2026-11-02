@@ -819,7 +819,7 @@ python tools/check-hardcoded-ui-strings.py
 - [x] Room v2→v3 显式迁移，`3.json` 已生成并纳入变更。
 - [x] 字段传播 11 项全部覆盖。
 - [x] 三语言文案与硬编码 UI 字符串检查通过。
-- [ ] 深色/复古玻璃/高级玻璃/平板侧栏的实际页面截图验收。
+- [ ] 深色/复古玻璃/平板侧栏的实际页面截图验收。
 - [ ] Room v2→v3 迁移测试、Discovery/Launcher/Bindings 设备或 fake-PM 测试。
 - [ ] `:app:lintDebug` / `:engine:lintDebug` 全绿（仍有仓库既有报错）。
 - [ ] 示例模块 APK 真机验收（安装/启用/扫描/启动/卸载/重装/重扫）。

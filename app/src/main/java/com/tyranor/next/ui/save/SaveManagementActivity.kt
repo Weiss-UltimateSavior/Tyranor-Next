@@ -50,7 +50,6 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -233,7 +232,7 @@ private fun SaveManagementScreen(game: ScanGame) {
             ) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        modifier = Modifier.fillMaxWidth().glassBorder(),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         colors = CardDefaults.cardColors(containerColor = NavWhite),
                         shape = AppComponentShape,
@@ -276,7 +275,7 @@ private fun SaveManagementScreen(game: ScanGame) {
 
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        modifier = Modifier.fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {

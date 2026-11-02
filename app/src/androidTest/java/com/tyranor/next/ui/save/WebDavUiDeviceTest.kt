@@ -657,7 +657,6 @@ class WebDavUiDeviceTest {
             ThemeCase("default-light", AppearanceStyle.DEFAULT, AppSettingsStore.THEME_MODE_LIGHT),
             ThemeCase("default-dark", AppearanceStyle.DEFAULT, AppSettingsStore.THEME_MODE_DARK),
             ThemeCase("retro-glass", AppearanceStyle.RETRO_GLASS, AppSettingsStore.THEME_MODE_LIGHT),
-            ThemeCase("advanced-glass", AppearanceStyle.ADVANCED_GLASS, AppSettingsStore.THEME_MODE_LIGHT),
         )
     }
 }

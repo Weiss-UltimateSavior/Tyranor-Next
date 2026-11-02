@@ -109,11 +109,11 @@ loopback 监听、Basic 合成账号，通过两台设备各自的 `adb reverse 
 - 初始不自动选择历史版本，激活按钮不可用；显式选中后才启用。
 - 确认弹窗展示与列表一致的 S→N 两个时间。
 - WebDAV 关闭后仍显示未完成切换的恢复入口。
-- 两处页面均采集默认浅色、默认深色、复古玻璃、高级玻璃。
+- 两处页面均采集默认浅色、默认深色、复古玻璃（「高级玻璃」档已移除，仅保留历史截图）。
 - 真正的 2.0 字体比例、横屏下，确认正文的滚动范围大于零；执行 ScrollBy 后正文位置改变，
   确认按钮仍可见且坐标保持不变。截图为滚动后的正文。
 
-另外在同一手机上临时将 density 设为 240，约 842dp 宽，再跑两页四种主题截图用例，**1 通过**。
+另外在同一手机上临时将 density 设为 240，约 842dp 宽，再跑两页三种主题截图用例，**1 通过**。
 这是宽屏/平板宽度模拟，**不是实体平板验收**。结束后再次读取设备设置：
 `font_scale=0.85`，`Physical density: 560`，无 density override。
 
@@ -161,7 +161,7 @@ PNG 直接来自设备 UiAutomation，没有裁切、缩放或重绘；`images/w
 | 默认浅色 | ![WebDAV 默认浅色](images/webdav-20261027/phone-webdav-theme-default-light.png) | ![存档管理默认浅色](images/webdav-20261027/phone-save-management-theme-default-light.png) |
 | 默认深色 | ![WebDAV 默认深色](images/webdav-20261027/phone-webdav-theme-default-dark.png) | ![存档管理默认深色](images/webdav-20261027/phone-save-management-theme-default-dark.png) |
 | 复古玻璃 | ![WebDAV 复古玻璃](images/webdav-20261027/phone-webdav-theme-retro-glass.png) | ![存档管理复古玻璃](images/webdav-20261027/phone-save-management-theme-retro-glass.png) |
-| 高级玻璃 | ![WebDAV 高级玻璃](images/webdav-20261027/phone-webdav-theme-advanced-glass.png) | ![存档管理高级玻璃](images/webdav-20261027/phone-save-management-theme-advanced-glass.png) |
+| 高级玻璃（已废弃，历史截图） | ![WebDAV 高级玻璃](images/webdav-20261027/phone-webdav-theme-advanced-glass.png) | ![存档管理高级玻璃](images/webdav-20261027/phone-save-management-theme-advanced-glass.png) |
 
 | 场景 | 截图 |
 | --- | --- |

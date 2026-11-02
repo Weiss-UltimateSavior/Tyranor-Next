@@ -69,8 +69,6 @@ import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.NavWhite
@@ -237,23 +235,14 @@ fun HomeScreen(
         return
     }
 
-    // ===== 原生 / 分类仓库：按应用设置「首页样式」二选一（Web 已在上面分支返回） =====
-    if (homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY) {
-        CategoryWarehouseContent(
-            modifier = modifier,
-            libraryState = libraryState,
-            onGameClick = { selectedGame = it },
-            onGameLongClick = { launchGame(it) },
-        )
-    } else {
-        NativeHomeContent(
-            modifier = modifier,
-            libraryState = libraryState,
-            onGameClick = { selectedGame = it },
-            onGameLongClick = { launchGame(it) },
-            onRecentRemoved = { removeRecentRecord(it) },
-        )
-    }
+    // ===== 原生首页（Web 已在上面分支返回） =====
+    NativeHomeContent(
+        modifier = modifier,
+        libraryState = libraryState,
+        onGameClick = { selectedGame = it },
+        onGameLongClick = { launchGame(it) },
+        onRecentRemoved = { removeRecentRecord(it) },
+    )
 
     // ===== 与游戏页统一：点按打开操作抽屉，长按直接启动 =====
     selectedGame?.let { game ->
@@ -510,7 +499,6 @@ private fun QuickLaunchCard(
     BoxWithConstraints(
         modifier = modifier
             .height(172.dp)
-            .glassShadow()
             .clip(AppComponentShape)
             .background(QuickLaunchFallback)
             .glassBorder(),
@@ -637,7 +625,6 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .height(172.dp)
-            .glassShadow()
             .clip(AppComponentShape)
             .background(NavWhite)
             .glassBorder(),
@@ -691,7 +678,6 @@ private fun RecentGameRow(
                         .matchParentSize()
                         .background(
                             when {
-                                AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
                                 AppThemeColors.isGlass -> GlassSurfaceHigh
                                 else -> MaterialTheme.colorScheme.primary
                             },

@@ -568,7 +568,7 @@ Activity 首版拟参照现有宿主使用 `singleInstance`，但**重入策略�
 | `engine/src/main/AndroidManifest.xml`、`engine/src/main/res/values/styles.xml`、`engine/consumer-rules.pro` | private Activity、进程/屏幕/主题、release JNI 保留 |
 | `.github/workflows/android-ci.yml`、`android-beta-release.yml` | 现有 assemble/JVM 门禁补 native ABI/依赖/16KB/设备测试证据，或独立 native CI 交付报告 |
 
-网络封面服务通常无需按引擎新增分支；首页分类目前按 enum 自动生成（`CategoryWarehouse.kt:161–193`），不重复增加第二套分类逻辑。标题回写是可选增强，必须保护用户改名且处理跨进程通知，不能把 Room 放进引擎子进程。
+网络封面服务通常无需按引擎新增分支；引擎分类的自动生成逻辑已随「分类仓库」首页样式一并移除，不重复增加第二套分类逻辑。标题回写是可选增强，必须保护用户改名且处理跨进程通知，不能把 Room 放进引擎子进程。
 - 实施时同步 `CONTEXT.md`，只描述已落地行为，计划尚未支持的能力不得写入事实清单。
 
 ## 10. 构建、二进制检查与许可

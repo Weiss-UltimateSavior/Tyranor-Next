@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppScreenActivity
@@ -81,7 +80,7 @@ internal fun EngineSettingsMenuScreen() {
             ) {
                 EngineSettingsKind.entries.forEach { kind ->
                     item {
-                        MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                             Column(Modifier.padding(vertical = 4.dp)) {
                                 val title = engineSettingsKindTitle(kind)
                                 ArrowPreference(
