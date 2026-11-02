@@ -378,15 +378,17 @@ fun MainScreen(modifier: Modifier = Modifier) {
       (selectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
     // 底栏采样源：Web 首页参与绘制时为仅背景层，其余为内容层（两者同一坐标空间，可直接替换）。
     val navBackdrop = if (webHomeInvolved) backgroundBackdrop else backdrop
-    // 仅背景层：默认外观绘制页面根背景（原直接挂在根 Box 上的 DefaultPageBackgroundLayer）；
-    // 玻璃系把原本画在内容层里的采样背景挪到本层——是转移而非叠加，屏幕上的背景绘制次数不变。
-    Box(
-      Modifier
-        .fillMaxSize()
-        .then(if (webHomeInvolved) Modifier.layerBackdrop(backgroundBackdrop) else Modifier)
-        .then(if (glassSamplingBackground && webHomeInvolved) pageBackground else Modifier),
-    ) {
-      DefaultPageBackgroundLayer()
+    // 仅背景层：只在 Web 首页参与绘制时挂载，供底栏采样（其余情况由根部 GlassBackground 绘制，
+    // 避免同一份动画背景在根层与内容层各跑一遍）。
+    if (webHomeInvolved) {
+      Box(
+        Modifier
+          .fillMaxSize()
+          .layerBackdrop(backgroundBackdrop)
+          .then(if (glassSamplingBackground) pageBackground else Modifier),
+      ) {
+        DefaultPageBackgroundLayer()
+      }
     }
     val contentLayerModifier = Modifier
       // source 节点常驻，避免切页结束时重新挂载玻璃录制层；Web 首页参与绘制时改由
@@ -483,7 +485,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       }
     }
 
-    // 玻璃外观风格下的默认导航栏：悬浮圆角玻璃条（玻璃底 + 0.5dp 描边 + 32dp 圆角），
+    // 玻璃外观风格下的默认导航栏：悬浮圆角玻璃条（玻璃底 + 0.5dp 描边 + 应用圆角），
     // 内容可从其下方滚过，列表底部留白由 glassNavBottomInset() 统一提供。
     if (floatingDefaultNav) {
       Box(
@@ -500,7 +502,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           onSelectPage = { selectPage(it) },
           modifier = Modifier
             .fillMaxWidth()
-            // 无文字后按图标高度收窄导航条（64dp）；圆角 32dp（半高），呈全圆角胶囊观感
+            // 无文字后按图标高度收窄导航条（64dp）；圆角取「应用圆角调整」值
             .height(64.dp)
             .clip(AppComponentShape)
             .glassBorder(AppComponentShape),
