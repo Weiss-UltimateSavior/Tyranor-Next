@@ -90,14 +90,10 @@
     <string name="settings_game_card_hide_title_tag">卡片隐藏名称标签</string>
     <string name="settings_game_sort">游戏排序</string>
     <string name="settings_engine_settings">引擎设置</string>
-    <string name="settings_app_summary">有关应用内的各项配置</string>
     <string name="settings_cover_scraper">封面刮削</string>
-    <string name="settings_cover_scraper_summary">设置多源封面来源、顺序与授权</string>
     <string name="settings_update_check">更新检查</string>
     <string name="settings_update_checking">正在检查更新</string>
-    <string name="settings_update_check_summary">对项目 GitHub 获取更新信息</string>
     <string name="settings_join_group">加入群聊</string>
-    <string name="settings_join_group_summary">跳转到官方聊天群组</string>
     <string name="settings_game_dirs_title">游戏目录</string>
     <string name="settings_no_game_dirs">暂无游戏目录</string>
     <string name="settings_invalid_suffix">已失效</string>

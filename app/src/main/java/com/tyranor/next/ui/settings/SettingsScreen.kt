@@ -323,47 +323,44 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
                 item {
                     // 工具入口：引擎设置；输入与手柄、解包 / 封包入口已迁至侧边栏「妙妙工具」面板
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_engine_settings),
-                                startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
-                                onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
-                            )
-                        }
-                    }
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_engine_settings),
+                        iconRes = R.drawable.ic_engine_manage,
+                        onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
+                    )
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_app_title),
-                                summary = stringResource(R.string.settings_app_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_app) },
-                                onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_cover_scraper),
-                                summary = stringResource(R.string.settings_cover_scraper_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_game_cover) },
-                                onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = if (checkingUpdate) stringResource(R.string.settings_update_checking) else stringResource(R.string.settings_update_check),
-                                summary = stringResource(R.string.settings_update_check_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_update, showBadge = hasUpdate) },
-                                onClick = { checkUpdate() },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_join_group),
-                                summary = stringResource(R.string.settings_join_group_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_group) },
-                                 onClick = {
-                                     showGroupDialog = true
-                                 },
-                             )
-                        }
-                    }
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_app_title),
+                        iconRes = R.drawable.ic_settings_app,
+                        onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_cover_scraper),
+                        iconRes = R.drawable.ic_game_cover,
+                        onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = if (checkingUpdate) {
+                            stringResource(R.string.settings_update_checking)
+                        } else {
+                            stringResource(R.string.settings_update_check)
+                        },
+                        iconRes = R.drawable.ic_settings_update,
+                        showBadge = hasUpdate,
+                        onClick = { checkUpdate() },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_join_group),
+                        iconRes = R.drawable.ic_settings_group,
+                        onClick = { showGroupDialog = true },
+                    )
                 }
                 item { BottomInsetSpacer() }
             }
@@ -1007,6 +1004,33 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onWinlator = { winlator = it },
                 onPpssppVersion = { ppssppVersion = it },
                 onWebShellPort = { webShellPort = it },
+            )
+        }
+    }
+}
+
+/**
+ * 单条功能入口卡：一张 MiuixCard 只承载一条 ArrowPreference。
+ * 每个入口独立成卡，避免多个不相关功能挤在同一张卡里；卡片间距由外层列表统一提供，
+ * 多行同类设置仍由 `EngineCard` 这类分组卡承载。
+ */
+@Composable
+private fun SettingsEntryCard(
+    title: String,
+    @DrawableRes iconRes: Int,
+    modifier: Modifier = Modifier,
+    showBadge: Boolean = false,
+    onClick: () -> Unit,
+) {
+    MiuixCard(
+        modifier = modifier.fillMaxWidth().glassShadow().glassBorder(),
+        cornerRadius = AppComponentCornerRadius,
+    ) {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            ArrowPreference(
+                title = title,
+                startAction = { SettingsItemIcon(iconRes, showBadge = showBadge) },
+                onClick = onClick,
             )
         }
     }

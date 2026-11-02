@@ -90,14 +90,10 @@
     <string name="settings_game_card_hide_title_tag">Hide name tags on cards</string>
     <string name="settings_game_sort">Game sorting</string>
     <string name="settings_engine_settings">Engine settings</string>
-    <string name="settings_app_summary">Application-level preferences</string>
     <string name="settings_cover_scraper">Cover scraping</string>
-    <string name="settings_cover_scraper_summary">Configure cover sources, priority, and authorization</string>
     <string name="settings_update_check">Check for updates</string>
     <string name="settings_update_checking">Checking for updates</string>
-    <string name="settings_update_check_summary">Fetch update information from GitHub</string>
     <string name="settings_join_group">Join community</string>
-    <string name="settings_join_group_summary">Open the official chat groups</string>
     <string name="settings_game_dirs_title">Game folders</string>
     <string name="settings_no_game_dirs">No game folders yet</string>
     <string name="settings_invalid_suffix">invalid</string>
