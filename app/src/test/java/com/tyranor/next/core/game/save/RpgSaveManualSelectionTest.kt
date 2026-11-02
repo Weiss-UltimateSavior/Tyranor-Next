@@ -36,7 +36,7 @@ class RpgSaveManualSelectionTest {
         val ioFailure = IOException("zip read failed")
 
         val thrown = assertThrows(IOException::class.java) {
-            store.withManualSelection<Unit>("g") { _ -> throw ioFailure }
+            store.withManualSelection<Unit>("g", temporaryFolder.root) { _ -> throw ioFailure }
         }
 
         // 原样重抛：不得把 IO 失败换成别的语义，调用方要如实上报同一次失败
@@ -50,7 +50,7 @@ class RpgSaveManualSelectionTest {
         // 取消不属于失败：必须原样向上传播，同样不得留下标记
         val cancelled = CancellationException("job cancelled")
         assertSame(cancelled, assertThrows(CancellationException::class.java) {
-            store.withManualSelection<Unit>("g") { _ -> throw cancelled }
+            store.withManualSelection<Unit>("g", temporaryFolder.root) { _ -> throw cancelled }
         })
         assertFalse(store.hasManualSelection("g"))
         assertTrue(stateDir.markers().isEmpty())
@@ -60,12 +60,12 @@ class RpgSaveManualSelectionTest {
     fun failureBeforeDirectoryCommitRestoresPreviousMarkerEvenWhenDamaged() {
         val stateDir = temporaryFolder.newFolder("state_previous")
         val store = RpgSaveSyncState(stateDir)
-        assertTrue(store.markManualSelection("g"))
+        assertTrue(store.markManualSelection("g", temporaryFolder.root))
         val presentBytes = stateDir.markerBytes()
 
         val ioFailure = IOException("staging copy failed")
         assertSame(ioFailure, assertThrows(IOException::class.java) {
-            store.withManualSelection<Unit>("g") { _ -> throw ioFailure }
+            store.withManualSelection<Unit>("g", temporaryFolder.root) { _ -> throw ioFailure }
         })
         // 事务前的 Present 标记必须逐字节回来：用户此前选过版本不能因一次失败而丢失
         assertTrue(store.hasManualSelection("g"))
@@ -76,7 +76,7 @@ class RpgSaveManualSelectionTest {
         val corruptBytes = stateDir.markerBytes()
         val blockFailure = IOException("backup restore failed")
         assertSame(blockFailure, assertThrows(IOException::class.java) {
-            store.withManualSelection<Unit>("g") { _ -> throw blockFailure }
+            store.withManualSelection<Unit>("g", temporaryFolder.root) { _ -> throw blockFailure }
         })
         assertArrayEquals(corruptBytes, stateDir.markerBytes())
         val unreadable = assertThrows(GameSaveException::class.java) { store.hasManualSelection("g") }
@@ -88,7 +88,7 @@ class RpgSaveManualSelectionTest {
         val stateDir = temporaryFolder.newFolder("state_success")
         val store = RpgSaveSyncState(stateDir)
 
-        val imported = store.withManualSelection("g") { onDirectoryCommitted ->
+        val imported = store.withManualSelection("g", temporaryFolder.root) { onDirectoryCommitted ->
             onDirectoryCommitted()
             3
         }
@@ -100,7 +100,7 @@ class RpgSaveManualSelectionTest {
 
         // 没调用提交回调就不算交换成功：整笔事务失败关闭，并回滚到「无标记」
         val missingCommit = assertThrows(GameSaveException::class.java) {
-            store.withManualSelection("h") { _ -> 1 }
+            store.withManualSelection("h", temporaryFolder.root) { _ -> 1 }
         }
         assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, missingCommit.code)
         assertFalse(store.hasManualSelection("h"))
@@ -114,7 +114,7 @@ class RpgSaveManualSelectionTest {
         val lateFailure = IOException("backup cleanup failed")
 
         val thrown = assertThrows(IOException::class.java) {
-            store.withManualSelection("g") { onDirectoryCommitted ->
+            store.withManualSelection("g", temporaryFolder.root) { onDirectoryCommitted ->
                 onDirectoryCommitted()
                 throw lateFailure
             }
@@ -129,7 +129,7 @@ class RpgSaveManualSelectionTest {
         assertTrue(store.needsManualSelectionRecovery("g"))
 
         // 下一次显式选择成功后自愈，标记回到 Present
-        store.withManualSelection("g") { onDirectoryCommitted -> onDirectoryCommitted() }
+        store.withManualSelection("g", temporaryFolder.root) { onDirectoryCommitted -> onDirectoryCommitted() }
         assertTrue(RpgSaveSyncState(stateDir).hasManualSelection("g"))
         assertFalse(store.needsManualSelectionRecovery("g"))
     }
@@ -138,7 +138,7 @@ class RpgSaveManualSelectionTest {
     fun oversizedMarkerRollsBackToUnreadableSentinelAndCanBeRepaired() {
         val stateDir = temporaryFolder.newFolder("state_oversized")
         val store = RpgSaveSyncState(stateDir)
-        assertTrue(store.markManualSelection("g"))
+        assertTrue(store.markManualSelection("g", temporaryFolder.root))
         val marker = stateDir.markers().single()
         marker.writeBytes(ByteArray(64 * 1024 + 1))
 
@@ -147,7 +147,7 @@ class RpgSaveManualSelectionTest {
 
         val failure = IOException("directory swap failed")
         assertSame(failure, assertThrows(IOException::class.java) {
-            store.withManualSelection<Unit>("g") { _ -> throw failure }
+            store.withManualSelection<Unit>("g", temporaryFolder.root) { _ -> throw failure }
         })
         // 超大内容无法原样保留，但显式选择必须已原子替换它，并以不可读哨兵失败关闭。
         assertTrue(marker.isFile)
@@ -156,7 +156,7 @@ class RpgSaveManualSelectionTest {
         assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, closed.code)
         assertTrue(store.needsManualSelectionRecovery("g"))
 
-        store.withManualSelection("g") { onDirectoryCommitted -> onDirectoryCommitted() }
+        store.withManualSelection("g", temporaryFolder.root) { onDirectoryCommitted -> onDirectoryCommitted() }
         assertTrue(store.hasManualSelection("g"))
     }
 
@@ -164,7 +164,7 @@ class RpgSaveManualSelectionTest {
     fun emptyAndNonEmptyMarkerDirectoriesArePreservedAndFailClosed() {
         val stateDir = temporaryFolder.newFolder("state_empty_marker")
         val store = RpgSaveSyncState(stateDir)
-        assertTrue(store.markManualSelection("g"))
+        assertTrue(store.markManualSelection("g", temporaryFolder.root))
         val marker = stateDir.markers().single()
         assertTrue(marker.delete())
         assertTrue(marker.mkdir())
@@ -172,12 +172,12 @@ class RpgSaveManualSelectionTest {
 
         val unavailable = assertThrows(GameSaveException::class.java) { store.hasManualSelection("g") }
         assertEquals(marker.toPath().toAbsolutePath().normalize().toString(), unavailable.detail)
-        val marked = assertThrows(GameSaveException::class.java) { store.markManualSelection("g") }
+        val marked = assertThrows(GameSaveException::class.java) { store.markManualSelection("g", temporaryFolder.root) }
         assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, marked.code)
         assertEquals(unavailable.detail, marked.detail)
 
         val empty = assertThrows(GameSaveException::class.java) {
-            store.withManualSelection<Unit>("g") { blockCalled = true }
+            store.withManualSelection<Unit>("g", temporaryFolder.root) { blockCalled = true }
         }
         assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, empty.code)
         assertEquals(marker.toPath().toAbsolutePath().normalize().toString(), empty.detail)
@@ -188,7 +188,7 @@ class RpgSaveManualSelectionTest {
 
         val nonEmptyDir = temporaryFolder.newFolder("state_nonempty_marker")
         val blocked = RpgSaveSyncState(nonEmptyDir)
-        assertTrue(blocked.markManualSelection("h"))
+        assertTrue(blocked.markManualSelection("h", temporaryFolder.root))
         val nonEmptyMarker = nonEmptyDir.markers().single()
         assertTrue(nonEmptyMarker.delete())
         assertTrue(nonEmptyMarker.mkdir())
@@ -196,7 +196,7 @@ class RpgSaveManualSelectionTest {
         blockCalled = false
 
         val nonEmpty = assertThrows(GameSaveException::class.java) {
-            blocked.withManualSelection<Unit>("h") { blockCalled = true }
+            blocked.withManualSelection<Unit>("h", temporaryFolder.root) { blockCalled = true }
         }
         assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, nonEmpty.code)
         assertEquals(nonEmptyMarker.toPath().toAbsolutePath().normalize().toString(), nonEmpty.detail)
@@ -220,7 +220,7 @@ class RpgSaveManualSelectionTest {
     fun clearRaisesWhenManualMarkerCleanupCannotComplete() {
         val stateDir = temporaryFolder.newFolder("state_clear_failure")
         val store = RpgSaveSyncState(stateDir)
-        assertTrue(store.markManualSelection("g"))
+        assertTrue(store.markManualSelection("g", temporaryFolder.root))
         val marker = stateDir.markers().single()
         assertTrue(marker.delete())
         assertTrue(marker.mkdir())
@@ -235,7 +235,7 @@ class RpgSaveManualSelectionTest {
 
         val manifests = temporaryFolder.newFolder("state_migration_clear")
         val legacy = RpgSaveSyncState(manifests)
-        assertTrue(legacy.markManualSelection("m"))
+        assertTrue(legacy.markManualSelection("m", temporaryFolder.root))
         val legacyMarker = manifests.markers().single()
         val blockedSelections = temporaryFolder.newFile("blocked_selections_parent")
         val migrating = RpgSaveSyncState(manifests, blockedSelections)
@@ -251,7 +251,7 @@ class RpgSaveManualSelectionTest {
         val manifests = temporaryFolder.newFolder("state_dual_clear_manifests")
         val selections = temporaryFolder.newFolder("state_dual_clear_selections")
         val legacy = RpgSaveSyncState(manifests)
-        assertTrue(legacy.markManualSelection("g"))
+        assertTrue(legacy.markManualSelection("g", temporaryFolder.root))
         val legacyMarker = manifests.markers().single()
         val currentMarker = File(selections, legacyMarker.name)
         assertTrue(currentMarker.mkdir())
@@ -269,7 +269,7 @@ class RpgSaveManualSelectionTest {
         val manifests = temporaryFolder.newFolder("manifests")
         val selections = temporaryFolder.newFolder("no_backup_selections")
         val legacy = RpgSaveSyncState(manifests)
-        assertTrue(legacy.markManualSelection("g"))
+        assertTrue(legacy.markManualSelection("g", temporaryFolder.root))
         val oldMarker = manifests.markers().single()
         val manifest = File(manifests, "existing.json").apply { writeText("manifest") }
 

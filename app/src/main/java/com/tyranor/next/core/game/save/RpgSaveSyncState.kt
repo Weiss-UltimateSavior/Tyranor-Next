@@ -29,7 +29,7 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         /** 没有标记文件，或标记被显式写成 false：常规双向同步。 */
         Absent,
 
-        /** Interrupted explicit selection; another explicit selection can repair it. */
+        /** Interrupted selection or unproven directory ownership; explicit recovery can repair it. */
         Pending,
 
         /**
@@ -201,7 +201,7 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
     /**
      * 是否存在「用户显式选择过存档版本」标记（见 [markManualSelection]）。
      *
-     * 只有内容为 `{"manual":true}` 才返回 true；显式的 `false` 视为「没有手动选择」。
+     * 只有 manual 为 true 且（提供目录时）与选择目录一致才返回 true；false 视为没有手动选择。
      *
      * **失败关闭**：标记文件存在却读不出布尔值（半截 JSON、缺键、类型不符）时抛类型化异常，
      * 既不退化成 false 走常规 mtime 同步（那会用标准侧较新副本覆盖用户刚选定的版本，正是本标记
@@ -210,8 +210,8 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
      *
      * @throws GameSaveException 标记内容损坏、无法判定状态时
      */
-    fun hasManualSelection(gameKey: String): Boolean =
-        when (readManualSelection(gameKey)) {
+    fun hasManualSelection(gameKey: String, directory: File? = null): Boolean =
+        when (readManualSelection(gameKey, directory?.canonicalPath)) {
             ManualSelectionState.Present -> true
             ManualSelectionState.Absent -> false
             ManualSelectionState.Pending -> throw GameSaveException(SaveErrorCode.SAVE_SELECTION_INCOMPLETE, detail = gameKey)
@@ -226,37 +226,44 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
      * 只认时间戳，认不出「这是人挑的」。标记落在不参与备份的独立小文件，同步失败与进程
      * 被杀都不丢，由调用方在同步成功（`failed == 0`）后 [clearManualSelection]。
      *
+     * 标记绑定所选 Tyranor 存档目录的规范路径；切换目录不会把旧选择自动应用到新目录。
      * 与清单读写共用 [INTEROP_LOCK]（可重入），故可在导入互斥区内安全调用。
      *
      * @return 是否已确认标记落盘。false = 标记不可用，调用方必须如实上报失败，不得静默降级为
      *   常规同步——那正是本标记要防的事。
      */
-    fun markManualSelection(gameKey: String): Boolean = synchronized(INTEROP_LOCK) {
-        when (readManualSelection(gameKey)) {
+    fun markManualSelection(gameKey: String, directory: File): Boolean = synchronized(INTEROP_LOCK) {
+        markManualSelection(gameKey, directory.canonicalPath)
+    }
+
+    private fun markManualSelection(gameKey: String, directoryPath: String): Boolean {
+        when (readManualSelection(gameKey, directoryPath)) {
             // 完好的标记无需重写：重复选择不该产生额外 IO
-            ManualSelectionState.Present -> return@synchronized true
+            ManualSelectionState.Present -> return true
             // Keep damaged state in place until a complete replacement is committed.
             ManualSelectionState.Pending, ManualSelectionState.Unreadable, ManualSelectionState.Absent -> Unit
         }
-        writeManualSelection(gameKey)
+        return writeManualSelection(gameKey, encodeManualSelection(true, directoryPath))
     }
 
-    internal fun needsManualSelectionRecovery(gameKey: String): Boolean = when (readManualSelection(gameKey)) {
-        ManualSelectionState.Pending, ManualSelectionState.Unreadable -> true
-        else -> false
-    }
+    internal fun needsManualSelectionRecovery(gameKey: String, directory: File? = null): Boolean =
+        when (readManualSelection(gameKey, directory?.canonicalPath)) {
+            ManualSelectionState.Pending, ManualSelectionState.Unreadable -> true
+            else -> false
+        }
 
     /** Commit the direction override only for an applied import; interrupted commits fail closed. */
-    internal fun <T> withManualSelection(gameKey: String, block: (onDirectoryCommitted: () -> Unit) -> T): T =
+    internal fun <T> withManualSelection(gameKey: String, directory: File, block: (onDirectoryCommitted: () -> Unit) -> T): T =
         synchronized(INTEROP_LOCK) {
             val file = manualFileFor(gameKey)
             val previous = captureManualSelection(file)
-            val pending = JSONObject().put(KEY_MANUAL_SELECTION, "pending").toString().toByteArray(Charsets.UTF_8)
+            val directoryPath = directory.canonicalPath
+            val pending = encodeManualSelection("pending", directoryPath)
             var directoryCommitted = false
             try {
                 if (!writeManualSelection(gameKey, pending)) throw manualSelectionUnavailable(file)
                 val result = block { directoryCommitted = true }
-                if (!directoryCommitted || !markManualSelection(gameKey)) {
+                if (!directoryCommitted || !markManualSelection(gameKey, directoryPath)) {
                     throw manualSelectionUnavailable(file)
                 }
                 result
@@ -289,7 +296,7 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         }
     }
 
-    private fun readManualSelection(gameKey: String): ManualSelectionState = synchronized(INTEROP_LOCK) {
+    private fun readManualSelection(gameKey: String, directoryPath: String? = null): ManualSelectionState = synchronized(INTEROP_LOCK) {
         try {
             val file = manualFileFor(gameKey)
             val attributes = manualSelectionAttributes(file) ?: return@synchronized ManualSelectionState.Absent
@@ -298,7 +305,14 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
             }
             // 只有显式的 true 才算「已手动选择」；false 是明确的「无手动选择」，
             // 而缺键/null/类型不符/半截 JSON 都属损坏，交由调用方失败关闭
-            when (val value = JSONObject(String(readManualSelectionBytes(file), Charsets.UTF_8)).get(KEY_MANUAL_SELECTION)) {
+            val state = JSONObject(String(readManualSelectionBytes(file), Charsets.UTF_8))
+            val value = state.get(KEY_MANUAL_SELECTION)
+            // A URI survives scoped-save changes. Never apply another directory's selection,
+            // including legacy markers whose directory cannot be established, to this tree.
+            if (value == true && directoryPath != null && state.opt(KEY_MANUAL_DIRECTORY) != directoryPath) {
+                return@synchronized ManualSelectionState.Pending
+            }
+            when (value) {
                 is Boolean -> if (value) ManualSelectionState.Present else ManualSelectionState.Absent
                 "pending" -> ManualSelectionState.Pending
                 else -> ManualSelectionState.Unreadable
@@ -343,10 +357,14 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         false
     }
 
+    private fun encodeManualSelection(value: Any, directoryPath: String): ByteArray =
+        JSONObject().put(KEY_MANUAL_SELECTION, value).put(KEY_MANUAL_DIRECTORY, directoryPath)
+            .toString().toByteArray(Charsets.UTF_8)
+
     /** 临时文件 + 原子替换写入（与 [save] 同款）：标记被写成半截 JSON 就等于丢状态。 */
     private fun writeManualSelection(
         gameKey: String,
-        content: ByteArray = JSONObject().put(KEY_MANUAL_SELECTION, true).toString().toByteArray(Charsets.UTF_8),
+        content: ByteArray,
     ): Boolean = synchronized(INTEROP_LOCK) {
         val file = manualFileFor(gameKey)
         val attributes = manualSelectionAttributes(file)
@@ -517,6 +535,7 @@ class RpgSaveSyncState(private val storeDir: File, private val manualStoreDir: F
         private const val KEY_TYRANOR_EXISTS = "tyr_x"
 
         private const val KEY_MANUAL_SELECTION = "manual"
+        private const val KEY_MANUAL_DIRECTORY = "directory"
         private const val MANIFEST_SUFFIX = ".json"
         private const val MANUAL_SUFFIX = ".manual.json"
         private const val MAX_MANUAL_SELECTION_BYTES = 64 * 1024

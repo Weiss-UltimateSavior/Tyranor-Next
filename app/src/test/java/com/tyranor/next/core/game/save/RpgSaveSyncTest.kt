@@ -1,6 +1,8 @@
 package com.tyranor.next.core.game.save
 
 import com.tyranor.next.core.engine.EngineType
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -741,7 +743,7 @@ class RpgSaveSyncTest {
         val store = RpgSaveSyncState(stateDir)
         assertFalse(store.hasManualSelection("g"))
 
-        assertTrue(store.markManualSelection("g"))
+        assertTrue(store.markManualSelection("g", temporaryFolder.root))
         assertTrue(store.hasManualSelection("g"))
         // 跨实例（等价于进程重启）仍在：同步失败/进程被杀都不能丢用户的选择
         assertTrue(RpgSaveSyncState(stateDir).hasManualSelection("g"))
@@ -755,18 +757,18 @@ class RpgSaveSyncTest {
         assertTrue(store.clearManualSelection("g"))
 
         // 游戏被真正移除：清单一并清掉时标记也必须跟着清，避免同 uri 重新添加后凭空定向同步
-        assertTrue(store.markManualSelection("g"))
+        assertTrue(store.markManualSelection("g", temporaryFolder.root))
         store.clear("g")
         assertFalse(store.hasManualSelection("g"))
 
         // 标记内容损坏 ⇒ 失败关闭：既不退回常规 mtime 同步，也不当成已选择
-        store.markManualSelection("g")
+        store.markManualSelection("g", temporaryFolder.root)
         markerFiles(stateDir).forEach { it.writeText("{corrupt") }
         val failed = runCatching { store.hasManualSelection("g") }
         assertTrue(failed.isFailure)
         assertTrue(failed.exceptionOrNull() is GameSaveException)
         // 重新显式选择可自愈：损坏标记被替换为完好标记
-        assertTrue(store.markManualSelection("g"))
+        assertTrue(store.markManualSelection("g", temporaryFolder.root))
         assertTrue(RpgSaveSyncState(stateDir).hasManualSelection("g"))
         val marker = markerFiles(stateDir).single()
         assertTrue(marker.delete())
@@ -775,12 +777,87 @@ class RpgSaveSyncTest {
     }
 
     @Test
+    fun selectedDirectoryCannotRetireStandardSavesAfterScopedDirectoryChange() {
+        val (standard, selected) = dirs()
+        val other = temporaryFolder.newFolder("other_scoped_save")
+        standard.writeAt("global.rpgsave", "NEW-PC", 9_000)
+        standard.writeAt("file8.rpgsave", "PC-ONLY", 9_000)
+        selected.writeAt(mvName("global.rpgsave"), "SELECTED-OLD", 1_000)
+        val stateDir = temporaryFolder.newFolder("bound_state")
+        val state = RpgSaveSyncState(stateDir)
+        state.withManualSelection("g", selected) { committed -> committed() }
+        val marker = markerFiles(stateDir).single()
+        val selectedMarker = marker.readBytes()
+
+        // Reopen the store to establish that the directory guard survives process death.
+        val reopened = RpgSaveSyncState(stateDir)
+        val failure = assertThrows(GameSaveException::class.java) {
+            RpgSaveSync.syncWithManualSelection(listOf(standard), other, EngineType.RPG_MV, reopened, "g")
+        }
+        assertEquals(SaveErrorCode.SAVE_SELECTION_INCOMPLETE, failure.code)
+        assertEquals("NEW-PC", standard.resolve("global.rpgsave").readText())
+        assertEquals("PC-ONLY", standard.resolve("file8.rpgsave").readText())
+        assertFalse(standard.resolve("deleted").exists())
+        assertTrue(other.listFiles().orEmpty().isEmpty())
+        assertArrayEquals(selectedMarker, marker.readBytes())
+        assertTrue(reopened.needsManualSelectionRecovery("g", other))
+        assertFalse(reopened.needsManualSelectionRecovery("g", selected))
+        assertEquals(RpgSaveSyncState.LoadResult.Missing, reopened.load("g"))
+
+        // Switching back resumes the original explicit choice, with the standard originals retained.
+        val resumed = RpgSaveSync.syncWithManualSelection(
+            listOf(standard), selected, EngineType.RPG_MV, reopened, "g")
+        assertEquals(0, resumed.failed)
+        assertEquals("SELECTED-OLD", standard.resolve("global.rpgsave").readText())
+        assertFalse(standard.resolve("file8.rpgsave").exists())
+        assertTrue(standard.resolve("deleted").walkTopDown().filter { it.isFile }
+            .any { it.readText() == "PC-ONLY" })
+        assertFalse(reopened.hasManualSelection("g"))
+    }
+
+    @Test
+    fun legacyUnboundSelectionStopsBeforeAnyInteropWrite() {
+        val (standard, tyranor) = dirs()
+        standard.writeAt("file8.rpgsave", "PC-ONLY", 9_000)
+        val stateDir = temporaryFolder.newFolder("legacy_state")
+        val state = RpgSaveSyncState(stateDir)
+        assertTrue(state.markManualSelection("g", tyranor))
+        val marker = markerFiles(stateDir).single()
+        marker.writeText("{\"manual\":true}")
+        val legacy = marker.readBytes()
+
+        val failure = assertThrows(GameSaveException::class.java) {
+            RpgSaveSync.syncWithManualSelection(listOf(standard), tyranor, EngineType.RPG_MV, state, "g")
+        }
+        assertEquals(SaveErrorCode.SAVE_SELECTION_INCOMPLETE, failure.code)
+        assertTrue(state.needsManualSelectionRecovery("g", tyranor))
+        assertEquals("PC-ONLY", standard.resolve("file8.rpgsave").readText())
+        assertFalse(standard.resolve("deleted").exists())
+        assertTrue(tyranor.listFiles().orEmpty().isEmpty())
+        assertArrayEquals(legacy, marker.readBytes())
+    }
+
+    @Test
+    fun canonicalAliasOfSelectedDirectoryStillConsumesSelection() {
+        val (standard, tyranor) = dirs()
+        standard.writeAt("global.rpgsave", "NEW-PC", 9_000)
+        tyranor.writeAt(mvName("global.rpgsave"), "SELECTED", 1_000)
+        val state = store()
+        val alias = File(tyranor.parentFile, tyranor.name + "/../" + tyranor.name)
+        assertTrue(state.markManualSelection("g", alias))
+        val result = RpgSaveSync.syncWithManualSelection(listOf(standard), tyranor, EngineType.RPG_MV, state, "g")
+        assertEquals(0, result.failed)
+        assertEquals("SELECTED", standard.resolve("global.rpgsave").readText())
+        assertFalse(state.hasManualSelection("g"))
+    }
+
+    @Test
     fun manualSelectionSyncConsumesMarkerOnlyAfterSuccessfulSync() {
         val (standard, tyranor) = dirs()
         standard.writeAt("global.rpgsave", "NEW-PC", 9_000)
         tyranor.writeAt(mvName("global.rpgsave"), "SELECTED-OLD", 1_000)
         val state = store()
-        assertTrue(state.markManualSelection("g"))
+        assertTrue(state.markManualSelection("g", tyranor))
 
         val result = RpgSaveSync.syncWithManualSelection(
             standardDirs = listOf(standard),
@@ -804,7 +881,7 @@ class RpgSaveSyncTest {
         tyranor.writeAt(mvName("global.rpgsave"), "SELECTED-OLD", 1_000)
         standard.resolve("deleted").writeText("block")
         val state = store()
-        assertTrue(state.markManualSelection("g"))
+        assertTrue(state.markManualSelection("g", tyranor))
 
         val result = RpgSaveSync.syncWithManualSelection(
             standardDirs = listOf(standard),

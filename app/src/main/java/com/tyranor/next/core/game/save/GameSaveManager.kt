@@ -349,8 +349,9 @@ class GameSaveManager(private val context: Context) {
             // 锁序恒为 importLock → INTEROP_LOCK（sync 只取后者），无死锁环。
             synchronized(RpgSaveSyncState.INTEROP_LOCK) {
                 if (manualSelection && RpgSaveFormat.isRpgWebEngine(game.engine)) {
-                    RpgSaveSyncState.forContext(appContext).withManualSelection(game.uri) { onCommitted ->
-                        importFromZipLocked(game, sourceUri, expectedDirectory) {
+                    val directory = expectedDirectory ?: syncSaveDirectory(game)
+                    RpgSaveSyncState.forContext(appContext).withManualSelection(game.uri, directory) { onCommitted ->
+                        importFromZipLocked(game, sourceUri, directory) {
                             onCommitted()
                             onDirectoryCommitted?.invoke()
                         }

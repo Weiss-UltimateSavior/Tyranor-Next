@@ -128,7 +128,7 @@ object RpgSaveSync {
         stateStore: RpgSaveSyncState,
         gameKey: String,
     ): Result = synchronized(syncLock) {
-        val preferTyranor = stateStore.hasManualSelection(gameKey)
+        val preferTyranor = stateStore.hasManualSelection(gameKey, tyranorDir)
         val result = syncLocked(
             standardDirs = standardDirs,
             tyranorDir = tyranorDir,

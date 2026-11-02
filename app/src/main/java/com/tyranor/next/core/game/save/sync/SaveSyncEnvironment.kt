@@ -120,11 +120,11 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
         requireSameSaveDirectory(activeKey, activeKey(game))
     }
     override fun needsManualRecovery(game: ScanGame) = RpgSaveFormat.isRpgWebEngine(game.engine) &&
-        RpgSaveSyncState.forContext(context).needsManualSelectionRecovery(game.uri)
+        RpgSaveSyncState.forContext(context).needsManualSelectionRecovery(game.uri, manager.syncSaveDirectory(game))
     override fun repairManualSelection(game: ScanGame, hasCurrent: Boolean): Boolean {
         if (!RpgSaveFormat.isRpgWebEngine(game.engine)) return true
         val state = RpgSaveSyncState.forContext(context)
-        return if (hasCurrent) state.markManualSelection(game.uri) else state.clearManualSelection(game.uri)
+        return if (hasCurrent) state.markManualSelection(game.uri, manager.syncSaveDirectory(game)) else state.clearManualSelection(game.uri)
     }
     override suspend fun recordRestored(game: ScanGame, hash: String, activeKey: String) =
         SaveSyncRuntime.recordRestoredVersion(context, game, hash, activeKey)
