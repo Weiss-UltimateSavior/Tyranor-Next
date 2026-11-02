@@ -133,6 +133,17 @@ val UnselectedGrey: Color
         AppThemeColors.isDark -> UnselectedGreyDark
         else -> UnselectedGreyLight
     }
+
+/**
+ * 条目右侧箭头色：与设置页 `ArrowPreference` 的箭头保持一致
+ * （默认风格 = 40% 前景色；复古玻璃 = 60% 的 [GlassTextSecondary]）。
+ */
+val ItemChevronColor: Color
+    get() = when {
+        AppThemeColors.isGlass -> GlassTextSecondary.copy(alpha = 0.6f)
+        AppThemeColors.isDark -> Color(0x66FFFFFF)
+        else -> Color(0x66000000)
+    }
 // 弹窗内条目容器色：默认风格 = PageGrey（白底弹窗灰卡）；玻璃风格 = 对应亮玻璃面
 val DialogItemSurface: Color
     get() = when {

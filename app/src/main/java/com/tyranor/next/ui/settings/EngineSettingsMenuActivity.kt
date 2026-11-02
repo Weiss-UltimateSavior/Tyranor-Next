@@ -31,7 +31,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 引擎设置入口页 Activity：由设置页「引擎设置」条目进入，聚合各引擎细分设置入口。 */

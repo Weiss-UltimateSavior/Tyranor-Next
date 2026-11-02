@@ -388,7 +388,7 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态与参数
 
-- 排版固定：圆角 `AppComponentShape`（统一取「应用圆角调整」值，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `KeyboardArrowRight`。均由组件内部处理。
+- 排版固定：圆角 `AppComponentShape`（统一取「应用圆角调整」值，见 `theme/AppShapes.kt`）+ 背景取 `theme/Color.kt` 常量 `NavWhite`（页面场景默认）+ 内边距（横向 16dp / 纵向 12dp）+ 左侧图标 24dp + 右侧指示箭头 `BoldChevronRight`（统一加粗）。均由组件内部处理。
 
 - 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
 
@@ -404,7 +404,9 @@ Column(fillMaxSize)                                // 页面根
 
 - `onClick`：点击回调；传 `null` 表示不可用（整条变灰且不可点击）。
 
-- 进入跳转的 icon 统一用 `KeyboardArrowRight`，组件内置，调用方不传。
+- 进入跳转的 icon 统一用共享的 `BoldChevronRight`（加粗），组件内置，调用方不传。
+
+- 设置类页面的 `ArrowPreference` 统一使用 `ui/common/ArrowPreference.kt`（Miuix 同名组件的加粗箭头版本），不要直接 import Miuix 的 `ArrowPreference`。
 
 - `showArrow`：是否显示右侧跳转箭头。**「进入下一级」的跳转条目必须 `true`（默认）**；「执行动作」的条目（如启动游戏、删除等不产生跳转的动作）传 `false` 隐藏箭头，避免误导为可跳转。
 

@@ -84,7 +84,7 @@ import kotlinx.coroutines.runInterruptible
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
