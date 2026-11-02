@@ -271,6 +271,9 @@ class EthornellSaveDeviceTest {
                 // proven still blocks list and writes. The owner is our own
                 // PID/starttime; no native host is impersonated.
                 assertTrue(manager.listSaveFiles(game).isEmpty())
+                expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) {
+                    manager.listSaveFiles(game, strict = true, expectedDirectory = store.root)
+                }
                 val destination = write(f.base, "must-not-truncate.zip", byteArrayOf(7))
                 val destinationBefore = metadata(destination)
                 expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) { manager.exportToZip(game, Uri.fromFile(destination)) }
@@ -288,6 +291,38 @@ class EthornellSaveDeviceTest {
                     assertTrue(EthornellDispatchRegistry.revokeUnclaimed(f.files, token, f.identity))
                 }
             }
+        }
+    }
+
+    @Test fun strictSnapshotListingRejectsInvalidRootAndDirectoryMismatch() = fixture { f ->
+        runBlocking {
+            assertTrue(EthornellSaveCapability.available)
+            val store = f.store()
+            val slot = write(store.root, "slot.bin", byteArrayOf(1, 2, 3))
+            val manager = GameSaveManager(f.context)
+            val game = ScanGame("Strict snapshot fixture", f.identity, EngineType.ETHORNELL, "")
+            assertEquals(listOf(slot), manager.listSaveFiles(game, strict = true, expectedDirectory = store.root))
+            expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) {
+                manager.listSaveFiles(game, strict = true, expectedDirectory = f.resources)
+            }
+            assertArrayEquals(byteArrayOf(1, 2, 3), slot.readBytes())
+
+            // A failed filesystem read is not a successful snapshot of an empty save tree.
+            val retained = File(store.root.parentFile, store.root.name + "-test-retained")
+            assertTrue(store.root.renameTo(retained))
+            try {
+                store.root.writeText("non-directory obstruction")
+                assertTrue(manager.listSaveFiles(game).isEmpty())
+                expect(SaveErrorCode.SAVE_DIR_UNAVAILABLE) {
+                    manager.listSaveFiles(game, strict = true, expectedDirectory = store.root)
+                }
+                assertEquals("non-directory obstruction", store.root.readText())
+                assertArrayEquals(byteArrayOf(1, 2, 3), File(retained, "slot.bin").readBytes())
+            } finally {
+                assertTrue(store.root.delete())
+                assertTrue(retained.renameTo(store.root))
+            }
+            assertEquals(listOf(slot), manager.listSaveFiles(game, strict = true, expectedDirectory = store.root))
         }
     }
 

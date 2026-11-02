@@ -89,6 +89,8 @@ private fun ScaleParameter(title: String, value: String, onChange: (String) -> U
     Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         AppSearchField(query = value, onQueryChange = onChange, modifier = Modifier.weight(1f),
+            imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
             leadingIcon = androidx.compose.ui.res.painterResource(R.drawable.ic_graphics_parameters),
             iconContentDescription = title, textStyle = MaterialTheme.typography.bodyMedium)
         DialogTextButton(stringResource(R.string.graphics_filter_decrease), enabled = (validScale(value) ?: 1.0) > 0.25) {
