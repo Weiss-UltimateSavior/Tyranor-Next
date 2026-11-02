@@ -61,7 +61,7 @@ data class GraphicsNode(
         enabled = enabled,
         casSharpness = sharpness,
         bicubicB = if (id == "bicubic") sharpness else GraphicsFilterChain.defaultBicubicB(id),
-        bicubicC = GraphicsFilterChain.defaultBicubicC(id),
+        bicubicC = if (id == "bicubic") sharpness else GraphicsFilterChain.defaultBicubicC(id),
         lanczosAntiRingingStrength = if (id == "lanczos") sharpness else GraphicsFilterChain.defaultLanczosAntiRingingStrength(id),
         scaleMode = scaleMode,
         widthScale = widthScale,
@@ -365,6 +365,8 @@ object GraphicsSettingsCodec {
                         }
                         if (node.has("bicubicC")) {
                             nodeBicubicC = (node.opt("bicubicC") as? Number)?.toDouble() ?: return null
+                        } else if (node.has("sharpness")) {
+                            nodeBicubicC = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
                         }
                     }
                     "lanczos" -> {

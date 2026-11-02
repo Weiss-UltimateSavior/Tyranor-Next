@@ -51,4 +51,16 @@ class CasSettingsCodecTest {
         }
         assertNull(codec.decodeSettings(inappropriate.toString()))
     }
+
+    @Test fun legacySingleSharpnessJsonMigratesBicubicBothParameters() {
+        val raw = JSONObject().put("version", 2).put("enabled", true)
+            .put("chain", JSONArray().put(JSONObject().put("id", "bicubic").put("enabled", true)
+                .put("sharpness", 0.8).put("scaleMode", "fit").put("widthScale", 1.0).put("heightScale", 1.0)))
+        val decoded = codec.decodeSettings(raw.toString())!!
+        assertEquals(0.8, decoded.chain[0].bicubicB, 0.0)
+        assertEquals(0.8, decoded.chain[0].bicubicC, 0.0)
+        val nodeFromConstructor = GraphicsNode("bicubic", enabled = true, sharpness = 0.8)
+        assertEquals(0.8, nodeFromConstructor.bicubicB, 0.0)
+        assertEquals(0.8, nodeFromConstructor.bicubicC, 0.0)
+    }
 }

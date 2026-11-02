@@ -240,7 +240,6 @@ public final class Anime4kPostProcessor {
     }
 
     private double mSharpness = 0.4;
-    private double mCasSharpness = 0.4;
     private double mBicubicB = 0.33;
     private double mBicubicC = 0.33;
     private double mLanczosAntiRingingStrength = 0;
@@ -261,7 +260,6 @@ public final class Anime4kPostProcessor {
         processor.mMaxOutputScale = definition.maxOutputScale;
         processor.mHaloPerPass = definition.haloPerPass;
         processor.mOutputSizedShader = definition.outputSized && !"none".equals(step.scaleMode);
-        processor.mCasSharpness = step.casSharpness;
         processor.mSharpness = step.casSharpness;
         return processor;
     }
