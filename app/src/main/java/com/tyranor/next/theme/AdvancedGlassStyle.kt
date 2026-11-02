@@ -142,12 +142,13 @@ fun Modifier.glassShadow(
     }
 
 /**
- * 高级玻璃弹窗/抽屉面板的表面：从页面背景取色的竖向渐变。
- * 抽屉的位置由内部 anchors 布局偏移决定，背景必须画在内容层。
+ * 高级玻璃弹窗/抽屉面板的表面：从页面背景取色的竖向渐变 + 顶端取色（供抽屉把手条使用）。
+ * 抽屉的位置由内部 anchors 布局偏移决定，背景必须画在内容层，把手条用 [topColor] 续色避免接缝。
  */
 @Immutable
 data class AdvancedGlassPanelSurface(
     val brush: Brush,
+    val topColor: Color,
 )
 
 /**
@@ -173,6 +174,7 @@ fun rememberAdvancedGlassPanelSurface(): AdvancedGlassPanelSurface {
         }
         AdvancedGlassPanelSurface(
             brush = Brush.verticalGradient(colors),
+            topColor = colors.first(),
         )
     }
 }
