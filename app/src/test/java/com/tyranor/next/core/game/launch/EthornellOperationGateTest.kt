@@ -34,10 +34,10 @@ class EthornellOperationGateTest {
         assertEquals(EthornellLaunchPolicy.Action.START_NEW, EthornellLaunchPolicy.decide("identity", null, false))
     }
 
-    @Test fun verifiedDispatchAloneDoesNotOpenSaveManagement() {
+    @Test fun deviceAcceptanceOpensSaveManagement() {
         assertTrue(EthornellSaveCapability.HOST_DISPATCH_PROTOCOL_VERIFIED)
-        assertFalse(EthornellSaveCapability.DEVICE_SAVE_IO_VERIFIED)
-        assertFalse(EthornellSaveCapability.available)
+        assertTrue(EthornellSaveCapability.DEVICE_SAVE_IO_VERIFIED)
+        assertTrue(EthornellSaveCapability.available)
     }
 
     @Test fun unobservedDispatchAfterMainDeathIsAtomicallyRevokedAndLateHostRejected() {

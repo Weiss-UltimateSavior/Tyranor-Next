@@ -622,6 +622,7 @@
     <string name="save_error_illegal_zip_path">压缩包包含非法路径：%1$s</string>
     <string name="save_error_create_save_dir_named">无法创建存档目录：%1$s</string>
     <string name="save_error_zip_too_large">压缩包解压后过大</string>
+    <string name="save_error_save_file_too_large">单个存档文件超过 64 MiB 上限：%1$s</string>
     <string name="save_error_create_temp_dir">无法创建临时解压目录</string>
     <string name="save_error_selection_incomplete">存档切换未完成，请重新选择版本</string>
 

@@ -622,6 +622,7 @@
     <string name="save_error_illegal_zip_path">ZIP contains an invalid path: %1$s</string>
     <string name="save_error_create_save_dir_named">Unable to create save directory: %1$s</string>
     <string name="save_error_zip_too_large">ZIP is too large after extraction</string>
+    <string name="save_error_save_file_too_large">A save file exceeds the 64 MiB limit: %1$s</string>
     <string name="save_error_create_temp_dir">Unable to create temporary extraction directory</string>
     <string name="save_error_selection_incomplete">Save switch incomplete. Select the version again.</string>
 

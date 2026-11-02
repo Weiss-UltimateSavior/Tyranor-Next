@@ -248,6 +248,12 @@ class GameSaveManager(private val context: Context) {
 
     suspend fun listSaveFiles(game: ScanGame, strict: Boolean = false, expectedDirectory: File? = null): List<File> {
         if (game.engine == EngineType.ETHORNELL) {
+            // Sync snapshots must distinguish an empty save from unavailable or busy data;
+            // otherwise an empty fingerprint could retire a pending upload session.
+            if (strict) return ethornellOperation(game) { store ->
+                expectedDirectory?.let { store.validateRoot(checkedSyncDirectory(it)) }
+                store.listFiles()
+            }
             // Existing SaveUI refresh does not catch errors. Busy/disabled data
             // has no safe snapshot; action methods still throw typed failures.
             if (!EthornellSaveCapability.available) return emptyList()

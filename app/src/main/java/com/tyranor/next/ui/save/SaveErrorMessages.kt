@@ -32,6 +32,8 @@ internal fun Throwable.toSaveErrorMessage(context: Context, fallback: String): S
         SaveErrorCode.CREATE_SAVE_DIR_NAMED ->
             localized.getString(R.string.save_error_create_save_dir_named, detail.orEmpty())
         SaveErrorCode.ZIP_TOO_LARGE -> localized.getString(R.string.save_error_zip_too_large)
+        SaveErrorCode.SAVE_FILE_TOO_LARGE ->
+            localized.getString(R.string.save_error_save_file_too_large, detail.orEmpty())
         SaveErrorCode.CREATE_TEMP_DIR -> localized.getString(R.string.save_error_create_temp_dir)
     }
 }

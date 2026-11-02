@@ -31,13 +31,15 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
 
 | 方法 | 必须观察的事实 |
 |---|---|
-| `loadAbiBuildInfoAndRejectInvalidTokens` | 真实 `dlopen(RTLD_NOW\|RTLD_LOCAL)`、14 required exports、ABI=1、权威头尺寸/offset 静态断言、build_info buffer size-query/copy、设备 page size；生产 JNI invalid token 拒绝 |
+| `loadAbiBuildInfoAndRejectInvalidTokens` | 真实 `dlopen(RTLD_NOW\|RTLD_LOCAL)`、15 required exports（含 `request_payload`）、ABI=1、权威头尺寸/offset 静态断言、build_info buffer size-query/copy、设备 page size；生产 JNI invalid token 拒绝（含 `requestPayload`） |
 | `supplementaryUtf8PathsAndWrongThreadAreSafe` | 带 🚀 / 𝄞 的真实资源/用户目录成功 create，证明标准 UTF8 跨 JNI；NUL/孤立 surrogate 明确拒绝；非 owner 调用抛异常且 owner 仍可用；destroy 后 token 拒绝 |
 | `gpuPresentDetachReattachAndGeneration` | 打包的原创 render fixture 经真实 VM 执行，1280×720 Surface 由独立 EGL consumer 取 buffer、应用 SurfaceTexture transform、采样至 RGBA framebuffer 后 `glReadPixels`；四色+黑底五个探针的全部3×3像素/四通道容差≤3；detach后停止、generation2再次匹配、旧detach/attach不破坏像素 |
-| `scriptExecutesNativeCloseAndProducesClosed` | 无 Java `requestClose`，仅真实 BP VM 执行 close mode + request-close 后 poll 收到 kind=3；收到 kind=2 按同 ID 仅应答一次；fatal diagnostic 失败 |
+| `scriptExecutesNativeCloseAndProducesClosed` | 无 Java `requestClose`，仅真实 BP VM 执行 close mode + request-close 后 poll 收到 kind=3；收到 kind=2 按同 ID 仅应答一次（空 text 的整数应答）；kind=5 只取 payload 后显式 `{"accepted":false}` 取消，不按 kind2 应答、不伪造成功；fatal diagnostic 失败 |
 | `suppliedGameDirectRuntime` | 无 game_path 时 JUnit assumption skip；有参数则真实原生 create/attach/step/poll，至少三个 GPU buffer、真实事件日志、显式 host requestClose（不伪称一定 Closed） |
 
 `ret` 单独没有 VM 完成事件，close fixture 独立证明脚本关闭路径。GPU 生命周期测试已经升级为 **render fixture 像素断言**，不再仅按 buffer 数或黑图判断通过；实际游戏直接 JNI 测试仍只验证真实 buffer/event，不宣称文本、音频、存档或可玩性。
+
+**15 符号 / kind-5 契约（2026-11-02 设备结果）：** probe 把 `ethornell_android_request_payload` 列为 required 并报告 `symbols=15`；直接 JNI 测试覆盖 invalid-token `requestPayload` 抛错、request id `0` 拒绝、未知 id 返回 null 且不 poison owner token、kind2 的 `completeRequest` 使用 4 参空 text、kind5 先 `requestPayload` 再显式 cancel（无真实 dialog fixture 时不伪造 accepted）。父验收本轮 `EthornellDeviceTest` 全类 **6/6 通过**；其中 ABI/build-info 与 UTF-8/线程/token 两例另行复跑也通过（2/2）。该结果只证明合成夹具与 JNI 契约，不证明真实商业游戏对白或输入对话框。
 
 原创 render assets 为 `assets/ethornell-render/system.arc`（1235B，SHA256 `f0d1d96ef30135c95bc722414a9d9572ec3f34952fb57ad9a1bfcf6adb8c06d8`）及其 `fixture.json`；来源为工具 owner 提供的 `render` profile，内部 BP 122B SHA256 `2bcc87a51db064d0163bf81cbf724589f00b3cbe440a6eebcf2cb5a3feb04217`，无商业资产。测试每次校验固定 archive hash 和 manifest，再拷入本轮私有 resource 根，user 根另建。
 
@@ -58,9 +60,9 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
   com.tyranor.next.ethornelltest.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-也应按需重跑gbk。此为默认debug harness，不属于release-only probe的三项有限验证。测试assets `ethornell-user-data/write` 与 `read` 均只有工具owner原创system.arc/fixture.json；固定archive SHA256分别为 `0a3455d3b5165d64d59a8f16d7f805983c626dc2af418633096d1f7d18d22a26`（402B）和 `75c558c5fe797fb522d6d0baadeff0e9471fd13f67bc612e674dc8b8831f4ab0`（435B）。运行时核对profile、固定hash与manifest size/hash，Java只将这些资源拷入专用resource根，**不会创建、替换、修补或合成BGI.gdb**。
+也应按需重跑gbk。此为默认debug harness，不属于release-only probe的三项有限验证。测试assets `ethornell-user-data/write` 与 `read` 均只有工具owner原创system.arc/fixture.json；固定archive SHA256分别为 `b64f297f3854c19360406b51143cd5e30b1b44b3e711bc21917d99f88f0fd538`（483B）和 `a7a5494ca1e8a6e66f00e46c35a8d5a93920457d49a92ad75c82ad20c44e842c`（516B）。运行时核对profile、固定hash与manifest size/hash，Java只将这些资源拷入专用resource根，**不会创建、替换、修补或合成BGI.gdb**。
 
-测试一次创建全新私有user根，原生JNI三个会话顺序执行，各自真实Surface/unpause/单调step/poll并finally owner-thread destroy ACK后再释放consumer：
+两个BP均在 Sys80:80/81 前调用 Sys80:39 设置 `bgi-user\`（不成立时先经 Sys80:28 创建 `bgi-user\UserData` 再设置其子目录），确保 `BGI.gdb` 落在共享 user_root 而非 resource_root。测试一次创建全新私有user根，原生JNI三个会话顺序执行，各自真实Surface/unpause/单调step/poll并finally owner-thread destroy ACK后再释放consumer：
 
 1. writer调用真实VM Sys80:81序列化；必须精确Title `ETHORNELL_USER_DATA_WRITE_OK` **先于Closed**，仅Closed不通过。destroy后检查VM实际创建 `user_root/BGI.gdb`、大小>32且≤8MiB、SDC magic；resource根只有原archive且逐字节不变。
 2. NEW reader会话使用不同read资源、同一未改user根，真实VM Sys80:80/83读取并比较16字节marker，必须精确Title `ETHORNELL_USER_DATA_READ_OK` 再Closed；JNI token须不同。Java读取但不解码/生成save，比较read前后文件字节不变。
@@ -109,7 +111,7 @@ Activity 测试自动验证：未导出、正确独立进程、生产 native-cre
 
 仅 `suppliedGamePrivateActivityLaunch` 支持 `-e keep_host_for_manual true`（默认false，严格只接受true/false），其精确语义只是**跳过harness自己的成功teardown**。在观察期与成功采证完成后，再确认本轮host仍存活且dispatch仍为CLAIMED，输出 `MANUAL_HANDOFF host_pid=... identity=... private_user_root=... dispatch=... survival_after_runner=NOT_GUARANTEED ... auto_acceptance=NONE` 并保存 `manual-handoff.txt`。该模式成功时不kill本轮host、不revoke/retire其dispatch，finally仍取消硬deadline并shutdown supervisor，不留后续定时杀进程任务。任何失败仍按默认采证+cleanup处理，不因为manual模式忽略错误。
 
-手动标题/新游戏/存档/读档/正常退出验收应在runner结束后**正常打开App并从游戏库启动**；别依赖上述参数留下的host。当前 `EthornellSaveCapability.available=false` 只控制App存档管理准入（设备save-IO与host dispatch协议尚未标记验证），不阻止正常EngineLauncher走OperationGate.issue后的启动，也不等于游戏内存档成功。若系统finish后留下CLAIMED metadata，下一次正常操作应走生产正向owner-death恢复，不手改记录。已显示的host confirmation保持人工处理，harness不自动答复所有确认，不以“观察期liveness通过”声称标题/slot可用。截图可能停在资源/保存错误提示，必须按真实错误归因。不得误伤正式App或其它session。参数只影响测试自身teardown，不导出Activity、不添加生产backdoor。
+手动标题/新游戏/存档/读档/正常退出验收应在runner结束后**正常打开App并从游戏库启动**；别依赖上述参数留下的host。当前 `EthornellSaveCapability.available=true`：host dispatch 协议、App 私有 user-root save-IO/64 MiB 边界与 native 全局 user-data 的设备验收均已通过（`EthornellSaveDeviceTest` 9/9），公开 manager 用例在门禁开启后执行；它只控制 App 存档管理准入，不阻止正常 EngineLauncher 走 OperationGate.issue 后的启动，也不等于商业游戏内存档槽位保存/读回成功。若系统finish后留下CLAIMED metadata，下一次正常操作应走生产正向owner-death恢复，不手改记录。已显示的host confirmation保持人工处理，harness不自动答复所有确认，不以“观察期liveness通过”声称标题/slot可用。截图可能停在资源/保存错误提示，必须按真实错误归因。不得误伤正式App或其它session。参数只影响测试自身teardown，不导出Activity、不添加生产backdoor。
 
 ## 正常关闭 ACK 后进程退出再重进（合成 fixture）
 
@@ -145,11 +147,15 @@ failed identity_sha256=<64hex> token=<session token>
 
 禁止用这些少量原创字节冒充原版/汉化游戏兼容样本。音频、文字/字体、存读档、API26、16KB、Adreno/Mali/Vulkan/GLES 独立矩阵、长稳与正常退出/确认弹窗仍需额外验收。生产 Native 不提供后端/静音参数，因此本 harness 沿用实际默认策略，不声称强制 Vulkan/GLES 或静音验证。
 
-## 实施状态
+## 实施与验收状态（2026-11-02）
 
-render 像素增强交付：已从工具 owner 指定临时目录复制上述两个原创 assets，并核对 archive SHA256；新 consumer shader/FBO/readback 和测试源码独立 javac 编译通过。**尚未由本 agent 运行 Gradle 打包或真实 Android VM/GPU，fixture 预期能否实际呈现待父 session 执行**。单独执行增强测试可传 `-e class com.core.ethornell.EthornellDeviceTest#gpuPresentDetachReattachAndGeneration`，其余 runner/包名保持上文命令。
+- `EthornellDeviceTest` 全类 **6/6 通过**：15 符号/ABI/build_info、UTF-8/线程/token、原创 GPU 像素与 Surface 重挂、脚本关闭 Closed、合成 VM 全局 user-data 写入/重开/空根反例。ABI 与 supplementary 两组另行复跑 **2/2**。
+- `EthornellSaveDeviceTest` 门禁翻转后 **9/9 通过**：私有树 ZIP 往返、64 MiB 单文件边界、ZIP 回滚、恶意 ZIP、取消清理、公开 `GameSaveManager`、busy 拒绝等；native 全局 user-data write/read/empty negative 同时通过。
+- Release R8 probe **3/3 通过**（`NUMTEST=3`/`FAILURES=0`）：release identity、15 符号 RTLD_NOW/ABI/build_info、production JNI create/poll/destroy；scope 不含 GPU/标题/存档。
+- **已通过（范围受限）：** `EthornellPauseDeviceTest` 已按新调度器多 stage/step 模型重写并 3/3 通过；夹具验证暂停/恢复与 Surface，不再断言精确 guest tick/held 序列；输入映射由 JVM 测试覆盖。
+- **未验证：** 真实商业游戏样本当前不在设备，商业槽位保存/重启读回、真实对白与输入 dialog 未验证；16KB 模拟器本轮未重跑；API26 GPU、音频路由、字体/电影与长稳仍未闭环。
 
-已阅读项目方案、生产 Activity/Session/JNI、外部权威 ABI header 与工具 fixture README；通过 Android CLI 发现并阅读 `android-permissions-security` 审查技能及官方 OpenGL 环境文档。独立 `javac -source 17 -target 17`（真实 android-37.0/android.jar、现有 engine 编译产物和 AndroidX/JUnit 缓存）编译三份 Java 测试源码成功；NDK r28 arm64/API26 `clang++ -fsyntax-only` 通过（包括 ABI size/offset 静态断言）。父 session 后续反馈主构建成功且 configuration cache stored、隔离 app APK 与 test APK 已安装；该反馈不代表本次修改后的设备测试通过。当前新增 ACK 退出后重进测试还需最终安全修复库及生产只读日志后由父验收者执行。未 spawn、未自行安装、未并发 assemble、未提交/push。**本文件是执行说明，不是已通过的设备验收记录；构建/执行结果由主验收者追加。**
+单独执行某方法时仍使用上文 `-e class ...#method` 形式；设备结果只对应记录时的 APK、库、header 与源码四元组，不能跨候选外推。
 
 ## WebDAV 弹窗忙碌状态回归
 

@@ -9,9 +9,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.launch.LaunchResult
 import com.tyranor.next.core.game.save.EthornellSaveCapability
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
@@ -91,21 +93,82 @@ class SaveLaunchAdmissionRuntimeTest {
     }
 
     @Test
-    fun ethornellWithoutVerifiedSaveIoBypassesRuntimeBookkeepingAndSaveOperationFence() = runBlocking {
-        assertFalse(EthornellSaveCapability.available)
+    fun verifiedEthornellUsesPrivateSaveAdmissionAndBlocksPendingSelections() = runBlocking {
+        assertTrue(EthornellSaveCapability.available)
+        val app = InstrumentationRegistry.getInstrumentation().targetContext
+        val fixtureId = "ethornell-admission-${UUID.randomUUID()}"
+        val root = File(app.cacheDir, fixtureId).apply { mkdirs() }
+        val preferences = mutableSetOf<String>()
+        val context = object : ContextWrapper(app) {
+            override fun getApplicationContext(): Context = this
+            override fun getFilesDir(): File = File(root, "files").apply { mkdirs() }
+            override fun getNoBackupFilesDir(): File = File(root, "private").apply { mkdirs() }
+            override fun getSharedPreferences(name: String, mode: Int): SharedPreferences {
+                val isolatedName = "$fixtureId-$name"
+                preferences += isolatedName
+                return app.getSharedPreferences(isolatedName, mode)
+            }
+            override fun startActivity(intent: Intent) {
+                throw AssertionError("A pending Ethornell selection must prevent engine dispatch")
+            }
+        }
+        // Save identity is private and remains resolvable even with no resource volume mounted.
+        val game = ScanGame("ETHORNELL admission", "file:///unmounted-ethornell-game", EngineType.ETHORNELL, "")
+        val directory = EthornellPaths.userDataDir(context.filesDir, game.uri)
+        val directoryKey = SAVE_DIRECTORY_KEY_PREFIX + directory.canonicalPath
+        try {
+            WebDavSettingsStore.setEnabled(context, true)
+            assertEquals(SaveSyncLaunchAdmission.Directory(directoryKey), SaveSyncRuntime.launchAdmission(context, game))
+            val exclusive = launch(start = CoroutineStart.UNDISPATCHED) {
+                SaveSyncLocks.mutation { awaitCancellation() }
+            }
+            val admitted = CompletableDeferred<String?>()
+            val pendingLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
+                withSaveSyncLaunchAdmission(
+                    resolve = { SaveSyncRuntime.launchAdmission(context, game) },
+                    managed = { key -> admitted.complete(key) },
+                    unmanaged = { throw AssertionError("Verified Ethornell must use managed admission") },
+                )
+            }
+            try {
+                assertFalse("Ethornell admission bypassed the save-operation fence", admitted.isCompleted)
+                exclusive.cancelAndJoin()
+                assertEquals(directoryKey, withTimeout(5_000) { admitted.await() })
+                withTimeout(5_000) { pendingLaunch.join() }
+            } finally {
+                pendingLaunch.cancelAndJoin()
+                exclusive.cancelAndJoin()
+            }
+
+            val selections = SaveDirectoryActivationStore(File(context.noBackupFilesDir, "save_sync"))
+            val token = UUID.randomUUID().toString()
+            selections.begin(directoryKey, game.uri, token)
+            assertEquals(LaunchResult.Failure.SavePreparationFailed(SaveSyncError.SELECTION_INCOMPLETE),
+                EngineLauncher.launch(context, game))
+            assertTrue(selections.owned(game.uri).any { it.token == token })
+            assertFalse(directory.exists())
+        } finally {
+            preferences.forEach { app.getSharedPreferences(it, Context.MODE_PRIVATE).edit().clear().commit() }
+            root.deleteRecursively()
+            WebDavSettingsStore.isEnabled(app)
+        }
+    }
+
+    @Test
+    fun engineWithoutSaveInterfaceBypassesRuntimeBookkeepingAndSaveOperationFence() = runBlocking {
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val context = object : ContextWrapper(app) {
             override fun getApplicationContext(): Context = this
             override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
-                throw AssertionError("ETHORNELL admission must not read WebDAV settings")
+                throw AssertionError("RUFFLE admission must not read WebDAV settings")
             override fun getFilesDir(): File =
-                throw AssertionError("ETHORNELL admission must not resolve managed save files")
+                throw AssertionError("RUFFLE admission must not resolve managed save files")
             override fun getNoBackupFilesDir(): File =
-                throw AssertionError("ETHORNELL admission must not create save-sync state")
+                throw AssertionError("RUFFLE admission must not create save-sync state")
             override fun getExternalFilesDir(type: String?): File? =
-                throw AssertionError("ETHORNELL admission must not resolve external save files")
+                throw AssertionError("RUFFLE admission must not resolve external save files")
         }
-        val game = ScanGame("ETHORNELL admission", "file:///unused-ethornell-admission", EngineType.ETHORNELL, "")
+        val game = ScanGame("RUFFLE admission", "file:///unused-ruffle-admission.swf", EngineType.RUFFLE, "")
         val exclusive = launch(start = CoroutineStart.UNDISPATCHED) {
             SaveSyncLocks.mutation { awaitCancellation() }
         }
@@ -114,7 +177,7 @@ class SaveLaunchAdmissionRuntimeTest {
             val result = withTimeout(5_000) {
                 withSaveSyncLaunchAdmission(
                     resolve = { SaveSyncRuntime.launchAdmission(context, game) },
-                    managed = { throw AssertionError("ETHORNELL was admitted to managed save bookkeeping") },
+                    managed = { throw AssertionError("RUFFLE was admitted to managed save bookkeeping") },
                     unmanaged = { "engine-start-path" },
                 )
             }

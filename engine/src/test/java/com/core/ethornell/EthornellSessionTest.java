@@ -4,20 +4,32 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 public class EthornellSessionTest {
     private static class Fake implements EthornellSession.Backend {
         final List<String> calls = Collections.synchronizedList(new ArrayList<>());
+        final List<String> answers = Collections.synchronizedList(new ArrayList<>());
         final Queue<EthornellSession.Event> events = new ConcurrentLinkedQueue<>();
+        final Set<Long> retried = Collections.synchronizedSet(new HashSet<>());
         final CountDownLatch ready = new CountDownLatch(1), closed = new CountDownLatch(1);
         final CountDownLatch requested = new CountDownLatch(1);
+        final AtomicInteger payloadReads = new AtomicInteger();
         volatile CountDownLatch blockStep, enteredStep;
+        volatile String payload = "{}";
+        volatile long failingPayloadId;
+        volatile RuntimeException payloadFailure;
+        volatile long retryOnAnswer;
+        volatile long followUpAfter;
+        volatile EthornellSession.Event followUp;
         @Override public long create() { calls.add("create:" + Thread.currentThread().getName()); ready.countDown(); return 7; }
         @Override public void attach(long h, Object s, int w, int height, long g) { calls.add("attach:" + g); }
         @Override public void detach(long h, long g) { calls.add("detach:" + g); }
@@ -29,13 +41,46 @@ public class EthornellSessionTest {
             if (blockStep != null) await(blockStep);
         }
         @Override public EthornellSession.Event poll(long h) { return events.poll(); }
-        @Override public void respond(long h, long id, int result) { calls.add("response:" + id + ":" + result); }
+        @Override public String requestPayload(long h, long id) {
+            calls.add("payload:" + id + ":" + Thread.currentThread().getName());
+            payloadReads.incrementAndGet();
+            if (payloadFailure != null && id == failingPayloadId) throw payloadFailure;
+            return payload;
+        }
+        @Override public void respond(long h, long id, int result, String text) {
+            calls.add("response:" + id + ":" + result);
+            answers.add(id + ":" + result + ":" + text);
+            if (retryOnAnswer == id && retried.add(id)) events.add(new EthornellSession.Event(2, id, 0, "retry"));
+            if (followUp != null && followUpAfter == id) { events.add(followUp); followUp = null; }
+        }
         @Override public void requestClose(long h) { calls.add("requestClose"); requested.countDown(); }
         @Override public void destroy(long h) { calls.add("destroy"); closed.countDown(); }
+    }
+    private static final class Recorder implements EthornellSession.Listener {
+        final List<EthornellSession.Event> events = Collections.synchronizedList(new ArrayList<>());
+        final List<String> details = Collections.synchronizedList(new ArrayList<>());
+        final AtomicInteger failures = new AtomicInteger(), fatals = new AtomicInteger();
+        final CountDownLatch closed = new CountDownLatch(1);
+        @Override public void event(long token, EthornellSession.Event event) { events.add(event); }
+        @Override public void failed(long token) { failures.incrementAndGet(); }
+        @Override public void failedDetail(long token, String safeDetail) { details.add(safeDetail); }
+        @Override public void closed(long token) { closed.countDown(); }
     }
     private static void await(CountDownLatch latch) {
         try { assertTrue("timed out", latch.await(3, TimeUnit.SECONDS)); }
         catch (InterruptedException e) { throw new AssertionError(e); }
+    }
+    private static void awaitTrue(String message, BooleanSupplier condition) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) return;
+            try { Thread.sleep(2); } catch (InterruptedException e) { throw new AssertionError(e); }
+        }
+        fail(message);
+    }
+    /** FIFO commands mean the final requestClose has already observed every earlier poll. */
+    private static void drainPolls(EthornellSession session, Fake backend) {
+        session.requestClose(); await(backend.requested);
     }
     private EthornellSession start(Fake backend, AtomicInteger fatals) {
         return new EthornellSession(42, backend, new EthornellSession.Listener() {
@@ -43,6 +88,9 @@ public class EthornellSessionTest {
             @Override public void failed(long token) { fail("unexpected runtime failure"); }
             @Override public void closed(long token) {}
         }, fatals::incrementAndGet);
+    }
+    private EthornellSession start(Fake backend, Recorder listener) {
+        return new EthornellSession(42, backend, listener, listener.fatals::incrementAndGet);
     }
     private void resume(EthornellSession session) {
         session.pause(1, false); session.pause(2, false); session.pause(4, false);
@@ -340,6 +388,158 @@ public class EthornellSessionTest {
         assertEquals(987, session.token());
         assertEquals("callback_token=987", evidence.get(0));
         assertEquals("forced_exit identity_sha256=" + digest + " token=987 reason=command_timeout operation=create budget_ms=200", evidence.get(1));
+    }
+    @Test public void kindFivePayloadIsFetchedOnceOnOwnerWorkerAndAnswerCarriesJson() {
+        Fake backend = new Fake();
+        backend.payload = "{\"type\":\"input\",\"title\":\"Name\",\"fields\":[]}";
+        backend.events.add(new EthornellSession.Event(5, 501, 0, "input"));
+        Recorder listener = new Recorder();
+        EthornellSession session = start(backend, listener);
+        awaitTrue("kind5 delivery", () -> listener.events.size() == 1);
+        assertEquals(1, backend.payloadReads.get());
+        assertTrue(backend.calls.contains("payload:501:Ethornell-engine"));
+        EthornellSession.Event first = listener.events.get(0);
+        assertEquals("{\"type\":\"input\",\"title\":\"Name\",\"fields\":[]}", first.payload);
+        assertNull(first.payloadError);
+        // Repeating an unanswered id must neither re-fetch nor re-show the dialog.
+        backend.events.add(new EthornellSession.Event(5, 501, 0, "input"));
+        session.pause(EthornellSession.PAUSE_DIALOG, true);
+        session.pause(EthornellSession.PAUSE_DIALOG, false);
+        drainPolls(session, backend);
+        assertEquals(1, listener.events.size());
+        assertEquals(1, backend.payloadReads.get());
+        session.respond(session.token(), 501, 0, "{\"accepted\":false}");
+        awaitTrue("json answer", () -> backend.answers.size() == 1);
+        assertEquals("501:0:{\"accepted\":false}", backend.answers.get(0));
+        session.close(); await(listener.closed);
+        assertEquals(0, listener.failures.get()); assertEquals(0, listener.fatals.get());
+    }
+    @Test public void payloadUnavailableOrFailingBecomesPayloadErrorWithoutSessionFailure() {
+        Fake backend = new Fake();
+        backend.payload = null;
+        backend.failingPayloadId = 602;
+        backend.payloadFailure = new IllegalStateException("Ethornell payload limit");
+        backend.events.add(new EthornellSession.Event(5, 601, 0, "input"));
+        backend.events.add(new EthornellSession.Event(5, 602, 0, "select"));
+        Recorder listener = new Recorder();
+        EthornellSession session = start(backend, listener);
+        awaitTrue("kind5 deliveries", () -> listener.events.size() == 2);
+        assertNull(listener.events.get(0).payload);
+        assertNotNull(listener.events.get(0).payloadError);
+        assertNull(listener.events.get(1).payload);
+        assertNotNull(listener.events.get(1).payloadError);
+        assertEquals(0, listener.failures.get());
+        assertNotEquals(EthornellSession.State.FAILED, session.state());
+        // Both requests are still settleable by an explicit cancel.
+        session.respond(session.token(), 601, 0, "{\"accepted\":false}");
+        session.respond(session.token(), 602, 0, "{\"accepted\":false}");
+        awaitTrue("cancels", () -> backend.answers.size() == 2);
+        session.respond(session.token(), 601, 0, "{\"accepted\":false}"); // stale duplicate
+        drainPolls(session, backend);
+        assertEquals(2, backend.answers.size());
+        session.close(); await(listener.closed);
+        assertEquals(0, listener.failures.get()); assertEquals(0, listener.fatals.get());
+    }
+    @Test public void emptyAnswerUsesIntegerPathWhileDialogAnswerCarriesJson() {
+        Fake backend = new Fake();
+        backend.events.add(new EthornellSession.Event(2, 701, 0, "confirm"));
+        backend.events.add(new EthornellSession.Event(5, 702, 0, "input"));
+        Recorder listener = new Recorder();
+        EthornellSession session = start(backend, listener);
+        awaitTrue("two deliveries", () -> listener.events.size() == 2);
+        session.respond(session.token(), 701, 1);
+        session.respond(session.token(), 702, 0, "{\"accepted\":true,\"texts\":[\"a\"]}");
+        awaitTrue("two answers", () -> backend.answers.size() == 2);
+        assertEquals("701:1:", backend.answers.get(0));
+        assertEquals("702:0:{\"accepted\":true,\"texts\":[\"a\"]}", backend.answers.get(1));
+        session.respond(session.token(), 702, 0, "{\"accepted\":false}"); // duplicate answer: no native call
+        drainPolls(session, backend);
+        assertEquals(2, backend.answers.size());
+        session.close(); await(listener.closed);
+        assertEquals(0, listener.failures.get()); assertEquals(0, listener.fatals.get());
+    }
+    @Test public void retryReusesRequestIdAndIsRedisplayedOnce() {
+        Fake backend = new Fake();
+        backend.retryOnAnswer = 801;
+        backend.events.add(new EthornellSession.Event(2, 801, 0, "Sys80:3C retry"));
+        Recorder listener = new Recorder();
+        EthornellSession session = start(backend, listener);
+        awaitTrue("first request", () -> listener.events.size() == 1);
+        session.respond(session.token(), 801, 1);
+        awaitTrue("retry request", () -> listener.events.size() == 2);
+        assertEquals(801, listener.events.get(1).requestId);
+        assertEquals(2, listener.events.get(1).kind);
+        session.respond(session.token(), 801, 0);
+        awaitTrue("second answer", () -> backend.answers.size() == 2);
+        // Completing a retry must not leave a permanent id history.
+        backend.events.add(new EthornellSession.Event(2, 802, 0, "next"));
+        session.pause(EthornellSession.PAUSE_DIALOG, true);
+        session.pause(EthornellSession.PAUSE_DIALOG, false);
+        awaitTrue("next request", () -> listener.events.size() == 3);
+        assertEquals(802, listener.events.get(2).requestId);
+        session.close(); await(listener.closed);
+        assertEquals(0, listener.failures.get()); assertEquals(0, listener.fatals.get());
+    }
+    @Test public void twentyOrdinaryConfirmationsDoNotAccumulateHistory() {
+        Fake backend = new Fake();
+        Recorder listener = new Recorder();
+        EthornellSession session = start(backend, listener);
+        for (int i = 0; i < 20; i++) {
+            long id = 900 + i;
+            final int expected = i + 1;
+            backend.events.add(new EthornellSession.Event(2, id, 0, "confirm"));
+            session.pause(EthornellSession.PAUSE_DIALOG, (i & 1) == 0);
+            awaitTrue("event " + i, () -> listener.events.size() == expected);
+            session.respond(session.token(), id, 1);
+            awaitTrue("answer " + i, () -> backend.answers.size() == expected);
+        }
+        for (int i = 0; i < 15; i++) backend.events.add(new EthornellSession.Event(2, 950 + i, 0, "later"));
+        session.pause(EthornellSession.PAUSE_DIALOG, true);
+        session.pause(EthornellSession.PAUSE_DIALOG, false);
+        awaitTrue("later requests admitted", () -> listener.events.size() == 35);
+        assertEquals(35, listener.events.size());
+        assertEquals(0, listener.failures.get()); assertEquals(0, listener.fatals.get());
+        session.close(); await(listener.closed);
+    }
+    @Test public void budgetCountsPendingPlusRetryCandidateBeforeAdmittingNewRequests() {
+        Fake backend = new Fake();
+        Recorder listener = new Recorder();
+        for (int i = 0; i < 16; i++) backend.events.add(new EthornellSession.Event(2, 1000 + i, 0, "confirm"));
+        EthornellSession session = start(backend, listener);
+        awaitTrue("sixteen pending", () -> listener.events.size() == 16);
+        assertEquals(0, listener.failures.get());
+        // Answering one of sixteen leaves fifteen pending plus one retry candidate.
+        backend.followUpAfter = 1015;
+        backend.followUp = new EthornellSession.Event(2, 2000, 0, "seventeenth");
+        session.respond(session.token(), 1015, 1);
+        awaitTrue("host budget diagnosed", () -> listener.failures.get() == 1);
+        await(listener.closed);
+        assertTrue(listener.details.stream().anyMatch(d ->
+                d.contains("host_request_budget=16 pending=15 retry_candidate=1")));
+        assertEquals(1, Collections.frequency(backend.calls, "destroy"));
+        assertEquals(0, backend.answers.stream().filter(a -> a.startsWith("2000:")).count());
+        assertEquals(EthornellSession.State.CLOSED, session.state());
+    }
+    @Test public void closeClearsPendingRequestsAndSuppressesLateSettlement() {
+        Fake backend = new Fake();
+        Recorder listener = new Recorder();
+        backend.events.add(new EthornellSession.Event(2, 3000, 0, "confirm"));
+        backend.events.add(new EthornellSession.Event(5, 3001, 0, "input"));
+        EthornellSession session = start(backend, listener);
+        awaitTrue("two pending", () -> listener.events.size() == 2);
+        session.respond(session.token(), 3000, 1);
+        awaitTrue("one answer", () -> backend.answers.size() == 1);
+        session.close();
+        await(listener.closed);
+        backend.events.add(new EthornellSession.Event(2, 3000, 0, "late retry"));
+        session.respond(session.token(), 3001, 0, "{\"accepted\":false}");
+        session.pause(EthornellSession.PAUSE_DIALOG, true);
+        session.requestClose();
+        assertEquals(2, listener.events.size());
+        assertEquals(1, backend.answers.size());
+        assertEquals(1, Collections.frequency(backend.calls, "destroy"));
+        assertEquals(EthornellSession.State.CLOSED, session.state());
+        assertEquals(0, listener.failures.get()); assertEquals(0, listener.fatals.get());
     }
     private static void awaitBarrierWait(Thread thread) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);

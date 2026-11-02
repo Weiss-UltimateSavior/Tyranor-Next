@@ -1,6 +1,95 @@
 # Ethornell 测试验收记录
 
-## 当前验收快照（2026-10-16，实施中）
+## 2026-11-02：0cfff1d + 本地 UserData/BGI 全局数据补丁验收（当前，043fef05）
+
+本节只对应下列四元组；下方 `0401e38d` 节与 `541bf6` 中间产物均为历史，不得混用哈希。
+
+| 元组项 | 值 |
+|---|---|
+| App commit（未固定） | 当前未提交工作区；未形成 clean commit，不能把 HEAD 单独当作完整候选 |
+| 库 SHA-256 | `043fef05d0485f027cd5b344a93ddfecd52f97e8e7f8a12fe2986dbcab376d3e`（27,259,224 B） |
+| header SHA-256 | `566f475c02d408816520dda814f2171cf52aacc1f39a5a53482b55015202fa57` |
+| 上游源码 revision | `0cfff1d274ecc4554d0af8af1c7b1c7908595e96`（dirty=true；`local_patches=1`） |
+| 本地补丁 | `tools/ethornell/patches/0001-user-data-double-bgi-resource.patch`，SHA-256 `77b99d9392f521a6d9b7313b6e4220e259e0634028fc01c6f74f395c37051138`；`file_policy.rs` `be3547f738267281b6a53326067757554c59cf4e3895661273f9a9674593b423`；inventory `d30b0774d1175e9bfb474024a8878a89d7f244d16591459a7dbe44129a23c494` |
+
+### 补丁行为与本轮修复链
+
+- `Sys80:32` 会把已含 `bgi-resource\` 前缀的 `UserData` 路径再次拼上资源根；补丁先收敛一层
+  `bgi-resource/bgi-resource/`，仍只把常规 `UserData` 子树映射到私有 `bgi-user/UserData`。
+- 在语言选择页点击语言会触发 `SaveGlobalUserData` 写入 `bgi-resource\BGI.gdb`；上游策略此前只认识
+  `UserData`，因此该写入落到只读资源根。旧 `7ee` 写的是裸 `BGI.gdb`，这是 `0cfff1d` 的行为面变化。
+  上一版 `541bf6` 只修了第一条，点击语言后仍报
+  `status=-10 ... stop=8 ... group=128 id=95`，`bgi-resource\BGI.gdb` 为 `PermissionDenied`。
+- 本补丁额外把顶层 `bgi-resource/BGI.gdb` 与 `bgi-resource/BGI####.cad`（四位数字、大小写不敏感）
+  映射到私有 `bgi-user/...`；其它任意资源路径、子目录、形似名与路径逃逸保持只读/拒绝。
+
+### 本轮通过项
+
+| 范围 | 结果 | 边界 |
+|---|---|---|
+| Release 产物/来源 | `verify_provenance.py --local-static` 与 `--apk`（debug、release）均 `ok=true`；debug/release APK 内库字节与随包库一致；release APK `zipalign -c -P 16 -v 4` 通过（build-tools 36.0.0；37.0.0 未安装） | `release_ready=false`；严格来源审计未通过，dirty 期间无法通过 |
+| Release R8 probe | SJIS **3/3**、GBK **3/3**（`NUMTEST=3`、`FAILURES=0`），对 `043f` 产物执行 | scope 仅 release-native-load-create-only，无 Surface/step/GPU/save |
+| JVM / Rust | `file_policy` Rust **14/14**（含双前缀、`BGI.gdb`/`BGI####.cad` 别名与形似名拒绝）；tools **79** OK；app **910** / engine **583** 为代码未变时的既有运行 | JVM 计数非本轮新增执行；Rust/工具计数对应当前工作区 |
+| `EthornellDeviceTest` | **6/6 通过**（1.426s）：15 符号/ABI/build_info、UTF-8/线程/token、GPU 像素与重挂、脚本 Closed、合成 VM 全局 user-data | 合成夹具与直接 JNI；不等于商业游戏对白/存档 |
+| `EthornellPauseDeviceTest` | **3/3 通过**（2.999s） | 仅暂停/恢复与 Surface；不含音频路由、Activity 焦点集成 |
+| `EthornellSaveDeviceTest` | **9/9 通过**（`pm clear` 后，2.047s）：私有树 ZIP/元数据/inode、64 MiB、回滚、恶意 ZIP、取消清理、公开 manager、busy 拒绝 | 仅 App 私有 user-root；不覆盖游戏内槽位 |
+| Amairo 启动（`/sdcard/Download/EthornellValidation-amairo2`） | 私有 Activity **30s 与 45s 含语言点击**均存活；点击后无 `failed_detail`；私有 user-root 存在 `BGI.gdb`（约 123,802 B） | 仅启动期/全局数据写入路径；新夹具下 `UserData` 可能为空，不声称存档槽位；标题/对白/存读档/槽位均未验证 |
+
+### 存档测试隔离说明
+
+`EthornellSaveDeviceTest` 首轮为 **8/9（1 项失败）**：保留的 Amairo 私有 Activity 任务使全局存档门禁保持 busy，属于测试隔离/顺序问题，不是产品回归；`pm clear` 清除残留任务后复跑 **9/9**。该失败不被隐藏，也不据此放宽门禁。
+
+### 本轮未通过/未验证
+
+- 严格来源审计：provenance `dirty=true` + 1 个本地补丁，strict 不能通过，`release_ready=false`；不得写成 strict provenance 通过。
+- 补丁只修启动期/全局数据写入路径（双重 `UserData` 与顶层 `BGI.gdb`/`BGI####.cad`），不覆盖存档存在性/读取：`Sys80:34`、`Sys80:30/31/35` 与 loose read 未验证。
+- 商业游戏内槽位保存、日期/缩略图、重启读回与 PC 存档互通未验证。
+- Amairo 未到标题/对白，不能据语言点击存活、`BGI.gdb` 或空 `UserData` 宣称可玩或存档闭环。
+- Jewel 样本仍在 `system.arc:ipl._bp` 未知 opcode 停止；旧 `7ee` 同样失败，不是本次补丁引入的回归。
+- 16KB/API26 完整游戏重跑未执行；音频路由、字体/电影与长稳未验证。
+
+### 已被取代的 541bf6 快照（历史）
+
+`541bf6d6…`（27,256,440 B，补丁 `7be529f4…`）只收敛双重 `UserData` 前缀，仍只放行 `UserData` 子树；其设备记录为私有 Activity 15s 存活并生成 `UserData/AmairoChocolate101.sud`（111,046 B），但点击语言后即因 `bgi-resource\BGI.gdb` 的 `PermissionDenied` 失败。该产物不是最终候选，也不得据此声称语言选择后的启动链通过；当前证据一律以本节 `043f` 四元组为准。
+
+## 历史：2026-11-02 上游 0cfff1d 宿主重构验收（0401e38d，已被 043fef05 取代）
+
+本节为历史快照，只对应下列四元组；当前 `043fef05` 见上节，不得混用哈希。旧章节保留为历史，不得与新结果混用。
+
+| 元组项 | 值 |
+|---|---|
+| App 基线 | `a81543a75e44d2538aeb491ebf1a1956c1a37913` + 未提交的宿主/存档实现工作区（未形成 clean commit，不能把 HEAD 单独当作完整候选） |
+| 库 SHA-256 | `0401e38d3ab2a30ed0f57020688f7d00f10332aa3e6baae9ebedee604e86af3c`（27,224,984 B） |
+| header SHA-256 | `566f475c02d408816520dda814f2171cf52aacc1f39a5a53482b55015202fa57` |
+| 上游源码 revision | `0cfff1d274ecc4554d0af8af1c7b1c7908595e96`（dirty=false；provenance `cargo-workspace-build-inputs-v1`） |
+
+### 本轮通过项
+
+| 范围 | 结果 | 边界 |
+|---|---|---|
+| Release 产物/来源 | （`0401e38d` 历史）当时记录为 strict provenance 通过；Release APK exact native bytes 与 zipalign 核对通过；15 个 `ethornell_android_*` 导出含 `request_payload` | 只对应该历史 APK/库；不等同外部源码审计或可复现构建 |
+| Debug 构建 | `:app:assembleDebug`、`:app:assembleDebugAndroidTest` 成功 | 构建成功不等于设备/游戏兼容 |
+| JVM 回归 | app **910 tests，0 fail，1 skip**；engine **583 tests，0 fail，1 skip**；`checkHardcodedUiStrings` 通过；tools **79 tests** 通过 | skip 不计通过；计数只对应当前工作区 |
+| `EthornellDeviceTest` | **6/6 通过**：15 符号/ABI/build_info；UTF-8/非 BMP/线程/token；原创 GPU 四色像素、detach/reattach 与旧 generation；脚本关闭 Closed；合成 VM 全局 user-data 写入/重开/空根反例 | 合成夹具与直接 JNI；不等于商业游戏对白/存档 |
+| ABI/supplementary | 另行复跑 **2/2 通过** | 同上 |
+| `EthornellSaveDeviceTest` | 门禁翻转后 **9/9 通过**：私有树 ZIP 往返/元数据/inode、64 MiB 单文件边界、ZIP 回滚、恶意 ZIP、取消清理、公开 `GameSaveManager`、busy 拒绝 | 只覆盖 App 私有 user-root；不覆盖游戏内槽位 |
+| 存档门禁 | `DEVICE_SAVE_IO_VERIFIED=true`、`HOST_DISPATCH_PROTOCOL_VERIFIED=true`、`available=true` | 范围仅备份/恢复/删除；不自动导入资源根 `UserData`，不宣称 PC 互通 |
+| Release R8 probe | **3/3 通过**（`NUMTEST=3`、`FAILURES=0`）：release identity、15 symbols/ABI/build_info、production JNI create/poll/destroy；kind<=5，stale token/unknown id/kind-5 显式 cancel 契约 | scope 仅 release-native-load-create-only，无 Surface/step/GPU/save |
+
+### 本轮未通过/范围受限
+
+- 真实样本补充：`/sdcard/Download/EthornellValidation-jewel`（本机 `/Volumes/HUAWEI-M2LITE/game/ジュエリー・ナイツ・アルカディア ‐The ends of the world‐`）通过私有 Activity 启动到宿主，但 native 在 `system.arc:ipl._bp` 的 pc=10 报 `unsupported`（未知 opcode `0x12`），未到标题/对白；该样本本轮不通过，不能据此宣称真实游戏兼容。
+- `EthornellPauseDeviceTest`（`0401e38d` 历史夹具）已按新调度器多 stage/step 模型重写并 **3/3 通过**；夹具覆盖暂停/恢复与 Surface，精确 guest tick/held 序列已移除断言，输入映射由 JVM 测试覆盖，不外推音频路由/Activity 焦点。当前 `043fef05` 的独立复跑见上节。
+
+### 本轮未验证
+
+- 该轮商业游戏样本不在设备（原路径不存在），因此商业槽位保存/重启读回、真实对白/输入 dialog 均未验证；历史标题/两句正文/正常退出证据只对应旧库与旧候选。
+- 16KB 模拟器本轮未重跑；API26 GPU、音频路由、字体/电影、后台 Activity onPause/焦点集成、小时级 soak 与多 GPU 未重跑。
+- 存档验收不包含游戏内槽位索引/日期/缩略图兼容，也不包含 PC 存档格式互通。
+
+## 历史验收快照（2026-10-16，实施中；保留，非当前）
+
+> 本节及以下旧时间线中的“当前”“available=false”“pause 3/3”等表述只对 2026-10-16 旧候选有效；当前状态以上方 `043fef05` 节为准。旧记录不因本次升级改写。
 
 **结论：当前`9e2fef…`中文标题/两句正文/正常退出已过；真实slot数据准备/保存流程未闭环，无date/thumbnail/file且未重启读回，仍禁管理。** 空slot无确认不判失败；producer复核指向跨VM procedure双输出/共享heap待查，不把堆指针当bool、不硬写ready。protocol=true、DEVICE_SAVE_IO=false/available=false，发布仍blocked。
 
