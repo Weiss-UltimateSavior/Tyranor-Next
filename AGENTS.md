@@ -264,8 +264,6 @@ Column(fillMaxSize)                                // 页面根
 
 - 所有应用弹窗使用 `AppAlertDialog`，背景与圆角由动态主题常量决定：默认浅色通常为白底 8dp，深浅色/色调切换使用 `NavWhite`，玻璃风格使用对应面板材质与 32dp；统一引用 `AppComponentShape`，不得写死白色或 8dp。原生按键编辑器的明文豁免仍仅限该页与游戏内按键层。
 
-- 所有底部抽屉使用 `com.tyranor.next.ui.common.AppBottomSheet`：面板色 / 遮罩 / `AppSheetTopShape` / 玻璃描边 / `sheetGesturesEnabled = false` / 内容区 `navigationBarsPadding()` 全部收敛在组件内，调用方只提供内容。内容区**不自带滚动与内边距**——需要滚动的调用方自行包 `LazyColumn` / `verticalScroll` 并用 `appSheetMaxHeight()` 限高，避免「可滚容器套可滚容器」。禁止再在页面内直接调用 `ModalBottomSheet` 拼装抽屉外观。
-
 ## 页面内容文字尺寸规范
 
 页面内容（顶部栏除外）只允许使用**两种**文字尺寸，与引擎设置页保持一致：
@@ -356,8 +354,6 @@ Column(fillMaxSize)                                // 页面根
 | 首页「分类仓库」分类栏（全部/快捷/最近/各引擎类型） | `CategoryWarehouse.kt` | 横向滚动 |
 
 > 例外：引擎页在默认外观风格下沿用 Miuix `TabRow`（等分分页的既有观感，含动画指示器），仅在玻璃外观下走本组件；新增场景（含默认风格）一律用本组件。
-
-- **例外（底部抽屉内的选择组）**：抽屉内与选择卡共用同一套强调色语汇、且数量不定需横向滚动的标签组（如游戏页筛选抽屉的引擎过滤），可不使用本组件——`SlidingTabRow` 的选中色由组件内部按外观风格分派、调用方不得传色值，无法与该抽屉「淡主题色底 + 主题色描边」的选择卡保持一致。**仅限抽屉内的控件**，抽屉外（含页面级分类栏、设置页分页）仍必须使用本组件。
 
 ***
 
