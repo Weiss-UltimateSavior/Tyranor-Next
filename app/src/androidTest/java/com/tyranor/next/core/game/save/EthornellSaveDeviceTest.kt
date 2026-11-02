@@ -16,6 +16,7 @@ import com.tyranor.next.core.game.model.ScanGame
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
@@ -38,8 +39,11 @@ import java.util.zip.ZipOutputStream
 /**
  * Real Android private-files backend IO, not native VM slots, PC interoperability,
  * or cross-process host acceptance. Tiny, self-contained byte fixtures only.
- * The release capability remains disabled; direct backend construction is scoped
- * to an isolated private fixture, never used to bypass public API admission.
+ * The release capability is enabled after device acceptance; direct backend
+ * construction is scoped to an isolated private fixture, never used to bypass
+ * public API admission. Coverage includes the private tree round-trip, empty
+ * export, malicious ZIPs, the 64 MiB per-file boundary, and gate refusal. The
+ * public manager lifecycle case runs with the gate enabled.
  */
 @RunWith(AndroidJUnit4::class)
 class EthornellSaveDeviceTest {
@@ -92,6 +96,42 @@ class EthornellSaveDeviceTest {
         }
         assertEquals(otherBefore, metadata(other))
         assertEquals(resourceBefore, snapshot(f.resources))
+    }
+
+    @Test fun emptyExportNeverOpensDestination() = fixture { f ->
+        val store = f.store()
+        val destination = write(f.base, "empty-export.zip", byteArrayOf(7))
+        val before = metadata(destination)
+        var opened = false
+        expect(SaveErrorCode.NO_EXPORTABLE_FILES) {
+            store.export { opened = true; FileOutputStream(destination) }
+        }
+        assertFalse(opened)
+        assertEquals(before, metadata(destination))
+    }
+
+    @Test fun importExportEnforce64MiBPerFileBoundary() = fixture { f ->
+        val limit = 64L * 1024L * 1024L
+        val store = f.store()
+        val lock = write(store.root, ".ethornell-session.lock", byteArrayOf(1))
+
+        assertEquals(1, store.import { FileInputStream(f.archiveOfSize("slot.bin", limit)) })
+        val slot = File(store.root, "slot.bin")
+        assertEquals(limit, slot.length())
+
+        val exported = File(f.base, "exact-export.zip")
+        assertEquals(1, store.export { FileOutputStream(exported) })
+        assertEquals(limit, zipEntrySize(exported))
+
+        expect(SaveErrorCode.SAVE_FILE_TOO_LARGE) {
+            store.import { FileInputStream(f.archiveOfSize("too-big.bin", limit + 1)) }
+        }
+        assertEquals(limit, slot.length())
+        assertEquals(listOf(slot), store.listFiles())
+        assertEquals(1, lock.length())
+        assertNoTransactionResidue(store)
+        store.recoverForLaunch()
+        assertEquals(limit, slot.length())
     }
 
     @Test fun hostileZipPathsAndSmallNodeBudgetNeverCommitOrEscape() = fixture { f ->
@@ -207,22 +247,29 @@ class EthornellSaveDeviceTest {
         f.store().recoverForLaunch()
     }
 
-    @Test fun publicApisStayClosedWithDurablePendingDispatchWithoutCapabilityOverride() = fixture { f ->
+    @Test fun publicApisStayClosedWithClaimedDispatch() = fixture { f ->
         runBlocking {
-            assertFalse(EthornellSaveCapability.available)
             val store = f.store()
             val old = write(store.root, "old.bin", byteArrayOf(1))
             val before = metadata(old)
             val manager = GameSaveManager(f.context)
             val game = ScanGame("Backend fixture only", f.identity, EngineType.ETHORNELL, "")
+            val pid = Process.myPid()
+            val startTime = selfStartTime()
             val token = EthornellDispatchRegistry.issue(f.files, f.identity)
+            var claimed = false
             try {
+                claimed = EthornellDispatchRegistry.claim(f.files, token, f.identity, pid, startTime)
+                assertTrue(claimed)
                 val record = requireNotNull(EthornellDispatchRegistry.status(f.files, token))
-                assertEquals(EthornellDispatchRegistry.Stage.ISSUED, record.stage)
+                assertEquals(EthornellDispatchRegistry.Stage.CLAIMED, record.stage)
                 assertEquals(f.identity, record.identity)
                 val location = manager.resolveSaveLocation(game)
                 assertEquals(store.root, location.directory)
-                assertFalse(location.available)
+                assertEquals(EthornellSaveCapability.available, location.available)
+                // With the gate enabled, a CLAIMED owner whose death cannot be
+                // proven still blocks list and writes. The owner is our own
+                // PID/starttime; no native host is impersonated.
                 assertTrue(manager.listSaveFiles(game).isEmpty())
                 val destination = write(f.base, "must-not-truncate.zip", byteArrayOf(7))
                 val destinationBefore = metadata(destination)
@@ -232,13 +279,65 @@ class EthornellSaveDeviceTest {
                 manager.cleanupAppData(game)
                 assertEquals(before, metadata(old))
                 assertEquals(destinationBefore, metadata(destination))
-                // No disabled action silently revokes a dispatch or claims that
-                // the pending host is stopped. This proves capability refusal,
-                // not the distinct real-host gate while capability is enabled.
-                assertEquals(EthornellDispatchRegistry.Stage.ISSUED,
+                assertEquals(EthornellDispatchRegistry.Stage.CLAIMED,
                     EthornellDispatchRegistry.status(f.files, token).stage)
             } finally {
-                assertTrue(EthornellDispatchRegistry.revokeUnclaimed(f.files, token, f.identity))
+                if (claimed) {
+                    assertTrue(EthornellDispatchRegistry.finish(f.files, token, f.identity, pid, startTime))
+                } else {
+                    assertTrue(EthornellDispatchRegistry.revokeUnclaimed(f.files, token, f.identity))
+                }
+            }
+        }
+    }
+
+    @Test fun publicManagerLifecycleAfterCapabilityAcceptance() {
+        // The production gate is enabled after device acceptance. Keep the
+        // assumption so this reports skipped if admission is ever reverted; it
+        // never overrides the production gate.
+        assumeTrue(
+            "Requires EthornellSaveCapability.available",
+            EthornellSaveCapability.available,
+        )
+        fixture { f ->
+            runBlocking {
+                val manager = GameSaveManager(f.context)
+                val game = ScanGame("Public entry fixture", f.identity, EngineType.ETHORNELL, "")
+                val store = f.store()
+                val nested = write(store.root, "UserData/slot.bin", byteArrayOf(0, 1, -1, 42))
+                val top = write(store.root, "global.dat", byteArrayOf(9, 8, 7))
+                val lock = write(store.root, ".ethornell-session.lock", byteArrayOf(3))
+                val resourcesBefore = snapshot(f.resources)
+
+                val location = manager.resolveSaveLocation(game)
+                assertTrue(location.available)
+                assertEquals(store.root, location.directory)
+                assertEquals(setOf(nested, top), manager.listSaveFiles(game).toSet())
+
+                val archive = File(f.base, "public-export.zip")
+                assertEquals(2, manager.exportToZip(game, Uri.fromFile(archive)))
+                val exported = readZip(archive)
+                assertEquals(setOf("UserData/slot.bin", "global.dat"), exported.keys)
+                assertArrayEquals(byteArrayOf(0, 1, -1, 42), exported.getValue("UserData/slot.bin"))
+                assertArrayEquals(byteArrayOf(9, 8, 7), exported.getValue("global.dat"))
+
+                assertEquals(2, manager.deleteSaves(game))
+                assertTrue(manager.listSaveFiles(game).isEmpty())
+                assertArrayEquals(byteArrayOf(3), lock.readBytes())
+                val empty = File(f.base, "empty-public-export.zip")
+                expect(SaveErrorCode.NO_EXPORTABLE_FILES) { manager.exportToZip(game, Uri.fromFile(empty)) }
+                assertFalse("Empty export must not create the destination", empty.exists())
+
+                assertEquals(2, manager.importFromZip(game, Uri.fromFile(archive)))
+                assertArrayEquals(byteArrayOf(0, 1, -1, 42), nested.readBytes())
+                assertArrayEquals(byteArrayOf(9, 8, 7), top.readBytes())
+                assertArrayEquals(byteArrayOf(3), lock.readBytes())
+                assertEquals(resourcesBefore, snapshot(f.resources))
+
+                manager.cleanupAppData(game)
+                assertTrue(manager.listSaveFiles(game).isEmpty())
+                assertArrayEquals(byteArrayOf(3), lock.readBytes())
+                assertEquals(resourcesBefore, snapshot(f.resources))
             }
         }
     }
@@ -246,8 +345,7 @@ class EthornellSaveDeviceTest {
     @Test fun sameProcessClaimRevokeRaceHasOneWinnerAndUncertainHostEvidenceRefusesSaves() = fixture { f ->
         val token = EthornellDispatchRegistry.issue(f.files, f.identity)
         val pid = Process.myPid()
-        val stat = File("/proc/self/stat").readText()
-        val startTime = stat.substring(stat.lastIndexOf(") ") + 2).trim().split(Regex("\\s+"))[19]
+        val startTime = selfStartTime()
         val ready = CountDownLatch(2)
         val go = CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(2)
@@ -330,6 +428,20 @@ class EthornellSaveDeviceTest {
             }
         }
 
+        fun archiveOfSize(name: String, size: Long): File = File(base, "input-$size.zip").also { archive ->
+            ZipOutputStream(FileOutputStream(archive)).use { zip ->
+                zip.putNextEntry(ZipEntry(name).apply { time = FIXTURE_TIME })
+                val buffer = ByteArray(64 * 1024)
+                var remaining = size
+                while (remaining > 0) {
+                    val chunk = minOf(buffer.size.toLong(), remaining).toInt()
+                    zip.write(buffer, 0, chunk)
+                    remaining -= chunk
+                }
+                zip.closeEntry()
+            }
+        }
+
         override fun close() {
             // Only our freshly-created UUID fixture is eligible. walkFileTree
             // does not follow symlinks; never recurse through a redirected root.
@@ -358,6 +470,27 @@ class EthornellSaveDeviceTest {
             check(parentFile!!.isDirectory || parentFile!!.mkdirs())
             FileOutputStream(this).use { out -> out.write(bytes); out.fd.sync() }
             check(setLastModified(FIXTURE_TIME))
+        }
+
+        fun selfStartTime(): String {
+            val stat = File("/proc/self/stat").readText()
+            return stat.substring(stat.lastIndexOf(") ") + 2).trim().split(Regex("\\s+"))[19]
+        }
+
+        fun zipEntrySize(file: File): Long {
+            ZipInputStream(FileInputStream(file)).use { zip ->
+                assertNotNull("Missing ZIP entry", zip.nextEntry)
+                var total = 0L
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = zip.read(buffer)
+                    if (read == -1) break
+                    total += read
+                }
+                zip.closeEntry()
+                assertNull("Expected a single ZIP entry", zip.nextEntry)
+                return total
+            }
         }
 
         data class Metadata(val device: Long, val inode: Long, val size: Long, val modified: Long, val digest: String)

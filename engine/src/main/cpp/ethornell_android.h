@@ -26,7 +26,7 @@ typedef struct {
     uint32_t reserved[2];
 } EthornellInputV1;
 typedef struct {
-    uint32_t struct_size, kind; /* 1=diagnostic,2=confirmation request,3=closed,4=title */
+    uint32_t struct_size, kind; /* 1=diagnostic,2=confirmation request,3=closed,4=title,5=dialog request */
     uint64_t request_id;
     int32_t code;
     uint32_t text_len; /* bytes present, excludes NUL; UTF-8 boundary preserved */
@@ -35,7 +35,7 @@ typedef struct {
 typedef struct {
     uint32_t struct_size;
     int32_t result; /* VM integer result, once only */
-    EthornellStringV1 text; /* reserved, must be empty in v1 */
+    EthornellStringV1 text; /* JSON answer for a kind-5 dialog request; empty otherwise */
 } EthornellResponseV1;
 /* Status: 0=OK, 1=no event/not yet due, negatives are errors. */
 enum { ETHORNELL_E_ARGUMENT=-1, ETHORNELL_E_HANDLE=-2, ETHORNELL_E_ABI=-3,
@@ -65,6 +65,9 @@ int32_t ethornell_android_set_paused(uint64_t handle, uint32_t reason_mask);
 int32_t ethornell_android_request_close(uint64_t handle);
 int32_t ethornell_android_poll_event(uint64_t handle, EthornellEventV1 *out_event);
 int32_t ethornell_android_complete_request(uint64_t handle, uint64_t request_id, const EthornellResponseV1 *response);
+/* JSON description of a kind-5 dialog request (see ABI.md). Returns required
+ * bytes INCLUDING NUL; copies only when capacity suffices. NULL/0 is a size query. */
+int32_t ethornell_android_request_payload(uint64_t handle, uint64_t request_id, char *out, uint32_t capacity);
 int32_t ethornell_android_destroy(uint64_t handle);
 #ifdef __cplusplus
 }

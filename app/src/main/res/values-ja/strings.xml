@@ -622,6 +622,7 @@
     <string name="save_error_illegal_zip_path">ZIP に不正なパスが含まれています：%1$s</string>
     <string name="save_error_create_save_dir_named">セーブフォルダを作成できません：%1$s</string>
     <string name="save_error_zip_too_large">ZIP 解凍後のサイズが大きすぎます</string>
+    <string name="save_error_save_file_too_large">セーブファイルが 64 MiB の上限を超えています：%1$s</string>
     <string name="save_error_create_temp_dir">一時解凍フォルダを作成できません</string>
 
     <string name="patch_title">オンラインパッチ</string>

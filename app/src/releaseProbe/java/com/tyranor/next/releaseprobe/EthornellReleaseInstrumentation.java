@@ -26,6 +26,8 @@ import java.util.concurrent.TimeUnit;
 /** Test APK only; framework + Java APIs, no AndroidX/JUnit/Kotlin and no production class copies. */
 public final class EthornellReleaseInstrumentation extends Instrumentation {
     private static final String TAG = "EthornellReleaseProbe";
+    /** Schema-valid explicit cancel; this runner never fakes an accepted kind-5 answer. */
+    private static final String DIALOG_CANCEL = "{\"accepted\":false}";
     private static final int NUM_TESTS = 3;
     private Bundle arguments;
     private Class<?> transport;
@@ -116,7 +118,8 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
         releaseTargetIdentity();
         System.loadLibrary("ethornell_test_probe");
         String report = probe(new File(getTargetContext().getApplicationInfo().nativeLibraryDir, "libethornell.so").getPath());
-        require(report != null && report.startsWith("OK RTLD_NOW") && report.contains("build_info=ethornell"), report);
+        require(report != null && report.startsWith("OK RTLD_NOW") && report.contains("symbols=15")
+                && report.contains("build_info=ethornell"), report);
         emit(0, "LOAD " + report, "rtldNowAbiBuildInfo", 2);
     }
 
@@ -154,14 +157,32 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
         require(handle != 0, "Native create returned zero");
         int events = 0;
         try {
+            // Unknown dialog ids are a non-fatal null; id 0 is a rejected argument.
+            Object unknownPayload = call("requestPayload", new Class<?>[]{long.class, long.class},
+                    handle, Long.MAX_VALUE);
+            require(unknownPayload == null, "Unknown dialog id returned a payload");
+            call("completeRequest", new Class<?>[]{long.class, long.class, int.class, String.class},
+                    handle, Long.MAX_VALUE, 0, DIALOG_CANCEL); // stale id: no-op, not fatal
+            boolean zeroRejected = false;
+            try { call("requestPayload", new Class<?>[]{long.class, long.class}, handle, 0L); }
+            catch (IllegalStateException expected) { zeroRejected = true; }
+            require(zeroRejected, "Zero dialog request id accepted");
             long end = SystemClock.elapsedRealtime() + 1000;
             while (SystemClock.elapsedRealtime() < end && events < 64) {
                 Object event = call("pollEvent", new Class<?>[]{long.class}, handle);
                 if (event == null) break;
                 Class<?> type = event.getClass();
                 int kind = type.getField("kind").getInt(event), code = type.getField("code").getInt(event);
-                require(kind >= 1 && kind <= 4 && !(kind == 1 && code < 0), "Fatal/invalid event kind=" + kind + " code=" + code);
-                Log.i(TAG, "EVENT kind=" + kind + " code=" + code + " text=" + type.getField("text").get(event));
+                long id = type.getField("requestId").getLong(event);
+                require(kind >= 1 && kind <= 5 && !(kind == 1 && code < 0), "Fatal/invalid event kind=" + kind + " code=" + code);
+                Log.i(TAG, "EVENT kind=" + kind + " code=" + code + " id=" + id + " text=" + type.getField("text").get(event));
+                if (kind == 5) {
+                    Object payload = call("requestPayload", new Class<?>[]{long.class, long.class}, handle, id);
+                    require(payload instanceof String, "Pending dialog payload unavailable");
+                    Log.i(TAG, "DIALOG id=" + id + " payload=" + payload + " policy=explicit-cancel");
+                    call("completeRequest", new Class<?>[]{long.class, long.class, int.class, String.class},
+                            handle, id, 0, DIALOG_CANCEL);
+                }
                 events++;
             }
             require(events > 0 && events < 64, "Expected bounded bootstrap diagnostic event");
@@ -174,6 +195,10 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
         try { call("pollEvent", new Class<?>[]{long.class}, handle); }
         catch (IllegalStateException expected) { rejected = true; }
         require(rejected, "Destroyed token accepted");
+        rejected = false;
+        try { call("requestPayload", new Class<?>[]{long.class, long.class}, handle, 1L); }
+        catch (IllegalStateException expected) { rejected = true; }
+        require(rejected, "Destroyed token accepted requestPayload");
         Log.i(TAG, "CREATE_POLL_DESTROY events=" + events + " nonBMP=true data retained=" + base
                 + " no Surface/step: NOT VM execution/GPU evidence");
     }

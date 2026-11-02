@@ -60,7 +60,7 @@ iOS版本计划中...
 
 CatSystem2 游戏按 `config/startup.xml`、`.int/.cst/.hg3/.kcs` 等目录特征组合评分识别（`cs2.exe` 仅作辅助，不单独判定），启动同样经外置 Winlator（目录 + 主程序；Runtime 允许 `.bin` 且优先 `cs2.exe`）。
 
-**实验接入：Ethornell / BGI（ethornell-rs）** 已接入扫描、内置宿主启动与 SJIS/GBK、字体设置；原创像素、基础 ABI、退出重入与合成VM持久化已有设备证据，合法样本的三语言选择、正常标题、中文菜单与两句真实中文推进已视觉验证。但商业存档槽位尚无实际保存，精确ABI与完整兼容仍待验收，不能统称可玩。API26当前测试硬件无可用GPU adapter，不代表所有API26设备不支持。App 存档管理默认关闭；完整 IME、BMV、WMV、实时 SWF 与电影音轨尚未支持。进度见 [移植计划](docs/Ethornell-BGI-Android化移植计划方案.md) 和 [测试验收记录](docs/Ethornell测试验收记录.md)。
+**实验接入：Ethornell / BGI（ethornell-rs）** 已接入扫描、内置宿主启动与 SJIS/GBK、字体设置；宿主已升级到上游 `0cfff1d` ABI v1（15 个导出、kind 5 输入对话框与 JSON 回答），当前随包库为 `043fef05…`（27,259,224 B），在上游基础上带 1 个本地补丁（SHA-256 `77b99d93…`），同时修复 `Sys80:32` 双重 `bgi-resource` 前缀的 `UserData` 写入，并把语言选择触发的顶层 `BGI.gdb` 与配置槽 `BGI####.cad` 映射到私有 user-root；provenance `dirty=true`，`--local-static`、debug/release APK 精确库字节与 zipalign 通过，严格来源审计未通过。原创像素、基础 ABI、退出重入与合成 VM 持久化已有设备证据；Amairo 样本私有 Activity 在 30s/45s 含语言点击后仍存活（无 `failed_detail`），私有 user-root 生成 `BGI.gdb`（约 123,802 B），新夹具下 `UserData` 可能为空，不能据此声称存档槽位；仍未到标题/对白，不能把旧的标题/两句正文证据当作当前库结果。App 存档管理已开放，但仅限 App 私有 user-root 的备份/恢复/删除，不含商业游戏内槽位或 PC 存档互通；商业槽位保存/读回、`Sys80:34`/`Sys80:30/31/35` 等读取 API 与完整兼容仍待验收，不能统称可玩。`EthornellPauseDeviceTest` 已按新调度器的多 stage/step 模型重写并 3/3 通过（2.999s）；其精确 guest tick/held 断言已降级为 pause/Surface 验证，输入映射由 JVM 测试覆盖；API26 当前测试硬件无可用 GPU adapter，不代表所有 API26 设备不支持。完整 IME、BMV、WMV、实时 SWF 与电影音轨仍未支持。进度见 [移植计划](docs/Ethornell-BGI-Android化移植计划方案.md) 和 [测试验收记录](docs/Ethornell测试验收记录.md)。
 
 YU-RIS（Windows）游戏通过外置 Winlator（winlator-cn）运行：扫描按 `yscfg.dat`、`pac/*.ypf`、引擎 DLL 与 `.ymv` 特征识别，启动时以「游戏目录 + 主程序 exe」经 Winlator 外置启动协议拉起（目录由 Winlator 自动分配空闲盘符临时挂载，`save=false` 不写回容器配置）；主程序自动选择，可在游戏详情「启动文件」手动覆盖。主 App 可统一管理其游戏目录 `save/` 中的存档；Winlator 的运行环境仍由外部应用负责。
 

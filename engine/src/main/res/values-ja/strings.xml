@@ -5,6 +5,16 @@
     <string name="engine_ethornell_game_menu">ゲームメニュー（右クリック）</string>
     <string name="engine_ethornell_backlog">バックログ（上スクロール）</string>
     <string name="engine_ethornell_host_request">ゲームの確認</string>
+    <string name="engine_ethornell_dialog_unavailable">入力ダイアログを読み込めません</string>
+    <string name="engine_ethornell_dialog_unavailable_detail">ゲームから送られた入力内容を利用できないため、この入力はキャンセルしてください。</string>
+    <string name="engine_ethornell_dialog_default_title">入力</string>
+    <string name="engine_ethornell_dialog_date_title">日付</string>
+    <string name="engine_ethornell_dialog_field">入力内容</string>
+    <string name="engine_ethornell_dialog_date_field">日付フィールド %1$d</string>
+    <string name="engine_ethornell_dialog_segment">%2$d 個中 %1$d 番目</string>
+    <string name="engine_ethornell_dialog_month">月</string>
+    <string name="engine_ethornell_dialog_day">日</string>
+    <string name="engine_ethornell_dialog_empty_option">（空）</string>
     <string name="engine_game_loading">ゲームを読み込み中</string>
     <string name="engine_starting_game">ゲームを起動しています</string>
     <string name="engine_preparing_game">ゲームデータを準備しています。しばらくお待ちください</string>

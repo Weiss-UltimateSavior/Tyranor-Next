@@ -20,6 +20,7 @@ enum class SaveErrorCode {
     ILLEGAL_ZIP_PATH,
     CREATE_SAVE_DIR_NAMED,
     ZIP_TOO_LARGE,
+    SAVE_FILE_TOO_LARGE,
     CREATE_TEMP_DIR,
 }
 

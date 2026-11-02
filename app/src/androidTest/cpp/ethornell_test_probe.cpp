@@ -29,7 +29,8 @@ static jstring probe_library(JNIEnv* env, jstring path) {
 #define CHECK(name) valid = valid && dlsym(library, "ethornell_android_" #name) != nullptr;
     CHECK(abi_version) CHECK(build_info) CHECK(last_error) CHECK(init_context)
     CHECK(create) CHECK(set_surface) CHECK(detach_surface) CHECK(step) CHECK(input)
-    CHECK(set_paused) CHECK(request_close) CHECK(poll_event) CHECK(complete_request) CHECK(destroy)
+    CHECK(set_paused) CHECK(request_close) CHECK(poll_event) CHECK(complete_request)
+    CHECK(request_payload) CHECK(destroy)
 #undef CHECK
     auto abi = reinterpret_cast<decltype(&ethornell_android_abi_version)>(dlsym(library, "ethornell_android_abi_version"));
     auto info = reinterpret_cast<decltype(&ethornell_android_build_info)>(dlsym(library, "ethornell_android_build_info"));
@@ -37,7 +38,7 @@ static jstring probe_library(JNIEnv* env, jstring path) {
     int needed = info ? info(nullptr, 0) : -1;
     bool copied = info && needed > 1 && needed <= static_cast<int>(sizeof(build)) && info(build, sizeof(build)) == needed;
     bool terminated = copied && build[needed - 1] == 0 && strlen(build) == static_cast<size_t>(needed - 1);
-    snprintf(result, sizeof(result), "%s RTLD_NOW symbols=14 ABI=%u Config=88 Input=32 Event=2072 Response=24 build_info=%s",
+    snprintf(result, sizeof(result), "%s RTLD_NOW symbols=15 ABI=%u Config=88 Input=32 Event=2072 Response=24 build_info=%s",
              valid && abi && abi() == ETHORNELL_ANDROID_ABI_VERSION && terminated ? "OK" : "FAIL",
              abi ? abi() : 0, build);
     dlclose(library);

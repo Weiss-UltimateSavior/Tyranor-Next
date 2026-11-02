@@ -62,6 +62,8 @@ python3 tools/ethornell/verify_provenance.py \
 
 `--local-static` 必须提供 NDK 并执行真实 ELF 检查，不能仅凭 manifest 哈希返回“native 通过”。该模式不调用原 CLI 的 `--source-root`，而是复用 `verify_native.py` 的 ELF/符号/16KB/API/依赖检查原语；没有拿 App checkout 冒充引擎。`ok=true` 仅指本次静态范围通过，**永远 `release_ready=false`**，即使 manifest 自称 `dirty=false` 也不改变这个结论。此字段是验证器原有的「严格来源 + ELF」审计结论，不代表当前自动发布资格；自动发布以静态命令成功退出为准，不改写该字段或伪造来源已验证。manifest、真实 dirty 状态、库/头文件哈希和格式检查仍保留。
 
+当前随包库就是 dirty 本地产物：`043fef05…`（27,259,224 B），`0cfff1d` + 1 个本地补丁（`dirty=true`、`local_patches=1`；补丁同时覆盖启动期 `UserData` 与顶层 `BGI.gdb`/`BGI####.cad`）。它只能走 `--local-static`/自动发布路径；可选 strict 审计会因 dirty 失败，不得写成 strict provenance 通过（见 `patches/README.md`）。
+
 若需要检查工作区外的开发产物，可显式 `--library /path/to/libethornell.so`、`--provenance /path/to/libethornell.provenance.json`；vendored header 默认仍来自 App 的正式头文件。CI 不配置这些开发机路径。
 
 ## 可选的严格源码审计（不阻塞自动发布）
