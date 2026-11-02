@@ -23,8 +23,8 @@ import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.random.Random
 
-/** 粒子数量：保持轻量，避免全屏背景逐帧绘制的开销过高。 */
-private const val ParticleCount = 16
+/** 粒子数量：小尺寸 + 较高密度，保持轻盈但可见；全屏背景逐帧绘制仍然很轻。 */
+private const val ParticleCount = 42
 
 /** 固定随机种子：进程内位置/速度稳定，重组或切换主题色时不会跳动。 */
 private const val ParticleSeed = 20261103
@@ -99,13 +99,13 @@ private fun buildFloatingParticles(primary: Color): List<FloatingParticle> {
         FloatingParticle(
             startX = random.nextFloat(),
             startY = random.nextFloat(),
-            radiusDp = 6f + random.nextFloat() * 18f,
-            riseSpeed = 0.008f + random.nextFloat() * 0.016f,
+            radiusDp = 2.5f + random.nextFloat() * 5.5f,
+            riseSpeed = 0.012f + random.nextFloat() * 0.024f,
             swayAmplitude = 0.02f + random.nextFloat() * 0.05f,
-            swaySpeed = 0.15f + random.nextFloat() * 0.35f,
+            swaySpeed = 0.20f + random.nextFloat() * 0.40f,
             phase = random.nextFloat() * (2f * PI.toFloat()),
             color = palette[random.nextInt(palette.size)],
-            alpha = 0.07f + random.nextFloat() * 0.09f,
+            alpha = 0.12f + random.nextFloat() * 0.12f,
         )
     }
 }

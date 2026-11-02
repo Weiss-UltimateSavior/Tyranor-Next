@@ -66,7 +66,6 @@ import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NoticeDotRed
@@ -1041,8 +1040,8 @@ private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = fal
         Image(
             painter = painterResource(iconRes),
             contentDescription = null,
-            // 深色模式下整体染白，保证低亮度背景上的可读性
-            colorFilter = if (AppThemeColors.isDark) ColorFilter.tint(Color.White) else null,
+            // 左侧图标统一跟随主题色调（Miuix 页面取 MiuixTheme 的 primary）
+            colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
             modifier = Modifier.fillMaxSize(),
         )
         if (showBadge) {

@@ -224,6 +224,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       title = stringResource(R.string.side_panel_kr2_native_title),
       leadingIcon = R.drawable.ic_settings_engine,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         interactScope.launch {
@@ -239,6 +240,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       title = stringResource(R.string.side_panel_archive_tool_title),
       leadingIcon = R.drawable.ic_sheet_archive,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context))
@@ -248,6 +250,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       title = stringResource(R.string.webdav_title),
       leadingIcon = R.drawable.ic_save_cloud,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, WebDavSettingsActivity.createIntent(context))
@@ -258,6 +261,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       title = stringResource(R.string.side_panel_input_tool_title),
       leadingIcon = R.drawable.ic_input_gamepad,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, InputSettingsActivity.createIntent(context))
@@ -268,6 +272,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       title = stringResource(R.string.side_panel_engine_module_title),
       leadingIcon = R.drawable.ic_engine_manage,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, EngineModuleManagementActivity.createIntent(context))

@@ -414,6 +414,8 @@ Column(fillMaxSize)                                // 页面根
 
 - 深色模式适配：左侧图标（PNG drawable）与右侧箭头在深色模式下自动染色为 `Color.White`，浅色模式保持原色不变；不可点击状态（`onClick = null`）保留 `contentAlpha` 衰减。这一适配由组件内部完成，调用方无需处理。
 
+- 设置页入口卡片（`SettingsScreen.kt` 的 `SettingsItemIcon`）左侧图标统一染 `MiuixTheme.colorScheme.primary`，跟随主题色调。
+
 - 颜色判断依赖全局 `AppThemeColors.isDark` 快照，切换外观模式自动重组刷新，与整体主题保持同步。
 
 ### 2. 侧边栏面板（AppSidePanel）内条目
@@ -422,6 +424,7 @@ Column(fillMaxSize)                                // 页面根
 
 - `containerColor = DialogItemSurface`（面板底色为 `NavWhite`，条目反色灰卡，与弹窗内条目为同一对偶关系）。
 - `leadingIcon` 必须传与功能语义对应的具体图标，不得使用组件默认占位图标，也不得隐藏图标位。
+- `leadingIconTint = MaterialTheme.colorScheme.primary`：左侧图标统一跟随主题色调。
 - `showArrow = true`（默认）：面板内条目统一保留右侧指示标，**「执行动作」条目（如启动 kr2 原生）同样不隐藏箭头**——本条优先于上文「执行动作传 `false`」条款。
 - 条目之间的纵向间距由 `AppSidePanel` 内部统一加（`SidePanelItemSpacing` = 8dp，与弹窗内条目列表一致），调用方不得自加外边距。
 
