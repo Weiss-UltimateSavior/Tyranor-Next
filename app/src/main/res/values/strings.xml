@@ -877,7 +877,11 @@
     <string name="graphics_settings_unsupported">当前引擎版本不支持滤镜</string>
     <string name="graphics_settings_runtime_dependent">自动选择：滤镜支持取决于实际内核</string>
     <string name="graphics_filter_parameters">参数</string>
+    <string name="graphics_filter_scale_settings">缩放设定</string>
     <string name="graphics_filter_sharpness">锐度</string>
+    <string name="graphics_filter_anti_ringing">抗振铃强度</string>
+    <string name="graphics_filter_bicubic_b">B 参数</string>
+    <string name="graphics_filter_bicubic_c">C 参数</string>
     <string name="graphics_filter_scale_type">类型</string>
     <string name="graphics_filter_scale_fit">适应</string>
     <string name="graphics_filter_scale_factor">倍数</string>

@@ -62,31 +62,34 @@ final class LanczosScale {
             "    fragColor.a = 1.0;\n" +
             "}\n";
 
-    /** Baseline Mitchell B=C=0.33 at the default sharpness 0.4; higher sharpness => sharper. */
-    private static double bicubicConstant(double sharpness) {
-        return Math.round((0.53 - 0.5 * sharpness) * 10000.0) / 10000.0;
+    static String fragmentShader(ResampleKernel kernel, double bicubicB, double bicubicC, double lanczosAntiRingingStrength) {
+        return shader(kernel, bicubicB, bicubicC, lanczosAntiRingingStrength, false);
     }
 
     static String fragmentShader(ResampleKernel kernel, double sharpness) {
-        return shader(kernel, sharpness, false);
+        return shader(kernel, sharpness, sharpness, sharpness, false);
     }
 
     /** Reductions widen the reconstruction support in proportion to the actual ratio. */
-    static String resampleFragmentShader(ResampleKernel kernel, double sharpness) {
-        return shader(kernel, sharpness, true);
+    static String resampleFragmentShader(ResampleKernel kernel, double bicubicB, double bicubicC, double lanczosAntiRingingStrength) {
+        return shader(kernel, bicubicB, bicubicC, lanczosAntiRingingStrength, true);
     }
 
-    private static String shader(ResampleKernel kernel, double sharpness, boolean resample) {
+    static String resampleFragmentShader(ResampleKernel kernel, double sharpness) {
+        return shader(kernel, sharpness, sharpness, sharpness, true);
+    }
+
+    private static String shader(ResampleKernel kernel, double bicubicB, double bicubicC, double lanczosAntiRingingStrength, boolean resample) {
         String radius = Integer.toString(kernel.radius);
         // Anti-ringing: clamp the normalized result to the nearest-2 texel extremes; the
-        // strength is baked per node instance (sharpness is fixed when the program builds).
+        // strength is baked per node instance.
         // The flag reads the rounded bake so tiny wire values (e.g. 0.00001) that round to
         // zero do not emit an identity mix block.
-        double strength = rounded(sharpness);
+        double strength = rounded(lanczosAntiRingingStrength);
         boolean antiring = kernel == ResampleKernel.LANCZOS2 && strength > 0.0;
         String shader = TEMPLATE
                 .replace("@@EXTRA_UNIFORMS@@", resample ? "uniform ivec2 uOutputSize;\n" : "")
-                .replace("@@WEIGHT_HELPERS@@", weightHelpers(kernel, sharpness))
+                .replace("@@WEIGHT_HELPERS@@", weightHelpers(kernel, bicubicB, bicubicC))
                 .replace("@@TAP_START@@", resample ? "1 - support" : Integer.toString(1 - kernel.radius))
                 .replace("@@TAP_END@@", resample ? "support" : radius)
                 .replace("@@SUPPORT@@", resample
@@ -103,14 +106,14 @@ final class LanczosScale {
                         + "{ ringLo = min(ringLo, tapColor.rgb); ringHi = max(ringHi, tapColor.rgb); }\n" : "")
                 .replace("@@AR_APPLY@@", antiring
                         ? "    fragColor.rgb = mix(fragColor.rgb, clamp(fragColor.rgb, ringLo, ringHi), "
-                        + baked(sharpness) + ");\n" : "");
+                        + baked(lanczosAntiRingingStrength) + ");\n" : "");
         if (shader.contains("@@")) {
             throw new AssertionError("unconsumed resample shader template marker");
         }
         return shader;
     }
 
-    private static String weightHelpers(ResampleKernel kernel, double sharpness) {
+    private static String weightHelpers(ResampleKernel kernel, double bicubicB, double bicubicC) {
         StringBuilder helpers = new StringBuilder();
         if (kernel == ResampleKernel.LANCZOS2) {
             helpers.append("const float PI = 3.14159265358979323846;\n")
@@ -132,20 +135,19 @@ final class LanczosScale {
                         .append("}\n");
                 break;
             case BICUBIC:
-                // Mitchell-Netravali with baked B=C; the default sharpness 0.4 lands on the
-                // B=C=0.33 Mitchell baseline, lower sharpness smooths, higher sharpens.
-                String bc = baked(bicubicConstant(sharpness));
+                String bStr = baked(bicubicB);
+                String cStr = baked(bicubicC);
                 helpers.append("float weight(float x) {\n")
                         .append("    x = abs(x);\n")
                         .append("    float x2 = x * x;\n")
                         .append("    float x3 = x2 * x;\n")
-                        .append("    if (x < 1.0) return ((12.0 - 9.0 * ").append(bc).append(" - 6.0 * ").append(bc)
-                        .append(") * x3 + (-18.0 + 12.0 * ").append(bc).append(" + 6.0 * ").append(bc)
-                        .append(") * x2 + (6.0 - 2.0 * ").append(bc).append(")) / 6.0;\n")
-                        .append("    if (x < 2.0) return ((-").append(bc).append(" - 6.0 * ").append(bc)
-                        .append(") * x3 + (6.0 * ").append(bc).append(" + 30.0 * ").append(bc)
-                        .append(") * x2 + (-12.0 * ").append(bc).append(" - 48.0 * ").append(bc)
-                        .append(") * x + 8.0 * ").append(bc).append(" + 24.0 * ").append(bc).append(") / 6.0;\n")
+                        .append("    if (x < 1.0) return ((12.0 - 9.0 * ").append(bStr).append(" - 6.0 * ").append(cStr)
+                        .append(") * x3 + (-18.0 + 12.0 * ").append(bStr).append(" + 6.0 * ").append(cStr)
+                        .append(") * x2 + (6.0 - 2.0 * ").append(bStr).append(")) / 6.0;\n")
+                        .append("    if (x < 2.0) return ((-").append(bStr).append(" - 6.0 * ").append(cStr)
+                        .append(") * x3 + (6.0 * ").append(bStr).append(" + 30.0 * ").append(cStr)
+                        .append(") * x2 + (-12.0 * ").append(bStr).append(" - 48.0 * ").append(cStr)
+                        .append(") * x + 8.0 * ").append(bStr).append(" + 24.0 * ").append(cStr).append(") / 6.0;\n")
                         .append("    return 0.0;\n")
                         .append("}\n");
                 break;

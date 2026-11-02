@@ -152,8 +152,11 @@ public final class GraphicsFilterChainTest {
         assertFalse(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:lanczos"), 1920, 1080, 1920, 1080).execute[0]);
         // Shader filters with their own in-place effect (CAS) must keep running at identity.
         assertTrue(GraphicsFilterPlan.create(GraphicsFilterChain.parse("v1:cas"), 1920, 1080, 1920, 1080).execute[0]);
-        // Wire round trips carry the adjustable sharpness (bicubic baseline / lanczos anti-ringing).
-        assertEquals("v2:bicubic~0.8~fit~1.0~1.0",
+        // Wire round trips carry the adjustable parameters (bicubic B/C / lanczos anti-ringing).
+        assertEquals("v2:bicubic~0.5~0.25~fit~1.0~1.0",
+                GraphicsFilterChain.parse("v2:bicubic~0.5~0.25~fit~1.0~1.0").encode());
+        // Legacy 5-token bicubic wire maps to bicubic B=C.
+        assertEquals("v2:bicubic~0.8~0.8~fit~1.0~1.0",
                 GraphicsFilterChain.parse("v2:bicubic~0.8~fit~1.0~1.0").encode());
         assertEquals("v2:lanczos~0.7~fit~1.0~1.0",
                 GraphicsFilterChain.parse("v2:lanczos~0.7~fit~1.0~1.0").encode());

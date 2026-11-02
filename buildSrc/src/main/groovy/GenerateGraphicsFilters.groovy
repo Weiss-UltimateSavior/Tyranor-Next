@@ -30,6 +30,9 @@ abstract class GenerateGraphicsFilters extends DefaultTask {
             if (d.asset != null) GenerateGraphicsFilters.requireAsset(assetsDirectory.get().asFile, d.asset)
             if (!d.scaleModes || !d.scaleModes.every { it in ['none','fit','factor'] } || !(d.defaultScaleMode in d.scaleModes)) GenerateGraphicsFilters.fail('invalid scale modes')
             if (!(d.defaultSharpness instanceof Number) || d.defaultSharpness < 0 || d.defaultSharpness > 1) GenerateGraphicsFilters.fail('invalid sharpness')
+            if (d.defaultBicubicB != null && (!(d.defaultBicubicB instanceof Number) || d.defaultBicubicB < 0 || d.defaultBicubicB > 1)) GenerateGraphicsFilters.fail('invalid bicubic B')
+            if (d.defaultBicubicC != null && (!(d.defaultBicubicC instanceof Number) || d.defaultBicubicC < 0 || d.defaultBicubicC > 1)) GenerateGraphicsFilters.fail('invalid bicubic C')
+            if (d.defaultLanczosAntiRingingStrength != null && (!(d.defaultLanczosAntiRingingStrength instanceof Number) || d.defaultLanczosAntiRingingStrength < 0 || d.defaultLanczosAntiRingingStrength > 1)) GenerateGraphicsFilters.fail('invalid lanczos anti-ringing')
             if (!(d.categoryOrder instanceof Integer) || !(d.order instanceof Integer)) GenerateGraphicsFilters.fail('invalid order')
             ['sharpnessAdjustable','outputSized','forceParameters','visible'].each { if (!(d[it] instanceof Boolean)) GenerateGraphicsFilters.fail('invalid flag') }
             if (d.topLeftCoordinates != null && !(d.topLeftCoordinates instanceof Boolean)) GenerateGraphicsFilters.fail('invalid coordinate origin')
@@ -47,6 +50,8 @@ abstract class GenerateGraphicsFilters extends DefaultTask {
                 strings(['zh','en','ja'].collect { d.title[it] }), strings(['zh','en','ja'].collect { d.categoryTitle[it] }),
                 quoted(d.shortName), '0x' + d.color.substring(1), quoted(d.asset), d.nativeScale, d.haloPerPass,
                 d.sharpnessAdjustable, strings(d.scaleModes), quoted(d.defaultScaleMode), d.defaultSharpness,
+                d.defaultBicubicB ?: 0.33, d.defaultBicubicC ?: 0.33,
+                d.defaultLanczosAntiRingingStrength ?: 0.5,
                 d.outputSized, d.forceParameters, d.visible, quoted(d.migrationTarget), d.maxOutputScale,
                 d.topLeftCoordinates ?: false, quoted(d.resampleKernel ?: 'lanczos2')]
             '            new GraphicsFilterDefinition(' + args.join(', ') + ')'

@@ -240,17 +240,19 @@ public final class Anime4kPostProcessor {
     }
 
     private double mSharpness = 0.4;
-    /** Sharpness baked into the scale program; only scale-only presets set it, so the
-     * asset-path internal resampling keeps the historical no-anti-ringing shader. */
-    private double mScaleSharpness = 0;
+    private double mCasSharpness = 0.4;
+    private double mBicubicB = 0.33;
+    private double mBicubicC = 0.33;
+    private double mLanczosAntiRingingStrength = 0;
     private LanczosScale.ResampleKernel mScaleKernel = LanczosScale.DEFAULT_KERNEL;
     static Anime4kPostProcessor forFilter(Context context, GraphicsFilterChain.Step step) {
         GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(step.id);
         if (definition.shaderAsset == null) {
             Anime4kPostProcessor processor = forLanczos(context);
             processor.mScaleKernel = LanczosScale.kernelOf(definition.resampleKernel);
-            // Scale-only presets: sharpness is the bicubic baseline / Lanczos anti-ringing strength.
-            processor.mScaleSharpness = step.sharpness;
+            processor.mBicubicB = step.bicubicB;
+            processor.mBicubicC = step.bicubicC;
+            processor.mLanczosAntiRingingStrength = step.lanczosAntiRingingStrength;
             return processor;
         }
         Anime4kPostProcessor processor = new Anime4kPostProcessor(context, definition.shaderAsset);
@@ -259,7 +261,8 @@ public final class Anime4kPostProcessor {
         processor.mMaxOutputScale = definition.maxOutputScale;
         processor.mHaloPerPass = definition.haloPerPass;
         processor.mOutputSizedShader = definition.outputSized && !"none".equals(step.scaleMode);
-        processor.mSharpness = step.sharpness;
+        processor.mCasSharpness = step.casSharpness;
+        processor.mSharpness = step.casSharpness;
         return processor;
     }
 
@@ -789,7 +792,7 @@ public final class Anime4kPostProcessor {
 
     private void buildScaleProgram() {
         int fragmentShader = compileShader(GLES30.GL_FRAGMENT_SHADER,
-                LanczosScale.resampleFragmentShader(mScaleKernel, mScaleSharpness));
+                LanczosScale.resampleFragmentShader(mScaleKernel, mBicubicB, mBicubicC, mLanczosAntiRingingStrength));
         int program = GLES30.glCreateProgram();
         try {
             requireName(program, "Lanczos program");

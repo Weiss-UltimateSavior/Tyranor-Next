@@ -13,8 +13,10 @@ data class GraphicsFilterCategory(val name: String, val presetIds: List<String>)
 
 object GraphicsFilterCatalog {
     fun options(language: String): List<Pair<String, String>> = GraphicsFilterDefinitions.visible().map { it.id to it.title(language) }
-    fun adjustable(id: String): Boolean = GraphicsFilterDefinitions.find(id)?.adjustable() == true
-    fun sharpnessAdjustable(id: String): Boolean = GraphicsFilterDefinitions.find(id)?.sharpnessAdjustable == true
+    fun adjustable(id: String): Boolean = scaleAdjustable(id) || parametersAdjustable(id)
+    fun scaleAdjustable(id: String): Boolean = scaleModes(id).size > 1
+    fun parametersAdjustable(id: String): Boolean = GraphicsFilterDefinitions.find(id)?.sharpnessAdjustable == true
+    fun sharpnessAdjustable(id: String): Boolean = parametersAdjustable(id)
     fun scaleModes(id: String): List<GraphicsScaleMode> = GraphicsFilterDefinitions.find(id)?.scaleModes.orEmpty()
         .map { value -> GraphicsScaleMode.entries.first { it.wire == value } }
 }

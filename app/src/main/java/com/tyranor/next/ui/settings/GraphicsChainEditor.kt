@@ -1,12 +1,14 @@
 package com.tyranor.next.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,8 +45,9 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
     val originalKeys = remember(chain) { entries.map { it.key } }
     var dragging by remember(chain) { mutableStateOf<String?>(null) }
     var offset by remember(chain) { mutableFloatStateOf(0f) }
-    val heights = remember(chain) { mutableMapOf<String, Int>() }
-    var editing by remember(chain, enabled) { mutableStateOf<String?>(null) }
+    var heights = remember(chain) { mutableMapOf<String, Int>() }
+    var editingScale by remember(chain, enabled) { mutableStateOf<String?>(null) }
+    var editingParameters by remember(chain, enabled) { mutableStateOf<String?>(null) }
     val currentOnChange by rememberUpdatedState(onChange)
     val scope = rememberCoroutineScope()
     fun commit(next: List<EditorNode>) { currentOnChange(next.map { it.node }) }
@@ -101,24 +104,56 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
                     Text(labels.getValue(node.id), style = MaterialTheme.typography.titleMedium,
                         color = TextColor.copy(alpha = if (node.enabled) 1f else 0.38f),
                         modifier = Modifier.weight(1f).padding(end = 8.dp))
-                    if (GraphicsFilterCatalog.adjustable(node.id)) {
-                        GraphicsNodeAction(R.drawable.ic_graphics_parameters, R.string.graphics_filter_parameters,
-                            enabled && dragging == null) { editing = entry.key }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (GraphicsFilterCatalog.scaleAdjustable(node.id)) {
+                            GraphicsNodeAction(
+                                R.drawable.ic_graphics_scale,
+                                R.string.graphics_filter_scale_settings,
+                                enabled && dragging == null
+                            ) { editingScale = entry.key }
+                        }
+                        if (GraphicsFilterCatalog.parametersAdjustable(node.id)) {
+                            GraphicsNodeAction(
+                                R.drawable.ic_graphics_parameters,
+                                R.string.graphics_filter_parameters,
+                                enabled && dragging == null
+                            ) { editingParameters = entry.key }
+                        }
+                        GraphicsNodeAction(
+                            R.drawable.ic_graphics_delete,
+                            R.string.graphics_chain_remove,
+                            enabled && dragging == null
+                        ) {
+                            commit(entries.filter { it.key != entry.key })
+                        }
+                        Box(
+                            modifier = Modifier
+                                .padding(horizontal = 2.dp)
+                                .width(1.dp)
+                                .height(20.dp)
+                                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        )
+                        GraphicsNodeAction(
+                            R.drawable.ic_graphics_up,
+                            R.string.graphics_chain_up,
+                            enabled && index > 0 && dragging == null
+                        ) {
+                            val position = entries.indexOfFirst { it.key == entry.key }
+                            if (position > 0) commit(entries.toMutableList().apply { add(position - 1, removeAt(position)) })
+                        }
+                        GraphicsNodeAction(
+                            R.drawable.ic_graphics_down,
+                            R.string.graphics_chain_down,
+                            enabled && index < entries.lastIndex && dragging == null
+                        ) {
+                            val position = entries.indexOfFirst { it.key == entry.key }
+                            if (position >= 0 && position < entries.lastIndex)
+                                commit(entries.toMutableList().apply { add(position + 1, removeAt(position)) })
+                        }
                     }
-                    GraphicsNodeAction(R.drawable.ic_graphics_delete, R.string.graphics_chain_remove, enabled && dragging == null) {
-                        commit(entries.filter { it.key != entry.key })
-                    }
-                    GraphicsNodeAction(R.drawable.ic_graphics_up, R.string.graphics_chain_up, enabled && index > 0 && dragging == null) {
-                        val position = entries.indexOfFirst { it.key == entry.key }
-                        if (position > 0) commit(entries.toMutableList().apply { add(position - 1, removeAt(position)) })
-                    }
-                    GraphicsNodeAction(R.drawable.ic_graphics_down, R.string.graphics_chain_down,
-                        enabled && index < entries.lastIndex && dragging == null) {
-                        val position = entries.indexOfFirst { it.key == entry.key }
-                        if (position >= 0 && position < entries.lastIndex)
-                            commit(entries.toMutableList().apply { add(position + 1, removeAt(position)) })
-                    }
-
                 }
             }
         }
@@ -133,10 +168,16 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
         Text(stringResource(R.string.graphics_chain_limit, GraphicsSettingsCodec.MAX_NODES),
             style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
     }
-    entries.firstOrNull { it.key == editing }?.let { entry ->
-        GraphicsNodeParameters(entry.node, onDismiss = { editing = null }) { value ->
+    entries.firstOrNull { it.key == editingScale }?.let { entry ->
+        GraphicsNodeScale(entry.node, onDismiss = { editingScale = null }) { value ->
             commit(entries.map { if (it.key == entry.key) it.copy(node = value) else it })
-            editing = null
+            editingScale = null
+        }
+    }
+    entries.firstOrNull { it.key == editingParameters }?.let { entry ->
+        GraphicsNodeParameters(entry.node, onDismiss = { editingParameters = null }) { value ->
+            commit(entries.map { if (it.key == entry.key) it.copy(node = value) else it })
+            editingParameters = null
         }
     }
 }
@@ -144,10 +185,28 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
 @Composable
 private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick: () -> Unit) {
     val description = stringResource(label)
-    Box(Modifier.size(40.dp).clickable(enabled = enabled,
-        interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center) {
-        Icon(painterResource(icon), contentDescription = description, modifier = Modifier.size(22.dp),
-            tint = TextColor.copy(alpha = if (enabled) 1f else 0.38f))
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .border(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (enabled) 0.5f else 0.2f),
+                RoundedCornerShape(8.dp)
+            )
+            .clickable(
+                enabled = enabled,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            painterResource(icon),
+            contentDescription = description,
+            modifier = Modifier.size(22.dp),
+            tint = TextColor.copy(alpha = if (enabled) 1f else 0.38f)
+        )
     }
 }

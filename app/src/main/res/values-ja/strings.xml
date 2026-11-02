@@ -877,7 +877,11 @@
     <string name="graphics_settings_unsupported">このエンジンのバージョンはフィルター非対応です</string>
     <string name="graphics_settings_runtime_dependent">自動選択：フィルター対応は実際のエンジンに依存します</string>
     <string name="graphics_filter_parameters">パラメーター</string>
+    <string name="graphics_filter_scale_settings">拡大・縮小設定</string>
     <string name="graphics_filter_sharpness">シャープネス</string>
+    <string name="graphics_filter_anti_ringing">アンチリンギング強度</string>
+    <string name="graphics_filter_bicubic_b">B パラメーター</string>
+    <string name="graphics_filter_bicubic_c">C パラメーター</string>
     <string name="graphics_filter_scale_type">種類</string>
     <string name="graphics_filter_scale_fit">画面に合わせる</string>
     <string name="graphics_filter_scale_factor">倍率</string>
