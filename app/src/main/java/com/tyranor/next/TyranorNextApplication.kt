@@ -8,6 +8,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.tyranor.next.core.game.storage.GameLibraryRepository
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
@@ -21,6 +22,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onCreate() {
         super<Application>.onCreate()
+        SaveSyncRuntime.install(this)
         // 多进程 WebView 数据目录隔离：主进程（Web 首页）与 :tyrano（Tyrano/VN/WebOther 游戏宿主，
         // 承载游戏 localStorage 存档，必须保持默认目录）在 API 28+ 不能共用默认目录，否则后初始化
         // 的进程创建 WebView 时直接抛异常。:rpgmaker 已在自身 Activity 设置 "rpgmaker" 后缀；
@@ -42,7 +44,12 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 
+    override fun onStart(owner: LifecycleOwner) {
+        SaveSyncRuntime.onForeground(this)
+    }
+
     override fun onStop(owner: LifecycleOwner) {
+        SaveSyncRuntime.onBackground(this)
         BackgroundUpdateWorker.enqueue(this)
     }
 }

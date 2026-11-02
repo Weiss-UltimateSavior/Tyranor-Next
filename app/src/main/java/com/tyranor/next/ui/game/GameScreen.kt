@@ -112,6 +112,7 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
+import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.model.GameSortKeys
 import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
@@ -150,6 +151,7 @@ import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.toSaveSyncCleanupException
 import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.cover.coverErrorMessage
@@ -161,6 +163,7 @@ import com.tyranor.next.ui.settings.PerGameSettingsActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -423,13 +426,24 @@ internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> 
     }
 }
 
-/** 删除游戏后清理应用内关联数据（设置/最近记录/快捷启动/封面/存档镜像），绝不触碰游戏文件。 */
-internal fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
-    PerGameSettingsStore.clear(context, target.uri)
-    GameLibraryFacade.removeRecentGame(context, target.uri)
-    GameLibraryFacade.removeQuickLaunch(context, target.uri)
-    deleteCoverFile(context, target.coverUri)
-    GameSaveManager(context).cleanupAppData(target)
+/**
+ * 清理应用内关联数据，不触碰游戏目录。等待存档门禁可取消且有时限；取得门禁后的存档清理及
+ * 后续设置清理不可取消。清理失败时调用方须保留游戏库条目，供用户重试。
+ */
+internal suspend fun cleanupDeletedGame(context: android.content.Context, target: ScanGame) {
+    try {
+        SaveSyncService(context).clearGame(target)
+        withContext(NonCancellable) {
+            PerGameSettingsStore.clear(context, target.uri)
+            GameLibraryFacade.removeRecentGame(context, target.uri)
+            GameLibraryFacade.removeQuickLaunch(context, target.uri)
+            deleteCoverFile(context, target.coverUri)
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: Exception) {
+        throw failure.toSaveSyncCleanupException()
+    }
 }
 
 private fun deleteCoverFile(context: android.content.Context, coverUri: String?) {
@@ -1271,6 +1285,7 @@ private fun RenameGameDialog(
                 query = title,
                 onQueryChange = { title = it },
                 onSearch = { if (canConfirm) onConfirm(normalizedTitle) },
+                imeAction = androidx.compose.ui.text.input.ImeAction.Done,
                 leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                 iconContentDescription = stringResource(R.string.game_rename),
                 textStyle = MaterialTheme.typography.bodyMedium,

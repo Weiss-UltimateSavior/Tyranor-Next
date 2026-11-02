@@ -27,6 +27,8 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.GameDirUnresolved ->
             localized.getString(R.string.launch_resolve_local_dir_failed)
 
+        is LaunchResult.Failure.SavePreparationFailed -> localized.getString(error.syncErrorResource())
+
         is LaunchResult.Failure.EthornellPrepareFailed -> localized.getString(when (error) {
             EthornellPrepareError.RESOURCE_ROOT -> R.string.ethornell_error_root
             EthornellPrepareError.BOOTSTRAP -> R.string.ethornell_error_bootstrap

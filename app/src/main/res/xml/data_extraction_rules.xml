@@ -8,6 +8,7 @@
          and omit unrelated app data. Preserve the exclusions below; quota/transport
          policy still applies, so users should explicitly export important saves. -->
     <cloud-backup>
+        <exclude domain="sharedpref" path="webdav_sync_secure.xml" />
         <exclude domain="sharedpref" path="hikarinagi_auth.xml" />
         <!-- OAuth 令牌加密库：Keystore 密钥换机不可解密，必须排除 -->
         <exclude domain="sharedpref" path="hikarinagi_auth_secure.xml" />
@@ -17,6 +18,7 @@
         <exclude domain="database" path="game_library.db-shm" />
     </cloud-backup>
     <device-transfer>
+        <exclude domain="sharedpref" path="webdav_sync_secure.xml" />
         <exclude domain="sharedpref" path="hikarinagi_auth.xml" />
         <exclude domain="sharedpref" path="hikarinagi_auth_secure.xml" />
         <exclude domain="database" path="game_library.db" />

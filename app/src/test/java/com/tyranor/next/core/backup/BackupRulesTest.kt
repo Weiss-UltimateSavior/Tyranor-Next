@@ -26,6 +26,7 @@ class BackupRulesTest {
         sections().forEach { section ->
             assertFalse(eligible(section, "sharedpref", "hikarinagi_auth.xml"))
             assertFalse(eligible(section, "sharedpref", "hikarinagi_auth_secure.xml"))
+            assertFalse(eligible(section, "sharedpref", "webdav_sync_secure.xml"))
             listOf("game_library.db", "game_library.db-wal", "game_library.db-shm").forEach {
                 assertFalse(eligible(section, "database", it))
             }

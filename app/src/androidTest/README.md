@@ -1,5 +1,7 @@
 # Ethornell device instrumentation
 
+WebDAV 存档同步、恢复与 Compose UI 的独立验收入口见 [WebDAV 设备验收记录](../../../docs/WebDAV-device-acceptance.md)。这些测试要求专用 application ID 与显式 opt-in；其纯框架辅助 Activity 不证明原生游戏兼容性。
+
 R8 release-native 动态验证使用可选的纯Java runner，见 [`../releaseProbe/README.md`](../releaseProbe/README.md)。不得把默认debug AndroidX测试APK与release target混装；默认本页命令仍针对debug，省略 `ethornellReleaseProbe` 属性即可。
 
 这些是 **真实 Android JNI/VM/GPU** 测试，不使用 mock Backend，不更改生产 Activity 的 exported 或添加 Intent backdoor。默认合成数据由测试 Java 在专用 app 私有目录生成，不含商业资产。测试代码直接访问 engine 是仪器层边界测试，非 UI 业务依赖。
@@ -154,3 +156,9 @@ failed identity_sha256=<64hex> token=<session token>
 - **未验证：** 真实商业游戏样本当前不在设备，商业槽位保存/重启读回、真实对白与输入 dialog 未验证；16KB 模拟器本轮未重跑；API26 GPU、音频路由、字体/电影与长稳仍未闭环。
 
 单独执行某方法时仍使用上文 `-e class ...#method` 形式；设备结果只对应记录时的 APK、库、header 与源码四元组，不能跨候选外推。
+
+## WebDAV 弹窗忙碌状态回归
+
+`ui/save/SaveDialogDismissDeviceTest` 补充两个隔离目标用例：任务中点击遮罩/返回保持弹窗可见，任务结束后允许关闭；退场动画已经开始后 busy 改变仍清除父状态。执行沿用 `com.tyranor.next.webdavacceptance*` 与 `-e webdav_device_acceptance true` 的双重门槛。
+
+2026-10-27 本轮仅编译该测试和普通 AndroidTest APK，按用户要求未连接设备、未执行新增 UI 用例；原有截图与设备报告不代表这两个新增用例已执行。

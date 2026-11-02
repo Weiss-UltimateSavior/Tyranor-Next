@@ -294,8 +294,10 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态（Miuix 风格，非展开内嵌式）
 
-- 组件内部固定为 `MiuixSettingsTheme + SearchBar + InputField` 模板，`expanded` 恒为
-  `false`（内嵌式），不使用 Miuix 的展开式全屏搜索页形态。
+- 组件内部固定为 `MiuixSettingsTheme + SearchBar` 模板，`expanded` 恒为
+  `false`（内嵌式），不使用 Miuix 的展开式全屏搜索页形态。默认参数组合走 `InputField`；
+  API 26/27 兼容、非恒等文本变换或显式键盘/IME/autofill 语义走组件内部
+  `EmbeddedSearchInputField`，页面不得自行复制该分支。
 
 - 前导图标固定 **26dp**，内边距固定 `SearchBarDefaults.LeadingIconStartPadding /
   LeadingIconEndPadding`，`tint` 统一取 `MiuixTheme.colorScheme.primary`——以上均由组件
@@ -308,10 +310,26 @@ Column(fillMaxSize)                                // 页面根
 - `onSearch`：键盘 IME 动作回调。本地即时过滤场景可不传（默认空实现）；
   需显式触发时传入（如网络请求、回车即保存）。
 
+- `imeAction`：键盘 IME 动作，默认 `ImeAction.Search`；普通搜索依赖默认值，用户名、URL、
+  密码及弹窗内其它非搜索身份输入显式传 `ImeAction.Done`。
+
+- `autofillContentType`：Compose autofill 内容类型，默认 `null`。用户名与现有密码按身份分别传
+  `ContentType.Username` / `ContentType.Password`；URL 等无对应语义的字段保持 `null`。
+  文本变换、键盘类型和 autofill 类型彼此独立，不得根据 `visualTransformation` 自动推断。
+
+- `keyboardType`：键盘类型，默认 `KeyboardType.Text`；URL 字段传 `KeyboardType.Uri`，密码字段传
+  `KeyboardType.Password`，用户名使用默认文本键盘。
+
+- `visualTransformation`：只控制文字显示变换，默认 `VisualTransformation.None`；密码掩码不代表
+  autofill 身份。密码字段必须另传 `keyboardType = KeyboardType.Password` 与
+  `autofillContentType = ContentType.Password`，内部按密码键盘/身份补充 `password()` 无障碍语义。
+  当前 API 没有 `secureInput` 参数；不得引用不存在的参数。
+
 - `leadingIcon`：drawable 资源（`R.drawable.ic_*`）。搜索语义用默认 `ic_game_search`；
   其他语义必须传对应图标（如名称修改用 `ic_sheet_rename`），禁止搜索图标滥用。
 
-- `iconContentDescription`：无障碍描述，跟随图标语义。
+- `iconContentDescription`：保留此参数名以兼容既有调用；实际同时作为输入框的无障碍 label，
+  文案跟随字段语义，并不只描述前导图标。
 
 - `modifier`：仅用于布局微调（如外边距），宽度由组件内部 `fillMaxWidth` 保证。
 
@@ -321,8 +339,14 @@ Column(fillMaxSize)                                // 页面根
 | ----------- | ---------------------------------- | ----------------- | --------------- |
 | 游戏库过滤       | `GameScreen.kt`（顶栏下方）              | `ic_game_search`  | 即时过滤，不传         |
 | VNDB 封面搜索   | `GameScreen.kt`（VndbSearchDialog）  | `ic_game_search`  | `search()` 网络请求 |
+| 安卓游戏选择过滤 | `AndroidGameAddDialog.kt`（已安装应用列表） | `ic_game_search` | 即时过滤，不传 |
 | krkr 在线补丁过滤 | `KrkrOnlinePatchActivity.kt`（列表首项） | `ic_game_search`  | 即时过滤，不传         |
-| 名称修改        | `GameScreen.kt`（RenameGameDialog）  | `ic_sheet_rename` | 内容有效即保存         |
+| 名称修改        | `GameScreen.kt`（RenameGameDialog）  | `ic_sheet_rename` | Done，内容有效即保存         |
+| WebDAV 地址/用户名/密码 | `WebDavSettingsActivity.kt` | 对应字段语义图标 | Done，显式 Uri/Text/Password 与身份 autofill |
+| 云端游戏标识 | `SaveVersionsPanel.kt`（身份编辑） | `ic_sheet_rename` | Done，内容有效即保存 |
+| 图形倍率 | `GraphicsNodeParameters.kt` | `ic_graphics_parameters` | Done，Decimal 键盘 |
+| 输入目录 | `SettingsScreen.kt`（路径弹窗） | `ic_sheet_folder` | Done，内容有效即保存 |
+| 目录/方案名称/端口/自定义 URL | `SettingsScreen.kt`（通用文本弹窗）、`PerGameSettingsScreen.kt`（`OverrideText`）、`InputSettingsScreen.kt`、`AppSettingsActivity.kt` | 当前为 `ic_sheet_rename` | Done；URL 为 Uri，端口为 Number |
 
 ***
 
@@ -369,6 +393,10 @@ Column(fillMaxSize)                                // 页面根
 
 - 背景色约定（与白底弹窗对偶，详细见 3.5）：**页面上的条目**默认 `NavWhite`（页面背景 `PageGrey` → 灰底白卡）；**弹窗内的条目**必须传 `containerColor = DialogItemSurface`（默认风格 = `PageGrey` 白底弹窗灰卡；玻璃风格 = 亮玻璃面），保证条目与弹窗背景反色、层次分明。「色调切换」开启时 `NavWhite`/`PageGrey` 同步互换，反差关系不变；玻璃风格下 `PageGrey` 透明、`NavWhite` 变为半透明玻璃面，`DialogItemSurface` 自动切换为亮玻璃面。
 
+- `drawSurface`：是否绘制条目自身的圆角背景与描边，默认 `true`。条目已位于
+  `MiuixCard` 等卡片表面时传 `drawSurface = false`，使用卡内平面样式，避免卡片套卡片；
+  点击、内边距、图标与文字排版保持不变。
+
 - 标题用 `MaterialTheme.typography.bodyMedium`、颜色取 `TextColor`；摘要可选，用 `bodySmall` + 半透明辅助色。均不依赖 `colorScheme.surface*`（遵循「组件背景色统一规范」）。
 
 - `leadingIcon`：左侧图标 drawable；未提供时组件自动使用**默认占位图标** `DEFAULT_LEADING_ICON`，不允许调用方在不该出现空图标时留白。
@@ -406,6 +434,7 @@ Column(fillMaxSize)                                // 页面根
 | 加入群聊（企鹅群聊/飞机频道） | `SettingsScreen.kt`（加入群聊弹窗）              | `ic_group_qq` / `ic_group_telegram` |
 | 妙妙工具面板（启动 kr2 原生） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_settings_engine` |
 | 妙妙工具面板（解封包工具） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_sheet_archive` |
+| 妙妙工具面板（WebDAV 存档同步） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_save_cloud` |
 | 妙妙工具面板（输入与手柄） | `MainScreen.kt`（`AppSidePanel` 的 `content` 槽） | `ic_input_gamepad` |
 
 ***
@@ -429,6 +458,7 @@ Column(fillMaxSize)                                // 页面根
 | 设置清单开关（KRKR/ONS/Artemis/RPG Maker 等） | `SettingsScreen.kt`                               | `SwitchPreference` |
 | 应用设置开关（色调切换等）                        | `AppSettingsActivity.kt`                          | `SwitchPreference` |
 | 应用设置「导航栏样式」四选一                      | `AppSettingsActivity.kt`                          | `OverlayDropdownPreference`（非布尔选择，见本节第 3 条例外） |
+| WebDAV 总开关与同步提示 | `WebDavSettingsActivity.kt` | `SwitchPreference` |
 | 封面来源启用开关（行内）                         | `CoverScraperSettingsActivity.kt`（CoverSourceRow） | `Switch`           |
 
 ### 3. 例外
@@ -500,9 +530,9 @@ Column(fillMaxSize)                                // 页面根
 
 ### 2. 页面如何获取主题色
 
-- **Material 页面**（首页/游戏/引擎等 Tab、存档管理、在线补丁等 Activity）：统一使用 `MaterialTheme.colorScheme.primary`（选中态图标/文字、按钮、开关、输入框聚焦指示等）。
+- **Material 页面**（首页/游戏/引擎等 Tab、在线补丁等 Activity）：统一使用 `MaterialTheme.colorScheme.primary`（选中态图标/文字、按钮、开关、输入框聚焦指示等）。
 
-- **Miuix 页面**（设置页/引擎设置/单游戏设置/应用设置等）：统一使用 `MiuixTheme.colorScheme.primary`（Preference 图标、Slider、Switch、下拉选中等）。
+- **Miuix 页面**（设置页/引擎设置/单游戏设置/应用设置/存档管理等）：统一使用 `MiuixTheme.colorScheme.primary`（Preference 图标、Slider、Switch、下拉选中等）。
 
 - 图标 tint、高亮文字、选中态等一切"强调色"位置只能从上述 colorScheme 获取，**禁止**在页面里硬编码 `Color(0x...)`、`#307DEF`、`Blue40` 或任何品牌蓝。
 
@@ -588,7 +618,7 @@ Column(fillMaxSize)                                // 页面根
 
 JVM 回归使用 JUnit 4，位于 app/engine 各自的 `src/test/`；覆盖扫描、设置解析、存档、输入、宿主生命周期与图形策略。测试聚焦行为和边界，不镜像实现，也不为纯文档修改新增业务测试。真机用例与 release R8 probe 的构建、安装和能力边界分别见 [androidTest](app/src/androidTest/README.md) 与 [releaseProbe](app/src/releaseProbe/README.md)；普通 Android CI 未自动运行设备验收。
 
-设备测试 JNI probe 的构建脚本当前只选择 Linux/macOS NDK host 路径，Windows 不能直接照搬这些测试 APK 构建命令；这不影响普通 App 构建与 JVM 测试命令的适用说明。
+设备测试 JNI probe 的构建脚本按 Windows/Linux/macOS 选择 NDK host 与编译器文件名；本机须安装上述 NDK。WebDAV 专用设备验收与不加载原生库的旧版系统验证边界见 [WebDAV 设备记录](docs/WebDAV-device-acceptance.md)，不得把框架测试当作游戏运行库验收。
 
 Room schema 变更须提交 `app/schemas/` 并添加显式 `Migration`；仅既有 v1→v2 与降级恢复保留破坏性重建策略，不扩大例外。
 
