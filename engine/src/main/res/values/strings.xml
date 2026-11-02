@@ -5,6 +5,16 @@
     <string name="engine_ethornell_game_menu">打开游戏菜单（右键）</string>
     <string name="engine_ethornell_backlog">回看（向上滚动）</string>
     <string name="engine_ethornell_host_request">游戏确认</string>
+    <string name="engine_ethornell_dialog_unavailable">无法加载输入对话框</string>
+    <string name="engine_ethornell_dialog_unavailable_detail">游戏传来的输入内容不可用，只能取消本次输入。</string>
+    <string name="engine_ethornell_dialog_default_title">输入</string>
+    <string name="engine_ethornell_dialog_date_title">日期</string>
+    <string name="engine_ethornell_dialog_field">输入内容</string>
+    <string name="engine_ethornell_dialog_date_field">日期字段 %1$d</string>
+    <string name="engine_ethornell_dialog_segment">第 %1$d/%2$d 段</string>
+    <string name="engine_ethornell_dialog_month">月</string>
+    <string name="engine_ethornell_dialog_day">日</string>
+    <string name="engine_ethornell_dialog_empty_option">（空）</string>
     <string name="engine_game_loading">游戏加载中</string>
     <string name="engine_starting_game">正在启动游戏</string>
     <string name="engine_preparing_game">请稍候，正在准备游戏内容</string>

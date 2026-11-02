@@ -5,6 +5,16 @@
     <string name="engine_ethornell_game_menu">Open game menu (right click)</string>
     <string name="engine_ethornell_backlog">Backlog (scroll up)</string>
     <string name="engine_ethornell_host_request">Game confirmation</string>
+    <string name="engine_ethornell_dialog_unavailable">Unable to load input dialog</string>
+    <string name="engine_ethornell_dialog_unavailable_detail">The input request from the game is unavailable, so this input can only be cancelled.</string>
+    <string name="engine_ethornell_dialog_default_title">Input</string>
+    <string name="engine_ethornell_dialog_date_title">Date</string>
+    <string name="engine_ethornell_dialog_field">Value</string>
+    <string name="engine_ethornell_dialog_date_field">Date field %1$d</string>
+    <string name="engine_ethornell_dialog_segment">Part %1$d of %2$d</string>
+    <string name="engine_ethornell_dialog_month">Month</string>
+    <string name="engine_ethornell_dialog_day">Day</string>
+    <string name="engine_ethornell_dialog_empty_option">(empty)</string>
     <string name="engine_game_loading">Game loading</string>
     <string name="engine_starting_game">Starting game</string>
     <string name="engine_preparing_game">Please wait while the game content is prepared</string>

@@ -1357,6 +1357,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
+                    EngineType.RUNTIME_MODULE -> item {
+                        // 入口对运行时模块隐藏；分支仅为 when 完备性，保留只读说明。
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_runtime_module_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
                     EngineType.TYRANO,
                     EngineType.VN,
                     EngineType.WEB_OTHER,

@@ -476,6 +476,8 @@ private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.ANDROID_APP -> EngineTab.CONSOLE
     // Flash 属于 Web 时代的格式，与 Tyrano / WebOther / VN 同归「网页」分类
     EngineType.RUFFLE, EngineType.TYRANO, EngineType.WEB_OTHER, EngineType.VN -> EngineTab.WEB
+    // 第三方运行时模块不进入引擎页列表；此处仅为 when 完备性。
+    EngineType.RUNTIME_MODULE -> EngineTab.WEB
     EngineType.UNKNOWN -> EngineTab.WEB
 }
 
@@ -510,6 +512,8 @@ private fun engineDescription(engine: EngineType): String = when (engine) {
     EngineType.ANDROID_APP -> stringResource(R.string.engine_desc_android)
     EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
     EngineType.RUFFLE -> stringResource(R.string.engine_desc_ruffle)
+    // 第三方运行时模块不进入引擎页列表；此处仅为 when 完备性。
+    EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_desc_runtime_module)
     EngineType.PSP -> stringResource(R.string.engine_desc_psp)
     EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)
     EngineType.UNKNOWN -> stringResource(R.string.engine_desc_unknown)

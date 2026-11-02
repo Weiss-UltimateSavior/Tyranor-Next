@@ -150,6 +150,8 @@ class GameSaveManager(private val context: Context) {
             EngineType.VN, EngineType.WEB_OTHER, EngineType.RPGMAKER, EngineType.RENPY,
             // RUFFLE 在函数开头已提前返回（外置模块无 App 可管理的文件存档接口），此分支仅为 when 完备性
             EngineType.RUFFLE,
+            // 第三方运行时模块无统一存档接口，此分支仅为 when 完备性
+            EngineType.RUNTIME_MODULE,
             // ETHORNELL returns its exact private user root above; exhaustive fallback only.
             EngineType.ETHORNELL,
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,

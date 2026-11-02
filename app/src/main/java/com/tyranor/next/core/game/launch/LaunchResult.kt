@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.launch
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
 
 /**
  * KRKR 可移动存储镜像准备的失败阶段（app 侧视图模型）。
@@ -87,6 +88,12 @@ sealed interface LaunchResult {
 
         /** 外置主机模拟器跳转失败（PPSSPP / Eden / Winlator）；携带目标与错误码，文案由 UI 映射。 */
         data class ExternalEmulatorFailed(val result: ExternalEmulatorLauncher.Result) : Failure
+
+        /** 第三方 APK 运行时模块启动失败；携带模块层类型化结果，文案由 UI 映射。 */
+        data class RuntimeModuleFailed(val result: RuntimeModuleLaunchResult) : Failure
+
+        /** 游戏引擎未知（含运行时模块卸载/禁用后降级的条目）；应重新扫描。 */
+        data object EngineUnknown : Failure
 
         /** YU-RIS：游戏目录内没有可启动的 .exe（可由单游戏「启动文件」手动指定）。 */
         data object YurisExeMissing : Failure

@@ -1055,16 +1055,19 @@ internal fun GameActionsSheet(
                         ),
                     )
                 }
-                add(
-                    DrawerAction(
-                        key = "engine_settings",
-                        title = drawerEngineSettingsTitle,
-                        icon = R.drawable.ic_sheet_settings,
-                        showArrow = true,
-                        iconTint = drawerPrimaryColor,
-                        onClick = onEngineSettings,
-                    ),
-                )
+                // 第三方运行时模块没有主 App 侧设置；未知引擎也不展示设置。
+                if (game.engine != EngineType.RUNTIME_MODULE && game.engine != EngineType.UNKNOWN) {
+                    add(
+                        DrawerAction(
+                            key = "engine_settings",
+                            title = drawerEngineSettingsTitle,
+                            icon = R.drawable.ic_sheet_settings,
+                            showArrow = true,
+                            iconTint = drawerPrimaryColor,
+                            onClick = onEngineSettings,
+                        ),
+                    )
+                }
                 add(
                     DrawerAction(
                         key = "delete",
@@ -1954,6 +1957,8 @@ internal fun GameCard(
             EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
             // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
             EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
+            // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
+            EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
             else -> game.engine.displayName
         }
         val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
@@ -2217,6 +2222,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.ANDROID_APP -> Color(0xFF2E7D32)
     EngineType.RENPY -> Color(0xFFE35B84)
     EngineType.RUFFLE -> Color(0xFFC62828)
+    EngineType.RUNTIME_MODULE -> Color(0xFF5C6BC0)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
     EngineType.UNKNOWN -> Color(0xFF607D8B)
@@ -2227,6 +2233,8 @@ internal fun shouldShowSaveManagement(engine: EngineType): Boolean =
     // 手动添加的类型（PC / 安卓游戏）无统一存档接口，显式排除。
     engine == EngineType.YURIS ||
         (!engine.isManual &&
+            engine != EngineType.RUNTIME_MODULE &&
+            engine != EngineType.UNKNOWN &&
             (engine != EngineType.ETHORNELL ||
                 com.tyranor.next.core.game.save.EthornellSaveCapability.available) &&
             !ExternalEngineModuleRegistry.isExternalEngine(engine) &&

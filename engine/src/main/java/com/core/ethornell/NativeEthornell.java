@@ -18,7 +18,13 @@ public final class NativeEthornell {
     public static native void input(long handle, int kind, int code, float x, float y, float value);
     public static native void step(long handle, long monotonicTimeNs);
     public static native EthornellSession.Event pollEvent(long handle);
-    public static native void completeRequest(long handle, long requestId, int result);
+    /** Owner worker only: full JSON payload for a kind-5 dialog request; null if stale/unsupported. */
+    public static native String requestPayload(long handle, long requestId);
+    /** Empty text answers as an integer; non-empty text carries the kind-5 JSON answer. */
+    public static native void completeRequest(long handle, long requestId, int result, String text);
+    public static void completeRequest(long handle, long requestId, int result) {
+        completeRequest(handle, requestId, result, "");
+    }
     public static native void requestClose(long handle);
     public static native void destroy(long handle);
 }

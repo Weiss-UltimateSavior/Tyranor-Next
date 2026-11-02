@@ -45,8 +45,8 @@ class EthornellSaveStoreTest {
         try { block(); fail("Expected $code") } catch (error: GameSaveException) { assertEquals(code, error.code) }
     }
 
-    @Test fun gateRemainsDisabledUntilDeviceFixtureAcceptance() {
-        assertFalse(EthornellSaveCapability.DEVICE_SAVE_IO_VERIFIED)
+    @Test fun gateOpensAfterDeviceFixtureAcceptance() {
+        assertTrue(EthornellSaveCapability.DEVICE_SAVE_IO_VERIFIED)
     }
 
     @Test fun exactRootUsesFullIdentityHashAndNeverResourceUserData() {
@@ -137,12 +137,42 @@ class EthornellSaveStoreTest {
 
     @Test fun emptyAndBudgetExceededArchivesDoNotReplaceOldData() {
         val files = temporary.newFolder()
+        // maxFileBytes keeps the 64 MiB default; this exercises the separate total ZIP budget.
         val store = EthornellSaveStore(files, identity, maxFiles = 2, maxBytes = 4)
         val old = write(store.root, "old", "old")
         expect(SaveErrorCode.NO_FILES_IN_ZIP) { import(store) }
         expect(SaveErrorCode.ZIP_TOO_LARGE) { import(store, "new" to "12345") }
         expect(SaveErrorCode.TOO_MANY_ZIP_FILES) { import(store, "a" to "", "b" to "", "c" to "") }
         assertEquals("old", old.readText())
+    }
+
+    @Test fun perFileBudgetRejectsOversizedEntryAndKeepsOldTree() {
+        val files = temporary.newFolder()
+        val store = EthornellSaveStore(files, identity, maxFileBytes = 4)
+        val old = write(store.root, "old", "old")
+        expect(SaveErrorCode.SAVE_FILE_TOO_LARGE) {
+            import(store, "exact" to "1234", "oversized" to "12345")
+        }
+        assertEquals("old", old.readText())
+        assertFalse(File(store.root.parentFile, ".ethornell-${store.root.name}-import-staging").exists())
+        store.recoverForLaunch()
+        assertEquals(2, import(store, "a" to "1234", "b" to "1234"))
+    }
+
+    @Test fun perFileBudgetRejectsOversizedExportBeforeOpeningDestination() {
+        val files = temporary.newFolder()
+        val store = EthornellSaveStore(files, identity, maxFileBytes = 4)
+        write(store.root, "exact", "1234")
+        var exactOpened = false
+        assertEquals(1, store.export { exactOpened = true; ByteArrayOutputStream() })
+        assertTrue(exactOpened)
+        val oversized = write(store.root, "oversized", "12345")
+        var oversizedOpened = false
+        expect(SaveErrorCode.SAVE_FILE_TOO_LARGE) {
+            store.export { oversizedOpened = true; ByteArrayOutputStream() }
+        }
+        assertFalse(oversizedOpened)
+        assertEquals("12345", oversized.readText())
     }
 
     @Test fun duplicateZipEntriesFailBeforeCommit() {

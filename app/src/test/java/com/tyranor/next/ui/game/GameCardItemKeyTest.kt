@@ -2,6 +2,7 @@ package com.tyranor.next.ui.game
 
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.EthornellSaveCapability
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
@@ -31,7 +32,8 @@ class GameCardItemKeyTest {
     @Test
     fun hidesSaveManagementForExternalApkEngines() {
         assertEquals(false, shouldShowSaveManagement(EngineType.RENPY))
-        assertEquals(false, shouldShowSaveManagement(EngineType.ETHORNELL))
+        // Ethornell 入口跟随验收门禁，capability 翻转时无需再改本断言。
+        assertEquals(EthornellSaveCapability.available, shouldShowSaveManagement(EngineType.ETHORNELL))
         assertEquals(false, shouldShowSaveManagement(EngineType.RPGMAKER))
         assertEquals(false, shouldShowSaveManagement(EngineType.RUFFLE))
         assertEquals(true, shouldShowSaveManagement(EngineType.KIRIKIRI))

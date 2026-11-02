@@ -66,6 +66,7 @@ internal fun CategoryWarehouseContent(
     val recentLabel = stringResource(R.string.home_category_recent)
     val unknownEngineName = stringResource(R.string.engine_name_unknown)
     val switchEngineName = stringResource(R.string.engine_name_switch)
+    val runtimeModuleName = stringResource(R.string.engine_name_runtime_module)
     val categories = remember(
         sortedGames,
         libraryState.quickLaunch,
@@ -75,6 +76,7 @@ internal fun CategoryWarehouseContent(
         recentLabel,
         unknownEngineName,
         switchEngineName,
+        runtimeModuleName,
     ) {
         buildHomeCategories(
             sortedGames = sortedGames,
@@ -85,6 +87,7 @@ internal fun CategoryWarehouseContent(
             recentLabel = recentLabel,
             unknownEngineName = unknownEngineName,
             switchEngineName = switchEngineName,
+            runtimeModuleName = runtimeModuleName,
         )
     }
     var selectedKey by rememberSaveable { mutableStateOf(HOME_CATEGORY_ALL) }
@@ -175,6 +178,7 @@ internal fun buildHomeCategories(
     recentLabel: String,
     unknownEngineName: String,
     switchEngineName: String,
+    runtimeModuleName: String,
 ): List<HomeCategory> = buildList {
     add(HomeCategory(HOME_CATEGORY_ALL, allLabel, sortedGames))
     // 快捷/最近为空时也保留分类（点击后由空态文案说明），保证分类栏结构稳定
@@ -188,6 +192,7 @@ internal fun buildHomeCategories(
                     EngineType.UNKNOWN -> unknownEngineName
                     // 短名「Switch」，避免「Nintendo Switch」占宽过长（与卡片占位一致）
                     EngineType.NINTENDO_SWITCH -> switchEngineName
+                    EngineType.RUNTIME_MODULE -> runtimeModuleName
                     else -> engine.displayName
                 },
                 games = sortedGames.filter { it.engine == engine },

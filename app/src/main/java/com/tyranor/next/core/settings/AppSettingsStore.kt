@@ -21,6 +21,9 @@ object AppSettingsStore {
     const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
 
+    /** 已启用的第三方 APK 运行时模块包名集合；默认空集（新发现模块默认关闭）。 */
+    const val KEY_RUNTIME_MODULE_ENABLED = "runtime_module_enabled"
+
     /** System4 一次性定点重检测迁移标志（纠正旧库中被误判为 XSYS35 的 System4 游戏）。 */
     private const val KEY_MIGRATION_XSYS4_RESCAN_DONE = "migration_xsys4_rescan_done"
 
@@ -615,6 +618,25 @@ object AppSettingsStore {
 
     private fun bumpCoverScraperSettingsVersion() {
         coverScraperSettingsVersion.value += 1
+    }
+
+    /** 已启用的第三方 APK 运行时模块包名集合；始终返回副本，调用方可安全修改。 */
+    fun getEnabledRuntimeModules(context: Context): Set<String> =
+        prefs(context).getStringSet(KEY_RUNTIME_MODULE_ENABLED, emptySet())?.toSet().orEmpty()
+
+    /** 按包名增删启用状态；空包名忽略，未发生变更时不写盘。 */
+    fun setRuntimeModuleEnabled(context: Context, packageName: String, enabled: Boolean) {
+        val target = packageName.trim()
+        if (target.isEmpty()) return
+        val current = getEnabledRuntimeModules(context).toMutableSet()
+        val changed = if (enabled) current.add(target) else current.remove(target)
+        if (!changed) return
+        prefs(context).edit().putStringSet(KEY_RUNTIME_MODULE_ENABLED, current).apply()
+    }
+
+    fun isRuntimeModuleEnabled(context: Context, packageName: String): Boolean {
+        val target = packageName.trim()
+        return target.isNotEmpty() && target in getEnabledRuntimeModules(context)
     }
 
     private fun normalizeLanguage(language: String?): String = when (language) {

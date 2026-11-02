@@ -27,6 +27,7 @@ enum class EngineType(val displayName: String, val abbr: String, val isManual: B
     ETHORNELL("Ethornell / BGI", "BGI"),
     RENPY("Ren'Py", "RPY"),
     RUFFLE("Ruffle", "SWF"),
+    RUNTIME_MODULE("Plugin", "RT"),
     YURIS("YU-RIS", "YR"),
     CATSYSTEM2("CatSystem2", "CS2"),
     PC("PC", "PC", isManual = true),

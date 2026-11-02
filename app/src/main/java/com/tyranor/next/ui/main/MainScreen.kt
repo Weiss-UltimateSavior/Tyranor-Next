@@ -66,6 +66,8 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AdvancedGlassNavSurface
@@ -108,10 +110,12 @@ import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
+import com.tyranor.next.ui.runtime.EngineModuleManagementActivity
 import com.tyranor.next.ui.settings.InputSettingsActivity
 import com.tyranor.next.ui.settings.SettingsScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -169,6 +173,27 @@ fun MainScreen(modifier: Modifier = Modifier) {
         android.util.Log.w("MainScreen", "pending RPG save sync failed", t)
       }
     }
+    // 第三方运行时模块：卸载/禁用后把绑定游戏降级为 UNKNOWN；同时刷新模块 label 缓存。
+    interactScope.launch {
+      try {
+        // 给安装器/包替换留出稳定窗口，避免模块更新瞬间把全部绑定误降级。
+        delay(1500)
+        val degraded = RuntimeModuleBindings.reconcile(context)
+        RuntimeModuleRegistry.refresh(context)
+        libraryViewModel.refreshFromStorage()
+        if (degraded > 0) {
+          android.widget.Toast.makeText(
+            context,
+            R.string.engine_module_management_degraded_toast,
+            android.widget.Toast.LENGTH_SHORT,
+          ).show()
+        }
+      } catch (ce: CancellationException) {
+        throw ce
+      } catch (t: Throwable) {
+        android.util.Log.w("MainScreen", "runtime module reconcile failed", t)
+      }
+    }
   }
   val navStyle = effectiveNavStyle()
   // ===== 侧边栏（仅四大页面可唤出）：左缘右滑 / 左边缘返回手势打开 =====
@@ -220,6 +245,16 @@ fun MainScreen(modifier: Modifier = Modifier) {
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, InputSettingsActivity.createIntent(context))
+      },
+    )
+    // 妙妙工具条目：引擎模块管理（第三方 APK 运行时模块的发现与启用）
+    AppNavItem(
+      title = stringResource(R.string.side_panel_engine_module_title),
+      leadingIcon = R.drawable.ic_engine_manage,
+      containerColor = DialogItemSurface,
+      onClick = {
+        sidePanelOpen = false
+        startActivityWithPageTransition(context, EngineModuleManagementActivity.createIntent(context))
       },
     )
   }

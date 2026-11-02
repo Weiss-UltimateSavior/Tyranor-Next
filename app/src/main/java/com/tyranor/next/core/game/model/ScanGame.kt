@@ -18,6 +18,8 @@ data class ScanGame(
     val externalModuleAlias: String? = null,
     /** 扫描阶段探测到的 Ren'Py 版本建议（EngineSettingsStore.RENPY_*）；null 表示未知或非 Ren'Py。 */
     val detectedRenpyVersion: String? = null,
+    /** 绑定的第三方 APK 运行时模块包名；null 表示非本体系。模块卸载/禁用后引擎降级为 UNKNOWN，但保留该最后已知包名用于重扫恢复。 */
+    val runtimeModulePackage: String? = null,
     /** 用户通过“启动文件”手动指定的启动入口文件名（相对游戏目录）；null 表示自动。 */
     val launchFile: String? = null,
     /** 最近一次打开时间戳（毫秒），仅最近打开列表展示使用；0 表示未知。 */
@@ -36,6 +38,7 @@ object ScanGameIntents {
     private const val EXTRA_METADATA_TITLE = "extra_metadata_title"
     private const val EXTRA_EXTERNAL_MODULE_ALIAS = "extra_external_module_alias"
     private const val EXTRA_DETECTED_RENPY_VERSION = "extra_detected_renpy_version"
+    private const val EXTRA_RUNTIME_MODULE_PACKAGE = "extra_runtime_module_package"
 
     fun putGame(intent: Intent, game: ScanGame): Intent = intent.apply {
         putExtra(EXTRA_TITLE, game.title)
@@ -48,6 +51,7 @@ object ScanGameIntents {
         game.metadataTitle?.let { putExtra(EXTRA_METADATA_TITLE, it) }
         game.externalModuleAlias?.let { putExtra(EXTRA_EXTERNAL_MODULE_ALIAS, it) }
         game.detectedRenpyVersion?.let { putExtra(EXTRA_DETECTED_RENPY_VERSION, it) }
+        game.runtimeModulePackage?.let { putExtra(EXTRA_RUNTIME_MODULE_PACKAGE, it) }
     }
 
     fun getGame(intent: Intent): ScanGame? {
@@ -67,6 +71,7 @@ object ScanGameIntents {
             metadataTitle = intent.getStringExtra(EXTRA_METADATA_TITLE),
             externalModuleAlias = intent.getStringExtra(EXTRA_EXTERNAL_MODULE_ALIAS),
             detectedRenpyVersion = intent.getStringExtra(EXTRA_DETECTED_RENPY_VERSION),
+            runtimeModulePackage = intent.getStringExtra(EXTRA_RUNTIME_MODULE_PACKAGE),
         )
     }
 }

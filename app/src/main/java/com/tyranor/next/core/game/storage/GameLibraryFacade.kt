@@ -299,6 +299,11 @@ object GameLibraryFacade {
         _libraryRevision.value++
     }
 
+    /** 外部逻辑（如运行时模块降级）直接改库后通知 UI 重新读取派生列表。 */
+    fun notifyGamesChanged() {
+        _libraryRevision.value++
+    }
+
     fun loadRoots(context: Context): List<String> =
         rootsCache ?: synchronized(cacheLock) {
             loadRootsLocked(context)

@@ -46,6 +46,11 @@ import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.WinlatorContract
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.engine.runtime.RuntimeModuleDiscoveryResult
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLauncher
+import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
+import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.EthornellPaths
@@ -248,6 +253,8 @@ object EngineLauncher {
     }
 
     private suspend fun launchInternalChecked(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice?): LaunchResult {
+        // 未知引擎（含第三方运行时模块卸载/禁用后的降级条目）不再落入 Tyrano 宿主兜底；请用户重新扫描。
+        if (game.engine == EngineType.UNKNOWN) return LaunchResult.Failure.EngineUnknown
         if (game.engine == EngineType.ETHORNELL) {
             currentCoroutineContext().ensureActive()
             val live = EngineSessionRegistry.currentLiveGame(context, EngineSessionRegistry.HOST_ETHORNELL)
@@ -264,6 +271,10 @@ object EngineLauncher {
         // 手动添加的安卓游戏：无引擎会话/存档/权限前置，按包名直接跳转（必须在目录解析之前分流）
         if (AndroidAppGames.isAndroidApp(game)) {
             return launchAndroidApp(context, game)
+        }
+        // 第三方 APK 运行时模块：按包名交给显式组件启动，不进入目录解析/设置/插件链
+        if (game.engine == EngineType.RUNTIME_MODULE) {
+            return launchRuntimeModule(context, game)
         }
         // 外置模拟器跳转：PSP / Switch 为 ROM 文件型（不解析目录），
         // YURIS 为 Windows 游戏（目录 + 主 exe，经 Winlator 外置启动协议挂载目录）
@@ -467,6 +478,71 @@ object EngineLauncher {
             throw ce // 取消不是启动失败，原样传播给调用方
         } catch (e: Exception) {
             LaunchResult.Failure.StartFailed(e.message)
+        }
+    }
+
+    /**
+     * 第三方 APK 运行时模块：先刷新发现结果（缓存可能早于模块安装/卸载/更新），再把游戏文件夹
+     * 绝对路径交给模块的显式组件。`Dispatched` 只代表 Intent 已交棒，不承诺游戏运行成功。
+     *
+     * [RuntimeModuleLaunchResult.ModuleMissing] / [ModuleDisabled] 会把游戏降级为 UNKNOWN；
+     * [RuntimeModuleLaunchResult.PathUnresolved] 不请求「所有文件访问」——模块自己负责存储权限。
+     */
+    private suspend fun launchRuntimeModule(context: Context, game: ScanGame): LaunchResult {
+        // 发现查询失败不是「模块缺失」：直接上报通用失败，避免把全部绑定误降级。
+        when (val discovery = RuntimeModuleRegistry.refresh(context)) {
+            is RuntimeModuleDiscoveryResult.Failure ->
+                return LaunchResult.Failure.RuntimeModuleFailed(
+                    RuntimeModuleLaunchResult.StartFailed(discovery.detail),
+                )
+
+            is RuntimeModuleDiscoveryResult.Success -> Unit
+        }
+        // 没有包名就没有可保留的绑定，但仍把条目降级，避免 UI 提示与状态不一致。
+        val packageName = game.runtimeModulePackage?.takeIf { it.isNotBlank() }
+        if (packageName == null) {
+            degradeRuntimeModuleGame(context, game, null)
+            return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.ModuleMissing)
+        }
+        val module = RuntimeModuleRegistry.find(packageName)
+        if (module == null) {
+            degradeRuntimeModuleGame(context, game, packageName)
+            return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.ModuleMissing)
+        }
+        if (!module.enabled) {
+            degradeRuntimeModuleGame(context, game, packageName)
+            return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.ModuleDisabled)
+        }
+        // 先做词法映射：模块自己校验目录是否存在/可读，主 App 不要求“所有文件访问”。
+        val path = GamePathUtils.safUriToPath(game.uri)
+            ?: resolveGameDirectory(context, game)
+            ?: return LaunchResult.Failure.RuntimeModuleFailed(RuntimeModuleLaunchResult.PathUnresolved)
+        currentCoroutineContext().ensureActive()
+        return when (val result = RuntimeModuleLauncher.launch(context, module, game, path)) {
+            RuntimeModuleLaunchResult.Dispatched -> {
+                GameLibraryFacade.recordRecentGame(context, game)
+                LaunchResult.Success
+            }
+
+            RuntimeModuleLaunchResult.ModuleMissing,
+            RuntimeModuleLaunchResult.ModuleDisabled,
+            RuntimeModuleLaunchResult.EntryMissing -> {
+                degradeRuntimeModuleGame(context, game, packageName)
+                LaunchResult.Failure.RuntimeModuleFailed(result)
+            }
+
+            else -> LaunchResult.Failure.RuntimeModuleFailed(result)
+        }
+    }
+
+    /** 模块缺失/禁用后的绑定清理；清理失败只记日志，不改变本次启动失败的既定结果。 */
+    private fun degradeRuntimeModuleGame(context: Context, game: ScanGame, expectedPackage: String?) {
+        try {
+            RuntimeModuleBindings.degradeGame(context, game.uri, expectedPackage)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (t: Throwable) {
+            Log.w(TAG, "degrade runtime module game failed uri=${game.uri}", t)
         }
     }
 
@@ -922,6 +998,8 @@ object EngineLauncher {
             EngineType.RPGMAKER,
             EngineType.RENPY,
             EngineType.RUFFLE -> error("${engine.displayName} is handled by external engine launcher")
+
+            EngineType.RUNTIME_MODULE -> error("${engine.displayName} is handled by RuntimeModuleLauncher")
 
             // YURIS / CatSystem2 / PC 由外置 Winlator 承载，在 launchInternalChecked 前置分流，不会走到这里
             EngineType.YURIS,

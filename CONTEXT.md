@@ -13,7 +13,7 @@ _Avoid_: 游戏类型、格式
 _Avoid_: 预制引擎、捆绑引擎
 
 **Ethornell / BGI（ETHORNELL）**:
-以 ethornell-rs 重实现承载的内置引擎家族，已接入扫描、启动与设置，目前仍属实验运行时，不能据此声明全家族可玩。App 存档管理尚未开放，不能把运行时用户数据与已验证的存档镜像或 PC 存档互通等同。
+以 ethornell-rs 重实现承载的内置引擎家族，已接入扫描、启动、设置与上游 `0cfff1d` 的 ABI v1 宿主（15 导出、kind 5 输入对话框）；目前仍属实验运行时、兼容性未验收，不能据此声明全家族可玩。App 存档管理已开放但范围仅限 App 私有 user-root 的备份/恢复/删除，不能把该范围与商业游戏内槽位、游戏资源根 `UserData` 或 PC 存档互通等同。
 _Avoid_: Winlator BGI 插件、完整 BGI 支持
 
 **System3.x / System4（XSYS35 / XSYS4）**:
@@ -25,8 +25,20 @@ Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（Real
 _Avoid_: 软渲染引擎、game_fb 引擎
 
 **外置 APK 引擎模块（External Engine Module）**:
-以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS 与 Ruffle（SWF / Flash）等游戏。主 App 只负责扫描、安装状态与启动协议，运行与存档由模块自身负责。
-_Avoid_: 插件、引擎 DLC
+以独立 Android 应用形式分发、由用户另行安装的引擎运行时，用于承载 Ren'Py、RPG Maker RGSS 与 Ruffle（SWF / Flash）等游戏；由固定包名与静态注册表（`core/engine/external`）管理，与按 action + 包名前缀动态发现的「第三方 APK 运行时模块」是两套体系。主 App 只负责扫描、安装状态与启动协议，运行与存档由模块自身负责。
+_Avoid_: 插件、引擎 DLC、第三方 APK 运行时模块（另一体系）
+
+**第三方 APK 运行时模块（Third-party APK Runtime Module）**:
+用户自行安装、以 `com.tyranor.runtime.` 包名前缀并声明 `com.tyranor.runtime.action.LAUNCH` 的独立 APK，接收游戏文件夹路径自行运行游戏；主 App 只负责发现、启用、扫描描述解释与交棒。
+_Avoid_: 插件、外置引擎（指 JoiPlay 时）、外置 APK 引擎模块（指 JoiPlay 注册表体系时）
+
+**运行时模块绑定（Runtime Module Binding）**:
+`ScanGame.runtimeModulePackage` 记录的游戏与第三方 APK 运行时模块包名之间的关系；模块卸载或禁用后游戏降级为 `UNKNOWN`，但保留最后已知包名用于重扫合并与恢复，重装或启用后只能经重新扫描恢复。
+_Avoid_: 手动绑定、模块别名、externalModuleAlias
+
+**模块扫描描述（Runtime Module Scan Descriptor）**:
+第三方运行时模块在自己 `res/raw/tyranor_runtime.json` 中声明的 `extensions` / `markers`（及 `match`），是主 App 自动扫描该模块游戏的唯一特征来源。
+_Avoid_: 内置特征库、插件清单、手动绑定
 
 **PC 游戏（手动添加）**:
 用户手动加入游戏库、经外置 Winlator 运行的 Windows 程序，不限定为已识别的视觉小说引擎家族。其运行参数属于 Winlator 设置域。
@@ -38,7 +50,7 @@ _Avoid_: 应用快捷方式、外置模拟器游戏
 
 **外置模拟器跳转（External Emulator Jump）**:
 由用户另行安装的独立模拟器或兼容运行环境承接游戏的启动方式，包括 PPSSPP、Eden 与 Winlator。
-_Avoid_: 外置模块（指 APK 引擎模块）、内置引擎
+_Avoid_: 外置模块（指 JoiPlay 外置 APK 引擎模块时）、第三方 APK 运行时模块、内置引擎
 
 **引擎网页壳（Tyranor Web 运行环境）**:
 内置 Web 运行时，承载 TyranoBuilder、WebOther、VN、RPG Maker MV/MZ 等网页形态游戏；各引擎共用同一颗网页壳版本（Tyranor-2.3.4，为原逆向 app 内置）。
@@ -116,7 +128,7 @@ _Avoid_: 配置分辨率、引擎循环帧率
 _Avoid_: 导入、索引
 
 **扫描候选（ScanGame）**:
-一次扫描/加载产出的单条游戏记录：标题、目录 URI 或入口文件 URI、引擎、启动目标，以及封面/元数据/外置模块别名等附属字段。
+一次扫描/加载产出的单条游戏记录：标题、目录 URI 或入口文件 URI、引擎、启动目标，以及封面/元数据/外置模块别名/第三方运行时模块包名等附属字段。
 _Avoid_: 游戏条目、GameItem
 
 **启动目标（launchTarget）**:
@@ -124,8 +136,8 @@ _Avoid_: 游戏条目、GameItem
 _Avoid_: 入口文件（与 launchFile 混淆时）
 
 **外置模块别名（externalModuleAlias）**:
-同一引擎下不同子运行时或外置模块记录保存的内部标识（如 `internal.rpgmxp`、Ruffle 的 `internal.flash`）：RPG Maker 用它选择子运行时；Ren'Py 改由单游戏版本设置决定，Ruffle 主要作为扫描标记。
-_Avoid_: 模块 ID
+JoiPlay 外置 APK 引擎模块体系中，同一引擎下不同子运行时或外置模块记录保存的内部标识（如 `internal.rpgmxp`、Ruffle 的 `internal.flash`）：RPG Maker 用它选择子运行时；Ren'Py 改由单游戏版本设置决定，Ruffle 主要作为扫描标记。它不承载第三方 APK 运行时模块的包名（后者见「运行时模块绑定」）。
+_Avoid_: 模块 ID、运行时模块绑定
 
 **文件型外置入口（launchEntryIsFile）**:
 外置模块游戏记录指向单个入口文件而非目录的启动形态（当前为 Ruffle SWF）：扫描以入口文件 URI 为记录身份，启动前解析其父目录，再以 `folder` + `execFile` 交给模块。
@@ -338,7 +350,7 @@ engine 模块定义的 App → 引擎宿主 Intent extras 键与固定取值的�
 _Avoid_: extras 约定、Intent 协议
 
 **启动结果（LaunchResult）**:
-引擎启动的统一 sealed 结果（Success / 类型化 Failure）；core 只给错误类型，本地化文案由 UI 层映射，异常场景用带错误码的 GameSaveException 类协议。
+引擎启动的统一 sealed 结果（Success / 类型化 Failure）；core 只给错误类型，本地化文案由 UI 层映射，异常场景用带错误码的 GameSaveException 类协议。第三方运行时模块的 `Dispatched` 只表示 Intent 已交棒，不表示游戏已进入或可运行。
 _Avoid_: 错误字符串、返回值文案
 
 **页面宿主（AppScreenActivity / AppScreenScaffold）**:
