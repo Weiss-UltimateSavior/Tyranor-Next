@@ -186,7 +186,7 @@ _Avoid_: 玻璃主题、Theme（与导航样式/外观模式混用）
 _Avoid_: 玻璃（单独出现时指本档）
 
 **白雾玻璃（White Mist Glass）**:
-外观风格第三档（显示名由「乳白玻璃」更名；持久化值仍为 `milk_glass`，内部 `MILK_GLASS` / `MilkSurface` 等标识保留以避免数据迁移）：运行期 64dp 高斯模糊的图片底图 + 45% 压暗 + 主题色环境光；默认液态玻璃 · 经典底栏用亮玻璃 + 主题色轻染；页面条目为 70% 白纱（`MilkSurface`，目标 L≈207），条目正文为深色（`TextColor`），页面顶栏/空态用近白（`PageTextColor`）；弹窗/抽屉面板用同一张页面底图 + 50% 白纱（`MilkGlassPanelBackground`），条目用 `DialogItemSurface`（`MilkItemOnPanel` 45% 白纱，叠加后约 L211，与页面条目同亮度）；不使用 0.5dp 玻璃描边或投影，圆角仍取统一应用圆角。
+外观风格第三档（显示名由「乳白玻璃」更名；持久化值仍为 `milk_glass`，内部 `MILK_GLASS` / `MilkSurface` 等标识保留以避免数据迁移）：运行期 64dp 高斯模糊的图片底图 + 38% 压暗 + 主题色环境光；默认液态玻璃 · 经典底栏用亮玻璃 + 主题色轻染；页面条目为 70% 白纱（`MilkSurface`，目标 L≈211），条目正文为深色（`TextColor`），页面顶栏/空态用近白（`PageTextColor`）；弹窗/抽屉面板用同一张页面底图 + 50% 白纱（`MilkGlassPanelBackground`），条目用 `DialogItemSurface`（`MilkItemOnPanel` 45% 白纱，叠加后约 L215，与页面条目同亮度）；不使用 0.5dp 玻璃描边或投影，圆角仍取统一应用圆角。
 _Avoid_: 乳白玻璃（旧显示名）、Milk glass（旧英文名）
 
 **平板侧栏（Side Rail）**:
