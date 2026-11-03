@@ -142,7 +142,7 @@ object AppSettingsStore {
 
     /**
      * 导航栏样式「未显式设置」：仅作内存态 / 归一化结果，**不会持久化**。
-     * 实际样式由 [resolveNavStyle] 按外观风格解析——默认外观风格为液态玻璃 · 透镜，
+     * 实际样式由 [resolveNavStyle] 按外观风格解析——默认外观风格为液态玻璃 · 经典，
      * 玻璃系外观风格（复古玻璃）保持经典 MD（其悬浮玻璃条形态）。
      */
     const val NAV_STYLE_AUTO = "auto"
@@ -340,7 +340,6 @@ object AppSettingsStore {
         return when {
             normalized != NAV_STYLE_AUTO -> normalized
             glassAppearance -> NAV_STYLE_CLASSIC_MD
-            enhancedSupported -> NAV_STYLE_LIQUID_GLASS_ENHANCED
             else -> NAV_STYLE_LIQUID_GLASS
         }
     }
