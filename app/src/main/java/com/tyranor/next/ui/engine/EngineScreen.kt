@@ -5,9 +5,11 @@ import android.net.Uri
 import android.os.Environment
 import android.os.StatFs
 import android.provider.DocumentsContract
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,12 +19,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
@@ -45,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -621,6 +625,45 @@ private fun EngineRow(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    EngineRowCard(
+        iconRes = engineIconRes(engine),
+        title = engineDisplayName(engine),
+        statusTextRes = statusTextRes,
+        installed = installed,
+        enabled = enabled,
+        onClick = onClick,
+    )
+}
+
+/** 外置跳转支持行：与引擎行同视觉，右侧按“是否至少装了一个模拟器”显示状态。 */
+@Composable
+private fun ExternalJumpRow(
+    installedCount: Int,
+    onClick: () -> Unit,
+) {
+    EngineRowCard(
+        iconRes = R.drawable.ic_engine_card_external,
+        title = stringResource(R.string.engine_external_jump_title),
+        statusTextRes = R.string.engine_external_jump_summary,
+        installed = installedCount > 0,
+        enabled = true,
+        onClick = onClick,
+    )
+}
+
+/**
+ * 原引擎条目布局：左侧引擎图标横幅（右侧渐变融入卡片）+ 标题 + 右侧原状态图标。
+ * 高度较原条目降低 10dp（min 60dp），状态图标保持 CheckCircle / Cancel。
+ */
+@Composable
+private fun EngineRowCard(
+    @DrawableRes iconRes: Int,
+    title: String,
+    @StringRes statusTextRes: Int,
+    installed: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -630,33 +673,46 @@ private fun EngineRow(
         colors = CardDefaults.cardColors(containerColor = NavWhite),
         shape = AppComponentShape,
     ) {
-        androidx.compose.foundation.layout.Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(60.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painter = painterResource(R.drawable.ic_engine_icon),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-                modifier = Modifier.size(28.dp),
-            )
-            Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                Text(
-                    engineDisplayName(engine),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            Box(
+                modifier = Modifier
+                    .width(120.dp)
+                    .fillMaxHeight(),
+            ) {
+                Image(
+                    painter = painterResource(iconRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
-                Text(
-                    engineDescription(engine),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
+                // 图标右侧与卡片背景的渐变遮罩，避免硬切边
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(44.dp)
+                        .background(
+                            Brush.horizontalGradient(
+                                0f to Color.Transparent,
+                                1f to NavWhite,
+                            ),
+                        ),
                 )
             }
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 12.dp, end = 8.dp),
+            )
             Icon(
                 if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
                 contentDescription = stringResource(statusTextRes),
@@ -665,66 +721,39 @@ private fun EngineRow(
                 } else {
                     MaterialTheme.colorScheme.error
                 },
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier
+                    .padding(start = 8.dp, end = 16.dp)
+                    .size(20.dp),
             )
         }
     }
 }
 
-/** 外置跳转支持行：与引擎行同视觉，右侧按“是否至少装了一个模拟器”显示状态。 */
-@Composable
-private fun ExternalJumpRow(
-    installedCount: Int,
-    onClick: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .glassBorder(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
-        shape = AppComponentShape,
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.ic_engine_icon),
-                contentDescription = null,
-                contentScale = ContentScale.Fit,
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-                modifier = Modifier.size(28.dp),
-            )
-            Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                Text(
-                    stringResource(R.string.engine_external_jump_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    stringResource(R.string.engine_external_jump_summary),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-            Icon(
-                if (installedCount > 0) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                contentDescription = stringResource(R.string.engine_external_jump_summary),
-                tint = if (installedCount > 0) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
-                modifier = Modifier.size(20.dp),
-            )
-        }
-    }
+@DrawableRes
+private fun engineIconRes(engine: EngineType): Int = when (engine) {
+    EngineType.KIRIKIRI -> R.drawable.ic_engine_card_kirikiri
+    EngineType.ONS -> R.drawable.ic_engine_card_ons
+    EngineType.TYRANO -> R.drawable.ic_engine_card_tyrano
+    EngineType.RPGMAKER -> R.drawable.ic_engine_card_rpgmaker
+    EngineType.RPG_MV, EngineType.RPG_MZ -> R.drawable.ic_engine_card_rpg_mv_mz
+    EngineType.VN, EngineType.WEB_OTHER -> R.drawable.ic_engine_card_web_vn
+    EngineType.ARTEMIS -> R.drawable.ic_engine_card_artemis
+    EngineType.SIGLUS -> R.drawable.ic_engine_card_siglus
+    EngineType.REALLIVE -> R.drawable.ic_engine_card_reallive
+    EngineType.AVG32 -> R.drawable.ic_engine_card_avg32
+    EngineType.XSYS35 -> R.drawable.ic_engine_card_system35
+    EngineType.XSYS4 -> R.drawable.ic_engine_card_system4
+    EngineType.UK2 -> R.drawable.ic_engine_card_uk2
+    EngineType.FVP -> R.drawable.ic_engine_card_fvp
+    EngineType.ETHORNELL -> R.drawable.ic_engine_card_ethornell
+    EngineType.RENPY -> R.drawable.ic_engine_card_renpy
+    EngineType.RUFFLE -> R.drawable.ic_engine_card_ruffle
+    EngineType.YURIS -> R.drawable.ic_engine_card_yuris
+    EngineType.CATSYSTEM2 -> R.drawable.ic_engine_card_catsystem2
+    EngineType.PC -> R.drawable.ic_engine_card_pc
+    EngineType.PSP -> R.drawable.ic_engine_card_psp
+    EngineType.NINTENDO_SWITCH -> R.drawable.ic_engine_card_switch
+    EngineType.ANDROID_APP, EngineType.RUNTIME_MODULE, EngineType.UNKNOWN -> R.drawable.ic_engine_icon
 }
 
 /** 引擎页顶部分页（顺序即展示顺序）：GAL / RPGM / 主机 / 网页。 */
@@ -752,37 +781,6 @@ private fun engineDisplayName(engine: EngineType): String = when (engine) {
     EngineType.RPG_MV, EngineType.RPG_MZ -> "RPG Maker MV/MZ"
     EngineType.WEB_OTHER, EngineType.VN -> "WebOther/VN"
     else -> engine.displayName
-}
-
-@Composable
-private fun engineDescription(engine: EngineType): String = when (engine) {
-    EngineType.KIRIKIRI -> stringResource(R.string.engine_desc_kirikiri)
-    EngineType.ONS -> stringResource(R.string.engine_desc_ons)
-    EngineType.TYRANO -> stringResource(R.string.engine_desc_tyrano)
-    EngineType.RPGMAKER -> stringResource(R.string.engine_desc_rpgmaker)
-    EngineType.RPG_MV, EngineType.RPG_MZ -> stringResource(R.string.engine_desc_rpg_mv_mz)
-    EngineType.VN, EngineType.WEB_OTHER -> stringResource(R.string.engine_desc_web_other_vn)
-    EngineType.ARTEMIS -> stringResource(R.string.engine_desc_artemis)
-    EngineType.SIGLUS -> stringResource(R.string.engine_desc_siglus)
-    EngineType.REALLIVE -> stringResource(R.string.engine_desc_reallive)
-    EngineType.AVG32 -> stringResource(R.string.engine_desc_avg32)
-    EngineType.XSYS35 -> stringResource(R.string.engine_desc_xsys35)
-    EngineType.XSYS4 -> stringResource(R.string.engine_desc_xsys4)
-    EngineType.UK2 -> stringResource(R.string.engine_desc_uk2)
-    EngineType.FVP -> stringResource(R.string.engine_desc_fvp)
-    EngineType.ETHORNELL -> stringResource(R.string.engine_desc_ethornell)
-
-    EngineType.YURIS -> stringResource(R.string.engine_desc_yuris)
-    EngineType.CATSYSTEM2 -> stringResource(R.string.engine_desc_cs2)
-    EngineType.PC -> stringResource(R.string.engine_desc_pc)
-    EngineType.ANDROID_APP -> stringResource(R.string.engine_desc_android)
-    EngineType.RENPY -> stringResource(R.string.engine_desc_renpy)
-    EngineType.RUFFLE -> stringResource(R.string.engine_desc_ruffle)
-    // 第三方运行时模块不进入引擎页列表；此处仅为 when 完备性。
-    EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_desc_runtime_module)
-    EngineType.PSP -> stringResource(R.string.engine_desc_psp)
-    EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_desc_nintendo_switch)
-    EngineType.UNKNOWN -> stringResource(R.string.engine_desc_unknown)
 }
 
 private fun refreshExternalInstallStates(
