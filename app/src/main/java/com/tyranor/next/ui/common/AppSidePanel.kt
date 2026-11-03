@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -51,7 +52,9 @@ import com.tyranor.next.R
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
+import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -155,26 +158,36 @@ internal fun AppSidePanel(
                     .glassBorder(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (AppThemeColors.isGlass) GlassPanel else NavWhite,
+                    containerColor = when {
+                        AppThemeColors.isGlass -> GlassPanel
+                        AppThemeColors.isMilkGlass -> Color.Transparent
+                        else -> NavWhite
+                    },
+                    contentColor = TextColor,
                 ),
                 shape = AppComponentShape,
             ) {
+                Box(Modifier.fillMaxSize().clip(AppComponentShape)) {
+                    if (AppThemeColors.isMilkGlass) {
+                        MilkGlassPanelBackground(Modifier.matchParentSize())
+                    }
                 // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
-                Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    Text(
-                        text = stringResource(R.string.side_panel_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 18.dp, bottom = 10.dp),
-                    )
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
-                    ) {
-                        content()
+                    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                        Text(
+                            text = stringResource(R.string.side_panel_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 18.dp, bottom = 10.dp),
+                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
+                        ) {
+                            content()
+                        }
                     }
                 }
             }

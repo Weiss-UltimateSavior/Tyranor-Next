@@ -68,6 +68,9 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.NavWhiteOverlay
+import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -379,7 +382,7 @@ private fun NativeHomeContent(
                             Text(
                                 stringResource(R.string.home_recent_empty),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = PageSecondaryTextColor,
                             )
                         }
                     }
@@ -709,6 +712,7 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
         Text(
             stringResource(R.string.home_quick_launch),
             style = MaterialTheme.typography.bodyMedium,
+            color = TextColor,
             modifier = Modifier.padding(top = 4.dp),
         )
     }
@@ -765,7 +769,7 @@ private fun RecentGameCard(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .background(NavWhite.copy(alpha = 0.9f))
+                .background(NavWhiteOverlay)
                 .padding(horizontal = 12.dp, vertical = 12.5.dp),
         ) {
             Text(

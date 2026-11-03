@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -46,6 +47,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
+import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.LocalAppDialogContent
@@ -130,44 +132,53 @@ internal fun AppAlertDialog(
                     .glassBorder(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 colors = CardDefaults.cardColors(
-                    // 玻璃系风格用高不透明度玻璃面板保证可读性
-                    containerColor = if (AppThemeColors.isGlass) GlassPanel else NavWhite,
+                    // 复古玻璃用高不透明度深色面板；白雾玻璃用页面底图 + 白纱的面板层
+                    containerColor = when {
+                        AppThemeColors.isGlass -> GlassPanel
+                        AppThemeColors.isMilkGlass -> Color.Transparent
+                        else -> NavWhite
+                    },
                     contentColor = TextColor,
                 ),
                 shape = AppComponentShape,
             ) {
-                // 仅为弹窗子组件提供取色上下文，使输入框与标签指示器和面板形成反差；
-                // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
-                CompositionLocalProvider(LocalAppDialogContent provides true) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
-                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                            title()
-                        }
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                // Measure the title/actions first so long text cannot consume
-                                // their space in landscape or with a large system font.
-                                .then(if (textScrollEnabled) Modifier.weight(1f, fill = false) else Modifier)
-                                .heightIn(max = textMaxHeight)
-                                .then(
-                                    if (textScrollEnabled) {
-                                        Modifier.verticalScroll(textScrollState)
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                .padding(top = 14.dp),
-                        ) {
-                            text()
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
-                            horizontalArrangement = buttonArrangement,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            dismissButton?.invoke()
-                            confirmButton()
+                Box(Modifier.fillMaxWidth().clip(AppComponentShape)) {
+                    if (AppThemeColors.isMilkGlass) {
+                        MilkGlassPanelBackground(Modifier.matchParentSize())
+                    }
+                    // 仅为弹窗子组件提供取色上下文，使输入框与标签指示器和面板形成反差；
+                    // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
+                    CompositionLocalProvider(LocalAppDialogContent provides true) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                title()
+                            }
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    // Measure the title/actions first so long text cannot consume
+                                    // their space in landscape or with a large system font.
+                                    .then(if (textScrollEnabled) Modifier.weight(1f, fill = false) else Modifier)
+                                    .heightIn(max = textMaxHeight)
+                                    .then(
+                                        if (textScrollEnabled) {
+                                            Modifier.verticalScroll(textScrollState)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
+                                    .padding(top = 14.dp),
+                            ) {
+                                text()
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                                horizontalArrangement = buttonArrangement,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                dismissButton?.invoke()
+                                confirmButton()
+                            }
                         }
                     }
                 }

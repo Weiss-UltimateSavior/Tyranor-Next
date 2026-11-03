@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.R
 import com.tyranor.next.core.input.InputRemapRepository
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppScreenActivity
@@ -89,7 +90,7 @@ internal fun GamepadMapScreen() {
                 AppTopBar(
                     title = stringResource(R.string.input_settings_gamepad_title),
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                 )
             },
         ) { innerPadding ->

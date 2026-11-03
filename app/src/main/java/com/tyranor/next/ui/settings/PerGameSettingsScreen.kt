@@ -61,6 +61,7 @@ import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.core.settings.RuffleOverride
 import com.tyranor.next.core.settings.WinlatorOverride
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.DialogItemSurface
@@ -721,7 +722,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 AppTopBar(
                     title = game.title,
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.common_save), MiuixTheme.colorScheme.primary) {
                             save()

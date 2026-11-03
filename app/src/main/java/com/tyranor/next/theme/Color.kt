@@ -79,6 +79,45 @@ val GlassTextSecondary = Color(0xFFA6AAB0)
 /** 玻璃导航栏未选中灰。 */
 val GlassUnselected = Color(0xFF7F858D)
 
+// ===== 白雾玻璃外观风格色板（固定浅色条目，不随外观模式变化） =====
+
+/**
+ * 白雾玻璃页面条目底色：约 70% 白纱。
+ *
+ * 对齐用户给的浅薰衣草色参考（L≈201）：背景 L≈109 时 70% 白纱落在 L≈211，
+ * 深色正文对比度约 9:1；既亮又保留背景的低频色场。
+ */
+val MilkSurface = Color(0xB3FFFFFF)
+
+/** 白雾玻璃高亮条目/输入框：约 72% 白，用于卡片内次级控件与浮层输入。 */
+val MilkSurfaceHigh = Color(0xB8FFFFFF)
+
+/** 白雾玻璃高不透明度覆盖层：约 82% 白，用于封面底部信息条等需要压住封面的小面积区域。 */
+val MilkSurfaceStrong = Color(0xD1FFFFFF)
+
+/**
+ * 弹窗/抽屉内条目：约 45% 白纱。
+ *
+ * 浮层面板本身已有 50% 白纱，条目再叠 45% 后最终亮度约 L215，与页面 70% 条目
+ * （L≈211）一致；因此视觉上仍是同一种亮色透明材质，不是更深的一档。
+ */
+val MilkItemOnPanel = Color(0x73FFFFFF)
+
+/** 白雾玻璃正文/标题：亮面条目上的深灰黑。 */
+val MilkText = TextColorLight
+
+/** 白雾玻璃次要文字：条目上的中灰。 */
+val MilkTextSecondary = Color(0xFF5C6168)
+
+/** 白雾玻璃页面标题/状态栏文字：深色底图上的近白。 */
+val MilkPageText = Color(0xFFF4F2F3)
+
+/** 白雾玻璃页面辅助文字：深色底图上的半透明近白。 */
+val MilkPageSecondary = Color(0xB3F4F2F3)
+
+/** 白雾玻璃分割线：条目/面板上的 8% 黑。 */
+val MilkDivider = Color(0x14000000)
+
 // ===== 悬浮按钮导航固定色（只随外观模式深浅取档，不随外观风格变化） =====
 
 /**
@@ -108,39 +147,64 @@ val GlassOpticalBlack = Color(0xFF000000)
 // 页面背景：随深色模式取深/浅；玻璃系风格透明（露出根部背景）
 val PageGrey: Color
     get() = when {
-        AppThemeColors.isGlass -> Color.Transparent
+        AppThemeColors.isGlass || AppThemeColors.isMilkGlass -> Color.Transparent
         AppThemeColors.isDark -> DarkGrey
         else -> GreyLight
     }
-// 卡片/导航栏背景：随深色模式取深/浅；复古玻璃为半透明玻璃面
+// 卡片/导航栏背景：随深色模式取深/浅；复古玻璃为半透明深色玻璃面，白雾玻璃为半透明白纱
 val NavWhite: Color
     get() = when {
         AppThemeColors.isGlass -> GlassSurface
+        AppThemeColors.isMilkGlass -> MilkSurface
         AppThemeColors.isDark -> LighterDark
         else -> WhiteLight
     }
-// 正文/标题文字色：随深色模式取深/浅；玻璃风格恒浅色
+// 正文/标题文字色：随深色模式取深/浅；复古玻璃恒浅色，白雾玻璃恒深色
 val TextColor: Color
     get() = when {
         AppThemeColors.isGlass -> GlassText
+        AppThemeColors.isMilkGlass -> MilkText
         AppThemeColors.isDark -> TextColorDark
         else -> TextColorLight
     }
-// 导航栏未选中图标/文字色：随深色模式取深/浅；玻璃风格固定浅灰
+// 导航栏未选中图标/文字色：随深色模式取深/浅；复古玻璃固定浅灰，白雾玻璃用中灰
 val UnselectedGrey: Color
     get() = when {
         AppThemeColors.isGlass -> GlassUnselected
+        AppThemeColors.isMilkGlass -> MilkTextSecondary
         AppThemeColors.isDark -> UnselectedGreyDark
         else -> UnselectedGreyLight
     }
 
 /**
+ * 页面级前景色：顶栏标题、状态栏旁文字、页面空态等直接落在背景上的文字。
+ * 白雾玻璃的条目正文仍是 [TextColor]（深色），两者分离，避免亮卡黑字与深底黑字混淆。
+ */
+val PageTextColor: Color
+    get() = when {
+        AppThemeColors.isMilkGlass -> MilkPageText
+        AppThemeColors.isGlass -> GlassText
+        AppThemeColors.isDark -> TextColorDark
+        else -> TextColorLight
+    }
+
+/** 页面级辅助文字：比 [PageTextColor] 低一档的透明度。 */
+val PageSecondaryTextColor: Color
+    get() = when {
+        AppThemeColors.isMilkGlass -> MilkPageSecondary
+        AppThemeColors.isGlass -> GlassTextSecondary
+        AppThemeColors.isDark -> TextColorDark.copy(alpha = 0.72f)
+        else -> TextColorLight.copy(alpha = 0.6f)
+    }
+
+/**
  * 条目右侧箭头色：与设置页 `ArrowPreference` 的箭头保持一致
- * （默认风格 = 40% 前景色；复古玻璃 = 60% 的 [GlassTextSecondary]）。
+ * （默认风格 = 40% 前景色；复古玻璃 = 60% 的 [GlassTextSecondary]；白雾玻璃 = 中灰）。
  */
 val ItemChevronColor: Color
     get() = when {
         AppThemeColors.isGlass -> GlassTextSecondary.copy(alpha = 0.6f)
+        AppThemeColors.isMilkGlass -> MilkText.copy(alpha = 0.45f)
         AppThemeColors.isDark -> Color(0x66FFFFFF)
         else -> Color(0x66000000)
     }
@@ -148,5 +212,15 @@ val ItemChevronColor: Color
 val DialogItemSurface: Color
     get() = when {
         AppThemeColors.isGlass -> GlassSurfaceHigh
+        AppThemeColors.isMilkGlass -> MilkItemOnPanel
         else -> PageGrey
+    }
+
+/** 封面底部信息条等小面积覆盖：白雾玻璃用更实的白纱，避免深色封面把文字吃掉。 */
+val NavWhiteOverlay: Color
+    get() = when {
+        AppThemeColors.isMilkGlass -> MilkSurfaceStrong
+        AppThemeColors.isGlass -> GlassSurface.copy(alpha = 0.9f)
+        AppThemeColors.isDark -> LighterDark.copy(alpha = 0.9f)
+        else -> WhiteLight.copy(alpha = 0.9f)
     }

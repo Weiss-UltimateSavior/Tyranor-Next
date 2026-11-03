@@ -41,6 +41,7 @@ import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.glassBorder
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -184,7 +185,7 @@ private fun CoverFlowCaption(
     Text(
         stringResource(R.string.game_cover_flow_caption, game.engine.displayName, displayTitle),
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = PageSecondaryTextColor,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Center,

@@ -51,14 +51,14 @@ private data class FloatingParticle(
 /**
  * 默认外观风格的页面背景：纯色底（取主题 `background`，即 `PageGrey` 档）+ 主题色粒子缓慢漂浮。
  *
- * - 仅**默认外观风格**生效；玻璃系外观风格有独立的页面背景实现（[GlassBackground]），本组件为 no-op。
+ * - 仅**默认外观风格**生效；复古玻璃与白雾玻璃有独立的页面背景实现（[GlassBackground]），本组件为 no-op。
  * - 粒子在绘制阶段读取动画时间，只失效绘制、不触发重组；约 30fps。
  * - 系统关闭动画（开发者选项/无障碍）时停止动画，保留静态粒子。
  * - 背景层必须是**独立空层**（不含页面内容），由页面根作为第一个子节点挂载。
  */
 @Composable
 fun DefaultPageBackgroundLayer(modifier: Modifier = Modifier) {
-    if (AppThemeColors.isGlass) return
+    if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) return
     val base = MaterialTheme.colorScheme.background
     val primary = AppThemeColors.primary
     val particles = remember(primary) { buildFloatingParticles(primary) }

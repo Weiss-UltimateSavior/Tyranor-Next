@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import androidx.compose.ui.graphics.Color as ComposeColor
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
@@ -63,7 +64,7 @@ internal fun EngineSettingsMenuScreen() {
                 AppTopBar(
                     title = stringResource(R.string.settings_engine_settings),
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                 )
             },
         ) { innerPadding ->

@@ -30,12 +30,13 @@
     <string name="settings_language_ja">日本語</string>
     <string name="settings_language_en">English</string>
     <string name="settings_color_wheel">色調ホイール</string>
-    <string name="settings_appearance_style">外観スタイル</string>
+    <string name="settings_appearance_style">外観テーマ</string>
     <string name="settings_appearance_style_default">デフォルト</string>
     <string name="settings_appearance_style_glass">レトロガラス</string>
+    <string name="settings_appearance_style_milk">白霧ガラス</string>
     <string name="settings_app_corner_radius">アプリの角丸調整</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
-    <string name="settings_disabled_in_glass_style">ガラス外観スタイルでは使用できません</string>
+    <string name="settings_disabled_in_glass_style">ガラス外観テーマでは使用できません</string>
     <string name="settings_theme_mode">明暗切り替え</string>
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
@@ -163,6 +164,11 @@
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">携帯機</string>
     <string name="engine_tab_web">Web</string>
+    <string name="engine_storage_title">ストレージ概要</string>
+    <string name="engine_storage_game_usage">ゲーム使用量 %1$s</string>
+    <string name="engine_storage_remaining">空き容量 %1$s</string>
+    <string name="engine_storage_counts">ゲーム %1$d · エンジン %2$d</string>
+    <string name="engine_storage_ring_label">ゲーム使用量</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
     <string name="engine_emulator_ppsspp_gold">PPSSPP ゴールド版</string>
     <string name="engine_emulator_eden">Eden</string>

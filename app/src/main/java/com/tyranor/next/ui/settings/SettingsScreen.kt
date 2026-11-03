@@ -66,6 +66,7 @@ import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NoticeDotRed
@@ -912,7 +913,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 AppTopBar(
                     title = engineSettingsKindTitle(kind),
                     background = Color.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.engine_settings_save_content_description), MiuixTheme.colorScheme.primary) {
                             saveAll()
@@ -1063,7 +1064,7 @@ private fun SettingsTopBar(title: String) {
     AppTopBar(
         title = title,
         background = Color.Transparent,
-        contentColor = MiuixTheme.colorScheme.onBackground,
+        contentColor = PageTextColor,
     )
 }
 

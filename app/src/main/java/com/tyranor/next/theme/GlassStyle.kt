@@ -1,5 +1,6 @@
 package com.tyranor.next.theme
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -7,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -15,14 +18,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.R
 
 /**
- * 应用根背景统一组件：玻璃系外观风格为深色背景 + 环境光层——
- * 复古玻璃：黑灰三档竖向渐变 + 白色顶部光晕 + 主题色对角环境光（本文件）。
- * 默认风格沿用主题页面背景色。所有顶层组合（MainActivity / AppScreenScaffold）必须经本组件
- * 包裹，否则透明页面背景会露出窗口底色。内部保留 Surface 以维持 contentColor 语义。
+ * 应用根背景统一组件：
+ * - 复古玻璃：黑灰三档竖向渐变 + 白色顶部光晕 + 主题色对角环境光；
+ * - 白雾玻璃：64dp 模糊图片底图 + 16% 白纱 + 38% 压暗 + 主题色环境光 + 轻暗角；
+ * - 默认风格：纯色底 + 主题色粒子（由 [DefaultPageBackgroundLayer] 绘制）。
+ * 所有顶层组合（MainActivity / AppScreenScaffold）必须经本组件包裹，否则透明页面背景会露出
+ * 窗口底色。内部保留 Surface 以维持 contentColor 语义。
  */
 @Composable
 fun GlassBackground(
@@ -34,19 +42,97 @@ fun GlassBackground(
         color = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
-        val accent = AppThemeColors.primary
-        val backgroundModifier = when {
-            AppThemeColors.isGlass -> Modifier.glassPageBackground(accent)
-            // 默认外观风格：纯色底，由独立背景层绘制
-            else -> Modifier
-        }
         Box(Modifier.fillMaxSize()) {
-            // 背景层（空层）；玻璃系为 no-op
-            DefaultPageBackgroundLayer()
-            Box(Modifier.fillMaxSize().then(backgroundModifier)) {
+            when {
+                // 白雾玻璃：模糊图片底图 + 白纱提亮 + 主题色环境光
+                AppThemeColors.isMilkGlass -> MilkGlassPageBackgroundLayer()
+                // 复古玻璃：黑灰渐变 + 环境光；默认风格：纯色底 + 主题色粒子
+                AppThemeColors.isGlass -> Box(Modifier.fillMaxSize().glassPageBackground(AppThemeColors.primary))
+                else -> DefaultPageBackgroundLayer()
+            }
+            Box(Modifier.fillMaxSize()) {
                 content()
             }
         }
+    }
+}
+
+/**
+ * 白雾玻璃外观的共享底图：模糊图片 + 16% 白纱 + 38% 压暗 + 主题色低透明度环境光。
+ *
+ * 当前底图是明亮彩色壁纸，需要压暗到参考图的深色调，但不能过暗；压暗后再叠白纱/
+ * 环境光，保留蓝紫粉的低频色场。页面使用 64dp 实时模糊，浮层用 40dp。
+ *
+ * [blurRadius] 允许页面与浮层使用不同强度的实时高斯模糊；图片资源本身也做了轻度
+ * 预模糊，API < 31 不支持 [blur] 时仍能保持柔和底图。
+ */
+@Composable
+private fun MilkGlassBackdrop(
+    modifier: Modifier = Modifier,
+    blurRadius: Dp,
+) {
+    val accent = AppThemeColors.primary
+    Box(modifier) {
+        Image(
+            painter = painterResource(R.drawable.bg_milk_glass),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(radius = blurRadius, edgeTreatment = BlurredEdgeTreatment.Rectangle),
+        )
+        // 先提亮再整体压暗：既保留彩色壁纸的色相，又把明度落到参考图的深色区间。
+        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.16f)))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)))
+        Box(
+            Modifier.fillMaxSize().drawWithCache {
+                val glow = Brush.radialGradient(
+                    colors = listOf(accent.copy(alpha = 0.14f), Color.Transparent),
+                    center = Offset(size.width * 0.5f, size.height * 0.42f),
+                    radius = size.width * 0.85f,
+                )
+                onDrawBehind { drawRect(glow) }
+            },
+        )
+    }
+}
+
+/**
+ * 白雾玻璃外观的页面背景：共享底图 + 顶部/底部极轻暗角。
+ *
+ * 亮度关系对齐参考图：彩色底图中性区约 L160，16% 白纱 + 38% 压暗后约 L109；页面条目
+ * 叠 [MilkSurface]（70% 白）后落在 L≈211，深色正文对比度约 9:1。
+ */
+@Composable
+private fun MilkGlassPageBackgroundLayer() {
+    Box(Modifier.fillMaxSize()) {
+        MilkGlassBackdrop(Modifier.fillMaxSize(), blurRadius = 64.dp)
+        Box(
+            Modifier.fillMaxSize().drawWithCache {
+                val vignette = Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.10f),
+                    0.55f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = 0.18f),
+                )
+                onDrawBehind { drawRect(vignette) }
+            },
+        )
+    }
+}
+
+/**
+ * 白雾玻璃弹窗/抽屉的面板底：同一张模糊页面底图 + 50% 白纱。
+ *
+ * 面板不铺浅色实底：用户要求浮层背景沿用页面背景。这里用同一张页面底图铺满面板，
+ * 既保留页面背景的纹理，又遮住底层卡片/导航文字（直接半透明会让它们重影）。
+ * 面板条目叠 [MilkItemOnPanel]（45% 白）；面板本身已有 50% 白纱，最终亮度约 L215，
+ * 与页面 70% 条目（L≈211）对齐；面板与条目都使用深色正文。
+ */
+@Composable
+fun MilkGlassPanelBackground(modifier: Modifier = Modifier) {
+    Box(modifier) {
+        MilkGlassBackdrop(Modifier.fillMaxSize(), blurRadius = 40.dp)
+        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.50f)))
     }
 }
 

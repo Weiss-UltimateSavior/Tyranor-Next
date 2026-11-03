@@ -56,6 +56,7 @@ import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.HomeWebUrls
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -102,7 +103,7 @@ internal fun AppSettingsScreen() {
     val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
-    val glass = AppThemeColors.isGlass
+    val fixedPalette = AppThemeColors.hasFixedContentPalette
     // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
     val railLayout = isSideRailLayout()
     var showColorPicker by remember { mutableStateOf(false) }
@@ -130,7 +131,7 @@ internal fun AppSettingsScreen() {
                 AppTopBar(
                     title = stringResource(R.string.settings_app_title),
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                 )
             },
         ) { innerPadding ->
@@ -197,13 +198,14 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 外观风格：默认 / 复古玻璃（切换即时全 App 生效并持久化）
+                            // 外观主题：默认 / 复古玻璃 / 白雾玻璃（切换即时全 App 生效并持久化）
                             val appearanceStyles = AppearanceStyle.entries
                             val appearanceLabels = appearanceStyles.map { style ->
                                 stringResource(
                                     when (style) {
                                         AppearanceStyle.DEFAULT -> R.string.settings_appearance_style_default
                                         AppearanceStyle.RETRO_GLASS -> R.string.settings_appearance_style_glass
+                                        AppearanceStyle.MILK_GLASS -> R.string.settings_appearance_style_milk
                                     },
                                 )
                             }
@@ -276,10 +278,10 @@ internal fun AppSettingsScreen() {
                                 .let { if (it < 0) 1 else it } // 未知存量值回退浅色
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.settings_theme_mode),
-                                summary = if (glass) stringResource(R.string.settings_disabled_in_glass_style) else null,
+                                summary = if (fixedPalette) stringResource(R.string.settings_disabled_in_glass_style) else null,
                                 items = themeModes.map { it.second },
                                 selectedIndex = modeIndex,
-                                enabled = !glass,
+                                enabled = !fixedPalette,
                                 onSelectedIndexChange = { index ->
                                     themeModes.getOrNull(index)?.first?.let { mode ->
                                         themeMode = mode
@@ -295,7 +297,7 @@ internal fun AppSettingsScreen() {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 导航栏样式：经典 MD / 液态玻璃 · 经典 / 液态玻璃 · 透镜 / 悬浮按钮。
-                            // 未显式选择时，仅默认外观用透镜；玻璃系外观保留经典 MD 的悬浮玻璃条。
+                            // 未显式选择时使用液态玻璃 · 经典；玻璃系外观保留经典 MD 的悬浮玻璃条。
                             // 「透镜」档需要 Android 13+ 的 RuntimeShader，低版本不提供该选项（列表里不出现）。
                             val navStyleOptions = buildList {
                                 add(

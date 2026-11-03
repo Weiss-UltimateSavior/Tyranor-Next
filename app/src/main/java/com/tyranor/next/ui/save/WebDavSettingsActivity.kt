@@ -48,6 +48,7 @@ import com.tyranor.next.core.game.save.sync.SaveSyncService
 import com.tyranor.next.core.game.save.sync.WebDavClient
 import com.tyranor.next.core.game.save.sync.WebDavConfig
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
@@ -334,7 +335,7 @@ private fun WebDavSettingsScreen() {
                 AppTopBar(
                     title = stringResource(R.string.webdav_title),
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                 )
             },
         ) { innerPadding ->
