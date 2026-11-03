@@ -690,12 +690,12 @@ private fun EngineRowCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-                // 图标右侧与卡片背景的渐变遮罩，避免硬切边
+                // 图标右侧与卡片背景的渐变遮罩，避免硬切边（44 → 47dp，再加长 3dp）
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
-                        .width(44.dp)
+                        .width(47.dp)
                         .background(
                             Brush.horizontalGradient(
                                 0f to Color.Transparent,
