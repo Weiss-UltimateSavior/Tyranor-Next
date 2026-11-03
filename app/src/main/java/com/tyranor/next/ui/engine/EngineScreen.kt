@@ -26,8 +26,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -85,6 +87,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.settings.artVersionOptions
 import java.io.File
 import kotlin.math.roundToInt
@@ -184,14 +187,21 @@ fun EngineScreen(
             engines
         }).distinctBy { engineDisplayName(it) }
 
-        // 引擎列表
-        LazyColumn(
+        // 引擎列表：竖屏单列；横屏/大屏一行三个
+        val engineColumns = if (isWideScreen()) 3 else 1
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(engineColumns),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp + glassNavBottomInset()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // 存储概览作为列表首项，随列表一起滚动（顶栏与分类栏保持固定）
-            item(key = "storage_overview", contentType = "storage_overview") {
+            item(
+                key = "storage_overview",
+                contentType = "storage_overview",
+                span = { GridItemSpan(maxLineSpan) },
+            ) {
                 StorageOverviewCard(
                     gameCount = gameCount,
                     engineCount = engines.distinctBy { engineDisplayName(it) }.size,
@@ -199,7 +209,7 @@ fun EngineScreen(
                     gameBytesLoading = gameDirsBytes == null,
                 )
             }
-            items(
+            gridItems(
                 items = tabEngines,
                 key = { it.name },
                 contentType = { "engine" },
@@ -234,6 +244,7 @@ fun EngineScreen(
                     installed = installed,
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
+                    compact = engineColumns > 1,
                     onClick = {
                         when {
                             // Winlator 系（YU-RIS / 手动 PC）：只展示本引擎的外置运行时，标题「<引擎> 引擎列表」
@@ -248,7 +259,11 @@ fun EngineScreen(
 
             // 外置跳转支持（PPSSPP / Eden / Winlator 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
             if (!categorizeEngines || selectedTab == EngineTab.CONSOLE.ordinal) {
-                item(key = "external-jump", contentType = "external-jump") {
+                item(
+                    key = "external-jump",
+                    contentType = "external-jump",
+                    span = { GridItemSpan(maxLineSpan) },
+                ) {
                     ExternalJumpRow(
                         installedCount = emulatorInstallStates.values.count { it },
                         onClick = { showExternalJumpDialog = true },
@@ -623,6 +638,7 @@ private fun EngineRow(
     @StringRes statusTextRes: Int,
     installed: Boolean,
     enabled: Boolean,
+    compact: Boolean = false,
     onClick: () -> Unit,
 ) {
     EngineRowCard(
@@ -631,6 +647,7 @@ private fun EngineRow(
         statusTextRes = statusTextRes,
         installed = installed,
         enabled = enabled,
+        compact = compact,
         onClick = onClick,
     )
 }
@@ -647,13 +664,14 @@ private fun ExternalJumpRow(
         statusTextRes = R.string.engine_external_jump_summary,
         installed = installedCount > 0,
         enabled = true,
+        compact = false,
         onClick = onClick,
     )
 }
 
 /**
  * 原引擎条目布局：左侧引擎图标横幅（右侧渐变融入卡片）+ 标题 + 右侧原状态图标。
- * 高度较原条目降低 10dp（min 60dp），状态图标保持 CheckCircle / Cancel。
+ * 高度 60dp；三列紧凑模式下横幅收窄到 88dp。状态图标保持 CheckCircle / Cancel。
  */
 @Composable
 private fun EngineRowCard(
@@ -662,8 +680,11 @@ private fun EngineRowCard(
     @StringRes statusTextRes: Int,
     installed: Boolean,
     enabled: Boolean,
+    compact: Boolean,
     onClick: () -> Unit,
 ) {
+    val bannerWidth = if (compact) 88.dp else 120.dp
+    val fadeWidth = minOf(47.dp, bannerWidth * 0.5f)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -681,7 +702,7 @@ private fun EngineRowCard(
         ) {
             Box(
                 modifier = Modifier
-                    .width(120.dp)
+                    .width(bannerWidth)
                     .fillMaxHeight(),
             ) {
                 Image(
@@ -695,7 +716,7 @@ private fun EngineRowCard(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
-                        .width(47.dp)
+                        .width(fadeWidth)
                         .background(
                             Brush.horizontalGradient(
                                 0f to Color.Transparent,
