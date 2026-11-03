@@ -189,7 +189,7 @@ private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick:
         modifier = Modifier
             .size(40.dp)
             .clip(AppComponentShape)
-            // 默认风格描边取动态常量 TextColor（AGENTS 3.5 禁止弹窗内读 colorScheme）；
+            // 默认风格描边取动态常量 TextColor（符合 AGENTS 规范，使用 Color.kt 动态常量）；
             // 玻璃风格的 0.5dp 发丝描边由 glassBorder 负责，两种风格不叠加。
             .then(
                 if (AppThemeColors.isGlass) Modifier

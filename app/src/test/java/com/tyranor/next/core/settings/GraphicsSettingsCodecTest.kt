@@ -36,6 +36,11 @@ class GraphicsSettingsCodecTest {
         // Pre-micro-parameter readers decode `sharpness` for every adjustable node; the mirror
         // keeps a rollback from resetting the whole chain to defaults.
         assertEquals(0.7, node.optDouble("sharpness"), 0.0)
+
+        // Bilinear is scale-only-adjustable and carried inert sharpness 0.4 in Era A; the downgrade mirror covers it too.
+        val bilinearSettings = GraphicsSettings(true, listOf(GraphicsNode("bilinear")), true)
+        val bilinearNode = codec.encode(bilinearSettings).let(::JSONObject).getJSONArray("chain").getJSONObject(0)
+        assertEquals(0.4, bilinearNode.optDouble("sharpness"), 0.0)
     }
 
     @Test fun authoritativeGlobalDoesNotReadLegacyEvenWhenMalformed() {

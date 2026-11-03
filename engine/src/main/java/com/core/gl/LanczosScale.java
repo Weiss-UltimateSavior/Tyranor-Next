@@ -208,7 +208,9 @@ final class LanczosScale {
         }
         try {
             long sourcePixels = Math.multiplyExact((long) sw, sh);
-            long bytes = restore ? Math.multiplyExact(sourcePixels, 4L) : 0; // No hidden Restore in a scale node.
+            // Restore targets in test fixtures use source resolution (sw*sh); production 2x CNN
+            // chains compute their full allocation via GraphicsShaderGeometry.
+            long bytes = restore ? Math.multiplyExact(sourcePixels, 4L) : 0;
             if (screenCopy) bytes = Math.addExact(bytes, Math.multiplyExact(sourcePixels, 4L));
             long halfFloatCount = Math.addExact((long) intermediateCount, selfSaveCount);
             bytes = Math.addExact(bytes, Math.multiplyExact(

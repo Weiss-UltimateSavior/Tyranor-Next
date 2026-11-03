@@ -301,10 +301,12 @@ object GraphicsSettingsCodec {
                         put("scaleMode", node.scaleMode.wire)
                         put("widthScale", node.widthScale).put("heightScale", node.heightScale)
                     }
-                    if (GraphicsFilterCatalog.parametersAdjustable(node.id)) {
+                    if (GraphicsFilterCatalog.parametersAdjustable(node.id) || GraphicsFilterCatalog.scaleAdjustable(node.id)) {
                         // Downgrade mirror: pre-micro-parameter readers decode `sharpness` for every
-                        // adjustable node; without it a rollback would reset the whole chain.
+                        // adjustable node (including bilinear); without it a rollback would reset the whole chain.
                         put("sharpness", node.sharpness)
+                    }
+                    if (GraphicsFilterCatalog.parametersAdjustable(node.id)) {
                         when (node.id) {
                             "bicubic" -> {
                                 put("bicubicB", node.bicubicB)
@@ -374,8 +376,10 @@ object GraphicsSettingsCodec {
                         }
                     }
                     "lanczos" -> {
-                        // Legacy sharpness is not migrated into anti-ringing; definition default applies (0.50)
-                        // when dedicated lanczosAntiRingingStrength is absent.
+                        // Historically, inert 0.4 was written for bilinear/lanczos before dedicated parameters;
+                        // in fac66a78..fbc6f0c7 lanczos sharpness temporarily exposed the AR slider before dedicated
+                        // naming. To eliminate migration ambiguity, legacy `sharpness` is not migrated to anti-ringing;
+                        // the definition default (0.50) applies when dedicated lanczosAntiRingingStrength is absent.
                         if (node.has("lanczosAntiRingingStrength")) {
                             nodeLanczosAntiRinging = (node.opt("lanczosAntiRingingStrength") as? Number)?.toDouble() ?: return null
                         }
@@ -384,6 +388,11 @@ object GraphicsSettingsCodec {
                         if (node.has("casSharpness")) {
                             nodeCasSharpness = (node.opt("casSharpness") as? Number)?.toDouble() ?: return null
                         } else if (node.has("sharpness")) {
+                            nodeCasSharpness = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
+                        }
+                    }
+                    else -> {
+                        if (definition.sharpnessAdjustable && node.has("sharpness")) {
                             nodeCasSharpness = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
                         }
                     }
