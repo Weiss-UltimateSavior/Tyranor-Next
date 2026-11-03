@@ -56,7 +56,9 @@ import com.tyranor.next.core.game.shortcut.initialCropTransform
 import com.tyranor.next.core.game.shortcut.writeShortcutCropBitmap
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
+import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.DialogTextButton
@@ -184,45 +186,55 @@ private fun CropDialogCard(
             .imePadding()
             .glassBorder(),
         colors = CardDefaults.cardColors(
-            // 玻璃系风格用高不透明度玻璃面板保证浮层内文字可读
-            containerColor = if (AppThemeColors.isGlass) GlassPanel else NavWhite,
+            // 玻璃风格用高不透明度面板保证浮层内文字可读
+            containerColor = when {
+                AppThemeColors.isGlass -> GlassPanel
+                AppThemeColors.isMilkGlass -> Color.Transparent
+                else -> NavWhite
+            },
+            contentColor = TextColor,
         ),
         shape = AppComponentShape,
     ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.game_desktop_shortcut_crop_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.game_desktop_shortcut_crop_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            CropDialogImage(
-                loadState = loadState,
-                metrics = metrics,
-                transform = transform,
-                onViewportSizeChanged = onViewportSizeChanged,
-                onTransform = onTransform,
-            )
-            if (cropFailed) {
+        Box(Modifier.fillMaxWidth().clip(AppComponentShape)) {
+            if (AppThemeColors.isMilkGlass) {
+                MilkGlassPanelBackground(Modifier.matchParentSize())
+            }
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
-                    text = stringResource(R.string.game_desktop_shortcut_crop_failed),
+                    text = stringResource(R.string.game_desktop_shortcut_crop_title),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = stringResource(R.string.game_desktop_shortcut_crop_hint),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CropDialogImage(
+                    loadState = loadState,
+                    metrics = metrics,
+                    transform = transform,
+                    onViewportSizeChanged = onViewportSizeChanged,
+                    onTransform = onTransform,
+                )
+                if (cropFailed) {
+                    Text(
+                        text = stringResource(R.string.game_desktop_shortcut_crop_failed),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                CropDialogActions(
+                    confirming = confirming,
+                    canConfirm = loadState is CropImageLoadState.Ready && metrics.isValid,
+                    onPickImage = onPickImage,
+                    onDismiss = onDismiss,
+                    onConfirm = onConfirm,
                 )
             }
-            CropDialogActions(
-                confirming = confirming,
-                canConfirm = loadState is CropImageLoadState.Ready && metrics.isValid,
-                onPickImage = onPickImage,
-                onDismiss = onDismiss,
-                onConfirm = onConfirm,
-            )
         }
     }
 }

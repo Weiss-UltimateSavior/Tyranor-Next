@@ -45,9 +45,9 @@ class MainActivity : ComponentActivity() {
     setContent {
       ProvideAppLocale {
         TyranorNextTheme {
-          // 系统栏图标跟随外观模式：深色模式用浅色图标（SystemBarStyle.dark）
+          // 系统栏图标跟随实际背景：深色模式/深色底图用浅色图标（SystemBarStyle.dark）
           val activity = this@MainActivity
-          val dark = AppThemeColors.isDark
+          val dark = AppThemeColors.isDark || AppThemeColors.hasDarkBackdrop
           SideEffect {
             if (dark) {
               activity.enableEdgeToEdge(

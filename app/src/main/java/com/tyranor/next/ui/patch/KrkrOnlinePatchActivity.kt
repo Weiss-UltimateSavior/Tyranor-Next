@@ -51,6 +51,8 @@ import com.tyranor.next.core.patch.KrkrPatchEntry
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppScreenActivity
@@ -177,7 +179,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                     Text(
                         stringResource(R.string.patch_no_match),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = PageSecondaryTextColor,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
                     )
                 }
@@ -237,7 +239,7 @@ private fun PatchEntryCard(
     Card(
         modifier = Modifier.fillMaxWidth().glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
         shape = AppComponentShape,
     ) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {

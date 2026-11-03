@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -74,8 +75,14 @@ fun LiquidGlassNavigationBar(
     modifier: Modifier = Modifier,
 ) {
     val density = LocalDensity.current
-    // 玻璃表面色随外观模式：深色模式用深色表面，浅色模式用白色表面
-    val surfaceColor = if (AppThemeColors.isDark) DarkGrey else Color.White
+    // 白雾玻璃默认导航栏：用主题色轻染的亮白玻璃，和 item 一样跟随主题色调；
+    // 其它风格维持原逻辑（深色模式深色表面、浅色模式白色表面）。
+    val milk = AppThemeColors.isMilkGlass
+    val surfaceColor = when {
+        milk -> lerp(Color.White, MaterialTheme.colorScheme.primary, 0.08f)
+        AppThemeColors.isDark -> DarkGrey
+        else -> Color.White
+    }
     val mutedColor = unselectedColor
     // 圆角纳入「应用圆角调整」统一控制
     val shape = AppComponentShape
@@ -88,7 +95,12 @@ fun LiquidGlassNavigationBar(
     val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     // 高版本表面半透明以透出模糊内容
     // 呈现液态玻璃质感；低版本（<12）无实时模糊，直接用不透明实底，避免文字等内容透出。
-    val glassSurfaceAlpha = if (backdropSupported) 0.55f else 1f
+    val glassSurfaceAlpha = when {
+        // 白雾玻璃的默认导航栏需要更亮、更接近 item 的白纱；否则采样到深色底图后只剩灰面。
+        milk -> if (backdropSupported) 0.80f else 0.96f
+        backdropSupported -> 0.55f
+        else -> 1f
+    }
     val navigationSurfaceModifier = if (backdropSupported) {
         Modifier.drawBackdrop(
             backdrop = backdrop,
@@ -101,7 +113,8 @@ fun LiquidGlassNavigationBar(
             // 不使用库自带 Highlight：它在高圆角下会在栏体内侧留下一圈白色弧线（表现为“第二层”）。
             // 边缘改用下方统一的 glassEdgeStroke 单层描边。
             highlight = null,
-            shadow = { Shadow.Default.copy(alpha = 0.8f) },
+            // 亮玻璃底栏不需要重阴影，否则会在亮面下方形成一圈脏黑边。
+            shadow = { Shadow.Default.copy(alpha = if (milk) 0.35f else 0.8f) },
             onDrawSurface = {
                 drawRect(surfaceColor.copy(alpha = glassSurfaceAlpha))
             },
@@ -198,6 +211,7 @@ private fun LiquidGlassNavItemView(
 
 /**
  * 当前实际生效的导航栏样式：用户显式选择的样式原样生效；未显式设置时按外观风格解析
+ * （白雾玻璃沿用液态玻璃 · 经典，仅做亮玻璃 + 主题色轻染的配色适配）
  * （默认外观 → 液态玻璃 · 经典，玻璃系外观 → 经典 MD），随外观风格切换即时重组。
  */
 @Composable

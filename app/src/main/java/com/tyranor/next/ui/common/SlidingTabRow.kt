@@ -45,6 +45,7 @@ import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.GlassText
 import com.tyranor.next.theme.GlassTextSecondary
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.UnselectedGrey
@@ -282,6 +283,7 @@ private fun tabContentColor(selected: Boolean): Color = when {
     selected && AppThemeColors.isGlass -> GlassText
     selected -> TextColor
     AppThemeColors.isGlass -> GlassTextSecondary
+    AppThemeColors.isMilkGlass -> PageSecondaryTextColor
     LocalAppDialogContent.current -> UnselectedGrey
     else -> MaterialTheme.colorScheme.onSurfaceVariant
 }

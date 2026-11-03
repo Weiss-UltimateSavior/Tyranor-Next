@@ -42,6 +42,7 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.engine.runtime.RuntimeModuleDescriptor
 import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
@@ -212,7 +213,7 @@ internal fun EngineModuleManagementScreen() {
                 AppTopBar(
                     title = stringResource(R.string.engine_module_management_title),
                     background = Color.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(
                             painterResource(R.drawable.ic_game_scan),

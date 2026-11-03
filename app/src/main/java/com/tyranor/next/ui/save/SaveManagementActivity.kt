@@ -46,7 +46,9 @@ import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.ScanGameIntents
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -219,7 +221,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                 AppTopBar(
                     title = stringResource(R.string.save_management_title),
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                 )
             },
         ) { innerPadding ->
@@ -234,7 +236,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                     Card(
                         modifier = Modifier.fillMaxWidth().glassBorder(),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        colors = CardDefaults.cardColors(containerColor = NavWhite),
+                        colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
                         shape = AppComponentShape,
                     ) {
                         Column(Modifier.fillMaxWidth().padding(16.dp)) {

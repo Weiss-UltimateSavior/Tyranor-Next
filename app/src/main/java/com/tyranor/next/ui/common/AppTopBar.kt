@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.theme.PageTextColor
 
 /**
  * 页面顶部栏统一组件（AGENTS.md「页面顶部栏统一规范」的唯一入口）。
@@ -37,9 +38,11 @@ import androidx.compose.ui.unit.dp
  *   Miuix 风格页面同样传 `Color.Transparent`（**不要**传 `MiuixTheme.colorScheme.background`
  *   ——它是 `PageGrey`，会盖住玻璃/根部背景，与 AGENTS.md「顶部栏背景恒为透明」冲突），
  *   需要页面底色参与取色的页面传 `PageGrey`（见 AGENTS.md 容器色约定）。玻璃外观风格下
- *   页面背景为透明，顶栏随之透明（露出渐变/环境光）；此时页面内容必须整体垫在顶栏下方（用持久
- *   padding，而非滚动 contentPadding），否则滚动内容会从顶栏下方穿过与标题重叠。
- * @param contentColor 标题前景色；默认 `colorScheme.onBackground`，与 [background] 配套传入
+ *   页面背景为透明，顶栏随之透明（露出渐变/图片/环境光）；此时页面内容必须整体垫在顶栏下方
+ *   （用持久 padding，而非滚动 contentPadding），否则滚动内容会从顶栏下方穿过与标题重叠。
+ * @param contentColor 标题前景色；默认 [PageTextColor]（页面级前景色）。
+ *   白雾玻璃的 Miuix `onBackground` 取深色（库内 preference 标题与卡片共用该色槽），
+ *   顶栏必须走页面级前景色；默认值已处理，调用方通常无需显式传。
  * @param underTitle 标题行下方的附加内容（可选，如游戏页折叠的搜索框）；置于状态栏背景延伸区内
  * @param trailing 标题右侧的图标/内容（可选，必须用 [TopBarIcon] 等公共组件）
  */
@@ -49,7 +52,7 @@ fun AppTopBar(
     modifier: Modifier = Modifier,
     // 默认透明：默认外观风格露出页面根部背景层（纯色底）；玻璃系同现状
     background: Color = Color.Transparent,
-    contentColor: Color = MaterialTheme.colorScheme.onBackground,
+    contentColor: Color = PageTextColor,
     underTitle: (@Composable () -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {

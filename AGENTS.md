@@ -174,10 +174,10 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 ### 4. 背景色
 
-- 顶部栏背景**恒为透明**（`AppTopBar` 默认 `Color.Transparent`），露出页面根部背景层：默认外观风格为纯色底（`PageGrey`）+ 主题色粒子缓慢漂浮（`theme/DefaultPageBackground.kt`，约 30fps、仅在绘制阶段更新，系统关闭动画时静止），玻璃系风格为玻璃页面渐变。标题与图标统一使用 `colorScheme.onBackground`。
+- 顶部栏背景**恒为透明**（`AppTopBar` 默认 `Color.Transparent`），露出页面根部背景层：默认外观风格为纯色底（`PageGrey`）+ 主题色粒子缓慢漂浮（`theme/DefaultPageBackground.kt`，约 30fps、仅在绘制阶段更新，系统关闭动画时静止），复古玻璃为玻璃页面渐变，白雾玻璃为模糊图片底图。标题与图标统一使用 `PageTextColor`（白雾玻璃为近白；Miuix 页须显式传入，不能依赖 `MiuixTheme.colorScheme.onBackground` 的深色卡片文字槽）。
 - 页面根容器（`MiuixScaffold(containerColor = …)`、页面级 Box）同样**不得铺不透明背景色**（一律 `Color.Transparent`），背景由根部背景层负责；否则会把根部背景整片盖掉。
 
-- **玻璃系外观风格（复古玻璃）**：玻璃下页面背景透明，顶栏保持透明（露出渐变/色斑与环境光）。
+- **玻璃系外观风格（复古玻璃 / 白雾玻璃）**：页面背景透明，顶栏保持透明（露出渐变/图片/色斑与环境光）。
   因此**页面内容必须整体垫在顶栏下方**（用持久 `Modifier.padding(top = 顶栏高度)`，而不是滚动区的
   `contentPadding`），否则滚动内容会从顶栏下方穿过与标题重叠。设置类页面（MiuixScaffold）的
   `innerPadding` 顶部值一律加到列表 modifier 上，`contentPadding` 只保留额外的间距。
@@ -233,11 +233,11 @@ Column(fillMaxSize)                                // 页面根
 
 - 页面切换动画必须保持统一：主 Screen 四个 Tab 间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
 
-- 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观与复古玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
+- 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观、复古玻璃与白雾玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
   `AppComponentShape`、Miuix 组件用 `AppComponentCornerRadius`、
-  抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。
+  抽屉顶部用 `AppSheetTopShape`；禁止再散落圆角字面量。外观风格不得自带圆角默认值或按风格覆盖该设置。
 
-- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「经典 MD 导航栏」（原「默认导航栏」）形态，液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
+- **平板侧栏**：`isSideRailLayout()`（`isTabletScreen()` 命中且应用设置「平板侧边栏」开关开启，默认开）命中时主导航移到侧边（`ui/common/AppNavigationRail.kt`）：侧栏形态按外观风格取该主题「经典 MD 导航栏」（原「默认导航栏」）形态（默认与白雾玻璃用 Material3 侧栏，复古玻璃用悬浮玻璃柱），液态玻璃两档与「悬浮按钮」不适配侧栏；侧栏占布局宽度，底部留白归零。选中态图标动画统一用 `ui/common/NavigationTabIcon.kt`。
 
 - **圆角豁免（液态玻璃 · 透镜底栏）**：应用设置「导航栏样式」选到「液态玻璃 · 透镜」后挂载的
   `ui/common/glass/EnhancedLiquidGlassNavigation.kt`（栏体 / 图标副本行 / 移动透镜三处）使用
@@ -247,7 +247,7 @@ Column(fillMaxSize)                                // 页面根
 - **圆角豁免（悬浮按钮导航）**：「导航栏样式 = 悬浮按钮」后挂载的 `ui/common/FloatingGlassNavButton.kt`
   主按钮与弧上导航项使用 `CircleShape`（圆形是本样式既定形态），为有意设计；该豁免仅限该组件，其余组件不得援引。
   **材质固定为液态玻璃的浅 / 深两档**（浅色 = 白玻璃、深色 = 深色玻璃），**只按 `AppThemeColors.isDark` 取档，
-  不随外观风格（默认 / 复古玻璃）分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」的豁免；
+  不随外观风格（默认 / 复古玻璃 / 白雾玻璃）分档**（本样式自带固定观感，是 3.5 节「组件必须走动态常量」的豁免；
   固定色取自 `theme/Color.kt` 的 `FloatingNavGlassSurface` / `FloatingNavGlassSurfaceDark` /
   `GlassUnselected` / `FloatingNavGlassUnselectedDark`，
   沿用原版图标，图标强调色与接近光效跟随主题色，触边使用半透明主题色玻璃覆盖），组件内不得引入 `AppThemeColors` 的**风格**判断（深浅取档是允许且必须的）。
@@ -361,7 +361,8 @@ Column(fillMaxSize)                                // 页面根
 - 选中项为**独立背景指示器**（不是逐项背景），切换时以 200ms 线性动画滑到目标标签；滚动态标签宽度不齐时宽度同步动画。指示器圆角统一 `AppComponentShape`，玻璃系由组件内部调用 `glassBorder` 补 0.5dp 发丝描边。
 - 指示器底色与文字颜色由组件内部按外观风格分派，**调用方不得传色值**：
   默认风格指示器 `NavWhite`、选中文字 `TextColor`（不跟随主题色，加粗作选中标识）、未选中 `onSurfaceVariant`；
-  复古玻璃 `GlassSurfaceHigh` + `GlassText`/`GlassTextSecondary`。
+  复古玻璃 `GlassSurfaceHigh` + `GlassText`/`GlassTextSecondary`；
+  白雾玻璃指示器 `NavWhite`（白纱）、选中 `TextColor`（深色）、未选中 `PageSecondaryTextColor`（深底浅字）。
 - 标签高度统一 42dp，文字统一 `MaterialTheme.typography.titleMedium`，选中加粗；无障碍统一 `selectable(selected, role = Tab)`。
 - 参数：`tabs`（标签文案）、`selectedIndex`（越界自动收敛）、`onTabSelected`、`modifier`（仅外边距）、`scrollable`（形态开关，默认 false）。
 
@@ -376,7 +377,7 @@ Column(fillMaxSize)                                // 页面根
 | --- | --- | --- |
 | 引擎页顶部分页（玻璃外观） | `EngineScreen.kt` | 等分 |
 
-> 例外：引擎页在默认外观风格下沿用 Miuix `TabRow`（等分分页的既有观感，含动画指示器），仅在玻璃外观下走本组件；新增场景（含默认风格）一律用本组件。
+> 例外：引擎页在默认外观风格下沿用 Miuix `TabRow`（等分分页的既有观感，含动画指示器），仅在复古玻璃与白雾玻璃下走本组件；新增场景（含默认风格）一律用本组件。
 
 ***
 
@@ -577,7 +578,25 @@ Column(fillMaxSize)                                // 页面根
   （液态玻璃底栏、透镜底栏、悬浮按钮导航的主子按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
   只能用半透明面板 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
+- **白雾玻璃外观风格（应用设置 → 外观风格 = 白雾玻璃）**：页面背景为模糊图片底图
+  （`drawable-nodpi/bg_milk_glass.webp`，运行期 40dp 高斯模糊）+ 14% 白纱 + 55% 压暗 + 主题色低透明度环境光；
+  `PageGrey` 透明，页面级文字用 `PageTextColor`（近白），条目正文用 `TextColor`（深灰黑）。
+  `NavWhite` 为 70% 白纱（`MilkSurface`，目标 L≈202），条目直接叠在模糊底图上；弹窗/抽屉面板用
+  `MilkGlassPanelBackground`（同一张页面底图 + 50% 白纱），弹窗内条目用 `DialogItemSurface`
+  （`MilkItemOnPanel` = 45% 白纱；面板已有 50% 白纱，叠加后最终 L≈206，与页面条目视觉一致）。
+  白雾条目**不加**
+  `glassBorder`、不加投影；圆角仍只取「应用圆角调整」统一值（默认 15dp）。
+  Miuix 的 `onBackground` 在该风格下取深色（库内 preference 标题与卡片共用该色槽），
+  因此 Miuix 页顶栏必须使用 `PageTextColor`（`AppTopBar` 默认值已处理；不得再传
+  `MiuixTheme.colorScheme.onBackground`）。
+  此模式下「外观模式」不可用（置灰），色调轮盘保持可用。
+  底部导航保持默认「液态玻璃 · 经典」，不新增导航栏形态；仅做亮玻璃 + 主题色轻染的配色适配
+  （表面亮度高于页面 item，阴影同样减弱），主题色变化时导航栏同步换色。
+
 - **底部抽屉/面板（`ModalBottomSheet`）→ 按「页面灰底」处理**：`ModalBottomSheet` 的 `containerColor` 通常取 `colorScheme.background`（浅/深随外观模式，等同页面背景），因此抽屉内条目（`AppNavItem` 等）必须传 `NavWhite`（灰底白卡），**不要**套用「弹窗白底灰卡」用 `PageGrey`——否则 item 与抽屉背景同色融为一体（如游戏操作抽屉 GameActionsSheet）。
+  白雾玻璃是例外：抽屉面板用 `MilkGlassPanelBackground`（页面底图 + 白纱），条目用
+  `DialogItemSurface`（`MilkItemOnPanel` 45% 白纱；叠加在 50% 面板后与页面条目同亮度），
+  仍保持亮面板/亮条目的层级。
 
 - **游戏操作抽屉（`GameActionsSheet`）关闭拖拽手势**：统一传 `sheetGesturesEnabled = false`，只允许遮罩/返回键关闭。
   原因：M3 `ModalBottomSheet` 的关闭判定是「位移 > 56dp 或速度 > 125dp/s」任一命中即关闭（`BottomSheetDefaults`

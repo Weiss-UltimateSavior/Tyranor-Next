@@ -24,7 +24,7 @@ object AppThemeColors {
     var isDark by mutableStateOf(false)
         private set
 
-    /** 外观风格（默认 / 复古玻璃）；变化时全 App 重组（背景/容器/文字随之切换）。 */
+    /** 外观风格（默认 / 复古玻璃 / 白雾玻璃）；变化时全 App 重组（背景/容器/文字随之切换）。 */
     var appearanceStyle by mutableStateOf(AppearanceStyle.DEFAULT)
         private set
 
@@ -36,11 +36,23 @@ object AppThemeColors {
         private set
 
     /**
-     * 是否处于玻璃系外观（复古玻璃）：透明页面背景、玻璃面、禁用外观模式等规则共用。
+     * 是否处于复古玻璃外观：深色玻璃面、白色文字、禁用外观模式等规则共用。
      * 派生自 [appearanceStyle]，供既有调用点零改动沿用。
      */
     val isGlass: Boolean
         get() = appearanceStyle.isGlass
+
+    /** 是否处于白雾玻璃外观：图片底图 + 白雾条目 + 深色正文。 */
+    val isMilkGlass: Boolean
+        get() = appearanceStyle.isMilkGlass
+
+    /** 页面背景是否为固定深色画面（复古玻璃 / 白雾玻璃），系统栏需浅色图标。 */
+    val hasDarkBackdrop: Boolean
+        get() = appearanceStyle.hasDarkBackdrop
+
+    /** 是否使用固定配色（禁用「深浅色切换」）。 */
+    val hasFixedContentPalette: Boolean
+        get() = appearanceStyle.hasFixedContentPalette
 
     /** 当前主题色的 Android ARGB int，用于传给非 Compose 引擎壳。 */
     val primaryArgb: Int
@@ -56,30 +68,38 @@ object AppThemeColors {
     }
 
     /** 从存储重读主题色与外观风格并广播变更（system 模式按系统当前深/浅解析）。
-     *  玻璃系风格下强制深色（背景固定深色画面）。 */
+     *  复古玻璃固定深色；白雾玻璃固定浅色（条目为亮面黑字），两者都禁用深浅色切换。 */
     fun refresh(context: Context) {
         appearanceStyle = AppSettingsStore.getAppearanceStyle(context)
         primary = parseColorHex(AppSettingsStore.getThemeColorHex(context))
-        isDark = appearanceStyle.isGlass || AppSettingsStore.isDarkEffective(context)
+        isDark = when {
+            appearanceStyle.isGlass -> true
+            appearanceStyle.isMilkGlass -> false
+            else -> AppSettingsStore.isDarkEffective(context)
+        }
         appCornerRadius = AppSettingsStore.getAppCornerRadius(context)
         // 同步主题色快照给 core 启动编排（EngineLauncher 注入引擎 Intent 用），
         // 维持 core 层不反向依赖 theme 的依赖方向。
         ThemeColorPayloadStore.current = ThemeColorPayload(
+            // 引擎壳沿用内容配色：白雾玻璃是亮面深字，不能因为页面底图深就把引擎 UI 标成 dark。
             darkMode = isDark,
             primaryArgb = primaryArgb,
             onPrimaryArgb = 0xFFFFFFFF.toInt(),
             cardArgb = when {
                 appearanceStyle.isGlass -> GlassPanel.toArgb()
+                appearanceStyle.isMilkGlass -> MilkSurfaceHigh.toArgb()
                 isDark -> 0xFF1E1F1F.toInt()
                 else -> 0xFFFFFFFF.toInt()
             },
             textArgb = when {
                 appearanceStyle.isGlass -> GlassText.toArgb()
+                appearanceStyle.isMilkGlass -> MilkText.toArgb()
                 isDark -> 0xFFF0F0F0.toInt()
                 else -> 0xFF14221B.toInt()
             },
             mutedArgb = when {
                 appearanceStyle.isGlass -> GlassTextSecondary.toArgb()
+                appearanceStyle.isMilkGlass -> MilkTextSecondary.toArgb()
                 isDark -> 0xFF9A9A9A.toInt()
                 else -> 0xFF82908A.toInt()
             },

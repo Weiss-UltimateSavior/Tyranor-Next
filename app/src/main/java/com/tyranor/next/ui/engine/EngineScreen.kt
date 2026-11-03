@@ -50,9 +50,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -157,9 +161,9 @@ fun EngineScreen(
             )
             MiuixSettingsTheme {
                 val tabModifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
-                if (AppThemeColors.isGlass) {
-                    // 玻璃外观：Miuix TabRow 不支持指示器描边，改用统一标签栏组件
-                    // （亮卡指示器 + 滑动动画 + 0.5dp 描边，见 AGENTS.md「标签栏统一规范」）
+                if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) {
+                    // 玻璃/白雾外观：Miuix TabRow 的选中文字取 onBackground，会在亮指示器上
+                    // 变成浅色；改用统一标签栏组件（自带亮底深字/深底浅字分派）。
                     SlidingTabRow(
                         tabs = tabs,
                         selectedIndex = selectedTab,
@@ -685,13 +689,20 @@ private fun EngineRowCard(
 ) {
     val bannerWidth = if (compact) 88.dp else 120.dp
     val fadeWidth = minOf(47.dp, bannerWidth * 0.5f)
+    val fadeStart = (bannerWidth - fadeWidth).value / bannerWidth.value
+    // 白雾/复古的卡片底色带透明度，固定色遮罩会留下接缝；让图片自身 alpha 淡出，
+    // 过渡终点直接取卡片背景。默认主题保持原来的 NavWhite 色遮罩，不动其它风格。
+    val useImageFadeMask = AppThemeColors.isMilkGlass || AppThemeColors.isGlass
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        colors = CardDefaults.cardColors(
+            containerColor = NavWhite,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
         shape = AppComponentShape,
     ) {
         Row(
@@ -705,25 +716,51 @@ private fun EngineRowCard(
                     .width(bannerWidth)
                     .fillMaxHeight(),
             ) {
-                Image(
-                    painter = painterResource(iconRes),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                // 图标右侧与卡片背景的渐变遮罩，避免硬切边（44 → 47dp，再加长 3dp）
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(fadeWidth)
-                        .background(
-                            Brush.horizontalGradient(
-                                0f to Color.Transparent,
-                                1f to NavWhite,
+                if (useImageFadeMask) {
+                    Image(
+                        painter = painterResource(iconRes),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                // DstIn 必须先离屏，否则会作用到整张卡片/父层而不是这张图片。
+                                compositingStrategy = CompositingStrategy.Offscreen
+                                clip = true
+                            }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = Brush.horizontalGradient(
+                                        0f to Color.Black,
+                                        fadeStart to Color.Black,
+                                        1f to Color.Transparent,
+                                    ),
+                                    blendMode = BlendMode.DstIn,
+                                )
+                            },
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(iconRes),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    // 默认主题保持原有的 NavWhite 色遮罩（44 → 47dp，再加长 3dp）
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .width(fadeWidth)
+                            .background(
+                                Brush.horizontalGradient(
+                                    0f to Color.Transparent,
+                                    1f to NavWhite,
+                                ),
                             ),
-                        ),
-                )
+                    )
+                }
             }
             Text(
                 title,

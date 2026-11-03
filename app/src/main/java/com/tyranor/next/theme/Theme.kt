@@ -28,7 +28,7 @@ fun TyranorNextTheme(
       tertiary = Amber40,
       background = PageGrey,
       surface = PageGrey,
-      onBackground = TextColor,
+      onBackground = PageTextColor,
       onSurface = TextColor,
     )
   } else {
@@ -39,7 +39,7 @@ fun TyranorNextTheme(
       // 页面背景与组件色取 theme/Color.kt 常量（随深色模式 / 玻璃外观切换）
       background = PageGrey,
       surface = PageGrey,
-      onBackground = TextColor,
+      onBackground = PageTextColor,
       onSurface = TextColor,
     )
   }
