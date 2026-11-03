@@ -44,10 +44,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredGridItems
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,6 +94,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import top.yukonga.miuix.kmp.basic.RadioButton
@@ -203,7 +207,7 @@ fun GameScreen(
     var longPressSaveDetection by remember { mutableStateOf<RpgSaveFormat.Detection?>(null) }
     var longPressPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
 
-    val gridState = rememberLazyGridState()
+    val gridState = rememberLazyStaggeredGridState()
     val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
 
     LaunchedEffect(libraryState.loaded, games, selectedGameUri) {
@@ -472,7 +476,7 @@ private fun GameLibraryContent(
     loaded: Boolean,
     scanning: Boolean,
     scrapingCovers: Boolean,
-    gridState: LazyGridState,
+    gridState: LazyStaggeredGridState,
     dirPickerLaunch: () -> Unit,
     syncMissingCovers: () -> Unit,
     refreshGames: () -> Unit,
@@ -1855,12 +1859,12 @@ private fun LaunchFileDialog(
 }
 
 /**
- * 游戏页默认网格（列数、封面加载优化、卡片名称标签与角标设置均按游戏页设置生效）。
+ * 游戏页默认瀑布流（列数、封面加载优化、卡片名称标签与角标设置均按游戏页设置生效）。
  */
 @Composable
 internal fun GameGrid(
     games: List<ScanGame>,
-    gridState: LazyGridState,
+    gridState: LazyStaggeredGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
 ) {
@@ -1876,17 +1880,17 @@ internal fun GameGrid(
     // 滚动状态只以 provider 形式下发，由封面加载协程读取（见 rememberCoverBitmap）：
     // 若在 item 组合内直接读 gridState.isScrollInProgress，滑动开始/结束会让整屏卡片一并重组。
     val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalItemSpacing = 12.dp,
     ) {
-        gridItems(
+        staggeredGridItems(
             items = games,
-            // 封面批量任务逐项更新时强制重建对应卡片的封面状态；否则 LazyGrid 可能继续复用
+            // 封面批量任务逐项更新时强制重建对应卡片的封面状态；否则列表可能继续复用
             // 以 uri 为身份的旧 item，直到卡片滚出屏幕后才重新读取新的 coverUri。
             key = ::gameCardItemKey,
             contentType = { "game_card" },
@@ -1921,37 +1925,43 @@ internal fun GameCard(
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
     showEngineBadge: Boolean = false,
 ) {
-    Column(modifier) {
-        val engineName = when (game.engine) {
-            EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
-            // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
-            EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
-            // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
-            EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
-            else -> game.engine.displayName
-        }
-        val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
-        val pressModifier = if (onLongClick != null) {
-            Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        } else {
-            Modifier.clickable(onClick = onClick)
-        }
-        // 卡片 1:3（高:宽 = 4:3 立式封面，一行三列）
-        // 封面加载完成后从 0 渐显到 1；占位（引擎色 + 文字）始终在底层，加载前不可见差异
-        val bmp = coverBitmap
-        val coverAlpha by animateFloatAsState(
-            targetValue = if (bmp != null) 1f else 0f,
-            animationSpec = tween(durationMillis = 300),
-            label = "coverFadeIn",
-        )
+    val engineName = when (game.engine) {
+        EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
+        // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
+        EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
+        // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
+        EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
+        else -> game.engine.displayName
+    }
+    val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
+    val pressModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让卡片高低错落（列数不变）
+    val coverAspect = remember(game.uri) {
+        val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
+        0.60f + (hash % 21) / 100f
+    }
+    val bmp = coverBitmap
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (bmp != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "coverFadeIn",
+    )
+    Column(
+        modifier
+            .clip(AppComponentShape)
+            .background(NavWhite)
+            .glassBorder()
+            .then(pressModifier),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(3f / 4f)
-                .clip(AppComponentShape)
-                .background(game.engine.coverColor())
-                .glassBorder()
-                .then(pressModifier),
+                .aspectRatio(coverAspect)
+                .background(game.engine.coverColor()),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1993,13 +2003,20 @@ internal fun GameCard(
                 )
             }
         }
+        // 封面下方延伸的白色信息区（不覆盖封面）：最多两行标题，小号字体、水平居中；
+        // 字号缩小后同步收紧行高与纵向内边距，避免白色区域显得过高
         Text(
             if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+            ),
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
 }
@@ -2011,7 +2028,7 @@ private val neverScrolling: () -> Boolean = { false }
  * 读取游戏封面。
  *
  * [isScrolling] 为「是否正在滑动/惯性滚动」的只读查询，只在 producer 协程内读取：
- * 若在组合期读取（例如以 boolean 参数下发）会让每张卡片订阅 `LazyGridState.isScrollInProgress`，
+ * 若在组合期读取（例如以 boolean 参数下发）会让每张卡片订阅 `LazyStaggeredGridState.isScrollInProgress`，
  * 滑动开始/结束瞬间整屏 item 一起重组，这是滑动起止掉帧的直接来源。
  *
  * 时序：滑动中不启动新解码（保持 [EngineType.coverColor] 占位）→ 静止后解码 → 解码完成再经
