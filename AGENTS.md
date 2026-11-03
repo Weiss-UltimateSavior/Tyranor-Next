@@ -570,7 +570,7 @@ Column(fillMaxSize)                                // 页面根
 - 弹窗内的条目容器（如 `AppNavItem` 传 `containerColor = DialogItemSurface`、手写条目行用
   `DialogItemSurface`） → 与弹窗背景形成对偶反差
 
-- **复古玻璃外观风格（应用设置 → 外观风格 = 复古玻璃）**：页面背景固定深色画面
+- **复古玻璃外观风格（应用设置 → 外观主题 = 复古玻璃）**：页面背景固定深色画面
   （黑灰渐变 + 主题色对角环境光，见 `theme/GlassStyle.kt`），
   `PageGrey` 透明、`TextColor` 恒浅色；卡片/条目/弹窗/输入框统一 0.5dp 发丝描边（`Modifier.glassBorder()`）。
   此模式下「外观模式」不可用（置灰），色调轮盘保持可用（环境光随主题色变化）。
@@ -578,12 +578,12 @@ Column(fillMaxSize)                                // 页面根
   （液态玻璃底栏、透镜底栏、悬浮按钮导航的主子按钮）；弹窗/抽屉是独立窗口，**无法**采样主窗口内容，
   只能用半透明面板 + 遮罩 + 光学描边，不要为它们接 backdrop。
 
-- **白雾玻璃外观风格（应用设置 → 外观风格 = 白雾玻璃）**：页面背景为模糊图片底图
-  （`drawable-nodpi/bg_milk_glass.webp`，运行期 40dp 高斯模糊）+ 14% 白纱 + 55% 压暗 + 主题色低透明度环境光；
+- **白雾玻璃外观风格（应用设置 → 外观主题 = 白雾玻璃）**：页面背景为模糊图片底图
+  （`drawable-nodpi/bg_milk_glass.webp`，运行期 64dp 高斯模糊）+ 16% 白纱 + 45% 压暗 + 主题色低透明度环境光；
   `PageGrey` 透明，页面级文字用 `PageTextColor`（近白），条目正文用 `TextColor`（深灰黑）。
-  `NavWhite` 为 70% 白纱（`MilkSurface`，目标 L≈202），条目直接叠在模糊底图上；弹窗/抽屉面板用
+  `NavWhite` 为 70% 白纱（`MilkSurface`，目标 L≈207），条目直接叠在模糊底图上；弹窗/抽屉面板用
   `MilkGlassPanelBackground`（同一张页面底图 + 50% 白纱），弹窗内条目用 `DialogItemSurface`
-  （`MilkItemOnPanel` = 45% 白纱；面板已有 50% 白纱，叠加后最终 L≈206，与页面条目视觉一致）。
+  （`MilkItemOnPanel` = 45% 白纱；面板已有 50% 白纱，叠加后最终 L≈211，与页面条目视觉一致）。
   白雾条目**不加**
   `glassBorder`、不加投影；圆角仍只取「应用圆角调整」统一值（默认 15dp）。
   Miuix 的 `onBackground` 在该风格下取深色（库内 preference 标题与卡片共用该色槽），

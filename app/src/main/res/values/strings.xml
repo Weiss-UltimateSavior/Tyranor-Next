@@ -30,13 +30,13 @@
     <string name="settings_language_ja">日本語</string>
     <string name="settings_language_en">English</string>
     <string name="settings_color_wheel">色调轮盘</string>
-    <string name="settings_appearance_style">外观风格</string>
+    <string name="settings_appearance_style">外观主题</string>
     <string name="settings_appearance_style_default">默认</string>
     <string name="settings_appearance_style_glass">复古玻璃</string>
     <string name="settings_appearance_style_milk">白雾玻璃</string>
     <string name="settings_app_corner_radius">应用圆角调整</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
-    <string name="settings_disabled_in_glass_style">玻璃外观风格下不可用</string>
+    <string name="settings_disabled_in_glass_style">玻璃外观主题下不可用</string>
     <string name="settings_theme_mode">深浅色切换</string>
     <string name="settings_theme_mode_light">浅色</string>
     <string name="settings_theme_mode_dark">深色</string>

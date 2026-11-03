@@ -27,7 +27,7 @@ import com.tyranor.next.R
 /**
  * 应用根背景统一组件：
  * - 复古玻璃：黑灰三档竖向渐变 + 白色顶部光晕 + 主题色对角环境光；
- * - 白雾玻璃：模糊图片底图 + 14% 白纱 + 主题色环境光 + 轻暗角；
+ * - 白雾玻璃：64dp 模糊图片底图 + 16% 白纱 + 45% 压暗 + 主题色环境光 + 轻暗角；
  * - 默认风格：纯色底 + 主题色粒子（由 [DefaultPageBackgroundLayer] 绘制）。
  * 所有顶层组合（MainActivity / AppScreenScaffold）必须经本组件包裹，否则透明页面背景会露出
  * 窗口底色。内部保留 Surface 以维持 contentColor 语义。
@@ -58,10 +58,10 @@ fun GlassBackground(
 }
 
 /**
- * 白雾玻璃外观的共享底图：模糊图片 + 14% 白纱 + 55% 压暗 + 主题色低透明度环境光。
+ * 白雾玻璃外观的共享底图：模糊图片 + 16% 白纱 + 45% 压暗 + 主题色低透明度环境光。
  *
- * 当前底图是明亮彩色壁纸，必须先压暗到参考图的深色调，否则顶栏白字和亮卡片的
- * 层级都会失效；压暗后再叠白纱/环境光，保留蓝紫粉的低频色场。
+ * 当前底图是明亮彩色壁纸，需要压暗到参考图的深色调，但不能过暗；压暗后再叠白纱/
+ * 环境光，保留蓝紫粉的低频色场。页面使用 64dp 实时模糊，浮层用 40dp。
  *
  * [blurRadius] 允许页面与浮层使用不同强度的实时高斯模糊；图片资源本身也做了轻度
  * 预模糊，API < 31 不支持 [blur] 时仍能保持柔和底图。
@@ -82,8 +82,8 @@ private fun MilkGlassBackdrop(
                 .blur(radius = blurRadius, edgeTreatment = BlurredEdgeTreatment.Rectangle),
         )
         // 先提亮再整体压暗：既保留彩色壁纸的色相，又把明度落到参考图的深色区间。
-        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.14f)))
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)))
+        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.16f)))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
         Box(
             Modifier.fillMaxSize().drawWithCache {
                 val glow = Brush.radialGradient(
@@ -100,13 +100,13 @@ private fun MilkGlassBackdrop(
 /**
  * 白雾玻璃外观的页面背景：共享底图 + 顶部/底部极轻暗角。
  *
- * 亮度关系对齐参考图：彩色底图中性区约 L160，14% 白纱 + 55% 压暗后约 L78；页面条目
- * 叠 [MilkSurface]（70% 白）后落在 L≈202，深色正文对比度约 9:1。
+ * 亮度关系对齐参考图：彩色底图中性区约 L160，16% 白纱 + 45% 压暗后约 L96；页面条目
+ * 叠 [MilkSurface]（70% 白）后落在 L≈207，深色正文对比度约 9:1。
  */
 @Composable
 private fun MilkGlassPageBackgroundLayer() {
     Box(Modifier.fillMaxSize()) {
-        MilkGlassBackdrop(Modifier.fillMaxSize(), blurRadius = 40.dp)
+        MilkGlassBackdrop(Modifier.fillMaxSize(), blurRadius = 64.dp)
         Box(
             Modifier.fillMaxSize().drawWithCache {
                 val vignette = Brush.verticalGradient(
@@ -125,13 +125,13 @@ private fun MilkGlassPageBackgroundLayer() {
  *
  * 面板不铺浅色实底：用户要求浮层背景沿用页面背景。这里用同一张页面底图铺满面板，
  * 既保留页面背景的纹理，又遮住底层卡片/导航文字（直接半透明会让它们重影）。
- * 面板条目叠 [MilkItemOnPanel]（45% 白）；面板本身已有 50% 白纱，最终亮度约 L206，
- * 与页面 70% 条目（L≈202）对齐；面板与条目都使用深色正文。
+ * 面板条目叠 [MilkItemOnPanel]（45% 白）；面板本身已有 50% 白纱，最终亮度约 L211，
+ * 与页面 70% 条目（L≈207）对齐；面板与条目都使用深色正文。
  */
 @Composable
 fun MilkGlassPanelBackground(modifier: Modifier = Modifier) {
     Box(modifier) {
-        MilkGlassBackdrop(Modifier.fillMaxSize(), blurRadius = 28.dp)
+        MilkGlassBackdrop(Modifier.fillMaxSize(), blurRadius = 40.dp)
         Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.50f)))
     }
 }

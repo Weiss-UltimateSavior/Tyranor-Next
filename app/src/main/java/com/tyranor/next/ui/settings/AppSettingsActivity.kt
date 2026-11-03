@@ -198,7 +198,7 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 外观风格：默认 / 复古玻璃 / 白雾玻璃（切换即时全 App 生效并持久化）
+                            // 外观主题：默认 / 复古玻璃 / 白雾玻璃（切换即时全 App 生效并持久化）
                             val appearanceStyles = AppearanceStyle.entries
                             val appearanceLabels = appearanceStyles.map { style ->
                                 stringResource(
