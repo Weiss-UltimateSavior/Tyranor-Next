@@ -44,10 +44,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredGridItems
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,6 +94,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import top.yukonga.miuix.kmp.basic.RadioButton
@@ -123,9 +127,6 @@ import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
-import com.tyranor.next.theme.AdvancedGlassBorder
-import com.tyranor.next.theme.glassShadow
-import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.GlassBorder
@@ -136,7 +137,6 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.CoverBadgeText
 import com.tyranor.next.theme.CoverBadgeBackground
@@ -207,7 +207,7 @@ fun GameScreen(
     var longPressSaveDetection by remember { mutableStateOf<RpgSaveFormat.Detection?>(null) }
     var longPressPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
 
-    val gridState = rememberLazyGridState()
+    val gridState = rememberLazyStaggeredGridState()
     val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
 
     LaunchedEffect(libraryState.loaded, games, selectedGameUri) {
@@ -414,7 +414,6 @@ fun GameScreen(
 }
 
 // 排序键与 Room 预计算列共用 GameSortKeys，保证 SQL 排序与内存排序结果一致（迁移方案阶段 3）。
-// internal：分类仓库首页复用同一排序（与游戏页展示顺序一致）。
 internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
     return when (sortMode) {
         AppSettingsStore.GAME_SORT_BRACKET_TAG -> games.sortedWith(
@@ -477,7 +476,7 @@ private fun GameLibraryContent(
     loaded: Boolean,
     scanning: Boolean,
     scrapingCovers: Boolean,
-    gridState: LazyGridState,
+    gridState: LazyStaggeredGridState,
     dirPickerLaunch: () -> Unit,
     syncMissingCovers: () -> Unit,
     refreshGames: () -> Unit,
@@ -861,14 +860,8 @@ internal fun GameActionsSheet(
         }
     }
 
-    // 玻璃系风格抽屉：高级玻璃用页面背景取色渐变；复古玻璃用不透明色，任何一层都不透底
-    val drawerItemSurface = when {
-        AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
-        AppThemeColors.isGlass -> GlassSurfaceSolid
-        else -> NavWhite
-    }
-    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
-    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
+    // 玻璃系风格抽屉：复古玻璃用不透明色，任何一层都不透底
+    val drawerItemSurface = if (AppThemeColors.isGlass) GlassSurfaceSolid else NavWhite
 
     ModalBottomSheet(
         onDismissRequest = {
@@ -882,45 +875,28 @@ internal fun GameActionsSheet(
         // 极易误关（列表到顶后的剩余手势/惯性会转交抽屉）。关闭后仅能通过遮罩/返回键关闭，
         // 内容滚动与点击不受影响。参见 AGENTS.md「游戏操作抽屉」约定。
         sheetGesturesEnabled = false,
-        // 高级玻璃面板底色透明，取色渐变画在内容层（不能挂 Surface 外层 modifier：
-        // 抽屉位置由内部 anchors 布局偏移决定，外层绘制会落在未偏移位置，与玻璃描边踩过同一个坑）；
         // 复古玻璃用不透明面板色（GlassPanel 带 10% 透明度会透出底层内容）
-        containerColor = when {
-            AppThemeColors.isAdvancedGlass -> Color.Transparent
-            AppThemeColors.isGlass -> GlassPanelSolid
-            else -> MaterialTheme.colorScheme.background
-        },
+        containerColor = if (AppThemeColors.isGlass) GlassPanelSolid else MaterialTheme.colorScheme.background,
         // 玻璃系风格加深化背景，避免抽屉与底层内容混在一起被看成半透明
-        scrimColor = when {
-            AppThemeColors.isAdvancedGlass -> Color.Black.copy(alpha = 0.6f)
-            AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
-            else -> Color.Black.copy(alpha = 0.32f)
+        scrimColor = if (AppThemeColors.isGlass) {
+            Color.Black.copy(alpha = 0.6f)
+        } else {
+            Color.Black.copy(alpha = 0.32f)
         },
         contentWindowInsets = { WindowInsets(0.dp) },
-        // 顶部圆角与弹窗内条目圆角（AppNavItem 8dp）保持一致
+        // 顶部圆角与组件统一圆角保持一致
         shape = AppSheetTopShape,
         // 玻璃描边只能画在抽屉真实顶边（dragHandle 槽首位）；不能挂 Surface 外层 modifier，
         // 否则描边会按未偏移的布局位置落到背景里形成一条白线。
-        // 高级玻璃的把手条用面板渐变的顶端取色铺底，与下方内容层的渐变无缝衔接。
         dragHandle = {
             // Column 默认水平 Start 对齐会让把手贴左；需显式居中，描边线仍铺满整宽
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(
-                        if (advancedPanelSurface != null) {
-                            Modifier.background(advancedPanelSurface.topColor)
-                        } else {
-                            Modifier
-                        },
-                    ),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (AppThemeColors.isGlass) {
                     Box(
-                        Modifier.fillMaxWidth().height(0.5.dp).background(
-                            if (AppThemeColors.isAdvancedGlass) AdvancedGlassBorder else GlassBorder,
-                        ),
+                        Modifier.fillMaxWidth().height(0.5.dp).background(GlassBorder),
                     )
                 }
                 BottomSheetDefaults.DragHandle()
@@ -936,15 +912,7 @@ internal fun GameActionsSheet(
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = sheetMaxHeight)
-                // 高级玻璃取色渐变画在内容层（随抽屉偏移一起移动）
-                .then(
-                    if (advancedPanelSurface != null) {
-                        Modifier.background(advancedPanelSurface.brush)
-                    } else {
-                        Modifier
-                    },
-                ),
+                .heightIn(max = sheetMaxHeight),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -1370,8 +1338,6 @@ private fun CoverSearchDialog(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
-    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
-    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
     /** 离开二级：取消在飞请求并清干净二级状态，避免残留状态或迟到写入影响一级。 */
     fun leaveDrillDown() {
@@ -1471,8 +1437,7 @@ private fun CoverSearchDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                // 高级玻璃面板为较高不透明度的灰玻璃膜，遮罩略加深即可
-                .background(Color.Black.copy(alpha = if (AppThemeColors.isAdvancedGlass) 0.6f else 0.5f)),
+                .background(Color.Black.copy(alpha = 0.5f)),
         ) {
             Box(
                 Modifier
@@ -1510,16 +1475,9 @@ private fun CoverSearchDialog(
                         .fillMaxWidth()
                         .widthIn(max = CoverSearchDialogMaxWidth)
                         .then(dialogHeightModifier)
-                        .glassShadow()
                         .clip(AppComponentShape)
-                        // 高级玻璃用页面背景取色渐变，其余玻璃档用高不透明度玻璃面板
-                        .then(
-                            if (advancedPanelSurface != null) {
-                                Modifier.background(advancedPanelSurface.brush)
-                            } else {
-                                Modifier.background(if (AppThemeColors.isGlass) GlassPanel else NavWhite)
-                            },
-                        )
+                        // 玻璃系用高不透明度玻璃面板
+                        .background(if (AppThemeColors.isGlass) GlassPanel else NavWhite)
                         .glassBorder()
                         .pointerInput(Unit) { detectTapGestures { } },
                 ) {
@@ -1901,12 +1859,12 @@ private fun LaunchFileDialog(
 }
 
 /**
- * 游戏页默认网格（internal：分类仓库首页复用，列数/滚动优化/卡片名称标签与角标设置均与游戏页一致）。
+ * 游戏页默认瀑布流（列数、封面加载优化、卡片名称标签与角标设置均按游戏页设置生效）。
  */
 @Composable
 internal fun GameGrid(
     games: List<ScanGame>,
-    gridState: LazyGridState,
+    gridState: LazyStaggeredGridState,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
 ) {
@@ -1922,17 +1880,17 @@ internal fun GameGrid(
     // 滚动状态只以 provider 形式下发，由封面加载协程读取（见 rememberCoverBitmap）：
     // 若在 item 组合内直接读 gridState.isScrollInProgress，滑动开始/结束会让整屏卡片一并重组。
     val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
+    LazyVerticalStaggeredGrid(
+        columns = StaggeredGridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalItemSpacing = 12.dp,
     ) {
-        gridItems(
+        staggeredGridItems(
             items = games,
-            // 封面批量任务逐项更新时强制重建对应卡片的封面状态；否则 LazyGrid 可能继续复用
+            // 封面批量任务逐项更新时强制重建对应卡片的封面状态；否则列表可能继续复用
             // 以 uri 为身份的旧 item，直到卡片滚出屏幕后才重新读取新的 coverUri。
             key = ::gameCardItemKey,
             contentType = { "game_card" },
@@ -1967,38 +1925,43 @@ internal fun GameCard(
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
     showEngineBadge: Boolean = false,
 ) {
-    Column(modifier) {
-        val engineName = when (game.engine) {
-            EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
-            // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
-            EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
-            // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
-            EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
-            else -> game.engine.displayName
-        }
-        val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
-        val pressModifier = if (onLongClick != null) {
-            Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        } else {
-            Modifier.clickable(onClick = onClick)
-        }
-        // 卡片 1:3（高:宽 = 4:3 立式封面，一行三列）
-        // 封面加载完成后从 0 渐显到 1；占位（引擎色 + 文字）始终在底层，加载前不可见差异
-        val bmp = coverBitmap
-        val coverAlpha by animateFloatAsState(
-            targetValue = if (bmp != null) 1f else 0f,
-            animationSpec = tween(durationMillis = 300),
-            label = "coverFadeIn",
-        )
+    val engineName = when (game.engine) {
+        EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
+        // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
+        EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
+        // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
+        EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
+        else -> game.engine.displayName
+    }
+    val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
+    val pressModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+    // 瀑布流：按游戏 uri 稳定取 0.60–0.80 的封面宽高比，让卡片高低错落（列数不变）
+    val coverAspect = remember(game.uri) {
+        val hash = game.uri.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }
+        0.60f + (hash % 21) / 100f
+    }
+    val bmp = coverBitmap
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (bmp != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "coverFadeIn",
+    )
+    Column(
+        modifier
+            .clip(AppComponentShape)
+            .background(NavWhite)
+            .glassBorder()
+            .then(pressModifier),
+    ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(3f / 4f)
-                .glassShadow()
-                .clip(AppComponentShape)
-                .background(game.engine.coverColor())
-                .glassBorder()
-                .then(pressModifier),
+                .aspectRatio(coverAspect)
+                .background(game.engine.coverColor()),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2026,7 +1989,7 @@ internal fun GameCard(
                 if (showEngineBadge) Text(
                     game.engine.abbr,
                     style = MaterialTheme.typography.labelSmall,
-                    // 角标样式固定（半透明黑底 + 白字，见 theme/Color.kt），不随主题色/色调切换变化
+                    // 角标样式固定（半透明黑底 + 白字，见 theme/Color.kt），不随主题色变化
                     color = CoverBadgeText,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -2040,13 +2003,20 @@ internal fun GameCard(
                 )
             }
         }
+        // 封面下方延伸的白色信息区（不覆盖封面）：最多两行标题，小号字体、水平居中；
+        // 字号缩小后同步收紧行高与纵向内边距，避免白色区域显得过高
         Text(
             if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title,
-            style = MaterialTheme.typography.bodyMedium,
-            maxLines = 1,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+            ),
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
 }
@@ -2058,7 +2028,7 @@ private val neverScrolling: () -> Boolean = { false }
  * 读取游戏封面。
  *
  * [isScrolling] 为「是否正在滑动/惯性滚动」的只读查询，只在 producer 协程内读取：
- * 若在组合期读取（例如以 boolean 参数下发）会让每张卡片订阅 `LazyGridState.isScrollInProgress`，
+ * 若在组合期读取（例如以 boolean 参数下发）会让每张卡片订阅 `LazyStaggeredGridState.isScrollInProgress`，
  * 滑动开始/结束瞬间整屏 item 一起重组，这是滑动起止掉帧的直接来源。
  *
  * 时序：滑动中不启动新解码（保持 [EngineType.coverColor] 占位）→ 静止后解码 → 解码完成再经

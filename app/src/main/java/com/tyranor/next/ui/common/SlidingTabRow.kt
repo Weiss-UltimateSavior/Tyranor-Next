@@ -39,8 +39,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
-import com.tyranor.next.theme.AdvancedGlassTextSecondary
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassSurfaceHigh
@@ -73,12 +71,12 @@ private const val IndicatorDurationMillis = 200
  *
  * 选中项是**独立背景指示器**（不是逐项背景），切换时指示器以 200ms 线性动画滑到目标标签，
  * 宽度同步动画（滚动态标签宽度不齐时宽度也平滑过渡）。指示器与文字颜色由组件内部按
- * 外观风格分派（默认 / 复古玻璃 / 高级玻璃），圆角统一 [AppComponentShape]，
+ * 外观风格分派（默认 / 复古玻璃），圆角统一 [AppComponentShape]，
  * 玻璃系由 [glassBorder] 补 0.5dp 描边；调用方**不得**自行传色值或手写指示器。
  *
  * 两种形态：
  * - [scrollable] = false（默认）：标签等分宽度，适合数量固定、宽度一致的分页（如引擎页顶部分页）；
- * - [scrollable] = true：标签按内容宽度横向滚动，适合数量多/宽度不齐的分类（如首页分类栏）；
+ * - [scrollable] = true：标签按内容宽度横向滚动，适合数量多/宽度不齐的分类；
  *   两端内置 12dp 留白，选中项在屏幕外（程序化回退/进程恢复）时自动滚动到可见（首次直接定位，
  *   之后带动画）。
  *
@@ -274,7 +272,6 @@ private fun TabLabel(
 @Composable
 private fun tabIndicatorContainer(): Color = when {
     LocalAppDialogContent.current -> DialogItemSurface
-    AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
     AppThemeColors.isGlass -> GlassSurfaceHigh
     else -> NavWhite
 }
@@ -284,7 +281,6 @@ private fun tabIndicatorContainer(): Color = when {
 private fun tabContentColor(selected: Boolean): Color = when {
     selected && AppThemeColors.isGlass -> GlassText
     selected -> TextColor
-    AppThemeColors.isAdvancedGlass -> AdvancedGlassTextSecondary
     AppThemeColors.isGlass -> GlassTextSecondary
     LocalAppDialogContent.current -> UnselectedGrey
     else -> MaterialTheme.colorScheme.onSurfaceVariant

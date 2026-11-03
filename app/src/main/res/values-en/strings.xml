@@ -33,14 +33,12 @@
     <string name="settings_appearance_style">Appearance style</string>
     <string name="settings_appearance_style_default">Default</string>
     <string name="settings_appearance_style_glass">Retro glass</string>
-    <string name="settings_appearance_style_advanced_glass">Advanced glass</string>
-    <string name="settings_appearance_style_advanced_glass_desc">Blurred cover-collage background (real-time blur on floating elements on Android 12+)</string>
+    <string name="settings_app_corner_radius">App corner radius</string>
+    <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">Unavailable in glass appearance styles</string>
-    <string name="settings_theme_mode">Appearance</string>
+    <string name="settings_theme_mode">Light/dark mode</string>
     <string name="settings_theme_mode_light">Light</string>
     <string name="settings_theme_mode_dark">Dark</string>
-    <string name="settings_default_theme_gradient">Default theme gradient</string>
-    <string name="settings_tone_switch">Tone switch</string>
     <string name="settings_engine_tabs">Categorize engine page</string>
     <string name="settings_side_rail">Tablet side rail</string>
     <string name="settings_side_rail_summary">Move navigation to the side on tablets and large windows; keep it at the bottom when off</string>
@@ -57,7 +55,6 @@
     <string name="settings_home_style">Home style</string>
     <string name="settings_home_style_native">Default</string>
     <string name="settings_home_style_web">Web</string>
-    <string name="settings_home_style_category">Category Library</string>
     <string name="settings_home_web_url">Web home URL</string>
     <string name="settings_home_web_custom">Custom URL</string>
     <string name="settings_home_web_custom_summary">Enter a custom URL</string>
@@ -90,14 +87,10 @@
     <string name="settings_game_card_hide_title_tag">Hide name tags on cards</string>
     <string name="settings_game_sort">Game sorting</string>
     <string name="settings_engine_settings">Engine settings</string>
-    <string name="settings_app_summary">Application-level preferences</string>
     <string name="settings_cover_scraper">Cover scraping</string>
-    <string name="settings_cover_scraper_summary">Configure cover sources, priority, and authorization</string>
     <string name="settings_update_check">Check for updates</string>
     <string name="settings_update_checking">Checking for updates</string>
-    <string name="settings_update_check_summary">Fetch update information from GitHub</string>
     <string name="settings_join_group">Join community</string>
-    <string name="settings_join_group_summary">Open the official chat groups</string>
     <string name="settings_game_dirs_title">Game folders</string>
     <string name="settings_no_game_dirs">No game folders yet</string>
     <string name="settings_invalid_suffix">invalid</string>
@@ -259,10 +252,6 @@
 
     <string name="home_recent_empty">No recently opened games</string>
     <string name="home_quick_launch">Quick launch</string>
-    <string name="home_category_all">All</string>
-    <string name="home_category_quick">Quick</string>
-    <string name="home_category_recent">Recent</string>
-    <string name="home_category_empty">No games in this category</string>
     <string name="home_empty_slot_content_description">Empty slot</string>
 
     <string name="engine_settings_save_content_description">Save settings</string>

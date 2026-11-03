@@ -16,9 +16,9 @@ object AppSettingsStore {
     const val KEY_LIQUID_GLASS_ENHANCE = "liquid_glass_enhance"
     const val KEY_APPEARANCE_STYLE = "appearance_style"
     const val KEY_SCAN_DEPTH = "scan_depth"
+    const val KEY_APP_CORNER_RADIUS = "app_corner_radius"
     const val KEY_LANGUAGE = "language"
     const val KEY_THEME_MODE = "theme_mode"
-    const val KEY_TONE_SWITCH = "tone_switch"
     const val KEY_GAME_SORT = "game_sort"
 
     /** 已启用的第三方 APK 运行时模块包名集合；默认空集（新发现模块默认关闭）。 */
@@ -27,7 +27,7 @@ object AppSettingsStore {
     /** System4 一次性定点重检测迁移标志（纠正旧库中被误判为 XSYS35 的 System4 游戏）。 */
     private const val KEY_MIGRATION_XSYS4_RESCAN_DONE = "migration_xsys4_rescan_done"
 
-    /** 首页样式：原生（最近打开/快捷启动）/ 网页 / 分类仓库。 */
+    /** 首页样式：原生（最近打开/快捷启动）/ 网页。 */
     const val KEY_HOME_STYLE = "home_style"
 
     /** Web 首页展示的地址。 */
@@ -42,8 +42,6 @@ object AppSettingsStore {
     /** 游戏页卡片左上角引擎类型角标；默认关。 */
     const val KEY_GAME_CARD_BADGE = "game_card_badge"
 
-    /** 默认外观风格的页面背景渐变（纯色+柔光/颜色渐变）；默认开。 */
-    const val KEY_DEFAULT_THEME_GRADIENT = "default_theme_gradient"
     const val KEY_ENGINE_TABS = "engine_tabs"
     const val KEY_SIDE_RAIL = "side_rail"
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
@@ -103,8 +101,11 @@ object AppSettingsStore {
     /** 文件夹扫描深度默认值（层级，1..5）。 */
     const val DEFAULT_SCAN_DEPTH = 3
 
-    /** 色调切换默认关闭：中性灰页面背景 + 白色组件。 */
-    const val DEFAULT_TONE_SWITCH_ENABLED = false
+    /** 应用统一圆角可选档位（dp）：5..50，步长 5，共十档。 */
+    val APP_CORNER_RADIUS_STEPS: List<Int> = listOf(5, 10, 15, 20, 25, 30, 35, 40, 45, 50)
+
+    /** 应用统一圆角默认值（dp）：15dp 档。 */
+    const val DEFAULT_APP_CORNER_RADIUS = 15
 
     /** 游戏排序：按标题字母/字符顺序。 */
     const val GAME_SORT_ALPHA = "alpha"
@@ -124,9 +125,6 @@ object AppSettingsStore {
     /** 卡片引擎角标默认值：关。 */
     const val DEFAULT_GAME_CARD_BADGE = false
 
-    /** 默认主题渐变默认值：开（应用设置可关闭，回退纯色页面背景）。 */
-    const val DEFAULT_DEFAULT_THEME_GRADIENT = true
-
     /**
      * 底部导航栏样式：经典 MD（Material3 导航栏）。
      * 持久化值沿用历史的 `"default"`：此前显式选过「默认」的用户升级后保持原样，不被静默改样式。
@@ -145,7 +143,7 @@ object AppSettingsStore {
     /**
      * 导航栏样式「未显式设置」：仅作内存态 / 归一化结果，**不会持久化**。
      * 实际样式由 [resolveNavStyle] 按外观风格解析——默认外观风格为液态玻璃 · 透镜，
-     * 玻璃系外观风格（复古 / 高级）保持经典 MD（其悬浮玻璃条形态）。
+     * 玻璃系外观风格（复古玻璃）保持经典 MD（其悬浮玻璃条形态）。
      */
     const val NAV_STYLE_AUTO = "auto"
 
@@ -154,9 +152,6 @@ object AppSettingsStore {
 
     /** 首页样式：Web 首页（内置 WebView 展示所选网址）。 */
     const val HOME_STYLE_WEB = "web"
-
-    /** 首页样式：分类仓库（分类栏：全部/快捷/最近/各引擎类型 + 游戏页同款网格）。 */
-    const val HOME_STYLE_CATEGORY = "category"
 
     /** 首页样式默认值：原生。 */
     const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
@@ -202,10 +197,7 @@ object AppSettingsStore {
     /** 卡片引擎角标内存态：设置页切换后游戏页卡片即时重组。 */
     val gameCardBadgeState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_GAME_CARD_BADGE)
 
-    /** 默认主题渐变内存态：设置页切换后页面背景即时重组。 */
-    val defaultThemeGradientState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_DEFAULT_THEME_GRADIENT)
-
-    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页/分类仓库形态。 */
+    /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页形态。 */
     val homeStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_STYLE)
 
     /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
@@ -341,7 +333,7 @@ object AppSettingsStore {
     /**
      * 把「未显式设置」解析为实际样式（纯函数，便于单元测试）：
      * 默认外观风格 → 液态玻璃 · 透镜（Android 13 以下回退液态玻璃 · 经典）；
-     * 玻璃系外观风格（复古 / 高级）→ 经典 MD（其悬浮玻璃条形态）。显式选择只做版本兼容归一化，不随外观风格改变。
+     * 玻璃系外观风格（复古玻璃）→ 经典 MD（其悬浮玻璃条形态）。显式选择只做版本兼容归一化，不随外观风格改变。
      */
     fun resolveNavStyle(style: String, enhancedSupported: Boolean, glassAppearance: Boolean): String {
         val normalized = normalizeNavStyle(style, enhancedSupported)
@@ -392,7 +384,7 @@ object AppSettingsStore {
         return x.coerceIn(0f, 1f) to y.coerceIn(0f, 1f)
     }
 
-    /** 当前外观风格（默认 / 复古玻璃 / 高级玻璃；未知值归一为默认）。 */
+    /** 当前外观风格（默认 / 复古玻璃；未知值归一为默认）。 */
     fun getAppearanceStyle(c: Context): AppearanceStyle =
         AppearanceStyle.fromStorage(prefs(c).getString(KEY_APPEARANCE_STYLE, null))
 
@@ -406,6 +398,21 @@ object AppSettingsStore {
     fun setScanDepth(c: Context, depth: Int) =
         prefs(c).edit().putInt(KEY_SCAN_DEPTH, depth.coerceIn(1, 5)).apply()
 
+    /**
+     * 应用统一圆角归一：吸附到 [APP_CORNER_RADIUS_STEPS] 中最近的档位
+     * （纯函数，便于 JVM 单测；非法/越界值同样收敛到档位内）。
+     */
+    fun normalizeAppCornerRadius(value: Int): Int =
+        APP_CORNER_RADIUS_STEPS.minByOrNull { kotlin.math.abs(it.toLong() - value) }
+            ?: DEFAULT_APP_CORNER_RADIUS
+
+    fun getAppCornerRadius(c: Context): Int =
+        normalizeAppCornerRadius(prefs(c).getInt(KEY_APP_CORNER_RADIUS, DEFAULT_APP_CORNER_RADIUS))
+
+    fun setAppCornerRadius(c: Context, radius: Int) {
+        prefs(c).edit().putInt(KEY_APP_CORNER_RADIUS, normalizeAppCornerRadius(radius)).apply()
+    }
+
     /** 首次组合时从持久化加载「卡片隐藏名称标签」到内存态（幂等）。 */
     fun initGameCardHideTitleTag(c: Context) {
         gameCardTitleTagState.value = isGameCardHideTitleTag(c)
@@ -417,20 +424,6 @@ object AppSettingsStore {
     fun setGameCardHideTitleTag(c: Context, hidden: Boolean) {
         prefs(c).edit().putBoolean(KEY_GAME_CARD_HIDE_TITLE_TAG, hidden).apply()
         gameCardTitleTagState.value = hidden
-    }
-
-    /** 首次组合时从持久化加载「卡片风格」到内存态（幂等）。 */
-    /** 首次组合时从持久化加载「默认主题渐变」到内存态（幂等）。 */
-    fun initDefaultThemeGradient(c: Context) {
-        defaultThemeGradientState.value = isDefaultThemeGradientEnabled(c)
-    }
-
-    fun isDefaultThemeGradientEnabled(c: Context): Boolean =
-        prefs(c).getBoolean(KEY_DEFAULT_THEME_GRADIENT, DEFAULT_DEFAULT_THEME_GRADIENT)
-
-    fun setDefaultThemeGradientEnabled(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_DEFAULT_THEME_GRADIENT, enabled).apply()
-        defaultThemeGradientState.value = enabled
     }
 
     /** 首次组合时从持久化加载「卡片引擎角标」到内存态（幂等）。 */
@@ -446,10 +439,12 @@ object AppSettingsStore {
         }
     }
 
-    /** 首页样式归一：web / category 精确接受，其余（含空/未知）回退原生（纯函数，便于单测）。 */
+    /**
+     * 首页样式归一：仅 web 精确接受，其余（含空/未知/历史值 "category"）回退原生
+     * （纯函数，便于单测）。
+     */
     fun normalizeHomeStyle(style: String?): String = when (style) {
         HOME_STYLE_WEB -> HOME_STYLE_WEB
-        HOME_STYLE_CATEGORY -> HOME_STYLE_CATEGORY
         else -> HOME_STYLE_NATIVE
     }
 
@@ -596,13 +591,6 @@ object AppSettingsStore {
 
     fun setThemeMode(c: Context, mode: String) =
         prefs(c).edit().putString(KEY_THEME_MODE, mode).apply()
-
-    /** 色调切换：开启时使用白色页面背景 + 中性灰组件；关闭时使用中性灰页面背景 + 白色组件。 */
-    fun isToneSwitchEnabled(c: Context): Boolean =
-        prefs(c).getBoolean(KEY_TONE_SWITCH, DEFAULT_TONE_SWITCH_ENABLED)
-
-    fun setToneSwitchEnabled(c: Context, enabled: Boolean) =
-        prefs(c).edit().putBoolean(KEY_TONE_SWITCH, enabled).apply()
 
     /** 系统当前是否深色模式（资源配置 uiMode）。 */
     fun isSystemDark(c: Context): Boolean =

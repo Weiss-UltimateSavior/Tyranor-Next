@@ -54,7 +54,6 @@ import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
@@ -130,7 +129,7 @@ fun EngineScreen(modifier: Modifier = Modifier) {
                         tabs = tabs,
                         selectedTabIndex = selectedTab,
                         onTabSelected = { selectedTab = it },
-                        // 圆角与组件统一入口同源：默认 8dp
+                        // 圆角与组件统一入口同源：取「应用圆角调整」值
                         cornerRadius = AppComponentCornerRadius,
                         // 容器背景透明（只保留选中指示器）：Miuix 默认取 surface，深色下呈不透明黑块
                         colors = TabRowDefaults.tabRowColors(backgroundColor = Color.Transparent),
@@ -357,7 +356,6 @@ private fun EngineRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
-            .glassShadow()
             .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),
@@ -414,7 +412,6 @@ private fun ExternalJumpRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .glassShadow()
             .glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite),

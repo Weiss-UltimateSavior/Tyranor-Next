@@ -45,7 +45,6 @@ import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
@@ -239,7 +238,7 @@ internal fun EngineModuleManagementScreen() {
                 if (lastError != null) {
                     item(key = "load_error") {
                         MiuixCard(
-                            modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                            modifier = Modifier.fillMaxWidth().glassBorder(),
                             cornerRadius = AppComponentCornerRadius,
                         ) {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -368,7 +367,7 @@ private fun EngineModuleCard(
     )
 
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+        modifier = Modifier.fillMaxWidth().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {

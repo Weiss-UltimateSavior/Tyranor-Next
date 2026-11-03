@@ -66,8 +66,6 @@ import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NoticeDotRed
@@ -106,7 +104,7 @@ import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -266,7 +264,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_add_game_dir),
@@ -323,47 +321,44 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
                 item {
                     // 工具入口：引擎设置；输入与手柄、解包 / 封包入口已迁至侧边栏「妙妙工具」面板
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_engine_settings),
-                                startAction = { SettingsItemIcon(R.drawable.ic_engine_manage) },
-                                onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
-                            )
-                        }
-                    }
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_engine_settings),
+                        iconRes = R.drawable.ic_engine_manage,
+                        onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
+                    )
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_app_title),
-                                summary = stringResource(R.string.settings_app_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_app) },
-                                onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_cover_scraper),
-                                summary = stringResource(R.string.settings_cover_scraper_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_game_cover) },
-                                onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
-                            )
-                            ArrowPreference(
-                                title = if (checkingUpdate) stringResource(R.string.settings_update_checking) else stringResource(R.string.settings_update_check),
-                                summary = stringResource(R.string.settings_update_check_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_update, showBadge = hasUpdate) },
-                                onClick = { checkUpdate() },
-                            )
-                            ArrowPreference(
-                                title = stringResource(R.string.settings_join_group),
-                                summary = stringResource(R.string.settings_join_group_summary),
-                                startAction = { SettingsItemIcon(R.drawable.ic_settings_group) },
-                                 onClick = {
-                                     showGroupDialog = true
-                                 },
-                             )
-                        }
-                    }
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_app_title),
+                        iconRes = R.drawable.ic_settings_app,
+                        onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_cover_scraper),
+                        iconRes = R.drawable.ic_game_cover,
+                        onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = if (checkingUpdate) {
+                            stringResource(R.string.settings_update_checking)
+                        } else {
+                            stringResource(R.string.settings_update_check)
+                        },
+                        iconRes = R.drawable.ic_settings_update,
+                        showBadge = hasUpdate,
+                        onClick = { checkUpdate() },
+                    )
+                }
+                item {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_join_group),
+                        iconRes = R.drawable.ic_settings_group,
+                        onClick = { showGroupDialog = true },
+                    )
                 }
                 item { BottomInsetSpacer() }
             }
@@ -1012,14 +1007,41 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     }
 }
 
+/**
+ * 单条功能入口卡：一张 MiuixCard 只承载一条 ArrowPreference。
+ * 每个入口独立成卡，避免多个不相关功能挤在同一张卡里；卡片间距由外层列表统一提供，
+ * 多行同类设置仍由 `EngineCard` 这类分组卡承载。
+ */
+@Composable
+private fun SettingsEntryCard(
+    title: String,
+    @DrawableRes iconRes: Int,
+    modifier: Modifier = Modifier,
+    showBadge: Boolean = false,
+    onClick: () -> Unit,
+) {
+    MiuixCard(
+        modifier = modifier.fillMaxWidth().glassBorder(),
+        cornerRadius = AppComponentCornerRadius,
+    ) {
+        Column(Modifier.padding(vertical = 4.dp)) {
+            ArrowPreference(
+                title = title,
+                startAction = { SettingsItemIcon(iconRes, showBadge = showBadge) },
+                onClick = onClick,
+            )
+        }
+    }
+}
+
 @Composable
 private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false) {
     Box(modifier = Modifier.padding(end = 6.dp).size(24.dp)) {
         Image(
             painter = painterResource(iconRes),
             contentDescription = null,
-            // 深色模式下整体染白，保证低亮度背景上的可读性
-            colorFilter = if (AppThemeColors.isDark) ColorFilter.tint(Color.White) else null,
+            // 左侧图标统一跟随主题色调（Miuix 页面取 MiuixTheme 的 primary）
+            colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
             modifier = Modifier.fillMaxSize(),
         )
         if (showBadge) {
@@ -1667,7 +1689,7 @@ private fun WinlatorValueDialog(
 
 @Composable
 internal fun EngineCard(header: String, content: @Composable () -> Unit) {
-    MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Text(
                 header,

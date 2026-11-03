@@ -45,13 +45,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import com.tyranor.next.theme.AppComponentShape
 import kotlinx.coroutines.launch
 
@@ -85,8 +83,6 @@ internal fun AppAlertDialog(
     val currentOnDismiss by rememberUpdatedState(onDismissRequest)
     val currentDismissEnabled by rememberUpdatedState(dismissEnabled)
     val focusManager = LocalFocusManager.current
-    // 高级玻璃：面板渐变从页面背景取色（独立窗口采不到 backdrop，用跨窗口取色替代）
-    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
     fun dismiss() {
         if (!currentDismissEnabled || dismissing.value) return
@@ -104,8 +100,8 @@ internal fun AppAlertDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false,
             dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
     ) {
-        // 窗口变暗遮罩，点击关闭；高级玻璃面板为较高不透明度的灰玻璃膜，遮罩略加深即可
-        val scrimAlpha = if (AppThemeColors.isAdvancedGlass) 0.6f else 0.5f
+        // 窗口变暗遮罩，点击关闭
+        val scrimAlpha = 0.5f
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -131,23 +127,11 @@ internal fun AppAlertDialog(
                     // 消费卡片区域点击，避免穿透到遮罩
                     .pointerInput(Unit) { detectTapGestures { } }
                     .then(if (dismissing.value) Modifier.clearAndSetSemantics {} else Modifier)
-                    .glassShadow()
-                    .then(
-                        if (advancedPanelSurface != null) {
-                            Modifier.background(advancedPanelSurface.brush, AppComponentShape)
-                        } else {
-                            Modifier
-                        },
-                    )
                     .glassBorder(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 colors = CardDefaults.cardColors(
-                    // 玻璃系风格用高不透明度玻璃面板保证可读性；高级玻璃由取色渐变承担底色
-                    containerColor = when {
-                        AppThemeColors.isAdvancedGlass -> Color.Transparent
-                        AppThemeColors.isGlass -> GlassPanel
-                        else -> NavWhite
-                    },
+                    // 玻璃系风格用高不透明度玻璃面板保证可读性
+                    containerColor = if (AppThemeColors.isGlass) GlassPanel else NavWhite,
                     contentColor = TextColor,
                 ),
                 shape = AppComponentShape,

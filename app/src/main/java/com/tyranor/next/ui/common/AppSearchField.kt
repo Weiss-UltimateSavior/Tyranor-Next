@@ -21,7 +21,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.SearchBar
@@ -85,7 +84,6 @@ fun AppSearchField(
                 inputField = {
                     val fieldModifier = Modifier
                         .fillMaxWidth()
-                        .glassShadow(CircleShape)
                         .glassBorder(CircleShape)
                         .semantics { contentDescription = resolvedInputLabel }
                     val fieldLeadingIcon: @Composable () -> Unit = {

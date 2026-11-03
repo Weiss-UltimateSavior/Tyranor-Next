@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import androidx.compose.ui.graphics.Color as ComposeColor
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppScreenActivity
@@ -32,7 +31,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 引擎设置入口页 Activity：由设置页「引擎设置」条目进入，聚合各引擎细分设置入口。 */
@@ -81,7 +80,7 @@ internal fun EngineSettingsMenuScreen() {
             ) {
                 EngineSettingsKind.entries.forEach { kind ->
                     item {
-                        MiuixCard(modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                             Column(Modifier.padding(vertical = 4.dp)) {
                                 val title = engineSettingsKindTitle(kind)
                                 ArrowPreference(

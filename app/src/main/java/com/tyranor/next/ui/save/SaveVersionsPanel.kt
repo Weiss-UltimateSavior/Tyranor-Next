@@ -38,7 +38,6 @@ import com.tyranor.next.core.game.save.sync.SaveVersionSource
 import com.tyranor.next.core.game.save.sync.WebDavSettingsStore
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
@@ -52,7 +51,7 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.text.SimpleDateFormat
@@ -208,7 +207,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
         }
         if (loadError == null) {
-            MiuixCard(Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+            MiuixCard(Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     when {
                         loading -> Text(
@@ -268,7 +267,7 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 }
             }
         }
-        MiuixCard(Modifier.fillMaxWidth().glassShadow().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+        MiuixCard(Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 AppNavItem(
                     title = stringResource(R.string.save_sync_execute),
@@ -396,7 +395,7 @@ private fun SaveSelectionRecoveryPanel(
         needed = withContext(Dispatchers.IO) { service.needsSelectionRecovery(game) }
     }
     if (!needed) return
-    MiuixCard(Modifier.fillMaxWidth().padding(bottom = 12.dp).glassShadow().glassBorder(),
+    MiuixCard(Modifier.fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
         cornerRadius = AppComponentCornerRadius) {
         AppNavItem(
             title = stringResource(R.string.save_version_recover),

@@ -193,7 +193,7 @@ UI 层按页面域继续拆分：
 - **语言**：Kotlin（引擎层含 Java 桥接代码）
 - **UI**：Jetpack Compose + Material 3 + [Miuix](https://github.com/compose-miuix-ui/miuix)
 - **导航**：底部导航 `NavigationBar`；主 Tab 内容页使用水平移动切换，详情/设置等独立 Activity 进入使用向上翻页、退出使用向下翻页
-- **顶栏与外观**：顶栏与正文恢复上下分离，不叠加顶栏渐进模糊（[#133](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/133)）；默认背景渐变与底栏/侧栏/悬浮按钮的玻璃效果不变
+- **顶栏与外观**：顶栏与正文恢复上下分离，不叠加顶栏渐进模糊（[#133](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/133)）；默认风格使用纯色页面背景并叠加主题色粒子漂浮，底栏/侧栏/悬浮按钮的玻璃效果不变
 - **构建**：Gradle 9.5.1 / AGP 9.2.1 / Kotlin 2.x + Compose Compiler，`compileSdk 37`、`minSdk 26`、`targetSdk 36`
 - **持久化**：Room v3（游戏库、扫描根、最近打开时间、快捷启动、单游戏覆盖、识别缓存与运行时模块绑定）+ SharedPreferences（应用/引擎设置、跨进程配置及旧库恢复镜像）
 - **文件访问**：Storage Access Framework（SAF）管理外部游戏目录，`documentFile` 库辅助
