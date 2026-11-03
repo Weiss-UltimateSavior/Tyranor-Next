@@ -20,8 +20,10 @@ class GraphicsSettingsCodecTest {
     }
 
     @Test fun legacyLanczosSharpnessJsonDoesNotBecomeAntiRinging() {
-        // The pre-micro-parameter encoder wrote an inert sharpness 0.4 for lanczos that was never
-        // user-facing; it must migrate to the definition default, not become the AR strength.
+        // Historically, inert 0.4 was written for lanczos before dedicated parameters, and in
+        // fac66a78..fbc6f0c7 the lanczos sharpness temporarily exposed the AR slider; to avoid
+        // migration ambiguity the legacy `sharpness` is not migrated into the anti-ringing
+        // strength — the definition default applies instead.
         val raw = JSONObject().put("version", 2).put("enabled", true)
             .put("chain", JSONArray().put(JSONObject().put("id", "lanczos").put("enabled", true)
                 .put("sharpness", 0.4).put("scaleMode", "fit").put("widthScale", 1.0).put("heightScale", 1.0)))

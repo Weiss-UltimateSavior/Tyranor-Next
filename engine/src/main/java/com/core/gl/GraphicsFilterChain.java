@@ -132,6 +132,12 @@ public final class GraphicsFilterChain {
                 } else if (parameters && fields.length == 5) {
                     double val = Double.parseDouble(fields[1]);
                     if ("bicubic".equals(fields[0])) {
+                        // The single-knob bicubic wire predates independent B/C: the value cannot
+                        // map onto the current parameters, so in-range wires decode to defaults —
+                        // but malformed values (out of range, or NaN which fails every comparison)
+                        // must fail closed like the lanczos/cas branches instead of silently
+                        // yielding defaults.
+                        if (!(val >= 0 && val <= 1)) throw new IllegalArgumentException("invalid graphics parameters");
                         result.add(new Step(fields[0], enabled, defaultCasSharpness(fields[0]),
                                 defaultBicubicB(fields[0]), defaultBicubicC(fields[0]),
                                 defaultLanczosAntiRingingStrength(fields[0]), fields[2],

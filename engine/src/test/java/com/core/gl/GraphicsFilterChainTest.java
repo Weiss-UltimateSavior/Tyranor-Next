@@ -176,4 +176,29 @@ public final class GraphicsFilterChainTest {
                 GraphicsFilterChain.parse("v2:lanczos~0.7~fit~1.0~1.0").encode());
         assertEquals("v1:", GraphicsFilterChain.fromLegacy("lanczos").encode());
     }
+
+    @Test public void legacySixParameterConstructorIgnoresLegacySharpnessForDedicatedParameters() {
+        // The 6-parameter constructor is the legacy single-knob wire shape (audit RN3): bicubic
+        // and lanczos carry dedicated parameters now, so the legacy sharpness must NOT migrate
+        // into them (the definition defaults apply, matching the settings codec policy); cas
+        // keeps its own value.
+        GraphicsFilterChain.Step lanczos = new GraphicsFilterChain.Step("lanczos", true, 0.7, "fit", 1.0, 1.0);
+        assertEquals(0.5, lanczos.lanczosAntiRingingStrength, 0.0);
+        assertEquals(GraphicsFilterChain.defaultCasSharpness("lanczos"), lanczos.casSharpness, 0.0);
+        GraphicsFilterChain.Step bicubic = new GraphicsFilterChain.Step("bicubic", true, 0.8, "factor", 1.0, 1.0);
+        assertEquals(0.33, bicubic.bicubicB, 0.0);
+        assertEquals(0.33, bicubic.bicubicC, 0.0);
+        GraphicsFilterChain.Step cas = new GraphicsFilterChain.Step("cas", true, 0.6, "none", 1.0, 1.0);
+        assertEquals(0.6, cas.casSharpness, 0.0);
+    }
+
+    @Test public void fiveTokenBicubicWireFailsClosedOnOutOfRangeValues() {
+        // In-range 5-token bicubic wires decode to the definition defaults (the single value
+        // cannot map onto independent B/C — pinned above). Out-of-range values and NaN are
+        // malformed: fail closed exactly like the lanczos/cas branches instead of silently
+        // yielding defaults (audit RN4 strictness asymmetry).
+        assertNull(GraphicsFilterChain.parse("v2:bicubic~99~fit~1.0~1.0"));
+        assertNull(GraphicsFilterChain.parse("v2:bicubic~-1~fit~1.0~1.0"));
+        assertNull(GraphicsFilterChain.parse("v2:bicubic~NaN~fit~1.0~1.0"));
+    }
 }
