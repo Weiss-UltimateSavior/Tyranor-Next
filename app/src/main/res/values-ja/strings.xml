@@ -163,6 +163,11 @@
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">携帯機</string>
     <string name="engine_tab_web">Web</string>
+    <string name="engine_storage_title">ストレージ概要</string>
+    <string name="engine_storage_game_usage">ゲーム使用量 %1$s</string>
+    <string name="engine_storage_remaining">空き容量 %1$s</string>
+    <string name="engine_storage_counts">ゲーム %1$d · エンジン %2$d</string>
+    <string name="engine_storage_ring_label">ゲーム使用量</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
     <string name="engine_emulator_ppsspp_gold">PPSSPP ゴールド版</string>
     <string name="engine_emulator_eden">Eden</string>

@@ -163,6 +163,11 @@
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">主机</string>
     <string name="engine_tab_web">网页</string>
+    <string name="engine_storage_title">存储概览</string>
+    <string name="engine_storage_game_usage">游戏占用 %1$s</string>
+    <string name="engine_storage_remaining">剩余空间 %1$s</string>
+    <string name="engine_storage_counts">游戏 %1$d · 引擎 %2$d</string>
+    <string name="engine_storage_ring_label">游戏占用</string>
     <string name="engine_emulator_ppsspp">PPSSPP</string>
     <string name="engine_emulator_ppsspp_gold">PPSSPP 黄金版</string>
     <string name="engine_emulator_eden">Eden</string>

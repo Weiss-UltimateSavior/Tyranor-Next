@@ -1,6 +1,12 @@
 package com.tyranor.next.ui.engine
 
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
+import android.os.StatFs
+import android.provider.DocumentsContract
 import androidx.annotation.StringRes
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -10,8 +16,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -30,11 +38,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -46,6 +59,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
@@ -64,9 +78,14 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.settings.artVersionOptions
+import java.io.File
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import androidx.compose.ui.graphics.Color
@@ -74,7 +93,10 @@ import android.widget.Toast
 
 /** 引擎页：列表行展示已集成的游戏引擎。 */
 @Composable
-fun EngineScreen(modifier: Modifier = Modifier) {
+fun EngineScreen(
+    modifier: Modifier = Modifier,
+    gameCount: Int = 0,
+) {
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
@@ -92,6 +114,19 @@ fun EngineScreen(modifier: Modifier = Modifier) {
     var showExternalJumpDialog by remember { mutableStateOf(false) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
     var emulatorDialogEngine by remember { mutableStateOf<EngineType?>(null) }
+    // 内部存储读取是常数级开销，先同步显示；游戏目录大小在后台用批量查询补齐，
+    // 避免首次进入时卡片长时间停在加载态。
+    val internalStorage = remember { readInternalStorage() }
+    val gameDirsBytes by produceState<Long?>(initialValue = null, gameCount) {
+        value = withContext(Dispatchers.IO) {
+            GameDirsSizeCache.getOrCompute(context, gameCount)
+        }
+    }
+    val storageStats = StorageStats(
+        internalTotalBytes = internalStorage.totalBytes,
+        gameBytes = gameDirsBytes ?: 0L,
+        freeBytes = internalStorage.freeBytes,
+    )
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         externalInstallStates = refreshExternalInstallStates(context, engines)
@@ -151,6 +186,15 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp + glassNavBottomInset()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // 存储概览作为列表首项，随列表一起滚动（顶栏与分类栏保持固定）
+            item(key = "storage_overview", contentType = "storage_overview") {
+                StorageOverviewCard(
+                    gameCount = gameCount,
+                    engineCount = engines.distinctBy { engineDisplayName(it) }.size,
+                    stats = storageStats,
+                    gameBytesLoading = gameDirsBytes == null,
+                )
+            }
             items(
                 items = tabEngines,
                 key = { it.name },
@@ -342,6 +386,231 @@ fun EngineScreen(modifier: Modifier = Modifier) {
             confirmButton = {},
         )
     }
+}
+
+/** 本机存储概览：内部存储 + 已添加游戏目录的总占用比例，附剩余空间与库数量。 */
+@Composable
+private fun StorageOverviewCard(
+    gameCount: Int,
+    engineCount: Int,
+    stats: StorageStats,
+    gameBytesLoading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .glassBorder(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = NavWhite,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        shape = AppComponentShape,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_engine_storage),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurface),
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        stringResource(R.string.engine_storage_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(
+                        R.string.engine_storage_game_usage,
+                        if (gameBytesLoading) "…" else ByteFormats.formatBinarySize(stats.gameBytes),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(
+                        R.string.engine_storage_remaining,
+                        ByteFormats.formatBinarySize(stats.freeBytes),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+                Text(
+                    stringResource(R.string.engine_storage_counts, gameCount, engineCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            StorageRing(
+                ratio = stats.ratio,
+                loading = gameBytesLoading,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun StorageRing(
+    ratio: Float,
+    loading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val safeRatio = ratio.coerceIn(0f, 1f)
+    val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val progressColor = MaterialTheme.colorScheme.primary
+    Box(modifier.size(92.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 10.dp.toPx()
+            val inset = stroke / 2f
+            val arcSize = Size(size.width - stroke, size.height - stroke)
+            val topLeft = Offset(inset, inset)
+            drawArc(
+                color = trackColor,
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+            if (!loading) {
+                drawArc(
+                    color = progressColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * safeRatio,
+                    useCenter = false,
+                    topLeft = topLeft,
+                    size = arcSize,
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                if (loading) "…" else "${(safeRatio * 100).roundToInt()}%",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                stringResource(R.string.engine_storage_ring_label),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private data class InternalStorage(
+    val totalBytes: Long,
+    val freeBytes: Long,
+)
+
+private fun readInternalStorage(): InternalStorage = runCatching {
+    val statFs = StatFs(Environment.getDataDirectory().absolutePath)
+    val total = statFs.totalBytes
+    InternalStorage(
+        totalBytes = total,
+        freeBytes = statFs.availableBytes,
+    )
+}.getOrElse { InternalStorage(0L, 0L) }
+
+private data class StorageStats(
+    val internalTotalBytes: Long,
+    /** 已添加游戏目录的总大小（环的分子）。 */
+    val gameBytes: Long,
+    val freeBytes: Long,
+) {
+    /** 严格按「游戏目录 / 内部总容量」；游戏目录超过内部总量时夹到 100%。 */
+    val ratio: Float
+        get() = if (internalTotalBytes <= 0L) {
+            0f
+        } else {
+            (gameBytes.toDouble() / internalTotalBytes).toFloat().coerceIn(0f, 1f)
+        }
+}
+
+/** 游戏目录大小缓存：按「根列表 + 游戏数」记忆，避免切页/重组重复遍历。 */
+private object GameDirsSizeCache {
+    private var key: String? = null
+    private var size: Long = 0L
+
+    @Synchronized
+    fun getOrCompute(context: Context, gameCount: Int): Long {
+        val roots = GameLibraryFacade.loadRoots(context)
+        val cacheKey = "$gameCount|" + roots.joinToString("|")
+        if (key == cacheKey) return size
+        val computed = roots.sumOf { directorySizeBytes(context, it) }
+        key = cacheKey
+        size = computed
+        return computed
+    }
+}
+
+/** 统计单个已添加目录的大小；SAF 目录走 DocumentsContract 批量查询，file:// 走 File 遍历。 */
+private fun directorySizeBytes(context: Context, root: String): Long = runCatching {
+    val uri = Uri.parse(root)
+    when (uri.scheme) {
+        "file" -> {
+            val path = uri.path ?: return@runCatching 0L
+            File(path).walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }
+        "content" -> treeSizeBytes(context, uri)
+        else -> 0L
+    }
+}.getOrDefault(0L)
+
+/**
+ * SAF 目录大小：每次查询直接取子项的 DOCUMENT_ID / MIME_TYPE / SIZE。
+ * 相比 `DocumentFile.listFiles()` 不再逐项创建对象/额外查询元数据，目录多时快一个量级。
+ */
+private fun treeSizeBytes(context: Context, treeUri: Uri): Long {
+    val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull() ?: return 0L
+    val resolver = context.contentResolver
+    val projection = arrayOf(
+        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+        DocumentsContract.Document.COLUMN_MIME_TYPE,
+        DocumentsContract.Document.COLUMN_SIZE,
+    )
+    var total = 0L
+    val stack = ArrayDeque<String>()
+    stack.addLast(rootId)
+    while (stack.isNotEmpty()) {
+        val parentId = stack.removeLast()
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+        runCatching {
+            resolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val mimeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val sizeCol = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                if (idCol < 0 || mimeCol < 0) return@use
+                while (cursor.moveToNext()) {
+                    val mime = cursor.getString(mimeCol)
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        cursor.getString(idCol)?.let { stack.addLast(it) }
+                    } else if (sizeCol >= 0 && !cursor.isNull(sizeCol)) {
+                        total += cursor.getLong(sizeCol).coerceAtLeast(0L)
+                    }
+                }
+            }
+        }
+    }
+    return total
 }
 
 @Composable

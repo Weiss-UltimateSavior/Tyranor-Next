@@ -619,7 +619,7 @@ private fun ColumnScope.MainTabPages(
                 onSearchQueryChanged = libraryViewModel::onSearchQueryChanged,
                 onAddManualGame = libraryViewModel::addManualGame,
               )
-              2 -> EngineScreen(Modifier.fillMaxSize())
+              2 -> EngineScreen(Modifier.fillMaxSize(), gameCount = libraryState.games.size)
               3 -> SettingsScreen(Modifier.fillMaxSize())
             }
           }
