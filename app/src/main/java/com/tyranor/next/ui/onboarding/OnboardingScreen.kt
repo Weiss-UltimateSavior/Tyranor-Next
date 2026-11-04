@@ -178,17 +178,35 @@ fun OnboardingCoachOverlay(
     )
     val primary = MaterialTheme.colorScheme.primary
     var tooltipBounds by remember(safeStep) { mutableStateOf<Rect?>(null) }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    var overlayBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coordinates ->
+                val bounds = coordinates.boundsInRoot()
+                if (overlayBoundsInRoot != bounds) overlayBoundsInRoot = bounds
+            },
+    ) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val overlayWidthPx = with(density) { maxWidth.toPx() }
         val overlayHeightPx = with(density) { maxHeight.toPx() }
-        val needsMeasuredTarget = safeStep == CoachAnchor.ENGINE || safeStep == CoachAnchor.SETTINGS
+        // 目标控件和提示气泡上报的是 root 坐标；横屏平板的引导层可能带有
+        // 系统栏/侧栏偏移，因此绘制前统一转换到引导层自己的局部坐标。
+        val overlayOrigin = overlayBoundsInRoot?.let { Offset(it.left, it.top) } ?: Offset.Zero
+        // 游戏页四个顶部按钮在横屏平板重排时不能使用比例回退矩形；
+        // 等待真实控件上报后再绘制，避免高亮落在工具栏中间的错误位置。
+        val needsMeasuredTarget = safeStep != CoachAnchor.HOME
         val hasMeasuredTarget = targetBounds?.isEmpty == false
         val showTarget = !needsMeasuredTarget || hasMeasuredTarget
-        val targetRect = if (showTarget) {
-            targetBounds ?: coachFallbackRect(safeStep, overlayWidthPx, overlayHeightPx)
-        } else {
-            Rect.Zero
+        val targetRect = when {
+            !showTarget -> Rect.Zero
+            targetBounds == null -> coachFallbackRect(safeStep, overlayWidthPx, overlayHeightPx)
+            else -> Rect(
+                left = targetBounds.left - overlayOrigin.x,
+                top = targetBounds.top - overlayOrigin.y,
+                right = targetBounds.right - overlayOrigin.x,
+                bottom = targetBounds.bottom - overlayOrigin.y,
+            )
         }
         val targetLeft = targetRect.left.coerceIn(0f, overlayWidthPx)
         val targetTop = targetRect.top.coerceIn(0f, overlayHeightPx)
@@ -229,16 +247,61 @@ fun OnboardingCoachOverlay(
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
                     style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx()),
                 )
-                tooltipBounds?.let { tooltip ->
+                tooltipBounds?.let {
+                    val tooltip = Rect(
+                        left = it.left - overlayOrigin.x,
+                        top = it.top - overlayOrigin.y,
+                        right = it.right - overlayOrigin.x,
+                        bottom = it.bottom - overlayOrigin.y,
+                    )
                     val drawnTarget = Rect(targetLeft, targetTop, targetRight, targetBottom)
-                    val connector = if (drawnTarget.bottom <= tooltip.top) {
-                        Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.top) to
-                            Offset(drawnTarget.center.x, drawnTarget.bottom)
-                    } else if (drawnTarget.top >= tooltip.bottom) {
-                        Offset(tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right), tooltip.bottom) to
-                            Offset(drawnTarget.center.x, drawnTarget.top)
-                    } else {
-                        Offset(tooltip.left, tooltip.center.y) to Offset(drawnTarget.right, drawnTarget.center.y)
+                    val horizontalOverlap = drawnTarget.left <= tooltip.right &&
+                        drawnTarget.right >= tooltip.left
+                    val connector = when {
+                        // 目标在提示卡片上方：两端分别落在提示卡片上边和目标下边，
+                        // 每个端点都限制在自身矩形内，避免连线悬空在卡片外。
+                        drawnTarget.bottom <= tooltip.top -> {
+                            if (horizontalOverlap) {
+                                Offset(tooltip.center.x, tooltip.top) to
+                                    Offset(drawnTarget.center.x, drawnTarget.bottom)
+                            } else {
+                                Offset(
+                                    drawnTarget.center.x.coerceIn(tooltip.left, tooltip.right),
+                                    tooltip.top,
+                                ) to Offset(
+                                    tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right),
+                                    drawnTarget.bottom,
+                                )
+                            }
+                        }
+                        // 目标在提示卡片下方。
+                        drawnTarget.top >= tooltip.bottom -> {
+                            if (horizontalOverlap) {
+                                Offset(tooltip.center.x, tooltip.bottom) to
+                                    Offset(drawnTarget.center.x, drawnTarget.top)
+                            } else {
+                                Offset(
+                                    drawnTarget.center.x.coerceIn(tooltip.left, tooltip.right),
+                                    tooltip.bottom,
+                                ) to Offset(
+                                    tooltip.center.x.coerceIn(drawnTarget.left, drawnTarget.right),
+                                    drawnTarget.top,
+                                )
+                            }
+                        }
+                        // 两者高度相交时，按左右关系连接相邻边缘。
+                        drawnTarget.left >= tooltip.right -> {
+                            Offset(tooltip.right, tooltip.center.y) to
+                                Offset(drawnTarget.left, drawnTarget.center.y)
+                        }
+                        drawnTarget.right <= tooltip.left -> {
+                            Offset(tooltip.left, tooltip.center.y) to
+                                Offset(drawnTarget.right, drawnTarget.center.y)
+                        }
+                        else -> {
+                            Offset(tooltip.center.x, tooltip.center.y) to
+                                Offset(drawnTarget.center.x, drawnTarget.center.y)
+                        }
                     }
                     drawLine(
                         color = primary.copy(alpha = 0.72f),
