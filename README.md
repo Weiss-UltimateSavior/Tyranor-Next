@@ -81,62 +81,6 @@ iOS版本计划中...
 
 开发与维护文档：[仓库规范](AGENTS.md) · [架构说明](ARCHITECTURE.md) · [功能规格与验收清单](SPEC.md) · [领域术语](CONTEXT.md) · [变更记录](CHANGELOG.md)。专题方案与 `.archify/` 图表保留其生成时的上下文；当前实现以源码及上述架构/规格说明为准。
 
-### 模块划分
-
-| 模块       | 职责                                                                                            |
-| -------- | --------------------------------------------------------------------------------------------- |
-| `app`    | Android 应用壳：Compose UI、功能抽象层、配置、封面、存档、授权、后台更新等应用侧能力                                           |
-| `engine` | 底层引擎运行时核心：SDL2/SDL3、Kirikiri TVP、krkrsdl3、ONScripter、Artemis、Siglus、FVP（rfvp）、Tyrano、Native/JNI 与引擎宿主 Activity |
-
-### 三层目录架构
-
-当前项目按职责归类为三层，依赖方向固定为：
-
-```
-界面 UI 交互层 -> 功能抽象层 -> 底层引擎层
-```
-
-| 层级        | 目录                                         | 职责                                                                                                     |
-| --------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| 底层引擎层     | `engine/`                                  | KRKR/Kirikiroid、krkrsdl3、ONS、Artemis、Siglus、FVP（rfvp）、Tyrano、SDL/Cocos/IJK、Native/JNI、引擎宿主 Activity、引擎资源与 Native 插件底层加载 |
-| 功能抽象层     | `app/src/main/java/com/tyranor/next/core/` | 游戏扫描、游戏模型、启动编排、封面抓取、存档管理、在线补丁、应用/引擎/单游戏配置、授权、后台更新                                                      |
-| 界面 UI 交互层 | `app/src/main/java/com/tyranor/next/ui/`   | Compose 页面、Activity 壳、弹窗、导航、顶部栏、搜索框、用户输入、加载态与错误态                                                       |
-
-功能抽象层按领域继续拆分：
-
-- `core/game`：游戏模型、扫描、启动、存档管理
-- `core/engine`：引擎类型、内置引擎插件启动与安装编排、外置 APK 引擎模块注册与启动协议；`core/engine/runtime` 负责第三方 APK 运行时模块的发现、启用与交棒
-- `core/cover`：封面抓取、来源聚合、批量任务
-- `core/patch`：KRKR 在线补丁
-- `core/settings`：应用级配置、引擎级配置、单游戏配置
-- `core/auth`：Hikarinagi OAuth 授权与 token 管理
-- `core/updater`：后台更新检查与通知
-- `core/unpack`：Artemis 启动封包解包辅助；XP3 解包/封包独立工具的核心逻辑与 SAF 中转
-
-UI 层按页面域继续拆分：
-
-- `ui/main`：主入口、底部导航与全局页面状态
-- `ui/home`：首页
-- `ui/game`：游戏库、游戏卡片、封面操作、游戏动作弹窗
-- `ui/engine`：引擎页
-- `ui/settings`：应用设置、引擎设置入口、引擎/单游戏设置页面
-- `ui/runtime`：引擎模块管理页（第三方 APK 运行时模块的发现与启用）
-- `ui/cover`：封面来源与批量抓取设置
-- `ui/patch`：KRKR 在线补丁页面
-- `ui/save`：存档管理页面
-- `ui/archive`：XP3 解包 / 封包独立工具页
-- `ui/auth`：OAuth 回调 Activity
-- `ui/common`：公共 UI 组件、弹窗、占位页、顶部栏/输入框等复用组件
-
-### 技术栈
-
-- **语言**：Kotlin（引擎层含 Java 桥接代码）
-- **UI**：Jetpack Compose + Material 3 + [Miuix](https://github.com/compose-miuix-ui/miuix)
-- **导航**：底部导航 `NavigationBar`；主 Tab 内容页使用水平移动切换，详情/设置等独立 Activity 进入使用向上翻页、退出使用向下翻页
-- **顶栏与外观**：顶栏与正文恢复上下分离，不叠加顶栏渐进模糊（[#133](https://github.com/Weiss-UltimateSavior/Tyranor-Next/issues/133)）；默认风格使用纯色页面背景并叠加主题色粒子漂浮，底栏/侧栏/悬浮按钮的玻璃效果不变
-- **构建**：Gradle 9.5.1 / AGP 9.2.1 / Kotlin 2.x + Compose Compiler，`compileSdk 37`、`minSdk 26`、`targetSdk 36`
-- **持久化**：Room v3（游戏库、扫描根、最近打开时间、快捷启动、单游戏覆盖、识别缓存与运行时模块绑定）+ SharedPreferences（应用/引擎设置、跨进程配置及旧库恢复镜像）
-- **文件访问**：Storage Access Framework（SAF）管理外部游戏目录，`documentFile` 库辅助
 
 ### 引擎集成设计
 
