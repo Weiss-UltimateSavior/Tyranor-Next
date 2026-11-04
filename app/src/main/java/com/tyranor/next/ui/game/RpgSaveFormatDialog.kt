@@ -81,7 +81,7 @@ internal fun RpgSaveFormatDialog(
 
 /**
  * 挂起版确认入口：供非 Compose 的透明蹦床（GameShortcutActivity）使用，行为与 Compose 版一致，
- * 遵循 AppAlertDialog 弹窗规范（白底 / 8dp 圆角 / 统一排版）。
+ * 遵循 AppAlertDialog 弹窗规范（白底 / 统一圆角 / 统一排版）。
  */
 suspend fun ComponentActivity.awaitRpgSaveFormatChoice(
     standardCount: Int,

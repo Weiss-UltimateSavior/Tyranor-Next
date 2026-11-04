@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.theme.PageSecondaryTextColor
 
 /**
  * 占位页面：顶部栏复用统一组件 [AppTopBar]，正文居中显示标题和一句用于区分的话。
@@ -30,7 +31,7 @@ internal fun PlaceholderPage(title: String, description: String, modifier: Modif
             Text(
                 description,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = PageSecondaryTextColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp),
             )

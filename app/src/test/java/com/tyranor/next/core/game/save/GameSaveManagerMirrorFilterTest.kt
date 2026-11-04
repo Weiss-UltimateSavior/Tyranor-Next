@@ -16,7 +16,7 @@ import org.junit.rules.TemporaryFolder
 
 class GameSaveManagerMirrorFilterTest {
     @get:Rule
-    val temporaryFolder = TemporaryFolder()
+    val temporaryFolder = TemporaryFolder(File(System.getProperty("java.io.tmpdir")).canonicalFile)
 
     @Test
     fun mirrorForcedListAndExportExcludeNestedEmptyPlaceholders() {

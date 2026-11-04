@@ -69,8 +69,9 @@ import com.tyranor.next.core.unpack.baseNameWithoutExtension
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
@@ -370,7 +371,7 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                             Text(
                                 stringResource(R.string.archive_empty_list),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = PageSecondaryTextColor,
                             )
                         }
                     } else {
@@ -486,6 +487,7 @@ private fun DirStrip(
         Text(
             name.ifBlank { "-" },
             style = MaterialTheme.typography.bodyMedium,
+            color = TextColor,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
@@ -500,7 +502,7 @@ private fun PaneHeader(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = PageSecondaryTextColor,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -594,7 +596,7 @@ private fun StatusBar(vm: ArchiveViewModel) {
         Text(
             text,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = PageSecondaryTextColor,
             modifier = Modifier.padding(top = 2.dp),
         )
     }
@@ -669,9 +671,9 @@ private fun BigAction(label: String, onClick: () -> Unit, enabled: Boolean) {
 @Composable
 private fun ArchiveCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().glassShadow(AppComponentShape).glassBorder(AppComponentShape),
+        modifier = Modifier.fillMaxWidth().glassBorder(AppComponentShape),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = NavWhite),
+        colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
         shape = AppComponentShape,
     ) {
         Column(Modifier.fillMaxWidth().padding(14.dp)) {

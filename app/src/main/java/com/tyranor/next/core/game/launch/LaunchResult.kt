@@ -4,6 +4,7 @@ import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEngineLaunchResult
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
+import com.tyranor.next.core.game.save.sync.SaveSyncError
 
 /**
  * KRKR 可移动存储镜像准备的失败阶段（app 侧视图模型）。
@@ -40,6 +41,7 @@ sealed interface LaunchResult {
         /** 无法把游戏 URI 解析为本地目录路径。 */
         data object GameDirUnresolved : Failure
         data class EthornellPrepareFailed(val error: EthornellPrepareError) : Failure
+        data class SavePreparationFailed(val error: SaveSyncError) : Failure
 
         /** 已打开「管理所有文件」系统授权页，用户返回后需再次启动。 */
         data object AllFilesAccessRequested : Failure

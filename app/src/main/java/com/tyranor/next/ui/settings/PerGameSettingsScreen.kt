@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -59,8 +61,8 @@ import com.tyranor.next.core.settings.RenPyOverride
 import com.tyranor.next.core.settings.RpgMakerOverride
 import com.tyranor.next.core.settings.RuffleOverride
 import com.tyranor.next.core.settings.WinlatorOverride
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
@@ -83,7 +85,7 @@ import kotlinx.coroutines.runInterruptible
 import org.json.JSONObject
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -720,7 +722,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 AppTopBar(
                     title = game.title,
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(painterResource(R.drawable.ic_save), stringResource(R.string.common_save), MiuixTheme.colorScheme.primary) {
                             save()
@@ -1414,6 +1416,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     sanitize = { it.filter { ch -> ch.isDigit() }.take(5) },
                                     allowEmpty = false,
                                     validate = { it.toIntOrNull()?.let { port -> port in 1..65535 } == true },
+                                    keyboardType = KeyboardType.Number,
                                 ) { webShellPort = it }
                             }
                         }
@@ -1645,7 +1648,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+        modifier = Modifier.fillMaxWidth().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {
@@ -1886,6 +1889,7 @@ private fun WinlatorContainerRows(
         hint = stringResource(R.string.engine_settings_winlator_container_id_summary_per_game),
         sanitize = { it.filter { ch -> ch.isDigit() }.take(6) },
         summaryOverride = idSummaryOverride,
+        keyboardType = KeyboardType.Number,
     ) { onContainerIdChange(it?.takeIf { value -> value.isNotBlank() }) }
     OverrideText(
         label = stringResource(R.string.engine_settings_winlator_container_name_title),
@@ -1910,6 +1914,7 @@ private fun OverrideText(
     sanitize: ((String) -> String)? = null,
     allowEmpty: Boolean = true,
     validate: (String) -> Boolean = { true },
+    keyboardType: KeyboardType = KeyboardType.Text,
     summaryOverride: String? = null,
     onSet: (String?) -> Unit,
 ) {
@@ -1942,6 +1947,8 @@ private fun OverrideText(
                             onSearch = { if (canConfirm) { onSet(normalized); showDialog = false } },
                             leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                             iconContentDescription = label,
+                            imeAction = ImeAction.Done,
+                            keyboardType = keyboardType,
                             textStyle = MaterialTheme.typography.bodyMedium,
                         )
                         Text(

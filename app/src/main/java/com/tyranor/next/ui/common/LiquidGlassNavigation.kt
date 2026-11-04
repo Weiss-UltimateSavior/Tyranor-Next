@@ -2,67 +2,55 @@ package com.tyranor.next.ui.common
 
 import android.os.Build
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.GlassEdgeStrokeAlpha
 import com.tyranor.next.theme.DarkGrey
 import com.tyranor.next.theme.glassEdgeStroke
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /** 底部导航栏的液态玻璃导航项（文字 + 图标资源）。 */
 @Immutable
@@ -74,8 +62,7 @@ data class LiquidGlassNavItem(
 /**
  * 液态玻璃 · 经典底栏（参考 RinneMobile 流体玻璃导航样式）：
  * 通过 [com.kyant.backdrop] 对页面内容做 vibrancy + blur 采样，呈现“看穿”的毛玻璃质感；
- * 选中项有跟随的主题色玻璃焦点胶囊；支持长按后左右拖动切换页面（移植自 RinneMobile）。
- * 悬浮于内容之上，圆角 16dp。
+ * 选中项仅通过图标颜色变化标识，无焦点胶囊；圆角取「应用圆角调整」的统一值。
  */
 @Composable
 fun LiquidGlassNavigationBar(
@@ -86,65 +73,34 @@ fun LiquidGlassNavigationBar(
     items: List<LiquidGlassNavItem>,
     onItemClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    /**
-     * 是否允许传 `Highlight`（高光）。
-     *
-     * `false` 时本档不画高光。它只应在「**需要** AGSL 而 AGSL 不可用」时被传成 `false`：
-     * 库的 `HighlightStyle.Default` 在 API 33+ 会 `obtainRuntimeShader { RuntimeShader(...) }`，
-     * 而高光由库节点在 attach/draw 期间自行构造、调用方无法 catch——透镜档探测失败回退到本档时，
-     * 若不掐掉这处依赖，兜底就等于「从一个会崩的档退回另一个会崩的档」。
-     *
-     * 注意 **API 31–32 不是这种情况**：那里没有 `RuntimeShader`，库会走「描边 + `BlurMaskFilter`」，
-     * 高光本来就有、也不会崩，因此必须保持 `true`（调用方用
-     * `GlassShaderSupport.highlightAllowed` 计算，别直接用 `isRuntimeShaderUsable`）。
-     * 默认值 `true` 保证默认与正常设备上的画面、行为**一字不变**。
-     */
-    highlightAvailable: Boolean = true,
 ) {
     val density = LocalDensity.current
-    // 玻璃表面色随外观模式：深色模式用深色表面；高级玻璃参考图的悬浮玻璃为浅色
-    val surfaceColor = if (AppThemeColors.isDark && !AppThemeColors.isAdvancedGlass) DarkGrey else Color.White
+    // 白雾玻璃默认导航栏：用主题色轻染的亮白玻璃，和 item 一样跟随主题色调；
+    // 其它风格维持原逻辑（深色模式深色表面、浅色模式白色表面）。
+    val milk = AppThemeColors.isMilkGlass
+    val surfaceColor = when {
+        milk -> lerp(Color.White, MaterialTheme.colorScheme.primary, 0.08f)
+        AppThemeColors.isDark -> DarkGrey
+        else -> Color.White
+    }
     val mutedColor = unselectedColor
-    // 统一圆角（AGENTS.md）：圆角组件一律 8dp；液态玻璃导航在 8dp 基础上加大 8dp，视觉更圆润
-    val shape = RoundedCornerShape(16.dp)
+    // 圆角纳入「应用圆角调整」统一控制
+    val shape = AppComponentShape
+    // 宽度与「液态玻璃 · 透镜」共用同一套几何：手机取自然宽度（N×76dp + 8dp）并居中，
+    // 宽屏拉伸铺满可用宽度；内部每槽宽度随栏宽自适应。
+    val spec = GlassBottomBarSpec.Default
+    val windowWidthDp = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }
+    val barWidth = spec.clampedBarWidth(items.size, windowWidthDp, stretch = isWideScreen())
     // blur 依赖 RenderEffect（Android 12+ 才生效）；低版本使用轻量实色表面。
     val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     // 高版本表面半透明以透出模糊内容
     // 呈现液态玻璃质感；低版本（<12）无实时模糊，直接用不透明实底，避免文字等内容透出。
-    // 高级玻璃更通透（透出封面模糊底图）、高光更强；复古玻璃保持既有参数不变。
-    val advancedGlass = AppThemeColors.isAdvancedGlass
-    val glassSurfaceAlpha = if (backdropSupported) {
-        if (advancedGlass) 0.42f else 0.55f
-    } else {
-        1f
+    val glassSurfaceAlpha = when {
+        // 白雾玻璃的默认导航栏需要更亮、更接近 item 的白纱；否则采样到深色底图后只剩灰面。
+        milk -> if (backdropSupported) 0.80f else 0.96f
+        backdropSupported -> 0.55f
+        else -> 1f
     }
-    val currentSelectedIndex by rememberUpdatedState(selectedIndex)
-    val currentOnItemClick by rememberUpdatedState(onItemClick)
-    var navWidth by remember { mutableIntStateOf(0) }
-    // 长按滑动切换：拖动期间焦点胶囊跟随手指，松手回弹到选中项（移植自 RinneMobile）
-    var dragPosition by remember { mutableStateOf<Float?>(null) }
-    val focusWidth = 76.dp
-    val focusWidthPx = with(density) { focusWidth.toPx() }
-    // onSizeChanged 在 Box 的水平 padding 之后测量，navWidth 即 item 分布的内容宽度（仅拖动估算用）
-    val itemWidth = if (items.isEmpty()) 0f else navWidth / items.size.toFloat()
-
-    fun centerAt(position: Float): Float {
-        return itemWidth * (position + 0.5f)
-    }
-
-    val focusTargetX = dragPosition?.let { position ->
-        centerAt(position) - focusWidthPx / 2f
-    } ?: if (itemWidth > 0f) {
-        centerAt(currentSelectedIndex.toFloat()) - focusWidthPx / 2f
-    } else {
-        0f
-    }
-    // stiffness 提高、阻尼加大：指示器跟随更干脆，点击切换不拖沓
-    val focusXState = animateFloatAsState(
-        targetValue = focusTargetX,
-        animationSpec = spring(dampingRatio = 0.82f, stiffness = 1200f),
-        label = "liquidGlassFocus",
-    )
     val navigationSurfaceModifier = if (backdropSupported) {
         Modifier.drawBackdrop(
             backdrop = backdrop,
@@ -154,12 +110,11 @@ fun LiquidGlassNavigationBar(
                 vibrancy()
                 blur(with(density) { 12.dp.toPx() })
             },
-            highlight = if (highlightAvailable) {
-                { Highlight.Default.copy(alpha = if (advancedGlass) 1f else 0.85f) }
-            } else {
-                null
-            },
-            shadow = { Shadow.Default.copy(alpha = 0.8f) },
+            // 不使用库自带 Highlight：它在高圆角下会在栏体内侧留下一圈白色弧线（表现为“第二层”）。
+            // 边缘改用下方统一的 glassEdgeStroke 单层描边。
+            highlight = null,
+            // 亮玻璃底栏不需要重阴影，否则会在亮面下方形成一圈脏黑边。
+            shadow = { Shadow.Default.copy(alpha = if (milk) 0.35f else 0.8f) },
             onDrawSurface = {
                 drawRect(surfaceColor.copy(alpha = glassSurfaceAlpha))
             },
@@ -168,97 +123,45 @@ fun LiquidGlassNavigationBar(
         Modifier.clip(shape).background(surfaceColor.copy(alpha = 0.96f))
     }
 
-    // 浅色档：半透明白表面压在纯白/浅灰页面上几乎看不见边界，补一条中性色发丝描边勾出悬浮轮廓
-    // （深色档不加：深底本身有对比，栏体自带高光与投影）
+    // 单层边缘描边：浅色档中性黑发丝线，深色档白色发丝线；不再叠加库 Highlight，
+    // 避免高圆角时描边被裁剪成内侧第二层轮廓。
     val edgeStrokeModifier = if (AppThemeColors.isDark) {
-        Modifier
+        Modifier.glassEdgeStroke(shape, color = Color.White.copy(alpha = GlassEdgeStrokeAlpha))
     } else {
         Modifier.glassEdgeStroke(shape)
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 12.dp)
-            .height(64.dp)
-            .then(navigationSurfaceModifier)
-            .then(edgeStrokeModifier)
-            .onSizeChanged { if (navWidth != it.width) navWidth = it.width }
-            .pointerInput(itemWidth, items.size) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { position ->
-                        if (itemWidth <= 0f) return@detectDragGesturesAfterLongPress
-                        val index = (position.x / itemWidth)
-                            .toInt()
-                            .coerceIn(items.indices)
-                        dragPosition = index.toFloat()
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        if (itemWidth > 0f) {
-                            val position = ((dragPosition ?: currentSelectedIndex.toFloat()) +
-                                dragAmount.x / itemWidth)
-                                .coerceIn(0f, items.lastIndex.toFloat())
-                            dragPosition = position
-                        }
-                    },
-                    onDragEnd = {
-                        val targetIndex = dragPosition?.roundToInt()?.coerceIn(items.indices)
-                        dragPosition = null
-                        if (targetIndex != null && targetIndex != currentSelectedIndex) {
-                            currentOnItemClick(targetIndex)
-                        }
-                    },
-                    onDragCancel = {
-                        dragPosition = null
-                    },
-                )
-            },
-    ) {
-        // 选中焦点胶囊：主题色半透明的液态玻璃效果
-        // 用 offset 而非 graphicsLayer 平移：offset 会更新布局坐标，
-        // drawBackdrop 采样与实际位置一致，避免胶囊中间出现错位线条
-        // 焦点只做主题色流体胶囊；外层已提供真实玻璃，避免焦点再运行第二套 blur 管线。
-        val focusSurfaceModifier = Modifier
-            .clip(shape)
-            .background(primaryColor.copy(alpha = if (backdropSupported) 0.32f else 0.45f))
+    // drawBackdrop 的裁剪形状在布局阶段写入图层；运行期只改圆角会触发重绘而不重新布局，
+    // 旧图层的圆角会残留成内侧弧线（重启后重新布局才消失）。
+    // 以圆角值作 key：变化时重建整栏，强制重新测量并写入新的裁剪层。
+    key(AppThemeColors.appCornerRadius) {
         Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                // offset 移动位置（布局坐标跟随，drawBackdrop 采样不偏移）；
-                // graphicsLayer 只做流体拉伸缩放（纯视觉，不影响采样坐标）
-                .offset { IntOffset(focusXState.value.roundToInt(), 0) }
-                .graphicsLayer {
-                    // 动画值只在 layout/draw 阶段读取，焦点弹簧不再逐帧重组整个导航栏。
-                    val movement = if (itemWidth > 0f) {
-                        abs(focusTargetX - focusXState.value) / itemWidth
-                    } else {
-                        0f
-                    }
-                    val stretch = movement.coerceIn(0f, 1f) * 0.42f
-                    scaleX = 1f + stretch
-                    scaleY = 1f - stretch * 0.25f
-                }
-                .width(focusWidth)
-                .height(48.dp)
-                .then(focusSurfaceModifier),
-        )
-
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
+            modifier = modifier
+                .width(barWidth)
+                .navigationBarsPadding()
+                .padding(vertical = 12.dp)
+                .height(64.dp)
+                .then(navigationSurfaceModifier)
+                .then(edgeStrokeModifier),
         ) {
-            items.forEachIndexed { index, item ->
-                LiquidGlassNavItemView(
-                    item = item,
-                    selected = index == selectedIndex,
-                    primaryColor = primaryColor,
-                    mutedColor = mutedColor,
-                    onClick = { onItemClick(index) },
-                    modifier = Modifier.weight(1f),
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // 与透镜档同一内边距：4dp，图标槽宽随栏宽均分
+                    .padding(horizontal = spec.barInnerPadding),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items.forEachIndexed { index, item ->
+                    LiquidGlassNavItemView(
+                        item = item,
+                        selected = index == selectedIndex,
+                        primaryColor = primaryColor,
+                        mutedColor = mutedColor,
+                        onClick = { onItemClick(index) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
         }
     }
@@ -274,31 +177,42 @@ private fun LiquidGlassNavItemView(
     modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val contentColor = if (selected) primaryColor else mutedColor
-    Box(
+    Column(
         modifier = modifier
             .height(56.dp)
-            .clip(RoundedCornerShape(16.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             ),
-        contentAlignment = Alignment.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Image(
-            painter = painterResource(item.iconRes),
+        // 与「经典 MD」底栏同一套选中效果：自下而上的渐变填充动画 + 颜色切换
+        NavigationTabIcon(
+            iconRes = item.iconRes,
             contentDescription = item.label,
-            modifier = Modifier.size(26.dp),
-            contentScale = ContentScale.Fit,
-            colorFilter = ColorFilter.tint(contentColor),
+            selected = selected,
+            unselectedColor = mutedColor,
+            selectedColor = primaryColor,
+            size = 26.dp,
+            animationLabel = "liquidGlassNavIcon_${item.label}",
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = item.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) primaryColor else mutedColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 /**
  * 当前实际生效的导航栏样式：用户显式选择的样式原样生效；未显式设置时按外观风格解析
- * （默认外观 → 液态玻璃 · 透镜，玻璃系外观 → 经典 MD），随外观风格切换即时重组。
+ * （白雾玻璃沿用液态玻璃 · 经典，仅做亮玻璃 + 主题色轻染的配色适配）
+ * （默认外观 → 液态玻璃 · 经典，玻璃系外观 → 经典 MD），随外观风格切换即时重组。
  */
 @Composable
 fun effectiveNavStyle(): String {

@@ -42,10 +42,10 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.engine.runtime.RuntimeModuleDescriptor
 import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
@@ -213,7 +213,7 @@ internal fun EngineModuleManagementScreen() {
                 AppTopBar(
                     title = stringResource(R.string.engine_module_management_title),
                     background = Color.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(
                             painterResource(R.drawable.ic_game_scan),
@@ -239,7 +239,7 @@ internal fun EngineModuleManagementScreen() {
                 if (lastError != null) {
                     item(key = "load_error") {
                         MiuixCard(
-                            modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                            modifier = Modifier.fillMaxWidth().glassBorder(),
                             cornerRadius = AppComponentCornerRadius,
                         ) {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -368,7 +368,7 @@ private fun EngineModuleCard(
     )
 
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+        modifier = Modifier.fillMaxWidth().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {

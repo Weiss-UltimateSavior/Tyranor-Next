@@ -1,35 +1,36 @@
 package com.tyranor.next.ui.home
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,7 +41,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,20 +50,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -71,11 +69,10 @@ import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.theme.AdvancedGlassSurfaceHigh
-import com.tyranor.next.theme.glassShadow
-import com.tyranor.next.theme.AppThemeColors
-import com.tyranor.next.theme.GlassSurfaceHigh
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.NavWhiteOverlay
+import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -83,14 +80,13 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.onboarding.coachAnchor
 import com.tyranor.next.ui.common.DialogTextButton
-import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.toErrorState
-import com.tyranor.next.ui.common.userMessage
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.RpgSaveFormatDialog
 import com.tyranor.next.ui.game.coverColor
@@ -100,7 +96,6 @@ import com.tyranor.next.ui.game.rpgConvertResultMessage
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
-import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -249,25 +244,16 @@ fun HomeScreen(
         return
     }
 
-    // ===== 原生 / 分类仓库：按应用设置「首页样式」二选一（Web 已在上面分支返回） =====
-    if (homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY) {
-        CategoryWarehouseContent(
-            modifier = modifier.coachAnchor(isActive, onCoachAnchorChanged),
-            libraryState = libraryState,
-            onGameClick = { selectedGame = it },
-            onGameLongClick = { launchGame(it) },
-        )
-    } else {
-        NativeHomeContent(
-            modifier = modifier,
-            libraryState = libraryState,
-            onGameClick = { selectedGame = it },
-            onGameLongClick = { launchGame(it) },
-            onRecentRemoved = { removeRecentRecord(it) },
-            onCoachAnchorChanged = onCoachAnchorChanged,
-            isActive = isActive,
-        )
-    }
+    // ===== 原生首页（Web 已在上面分支返回） =====
+    NativeHomeContent(
+        modifier = modifier,
+        libraryState = libraryState,
+        onGameClick = { selectedGame = it },
+        onGameLongClick = { launchGame(it) },
+        onRecentRemoved = { removeRecentRecord(it) },
+        onCoachAnchorChanged = onCoachAnchorChanged,
+        isActive = isActive,
+    )
 
     // ===== 与游戏页统一：点按打开操作抽屉，长按直接启动 =====
     selectedGame?.let { game ->
@@ -355,7 +341,7 @@ fun HomeScreen(
 
 /**
  * 原生首页（应用设置「首页样式」= 默认时挂载）：快捷启动大卡 + 最近打开列表。
- * 交互与游戏页统一：点按开操作抽屉、长按直接启动；最近记录左滑删除（仅删记录不删库）。
+ * 交互：点按开操作抽屉；快捷启动卡长按直接启动；最近卡片长按删除该条记录（仅删记录不删库）。
  */
 @Composable
 private fun NativeHomeContent(
@@ -369,6 +355,8 @@ private fun NativeHomeContent(
 ) {
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
+    // 横屏/大屏一行五列，竖屏手机保持两列
+    val recentColumns = if (isWideScreen()) 5 else 2
     Column(modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.nav_home))
 
@@ -414,7 +402,7 @@ private fun NativeHomeContent(
                             Text(
                                 stringResource(R.string.home_recent_empty),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = PageSecondaryTextColor,
                             )
                         }
                     }
@@ -430,16 +418,26 @@ private fun NativeHomeContent(
                     )
                 }
                 items(
-                    items = recentGames,
-                    key = { it.uri },
-                    contentType = { "recent_game" },
-                ) { game ->
-                    RecentGameRow(
-                        game = game,
-                        onClick = { onGameClick(game) },
-                        onLongClick = { onGameLongClick(game) },
-                        onSwipeDelete = { onRecentRemoved(game) },
-                    )
+                    items = recentGames.chunked(recentColumns),
+                    key = { row -> row.first().uri },
+                    contentType = { "recent_row" },
+                ) { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        row.forEach { game ->
+                            RecentGameCard(
+                                game = game,
+                                modifier = Modifier.weight(1f),
+                                onClick = { onGameClick(game) },
+                                onLongClick = { onRecentRemoved(game) },
+                            )
+                        }
+                        repeat(recentColumns - row.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
@@ -492,24 +490,87 @@ private fun QuickLaunchSection(
             QuickLaunchEmptyCard(modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth())
         } else {
             val pagerState = rememberPagerState { quickLaunch.size }
-            HorizontalPager(
-                state = pagerState,
+            Column(
                 modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
-                pageSpacing = 10.dp,
-                verticalAlignment = Alignment.Top,
-            ) { page ->
-                val game = quickLaunch.getOrNull(page) ?: return@HorizontalPager
-                // 按游戏 uri 做 key：删除卡片后页面状态跟随游戏而不是按位置复用，
-                // 避免复用被删卡的封面 MutableState（上一个封面串到另一张卡）。
-                key(game.uri) {
-                    QuickLaunchCard(
-                        game = game,
-                        onClick = { onGameClick(game) },
-                        onLongClick = { onGameLongClick(game) },
-                        modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxWidth(),
+                    pageSpacing = 10.dp,
+                    verticalAlignment = Alignment.Top,
+                ) { page ->
+                    val game = quickLaunch.getOrNull(page) ?: return@HorizontalPager
+                    // 按游戏 uri 做 key：删除卡片后页面状态跟随游戏而不是按位置复用，
+                    // 避免复用被删卡的封面 MutableState（上一个封面串到另一张卡）。
+                    key(game.uri) {
+                        QuickLaunchCard(
+                            game = game,
+                            onClick = { onGameClick(game) },
+                            onLongClick = { onGameLongClick(game) },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+                // 口径：0/1 项不显示指示；2–3 项在卡片下方显示「当前页胶囊 + 其余圆点」
+                if (quickLaunch.size > 1) {
+                    QuickLaunchPagerIndicator(
+                        pageCount = quickLaunch.size,
+                        currentPage = pagerState.currentPage,
+                        modifier = Modifier.padding(top = 10.dp),
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * 快捷启动翻页指示：当前页为加宽胶囊（主题色实底 + 同色柔光），其余为半透明小圆点。
+ * 只在可滑动（2–3 项）的小屏单卡形态下绘制于卡片下方；大屏三卡并排与 0/1 项不显示。
+ */
+@Composable
+private fun QuickLaunchPagerIndicator(
+    pageCount: Int,
+    currentPage: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (pageCount <= 1) return
+    val activePage = currentPage.coerceIn(0, pageCount - 1)
+    val primary = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(pageCount) { index ->
+            val selected = index == activePage
+            val width by animateDpAsState(
+                targetValue = if (selected) 24.dp else 8.dp,
+                animationSpec = tween(durationMillis = 200),
+                label = "quickLaunchIndicatorWidth$index",
+            )
+            val color = if (selected) primary else primary.copy(alpha = 0.32f)
+            Box(
+                modifier = Modifier
+                    .height(8.dp)
+                    .width(width)
+                    .then(
+                        if (selected) {
+                            Modifier.shadow(
+                                elevation = 6.dp,
+                                shape = CircleShape,
+                                clip = false,
+                                ambientColor = color,
+                                spotColor = color,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .clip(CircleShape)
+                    .background(color),
+            )
         }
     }
 }
@@ -534,7 +595,6 @@ private fun QuickLaunchCard(
     BoxWithConstraints(
         modifier = modifier
             .height(172.dp)
-            .glassShadow()
             .clip(AppComponentShape)
             .background(QuickLaunchFallback)
             .glassBorder(),
@@ -661,7 +721,6 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .height(172.dp)
-            .glassShadow()
             .clip(AppComponentShape)
             .background(NavWhite)
             .glassBorder(),
@@ -677,119 +736,74 @@ private fun QuickLaunchEmptyCard(modifier: Modifier = Modifier) {
         Text(
             stringResource(R.string.home_quick_launch),
             style = MaterialTheme.typography.bodyMedium,
+            color = TextColor,
             modifier = Modifier.padding(top = 4.dp),
         )
     }
 }
 
-/** 最近打开列表项：圆角长矩形，左侧统一图标 + 游戏名，右侧打开时间；交互与游戏页统一——点按开菜单、长按直启；向左滑动约 1/6 露出独立删除按钮，点击直接移除该条记录。 */
+/**
+ * 最近打开卡片：竖屏两列、横屏/大屏五列网格，封面铺满卡片（无封面时用引擎分类色底），
+ * 底部信息面板仅显示游戏名；点按打开操作抽屉，长按删除该条最近记录。
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RecentGameRow(
+private fun RecentGameCard(
     game: ScanGame,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onSwipeDelete: () -> Unit,
 ) {
-    BoxWithConstraints {
-        val revealPx = with(LocalDensity.current) { (maxWidth / 6f).toPx() }
-        val scope = rememberCoroutineScope()
-        var offset by remember { mutableFloatStateOf(0f) }
-        val settleJob = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
-        fun settleOffset(target: Float) {
-            settleJob[0]?.cancel()
-            settleJob[0] = scope.launch {
-                androidx.compose.animation.core.Animatable(offset).animateTo(target) {
-                    offset = value
-                }
-            }
+    val coverBitmap by rememberCoverBitmap(game.coverUri)
+    val bmp = coverBitmap
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (bmp != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "recentCoverFadeIn",
+    )
+    Box(
+        modifier
+            .aspectRatio(1f)
+            .clip(AppComponentShape)
+            .background(game.engine.coverColor())
+            .glassBorder()
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                onLongClickLabel = stringResource(R.string.common_delete),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (bmp != null) {
+            Image(
+                bitmap = bmp,
+                contentDescription = game.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
+            )
+        } else {
+            Text(
+                "Tyranor",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.7f),
+            )
         }
-        val formattedOpenTime = remember(game.openTime) { TimeFormats.formatDateTime(game.openTime) }
-        // 统一裁切圆角：红色删除层与白色内容层圆角一致，内容左移越界部分被裁掉
-        Box(Modifier.clip(AppComponentShape)) {
-            // 删除层：仅滑出约 1/6 时露出右侧「删除」区域；玻璃风格固定用亮玻璃面（避免主题色半透明），
-            // 默认风格保持主题色底。仅在滑出（offset < 0）时渲染
-            if (offset < 0f) {
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(
-                            when {
-                                AppThemeColors.isAdvancedGlass -> AdvancedGlassSurfaceHigh
-                                AppThemeColors.isGlass -> GlassSurfaceHigh
-                                else -> MaterialTheme.colorScheme.primary
-                            },
-                        )
-                        .clickable(onClick = onSwipeDelete),
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center,
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .width(with(LocalDensity.current) { revealPx.toDp() })
-                            .align(Alignment.CenterEnd),
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Delete,
-                            contentDescription = stringResource(R.string.common_delete),
-                            tint = Color.White,
-                        )
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier
-                    .offset { IntOffset(offset.roundToInt(), 0) }
-                    .fillMaxWidth()
-                    .background(NavWhite)
-                    .glassBorder()
-                    .combinedClickable(
-                        onClick = {
-                            if (offset != 0f) {
-                                settleOffset(0f)
-                            } else {
-                                onClick()
-                            }
-                        },
-                        onLongClick = onLongClick,
-                    )
-                    .pointerInput(revealPx) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                settleOffset(if (offset < -revealPx / 2f) -revealPx else 0f)
-                            },
-                            onDragCancel = {
-                                settleOffset(if (offset < -revealPx / 2f) -revealPx else 0f)
-                            },
-                        ) { _, dragAmount ->
-                            settleJob[0]?.cancel()
-                            offset = (offset + dragAmount).coerceIn(-revealPx, 0f)
-                        }
-                    }
-                    .padding(horizontal = 16.dp, vertical = 23.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.ic_recent),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.size(24.dp),
-                )
-                Text(
-                    game.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f).padding(start = 14.dp),
-                )
-                Text(
-                    formattedOpenTime,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 12.dp),
-                )
-            }
+        // 底部信息面板：仅展示游戏名（比卡片默认标题小一号）
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(NavWhiteOverlay)
+                .padding(horizontal = 12.dp, vertical = 12.5.dp),
+        ) {
+            Text(
+                game.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

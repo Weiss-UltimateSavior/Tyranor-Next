@@ -34,6 +34,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -51,10 +52,10 @@ import com.tyranor.next.R
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassPanel
+import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.glassShadow
-import com.tyranor.next.theme.rememberAdvancedGlassPanelSurface
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -92,8 +93,7 @@ private val SidePanelSwipeThreshold = 40.dp
  * - 用 [Dialog] 独立窗口实现（`decorFitsSystemWindows = false` 的全屏窗口）：侧边栏需要盖住
  *   整窗（含状态栏、底部导航栏与平板侧栏），并与 [AppAlertDialog] 共用
  *   「遮罩点击 / 返回键关闭 + 进出动画」宿主；
- * - 面板材质沿用应用弹窗/抽屉的玻璃适配：默认 [NavWhite]、复古玻璃 [GlassPanel]、
- *   高级玻璃用 [rememberAdvancedGlassPanelSurface] 的页面取色渐变；
+ * - 面板材质沿用应用弹窗/抽屉的玻璃适配：默认 [NavWhite]、复古玻璃 [GlassPanel]；
  * - 顶部固定标题（[R.string.side_panel_title]，水平居中），下方 [content] 为功能条目区：
  *   条目之间统一加 [SidePanelItemSpacing] 纵向间距（调用方不要自加外边距）；条目仍必须
  *   使用 AppNavItem 等统一组件（弹窗内传 `DialogItemSurface`）。
@@ -111,7 +111,6 @@ internal fun AppSidePanel(
     val slideFraction = remember { Animatable(1f) }
     val dismissing = remember { mutableStateOf(false) }
     val currentOnDismiss by rememberUpdatedState(onDismiss)
-    val advancedPanelSurface = if (AppThemeColors.isAdvancedGlass) rememberAdvancedGlassPanelSurface() else null
 
     fun dismiss() {
         if (dismissing.value) return
@@ -128,8 +127,8 @@ internal fun AppSidePanel(
         // 全屏窗口：面板可延伸到系统栏区域，遮罩覆盖整屏
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
-        // 遮罩：高级玻璃面板不透明度更高，遮罩略加深（与 AppAlertDialog 同规则）
-        val scrimAlpha = if (AppThemeColors.isAdvancedGlass) 0.6f else 0.5f
+        // 遮罩：与 AppAlertDialog 使用同一档不透明度
+        val scrimAlpha = 0.5f
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -156,41 +155,39 @@ internal fun AppSidePanel(
                     }
                     // 消费面板区域点击，避免穿透到遮罩
                     .pointerInput(Unit) { detectTapGestures { } }
-                    .glassShadow()
-                    .then(
-                        if (advancedPanelSurface != null) {
-                            Modifier.background(advancedPanelSurface.brush, AppComponentShape)
-                        } else {
-                            Modifier
-                        },
-                    )
                     .glassBorder(),
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = when {
-                        AppThemeColors.isAdvancedGlass -> Color.Transparent
                         AppThemeColors.isGlass -> GlassPanel
+                        AppThemeColors.isMilkGlass -> Color.Transparent
                         else -> NavWhite
                     },
+                    contentColor = TextColor,
                 ),
                 shape = AppComponentShape,
             ) {
+                Box(Modifier.fillMaxSize().clip(AppComponentShape)) {
+                    if (AppThemeColors.isMilkGlass) {
+                        MilkGlassPanelBackground(Modifier.matchParentSize())
+                    }
                 // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
-                Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    Text(
-                        text = stringResource(R.string.side_panel_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 18.dp, bottom = 10.dp),
-                    )
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
-                    ) {
-                        content()
+                    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                        Text(
+                            text = stringResource(R.string.side_panel_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 18.dp, bottom = 10.dp),
+                        )
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
+                        ) {
+                            content()
+                        }
                     }
                 }
             }

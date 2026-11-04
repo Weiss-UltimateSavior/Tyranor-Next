@@ -27,10 +27,11 @@ abstract class AppScreenActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 玻璃系外观风格背景固定深色画面，系统栏恒用浅色图标
+        observeSaveSyncFeedback()
+        // 深色背景（深色外观 / 复古玻璃 / 白雾玻璃）系统栏恒用浅色图标
         applySystemBarStyle(
             AppSettingsStore.isDarkEffective(this) ||
-                AppSettingsStore.getAppearanceStyle(this).isGlass,
+                AppSettingsStore.getAppearanceStyle(this).hasDarkBackdrop,
         )
     }
 
@@ -38,7 +39,7 @@ abstract class AppScreenActivity : ComponentActivity() {
     protected fun setAppScreenContent(content: @Composable () -> Unit) {
         setContent {
             // 外观模式/外观风格在页面内切换时（如应用设置页），系统栏图标实时跟随
-            val dark = AppThemeColors.isDark
+            val dark = AppThemeColors.isDark || AppThemeColors.hasDarkBackdrop
             SideEffect { applySystemBarStyle(dark) }
             AppScreenScaffold(content = content)
         }

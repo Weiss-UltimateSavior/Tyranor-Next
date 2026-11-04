@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.ItemChevronColor
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
@@ -44,11 +42,11 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 统一规范（详见 AGENTS.md「功能跳转条目统一规范」）：
  * - 所有「功能跳转列」（点击后进入/跳转/打开下一级的条目，如封面来源列表、群聊/频道项等）
  *   必须使用本组件，禁止用手写 Row/Column 拼装、禁止混用 Material 的 ListItem 等。
- * - 排版：圆角统一用 [com.tyranor.next.theme.AppComponentShape]（默认 8dp / 玻璃风格 32dp）+ 背景 [containerColor]（默认 [NavWhite]）+ 内边距（纵向 12dp / 横向 16dp）+ 左侧图标 24dp + 右侧箭头，
- *   标题用 [TextColor]、摘要用半透明辅助色；进入跳转的 icon 一律 `KeyboardArrowRight`。
+ * - 排版：圆角统一用 [com.tyranor.next.theme.AppComponentShape]（取「应用圆角调整」值）+ 背景 [containerColor]（默认 [NavWhite]）+ 内边距（纵向 12dp / 横向 16dp）+ 左侧图标 24dp + 右侧箭头，
+ *   标题用 [TextColor]、摘要用半透明辅助色；进入跳转的 icon 一律 `BoldChevronRight`（加粗）。
  * - 背景色约定：页面上条目默认 [NavWhite]（页面背景 PageGrey 灰底白卡）；弹窗内条目传 [DialogItemSurface]，
  *   与弹窗背景形成层次反差（AGENTS.md 界面规范，勿回退 PageGrey——玻璃外观下 PageGrey 透明会丢失卡片层次）。
- * - 「色调切换」遵循统一规范：背景引用 `theme/Color.kt` 常量，前景取 [TextColor]，
+ * - 容器色约定：背景引用 `theme/Color.kt` 常量，前景取 [TextColor]，
  *   不依赖 `colorScheme.surface*`，保证弹窗作用域内外一致。
  *
  * @param title 条目标题
@@ -63,6 +61,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  *   null 时保持默认行为（深色染白、浅色用原图）
  * @param titleMaxLines 标题最大行数；长预设名可允许换行，默认保持单行
  * @param titleColor 显式覆盖标题颜色（如危险条目用 error 色）；null 时用默认 [TextColor]
+ * @param drawSurface 是否绘制条目自身的圆角背景与描边；位于已有卡片表面的子条目可传 false
  */
 @Composable
 fun AppNavItem(
@@ -78,6 +77,7 @@ fun AppNavItem(
     titleColor: Color? = null,
     titleMaxLines: Int = 1,
     indication: Indication? = LocalIndication.current,
+    drawSurface: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
     val enabled = onClick != null
@@ -93,8 +93,9 @@ fun AppNavItem(
                 enabled = enabled,
                 onClick = { onClick?.invoke() },
             )
-            .background(containerColor)
-            .glassBorder()
+            .let { rowModifier ->
+                if (drawSurface) rowModifier.background(containerColor).glassBorder() else rowModifier
+            }
             .padding(horizontal = 16.dp, vertical = verticalPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -133,16 +134,9 @@ fun AppNavItem(
             }
         }
         if (showArrow) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = null,
+            BoldChevronRight(
+                color = ItemChevronColor.copy(alpha = ItemChevronColor.alpha * contentAlpha),
                 modifier = Modifier.padding(start = 12.dp),
-                // 深色模式下右侧箭头染白，与左侧图标保持一致
-                tint = if (AppThemeColors.isDark) {
-                    Color.White.copy(alpha = contentAlpha)
-                } else {
-                    MiuixTheme.colorScheme.onBackground.copy(alpha = contentAlpha)
-                },
             )
         }
     }

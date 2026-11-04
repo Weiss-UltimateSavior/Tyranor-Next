@@ -83,6 +83,35 @@ USER_DATA_MARKER = bytes.fromhex("42 47 49 2d 53 4d 4f 4b 45 2d 56 31 00 a5 5a 0
 USER_DATA_OFFSET = 64
 
 
+def _instruction_starts(code):
+    """Code-region offsets the VM parser treats as instruction starts."""
+    starts, pc = set(), 0
+    while pc < len(code):
+        starts.add(pc)
+        opcode = code[pc]
+        pc += 1
+        if opcode in (0x00, 0x08, 0x09, 0x0a, 0x15,
+                      0x80, 0x81, 0x90, 0x91, 0x92, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0, 0xff):
+            pc += 1
+        elif opcode == 0x01:
+            pc += 2
+        elif opcode == 0x02:
+            pc += 4
+        elif opcode in (0x04, 0x05, 0x06):
+            pc += 2
+        elif opcode == 0x0b:
+            if pc >= len(code):
+                raise ValueError("truncated fixture block payload")
+            pc += 1 + code[pc]
+        elif opcode == 0x0c:
+            pc += 2
+        elif opcode not in (0x10, 0x11, 0x14, 0x16, 0x17, 0x20, 0x21, 0x30):
+            raise ValueError(f"unexpected fixture opcode 0x{opcode:02x}")
+        if pc > len(code):
+            raise ValueError("truncated fixture instruction")
+    return starts
+
+
 def _make_user_data_module(phase):
     """Original BP using the REAL VM GDB serializer, not a fixture-made save.
 
@@ -95,7 +124,12 @@ def _make_user_data_module(phase):
       tests::global_payload_round_trips_memory_names_and_flags.
     vm/src/lib.rs::execute_instruction: 0b count/payload consumes pointer;
       15 predicate pops destination THEN condition (0=nonzero, 1=zero);
-      02 absolute parser byte offset + 14 jumps to a real instruction label.
+      02 pushes a jump destination that is a CODE-REGION offset (the module
+      byte offset minus the BP header), not a file-absolute offset;
+      VM resolve_target_code_offset adds parser start 16 back before
+      jump_target_index, which requires an exact instruction start.
+    vm/src/lib.rs::tests::watchdog_does_not_masquerade_as_a_cooperative_yield:
+      pins that encoding ("code offset 2 (file offset 0x12)").
     app/src/lib.rs::{write_file_bytes,read_user_file_bytes} and
       file_policy.rs::{parent,read_user}: unprefixed BGI.gdb is under user_root.
 
@@ -134,9 +168,13 @@ def _make_user_data_module(phase):
         target(label)
         code.extend(bytes((0x15, predicate)))
 
-    def title(text):
+    def push_string(text):
         strings.append((len(code), text))
-        code.extend(b"\x05\0\0\x80\x66")
+        code.extend(b"\x05\0\0")
+
+    def title(text):
+        push_string(text)
+        code.extend(b"\x80\x66")
 
     def outcome(label, text):
         labels[label] = len(code)
@@ -150,7 +188,26 @@ def _make_user_data_module(phase):
         store(20)
         store(16)
 
+    def set_user_root(failure_label):
+        # Sys80:39 stores the validated user-data root used by BGI.gdb
+        # (vm/src/user_data.rs::global_data_path). "bgi-user" resolves to the
+        # HostConfig user_root through file_policy::user_data_alias; a raw
+        # resource-relative path would be denied by the restricted policy.
+        push_string("bgi-user\\")
+        code.extend(b"\x80\x39")
+        branch("root_ready", 0)  # 1 = stored; skip the fallback
+        # Some hosts expose only a UserData subtree. Create it in the user
+        # root (Sys80:28 CreateDirectory) and validate that path instead.
+        push_string("bgi-user\\UserData")
+        code.extend(b"\x80\x28")
+        store(28)  # discard the BOOL in the free scratch local
+        push_string("bgi-user\\UserData\\")
+        code.extend(b"\x80\x39")
+        branch(failure_label, 1)  # 0 = no validated root
+        labels["root_ready"] = len(code)
+
     code.extend(bytes.fromhex("10 00 20 20 11"))  # base += 32
+    set_user_root("save_failed" if phase == "write" else "load_failed")
     status_from_global_load()
     load(24)
     if phase == "write":
@@ -187,8 +244,19 @@ def _make_user_data_module(phase):
     code.extend(bytes.fromhex("80 68 80 69 10 00 20 21 11 17"))
     # 68=allow native close, 69=post close; HostRuntime emits Title before
     # processing pending close. Both pass AND fail close: Title is mandatory.
+    # The VM indexes labels by parser/file offset but jump operands are
+    # code-region offsets, so emit the label's code offset without the header.
     for offset, label in branches:
-        struct.pack_into("<I", code, offset + 1, 16 + labels[label])
+        struct.pack_into("<I", code, offset + 1, labels[label])
+    # Every branch destination must name the first byte of an instruction.
+    starts = _instruction_starts(bytes(code))
+    missing = set(labels.values()) - starts
+    if missing:
+        raise ValueError(f"label is not an instruction start: {sorted(missing)}")
+    for offset, label in branches:
+        target = struct.unpack_from("<I", code, offset + 1)[0]
+        if target not in starts:
+            raise ValueError(f"branch to {label} is not an instruction start: {target}")
     for offset, text in strings:
         target_offset = len(code)
         code.extend(text.encode("ascii") + b"\0")
@@ -316,6 +384,13 @@ def user_data_expectation(phase):
         "loader": "VM Sys80:80 -> SysApi::read_user_file_bytes -> decode_sdc -> install_global_data",
         "guest_file": "BGI.gdb",
         "host_file": "<same HostConfig.user_root>/BGI.gdb",
+        "validated_file_root": {
+            "setter": "Sys80:39 before Sys80:80/81",
+            "primary": "bgi-user\\",
+            "fallback": "bgi-user\\UserData\\",
+            "fallback_creator": "Sys80:28 CreateDirectory",
+            "host_mapping": "file_policy user_data_alias -> HostConfig.user_root",
+        },
         "path_policy": "Unprefixed user-file hooks resolve under user_root (equivalent to bgi-user/BGI.gdb), NOT resource_root or bgi-resource/UserData",
         "marker_global_offset": USER_DATA_OFFSET,
         "marker_hex": USER_DATA_MARKER.hex(),
@@ -338,6 +413,8 @@ def user_data_expectation(phase):
         "protocol": [
             "Use generated write/read roots as separate resources; one fresh dedicated user_root shared across both sessions; never point either profile at real user saves",
             "Generator creates system.arc/fixture.json ONLY; no BGI.gdb, no user_root, no synthesized persisted bytes",
+            "Both profiles call 80:39 SetValidatedFileRoot('bgi-user\\') before 80:80/81; that alias resolves to user_root under the restricted file policy",
+            "If 'bgi-user' is not a directory, the BP creates bgi-user\\UserData with 80:28 and validates 'bgi-user\\UserData\\' instead; BGI.gdb must still resolve under user_root, never resource_root",
             "Write profile first calls 80:80 and requires missing=1; status=0/2 refuses existing/invalid saves without writing; empty/unreadable files may also appear missing, so a fresh test-only root is mandatory",
             "Attach a real Surface, unpause; step(t0), step(t0+16000000ns); provide a valid system/user font; silent mode is appropriate",
             "Require exact WRITE_OK Title then Closed; absent title, wrong title or native error is failure even if Closed arrives",
@@ -349,11 +426,12 @@ def user_data_expectation(phase):
         ],
         "evidence": [
             "ethornell-vm/src/lib.rs::{try_builtin_sys_with_api,execute_instruction,jump_target_index}",
-            "ethornell-vm/src/user_data.rs::{copy_to_global_data,save_global_user_data,load_global_user_data,copy_from_global_data}",
+            "ethornell-vm/src/lib.rs::try_builtin_sys_with_api (80:39 SetValidatedFileRoot, 80:28 CreateDirectory)",
+            "ethornell-vm/src/user_data.rs::{copy_to_global_data,save_global_user_data,load_global_user_data,copy_from_global_data,global_data_path}",
             "ethornell-vm/src/user_data.rs::{serialize_global_data,install_global_data,encode_sdc,decode_sdc}",
             "ethornell-vm/src/user_data.rs::tests::global_payload_round_trips_memory_names_and_flags",
             "ethornell-app/src/lib.rs::{write_file_bytes,read_user_file_bytes,call_sys}",
-            "ethornell-app/src/file_policy.rs::{parent,atomic_write,read_user}",
+            "ethornell-app/src/file_policy.rs::{parent,atomic_write,read_user,user_data_alias}",
             "ethornell-app/src/host_runtime.rs::{step_inner,request_close}",
         ],
     }

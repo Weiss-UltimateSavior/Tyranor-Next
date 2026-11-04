@@ -49,11 +49,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.DialogTextButton
 import androidx.annotation.StringRes
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -61,18 +62,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.shadow.Shadow
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.theme.AdvancedGlassNavSurface
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DefaultPageBackgroundLayer
 import com.tyranor.next.theme.GlassNavSurface
@@ -97,20 +92,19 @@ import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
 import com.tyranor.next.ui.common.effectiveNavStyle
 import com.tyranor.next.ui.common.isSideRailLayout
 import com.tyranor.next.ui.common.rememberSidePanelSwipeModifier
+import com.tyranor.next.ui.common.syncErrorResource
 import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.common.glass.EnhancedLiquidGlassNavigationBar
 import com.tyranor.next.ui.common.glass.GlassShaderSupport
 import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
-import com.tyranor.next.ui.common.glass.clearAmbientBackdropCache
-import com.tyranor.next.ui.common.glass.rememberAmbientBackdrop
 import com.tyranor.next.ui.common.glass.rememberGlassBottomBarColors
 import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.AppComponentShape
-import com.tyranor.next.theme.advancedGlassPageBackground
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.home.HomeScreen
+import com.tyranor.next.ui.save.WebDavSettingsActivity
 import com.tyranor.next.ui.runtime.EngineModuleManagementActivity
 import com.tyranor.next.ui.settings.InputSettingsActivity
 import com.tyranor.next.ui.settings.SettingsScreen
@@ -151,6 +145,20 @@ fun MainScreen(
   val displayedSelectedIndex = coachPage?.coerceIn(tabItems.indices) ?: selectedIndex
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
+  val cleanupError = libraryState.cleanupError
+  if (cleanupError != null) {
+    val cleanupReason = stringResource(cleanupError.syncErrorResource())
+    AppAlertDialog(
+      onDismissRequest = libraryViewModel::dismissCleanupError,
+      title = { Text(stringResource(R.string.save_operation_failed), style = MaterialTheme.typography.titleMedium) },
+      text = { Text(stringResource(R.string.save_sync_cleanup_failed, libraryState.cleanupGameTitle.orEmpty(), cleanupReason),
+        style = MaterialTheme.typography.bodyMedium) },
+      textScrollEnabled = true,
+      confirmButton = {
+        DialogTextButton(stringResource(R.string.common_confirm), onClick = libraryViewModel::dismissCleanupError)
+      },
+    )
+  }
   val interactScope = rememberCoroutineScope()
   val unselectedColor = UnselectedGrey
   // 导航栏样式：应用设置 → 默认 / 液态玻璃 · 经典 / 液态玻璃 · 透镜（内存态，设置页切换即时生效）
@@ -165,7 +173,6 @@ fun MainScreen(
     withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
-    withContext(Dispatchers.IO) { AppSettingsStore.initDefaultThemeGradient(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initHomeStyle(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initFloatingNavPosition(context) }
@@ -229,6 +236,7 @@ fun MainScreen(
       title = stringResource(R.string.side_panel_kr2_native_title),
       leadingIcon = R.drawable.ic_settings_engine,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         interactScope.launch {
@@ -244,9 +252,20 @@ fun MainScreen(
       title = stringResource(R.string.side_panel_archive_tool_title),
       leadingIcon = R.drawable.ic_sheet_archive,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context))
+      },
+    )
+    AppNavItem(
+      title = stringResource(R.string.webdav_title),
+      leadingIcon = R.drawable.ic_save_cloud,
+      containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
+      onClick = {
+        sidePanelOpen = false
+        startActivityWithPageTransition(context, WebDavSettingsActivity.createIntent(context))
       },
     )
     // 妙妙工具条目：输入与手柄（原设置页「输入与手柄」入口迁入）
@@ -254,6 +273,7 @@ fun MainScreen(
       title = stringResource(R.string.side_panel_input_tool_title),
       leadingIcon = R.drawable.ic_input_gamepad,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, InputSettingsActivity.createIntent(context))
@@ -264,6 +284,7 @@ fun MainScreen(
       title = stringResource(R.string.side_panel_engine_module_title),
       leadingIcon = R.drawable.ic_engine_manage,
       containerColor = DialogItemSurface,
+      leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
         sidePanelOpen = false
         startActivityWithPageTransition(context, EngineModuleManagementActivity.createIntent(context))
@@ -306,12 +327,6 @@ fun MainScreen(
   )
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass && !floatingButtonStyle && !railLayout
-  // 高级玻璃 + 默认导航：悬浮条升级为真 backdrop 采样（API 31+ 才有效）
-  val advancedFloatingNav = floatingDefaultNav && AppThemeColors.isAdvancedGlass
-  val advancedGlass = AppThemeColors.isAdvancedGlass
-  // 平板玻璃系外观的悬浮侧栏；高级档需要独立背景层做真采样
-  val glassRail = railLayout && AppThemeColors.isGlass
-  val advancedGlassRail = glassRail && advancedGlass
   val tabLabels = tabItems.map { stringResource(it.labelRes) }
   // remember(tabLabels)：labels 内容不变时复用同一份 items，避免每次重组都给增强栏传新 List
   // （增强栏据此跳过重组，进而避免 drawBackdrop 元素被判不等而重建 RenderEffect 管线）
@@ -319,13 +334,12 @@ fun MainScreen(
     tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
   }
 
-  // 采样层可用条件：液态玻璃两档、高级玻璃悬浮条或悬浮按钮（底栏形态），或平板高级玻璃侧栏
+  // 采样层可用条件：液态玻璃两档或悬浮按钮（底栏形态）
   val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-  val bottomBackdropActive = (liquidBottomActive || advancedFloatingNav || floatingButtonActive) &&
+  val bottomBackdropActive = (liquidBottomActive || floatingButtonActive) &&
     backdropSupported
   // 悬浮按钮的采样层是否真的挂载（API < 31 时组件退实底，无需背景复制）
   val floatingButtonBackdrop = floatingButtonActive && bottomBackdropActive
-  val railBackdropActive = advancedGlassRail && backdropSupported
   // 透镜档**是否真的会渲染**：设置选了它 + 采样层可用 + 本机 AGSL 可用。
   // 后者是运行期探测（见 GlassShaderSupport）：API 33+ 但 AGSL 编译异常的机器上，
   // Backdrop 内部的 RuntimeShader 会在布局期抛出并崩掉整个主界面，此时退回经典档更安全。
@@ -360,37 +374,17 @@ fun MainScreen(
     // Web 首页场景的「仅背景」采样层（见下方 webHomeInvolved）：只含页面背景、不含页面内容，
     // 避免 WebView 被录进采样层并逐帧离屏重放。
     val backgroundBackdrop = rememberLayerBackdrop()
-    // 高级玻璃的封面拼贴模糊底图：优先固定/最近游戏，再补游戏库封面（最多 6 张）。
-    // 生成在后台线程（解码 + 盒式模糊），写入全局快照供根部背景与采样层绘制。
-    val ambientCovers = remember(libraryState.quickLaunch, libraryState.recentGames, libraryState.games) {
-      (libraryState.quickLaunch + libraryState.recentGames + libraryState.games)
-        .asSequence()
-        .mapNotNull { it.coverUri?.takeIf(String::isNotBlank) }
-        .distinct()
-        .take(6)
-        .toList()
-    }
-    val ambientBackdrop by rememberAmbientBackdrop(ambientCovers, advancedGlass)
-    LaunchedEffect(ambientBackdrop, advancedGlass) {
-      AppThemeColors.updateAmbientBackdrop(if (advancedGlass) ambientBackdrop else null)
-      if (!advancedGlass) clearAmbientBackdropCache()
-    }
     // 采样修复（报告 §5.3 / §8.4 第 1 条）：玻璃外观风格下 PageGrey 透明，根部背景在采样层之外，
-    // 透镜档与高级玻璃悬浮条把同一份背景画进被采样内容，保证采样源含完整背景且坐标同源。
-    // remember：MainScreen 在切页动画期间每帧重组，复用同一 Modifier 才不会每帧重建绘制缓存；
-    // advanced 必须进 key（绘制期读快照会在缓存下拿到旧值）。
+    // 透镜档把同一份背景画进被采样内容，保证采样源含完整背景且坐标同源。
+    // remember：MainScreen 在切页动画期间每帧重组，复用同一 Modifier 才不会每帧重建绘制缓存。
     val accent = AppThemeColors.primary
-    val pageBackground = remember(accent, advancedGlass) {
-      if (advancedGlass) {
-        Modifier.advancedGlassPageBackground()
-      } else {
-        Modifier.glassPageBackground(accent)
-      }
+    val pageBackground = remember(accent) {
+      Modifier.glassPageBackground(accent)
     }
-    // 玻璃系需要把页面背景并入采样源的场景（增强透镜 / 高级玻璃悬浮条 / 悬浮按钮）；
-    // 平板侧栏不适用（导航在侧边，另行录制纯背景层，见 railBackdrop）。
+    // 玻璃系需要把页面背景并入采样源的场景（增强透镜 / 悬浮按钮）；
+    // 平板侧栏不适用（导航在侧边，不采样内容层）。
     val glassSamplingBackground = AppThemeColors.isGlass &&
-      (enhancedBarActive || advancedFloatingNav || floatingButtonBackdrop)
+      (enhancedBarActive || floatingButtonBackdrop)
     // ===== Web 首页采样降级（防切页闪烁） =====
     // Web 首页参与绘制（前台，或转场起点/终点）时底栏不得采样内容层：layerBackdrop 每个绘制帧
     // 把内容重新录进采样层，而 Compose 的 AndroidView（WebView）经 view.draw 一并入录，底栏/透镜
@@ -404,15 +398,17 @@ fun MainScreen(
       (displayedSelectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
     // 底栏采样源：Web 首页参与绘制时为仅背景层，其余为内容层（两者同一坐标空间，可直接替换）。
     val navBackdrop = if (webHomeInvolved) backgroundBackdrop else backdrop
-    // 仅背景层：默认外观绘制页面根背景（原直接挂在根 Box 上的 DefaultPageBackgroundLayer）；
-    // 玻璃系把原本画在内容层里的采样背景挪到本层——是转移而非叠加，屏幕上的背景绘制次数不变。
-    Box(
-      Modifier
-        .fillMaxSize()
-        .then(if (webHomeInvolved) Modifier.layerBackdrop(backgroundBackdrop) else Modifier)
-        .then(if (glassSamplingBackground && webHomeInvolved) pageBackground else Modifier),
-    ) {
-      DefaultPageBackgroundLayer()
+    // 仅背景层：只在 Web 首页参与绘制时挂载，供底栏采样（其余情况由根部 GlassBackground 绘制，
+    // 避免同一份动画背景在根层与内容层各跑一遍）。
+    if (webHomeInvolved) {
+      Box(
+        Modifier
+          .fillMaxSize()
+          .layerBackdrop(backgroundBackdrop)
+          .then(if (glassSamplingBackground) pageBackground else Modifier),
+      ) {
+        DefaultPageBackgroundLayer()
+      }
     }
     val contentLayerModifier = Modifier
       // source 节点常驻，避免切页结束时重新挂载玻璃录制层；Web 首页参与绘制时改由
@@ -429,23 +425,12 @@ fun MainScreen(
       )
       // 玻璃系：PageGrey（透明）兜底；默认风格由根部背景层绘制（此处不再铺不透明纯色）
       .then(
-        if (AppThemeColors.isGlass || AppThemeColors.isAdvancedGlass) {
+        if (AppThemeColors.isGlass) {
           Modifier.background(MaterialTheme.colorScheme.background)
         } else {
           Modifier
         },
       )
-    // 平板 + 高级玻璃：侧栏在内容层之外，采样内容层会因坐标越界采不到东西——
-    // 单独把纯背景（cover 铺满 + 压暗 + 暗角）录进 railBackdrop，坐标与窗口同源供侧栏采样。
-    val railBackdrop = rememberLayerBackdrop()
-    if (railBackdropActive) {
-      Box(
-        Modifier
-          .fillMaxSize()
-          .layerBackdrop(railBackdrop)
-          .then(pageBackground),
-      )
-    }
     if (railLayout) {
       // 平板/大窗口：主导航移到侧边，按外观风格取该主题「默认导航栏」形态
       Row(Modifier.fillMaxSize()) {
@@ -453,7 +438,6 @@ fun MainScreen(
           selectedIndex = displayedSelectedIndex,
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
-          backdrop = if (railBackdropActive) railBackdrop else null,
           modifier = Modifier.fillMaxHeight(),
         )
         Column(Modifier.weight(1f).fillMaxHeight().then(contentLayerModifier)) {
@@ -515,44 +499,14 @@ fun MainScreen(
           unselectedColor = unselectedColor,
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
-          // 仅在「需要 AGSL 而 AGSL 不可用」（API 33+ 探测失败）时掐掉高光：
-          // 库的 HighlightStyle 在 33+ 同样构造 RuntimeShader，不掐则回退路径自己会崩；
-          // 而 API 31–32 库走非 shader 的描边路径、本来有高光，必须保持 true
-          //（别用 isRuntimeShaderUsable——它在 33 以下恒为 false，会误删 Android 12 的高光）。
-          highlightAvailable = GlassShaderSupport.highlightAllowed,
           modifier = reportBottomNavTop.align(Alignment.BottomCenter),
         )
       }
     }
 
-    // 玻璃外观风格下的默认导航栏：悬浮圆角玻璃条（玻璃底 + 0.5dp 描边 + 32dp 圆角），
+    // 玻璃外观风格下的默认导航栏：悬浮圆角玻璃条（玻璃底 + 0.5dp 描边 + 应用圆角），
     // 内容可从其下方滚过，列表底部留白由 glassNavBottomInset() 统一提供。
-    // 高级玻璃 + API 31+：栏体改用真 backdrop 采样（vibrancy + blur + 高光 + 投影），
-    // 采样页面内容（含封面模糊底图），呈现参考图的悬浮玻璃观感；低版本退回半透膜。
     if (floatingDefaultNav) {
-      val backdropActive = advancedFloatingNav && bottomBackdropActive
-      val density = LocalDensity.current
-      // remember：切页动画期 MainScreen 每帧重组，内联 drawBackdrop 会因 ShapeProvider/lambda
-      // 每次都是新实例而判不等，导致逐帧重建 vibrancy/blur 的 RenderEffect 管线；
-      // 复用同一 Modifier 才能让 Backdrop 跳过重建（与液态玻璃底栏同一处理）。
-      // advancedGlass 进 key：玻璃描边在构造期定型（复古单色 / 高级渐变），现场切换必须重建。
-      val advancedNavModifier = remember(navBackdrop, density, advancedGlass) {
-        Modifier
-          .drawBackdrop(
-            backdrop = navBackdrop,
-            shape = { AppComponentShape },
-            effects = {
-              vibrancy()
-              blur(with(density) { 18.dp.toPx() })
-            },
-            // 描边统一由 glassBorder 的受光内描边绘制（与页面组件同款、同亮度）：
-            // 不用库的 Highlight——它的白度固定 50%，比组件亮一档，且 33+ 构造 RuntimeShader 有崩机风险。
-            highlight = null,
-            shadow = { Shadow.Default.copy(alpha = 0.85f) },
-            onDrawSurface = { drawRect(AdvancedGlassNavSurface) },
-          )
-          .glassBorder(AppComponentShape)
-      }
       Box(
         modifier = reportBottomNavTop
           .align(Alignment.BottomCenter)
@@ -567,23 +521,13 @@ fun MainScreen(
           onSelectPage = { selectPage(it) },
           modifier = Modifier
             .fillMaxWidth()
-            // 无文字后按图标高度收窄导航条（64dp）；圆角 32dp（半高），呈全圆角胶囊观感
+            // 无文字后按图标高度收窄导航条（64dp）；圆角取「应用圆角调整」值
             .height(64.dp)
-            .then(
-              if (backdropActive) {
-                advancedNavModifier
-              } else {
-                Modifier.glassShadow(AppComponentShape).clip(AppComponentShape).glassBorder(AppComponentShape)
-              },
-            ),
+            .clip(AppComponentShape)
+            .glassBorder(AppComponentShape),
           windowInsets = WindowInsets(0.dp),
-          // 高级玻璃（真采样）：表面由 onDrawSurface 绘制，容器保持透明；
-          // 低版本无实时模糊时用高级半透膜；其余情况沿用复古玻璃的更实玻璃底 + 只显示图标
-          containerColor = when {
-            backdropActive -> Color.Transparent
-            advancedFloatingNav -> AdvancedGlassNavSurface
-            else -> GlassNavSurface
-          },
+          // 复古玻璃的更实玻璃底 + 只显示图标
+          containerColor = GlassNavSurface,
           showLabels = false,
         )
       }
@@ -704,6 +648,7 @@ private fun ColumnScope.MainTabPages(
                 Modifier.fillMaxSize(),
                 onCoachAnchorChanged = { onCoachAnchorChanged(CoachAnchor.ENGINE, it) },
                 isActive = pageActive,
+                gameCount = libraryState.games.size,
               )
               3 -> SettingsScreen(
                 Modifier.fillMaxSize(),

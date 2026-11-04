@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.lifecycle.Lifecycle
@@ -40,10 +41,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tyranor.next.R
 import com.tyranor.next.core.input.InputRemapRepository
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.theme.glassShadow
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppSearchField
@@ -58,7 +59,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.ArrowPreference
+import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -219,7 +220,7 @@ internal fun InputSettingsScreen() {
                 AppTopBar(
                     title = stringResource(R.string.input_settings_title),
                     background = ComposeColor.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                 )
             },
         ) { innerPadding ->
@@ -334,7 +335,7 @@ internal fun InputSettingsScreen() {
                 item {
                     // 卡片不设标题：条目自身已含标题与说明，避免与卡片标题重复
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassShadow().glassBorder(),
+                        modifier = Modifier.fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
@@ -568,8 +569,10 @@ private fun ProfileNameDialog(
                     AppSearchField(
                         query = value,
                         onQueryChange = { value = it },
+                        onSearch = { onConfirm(value) },
                         leadingIcon = painterResource(R.drawable.ic_sheet_rename),
                         iconContentDescription = title,
+                        imeAction = ImeAction.Done,
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                     Text(

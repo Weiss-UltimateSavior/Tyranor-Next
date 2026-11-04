@@ -1,0 +1,108 @@
+name: WebDAV macOS regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/webdav-macos.yml"
+
+      # Save/WebDAV/path-safety code and the launch-side path logic it shares.
+      - "app/src/main/java/com/tyranor/next/core/game/save/**"
+      - "app/src/main/java/com/tyranor/next/core/engine/EngineType.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/launch/EngineLauncher.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/launch/GameLaunchCompletion.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/launch/KrMirrorOverlayReader.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/launch/EthornellOperationGate.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/manual/AndroidAppGames.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/EthornellPaths.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/GamePathUtils.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/ScanGame.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/Xs35Paths.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/model/Xs4Paths.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/EffectiveEngineSettings.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsStore.kt"
+      - "app/src/main/java/com/tyranor/next/core/settings/PerGameSettingsStore.kt"
+
+      # Narrow direct consumers of SaveSync, save management, and launch paths.
+      - "app/src/main/java/com/tyranor/next/TyranorNextApplication.kt"
+      - "app/src/main/java/com/tyranor/next/ui/common/SaveSyncFeedback.kt"
+      - "app/src/main/java/com/tyranor/next/ui/common/SaveSyncMessages.kt"
+      - "app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt"
+      - "app/src/main/java/com/tyranor/next/ui/game/GameShortcutActivity.kt"
+      - "app/src/main/java/com/tyranor/next/ui/game/RpgSaveFormatDialog.kt"
+      - "app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt"
+      - "app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt"
+      - "app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt"
+      - "app/src/main/java/com/tyranor/next/ui/save/**"
+      - "app/src/main/java/com/tyranor/next/ui/settings/PerGameSettingsScreen.kt"
+
+      # JVM regressions that exercise the same filesystem behavior.
+      - "app/src/test/java/com/tyranor/next/core/game/save/**"
+      - "app/src/test/java/com/tyranor/next/core/game/launch/RpgSaveScanDirsTest.kt"
+      - "app/src/test/java/com/tyranor/next/core/game/launch/GameLaunchCompletionTest.kt"
+      - "app/src/test/java/com/tyranor/next/core/game/launch/KrMirrorOverlayReaderTest.kt"
+      - "app/src/test/java/com/tyranor/next/ui/common/SaveSyncMessagesTest.kt"
+      - "app/src/test/java/com/tyranor/next/ui/save/**"
+
+      # Build-graph inputs for the full :app:testDebugUnitTest task.
+      - "app/build.gradle.kts"
+      - "engine/build.gradle"
+      - "buildSrc/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "gradlew"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webdav-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    name: Full app JVM tests on macOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: platform-tools
+      - name: Install build SDK
+        run: |
+          packages=("platforms;android-36" "platforms;android-37.0" "build-tools;37.0.0" "ndk;28.0.13004108")
+          # Keep the macOS SDK installation aligned with main CI; partial NDK downloads
+          # can fail while unzipping and need cleanup before retrying.
+          for attempt in 1 2 3; do
+            if sdkmanager --channel=3 "${packages[@]}"; then
+              exit 0
+            fi
+            echo "::warning::sdkmanager install failed (attempt ${attempt}/3); clearing partial downloads before retry"
+            rm -rf "${ANDROID_HOME}/.temp" "${ANDROID_HOME}/.downloadIntermediates" "${ANDROID_HOME}/ndk/28.0.13004108"
+            sleep $((attempt * 15))
+          done
+          echo "::error::Failed to install Android SDK packages after 3 attempts"
+          exit 1
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - name: Run full app JVM regression with native filesystem aliases
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+      - name: Keep test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: webdav-macos-jvm-results
+          path: |
+            app/build/test-results/testDebugUnitTest
+            app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: warn

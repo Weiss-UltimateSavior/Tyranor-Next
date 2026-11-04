@@ -36,6 +36,7 @@ import com.tyranor.next.R
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
 import com.tyranor.next.core.engine.external.RuffleExternalEngineModule
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.NoRippleTextButton
@@ -66,7 +67,7 @@ internal fun RuffleSettingsScreen() {
                 AppTopBar(
                     title = stringResource(R.string.engine_settings_ruffle_title),
                     background = Color.Transparent,
-                    contentColor = MiuixTheme.colorScheme.onBackground,
+                    contentColor = PageTextColor,
                     trailing = {
                         TopBarIcon(
                             painterResource(R.drawable.ic_save),

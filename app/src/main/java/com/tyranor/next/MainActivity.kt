@@ -36,6 +36,7 @@ import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassBackground
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.core.updater.UpdateNotificationManager
+import com.tyranor.next.ui.common.observeSaveSyncFeedback
 
 class MainActivity : ComponentActivity() {
   private val notificationPermissionLauncher =
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    observeSaveSyncFeedback()
 
     enableEdgeToEdge(
       statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
@@ -54,9 +56,9 @@ class MainActivity : ComponentActivity() {
     setContent {
       ProvideAppLocale {
         TyranorNextTheme {
-          // 系统栏图标跟随外观模式：深色模式用浅色图标（SystemBarStyle.dark）
+          // 系统栏图标跟随实际背景：深色模式/深色底图用浅色图标（SystemBarStyle.dark）
           val activity = this@MainActivity
-          val dark = AppThemeColors.isDark
+          val dark = AppThemeColors.isDark || AppThemeColors.hasDarkBackdrop
           SideEffect {
             if (dark) {
               activity.enableEdgeToEdge(

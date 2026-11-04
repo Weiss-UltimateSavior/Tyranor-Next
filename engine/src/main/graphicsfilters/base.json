@@ -30,7 +30,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "m",
@@ -62,7 +63,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "l",
@@ -94,7 +96,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "soft_s",
@@ -126,7 +129,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "soft_m",
@@ -158,7 +162,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "soft_l",
@@ -190,7 +195,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "deblur",
@@ -222,7 +228,8 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "topLeftCoordinates": true
     },
     {
       "id": "lanczos",
@@ -244,6 +251,40 @@
       "asset": null,
       "nativeScale": 1,
       "haloPerPass": 0,
+      "sharpnessAdjustable": true,
+      "scaleModes": [
+        "fit",
+        "factor"
+      ],
+      "defaultScaleMode": "fit",
+      "defaultSharpness": 0.5,
+      "defaultLanczosAntiRingingStrength": 0.5,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1
+    },
+    {
+      "id": "bilinear",
+      "category": "Bilinear",
+      "categoryOrder": 36,
+      "order": 0,
+      "title": {
+        "zh": "Bilinear",
+        "en": "Bilinear",
+        "ja": "バイリニア"
+      },
+      "categoryTitle": {
+        "zh": "Bilinear",
+        "en": "Bilinear",
+        "ja": "バイリニア"
+      },
+      "shortName": "BL",
+      "color": "#FF8B6657",
+      "asset": null,
+      "nativeScale": 1,
+      "haloPerPass": 0,
       "sharpnessAdjustable": false,
       "scaleModes": [
         "fit",
@@ -255,7 +296,44 @@
       "forceParameters": false,
       "visible": true,
       "migrationTarget": null,
-      "maxOutputScale": 1
+      "maxOutputScale": 1,
+      "resampleKernel": "bilinear"
+    },
+    {
+      "id": "bicubic",
+      "category": "Bicubic",
+      "categoryOrder": 38,
+      "order": 0,
+      "title": {
+        "zh": "Bicubic",
+        "en": "Bicubic",
+        "ja": "バイキュービック"
+      },
+      "categoryTitle": {
+        "zh": "Bicubic",
+        "en": "Bicubic",
+        "ja": "バイキュービック"
+      },
+      "shortName": "BC",
+      "color": "#FF8B6657",
+      "asset": null,
+      "nativeScale": 1,
+      "haloPerPass": 0,
+      "sharpnessAdjustable": true,
+      "scaleModes": [
+        "fit",
+        "factor"
+      ],
+      "defaultScaleMode": "fit",
+      "defaultSharpness": 0.33,
+      "defaultBicubicB": 0.33,
+      "defaultBicubicC": 0.33,
+      "outputSized": false,
+      "forceParameters": false,
+      "visible": true,
+      "migrationTarget": null,
+      "maxOutputScale": 1,
+      "resampleKernel": "bicubic"
     }
   ]
 }
