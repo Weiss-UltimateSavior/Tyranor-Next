@@ -164,13 +164,11 @@ fun OnboardingCoachOverlay(
     val titleRes = when {
         safeStep != CoachAnchor.HOME -> coachSteps[safeStep].title
         homeStyle == AppSettingsStore.HOME_STYLE_WEB -> R.string.onboarding_coach_home_web_title
-        homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY -> R.string.onboarding_coach_home_category_title
         else -> coachSteps[safeStep].title
     }
     val bodyRes = when {
         safeStep != CoachAnchor.HOME -> coachSteps[safeStep].body
         homeStyle == AppSettingsStore.HOME_STYLE_WEB -> R.string.onboarding_coach_home_web_body
-        homeStyle == AppSettingsStore.HOME_STYLE_CATEGORY -> R.string.onboarding_coach_home_category_body
         else -> coachSteps[safeStep].body
     }
     val contentDescription = stringResource(

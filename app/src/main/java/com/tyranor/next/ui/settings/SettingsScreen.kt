@@ -275,7 +275,6 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .coachAnchor(isActive, onCoachAnchorChanged)
-                            .glassShadow()
                             .glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {

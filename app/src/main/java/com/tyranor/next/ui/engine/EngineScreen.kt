@@ -172,9 +172,6 @@ fun EngineScreen(
                 if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) {
                     // 玻璃外观：Miuix TabRow 不支持指示器描边，改用统一标签栏组件
                     // （亮卡指示器 + 滑动动画 + 0.5dp 发丝描边，见 AGENTS.md「标签栏统一规范」）
-                val tabModifier = Modifier
-                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
-                if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) {
                     // 玻璃/白雾外观：Miuix TabRow 的选中文字取 onBackground，会在亮指示器上
                     // 变成浅色；改用统一标签栏组件（自带亮底深字/深底浅字分派）。
                     SlidingTabRow(
