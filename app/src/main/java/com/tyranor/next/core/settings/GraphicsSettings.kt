@@ -32,7 +32,10 @@ enum class GraphicsScaleMode(val wire: String) { NONE("none"), FIT("fit"), FACTO
 data class GraphicsNode(
     val id: String,
     val enabled: Boolean = true,
-    val sharpness: Double = GraphicsFilterChain.legacySharpness(id),
+    val casSharpness: Double = GraphicsFilterChain.defaultCasSharpness(id),
+    val bicubicB: Double = GraphicsFilterChain.defaultBicubicB(id),
+    val bicubicC: Double = GraphicsFilterChain.defaultBicubicC(id),
+    val lanczosAntiRingingStrength: Double = GraphicsFilterChain.defaultLanczosAntiRingingStrength(id),
     val scaleMode: GraphicsScaleMode = GraphicsScaleMode.entries.first { it.wire == GraphicsFilterChain.defaultScaleMode(id) },
     val widthScale: Double = 1.0,
     val heightScale: Double = 1.0,
@@ -40,13 +43,44 @@ data class GraphicsNode(
     // Retain the old wire fields; migrate unequal legacy factors without increasing either dimension.
     val scaleFactor: Double get() = minOf(widthScale, heightScale)
 
+    val sharpness: Double get() = when (id) {
+        "bicubic" -> bicubicB
+        "lanczos" -> lanczosAntiRingingStrength
+        else -> casSharpness
+    }
+
+    constructor(
+        id: String,
+        enabled: Boolean,
+        sharpness: Double,
+        scaleMode: GraphicsScaleMode = GraphicsScaleMode.entries.first { it.wire == GraphicsFilterChain.defaultScaleMode(id) },
+        widthScale: Double = 1.0,
+        heightScale: Double = 1.0,
+    ) : this(
+        id = id,
+        enabled = enabled,
+        // Legacy wire shape: cas keeps the sharpness value (its dedicated parameter), while bicubic
+        // and lanczos ignore it and apply their definition defaults (B=C=0.33, AR=0.50) —
+        // legacy sharpness must not migrate into filter parameters.
+        casSharpness = if (id == "cas") sharpness else GraphicsFilterChain.defaultCasSharpness(id),
+        bicubicB = GraphicsFilterChain.defaultBicubicB(id),
+        bicubicC = GraphicsFilterChain.defaultBicubicC(id),
+        lanczosAntiRingingStrength = GraphicsFilterChain.defaultLanczosAntiRingingStrength(id),
+        scaleMode = scaleMode,
+        widthScale = widthScale,
+        heightScale = heightScale,
+    )
+
     internal fun normalized() = when (scaleMode) {
         GraphicsScaleMode.FIT -> copy(widthScale = 1.0, heightScale = 1.0)
         GraphicsScaleMode.FACTOR -> copy(widthScale = scaleFactor, heightScale = scaleFactor)
         GraphicsScaleMode.NONE -> this
     }
 
-    internal fun step() = GraphicsFilterChain.Step(id, enabled, sharpness, scaleMode.wire, widthScale, heightScale)
+    internal fun step() = GraphicsFilterChain.Step(
+        id, enabled, casSharpness, bicubicB, bicubicC, lanczosAntiRingingStrength,
+        scaleMode.wire, widthScale, heightScale
+    )
 }
 
 data class GraphicsSettings(
@@ -263,9 +297,28 @@ object GraphicsSettingsCodec {
         return JSONArray().apply {
             chain.map(GraphicsNode::normalized).forEach { node ->
                 put(JSONObject().put("id", node.id).put("enabled", node.enabled).apply {
-                    if (GraphicsFilterCatalog.adjustable(node.id)) {
-                        put("sharpness", node.sharpness).put("scaleMode", node.scaleMode.wire)
+                    if (GraphicsFilterCatalog.scaleAdjustable(node.id)) {
+                        put("scaleMode", node.scaleMode.wire)
                         put("widthScale", node.widthScale).put("heightScale", node.heightScale)
+                    }
+                    if (GraphicsFilterCatalog.parametersAdjustable(node.id) || GraphicsFilterCatalog.scaleAdjustable(node.id)) {
+                        // Downgrade mirror: pre-micro-parameter readers decode `sharpness` for every
+                        // adjustable node (including bilinear); without it a rollback would reset the whole chain.
+                        put("sharpness", node.sharpness)
+                    }
+                    if (GraphicsFilterCatalog.parametersAdjustable(node.id)) {
+                        when (node.id) {
+                            "bicubic" -> {
+                                put("bicubicB", node.bicubicB)
+                                put("bicubicC", node.bicubicC)
+                            }
+                            "lanczos" -> {
+                                put("lanczosAntiRingingStrength", node.lanczosAntiRingingStrength)
+                            }
+                            "cas" -> {
+                                put("casSharpness", node.casSharpness)
+                            }
+                        }
                     }
                 })
             }
@@ -275,6 +328,7 @@ object GraphicsSettingsCodec {
     private fun decodeChain(json: JSONArray?, version: Int): List<GraphicsNode>? {
         if (json == null || json.length() > MAX_NODES) return null
         val chain = ArrayList<GraphicsNode>()
+        val parameterKeys = listOf("sharpness", "casSharpness", "bicubicB", "bicubicC", "lanczosAntiRingingStrength", "scaleMode", "widthScale", "heightScale")
         for (index in 0 until json.length()) {
             val node = json.optJSONObject(index) ?: return null
             val id = node.opt("id") as? String ?: return null
@@ -284,16 +338,74 @@ object GraphicsSettingsCodec {
             val migrated = definition.migrationTarget != null
             val canonicalId = definition.migrationTarget ?: id
             if (canonicalId !in IDS) return null
-            if (version == 2 && !migrated && !definition.adjustable() &&
-                listOf("sharpness", "scaleMode", "widthScale", "heightScale").any(node::has)) return null
-            val defaults = GraphicsNode(canonicalId, enabled, definition.defaultSharpness,
-                GraphicsScaleMode.entries.first { it.wire == definition.defaultScaleMode })
+            if (version == 2 && !migrated && !definition.adjustable() && parameterKeys.any(node::has)) return null
+            val defaults = GraphicsNode(
+                id = canonicalId,
+                enabled = enabled,
+                casSharpness = definition.defaultSharpness,
+                bicubicB = definition.defaultBicubicB,
+                bicubicC = definition.defaultBicubicC,
+                lanczosAntiRingingStrength = definition.defaultLanczosAntiRingingStrength,
+                scaleMode = GraphicsScaleMode.entries.first { it.wire == definition.defaultScaleMode },
+            )
             val decoded = if (version == 2 && !migrated && definition.adjustable()) {
-                val sharpness = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
-                val scaleMode = GraphicsScaleMode.entries.firstOrNull { it.wire == node.opt("scaleMode") } ?: return null
-                val widthScale = (node.opt("widthScale") as? Number)?.toDouble() ?: return null
-                val heightScale = (node.opt("heightScale") as? Number)?.toDouble() ?: return null
-                defaults.copy(sharpness = sharpness, scaleMode = scaleMode, widthScale = widthScale, heightScale = heightScale)
+                val scaleMode = if (node.has("scaleMode")) {
+                    GraphicsScaleMode.entries.firstOrNull { it.wire == node.opt("scaleMode") } ?: return null
+                } else defaults.scaleMode
+                val widthScale = if (node.has("widthScale")) {
+                    (node.opt("widthScale") as? Number)?.toDouble() ?: return null
+                } else defaults.widthScale
+                val heightScale = if (node.has("heightScale")) {
+                    (node.opt("heightScale") as? Number)?.toDouble() ?: return null
+                } else defaults.heightScale
+
+                var nodeBicubicB = defaults.bicubicB
+                var nodeBicubicC = defaults.bicubicC
+                var nodeLanczosAntiRinging = defaults.lanczosAntiRingingStrength
+                var nodeCasSharpness = defaults.casSharpness
+
+                when (canonicalId) {
+                    "bicubic" -> {
+                        // Legacy sharpness is not migrated into B/C; definition defaults apply (B=C=0.33)
+                        // when dedicated keys are absent.
+                        if (node.has("bicubicB")) {
+                            nodeBicubicB = (node.opt("bicubicB") as? Number)?.toDouble() ?: return null
+                        }
+                        if (node.has("bicubicC")) {
+                            nodeBicubicC = (node.opt("bicubicC") as? Number)?.toDouble() ?: return null
+                        }
+                    }
+                    "lanczos" -> {
+                        // Historically, inert 0.4 was written for bilinear/lanczos before dedicated parameters;
+                        // in fac66a78..fbc6f0c7 lanczos sharpness temporarily exposed the AR slider before dedicated
+                        // naming. To eliminate migration ambiguity, legacy `sharpness` is not migrated to anti-ringing;
+                        // the definition default (0.50) applies when dedicated lanczosAntiRingingStrength is absent.
+                        if (node.has("lanczosAntiRingingStrength")) {
+                            nodeLanczosAntiRinging = (node.opt("lanczosAntiRingingStrength") as? Number)?.toDouble() ?: return null
+                        }
+                    }
+                    "cas" -> {
+                        if (node.has("casSharpness")) {
+                            nodeCasSharpness = (node.opt("casSharpness") as? Number)?.toDouble() ?: return null
+                        } else if (node.has("sharpness")) {
+                            nodeCasSharpness = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
+                        }
+                    }
+                    else -> {
+                        if (definition.sharpnessAdjustable && node.has("sharpness")) {
+                            nodeCasSharpness = (node.opt("sharpness") as? Number)?.toDouble() ?: return null
+                        }
+                    }
+                }
+                defaults.copy(
+                    casSharpness = nodeCasSharpness,
+                    bicubicB = nodeBicubicB,
+                    bicubicC = nodeBicubicC,
+                    lanczosAntiRingingStrength = nodeLanczosAntiRinging,
+                    scaleMode = scaleMode,
+                    widthScale = widthScale,
+                    heightScale = heightScale,
+                )
             } else defaults
             if (!runCatching { decoded.step() }.isSuccess) return null
             chain.add(decoded.normalized())

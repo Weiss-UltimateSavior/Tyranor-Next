@@ -876,7 +876,11 @@
     <string name="graphics_settings_unsupported">This engine version does not support filters</string>
     <string name="graphics_settings_runtime_dependent">Auto selection: filter support depends on the actual engine version</string>
     <string name="graphics_filter_parameters">Parameters</string>
+    <string name="graphics_filter_scale_settings">Scale settings</string>
     <string name="graphics_filter_sharpness">Sharpness</string>
+    <string name="graphics_filter_anti_ringing">Anti-ringing strength</string>
+    <string name="graphics_filter_bicubic_b">B parameter</string>
+    <string name="graphics_filter_bicubic_c">C parameter</string>
     <string name="graphics_filter_scale_type">Type</string>
     <string name="graphics_filter_scale_fit">Fit</string>
     <string name="graphics_filter_scale_factor">Factor</string>

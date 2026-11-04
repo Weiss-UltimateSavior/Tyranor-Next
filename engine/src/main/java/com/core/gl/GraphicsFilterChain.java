@@ -11,29 +11,63 @@ public final class GraphicsFilterChain {
     public static final class Step {
         public final String id;
         public final boolean enabled;
-        public final double sharpness, widthScale, heightScale;
+        public final double casSharpness, bicubicB, bicubicC, lanczosAntiRingingStrength;
+        public final double sharpness;
+        public final double widthScale, heightScale;
         public final String scaleMode;
         public Step(String id, boolean enabled) {
-            this(id, enabled, legacySharpness(id), defaultScaleMode(id), 1.0, 1.0);
+            this(id, enabled, defaultCasSharpness(id), defaultBicubicB(id), defaultBicubicC(id),
+                    defaultLanczosAntiRingingStrength(id), defaultScaleMode(id), 1.0, 1.0);
         }
         public Step(String id, boolean enabled, double sharpness, String scaleMode, double widthScale, double heightScale) {
-            if (!known(id) || !Double.isFinite(sharpness) || sharpness < 0 || sharpness > 1
+            this(id, enabled,
+                    ("bicubic".equals(id) || "lanczos".equals(id)) ? defaultCasSharpness(id) : sharpness,
+                    defaultBicubicB(id),
+                    defaultBicubicC(id),
+                    defaultLanczosAntiRingingStrength(id),
+                    scaleMode, widthScale, heightScale);
+        }
+        public Step(String id, boolean enabled, double casSharpness, double bicubicB, double bicubicC,
+                double lanczosAntiRingingStrength, String scaleMode, double widthScale, double heightScale) {
+            if (!known(id) || !Double.isFinite(casSharpness) || casSharpness < 0 || casSharpness > 1
+                    || !Double.isFinite(bicubicB) || bicubicB < 0 || bicubicB > 1
+                    || !Double.isFinite(bicubicC) || bicubicC < 0 || bicubicC > 1
+                    || !Double.isFinite(lanczosAntiRingingStrength) || lanczosAntiRingingStrength < 0 || lanczosAntiRingingStrength > 1
                     || !Double.isFinite(widthScale) || !Double.isFinite(heightScale)
                     || widthScale < 0.25 || widthScale > 4 || heightScale < 0.25 || heightScale > 4
                     || !("none".equals(scaleMode) || "fit".equals(scaleMode) || "factor".equals(scaleMode)))
                 throw new IllegalArgumentException("invalid graphics parameters");
             GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(id);
-            if (!definition.scaleModes.contains(scaleMode) || !definition.sharpnessAdjustable && sharpness != definition.defaultSharpness
+            if (!definition.scaleModes.contains(scaleMode)
+                    || (!definition.sharpnessAdjustable && (casSharpness != definition.defaultSharpness
+                            || bicubicB != definition.defaultBicubicB || bicubicC != definition.defaultBicubicC
+                            || lanczosAntiRingingStrength != definition.defaultLanczosAntiRingingStrength))
                     || !definition.adjustable() && (!definition.defaultScaleMode.equals(scaleMode) || widthScale != 1 || heightScale != 1))
                 throw new IllegalArgumentException("parameters unsupported by filter");
             if ("none".equals(scaleMode) && (widthScale != 1 || heightScale != 1))
                 throw new IllegalArgumentException("invalid scale parameters");
-            this.id = id; this.enabled = enabled; this.sharpness = sharpness;
+            this.id = id; this.enabled = enabled;
+            this.casSharpness = casSharpness;
+            this.bicubicB = bicubicB;
+            this.bicubicC = bicubicC;
+            this.lanczosAntiRingingStrength = lanczosAntiRingingStrength;
+            this.sharpness = "bicubic".equals(id) ? bicubicB : "lanczos".equals(id) ? lanczosAntiRingingStrength : casSharpness;
             this.scaleMode = scaleMode; this.widthScale = widthScale; this.heightScale = heightScale;
         }
         private boolean parameterized() {
-            return GraphicsFilterDefinitions.find(id).forceParameters || sharpness != legacySharpness(id)
-                    || !defaultScaleMode(id).equals(scaleMode) || widthScale != 1 || heightScale != 1;
+            GraphicsFilterDefinition def = GraphicsFilterDefinitions.find(id);
+            if (def.forceParameters) return true;
+            if (!defaultScaleMode(id).equals(scaleMode) || widthScale != 1 || heightScale != 1) return true;
+            if ("bicubic".equals(id)) {
+                return bicubicB != def.defaultBicubicB || bicubicC != def.defaultBicubicC;
+            }
+            if ("lanczos".equals(id)) {
+                return lanczosAntiRingingStrength != def.defaultLanczosAntiRingingStrength;
+            }
+            if ("cas".equals(id)) {
+                return casSharpness != def.defaultSharpness;
+            }
+            return sharpness != legacySharpness(id);
         }
     }
     public static String defaultScaleMode(String id) {
@@ -43,6 +77,22 @@ public final class GraphicsFilterChain {
     public static double legacySharpness(String id) {
         GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(id);
         return definition == null ? 0.4 : definition.defaultSharpness;
+    }
+    public static double defaultCasSharpness(String id) {
+        GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(id);
+        return definition == null ? 0.4 : definition.defaultSharpness;
+    }
+    public static double defaultBicubicB(String id) {
+        GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(id);
+        return definition == null ? 0.33 : definition.defaultBicubicB;
+    }
+    public static double defaultBicubicC(String id) {
+        GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(id);
+        return definition == null ? 0.33 : definition.defaultBicubicC;
+    }
+    public static double defaultLanczosAntiRingingStrength(String id) {
+        GraphicsFilterDefinition definition = GraphicsFilterDefinitions.find(id);
+        return definition == null ? 0.5 : definition.defaultLanczosAntiRingingStrength;
     }
 
     private final List<Step> steps;
@@ -74,10 +124,33 @@ public final class GraphicsFilterChain {
                 boolean enabled = !token.startsWith("!");
                 String[] fields = (enabled ? token : token.substring(1)).split("~", -1);
                 if (fields.length == 1) result.add(new Step(fields[0], enabled));
-                else if (parameters && fields.length == 5)
-                    result.add(new Step(fields[0], enabled, Double.parseDouble(fields[1]), fields[2],
-                            Double.parseDouble(fields[3]), Double.parseDouble(fields[4])));
-                else return null;
+                else if (parameters && "bicubic".equals(fields[0]) && fields.length == 6) {
+                    result.add(new Step(fields[0], enabled, defaultCasSharpness(fields[0]),
+                            Double.parseDouble(fields[1]), Double.parseDouble(fields[2]),
+                            defaultLanczosAntiRingingStrength(fields[0]), fields[3],
+                            Double.parseDouble(fields[4]), Double.parseDouble(fields[5])));
+                } else if (parameters && fields.length == 5) {
+                    double val = Double.parseDouble(fields[1]);
+                    if ("bicubic".equals(fields[0])) {
+                        // The single-knob bicubic wire predates independent B/C: the value cannot
+                        // map onto the current parameters, so in-range wires decode to defaults —
+                        // but malformed values (out of range, or NaN which fails every comparison)
+                        // must fail closed like the lanczos/cas branches instead of silently
+                        // yielding defaults.
+                        if (!(val >= 0 && val <= 1)) throw new IllegalArgumentException("invalid graphics parameters");
+                        result.add(new Step(fields[0], enabled, defaultCasSharpness(fields[0]),
+                                defaultBicubicB(fields[0]), defaultBicubicC(fields[0]),
+                                defaultLanczosAntiRingingStrength(fields[0]), fields[2],
+                                Double.parseDouble(fields[3]), Double.parseDouble(fields[4])));
+                    } else if ("lanczos".equals(fields[0])) {
+                        result.add(new Step(fields[0], enabled, defaultCasSharpness(fields[0]), defaultBicubicB(fields[0]), defaultBicubicC(fields[0]),
+                                val, fields[2], Double.parseDouble(fields[3]), Double.parseDouble(fields[4])));
+                    } else {
+                        result.add(new Step(fields[0], enabled, val, defaultBicubicB(fields[0]), defaultBicubicC(fields[0]),
+                                defaultLanczosAntiRingingStrength(fields[0]), fields[2],
+                                Double.parseDouble(fields[3]), Double.parseDouble(fields[4])));
+                    }
+                } else return null;
             }
         } catch (IllegalArgumentException invalid) { return null; }
         return of(result);
@@ -97,8 +170,18 @@ public final class GraphicsFilterChain {
             Step step = steps.get(i);
             if (!step.enabled) result.append('!');
             result.append(step.id);
-            if (step.parameterized()) result.append('~').append(step.sharpness).append('~').append(step.scaleMode)
-                    .append('~').append(step.widthScale).append('~').append(step.heightScale);
+            if (step.parameterized()) {
+                if ("bicubic".equals(step.id)) {
+                    result.append('~').append(step.bicubicB).append('~').append(step.bicubicC)
+                            .append('~').append(step.scaleMode).append('~').append(step.widthScale).append('~').append(step.heightScale);
+                } else if ("lanczos".equals(step.id)) {
+                    result.append('~').append(step.lanczosAntiRingingStrength)
+                            .append('~').append(step.scaleMode).append('~').append(step.widthScale).append('~').append(step.heightScale);
+                } else {
+                    result.append('~').append(step.casSharpness)
+                            .append('~').append(step.scaleMode).append('~').append(step.widthScale).append('~').append(step.heightScale);
+                }
+            }
         }
         return result.toString();
     }

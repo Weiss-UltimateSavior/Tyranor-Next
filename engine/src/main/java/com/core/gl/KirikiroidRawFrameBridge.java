@@ -129,9 +129,9 @@ public final class KirikiroidRawFrameBridge {
     }
     @Keep
     private static int process(int texture,int sourceWidth,int sourceHeight,float u0,float v0,
-                               float u1,float v1,int width,int height) {
+                               float u1,float v1,int width,int height,boolean topLeft) {
         if (pipeline == null || !Anime4kRuntime.isEnabled()) return 0;
-        int output = pipeline.renderCroppedTexture(texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height);
+        int output = pipeline.renderCroppedTexture(texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height,topLeft);
         frameSeen = true;
         Anime4kRuntime.onRawFrame(sourceWidth,sourceHeight,width,height,pipeline);
         return output;
@@ -173,7 +173,9 @@ public final class KirikiroidRawFrameBridge {
             return 0;
         }
         ensurePipeline(reserved);
-        int output = pipeline.renderCroppedTexture(texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height);
+        // The 1.2.6 PaintBox bitmap and its unchanged carrier UVs use top-left rows.
+        boolean topLeft = true;
+        int output = pipeline.renderCroppedTexture(texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height,topLeft);
         frameSeen = true;
         if (output != 0 && !nativeUploadCarrier(output,pipeline.outputWidth(),pipeline.outputHeight())) {
             Anime4kRuntime.onRawUnavailable(width,height,GraphicsStatus.FILTER_FAILED);
