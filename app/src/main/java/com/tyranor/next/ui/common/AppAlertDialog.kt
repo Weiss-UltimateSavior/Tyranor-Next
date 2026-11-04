@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -54,6 +55,9 @@ import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import kotlinx.coroutines.launch
+
+/** 统一弹窗最大宽度：与游戏操作抽屉（ModalBottomSheet 的 SheetMaxWidth）一致，避免横屏/大屏拉伸过宽。 */
+internal val AppDialogMaxWidth = 640.dp
 
 /**
  * Miuix 风格弹窗：小屏底部弹入 + 窗口变暗 + 标题居中。
@@ -118,11 +122,12 @@ internal fun AppAlertDialog(
             // 弹窗卡片：底部对齐，从屏底弹入
             Card(
                 modifier = Modifier
-                    .fillMaxWidth()
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .imePadding()
                     .padding(horizontal = 12.dp, vertical = 12.dp)
+                    .widthIn(max = AppDialogMaxWidth)
+                    .fillMaxWidth()
                     .graphicsLayer {
                         translationY = slideFraction.value * windowHeightPx
                     }

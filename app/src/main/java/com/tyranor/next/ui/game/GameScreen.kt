@@ -147,6 +147,7 @@ import com.tyranor.next.theme.CoverBadgeText
 import com.tyranor.next.theme.CoverBadgeBackground
 import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppDialogMaxWidth
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
@@ -880,6 +881,8 @@ internal fun GameActionsSheet(
             onDismiss()
         },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        // 与统一弹窗共用最大宽度，避免横屏/大屏拉伸过宽
+        sheetMaxWidth = AppDialogMaxWidth,
         // 关闭抽屉拖拽手势：M3 默认「位移 > 56dp 或速度 > 125dp/s」即关闭，用户快速滑动内容时
         // 极易误关（列表到顶后的剩余手势/惯性会转交抽屉）。关闭后仅能通过遮罩/返回键关闭，
         // 内容滚动与点击不受影响。参见 AGENTS.md「游戏操作抽屉」约定。
