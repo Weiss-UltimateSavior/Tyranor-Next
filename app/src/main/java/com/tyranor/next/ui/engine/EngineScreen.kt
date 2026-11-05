@@ -94,7 +94,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
-import com.tyranor.next.ui.onboarding.coachAnchor
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.settings.artVersionOptions
 import java.io.File

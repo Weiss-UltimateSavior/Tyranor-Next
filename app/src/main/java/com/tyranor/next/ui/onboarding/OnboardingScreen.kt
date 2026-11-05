@@ -53,14 +53,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.theme.CoachOverlayScrim
 import com.tyranor.next.theme.NavWhite
-import com.tyranor.next.theme.TextColor
+import com.tyranor.next.theme.PageTextColor
+import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.CoachAnchor
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.NoRippleTextButton
 
@@ -68,23 +72,6 @@ private data class CoachStep(
     @StringRes val title: Int,
     @StringRes val body: Int,
 )
-
-internal object CoachAnchor {
-    const val HOME = 0
-    const val GAME_ADD = 1
-    const val GAME_SEARCH = 2
-    const val GAME_COVER = 3
-    const val GAME_SCAN = 4
-    const val ENGINE = 5
-    const val SETTINGS = 6
-
-    fun pageOf(index: Int): Int = when (index) {
-        HOME -> 0
-        in GAME_ADD..GAME_SCAN -> 1
-        ENGINE -> 2
-        else -> 3
-    }
-}
 
 private val coachSteps = listOf(
     CoachStep(R.string.onboarding_coach_home_title, R.string.onboarding_coach_home_body),
@@ -121,9 +108,6 @@ private fun Modifier.consumeCoachTouches(step: Int): Modifier = pointerInput(ste
     }
 }
 
-internal fun Modifier.coachAnchor(enabled: Boolean, onBounds: (Rect) -> Unit): Modifier =
-    if (enabled) onGloballyPositioned { onBounds(it.boundsInRoot()) } else this
-
 @Composable
 fun OnboardingStorageError(onRetry: () -> Unit) {
     Column(
@@ -139,7 +123,7 @@ fun OnboardingStorageError(onRetry: () -> Unit) {
             Text(
                 stringResource(R.string.onboarding_save_failed),
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextColor,
+                color = PageTextColor,
             )
             NoRippleButton(text = stringResource(R.string.onboarding_retry), onClick = onRetry)
         }
@@ -229,8 +213,8 @@ fun OnboardingCoachOverlay(
                 }
         ) {
             // 优先使用真实控件上报的 root 坐标；首帧尚未测量时才使用保守回退值。
-            val cornerRadius = minOf(18.dp.toPx(), targetHeight * 0.22f)
-            drawRect(Color.Black.copy(alpha = 0.46f))
+            val cornerRadius = minOf(AppComponentCornerRadius.toPx(), targetHeight * 0.22f)
+            drawRect(CoachOverlayScrim)
             if (showTarget) {
                 val targetSize = Size(targetWidth, targetHeight)
                 drawRoundRect(
@@ -362,6 +346,7 @@ fun OnboardingCoachOverlay(
                     if (tooltipBounds != bounds) tooltipBounds = bounds
                 }
                 .background(NavWhite, AppComponentShape)
+                .glassBorder()
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -375,13 +360,13 @@ fun OnboardingCoachOverlay(
                     stringResource(titleRes),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = TextColor,
+                    color = PageTextColor,
                 )
             }
             Text(
                 stringResource(bodyRes),
                 style = MaterialTheme.typography.bodyMedium,
-                color = TextColor,
+                color = PageTextColor,
             )
             if (saveFailed) {
                 Text(
@@ -408,7 +393,7 @@ fun OnboardingCoachOverlay(
                             Modifier
                                 .size(if (index == safeStep) 16.dp else 7.dp)
                                 .background(
-                                    if (index == safeStep) primary else TextColor.copy(alpha = 0.24f),
+                                    if (index == safeStep) primary else PageTextColor.copy(alpha = 0.24f),
                                     CircleShape,
                                 ),
                         )

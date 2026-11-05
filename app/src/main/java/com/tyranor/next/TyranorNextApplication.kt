@@ -13,7 +13,6 @@ import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.AppSettingsStore
-import com.tyranor.next.core.settings.OnboardingWriteResult
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -43,11 +42,14 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         initializeStartup()
     }
 
-    /** 主线程调用；初始标记写入失败时允许入口页重试，不执行会污染安装判定的迁移。 */
+    /** 主线程调用；引导标记落盘失败不阻断应用启动，内存快照仍用于本次启动判定。 */
     fun initializeStartup(): Boolean {
         if (startupReady) return true
-        if (isMainProcess() && AppSettingsStore.initializeOnboarding(this) != OnboardingWriteResult.SAVED) {
-            return false
+        val mainProcess = isMainProcess()
+        if (mainProcess) {
+            // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
+            // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
+            AppSettingsStore.initializeOnboarding(this)
         }
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。
@@ -56,8 +58,8 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         EngineSettingsStore.cleanupLegacyWinlatorKeys(this)
         UpdateNotificationManager.createChannel(this)
         GitHubUpdateChecker.restoreState(this)
-        // 游戏库 Room 迁移检查 + 首页缓存预热，避免主线程首次读库阻塞（迁移方案阶段 0）。
-        if (AppSettingsStore.isOnboardingCompleted(this)) initializeMainLibrary()
+        // 游戏库 Room 迁移检查 + 首页缓存预热在 setContent 前启动，避免首帧 SettingsScreen 同步开库。
+        if (mainProcess) initializeMainLibrary()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         startupReady = true
         return true

@@ -917,8 +917,6 @@
     <string name="onboarding_coach_home_body">Jump back into favorites here and see what you opened recently.</string>
     <string name="onboarding_coach_home_web_title">Explore the web home</string>
     <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
-    <string name="onboarding_coach_home_category_title">Browse game categories</string>
-    <string name="onboarding_coach_home_category_body">Browse and launch games by category here.</string>
     <string name="onboarding_coach_games_title">Add your games</string>
     <string name="onboarding_coach_games_body">Use Add game to choose and save a game folder. It is scanned after you add it.</string>
     <string name="onboarding_coach_games_search_title">Find a game</string>
@@ -930,7 +928,7 @@
     <string name="onboarding_coach_engine_title">Check runtimes</string>
     <string name="onboarding_coach_engine_body">Check built-in engines, external modules, and emulators here.</string>
     <string name="onboarding_coach_settings_title">Adjust settings anytime</string>
-    <string name="onboarding_coach_settings_body">Adjust appearance, navigation, scanning, and input from Settings.</string>
+    <string name="onboarding_coach_settings_body">Add game directories here, then adjust scan depth and game sorting.</string>
     <string name="webdav_title">WebDAV save sync</string>
     <string name="webdav_enabled">Enable WebDAV save sync</string>
     <string name="webdav_server_url">Server URL</string>

@@ -108,7 +108,7 @@ import com.tyranor.next.ui.save.WebDavSettingsActivity
 import com.tyranor.next.ui.runtime.EngineModuleManagementActivity
 import com.tyranor.next.ui.settings.InputSettingsActivity
 import com.tyranor.next.ui.settings.SettingsScreen
-import com.tyranor.next.ui.onboarding.CoachAnchor
+import com.tyranor.next.ui.common.CoachAnchor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -581,7 +581,7 @@ private fun ColumnScope.MainTabPages(
         // 中间 Tab 的 alpha 在任意状态均为 0，因此跨页时只显示起点和终点的直接水平动画。
         tabItems.indices.forEach { page ->
           val pageOffset by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = if (onboarding) 0 else 200) },
+            transitionSpec = { tween(durationMillis = if (onboarding) 80 else 200) },
             label = "mainTabOffset$page",
           ) { activePage ->
             when {
@@ -591,7 +591,7 @@ private fun ColumnScope.MainTabPages(
             }
           }
           val pageAlpha by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = if (onboarding) 0 else 160) },
+            transitionSpec = { tween(durationMillis = if (onboarding) 80 else 160) },
             label = "mainTabAlpha$page",
           ) { activePage -> if (page == activePage) 1f else 0f }
           val pageActive = page == selectedIndex && !pageTransition.isRunning

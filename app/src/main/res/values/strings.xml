@@ -917,8 +917,6 @@
     <string name="onboarding_coach_home_body">这里可以快速进入常玩游戏，也能查看最近打开的内容。</string>
     <string name="onboarding_coach_home_web_title">浏览网页首页</string>
     <string name="onboarding_coach_home_web_body">这里展示你配置的网页首页内容。</string>
-    <string name="onboarding_coach_home_category_title">浏览游戏分类</string>
-    <string name="onboarding_coach_home_category_body">这里可以按分类浏览和启动游戏。</string>
     <string name="onboarding_coach_games_title">添加你的游戏</string>
     <string name="onboarding_coach_games_body">点击“添加游戏”选择并保存游戏目录；首次添加后会自动扫描。</string>
     <string name="onboarding_coach_games_search_title">查找游戏</string>
@@ -930,7 +928,7 @@
     <string name="onboarding_coach_engine_title">查看运行环境</string>
     <string name="onboarding_coach_engine_body">在“引擎”页查看内置引擎、外置模块和模拟器。</string>
     <string name="onboarding_coach_settings_title">随时调整设置</string>
-    <string name="onboarding_coach_settings_body">在“设置”中调整外观、导航、扫描和输入。</string>
+    <string name="onboarding_coach_settings_body">这里可以添加游戏目录、调整扫描深度和游戏排序。</string>
     <string name="webdav_title">WebDAV 存档同步</string>
     <string name="webdav_enabled">启用 WebDAV 存档同步</string>
     <string name="webdav_server_url">服务器地址</string>

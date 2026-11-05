@@ -7,10 +7,12 @@ import com.tyranor.next.ui.main.MainScreen
 
 @Composable
 fun MainNavigation(
+  modifier: Modifier = Modifier,
   coachPage: Int? = null,
   onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
 ) {
   MainScreen(
+    modifier = modifier,
     coachPage = coachPage,
     onCoachAnchorChanged = onCoachAnchorChanged,
   )

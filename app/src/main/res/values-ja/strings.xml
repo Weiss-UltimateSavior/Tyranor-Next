@@ -917,8 +917,6 @@
     <string name="onboarding_coach_home_body">ここからお気に入りを起動し、最近開いたゲームも確認できます。</string>
     <string name="onboarding_coach_home_web_title">ウェブホームを見る</string>
     <string name="onboarding_coach_home_web_body">設定したウェブホームをここに表示します。</string>
-    <string name="onboarding_coach_home_category_title">ゲームを分類で見る</string>
-    <string name="onboarding_coach_home_category_body">ここでゲームを分類ごとに閲覧して起動できます。</string>
     <string name="onboarding_coach_games_title">ゲームを追加</string>
     <string name="onboarding_coach_games_body">「ゲームを追加」でゲームフォルダーを選択して保存します。追加後に自動でスキャンされます。</string>
     <string name="onboarding_coach_games_search_title">ゲームを探す</string>
@@ -930,7 +928,7 @@
     <string name="onboarding_coach_engine_title">実行環境を確認</string>
     <string name="onboarding_coach_engine_body">ここで内蔵エンジン、外部モジュール、エミュレーターを確認できます。</string>
     <string name="onboarding_coach_settings_title">設定はいつでも変更可能</string>
-    <string name="onboarding_coach_settings_body">「設定」で外観、ナビゲーション、スキャン、入力を調整できます。</string>
+    <string name="onboarding_coach_settings_body">ここでゲームフォルダーを追加し、スキャンの深さとゲームの並び順を調整できます。</string>
     <string name="webdav_title">WebDAV セーブ同期</string>
     <string name="webdav_enabled">WebDAV セーブ同期を有効化</string>
     <string name="webdav_server_url">サーバー URL</string>

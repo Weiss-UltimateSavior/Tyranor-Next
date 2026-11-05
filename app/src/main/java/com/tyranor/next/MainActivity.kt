@@ -15,20 +15,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.OnboardingWriteResult
 import com.tyranor.next.ui.onboarding.OnboardingCoachOverlay
 import com.tyranor.next.ui.onboarding.OnboardingStorageError
-import com.tyranor.next.ui.onboarding.CoachAnchor
+import com.tyranor.next.ui.common.CoachAnchor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.ui.common.ProvideAppLocale
@@ -96,10 +95,26 @@ class MainActivity : ComponentActivity() {
     var coachStep by rememberSaveable { mutableStateOf(0) }
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
     var saving by remember { mutableStateOf(false) }
-    var saveFailed by remember { mutableStateOf(false) }
+    var saveFailed by rememberSaveable { mutableStateOf(false) }
+    var saveRequest by rememberSaveable { mutableStateOf(0) }
     var coachAnchors by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
-    val coachPage = CoachAnchor.pageOf(coachStep)
-    val scope = rememberCoroutineScope()
+    val safeCoachStep = coachStep.coerceIn(CoachAnchor.HOME, CoachAnchor.SETTINGS)
+    val coachPage = CoachAnchor.pageOf(safeCoachStep)
+    LaunchedEffect(saveRequest) {
+      if (saveRequest == 0) return@LaunchedEffect
+      saving = true
+      saveFailed = false
+      val saved = withContext(Dispatchers.IO) {
+        AppSettingsStore.setOnboardingCompleted(applicationContext)
+      }
+      saving = false
+      saveRequest = 0
+      if (saved == OnboardingWriteResult.SAVED) {
+        completed = true
+      } else {
+        saveFailed = true
+      }
+    }
     LaunchedEffect(coachPage) {
       // 四页常驻组合会保留隐藏页；切页时丢弃旧页坐标，避免把屏外矩形用于新页面。
       coachAnchors = coachAnchors.filterKeys { CoachAnchor.pageOf(it) == coachPage }
@@ -134,58 +149,25 @@ class MainActivity : ComponentActivity() {
         MainNavigation(
           coachPage = coachPage,
           onCoachAnchorChanged = reportCoachAnchor,
+          modifier = Modifier.clearAndSetSemantics { },
         )
         OnboardingCoachOverlay(
-          step = coachStep,
+          step = safeCoachStep,
           homeStyle = homeStyle,
           saving = saving,
           saveFailed = saveFailed,
-          targetBounds = coachAnchors[coachStep],
+          targetBounds = coachAnchors[safeCoachStep],
           onNext = {
-            if (coachStep == CoachAnchor.SETTINGS) finishOnboarding(
-              saving = saving,
-              setSaving = { saving = it },
-              setSaveFailed = { saveFailed = it },
-              setCompleted = { completed = it },
-              scope = scope,
-            ) else {
-              coachStep += 1
+            if (safeCoachStep == CoachAnchor.SETTINGS) {
+              if (!saving) saveRequest += 1
+            } else {
+              coachStep = (safeCoachStep + 1).coerceAtMost(CoachAnchor.SETTINGS)
             }
           },
           onSkip = {
-            finishOnboarding(
-              saving = saving,
-              setSaving = { saving = it },
-              setSaveFailed = { saveFailed = it },
-              setCompleted = { completed = it },
-              scope = scope,
-            )
+            if (!saving) saveRequest += 1
           },
         )
-      }
-    }
-  }
-
-  private fun finishOnboarding(
-    saving: Boolean,
-    setSaving: (Boolean) -> Unit,
-    setSaveFailed: (Boolean) -> Unit,
-    setCompleted: (Boolean) -> Unit,
-    scope: kotlinx.coroutines.CoroutineScope,
-  ) {
-    if (!saving) {
-      setSaving(true)
-      setSaveFailed(false)
-      scope.launch {
-        val saved = withContext(Dispatchers.IO) {
-          AppSettingsStore.setOnboardingCompleted(applicationContext)
-        }
-        setSaving(false)
-        if (saved == OnboardingWriteResult.SAVED) {
-          setCompleted(true)
-        } else {
-          setSaveFailed(true)
-        }
       }
     }
   }

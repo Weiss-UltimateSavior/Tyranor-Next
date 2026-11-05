@@ -154,8 +154,8 @@ import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
-import com.tyranor.next.ui.onboarding.CoachAnchor
-import com.tyranor.next.ui.onboarding.coachAnchor
+import com.tyranor.next.ui.common.CoachAnchor
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog

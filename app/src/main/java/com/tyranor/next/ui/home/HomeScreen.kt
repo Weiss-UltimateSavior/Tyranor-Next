@@ -78,7 +78,7 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.onboarding.coachAnchor
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
@@ -456,6 +456,11 @@ private fun QuickLaunchSection(
     onCoachAnchorChanged: (Rect) -> Unit = {},
     isActive: Boolean = true,
 ) {
+    DisposableEffect(isActive) {
+        onDispose {
+            if (isActive) onCoachAnchorChanged(Rect.Zero)
+        }
+    }
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth().coachAnchor(isActive, onCoachAnchorChanged),
         contentAlignment = Alignment.Center,

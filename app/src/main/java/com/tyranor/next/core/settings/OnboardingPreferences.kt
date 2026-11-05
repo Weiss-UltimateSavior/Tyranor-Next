@@ -24,17 +24,22 @@ internal class OnboardingPreferences(private val settings: SharedPreferences) {
     }
 
     @Synchronized
-    fun isCompleted(): Boolean = pendingInitialValue == null &&
-        settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
+    fun isCompleted(): Boolean = pendingInitialValue
+        ?: settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
 
     @Synchronized
     fun complete(): OnboardingWriteResult {
-        if (isCompleted()) return OnboardingWriteResult.SAVED
+        if (pendingInitialValue == null &&
+            settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
+        ) {
+            return OnboardingWriteResult.SAVED
+        }
         if (!settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, true).commit()) {
             // 重建 Activity/onStop 不能把失败写入留下的内存 true 当成完成。
             settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false).apply()
             return OnboardingWriteResult.STORAGE_UNAVAILABLE
         }
+        pendingInitialValue = null
         return OnboardingWriteResult.SAVED
     }
 }

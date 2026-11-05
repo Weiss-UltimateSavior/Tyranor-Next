@@ -102,13 +102,13 @@ class OnboardingPreferencesTest {
     }
 
     @Test
-    fun `failed upgrade marker cannot be observed as completion`() {
+    fun `failed upgrade marker keeps existing users out of onboarding and can be repaired`() {
         val storage = MemoryPreferences().apply { writeSucceeds = false }
         val state = OnboardingPreferences(storage.preferences)
         assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, state.initialize { true })
-        assertFalse(state.isCompleted())
+        assertTrue(state.isCompleted())
         storage.writeSucceeds = true
-        state.initialize { false }
+        assertEquals(OnboardingWriteResult.SAVED, state.complete())
         assertTrue(state.isCompleted())
     }
 

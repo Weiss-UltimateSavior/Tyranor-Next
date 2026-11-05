@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -79,7 +80,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.onboarding.coachAnchor
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
@@ -143,12 +144,13 @@ fun SettingsScreen(
     var updateDownloadJob by remember { mutableStateOf<Job?>(null) }
     var showGroupDialog by remember { mutableStateOf(false) }
     var showScanDirs by remember { mutableStateOf(false) }
-    var scanDirs by remember { mutableStateOf(GameLibraryFacade.loadRoots(ctx)) }
+    var scanDirs by remember { mutableStateOf(emptyList<String>()) }
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
     val settingsUpdateFailedFormat = stringResource(R.string.settings_update_failed)
     LaunchedEffect(Unit) {
+        scanDirs = withContext(Dispatchers.IO) { GameLibraryFacade.loadRoots(ctx) }
         GameLibraryFacade.rootsRevision.collect {
             scanDirs = withContext(Dispatchers.IO) { GameLibraryFacade.loadRoots(ctx) }
         }
@@ -271,6 +273,11 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
+                    DisposableEffect(isActive) {
+                        onDispose {
+                            if (isActive) onCoachAnchorChanged(Rect.Zero)
+                        }
+                    }
                     MiuixCard(
                         modifier = Modifier
                             .fillMaxWidth()
