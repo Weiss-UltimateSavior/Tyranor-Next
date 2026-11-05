@@ -32,9 +32,6 @@ object EngineDetectionRepository {
         when (value?.trim()) {
             EngineSettingsStore.ART_ENGINE_V1, "internal.artemis" -> EngineSettingsStore.ART_ENGINE_V1
             EngineSettingsStore.ART_ENGINE_V2, "internal.artemis.compat" -> EngineSettingsStore.ART_ENGINE_V2
-            EngineSettingsStore.ART_ENGINE_V3, "internal.artemis.compat.v2" -> EngineSettingsStore.ART_ENGINE_V3
-            EngineSettingsStore.ART_ENGINE_V4, "internal.artemis.v4" -> EngineSettingsStore.ART_ENGINE_V4
-            EngineSettingsStore.ART_ENGINE_V5, "internal.artemis.v5" -> EngineSettingsStore.ART_ENGINE_V5
             EngineSettingsStore.ART_ENGINE_V6, "internal.artemis.v6" -> EngineSettingsStore.ART_ENGINE_V6
             else -> null
         }
@@ -89,7 +86,12 @@ object EngineDetectionRepository {
         } else {
             row0 ?: return@withContext null
         }
-        val remembered = row.artemisSuccessVersion ?: row.artemisVersion ?: return@withContext null
+        // DB 原值同样走归一：旧库里的 3/4/5（含其 legacy id）已被删除，直接返回会让
+        // ArtemisVersion.requested() 回落 V1、同时以旧值作为回退链首项使 V2 被跳过；
+        // 非法/已删除版本一律视为无记忆（返回 null 触发重新识别）。
+        val remembered = normalizeArtemisVersion(row.artemisSuccessVersion)
+            ?: normalizeArtemisVersion(row.artemisVersion)
+            ?: return@withContext null
         if (row.fingerprintHash == null || fingerprint == null || row.fingerprintHash == fingerprint) {
             remembered
         } else {

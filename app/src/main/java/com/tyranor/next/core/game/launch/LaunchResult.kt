@@ -52,6 +52,9 @@ sealed interface LaunchResult {
         /** 内置引擎原生插件保障失败。 */
         data class PluginBootstrapFailed(val reason: EnginePluginBootstrap.Failure) : Failure
 
+        /** 大体积引擎运行库包（assets/engine-runtime/<packId>.zip.xz）解压失败或安装包不完整。 */
+        data class EngineLibraryPackFailed(val packId: String) : Failure
+
         /** KRKR 可移动存储镜像准备失败；携带类型化阶段（文案由 UI 映射）。 */
         data class KrkrMirrorPrepareFailed(
             val stage: MirrorPrepareStage,

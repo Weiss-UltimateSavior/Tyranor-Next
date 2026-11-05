@@ -2,7 +2,13 @@
 
 Explicit opt-in only: `-PethornellReleaseProbe=true`. Default remains the existing debug AndroidX/JUnit/Compose harness. Opt-in selects `testBuildType=release`, replaces androidTest Java sources using the Variant Sources API, chooses the framework-only Java Instrumentation subclass, and excludes all explicitly declared AndroidX/JUnit/Compose test dependencies. Production release R8/resource shrinking and production keep rules are unchanged. Test-only keep is limited to this runner's literal JNI export.
 
-The runner references only Android framework and Java APIs. It loads the real target `com.core.ethornell.NativeEthornell` through the target classloader/reflection; it contains **no copied/shadow production JNI classes**. The same test-only C++ library/header as the debug probe supplies RTLD_NOW, 15 ABI symbols (including `request_payload`), build_info buffer and ABI-layout checks. Its extra JNI entry only exists in the test APK. No Kotlin/AndroidX/JUnit initialization is needed to run these checks.
+The runner uses only Android framework/Java APIs plus one direct reference to the target's production `com.core.nativeplugin.NativeRuntimePack` (retained verbatim by the production `-keep class com.core.**` rule) to resolve the extracted engine library; the real target `com.core.ethornell.NativeEthornell` is still loaded through the target classloader/reflection. It contains **no copied/shadow production JNI classes**. The same test-only C++ library/header as the debug probe supplies RTLD_NOW, 15 ABI symbols (including `request_payload`), build_info buffer and ABI-layout checks. Its extra JNI entry only exists in the test APK. No Kotlin/AndroidX/JUnit dependency in the test APK is needed to run these checks.
+
+## Runtime pack precondition
+
+`libethornell.so` is no longer packaged under APK `lib/arm64-v8a/`; it ships as `assets/engine-runtime/ethornell.zip.xz` and is extracted to `files/engine_runtime/ethornell/` on first use. Both checks therefore call `NativeRuntimePack.ensure(context, NativeRuntimePack.PACK_ETHORNELL)` and take the absolute path from `NativeRuntimePack.libraryPath(context, PACK_ETHORNELL, "libethornell.so")`; check 3 also calls production `prepareEngineLibrary` so the bridge opens that same absolute path. The runner never joins `applicationInfo.nativeLibraryDir`.
+
+A fresh install or `pm clear` is therefore fine and no prior app launch is required: the first probe call performs the extraction inside the installed target's private storage, and its duration counts toward the 60s watchdog. `ensure` returning false, or a missing/unreadable file, fails the check with `runtime pack not ready` instead of a later `RTLD_NOW`/create error. The isolated target's `filesDir` must stay writable with enough free space for `NativeRuntimePack`'s precheck (`asset size × 7 + 16 MB`, about 67 MB for ethornell; 128 MiB fallback when the asset size is unreadable), because instrumentation does not pre-seed it.
 
 ## Build (parent acceptance session)
 
@@ -33,8 +39,8 @@ Use only isolated `com.tyranor.next.ethornelltest`, never overwrite the user's f
 Repeat with `encoding gbk`. NUMTEST=3, per-check START/PASS/FAIL, numtests/current/stack status fields and a final `passed`, `failures`, `scope`, `stream` result bundle are emitted. Final instrumentation result is -1 only when all checks pass, otherwise 0; still inspect `FAILURES` and process-crash output rather than treating adb's exit code as success. 60s independent daemon watchdog logs FAIL and kills only the instrumented PID on stuck JNI; process death is failure, not PASS.
 
 1. Target identity: nondebuggable target, exact expected isolated package, target UID, actual device page size.
-2. Actual RTLD_NOW/load/15 exports (`symbols=15`)/ABI/build_info via the installed target's native library path.
-3. Production JNI load/create with original ret PackFile fixture in canonical, separate non-BMP private resource/user roots; poll genuine bootstrap diagnostics with kind bound 1..5; owner-thread pause/destroy; stale token rejection for both `pollEvent` and `requestPayload`; unknown dialog id returns null non-fatally, id `0` is rejected, and kind-5 events are explicitly cancelled with a 4-argument `completeRequest` (never faked as accepted); resource unchanged.
+2. Actual RTLD_NOW/load/15 exports (`symbols=15`)/ABI/build_info against the extracted runtime-pack path `files/engine_runtime/ethornell/libethornell.so`, never `applicationInfo.nativeLibraryDir`.
+3. Production JNI load/create (`prepareEngineLibrary`, so the bridge binds the extracted absolute path) with original ret PackFile fixture in canonical, separate non-BMP private resource/user roots; poll genuine bootstrap diagnostics with kind bound 1..5; owner-thread pause/destroy; stale token rejection for both `pollEvent` and `requestPayload`; unknown dialog id returns null non-fatally, id `0` is rejected, and kind-5 events are explicitly cancelled with a 4-argument `completeRequest` (never faked as accepted); resource unchanged.
 
 Scope is **partial release-native evidence**. No Surface or step occurs: create/poll does NOT prove VM ret execution, GPU/pixels, audio, text/font coverage, saves, full R8 private-Activity behavior or game compatibility. Debug GPU/Closed tests and release ordinary-App UI launch/manual logs remain separate gates. The production host must be launched through the normal release game library for manual acceptance; framework instrumentation finish normally force-stops its target package, so this runner does not claim post-run host survival.
 
@@ -53,7 +59,11 @@ null non-fatally, id `0` rejected, and kind-5 events explicitly cancelled with t
 `completeRequest` (never faked as accepted); resource root unchanged. For this artifact
 (`libethornell.so` SHA-256 `043fef05...`, 27,259,224 bytes), `--local-static` checked exact native
 bytes in both the debug and release APKs, and `zipalign -c -P 16 -v 4` passed with build-tools
-36.0.0 (37.0.0 was not installed). Strict source verification was **not** passed: provenance
+36.0.0 (37.0.0 was not installed). APK `lib/` no longer holds that file: it now ships only inside
+`assets/engine-runtime/ethornell.zip.xz`, so the equivalent byte check is to decompress that asset
+and compare its `libethornell.so` entry (or read the extracted
+`files/engine_runtime/ethornell/libethornell.so` on device) rather than inspecting APK
+`lib/arm64-v8a/`. Strict source verification was **not** passed: provenance
 records `dirty=true` with one local patch (`77b99d93...`), so `release_ready=false`.
 
 This remains **partial release-native evidence**: there is no Surface/step, so it does not prove VM

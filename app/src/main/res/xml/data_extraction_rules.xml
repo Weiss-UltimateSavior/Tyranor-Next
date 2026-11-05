@@ -16,6 +16,9 @@
         <exclude domain="database" path="game_library.db" />
         <exclude domain="database" path="game_library.db-wal" />
         <exclude domain="database" path="game_library.db-shm" />
+        <!-- 随 APK 分发的可重建解压副本（原生插件 / 引擎运行库），不参与备份与换机迁移 -->
+        <exclude domain="file" path="engine_plugins/" />
+        <exclude domain="file" path="engine_runtime/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="webdav_sync_secure.xml" />
@@ -24,5 +27,8 @@
         <exclude domain="database" path="game_library.db" />
         <exclude domain="database" path="game_library.db-wal" />
         <exclude domain="database" path="game_library.db-shm" />
+        <!-- 随 APK 分发的可重建解压副本（原生插件 / 引擎运行库），不参与备份与换机迁移 -->
+        <exclude domain="file" path="engine_plugins/" />
+        <exclude domain="file" path="engine_runtime/" />
     </device-transfer>
 </data-extraction-rules>

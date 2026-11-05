@@ -53,11 +53,15 @@
     <string name="engine_fvp_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
     <string name="engine_xsys35_missing_game_dir">System35 の起動に失敗しました：ゲームディレクトリがありません</string>
     <string name="engine_xsys35_init_failed">System35 エンジンの初期化に失敗しました：シナリオファイル（S*.ALD）が見つかりません</string>
+    <string name="engine_xsys35_runtime_pack_missing">System35 エンジンのランタイムが未準備です。アプリを再起動するか再インストールしてください</string>
     <string name="engine_xsys35_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
     <string name="engine_xsys4_missing_game_dir">System4 の起動に失敗しました：ゲームディレクトリがありません</string>
     <string name="engine_xsys4_init_failed">System4 エンジンの初期化に失敗しました：System40.ini / AliceStart.ini が見つかりません</string>
+    <string name="engine_xsys4_runtime_pack_missing">System4 エンジンのランタイムが未準備です。アプリを再起動するか再インストールしてください</string>
     <string name="engine_xsys4_gles3_required">OpenGL ES 3.0 対応デバイスが必要です</string>
     <string name="engine_xsys4_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
+    <string name="engine_krkrsdl3_init_failed">krkrsdl3 エンジンの初期化に失敗しました</string>
+    <string name="engine_krkrsdl3_runtime_pack_missing">krkrsdl3 エンジンのランタイムが未準備です。アプリを再起動するか再インストールしてください</string>
     <string name="engine_fb_missing_game_dir">起動失敗：ゲームディレクトリがありません</string>
     <string name="engine_fb_init_failed">エンジンの初期化に失敗しました</string>
     <string name="engine_fb_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>

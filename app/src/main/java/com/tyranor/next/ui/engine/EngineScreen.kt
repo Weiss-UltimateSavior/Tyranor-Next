@@ -905,7 +905,6 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
     EngineType.KIRIKIRI to listOf(
         builtinEntry("krkr-139", "Kirikiroid2-1.3.9"),
         builtinEntry("krkr-134", "Kirikiroid2-1.3.4"),
-        builtinEntry("krkr-126", "Kirikiroid2-1.2.6"),
         builtinEntry("krkr-sdl3", "Krkrsdl3-tyn"),
     ),
 )

@@ -131,7 +131,6 @@ data class GraphicsCapabilities(val supported: Boolean, val runtimeDependent: Bo
                     val library = when (version) {
                         "", EngineSettingsStore.KR_AUTO, EngineSettingsStore.KR_139 -> NativePluginConstants.LIB_GAME_139
                         EngineSettingsStore.KR_134 -> NativePluginConstants.LIB_GAME_134
-                        EngineSettingsStore.KR_126 -> NativePluginConstants.LIB_GAME_126
                         else -> null
                     }
                     if (kernel == EngineSettingsStore.KERNEL_KRKRSDL3) {

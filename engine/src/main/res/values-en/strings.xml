@@ -53,11 +53,15 @@
     <string name="engine_fvp_back_again_to_exit">Press back again to exit the game</string>
     <string name="engine_xsys35_missing_game_dir">System35 failed to start: the game directory is missing</string>
     <string name="engine_xsys35_init_failed">Failed to initialize the System35 engine: no scenario file (S*.ALD) found</string>
+    <string name="engine_xsys35_runtime_pack_missing">The System35 engine runtime is not ready. Restart the app or reinstall it.</string>
     <string name="engine_xsys35_back_again_to_exit">Press back again to exit the game</string>
     <string name="engine_xsys4_missing_game_dir">System4 failed to start: the game directory is missing</string>
     <string name="engine_xsys4_init_failed">Failed to initialize System4: System40.ini / AliceStart.ini not found</string>
+    <string name="engine_xsys4_runtime_pack_missing">The System4 engine runtime is not ready. Restart the app or reinstall it.</string>
     <string name="engine_xsys4_gles3_required">A device with OpenGL ES 3.0 support is required</string>
     <string name="engine_xsys4_back_again_to_exit">Press back again to exit the game</string>
+    <string name="engine_krkrsdl3_init_failed">krkrsdl3 engine initialization failed</string>
+    <string name="engine_krkrsdl3_runtime_pack_missing">The krkrsdl3 engine runtime is not ready. Restart the app or reinstall it.</string>
     <string name="engine_fb_missing_game_dir">Launch failed: game directory is missing</string>
     <string name="engine_fb_init_failed">Engine initialization failed</string>
     <string name="engine_fb_back_again_to_exit">Press back again to exit the game</string>

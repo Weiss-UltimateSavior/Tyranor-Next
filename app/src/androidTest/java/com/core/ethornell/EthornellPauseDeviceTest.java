@@ -8,6 +8,7 @@ import android.os.SystemClock;
 import android.util.Log;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import com.core.nativeplugin.NativeRuntimePack;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
@@ -204,8 +205,29 @@ public final class EthornellPauseDeviceTest {
         return InstrumentationRegistry.getInstrumentation().getTargetContext().getApplicationContext();
     }
 
+    /**
+     * Extracts {@code assets/engine-runtime/ethornell.zip.xz} on demand and binds the absolute
+     * library path into the production JNI bridge. Replaces the legacy APK lib/arm64-v8a lookup:
+     * after a fresh install or {@code pm clear} that file never exists, and the bridge would
+     * otherwise fall back to a missing plain SONAME.
+     */
+    private static String runtimeLibrary() {
+        Context context = app();
+        assertTrue("Ethornell runtime pack not ready: NativeRuntimePack.ensure(PACK_ETHORNELL) failed "
+                        + "to extract assets/engine-runtime/ethornell.zip.xz",
+                NativeRuntimePack.ensure(context, NativeRuntimePack.PACK_ETHORNELL));
+        String path = NativeRuntimePack.libraryPath(context, NativeRuntimePack.PACK_ETHORNELL, "libethornell.so");
+        assertNotNull("Ethornell runtime pack not ready: libethornell.so missing after extraction", path);
+        File library = new File(path);
+        assertTrue("Ethornell runtime pack not ready: " + path + " is not a readable file",
+                library.isFile() && library.canRead());
+        assertTrue("Ethornell JNI bridge rejected runtime library path " + path,
+                NativeEthornell.prepareEngineLibrary(context));
+        return path;
+    }
+
     private static long create(Fixture fixture) {
-        NativeEthornell.load();
+        runtimeLibrary();
         // Production JNI defaults flags=0: real backend required, never explicit silent mode.
         long handle = NativeEthornell.create(app(), fixture.resource.getPath(), fixture.user.getPath(), "", 0);
         assertNotEquals("Real JNI/runtime/audio create failed", 0, handle);

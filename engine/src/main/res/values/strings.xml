@@ -53,12 +53,16 @@
     <string name="engine_fvp_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_xsys35_missing_game_dir">System35 启动失败：缺少游戏目录</string>
     <string name="engine_xsys35_init_failed">System35 引擎初始化失败：未找到场景档（S*.ALD）</string>
+    <string name="engine_xsys35_runtime_pack_missing">System35 引擎运行库未就绪，请重启应用或重新安装</string>
     <string name="engine_xsys35_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_xsys4_missing_game_dir">System4 启动失败：缺少游戏目录</string>
     <string name="engine_xsys4_init_failed">System4 引擎初始化失败：未找到 System40.ini / AliceStart.ini</string>
+    <string name="engine_xsys4_runtime_pack_missing">System4 引擎运行库未就绪，请重启应用或重新安装</string>
     <string name="engine_xsys4_gles3_required">需要支持 OpenGL ES 3.0 的设备</string>
     <string name="engine_xsys4_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_fb_missing_game_dir">启动失败：缺少游戏目录</string>
+    <string name="engine_krkrsdl3_init_failed">krkrsdl3 引擎初始化失败</string>
+    <string name="engine_krkrsdl3_runtime_pack_missing">krkrsdl3 引擎运行库未就绪，请重启应用或重新安装</string>
     <string name="engine_fb_init_failed">引擎初始化失败</string>
     <string name="engine_fb_back_again_to_exit">再按一次返回键退出游戏</string>
     <string name="engine_fb_ime_show">输入法</string>

@@ -23,6 +23,8 @@ okhttp = "5.5.0"
 ksp = "2.3.6"
 room = "2.7.2"
 leakcanary = "1.0.0"
+# XZ for Java: build-time packaging and first-run extraction of native plugin assets.
+xz = "1.10"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
@@ -64,6 +66,7 @@ miuix-preference = { module = "top.yukonga.miuix.kmp:miuix-preference-android", 
 backdrop = { module = "io.github.kyant0:backdrop", version = "1.0.2" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 leakcanary = { group = "com.android.tools.studio.leakcanary", name = "leakcanary", version.ref = "leakcanary" }
+xz = { module = "org.tukaani:xz", version.ref = "xz" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }

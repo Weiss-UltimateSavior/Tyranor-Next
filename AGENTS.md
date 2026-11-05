@@ -105,7 +105,9 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - `engine/src/main/nativeplugins`：共享 Native 插件 so 源头。
 - `app/src/main/nativeplugins`：插件 manifest 与 app-only 插件源头。
 
-- 插件 zip 生成到 `app/build/generated/assets/nativeplugins`。禁止在 app 与 engine 两边手工维护同一份二进制或共享脚本；插件源合并通过 `DuplicatesStrategy.FAIL` 拒绝重名，脚本单一源归属仍需评审检查。
+- 插件 zip 生成到 `app/build/generated/assets/nativeplugins`（未压缩 zip 容器再压成 `<engine>.zip.xz`，减小 APK 体积）。禁止在 app 与 engine 两边手工维护同一份二进制或共享脚本；插件源合并通过 `DuplicatesStrategy.FAIL` 拒绝重名，脚本单一源归属仍需评审检查。
+
+- 大体积引擎运行库（当前 `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 + `libSDL2x.so`）仍以 `engine/src/main/jniLibs` 为源头，但**不进 APK 的 `lib/`**：Gradle 打成 `app/build/generated/assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时由 `com.core.nativeplugin.NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen（IJK 走 `IjkRuntime` 的 `IjkLibLoader`）。新增此类运行库时须同步 `NativeRuntimePack` 的分片常量与 `app/build.gradle.kts` 的 `bundledEngineRuntimePacks`（两处 id 与库名保持一致）；`packaging.jniLibs.excludes` 由该清单自动推导，不要再手写。
 
 - 原生运行库通常是已提交的预编译 `.so`；普通 Gradle 构建只编 JNI 桥，不重建全部运行时。更新运行库时必须同步固定来源、校验清单、许可证与设备验收证据，详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 

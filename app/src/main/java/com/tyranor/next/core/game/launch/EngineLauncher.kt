@@ -13,7 +13,6 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import bridge.KrSafMirror
 import com.akira.tyranoemu.remote.ArtemisActivityClean
-import com.akira.tyranoemu.remote.Kirikiroid126
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
 import com.core.engine.ArtemisVersion
@@ -28,6 +27,7 @@ import com.core.fvp.FvpActivity
 import com.core.games.FramebufferGameActivity
 import com.core.krkrsdl3.Krkrsdl3Activity
 import com.core.nativeplugin.NativePluginConstants
+import com.core.nativeplugin.NativeRuntimePack
 import com.core.rpgmaker.RpgMakerActivity
 import com.core.siglus.SiglusActivity
 import com.core.tyrano.TyranoActivity
@@ -121,9 +121,6 @@ object EngineLauncher {
     private val ARTEMIS_DEFAULT_FALLBACK_CHAIN = listOf(
         EngineSettingsStore.ART_ENGINE_V2,
         EngineSettingsStore.ART_ENGINE_V1,
-        EngineSettingsStore.ART_ENGINE_V3,
-        EngineSettingsStore.ART_ENGINE_V4,
-        EngineSettingsStore.ART_ENGINE_V5,
         EngineSettingsStore.ART_ENGINE_V6,
     )
 
@@ -508,6 +505,19 @@ object EngineLauncher {
         }
         // 阻塞准备（镜像/overlay/PFS）完成后统一检查取消：已取消则不执行任何启动副作用
         currentCoroutineContext().ensureActive()
+        // 大体积引擎运行库（siglus / fvp / ethornell / krkrsdl3 / ijk / xsystem）首启从 assets 解压到应用私有目录；
+        // IJK 只服务视频覆盖层（OnsIjkVideoView / VideoViewActivity 自带「视频失败不影响游戏本体」的
+        // 降级路径），解压失败只记日志继续启动；其余分片是引擎本体依赖，失败即类型化返回。
+        // 复用 launch() 的 IO 调度，宿主进程只按绝对路径加载已解压的 .so。
+        for (packId in engineRuntimePacksFor(game.engine, settings)) {
+            if (NativeRuntimePack.ensure(context.applicationContext, packId)) continue
+            if (packId == NativeRuntimePack.PACK_IJK) {
+                Log.w(TAG, "IJK runtime pack unavailable, launching without video overlay uri=${game.uri}")
+                continue
+            }
+            Log.w(TAG, "engine runtime pack unavailable pack=$packId uri=${game.uri}")
+            return LaunchResult.Failure.EngineLibraryPackFailed(packId)
+        }
         return try {
             val intent = buildIntent(context, game.engine, path, game, patchChoice, krSafMirror, settings)
                 .putExtra(LaunchContract.ROOT_URI, game.uri)
@@ -956,6 +966,36 @@ object EngineLauncher {
             normalized == "/storage/emulated/0" ||
             normalized.startsWith("/storage/emulated/0/") ||
             GamePathUtils.isRemovableStoragePath(normalized)
+    }
+
+    /** 引擎 → 随包运行库分片；空表示该引擎的运行库仍直接放在 APK `lib/` 内。 */
+    private fun engineRuntimePacksFor(
+        engine: EngineType,
+        settings: ResolvedEngineSettings,
+    ): List<String> = buildList {
+        when (engine) {
+            EngineType.SIGLUS,
+            EngineType.REALLIVE,
+            EngineType.AVG32,
+            EngineType.UK2 -> add(NativeRuntimePack.PACK_SIGLUS)
+
+            EngineType.FVP -> add(NativeRuntimePack.PACK_FVP)
+
+            EngineType.ETHORNELL -> add(NativeRuntimePack.PACK_ETHORNELL)
+
+            // 视频播放（ONS 覆盖层 / Artemis VideoView）依赖 IJK 三件套。
+            EngineType.ONS,
+            EngineType.ARTEMIS -> add(NativeRuntimePack.PACK_IJK)
+
+            EngineType.XSYS35,
+            EngineType.XSYS4 -> add(NativeRuntimePack.PACK_XSYSTEM)
+
+            EngineType.KIRIKIRI -> if (settings.krKernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
+                add(NativeRuntimePack.PACK_KRKRSDL3)
+            }
+
+            else -> Unit
+        }
     }
 
     /** 构建引擎 Intent；path 为真实文件路径。
@@ -1488,7 +1528,7 @@ object EngineLauncher {
     }
 
     /**
-     * KRKR 启动：按设置页选择的内核（krkrsdl3 / 吉里吉里2）与引擎版本（auto/1.3.9/1.3.4/1.2.6）
+     * KRKR 启动：按设置页选择的内核（krkrsdl3 / 吉里吉里2）与引擎版本（auto/1.3.9/1.3.4）
      * 路由到对应引擎宿主，并注入字体、独立存档与渲染/内存偏好。
      */
     private fun buildKirikiriIntent(
@@ -1526,7 +1566,6 @@ object EngineLauncher {
         val version = settings.krEngineVersion
         val activity = when (version) {
             EngineSettingsStore.KR_134 -> Kirikiroid134::class.java
-            EngineSettingsStore.KR_126 -> Kirikiroid126::class.java
             else -> Kirikiroid139::class.java
         }
         val launchEntry = pickedLaunchEntry
@@ -1581,7 +1620,6 @@ object EngineLauncher {
             // 引擎版本
             putExtra(LaunchContract.KR_ENGINE_VERSION, when (version) {
                 EngineSettingsStore.KR_134 -> "1.3.4"
-                EngineSettingsStore.KR_126 -> "1.2.6"
                 else -> "1.3.9"
             })
             // 字体偏好：两个 extra 必须无条件注入。引擎侧 applyFontPreferences 仅在
@@ -1776,8 +1814,16 @@ object EngineLauncher {
         } else {
             stage = artemisFallbackStage(version)
         }
+        // 旧库/旧配置可能残留已删除的版本 id（3/4/5）或 legacy id：先归一到当前可用版本，
+        // 使下发的 activity/库名/stage/候选链/index 与宿主 ArtemisVersion.find 同一口径。
+        version = (ArtemisVersion.requested(version) ?: ArtemisVersion.V1).id
+        // 候选链先按当前 ArtemisVersion 可用集合过滤，再在过滤后的列表上定位 index：
+        // 宿主 ArtemisLauncherBaseActivity 会丢弃不可用版本却沿用原 index，未过滤时过滤后的
+        // 链首（通常是 V2）会被当成「已尝试」而跳过（旧记忆值/缺失版本即触发该问题）。
+        val availableFallbacks = fallbackVersions.mapNotNull { ArtemisVersion.find(it)?.id }.distinct()
+        val dispatchFallbacks = (listOf(version) + availableFallbacks).distinct()
         val (activity, libName) = artemisActivityAndLib(version)
-        val fallbackIndex = fallbackVersions.indexOf(version).coerceAtLeast(0)
+        val fallbackIndex = dispatchFallbacks.indexOf(version).coerceAtLeast(0)
         return Intent(context, activity).apply {
             putExtra(LaunchContract.PATH, path)
             putExtra(LaunchContract.GAME_PATH, path)
@@ -1793,7 +1839,7 @@ object EngineLauncher {
             putExtra(LaunchContract.ARTEMIS_AUTO_FALLBACK, auto)
             putExtra(LaunchContract.ARTEMIS_FALLBACK_STAGE, stage)
             putExtra(LaunchContract.ARTEMIS_CURRENT_VERSION, version)
-            putExtra(LaunchContract.ARTEMIS_FALLBACK_VERSIONS, fallbackVersions.joinToString(","))
+            putExtra(LaunchContract.ARTEMIS_FALLBACK_VERSIONS, dispatchFallbacks.joinToString(","))
             putExtra(LaunchContract.ARTEMIS_FALLBACK_INDEX, fallbackIndex)
             putExtra(LaunchContract.ARTEMIS_AUTO_PLAN_REASON, planReason)
         }

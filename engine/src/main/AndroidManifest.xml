@@ -29,16 +29,6 @@
             android:screenOrientation="sensorLandscape"
             android:windowSoftInputMode="adjustPan"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
-        <activity
-            android:name="com.akira.tyranoemu.remote.Kirikiroid126"
-            android:exported="false"
-            android:process=":kirikiri2"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Kirikiroid2"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
-
         <!-- krkrsdl3 引擎（SDL3 内核，独立入口/独立进程，与 :kirikiri2 隔离） -->
         <activity
             android:name="com.core.krkrsdl3.Krkrsdl3Activity"
@@ -86,39 +76,6 @@
             android:name="com.akira.tyranoemu.remote.ArtemisActivityV2"
             android:exported="false"
             android:process=":artemis.compat"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
-            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
-        </activity>
-        <activity
-            android:name="com.akira.tyranoemu.remote.ArtemisActivityV3"
-            android:exported="false"
-            android:process=":artemis.compat.v2"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
-            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
-        </activity>
-        <activity
-            android:name="com.akira.tyranoemu.remote.ArtemisActivityV4"
-            android:exported="false"
-            android:process=":artemis.v4"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.core.Artemis"
-            android:screenOrientation="sensorLandscape"
-            android:windowSoftInputMode="adjustPan"
-            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection">
-            <meta-data android:name="android.app.lib_name" android:value="artemis_loader" />
-        </activity>
-        <activity
-            android:name="com.akira.tyranoemu.remote.ArtemisActivityV5"
-            android:exported="false"
-            android:process=":artemis.v5"
             android:launchMode="singleInstance"
             android:taskAffinity="com.core.Artemis"
             android:screenOrientation="sensorLandscape"

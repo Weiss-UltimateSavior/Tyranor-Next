@@ -773,6 +773,7 @@
 
     <string name="plugin_unknown_engine">未知引擎插件：%1$s</string>
     <string name="plugin_install_failed">引擎插件安装失败，请重启应用或检查安装包完整性</string>
+    <string name="launch_engine_library_pack_failed">引擎运行库未就绪，请重启应用或检查安装包完整性</string>
 
     <string name="launch_resolve_local_dir_failed">无法解析游戏目录（仅支持本地文件路径）</string>
     <string name="launch_external_module_failed">启动 %1$s 失败</string>

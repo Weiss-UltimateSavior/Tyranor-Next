@@ -221,6 +221,7 @@ public final class EthornellActivity extends AppCompatActivity implements Surfac
                             || !chosen.canRead() || chosen.length() == 0 || chosen.length() > 64L * 1024 * 1024) throw new IOException("font policy");
                     font = chosen.getPath();
                 }
+                if (!NativeEthornell.prepareEngineLibrary(application)) throw new IOException("ethornell runtime pack");
                 NativeEthornell.load();
                 long handle = NativeEthornell.create(application, resource.getPath(), user.getPath(), font, config.nls.equals("gbk") ? 1 : 0);
                 if (handle != 0) EngineSessionRegistry.record(application, EngineSessionRegistry.HOST_ETHORNELL, config.identity);

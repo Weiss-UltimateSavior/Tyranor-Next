@@ -10,6 +10,7 @@ import android.os.SystemClock;
 import android.system.Os;
 import android.system.OsConstants;
 import android.util.Log;
+import com.core.nativeplugin.NativeRuntimePack;
 import java.io.File;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -116,11 +117,24 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
 
     private void rtldNowAbiBuildInfo() {
         releaseTargetIdentity();
+        // Extracted runtime pack, never APK lib/arm64-v8a: a fresh install/pm clear has no such entry.
+        String library = runtimeLibrary();
         System.loadLibrary("ethornell_test_probe");
-        String report = probe(new File(getTargetContext().getApplicationInfo().nativeLibraryDir, "libethornell.so").getPath());
+        String report = probe(library);
         require(report != null && report.startsWith("OK RTLD_NOW") && report.contains("symbols=15")
                 && report.contains("build_info=ethornell"), report);
-        emit(0, "LOAD " + report, "rtldNowAbiBuildInfo", 2);
+        emit(0, "LOAD " + report + " pack=ethornell path=" + library, "rtldNowAbiBuildInfo", 2);
+    }
+
+    /** Same extraction the launcher performs; a failure means "runtime pack not ready". */
+    private String runtimeLibrary() {
+        Context app = getTargetContext().getApplicationContext();
+        require(NativeRuntimePack.ensure(app, NativeRuntimePack.PACK_ETHORNELL),
+                "Ethornell runtime pack not ready: cannot extract assets/engine-runtime/ethornell.zip.xz");
+        String path = NativeRuntimePack.libraryPath(app, NativeRuntimePack.PACK_ETHORNELL, "libethornell.so");
+        require(path != null && new File(path).isFile() && new File(path).canRead(),
+                "Ethornell runtime pack not ready: libethornell.so missing under files/engine_runtime/ethornell");
+        return path;
     }
 
     private Object call(String name, Class<?>[] types, Object... args) throws Exception {
@@ -151,7 +165,11 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
         archive.put(entry).putInt(0).putInt(17).putInt(0).putInt(0);
         archive.putInt(16).putInt(1).putInt(0).putInt(0).put((byte) 0x17);
         File input = new File(resource, "system.arc"); Files.write(input.toPath(), archive.array());
-        call("load", new Class<?>[0]);
+        String library = runtimeLibrary();
+        // Production wiring: the bridge dlopens the extracted absolute path, not a plain SONAME.
+        require(Boolean.TRUE.equals(call("prepareEngineLibrary", new Class<?>[]{Context.class},
+                getTargetContext().getApplicationContext())),
+                "Ethornell runtime pack not ready: prepareEngineLibrary rejected " + library);
         long handle = ((Long) call("create", new Class<?>[]{Context.class, String.class, String.class, String.class, int.class},
                 getTargetContext().getApplicationContext(), resource.getPath(), user.getPath(), "", encoding.equals("gbk") ? 1 : 0));
         require(handle != 0, "Native create returned zero");
@@ -199,7 +217,7 @@ public final class EthornellReleaseInstrumentation extends Instrumentation {
         try { call("requestPayload", new Class<?>[]{long.class, long.class}, handle, 1L); }
         catch (IllegalStateException expected) { rejected = true; }
         require(rejected, "Destroyed token accepted requestPayload");
-        Log.i(TAG, "CREATE_POLL_DESTROY events=" + events + " nonBMP=true data retained=" + base
+        Log.i(TAG, "CREATE_POLL_DESTROY events=" + events + " lib=" + library + " nonBMP=true data retained=" + base
                 + " no Surface/step: NOT VM execution/GPU evidence");
     }
 

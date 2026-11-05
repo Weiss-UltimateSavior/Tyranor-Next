@@ -50,6 +50,9 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 localized.getString(R.string.plugin_install_failed)
         }
 
+        is LaunchResult.Failure.EngineLibraryPackFailed ->
+            localized.getString(R.string.launch_engine_library_pack_failed)
+
         // 镜像准备失败的文案按类型化阶段映射：底层异常 message 是日志线索，
         // 不同失败原因给用户的处置方式不同（重新授权 vs 清理存储空间）
         is LaunchResult.Failure.KrkrMirrorPrepareFailed -> when (stage) {

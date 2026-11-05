@@ -18,7 +18,6 @@ public final class KirikiroidRawFrameBridge {
     }
     private static volatile InstallStatus installStatus = InstallStatus.UNCONFIGURED;
     private static String configuredLibrary;
-    private static boolean bitmap126;
     private static Context pipelineContext;
     private static long pipelineReservedBytes;
     private static boolean installed, frameSeen;
@@ -28,7 +27,6 @@ public final class KirikiroidRawFrameBridge {
     /** Runs during library loading, before the GL renderer starts. */
     public static void configureLibrary(String library) {
         configuredLibrary = null;
-        bitmap126 = false;
         installStatus = InstallStatus.UNCONFIGURED;
         if (!Anime4kRuntime.isEnabled()) {
             installStatus = InstallStatus.DISABLED;
@@ -44,7 +42,6 @@ public final class KirikiroidRawFrameBridge {
                 installStatus = InstallStatus.UNSUPPORTED_LIBRARY;
                 return;
             }
-            bitmap126 = NativePluginConstants.LIB_GAME_126.equals(name);
             configuredLibrary = canonicalLibrary.getPath();
             installStatus = InstallStatus.WAITING_FOR_CONTEXT;
         } catch (Exception unavailable) {
@@ -88,7 +85,7 @@ public final class KirikiroidRawFrameBridge {
         if (installed) {
             try {
                 nativeResetContext(false);
-                if (!bitmap126) ensurePipeline(0);
+                ensurePipeline(0);
             } catch (UnsatisfiedLinkError unavailable) {
                 installed = false;
                 installStatus = InstallStatus.NATIVE_UNAVAILABLE;
@@ -173,7 +170,7 @@ public final class KirikiroidRawFrameBridge {
             return 0;
         }
         ensurePipeline(reserved);
-        // The 1.2.6 PaintBox bitmap and its unchanged carrier UVs use top-left rows.
+        // The legacy bitmap carrier and its unchanged carrier UVs use top-left rows.
         boolean topLeft = true;
         int output = pipeline.renderCroppedTexture(texture,sourceWidth,sourceHeight,u0,v0,u1,v1,width,height,topLeft);
         frameSeen = true;

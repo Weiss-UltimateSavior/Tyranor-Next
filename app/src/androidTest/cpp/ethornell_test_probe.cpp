@@ -15,7 +15,7 @@ static_assert(offsetof(EthornellEventV1, text) == 24);
 static_assert(sizeof(EthornellResponseV1) == 24);
 
 static jstring probe_library(JNIEnv* env, jstring path) {
-    // Path comes only from targetContext.applicationInfo.nativeLibraryDir, not game data.
+    // Path is the caller-supplied NativeRuntimePack extraction dir, not game data.
     const char* name = env->GetStringUTFChars(path, nullptr);
     if (!name) return nullptr;
     void* library = dlopen(name, RTLD_NOW | RTLD_LOCAL);

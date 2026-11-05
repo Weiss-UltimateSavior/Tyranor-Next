@@ -35,6 +35,10 @@ public final class Krkrsdl3Graphics implements ArtemisPerformanceOverlay.Source 
     private final ArtemisGraphicsStats stats = new ArtemisGraphicsStats();
     private volatile int status;
     private volatile boolean closed;
+    // Absolute paths of the runtime-pack libraries, written by the host before
+    // install() and read on SDLThread afterwards. Null keeps the legacy SONAME
+    // lookup for callers that still load both libraries from lib/.
+    private volatile String engineLibraryPath, sdlLibraryPath;
     // Only accessed on SDLThread, including install and close.
     private boolean attempted;
     private GraphicsFilterPipeline pipeline;
@@ -52,13 +56,26 @@ public final class Krkrsdl3Graphics implements ArtemisPerformanceOverlay.Source 
         status = Anime4kRuntime.status();
     }
 
+    /**
+     * Selects the libraries the native adapter must attach to (RTLD_NOLOAD).
+     *
+     * <p>The engine pack is unpacked to private storage and loaded with
+     * {@code System.load(absolutePath)}, so the SONAME-only lookup no longer finds it.
+     * Must be called before {@link #install()}; either path may be null to fall back
+     * to the legacy SONAME lookup.
+     */
+    public void setLibraryPaths(String enginePath, String sdlPath) {
+        engineLibraryPath = enginePath;
+        sdlLibraryPath = sdlPath;
+    }
+
     /** Called immediately before SDLActivity.nativeRunMain, on SDLThread. */
     public void install() {
         if (closed || !enabled || attempted) return;
         attempted = true;
         if (!LIBRARY_AVAILABLE) { status = GraphicsStatus.MISSING_ABI; return; }
         try {
-            if (!nativeInstall() && status == GraphicsStatus.WAITING) status = GraphicsStatus.MISSING_ABI;
+            if (!nativeInstall(engineLibraryPath, sdlLibraryPath) && status == GraphicsStatus.WAITING) status = GraphicsStatus.MISSING_ABI;
         } catch (UnsatisfiedLinkError unavailable) {
             status = GraphicsStatus.MISSING_ABI;
             Log.w(TAG, "SDL3 graphics registration unavailable", unavailable);
@@ -183,6 +200,6 @@ public final class Krkrsdl3Graphics implements ArtemisPerformanceOverlay.Source 
     @Override public boolean isAnalyzing() { return analyzerRequested && !closed; }
     @Override public int status() { return status; }
 
-    @Keep private native boolean nativeInstall();
+    @Keep private native boolean nativeInstall(String enginePath, String sdlPath);
     @Keep private native void nativeClose();
 }

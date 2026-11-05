@@ -59,6 +59,8 @@ dependencies {
     implementation libs.appcompat
     implementation libs.androidx.documentfile
     implementation libs.kotlin.stdlib
+    // NativeRuntimePack: 首启解压 assets/engine-runtime/<pack>.zip.xz（LZMA2）。
+    implementation libs.xz
     testImplementation libs.junit
     // 覆盖 android.jar 的 org.json stub（纯 JVM 单测需要真实现）：
     // - input 配置模型的解析测试；

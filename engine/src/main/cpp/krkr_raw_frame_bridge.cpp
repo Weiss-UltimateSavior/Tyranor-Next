@@ -300,10 +300,11 @@ void initHook(void* command,float z,unsigned int texture,void* program,Blend ble
 }
 
 
-// 1.2.6 calls TrianglesCommand::init directly, without an interposable PLT
-// entry. Lease a genuine engine-owned Texture2D through the public Sprite APIs
-// instead. The Sprite's vertices, content size, transform and hit testing stay
-// untouched; its UVs and original texture are restored after renderer flush.
+// The 1.2.6 bitmap path (libgame126.so, no longer bundled) calls
+// TrianglesCommand::init directly, without an interposable PLT entry. Lease a
+// genuine engine-owned Texture2D through the public Sprite APIs instead. The
+// Sprite's vertices, content size, transform and hit testing stay untouched;
+// its UVs and original texture are restored after renderer flush.
 thread_local void* leasedSprite=nullptr;
 thread_local void* leasedSource=nullptr;
 thread_local Rect leasedRect{};

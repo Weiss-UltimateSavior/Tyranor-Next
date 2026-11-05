@@ -29,9 +29,15 @@
 - 升级 Ethornell / BGI 内置宿主到上游 `0cfff1d` ABI v1：15 个导出（含 `request_payload`）、kind 5 输入对话框与 JSON 回答、engine 原生四类对话框；同步 ABI header、provenance 与 Release R8 probe。当前随包库为 `043fef05…`（27,259,224 B，provenance `dirty=true`、1 个本地补丁；`--local-static` 与 debug/release APK 精确库字节检查通过，严格来源审计未通过）。App 存档管理开放为 App 私有 user-root 备份/恢复/删除（单文件 64 MiB；不导入资源根 `UserData`，不承诺商业游戏槽位或 PC 存档互通）。设备核心 6/6（1.426s）、暂停 3/3（2.999s）、存档 9/9（`pm clear` 后，2.047s）、release probe SJIS/GBK 各 3/3；真实样本语言点击后宿主仍存活并生成 `BGI.gdb`（约 123,802 B），仅验证启动期全局数据写入，16KB/API26 完整重跑未执行。
 - 新增 VN-SR C08 / C12 / C16 三种原生 2× 滤镜预设。
 - 新增 Bilinear / Bicubic 缩放处理滤镜（独立菜单项，按性能开销排序于 Lanczos 之前）：Bicubic 支持 B/C 独立参数双滑块调节（缺省 Mitchell 基准 B=0.33, C=0.33），Lanczos 提供独立抗振铃强度滑块（缺省 0.50，可抑制文字/边缘振铃，设为 0 时关闭）；二者与 Lanczos 同为纯重采样节点，可作 CNN 滤镜在性能预算不足时的轻量放大替代。滤镜链操作栏将缩放设定与参数设定拆分为独立弹窗，按钮采用圆角线框与短竖线分割布局。自动 Resize 行为不变。
+- 缩小安装包体积：引擎原生插件改为「未压缩 zip 容器 + LZMA2（`.zip.xz`）」随包，同一引擎家族的多个近重复 `.so`（Kirikiroid2 1.3.9/1.3.4 两个内核、Artemis V1/V2/V6 与 clean 四个 revision）共享同一份字典，首次启动由 `EnginePluginBootstrap` 流式解压安装；Runtime 侧新增 `org.tukaani:xz` 依赖，构建期新增 `CompressXzArchive` 任务（隔离 worker 进程压缩）。字体仍按上游要求保持不压缩。
+- `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套与 System35/4（含 `libSDL2x.so`）移出 APK 的 `lib/`：构建期打成 `assets/engine-runtime/{siglus,fvp,ethornell,krkrsdl3,ijk,xsystem}.zip.xz`，`EngineLauncher` 在拉起对应引擎前由 `NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`（按 APK `lastUpdateTime:versionName` 失效），宿主与 JNI 桥改为按绝对路径加载（IJK 经 `IjkRuntime` 的 `IjkLibLoader`，krkrsdl3 覆写 SDL 的 `loadLibraries`/`getMainSharedObject`）；除 IJK 解压失败只记日志继续启动外，其余分片失败返回新的类型化 `LaunchResult.Failure.EngineLibraryPackFailed`。首启对应引擎需额外解压一次。
 
 ### 移除
 
+- 移除 Kirikiroid2 1.2.6 内核（`libgame126.so` / `Kirikiroid126` / 引擎页与设置项），KRKR 版本仅保留 auto / 1.3.9 / 1.3.4；已保存的 `1.2.6` 设置回落为 auto。
+- 移除 Artemis Rev.3201 / Rev.2958 / Rev.3288 三个内核（V3/V4/V5 宿主与 `libartemis-compatible-v2.so` / `libartemis-v4.so` / `libartemis-v5.so`），Artemis 版本仅保留 auto / V1 / V2 / V6；自动指纹候选链与旧 `internal.artemis.*` 识别值同步收窄，旧值归一为 null（按 auto 处理）。native plugin `pluginVersion` 提升（kirikiroid2 2、artemis 33），升级后自动重新解压。
+
+- 移除随包的重复/无引用原生库：`libwmv_decoder.so`、`libmediacodec-4c4a3ce3b3fea0cb.so`（cargo-ndk 副产物，`NEEDED` 与字符串均未引用）与 `libmmkv.so`、`libshadowhook*.so`、`libbytehook.so`（全仓无 `System.loadLibrary`/`dlopen` 引用）。
 - 移除应用设置「色调切换」与「默认主题渐变」：默认外观恢复为纯色页面背景，组件色只随外观模式取档；历史键 `tone_switch` / `default_theme_gradient` 不再读取。
 - 移除「首页样式」中的「分类仓库」：首页只保留默认与网页两种形态；历史值 `category` 归一回默认。
 - 移除「外观风格」中的「高级玻璃」：外观只保留默认与复古玻璃；删除 `AdvancedGlassStyle`、`AmbientBackdrop` 与 `glassShadow()`，历史值 `glass_advanced` 归一回默认。

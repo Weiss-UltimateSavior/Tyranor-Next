@@ -17,4 +17,7 @@
     <exclude domain="database" path="game_library.db" />
     <exclude domain="database" path="game_library.db-wal" />
     <exclude domain="database" path="game_library.db-shm" />
+    <!-- 引擎原生插件与运行库是随 APK 分发的可重建解压副本（插件约 100 MB + 运行库约 144 MB），不参与备份 -->
+    <exclude domain="file" path="engine_plugins/" />
+    <exclude domain="file" path="engine_runtime/" />
 </full-backup-content>

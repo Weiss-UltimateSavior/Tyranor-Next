@@ -773,6 +773,7 @@
 
     <string name="plugin_unknown_engine">不明なエンジンプラグイン：%1$s</string>
     <string name="plugin_install_failed">エンジンプラグインのインストールに失敗しました。アプリを再起動するか、インストールパッケージの完全性を確認してください</string>
+    <string name="launch_engine_library_pack_failed">エンジンランタイムライブラリの準備ができていません。アプリを再起動するか、インストールパッケージの完全性を確認してください</string>
 
     <string name="launch_resolve_local_dir_failed">ゲームフォルダを解析できません（ローカルファイルパスのみ対応）</string>
     <string name="launch_external_module_failed">%1$s の起動に失敗しました</string>

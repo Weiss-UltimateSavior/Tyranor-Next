@@ -93,7 +93,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - 不同引擎提供适用的内核/版本、编码、字体、渲染、存档位置或兼容参数；PC 游戏支持 Winlator 全局与单游戏参数覆盖，安卓游戏不提供引擎参数配置。
 - Web 宿主支持统一虚拟按键与手柄映射、按键方案导入/导出与全屏编辑；方案按归一化视口保存。默认虚拟按键 MV/MZ 开、Tyrano/VN/WebOther 关；Web 手柄映射默认开。
 - 共用画质滤镜链最多 **8** 节点，支持添加、移除、排序与参数配置；单游戏切换跟随全局后保留自定义链。滤镜预设含纯重采样的 Bilinear / Bicubic 与带抗振铃强度（缺省 0.5）的 Lanczos，按性能开销排序；参数细节见 [共用画质滤镜链](docs/graphics-filters.md)。
-- 图形能力按内核、库身份及渲染器判断：Kirikiroid2 1.2.6/1.3.4/1.3.9、krkrsdl3 OpenGL、受支持的官方 Artemis 与 Siglus 走各自接入；krkrsdl3 软件渲染与自研 Artemis 当前不提供同等滤镜入口。
+- 图形能力按内核、库身份及渲染器判断：Kirikiroid2（auto/1.3.9/1.3.4）、krkrsdl3 OpenGL、受支持的官方 Artemis 与 Siglus 走各自接入；krkrsdl3 软件渲染与自研 Artemis 当前不提供同等滤镜入口。
 - 滤镜处理已合成画面（可能含文本和 UI），不承诺文本排除。性能分析器仅在支持且滤镜生效时可用；GPU 时间缺失时不得显示 CPU 时间充数。
 
 具体范围与验证记录见 [共用画质滤镜链](docs/graphics-filters.md)；它不代表所有游戏与第三方插件都已认证。

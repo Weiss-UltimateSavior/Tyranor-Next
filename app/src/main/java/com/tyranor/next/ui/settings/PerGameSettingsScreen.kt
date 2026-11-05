@@ -507,7 +507,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         if (isSdl3) EngineSettingsStore.RENDERER_OPENGL else ""
     }
     val effVersion = EffectiveEngineSettings.resolveKrVersion(krVersion, globalKrVersion)
-    val krIs134126 = effVersion == EngineSettingsStore.KR_134 || effVersion == EngineSettingsStore.KR_126
+    val krIs134 = effVersion == EngineSettingsStore.KR_134
 
     // 渲染相关全局值（跟随全局时展示用）
     val globalAccurate = EngineSettingsStore.getKrOglAccurateRender(ctx) == "1"
@@ -833,7 +833,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                             krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value = it
                                         }
                                     }
-                                    if (!krIs134126) {
+                                    if (!krIs134) {
                                         OverrideChoice(stringResource(R.string.engine_settings_fps_limit), krFpsMap, globalFps, krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value, emptyLabel = engineDefault) {
                                             krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value = it
                                         }
@@ -889,9 +889,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                         onPick = { fontLauncher.launch("*/*") },
                                         valueInSummary = true,
                                     )
-                                    if (effVersion != EngineSettingsStore.KR_126) {
-                                        OverrideSwitch(stringResource(R.string.engine_settings_force_default_font_short), globalForce, krForceFont) { krForceFont = it }
-                                    }
+                                    OverrideSwitch(stringResource(R.string.engine_settings_force_default_font_short), globalForce, krForceFont) { krForceFont = it }
                                 }
                             }
                         }

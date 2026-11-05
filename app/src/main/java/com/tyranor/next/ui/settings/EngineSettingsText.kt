@@ -17,7 +17,6 @@ internal fun krSelectOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.KR_AUTO to stringResource(R.string.common_auto),
     EngineSettingsStore.KR_139 to "1.3.9",
     EngineSettingsStore.KR_134 to "1.3.4",
-    EngineSettingsStore.KR_126 to "1.2.6",
 )
 
 @Composable
@@ -100,9 +99,6 @@ internal fun artVersionOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ART_ENGINE_AUTO to stringResource(R.string.common_auto),
     EngineSettingsStore.ART_ENGINE_V2 to "v1（Tyranor/Rev.2762）",
     EngineSettingsStore.ART_ENGINE_V1 to "v2（Tyranor/Rev.3049/emote）",
-    EngineSettingsStore.ART_ENGINE_V3 to "v3（Tyranor/Rev.3201/emote）",
-    EngineSettingsStore.ART_ENGINE_V4 to "V1（TyranorNext/Rev.2958）",
-    EngineSettingsStore.ART_ENGINE_V5 to "V3（TyranorNext/Rev.3288）",
     EngineSettingsStore.ART_ENGINE_V6 to "V4（TyranorNext/Rev.3294/emote）",
 )
 

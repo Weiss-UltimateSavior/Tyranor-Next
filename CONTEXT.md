@@ -12,6 +12,10 @@ _Avoid_: 游戏类型、格式
 随 App 分发、无需外置安装的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、RealLive / AVG32 / UK2（siglus_rs game_launcher 软渲染运行时）、FVP（rfvp Rust 运行时）、System35（xsystem35）、System4（xsystem4，与 System35 共用 libSDL2x）、Ethornell / BGI（实验接入，兼容性未验收）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
 _Avoid_: 预制引擎、捆绑引擎
 
+**引擎运行库包（Runtime Pack）**:
+`NativeRuntimePack` 按引擎家族把大体积预编译库（`libsiglus` / `librfvp` / `libethornell` / `libkrkrsdl3` / IJK 三件套 / System35/4）打成 `assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时解压到 `files/engine_runtime/<pack>/` 供宿主按绝对路径 dlopen 的分发单位；`libSDL3.so` 与 `libSDL2_mixer_xs35.so` 不属于运行库包，仍随 APK `lib/`。
+_Avoid_: 运行时模块、内置引擎、原生插件
+
 **Ethornell / BGI（ETHORNELL）**:
 以 ethornell-rs 重实现承载的内置引擎家族，已接入扫描、启动、设置与上游 `0cfff1d` 的 ABI v1 宿主（15 导出、kind 5 输入对话框）；目前仍属实验运行时、兼容性未验收，不能据此声明全家族可玩。App 存档管理已开放但范围仅限 App 私有 user-root 的备份/恢复/删除，不能把该范围与商业游戏内槽位、游戏资源根 `UserData` 或 PC 存档互通等同。
 _Avoid_: Winlator BGI 插件、完整 BGI 支持

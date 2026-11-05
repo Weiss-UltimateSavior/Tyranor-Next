@@ -841,7 +841,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     }
 
     val isSdl3 = krKernel == EngineSettingsStore.KERNEL_KRKRSDL3
-    val krIs134126 = krVersion == EngineSettingsStore.KR_134 || krVersion == EngineSettingsStore.KR_126
+    val krIs134 = krVersion == EngineSettingsStore.KR_134
 
     // 编辑→保存模型：控件仅更新本地状态，点顶部保存按钮才统一写盘
     fun saveAll() {
@@ -926,7 +926,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
             LazyListPlaceholder(
                 kind,
                 krVersion, krKernel, krScoped, krSkipStartupDialogs, krFont, krForceFont, krRenderer, krDrawThread,
-                krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134126,
+                krSwCompress, krOglCompress, krMem, krTexsize, krAccurate, krFps, isSdl3, krIs134,
                 krVCursorScale, krMenuOpa, krPatchOverlayMode,
                 ons, artKernel, artVersion, artRotate, artPatch, artResolution, artSideCut, artSurfaceCache,
                 artFontCache, artPowerSaving, tyExternal, tyScoped, rpgMakerMod, rpgLegacyRenderer, rpgSaveInterop, rpgMvVersion, rpgMzVersion, rpg, renpyVersion, renpy, siglusLanguage, fbNls,
@@ -1080,7 +1080,7 @@ private fun LazyListPlaceholder(
     krVersion: String, krKernel: String, krScoped: Boolean, krSkipStartupDialogs: Boolean,
     krFont: String, krForceFont: Boolean,
     krRenderer: String, krDrawThread: String, krSwCompress: String, krOglCompress: String,
-    krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134126: Boolean,
+    krMem: String, krTexsize: String, krAccurate: String, krFps: String, isSdl3: Boolean, krIs134: Boolean,
     krVCursorScale: String, krMenuOpa: String, krPatchOverlayMode: String,
     ons: EngineSettingsStore.Ons, artKernel: String, artVersion: String, artRotate: Boolean, artPatch: String,
     artResolution: String, artSideCut: String, artSurfaceCache: String, artFontCache: String,
@@ -1208,7 +1208,7 @@ private fun LazyListPlaceholder(
                     SliderRow(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, krDrawThread, onSelect = onKrDrawThread)
                     DropdownRow(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, krSwCompress, onKrSwCompress)
                 }
-                if (!isSdl3 && !krIs134126) {
+                if (!isSdl3 && !krIs134) {
                     SliderRow(stringResource(R.string.engine_settings_fps_limit), krFpsMap, krFps, onSelect = onKrFps)
                 }
                 if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_OPENGL)) {
@@ -1227,15 +1227,13 @@ private fun LazyListPlaceholder(
                     onFollow = onResetKrFont,
                     onPick = { fontLauncher.launch("*/*") },
                 )
-                if (krVersion != EngineSettingsStore.KR_126) {
-                    SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
-                    Text(
-                        stringResource(R.string.engine_settings_force_font_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MiuixTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
+                SwitchPreference(title = stringResource(R.string.engine_settings_force_default_font), checked = krForceFont, onCheckedChange = onKrForceFont)
+                Text(
+                    stringResource(R.string.engine_settings_force_font_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MiuixTheme.colorScheme.onBackground,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
             }
         }
 

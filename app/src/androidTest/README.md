@@ -6,6 +6,12 @@ R8 release-native 动态验证使用可选的纯Java runner，见 [`../releasePr
 
 这些是 **真实 Android JNI/VM/GPU** 测试，不使用 mock Backend，不更改生产 Activity 的 exported 或添加 Intent backdoor。默认合成数据由测试 Java 在专用 app 私有目录生成，不含商业资产。测试代码直接访问 engine 是仪器层边界测试，非 UI 业务依赖。
 
+## 运行库前置条件（已迁出 APK `lib/`）
+
+`libethornell.so` 不再打进 APK 的 `lib/arm64-v8a/`，而是随包放在 `assets/engine-runtime/ethornell.zip.xz`，运行时由 `com.core.nativeplugin.NativeRuntimePack` 解压到应用私有目录 `files/engine_runtime/ethornell/`。本目录的直接 JNI 测试不再拼 `applicationInfo.nativeLibraryDir`，而是每个用例先 `NativeRuntimePack.ensure(context, NativeRuntimePack.PACK_ETHORNELL)`，再用 `NativeRuntimePack.libraryPath(...)` 取绝对路径，并经生产 `NativeEthornell.prepareEngineLibrary(context)` 注入 JNI 桥（`NativeEthornell.load()` 只加载 bridge，不会设置运行库路径）。
+
+因此全新安装或 `pm clear` 后可以直接跑仪器测试，无需先手动启动一次 App；首次调用会包含 xz 解压耗时，计入各方法的 70s 硬截止。`ensure` 失败或解压后文件缺失会立即以「运行库包未就绪」断言失败，而不是等到 `dlopen`/`create` 才报错。前置要求只剩：隔离测试包 `filesDir` 可写、剩余空间满足 `NativeRuntimePack` 的预检（`asset 大小 × 7 + 16 MB`，ethornell 约 67 MB；读取不到资产大小时回退 128 MiB），且设备为 arm64-v8a。
+
 ## 构建与安装（由主验收者执行）
 
 沿用版本目录现有 runner 1.7.0 / ext-junit 1.3.0 / core 1.7.0，无新增 Maven 依赖。Gradle Variant API 自动生成 androidTest-only arm64 JNI probe，NDK 默认 r28 `28.0.13004108`，可用 `ANDROID_NDK_HOME` 覆盖。生成目录不会进入生产 APK；无需修改 `gradle.properties`。
@@ -31,7 +37,7 @@ android --sdk=/tmp/androidsdk install --device='adb-AUUEUT3C22008394-f7wkhv._adb
 
 | 方法 | 必须观察的事实 |
 |---|---|
-| `loadAbiBuildInfoAndRejectInvalidTokens` | 真实 `dlopen(RTLD_NOW\|RTLD_LOCAL)`、15 required exports（含 `request_payload`）、ABI=1、权威头尺寸/offset 静态断言、build_info buffer size-query/copy、设备 page size；生产 JNI invalid token 拒绝（含 `requestPayload`） |
+| `loadAbiBuildInfoAndRejectInvalidTokens` | 对解压后的 `files/engine_runtime/ethornell/libethornell.so` 执行真实 `dlopen(RTLD_NOW\|RTLD_LOCAL)`、15 required exports（含 `request_payload`）、ABI=1、权威头尺寸/offset 静态断言、build_info buffer size-query/copy、设备 page size；生产 JNI invalid token 拒绝（含 `requestPayload`） |
 | `supplementaryUtf8PathsAndWrongThreadAreSafe` | 带 🚀 / 𝄞 的真实资源/用户目录成功 create，证明标准 UTF8 跨 JNI；NUL/孤立 surrogate 明确拒绝；非 owner 调用抛异常且 owner 仍可用；destroy 后 token 拒绝 |
 | `gpuPresentDetachReattachAndGeneration` | 打包的原创 render fixture 经真实 VM 执行，1280×720 Surface 由独立 EGL consumer 取 buffer、应用 SurfaceTexture transform、采样至 RGBA framebuffer 后 `glReadPixels`；四色+黑底五个探针的全部3×3像素/四通道容差≤3；detach后停止、generation2再次匹配、旧detach/attach不破坏像素 |
 | `scriptExecutesNativeCloseAndProducesClosed` | 无 Java `requestClose`，仅真实 BP VM 执行 close mode + request-close 后 poll 收到 kind=3；收到 kind=2 按同 ID 仅应答一次（空 text 的整数应答）；kind=5 只取 payload 后显式 `{"accepted":false}` 取消，不按 kind2 应答、不伪造成功；fatal diagnostic 失败 |
@@ -154,6 +160,8 @@ failed identity_sha256=<64hex> token=<session token>
 - Release R8 probe **3/3 通过**（`NUMTEST=3`/`FAILURES=0`）：release identity、15 符号 RTLD_NOW/ABI/build_info、production JNI create/poll/destroy；scope 不含 GPU/标题/存档。
 - **已通过（范围受限）：** `EthornellPauseDeviceTest` 已按新调度器多 stage/step 模型重写并 3/3 通过；夹具验证暂停/恢复与 Surface，不再断言精确 guest tick/held 序列；输入映射由 JVM 测试覆盖。
 - **未验证：** 真实商业游戏样本当前不在设备，商业槽位保存/重启读回、真实对白与输入 dialog 未验证；16KB 模拟器本轮未重跑；API26 GPU、音频路由、字体/电影与长稳仍未闭环。
+
+上述设备结果均取自 `libethornell.so` 仍随 APK `lib/arm64-v8a/` 的旧布局。运行库迁到 `assets/engine-runtime/ethornell.zip.xz` 后，本页 `EthornellDeviceTest` 与 release probe 必须按上文「运行库前置条件」重跑；旧结果不能直接外推。
 
 单独执行某方法时仍使用上文 `-e class ...#method` 形式；设备结果只对应记录时的 APK、库、header 与源码四元组，不能跨候选外推。
 

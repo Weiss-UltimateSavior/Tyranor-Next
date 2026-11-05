@@ -136,6 +136,8 @@ constexpr uint32_t kArm64SubSpPrologue = 0xD10203FF;
 constexpr uintptr_t kLibGameLanguageCheckOffset = 0x9235C8;
 constexpr uintptr_t kLibGame134LanguageCheckOffset = 0x90F6CC;
 
+// 当前随包的 Kirikiri 游戏库只有 libgame.so（1.3.9）与 libgame134.so（1.3.4）；
+// 对已移除的 libgame126.so 保留名称比较，行为不变（1.2.6 内核不再随包）。
 bool supportedGameLibrary(const char* library) {
     if (library == nullptr || library[0] == '\0') return false;
     const char* baseName = std::strrchr(library, '/');

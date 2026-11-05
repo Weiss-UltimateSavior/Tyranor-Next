@@ -773,6 +773,7 @@
 
     <string name="plugin_unknown_engine">Unknown engine plugin: %1$s</string>
     <string name="plugin_install_failed">Engine plugin installation failed. Restart the app or check that the install package is complete</string>
+    <string name="launch_engine_library_pack_failed">Engine runtime library is not ready. Restart the app or check that the install package is complete</string>
 
     <string name="launch_resolve_local_dir_failed">Unable to resolve the game directory (local file paths only)</string>
     <string name="launch_external_module_failed">Failed to launch %1$s</string>

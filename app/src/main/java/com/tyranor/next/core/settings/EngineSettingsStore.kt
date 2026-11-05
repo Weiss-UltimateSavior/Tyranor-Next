@@ -154,10 +154,9 @@ object EngineSettingsStore {
     const val KR_AUTO = "auto"
     const val KR_139 = "1.3.9"
     const val KR_134 = "1.3.4"
-    const val KR_126 = "1.2.6"
     const val KERNEL_KIRIKIRI2 = "kirikiri2"
     const val KERNEL_KRKRSDL3 = "krkrsdl3"
-    val KR_VERSIONS = setOf(KR_AUTO, KR_139, KR_134, KR_126)
+    val KR_VERSIONS = setOf(KR_AUTO, KR_139, KR_134)
     val KR_KERNELS = setOf(KR_AUTO, KERNEL_KIRIKIRI2, KERNEL_KRKRSDL3)
     const val KR_PATCH_OVERLAY_AUTO = "auto"
     const val KR_PATCH_OVERLAY_FORCE = "force"
@@ -204,9 +203,6 @@ object EngineSettingsStore {
     const val ART_ENGINE_AUTO = "auto"
     const val ART_ENGINE_V1 = "1"
     const val ART_ENGINE_V2 = "2"
-    const val ART_ENGINE_V3 = "3"
-    const val ART_ENGINE_V4 = "4"
-    const val ART_ENGINE_V5 = "5"
     const val ART_ENGINE_V6 = "6"
     /** Artemis 内核：官方多 revision 运行库 / 自研 clean-room 兼容内核。 */
     const val ART_KERNEL_OFFICIAL = "official"
@@ -218,7 +214,7 @@ object EngineSettingsStore {
     /** 补丁策略默认值：关闭（不询问、不自动补丁；用户可在引擎设置/单游戏覆盖中改为询问或自动）。 */
     const val ART_PATCH_DEFAULT = AUTO_PATCH_OFF
     /** Artemis 引擎版本全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
-    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V3, ART_ENGINE_V4, ART_ENGINE_V5, ART_ENGINE_V6)
+    val ART_VERSIONS = setOf(ART_ENGINE_AUTO, ART_ENGINE_V1, ART_ENGINE_V2, ART_ENGINE_V6)
     /** Artemis 补丁策略全量白名单，供单游戏覆盖值校验（非法持久化值回退全局）。 */
     val ART_PATCHES = setOf(AUTO_PATCH_ASK, AUTO_PATCH_AUTO, AUTO_PATCH_OFF)
     const val ART_RESOLUTION_DEFAULT = ""
@@ -620,7 +616,6 @@ object EngineSettingsStore {
     private fun normalizeKr(v: String?): String = when (v?.trim()?.lowercase()) {
         KR_139 -> KR_139
         KR_134 -> KR_134
-        KR_126 -> KR_126
         else -> KR_AUTO
     }
 
@@ -684,9 +679,6 @@ object EngineSettingsStore {
         return if (
             v == ART_ENGINE_V1 ||
             v == ART_ENGINE_V2 ||
-            v == ART_ENGINE_V3 ||
-            v == ART_ENGINE_V4 ||
-            v == ART_ENGINE_V5 ||
             v == ART_ENGINE_V6
         ) v else ART_ENGINE_AUTO
     }

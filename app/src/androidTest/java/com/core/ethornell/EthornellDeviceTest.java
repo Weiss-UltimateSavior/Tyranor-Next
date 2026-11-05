@@ -14,6 +14,7 @@ import android.util.Log;
 import android.view.Surface;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import com.core.nativeplugin.NativeRuntimePack;
 import java.io.File;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
@@ -51,16 +52,38 @@ public final class EthornellDeviceTest {
         return selected.equals("gbk") ? 1 : 0;
     }
 
+    /**
+     * Extracts {@code assets/engine-runtime/ethornell.zip.xz} on demand and binds the absolute
+     * library path into the production JNI bridge. Replaces the legacy APK lib/arm64-v8a lookup:
+     * after a fresh install or {@code pm clear} that file never exists, and the bridge would
+     * otherwise fall back to a missing plain SONAME.
+     */
+    private static String runtimeLibrary() {
+        Context context = app();
+        assertTrue("Ethornell runtime pack not ready: NativeRuntimePack.ensure(PACK_ETHORNELL) failed "
+                        + "to extract assets/engine-runtime/ethornell.zip.xz",
+                NativeRuntimePack.ensure(context, NativeRuntimePack.PACK_ETHORNELL));
+        String path = NativeRuntimePack.libraryPath(context, NativeRuntimePack.PACK_ETHORNELL, "libethornell.so");
+        assertNotNull("Ethornell runtime pack not ready: libethornell.so missing after extraction", path);
+        File library = new File(path);
+        assertTrue("Ethornell runtime pack not ready: " + path + " is not a readable file",
+                library.isFile() && library.canRead());
+        assertTrue("Ethornell JNI bridge rejected runtime library path " + path,
+                NativeEthornell.prepareEngineLibrary(context));
+        return path;
+    }
+
     @Test public void loadAbiBuildInfoAndRejectInvalidTokens() throws Exception {
         bounded(() -> {
+            // The engine library only exists after extracting the runtime pack, not in APK lib/.
+            String library = runtimeLibrary();
             System.loadLibrary("ethornell_test_probe");
-            String report = probe(new File(app().getApplicationInfo().nativeLibraryDir, "libethornell.so").getPath());
+            String report = probe(library);
             Log.i(TAG, "LOAD " + report + " sdk=" + Build.VERSION.SDK_INT + " abi=" + Build.SUPPORTED_ABIS[0]
-                    + " page_size=" + Os.sysconf(OsConstants._SC_PAGESIZE));
+                    + " page_size=" + Os.sysconf(OsConstants._SC_PAGESIZE) + " pack=ethornell lib=" + library);
             assertTrue(report, report.startsWith("OK RTLD_NOW"));
             assertTrue(report, report.contains("symbols=15"));
             assertTrue(report, report.contains("build_info=ethornell"));
-            NativeEthornell.load();
             for (long bad : new long[]{0, -1, Long.MAX_VALUE}) {
                 rejected("invalid token step", () -> NativeEthornell.step(bad, System.nanoTime()));
                 rejected("invalid token pause", () -> NativeEthornell.setPaused(bad, 0));
@@ -75,7 +98,7 @@ public final class EthornellDeviceTest {
     @Test public void supplementaryUtf8PathsAndWrongThreadAreSafe() throws Exception {
         bounded(() -> {
             try (Fixture fixture = new Fixture(false)) {
-                NativeEthornell.load();
+                runtimeLibrary();
                 for (String bad : new String[]{"bad\0path", "bad\uD800", "bad\uDC00"}) {
                     rejected("invalid UTF-16 resource", () -> NativeEthornell.create(app(), bad, fixture.user.getPath(), "", encoding()));
                     rejected("invalid UTF-16 user", () -> NativeEthornell.create(app(), fixture.resource.getPath(), bad, "", encoding()));
@@ -225,7 +248,7 @@ public final class EthornellDeviceTest {
     private static long runUserDataPhase(File resource, File user, String expectedTitle) throws Exception {
         File r = resource.getCanonicalFile(), u = user.getCanonicalFile();
         assertFalse("Resource/user overlap", r.toPath().startsWith(u.toPath()) || u.toPath().startsWith(r.toPath()));
-        NativeEthornell.load();
+        runtimeLibrary();
         long handle = NativeEthornell.create(app(), r.getPath(), u.getPath(), "", encoding());
         assertNotEquals("User-data phase create failed", 0, handle);
         GpuSurfaceConsumer consumer = null;
@@ -290,7 +313,7 @@ public final class EthornellDeviceTest {
             assertTrue("game_path must be readable directory", root.isAbsolute() && root.isDirectory() && root.canRead());
             File user = new File(app().getFilesDir(), "ethornell-device-game-" + UUID.randomUUID());
             assertTrue(user.mkdirs());
-            NativeEthornell.load();
+            runtimeLibrary();
             long handle = 0;
             GpuSurfaceConsumer consumer = null;
             try {
@@ -316,7 +339,7 @@ public final class EthornellDeviceTest {
     }
 
     private static long create(Fixture fixture) {
-        NativeEthornell.load();
+        runtimeLibrary();
         try { fixture.assertRootsAccessibleAndDisjoint(); }
         catch (Exception error) { throw new AssertionError("Fixture root preflight failed", error); }
         long handle = NativeEthornell.create(app(), fixture.resource.getPath(), fixture.user.getPath(), "", encoding());

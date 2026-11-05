@@ -23,6 +23,9 @@ JavaVM* vm = nullptr;
 jobject appContext = nullptr;
 std::mutex mutex;
 void* library = nullptr;
+// Absolute path supplied by Java before the first load (extracted runtime pack).
+std::mutex libraryPathMutex;
+std::string libraryPath;
 // The 14 base exports are mandatory; request_payload is an additive v1 export.
 #define REQUIRED_API_LIST(X) X(abi_version) X(build_info) X(last_error) X(init_context) X(create) X(set_surface) \
     X(detach_surface) X(step) X(input) X(set_paused) X(request_close) X(poll_event) X(complete_request) X(destroy)
@@ -90,8 +93,14 @@ bool acknowledgement(JNIEnv* env, int32_t code) {
 }
 bool load(JNIEnv* env) {
     if (library) return true;
-    // Android linker namespace resolves this fixed SONAME only from the installed APK.
-    void* candidate = dlopen("libethornell.so", RTLD_NOW | RTLD_LOCAL);
+    std::string configured;
+    {
+        std::lock_guard<std::mutex> lock(libraryPathMutex);
+        configured = libraryPath;
+    }
+    // The runtime pack supplies an absolute path; the plain SONAME is the legacy in-APK layout.
+    const char* target = configured.empty() ? "libethornell.so" : configured.c_str();
+    void* candidate = dlopen(target, RTLD_NOW | RTLD_LOCAL);
     if (!candidate) { fail(env, "Ethornell library unavailable"); return false; }
     bool valid = true;
 #define RESOLVE(name) api_##name = reinterpret_cast<decltype(api_##name)>(dlsym(candidate, "ethornell_android_" #name)); valid = valid && api_##name != nullptr;
@@ -347,6 +356,18 @@ void destroy(JNIEnv* env, jclass, jlong token) {
     sessions.erase(static_cast<uint64_t>(token));
     // ABI v1 retains ndk-context for this isolated process; the GlobalRef must match that lifetime.
 }
+void setLibraryPath(JNIEnv* env, jclass, jstring path) {
+    std::string value;
+    if (path != nullptr) {
+        const char* chars = env->GetStringUTFChars(path, nullptr);
+        if (chars != nullptr) {
+            value = chars;
+            env->ReleaseStringUTFChars(path, chars);
+        }
+    }
+    std::lock_guard<std::mutex> lock(libraryPathMutex);
+    libraryPath = std::move(value);
+}
 // C++ allocation/system exceptions must never unwind through the VM's JNI frame.
 template<auto Function> struct Guard;
 template<typename Result, typename... Args, Result (*Function)(JNIEnv*, jclass, Args...)>
@@ -368,7 +389,8 @@ JNINativeMethod methods[] = {
     METHOD("pollEvent", "(J)Lcom/core/ethornell/EthornellSession$Event;", poll),
     METHOD("requestPayload", "(JJ)Ljava/lang/String;", requestPayload),
     METHOD("completeRequest", "(JJILjava/lang/String;)V", respond), METHOD("requestClose", "(J)V", close),
-    METHOD("destroy", "(J)V", destroy)
+    METHOD("destroy", "(J)V", destroy),
+    METHOD("nativeSetEngineLibraryPath", "(Ljava/lang/String;)V", setLibraryPath)
 };
 }
 extern "C" JNIEXPORT jint JNI_OnLoad(JavaVM* javaVm, void*) {
