@@ -910,7 +910,7 @@
     <string name="onboarding_progress">第 %1$d 页，共 %2$d 页</string>
     <string name="onboarding_next">下一步</string>
     <string name="onboarding_start">开始使用</string>
-    <string name="onboarding_skip">暂时跳过</string>
+    <string name="onboarding_skip">跳过引导并开始使用</string>
     <string name="onboarding_save_failed">无法保存引导状态，请检查存储空间后重试。</string>
     <string name="onboarding_retry">重试</string>
     <string name="onboarding_coach_home_title">先从首页开始</string>

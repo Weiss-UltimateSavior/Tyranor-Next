@@ -910,7 +910,7 @@
     <string name="onboarding_progress">Page %1$d of %2$d</string>
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start">Get started</string>
-    <string name="onboarding_skip">Skip for now</string>
+    <string name="onboarding_skip">Skip the guide and start using Tyranor</string>
     <string name="onboarding_save_failed">Could not save your progress. Check available storage and try again.</string>
     <string name="onboarding_retry">Retry</string>
     <string name="onboarding_coach_home_title">Start from Home</string>

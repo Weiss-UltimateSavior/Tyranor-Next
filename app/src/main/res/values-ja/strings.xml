@@ -910,7 +910,7 @@
     <string name="onboarding_progress">%1$d / %2$d ページ</string>
     <string name="onboarding_next">次へ</string>
     <string name="onboarding_start">利用を開始</string>
-    <string name="onboarding_skip">今はスキップ</string>
+    <string name="onboarding_skip">ガイドをスキップして使い始める</string>
     <string name="onboarding_save_failed">進行状況を保存できませんでした。空き容量を確認して再試行してください。</string>
     <string name="onboarding_retry">再試行</string>
     <string name="onboarding_coach_home_title">まずはホームから</string>
