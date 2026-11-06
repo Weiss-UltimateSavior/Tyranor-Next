@@ -2,7 +2,7 @@
   <img src="screenshots/index1.png" alt="Tyranor Next" width="900" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）聚合启动器，面向 Android 平台。内置 Kirikiri / ONScripter / Tyrano / Artemis / Siglus / RealLive / AVG32 / UK2 / FVP / System35 / System4 等原生与 Web 运行环境，另含 Ethornell / BGI 实验接入，并支持 Ren'Py、RPG Maker RGSS、Ruffle（SWF / Flash）外置 APK 引擎模块、第三方 APK 运行时模块与外置模拟器跳转（PPSSPP / Eden / Winlator），提供游戏库管理、封面获取、存档镜像、引擎参数调节等一体化体验。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
+基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）模拟器器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
 mac原生版本如下：
 
