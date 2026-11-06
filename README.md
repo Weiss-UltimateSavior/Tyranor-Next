@@ -2,7 +2,7 @@
   <img src="screenshots/index1.png" alt="Tyranor Next" width="900" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写**的多引擎视觉小说（Galgame）模拟器器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
+基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
 mac原生版本如下：
 
