@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.ui.common.motion.pressSquish
 
 /**
  * 页内无按压反馈按钮（配合 AGENTS.md「弹窗点击反馈统一规范」的同一意图）。
@@ -50,6 +51,7 @@ fun NoRippleTextButton(
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
         },
         modifier = modifier
+            .pressSquish(enabled = enabled)
             .clip(AppComponentShape)
             .clickable(
                 enabled = enabled,
@@ -84,6 +86,7 @@ fun NoRippleButton(
     val contentColor = if (tonal) MaterialTheme.colorScheme.primary else Color.White
     Row(
         modifier = modifier
+            .pressSquish(enabled = enabled)
             .clip(AppComponentShape)
             .background(container)
             .clickable(

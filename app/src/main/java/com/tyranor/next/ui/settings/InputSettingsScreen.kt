@@ -53,6 +53,11 @@ import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.NoRippleTextButton
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,7 +65,7 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -212,6 +217,7 @@ internal fun InputSettingsScreen() {
     }
 
     MiuixSettingsTheme {
+        ProvideEntrance {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = ComposeColor.Transparent,
@@ -233,12 +239,14 @@ internal fun InputSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
+                    Box(Modifier.pressSquishGroup().staggeredEntrance(0)) {
                     EngineCard(stringResource(R.string.engine_settings_input_title)) {
                         // 开关展示值：未显式设置时按「开」显示（与 MV/MZ 的默认一致，
                         // 见 globalPadSwitchValue 的 KDoc），否则用户看到「关着但游戏里
                         // 有按键层」、且想关闭得点两下（先显式开、再显式关）。切换即写入
                         // 显式设置。Tyrano/VN/WebOther 的实际默认是关，由摘要文案说明。
                         SwitchPreference(
+                            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
                             title = stringResource(R.string.engine_settings_input_pad_title),
                             summary = stringResource(R.string.engine_settings_input_pad_summary),
                             checked = padEnabled,
@@ -248,6 +256,7 @@ internal fun InputSettingsScreen() {
                             },
                         )
                         SwitchPreference(
+                            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
                             title = stringResource(R.string.engine_settings_input_gamepad_title),
                             summary = stringResource(R.string.engine_settings_input_gamepad_summary),
                             checked = gamepadEnabled,
@@ -257,9 +266,11 @@ internal fun InputSettingsScreen() {
                             },
                         )
                     }
+                    }
                 }
 
                 item {
+                    Box(Modifier.pressSquishGroup().staggeredEntrance(1)) {
                     EngineCard(stringResource(R.string.input_settings_profiles_title)) {
                         // 新建/导入置于方案列表上方（列表条目随方案数量增长，操作入口保持固定位置）
                         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -330,12 +341,13 @@ internal fun InputSettingsScreen() {
                             )
                         }
                     }
+                    }
                 }
 
                 item {
                     // 卡片不设标题：条目自身已含标题与说明，避免与卡片标题重复
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
@@ -373,6 +385,7 @@ internal fun InputSettingsScreen() {
                 }
                 item { BottomInsetSpacer() }
             }
+        }
         }
     }
 

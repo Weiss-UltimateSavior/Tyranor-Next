@@ -5,7 +5,7 @@ import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -29,7 +29,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -56,6 +58,16 @@ import com.tyranor.next.theme.MilkGlassPanelBackground
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionSprings
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.passThroughTouches
+import com.tyranor.next.ui.common.motion.releaseFocusForExit
+import com.tyranor.next.ui.common.motion.restoreInteraction
+import com.tyranor.next.ui.common.motion.rememberEntranceState
+import com.tyranor.next.ui.common.motion.staggeredEntrance
+import com.tyranor.next.ui.common.motion.syncDialogWindow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
@@ -104,17 +116,53 @@ internal fun AppSidePanel(
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit = {},
 ) {
-    if (!open) return
+    // 「增强」动效档：外部把 open 置为 false（例如点条目跳转到其它页面）时，面板先滑出再移除，
+    // 而不是整窗瞬间消失；「普通」档保持原版立即移除
+    var mounted by remember { mutableStateOf(open) }
+    LaunchedEffect(open) { if (open) mounted = true }
+    val show = open || (mounted && MotionMode.enhanced)
+    if (!show) {
+        if (mounted) mounted = false
+        return
+    }
+    SidePanelWindow(
+        closeRequested = !open,
+        onClosed = { mounted = false },
+        onDismiss = onDismiss,
+        content = content,
+    )
+}
+
+@Composable
+private fun SidePanelWindow(
+    closeRequested: Boolean,
+    onClosed: () -> Unit,
+    onDismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val dimAlpha = remember { Animatable(0f) }
     // 1f = 完全移出屏幕左侧，0f = 就位
     val slideFraction = remember { Animatable(1f) }
     val dismissing = remember { mutableStateOf(false) }
+    val dialogWindow = remember { mutableStateOf<android.view.Window?>(null) }
     val currentOnDismiss by rememberUpdatedState(onDismiss)
+
+    // 点遮罩 / 返回键关闭（快速滑出），区别于条目跳转时的交接滑出
+    val quickExit = remember { BooleanArray(1) }
 
     fun dismiss() {
         if (dismissing.value) return
         dismissing.value = true
+        dialogWindow.value.passThroughTouches()
+        if (MotionMode.enhanced) {
+            // 增强档：立即把 open 置为 false，滑出交给下方的 LaunchedEffect(closeRequested) 播放。
+            // 这样滑出途中再次边缘右滑能把 open 改回 true，从当前位置重新滑入；否则这次右滑会因 open 仍为 true 而被吞掉
+            quickExit[0] = true
+            dialogWindow.value.releaseFocusForExit()
+            currentOnDismiss()
+            return
+        }
         scope.launch {
             launch { dimAlpha.animateTo(0f, tween(200, easing = FastOutLinearInEasing)) }
             slideFraction.animateTo(1f, tween(220, easing = FastOutLinearInEasing))
@@ -129,10 +177,14 @@ internal fun AppSidePanel(
     ) {
         // 遮罩：与 AppAlertDialog 使用同一档不透明度
         val scrimAlpha = 0.5f
+        // 窗口 dim 跟随遮罩进度，关闭时点击穿透，避免遮罩残留拦截触摸
+        val window = syncDialogWindow { dimAlpha.value }
+        SideEffect { dialogWindow.value = window }
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = scrimAlpha * dimAlpha.value))
+                // 遮罩透明度在绘制阶段读取：动画期间不逐帧重组整个面板
+                .drawBehind { drawRect(Color.Black.copy(alpha = scrimAlpha * dimAlpha.value)) }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -172,6 +224,8 @@ internal fun AppSidePanel(
                         MilkGlassPanelBackground(Modifier.matchParentSize())
                     }
                 // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
+                    // 每次打开时标题与条目区依次弹入
+                    ProvideEntrance(rememberEntranceState()) {
                     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                         Text(
                             text = stringResource(R.string.side_panel_title),
@@ -179,28 +233,65 @@ internal fun AppSidePanel(
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                             modifier = Modifier
+                                .staggeredEntrance(0)
                                 .fillMaxWidth()
                                 .padding(top = 18.dp, bottom = 10.dp),
                         )
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.staggeredEntrance(1).fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
                         ) {
                             content()
                         }
+                    }
                     }
                 }
             }
         }
     }
 
+    // 外部关闭（open 变为 false，例如条目跳转）：与点遮罩关闭同一段滑出，结束后再移除窗口
+    LaunchedEffect(closeRequested) {
+        if (!closeRequested) {
+            // 滑出途中被重新打开：撤销关闭状态并从当前位置回到就位
+            if (dismissing.value) {
+                dismissing.value = false
+                quickExit[0] = false
+                dialogWindow.value.restoreInteraction()
+                launch { dimAlpha.animateTo(1f, MotionTokens.fadeIn(0.001f)) }
+                slideFraction.animateTo(0f, MotionTokens.surfaceEnter(0.0001f))
+            }
+            return@LaunchedEffect
+        }
+        if (quickExit[0]) {
+            launch { dimAlpha.animateTo(0f, MotionTokens.fadeOut(0.001f)) }
+            slideFraction.animateTo(1f, MotionTokens.surfaceExit(0.002f))
+        } else if (!dismissing.value) {
+            dismissing.value = true
+            dialogWindow.value.passThroughTouches()
+            dialogWindow.value.releaseFocusForExit()
+            // 外部关闭来自条目跳转：交接滑出，时长与页面侧推相当，面板向左滑出与新页面从右推入同时进行
+            launch { dimAlpha.animateTo(0f, MotionSprings.effects(420, 0.001f)) }
+            slideFraction.animateTo(1f, MotionSprings.smooth(500, 0.002f))
+        }
+        onClosed()
+    }
+
     // 进入动画：遮罩渐入 + 面板自左边缘滑入
     LaunchedEffect(Unit) {
-        launch { dimAlpha.animateTo(1f, tween(250, easing = LinearOutSlowInEasing)) }
-        slideFraction.animateTo(
-            targetValue = 0f,
-            animationSpec = spring(dampingRatio = 0.88f, stiffness = 450f, visibilityThreshold = 0.0001f),
-        )
+        if (MotionMode.enhanced) {
+            launch { dimAlpha.animateTo(1f, MotionTokens.fadeIn(0.001f)) }
+            slideFraction.animateTo(
+                targetValue = 0f,
+                animationSpec = MotionTokens.surfaceEnter(0.0001f),
+            )
+        } else {
+            launch { dimAlpha.animateTo(1f, tween(250, easing = LinearOutSlowInEasing)) }
+            slideFraction.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(dampingRatio = 0.88f, stiffness = 450f, visibilityThreshold = 0.0001f),
+            )
+        }
     }
 }
 

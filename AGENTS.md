@@ -233,7 +233,12 @@ Column(fillMaxSize)                                // 页面根
 
 - 顶部栏下方禁止放置页面说明/描述文案；正文区域应直接展示该页面的实际内容或列表。
 
-- 页面切换动画必须保持统一：主 Screen 四个 Tab 间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
+- 页面切换动画必须保持统一：主 Screen 四个 Tab 间切换使用水平弹簧移动动画；其他独立 Activity 页面一律**水平侧推**——进入时新页从右侧推入、上一级向左让开 30% 并压暗，退出/返回原路倒放。统一经 `ui/common/motion/PageTransitions.kt`（`startActivityWithPageTransition` / `AppScreenActivity.finish()` 已接入），不得再为单页手写窗口动画。
+- **动效统一规范**：页面动效统一使用 `ui/common/motion/` 工具集（`MotionSprings` 弹簧 token、`pressSquish` Q 弹按压、`staggeredEntrance` 入场、`BlurCrossfade` / `BlurVisibility` / `ExpandVisibility` 内容变换、`RollingNumberText` 数字滚动、`bounceOnChange` 图标弹一下），新增动画优先用弹簧而非固定时长缓动。动效只改变运动过程：停稳后组件的位置、尺寸、颜色、圆角与排版必须与无动效时完全一致；系统关闭动画时弹簧瞬间完成。
+- **动效 token 与可打断**：新增 / 修改动画一律按语义选用 `ui/common/motion/MotionTokens.kt` 的 token（出现 / 消失 / 内容替换 / 布局 / 弹出 / 控件 / 按压 / 大面板进退场 / 页面 / 数值），不要随手写时长数字，保证全应用节奏一致；动画一律用弹簧并允许随时打断（从当前位置与速度转向新目标），不得用「动画进行中忽略操作」的守卫，不得在动画途中 `snapTo` 造成跳变。动画值尽量在 `graphicsLayer` / `drawBehind` / `layout` 等绘制或布局阶段读取，避免逐帧重组。
+- **界面动效档位**：应用设置「外观主题」卡片内的「界面动效」可选「增强」（默认，新动效）与「普通」（原版 Tyranor 动效）。全局状态为 `ui/common/motion/MotionMode.kt` 的 `MotionMode.enhanced`（持久化 `AppSettingsStore.KEY_MOTION_ENHANCED`）。工具集函数已自行按档位退化；页面内**不经工具集**新增或修改的动画必须写成 `if (MotionMode.enhanced) 新动效 else 原版动效`，保证「普通」档与原版完全一致。缺陷修复（如弹窗关闭后遮罩残留，见 `DialogWindowMotion.kt`）两档都生效。
+- 原生 `Dialog` 的弹窗必须调用 `syncDialogWindow { 遮罩进度 }`，关闭开始时调用 `passThroughTouches()`：否则平台窗口自带的背景变暗会在卡片退场后再残留一段，并在此期间拦截点击。
+- **动效性能**：新增逐元素动效优先写成 `Modifier.Node`（参考 `Entrance.kt` / `PressSquish.kt`），不要用 `composed`；动画值只在图层块 / 绘制 / 布局阶段读取，图层块里读到的持有者必须是快照状态（`invalidateLayer()` 不会重新执行图层块）。`app/src/main/baseline-prof.txt` 是真机运行收集的类级预编译规则，大量新增页面后可按同样方式重新生成。
 
 - 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观、复古玻璃与白雾玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
   `AppComponentShape`、Miuix 组件用 `AppComponentCornerRadius`、
@@ -360,7 +365,7 @@ Column(fillMaxSize)                                // 页面根
 
 ### 1. 组件形态与参数
 
-- 选中项为**独立背景指示器**（不是逐项背景），切换时以 200ms 线性动画滑到目标标签；滚动态标签宽度不齐时宽度同步动画。指示器圆角统一 `AppComponentShape`，玻璃系由组件内部调用 `glassBorder` 补 0.5dp 发丝描边。
+- 选中项为**独立背景指示器**（不是逐项背景），切换时以弹簧「蠕动」滑到目标标签（前沿先到、后沿跟上，到位轻微回弹）；滚动态标签宽度不齐时宽度同步过渡。指示器圆角统一 `AppComponentShape`，玻璃系由组件内部调用 `glassBorder` 补 0.5dp 发丝描边。
 - 指示器底色与文字颜色由组件内部按外观风格分派，**调用方不得传色值**：
   默认风格指示器 `NavWhite`、选中文字 `TextColor`（不跟随主题色，加粗作选中标识）、未选中 `onSurfaceVariant`；
   复古玻璃 `GlassSurfaceHigh` + `GlassText`/`GlassTextSecondary`；
@@ -453,10 +458,14 @@ Column(fillMaxSize)                                // 页面根
 ### 1. 组件选型（按场景二选一）
 
 - **设置条目式开关**（标题行 + 右侧开关，如设置清单中的配置项）：统一使用
-  `top.yukonga.miuix.kmp.preference.SwitchPreference`（title / checked / onCheckedChange）。
+  `com.tyranor.next.ui.common.SwitchPreference`（与 Miuix 同名同参，外观完全一致；「增强」动效档下右侧开关为 iOS 26 手感：
+  拖动跟手、果冻回弹、轨道颜色随拇指位置由灰到主题色连续过渡；「普通」档直接使用 Miuix 原组件）。
 
 - **行内独立开关**（列表项右端内嵌、无标题行的纯开关）：统一使用
-  `top.yukonga.miuix.kmp.basic.Switch`（checked / onCheckedChange）。
+  `com.tyranor.next.ui.common.Switch`（checked / onCheckedChange，规则同上）。
+
+- 带刻度的离散滑条（扫描深度、应用圆角调整等）统一使用 `com.tyranor.next.ui.common.Slider`（与 Miuix 同名同参、外观一致；
+  「增强」档支持单点跳格、逐格轻震、拖出两端拉伸回弹；连续滑条与「普通」档沿用 Miuix 原组件）。
 
 ### 2. 现有调用点（新增场景照此对齐）
 
@@ -479,8 +488,9 @@ Column(fillMaxSize)                                // 页面根
 ## 弹窗点击反馈统一规范
 
 `AppAlertDialog` 弹窗（含 `title` / `text` / `confirmButton` / `dismissButton` 内容）内的
-**所有按钮与组件不得使用任何点击或按压反馈效果**：涟漪、水波、缩放、高亮、透明度/颜色变化等一律禁止。
-点击行为本身不受影响，仅去掉视觉/触感反馈。
+**所有按钮与组件不得使用涟漪、水波、高亮、透明度/颜色变化等点击反馈效果**。
+唯一允许的按压反馈是动效规范中的 Q 弹按压（`ui/common/motion/PressSquish.kt` 的 `pressSquish`，只改绘制图层的缩放/跟手偏移，
+松手回弹、静止时与原样一致）；`DialogTextButton`、`NoRippleButton`、`NoRippleTextButton`、`AppNavItem` 已内置。
 
 ### 1. 组件选型
 
@@ -600,7 +610,11 @@ Column(fillMaxSize)                                // 页面根
   `DialogItemSurface`（`MilkItemOnPanel` 45% 白纱；叠加在 50% 面板后与页面条目同亮度），
   仍保持亮面板/亮条目的层级。
 
-- **游戏操作抽屉（`GameActionsSheet`）关闭拖拽手势**：统一传 `sheetGesturesEnabled = false`，只允许遮罩/返回键关闭。
+- **游戏操作抽屉（`GameActionsSheet`）关闭 Material 拖拽手势**：统一传 `sheetGesturesEnabled = false`。
+  「增强」动效档由 `ui/common/motion/SheetMotion.kt` 的 `MotionSheetController` 接管抽屉运动，另加跟手下拉关闭：
+  松手时以「位置 + 约 0.12s 惯性投影」判定，超过抽屉高度约 1/3 收起，否则回弹——慢拉按位置，明显的快速下甩也能收起；
+  只有直接拉抽屉（内容 / 把手）才计速度，列表滚到顶后的剩余惯性不会转交抽屉，因此不会重现下述快速滑动误关的问题。
+  「普通」档只允许遮罩/返回键关闭。
   原因：M3 `ModalBottomSheet` 的关闭判定是「位移 > 56dp 或速度 > 125dp/s」任一命中即关闭（`BottomSheetDefaults`
   的 `PositionalThreshold` / `VelocityThreshold`，1.4.0 起 `rememberModalBottomSheetState` 不暴露这两个阈值），
   且列表到顶后的剩余手势/惯性会转交抽屉，导致用户"滑动稍微快一点"就误关抽屉。新增抽屉照此对齐；

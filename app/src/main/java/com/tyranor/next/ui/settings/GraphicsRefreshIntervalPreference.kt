@@ -1,5 +1,8 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.tyranor.next.R
@@ -15,6 +18,7 @@ internal fun GraphicsRefreshIntervalPreference(
 ) {
     val presets = GraphicsRefreshInterval.PRESETS_MS
     OverlayDropdownPreference(
+        modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
         title = stringResource(R.string.graphics_refresh_interval),
         items = refreshLabels(),
         selectedIndex = presets.indexOf(GraphicsRefreshInterval.normalize(intervalMs)),
@@ -36,6 +40,7 @@ internal fun GraphicsRefreshIntervalOverridePreference(
         stringResource(R.string.graphics_refresh_seconds, refreshSeconds(GraphicsRefreshInterval.normalize(globalIntervalMs))),
     )
     OverlayDropdownPreference(
+        modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
         title = stringResource(R.string.graphics_refresh_interval),
         items = listOf(inherited) + refreshLabels(),
         selectedIndex = overrideIntervalMs?.let { presets.indexOf(GraphicsRefreshInterval.normalize(it)) + 1 } ?: 0,

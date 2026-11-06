@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.PagerDefaults
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,12 +32,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.zIndex
 import com.tyranor.next.R
 import com.tyranor.next.core.game.model.GameTitleTags
 import com.tyranor.next.core.game.model.ScanGame
@@ -43,6 +45,12 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.motionBlur
+import com.tyranor.next.ui.common.motion.pressSquish
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.min
@@ -94,18 +102,35 @@ internal fun GameCoverFlow(
                     pageSize = PageSize.Fixed(cardWidth),
                     contentPadding = PaddingValues(horizontal = horizontalPadding),
                     pageSpacing = 14.dp,
+                    // 翻页吸附用带一点回弹的弹簧（普通档为原版默认吸附）
+                    flingBehavior = if (MotionMode.enhanced) {
+                        PagerDefaults.flingBehavior(
+                            state = pagerState,
+                            snapAnimationSpec = MotionTokens.layout(0.5f),
+                        )
+                    } else {
+                        PagerDefaults.flingBehavior(state = pagerState)
+                    },
                 ) { page ->
                     val game = games.getOrNull(page) ?: return@HorizontalPager
-                    val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-                    val absOffset = min(offset.absoluteValue, 2f)
+                    // 距中心的页偏移不在组合里读取（否则每个滚动帧所有页都重组）：
+                    // 层级（zIndex）在布局放置块、形变在图层块里从 pagerState 现读
                     key(game.uri) {
                         CoverFlowCard(
                             game = game,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(3f / 4f)
-                                .zIndex(1f - absOffset)
+                                .layout { measurable, constraints ->
+                                    val placeable = measurable.measure(constraints)
+                                    layout(placeable.width, placeable.height) {
+                                        val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                                        placeable.place(0, 0, zIndex = 1f - min(offset.absoluteValue, 2f))
+                                    }
+                                }
                                 .graphicsLayer {
+                                    val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                                    val absOffset = min(offset.absoluteValue, 2f)
                                     cameraDistance = 16f * density.density
                                     rotationY = (-offset.coerceIn(-1f, 1f)) * 38f
                                     val scale = 1f - 0.22f * min(absOffset, 1f)
@@ -119,7 +144,13 @@ internal fun GameCoverFlow(
                                             if (page == pagerState.currentPage) {
                                                 onGameClick(game)
                                             } else {
-                                                scope.launch { pagerState.animateScrollToPage(page) }
+                                                scope.launch {
+                                                    if (MotionMode.enhanced) {
+                                                        pagerState.animateScrollToPage(page, animationSpec = MotionTokens.layout(0.5f))
+                                                    } else {
+                                                        pagerState.animateScrollToPage(page)
+                                                    }
+                                                }
                                             }
                                         },
                                         onLongPress = { onGameLongClick(game) },
@@ -146,8 +177,18 @@ private fun CoverFlowCard(
     modifier: Modifier = Modifier,
 ) {
     val cover by rememberCoverBitmap(game.coverUri)
+    // 封面加载完成：淡入 + 由糊变清（已缓存的封面一开始就是 1，不会闪）
+    val animatedCoverAlpha = animateFloatAsState(
+        targetValue = if (cover != null) 1f else 0f,
+        animationSpec = MotionTokens.fadeIn(0.001f),
+        label = "coverFlowFadeIn",
+    )
+    // 普通档：上游无淡入，封面一就绪即不透明
+    // 动画值不在组合里读取：图层块 / 模糊半径块里现读，淡入期间只失效图层
+    val enhanced = MotionMode.enhanced
     Box(
         modifier = modifier
+            .pressSquish(scale = PressSquishDefaults.CardScale)
             .clip(AppComponentShape)
             .background(game.engine.coverColor())
             .glassBorder(),
@@ -168,7 +209,13 @@ private fun CoverFlowCard(
                 bitmap = bitmap,
                 contentDescription = game.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = if (enhanced) animatedCoverAlpha.value else 1f }
+                    .motionBlur {
+                        val coverAlpha = if (enhanced) animatedCoverAlpha.value else 1f
+                        (1f - coverAlpha).coerceIn(0f, 1f) * 8.dp.toPx()
+                    },
             )
         }
     }
@@ -182,13 +229,17 @@ private fun CoverFlowCaption(
 ) {
     if (game == null) return
     val displayTitle = if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title
-    Text(
-        stringResource(R.string.game_cover_flow_caption, game.engine.displayName, displayTitle),
-        style = MaterialTheme.typography.bodyMedium,
-        color = PageSecondaryTextColor,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        textAlign = TextAlign.Center,
-        modifier = modifier,
-    )
+    val caption = stringResource(R.string.game_cover_flow_caption, game.engine.displayName, displayTitle)
+    // 翻到另一张时标题模糊替换
+    BlurCrossfade(caption, modifier = modifier, contentAlignment = Alignment.Center) { text ->
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = PageSecondaryTextColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }

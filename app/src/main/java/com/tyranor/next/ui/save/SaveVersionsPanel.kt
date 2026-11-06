@@ -43,6 +43,10 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
@@ -207,67 +211,70 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
         }
         if (loadError == null) {
-            MiuixCard(Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+            MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                 Column(Modifier.padding(vertical = 4.dp)) {
-                    when {
-                        loading -> Text(
-                            stringResource(R.string.common_loading),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                        versions.isEmpty() -> Text(
-                            stringResource(R.string.save_versions_none),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                        else -> {
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.save_versions_title),
-                                entry = DropdownEntry(
-                                    listOf(DropdownItem(
-                                        text = stringResource(R.string.save_version_choose),
-                                        enabled = false,
-                                        selected = selectedVersion == null,
-                                    )) + versions.map { version ->
-                                        DropdownItem(
-                                            text = saveVersionDisplayText(version, dateFormat, previousUnknown),
-                                            selected = version.id == selectedId,
-                                            onClick = {
-                                                if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
-                                                    selectedId = version.id
-                                                }
-                                            },
-                                        )
-                                    },
-                                ),
-                                enabled = !taskRunning,
+                    BlurCrossfade(targetState = if (loading) 0 else if (versions.isEmpty()) 1 else 2) { stateKey ->
+                        when (stateKey) {
+                            0 -> Text(
+                                stringResource(R.string.common_loading),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                             )
-                            AppNavItem(
-                                title = stringResource(R.string.save_version_activate),
-                                showLeadingIcon = false,
-                                showArrow = false,
-                                drawSurface = false,
-                                onClick = if (taskRunning || selectedVersion == null) {
-                                    null
-                                } else {
-                                    {
-                                        if (WebDavSettingsStore.isEnabled(context)) {
-                                            taskError = null
-                                            taskInfo = null
-                                            discardPrevious = false
-                                            pendingVersion = selectedVersion
+                            1 -> Text(
+                                stringResource(R.string.save_versions_none),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            )
+                            else -> Column {
+                                OverlayDropdownPreference(
+                                    modifier = Modifier.pressSquish(!taskRunning, PressSquishDefaults.RowScale),
+                                    title = stringResource(R.string.save_versions_title),
+                                    entry = DropdownEntry(
+                                        listOf(DropdownItem(
+                                            text = stringResource(R.string.save_version_choose),
+                                            enabled = false,
+                                            selected = selectedVersion == null,
+                                        )) + versions.map { version ->
+                                            DropdownItem(
+                                                text = saveVersionDisplayText(version, dateFormat, previousUnknown),
+                                                selected = version.id == selectedId,
+                                                onClick = {
+                                                    if (!taskRunning && WebDavSettingsStore.isEnabled(context)) {
+                                                        selectedId = version.id
+                                                    }
+                                                },
+                                            )
+                                        },
+                                    ),
+                                    enabled = !taskRunning,
+                                )
+                                AppNavItem(
+                                    title = stringResource(R.string.save_version_activate),
+                                    showLeadingIcon = false,
+                                    showArrow = false,
+                                    drawSurface = false,
+                                    onClick = if (taskRunning || selectedVersion == null) {
+                                        null
+                                    } else {
+                                        {
+                                            if (WebDavSettingsStore.isEnabled(context)) {
+                                                taskError = null
+                                                taskInfo = null
+                                                discardPrevious = false
+                                                pendingVersion = selectedVersion
+                                            }
                                         }
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
             }
         }
-        MiuixCard(Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+        MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 AppNavItem(
                     title = stringResource(R.string.save_sync_execute),
@@ -280,14 +287,15 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
                     title = stringResource(R.string.save_sync_identity),
                     enabled = !taskRunning,
                     endActions = {
-                        Text(
-                            identity,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(0.5f),
-                        )
+                        BlurCrossfade(targetState = identity, modifier = Modifier.fillMaxWidth(0.5f)) { shownIdentity ->
+                            Text(
+                                shownIdentity,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     },
                     onClick = { beginIdentityEdit() },
                 )
@@ -395,7 +403,7 @@ private fun SaveSelectionRecoveryPanel(
         needed = withContext(Dispatchers.IO) { service.needsSelectionRecovery(game) }
     }
     if (!needed) return
-    MiuixCard(Modifier.fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
+    MiuixCard(Modifier.pressSquishGroup().fillMaxWidth().padding(bottom = 12.dp).glassBorder(),
         cornerRadius = AppComponentCornerRadius) {
         AppNavItem(
             title = stringResource(R.string.save_version_recover),

@@ -1,5 +1,7 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.ExpandVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -52,7 +54,7 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
     val scope = rememberCoroutineScope()
     fun commit(next: List<EditorNode>) { currentOnChange(next.map { it.node }) }
     Column {
-        if (chain.isEmpty()) {
+        ExpandVisibility(chain.isEmpty()) {
             Text(stringResource(R.string.graphics_chain_empty), style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
         }
@@ -187,6 +189,7 @@ private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick:
     val description = stringResource(label)
     Box(
         modifier = Modifier
+            .pressSquish(enabled = enabled)
             .size(40.dp)
             .clip(AppComponentShape)
             // 默认风格描边取动态常量 TextColor（符合 AGENTS 规范，使用 Color.kt 动态常量）；

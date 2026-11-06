@@ -62,6 +62,8 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.syncDialogWindow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -143,6 +145,8 @@ internal fun GameShortcutCropDialog(
             dismissOnClickOutside = !confirming,
         ),
     ) {
+        // 修复弹窗退场后窗口遮罩残留拦截触摸
+        syncDialogWindow { 1f }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -248,7 +252,9 @@ private fun CropDialogImage(
     onViewportSizeChanged: (androidx.compose.ui.unit.IntSize) -> Unit,
     onTransform: (CropTransform) -> Unit,
 ) {
-    when (loadState) {
+    // 加载中 / 失败 / 可编辑 之间模糊替换（按状态类别切换，换图重新加载时才触发）
+    BlurCrossfade(loadState, contentKey = { it::class }) { state ->
+    when (state) {
         CropImageLoadState.Loading -> Box(
             modifier = Modifier.fillMaxWidth().aspectRatio(1f),
             contentAlignment = Alignment.Center,
@@ -268,12 +274,13 @@ private fun CropDialogImage(
         }
 
         is CropImageLoadState.Ready -> CropPreview(
-            bitmap = loadState.bitmap,
+            bitmap = state.bitmap,
             metrics = metrics,
             transform = transform,
             onViewportSizeChanged = onViewportSizeChanged,
             onTransform = onTransform,
         )
+    }
     }
 }
 

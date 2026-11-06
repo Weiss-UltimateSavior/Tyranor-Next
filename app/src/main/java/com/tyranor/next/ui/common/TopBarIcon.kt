@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.unit.dp
+import com.tyranor.next.ui.common.motion.pressSquish
 
 /**
  * 顶部栏图标按钮统一规范（排版对齐游戏页顶部栏）：
@@ -34,6 +35,8 @@ fun TopBarIcon(
         colorFilter = ColorFilter.tint(tint),
         modifier = Modifier
             .padding(start = 2.dp)
+            // Q 弹按压：只改绘制图层，静止时与原样一致
+            .pressSquish()
             .size(34.dp)
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)

@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.ProvideEntrance
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -18,7 +19,9 @@ class PerGameSettingsActivity : AppScreenActivity() {
         }
 
         setAppScreenContent {
-            PerGameSettingsScreen(game = game)
+            ProvideEntrance {
+                PerGameSettingsScreen(game = game)
+            }
         }
     }
 

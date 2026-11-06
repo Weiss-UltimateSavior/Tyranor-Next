@@ -9,12 +9,15 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
-import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassBackground
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.theme.WithoutPressIndication
+import com.tyranor.next.ui.common.motion.PageTransitions
+import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.pageTransitionScrim
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 
 /**
  * 二级页面统一宿主（P1-4）：收敛各 Activity 重复的
@@ -45,10 +48,10 @@ abstract class AppScreenActivity : ComponentActivity() {
         }
     }
 
-    @Suppress("DEPRECATION")
     override fun finish() {
         super.finish()
-        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
+        // 返回：当前页向右整页退出，上一级从左侧回到原位（侧推的倒放）
+        PageTransitions.applyPop(this)
     }
 }
 
@@ -80,9 +83,12 @@ fun AppScreenScaffold(
 ) {
     ProvideAppLocale {
         TyranorNextTheme {
-            GlassBackground(modifier = modifier) {
-                WithoutPressIndication {
-                    content()
+            ProvideMotionEnvironment {
+                // pageTransitionScrim：推入下一页时本页随转场压暗，返回时渐亮（静止时透明）
+                GlassBackground(modifier = modifier.pageTransitionScrim().skipEntranceOnDrag()) {
+                    WithoutPressIndication {
+                        content()
+                    }
                 }
             }
         }

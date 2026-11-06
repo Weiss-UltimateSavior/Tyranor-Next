@@ -16,6 +16,7 @@ import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.TextColor
+import com.tyranor.next.ui.common.motion.pressSquish
 
 /**
  * 弹窗点击反馈规范（AGENTS.md「弹窗点击反馈统一规范」）：
@@ -40,6 +41,7 @@ fun DialogTextButton(
     contentColor: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit,
 ) {
+    val dialogExit = LocalDialogExit.current
     Text(
         text = text,
         // 两档排版：按钮文字属 bodyMedium（AGENTS.md「页面内容文字尺寸规范」），
@@ -51,12 +53,17 @@ fun DialogTextButton(
             TextColor.copy(alpha = 0.38f)
         },
         modifier = modifier
+            .pressSquish(enabled = enabled)
             .clip(AppComponentShape)
             .clickable(
                 enabled = enabled,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = onClick,
+                onClick = {
+                    // 取消类按钮：弹窗先平滑退场再执行（增强动效档，见 AppAlertDialog）
+                    val exit = dialogExit
+                    if (exit != null) exit.closeThen(onClick) else onClick()
+                },
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
     )

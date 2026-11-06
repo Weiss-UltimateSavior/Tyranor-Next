@@ -12,6 +12,8 @@ import com.tyranor.next.theme.ItemChevronColor
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.BasicComponentColors
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
 
 /**
  * 与 Miuix `ArrowPreference` 行为一致的条目组件，仅把右侧箭头替换为统一加粗的 [BoldChevronRight]。
@@ -33,7 +35,12 @@ fun ArrowPreference(
     enabled: Boolean = true,
 ) {
     BasicComponent(
-        modifier = modifier,
+        // Q 弹按压（整行轻微形变）；不可点击时不加
+        modifier = modifier.pressSquish(
+            // 带底部控件（如滑条行）时不形变，避免拖动滑条时坐标随图层偏移
+            enabled = enabled && onClick != null && bottomAction == null,
+            scale = PressSquishDefaults.RowScale,
+        ),
         insideMargin = insideMargin,
         title = title,
         titleColor = titleColor,

@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -60,6 +61,11 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -213,6 +219,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     }
 
     MiuixSettingsTheme {
+        ProvideEntrance {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = ComposeColor.Transparent,
@@ -234,34 +241,36 @@ private fun SaveManagementScreen(game: ScanGame) {
             ) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.staggeredEntrance(0).fillMaxWidth().glassBorder(),
                         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
                         shape = AppComponentShape,
                     ) {
                         Column(Modifier.fillMaxWidth().padding(16.dp)) {
                             Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            location?.let { loadedLocation ->
-                                Text(
-                                    loadedLocation.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
-                                if (loadedLocation.mirrorForced) {
+                            BlurCrossfade(targetState = location) { loadedLocation ->
+                                if (loadedLocation != null) Column {
                                     Text(
-                                        stringResource(R.string.krkr_mirror_save_import_hint),
+                                        loadedLocation.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(top = 8.dp),
+                                    )
+                                    if (loadedLocation.mirrorForced) {
+                                        Text(
+                                            stringResource(R.string.krkr_mirror_save_import_hint),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.padding(top = 4.dp),
+                                        )
+                                    }
+                                    Text(
+                                        if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(top = 4.dp),
                                     )
                                 }
-                                Text(
-                                    if (loadedLocation.available) stringResource(R.string.save_file_count, fileCount) else stringResource(R.string.save_unmanageable),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = 4.dp),
-                                )
                             }
                             refreshError?.let { error ->
                                 Text(
@@ -277,7 +286,7 @@ private fun SaveManagementScreen(game: ScanGame) {
 
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
@@ -310,7 +319,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                                     }
                                 }),
                             )
-                            if (rpgWebGame && saveInteropEnabled) {
+                            ExpandVisibility(visible = rpgWebGame && saveInteropEnabled) {
                                 AppNavItem(
                                     title = stringResource(R.string.save_sync_now),
                                     showLeadingIcon = false,
@@ -350,13 +359,16 @@ private fun SaveManagementScreen(game: ScanGame) {
                 }
                 if (location?.available == true) {
                     item {
+                        Box(Modifier.staggeredEntrance(2)) {
                         SaveVersionsPanel(game, taskRunning, versionsRevision) { block ->
                             runSaveTask(block = block, shortFeedback = true)
+                        }
                         }
                     }
                 }
                 item { BottomInsetSpacer() }
             }
+        }
         }
     }
 

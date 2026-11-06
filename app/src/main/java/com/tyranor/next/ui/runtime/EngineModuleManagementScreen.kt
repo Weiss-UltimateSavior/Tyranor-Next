@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -50,13 +52,17 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
@@ -239,7 +245,21 @@ internal fun EngineModuleManagementScreen() {
                 if (lastError != null) {
                     item(key = "load_error") {
                         MiuixCard(
-                            modifier = Modifier.fillMaxWidth().glassBorder(),
+                            modifier = Modifier
+                                .then(
+                                    if (MotionMode.enhanced) {
+                                        Modifier.animateItem(
+                                            fadeInSpec = MotionTokens.fadeIn(),
+                                            placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                            fadeOutSpec = MotionTokens.fadeOut(),
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .staggeredEntrance(0)
+                                .fillMaxWidth()
+                                .glassBorder(),
                             cornerRadius = AppComponentCornerRadius,
                         ) {
                             Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
@@ -256,7 +276,20 @@ internal fun EngineModuleManagementScreen() {
                 if (refreshing && snapshot.modules.isEmpty() && lastError == null) {
                     item(key = "loading") {
                         Box(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                            modifier = Modifier
+                                .then(
+                                    if (MotionMode.enhanced) {
+                                        Modifier.animateItem(
+                                            fadeInSpec = MotionTokens.fadeIn(),
+                                            placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                            fadeOutSpec = MotionTokens.fadeOut(),
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             CircularProgressIndicator()
@@ -267,7 +300,22 @@ internal fun EngineModuleManagementScreen() {
                 if (!refreshing && snapshot.modules.isEmpty() && lastError == null) {
                     item(key = "empty") {
                         Box(
-                            modifier = Modifier.fillParentMaxHeight().fillMaxWidth().padding(horizontal = 24.dp),
+                            modifier = Modifier
+                                .then(
+                                    if (MotionMode.enhanced) {
+                                        Modifier.animateItem(
+                                            fadeInSpec = MotionTokens.fadeIn(),
+                                            placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                            fadeOutSpec = MotionTokens.fadeOut(),
+                                        )
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .staggeredEntrance(0)
+                                .fillParentMaxHeight()
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -288,11 +336,24 @@ internal fun EngineModuleManagementScreen() {
                     }
                 }
 
-                items(
+                itemsIndexed(
                     items = snapshot.modules,
-                    key = { module -> module.packageName },
-                ) { module ->
+                    key = { _, module -> module.packageName },
+                ) { index, module ->
                     EngineModuleCard(
+                        modifier = Modifier
+                            .staggeredEntrance(index + 1)
+                            .then(
+                                if (MotionMode.enhanced) {
+                                    Modifier.animateItem(
+                                        fadeInSpec = MotionTokens.fadeIn(),
+                                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                        fadeOutSpec = MotionTokens.fadeOut(),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         module = module,
                         gameCount = gameCounts[module.packageName] ?: 0,
                         toggleEnabled = module.packageName !in togglingPackages,
@@ -346,6 +407,7 @@ private fun EngineModuleCard(
     gameCount: Int,
     toggleEnabled: Boolean,
     onEnabledChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val version = module.versionName
         ?.takeIf { it.isNotBlank() }
@@ -368,7 +430,7 @@ private fun EngineModuleCard(
     )
 
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassBorder(),
+        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {

@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -58,6 +59,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -79,9 +82,18 @@ import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.NoRippleTextButton
 import com.tyranor.next.ui.common.NoRippleButton
-import top.yukonga.miuix.kmp.basic.Slider
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.staggeredEntrance
+import com.tyranor.next.ui.common.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import kotlin.math.roundToInt
+import com.tyranor.next.ui.common.motion.rememberLastNonNull
 
 /** 解包 / 封包独立页：入口见应用设置。解包=选目录扫描XP3→主从预览→解到同名文件夹；封包=选目录→选压缩等级→输出同名 .xp3。 */
 class ArchiveUnpackActivity : AppScreenActivity() {
@@ -187,53 +199,60 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
         }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        AppTopBar(title = stringResource(R.string.archive_title))
+    ProvideEntrance {
+        Column(Modifier.fillMaxSize()) {
+            AppTopBar(title = stringResource(R.string.archive_title))
 
-        if (!allFilesGranted) {
-            ArchiveCard(title = stringResource(R.string.archive_permission_rationale)) {
-                NoRippleButton(
-                    text = stringResource(R.string.archive_permission_grant),
-                    tonal = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { launchAllFilesAccessSettings(appContext) },
-                )
-            }
-        }
-
-        ModeTabs(mode = vm.mode, onSelect = { vm.switchMode(it) })
-
-        // 面板占剩余空间：给关闭弹窗后的结果消息（StatusBar）留出可见区域。
-        // 模式切换保留滑动 + 淡入淡出特效（与主界面水平移动切换同向语义）。
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            AnimatedContent(
-                targetState = vm.mode,
-                transitionSpec = {
-                    val forward = targetState == ArchiveMode.PACK
-                    (slideInHorizontally { if (forward) it else -it } + fadeIn(tween(220))) togetherWith
-                        (slideOutHorizontally { if (forward) -it else it } + fadeOut(tween(220)))
-                },
-                label = "archivePane",
-            ) { paneMode ->
-                when (paneMode) {
-                    ArchiveMode.UNPACK -> UnpackPane(
-                        vm = vm,
-                        appContext = appContext,
-                        onPickDir = { pickSourceDir.launch(null) },
-                    )
-                    ArchiveMode.PACK -> PackPane(
-                        vm = vm,
-                        appContext = appContext,
-                        onPickDir = { pickPackDir.launch(null) },
+            ExpandVisibility(visible = !allFilesGranted) {
+                ArchiveCard(title = stringResource(R.string.archive_permission_rationale)) {
+                    NoRippleButton(
+                        text = stringResource(R.string.archive_permission_grant),
+                        tonal = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { launchAllFilesAccessSettings(appContext) },
                     )
                 }
             }
-        }
 
-        if (vm.message != null && !vm.dialogVisible) {
-            StatusBar(vm = vm)
+            ModeTabs(mode = vm.mode, onSelect = { vm.switchMode(it) })
+
+            // 面板占剩余空间：给关闭弹窗后的结果消息（StatusBar）留出可见区域。
+            // 模式切换保留滑动 + 淡入淡出特效（与主界面水平移动切换同向语义）。
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                AnimatedContent(
+                    targetState = vm.mode,
+                    transitionSpec = {
+                        val forward = targetState == ArchiveMode.PACK
+                        if (MotionMode.enhanced) {
+                            (slideInHorizontally(MotionTokens.content(IntOffset.VisibilityThreshold)) { if (forward) it else -it } + fadeIn(MotionTokens.fadeIn())) togetherWith
+                                (slideOutHorizontally(MotionTokens.contentExit(IntOffset.VisibilityThreshold)) { if (forward) -it else it } + fadeOut(MotionTokens.fadeOut()))
+                        } else {
+                            (slideInHorizontally { if (forward) it else -it } + fadeIn(tween(220))) togetherWith
+                                (slideOutHorizontally { if (forward) -it else it } + fadeOut(tween(220)))
+                        }
+                    },
+                    label = "archivePane",
+                ) { paneMode ->
+                    when (paneMode) {
+                        ArchiveMode.UNPACK -> UnpackPane(
+                            vm = vm,
+                            appContext = appContext,
+                            onPickDir = { pickSourceDir.launch(null) },
+                        )
+                        ArchiveMode.PACK -> PackPane(
+                            vm = vm,
+                            appContext = appContext,
+                            onPickDir = { pickPackDir.launch(null) },
+                        )
+                    }
+                }
+            }
+
+            ExpandVisibility(visible = vm.message != null && !vm.dialogVisible) {
+                StatusBar(vm = vm)
+            }
+            Spacer(Modifier.navigationBarsPadding().height(4.dp))
         }
-        Spacer(Modifier.navigationBarsPadding().height(4.dp))
     }
 }
 
@@ -242,6 +261,7 @@ private fun ModeTabs(mode: ArchiveMode, onSelect: (ArchiveMode) -> Unit) {
     // 横排独立小按钮（形态对齐主界面左侧纵栏的小胶囊）：玻璃面 + 描边，选中态主色浅底
     Row(
         modifier = Modifier
+            .staggeredEntrance(1)
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(AppComponentShape)
             .background(NavWhite)
@@ -274,6 +294,7 @@ private fun ModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
     )
     Box(
         modifier = Modifier
+            .pressSquish()
             .clip(AppComponentShape)
             .background(bg)
             .clickable(onClick = onClick)
@@ -291,7 +312,8 @@ private fun ModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () -> Unit) {
-    if (vm.sourceTreeUri == null) {
+    BlurCrossfade(targetState = vm.sourceTreeUri == null, modifier = Modifier.fillMaxSize()) { noSourceDir ->
+    if (noSourceDir) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             BigAction(
                 label = stringResource(R.string.archive_pick_source_dir),
@@ -299,98 +321,118 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                 enabled = !vm.working,
             )
         }
-        return
-    }
+    } else {
+        Column(Modifier.fillMaxSize()) {
+            DirStrip(
+                name = vm.sourceDirName,
+                onRescan = { vm.rescan(appContext) },
+                onRePick = onPickDir,
+                enabled = !vm.working,
+                rescanLabel = stringResource(R.string.archive_rescan),
+                rePickLabel = stringResource(R.string.archive_change_dir),
+            )
 
-    Column(Modifier.fillMaxSize()) {
-        DirStrip(
-            name = vm.sourceDirName,
-            onRescan = { vm.rescan(appContext) },
-            onRePick = onPickDir,
-            enabled = !vm.working,
-            rescanLabel = stringResource(R.string.archive_rescan),
-            rePickLabel = stringResource(R.string.archive_change_dir),
-        )
-
-        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-            // 左栏：归档列表
-            Column(
-                modifier = Modifier.weight(0.42f).fillMaxSize().padding(end = 6.dp),
-            ) {
-                PaneHeader(stringResource(R.string.archive_archives_count, vm.archives.size))
-                LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                    items(vm.archives, key = { it.id }) { archive ->
-                        ArchiveListRow(
-                            archive = archive,
-                            selected = archive.id == vm.selectedId,
-                            onClick = { vm.selectArchive(appContext, archive.id) },
-                        )
-                    }
-                }
-            }
-            // 右栏：选中归档的内容
-            Column(
-                modifier = Modifier.weight(0.58f).fillMaxSize().padding(start = 6.dp),
-            ) {
-                val selected = vm.selectedArchive
-                if (selected == null) {
-                    PaneHeader(stringResource(R.string.archive_select_hint))
-                } else {
-                    // 汇总只在 entries 变化时算一次：敌意大档的逐条统计不能跟随重组反复跑。
-                    val (fileCount, totalSize) = remember(vm.entries) {
-                        var count = 0
-                        var size = 0L
-                        for (entry in vm.entries) {
-                            if (!entry.isDirectory) {
-                                count++
-                                size += entry.size
-                            }
-                        }
-                        count to size
-                    }
-                    PaneHeader(
-                        if (fileCount > 0) {
-                            stringResource(R.string.archive_entries_summary).format(fileCount, formatBytes(totalSize))
-                        } else {
-                            selected.fileName
-                        },
-                    )
-                    NoRippleButton(
-                        text = stringResource(R.string.archive_extract_to, baseNameWithoutExtension(selected.fileName)),
-                        enabled = !vm.working && vm.entriesListed,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        onClick = { vm.extractSelected(appContext) },
-                    )
-                    // 展开集合随 entries 换包自动重置；默认全收起
-                    val expandedDirs = remember(vm.entries) { mutableStateOf(setOf<String>()) }
-                    val visibleRows = remember(vm.entries, expandedDirs.value) {
-                        buildVisibleTree(vm.entries, expandedDirs.value)
-                    }
-                    if (vm.entriesListed && vm.entries.isEmpty()) {
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Text(
-                                stringResource(R.string.archive_empty_list),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PageSecondaryTextColor,
+            Row(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                // 左栏：归档列表
+                Column(
+                    modifier = Modifier.weight(0.42f).fillMaxSize().padding(end = 6.dp),
+                ) {
+                    PaneHeader(stringResource(R.string.archive_archives_count, vm.archives.size))
+                    LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                        itemsIndexed(vm.archives, key = { _, item -> item.id }) { index, archive ->
+                            ArchiveListRow(
+                                modifier = Modifier
+                                    .then(if (MotionMode.enhanced) Modifier.animateItem(
+                                        fadeInSpec = MotionTokens.fadeIn(),
+                                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                        fadeOutSpec = MotionTokens.fadeOut(),
+                                    ) else Modifier)
+                                    .staggeredEntrance(index),
+                                archive = archive,
+                                selected = archive.id == vm.selectedId,
+                                onClick = { vm.selectArchive(appContext, archive.id) },
                             )
                         }
+                    }
+                }
+                // 右栏：选中归档的内容
+                Column(
+                    modifier = Modifier.weight(0.58f).fillMaxSize().padding(start = 6.dp),
+                ) {
+                    val selected = vm.selectedArchive
+                    if (selected == null) {
+                        PaneHeader(stringResource(R.string.archive_select_hint))
                     } else {
-                        LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                            // key 带索引：归档内允许重名条目，纯名字 key 会撞 Compose 崩溃
-                            itemsIndexed(visibleRows.take(MAX_LISTED_ENTRIES), key = { index, row ->
-                                "$index:" + (if (row.entry.isDirectory) "d:" else "f:") + row.entry.name
-                            }) { _, row ->
-                                EntryListRow(row) { toggle ->
-                                    expandedDirs.value = if (toggle) expandedDirs.value + row.entry.name else expandedDirs.value - row.entry.name
+                        // 汇总只在 entries 变化时算一次：敌意大档的逐条统计不能跟随重组反复跑。
+                        val (fileCount, totalSize) = remember(vm.entries) {
+                            var count = 0
+                            var size = 0L
+                            for (entry in vm.entries) {
+                                if (!entry.isDirectory) {
+                                    count++
+                                    size += entry.size
                                 }
                             }
-                            if (visibleRows.size > MAX_LISTED_ENTRIES) {
-                                item {
+                            count to size
+                        }
+                        PaneHeader(
+                            if (fileCount > 0) {
+                                stringResource(R.string.archive_entries_summary).format(fileCount, formatBytes(totalSize))
+                            } else {
+                                selected.fileName
+                            },
+                        )
+                        NoRippleButton(
+                            text = stringResource(R.string.archive_extract_to, baseNameWithoutExtension(selected.fileName)),
+                            enabled = !vm.working && vm.entriesListed,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            onClick = { vm.extractSelected(appContext) },
+                        )
+                        // 展开集合随 entries 换包自动重置；默认全收起
+                        val expandedDirs = remember(vm.entries) { mutableStateOf(setOf<String>()) }
+                        val visibleRows = remember(vm.entries, expandedDirs.value) {
+                            buildVisibleTree(vm.entries, expandedDirs.value)
+                        }
+                        BlurCrossfade(
+                            targetState = vm.entriesListed && vm.entries.isEmpty(),
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                        ) { listEmpty ->
+                            if (listEmpty) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     Text(
-                                        "+${visibleRows.size - MAX_LISTED_ENTRIES}",
+                                        stringResource(R.string.archive_empty_list),
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        color = PageSecondaryTextColor,
                                     )
+                                }
+                            } else {
+                                LazyColumn(Modifier.fillMaxSize()) {
+                                    // key 带索引：归档内允许重名条目，纯名字 key 会撞 Compose 崩溃
+                                    itemsIndexed(visibleRows.take(MAX_LISTED_ENTRIES), key = { index, row ->
+                                        "$index:" + (if (row.entry.isDirectory) "d:" else "f:") + row.entry.name
+                                    }) { index, row ->
+                                        EntryListRow(
+                                            row,
+                                            modifier = Modifier
+                                                .then(if (MotionMode.enhanced) Modifier.animateItem(
+                                                    fadeInSpec = MotionTokens.fadeIn(),
+                                                    placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                                    fadeOutSpec = MotionTokens.fadeOut(),
+                                                ) else Modifier)
+                                                .staggeredEntrance(index),
+                                        ) { toggle ->
+                                            expandedDirs.value = if (toggle) expandedDirs.value + row.entry.name else expandedDirs.value - row.entry.name
+                                        }
+                                    }
+                                    if (visibleRows.size > MAX_LISTED_ENTRIES) {
+                                        item {
+                                            Text(
+                                                "+${visibleRows.size - MAX_LISTED_ENTRIES}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -398,6 +440,7 @@ private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () 
                 }
             }
         }
+    }
     }
 }
 
@@ -484,14 +527,15 @@ private fun DirStrip(
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(8.dp))
-        Text(
-            name.ifBlank { "-" },
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        BlurCrossfade(targetState = name.ifBlank { "-" }, modifier = Modifier.weight(1f)) { shown ->
+            Text(
+                shown,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         NoRippleTextButton(text = rescanLabel, enabled = enabled, onClick = onRescan)
         NoRippleTextButton(text = rePickLabel, enabled = enabled, onClick = onRePick)
     }
@@ -499,20 +543,22 @@ private fun DirStrip(
 
 @Composable
 private fun PaneHeader(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = PageSecondaryTextColor,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-    )
+    BlurCrossfade(targetState = text, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) { shown ->
+        Text(
+            shown,
+            style = MaterialTheme.typography.bodyMedium,
+            color = PageSecondaryTextColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
-private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: () -> Unit) {
+private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier
+        modifier = modifier
+            .pressSquish(scale = PressSquishDefaults.CardScale)
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .clip(AppComponentShape)
@@ -540,10 +586,12 @@ private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: 
 }
 
 @Composable
-private fun EntryListRow(row: VisibleEntry, onToggle: (Boolean) -> Unit) {
+private fun EntryListRow(row: VisibleEntry, modifier: Modifier = Modifier, onToggle: (Boolean) -> Unit) {
     val (entry, depth, expanded) = row
     Row(
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier
+            .pressSquish(enabled = entry.isDirectory, scale = PressSquishDefaults.RowScale)
+            .fillMaxWidth()
             .padding(start = (depth * 14).dp)
             .padding(vertical = 1.dp)
             .clip(AppComponentShape)
@@ -592,13 +640,15 @@ private fun buildVisibleTree(entries: List<EntryRow>, expanded: Set<String>): Li
 
 @Composable
 private fun StatusBar(vm: ArchiveViewModel) {
-    vm.message?.let { text ->
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = PageSecondaryTextColor,
-            modifier = Modifier.padding(top = 2.dp),
-        )
+    // 收起动画期间消息可能已清空：沿用最后一条，避免先消失再收起空框
+    rememberLastNonNull(vm.message)?.let { text ->
+        BlurCrossfade(targetState = text, modifier = Modifier.padding(top = 2.dp)) { shown ->
+            Text(
+                shown,
+                style = MaterialTheme.typography.bodyMedium,
+                color = PageSecondaryTextColor,
+            )
+        }
     }
 }
 
@@ -612,13 +662,16 @@ private fun ArchiveProgressDialog(vm: ArchiveViewModel, onDismissRequest: () -> 
         onDismissRequest = onDismissRequest,
         title = { Text(stringResource(R.string.archive_title), style = MaterialTheme.typography.titleMedium) },
         text = {
+            val animatedProgress by animateFloatAsState(vm.progress, MotionTokens.value(0.001f), label = "archiveProgress")
+            val animatedFileProgress by animateFloatAsState(vm.fileProgress, MotionTokens.value(0.001f), label = "archiveFileProgress")
+            BlurCrossfade(targetState = vm.working) { working ->
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (vm.working) {
+                if (working) {
                     if (vm.progressDeterminate) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            LinearProgressIndicator(progress = { vm.progress }, modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(progress = { if (MotionMode.enhanced) animatedProgress else vm.progress }, modifier = Modifier.fillMaxWidth())
                             if (vm.fileBytes.second > 0) {
-                                LinearProgressIndicator(progress = { vm.fileProgress }, modifier = Modifier.fillMaxWidth())
+                                LinearProgressIndicator(progress = { if (MotionMode.enhanced) animatedFileProgress else vm.fileProgress }, modifier = Modifier.fillMaxWidth())
                             }
                         }
                         Text(
@@ -643,6 +696,7 @@ private fun ArchiveProgressDialog(vm: ArchiveViewModel, onDismissRequest: () -> 
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
             }
         },
         confirmButton = {
@@ -671,7 +725,7 @@ private fun BigAction(label: String, onClick: () -> Unit, enabled: Boolean) {
 @Composable
 private fun ArchiveCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().glassBorder(AppComponentShape),
+        modifier = Modifier.staggeredEntrance(0).fillMaxWidth().glassBorder(AppComponentShape),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
         shape = AppComponentShape,

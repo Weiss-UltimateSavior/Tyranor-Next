@@ -60,6 +60,13 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.shouldShowSaveSyncFeedback
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
@@ -72,7 +79,7 @@ import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class WebDavSettingsActivity : AppScreenActivity() {
@@ -327,6 +334,7 @@ private fun WebDavSettingsScreen() {
     }
 
     MiuixSettingsTheme {
+        ProvideEntrance {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = ComposeColor.Transparent,
@@ -348,11 +356,12 @@ private fun WebDavSettingsScreen() {
             ) {
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(0).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
+                                modifier = Modifier.pressSquish(masterAvailable, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_enabled),
                                 checked = masterChecked,
                                 enabled = masterAvailable,
@@ -364,7 +373,7 @@ private fun WebDavSettingsScreen() {
                 pageError?.let { error ->
                     item {
                         MiuixCard(
-                            modifier = Modifier.fillMaxWidth().glassBorder(),
+                            modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(),
                             cornerRadius = AppComponentCornerRadius,
                         ) {
                             Column {
@@ -375,7 +384,7 @@ private fun WebDavSettingsScreen() {
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                                 )
                                 // 仅在「本机读不出已存加密载荷」时提供恢复入口；总开关关闭或有任务在途时禁用
-                                if (loadError != null) {
+                                ExpandVisibility(visible = loadError != null) {
                                     AppNavItem(
                                         title = stringResource(R.string.webdav_reset_config),
                                         showLeadingIcon = false,
@@ -391,7 +400,7 @@ private fun WebDavSettingsScreen() {
                 }
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
@@ -439,12 +448,13 @@ private fun WebDavSettingsScreen() {
                 }
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(3).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             val modes = SaveSyncMode.entries
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_mode),
                                 summary = if (config.mode == SaveSyncMode.MANUAL) {
                                     stringResource(R.string.webdav_manual_note)
@@ -466,6 +476,7 @@ private fun WebDavSettingsScreen() {
                             )
                             val retentionOptions = SaveSyncRetention.choices
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_retention),
                                 summary = stringResource(R.string.webdav_retention_hint),
                                 items = retentionOptions.map { limit ->
@@ -490,6 +501,7 @@ private fun WebDavSettingsScreen() {
                                 },
                             )
                             SwitchPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_show_sync_feedback),
                                 checked = config.showSyncFeedback,
                                 enabled = available,
@@ -506,12 +518,13 @@ private fun WebDavSettingsScreen() {
                 }
                 item {
                     MiuixCard(
-                        modifier = Modifier.fillMaxWidth().glassBorder(),
+                        modifier = Modifier.pressSquishGroup().staggeredEntrance(4).fillMaxWidth().glassBorder(),
                         cornerRadius = AppComponentCornerRadius,
                     ) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             val directions = SaveSyncDirection.entries
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(available, PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.webdav_manual_all),
                                 items = directions.map { stringResource(it.labelResource()) },
                                 selectedIndex = directions.indexOf(manualDirection).coerceAtLeast(0),
@@ -541,6 +554,7 @@ private fun WebDavSettingsScreen() {
                 }
                 item { BottomInsetSpacer() }
             }
+        }
         }
     }
 
@@ -619,13 +633,15 @@ private fun WebDavSettingsScreen() {
 
 @Composable
 private fun PreferenceValue(value: String) {
-    Text(
-        value,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-    )
+    BlurCrossfade(targetState = value) { shown ->
+        Text(
+            shown,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 private fun SaveSyncMode.titleResource(): Int = when (this) {

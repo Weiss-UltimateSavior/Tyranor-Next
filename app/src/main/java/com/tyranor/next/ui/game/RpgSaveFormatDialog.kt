@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
@@ -19,6 +20,9 @@ import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.ProvideAppLocale
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.TyranorNextTheme
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -46,6 +50,8 @@ internal fun RpgSaveFormatDialog(
             Text(stringResource(R.string.save_format_convert_title), style = MaterialTheme.typography.titleMedium)
         },
         text = {
+            // 选项依次弹入
+            ProvideEntrance {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     stringResource(R.string.save_format_convert_message, standardCount),
@@ -58,6 +64,7 @@ internal fun RpgSaveFormatDialog(
                     )
                 }
                 AppNavItem(
+                    modifier = Modifier.staggeredEntrance(0),
                     title = stringResource(R.string.save_format_convert_confirm),
                     leadingIcon = R.drawable.ic_sheet_saves,
                     containerColor = DialogItemSurface,
@@ -66,12 +73,14 @@ internal fun RpgSaveFormatDialog(
                     onClick = { onChoice(true) },
                 )
                 AppNavItem(
+                    modifier = Modifier.staggeredEntrance(1),
                     title = stringResource(R.string.save_format_convert_keep),
                     leadingIcon = R.drawable.ic_sheet_launch,
                     containerColor = DialogItemSurface,
                     showArrow = false,
                     onClick = { onChoice(false) },
                 )
+            }
             }
         },
         // 选项已用 AppNavItem 承载，confirmButton 槽位必填故传空
@@ -91,16 +100,18 @@ suspend fun ComponentActivity.awaitRpgSaveFormatChoice(
         // 主题最外层（AGENTS.md 界面规范）：透明蹦床 trampoline 也必须挂主题，否则 typography/primary 回落默认
         TyranorNextTheme {
             ProvideAppLocale {
-                var showDialog by remember { mutableStateOf(true) }
-                if (showDialog) {
-                    RpgSaveFormatDialog(
-                        standardCount = standardCount,
-                        hashedCount = hashedCount,
-                        onChoice = { convert ->
-                            showDialog = false
-                            if (continuation.isActive) continuation.resume(convert)
-                        },
-                    )
+                ProvideMotionEnvironment {
+                    var showDialog by remember { mutableStateOf(true) }
+                    if (showDialog) {
+                        RpgSaveFormatDialog(
+                            standardCount = standardCount,
+                            hashedCount = hashedCount,
+                            onChoice = { convert ->
+                                showDialog = false
+                                if (continuation.isActive) continuation.resume(convert)
+                            },
+                        )
+                    }
                 }
             }
         }

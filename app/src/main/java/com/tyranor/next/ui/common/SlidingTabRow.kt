@@ -1,8 +1,10 @@
 package com.tyranor.next.ui.common
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -32,12 +34,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppThemeColors
@@ -51,6 +55,10 @@ import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.theme.UnselectedGrey
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionSprings
+import com.tyranor.next.ui.common.motion.pressSquish
+import kotlinx.coroutines.launch
 
 /** 标签高度（两形态统一）。 */
 private val SlidingTabHeight = 42.dp
@@ -64,14 +72,57 @@ private val ScrollableTabSpacing = 8.dp
 /** 滚动态两端留白：滚动到边缘时标签不贴屏幕边。 */
 private val ScrollableTabContentPadding = 12.dp
 
-/** 指示器滑动时长（与页面 Tab 切换动画同一时长的线性运动）。 */
-private const val IndicatorDurationMillis = 200
+/**
+ * 「蠕动」指示器：前沿（运动方向那条边）用快而略带回弹的弹簧先到，后沿用慢一点的弹簧跟上，
+ * 移动途中指示器朝目标拉长、到位时轻轻回弹收拢。停稳后左右边与目标标签完全重合（外观不变）。
+ *
+ * 返回左右边的动画值；在布局阶段读取（见 [stretchyBounds]），移动途中不逐帧重组整行标签。
+ */
+@Composable
+private fun rememberStretchyIndicator(targetLeft: Dp, targetRight: Dp): StretchyEdges {
+    val left = remember { Animatable(targetLeft, Dp.VectorConverter) }
+    val right = remember { Animatable(targetRight, Dp.VectorConverter) }
+    LaunchedEffect(targetLeft, targetRight) {
+        val movingRight = targetLeft > left.value
+        // 「普通」动效档：原版 200ms 线性滑动，两边同步（宽度不拉伸）
+        val original = tween<Dp>(durationMillis = 200, easing = LinearEasing)
+        // 前沿比统一的控件节奏（MotionTokens.control）略快，后沿略慢，形成「蠕动」
+        val lead = if (MotionMode.enhanced) MotionSprings.response(0.3f, 0.66f, IndicatorThreshold) else original
+        val trail = if (MotionMode.enhanced) MotionSprings.response(0.44f, 0.8f, IndicatorThreshold) else original
+        launch { left.animateTo(targetLeft, if (movingRight) trail else lead) }
+        launch { right.animateTo(targetRight, if (movingRight) lead else trail) }
+    }
+    return remember(left, right) { StretchyEdges(left, right) }
+}
+
+private class StretchyEdges(
+    val left: Animatable<Dp, AnimationVector1D>,
+    val right: Animatable<Dp, AnimationVector1D>,
+)
+
+/**
+ * 按两条边的当前值摆放指示器（布局阶段读取动画值，只重新布局不重组）；[maxWidth] 不为 null 时把两边夹在标签栏内。
+ */
+private fun Modifier.stretchyBounds(edges: StretchyEdges, maxWidth: Dp? = null): Modifier = layout { measurable, constraints ->
+    var l = edges.left.value
+    var r = edges.right.value
+    if (maxWidth != null) {
+        l = l.coerceIn(0.dp, maxWidth)
+        r = r.coerceIn(l, maxWidth)
+    }
+    val x = l.roundToPx()
+    val w = (r.roundToPx() - x).coerceAtLeast(0)
+    val placeable = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
+    layout(placeable.width, placeable.height) { placeable.place(x, 0) }
+}
+
+private val IndicatorThreshold = 0.1.dp
 
 /**
  * 标签栏统一组件（AGENTS.md「标签栏统一规范」的唯一入口）。
  *
- * 选中项是**独立背景指示器**（不是逐项背景），切换时指示器以 200ms 线性动画滑到目标标签，
- * 宽度同步动画（滚动态标签宽度不齐时宽度也平滑过渡）。指示器与文字颜色由组件内部按
+ * 选中项是**独立背景指示器**（不是逐项背景），切换时指示器以弹簧「蠕动」滑到目标标签
+ * （前沿先到、后沿跟上，途中拉长、到位回弹），宽度随之过渡（滚动态标签宽度不齐时也平滑过渡）。指示器与文字颜色由组件内部按
  * 外观风格分派（默认 / 复古玻璃），圆角统一 [AppComponentShape]，
  * 玻璃系由 [glassBorder] 补 0.5dp 描边；调用方**不得**自行传色值或手写指示器。
  *
@@ -115,13 +166,11 @@ private fun FixedSlidingTabRow(
     val shape = AppComponentShape
     BoxWithConstraints(modifier.fillMaxWidth().height(SlidingTabHeight)) {
         val tabWidth = (maxWidth - FixedTabSpacing * (tabs.size - 1)) / tabs.size
-        val indicatorOffset by animateDpAsState(
-            targetValue = (tabWidth + FixedTabSpacing) * selectedIndex,
-            animationSpec = tween(durationMillis = IndicatorDurationMillis, easing = LinearEasing),
-            label = "slidingTabIndicatorOffset",
-        )
+        val targetLeft = (tabWidth + FixedTabSpacing) * selectedIndex
+        val edges = rememberStretchyIndicator(targetLeft, targetLeft + tabWidth)
+        // 两端标签处前沿回弹不越出标签栏
         TabIndicator(
-            modifier = Modifier.offset(x = indicatorOffset).width(tabWidth),
+            modifier = Modifier.stretchyBounds(edges, maxWidth),
             shape = shape,
         )
         Row(
@@ -179,18 +228,9 @@ private fun ScrollableSlidingTabRow(
                 geometry[selectedIndex]?.let { target ->
                     val targetX = with(density) { target.x.toDp() }
                     val targetWidth = with(density) { target.width.toDp() }
-                    val animatedX by animateDpAsState(
-                        targetValue = targetX,
-                        animationSpec = tween(durationMillis = IndicatorDurationMillis, easing = LinearEasing),
-                        label = "slidingTabIndicatorX",
-                    )
-                    val animatedWidth by animateDpAsState(
-                        targetValue = targetWidth,
-                        animationSpec = tween(durationMillis = IndicatorDurationMillis, easing = LinearEasing),
-                        label = "slidingTabIndicatorWidth",
-                    )
+                    val edges = rememberStretchyIndicator(targetX, targetX + targetWidth)
                     TabIndicator(
-                        modifier = Modifier.offset(x = animatedX).width(animatedWidth),
+                        modifier = Modifier.stretchyBounds(edges),
                         shape = shape,
                     )
                 }
@@ -251,6 +291,8 @@ private fun TabLabel(
 ) {
     Box(
         modifier = modifier
+            // Q 弹按压（只改绘制图层）
+            .pressSquish()
             .clip(AppComponentShape)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .padding(horizontal = 16.dp),

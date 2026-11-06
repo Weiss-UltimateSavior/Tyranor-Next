@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import com.tyranor.next.ui.common.AppScreenActivity
+import com.tyranor.next.ui.common.motion.ProvideEntrance
 
 class EngineSettingsActivity : AppScreenActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -16,7 +17,9 @@ class EngineSettingsActivity : AppScreenActivity() {
         }
 
         setAppScreenContent {
-            EngineSettingsDetailScreen(kind = kind)
+            ProvideEntrance {
+                EngineSettingsDetailScreen(kind = kind)
+            }
         }
     }
 

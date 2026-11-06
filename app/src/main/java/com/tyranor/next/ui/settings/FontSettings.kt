@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.BlurCrossfade
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -91,13 +92,15 @@ internal fun FontPreference(
         summary = if (valueInSummary) value else null,
         endActions = {
             if (!valueInSummary) {
-                Text(
-                    value,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                BlurCrossfade(value) { shown ->
+                    Text(
+                        shown,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         },
         enabled = enabled,

@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.PageTextColor
+import com.tyranor.next.ui.common.motion.BlurCrossfade
 
 /**
  * 页面顶部栏统一组件（AGENTS.md「页面顶部栏统一规范」的唯一入口）。
@@ -62,15 +63,17 @@ fun AppTopBar(
                 modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = contentColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                // 标题变化（如多选计数、切换分类）时模糊过渡；静态标题无动画
+                BlurCrossfade(targetState = title, modifier = Modifier.weight(1f)) { currentTitle ->
+                    Text(
+                        currentTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = contentColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 trailing?.invoke()
             }
             underTitle?.invoke()

@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,13 +56,18 @@ import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.NoRippleTextButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.RollingNumberText
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.auth.HikarinagiOAuthCallbackActivity
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.basic.Switch
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.Switch
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 class CoverScraperSettingsActivity : AppScreenActivity() {
@@ -117,6 +123,7 @@ internal fun CoverScraperSettingsScreen() {
     }
 
     MiuixSettingsTheme {
+      ProvideEntrance {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = ComposeColor.Transparent,
@@ -135,9 +142,11 @@ internal fun CoverScraperSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(0).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             sources.forEachIndexed { index, source ->
+                              // 以来源为 key：重排时行状态跟着来源走，序号数字滚动
+                              key(source) {
                                 CoverSourceRow(
                                     index = index,
                                     count = sources.size,
@@ -171,13 +180,14 @@ internal fun CoverScraperSettingsScreen() {
                                         }
                                     },
                                 )
+                              }
                             }
                         }
                     }
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.cover_only_missing_title),
@@ -202,7 +212,7 @@ internal fun CoverScraperSettingsScreen() {
                 }
 
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(
                             modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -230,6 +240,7 @@ internal fun CoverScraperSettingsScreen() {
                 }
             }
         }
+      }
     }
 }
 
@@ -259,10 +270,9 @@ private fun CoverSourceRow(
                 .background(DialogItemSurface),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
+            RollingNumberText(
                 "${index + 1}",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                 color = MiuixTheme.colorScheme.primary,
             )
         }
@@ -278,13 +288,16 @@ private fun CoverSourceRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                sourceSummary(source, authStatus),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            val summary = sourceSummary(source, authStatus)
+            BlurCrossfade(targetState = summary) { text ->
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 NoRippleTextButton(
                     text = stringResource(R.string.cover_move_up),

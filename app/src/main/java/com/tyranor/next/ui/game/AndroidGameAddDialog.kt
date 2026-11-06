@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.game.manual.AndroidAppGames
@@ -42,6 +45,11 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.RadioButton
@@ -127,13 +135,24 @@ internal fun AndroidGameAddDialog(
                     )
                 }
 
-                when {
-                    loading -> Box(
+                // 加载中 / 失败 / 空 / 无匹配 / 列表 之间模糊替换（恒为一个子项，间距不变）
+                val pane = when {
+                    loading -> 0
+                    loadFailed -> 1
+                    apps.isEmpty() -> 2
+                    filtered.isEmpty() -> 3
+                    else -> 4
+                }
+                // 列表状态放在 BlurCrossfade 外：过滤到「无匹配」再回来时滚动位置不丢
+                val listState = rememberLazyListState()
+                BlurCrossfade(pane) { current ->
+                when (current) {
+                    0 -> Box(
                         modifier = Modifier.fillMaxWidth().height(120.dp),
                         contentAlignment = Alignment.Center,
                     ) { CircularProgressIndicator() }
 
-                    loadFailed -> Column(
+                    1 -> Column(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
@@ -147,14 +166,14 @@ internal fun AndroidGameAddDialog(
                         ) { loadAttempt++ }
                     }
 
-                    apps.isEmpty() -> Text(
+                    2 -> Text(
                         stringResource(R.string.android_add_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
                     )
 
-                    filtered.isEmpty() -> Text(
+                    3 -> Text(
                         stringResource(R.string.android_add_no_match),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -163,6 +182,7 @@ internal fun AndroidGameAddDialog(
 
                     else -> MiuixPreferenceTheme {
                         LazyColumn(
+                            state = listState,
                             modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
@@ -170,6 +190,18 @@ internal fun AndroidGameAddDialog(
                                 val added = AndroidAppGames.uriFor(app.packageName) in existingUris
                                 Row(
                                     modifier = Modifier
+                                        .then(
+                                            if (MotionMode.enhanced) {
+                                                Modifier.animateItem(
+                                                    fadeInSpec = MotionTokens.fadeIn(),
+                                                    placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                                    fadeOutSpec = MotionTokens.fadeOut(),
+                                                )
+                                            } else {
+                                                Modifier
+                                            },
+                                        )
+                                        .pressSquish(enabled = !added, scale = PressSquishDefaults.RowScale)
                                         .fillMaxWidth()
                                         // 已在库的应用整行弱化，明确不可选原因
                                         .alpha(if (added) 0.45f else 1f)
@@ -215,6 +247,7 @@ internal fun AndroidGameAddDialog(
                             }
                         }
                     }
+                }
                 }
             }
         },

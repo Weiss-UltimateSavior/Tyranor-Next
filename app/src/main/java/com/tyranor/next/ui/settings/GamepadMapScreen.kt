@@ -42,12 +42,18 @@ import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.NoRippleButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 手柄映射编辑页：逐逻辑按键与摇杆方向编辑输出键位。 */
@@ -82,6 +88,7 @@ internal fun GamepadMapScreen() {
     var editingStick by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     MiuixSettingsTheme {
+        ProvideEntrance {
         MiuixScaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = ComposeColor.Transparent,
@@ -103,6 +110,7 @@ internal fun GamepadMapScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
+                    Box(Modifier.pressSquishGroup().staggeredEntrance(0)) {
                     EngineCard(stringResource(R.string.input_settings_gamepad_buttons_label)) {
                         // 说明并入卡片内：AGENTS.md 禁止在顶部栏下方放整页描述文案
                         Text(
@@ -119,8 +127,10 @@ internal fun GamepadMapScreen() {
                             )
                         }
                     }
+                    }
                 }
                 item {
+                    Box(Modifier.pressSquishGroup().staggeredEntrance(1)) {
                     EngineCard(stringResource(R.string.input_settings_gamepad_sticks_label)) {
                         listOf(
                             InputRemapRepository.STICK_LEFT to R.string.input_settings_stick_left,
@@ -134,9 +144,11 @@ internal fun GamepadMapScreen() {
                             )
                         }
                     }
+                    }
                 }
                 item { BottomInsetSpacer() }
             }
+        }
         }
     }
 
@@ -319,6 +331,7 @@ private fun KeyBindingDialog(
                     if (allowAutoKeep) {
                         item {
                             SwitchPreference(
+                                modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.input_settings_auto_keep_toggle),
                                 checked = keep,
                                 onCheckedChange = { keep = it },
@@ -326,12 +339,16 @@ private fun KeyBindingDialog(
                         }
                     }
                     item {
-                        Text(
-                            text = stringResource(R.string.input_settings_binding_keys, selected.size),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        BlurCrossfade(
+                            targetState = selected.size,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        )
+                        ) { count ->
+                            Text(
+                                text = stringResource(R.string.input_settings_binding_keys, count),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
                     }
                     groups.forEach { group ->
                         item {

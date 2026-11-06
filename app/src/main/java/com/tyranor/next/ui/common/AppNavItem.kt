@@ -35,6 +35,8 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
 
 /**
  * 功能跳转条目统一组件：左侧图标 + 标题/摘要 + 右侧指示箭头。
@@ -86,6 +88,11 @@ fun AppNavItem(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            // Q 弹按压：有底卡时整卡形变，卡内平面条目缩得更少
+            .pressSquish(
+                enabled = enabled,
+                scale = if (drawSurface) PressSquishDefaults.CardScale else PressSquishDefaults.RowScale,
+            )
             .clip(AppComponentShape)
             .clickable(
                 interactionSource = interactionSource,

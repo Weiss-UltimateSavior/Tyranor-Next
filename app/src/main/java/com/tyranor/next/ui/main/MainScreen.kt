@@ -35,6 +35,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,6 +69,7 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.DefaultPageBackgroundLayer
 import com.tyranor.next.theme.GlassNavSurface
 import com.tyranor.next.theme.NavWhite
@@ -99,6 +101,8 @@ import com.tyranor.next.ui.common.glass.GlassBottomBarSpec
 import com.tyranor.next.ui.common.glass.rememberGlassBottomBarColors
 import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.theme.AppComponentShape
+import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
+import top.yukonga.miuix.kmp.utils.MiuixPopupUtils
 import com.tyranor.next.ui.engine.EngineScreen
 import com.tyranor.next.ui.game.GameScreen
 import com.tyranor.next.ui.game.startActivityWithPageTransition
@@ -110,8 +114,17 @@ import com.tyranor.next.ui.settings.SettingsScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.tyranor.next.ui.common.motion.rememberEntranceState
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.MotionTokens
+import android.os.SystemClock
+import androidx.compose.runtime.derivedStateOf
+import com.tyranor.next.ui.common.motion.EntranceState
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.rememberAfterPushStarts
 
 // 底部导航栏 Tab 定义
 @Immutable
@@ -218,6 +231,18 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
     if (fromLeftEdge) sidePanelOpen = true else hostActivity?.finish()
   }
+  val closePanelAfterPush = rememberAfterPushStarts()
+  val panelNavLock = remember { BooleanArray(1) }
+  // 从侧边栏进入页面：增强动效档下面板要等侧推开始才滑出，这段时间内再点条目不能重复打开页面
+  fun navigateFromPanel(start: () -> Unit) {
+    if (panelNavLock[0]) return
+    panelNavLock[0] = true
+    start()
+    closePanelAfterPush {
+      sidePanelOpen = false
+      panelNavLock[0] = false
+    }
+  }
   AppSidePanel(open = sidePanelOpen, onDismiss = { sidePanelOpen = false }) {
     // 妙妙工具条目：启动内置原生 Kirikiroid2 界面（文件浏览器，不启动具体游戏）
     AppNavItem(
@@ -242,8 +267,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       containerColor = DialogItemSurface,
       leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
-        sidePanelOpen = false
-        startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context))
+        navigateFromPanel { startActivityWithPageTransition(context, ArchiveUnpackActivity.createIntent(context)) }
       },
     )
     AppNavItem(
@@ -252,8 +276,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       containerColor = DialogItemSurface,
       leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
-        sidePanelOpen = false
-        startActivityWithPageTransition(context, WebDavSettingsActivity.createIntent(context))
+        navigateFromPanel { startActivityWithPageTransition(context, WebDavSettingsActivity.createIntent(context)) }
       },
     )
     // 妙妙工具条目：输入与手柄（原设置页「输入与手柄」入口迁入）
@@ -263,8 +286,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       containerColor = DialogItemSurface,
       leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
-        sidePanelOpen = false
-        startActivityWithPageTransition(context, InputSettingsActivity.createIntent(context))
+        navigateFromPanel { startActivityWithPageTransition(context, InputSettingsActivity.createIntent(context)) }
       },
     )
     // 妙妙工具条目：引擎模块管理（第三方 APK 运行时模块的发现与启用）
@@ -274,8 +296,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       containerColor = DialogItemSurface,
       leadingIconTint = MaterialTheme.colorScheme.primary,
       onClick = {
-        sidePanelOpen = false
-        startActivityWithPageTransition(context, EngineModuleManagementActivity.createIntent(context))
+        navigateFromPanel { startActivityWithPageTransition(context, EngineModuleManagementActivity.createIntent(context)) }
       },
     )
   }
@@ -336,6 +357,10 @@ fun MainScreen(modifier: Modifier = Modifier) {
     GlassShaderSupport.isRuntimeShaderUsable
 
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
+  // 每个标签页一份入场节拍：切到该页时卡片 / 列表项依次弹入（页内 staggeredEntrance 使用）。
+  // 在切页的同一帧同步重播，页内元素首帧即按隐藏绘制，不会先闪一下
+  val tabEntrances = tabItems.indices.map { page -> rememberEntranceState(playOnStart = page == selectedIndex) }
+  val tabLeftAt = remember { LongArray(tabItems.size) }
   fun selectPage(index: Int) {
     // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
     if (index !in tabItems.indices) return
@@ -344,10 +369,26 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 这里判的是**实际生效的档**（enhancedBarActive）而不是设置值：AGSL 不可用时界面已回退成
     // 经典档，转场语义必须跟着回退，否则会出现「看着是经典档、行为是透镜档」的错配。
     // 默认路径保持原有守卫，避免把这一行为变更带给未开启该选项的用户（报告 §8.7）。
-    if (!enhancedBarActive && !floatingButtonActive && pageTransition.isRunning) return
+    // 「普通」动效档：原版守卫（转场进行中忽略）；「增强」档不设守卫：切页是弹簧转场，
+    // 转场途中点新页签会从当前位置与速度直接转向新目标（可打断）
+    val guardActive = !MotionMode.enhanced
+    if (!enhancedBarActive && !floatingButtonActive && pageTransition.isRunning && guardActive) return
+    // 切回刚离开不久的标签页（A→B→A）时不重播：那一页还在屏幕上，重播会把正在显示的内容清空再弹入
+    val now = SystemClock.uptimeMillis()
+    tabLeftAt[selectedIndex] = now
+    if (now - tabLeftAt[index] > MainTabReplayMinGapMillis) tabEntrances[index].replay(quick = true)
     selectedIndex = index
   }
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
+  // 透明、零 inset 的最外层 Miuix Scaffold 只用来托管浮层：各标签页里的下拉菜单等 Miuix 浮层默认渲染到最外层 Scaffold，
+  // 放在这里后浮层与其背景变暗盖住整个屏幕（含底部导航栏），而不是夹在页面与底栏之间、让底栏单独亮着。
+  // 浮层内容在这里组合，故宿主套同一个 MiuixSettingsTheme，配色与原先在设置页内渲染时一致。
+  MiuixScaffold(
+    modifier = Modifier.fillMaxSize(),
+    popupHost = { MiuixSettingsTheme { MiuixPopupUtils.MiuixPopupHost() } },
+    containerColor = Color.Transparent,
+    contentWindowInsets = WindowInsets(0.dp),
+  ) { _ ->
   Box(
     modifier.fillMaxSize().then(sidePanelSwipeModifier)
       .then(if (floatingButtonActive) floatingNavOutsideTapObserver else Modifier),
@@ -378,9 +419,23 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 该场景改用仅含页面背景的 backgroundBackdrop：Web 首页在 glassNavBottomInset() 下留有底部
     // 空白，导航栏底下本来就只有页面背景，采样内容零视觉价值；Web 首页不再参与绘制后立即恢复。
     // currentState/targetState 只在转场起止变化（currentState 保持起点直到转场结束），不逐帧重组。
+    val homeInTransition = selectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0
+    // 「增强」动效档允许转场途中转向（首页→游戏→引擎）：转向时 currentState 会变成上一个目标，首页其实还在淡出，
+    // 必须保持「首页参与绘制」直到转场完全停下，否则底栏会提前改采内容层，把 WebView 录进采样层而闪烁
+    var homeLatched by remember { mutableStateOf(false) }
+    // 只以 homeInTransition 作为 key：isRunning 不在组合期读取，转场起止不再触发 MainScreen 重组；
+    // 首页离开时等到转场真正停下（snapshotFlow 读取的是当前值，已停下则立即继续）再解除锁存。
+    LaunchedEffect(homeInTransition) {
+      if (homeInTransition) {
+        homeLatched = true
+      } else {
+        snapshotFlow { pageTransition.isRunning }.first { !it }
+        homeLatched = false
+      }
+    }
     val webHomeInvolved = bottomBackdropActive &&
       homeStyle == AppSettingsStore.HOME_STYLE_WEB &&
-      (selectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
+      (homeInTransition || (MotionMode.enhanced && homeLatched))
     // 底栏采样源：Web 首页参与绘制时为仅背景层，其余为内容层（两者同一坐标空间，可直接替换）。
     val navBackdrop = if (webHomeInvolved) backgroundBackdrop else backdrop
     // 仅背景层：只在 Web 首页参与绘制时挂载，供底栏采样（其余情况由根部 GlassBackground 绘制，
@@ -429,6 +484,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           MainTabPages(
             selectedIndex = selectedIndex,
             pageTransition = pageTransition,
+            tabEntrances = tabEntrances,
             libraryState = libraryState,
             libraryViewModel = libraryViewModel,
           )
@@ -439,6 +495,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
         MainTabPages(
           selectedIndex = selectedIndex,
           pageTransition = pageTransition,
+          tabEntrances = tabEntrances,
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
         )
@@ -535,6 +592,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
       modifier = Modifier.align(Alignment.CenterStart),
     )
   }
+  }
 
   // 侧边栏条目启动失败弹窗（与首页/游戏页共用同一个错误弹窗组件）
   sidePanelLaunchError?.let { state ->
@@ -551,6 +609,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
 private fun ColumnScope.MainTabPages(
   selectedIndex: Int,
   pageTransition: Transition<Int>,
+  tabEntrances: List<EntranceState>,
   libraryState: MainLibraryUiState,
   libraryViewModel: MainLibraryViewModel,
 ) {
@@ -559,8 +618,9 @@ private fun ColumnScope.MainTabPages(
         // 四页常驻组合：隐藏页只保留已测量节点且 alpha=0，切换时不再重建游戏网格/Miuix 设置页。
         // 中间 Tab 的 alpha 在任意状态均为 0，因此跨页时只显示起点和终点的直接水平动画。
         tabItems.indices.forEach { page ->
+          // 水平切页改为弹簧：几乎不过冲的快速滑入（阻尼 0.86），淡入淡出走临界阻尼
           val pageOffset by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = 200) },
+            transitionSpec = { if (MotionMode.enhanced) MainTabSlideSpring else tween(durationMillis = 200) },
             label = "mainTabOffset$page",
           ) { activePage ->
             when {
@@ -570,10 +630,16 @@ private fun ColumnScope.MainTabPages(
             }
           }
           val pageAlpha by pageTransition.animateFloat(
-            transitionSpec = { tween(durationMillis = 160) },
+            transitionSpec = { if (MotionMode.enhanced) MainTabFadeSpring else tween(durationMillis = 160) },
             label = "mainTabAlpha$page",
           ) { activePage -> if (page == activePage) 1f else 0f }
-          val pageInteractive = page == selectedIndex && !pageTransition.isRunning
+          // 可交互：选中且已基本到位（弹簧尾巴不再阻挡点击）
+          val pageSettled by remember {
+            derivedStateOf { kotlin.math.abs(pageOffset) < 0.02f && pageAlpha > 0.98f }
+          }
+          val pageInteractive = page == selectedIndex &&
+            (if (MotionMode.enhanced) pageSettled else !pageTransition.isRunning)
+          val entrance = tabEntrances[page]
           Box(
             Modifier
               .fillMaxSize()
@@ -581,6 +647,12 @@ private fun ColumnScope.MainTabPages(
               .graphicsLayer {
                 translationX = pageOffset * size.width
                 alpha = pageAlpha
+                // 景深：滑动途中两页略微缩小，停稳时为 1（外观不变）
+                if (MotionMode.enhanced) {
+                  val depth = 1f - MainTabDepthScale * kotlin.math.abs(pageOffset).coerceAtMost(1f)
+                  scaleX = depth
+                  scaleY = depth
+                }
               }
               .then(
                 if (pageInteractive) {
@@ -598,6 +670,7 @@ private fun ColumnScope.MainTabPages(
                 },
               ),
           ) {
+            ProvideEntrance(entrance) {
             when (page) {
               0 -> HomeScreen(
                 modifier = Modifier.fillMaxSize(),
@@ -621,6 +694,7 @@ private fun ColumnScope.MainTabPages(
               )
               2 -> EngineScreen(Modifier.fillMaxSize(), gameCount = libraryState.games.size)
               3 -> SettingsScreen(Modifier.fillMaxSize())
+            }
             }
           }
         }
@@ -684,3 +758,15 @@ private fun DefaultBottomNavigationBar(
     }
   }
 }
+
+/** 主界面切页的位移弹簧（约 0.4s，阻尼 0.86：快速滑入、几乎不过冲）。 */
+private val MainTabSlideSpring = MotionTokens.page(0.001f)
+
+/** 主界面切页的淡入淡出（临界阻尼，不过冲）。 */
+private val MainTabFadeSpring = MotionTokens.fadeIn(0.002f)
+
+/** 离开某标签页后这段时间内切回不重播入场（页面还在屏幕上）。 */
+private const val MainTabReplayMinGapMillis = 400L
+
+/** 切页途中两页的景深缩放幅度。 */
+private const val MainTabDepthScale = 0.06f
