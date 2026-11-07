@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -102,8 +103,13 @@ private class StretchyEdges(
 
 /**
  * 按两条边的当前值摆放指示器（布局阶段读取动画值，只重新布局不重组）；[maxWidth] 不为 null 时把两边夹在标签栏内。
+ * 等分标签的边界从逻辑起点计算；滚动标签的测量边界则为物理坐标。
  */
-private fun Modifier.stretchyBounds(edges: StretchyEdges, maxWidth: Dp? = null): Modifier = layout { measurable, constraints ->
+private fun Modifier.stretchyBounds(
+    edges: StretchyEdges,
+    maxWidth: Dp? = null,
+    relativeToStart: Boolean = false,
+): Modifier = layout { measurable, constraints ->
     var l = edges.left.value
     var r = edges.right.value
     if (maxWidth != null) {
@@ -113,7 +119,9 @@ private fun Modifier.stretchyBounds(edges: StretchyEdges, maxWidth: Dp? = null):
     val x = l.roundToPx()
     val w = (r.roundToPx() - x).coerceAtLeast(0)
     val placeable = measurable.measure(constraints.copy(minWidth = w, maxWidth = w))
-    layout(placeable.width, placeable.height) { placeable.place(x, 0) }
+    layout(placeable.width, placeable.height) {
+        if (relativeToStart) placeable.placeRelative(x, 0) else placeable.place(x, 0)
+    }
 }
 
 private val IndicatorThreshold = 0.1.dp
@@ -170,7 +178,7 @@ private fun FixedSlidingTabRow(
         val edges = rememberStretchyIndicator(targetLeft, targetLeft + tabWidth)
         // 两端标签处前沿回弹不越出标签栏
         TabIndicator(
-            modifier = Modifier.stretchyBounds(edges, maxWidth),
+            modifier = Modifier.stretchyBounds(edges, maxWidth, relativeToStart = true),
             shape = shape,
         )
         Row(
@@ -202,11 +210,10 @@ private fun ScrollableSlidingTabRow(
     val shape = AppComponentShape
     val density = LocalDensity.current
     val scrollState = rememberScrollState()
-    val geometry = remember { mutableStateMapOf<Int, TabGeometry>() }
+    // 标签数量变化时同步更换测量表；异步 clear 可能晚于首次布局，把刚写入的几何清空且不再触发测量。
+    val geometry = remember(tabs.size) { mutableStateMapOf<Int, TabGeometry>() }
     // 首次自动定位（快照）与后续选中变化（动画）的区分
     var positionedOnce by remember { mutableStateOf(false) }
-    // 标签集合变化（引擎分类增删）后重新测量，避免沿用旧坐标
-    LaunchedEffect(tabs.size) { geometry.clear() }
     // 选中项在可视区外时滚动到可见（首次直接定位；用户点击的标签必然可见，不触发）
     LaunchedEffect(selectedIndex, geometry.size, scrollState.viewportSize) {
         val target = geometry[selectedIndex] ?: return@LaunchedEffect
@@ -230,7 +237,7 @@ private fun ScrollableSlidingTabRow(
                     val targetWidth = with(density) { target.width.toDp() }
                     val edges = rememberStretchyIndicator(targetX, targetX + targetWidth)
                     TabIndicator(
-                        modifier = Modifier.stretchyBounds(edges),
+                        modifier = Modifier.align(AbsoluteAlignment.TopLeft).stretchyBounds(edges),
                         shape = shape,
                     )
                 }

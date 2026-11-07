@@ -15,6 +15,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 
 /**
@@ -39,7 +40,7 @@ internal fun AddGameDialog(
             // 两个分支入口依次弹入
             ProvideEntrance {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().skipEntranceOnDrag(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 AppNavItem(

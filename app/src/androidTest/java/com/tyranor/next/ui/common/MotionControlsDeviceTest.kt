@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.ReusableContentHost
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -14,15 +15,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.theme.MiuixSettingsTheme
+import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.LocalAppDialogContent
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.bounceOnChange
@@ -32,6 +39,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
+import kotlin.math.roundToInt
 
 /** Requires explicit opt-in and the isolated motion acceptance package; never runs against the official app. */
 class MotionControlsDeviceTest {
@@ -81,7 +89,7 @@ class MotionControlsDeviceTest {
         var progress by mutableFloatStateOf(0.35f)
         compose.setContent {
             MiuixSettingsTheme {
-                Column(Modifier.width(240.dp)) {
+                Column(Modifier.width(240.dp).testTag("progressComparison")) {
                     MotionLinearProgressIndicator(progress, Modifier.testTag("motionProgress"))
                     // 原实现：相同 spring 在组合期读取，作为迁移到绘制阶段后的像素参照。
                     val reference by animateFloatAsState(progress, MotionTokens.value(), label = "referenceProgress")
@@ -98,6 +106,110 @@ class MotionControlsDeviceTest {
             assertSamePixels("motionProgress", "libraryProgress")
         }
         compose.mainClock.autoAdvance = true
+    }
+
+    @Test
+    fun ordinaryProgressFramesMatchUnanimatedMiuixRendering() {
+        requireMotionTarget()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(false) }
+        var progress by mutableFloatStateOf(0.35f)
+        compose.setContent {
+            MiuixSettingsTheme {
+                Column(Modifier.width(240.dp).testTag("progressComparison")) {
+                    MotionLinearProgressIndicator(progress, Modifier.testTag("motionProgress"))
+                    LinearProgressIndicator(progress = progress, modifier = Modifier.testTag("libraryProgress"))
+                }
+            }
+        }
+        assertSamePixels("motionProgress", "libraryProgress")
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { progress = 0.85f }
+        repeat(64) {
+            compose.mainClock.advanceTimeByFrame()
+            assertSamePixels("motionProgress", "libraryProgress")
+        }
+        compose.mainClock.autoAdvance = true
+    }
+
+    @Test
+    fun emptyKeyPointsSupportContinuousAndSteppedAccessibilityChanges() {
+        requireMotionTarget()
+        var value by mutableFloatStateOf(0.25f)
+        var steps by mutableStateOf(0)
+        var completions = 0
+        compose.setContent {
+            MiuixSettingsTheme {
+                Slider(
+                    value = value,
+                    onValueChange = { value = it },
+                    onValueChangeFinished = { completions++ },
+                    keyPoints = emptyList(),
+                    steps = steps,
+                    modifier = Modifier.width(240.dp).testTag("emptyTicksSlider"),
+                )
+            }
+        }
+        compose.onNodeWithTag("emptyTicksSlider").performSemanticsAction(SemanticsActions.SetProgress) { it(0.75f) }
+        compose.runOnIdle {
+            assertEquals(0.75f, value)
+            assertEquals(1, completions)
+            value = 0.25f
+            steps = 3
+        }
+        compose.onNodeWithTag("emptyTicksSlider").performSemanticsAction(SemanticsActions.SetProgress) { it(0.75f) }
+        compose.runOnIdle {
+            assertEquals(0.75f, value)
+            assertEquals(2, completions)
+        }
+    }
+
+    @Test
+    fun tabIndicatorFollowsSelectedLabelInBothLayoutDirections() {
+        requireMotionTarget()
+        var direction by mutableStateOf(LayoutDirection.Ltr)
+        var scrollable by mutableStateOf(false)
+        var selected by mutableStateOf(0)
+        val labels = listOf("One", "Two", "Three")
+        compose.setContent {
+            MiuixSettingsTheme {
+                Column(Modifier.width(240.dp).background(Color.Black)) {
+                    CompositionLocalProvider(
+                        LocalLayoutDirection provides direction,
+                        LocalAppDialogContent provides true,
+                    ) {
+                        SlidingTabRow(labels, selected, {}, Modifier.testTag("tabs"), scrollable)
+                    }
+                    Box(Modifier.size(20.dp).background(DialogItemSurface).testTag("indicatorReference"))
+                }
+            }
+        }
+        for (layoutDirection in listOf(LayoutDirection.Ltr, LayoutDirection.Rtl)) {
+            for (useScrolling in listOf(false, true)) {
+                for (index in labels.indices) {
+                    compose.runOnIdle {
+                        direction = layoutDirection
+                        scrollable = useScrolling
+                        selected = index
+                    }
+                    // runOnIdle executes the mutation after idling; wait for its resulting layout and animation too.
+                    compose.waitForIdle()
+                    val tabs = compose.onNodeWithTag("tabs")
+                    val tabBounds = tabs.fetchSemanticsNode().boundsInRoot
+                    val labelBounds = compose.onNodeWithText(labels[index]).fetchSemanticsNode().boundsInRoot
+                    val tabImage = tabs.captureToImage()
+                    val pixels = tabImage.toPixelMap()
+                    val expected = compose.onNodeWithTag("indicatorReference").captureToImage().toPixelMap()
+                    val x = (labelBounds.center.x - tabBounds.left).toInt().coerceIn(0, pixels.width - 1)
+                    val actualColor = pixels[x, pixels.height * 5 / 6]
+                    val expectedColor = expected[expected.width / 2, expected.height / 2]
+                    if (expectedColor != actualColor) {
+                        val file = java.io.File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "motion-tabs-failure.png")
+                        file.outputStream().use { tabImage.asAndroidBitmap().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    }
+                    assertEquals("$layoutDirection scrolling=$useScrolling index=$index", expectedColor, actualColor)
+                }
+            }
+        }
     }
 
     @Test
@@ -129,13 +241,23 @@ class MotionControlsDeviceTest {
     }
 
     private fun assertSamePixels(actualTag: String, expectedTag: String) {
-        val actual = compose.onNodeWithTag(actualTag).captureToImage().toPixelMap()
-        val expected = compose.onNodeWithTag(expectedTag).captureToImage().toPixelMap()
+        val root = compose.onNodeWithTag("progressComparison")
+        val rootBounds = root.fetchSemanticsNode().boundsInRoot
+        val actual = compose.onNodeWithTag(actualTag).fetchSemanticsNode().boundsInRoot
+        val expected = compose.onNodeWithTag(expectedTag).fetchSemanticsNode().boundsInRoot
         assertEquals(expected.width, actual.width)
         assertEquals(expected.height, actual.height)
-        for (y in 0 until actual.height) for (x in 0 until actual.width) {
-            val a = actual[x, y]
-            val e = expected[x, y]
+        // Capture the pair in one Android draw frame, rather than comparing two independently captured windows.
+        val pixels = root.captureToImage().toPixelMap()
+        assertEquals(rootBounds.width.roundToInt(), pixels.width)
+        assertEquals(rootBounds.height.roundToInt(), pixels.height)
+        val actualX = (actual.left - rootBounds.left).roundToInt()
+        val actualY = (actual.top - rootBounds.top).roundToInt()
+        val expectedX = (expected.left - rootBounds.left).roundToInt()
+        val expectedY = (expected.top - rootBounds.top).roundToInt()
+        for (y in 0 until actual.height.roundToInt()) for (x in 0 until actual.width.roundToInt()) {
+            val a = pixels[actualX + x, actualY + y]
+            val e = pixels[expectedX + x, expectedY + y]
             val delta = maxOf(kotlin.math.abs(a.red - e.red), kotlin.math.abs(a.green - e.green), kotlin.math.abs(a.blue - e.blue), kotlin.math.abs(a.alpha - e.alpha))
             assertTrue("$actualTag differs at ($x,$y), delta=$delta", delta <= 1f / 255f)
         }

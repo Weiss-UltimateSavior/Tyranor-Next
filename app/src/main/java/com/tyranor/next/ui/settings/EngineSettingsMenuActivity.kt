@@ -30,6 +30,7 @@ import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.game.startActivityWithPageTransition
@@ -61,7 +62,7 @@ internal fun EngineSettingsMenuScreen() {
     MiuixSettingsTheme {
       ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {

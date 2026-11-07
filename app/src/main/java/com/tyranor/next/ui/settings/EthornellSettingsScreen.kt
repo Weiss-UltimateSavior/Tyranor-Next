@@ -28,6 +28,7 @@ import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlinx.coroutines.launch
@@ -58,6 +59,7 @@ internal fun EthornellSettingsScreen() {
     }
     MiuixSettingsTheme {
         Scaffold(
+            modifier = Modifier.skipEntranceOnDrag(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {

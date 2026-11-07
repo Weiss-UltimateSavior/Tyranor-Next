@@ -66,6 +66,7 @@ import com.tyranor.next.ui.common.motion.passThroughTouches
 import com.tyranor.next.ui.common.motion.releaseFocusForExit
 import com.tyranor.next.ui.common.motion.restoreInteraction
 import com.tyranor.next.ui.common.motion.rememberEntranceState
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.motion.syncDialogWindow
 import kotlinx.coroutines.launch
@@ -226,7 +227,7 @@ private fun SidePanelWindow(
                 // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
                     // 每次打开时标题与条目区依次弹入
                     ProvideEntrance(rememberEntranceState()) {
-                    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    Column(modifier = Modifier.fillMaxSize().skipEntranceOnDrag().padding(horizontal = 12.dp)) {
                         Text(
                             text = stringResource(R.string.side_panel_title),
                             style = MaterialTheme.typography.titleMedium,

@@ -193,3 +193,113 @@
 新增验证文件为 `app/src/androidTest/java/com/tyranor/next/ui/common/MotionControlsDeviceTest.kt:37`，仅在精确隔离包名且显式传入 `motion_device_acceptance=true` 时执行。最初一轮中，复用测试在暂停时钟下未推进停用/复用帧而失败，另一个诊断调用与 Android CLI 的 UiAutomation 服务冲突；已修正测试时钟步骤并移除不需要的第二套 UiAutomation 诊断，停止本轮 CLI 辅助进程后重跑 **3/3 通过**。没有将失败轮删去或写成通过，也没有放宽像素容差或复用恢复断言。
 
 最终清理已核对：本轮电脑检查脚本均已退出，手机没有 screenrecord、perfetto、Android CLI 辅助 instrumentation 或测试 runner 残留进程。Release 前后录屏的滑条静止样式、正常与连续拖动、页面入场、菜单覆盖底栏的 dim、侧栏关闭/重开未观察到新增跳变；输入与采集延迟不同，不声称两次录屏的绝对时间戳相同。最后再次执行 Release Kotlin 编译和 assembleRelease 均通过，字符串与 diff 格式检查也通过。性能、平板与其它未执行项保持上面的明确标注。原始日志与媒体仅作本地验收证据，不提交任何设备地址、用户名路径或私人画面。审核报告按初始未提交范围编写；后续用户已明确授权清理、提交和向上游创建 PR，发布信息以实际 PR 页面为准，不另行冒充已发布 `gh pr review`。
+
+
+## CodeRabbit 评审修复记录（PR #150，2026-11-07）
+
+审查范围：修复前 PR head `c658192e3321a9d1ccf17120f26db18da142a453`，目标分支 `main`，原动效基线仍为 `c65e3c55`。逐条核对 CodeRabbit 的 **14 条行内评论**及相关调用方。本轮源码与设备测试共 **39 个文件、+1263 / −161 行**，另同步 `CHANGELOG.md` 与本报告。下列位置均为本轮修复后工作树行号，不伪造 commit permalink；本节不改写前面的初始审查快照统计。
+
+### 结论摘要
+
+14 条评论全部完成源码修复或验证补充，最终独立复审未发现剩余确认的高、中级问题，可更新现有 PR 继续上游评审。原弹簧、缓动、运动模糊、位移/尺寸、按压形变和动画 token 参数未调整；普通档保持原版行为，遮罩/触摸与健壮性缺陷修复对两档生效。普通裁剪弹窗恢复平台退场属于回归修复。没有改动受保护底栏文件或 `DefaultBottomNavigationBar`，透明零 inset 的 Miuix 浮层宿主及 dim 覆盖底栏行为保留。滑条例外与白雾刻度配色决定继续沿用本报告前述用户确认。
+
+### 问题清单与处理结果
+
+| No. | 级别 | 问题与评论证据 | 处理结果 | 修复后位置 |
+|---|---|---|---|---|
+| 1 | 中 | [评论 4496842170](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842170)：增强弹窗退场中再次激活会重复交付按钮动作 | 已修复；增强档退出流程只交付一次；普通档仍立即执行 | `app/src/main/java/com/tyranor/next/ui/common/AppAlertDialog.kt:122` |
+| 2 | 中 | [评论 4496842191](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842191)：固定 650ms 使慢速数字滚动提前切回完整文字 | 已修复；等待同一字符 Transition 真正完成，保留运行状态以支持 1→8→1 反向打断 | `app/src/main/java/com/tyranor/next/ui/common/motion/ContentMotion.kt:417` |
+| 3 | 中 | [评论 4496842198](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842198)：全局跳过计数会打断其他页面或浮层的入场 | 已修复；各 EntranceState 独立计数，各既有根节点只观察所属状态；移除过期 profile 类规则 | `app/src/main/java/com/tyranor/next/ui/common/motion/Entrance.kt:62` |
+| 4 | 中 | [评论 4496842209](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842209)：无效参数在 Compose 前 finish，普通档误用默认增强返回 | 已修复；基类 onCreate 同步持久化档位后才交给子类校验 | `app/src/main/java/com/tyranor/next/ui/common/AppScreen.kt:34` |
+| 5 | 中 | [评论 4496842219](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842219)：450ms 超时可能早于侧推而关闭侧栏 | 已修复；仅实际 ON_PAUSE 消费关闭；导航锁保持至让位或明确取消，旧回调按代数作废 | `app/src/main/java/com/tyranor/next/ui/common/motion/PageTransitions.kt:161` |
+| 6 | 中 | [评论 4496842229](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842229)：抽屉开始退场后仍可执行内容操作 | 已修复；所有直接条目和公共动作在执行业务时检查 busy，保持原按压外观 | `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1050` |
+| 7 | 中 | [评论 4496842241](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842241)：空 keyPoints 在无障碍或松手索引时越界 | 已修复；空列表按未提供处理，有 steps 时保留均分刻度，否则走原连续滑条 | `app/src/main/java/com/tyranor/next/ui/common/MotionSlider.kt:77` |
+| 8 | 中 | [评论 4496842251](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842251)：固定标签 RTL 指示器使用了错误方向的偏移 | 已修复；固定标签逻辑坐标用 placeRelative，滚动标签保持物理坐标及左侧锚点；同时修复异步清表丢失首次几何 | `app/src/main/java/com/tyranor/next/ui/common/SlidingTabRow.kt:123` |
+| 9 | 中 | [评论 4496842261](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842261)：库列表退场期间陈旧卡片回调仍可开抽屉或启动 | 已修复；网格/封面流点击与长按读取当前 pane 是否 Content | `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:605` |
+| 10 | 中 | [评论 4496842272](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842272)：封面搜索窗口关闭路径未及时透传触摸 | 已修复；返回、遮罩、关闭按钮及绑定成功在关闭前处理窗口；绑定失败保留交互 | `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1472` |
+| 11 | 中 | [评论 4496842292](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842292)：普通档裁剪弹窗被清除平台退场动画 | 已修复；保留原平台 windowAnimations，真正关闭前清零 dim 并禁止触摸；选择新图片不关闭窗口 | `app/src/main/java/com/tyranor/next/ui/game/GameShortcutCropDialog.kt:164` |
+| 12 | 中 | [评论 4496842309](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842309)：仅按 400ms 判断重播会隐藏仍可见的页面 | 已修复；保留原间隔，并在点击时核对原 alpha/offset 的实际可见状态 | `app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt:726` |
+| 13 | 中 | [评论 4496842317](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496842317)：恢复卡片与版本控件被 Box 叠放 | 已修复；Column 恢复原有纵向顺序，保留同一入场 modifier | `app/src/main/java/com/tyranor/next/ui/save/SaveManagementActivity.kt:363` |
+| 14 | 低 | [评论 4496853064](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#discussion_r4496853064)：普通档进度变化缺少原始 Miuix 帧对照保护 | 已补充；普通档原始进度 64 帧对照，增强档也继续逐帧对照，容差 1/255 | `app/src/androidTest/java/com/tyranor/next/ui/common/MotionControlsDeviceTest.kt:112` |
+
+### 重点问题说明
+
+- 数字滚动保留 `AnimatedContent` 本来创建的同一 Transition，只观察真实完成状态；所有字符及其子动画完成后才恢复完整文本。独立复审发现第一版仅比较 `settledText` 会破坏 `1→8→1` 反向，已恢复显式运行状态，并以 4 倍时长、反向打断、最终像素和 0 倍时长设备用例验证。
+- 慢启动不再使用固定超时收起侧栏，也不在超时后解除导航锁；等待由生命周期观察器承载，没有永久等待的协程。真实 `ON_PAUSE` 只消费最新动作一次，销毁或移除组合清理动作。取消时作废旧代数，避免旧动作关闭重新打开的侧栏或解除新请求的锁。
+- 滚动标签设备测试最初失败，截图中三个文字正常而整个指示器缺失。源码确认异步 `geometry.clear()` 能晚于首次 `onGloballyPositioned` 写回；改成 `remember(tabs.size)` 同步换表，保留原来只按数量重置的范围，同数量改名/重排仍保留指示器弹簧。LTR/RTL、固定/滚动及三个选中位置共 12 组截图断言通过。
+- 普通裁剪弹窗在真实 `GameShortcutCropDialog` 取消回调处检查原平台动画 ID、dim=0、`FLAG_NOT_TOUCHABLE`，并强制内容到达实际绘制帧后录制平台退出。选择新图片的父回调会保留裁剪弹窗，因此不会提前禁用该窗口。
+
+### 独立复审
+
+逻辑、架构、健壮性、回归风险、代码规范共五个独立审查视角，分别只读核对本轮 diff 与调用方；未把其他审查者的发现作为其首次审查输入。主 agent 对每条发现回源码复核。两处修复中发现的边界问题（数字反向和慢启动重复请求）及后续取消代数均已修正并再次独立复核。标签缓存修复还由控件审查 agent 单独核对，按其建议将缓存 key 收窄为 `tabs.size`，保持原运动范围。最终全新独立 agent 复审后，还将裁剪窗口的销毁清理改为捕获该 effect 自己的 window，避免条件性的窗口替换时清错新窗口；正常调用链是否触发同子树窗口替换仍标待确认，几行所有权防御修复已完成并再次独立复核，不改变关闭轨迹。
+
+### 验证记录
+
+以下构建统一设 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。没有更改版本号，没有安装或操作正式包 `com.tyranor.next`。
+
+| 命令 / 检查 | 本轮最终结果 |
+|---|---|
+| `./gradlew.bat :app:compileReleaseKotlin` | 通过 |
+| `./gradlew.bat testDebugUnitTest --continue --no-daemon` | 1,969 项，43 失败（app 27 / engine 16）；按完整类名/方法名与此前实际执行的 `c65e3c55` 基线及修复前集合比较，新增失败 **0** |
+| `./gradlew.bat :app:lintDebug --no-daemon` | 29 Error / 335 Warning / 8 Hint；与本轮修复前相同，新增 Error **0**。不能写成 lint 全绿；中途出现的返回值 Composable 命名 Warning 已修正 |
+| `python tools/check-hardcoded-ui-strings.py` | 通过 |
+| `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` | 通过，含 R8 和 baseline profile 编译/打包 |
+| `./gradlew.bat :app:assembleDebugAndroidTest --no-daemon` | 实际裁剪窗口绘制/录屏补充后再次通过 |
+| `./gradlew.bat :app:compileReleaseKotlin :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` | 最终窗口清理所有权修复后再次通过 |
+| `adb -s "$motionSerial" shell am instrument -w -r -e class "$motionClasses" -e motion_device_acceptance true com.tyranor.next.motionv2.test/androidx.test.runner.AndroidJUnitRunner` | **OK (22 tests)**，八个 Motion 设备测试类；未出现跳过 |
+| 上一命令的 `-e class com.tyranor.next.ui.game.MotionCropDialogDeviceTest` | 录屏补充后、最终窗口所有权修复后分别独立复跑 **OK (2 tests)**；覆盖两档实际裁剪窗口 |
+| `git -c core.safecrlf=false diff --check`、保护文件/默认底栏函数比对、隐私扫描 | 通过；无版本号或保护底栏差异，原始日志、设备地址、私人画面均不进提交 |
+
+`motionClasses` 为 `com.tyranor.next.ui.common` 下的 `MotionControlsDeviceTest`、`MotionRollingDeviceTest`、`MotionEntranceDeviceTest`、`MotionLifecycleDeviceTest`、`MotionDialogDeviceTest`、`MotionActivityInitializationDeviceTest`，以及 `com.tyranor.next.ui.game` 下的 `MotionGameInteractionsDeviceTest`、`MotionCropDialogDeviceTest`，以逗号连接的完整类名。
+
+测试记录保留失败轮次：前两轮标签首测缺失，修复同步缓存后通过；第三轮进度对照的两次独立截图出现高度不一致，改成共同根的一次截图比较两个区域，继续断言组件/截图尺寸和逐像素 1/255 容差，最终 22/22 通过，没有用放宽阈值或删除断言消除失败。增强档与普通档进度各推进 64 帧；慢动画测试通过 Compose 注入 4 倍/0 倍时长，不修改系统设置。游戏操作用合成 UI 夹具，不启动真实引擎。
+
+设备为 Honor PPG-AN00、Android 17、1264×2800。已保存同一组操作的修复前后隔离 Release 录屏，并导出 30fps 序列，逐帧核对设置入场/主标签水平切换、刻度滑条连续拖动/回弹、下拉 dim 覆盖底栏及侧栏关闭重开；所测场景未观察到新增跳变或静止外观变化。时钟、背景粒子、输入采样与录制负载不同，不宣称两次整屏逐像素或绝对时间戳相同。普通裁剪窗口另录制实际内容与退出，可见平台淡出；属性与关闭前 dim/触摸由同一实际组件用例断言。设备输入前逐次检查前台；本轮一次启动首帧为 null 时停止了输入，确认前台恢复为隔离包后才重试。
+
+未执行：全部主题/深浅色组合，平板/折叠屏/横屏完整矩阵，低端机与其他机型，真实游戏的各引擎启动/存档/退出，真实封面下载和快捷方式导出全流程，所有 Miuix 浮层类型、RTL 长标签溢出全矩阵，Perfetto/功耗/性能收益定量评估。已有真实设备通过只覆盖上述具体场景。
+
+### 本轮修复文件清单
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionActivityInitializationDeviceTest.kt` | +37 | −0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionControlsDeviceTest.kt` | +128 | −6 |
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionDialogDeviceTest.kt` | +110 | −0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionEntranceDeviceTest.kt` | +91 | −0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionLifecycleDeviceTest.kt` | +241 | −0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionRollingDeviceTest.kt` | +120 | −0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCropDialogDeviceTest.kt` | +117 | −0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/game/MotionGameInteractionsDeviceTest.kt` | +119 | −0 |
+| `app/src/main/baseline-prof.txt` | +0 | −1 |
+| `app/src/main/java/com/tyranor/next/MainActivity.kt` | +1 | −2 |
+| `app/src/main/java/com/tyranor/next/ui/archive/ArchiveUnpackActivity.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/common/AppAlertDialog.kt` | +4 | −2 |
+| `app/src/main/java/com/tyranor/next/ui/common/AppScreen.kt` | +5 | −2 |
+| `app/src/main/java/com/tyranor/next/ui/common/AppSidePanel.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/common/MotionSlider.kt` | +5 | −3 |
+| `app/src/main/java/com/tyranor/next/ui/common/PlaceholderPage.kt` | +5 | −3 |
+| `app/src/main/java/com/tyranor/next/ui/common/SlidingTabRow.kt` | +14 | −7 |
+| `app/src/main/java/com/tyranor/next/ui/common/motion/ContentMotion.kt` | +28 | −24 |
+| `app/src/main/java/com/tyranor/next/ui/common/motion/DialogWindowMotion.kt` | +9 | −3 |
+| `app/src/main/java/com/tyranor/next/ui/common/motion/Entrance.kt` | +28 | −31 |
+| `app/src/main/java/com/tyranor/next/ui/common/motion/PageTransitions.kt` | +27 | −13 |
+| `app/src/main/java/com/tyranor/next/ui/cover/CoverScraperSettingsActivity.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/game/AddGameDialog.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt` | +32 | −15 |
+| `app/src/main/java/com/tyranor/next/ui/game/GameShortcutCropDialog.kt` | +25 | −3 |
+| `app/src/main/java/com/tyranor/next/ui/game/RpgSaveFormatDialog.kt` | +5 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt` | +76 | −27 |
+| `app/src/main/java/com/tyranor/next/ui/patch/KrkrOnlinePatchActivity.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/runtime/EngineModuleManagementScreen.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/save/SaveManagementActivity.kt` | +6 | −5 |
+| `app/src/main/java/com/tyranor/next/ui/save/WebDavSettingsActivity.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/settings/AppSettingsActivity.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/settings/EngineSettingsMenuActivity.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/settings/EthornellSettingsScreen.kt` | +2 | −0 |
+| `app/src/main/java/com/tyranor/next/ui/settings/GamepadMapScreen.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/settings/InputSettingsScreen.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/settings/PerGameSettingsScreen.kt` | +2 | −1 |
+| `app/src/main/java/com/tyranor/next/ui/settings/RuffleSettingsScreen.kt` | +2 | −0 |
+| `app/src/main/java/com/tyranor/next/ui/settings/SettingsScreen.kt` | +2 | −1 |
+
+本轮仅更新现有 PR，不合并。结束前停止本轮仪器及采集进程，清除手机上的本轮录屏临时文件，并恢复已验证的隔离 Release 包供继续检查；保留本地验收日志与媒体，不向上游提交隐私内容。

@@ -22,6 +22,7 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.TyranorNextTheme
@@ -52,7 +53,10 @@ internal fun RpgSaveFormatDialog(
         text = {
             // 选项依次弹入
             ProvideEntrance {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.skipEntranceOnDrag(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     stringResource(R.string.save_format_convert_message, standardCount),
                     style = MaterialTheme.typography.bodyMedium,

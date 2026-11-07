@@ -58,7 +58,10 @@ class EntranceState internal constructor() {
     internal var startedAt: Long = 0L
         private set
 
-    /** 本轮入场开始时的「跳过」计数：用户一拖动（[EntranceSkip]），本轮未完成的入场立即收尾。 */
+    /** 只属于这份入场节拍的跳过信号；其他页面或浮层的拖动不会影响本轮。 */
+    private var skipCounter by mutableIntStateOf(0)
+
+    /** 本轮入场开始时的「跳过」计数：用户一拖动（[skip]），本轮未完成的入场立即收尾。 */
     internal var skipMark: Int = 0
         private set
 
@@ -101,7 +104,7 @@ class EntranceState internal constructor() {
      */
     fun replay(quick: Boolean = false) {
         startedAt = SystemClock.uptimeMillis()
-        skipMark = EntranceSkip.counter
+        skipMark = skipCounter
         this.quick = quick
         generation++
         // 已挂载的元素按挂载顺序（= 组合顺序）依次领号并（重新）开始入场；不再触发任何重组
@@ -121,7 +124,12 @@ class EntranceState internal constructor() {
     internal fun isFresh(): Boolean =
         generation > 0 && SystemClock.uptimeMillis() - startedAt < WINDOW_MILLIS && !isSkipped()
 
-    internal fun isSkipped(): Boolean = EntranceSkip.counter != skipMark
+    internal fun isSkipped(): Boolean = skipCounter != skipMark
+
+    /** 只让本作用域中未完成的入场快速收尾，之后新出现的元素直接显示。 */
+    fun skip() {
+        skipCounter++
+    }
 
     internal companion object {
         const val WINDOW_MILLIS = 500L
@@ -129,38 +137,27 @@ class EntranceState internal constructor() {
 }
 
 /**
- * 入场「跳过」信号：页面一开始被拖动（滚动），所有还在等待 / 播放中的入场立即快速收尾，
- * 之后滚动进来的元素直接显示——不会出现「刚进页面就往下滑，下面的卡片还没显示出来」。
+ * 放在 [ProvideEntrance] 内的页面根部：观察（不消费）拖动，超过触摸阈值就让当前 [state] 收尾。
+ * 不影响其他页面或浮层；没有提供者或「普通」动效档时不加任何节点。
  */
-object EntranceSkip {
-    internal var counter by mutableIntStateOf(0)
-        private set
-
-    fun skip() {
-        counter++
-    }
-}
-
-/**
- * 放在页面根部：观察（不消费）任何拖动，一超过触摸阈值就发出 [EntranceSkip]。
- * 「普通」动效档没有入场，不加任何节点。
- */
-fun Modifier.skipEntranceOnDrag(): Modifier = if (!MotionMode.enhanced) this else pointerInput(Unit) {
-    awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-        var total = Offset.Zero
-        while (true) {
-            val event = awaitPointerEvent(PointerEventPass.Initial)
-            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-            if (!change.pressed) break
-            total += change.positionChange()
-            if (total.getDistance() > viewConfiguration.touchSlop) {
-                EntranceSkip.skip()
-                break
+@Composable
+fun Modifier.skipEntranceOnDrag(state: EntranceState? = LocalEntranceState.current): Modifier =
+    if (!MotionMode.enhanced || state == null) this else pointerInput(state) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            var total = Offset.Zero
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) break
+                total += change.positionChange()
+                if (total.getDistance() > viewConfiguration.touchSlop) {
+                    state.skip()
+                    break
+                }
             }
         }
     }
-}
 
 private val LocalEntranceState = staticCompositionLocalOf<EntranceState?> { null }
 

@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.rememberEntranceState
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 
 /**
@@ -22,7 +23,8 @@ import com.tyranor.next.ui.common.motion.staggeredEntrance
  */
 @Composable
 internal fun PlaceholderPage(title: String, description: String, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxSize()) {
+    val entrance = rememberEntranceState()
+    Column(modifier.fillMaxSize().skipEntranceOnDrag(entrance)) {
         AppTopBar(title = title)
         // 正文区域
         Column(
@@ -30,7 +32,7 @@ internal fun PlaceholderPage(title: String, description: String, modifier: Modif
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            ProvideEntrance(rememberEntranceState()) {
+            ProvideEntrance(entrance) {
             Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.staggeredEntrance(0))
             Text(
                 description,

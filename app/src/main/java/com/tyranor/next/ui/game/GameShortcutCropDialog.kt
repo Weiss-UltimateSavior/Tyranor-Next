@@ -2,6 +2,7 @@ package com.tyranor.next.ui.game
 
 import android.graphics.Bitmap
 import android.net.Uri
+import android.view.Window
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -22,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -64,6 +66,8 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.syncDialogWindow
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.passThroughTouches
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -86,6 +90,16 @@ internal fun GameShortcutCropDialog(
     var transform by remember(imageUri) { mutableStateOf(CropTransform()) }
     var confirming by remember(imageUri) { mutableStateOf(false) }
     var cropFailed by remember(imageUri) { mutableStateOf(false) }
+    val dialogWindow = remember { arrayOfNulls<Window>(1) }
+    fun prepareClose() {
+        dialogWindow[0].passThroughTouches()
+        dialogWindow[0]?.setDimAmount(0f)
+    }
+    fun dismiss() {
+        if (confirming) return
+        prepareClose()
+        onDismiss()
+    }
 
     LaunchedEffect(imageUri) {
         loadState = CropImageLoadState.Loading
@@ -125,6 +139,7 @@ internal fun GameShortcutCropDialog(
                     cropFailed = true
                 } else {
                     val resultUri = croppedUri
+                    prepareClose()
                     onConfirm(resultUri)
                     handedOff = true
                 }
@@ -138,7 +153,7 @@ internal fun GameShortcutCropDialog(
     }
 
     Dialog(
-        onDismissRequest = { if (!confirming) onDismiss() },
+        onDismissRequest = ::dismiss,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = !confirming,
@@ -146,7 +161,14 @@ internal fun GameShortcutCropDialog(
         ),
     ) {
         // 修复弹窗退场后窗口遮罩残留拦截触摸
-        syncDialogWindow { 1f }
+        val window = syncDialogWindow(preserveWindowAnimations = !MotionMode.enhanced) { 1f }
+        dialogWindow[0] = window
+        DisposableEffect(window) {
+            onDispose {
+                window.passThroughTouches()
+                window?.setDimAmount(0f)
+            }
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -162,7 +184,7 @@ internal fun GameShortcutCropDialog(
                 onViewportSizeChanged = { viewportSize = min(it.width, it.height).toFloat() },
                 onTransform = { transform = it },
                 onPickImage = onPickImage,
-                onDismiss = onDismiss,
+                onDismiss = ::dismiss,
                 onConfirm = ::confirmCrop,
             )
         }

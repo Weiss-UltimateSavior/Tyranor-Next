@@ -97,6 +97,7 @@ import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import com.tyranor.next.ui.common.motion.rememberEntranceOrder
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 
 /**
  * 单游戏（应用级）引擎设置页。每项基于「覆盖 ?: 全局」，可单独切回“跟随全局”。
@@ -724,7 +725,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
     MiuixSettingsTheme {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {

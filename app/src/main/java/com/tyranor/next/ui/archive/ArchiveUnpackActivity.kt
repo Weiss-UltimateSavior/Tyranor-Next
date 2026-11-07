@@ -88,6 +88,7 @@ import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.Slider
@@ -200,7 +201,7 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
     }
 
     ProvideEntrance {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().skipEntranceOnDrag()) {
             AppTopBar(title = stringResource(R.string.archive_title))
 
             ExpandVisibility(visible = !allFilesGranted) {

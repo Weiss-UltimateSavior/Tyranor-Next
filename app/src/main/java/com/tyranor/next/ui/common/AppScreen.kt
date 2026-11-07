@@ -15,9 +15,9 @@ import com.tyranor.next.theme.GlassBackground
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.theme.WithoutPressIndication
 import com.tyranor.next.ui.common.motion.PageTransitions
+import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
 import com.tyranor.next.ui.common.motion.pageTransitionScrim
-import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 
 /**
  * 二级页面统一宿主（P1-4）：收敛各 Activity 重复的
@@ -30,6 +30,9 @@ abstract class AppScreenActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 子类可能因参数无效而在 setContent 前 finish；返回动画同样必须使用持久化档位。
+        AppSettingsStore.initMotionEnhanced(this)
+        MotionMode.sync(AppSettingsStore.motionEnhancedState.value)
         observeSaveSyncFeedback()
         // 深色背景（深色外观 / 复古玻璃 / 白雾玻璃）系统栏恒用浅色图标
         applySystemBarStyle(
@@ -85,7 +88,7 @@ fun AppScreenScaffold(
         TyranorNextTheme {
             ProvideMotionEnvironment {
                 // pageTransitionScrim：推入下一页时本页随转场压暗，返回时渐亮（静止时透明）
-                GlassBackground(modifier = modifier.pageTransitionScrim().skipEntranceOnDrag()) {
+                GlassBackground(modifier = modifier.pageTransitionScrim()) {
                     WithoutPressIndication {
                         content()
                     }

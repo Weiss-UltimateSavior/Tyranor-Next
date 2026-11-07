@@ -68,6 +68,7 @@ import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.pressSquishGroup
 import com.tyranor.next.ui.common.motion.staggeredEntrance
@@ -142,7 +143,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
         KrkrOnlinePatchService.search(entries, keyword).take(80)
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().skipEntranceOnDrag()) {
         AppTopBar(
             title = stringResource(R.string.patch_title),
             trailing = {

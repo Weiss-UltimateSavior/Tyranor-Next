@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -125,6 +126,7 @@ import androidx.compose.runtime.derivedStateOf
 import com.tyranor.next.ui.common.motion.EntranceState
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.rememberAfterPushStarts
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 
 // 底部导航栏 Tab 定义
 @Immutable
@@ -231,19 +233,16 @@ fun MainScreen(modifier: Modifier = Modifier) {
     }
     if (fromLeftEdge) sidePanelOpen = true else hostActivity?.finish()
   }
+  val panelNavigation = remember { MainPanelNavigation() }
   val closePanelAfterPush = rememberAfterPushStarts()
-  val panelNavLock = remember { BooleanArray(1) }
   // 从侧边栏进入页面：增强动效档下面板要等侧推开始才滑出，这段时间内再点条目不能重复打开页面
   fun navigateFromPanel(start: () -> Unit) {
-    if (panelNavLock[0]) return
-    panelNavLock[0] = true
-    start()
-    closePanelAfterPush {
-      sidePanelOpen = false
-      panelNavLock[0] = false
-    }
+    panelNavigation.navigate(start, closePanelAfterPush) { sidePanelOpen = false }
   }
-  AppSidePanel(open = sidePanelOpen, onDismiss = { sidePanelOpen = false }) {
+  AppSidePanel(open = sidePanelOpen, onDismiss = {
+    sidePanelOpen = false
+    panelNavigation.cancel()
+  }) {
     // 妙妙工具条目：启动内置原生 Kirikiroid2 界面（文件浏览器，不启动具体游戏）
     AppNavItem(
       title = stringResource(R.string.side_panel_kr2_native_title),
@@ -357,6 +356,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     GlassShaderSupport.isRuntimeShaderUsable
 
   val pageTransition = updateTransition(targetState = selectedIndex, label = "mainTabTransition")
+  val tabMotion = rememberMainTabMotion(pageTransition, tabItems.size)
   // 每个标签页一份入场节拍：切到该页时卡片 / 列表项依次弹入（页内 staggeredEntrance 使用）。
   // 在切页的同一帧同步重播，页内元素首帧即按隐藏绘制，不会先闪一下
   val tabEntrances = tabItems.indices.map { page -> rememberEntranceState(playOnStart = page == selectedIndex) }
@@ -376,7 +376,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
     // 切回刚离开不久的标签页（A→B→A）时不重播：那一页还在屏幕上，重播会把正在显示的内容清空再弹入
     val now = SystemClock.uptimeMillis()
     tabLeftAt[selectedIndex] = now
-    if (now - tabLeftAt[index] > MainTabReplayMinGapMillis) tabEntrances[index].replay(quick = true)
+    tabMotion[index].replayEntranceIfHidden(tabEntrances[index], now - tabLeftAt[index])
     selectedIndex = index
   }
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
@@ -484,6 +484,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
           MainTabPages(
             selectedIndex = selectedIndex,
             pageTransition = pageTransition,
+            tabMotion = tabMotion,
             tabEntrances = tabEntrances,
             libraryState = libraryState,
             libraryViewModel = libraryViewModel,
@@ -495,6 +496,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
         MainTabPages(
           selectedIndex = selectedIndex,
           pageTransition = pageTransition,
+          tabMotion = tabMotion,
           tabEntrances = tabEntrances,
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
@@ -609,6 +611,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
 private fun ColumnScope.MainTabPages(
   selectedIndex: Int,
   pageTransition: Transition<Int>,
+  tabMotion: List<MainTabMotion>,
   tabEntrances: List<EntranceState>,
   libraryState: MainLibraryUiState,
   libraryViewModel: MainLibraryViewModel,
@@ -618,24 +621,10 @@ private fun ColumnScope.MainTabPages(
         // 四页常驻组合：隐藏页只保留已测量节点且 alpha=0，切换时不再重建游戏网格/Miuix 设置页。
         // 中间 Tab 的 alpha 在任意状态均为 0，因此跨页时只显示起点和终点的直接水平动画。
         tabItems.indices.forEach { page ->
-          // 水平切页改为弹簧：几乎不过冲的快速滑入（阻尼 0.86），淡入淡出走临界阻尼
-          val pageOffset by pageTransition.animateFloat(
-            transitionSpec = { if (MotionMode.enhanced) MainTabSlideSpring else tween(durationMillis = 200) },
-            label = "mainTabOffset$page",
-          ) { activePage ->
-            when {
-              page < activePage -> -1f
-              page > activePage -> 1f
-              else -> 0f
-            }
-          }
-          val pageAlpha by pageTransition.animateFloat(
-            transitionSpec = { if (MotionMode.enhanced) MainTabFadeSpring else tween(durationMillis = 160) },
-            label = "mainTabAlpha$page",
-          ) { activePage -> if (page == activePage) 1f else 0f }
+          val motion = tabMotion[page]
           // 可交互：选中且已基本到位（弹簧尾巴不再阻挡点击）
           val pageSettled by remember {
-            derivedStateOf { kotlin.math.abs(pageOffset) < 0.02f && pageAlpha > 0.98f }
+            derivedStateOf { kotlin.math.abs(motion.offset.value) < 0.02f && motion.alpha.value > 0.98f }
           }
           val pageInteractive = page == selectedIndex &&
             (if (MotionMode.enhanced) pageSettled else !pageTransition.isRunning)
@@ -643,10 +632,12 @@ private fun ColumnScope.MainTabPages(
           Box(
             Modifier
               .fillMaxSize()
+              .skipEntranceOnDrag(entrance)
               .zIndex(if (page == selectedIndex) 1f else 0f)
               .graphicsLayer {
+                val pageOffset = motion.offset.value
                 translationX = pageOffset * size.width
-                alpha = pageAlpha
+                alpha = motion.alpha.value
                 // 景深：滑动途中两页略微缩小，停稳时为 1（外观不变）
                 if (MotionMode.enhanced) {
                   val depth = 1f - MainTabDepthScale * kotlin.math.abs(pageOffset).coerceAtMost(1f)
@@ -701,6 +692,64 @@ private fun ColumnScope.MainTabPages(
       }
     }
 }
+
+/** 侧栏发起一次页面启动后，直到真正让位或用户取消前不重复启动。 */
+internal class MainPanelNavigation {
+  private var waiting = false
+  private var generation = 0
+
+  fun navigate(start: () -> Unit, afterPush: (action: () -> Unit) -> Unit, close: () -> Unit) {
+    if (waiting) return
+    waiting = true
+    val request = ++generation
+    try {
+      start()
+    } catch (error: RuntimeException) {
+      waiting = false
+      throw error
+    }
+    afterPush {
+      if (request == generation) {
+        waiting = false
+        close()
+      }
+    }
+  }
+
+  fun cancel() {
+    generation++
+    waiting = false
+  }
+}
+
+/** 保留原转场的状态对象，供点击时核对页面是否真的已经离屏；动画值仍只在绘制/派生状态中逐帧读取。 */
+internal class MainTabMotion(val offset: State<Float>, val alpha: State<Float>) {
+  fun replayEntranceIfHidden(entrance: EntranceState, timeSinceLeft: Long) {
+    val visible = alpha.value > 0f && kotlin.math.abs(offset.value) < 1f
+    if (!visible && timeSinceLeft > MainTabReplayMinGapMillis) entrance.replay(quick = true)
+  }
+}
+
+@Composable
+internal fun rememberMainTabMotion(transition: Transition<Int>, pageCount: Int): List<MainTabMotion> =
+  (0 until pageCount).map { page ->
+    // 与 MainTabPages 原有位移、淡入淡出完全相同，只把状态引用交给切页回调。
+    val offset = transition.animateFloat(
+      transitionSpec = { if (MotionMode.enhanced) MainTabSlideSpring else tween(durationMillis = 200) },
+      label = "mainTabOffset$page",
+    ) { activePage ->
+      when {
+        page < activePage -> -1f
+        page > activePage -> 1f
+        else -> 0f
+      }
+    }
+    val alpha = transition.animateFloat(
+      transitionSpec = { if (MotionMode.enhanced) MainTabFadeSpring else tween(durationMillis = 160) },
+      label = "mainTabAlpha$page",
+    ) { activePage -> if (page == activePage) 1f else 0f }
+    remember(offset, alpha) { MainTabMotion(offset, alpha) }
+  }
 
 /**
  * 默认底部导航栏（Material3 NavigationBar，含选中态图标填充动画）。

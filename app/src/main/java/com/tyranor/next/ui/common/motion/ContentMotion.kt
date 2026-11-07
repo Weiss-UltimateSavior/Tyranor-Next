@@ -12,8 +12,10 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Transition
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -26,7 +28,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlurEffect
@@ -63,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 // ---------------------------------------------------------------------------------------------
 // 模糊
@@ -370,23 +373,12 @@ fun RollingNumberText(
         previous.value = text
         rollDirection(old, text)
     }
+    val enhanced = MotionMode.enhanced
+    // 文字变化的同一帧就隐藏新值、显示滚轮层，避免先闪出最终文字。
     var rolling by remember { mutableStateOf(false) }
-    // 文字变化的同一帧就隐藏新值、显示滚轮层（不等 LaunchedEffect 把 rolling 置位），避免新值闪一帧
     var settledText by remember { mutableStateOf(text) }
-    val rollingNow = MotionMode.enhanced && (rolling || text != settledText)
-    val initialized = remember { booleanArrayOf(false) }
-    LaunchedEffect(text) {
-        // 第一次组合不滚
-        if (!initialized[0] || !MotionMode.enhanced) {
-            initialized[0] = true
-            settledText = text
-            return@LaunchedEffect
-        }
-        rolling = true
-        delay(ROLL_SETTLE_MILLIS)
-        rolling = false
-        settledText = text
-    }
+    val rollingNow = enhanced && (rolling || text != settledText)
+    val charTransitions = ArrayList<Transition<Char>>(text.length)
     val contentColor = LocalContentColor.current
     val resolvedColor = when {
         color != Color.Unspecified -> color
@@ -414,17 +406,32 @@ fun RollingNumberText(
             for (i in 0 until length) {
                 val fromRight = length - 1 - i
                 key(fromRight) {
-                    RollingChar(text[i], direction, resolvedColor, style)
+                    charTransitions += rollingChar(text[i], direction, resolvedColor, style)
                 }
             }
+        }
+        LaunchedEffect(text, enhanced, charTransitions) {
+            if (enhanced) {
+                if (text != settledText) rolling = true
+                // 等每一位的真实动画（含模糊与尺寸）完成，系统放慢动画或途中改值也不会提前切走。
+                snapshotFlow {
+                    charTransitions.withIndex().all { (index, transition) ->
+                        transition.targetState == text[index] &&
+                            transition.currentState == text[index] && !transition.isRunning
+                    }
+                }.first { it }
+            }
+            rolling = false
+            settledText = text
         }
     }
 }
 
 @Composable
-private fun RollingChar(ch: Char, direction: Int, color: Color, style: TextStyle) {
-    AnimatedContent(
-        targetState = ch,
+private fun rollingChar(ch: Char, direction: Int, color: Color, style: TextStyle): Transition<Char> {
+    // AnimatedContent(targetState) 内部也创建同样的 Transition；显式保留它仅用于观察完成状态。
+    val transition = updateTransition(targetState = ch, label = "rollingDigit")
+    transition.AnimatedContent(
         transitionSpec = {
             val digitChange = initialState.isDigit() && targetState.isDigit()
             if (digitChange) {
@@ -444,7 +451,6 @@ private fun RollingChar(ch: Char, direction: Int, color: Color, style: TextStyle
                     SizeTransform(clip = false) { _, _ -> MotionTokens.content(IntSize(1, 1)) }
             }
         },
-        label = "rollingDigit",
     ) { c ->
         Text(
             text = c.toString(),
@@ -456,10 +462,8 @@ private fun RollingChar(ch: Char, direction: Int, color: Color, style: TextStyle
             overflow = TextOverflow.Clip,
         )
     }
+    return transition
 }
-
-/** 滚轮停稳所需时间（弹簧 420ms 周期、回弹 0.15，约 0.6s 内进入阈值）。 */
-private const val ROLL_SETTLE_MILLIS = 650L
 
 private class PreviousText(var value: String)
 

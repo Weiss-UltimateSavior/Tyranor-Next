@@ -14,8 +14,10 @@ import com.tyranor.next.ui.common.motion.BlurVisibility
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.syncDialogWindow
+import com.tyranor.next.ui.common.motion.passThroughTouches
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.motionBlurAlpha
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.staggeredEntrance
@@ -89,6 +91,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -598,6 +601,8 @@ private fun GameLibraryContent(
                 filteredGames.isEmpty() -> LibraryPane.NoMatch
                 else -> LibraryPane.Content
             }
+            // 退场列表仍参与绘制，但扫描/空态已接管页面时不得再打开卡片或启动游戏。
+            val contentInteractive by rememberUpdatedState(pane == LibraryPane.Content)
             BlurCrossfade(pane, modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { current ->
                 when (current) {
                     LibraryPane.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -632,15 +637,15 @@ private fun GameLibraryContent(
                             // 「列表」风格：封面流横向轮播（列表/搜索/排序数据源相同）
                             GameCoverFlow(
                                 games = filteredGames,
-                                onGameClick = onGameClick,
-                                onGameLongClick = onGameLongClick,
+                                onGameClick = { if (contentInteractive) onGameClick(it) },
+                                onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
                             )
                         } else {
                             GameGrid(
                                 games = filteredGames,
                                 gridState = gridState,
-                                onGameClick = onGameClick,
-                                onGameLongClick = onGameLongClick,
+                                onGameClick = { if (contentInteractive) onGameClick(it) },
+                                onGameLongClick = { if (contentInteractive) onGameLongClick(it) },
                             )
                         }
                     }
@@ -1004,7 +1009,7 @@ internal fun GameActionsSheet(
         MotionSheetEffects(sheetMotion, requestSheetDismiss)
         // 抽屉自带入场节拍：条目依次弹入
         ProvideEntrance {
-        Box(Modifier.fillMaxWidth().motionSheetDrag(sheetMotion).clip(AppSheetTopShape)) {
+        Box(Modifier.fillMaxWidth().skipEntranceOnDrag().motionSheetDrag(sheetMotion).clip(AppSheetTopShape)) {
             if (AppThemeColors.isMilkGlass) {
                 MilkGlassPanelBackground(Modifier.matchParentSize())
             }
@@ -1042,7 +1047,7 @@ internal fun GameActionsSheet(
                                 verticalPadding = 17.dp,
                             showArrow = false,
                             leadingIconTint = MaterialTheme.colorScheme.primary,
-                            onClick = { beginLaunch() },
+                            onClick = { if (!sheetMotion.busy) beginLaunch() },
                         )
                     }
                     // KRKR 与所有 Winlator 系引擎（YU-RIS / CatSystem2 / PC）支持启动文件切换
@@ -1060,7 +1065,7 @@ internal fun GameActionsSheet(
                                 verticalPadding = 17.dp,
                                 showArrow = false,
                                 leadingIconTint = MaterialTheme.colorScheme.primary,
-                                onClick = { showLaunchFilePicker = true },
+                                onClick = { if (!sheetMotion.busy) showLaunchFilePicker = true },
                             )
                         }
                     }
@@ -1194,7 +1199,8 @@ internal fun GameActionsSheet(
                                         showArrow = action.showArrow,
                                         leadingIconTint = action.iconTint,
                                         titleColor = action.titleColor,
-                                        onClick = action.onClick,
+                                        // 只拦截退场/导航已开始后的业务动作，不改变条目外观和退场轨迹。
+                                        onClick = { if (!sheetMotion.busy) action.onClick() },
                                     )
                                 }
                                 if (rowActions.size == 1) {
@@ -1270,7 +1276,7 @@ internal fun GameActionsSheet(
             binding = coverBinding,
             bindError = coverBindError,
             onDismiss = { coverSearchSource = null },
-            onBind = { candidate ->
+            onBind = { candidate, beforeClose ->
                 if (!coverBinding && !isBatchScrapingActive()) {
                     coverBinding = true
                     coverBindError = null
@@ -1286,6 +1292,7 @@ internal fun GameActionsSheet(
                         }
                         coverBinding = false
                         if (updated != null) {
+                            beforeClose()
                             onGameUpdated(updated)
                             coverSearchSource = null
                             dismissAnimated()
@@ -1440,7 +1447,7 @@ private fun CoverSearchDialog(
     binding: Boolean,
     bindError: String?,
     onDismiss: () -> Unit,
-    onBind: (CoverSearchCandidate) -> Unit,
+    onBind: (candidate: CoverSearchCandidate, beforeClose: () -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
     val coverNoMatchMessage = stringResource(R.string.game_cover_no_match)
@@ -1460,6 +1467,16 @@ private fun CoverSearchDialog(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
+    val dialogWindow = remember { arrayOfNulls<android.view.Window>(1) }
+
+    fun prepareForClose() {
+        dialogWindow[0].passThroughTouches()
+    }
+
+    fun dismiss() {
+        prepareForClose()
+        onDismiss()
+    }
 
     /** 离开二级：取消在飞请求并清干净二级状态，避免残留状态或迟到写入影响一级。 */
     fun leaveDrillDown() {
@@ -1545,17 +1562,17 @@ private fun CoverSearchDialog(
             if (drillDownWork == null && CoverScraperService.supportsCoverDrillDown(candidate.source)) {
                 openWork(candidate)
             } else {
-                onBind(candidate)
+                onBind(candidate, ::prepareForClose)
             }
         }
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = ::dismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         // 修复弹窗退场后窗口遮罩残留拦截触摸
-        syncDialogWindow { 1f }
+        dialogWindow[0] = syncDialogWindow { 1f }
         // Dialog 是独立窗口：返回键必须在窗口内注册，才能「二级先回一级」而不是直接关掉弹窗
         BackHandler(enabled = drillDownWork != null) { leaveDrillDown() }
         Box(
@@ -1566,7 +1583,7 @@ private fun CoverSearchDialog(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(Unit) { detectTapGestures { onDismiss() } },
+                    .pointerInput(Unit) { detectTapGestures { dismiss() } },
             )
             BoxWithConstraints(
                 modifier = Modifier
@@ -1748,7 +1765,7 @@ private fun CoverSearchDialog(
                                         onClick = { leaveDrillDown() },
                                     )
                                 }
-                                DialogTextButton(text = stringResource(R.string.common_close), onClick = onDismiss)
+                                DialogTextButton(text = stringResource(R.string.common_close), onClick = ::dismiss)
                                 if (drillDown == null) {
                                     DialogTextButton(
                                         text = if (searching) stringResource(R.string.game_searching) else stringResource(R.string.game_search),

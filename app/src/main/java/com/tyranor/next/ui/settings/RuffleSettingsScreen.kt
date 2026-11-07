@@ -4,6 +4,7 @@ import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -65,6 +66,7 @@ internal fun RuffleSettingsScreen() {
 
     MiuixSettingsTheme {
         Scaffold(
+            modifier = Modifier.skipEntranceOnDrag(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {

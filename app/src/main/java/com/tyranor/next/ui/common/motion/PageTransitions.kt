@@ -26,9 +26,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppThemeColors
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import top.yukonga.miuix.kmp.utils.MiuixOverscrollFactory
 
 /**
@@ -156,26 +154,42 @@ fun ProvideMotionEnvironment(content: @Composable () -> Unit) {
 /**
  * 从浮层（游戏操作抽屉、妙妙工具侧边栏）跳转到新页面时，浮层的收起要和侧推同步：新页面的第一帧通常要 ~200ms 才就绪，
  * 立即收起会先露出空的旧页面再开始侧推。返回的函数把 [action]（收起浮层）推迟到本页真正让位（onPause，
- * 即侧推开始）时执行，最长等 [PUSH_START_TIMEOUT_MILLIS]；「普通」动效档立即执行（原版行为）。
+ * 即侧推开始）时执行。「普通」动效档立即执行（原版行为）。
+ * 用生命周期观察器等待，不以固定超时推断侧推已发生；组合移除时同时撤销待执行动作。
  */
 @Composable
 fun rememberAfterPushStarts(): (action: () -> Unit) -> Unit {
     val owner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
-    return remember(owner, scope) {
+    val pending = remember(owner) { PendingPushAction() }
+    DisposableEffect(owner, pending) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> pending.take()?.invoke()
+                Lifecycle.Event.ON_DESTROY -> pending.take()
+                else -> Unit
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose {
+            owner.lifecycle.removeObserver(observer)
+            pending.take()
+        }
+    }
+    return remember(owner, pending) {
         { action ->
-            if (!MotionMode.enhanced) {
+            pending.take()
+            if (!MotionMode.enhanced || !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
                 action()
             } else {
-                scope.launch {
-                    withTimeoutOrNull(PUSH_START_TIMEOUT_MILLIS) {
-                        owner.lifecycle.currentStateFlow.first { !it.isAtLeast(Lifecycle.State.RESUMED) }
-                    }
-                    action()
-                }
+                pending.action = action
             }
         }
     }
 }
 
-private const val PUSH_START_TIMEOUT_MILLIS = 450L
+private class PendingPushAction {
+    var action: (() -> Unit)? = null
+    fun take(): (() -> Unit)? {
+        return action.also { action = null }
+    }
+}

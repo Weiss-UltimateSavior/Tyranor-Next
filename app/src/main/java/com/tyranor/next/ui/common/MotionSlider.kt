@@ -73,7 +73,9 @@ fun Slider(
     keyPoints: List<Float>? = null,
     magnetThreshold: Float = 0.02f,
 ) {
-    val discrete = keyPoints != null || steps > 0
+    // 空自定义刻度等同未提供：有 steps 时使用均分刻度，否则走原有连续滑条。
+    val effectiveKeyPoints = keyPoints?.takeIf { it.isNotEmpty() }
+    val discrete = effectiveKeyPoints != null || steps > 0
     if (!MotionMode.enhanced || !discrete) {
         // 用户明确保留本批滑条外观：已覆盖区域的刻度与进度条同色，见 motion-v2-review.md。
         val coveredDotColor = if (enabled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledPrimarySlider
@@ -97,7 +99,7 @@ fun Slider(
             height = height,
             hapticEffect = hapticEffect,
             showKeyPoints = showKeyPoints,
-            keyPoints = keyPoints,
+            keyPoints = effectiveKeyPoints,
             magnetThreshold = magnetThreshold,
         )
         return
@@ -113,7 +115,7 @@ fun Slider(
         height = height,
         haptics = hapticEffect != SliderDefaults.SliderHapticEffect.None,
         showKeyPoints = showKeyPoints,
-        keyPoints = keyPoints,
+        keyPoints = effectiveKeyPoints,
     )
 }
 

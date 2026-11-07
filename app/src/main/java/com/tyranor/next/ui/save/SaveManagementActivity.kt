@@ -65,6 +65,7 @@ import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.ExpandVisibility
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.toSaveSyncMessage
 import kotlinx.coroutines.CancellationException
@@ -221,7 +222,7 @@ private fun SaveManagementScreen(game: ScanGame) {
     MiuixSettingsTheme {
         ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -359,10 +360,10 @@ private fun SaveManagementScreen(game: ScanGame) {
                 }
                 if (location?.available == true) {
                     item {
-                        Box(Modifier.staggeredEntrance(2)) {
-                        SaveVersionsPanel(game, taskRunning, versionsRevision) { block ->
-                            runSaveTask(block = block, shortFeedback = true)
-                        }
+                        Column(Modifier.staggeredEntrance(2)) {
+                            SaveVersionsPanel(game, taskRunning, versionsRevision) { block ->
+                                runSaveTask(block = block, shortFeedback = true)
+                            }
                         }
                     }
                 }

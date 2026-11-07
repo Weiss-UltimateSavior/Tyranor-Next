@@ -63,6 +63,7 @@ import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.ProvideEntrance
 import com.tyranor.next.ui.common.motion.rememberEntranceState
 import com.tyranor.next.ui.common.motion.staggeredEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import kotlinx.coroutines.launch
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -114,10 +115,11 @@ internal fun AppAlertDialog(
     // 动作执行后弹窗若仍在（例如校验未通过），再弹回来，不会卡在隐藏状态。
     val exitController = remember {
         DialogExitController { action ->
-            if (!enhanced || dismissing.value) {
+            if (!enhanced) {
                 action()
                 return@DialogExitController
             }
+            if (dismissing.value) return@DialogExitController
             dismissing.value = true
             focusManager.clearFocus(force = true)
             dialogWindow[0].passThroughTouches()
@@ -223,7 +225,7 @@ internal fun AppAlertDialog(
                     // 不把弹窗条目色扩展到页内组件，也不由页面调用方覆盖公共组件颜色。
                     CompositionLocalProvider(LocalAppDialogContent provides true) {
                         ProvideEntrance(entrance) {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                        Column(Modifier.fillMaxWidth().skipEntranceOnDrag().padding(horizontal = 18.dp, vertical = 16.dp)) {
                             // 标题 / 正文 / 按钮依次轻轻升起（停稳后与原样一致）
                             Box(
                                 Modifier.fillMaxWidth().staggeredEntrance(0, distance = 14.dp, stepMillis = 45L),

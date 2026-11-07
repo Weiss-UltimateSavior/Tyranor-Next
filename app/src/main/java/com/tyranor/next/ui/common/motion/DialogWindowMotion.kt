@@ -4,6 +4,7 @@ import android.view.Window
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalView
@@ -15,20 +16,25 @@ import kotlin.math.roundToInt
  * Compose `Dialog` 的平台窗口自带背景变暗（dim）与系统进出场动画，窗口移除时系统再单独淡出一次 dim，
  * 而这段时间窗口仍拦截触摸。
  *
- * 在 `Dialog { }` 内容里调用：关闭该窗口的系统进出场动画，并让窗口 dim 跟随 [dimProgress]（0..1，通常就是弹窗自己的
+ * 在 `Dialog { }` 内容里调用：默认关闭该窗口的系统进出场动画，并让窗口 dim 跟随 [dimProgress]（0..1，通常就是弹窗自己的
  * 遮罩进度）同步淡入淡出，停稳时的总暗度与原来一致。关闭开始时调用 [passThroughTouches]，退场期间点击直接落到下层页面。
  * 这是缺陷修复，「普通」与「增强」动效档都生效。
+ * 没有自绘进退场的原版弹窗可用 [preserveWindowAnimations] 保留平台效果，关闭时须同步清零 dim。
  *
  * @return 弹窗所在的平台窗口（取不到时为 null）
  */
 @Composable
-fun syncDialogWindow(dimProgress: () -> Float): Window? {
+fun syncDialogWindow(preserveWindowAnimations: Boolean = false, dimProgress: () -> Float): Window? {
     val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+    val originalAnimations = remember(window) { window?.attributes?.windowAnimations ?: 0 }
     val baseDim = remember(window) {
         val dim = window?.attributes?.dimAmount ?: 0f
-        window?.setWindowAnimations(0)
         window?.setDimAmount(0f)
         dim
+    }
+    SideEffect {
+        val animations = if (preserveWindowAnimations) originalAnimations else 0
+        if (window != null && window.attributes.windowAnimations != animations) window.setWindowAnimations(animations)
     }
     LaunchedEffect(window) {
         if (window == null) return@LaunchedEffect
