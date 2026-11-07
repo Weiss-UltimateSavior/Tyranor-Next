@@ -1,5 +1,12 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.staggeredEntrance
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -88,6 +96,8 @@ import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
 import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import com.tyranor.next.ui.common.motion.rememberEntranceOrder
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 
 /**
  * 单游戏（应用级）引擎设置页。每项基于「覆盖 ?: 全局」，可单独切回“跟随全局”。
@@ -715,7 +725,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
     MiuixSettingsTheme {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -778,7 +788,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     // 运行期仍会回退 filesDir/save，开关并非不可用）
                                     enabled = saveLocationReady && !krMirrorForced,
                                 ) { krScoped = it }
-                                if (saveLocationLoadFailed || krMirrorForced) {
+                                ExpandVisibility(saveLocationLoadFailed || krMirrorForced) {
                                     Text(
                                         stringResource(
                                             if (saveLocationLoadFailed) R.string.save_location_load_failed_note
@@ -806,44 +816,52 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                     krKernel,
                                     enabled = saveLocationReady && !krMirrorForced,
                                 ) { krKernel = it }
-                                if (!isSdl3) {
+                                ExpandVisibility(!isSdl3) {
                                     OverrideChoice(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, globalKrPatchOverlayMode, krPatchOverlayMode) { krPatchOverlayMode = it }
                                 }
                             }
                         }
                         item {
                             SectionCard(stringResource(R.string.engine_settings_render)) {
-                                if (!isSdl3) {
-                                    OverrideSwitch(stringResource(R.string.engine_settings_opengl_accurate_render), globalAccurate, krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value == "1") { b ->
-                                        krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value = when (b) { null -> ""; true -> "1"; false -> "0" }
-                                    }
-                                    OverrideChoice(stringResource(R.string.engine_settings_memory_usage), krMemMap, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = engineDefault) {
-                                        krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value = it
+                                ExpandVisibility(!isSdl3) {
+                                    Column {
+                                        OverrideSwitch(stringResource(R.string.engine_settings_opengl_accurate_render), globalAccurate, krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value == "1") { b ->
+                                            krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value = when (b) { null -> ""; true -> "1"; false -> "0" }
+                                        }
+                                        OverrideChoice(stringResource(R.string.engine_settings_memory_usage), krMemMap, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = engineDefault) {
+                                            krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value = it
+                                        }
                                     }
                                 }
                                 OverrideChoice(stringResource(R.string.engine_settings_renderer), krRendererMap, globalRenderer, krRender[PerGameSettingsStore.F_RENDERER]!!.value, emptyLabel = engineDefault) {
                                     krRender[PerGameSettingsStore.F_RENDERER]!!.value = it
                                 }
-                                if (!isSdl3) {
-                                    if (effRenderer == "" || effRenderer == EngineSettingsStore.RENDERER_SOFTWARE) {
-                                        OverrideChoice(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, globalDrawThread, krRender[PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD]!!.value, emptyLabel = auto) {
-                                            krRender[PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD]!!.value = it
+                                ExpandVisibility(!isSdl3) {
+                                    Column {
+                                        ExpandVisibility(effRenderer == "" || effRenderer == EngineSettingsStore.RENDERER_SOFTWARE) {
+                                            Column {
+                                                OverrideChoice(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, globalDrawThread, krRender[PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD]!!.value, emptyLabel = auto) {
+                                                    krRender[PerGameSettingsStore.F_SOFTWARE_DRAW_THREAD]!!.value = it
+                                                }
+                                                OverrideChoice(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, globalSwCompress, krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value, emptyLabel = engineDefault) {
+                                                    krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value = it
+                                                }
+                                            }
                                         }
-                                        OverrideChoice(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, globalSwCompress, krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value, emptyLabel = engineDefault) {
-                                            krRender[PerGameSettingsStore.F_SOFTWARE_COMPRESS_TEX]!!.value = it
+                                        ExpandVisibility(!krIs134) {
+                                            OverrideChoice(stringResource(R.string.engine_settings_fps_limit), krFpsMap, globalFps, krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value, emptyLabel = engineDefault) {
+                                                krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value = it
+                                            }
                                         }
-                                    }
-                                    if (!krIs134) {
-                                        OverrideChoice(stringResource(R.string.engine_settings_fps_limit), krFpsMap, globalFps, krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value, emptyLabel = engineDefault) {
-                                            krRender[PerGameSettingsStore.F_FPS_LIMIT]!!.value = it
-                                        }
-                                    }
-                                    if (effRenderer == "" || effRenderer == EngineSettingsStore.RENDERER_OPENGL) {
-                                        OverrideChoice(stringResource(R.string.engine_settings_opengl_texture_compression), krOglCompressMap, globalOglCompress, krRender[PerGameSettingsStore.F_OGL_COMPRESS_TEX]!!.value, emptyLabel = engineDefault) {
-                                            krRender[PerGameSettingsStore.F_OGL_COMPRESS_TEX]!!.value = it
-                                        }
-                                        OverrideChoice(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, globalTexsize, krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value, emptyLabel = auto) {
-                                            krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value = it
+                                        ExpandVisibility(effRenderer == "" || effRenderer == EngineSettingsStore.RENDERER_OPENGL) {
+                                            Column {
+                                                OverrideChoice(stringResource(R.string.engine_settings_opengl_texture_compression), krOglCompressMap, globalOglCompress, krRender[PerGameSettingsStore.F_OGL_COMPRESS_TEX]!!.value, emptyLabel = engineDefault) {
+                                                    krRender[PerGameSettingsStore.F_OGL_COMPRESS_TEX]!!.value = it
+                                                }
+                                                OverrideChoice(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, globalTexsize, krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value, emptyLabel = auto) {
+                                                    krRender[PerGameSettingsStore.F_OGL_MAX_TEXSIZE]!!.value = it
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -909,16 +927,19 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             SectionCard("Artemis") {
                                 OverrideChoice(stringResource(R.string.engine_settings_engine_kernel), artKernelMap, globalArtKernel, artKernel) { artKernel = it }
                                 OverrideSwitch(stringResource(R.string.engine_settings_rotate_screen), globalArtRotate, artRotate) { artRotate = it }
-                                if (effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
-                                    OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
-                                    OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
-                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
-                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
-                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
-                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
-                                    OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
-                                } else {
-                                    // 自研内核直接读游戏包内配置，官方专属项不适用
+                                ExpandVisibility(effectiveArtKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
+                                    Column {
+                                        OverrideChoice(stringResource(R.string.engine_settings_engine_version), artVersionMap, globalArtVersion, artVersion) { artVersion = it }
+                                        OverrideChoice(stringResource(R.string.engine_settings_auto_patch), artPatchMap, globalArtPatch, artPatch) { artPatch = it }
+                                        OverrideChoice(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, globalArtResolution, artResolution) { artResolution = it }
+                                        OverrideChoice(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, globalArtSideCut, artSideCut) { artSideCut = it }
+                                        OverrideChoice(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, globalArtSurfaceCache, artSurfaceCache) { artSurfaceCache = it }
+                                        OverrideChoice(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, globalArtFontCache, artFontCache) { artFontCache = it }
+                                        OverrideChoice(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, globalArtPowerSaving, artPowerSaving) { artPowerSaving = it }
+                                    }
+                                }
+                                // 自研内核直接读游戏包内配置，官方专属项不适用
+                                ExpandVisibility(effectiveArtKernel != EngineSettingsStore.ART_KERNEL_OFFICIAL) {
                                     Text(
                                         stringResource(R.string.engine_settings_artemis_clean_hint),
                                         style = MaterialTheme.typography.bodyMedium,
@@ -1147,20 +1168,24 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                             )
                             // 当前生效存档路径（与存档管理同源）：独立存档 = 应用外部存档目录，关闭 = 游戏目录 save/
-                            saveLocation?.let { location ->
-                                Text(
-                                    location.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                                )
-                                location.directory?.let { dir ->
-                                    Text(
-                                        dir.absolutePath,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                                    )
+                            ExpandVisibility(saveLocation != null) {
+                                Column {
+                                    saveLocation?.let { location ->
+                                        Text(
+                                            location.description,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                        )
+                                        location.directory?.let { dir ->
+                                            Text(
+                                                dir.absolutePath,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1208,20 +1233,24 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
                             )
                             // 当前生效存档路径（与存档管理同源）：独立存档 = 应用外部存档目录，关闭 = 游戏根 SaveFolder
-                            saveLocation?.let { location ->
-                                Text(
-                                    location.description,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                                )
-                                location.directory?.let { dir ->
-                                    Text(
-                                        dir.absolutePath,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                                    )
+                            ExpandVisibility(saveLocation != null) {
+                                Column {
+                                    saveLocation?.let { location ->
+                                        Text(
+                                            location.description,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                        )
+                                        location.directory?.let { dir ->
+                                            Text(
+                                                dir.absolutePath,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1493,6 +1522,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 if (game.engine in WINLATOR_LAUNCH_ENGINES) item {
                     SectionCard("Winlator") {
                         OverlayDropdownPreference(
+                            modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
                             title = stringResource(R.string.engine_settings_winlator_mode_title),
                             items = listOf(
                                 stringResource(R.string.engine_settings_winlator_mode_global),
@@ -1512,7 +1542,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                                 }
                             },
                         )
-                        if (winlatorMode == PerGameSettingsStore.WINLATOR_MODE_GLOBAL) {
+                        ExpandVisibility(winlatorMode == PerGameSettingsStore.WINLATOR_MODE_GLOBAL) {
                             AppNavItem(
                                 title = stringResource(R.string.engine_settings_winlator_global_entry),
                                 summary = stringResource(R.string.engine_settings_winlator_global_entry_summary),
@@ -1529,8 +1559,15 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
                 if (game.engine in WINLATOR_LAUNCH_ENGINES &&
                     winlatorMode == PerGameSettingsStore.WINLATOR_MODE_CONTAINER
-                ) item {
-                    SectionCard(stringResource(R.string.engine_settings_winlator_group_container)) {
+                ) item(key = "winlatorContainerCard") {
+                    SectionCard(
+                        stringResource(R.string.engine_settings_winlator_group_container),
+                        modifier = if (MotionMode.enhanced) Modifier.animateItem(
+                            fadeInSpec = MotionTokens.fadeIn(),
+                            placementSpec = MotionTokens.layout(IntOffset(1, 1)),
+                            fadeOutSpec = MotionTokens.fadeOut(),
+                        ) else Modifier,
+                    ) {
                         WinlatorContainerRows(
                             globalContainerName = globalWinlator.containerName,
                             effectiveContainerIdLabel = winlatorEffectiveContainerIdLabel,
@@ -1545,8 +1582,15 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
                 if (game.engine in WINLATOR_LAUNCH_ENGINES &&
                     winlatorMode == PerGameSettingsStore.WINLATOR_MODE_CUSTOM
-                ) item {
-                    SectionCard(stringResource(R.string.engine_settings_winlator_group_container)) {
+                ) item(key = "winlatorCustomCard") {
+                    SectionCard(
+                        stringResource(R.string.engine_settings_winlator_group_container),
+                        modifier = if (MotionMode.enhanced) Modifier.animateItem(
+                            fadeInSpec = MotionTokens.fadeIn(),
+                            placementSpec = MotionTokens.layout(IntOffset(1, 1)),
+                            fadeOutSpec = MotionTokens.fadeOut(),
+                        ) else Modifier,
+                    ) {
                         WinlatorContainerRows(
                             globalContainerName = globalWinlator.containerName,
                             effectiveContainerIdLabel = winlatorEffectiveContainerIdLabel,
@@ -1643,10 +1687,13 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
 // ───────────────────────── 覆盖行组件 ─────────────────────────
 
+/** 为单游戏覆盖分组分配稳定入场次序，复用卡片材质并让组内按压统一作用于整张卡片。 */
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+private fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    // 入场次序：按首次组合顺序取号（超过 10 的由 staggeredEntrance 自行封顶）
+    val order = rememberEntranceOrder()
     MiuixCard(
-        modifier = Modifier.fillMaxWidth().glassBorder(),
+        modifier = modifier.pressSquishGroup().staggeredEntrance(order).fillMaxWidth().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 6.dp)) {
@@ -1726,6 +1773,7 @@ internal fun OverrideChoice(
 ) {
     if (notReadyLabel != null) {
         OverlayDropdownPreference(
+            modifier = Modifier.pressSquish(enabled = false, scale = PressSquishDefaults.RowScale),
             title = label,
             items = listOf(notReadyLabel),
             selectedIndex = 0,
@@ -1751,6 +1799,7 @@ internal fun OverrideChoice(
         else -> keys.indexOf(override) + 1
     }
     OverlayDropdownPreference(
+        modifier = Modifier.pressSquish(enabled = enabled, scale = PressSquishDefaults.RowScale),
         title = label,
         items = labels,
         selectedIndex = index,
@@ -1780,6 +1829,7 @@ internal fun OverrideSwitch(
     val labels = listOf(stringResource(R.string.engine_settings_follow_global_bool, if (global) onText else offText), onText, offText)
     val index = when { override == null -> 0; override -> 1; else -> 2 }
     OverlayDropdownPreference(
+        modifier = Modifier.pressSquish(enabled = enabled, scale = PressSquishDefaults.RowScale),
         title = label,
         items = labels,
         selectedIndex = index,

@@ -2,6 +2,7 @@ package com.tyranor.next.ui.game
 
 import android.graphics.Bitmap
 import android.net.Uri
+import android.view.Window
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -22,6 +23,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -62,6 +64,10 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.syncDialogWindow
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.passThroughTouches
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,6 +90,18 @@ internal fun GameShortcutCropDialog(
     var transform by remember(imageUri) { mutableStateOf(CropTransform()) }
     var confirming by remember(imageUri) { mutableStateOf(false) }
     var cropFailed by remember(imageUri) { mutableStateOf(false) }
+    val dialogWindow = remember { arrayOfNulls<Window>(1) }
+    /** Removes window interception and dim before returning control to the parent dialog or page. */
+    fun prepareClose() {
+        dialogWindow[0].passThroughTouches()
+        dialogWindow[0]?.setDimAmount(0f)
+    }
+    /** Allows dismissal only outside an export, releasing the dialog window before the callback. */
+    fun dismiss() {
+        if (confirming) return
+        prepareClose()
+        onDismiss()
+    }
 
     LaunchedEffect(imageUri) {
         loadState = CropImageLoadState.Loading
@@ -123,6 +141,7 @@ internal fun GameShortcutCropDialog(
                     cropFailed = true
                 } else {
                     val resultUri = croppedUri
+                    prepareClose()
                     onConfirm(resultUri)
                     handedOff = true
                 }
@@ -136,13 +155,22 @@ internal fun GameShortcutCropDialog(
     }
 
     Dialog(
-        onDismissRequest = { if (!confirming) onDismiss() },
+        onDismissRequest = ::dismiss,
         properties = DialogProperties(
             usePlatformDefaultWidth = false,
             dismissOnBackPress = !confirming,
             dismissOnClickOutside = !confirming,
         ),
     ) {
+        // 修复弹窗退场后窗口遮罩残留拦截触摸
+        val window = syncDialogWindow(preserveWindowAnimations = !MotionMode.enhanced) { 1f }
+        dialogWindow[0] = window
+        DisposableEffect(window) {
+            onDispose {
+                window.passThroughTouches()
+                window?.setDimAmount(0f)
+            }
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -158,7 +186,7 @@ internal fun GameShortcutCropDialog(
                 onViewportSizeChanged = { viewportSize = min(it.width, it.height).toFloat() },
                 onTransform = { transform = it },
                 onPickImage = onPickImage,
-                onDismiss = onDismiss,
+                onDismiss = ::dismiss,
                 onConfirm = ::confirmCrop,
             )
         }
@@ -248,7 +276,9 @@ private fun CropDialogImage(
     onViewportSizeChanged: (androidx.compose.ui.unit.IntSize) -> Unit,
     onTransform: (CropTransform) -> Unit,
 ) {
-    when (loadState) {
+    // 加载中 / 失败 / 可编辑 之间模糊替换（按状态类别切换，换图重新加载时才触发）
+    BlurCrossfade(loadState, contentKey = { it::class }) { state ->
+    when (state) {
         CropImageLoadState.Loading -> Box(
             modifier = Modifier.fillMaxWidth().aspectRatio(1f),
             contentAlignment = Alignment.Center,
@@ -268,12 +298,13 @@ private fun CropDialogImage(
         }
 
         is CropImageLoadState.Ready -> CropPreview(
-            bitmap = loadState.bitmap,
+            bitmap = state.bitmap,
             metrics = metrics,
             transform = transform,
             onViewportSizeChanged = onViewportSizeChanged,
             onTransform = onTransform,
         )
+    }
     }
 }
 

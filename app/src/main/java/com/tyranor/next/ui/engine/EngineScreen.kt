@@ -7,6 +7,9 @@ import android.os.StatFs
 import android.provider.DocumentsContract
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,7 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -39,12 +42,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +69,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -92,10 +99,20 @@ import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionSprings
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.RollingNumberText
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.settings.artVersionOptions
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
@@ -139,10 +156,27 @@ fun EngineScreen(
         freeBytes = internalStorage.freeBytes,
     )
 
+    // 安装状态刷新：PackageManager.getPackageInfo 逐项查询放到 IO 线程，回主线程后一次性写入 Compose 状态。
+    // 结果到达前沿用旧值；若期间又发起了更新的一轮刷新，旧一轮的结果丢弃（以免用旧快照覆盖新快照）。
+    val refreshScope = rememberCoroutineScope()
+    val refreshToken = remember { IntArray(1) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        externalInstallStates = refreshExternalInstallStates(context, engines)
-        moduleStates = refreshModuleStates(context)
-        emulatorInstallStates = refreshEmulatorInstallStates(context)
+        val token = ++refreshToken[0]
+        refreshScope.launch {
+            val appContext = context.applicationContext
+            val fresh = withContext(Dispatchers.IO) {
+                Triple(
+                    refreshExternalInstallStates(appContext, engines),
+                    refreshModuleStates(appContext),
+                    refreshEmulatorInstallStates(appContext),
+                )
+            }
+            if (token == refreshToken[0]) {
+                externalInstallStates = fresh.first
+                moduleStates = fresh.second
+                emulatorInstallStates = fresh.third
+            }
+        }
         ppssppVersion = EngineSettingsStore.getPpssppVersion(context)
     }
 
@@ -211,13 +245,14 @@ fun EngineScreen(
                     engineCount = engines.distinctBy { engineDisplayName(it) }.size,
                     stats = storageStats,
                     gameBytesLoading = gameDirsBytes == null,
+                    modifier = Modifier.staggeredEntrance(0),
                 )
             }
-            gridItems(
+            gridItemsIndexed(
                 items = tabEngines,
-                key = { it.name },
-                contentType = { "engine" },
-            ) { engine ->
+                key = { _, it -> it.name },
+                contentType = { _, _ -> "engine" },
+            ) { engineIndex, engine ->
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
                 val emulator = ExternalEmulatorRegistry.forEngine(engine)
                 val installed = when {
@@ -249,6 +284,19 @@ fun EngineScreen(
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     compact = engineColumns > 1,
+                    modifier = Modifier
+                        .staggeredEntrance(engineIndex + 1)
+                        .then(
+                            if (MotionMode.enhanced) {
+                                Modifier.animateItem(
+                                    fadeInSpec = MotionTokens.fadeIn(),
+                                    placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                    fadeOutSpec = MotionTokens.fadeOut(),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                     onClick = {
                         when {
                             // Winlator 系（YU-RIS / 手动 PC）：只展示本引擎的外置运行时，标题「<引擎> 引擎列表」
@@ -269,6 +317,17 @@ fun EngineScreen(
                     span = { GridItemSpan(maxLineSpan) },
                 ) {
                     ExternalJumpRow(
+                        modifier = Modifier.staggeredEntrance(99).then(
+                            if (MotionMode.enhanced) {
+                                Modifier.animateItem(
+                                    fadeInSpec = MotionTokens.fadeIn(),
+                                    placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                    fadeOutSpec = MotionTokens.fadeOut(),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                         installedCount = emulatorInstallStates.values.count { it },
                         onClick = { showExternalJumpDialog = true },
                     )
@@ -454,29 +513,42 @@ private fun StorageOverviewCard(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(
+                // 数值变化（加载完成、剩余空间、数量）时整句模糊替换
+                BlurCrossfade(
+                    targetState = stringResource(
                         R.string.engine_storage_game_usage,
                         if (gameBytesLoading) "…" else ByteFormats.formatBinarySize(stats.gameBytes),
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    stringResource(
+                ) { usageText ->
+                    Text(
+                        usageText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                BlurCrossfade(
+                    targetState = stringResource(
                         R.string.engine_storage_remaining,
                         ByteFormats.formatBinarySize(stats.freeBytes),
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 2.dp),
-                )
-                Text(
-                    stringResource(R.string.engine_storage_counts, gameCount, engineCount),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ) { remainingText ->
+                    Text(
+                        remainingText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                BlurCrossfade(
+                    targetState = stringResource(R.string.engine_storage_counts, gameCount, engineCount),
                     modifier = Modifier.padding(top = 2.dp),
-                )
+                ) { countsText ->
+                    Text(
+                        countsText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             StorageRing(
                 ratio = stats.ratio,
@@ -487,6 +559,10 @@ private fun StorageOverviewCard(
     }
 }
 
+/**
+ * Shows bounded storage usage, retaining the last settled sweep across lazy-item recreation.
+ * Enhanced mode animates the sweep; ordinary mode draws the latest ratio immediately.
+ */
 @Composable
 private fun StorageRing(
     ratio: Float,
@@ -496,6 +572,20 @@ private fun StorageRing(
     val safeRatio = ratio.coerceIn(0f, 1f)
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     val progressColor = MaterialTheme.colorScheme.primary
+    // 进度弧：首次显示与数值变化时从当前值弹簧扫过去（加载中保持 0）
+    // 记住上次停稳的值：滚出屏幕再滚回来时直接停在原位，不重新从 0 扫
+    var settledSweep by rememberSaveable { mutableFloatStateOf(0f) }
+    val sweep = remember { Animatable(settledSweep) }
+    val sweepTarget = if (loading) 0f else safeRatio
+    LaunchedEffect(sweepTarget) {
+        if (MotionMode.enhanced) {
+            // 特例：环形占用弧刻意用更长的 0.9s 平滑扫过（比 value 慢），强调「占用量」读数
+            sweep.animateTo(sweepTarget, MotionSprings.smooth(900, 0.001f))
+        } else {
+            sweep.snapTo(sweepTarget)
+        }
+        settledSweep = sweepTarget
+    }
     Box(modifier.size(92.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val stroke = 10.dp.toPx()
@@ -515,7 +605,7 @@ private fun StorageRing(
                 drawArc(
                     color = progressColor,
                     startAngle = -90f,
-                    sweepAngle = 360f * safeRatio,
+                    sweepAngle = 360f * (if (MotionMode.enhanced) sweep.value else sweepTarget).coerceIn(0f, 1f),
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
@@ -524,10 +614,9 @@ private fun StorageRing(
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
+            RollingNumberText(
                 if (loading) "…" else "${(safeRatio * 100).roundToInt()}%",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
@@ -636,6 +725,7 @@ private fun treeSizeBytes(context: Context, treeUri: Uri): Long {
     return total
 }
 
+/** Resolves an engine's icon and label, forwarding the caller's installation status and click behavior. */
 @Composable
 private fun EngineRow(
     engine: EngineType,
@@ -643,9 +733,11 @@ private fun EngineRow(
     installed: Boolean,
     enabled: Boolean,
     compact: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     EngineRowCard(
+        modifier = modifier,
         iconRes = engineIconRes(engine),
         title = engineDisplayName(engine),
         statusTextRes = statusTextRes,
@@ -661,8 +753,10 @@ private fun EngineRow(
 private fun ExternalJumpRow(
     installedCount: Int,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     EngineRowCard(
+        modifier = modifier,
         iconRes = R.drawable.ic_engine_card_external,
         title = stringResource(R.string.engine_external_jump_title),
         statusTextRes = R.string.engine_external_jump_summary,
@@ -686,6 +780,7 @@ private fun EngineRowCard(
     enabled: Boolean,
     compact: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val bannerWidth = if (compact) 88.dp else 120.dp
     val fadeWidth = minOf(47.dp, bannerWidth * 0.5f)
@@ -694,7 +789,8 @@ private fun EngineRowCard(
     // 过渡终点直接取卡片背景。默认主题保持原来的 NavWhite 色遮罩，不动其它风格。
     val useImageFadeMask = AppThemeColors.isMilkGlass || AppThemeColors.isGlass
     Card(
-        modifier = Modifier
+        modifier = modifier
+            .pressSquish(enabled = enabled, scale = PressSquishDefaults.CardScale)
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick)
             .glassBorder(),
@@ -771,18 +867,26 @@ private fun EngineRowCard(
                     .weight(1f)
                     .padding(start = 12.dp, end = 8.dp),
             )
-            Icon(
-                if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                contentDescription = stringResource(statusTextRes),
-                tint = if (installed) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.error
-                },
+            BlurCrossfade(
+                targetState = installed,
                 modifier = Modifier
                     .padding(start = 8.dp, end = 16.dp)
+                    // 安装状态变化时整个图标位弹一下（放在替换容器上，新旧图标都随之形变）
+                    .bounceOnChange(installed)
                     .size(20.dp),
-            )
+                contentAlignment = Alignment.Center,
+            ) { isInstalled ->
+                Icon(
+                    if (isInstalled) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                    contentDescription = stringResource(statusTextRes),
+                    tint = if (isInstalled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.size(20.dp),
+                )
+            }
         }
     }
 }

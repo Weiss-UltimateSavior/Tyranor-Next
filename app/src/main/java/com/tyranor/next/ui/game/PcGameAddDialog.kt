@@ -32,6 +32,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
@@ -44,6 +46,10 @@ import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -141,6 +147,18 @@ internal fun PcGameAddDialog(
                                 items(candidates, key = { it.name }) { candidate ->
                                     Row(
                                         modifier = Modifier
+                                            .then(
+                                                if (MotionMode.enhanced) {
+                                                    Modifier.animateItem(
+                                                        fadeInSpec = MotionTokens.fadeIn(),
+                                                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                                        fadeOutSpec = MotionTokens.fadeOut(),
+                                                    )
+                                                } else {
+                                                    Modifier
+                                                },
+                                            )
+                                            .pressSquish(scale = PressSquishDefaults.RowScale)
                                             .fillMaxWidth()
                                             .clip(AppComponentShape)
                                             .background(DialogItemSurface)

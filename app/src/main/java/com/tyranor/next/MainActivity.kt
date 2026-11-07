@@ -12,7 +12,10 @@ import androidx.compose.runtime.SideEffect
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.theme.AppThemeColors
+import androidx.compose.ui.Modifier
 import com.tyranor.next.theme.GlassBackground
+import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.pageTransitionScrim
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.core.updater.UpdateNotificationManager
 import com.tyranor.next.ui.common.observeSaveSyncFeedback
@@ -21,6 +24,7 @@ class MainActivity : ComponentActivity() {
   private val notificationPermissionLauncher =
     registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+  /** Initializes the themed root and its motion environment before rendering the main navigation. */
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     observeSaveSyncFeedback()
@@ -61,7 +65,10 @@ class MainActivity : ComponentActivity() {
               )
             }
           }
-          GlassBackground { MainNavigation() }
+          // 动效环境（Q 弹越界回弹）+ 推入二级页时本页压暗（静止时透明）
+          ProvideMotionEnvironment {
+            GlassBackground(Modifier.pageTransitionScrim()) { MainNavigation() }
+          }
         }
       }
     }

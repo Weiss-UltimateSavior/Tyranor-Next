@@ -34,6 +34,9 @@
     <string name="settings_appearance_style_default">默认</string>
     <string name="settings_appearance_style_glass">复古玻璃</string>
     <string name="settings_appearance_style_milk">白雾玻璃</string>
+    <string name="settings_motion_mode">界面动效</string>
+    <string name="settings_motion_enhanced">增强</string>
+    <string name="settings_motion_normal">普通</string>
     <string name="settings_app_corner_radius">应用圆角调整</string>
     <string name="settings_app_corner_radius_value">%1$d dp</string>
     <string name="settings_disabled_in_glass_style">玻璃外观主题下不可用</string>

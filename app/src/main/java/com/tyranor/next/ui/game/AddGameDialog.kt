@@ -14,6 +14,9 @@ import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 
 /**
  * 「添加游戏」分支弹窗（游戏页顶栏入口）：选择添加 PC 游戏（SAF 目录 + exe）或
@@ -34,11 +37,14 @@ internal fun AddGameDialog(
             )
         },
         text = {
+            // 两个分支入口依次弹入
+            ProvideEntrance {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().skipEntranceOnDrag(),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 AppNavItem(
+                    modifier = Modifier.staggeredEntrance(0),
                     title = stringResource(R.string.game_add_pc),
                     summary = stringResource(R.string.game_add_pc_summary),
                     leadingIcon = R.drawable.ic_sheet_pc,
@@ -47,6 +53,7 @@ internal fun AddGameDialog(
                     onClick = onAddPc,
                 )
                 AppNavItem(
+                    modifier = Modifier.staggeredEntrance(1),
                     title = stringResource(R.string.game_add_android),
                     summary = stringResource(R.string.game_add_android_summary),
                     leadingIcon = R.drawable.ic_sheet_phone,
@@ -54,6 +61,7 @@ internal fun AddGameDialog(
                     indication = null,
                     onClick = onAddAndroid,
                 )
+            }
             }
         },
         confirmButton = {},

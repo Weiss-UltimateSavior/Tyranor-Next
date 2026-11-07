@@ -44,6 +44,10 @@ object AppSettingsStore {
 
     const val KEY_ENGINE_TABS = "engine_tabs"
     const val KEY_SIDE_RAIL = "side_rail"
+
+    /** 界面动效档位：true = 增强（新动效，默认），false = 普通（原版动效）。 */
+    const val KEY_MOTION_ENHANCED = "motion_enhanced"
+    const val DEFAULT_MOTION_ENHANCED = true
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
     const val KEY_COVER_SCRAPER_SOURCE_ORDER = "cover_scraper_source_order"
     private const val KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX = "cover_scraper_source_enabled_"
@@ -182,6 +186,9 @@ object AppSettingsStore {
     /** 平板侧边栏内存态：设置页切换后主界面即时重组（平板判定 + 本开关决定是否用侧栏）。 */
     val sideRailState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_SIDE_RAIL_ENABLED)
 
+    /** 界面动效档位内存态：应用设置切换后全局即时生效。 */
+    val motionEnhancedState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_MOTION_ENHANCED)
+
     /** 引擎页分类显示内存态：设置页切换后引擎页即时重组。 */
     val engineTabsState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_TABS_ENABLED)
 
@@ -262,6 +269,11 @@ object AppSettingsStore {
     /** 首次组合时从持久化加载平板侧边栏开关到内存态（幂等）。 */
     fun initSideRail(c: Context) {
         sideRailState.value = isSideRailEnabled(c)
+    }
+
+    /** Loads the persisted motion preference into the shared flow for UI subscribers. */
+    fun initMotionEnhanced(c: Context) {
+        motionEnhancedState.value = isMotionEnhanced(c)
     }
 
     private fun prefs(context: Context) =
@@ -528,6 +540,16 @@ object AppSettingsStore {
     fun setSideRailEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit().putBoolean(KEY_SIDE_RAIL, enabled).apply()
         sideRailState.value = enabled
+    }
+
+    /** Returns the saved motion mode, using enhanced motion for an unset preference. */
+    fun isMotionEnhanced(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_MOTION_ENHANCED, DEFAULT_MOTION_ENHANCED)
+
+    /** Persists the chosen mode and immediately publishes it to existing UI subscribers. */
+    fun setMotionEnhanced(c: Context, enhanced: Boolean) {
+        prefs(c).edit().putBoolean(KEY_MOTION_ENHANCED, enhanced).apply()
+        motionEnhancedState.value = enhanced
     }
 
     fun isCoverScraperOnlyMissing(c: Context): Boolean =

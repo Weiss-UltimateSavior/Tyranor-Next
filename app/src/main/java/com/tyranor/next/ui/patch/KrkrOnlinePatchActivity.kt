@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material3.Card
@@ -44,6 +44,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.patch.KrkrOnlinePatchService
@@ -61,12 +63,22 @@ import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TimeFormats
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class KrkrOnlinePatchActivity : AppScreenActivity() {
+    /** 先完成页面基类初始化；缺少游戏输入时直接退出，否则为补丁页建立独立入场作用域。 */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -77,7 +89,9 @@ class KrkrOnlinePatchActivity : AppScreenActivity() {
         }
 
         setAppScreenContent {
-            KrkrOnlinePatchScreen(game = game)
+            ProvideEntrance {
+                KrkrOnlinePatchScreen(game = game)
+            }
         }
     }
 
@@ -89,6 +103,10 @@ class KrkrOnlinePatchActivity : AppScreenActivity() {
     }
 }
 
+/**
+ * 为指定游戏加载并筛选补丁索引，向服务提交勾选的补丁文件并展示安装结果。
+ * 搜索、加载、消息与补丁条目使用独立列表身份，使内容转场不会复用其他状态的节点。
+ */
 @Composable
 private fun KrkrOnlinePatchScreen(game: ScanGame) {
     val context = LocalContext.current
@@ -130,7 +148,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
         KrkrOnlinePatchService.search(entries, keyword).take(80)
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().skipEntranceOnDrag()) {
         AppTopBar(
             title = stringResource(R.string.patch_title),
             trailing = {
@@ -145,17 +163,31 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
             contentPadding = PaddingValues(top = 16.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
+            item(key = "search") {
                 AppSearchField(
                     query = keyword,
                     onQueryChange = { keyword = it },
+                    modifier = Modifier.staggeredEntrance(0),
                 )
             }
 
             if (loading) {
-                item {
+                item(key = "loading") {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                        modifier = Modifier
+                            .then(
+                                if (MotionMode.enhanced) {
+                                    Modifier.animateItem(
+                                        fadeInSpec = MotionTokens.fadeIn(),
+                                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                        fadeOutSpec = MotionTokens.fadeOut(),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
                         horizontalArrangement = Arrangement.Center,
                     ) {
                         CircularProgressIndicator(Modifier.size(28.dp))
@@ -164,29 +196,71 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
             }
 
             message?.let { text ->
-                item {
-                    Text(
-                        text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                    )
+                item(key = "message") {
+                    // 错误 / 进度文字变化时模糊替换
+                    BlurCrossfade(
+                        targetState = text,
+                        modifier = Modifier
+                            .then(
+                                if (MotionMode.enhanced) {
+                                    Modifier.animateItem(
+                                        fadeInSpec = MotionTokens.fadeIn(),
+                                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                        fadeOutSpec = MotionTokens.fadeOut(),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .padding(horizontal = 4.dp),
+                    ) { messageText ->
+                        Text(
+                            messageText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                 }
             }
 
             if (!loading && filtered.isEmpty() && message == null) {
-                item {
+                item(key = "no_match") {
                     Text(
                         stringResource(R.string.patch_no_match),
                         style = MaterialTheme.typography.bodyMedium,
                         color = PageSecondaryTextColor,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .then(
+                                if (MotionMode.enhanced) {
+                                    Modifier.animateItem(
+                                        fadeInSpec = MotionTokens.fadeIn(),
+                                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                        fadeOutSpec = MotionTokens.fadeOut(),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            )
+                            .padding(horizontal = 4.dp, vertical = 12.dp),
                     )
                 }
             }
 
-            items(filtered, key = { "${it.timestamp}-${it.name}-${it.path}" }) { entry ->
+            itemsIndexed(filtered, key = { _, it -> "${it.timestamp}-${it.name}-${it.path}" }) { index, entry ->
                 PatchEntryCard(
+                    modifier = Modifier
+                        .staggeredEntrance(index + 1)
+                        .then(
+                            if (MotionMode.enhanced) {
+                                Modifier.animateItem(
+                                    fadeInSpec = MotionTokens.fadeIn(),
+                                    placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                    fadeOutSpec = MotionTokens.fadeOut(),
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                     entry = entry,
                     installing = installing,
                     onInstall = { selected ->
@@ -216,18 +290,20 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
                 )
             }
 
-            item {
+            item(key = "bottom_spacer") {
                 Spacer(Modifier.navigationBarsPadding().height(4.dp))
             }
         }
     }
 }
 
+/** 按补丁条目保存文件勾选状态；安装期间禁用提交，由调用方执行下载与写入。 */
 @Composable
 private fun PatchEntryCard(
     entry: KrkrPatchEntry,
     installing: Boolean,
     onInstall: (List<String>) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val checked = remember(entry) {
         mutableStateMapOf<String, Boolean>().apply {
@@ -237,7 +313,7 @@ private fun PatchEntryCard(
     val selected = entry.patches.filter { checked[it] == true }
 
     Card(
-        modifier = Modifier.fillMaxWidth().glassBorder(),
+        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = NavWhite, contentColor = TextColor),
         shape = AppComponentShape,
@@ -273,7 +349,7 @@ private fun PatchEntryCard(
                 entry.patches.forEach { url ->
                     val name = url.substringAfterLast('/')
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable {
+                        modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale).fillMaxWidth().clickable {
                             checked[url] = checked[url] != true
                         },
                         verticalAlignment = Alignment.CenterVertically,

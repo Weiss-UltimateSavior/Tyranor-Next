@@ -1,5 +1,6 @@
 package com.tyranor.next.ui.home
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -25,7 +26,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -60,6 +61,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -83,6 +86,13 @@ import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.motionBlurAlpha
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.game.GameActionsSheet
 import com.tyranor.next.ui.game.RpgSaveFormatDialog
@@ -98,6 +108,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Hosts the selected native or web home and shares game actions and launch gates with the library.
+ * The active-tab flag controls the web home's lifecycle while the main tabs remain composed.
+ */
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -253,7 +267,8 @@ fun HomeScreen(
                 onQuickLaunchToggle = { onQuickLaunchToggle(game) },
                 onEngineSettings = {
                     startActivityWithPageTransition(context, PerGameSettingsActivity.createIntent(context, game))
-                    selectedGame = null
+                    // 增强动效档由抽屉在侧推开始时自己平滑收起；普通档保持原版立即关闭
+                    if (!MotionMode.enhanced) selectedGame = null
                 },
             )
         }
@@ -341,6 +356,7 @@ private fun NativeHomeContent(
     val recentGames = libraryState.recentGames
     // 横屏/大屏一行五列，竖屏手机保持两列
     val recentColumns = if (isWideScreen()) 5 else 2
+    val recentRows = remember(recentGames, recentColumns) { recentGames.chunked(recentColumns) }
     Column(modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.nav_home))
 
@@ -365,7 +381,7 @@ private fun NativeHomeContent(
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
                         )
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxWidth().weight(1f).staggeredEntrance(1), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     }
@@ -378,7 +394,7 @@ private fun NativeHomeContent(
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
                         )
-                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxWidth().weight(1f).staggeredEntrance(1), contentAlignment = Alignment.Center) {
                             Text(
                                 stringResource(R.string.home_recent_empty),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -390,18 +406,40 @@ private fun NativeHomeContent(
             } else {
                 item(key = "quick_launch", contentType = "quick_launch") {
                     QuickLaunchSection(
+                        modifier = if (MotionMode.enhanced) {
+                            Modifier.animateItem(
+                                fadeInSpec = MotionTokens.fadeIn(),
+                                placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                fadeOutSpec = MotionTokens.fadeOut(),
+                            )
+                        } else {
+                            Modifier
+                        },
                         quickLaunch = quickLaunch,
                         onGameClick = onGameClick,
                         onGameLongClick = onGameLongClick,
                     )
                 }
-                items(
-                    items = recentGames.chunked(recentColumns),
-                    key = { row -> row.first().uri },
-                    contentType = { "recent_row" },
-                ) { row ->
+                itemsIndexed(
+                    items = recentRows,
+                    key = { _, row -> row.first().uri },
+                    contentType = { _, _ -> "recent_row" },
+                ) { rowIndex, row ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .staggeredEntrance(rowIndex + 1)
+                            .then(
+                                if (MotionMode.enhanced) {
+                                    Modifier.animateItem(
+                                        fadeInSpec = MotionTokens.fadeIn(),
+                                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                                        fadeOutSpec = MotionTokens.fadeOut(),
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         row.forEach { game ->
@@ -431,9 +469,10 @@ private fun QuickLaunchSection(
     quickLaunch: List<ScanGame>,
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().staggeredEntrance(0),
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {
@@ -523,10 +562,15 @@ private fun QuickLaunchPagerIndicator(
             val selected = index == activePage
             val width by animateDpAsState(
                 targetValue = if (selected) 24.dp else 8.dp,
-                animationSpec = tween(durationMillis = 200),
+                animationSpec = if (MotionMode.enhanced) MotionTokens.control(0.1.dp) else tween(durationMillis = 200),
                 label = "quickLaunchIndicatorWidth$index",
             )
-            val color = if (selected) primary else primary.copy(alpha = 0.32f)
+            val animatedColor by animateColorAsState(
+                targetValue = if (selected) primary else primary.copy(alpha = 0.32f),
+                animationSpec = MotionTokens.fadeIn(),
+                label = "quickLaunchIndicatorColor$index",
+            )
+            val color = if (MotionMode.enhanced) animatedColor else if (selected) primary else primary.copy(alpha = 0.32f)
             Box(
                 modifier = Modifier
                     .height(8.dp)
@@ -570,6 +614,7 @@ private fun QuickLaunchCard(
     }
     BoxWithConstraints(
         modifier = modifier
+            .pressSquish(scale = PressSquishDefaults.CardScale)
             .height(172.dp)
             .clip(AppComponentShape)
             .background(QuickLaunchFallback)
@@ -584,6 +629,12 @@ private fun QuickLaunchCard(
         }
         val cardMaxWidth = maxWidth
         val coverBitmap by rememberCoverBitmap(game.coverUri)
+        // 背景封面加载完成后淡入
+        val animatedBgAlpha by animateFloatAsState(
+            targetValue = if (coverBitmap != null) 1f else 0f,
+            animationSpec = MotionTokens.fadeIn(0.001f),
+            label = "quickLaunchBgFadeIn",
+        )
         coverBitmap?.let { bmp ->
             // 封面缩到 40px 再拉伸铺满：API 31+ 由 Modifier.blur（RenderEffect）做真高斯；
             // API 26-30 无 RenderEffect，若只放大 40px 会呈马赛克（issue #76），
@@ -611,10 +662,14 @@ private fun QuickLaunchCard(
                 bitmap = blurred,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize().blur(24.dp),
+                modifier = Modifier.matchParentSize().graphicsLayer {
+                  alpha = if (MotionMode.enhanced) animatedBgAlpha else 1f // 此处 coverBitmap 已非空，原非增强分支恒为 1f
+                }.blur(24.dp),
             )
             // 黑色压暗遮罩：保证白色文字可读
-            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.25f)))
+            Box(Modifier.matchParentSize().graphicsLayer {
+              alpha = if (MotionMode.enhanced) animatedBgAlpha else 1f
+            }.background(Color.Black.copy(alpha = 0.25f)))
         }
         Column(
             modifier = Modifier
@@ -659,20 +714,29 @@ private fun QuickLaunchCard(
                             .background(Color.White.copy(alpha = 0.18f)),
                         contentAlignment = Alignment.Center,
                     ) {
-                        val bmp = coverBitmap
-                        if (bmp != null) {
-                            Image(
-                                bitmap = bmp,
-                                contentDescription = game.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } else {
-                            Text(
-                                "Tyranor",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = Color.White.copy(alpha = 0.7f),
-                            )
+                        BlurCrossfade(
+                            targetState = coverBitmap,
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
+                            contentKey = { it != null },
+                        ) { bmp ->
+                            if (bmp != null) {
+                                Image(
+                                    bitmap = bmp,
+                                    contentDescription = game.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
+                                // 替换容器会把内容撑满封面位：外包一层居中，保持原先居中的占位文字
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        "Tyranor",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.White.copy(alpha = 0.7f),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -734,11 +798,12 @@ private fun RecentGameCard(
     val bmp = coverBitmap
     val coverAlpha by animateFloatAsState(
         targetValue = if (bmp != null) 1f else 0f,
-        animationSpec = tween(durationMillis = 300),
+        animationSpec = if (MotionMode.enhanced) MotionTokens.fadeIn(0.001f) else tween(durationMillis = 300),
         label = "recentCoverFadeIn",
     )
     Box(
         modifier
+            .pressSquish(scale = PressSquishDefaults.CardScale)
             .aspectRatio(1f)
             .clip(AppComponentShape)
             .background(game.engine.coverColor())
@@ -755,7 +820,12 @@ private fun RecentGameCard(
                 bitmap = bmp,
                 contentDescription = game.title,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .motionBlurAlpha(
+                        alpha = { coverAlpha },
+                        radius = { (1f - coverAlpha) * 8.dp.toPx() },
+                    ),
             )
         } else {
             Text(

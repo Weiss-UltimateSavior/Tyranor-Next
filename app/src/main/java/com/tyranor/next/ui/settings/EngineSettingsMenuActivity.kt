@@ -29,6 +29,10 @@ import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
@@ -56,8 +60,9 @@ internal fun EngineSettingsMenuScreen() {
     val ctx = LocalContext.current
 
     MiuixSettingsTheme {
+      ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -79,9 +84,9 @@ internal fun EngineSettingsMenuScreen() {
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                EngineSettingsKind.entries.forEach { kind ->
+                EngineSettingsKind.entries.forEachIndexed { kindIndex, kind ->
                     item {
-                        MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                        MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(kindIndex).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                             Column(Modifier.padding(vertical = 4.dp)) {
                                 val title = engineSettingsKindTitle(kind)
                                 ArrowPreference(
@@ -104,6 +109,7 @@ internal fun EngineSettingsMenuScreen() {
                 }
             }
         }
+      }
     }
 }
 

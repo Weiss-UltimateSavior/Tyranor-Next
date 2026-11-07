@@ -9,12 +9,15 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
-import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.GlassBackground
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.theme.WithoutPressIndication
+import com.tyranor.next.ui.common.motion.PageTransitions
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.ProvideMotionEnvironment
+import com.tyranor.next.ui.common.motion.pageTransitionScrim
 
 /**
  * 二级页面统一宿主（P1-4）：收敛各 Activity 重复的
@@ -25,8 +28,12 @@ import com.tyranor.next.theme.WithoutPressIndication
  */
 abstract class AppScreenActivity : ComponentActivity() {
 
+    /** 在正文创建前同步动效档位与系统栏外观，使无效入参导致的提前返回也使用正确转场。 */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 子类可能因参数无效而在 setContent 前 finish；返回动画同样必须使用持久化档位。
+        AppSettingsStore.initMotionEnhanced(this)
+        MotionMode.sync(AppSettingsStore.motionEnhancedState.value)
         observeSaveSyncFeedback()
         // 深色背景（深色外观 / 复古玻璃 / 白雾玻璃）系统栏恒用浅色图标
         applySystemBarStyle(
@@ -45,10 +52,11 @@ abstract class AppScreenActivity : ComponentActivity() {
         }
     }
 
-    @Suppress("DEPRECATION")
+    /** 结束页面后应用当前档位的返回转场，与统一启动入口的进场配对。 */
     override fun finish() {
         super.finish()
-        overridePendingTransition(R.anim.page_slide_in_from_top, R.anim.page_slide_out_to_bottom)
+        // 返回：当前页向右整页退出，上一级从左侧回到原位（侧推的倒放）
+        PageTransitions.applyPop(this)
     }
 }
 
@@ -80,9 +88,12 @@ fun AppScreenScaffold(
 ) {
     ProvideAppLocale {
         TyranorNextTheme {
-            GlassBackground(modifier = modifier) {
-                WithoutPressIndication {
-                    content()
+            ProvideMotionEnvironment {
+                // pageTransitionScrim：推入下一页时本页随转场压暗，返回时渐亮（静止时透明）
+                GlassBackground(modifier = modifier.pageTransitionScrim()) {
+                    WithoutPressIndication {
+                        content()
+                    }
                 }
             }
         }

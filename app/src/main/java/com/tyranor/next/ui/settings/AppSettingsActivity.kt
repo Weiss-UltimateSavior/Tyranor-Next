@@ -53,6 +53,15 @@ import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.ProvideEntrance
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.bounceOnChange
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.AppearanceStyle
 import com.tyranor.next.core.settings.HomeWebUrls
@@ -69,11 +78,11 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.ColorPicker
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.basic.Slider
+import com.tyranor.next.ui.common.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 应用设置页 Activity：入口见设置页「应用设置」项。 */
@@ -123,8 +132,9 @@ internal fun AppSettingsScreen() {
     }
 
     MiuixSettingsTheme {
+      ProvideEntrance {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = ComposeColor.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -144,7 +154,7 @@ internal fun AppSettingsScreen() {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(0).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             var language by remember { mutableStateOf(AppSettingsStore.getLanguage(ctx)) }
                             val languageModes = listOf(
@@ -170,7 +180,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(1).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_color_wheel),
@@ -178,17 +188,20 @@ internal fun AppSettingsScreen() {
                                     Box(
                                         modifier = Modifier
                                             .padding(end = 6.dp)
+                                            .bounceOnChange(AppThemeColors.primary)
                                             .size(24.dp)
                                             .clip(CircleShape)
                                             .background(AppThemeColors.primary),
                                     )
                                 },
                                 endActions = {
-                                    Text(
-                                        AppThemeColors.primary.toHex(),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+                                    BlurCrossfade(targetState = AppThemeColors.primary.toHex()) { hex ->
+                                        Text(
+                                            hex,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 },
                                 onClick = { showColorPicker = true },
                             )
@@ -196,7 +209,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(2).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 外观主题：默认 / 复古玻璃 / 白雾玻璃（切换即时全 App 生效并持久化）
                             val appearanceStyles = AppearanceStyle.entries
@@ -223,11 +236,24 @@ internal fun AppSettingsScreen() {
                                     }
                                 },
                             )
+                            // 界面动效：增强（新动效，默认）/ 普通（原版动效），切换即时全 App 生效并持久化
+                            val motionEnhanced by AppSettingsStore.motionEnhancedState.collectAsState()
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.settings_motion_mode),
+                                items = listOf(
+                                    stringResource(R.string.settings_motion_enhanced),
+                                    stringResource(R.string.settings_motion_normal),
+                                ),
+                                selectedIndex = if (motionEnhanced) 0 else 1,
+                                onSelectedIndexChange = { index ->
+                                    AppSettingsStore.setMotionEnhanced(ctx, index == 0)
+                                },
+                            )
                         }
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.staggeredEntrance(3).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 应用圆角调整：默认外观与复古玻璃共用同一数值；拖动即时生效并逐档落盘
                             val radiusSteps = AppSettingsStore.APP_CORNER_RADIUS_STEPS
@@ -277,6 +303,7 @@ internal fun AppSettingsScreen() {
                             val modeIndex = themeModes.indexOfFirst { it.first == themeMode }
                                 .let { if (it < 0) 1 else it } // 未知存量值回退浅色
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.settings_theme_mode),
                                 summary = if (fixedPalette) stringResource(R.string.settings_disabled_in_glass_style) else null,
                                 items = themeModes.map { it.second },
@@ -294,7 +321,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(4).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 导航栏样式：经典 MD / 液态玻璃 · 经典 / 液态玻璃 · 透镜 / 悬浮按钮。
                             // 未显式选择时使用液态玻璃 · 经典；玻璃系外观保留经典 MD 的悬浮玻璃条。
@@ -346,7 +373,7 @@ internal fun AppSettingsScreen() {
                                 },
                             )
                             // 悬浮按钮支持长按拖动；拖动后可用此项一键回右下角
-                            if (navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON) {
+                            ExpandVisibility(visible = navStyle == AppSettingsStore.NAV_STYLE_FLOATING_BUTTON) {
                                 ArrowPreference(
                                     title = stringResource(R.string.settings_nav_bar_reset_position),
                                     onClick = {
@@ -358,7 +385,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(5).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 首页样式：默认（最近打开/快捷启动）/ 网页（内置 WebView 展示所选网址）
                             val homeStyles = listOf(
@@ -395,7 +422,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(6).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 平板侧边栏：开启时平板/大窗口下导航移到侧边，关闭则保持底部导航
                             SwitchPreference(
@@ -410,7 +437,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(7).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_engine_tabs),
@@ -423,7 +450,7 @@ internal fun AppSettingsScreen() {
                     }
                 }
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.pressSquishGroup().staggeredEntrance(8).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             // 游戏页卡片风格：网格 / 列表（封面流）
                             val cardStyleModes = listOf(
@@ -464,6 +491,7 @@ internal fun AppSettingsScreen() {
                 item { BottomInsetSpacer() }
             }
         }
+      }
     }
 
     if (showColorPicker) {
@@ -597,7 +625,7 @@ private fun HomeWebCustomUrlDialog(
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.Top,
             ) {
                 // 弹窗正文内的输入框禁用点击反馈（清空按钮走 LocalIndication）；
                 // 语义图标用「重命名/编辑」，不用默认搜索图标
@@ -616,12 +644,13 @@ private fun HomeWebCustomUrlDialog(
                         textStyle = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (invalid) {
+                // 提示条展开/收起（原 spacedBy(6.dp) 间距并入提示自身的顶部内边距）
+                ExpandVisibility(visible = invalid) {
                     Text(
                         stringResource(R.string.settings_home_web_url_invalid),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 10.dp, bottom = 4.dp),
                     )
                 }
             }
@@ -657,7 +686,7 @@ private fun ColorPickerDialog(
                     color = pickerColor,
                     onColorChanged = { pickerColor = it },
                 )
-                if (invalid) {
+                ExpandVisibility(visible = invalid) {
                     Text(
                         stringResource(R.string.settings_invalid_theme_color),
                         style = MaterialTheme.typography.bodyMedium,

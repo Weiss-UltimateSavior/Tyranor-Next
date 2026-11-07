@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 侧推节奏：拟合 0.42s 临界阻尼弹簧（与 MotionSprings.PushEasing 数值一致） -->
+<pathInterpolator xmlns:android="http://schemas.android.com/apk/res/android"
+    android:controlX1="0.25"
+    android:controlY1="0.24"
+    android:controlX2="0.13"
+    android:controlY2="1.0" />

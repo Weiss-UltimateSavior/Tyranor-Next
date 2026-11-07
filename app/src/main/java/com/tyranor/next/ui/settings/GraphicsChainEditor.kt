@@ -1,5 +1,7 @@
 package com.tyranor.next.ui.settings
 
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.ExpandVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +40,10 @@ import java.util.UUID
 /** Transient keys distinguish duplicate nodes without adding UI identity to persisted settings. */
 private data class EditorNode(val key: String, val node: GraphicsNode)
 
+/**
+ * 编辑滤镜链的顺序与节点参数；临时身份区分重复滤镜，不写入持久化设置。
+ * 长按拖拽先预览顺序，松手提交，取消恢复原顺序；拖拽期间禁用相互冲突的节点操作。
+ */
 @Composable
 internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, onChange: (List<GraphicsNode>) -> Unit) {
     val labels = graphicsFilterOptions().toMap()
@@ -52,7 +58,7 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
     val scope = rememberCoroutineScope()
     fun commit(next: List<EditorNode>) { currentOnChange(next.map { it.node }) }
     Column {
-        if (chain.isEmpty()) {
+        ExpandVisibility(chain.isEmpty()) {
             Text(stringResource(R.string.graphics_chain_empty), style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
         }
@@ -182,11 +188,13 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
     }
 }
 
+/** 节点工具按钮统一承载禁用态和无涟漪点击，按压形变与静止描边分别遵循动效和外观设置。 */
 @Composable
 private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick: () -> Unit) {
     val description = stringResource(label)
     Box(
         modifier = Modifier
+            .pressSquish(enabled = enabled)
             .size(40.dp)
             .clip(AppComponentShape)
             // 默认风格描边取动态常量 TextColor（符合 AGENTS 规范，使用 Color.kt 动态常量）；

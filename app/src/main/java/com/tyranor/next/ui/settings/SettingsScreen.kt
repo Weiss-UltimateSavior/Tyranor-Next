@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
@@ -34,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
@@ -83,6 +86,17 @@ import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.TopBarIcon
+import com.tyranor.next.ui.common.motion.BlurCrossfade
+import com.tyranor.next.ui.common.motion.BlurVisibility
+import com.tyranor.next.ui.common.motion.ExpandVisibility
+import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.motion.MotionTokens
+import com.tyranor.next.ui.common.motion.PressSquishDefaults
+import com.tyranor.next.ui.common.motion.pressSquish
+import com.tyranor.next.ui.common.motion.pressSquishGroup
+import com.tyranor.next.ui.common.motion.animateContentSizeSpring
+import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
+import com.tyranor.next.ui.common.motion.staggeredEntrance
 import com.tyranor.next.ui.common.formatUiDecimal
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -101,13 +115,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
-import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
+import com.tyranor.next.ui.common.MotionLinearProgressIndicator
 import top.yukonga.miuix.kmp.basic.Scaffold as MiuixScaffold
-import top.yukonga.miuix.kmp.basic.Slider
+import com.tyranor.next.ui.common.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import com.tyranor.next.ui.common.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
+import com.tyranor.next.ui.common.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /** 更新弹窗的下载阶段；null 表示停留在“发现新版本”阶段，四个阶段复用同一个 AppAlertDialog。 */
@@ -265,7 +279,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+                    MiuixCard(modifier = Modifier.staggeredEntrance(0).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_add_game_dir),
@@ -307,6 +321,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                             val sortIndex = gameSortModes.indexOfFirst { it.first == gameSort }
                                 .let { if (it < 0) 0 else it }
                             OverlayDropdownPreference(
+                                modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
                                 title = stringResource(R.string.settings_game_sort),
                                 items = gameSortModes.map { it.second },
                                 selectedIndex = sortIndex,
@@ -323,6 +338,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 item {
                     // 工具入口：引擎设置；输入与手柄、解包 / 封包入口已迁至侧边栏「妙妙工具」面板
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(1),
                         title = stringResource(R.string.settings_engine_settings),
                         iconRes = R.drawable.ic_engine_manage,
                         onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
@@ -330,6 +346,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
                 item {
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(2),
                         title = stringResource(R.string.settings_app_title),
                         iconRes = R.drawable.ic_settings_app,
                         onClick = { startActivityWithPageTransition(ctx, AppSettingsActivity.createIntent(ctx)) },
@@ -337,6 +354,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
                 item {
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(3),
                         title = stringResource(R.string.settings_cover_scraper),
                         iconRes = R.drawable.ic_game_cover,
                         onClick = { startActivityWithPageTransition(ctx, CoverScraperSettingsActivity.createIntent(ctx)) },
@@ -344,6 +362,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
                 item {
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(4),
                         title = if (checkingUpdate) {
                             stringResource(R.string.settings_update_checking)
                         } else {
@@ -356,6 +375,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 }
                 item {
                     SettingsEntryCard(
+                        modifier = Modifier.staggeredEntrance(5),
                         title = stringResource(R.string.settings_join_group),
                         iconRes = R.drawable.ic_settings_group,
                         onClick = { showGroupDialog = true },
@@ -371,7 +391,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
             onDismissRequest = { showScanDirs = false },
             title = { Text(stringResource(R.string.settings_game_dirs_title), style = MaterialTheme.typography.titleMedium) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(modifier = Modifier.animateContentSizeSpring(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (scanDirs.isEmpty()) {
                         Text(
                             stringResource(R.string.settings_no_game_dirs),
@@ -551,19 +571,22 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
         AppAlertDialog(
             onDismissRequest = { closeUpdateDialog() },
             title = {
-                Text(
-                    stringResource(
-                        when (downloadPhase) {
-                            is UpdateDownloadPhase.Failed -> R.string.update_download_failed_title
-                            is UpdateDownloadPhase.Completed -> R.string.update_download_completed_title
-                            else -> R.string.update_found_title
-                        },
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
+                val titleRes = when (downloadPhase) {
+                    is UpdateDownloadPhase.Failed -> R.string.update_download_failed_title
+                    is UpdateDownloadPhase.Completed -> R.string.update_download_completed_title
+                    else -> R.string.update_found_title
+                }
+                BlurCrossfade(targetState = titleRes) { res ->
+                    Text(
+                        stringResource(res),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             },
             text = {
+              // 阶段切换（版本列表 / 下载中 / 完成 / 失败）模糊替换；下载进度只刷新内容不触发切换
+              BlurCrossfade(targetState = downloadPhase, contentKey = { it?.let { p -> p::class } }) { downloadPhase ->
                 when (downloadPhase) {
                     null -> {
                         // 统一条目组件列出最新三个版本，点击进入下载弹窗
@@ -620,7 +643,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             // miuix 风格进度条：progress 为 null 时展示不定态
-                            LinearProgressIndicator(
+                            MotionLinearProgressIndicator(
                                 progress = fraction,
                                 modifier = Modifier.fillMaxWidth(),
                             )
@@ -651,6 +674,7 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                         )
                     }
                 }
+              }
             },
             dismissButton = {
                 when (downloadPhase) {
@@ -697,6 +721,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * 加载指定引擎的全局设置到页面草稿，控件只更新草稿，顶栏保存时统一写入各设置门面。
+ * 内核专属内容和图形能力按所选引擎展示，页面拖动时结束尚未完成的错峰入场。
+ */
 @Composable
 internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     if (kind == EngineSettingsKind.ETHORNELL) {
@@ -906,7 +934,7 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
 
     MiuixSettingsTheme {
         MiuixScaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().skipEntranceOnDrag(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0.dp),
             topBar = {
@@ -1022,7 +1050,7 @@ private fun SettingsEntryCard(
     onClick: () -> Unit,
 ) {
     MiuixCard(
-        modifier = modifier.fillMaxWidth().glassBorder(),
+        modifier = modifier.pressSquishGroup().fillMaxWidth().glassBorder(),
         cornerRadius = AppComponentCornerRadius,
     ) {
         Column(Modifier.padding(vertical = 4.dp)) {
@@ -1035,6 +1063,7 @@ private fun SettingsEntryCard(
     }
 }
 
+/** 设置入口图标与独立通知红点；红点显隐执行内容转场，不改变图标的布局尺寸。 */
 @Composable
 private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false) {
     Box(modifier = Modifier.padding(end = 6.dp).size(24.dp)) {
@@ -1045,15 +1074,15 @@ private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = fal
             colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
             modifier = Modifier.fillMaxSize(),
         )
-        if (showBadge) {
-            // 红点提醒：固定亮红，不随主题色变化
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 5.dp, y = (-5).dp)
-                    .size(8.dp)
-                    .background(NoticeDotRed, CircleShape),
-            )
+        // 红点提醒：固定亮红，不随主题色变化
+        BlurVisibility(
+            visible = showBadge,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = 5.dp, y = (-5).dp)
+                .size(8.dp),
+        ) {
+            Box(Modifier.fillMaxSize().background(NoticeDotRed, CircleShape))
         }
     }
 }
@@ -1172,7 +1201,25 @@ private fun LazyListPlaceholder(
         contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (kind == EngineSettingsKind.KRKR) item {
+        // 卡片依次弹入；带 key 的卡片（随内核显隐）出现 / 消失时平滑过渡
+        var entranceIndex = 0
+        /** 按当前列表顺序分配入场序号；有稳定 key 的动态卡片才启用列表增删和位移动画。 */
+        fun LazyListScope.cardItem(key: Any? = null, content: @Composable () -> Unit) {
+            val index = entranceIndex++
+            item(key = key) {
+                val move = if (key != null && MotionMode.enhanced) {
+                    Modifier.animateItem(
+                        fadeInSpec = MotionTokens.fadeIn(),
+                        placementSpec = MotionTokens.layout(IntOffset.VisibilityThreshold),
+                        fadeOutSpec = MotionTokens.fadeOut(),
+                    )
+                } else {
+                    Modifier
+                }
+                Box(move.staggeredEntrance(index)) { content() }
+            }
+        }
+        if (kind == EngineSettingsKind.KRKR) cardItem(key = "krkr") {
             EngineCard("KRKR") {
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = krScoped, onCheckedChange = onKrScoped)
                 SwitchPreference(
@@ -1183,17 +1230,19 @@ private fun LazyListPlaceholder(
                 )
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), krSelectMap, krVersion, onKrVersion)
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), krKernelMap, krKernel, onKrKernel)
-                if (!isSdl3) {
+                ExpandVisibility(visible = !isSdl3) {
                     DropdownRow(stringResource(R.string.engine_settings_krkr_patch_overlay), krPatchOverlayMap, krPatchOverlayMode, onKrPatchOverlayMode)
                 }
             }
         }
 
-        if (kind == EngineSettingsKind.KRKR) item {
-            EngineCard(stringResource(R.string.engine_settings_render)) {
-                if (!isSdl3) {
-                    SwitchPreference(title = stringResource(R.string.engine_settings_opengl_accurate_render), checked = krAccurate == "1", onCheckedChange = { b -> onKrAccurate(if (b) "1" else "0") })
-                    SliderRow(stringResource(R.string.engine_settings_memory_usage), krMemMap, krMem, onSelect = onKrMem)
+        if (kind == EngineSettingsKind.KRKR) cardItem(key = "krkr_render") {
+            EngineCard(stringResource(R.string.engine_settings_render), pressGroup = false) {
+                ExpandVisibility(visible = !isSdl3) {
+                    Column {
+                        SwitchPreference(title = stringResource(R.string.engine_settings_opengl_accurate_render), checked = krAccurate == "1", onCheckedChange = { b -> onKrAccurate(if (b) "1" else "0") })
+                        SliderRow(stringResource(R.string.engine_settings_memory_usage), krMemMap, krMem, onSelect = onKrMem)
+                    }
                 }
                 val rendererOptions = if (isSdl3) krSdl3RendererMap else krRendererMap
                 val selectedRenderer = if (isSdl3) {
@@ -1204,21 +1253,25 @@ private fun LazyListPlaceholder(
                 DropdownRow(stringResource(R.string.engine_settings_renderer), rendererOptions, selectedRenderer) {
                     onKrRenderer(if (!isSdl3 && it == "default") "" else it)
                 }
-                if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_SOFTWARE)) {
-                    SliderRow(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, krDrawThread, onSelect = onKrDrawThread)
-                    DropdownRow(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, krSwCompress, onKrSwCompress)
+                ExpandVisibility(visible = !isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_SOFTWARE)) {
+                    Column {
+                        SliderRow(stringResource(R.string.engine_settings_software_draw_threads), krThreadMap, krDrawThread, onSelect = onKrDrawThread)
+                        DropdownRow(stringResource(R.string.engine_settings_software_texture_compression), krSwCompressMap, krSwCompress, onKrSwCompress)
+                    }
                 }
-                if (!isSdl3 && !krIs134) {
+                ExpandVisibility(visible = !isSdl3 && !krIs134) {
                     SliderRow(stringResource(R.string.engine_settings_fps_limit), krFpsMap, krFps, onSelect = onKrFps)
                 }
-                if (!isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_OPENGL)) {
-                    DropdownRow(stringResource(R.string.engine_settings_opengl_texture_compression), krOglCompressMap, krOglCompress, onKrOglCompress)
-                    SliderRow(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, krTexsize, onSelect = onKrTexsize)
+                ExpandVisibility(visible = !isSdl3 && (krRenderer == "" || krRenderer == EngineSettingsStore.RENDERER_OPENGL)) {
+                    Column {
+                        DropdownRow(stringResource(R.string.engine_settings_opengl_texture_compression), krOglCompressMap, krOglCompress, onKrOglCompress)
+                        SliderRow(stringResource(R.string.engine_settings_max_texture_size), krTexsizeMap, krTexsize, onSelect = onKrTexsize)
+                    }
                 }
             }
         }
 
-        if (kind == EngineSettingsKind.KRKR && !isSdl3) item {
+        if (kind == EngineSettingsKind.KRKR && !isSdl3) cardItem(key = "krkr_font") {
             EngineCard(stringResource(R.string.engine_settings_font)) {
                 FontPreference(
                     label = stringResource(R.string.engine_settings_default_font),
@@ -1237,8 +1290,8 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.KRKR && !isSdl3) item {
-            EngineCard(stringResource(R.string.engine_settings_operation)) {
+        if (kind == EngineSettingsKind.KRKR && !isSdl3) cardItem(key = "krkr_operation") {
+            EngineCard(stringResource(R.string.engine_settings_operation), pressGroup = false) {
                 // 仅 kirikiri2 内核（libgame.so）读取这两项偏好，krkrsdl3 走命令行参数不生效
                 // 虚拟鼠标 1..150%（50% 即原版 Ty 的 0.5），菜单不透明度 1..100%
                 SliderRow(stringResource(R.string.engine_settings_vcursor_scale), krkrVcursorOptions(), krVCursorScale, discrete = false, onSelect = onKrVCursorScale)
@@ -1246,14 +1299,14 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.ONS) item {
-            EngineCard("ONS") {
+        if (kind == EngineSettingsKind.ONS) cardItem {
+            EngineCard("ONS", pressGroup = false) {
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = ons.scopedSaveDir, onCheckedChange = { b -> onOns(ons.copy(scopedSaveDir = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_fullscreen_stretch), checked = ons.stretchFull, onCheckedChange = { b -> onOns(ons.copy(stretchFull = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_ignore_cutout), checked = ons.ignoreCutout, onCheckedChange = { b -> onOns(ons.copy(ignoreCutout = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_disable_video), checked = ons.disableVideo, onCheckedChange = { b -> onOns(ons.copy(disableVideo = b)) })
                 SwitchPreference(title = stringResource(R.string.engine_settings_sharpness), checked = ons.sharpness, onCheckedChange = { b -> onOns(ons.copy(sharpness = b)) })
-                if (ons.sharpness) {
+                ExpandVisibility(visible = ons.sharpness) {
                     SliderRow(stringResource(R.string.engine_settings_sharpness_strength), onsSharpnessMap, ons.sharpnessValue) {
                         onOns(ons.copy(sharpnessValue = it))
                     }
@@ -1264,31 +1317,38 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.ARTEMIS) item {
+        if (kind == EngineSettingsKind.ARTEMIS) cardItem {
             EngineCard("Artemis") {
                 DropdownRow(stringResource(R.string.engine_settings_engine_kernel), artKernelSelect, artKernel, onArtKernel)
                 SwitchPreference(title = stringResource(R.string.engine_settings_rotate_screen), checked = artRotate, onCheckedChange = onArtRotate)
-                if (artKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL) {
-                    DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
-                    DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)
-                    DropdownRow(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, artResolution, onArtResolution)
-                    DropdownRow(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, artSideCut, onArtSideCut)
-                    DropdownRow(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, artSurfaceCache, onArtSurfaceCache)
-                    DropdownRow(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, artFontCache, onArtFontCache)
-                    DropdownRow(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, artPowerSaving, onArtPowerSaving)
-                } else {
-                    // 自研内核直接读游戏包内配置，官方专属项（版本/补丁/显示注入）不适用
-                    Text(
-                        stringResource(R.string.engine_settings_artemis_clean_hint),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
+                BlurCrossfade(
+                    targetState = artKernel == EngineSettingsStore.ART_KERNEL_OFFICIAL,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { official ->
+                    if (official) {
+                        Column {
+                            DropdownRow(stringResource(R.string.engine_settings_engine_version), artVersionMap, artVersion, onArtVersion)
+                            DropdownRow(stringResource(R.string.engine_settings_auto_patch), artPatchMap, artPatch, onArtPatch)
+                            DropdownRow(stringResource(R.string.engine_settings_artemis_resolution), artResolutionMap, artResolution, onArtResolution)
+                            DropdownRow(stringResource(R.string.engine_settings_artemis_side_cut), artToggleMap, artSideCut, onArtSideCut)
+                            DropdownRow(stringResource(R.string.engine_settings_artemis_surface_cache), artSurfaceCacheMap, artSurfaceCache, onArtSurfaceCache)
+                            DropdownRow(stringResource(R.string.engine_settings_artemis_font_cache), artFontCacheMap, artFontCache, onArtFontCache)
+                            DropdownRow(stringResource(R.string.engine_settings_artemis_power_saving), artToggleMap, artPowerSaving, onArtPowerSaving)
+                        }
+                    } else {
+                        // 自研内核直接读游戏包内配置，官方专属项（版本/补丁/显示注入）不适用
+                        Text(
+                            stringResource(R.string.engine_settings_artemis_clean_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
+                    }
                 }
             }
         }
 
-        if (kind == EngineSettingsKind.TYRANO) item {
+        if (kind == EngineSettingsKind.TYRANO) cardItem {
             EngineCard("Tyrano") {
                 // RPG Maker Web 与 Tyrano 共用同一套 WebView 宿主开关，避免同类引擎重复配置。
                 SwitchPreference(title = stringResource(R.string.engine_settings_external_network_resources), checked = tyExternal, onCheckedChange = onTyExternal)
@@ -1306,7 +1366,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.RPG_MAKER) item {
+        if (kind == EngineSettingsKind.RPG_MAKER) cardItem {
             EngineCard("RPG Maker MV/MZ") {
                 SwitchPreference(title = stringResource(R.string.engine_settings_external_network_resources), checked = tyExternal, onCheckedChange = onTyExternal)
                 SwitchPreference(title = stringResource(R.string.engine_settings_scoped_save_dir), checked = tyScoped, onCheckedChange = onTyScoped)
@@ -1318,11 +1378,11 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.RPG_MAKER) item {
+        if (kind == EngineSettingsKind.RPG_MAKER) cardItem {
             RpgMakerRgssSettingsCard(settings = rpg, onSettings = onRpg)
         }
 
-        if (kind == EngineSettingsKind.RENPY) item {
+        if (kind == EngineSettingsKind.RENPY) cardItem {
             EngineCard("Ren'Py") {
                 DropdownRow(stringResource(R.string.engine_settings_engine_version), renpyVersionMap, renpyVersion, onRenpyVersion)
                 Text(
@@ -1334,11 +1394,11 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.RENPY) item {
+        if (kind == EngineSettingsKind.RENPY) cardItem {
             RenPySettingsCard(settings = renpy, onSettings = onRenpy)
         }
 
-        if (kind == EngineSettingsKind.SIGLUS) item {
+        if (kind == EngineSettingsKind.SIGLUS) cardItem {
             EngineCard("Siglus") {
                 DropdownRow(
                     stringResource(R.string.engine_settings_siglus_language_title),
@@ -1355,7 +1415,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.FRAMEBUFFER) item {
+        if (kind == EngineSettingsKind.FRAMEBUFFER) cardItem {
             EngineCard("RealLive / AVG32 / UK2") {
                 DropdownRow(
                     stringResource(R.string.engine_settings_fb_nls_title),
@@ -1372,7 +1432,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.FVP) item {
+        if (kind == EngineSettingsKind.FVP) cardItem {
             EngineCard("FVP") {
                 DropdownRow(
                     stringResource(R.string.engine_settings_fvp_nls_title),
@@ -1414,7 +1474,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.XSYS35) item {
+        if (kind == EngineSettingsKind.XSYS35) cardItem {
             EngineCard(stringResource(R.string.engine_settings_xsys35_title)) {
                 DropdownRow(
                     stringResource(R.string.engine_settings_xsys35_renderer_title),
@@ -1446,7 +1506,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.XSYS4) item {
+        if (kind == EngineSettingsKind.XSYS4) cardItem {
             EngineCard(stringResource(R.string.engine_settings_xsys4_title)) {
                 SwitchPreference(
                     title = stringResource(R.string.engine_settings_scoped_save_dir),
@@ -1506,7 +1566,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.PPSSPP) item {
+        if (kind == EngineSettingsKind.PPSSPP) cardItem {
             EngineCard("PPSSPP") {
                 DropdownRow(
                     stringResource(R.string.engine_settings_ppsspp_version_title),
@@ -1523,7 +1583,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind == EngineSettingsKind.WINLATOR) item {
+        if (kind == EngineSettingsKind.WINLATOR) cardItem {
             EngineCard("Winlator") {
                 WinlatorValueRow(
                     label = stringResource(R.string.engine_settings_winlator_container_id_title),
@@ -1586,7 +1646,7 @@ private fun LazyListPlaceholder(
             }
         }
 
-        if (kind.graphicsFamily() != null) item { graphicsContent() }
+        if (kind.graphicsFamily() != null) cardItem { graphicsContent() }
         item { BottomInsetSpacer() }
     }
 
@@ -1686,9 +1746,13 @@ private fun WinlatorValueDialog(
 }
 
 
+/**
+ * 统一引擎设置分组的标题、间距与材质；含独立拖拽控件的分组可关闭整卡按压传递。
+ * [pressGroup] 仅控制按压反馈，不改变静止布局或内部设置的保存方式。
+ */
 @Composable
-internal fun EngineCard(header: String, content: @Composable () -> Unit) {
-    MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
+internal fun EngineCard(header: String, pressGroup: Boolean = true, content: @Composable () -> Unit) {
+    MiuixCard(modifier = Modifier.pressSquishGroup(enabled = pressGroup).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
         Column(Modifier.padding(vertical = 6.dp)) {
             Text(
                 header,
@@ -1712,6 +1776,7 @@ internal fun DropdownRow(
     val labels = options.map { it.second }
     val index = keys.indexOf(current).takeIf { it >= 0 } ?: 0
     OverlayDropdownPreference(
+        modifier = Modifier.pressSquish(scale = PressSquishDefaults.RowScale),
         title = label,
         items = labels,
         selectedIndex = index,
