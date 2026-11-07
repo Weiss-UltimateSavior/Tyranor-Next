@@ -27,6 +27,11 @@ iOS版本计划中...
   <img src="screenshots/index3.png" alt="Tyranor Next" width="900" />
 </p>
 
+### 多种个性化设置（部分展示）
+<p align="center">
+  <img src="screenshots/index4.png" alt="Tyranor Next" width="900" />
+</p>
+
 ## 感谢各位贡献者们！一起成为光吧！
 
 <a href="https://github.com/Weiss-UltimateSavior/Tyranor-Next/graphs/contributors">
