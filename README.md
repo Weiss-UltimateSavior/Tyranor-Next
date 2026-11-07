@@ -32,6 +32,11 @@ iOS版本计划中...
   <img src="screenshots/index4.png" alt="Tyranor Next" width="900" />
 </p>
 
+### 更多拓展功能（部分展示，第三方插件支持见 [docs/第三方APK运行时模块接入指南.md](docs/第三方APK运行时模块接入指南.md)）
+<p align="center">
+  <img src="screenshots/index5.png" alt="Tyranor Next" width="900" />
+</p>
+
 ## 感谢各位贡献者们！一起成为光吧！
 
 <a href="https://github.com/Weiss-UltimateSavior/Tyranor-Next/graphs/contributors">
