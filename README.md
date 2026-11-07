@@ -2,7 +2,7 @@
   <img src="screenshots/index1.png" alt="Tyranor Next" width="900" />
 </p>
 
-基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
+基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
 mac原生版本如下：
 
@@ -74,10 +74,6 @@ iOS版本计划中...
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
 
-## 首次使用
-
-新安装或清除数据后首次打开，会在真实主界面上叠加七步「快速入门」教练层，用连接线和提示气泡讲解首页、游戏页的添加/搜索/封面/扫描、引擎与设置入口，不会创建独立的引导页面。点击「跳过引导」或「开始使用」后移除提示并保留当前主界面状态，之后不再自动显示；已有设置或游戏库的升级用户默认跳过。新用户在完成引导后请求通知权限，升级用户跳过引导后沿用既有通知权限请求策略。
-
 ## 参与贡献
 
 欢迎参与项目开发与维护！
@@ -92,21 +88,6 @@ iOS版本计划中...
 
 开发与维护文档：[仓库规范](AGENTS.md) · [架构说明](ARCHITECTURE.md) · [功能规格与验收清单](SPEC.md) · [领域术语](CONTEXT.md) · [变更记录](CHANGELOG.md)。专题方案与 `.archify/` 图表保留其生成时的上下文；当前实现以源码及上述架构/规格说明为准。
 
-
-### 引擎集成设计
-
-- 引擎原生插件（`kirikiroid2` / `ons` / `artemis` 的 `.so`）以 assets 形式随 APK 打包（`nativeplugins/`），首次启动由 `NativePluginManager` 自动解压安装到应用私有目录
-- 共享 Native 插件 `.so` 的源头位于 `engine/src/main/nativeplugins`；app 侧仅维护插件 `manifest.json` 和 app-only 插件。构建时由 Gradle 合并打包成 `app/build/generated/assets/nativeplugins/*.zip.xz`（未压缩 zip 容器 + LZMA2，同一引擎家族的多个近重复 `.so` 共享字典）
-- 大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 与 `libSDL2x.so`）不进 APK 的 `lib/`：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时由 `NativeRuntimePack` 解压到应用私有目录，JNI 桥按绝对路径加载
-- 共享 RPG Maker 注入脚本源头位于 `engine/src/main/assets`；app 侧只保留应用专属注入脚本，构建时由 Gradle 同步生成到 app assets，避免两边手工维护重复文件
-- `app` 模块通过 `core/game/launch/EngineLauncher` 将扫描结果映射到对应引擎 Activity 启动（SAF URI → 真实路径转换）
-- Ren'Py、RPG Maker RGSS、Ruffle 等外置 APK 引擎模块由 `core/engine/external` 统一注册、检测安装状态并按 intent 协议拉起；主 App 不维护手动启用开关，模块安装即视为可用。Ruffle 使用 `launchEntryIsFile` 的文件型入口，启动前把 SWF 文件记录解析为父目录再下发
-- 第三方 APK 运行时模块由 `core/engine/runtime` 按 `com.tyranor.runtime.` 前缀与 `LAUNCH` action 动态发现，在侧边栏「妙妙工具 → 引擎模块管理」默认关闭、按模块启用；扫描仅使用模块 `res/raw/tyranor_runtime.json` 声明的特征，启动经显式组件只传入游戏文件夹路径，模块自管运行、设置与存档
-- PSP / Nintendo Switch 由 `core/engine/external` 的 `ExternalEmulatorRegistry` / `ExternalEmulatorLauncher` 跳转外置 PPSSPP / Eden：扫描识别 ROM 后逐条入库（一 ROM 一条），运行时在目录解析前分流、按显式组件与读取授权启动；引擎页「外置跳转支持」项展示安装状态并可跳下载页，Manifest `<queries>` 已声明对应包名
-- Tyrano 运行环境内置本地 HTTP 服务器、Asar 归档解析与 JS 钩子脚本（`__tyrano__.js` 等），无需外部依赖即可运行网页式脚本游戏
-- FVP（rfvp）宿主为 Java `SurfaceView` + `Choreographer` 主循环驱动 Rust 引擎（`librfvp.so` + 自研桥接库），随 APK 打包；支持 `*.hcb` 原版与 `*.bch` 汉化脚本，文本编码（Shift-JIS/GBK/UTF-8）、系统字体回退与文本 HiDPI 可在引擎设置中按全局/单游戏调整
-- RealLive / AVG32 / UK2 由 `game_launcher` 运行库承载（与 Siglus 同一 `libsiglus.so`，由 `libgames_bridge.so` dlopen），宿主 `FramebufferGameActivity`（`:fbgames` 进程）每帧驱动 `game_fb_*` 帧缓冲：单指=左键、双指点按=右键、双指上下滑=滚轮、Back=右键，文本编码（自动/Shift-JIS/GBK/Big5/UTF-8/韩语）可按全局/单游戏调整
-- 原生库仅提供 `arm64-v8a` 架构
 
 ## 可视化文档
 
