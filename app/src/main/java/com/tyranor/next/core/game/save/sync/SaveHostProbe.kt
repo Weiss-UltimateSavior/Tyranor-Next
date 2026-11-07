@@ -38,6 +38,16 @@ internal sealed interface SaveHostIdentity {
     data class Live(val name: String) : SaveHostIdentity
 }
 
+/**
+ * A persisted host record whose `/proc/<pid>/cmdline` cannot be read is probed with
+ * `kill(pid, 0)`. `ESRCH` proves the process is gone; `EPERM`/`EACCES` mean this app cannot
+ * signal a still-existing PID. Save host processes always share this app's UID and security
+ * domain, so an unsignalable PID cannot be the recorded host either. Only an indeterminate
+ * probe stays Unknown.
+ */
+internal fun classifyUnreadableHostProcess(processGone: Boolean, notSignalable: Boolean): SaveHostIdentity =
+    if (processGone || notSignalable) SaveHostIdentity.Dead else SaveHostIdentity.Unknown
+
 /** ActivityManager and /proc can independently be incomplete on OEM Android builds. */
 internal interface SaveHostProbe {
     /** null means unavailable (including an empty ActivityManager process list). */
