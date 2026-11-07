@@ -20,13 +20,11 @@ import androidx.compose.runtime.setValue
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.OnboardingWriteResult
 import com.tyranor.next.ui.onboarding.OnboardingCoachOverlay
-import com.tyranor.next.ui.onboarding.OnboardingStorageError
 import com.tyranor.next.ui.common.CoachAnchor
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
@@ -36,6 +34,13 @@ import com.tyranor.next.theme.GlassBackground
 import com.tyranor.next.theme.TyranorNextTheme
 import com.tyranor.next.core.updater.UpdateNotificationManager
 import com.tyranor.next.ui.common.observeSaveSyncFeedback
+
+private fun coachPageOf(index: Int): Int = when (index) {
+  CoachAnchor.HOME -> 0
+  in CoachAnchor.GAME_ADD..CoachAnchor.GAME_SCAN -> 1
+  CoachAnchor.ENGINE -> 2
+  else -> 3
+}
 
 class MainActivity : ComponentActivity() {
   private val notificationPermissionLauncher =
@@ -79,14 +84,8 @@ class MainActivity : ComponentActivity() {
 
   @Composable
   private fun AppEntry() {
-    val app = application as TyranorNextApplication
-    var startupReady by remember { mutableStateOf(app.startupReady) }
-    if (!startupReady) {
-      OnboardingStorageError(onRetry = { startupReady = app.initializeStartup() })
-      return
-    }
     LaunchedEffect(Unit) {
-      // 标记初始化后才准备插件，避免失败重试期间生成旧安装特征。
+      // 启动初始化后准备插件；失败时由独立快照保护首次安装判定不被基础设施数据改变。
       Thread {
         EnginePluginBootstrap.provisionIfNeeded(applicationContext)
       }.apply { isDaemon = true }.start()
@@ -99,7 +98,7 @@ class MainActivity : ComponentActivity() {
     var saveRequest by rememberSaveable { mutableStateOf(0) }
     var coachAnchors by remember { mutableStateOf<Map<Int, Rect>>(emptyMap()) }
     val safeCoachStep = coachStep.coerceIn(CoachAnchor.HOME, CoachAnchor.SETTINGS)
-    val coachPage = CoachAnchor.pageOf(safeCoachStep)
+    val coachPage = coachPageOf(safeCoachStep)
     LaunchedEffect(saveRequest) {
       if (saveRequest == 0) return@LaunchedEffect
       saving = true
@@ -117,10 +116,10 @@ class MainActivity : ComponentActivity() {
     }
     LaunchedEffect(coachPage) {
       // 四页常驻组合会保留隐藏页；切页时丢弃旧页坐标，避免把屏外矩形用于新页面。
-      coachAnchors = coachAnchors.filterKeys { CoachAnchor.pageOf(it) == coachPage }
+      coachAnchors = coachAnchors.filterKeys { coachPageOf(it) == coachPage }
     }
     val reportCoachAnchor: (Int, Rect) -> Unit = { index, rect ->
-      if (CoachAnchor.pageOf(index) == coachPage) {
+      if (coachPageOf(index) == coachPage) {
         coachAnchors = if (rect.isEmpty) {
           coachAnchors - index
         } else if (coachAnchors[index] != rect) {
@@ -131,26 +130,18 @@ class MainActivity : ComponentActivity() {
       }
     }
 
-    if (completed) {
-      LaunchedEffect(Unit) {
-        app.initializeMainLibrary()
-        if (UpdateNotificationManager.shouldRequestPermission(this@MainActivity)) {
-          UpdateNotificationManager.markPermissionRequested(this@MainActivity)
-          notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
+    LaunchedEffect(completed) {
+      if (completed && UpdateNotificationManager.shouldRequestPermission(this@MainActivity)) {
+        UpdateNotificationManager.markPermissionRequested(this@MainActivity)
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
       }
-      MainNavigation(onCoachAnchorChanged = { _, _ -> })
-    } else {
-      LaunchedEffect(Unit) {
-        // 教练层展示真实主界面，因此先确保其游戏库依赖按正常入口初始化。
-        app.initializeMainLibrary()
-      }
-      Box(Modifier.fillMaxSize()) {
-        MainNavigation(
-          coachPage = coachPage,
-          onCoachAnchorChanged = reportCoachAnchor,
-          modifier = Modifier.clearAndSetSemantics { },
-        )
+    }
+    Box(Modifier.fillMaxSize()) {
+      MainNavigation(
+        coachPage = if (completed) null else coachPage,
+        onCoachAnchorChanged = if (completed) { _, _ -> } else reportCoachAnchor,
+      )
+      if (!completed) {
         OnboardingCoachOverlay(
           step = safeCoachStep,
           homeStyle = homeStyle,

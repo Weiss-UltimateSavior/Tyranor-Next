@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -14,11 +15,16 @@ object AppSettingsStore {
 
     const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
 
+    private const val ONBOARDING_PENDING_INITIAL_STATE_FILE = "onboarding_initial_state"
+
     private var onboardingPreferences: OnboardingPreferences? = null
 
     @Synchronized
     private fun onboarding(context: Context): OnboardingPreferences =
-        onboardingPreferences ?: OnboardingPreferences(prefs(context)).also { onboardingPreferences = it }
+        onboardingPreferences ?: OnboardingPreferences(
+            settings = prefs(context),
+            pendingStateFile = File(context.applicationContext.filesDir, ONBOARDING_PENDING_INITIAL_STATE_FILE),
+        ).also { onboardingPreferences = it }
 
     /** 在主进程的偏好迁移/游戏库预热前调用；显式 false 防止中途退出被识别为老用户。 */
     fun initializeOnboarding(context: Context): OnboardingWriteResult {
@@ -26,10 +32,14 @@ object AppSettingsStore {
         return onboarding(context).initialize {
             hasExistingOnboardingData(
                 appSettingsHasData = settings.all.isNotEmpty(),
-                legacyPreferencesHaveData = listOf("tyranor_prefs", "yukihub_prefs", "game_scanner").any { name ->
+                legacyPreferencesHaveData = listOf(
+                    AppStorageNames.ENGINE_PREFS,
+                    AppStorageNames.LEGACY_ENGINE_PREFS,
+                    AppStorageNames.GAME_SCANNER_PREFS,
+                ).any { name ->
                     context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
                 },
-                gameLibraryExists = context.getDatabasePath("game_library.db").exists(),
+                gameLibraryExists = context.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
             )
         }
     }
@@ -310,7 +320,7 @@ object AppSettingsStore {
     }
 
     private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
 
     /** System4 一次性定点重检测迁移：读取标志。 */
     fun isXs4RescanMigrationDone(c: Context): Boolean =

@@ -1,15 +1,14 @@
 package com.tyranor.next
 
 import android.app.Application
-import android.app.ActivityManager
 import android.os.Build
-import android.os.Process
 import android.webkit.WebView
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.tyranor.next.core.game.storage.GameLibraryRepository
+import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -20,8 +19,6 @@ import com.tyranor.next.core.updater.UpdateNotificationManager
 
 /** 在整个应用进入后台时安排一次静默更新检查。 */
 class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configuration.Provider {
-    var startupReady = false
-        private set
     private var libraryInitialized = false
 
     override val workManagerConfiguration: Configuration
@@ -42,10 +39,9 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         initializeStartup()
     }
 
-    /** 主线程调用；引导标记落盘失败不阻断应用启动，内存快照仍用于本次启动判定。 */
-    fun initializeStartup(): Boolean {
-        if (startupReady) return true
-        val mainProcess = isMainProcess()
+    /** 主线程调用；引导标记落盘失败不阻断应用启动，快照仍用于本次启动判定。 */
+    private fun initializeStartup() {
+        val mainProcess = AppProcess.isMain(this, unknownIsMainProcess = true)
         if (mainProcess) {
             // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
@@ -58,15 +54,13 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         EngineSettingsStore.cleanupLegacyWinlatorKeys(this)
         UpdateNotificationManager.createChannel(this)
         GitHubUpdateChecker.restoreState(this)
-        // 游戏库 Room 迁移检查 + 首页缓存预热在 setContent 前启动，避免首帧 SettingsScreen 同步开库。
+        // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
         if (mainProcess) initializeMainLibrary()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
-        startupReady = true
-        return true
     }
 
-    /** 主线程调用；保存期间重建后也从主界面入口补齐，进程内只预热一次。 */
-    fun initializeMainLibrary() {
+    /** 主线程调用；进程内只预热一次。 */
+    private fun initializeMainLibrary() {
         if (libraryInitialized) return
         libraryInitialized = true
         GameLibraryRepository.init(this)
@@ -81,10 +75,4 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         if (AppSettingsStore.isOnboardingCompleted(this)) BackgroundUpdateWorker.enqueue(this)
     }
 
-    private fun isMainProcess(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) return getProcessName() == packageName
-        val manager = getSystemService(ACTIVITY_SERVICE) as? ActivityManager
-        return manager?.runningAppProcesses?.firstOrNull { it.pid == Process.myPid() }
-            ?.processName == packageName
-    }
 }

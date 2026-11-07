@@ -9,18 +9,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -46,7 +41,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.dialog
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,11 +57,12 @@ import com.tyranor.next.R
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.CoachOverlayScrim
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.PageTextColor
+import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
-import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.CoachAnchor
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.NoRippleTextButton
@@ -83,15 +82,8 @@ private val coachSteps = listOf(
     CoachStep(R.string.onboarding_coach_settings_title, R.string.onboarding_coach_settings_body),
 )
 
-private fun coachFallbackRect(step: Int, width: Float, height: Float): Rect {
-    val fractions = when (step) {
-        0 -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
-        1 -> floatArrayOf(0.29f, 0.02f, 0.51f, 0.10f)
-        2 -> floatArrayOf(0.51f, 0.02f, 0.63f, 0.10f)
-        3 -> floatArrayOf(0.63f, 0.02f, 0.76f, 0.10f)
-        4 -> floatArrayOf(0.76f, 0.02f, 0.95f, 0.10f)
-        else -> floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
-    }
+private fun coachFallbackRect(width: Float, height: Float): Rect {
+    val fractions = floatArrayOf(0.04f, 0.13f, 0.96f, 0.37f)
     return Rect(
         left = width * fractions[0],
         top = height * fractions[1],
@@ -104,28 +96,6 @@ private fun Modifier.consumeCoachTouches(step: Int): Modifier = pointerInput(ste
     awaitPointerEventScope {
         while (true) {
             awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-        }
-    }
-}
-
-@Composable
-fun OnboardingStorageError(onRetry: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().windowInsetsPadding(
-            WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-        ),
-    ) {
-        AppTopBar(title = stringResource(R.string.onboarding_title))
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                stringResource(R.string.onboarding_save_failed),
-                style = MaterialTheme.typography.bodyMedium,
-                color = PageTextColor,
-            )
-            NoRippleButton(text = stringResource(R.string.onboarding_retry), onClick = onRetry)
         }
     }
 }
@@ -161,11 +131,19 @@ fun OnboardingCoachOverlay(
         coachSteps.size,
     )
     val primary = MaterialTheme.colorScheme.primary
+    val coachTextColor = if (AppThemeColors.isMilkGlass) TextColor else PageTextColor
+    val onboardingPaneTitle = stringResource(R.string.onboarding_title)
     var tooltipBounds by remember(safeStep) { mutableStateOf<Rect?>(null) }
     var overlayBoundsInRoot by remember { mutableStateOf<Rect?>(null) }
     BoxWithConstraints(
         Modifier
             .fillMaxSize()
+            .semantics {
+                // 将引导暴露为独立的 TalkBack 遍历组，保留真实高亮控件的语义，不再清空整棵主界面语义树。
+                dialog()
+                paneTitle = onboardingPaneTitle
+                isTraversalGroup = true
+            }
             .onGloballyPositioned { coordinates ->
                 val bounds = coordinates.boundsInRoot()
                 if (overlayBoundsInRoot != bounds) overlayBoundsInRoot = bounds
@@ -184,7 +162,7 @@ fun OnboardingCoachOverlay(
         val showTarget = !needsMeasuredTarget || hasMeasuredTarget
         val targetRect = when {
             !showTarget -> Rect.Zero
-            targetBounds == null -> coachFallbackRect(safeStep, overlayWidthPx, overlayHeightPx)
+            targetBounds == null -> coachFallbackRect(overlayWidthPx, overlayHeightPx)
             else -> Rect(
                 left = targetBounds.left - overlayOrigin.x,
                 top = targetBounds.top - overlayOrigin.y,
@@ -339,7 +317,7 @@ fun OnboardingCoachOverlay(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
                 .padding(top = maxHeight * if (safeStep == 0) 0.40f else 0.54f)
-                .shadow(10.dp, AppComponentShape)
+                .then(if (AppThemeColors.isMilkGlass) Modifier else Modifier.shadow(10.dp, AppComponentShape))
                 .verticalScroll(rememberScrollState())
                 .onGloballyPositioned { coordinates ->
                     val bounds = coordinates.boundsInRoot()
@@ -360,13 +338,13 @@ fun OnboardingCoachOverlay(
                     stringResource(titleRes),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = PageTextColor,
+                    color = coachTextColor,
                 )
             }
             Text(
                 stringResource(bodyRes),
                 style = MaterialTheme.typography.bodyMedium,
-                color = PageTextColor,
+                color = coachTextColor,
             )
             if (saveFailed) {
                 Text(
@@ -393,7 +371,7 @@ fun OnboardingCoachOverlay(
                             Modifier
                                 .size(if (index == safeStep) 16.dp else 7.dp)
                                 .background(
-                                    if (index == safeStep) primary else PageTextColor.copy(alpha = 0.24f),
+                                    if (index == safeStep) primary else coachTextColor.copy(alpha = 0.24f),
                                     CircleShape,
                                 ),
                         )

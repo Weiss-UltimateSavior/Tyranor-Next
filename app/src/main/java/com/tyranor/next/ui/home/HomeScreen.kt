@@ -118,10 +118,9 @@ fun HomeScreen(
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
-    DisposableEffect(homeStyle) {
-        onDispose {
-            onCoachAnchorChanged(Rect.Zero)
-        }
+    // 锚点生命周期跟随页面，而不是 LazyColumn 首项；拖动时保留上一帧目标，避免立即退化为全屏拦截。
+    DisposableEffect(homeStyle, isActive) {
+        onDispose { onCoachAnchorChanged(Rect.Zero) }
     }
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     var webReloadSignal by remember { mutableIntStateOf(0) }
@@ -456,11 +455,6 @@ private fun QuickLaunchSection(
     onCoachAnchorChanged: (Rect) -> Unit = {},
     isActive: Boolean = true,
 ) {
-    DisposableEffect(isActive) {
-        onDispose {
-            if (isActive) onCoachAnchorChanged(Rect.Zero)
-        }
-    }
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth().coachAnchor(isActive, onCoachAnchorChanged),
         contentAlignment = Alignment.Center,

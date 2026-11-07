@@ -149,6 +149,10 @@ fun SettingsScreen(
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
     val settingsUpdateFailedFormat = stringResource(R.string.settings_update_failed)
+    // 锚点生命周期跟随页面，而不是 LazyColumn 首项；拖动时保留上一帧目标，避免立即退化为全屏拦截。
+    DisposableEffect(isActive) {
+        onDispose { onCoachAnchorChanged(Rect.Zero) }
+    }
     LaunchedEffect(Unit) {
         scanDirs = withContext(Dispatchers.IO) { GameLibraryFacade.loadRoots(ctx) }
         GameLibraryFacade.rootsRevision.collect {
@@ -273,11 +277,6 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    DisposableEffect(isActive) {
-                        onDispose {
-                            if (isActive) onCoachAnchorChanged(Rect.Zero)
-                        }
-                    }
                     MiuixCard(
                         modifier = Modifier
                             .fillMaxWidth()

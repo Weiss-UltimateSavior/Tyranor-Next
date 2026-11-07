@@ -912,7 +912,6 @@
     <string name="onboarding_start">利用を開始</string>
     <string name="onboarding_skip">ガイドをスキップ</string>
     <string name="onboarding_save_failed">進行状況を保存できませんでした。空き容量を確認して再試行してください。</string>
-    <string name="onboarding_retry">再試行</string>
     <string name="onboarding_coach_home_title">まずはホームから</string>
     <string name="onboarding_coach_home_body">ここからお気に入りを起動し、最近開いたゲームも確認できます。</string>
     <string name="onboarding_coach_home_web_title">ウェブホームを見る</string>

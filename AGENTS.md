@@ -84,7 +84,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
-- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater` 等包。
+- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater`、`core/process` 等包。
 
 ### 3. 界面 UI 交互层
 
@@ -94,7 +94,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 规则：只能调用功能抽象层；禁止直接 import `com.core`、`com.akira`、`com.yuri`、`org.tvp`、`org.libsdl`、`org.cocos2dx`、`bridge` 等底层引擎包。
 
-- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`，公共组件放入 `ui/common`。
+- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`、`ui/onboarding`，公共组件放入 `ui/common`。
 
 ### 4. 资源归属
 

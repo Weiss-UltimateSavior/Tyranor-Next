@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import java.io.File
 import java.lang.reflect.Proxy
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -79,6 +80,20 @@ class OnboardingPreferencesTest {
     }
 
     @Test
+    fun `persisted marker wins over a stale pending snapshot`() {
+        val pending = Files.createTempFile("onboarding-stale-state", ".tmp").toFile()
+        try {
+            pending.writeText("0")
+            val storage = MemoryPreferences(mapOf(AppSettingsStore.KEY_ONBOARDING_COMPLETED to true))
+            val state = OnboardingPreferences(storage.preferences, pending)
+            assertTrue(state.isCompleted())
+            assertFalse(pending.exists())
+        } finally {
+            pending.delete()
+        }
+    }
+
+    @Test
     fun `completion survives a new preferences instance and repeated completion is harmless`() {
         val storage = MemoryPreferences()
         val state = OnboardingPreferences(storage.preferences)
@@ -99,6 +114,69 @@ class OnboardingPreferencesTest {
         storage.writeSucceeds = true
         assertEquals(OnboardingWriteResult.SAVED, state.initialize { error("Must reuse the initial snapshot") })
         assertFalse(state.isCompleted())
+    }
+
+    @Test
+    fun `failed initial write survives process restart without reclassifying install`() {
+        val pending = Files.createTempFile("onboarding-initial-state", ".tmp").toFile().apply { delete() }
+        try {
+            val storage = MemoryPreferences().apply { writeSucceeds = false }
+            val state = OnboardingPreferences(storage.preferences, pending)
+            assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, state.initialize { false })
+            assertFalse(state.isCompleted())
+            assertTrue(pending.isFile)
+
+            val restarted = OnboardingPreferences(MemoryPreferences(storage.disk).preferences, pending)
+            assertEquals(
+                OnboardingWriteResult.SAVED,
+                restarted.initialize { true },
+            )
+            assertFalse(restarted.isCompleted())
+            assertFalse(pending.exists())
+        } finally {
+            pending.delete()
+        }
+    }
+
+    @Test
+    fun `failed initialization keeps fresh install after restart with infrastructure data`() {
+        val gameLibrary = Files.createTempFile("onboarding-game-library", ".db").toFile()
+        gameLibrary.delete()
+        val appSettings = MemoryPreferences().apply { writeSucceeds = false }
+        val infrastructure = MemoryPreferences(mapOf("prefs_rename_migrated_v1" to true))
+        val scanner = MemoryPreferences(mapOf("storage_migration_v1_done" to true))
+        val firstContext = OnboardingContext(
+            appSettings = appSettings.preferences,
+            stores = emptyMap(),
+            gameLibrary = gameLibrary,
+        )
+        val pending = firstContext.filesDir.resolve("onboarding_initial_state")
+        pending.delete()
+        try {
+            assertEquals(
+                OnboardingWriteResult.STORAGE_UNAVAILABLE,
+                AppSettingsStore.initializeOnboarding(firstContext),
+            )
+            assertFalse(AppSettingsStore.isOnboardingCompleted(firstContext))
+
+            gameLibrary.createNewFile()
+            AppSettingsStore.resetOnboardingForTests()
+            appSettings.writeSucceeds = true
+            val restarted = OnboardingContext(
+                appSettings = appSettings.preferences,
+                stores = mapOf(
+                    "tyranor_prefs" to infrastructure.preferences,
+                    "game_scanner" to scanner.preferences,
+                ),
+                gameLibrary = gameLibrary,
+            )
+            assertEquals(OnboardingWriteResult.SAVED, AppSettingsStore.initializeOnboarding(restarted))
+            assertFalse(AppSettingsStore.isOnboardingCompleted(restarted))
+        } finally {
+            AppSettingsStore.resetOnboardingForTests()
+            pending.delete()
+            gameLibrary.delete()
+        }
     }
 
     @Test
@@ -187,6 +265,8 @@ class OnboardingPreferencesTest {
             if (name == "app_settings") appSettings else stores[name] ?: MemoryPreferences().preferences
 
         override fun getDatabasePath(name: String): File = gameLibrary
+
+        override fun getFilesDir(): File = File("build/tmp/onboarding-preferences-test")
     }
 
     companion object {

@@ -14,13 +14,6 @@ internal object CoachAnchor {
     const val GAME_SCAN = 4
     const val ENGINE = 5
     const val SETTINGS = 6
-
-    fun pageOf(index: Int): Int = when (index) {
-        HOME -> 0
-        in GAME_ADD..GAME_SCAN -> 1
-        ENGINE -> 2
-        else -> 3
-    }
 }
 
 internal fun Modifier.coachAnchor(enabled: Boolean, onBounds: (Rect) -> Unit): Modifier =

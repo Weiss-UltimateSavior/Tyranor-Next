@@ -912,7 +912,6 @@
     <string name="onboarding_start">Get started</string>
     <string name="onboarding_skip">Skip onboarding</string>
     <string name="onboarding_save_failed">Could not save your progress. Check available storage and try again.</string>
-    <string name="onboarding_retry">Retry</string>
     <string name="onboarding_coach_home_title">Start from Home</string>
     <string name="onboarding_coach_home_body">Jump back into favorites here and see what you opened recently.</string>
     <string name="onboarding_coach_home_web_title">Explore the web home</string>

@@ -140,9 +140,9 @@ fun MainScreen(
   LaunchedEffect(coachPage) {
     if (coachPage != null) selectedIndex = coachPage.coerceIn(tabItems.indices)
   }
-  // 引导步骤切页时直接使用目标页作为本帧转场目标，不等待 LaunchedEffect
-  // 下一帧同步 selectedIndex，避免提示层与页面动画错开一帧。
-  val displayedSelectedIndex = coachPage?.coerceIn(tabItems.indices) ?: selectedIndex
+  // 引导期间由 coachPage 临时接管当前页；其余时间使用用户选择的 selectedIndex。
+  // 所有转场、导航和页面交互都使用同一个 activeIndex，避免首帧出现双索引错位。
+  val activeIndex = coachPage?.coerceIn(tabItems.indices) ?: selectedIndex
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val cleanupError = libraryState.cleanupError
@@ -348,13 +348,13 @@ fun MainScreen(
     GlassShaderSupport.isRuntimeShaderUsable
 
   val pageTransition = updateTransition(
-    targetState = displayedSelectedIndex,
+    targetState = activeIndex,
     label = "mainTabTransition",
   )
   fun selectPage(index: Int) {
     // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
     if (index !in tabItems.indices) return
-    if (index == selectedIndex) return
+    if (index == activeIndex) return
     // 透镜档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
     // 这里判的是**实际生效的档**（enhancedBarActive）而不是设置值：AGSL 不可用时界面已回退成
     // 经典档，转场语义必须跟着回退，否则会出现「看着是经典档、行为是透镜档」的错配。
@@ -395,7 +395,7 @@ fun MainScreen(
     // currentState/targetState 只在转场起止变化（currentState 保持起点直到转场结束），不逐帧重组。
     val webHomeInvolved = bottomBackdropActive &&
       homeStyle == AppSettingsStore.HOME_STYLE_WEB &&
-      (displayedSelectedIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
+      (activeIndex == 0 || pageTransition.currentState == 0 || pageTransition.targetState == 0)
     // 底栏采样源：Web 首页参与绘制时为仅背景层，其余为内容层（两者同一坐标空间，可直接替换）。
     val navBackdrop = if (webHomeInvolved) backgroundBackdrop else backdrop
     // 仅背景层：只在 Web 首页参与绘制时挂载，供底栏采样（其余情况由根部 GlassBackground 绘制，
@@ -435,14 +435,14 @@ fun MainScreen(
       // 平板/大窗口：主导航移到侧边，按外观风格取该主题「默认导航栏」形态
       Row(Modifier.fillMaxSize()) {
         AppNavigationRail(
-          selectedIndex = displayedSelectedIndex,
+          selectedIndex = activeIndex,
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
           modifier = Modifier.fillMaxHeight(),
         )
         Column(Modifier.weight(1f).fillMaxHeight().then(contentLayerModifier)) {
           MainTabPages(
-            selectedIndex = displayedSelectedIndex,
+            selectedIndex = activeIndex,
             pageTransition = pageTransition,
             onboarding = coachPage != null,
             libraryState = libraryState,
@@ -454,7 +454,7 @@ fun MainScreen(
     } else {
       Column(Modifier.fillMaxSize().then(contentLayerModifier)) {
         MainTabPages(
-          selectedIndex = displayedSelectedIndex,
+          selectedIndex = activeIndex,
           pageTransition = pageTransition,
           onboarding = coachPage != null,
           libraryState = libraryState,
@@ -463,7 +463,7 @@ fun MainScreen(
         )
         if (!liquidGlass && !floatingDefaultNav && !floatingButtonActive) {
           DefaultBottomNavigationBar(
-            selectedIndex = displayedSelectedIndex,
+            selectedIndex = activeIndex,
             tabLabels = tabLabels,
             unselectedColor = unselectedColor,
             onSelectPage = { selectPage(it) },
@@ -482,7 +482,7 @@ fun MainScreen(
         EnhancedLiquidGlassNavigationBar(
           backdrop = navBackdrop,
           // 权威选中值先夹取到合法槽位，避免越界值把透镜放到栏外（组件内部也会再夹一次）
-          selectedIndex = displayedSelectedIndex.coerceIn(liquidGlassTabItems.indices),
+          selectedIndex = activeIndex.coerceIn(liquidGlassTabItems.indices),
           colors = rememberGlassBottomBarColors(unselectedColor),
           items = liquidGlassTabItems,
           onItemClick = { selectPage(it) },
@@ -494,7 +494,7 @@ fun MainScreen(
       } else {
         LiquidGlassNavigationBar(
           backdrop = navBackdrop,
-          selectedIndex = displayedSelectedIndex,
+          selectedIndex = activeIndex,
           primaryColor = MaterialTheme.colorScheme.primary,
           unselectedColor = unselectedColor,
           items = liquidGlassTabItems,
@@ -515,7 +515,7 @@ fun MainScreen(
           .padding(horizontal = 12.dp, vertical = 12.dp),
       ) {
         DefaultBottomNavigationBar(
-          selectedIndex = displayedSelectedIndex,
+          selectedIndex = activeIndex,
           tabLabels = tabLabels,
           unselectedColor = unselectedColor,
           onSelectPage = { selectPage(it) },
@@ -539,7 +539,7 @@ fun MainScreen(
       FloatingGlassNavButton(
         backdrop = if (floatingButtonBackdrop) navBackdrop else null,
         items = liquidGlassTabItems,
-        selectedIndex = displayedSelectedIndex.coerceIn(liquidGlassTabItems.indices),
+        selectedIndex = activeIndex.coerceIn(liquidGlassTabItems.indices),
         primaryColor = MaterialTheme.colorScheme.primary,
         onItemClick = { selectPage(it) },
         // 组件在安全区内自行摆放（长按可拖动、位置持久化），宿主只负责占满可用区域

@@ -912,7 +912,6 @@
     <string name="onboarding_start">开始使用</string>
     <string name="onboarding_skip">跳过引导</string>
     <string name="onboarding_save_failed">无法保存引导状态，请检查存储空间后重试。</string>
-    <string name="onboarding_retry">重试</string>
     <string name="onboarding_coach_home_title">先从首页开始</string>
     <string name="onboarding_coach_home_body">这里可以快速进入常玩游戏，也能查看最近打开的内容。</string>
     <string name="onboarding_coach_home_web_title">浏览网页首页</string>
