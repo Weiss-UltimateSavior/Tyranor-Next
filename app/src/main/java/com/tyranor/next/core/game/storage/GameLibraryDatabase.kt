@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.tyranor.next.core.settings.AppStorageNames
 
 /**
  * 游戏库 Room 数据库单例。主进程专用；引擎子进程不访问本库。
@@ -37,7 +38,7 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
     abstract fun gameLibraryDao(): GameLibraryDao
 
     companion object {
-        private const val DB_NAME = "game_library.db"
+        private const val DB_NAME = AppStorageNames.GAME_LIBRARY_DATABASE
 
         /** v2→v3：新增第三方 APK 运行时模块绑定列及其索引（旧行为 null）。 */
         internal val MIGRATION_2_3 = object : Migration(2, 3) {

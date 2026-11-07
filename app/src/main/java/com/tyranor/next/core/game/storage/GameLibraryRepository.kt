@@ -1,16 +1,14 @@
 package com.tyranor.next.core.game.storage
 
-import android.app.ActivityManager
-import android.app.Application
 import android.content.Context
-import android.os.Build
-import android.os.Process
 import android.util.Log
 import androidx.room.withTransaction
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.GameRecordCodec
 import com.tyranor.next.core.game.scan.GameRootMatcher
+import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.settings.AppSettingsStore
+import com.tyranor.next.core.settings.AppStorageNames
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,7 +36,7 @@ object GameLibraryRepository {
 
     private const val TAG = "GameLibraryRepo"
 
-    private const val LEGACY_PREFS = "game_scanner"
+    private const val LEGACY_PREFS = AppStorageNames.GAME_SCANNER_PREFS
     private const val LEGACY_KEY_ROOTS = "scan_roots"
     private const val LEGACY_KEY_GAMES = "scan_games"
     private const val LEGACY_KEY_RECENT = "recent_games"
@@ -72,7 +70,7 @@ object GameLibraryRepository {
     /** 应用启动预热（仅主进程）：旧数据迁移检查 + 单游戏覆盖 prefs 同步 + GameLibraryFacade
      * 同步门面缓存回填，避免主线程首次读库阻塞。引擎子进程直接跳过。 */
     fun init(context: Context) {
-        if (!isMainProcess(context)) return
+        if (!AppProcess.isMain(context)) return
         val app = context.applicationContext
         writeScope.launch {
             try {
@@ -381,14 +379,4 @@ object GameLibraryRepository {
 
     private fun dao(context: Context): GameLibraryDao = GameLibraryDatabase.get(context).gameLibraryDao()
 
-    /** 引擎子进程（:tyrano/:kirikiri2 等）复用同一 Application 类，本仓库只在主进程初始化。 */
-    private fun isMainProcess(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return Application.getProcessName() == context.packageName
-        }
-        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
-        return am.runningAppProcesses
-            ?.firstOrNull { it.pid == Process.myPid() }
-            ?.processName == context.packageName
-    }
 }

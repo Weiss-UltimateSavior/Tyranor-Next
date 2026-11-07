@@ -3,6 +3,8 @@ package com.tyranor.next.core.settings
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
+import androidx.annotation.VisibleForTesting
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -10,6 +12,59 @@ import kotlinx.coroutines.flow.MutableStateFlow
  * 使用独立 prefs 文件 app_settings，避免混入引擎进程读取的 tyranor_prefs。
  */
 object AppSettingsStore {
+
+    const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
+
+    private const val ONBOARDING_PENDING_INITIAL_STATE_FILE = "onboarding_initial_state"
+
+    private var onboardingPreferences: OnboardingPreferences? = null
+
+    @Synchronized
+    private fun onboarding(context: Context): OnboardingPreferences =
+        onboardingPreferences ?: OnboardingPreferences(
+            settings = prefs(context),
+            pendingStateFile = File(context.applicationContext.filesDir, ONBOARDING_PENDING_INITIAL_STATE_FILE),
+        ).also { onboardingPreferences = it }
+
+    /** 在主进程的偏好迁移/游戏库预热前调用；显式 false 防止中途退出被识别为老用户。 */
+    fun initializeOnboarding(context: Context): OnboardingWriteResult {
+        val settings = prefs(context)
+        return onboarding(context).initialize {
+            hasExistingOnboardingData(
+                appSettingsHasData = settings.all.isNotEmpty(),
+                legacyPreferencesHaveData = listOf(
+                    AppStorageNames.ENGINE_PREFS,
+                    AppStorageNames.LEGACY_ENGINE_PREFS,
+                    AppStorageNames.GAME_SCANNER_PREFS,
+                ).any { name ->
+                    context.getSharedPreferences(name, Context.MODE_PRIVATE).all.isNotEmpty()
+                },
+                gameLibraryExists = context.getDatabasePath(AppStorageNames.GAME_LIBRARY_DATABASE).exists(),
+            )
+        }
+    }
+
+    /**
+     * Centralizes the legacy-install evidence used by [initializeOnboarding]. Keeping this
+     * decision pure makes the upgrade/first-install boundary directly regression-testable.
+     */
+    internal fun hasExistingOnboardingData(
+        appSettingsHasData: Boolean,
+        legacyPreferencesHaveData: Boolean,
+        gameLibraryExists: Boolean,
+    ): Boolean = appSettingsHasData || legacyPreferencesHaveData || gameLibraryExists
+
+    @VisibleForTesting
+    internal fun resetOnboardingForTests() {
+        onboardingPreferences = null
+    }
+
+    fun isOnboardingCompleted(context: Context): Boolean =
+        onboarding(context).isCompleted()
+
+    /** IO 线程调用；只有写入成功才能离开引导，失败允许用户重试。 */
+    fun setOnboardingCompleted(context: Context): OnboardingWriteResult =
+        onboarding(context).complete()
 
     const val KEY_THEME_COLOR = "theme_color"
     const val KEY_NAV_STYLE = "nav_style"
@@ -265,7 +320,7 @@ object AppSettingsStore {
     }
 
     private fun prefs(context: Context) =
-        context.applicationContext.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+        context.applicationContext.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
 
     /** System4 一次性定点重检测迁移：读取标志。 */
     fun isXs4RescanMigrationDone(c: Context): Boolean =
