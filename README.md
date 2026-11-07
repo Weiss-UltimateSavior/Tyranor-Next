@@ -4,40 +4,32 @@
 
 基于 **Tyranor 模拟器逆向重写** 的多引擎视觉小说（Galgame）模拟器，面向 Android 平台。具体功能与兼容边界见 [SPEC.md](SPEC.md)。
 
-mac原生版本如下：
-
-- [Tyranor Next for macOS](https://github.com/Weiss-UltimateSavior/Tyranor-Mac)
-
-iOS版本计划中...
-鸿蒙设备可使用卓易通安装
-
+iOS版本计划中...  鸿蒙设备可使用卓易通安装
 主打轻便、简单、快捷，不引入其他冗余功能的简约设计思路
 
-企鹅群：364439133
+企鹅群：364439133   感谢 [@安音](https://www.pixiv.net/users/8182248) 为本项目绘画的logo娘！
 
-感谢 [@安音](https://www.pixiv.net/users/8182248) 为本项目绘画的logo娘！
-
-### 默认主题界面（浅色）
+## 默认主题界面（浅色）
 <p align="center">
   <img src="screenshots/index2.png" alt="Tyranor Next" width="900" />
 </p>
 
-### 三种不同风格主题（不包含深浅色模式对比）
+## 三种不同风格主题（不包含深浅色模式对比）
 <p align="center">
   <img src="screenshots/index3.png" alt="Tyranor Next" width="900" />
 </p>
 
-### 多种个性化设置（部分展示）
+## 多种个性化设置（部分展示）
 <p align="center">
   <img src="screenshots/index4.png" alt="Tyranor Next" width="900" />
 </p>
 
-### 更多拓展功能（部分展示，第三方插件支持见 [docs/第三方APK运行时模块接入指南.md](docs/第三方APK运行时模块接入指南.md)）
+## 更多拓展功能（部分展示，第三方插件支持见 [docs/第三方APK运行时模块接入指南.md](docs/第三方APK运行时模块接入指南.md)）
 <p align="center">
   <img src="screenshots/index5.png" alt="Tyranor Next" width="900" />
 </p>
 
-### 画面超分（展示配置）
+## 画面超分（展示配置）
 <p align="center">
   <img src="screenshots/index6.png" alt="Tyranor Next" width="900" />
 </p>
