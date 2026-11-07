@@ -142,6 +142,7 @@ private val tabItems = listOf(
   Tab(R.string.nav_settings, R.drawable.ic_settings),
 )
 
+/** 托管四个主标签页、侧栏及根 Miuix 浮层；透明且零 inset 的宿主让菜单遮罩覆盖底栏。 */
 @Composable
 fun MainScreen(modifier: Modifier = Modifier) {
   val context = LocalContext.current
@@ -236,6 +237,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
   val panelNavigation = remember { MainPanelNavigation() }
   val closePanelAfterPush = rememberAfterPushStarts()
   // 从侧边栏进入页面：增强动效档下面板要等侧推开始才滑出，这段时间内再点条目不能重复打开页面
+  /** 增强档等待页面让位后关闭侧栏，普通档立即关闭；等待期间复用同一个启动门控。 */
   fun navigateFromPanel(start: () -> Unit) {
     panelNavigation.navigate(start, closePanelAfterPush) { sidePanelOpen = false }
   }
@@ -361,6 +363,7 @@ fun MainScreen(modifier: Modifier = Modifier) {
   // 在切页的同一帧同步重播，页内元素首帧即按隐藏绘制，不会先闪一下
   val tabEntrances = tabItems.indices.map { page -> rememberEntranceState(playOnStart = page == selectedIndex) }
   val tabLeftAt = remember { LongArray(tabItems.size) }
+  /** Validates tab requests, preserves ordinary-mode guards, and replays entrance only for hidden pages. */
   fun selectPage(index: Int) {
     // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
     if (index !in tabItems.indices) return
@@ -698,15 +701,17 @@ internal class MainPanelNavigation {
   private var waiting = false
   private var generation = 0
 
+  /** 启动失败时解除门控并原样传播异常；成功时由 afterPush 决定关闭时机，仅当前请求可关闭面板。 */
   fun navigate(start: () -> Unit, afterPush: (action: () -> Unit) -> Unit, close: () -> Unit) {
     if (waiting) return
     waiting = true
     val request = ++generation
+    var started = false
     try {
       start()
-    } catch (error: RuntimeException) {
-      waiting = false
-      throw error
+      started = true
+    } finally {
+      if (!started) waiting = false
     }
     afterPush {
       if (request == generation) {
@@ -716,6 +721,7 @@ internal class MainPanelNavigation {
     }
   }
 
+  /** 关闭或重新打开面板时使旧的延迟回调失效，并允许新的启动请求。 */
   fun cancel() {
     generation++
     waiting = false
@@ -724,12 +730,14 @@ internal class MainPanelNavigation {
 
 /** 保留原转场的状态对象，供点击时核对页面是否真的已经离屏；动画值仍只在绘制/派生状态中逐帧读取。 */
 internal class MainTabMotion(val offset: State<Float>, val alpha: State<Float>) {
+  /** 仅离屏且超过最小间隔的页面重播入场，避免慢速切页途中再次选中导致内容跳变。 */
   fun replayEntranceIfHidden(entrance: EntranceState, timeSinceLeft: Long) {
     val visible = alpha.value > 0f && kotlin.math.abs(offset.value) < 1f
     if (!visible && timeSinceLeft > MainTabReplayMinGapMillis) entrance.replay(quick = true)
   }
 }
 
+/** 为每页保留原有位移与透明度动画；增强档用既有弹簧，普通档保留原版缓动。 */
 @Composable
 internal fun rememberMainTabMotion(transition: Transition<Int>, pageCount: Int): List<MainTabMotion> =
   (0 until pageCount).map { page ->

@@ -525,6 +525,10 @@ private fun RpgmGroupLabel(text: String) {
     )
 }
 
+/**
+ * 展示一种 RTP 的读取中/已导入/缺失状态，已导入时才显示清除入口。
+ * 同类型导入期间禁用导入与清除，避免文件写入和删除交错。
+ */
 @Composable
 private fun RpgmRtpRow(
     title: String,

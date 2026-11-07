@@ -28,6 +28,7 @@ import com.tyranor.next.ui.common.motion.pageTransitionScrim
  */
 abstract class AppScreenActivity : ComponentActivity() {
 
+    /** 在正文创建前同步动效档位与系统栏外观，使无效入参导致的提前返回也使用正确转场。 */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 子类可能因参数无效而在 setContent 前 finish；返回动画同样必须使用持久化档位。
@@ -51,6 +52,7 @@ abstract class AppScreenActivity : ComponentActivity() {
         }
     }
 
+    /** 结束页面后应用当前档位的返回转场，与统一启动入口的进场配对。 */
     override fun finish() {
         super.finish()
         // 返回：当前页向右整页退出，上一级从左侧回到原位（侧推的倒放）

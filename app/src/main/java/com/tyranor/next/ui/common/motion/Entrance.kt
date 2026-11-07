@@ -88,10 +88,12 @@ class EntranceState internal constructor() {
     /** 已挂载的 [staggeredEntrance] 节点：挂载时加入、卸载时移除（只在主线程访问）。 */
     private val nodes = ArrayList<StaggeredEntranceNode>()
 
+    /** 登记已挂载节点，使下一次 [replay] 能直接通知它；与 [detach] 成对调用。 */
     internal fun attach(node: StaggeredEntranceNode) {
         nodes.add(node)
     }
 
+    /** 移除节点最后一次登记；重复卸载或已被移除时保持无操作。 */
     internal fun detach(node: StaggeredEntranceNode) {
         val i = nodes.lastIndexOf(node)
         if (i >= 0) nodes.removeAt(i)
@@ -124,6 +126,7 @@ class EntranceState internal constructor() {
     internal fun isFresh(): Boolean =
         generation > 0 && SystemClock.uptimeMillis() - startedAt < WINDOW_MILLIS && !isSkipped()
 
+    /** 判断本轮开始后是否收到过拖动跳过信号，供动画协程观察。 */
     internal fun isSkipped(): Boolean = skipCounter != skipMark
 
     /** 只让本作用域中未完成的入场快速收尾，之后新出现的元素直接显示。 */
@@ -210,6 +213,7 @@ private class StaggeredEntranceElement(
         node.distance = distance
     }
 
+    /** 按完整入场参数比较，让参数未变的修饰符继续复用现有节点。 */
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is StaggeredEntranceElement) return false
@@ -282,14 +286,17 @@ internal class StaggeredEntranceNode(
         }
     }
 
+    /** 挂载时订阅最近的入场作用域，并在有效窗口内准备首帧隐藏态。 */
     override fun onAttach() {
         observeEntranceState(relayout = false)
     }
 
+    /** 提供者替换后重新绑定作用域，必要时请求放置以启用图层。 */
     override fun onObservedReadsChanged() {
         observeEntranceState(relayout = true)
     }
 
+    /** 切换作用域时撤销旧动画与登记；只有增强档且新节拍仍有效时才播放。 */
     private fun observeEntranceState(relayout: Boolean) {
         var next: EntranceState? = null
         observeReads { next = currentValueOf(LocalEntranceState) }
@@ -309,6 +316,7 @@ internal class StaggeredEntranceNode(
         if (MotionMode.enhanced && st.isFresh()) beginPlay(st, relayout)
     }
 
+    /** 卸载时解除节拍登记并丢弃动画，避免懒列表复用继承半透明状态。 */
     override fun onDetach() {
         state?.detach(this)
         state = null
@@ -319,6 +327,7 @@ internal class StaggeredEntranceNode(
         layerActive = false
     }
 
+    /** 懒列表回收节点时作废当前动画，让旧内容立即恢复完整显示。 */
     override fun onReset() {
         // 懒列表回收：中途的入场立刻作废，内容以原样显示
         playJob?.cancel()
@@ -335,6 +344,7 @@ internal class StaggeredEntranceNode(
         beginPlay(st, relayout = true)
     }
 
+    /** 为本轮领取屏幕顺序并替换旧任务；协程启动前先隐藏，防止首帧闪现。 */
     private fun beginPlay(st: EntranceState, relayout: Boolean) {
         val an = anim ?: EntranceAnim().also { anim = it }
         an.token++
@@ -358,6 +368,7 @@ internal class StaggeredEntranceNode(
         if (newLayer && relayout) invalidatePlacement()
     }
 
+    /** 播放错峰入场并响应拖动跳过；取消时只收尾仍属于本轮的动画值。 */
     private suspend fun play(st: EntranceState, an: EntranceAnim, generation: Int, token: Int, delayMillis: Long) {
         val progress = an.progress
         val alpha = an.alpha
@@ -401,6 +412,7 @@ internal class StaggeredEntranceNode(
         }
     }
 
+    /** 保留内容原始测量尺寸，仅为曾经播放过入场的节点附加绘制图层。 */
     override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
         val placeable = measurable.measure(constraints)
         return layout(placeable.width, placeable.height) {

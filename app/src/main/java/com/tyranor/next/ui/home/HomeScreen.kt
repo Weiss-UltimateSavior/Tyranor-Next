@@ -108,6 +108,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * Hosts the selected native or web home and shares game actions and launch gates with the library.
+ * The active-tab flag controls the web home's lifecycle while the main tabs remain composed.
+ */
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,

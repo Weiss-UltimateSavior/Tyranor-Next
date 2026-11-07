@@ -12,10 +12,9 @@ import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.TyranorNextTheme
-import com.tyranor.next.ui.common.motion.MotionMode
+import com.tyranor.next.ui.common.MotionDeviceAcceptance
 import com.tyranor.next.ui.main.MainLibraryUiState
 import org.junit.Assert.assertEquals
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -23,9 +22,10 @@ import org.junit.Test
 class MotionGameInteractionsDeviceTest {
     @get:Rule val compose = createComposeRule()
 
+    /** Reuses a queued drawer activation during exit and verifies a single business operation. */
     @Test
     fun closingSheetRejectsRepeatedBusinessAction() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val quickLaunchLabel = instrumentation.targetContext.getString(R.string.game_add_quick_launch)
         var quickLaunchChanges = 0
@@ -61,9 +61,10 @@ class MotionGameInteractionsDeviceTest {
         }
     }
 
+    /** Invokes a captured card callback while its content is leaving and verifies no action sheet opens. */
     @Test
     fun leavingLibraryContentRejectsStaleCardClick() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val launchLabel = instrumentation.targetContext.getString(R.string.game_launch_action)
         val originalCardStyle = AppSettingsStore.gameCardStyleState.value
@@ -103,12 +104,6 @@ class MotionGameInteractionsDeviceTest {
         }
     }
 
-    private fun requireMotionTarget() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        assumeTrue(instrumentation.targetContext.packageName == "com.tyranor.next.motionv2")
-        assumeTrue(InstrumentationRegistry.getArguments().getString("motion_device_acceptance") == "true")
-        instrumentation.runOnMainSync { MotionMode.sync(true) }
-    }
 
     private val fixtureGame = ScanGame(
         title = "Motion review fixture",

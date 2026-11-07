@@ -99,6 +99,10 @@ class SaveManagementActivity : AppScreenActivity() {
     }
 }
 
+/**
+ * Shows one game's save location and serializes import, export, deletion, and synchronization tasks.
+ * Refreshes file counts and version panels after an operation while preserving typed failure messages.
+ */
 @Composable
 private fun SaveManagementScreen(game: ScanGame) {
     val context = LocalContext.current

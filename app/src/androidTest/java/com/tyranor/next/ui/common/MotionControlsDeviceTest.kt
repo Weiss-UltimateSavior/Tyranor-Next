@@ -35,7 +35,6 @@ import com.tyranor.next.ui.common.motion.MotionTokens
 import com.tyranor.next.ui.common.motion.bounceOnChange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 import top.yukonga.miuix.kmp.basic.LinearProgressIndicator
@@ -45,9 +44,10 @@ import kotlin.math.roundToInt
 class MotionControlsDeviceTest {
     @get:Rule val compose = createComposeRule()
 
+    /** Checks that accessibility changes save the chosen value and complete exactly once in both modes. */
     @Test
     fun accessibilitySliderChangeDeliversCompletion() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var value by mutableFloatStateOf(2f)
         var saved = 2f
         var completions = 0
@@ -83,9 +83,10 @@ class MotionControlsDeviceTest {
         }
     }
 
+    /** Compares every enhanced progress frame with the original animated Miuix rendering. */
     @Test
     fun progressFramesMatchPreviousMiuixRendering() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var progress by mutableFloatStateOf(0.35f)
         compose.setContent {
             MiuixSettingsTheme {
@@ -108,9 +109,10 @@ class MotionControlsDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
+    /** Compares ordinary progress frames with the original unanimated Miuix indicator. */
     @Test
     fun ordinaryProgressFramesMatchUnanimatedMiuixRendering() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(false) }
         var progress by mutableFloatStateOf(0.35f)
         compose.setContent {
@@ -131,9 +133,10 @@ class MotionControlsDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
+    /** Verifies continuous and stepped accessibility updates when no custom ticks are supplied. */
     @Test
     fun emptyKeyPointsSupportContinuousAndSteppedAccessibilityChanges() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var value by mutableFloatStateOf(0.25f)
         var steps by mutableStateOf(0)
         var completions = 0
@@ -163,9 +166,10 @@ class MotionControlsDeviceTest {
         }
     }
 
+    /** Samples the indicator beneath each selected label with fixed and scrollable LTR/RTL tabs. */
     @Test
     fun tabIndicatorFollowsSelectedLabelInBothLayoutDirections() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var direction by mutableStateOf(LayoutDirection.Ltr)
         var scrollable by mutableStateOf(false)
         var selected by mutableStateOf(0)
@@ -212,9 +216,10 @@ class MotionControlsDeviceTest {
         }
     }
 
+    /** Deactivates an unfinished bounce and checks that reused content regains its static size. */
     @Test
     fun reusedBounceDoesNotKeepInterruptedScale() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var active by mutableStateOf(true)
         var trigger by mutableStateOf(false)
         compose.setContent {
@@ -240,6 +245,7 @@ class MotionControlsDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
+    /** Captures both progress references in one draw frame and compares their corresponding pixels. */
     private fun assertSamePixels(actualTag: String, expectedTag: String) {
         val root = compose.onNodeWithTag("progressComparison")
         val rootBounds = root.fetchSemanticsNode().boundsInRoot
@@ -262,12 +268,4 @@ class MotionControlsDeviceTest {
             assertTrue("$actualTag differs at ($x,$y), delta=$delta", delta <= 1f / 255f)
         }
     }
-
-    private fun requireMotionTarget() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        assumeTrue(instrumentation.targetContext.packageName == "com.tyranor.next.motionv2")
-        assumeTrue(InstrumentationRegistry.getArguments().getString("motion_device_acceptance") == "true")
-        instrumentation.runOnMainSync { MotionMode.sync(true) }
-    }
-
 }

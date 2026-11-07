@@ -10,6 +10,7 @@ import com.tyranor.next.core.settings.GraphicsRefreshInterval
 import com.tyranor.next.ui.common.formatUiDecimal
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
+/** 将全局刷新间隔归一到支持的预设，只有有效选项索引才回传毫秒值。 */
 @Composable
 internal fun GraphicsRefreshIntervalPreference(
     intervalMs: Int,
@@ -27,6 +28,7 @@ internal fun GraphicsRefreshIntervalPreference(
     )
 }
 
+/** 首项以当前全局值展示继承状态；选中继承回传 null，其余选项回传对应的预设毫秒值。 */
 @Composable
 internal fun GraphicsRefreshIntervalOverridePreference(
     globalIntervalMs: Int,

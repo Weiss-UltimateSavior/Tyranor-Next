@@ -104,6 +104,7 @@ private data class PressSquishElement(
         node.group = group
     }
 
+    /** 在布局检查器中区分整组与单组件按压，并显示实际形变参数。 */
     override fun InspectorInfo.inspectableProperties() {
         name = if (group) "pressSquishGroup" else "pressSquish"
         properties["scale"] = scale
@@ -131,9 +132,11 @@ private class PressSquishNode(
     private var shiftJob: Job? = null
     private var lastShiftTarget = Offset.Zero
 
+    /** 首次反馈时才分配缩放动画，并通过快照持有者让图层开始观察它。 */
     private fun press(): Animatable<Float, AnimationVector1D> =
         pressAnim ?: Animatable(1f).also { pressAnim = it }
 
+    /** 首次跟手时才分配位移动画；未被交互的节点不承担动画对象开销。 */
     private fun shift(): Animatable<Offset, AnimationVector2D> =
         shiftAnim ?: Animatable(Offset.Zero, Offset.VectorConverter).also { shiftAnim = it }
 
@@ -157,6 +160,7 @@ private class PressSquishNode(
                 awaitEachGesture {
                     // 手势被异常中断（指针流取消）时，释放代码不会跑到：用 finally 兜底收回
                     var pressing = false
+                    /** 标记本次手势已释放，并按点击或取消结果选择回收方式。 */
                     fun finish(bouncy: Boolean) {
                         pressing = false
                         release(bouncy)
@@ -235,6 +239,7 @@ private class PressSquishNode(
         return p.x < -m || p.y < -m || p.x > width + m || p.y > height + m
     }
 
+    /** 查找外层整组按压；命中后当前节点让出反馈，避免嵌套形变叠乘。 */
     private fun hasGroupAncestor(): Boolean {
         var found = false
         traverseAncestors(TRAVERSE_KEY) { node ->
@@ -256,6 +261,7 @@ private class PressSquishNode(
         return max(pressedScale, minScale).coerceAtMost(1f)
     }
 
+    /** 将指尖偏离中心的距离映射为有界位移；关闭跟手时返回零位移。 */
     private fun shiftTarget(finger: Offset): Offset {
         val limit = follow.value * requireDensity().density
         if (limit <= 0f) return Offset.Zero
@@ -264,6 +270,7 @@ private class PressSquishNode(
         return Offset(limit * tanh(dx), limit * tanh(dy))
     }
 
+    /** 整组首次按下时固定指尖处的缩放原点，回弹未结束时沿用旧原点。 */
     private fun originAt(finger: Offset) {
         if (!group) return
         // 分组卡片：以按下点为中心收拢（回弹途中不换原点，避免跳动）
@@ -277,6 +284,7 @@ private class PressSquishNode(
     /** 本次按下的目标缩放（松手时据此判断是否已按到位）。 */
     private var pressTarget = 1f
 
+    /** 从当前动画状态转向受尺寸上限约束的按下深度，并启动指尖跟随。 */
     private fun pressDown(finger: Offset) {
         originAt(finger)
         val target = effectiveScale()
@@ -288,6 +296,7 @@ private class PressSquishNode(
         followFinger(finger)
     }
 
+    /** 单组件用弹簧跟随指尖；整组不偏移，亚像素目标变化不重启活跃任务。 */
     private fun followFinger(finger: Offset) {
         if (group) return
         val target = shiftTarget(finger)
@@ -301,6 +310,7 @@ private class PressSquishNode(
         }
     }
 
+    /** 点击释放时补足按下深度再回弹；取消时平稳恢复，已有位移同步归零。 */
     private fun release(bouncy: Boolean) {
         pressJob?.cancel()
         pressJob = coroutineScope.launch {
@@ -326,6 +336,7 @@ private class PressSquishNode(
         }
     }
 
+    /** 为短于按压等待时间的有效点击补一次完整形变，整组仍只缩放不跟手。 */
     private fun tapPulse(finger: Offset) {
         originAt(finger)
         val target = effectiveScale()
@@ -346,6 +357,7 @@ private class PressSquishNode(
         }
     }
 
+    /** 复用节点重新挂载时同步归位，避免新列表项继承旧项被取消的形变。 */
     override fun onAttach() {
         // 懒列表复用节点时，上一次的回弹可能在半途被取消：重新挂载时同步回到原样
         val p = pressAnim

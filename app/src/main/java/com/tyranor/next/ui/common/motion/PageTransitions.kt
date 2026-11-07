@@ -50,6 +50,7 @@ object PageTransitions {
         lastPushAt = if (MotionMode.enhanced) SystemClock.uptimeMillis() else 0L
     }
 
+    /** 仅消费最近一秒的侧推标记，避免普通生命周期变化触发页面压暗。 */
     internal fun consumeRecentPush(): Boolean {
         val recent = SystemClock.uptimeMillis() - lastPushAt < 1_000L
         if (recent) lastPushAt = 0L
@@ -189,6 +190,7 @@ fun rememberAfterPushStarts(): (action: () -> Unit) -> Unit {
 
 private class PendingPushAction {
     var action: (() -> Unit)? = null
+    /** 取出并清除待执行动作，使暂停、销毁或组合移除只消费一次。 */
     fun take(): (() -> Unit)? {
         return action.also { action = null }
     }

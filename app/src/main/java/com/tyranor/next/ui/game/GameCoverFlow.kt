@@ -171,6 +171,10 @@ internal fun GameCoverFlow(
     }
 }
 
+/**
+ * Displays an engine placeholder until its cover is decoded. Enhanced mode fades and sharpens the
+ * image in the drawing layers; ordinary mode reveals it immediately when ready.
+ */
 @Composable
 private fun CoverFlowCard(
     game: ScanGame,
@@ -221,6 +225,7 @@ private fun CoverFlowCard(
     }
 }
 
+/** Shows the selected game's engine and optional stripped title, transitioning when the caption changes. */
 @Composable
 private fun CoverFlowCaption(
     game: ScanGame?,

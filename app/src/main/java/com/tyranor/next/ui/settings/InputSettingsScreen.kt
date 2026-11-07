@@ -87,6 +87,10 @@ class InputSettingsActivity : AppScreenActivity() {
     }
 }
 
+/**
+ * 管理全局输入开关与按键方案的选择、导入导出和编辑入口，返回前台时重读共享设置。
+ * 列表入场和内容变换只影响展示，方案的身份、保护与读写仍由输入仓库管理。
+ */
 @Composable
 internal fun InputSettingsScreen() {
     val ctx = LocalContext.current

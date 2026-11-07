@@ -24,11 +24,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.test.platform.app.InstrumentationRegistry
-import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.RollingNumberText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -40,9 +38,10 @@ class MotionRollingDeviceTest {
 
     @get:Rule val compose = createComposeRule(effectContext = durationScale)
 
+    /** Interrupts a slowed number roll and checks that plain text appears only after it settles. */
     @Test
     fun slowRollingRemainsVisibleUntilFinishedAndCanRetarget() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var value by mutableStateOf("1")
         setComparisonContent { value }
         assertEquals(0, differentPixels())
@@ -58,9 +57,10 @@ class MotionRollingDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
+    /** Injects zero animation scale and checks immediate restoration of the final plain text. */
     @Test
     fun disabledAnimationsShowFinalPlainTextWithoutWaiting() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         InstrumentationRegistry.getInstrumentation().runOnMainSync { durationScale.scaleFactor = 0f }
         var value by mutableStateOf("1")
         setComparisonContent { value }
@@ -71,6 +71,7 @@ class MotionRollingDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
+    /** Renders the rolling value beside a matching plain-text reference without changing system settings. */
     private fun setComparisonContent(value: () -> String) {
         compose.setContent {
             MaterialTheme {
@@ -93,6 +94,7 @@ class MotionRollingDeviceTest {
         }
     }
 
+    /** Counts pixels that differ between the equally sized rolling and plain-text reference captures. */
     private fun differentPixels(): Int {
         val actual = compose.onNodeWithTag("rolling").captureToImage().toPixelMap()
         val expected = compose.onNodeWithTag("plain").captureToImage().toPixelMap()
@@ -111,10 +113,4 @@ class MotionRollingDeviceTest {
         return different
     }
 
-    private fun requireMotionTarget() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        assumeTrue(instrumentation.targetContext.packageName == "com.tyranor.next.motionv2")
-        assumeTrue(InstrumentationRegistry.getArguments().getString("motion_device_acceptance") == "true")
-        instrumentation.runOnMainSync { MotionMode.sync(true) }
-    }
 }

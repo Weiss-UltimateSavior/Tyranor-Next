@@ -69,6 +69,7 @@ class GamepadMapActivity : AppScreenActivity() {
     }
 }
 
+/** 编辑手柄按键和摇杆映射；通过逻辑按键及摇杆方向定位编辑目标，按卡片分组执行入场。 */
 @Composable
 internal fun GamepadMapScreen() {
     val ctx = LocalContext.current

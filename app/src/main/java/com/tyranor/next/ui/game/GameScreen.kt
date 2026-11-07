@@ -208,6 +208,10 @@ import com.tyranor.next.ui.common.motion.rememberLastNonNull
 import com.tyranor.next.ui.common.motion.rememberAfterPushStarts
 import androidx.lifecycle.compose.LocalLifecycleOwner
 
+/**
+ * Connects the game library to its content, action sheet, and launch confirmation dialogs.
+ * Retains the last selected game during the sheet's exit so removal can finish its visual transition.
+ */
 @Composable
 fun GameScreen(
     modifier: Modifier = Modifier,
@@ -447,6 +451,7 @@ fun GameScreen(
 }
 
 // 排序键与 Room 预计算列共用 GameSortKeys，保证 SQL 排序与内存排序结果一致（迁移方案阶段 3）。
+/** Sorts by bracket tag when selected; all other modes use the shared normalized title key. */
 internal fun sortGames(games: List<ScanGame>, sortMode: String): List<ScanGame> {
     return when (sortMode) {
         AppSettingsStore.GAME_SORT_BRACKET_TAG -> games.sortedWith(
@@ -490,6 +495,7 @@ private fun deleteCoverFile(context: android.content.Context, coverUri: String?)
     }
 }
 
+/** Uses the hosting Activity's page transition, falling back to a new task for non-Activity contexts. */
 internal fun startActivityWithPageTransition(context: android.content.Context, intent: android.content.Intent) {
     val activity = AppLocaleController.findActivity(context)
     if (activity != null) {
@@ -501,6 +507,10 @@ internal fun startActivityWithPageTransition(context: android.content.Context, i
     }
 }
 
+/**
+ * Renders the library's loading, empty, and populated states and its search and add-game controls.
+ * A pending database search uses in-memory filtering until results match the current query.
+ */
 @Composable
 private fun GameLibraryContent(
     modifier: Modifier,
@@ -694,6 +704,11 @@ private data class DrawerAction(
     val onClick: () -> Unit,
 )
 
+/**
+ * Presents actions for one game and owns their confirmation dialogs. Enhanced mode keeps the sheet
+ * through page navigation or animates dismissal; ordinary mode retains immediate dismissal.
+ * Closing or navigating sheets reject further business actions before dispatching callbacks.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GameActionsSheet(
@@ -716,6 +731,7 @@ internal fun GameActionsSheet(
     // 跳转到新页面（或启动游戏）：抽屉随所在页面一起被新页面推入覆盖、同步压暗，盖住后再移除
     val sheetLifecycleOwner = LocalLifecycleOwner.current
     // 进入二级页面：增强档抽屉保持打开，随所在页面一起被推入覆盖并压暗，返回时回到抽屉；普通档保持原版立即关闭
+    /** Keeps the enhanced sheet available on return; ordinary mode removes it immediately. */
     fun stayOpenForNavigation() {
         if (!sheetMotion.enhanced) {
             onDismiss()
@@ -723,6 +739,7 @@ internal fun GameActionsSheet(
         }
         sheetMotion.stayDuringNavigation(sheetLifecycleOwner)
     }
+    /** Defers enhanced-sheet removal to navigation lifecycle events after a successful game launch. */
     fun dismissForNavigation() {
         if (!sheetMotion.enhanced) {
             onDismiss()
@@ -730,6 +747,7 @@ internal fun GameActionsSheet(
         }
         sheetMotion.navigateAway(sheetLifecycleOwner)
     }
+    /** Closes with the controller's exit motion, or immediately in ordinary mode. */
     fun dismissAnimated() {
         if (!sheetMotion.enhanced) {
             onDismiss()
@@ -1440,6 +1458,10 @@ private fun CoverSourcePickerDialog(
     )
 }
 
+/**
+ * Searches one cover source and, where supported, drills into a work's alternate covers.
+ * Releases the dialog's touch interception before dismissing or handing a selected cover to its caller.
+ */
 @Composable
 private fun CoverSearchDialog(
     game: ScanGame,
@@ -1469,10 +1491,12 @@ private fun CoverSearchDialog(
     val imeVisible = WindowInsets.ime.getBottom(density) > 0
     val dialogWindow = remember { arrayOfNulls<android.view.Window>(1) }
 
+    /** Lets the parent receive touches while the closing dialog window is still attached. */
     fun prepareForClose() {
         dialogWindow[0].passThroughTouches()
     }
 
+    /** Releases window interception before invoking the caller's dismissal callback. */
     fun dismiss() {
         prepareForClose()
         onDismiss()
@@ -1821,6 +1845,10 @@ private fun decodeCoverSearchCandidate(encoded: String): CoverSearchCandidate? =
     )
 }.getOrNull()
 
+/**
+ * Displays a selectable cover preview and optional alternate-cover caption. Loading, ready, and
+ * failed previews transition by state category so bitmap replacement alone does not restart motion.
+ */
 @Composable
 private fun CoverCandidateCard(
     candidate: CoverSearchCandidate,
@@ -2115,6 +2143,10 @@ internal fun GameGrid(
 internal fun gameCardItemKey(game: ScanGame): String =
     "${game.uri}\u0000${game.coverUri.orEmpty()}\u0000${game.coverSource.orEmpty()}"
 
+/**
+ * Renders a stable-aspect library card with optional long press and engine badge. Cover decoding
+ * follows the supplied scrolling query, while the chosen motion mode controls its reveal animation.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun GameCard(

@@ -20,7 +20,6 @@ import com.tyranor.next.ui.common.motion.skipEntranceOnDrag
 import com.tyranor.next.ui.common.motion.staggeredEntrance
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -28,9 +27,10 @@ import org.junit.Test
 class MotionEntranceDeviceTest {
     @get:Rule val compose = createComposeRule()
 
+    /** Verifies drag skip isolation between entrance scopes and reset when a new entrance round starts. */
     @Test
     fun draggingOnlySkipsItsOwnScopeAndReplayStartsAFreshRound() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         val first = EntranceState()
         val second = EntranceState()
         compose.setContent {
@@ -67,9 +67,10 @@ class MotionEntranceDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
+    /** Confirms ordinary mode leaves entrance state untouched by drag gestures. */
     @Test
     fun ordinaryModeDoesNotObserveEntranceDrag() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         InstrumentationRegistry.getInstrumentation().runOnMainSync { MotionMode.sync(false) }
         val state = EntranceState()
         compose.setContent {
@@ -82,10 +83,4 @@ class MotionEntranceDeviceTest {
         compose.runOnIdle { assertFalse("Ordinary mode must not install an entrance drag observer", state.isSkipped()) }
     }
 
-    private fun requireMotionTarget() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        assumeTrue(instrumentation.targetContext.packageName == "com.tyranor.next.motionv2")
-        assumeTrue(InstrumentationRegistry.getArguments().getString("motion_device_acceptance") == "true")
-        instrumentation.runOnMainSync { MotionMode.sync(true) }
-    }
 }

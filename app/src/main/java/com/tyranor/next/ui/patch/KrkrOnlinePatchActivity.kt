@@ -78,6 +78,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class KrkrOnlinePatchActivity : AppScreenActivity() {
+    /** 先完成页面基类初始化；缺少游戏输入时直接退出，否则为补丁页建立独立入场作用域。 */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -102,6 +103,10 @@ class KrkrOnlinePatchActivity : AppScreenActivity() {
     }
 }
 
+/**
+ * 为指定游戏加载并筛选补丁索引，向服务提交勾选的补丁文件并展示安装结果。
+ * 搜索、加载、消息与补丁条目使用独立列表身份，使内容转场不会复用其他状态的节点。
+ */
 @Composable
 private fun KrkrOnlinePatchScreen(game: ScanGame) {
     val context = LocalContext.current
@@ -292,6 +297,7 @@ private fun KrkrOnlinePatchScreen(game: ScanGame) {
     }
 }
 
+/** 按补丁条目保存文件勾选状态；安装期间禁用提交，由调用方执行下载与写入。 */
 @Composable
 private fun PatchEntryCard(
     entry: KrkrPatchEntry,

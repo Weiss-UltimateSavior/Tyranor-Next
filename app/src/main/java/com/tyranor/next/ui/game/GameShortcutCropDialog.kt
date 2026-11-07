@@ -91,10 +91,12 @@ internal fun GameShortcutCropDialog(
     var confirming by remember(imageUri) { mutableStateOf(false) }
     var cropFailed by remember(imageUri) { mutableStateOf(false) }
     val dialogWindow = remember { arrayOfNulls<Window>(1) }
+    /** Removes window interception and dim before returning control to the parent dialog or page. */
     fun prepareClose() {
         dialogWindow[0].passThroughTouches()
         dialogWindow[0]?.setDimAmount(0f)
     }
+    /** Allows dismissal only outside an export, releasing the dialog window before the callback. */
     fun dismiss() {
         if (confirming) return
         prepareClose()

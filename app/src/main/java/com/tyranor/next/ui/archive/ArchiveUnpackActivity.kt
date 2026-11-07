@@ -143,6 +143,10 @@ private fun launchAllFilesAccessSettings(context: Context) {
     }
 }
 
+/**
+ * 组合权限提示、解包/封包面板与任务弹窗；运行状态和目录授权由现有 ViewModel 与系统入口管理。
+ * 增强档为面板切换提供弹簧转场，普通档保留原有水平滑动与淡入淡出。
+ */
 @Composable
 private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
     val context = LocalContext.current
@@ -257,6 +261,7 @@ private fun ArchiveScreen(vm: ArchiveViewModel = viewModel()) {
     }
 }
 
+/** 展示解包/封包两种模式，由调用方切换任务模型；整组参与页面的错峰入场。 */
 @Composable
 private fun ModeTabs(mode: ArchiveMode, onSelect: (ArchiveMode) -> Unit) {
     // 横排独立小按钮（形态对齐主界面左侧纵栏的小胶囊）：玻璃面 + 描边，选中态主色浅底
@@ -283,6 +288,7 @@ private fun ModeTabs(mode: ArchiveMode, onSelect: (ArchiveMode) -> Unit) {
     }
 }
 
+/** 绘制单个模式选项的选中配色，并将按压形变限制在不改变静止布局的图层中。 */
 @Composable
 private fun ModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
     val bg by animateColorAsState(
@@ -311,6 +317,10 @@ private fun ModeTab(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * 在目录选择提示与归档浏览器间切换；浏览器按归档身份保存选择，按条目集合重置目录展开状态。
+ * 内容树只展示限定数量的可见条目，运行任务期间禁用重扫、换目录与重复解包入口。
+ */
 @Composable
 private fun UnpackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () -> Unit) {
     BlurCrossfade(targetState = vm.sourceTreeUri == null, modifier = Modifier.fillMaxSize()) { noSourceDir ->
@@ -502,6 +512,7 @@ private fun PackPane(vm: ArchiveViewModel, appContext: Context, onPickDir: () ->
     }
 }
 
+/** 当前目录摘要与重扫/换目录入口；目录名变化使用内容转场，操作是否可用由任务状态决定。 */
 @Composable
 private fun DirStrip(
     name: String,
@@ -542,6 +553,7 @@ private fun DirStrip(
     }
 }
 
+/** 将归档名称或统计摘要的替换约束在同一行内，保持两栏布局的宽度不变。 */
 @Composable
 private fun PaneHeader(text: String) {
     BlurCrossfade(targetState = text, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) { shown ->
@@ -555,6 +567,7 @@ private fun PaneHeader(text: String) {
     }
 }
 
+/** 展示归档大小与选中态；接收列表提供的位移动画和入场修饰符，点击选择由调用方处理。 */
 @Composable
 private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Column(
@@ -586,6 +599,7 @@ private fun ArchiveListRow(archive: ScannedArchive, selected: Boolean, onClick: 
     }
 }
 
+/** 按树深度缩进条目；只有目录可点击展开并产生按压形变，普通文件只展示名称与大小。 */
 @Composable
 private fun EntryListRow(row: VisibleEntry, modifier: Modifier = Modifier, onToggle: (Boolean) -> Unit) {
     val (entry, depth, expanded) = row
@@ -639,6 +653,7 @@ private fun buildVisibleTree(entries: List<EntryRow>, expanded: Set<String>): Li
     return out
 }
 
+/** 保留最后一条非空结果，直到外层退出转场完成，避免消息先清空后留下收起中的空框。 */
 @Composable
 private fun StatusBar(vm: ArchiveViewModel) {
     // 收起动画期间消息可能已清空：沿用最后一条，避免先消失再收起空框
@@ -723,6 +738,7 @@ private fun BigAction(label: String, onClick: () -> Unit, enabled: Boolean) {
     NoRippleButton(text = label, enabled = enabled, onClick = onClick)
 }
 
+/** 承载权限提示等归档辅助内容，复用统一面板材质、圆角和首组入场次序。 */
 @Composable
 private fun ArchiveCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Card(

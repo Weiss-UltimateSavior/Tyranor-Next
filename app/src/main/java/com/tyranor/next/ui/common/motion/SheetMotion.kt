@@ -109,6 +109,7 @@ class MotionSheetController internal constructor(
         }
     }
 
+    /** 等所在页面开始让位后同步压暗并移除抽屉；跳转未发生时退回常规收起。 */
     fun navigateAway(owner: LifecycleOwner) {
         if (!enhanced) {
             onClosed()
@@ -164,12 +165,14 @@ class MotionSheetController internal constructor(
     /** 拖动速度（px/s）：松手后的回弹 / 收起从手指的速度接着走，跟手不「断」。 */
     private val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
 
+    /** 新手势开始时清除上一段拖动样本，防止旧速度影响松手判定。 */
     internal fun resetVelocity() = tracker.resetTracking()
 
     /** 本次手势是否真的拖动过抽屉（用于忽略展开动画期间的 fling）。 */
     internal var dragged = false
         private set
 
+    /** 将拖动立即施加到抽屉；向上越界时增加阻力，关闭过程中忽略新拖动。 */
     internal fun dragBy(delta: Float) {
         if (closing) return
         dragged = true
@@ -186,8 +189,10 @@ class MotionSheetController internal constructor(
         scope.launch(start = CoroutineStart.UNDISPATCHED) { offset.snapTo(next) }
     }
 
+    /** 读取本次竖向松手速度并清空样本，供收起或回弹延续手指运动。 */
     private fun releaseVelocity(): Float = tracker.calculateVelocity().y.also { tracker.resetTracking() }
 
+    /** 按当前位置与受限速度投影选择收起或回弹，并结束本次拖动标记。 */
     internal fun settle() {
         dragged = false
         if (closing) return
@@ -339,6 +344,7 @@ fun MotionSheetEffects(controller: MotionSheetController, onClosed: () -> Unit) 
 }
 
 private class SheetDragConnection(private val c: MotionSheetController) : NestedScrollConnection {
+    /** 用户上滑时优先抵消抽屉已有下移，归位后的余量交给内容滚动。 */
     override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
         // 抽屉已被下拉时，往上滑先把抽屉推回去
         if (source == NestedScrollSource.UserInput && available.y < 0f && c.offset.value > 0f) {
@@ -349,6 +355,7 @@ private class SheetDragConnection(private val c: MotionSheetController) : Nested
         return Offset.Zero
     }
 
+    /** 接收内容到顶后剩余的用户下拉距离，惯性滚动不转交给抽屉。 */
     override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
         // 列表已到顶仍在下拉：转交给抽屉
         if (source == NestedScrollSource.UserInput && available.y > 0f) {
@@ -358,6 +365,7 @@ private class SheetDragConnection(private val c: MotionSheetController) : Nested
         return Offset.Zero
     }
 
+    /** 仅在本次实际拖动且抽屉尚未归位时接管松手，避免列表惯性误关抽屉。 */
     override suspend fun onPreFling(available: Velocity): Velocity {
         if (c.dragged && c.offset.value != 0f) {
             c.settle()

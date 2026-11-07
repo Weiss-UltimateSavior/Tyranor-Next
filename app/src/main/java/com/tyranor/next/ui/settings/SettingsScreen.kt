@@ -721,6 +721,10 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * 加载指定引擎的全局设置到页面草稿，控件只更新草稿，顶栏保存时统一写入各设置门面。
+ * 内核专属内容和图形能力按所选引擎展示，页面拖动时结束尚未完成的错峰入场。
+ */
 @Composable
 internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
     if (kind == EngineSettingsKind.ETHORNELL) {
@@ -1059,6 +1063,7 @@ private fun SettingsEntryCard(
     }
 }
 
+/** 设置入口图标与独立通知红点；红点显隐执行内容转场，不改变图标的布局尺寸。 */
 @Composable
 private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false) {
     Box(modifier = Modifier.padding(end = 6.dp).size(24.dp)) {
@@ -1198,6 +1203,7 @@ private fun LazyListPlaceholder(
     ) {
         // 卡片依次弹入；带 key 的卡片（随内核显隐）出现 / 消失时平滑过渡
         var entranceIndex = 0
+        /** 按当前列表顺序分配入场序号；有稳定 key 的动态卡片才启用列表增删和位移动画。 */
         fun LazyListScope.cardItem(key: Any? = null, content: @Composable () -> Unit) {
             val index = entranceIndex++
             item(key = key) {
@@ -1740,6 +1746,10 @@ private fun WinlatorValueDialog(
 }
 
 
+/**
+ * 统一引擎设置分组的标题、间距与材质；含独立拖拽控件的分组可关闭整卡按压传递。
+ * [pressGroup] 仅控制按压反馈，不改变静止布局或内部设置的保存方式。
+ */
 @Composable
 internal fun EngineCard(header: String, pressGroup: Boolean = true, content: @Composable () -> Unit) {
     MiuixCard(modifier = Modifier.pressSquishGroup(enabled = pressGroup).fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {

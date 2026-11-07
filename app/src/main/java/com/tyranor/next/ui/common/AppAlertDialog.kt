@@ -137,6 +137,7 @@ internal fun AppAlertDialog(
         }
     }
 
+    /** 接受一次允许的关闭请求，先释放触摸并同步退场，再交付最新关闭回调。 */
     fun dismiss() {
         if (!currentDismissEnabled || dismissing.value) return
         dismissing.value = true

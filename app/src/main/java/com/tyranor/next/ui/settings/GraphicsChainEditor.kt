@@ -40,6 +40,10 @@ import java.util.UUID
 /** Transient keys distinguish duplicate nodes without adding UI identity to persisted settings. */
 private data class EditorNode(val key: String, val node: GraphicsNode)
 
+/**
+ * 编辑滤镜链的顺序与节点参数；临时身份区分重复滤镜，不写入持久化设置。
+ * 长按拖拽先预览顺序，松手提交，取消恢复原顺序；拖拽期间禁用相互冲突的节点操作。
+ */
 @Composable
 internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, onChange: (List<GraphicsNode>) -> Unit) {
     val labels = graphicsFilterOptions().toMap()
@@ -184,6 +188,7 @@ internal fun GraphicsChainEditor(chain: List<GraphicsNode>, enabled: Boolean, on
     }
 }
 
+/** 节点工具按钮统一承载禁用态和无涟漪点击，按压形变与静止描边分别遵循动效和外观设置。 */
 @Composable
 private fun GraphicsNodeAction(icon: Int, label: Int, enabled: Boolean, onClick: () -> Unit) {
     val description = stringResource(label)

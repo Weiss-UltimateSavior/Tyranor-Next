@@ -159,6 +159,10 @@ private const val PRESS_SCALE = 1.127f
 /** 按住时拇指额外拉长成胶囊的比例（停稳为 0，外观与圆形一致）。 */
 private const val PRESS_STRETCH = 0.32f
 
+/**
+ * 用连续位置绘制增强档开关，保留 Miuix 静止几何与颜色；无回调或禁用时不处理手势。
+ * 取消手势或调用方拒绝切换后恢复到当前真实状态，动画值在绘制阶段读取。
+ */
 @Composable
 private fun JellySwitch(
     checked: Boolean,
@@ -185,6 +189,7 @@ private fun JellySwitch(
         if (heading != target) pos.animateTo(target, MotionTokens.control(0.0005f))
     }
 
+    /** 继承释放速度吸附到目标，同时收回按压；调用方拒绝切换时再平滑归位。 */
     fun settleTo(target: Boolean, velocity: Float = 0f) {
         scope.launch {
             // 带着松手时的手指速度继续滑过去（跟手、不「断」）
@@ -198,6 +203,7 @@ private fun JellySwitch(
         scope.launch { press.animateTo(0f, MotionSprings.response(0.32f, 0.5f, 0.001f)) }
     }
 
+    /** 仅在目标不同于真实状态时发出轻震并通知调用方，不直接修改外部状态。 */
     fun commit(target: Boolean) {
         if (target != currentChecked) {
             haptics.performHapticFeedback(if (target) HapticFeedbackType.ToggleOn else HapticFeedbackType.ToggleOff)

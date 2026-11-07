@@ -22,11 +22,13 @@ import com.tyranor.next.ui.common.motion.rememberEntranceState
 import com.tyranor.next.ui.main.MainTabMotion
 import com.tyranor.next.ui.main.MainPanelNavigation
 import com.tyranor.next.ui.main.rememberMainTabMotion
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -38,9 +40,37 @@ class MotionLifecycleDeviceTest {
 
     @get:Rule val compose = createComposeRule(effectContext = durationScale)
 
+    /** Every failed start propagates its original throwable and permits a subsequent successful request. */
+    @Test
+    fun failedNavigationPropagatesEveryThrowableAndAllowsRetry() {
+        MotionDeviceAcceptance.require()
+        for (failure in listOf(RuntimeException("start"), AssertionError("start"), IOException("start"))) {
+            val navigation = MainPanelNavigation()
+            var pending: (() -> Unit)? = null
+            var closes = 0
+            val afterPush: (() -> Unit) -> Unit = { pending = it }
+            val thrown = try {
+                navigation.navigate({ throw failure }, afterPush) { closes++ }
+                null
+            } catch (error: Throwable) {
+                error
+            }
+            assertSame("A failed start must propagate the original throwable", failure, thrown)
+            assertNull("A failed start must not queue a close callback", pending)
+            assertEquals(0, closes)
+            var starts = 0
+            navigation.navigate({ starts++ }, afterPush) { closes++ }
+            assertEquals("A failed start must not lock the next navigation", 1, starts)
+            assertEquals("A successful retry must still wait for the push", 0, closes)
+            requireNotNull(pending).invoke()
+            assertEquals(1, closes)
+        }
+    }
+
+    /** Keeps the overlay open during a slow launch and consumes the latest close only on a real pause. */
     @Test
     fun slowNavigationStaysLockedUntilPauseAndConsumesOnlyTheLatestClose() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         val owner = resumedOwner()
         val staleCloses = AtomicInteger()
         val closes = AtomicInteger()
@@ -80,9 +110,10 @@ class MotionLifecycleDeviceTest {
         }
     }
 
+    /** Reopens navigation and verifies that the cancelled callback cannot close or unlock the new request. */
     @Test
     fun cancellingNavigationDiscardsItsOldCloseWithoutUnlockingTheNewRequest() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         val navigation = MainPanelNavigation()
         var pending: (() -> Unit)? = null
         var starts = 0
@@ -100,9 +131,10 @@ class MotionLifecycleDeviceTest {
         assertEquals(1, closes)
     }
 
+    /** Disposes an overlay before pause and checks that its pending close never executes. */
     @Test
     fun disposingTheCompositionCancelsPendingClose() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         val owner = resumedOwner()
         val closes = AtomicInteger()
         var mounted by mutableStateOf(true)
@@ -137,9 +169,10 @@ class MotionLifecycleDeviceTest {
         }
     }
 
+    /** Checks the original immediate-close behavior and ensures a later pause does not duplicate it. */
     @Test
     fun ordinaryModeClosesImmediatelyWithoutWaitingForPause() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         val owner = resumedOwner()
         val closes = AtomicInteger()
         lateinit var afterPush: (() -> Unit) -> Unit
@@ -163,9 +196,10 @@ class MotionLifecycleDeviceTest {
         }
     }
 
+    /** Exercises slow tab motion so reselecting a still-visible page cannot restart its entrance. */
     @Test
     fun tabEntranceReplaysOnlyAfterTheLeavingPageIsActuallyHidden() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var selectedPage by mutableIntStateOf(1)
         lateinit var tabMotions: List<MainTabMotion>
         lateinit var entrance: EntranceState
@@ -211,6 +245,7 @@ class MotionLifecycleDeviceTest {
         }
     }
 
+    /** Builds a resumed test lifecycle on the main thread for deterministic pause and disposal checks. */
     private fun resumedOwner(): MotionTestLifecycleOwner {
         lateinit var owner: MotionTestLifecycleOwner
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -223,17 +258,11 @@ class MotionLifecycleDeviceTest {
         return owner
     }
 
-    private fun requireMotionTarget() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        assumeTrue(instrumentation.targetContext.packageName == "com.tyranor.next.motionv2")
-        assumeTrue(InstrumentationRegistry.getArguments().getString("motion_device_acceptance") == "true")
-        instrumentation.runOnMainSync { MotionMode.sync(true) }
-    }
-
     private class MotionTestLifecycleOwner : LifecycleOwner {
         private val registry = LifecycleRegistry(this)
         override val lifecycle: Lifecycle get() = registry
 
+        /** Dispatches a lifecycle event through the registry used by the tested composition. */
         fun event(event: Lifecycle.Event) {
             registry.handleLifecycleEvent(event)
         }

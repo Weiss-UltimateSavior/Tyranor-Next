@@ -39,6 +39,10 @@ internal fun ethornellNlsOptions(): List<Pair<String, String>> = listOf(
     EngineSettingsStore.ETHORNELL_NLS_GBK to "GBK / CP936",
 )
 
+/**
+ * 编辑 Ethornell 编码与字体，顶栏保存时统一写入偏好；字体文件先导入应用私有目录。
+ * 导入在途禁用字体入口，并在结束或取消时恢复；用户开始拖动页面即停止未完成的入场。
+ */
 @Composable
 internal fun EthornellSettingsScreen() {
     val context = LocalContext.current

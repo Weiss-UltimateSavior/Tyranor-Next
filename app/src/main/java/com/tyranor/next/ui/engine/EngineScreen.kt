@@ -559,6 +559,10 @@ private fun StorageOverviewCard(
     }
 }
 
+/**
+ * Shows bounded storage usage, retaining the last settled sweep across lazy-item recreation.
+ * Enhanced mode animates the sweep; ordinary mode draws the latest ratio immediately.
+ */
 @Composable
 private fun StorageRing(
     ratio: Float,
@@ -721,6 +725,7 @@ private fun treeSizeBytes(context: Context, treeUri: Uri): Long {
     return total
 }
 
+/** Resolves an engine's icon and label, forwarding the caller's installation status and click behavior. */
 @Composable
 private fun EngineRow(
     engine: EngineType,

@@ -62,6 +62,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Presents cloud versions and save identity when WebDAV is enabled, using the parent's task runner
+ * to serialize changes. Selection recovery remains available independently of the WebDAV switch.
+ */
 @Composable
 internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: Int, runTask: (suspend () -> String?) -> Unit) {
     val context = LocalContext.current
@@ -386,6 +390,10 @@ internal fun SaveVersionsPanel(game: ScanGame, taskRunning: Boolean, revision: I
     )
 }
 
+/**
+ * Offers confirmed recovery only when the game has an incomplete save-version selection.
+ * Recovery shares the parent task gate and reports failures without dismissing the confirmation.
+ */
 @Composable
 private fun SaveSelectionRecoveryPanel(
     game: ScanGame,

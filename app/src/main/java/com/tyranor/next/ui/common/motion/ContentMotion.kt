@@ -133,6 +133,7 @@ private class BounceElement(val trigger: Any?, val depth: Float) : ModifierNodeE
         properties["trigger"] = trigger
     }
 
+    /** 触发值与深度共同决定修饰符身份，参数未变时保留节点及当前动画。 */
     override fun equals(other: Any?): Boolean =
         other is BounceElement && other.trigger == trigger && other.depth == depth
 
@@ -143,6 +144,7 @@ private class BounceNode(private var last: Any?, var depth: Float) : Modifier.No
     private val scale = Animatable(1f)
     private var job: Job? = null
 
+    /** 节点复用时先恢复原始缩放，防止旧列表项的半途形变泄漏到新项。 */
     override fun onAttach() {
         // 被懒列表回收时节点协程会取消；复用后以原始尺寸显示，不继承旧元素的半途形变。
         if (scale.value != 1f) {
@@ -154,6 +156,7 @@ private class BounceNode(private var last: Any?, var depth: Float) : Modifier.No
         job = null
     }
 
+    /** 只响应新且有效的触发值；取消旧任务后从当前缩放继续播放反馈。 */
     fun onTrigger(trigger: Any?) {
         if (trigger == last) return
         last = trigger
@@ -184,6 +187,7 @@ private class BounceNode(private var last: Any?, var depth: Float) : Modifier.No
 /** 内容替换、显隐默认的模糊半径。 */
 val ContentBlurRadius: Dp = 8.dp
 
+/** 将显隐进度映射到图层模糊半径，完全可见时移除模糊效果。 */
 @Composable
 private fun AnimatedVisibilityScope.blurLayer(blur: Dp): Modifier {
     val visible by transition.animateFloat(
@@ -289,6 +293,7 @@ fun expandBlurEnter(): EnterTransition =
         fadeIn(MotionTokens.fadeIn()) +
         slideInVertically(MotionTokens.layout(IntOffset(1, 1))) { -it / 6 }
 
+/** 与竖向展开配对：向顶部收回高度，同时淡出并轻微上移。 */
 fun shrinkBlurExit(): ExitTransition =
     shrinkVertically(MotionTokens.layoutExit(IntSize(1, 1)), shrinkTowards = Alignment.Top) +
         fadeOut(MotionTokens.fadeOut()) +
@@ -427,6 +432,7 @@ fun RollingNumberText(
     }
 }
 
+/** 数字按方向逐位滚动，其他字符淡入缩放替换；返回转场供外层等待真实结束。 */
 @Composable
 private fun rollingChar(ch: Char, direction: Int, color: Color, style: TextStyle): Transition<Char> {
     // AnimatedContent(targetState) 内部也创建同样的 Transition；显式保留它仅用于观察完成状态。

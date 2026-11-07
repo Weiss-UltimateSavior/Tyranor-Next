@@ -19,6 +19,7 @@ object MotionMode {
     var enhanced: Boolean by mutableStateOf(AppSettingsStore.DEFAULT_MOTION_ENHANCED)
         private set
 
+    /** 同步持久化档位的快照镜像；值改变时同时更新第三方下拉弹窗弹簧。 */
     internal fun sync(value: Boolean) {
         if (enhanced == value) return
         enhanced = value
@@ -50,6 +51,7 @@ internal object MiuixPopupMotion {
         visibilityThreshold = 0.0001f,
     )
 
+    /** 串行切换增强弹簧与首次保存的原版配置；反射不可用时保留当前库配置。 */
     @Synchronized
     fun apply(enhanced: Boolean) {
         runCatching {

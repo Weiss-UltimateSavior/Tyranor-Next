@@ -122,6 +122,10 @@ fun Slider(
 /** 拖出两端时整条最多拉伸的比例。 */
 private const val MAX_STRETCH = 0.035f
 
+/**
+ * 增强档离散滑条：手势期间连续跟手、按最近刻度回调数值，释放或取消后恢复到实际状态。
+ * 仅在绘制阶段读取动画位置，保留已批准的未覆盖刻度样式与 Miuix 基础几何。
+ */
 @Composable
 private fun TickSlider(
     value: Float,
@@ -147,6 +151,7 @@ private fun TickSlider(
     // 绘制的圆点刻度：与 Miuix 一致（自定义刻度点总画；否则仅 showKeyPoints 时画 steps 刻度）
     val drawnFractions = if (keyPoints != null || showKeyPoints) tickFractions else FloatArray(0)
 
+    /** 返回距离目标比例最近的刻度下标；距离相同时保留排序靠前的刻度。 */
     fun nearestIndex(fraction: Float): Int {
         var best = 0
         var bestD = Float.MAX_VALUE
@@ -206,6 +211,7 @@ private fun TickSlider(
                             interaction.settleJob?.cancel()
                             val r = size.height / 2f
                             val avail = (size.width - 2f * r).coerceAtLeast(1f)
+                            /** 将指针横坐标换算为行程比例，保留越界量供橡皮筋形变使用。 */
                             fun fractionAt(x: Float) = (x - r) / avail
                             interacting = true
                             scope.launch { press.animateTo(1.127f, MotionTokens.press(0.001f)) }

@@ -164,6 +164,7 @@ fun SlidingTabRow(
     }
 }
 
+/** 等分可用宽度并以逻辑起点定位指示器，弹簧过冲限制在标签栏边界内。 */
 @Composable
 private fun FixedSlidingTabRow(
     tabs: List<String>,
@@ -200,6 +201,7 @@ private fun FixedSlidingTabRow(
 /** 滚动态标签的已测量几何（相对内容坐标系的 x 与宽度，px）。 */
 private data class TabGeometry(val x: Float, val width: Float)
 
+/** 按内容测量每项边界并驱动指示器；选中项不可见时首次直达，之后平滑滚动到可见。 */
 @Composable
 private fun ScrollableSlidingTabRow(
     tabs: List<String>,

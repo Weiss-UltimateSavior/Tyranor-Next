@@ -24,6 +24,7 @@ class MainActivity : ComponentActivity() {
   private val notificationPermissionLauncher =
     registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+  /** Initializes the themed root and its motion environment before rendering the main navigation. */
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     observeSaveSyncFeedback()

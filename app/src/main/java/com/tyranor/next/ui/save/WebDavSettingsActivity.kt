@@ -115,6 +115,10 @@ private enum class WebDavTextField(
     ),
 }
 
+/**
+ * Edits encrypted WebDAV configuration and runs connection or synchronization operations under one
+ * interaction gate. Credentials remain in composition memory rather than saved instance state.
+ */
 @Composable
 private fun WebDavSettingsScreen() {
     val context = LocalContext.current
@@ -632,6 +636,7 @@ private fun WebDavSettingsScreen() {
     }
 }
 
+/** Shows a single-line setting value, using the mode-aware content transition when it changes. */
 @Composable
 private fun PreferenceValue(value: String) {
     BlurCrossfade(targetState = value) { shown ->

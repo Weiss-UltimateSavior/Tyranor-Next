@@ -21,6 +21,10 @@ import com.tyranor.next.core.settings.GraphicsSettingsCodec
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import com.tyranor.next.ui.common.SwitchPreference
 
+/**
+ * 按引擎图形能力编辑全局滤镜与分析器设置，只通过 [onChange] 回传副本。
+ * 不支持或依赖运行库的能力以提示说明，分析器相关入口遵循解析后的有效启用状态。
+ */
 @Composable
 internal fun GlobalGraphicsSettings(
     settings: GraphicsSettings,
@@ -67,6 +71,10 @@ internal fun GlobalGraphicsSettings(
     }
 }
 
+/**
+ * 编辑单游戏图形覆盖；null 表示跟随全局，展示和入口可用性使用解析后的有效设置。
+ * 自定义滤镜链与继承切换由编解码门面处理，避免把继承状态误写为固定副本。
+ */
 @Composable
 internal fun PerGameGraphicsSettings(
     global: GraphicsSettings,

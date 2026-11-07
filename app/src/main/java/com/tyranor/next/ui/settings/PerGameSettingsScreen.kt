@@ -1687,6 +1687,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
 
 // ───────────────────────── 覆盖行组件 ─────────────────────────
 
+/** 为单游戏覆盖分组分配稳定入场次序，复用卡片材质并让组内按压统一作用于整张卡片。 */
 @Composable
 private fun SectionCard(title: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     // 入场次序：按首次组合顺序取号（超过 10 的由 staggeredEntrance 自行封顶）

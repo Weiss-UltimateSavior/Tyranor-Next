@@ -21,6 +21,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.R
+import com.tyranor.next.ui.common.MotionDeviceAcceptance
 import com.tyranor.next.ui.common.motion.MotionMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -33,16 +34,18 @@ import org.junit.Test
 class MotionCropDialogDeviceTest {
     @get:Rule val compose = createComposeRule()
 
+    /** Verifies the ordinary crop window retains its platform fade while clearing dim and touch on close. */
     @Test
     fun ordinaryCropPreservesPlatformExitAndClearsDimBeforeDismiss() = verifyCropDismiss(enhanced = false)
 
+    /** Verifies the enhanced crop window retains its existing animation policy and clears dim and touch. */
     @Test
     fun enhancedCropRetainsItsExistingWindowPolicyAndClearsDimBeforeDismiss() = verifyCropDismiss(enhanced = true)
 
+    /** Compares the actual crop window policy with a platform reference and observes its real cancel callback. */
     private fun verifyCropDismiss(enhanced: Boolean) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        assumeTrue(instrumentation.targetContext.packageName == "com.tyranor.next.motionv2")
-        assumeTrue(InstrumentationRegistry.getArguments().getString("motion_device_acceptance") == "true")
+        MotionDeviceAcceptance.require(enhanced = null)
         assumeTrue(android.os.Build.VERSION.SDK_INT >= 29)
         instrumentation.runOnMainSync { MotionMode.sync(enhanced) }
         var reference by mutableStateOf(true)
@@ -103,6 +106,7 @@ class MotionCropDialogDeviceTest {
         compose.waitUntil(timeoutMillis = 1_500) { android.os.SystemClock.uptimeMillis() >= exitUntil }
     }
 
+    /** Finds the latest attached Compose dialog window without reading user images or external app state. */
     private fun findDialogWindow(): Window? = WindowInspector.getGlobalWindowViews().asSequence()
         .filter { it.isAttachedToWindow }
         .flatMap { descendants(it) }
@@ -110,6 +114,7 @@ class MotionCropDialogDeviceTest {
         .map { it.window }
         .lastOrNull()
 
+    /** Traverses a window view tree lazily to locate its dialog window provider. */
     private fun descendants(view: View): Sequence<View> = sequence {
         yield(view)
         if (view is ViewGroup) for (index in 0 until view.childCount) yieldAll(descendants(view.getChildAt(index)))

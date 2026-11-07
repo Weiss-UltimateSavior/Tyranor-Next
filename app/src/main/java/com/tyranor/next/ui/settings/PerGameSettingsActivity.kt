@@ -9,6 +9,7 @@ import com.tyranor.next.core.game.model.ScanGameIntents
 import com.tyranor.next.ui.common.AppScreenActivity
 
 class PerGameSettingsActivity : AppScreenActivity() {
+    /** 基类先加载页面环境；没有有效游戏输入时直接退出，避免创建无目标的覆盖设置页。 */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 

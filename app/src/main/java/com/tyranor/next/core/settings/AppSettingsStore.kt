@@ -271,6 +271,7 @@ object AppSettingsStore {
         sideRailState.value = isSideRailEnabled(c)
     }
 
+    /** Loads the persisted motion preference into the shared flow for UI subscribers. */
     fun initMotionEnhanced(c: Context) {
         motionEnhancedState.value = isMotionEnhanced(c)
     }
@@ -541,9 +542,11 @@ object AppSettingsStore {
         sideRailState.value = enabled
     }
 
+    /** Returns the saved motion mode, using enhanced motion for an unset preference. */
     fun isMotionEnhanced(c: Context): Boolean =
         prefs(c).getBoolean(KEY_MOTION_ENHANCED, DEFAULT_MOTION_ENHANCED)
 
+    /** Persists the chosen mode and immediately publishes it to existing UI subscribers. */
     fun setMotionEnhanced(c: Context, enhanced: Boolean) {
         prefs(c).edit().putBoolean(KEY_MOTION_ENHANCED, enhanced).apply()
         motionEnhancedState.value = enhanced

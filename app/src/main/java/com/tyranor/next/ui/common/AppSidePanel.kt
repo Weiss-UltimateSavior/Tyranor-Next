@@ -134,6 +134,10 @@ internal fun AppSidePanel(
     )
 }
 
+/**
+ * 承载侧栏独立窗口与同步遮罩；增强档外部关闭完成退场后才移除，重新打开可反向接续。
+ * 普通档沿用原版进退场，关闭时两档都释放窗口触摸，避免残留遮罩阻塞页面。
+ */
 @Composable
 private fun SidePanelWindow(
     closeRequested: Boolean,
@@ -152,6 +156,7 @@ private fun SidePanelWindow(
     // 点遮罩 / 返回键关闭（快速滑出），区别于条目跳转时的交接滑出
     val quickExit = remember { BooleanArray(1) }
 
+    /** 遮罩或返回触发的快速关闭；增强档先通知宿主，以允许退场途中重新唤出。 */
     fun dismiss() {
         if (dismissing.value) return
         dismissing.value = true

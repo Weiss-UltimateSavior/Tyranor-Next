@@ -85,6 +85,10 @@ class CoverScraperSettingsActivity : AppScreenActivity() {
     }
 }
 
+/**
+ * 编辑封面来源优先级与抓取选项，订阅任务管理器展示批量结果并消费一次性完成事件。
+ * 来源以自身身份参与组合，重排只改变序号与位置，不把授权或开关状态转交给其他来源。
+ */
 @Composable
 internal fun CoverScraperSettingsScreen() {
     val ctx = LocalContext.current
@@ -245,6 +249,10 @@ internal fun CoverScraperSettingsScreen() {
     }
 }
 
+/**
+ * 显示来源序号、启用开关和排序入口；仅 Hikarinagi 来源展示授权操作。
+ * 序号与摘要各自执行内容转场，排序按钮在列表边界禁用，业务变更交由调用方写入。
+ */
 @Composable
 private fun CoverSourceRow(
     index: Int,

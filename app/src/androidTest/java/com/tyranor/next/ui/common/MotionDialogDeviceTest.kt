@@ -13,14 +13,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogWindowProvider
-import androidx.test.platform.app.InstrumentationRegistry
-import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.passThroughTouches
 import com.tyranor.next.ui.common.motion.syncDialogWindow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -28,9 +25,10 @@ import org.junit.Test
 class MotionDialogDeviceTest {
     @get:Rule val compose = createComposeRule()
 
+    /** Activates the same pending exit twice and verifies that only one deferred action is delivered. */
     @Test
     fun repeatedExitActivationDeliversOneAction() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var visible by mutableStateOf(true)
         var controller: DialogExitController? = null
         var actions = 0
@@ -63,9 +61,10 @@ class MotionDialogDeviceTest {
         compose.mainClock.autoAdvance = true
     }
 
+    /** Checks platform animation restoration and explicit dim/touch cleanup on the real dialog window. */
     @Test
     fun ordinaryWindowAnimationCanBePreservedWithoutRetainingExitDimOrTouch() {
-        requireMotionTarget()
+        MotionDeviceAcceptance.require()
         var preserve by mutableStateOf(true)
         var window: Window? = null
         compose.setContent {
@@ -101,10 +100,4 @@ class MotionDialogDeviceTest {
         }
     }
 
-    private fun requireMotionTarget() {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        assumeTrue(instrumentation.targetContext.packageName == "com.tyranor.next.motionv2")
-        assumeTrue(InstrumentationRegistry.getArguments().getString("motion_device_acceptance") == "true")
-        instrumentation.runOnMainSync { MotionMode.sync(true) }
-    }
 }
