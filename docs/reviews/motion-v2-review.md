@@ -880,3 +880,51 @@ GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = 
 | CR6-2 roots冷读覆盖 | 已修复测试缺口，不改生产根目录行为 | `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:129`、`:198`、`:260`、`:266`、`:273` | Roots 9/9通过，真实FIFO+fake DAO计数；非SQLite验收。 |
 | 规格/架构/变更记录 | 已同步 | `SPEC.md:30`、`ARCHITECTURE.md:54`、`CHANGELOG.md:60` | 六个独立复审及主agent核对与生产实现一致；diff/字符串检查通过。 |
 | 动效/导航/版本及验证边界 | 本轮无修改；远端与设备边界如上保留 | 49个保护/动效/构建文件 | 对父提交逐字无差异。提交后继续等待最新head CI与CodeRabbit；未执行设备/逐帧/主题/平板/性能。 |
+
+
+## 第七轮 CI 启动准备修复（2026-11-08）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `557698b471a127f49bb3f16567300a2eee2b223e`；本节候选由包含本节的提交识别。本轮相对父提交共3个文件、+62/−0，完整清单如下；没有未跟踪文件纳入候选。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `.github/workflows/webdav-macos.yml` | 13 | 0 |
+| `CHANGELOG.md` | 1 | 0 |
+| `docs/reviews/motion-v2-review.md` | 48 | 0 |
+
+已执行验证：
+
+- `gh run view 42467462516 --repo Weiss-UltimateSavior/Tyranor-Next --log-failed` → 第二次macOS任务仍在下载原Gradle 9.5.1分发包时收到HTTP 504，未启动编译或测试。与上轮42464543959同类；未把下载失败记作测试通过。
+- `./gradlew.bat --version --no-daemon` → 本机退出0，仍为Gradle 9.5.1 / JDK 17；本机缓存命中不证明远端下载恢复。
+- `bash -n` 检查提取的新增准备脚本，以及Bash `-e -o pipefail` 四种故障夹具 → 全通过。立即成功：准备1次/测试1次/exit0；第三次准备成功：准备3次/测试1次/exit0；三次准备失败：准备3次/测试0次/exit1；准备成功后实际测试退出27：准备1次/测试1次/exit27。夹具替换sleep为计数，核对仅请求15秒、30秒两次等待；夹具不属于真实下载或项目测试验收。
+- 移除新增准备块后与父提交工作流逐字比较 → 完全一致。原 `./gradlew :app:testDebugUnitTest --no-daemon`、JDK 17、Wrapper版本和URL、setup-gradle固定版本、45分钟超时、权限及 `always()` 证据上传保持。
+- `git -c core.autocrlf=false diff --check`、UTF-8无BOM/LF检查 → 通过；复审发现的CRLF已归一。本轮无app/engine/动效/导航/版本代码变化，49个保护文件对父提交无差异。
+- 产品源码沿用557698b4，复用第六轮Release Kotlin、Release/Debug/AndroidTest APK构建通过、完整JVM2,012/43/22（基线失败集合无新增）、lint29E/316W/10H（Error签名无新增）和字符串检查结果。纯CI准备改动未再重复产品构建与JVM；远端仍须在新head真正运行完整测试。
+- 未执行：本机macOS Runner、冷缓存真实下载重试、独立YAML/actionlint、设备/录屏逐帧、全主题/平板/低端机/真实引擎与性能。本轮没有设备操作或新增后台脚本、录屏、Perfetto进程。
+
+### 结论摘要
+
+连续两轮远端macOS失败来自Gradle启动前下载504，当前贡献者无上游Actions直接重跑权限。已在原测试步骤前增加最多三次Wrapper版本查询准备，实际测试仍独立执行一次并保留原失败结论。五个独立agent从逻辑、架构、健壮性、回归、规范核对，主agent回源码复核；修正行尾后由一个新的独立agent复审最终修复。当前本地未确认新增高、中级代码问题，可提交继续远端验证；不预先宣称网络恢复、CI全绿或CodeRabbit无新意见。
+
+### 问题清单
+
+| No. | 级别 | 问题与证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR7-1 | 中，CI外部依赖 | 两轮macOS均因Gradle分发包HTTP 504在测试前退出，任务没有独立启动准备重试。 | 已新增有限bootstrap重试；三次失败仍阻断，真正恢复以新head远端结果为准。 | `.github/workflows/webdav-macos.yml:98`、`:100`、`:109`、`:111`；远端run42467462516/42464543959失败日志 |
+| CR7-2 | 低，格式 | 编辑工具曾使工作流行尾转为CRLF，扩大文本差异并触发行尾检查。 | 已统一UTF-8无BOM/LF，最终仅13行准备步骤增量。 | `.github/workflows/webdav-macos.yml:1` |
+
+### 已核对无问题的部分
+
+- 失败命令处于if条件中，默认Bash的 `-e` 不提前中止重试；成功exit只结束当前step，不退出整个job。三次失败显式exit1，仅前两次等待，没有后台任务。
+- 真实测试、编译与断言没有重试、过滤、跳过或continue-on-error；证据上传不会覆盖失败状态。没有切换下载源、升级Wrapper或改变动效/组件外观。
+- 新增内容不含主机路径、设备端点、凭据、日志或APK；故障夹具与原始结果留在仓库外。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR7-1 Gradle启动下载失败 | 已补有限重试；远端新head待验证 | `.github/workflows/webdav-macos.yml:98`、`:100`、`:104`、`:109`；`CHANGELOG.md:60` | Bash语法及四类成功/失败传播夹具通过；原测试step逐字未改。真实macOS下载与完整测试须继续等待。 |
+| CR7-2 行尾 | 已修复 | `.github/workflows/webdav-macos.yml:1` | 最终UTF-8无BOM/LF、diff --check通过，13行有效增量。 |
+| 产品/动效/导航/版本 | 本轮未改；复用第六轮产品验证 | 49个保护文件及app/engine源集 | 对父提交无差异；设备/逐帧/主题/平板/性能仍未执行。 |

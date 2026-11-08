@@ -95,6 +95,19 @@ jobs:
           echo "::error::Failed to install Android SDK packages after 3 attempts"
           exit 1
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - name: Prepare Gradle distribution
+        run: |
+          for attempt in 1 2 3; do
+            if ./gradlew --version --no-daemon; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::Gradle bootstrap failed (attempt ${attempt}/3); retrying before tests"
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "::error::Gradle bootstrap failed after 3 attempts"
+          exit 1
       - name: Run full app JVM regression with native filesystem aliases
         run: ./gradlew :app:testDebugUnitTest --no-daemon
       - name: Keep test evidence
