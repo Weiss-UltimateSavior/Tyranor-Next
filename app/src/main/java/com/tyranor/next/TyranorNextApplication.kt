@@ -8,8 +8,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
 import com.tyranor.next.core.game.storage.GameLibraryRepository
+import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.core.settings.PrefsRenameMigration
 import com.tyranor.next.core.updater.BackgroundUpdateWorker
 import com.tyranor.next.core.updater.GitHubUpdateChecker
@@ -17,6 +19,8 @@ import com.tyranor.next.core.updater.UpdateNotificationManager
 
 /** 在整个应用进入后台时安排一次静默更新检查。 */
 class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configuration.Provider {
+    private var libraryInitialized = false
+
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().build()
 
@@ -32,6 +36,17 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         ) {
             runCatching { WebView.setDataDirectorySuffix("home") }
         }
+        initializeStartup()
+    }
+
+    /** 主线程调用；引导标记落盘失败不阻断应用启动，快照仍用于本次启动判定。 */
+    private fun initializeStartup() {
+        val mainProcess = AppProcess.isMain(this, unknownIsMainProcess = true)
+        if (mainProcess) {
+            // commit 失败时 OnboardingPreferences 保留基于旧数据的内存快照：存量用户仍直接进入主界面，
+            // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
+            AppSettingsStore.initializeOnboarding(this)
+        }
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。
         PrefsRenameMigration.migrate(this)
@@ -39,9 +54,16 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         EngineSettingsStore.cleanupLegacyWinlatorKeys(this)
         UpdateNotificationManager.createChannel(this)
         GitHubUpdateChecker.restoreState(this)
-        // 游戏库 Room 迁移检查 + 首页缓存预热，避免主线程首次读库阻塞（迁移方案阶段 0）。
-        GameLibraryRepository.init(this)
+        // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
+        if (mainProcess) initializeMainLibrary()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+    }
+
+    /** 主线程调用；进程内只预热一次。 */
+    private fun initializeMainLibrary() {
+        if (libraryInitialized) return
+        libraryInitialized = true
+        GameLibraryRepository.init(this)
     }
 
     override fun onStart(owner: LifecycleOwner) {
@@ -50,6 +72,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onStop(owner: LifecycleOwner) {
         SaveSyncRuntime.onBackground(this)
-        BackgroundUpdateWorker.enqueue(this)
+        if (AppSettingsStore.isOnboardingCompleted(this)) BackgroundUpdateWorker.enqueue(this)
     }
+
 }

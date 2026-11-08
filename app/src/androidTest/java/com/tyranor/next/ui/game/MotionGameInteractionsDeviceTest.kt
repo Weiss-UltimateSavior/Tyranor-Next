@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
@@ -22,42 +23,68 @@ import org.junit.Test
 class MotionGameInteractionsDeviceTest {
     @get:Rule val compose = createComposeRule()
 
-    /** Reuses a queued drawer activation during exit and verifies a single business operation. */
+    /** Reuses a queued drawer activation during exit and verifies that no new navigation is dispatched. */
     @Test
     fun closingSheetRejectsRepeatedBusinessAction() {
         MotionDeviceAcceptance.require()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val quickLaunchLabel = instrumentation.targetContext.getString(R.string.game_add_quick_launch)
-        var quickLaunchChanges = 0
+        val settingsLabel = instrumentation.targetContext.getString(R.string.settings_engine_settings)
+        var settingsRequests = 0
         var showSheet by mutableStateOf(true)
         compose.setContent {
             TyranorNextTheme {
                 if (showSheet) {
                     GameActionsSheet(
-                        game = fixtureGame,
+                        game = fixtureGame.copy(engine = EngineType.KIRIKIRI),
                         onDismiss = { showSheet = false },
                         onGameUpdated = {},
-                        onDeleteGame = {},
-                        onEngineSettings = {},
-                        quickLaunched = false,
-                        onQuickLaunchToggle = { quickLaunchChanges++; true },
+                        onEngineSettings = { settingsRequests++ },
                     )
                 }
             }
         }
         // Keep the original callback: a queued accessibility activation can outlive its semantics node.
         val activate = requireNotNull(
-            compose.onNodeWithText(quickLaunchLabel).fetchSemanticsNode().config[SemanticsActions.OnClick].action,
+            compose.onNodeWithText(settingsLabel).fetchSemanticsNode().config[SemanticsActions.OnClick].action,
         )
         compose.mainClock.autoAdvance = false
         try {
+            pressBack()
+            compose.onNodeWithText(settingsLabel).assertExists()
             compose.runOnIdle {
                 activate()
                 activate()
-                assertEquals(1, quickLaunchChanges)
+                assertEquals("Closing must reject even an already captured navigation callback", 0, settingsRequests)
             }
         } finally {
             compose.mainClock.autoAdvance = true
+        }
+    }
+
+    /** Accepted navigation retains its busy guard even before the owning Activity pauses. */
+    @Test
+    fun navigatingSheetRejectsRepeatedBusinessAction() {
+        MotionDeviceAcceptance.require()
+        val settingsLabel = InstrumentationRegistry.getInstrumentation().targetContext
+            .getString(R.string.settings_engine_settings)
+        var settingsRequests = 0
+        compose.setContent {
+            TyranorNextTheme {
+                GameActionsSheet(
+                    game = fixtureGame.copy(engine = EngineType.KIRIKIRI),
+                    onDismiss = {},
+                    onGameUpdated = {},
+                    onEngineSettings = { settingsRequests++ },
+                )
+            }
+        }
+        val activate = requireNotNull(
+            compose.onNodeWithText(settingsLabel).fetchSemanticsNode().config[SemanticsActions.OnClick].action,
+        )
+        compose.runOnIdle {
+            activate()
+            activate()
+            assertEquals(1, settingsRequests)
         }
     }
 

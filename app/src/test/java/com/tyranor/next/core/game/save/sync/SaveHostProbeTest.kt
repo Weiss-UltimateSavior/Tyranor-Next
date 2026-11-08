@@ -186,6 +186,26 @@ class SaveHostProbeTest {
     }
 
     @Test
+    fun recycledPidOwnedByAnotherUidProvesTheRecordedHostEnded() {
+        // A stale host record's PID may be reused by another app. /proc is then unreadable and
+        // kill(pid, 0) reports EPERM/EACCES; a host process always shares the app UID, so an
+        // unsignalable PID cannot be the recorded host and must count as dead instead of
+        // blocking every game as "running".
+        assertSame(
+            SaveHostIdentity.Dead,
+            classifyUnreadableHostProcess(processGone = true, notSignalable = false),
+        )
+        assertSame(
+            SaveHostIdentity.Dead,
+            classifyUnreadableHostProcess(processGone = false, notSignalable = true),
+        )
+        assertSame(
+            SaveHostIdentity.Unknown,
+            classifyUnreadableHostProcess(processGone = false, notSignalable = false),
+        )
+    }
+
+    @Test
     fun malformedPersistedRecordStaysBusyWithoutVisibleProcesses() {
         val name = "com.tyranor.next:kirikiroid"
         val probe = FakeProbe(

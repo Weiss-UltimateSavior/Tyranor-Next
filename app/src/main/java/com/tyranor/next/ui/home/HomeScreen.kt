@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,7 +45,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,6 +55,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -66,9 +68,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.settings.AppSettingsStore
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.NavWhiteOverlay
@@ -77,15 +77,12 @@ import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.QuickLaunchFallback
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
-import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppTopBar
-import com.tyranor.next.ui.common.DialogTextButton
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.boxBlurArgb
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.isWideScreen
-import com.tyranor.next.ui.common.LaunchErrorDialog
-import com.tyranor.next.ui.common.LaunchErrorState
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.MotionMode
 import com.tyranor.next.ui.common.motion.MotionTokens
@@ -93,20 +90,13 @@ import com.tyranor.next.ui.common.motion.PressSquishDefaults
 import com.tyranor.next.ui.common.motion.motionBlurAlpha
 import com.tyranor.next.ui.common.motion.pressSquish
 import com.tyranor.next.ui.common.motion.staggeredEntrance
-import com.tyranor.next.ui.common.toErrorState
 import com.tyranor.next.ui.game.GameActionsSheet
-import com.tyranor.next.ui.game.RpgSaveFormatDialog
+import com.tyranor.next.ui.game.GameQuickActionsDialog
 import com.tyranor.next.ui.game.coverColor
-import com.tyranor.next.ui.game.dialogArgs
 import com.tyranor.next.ui.game.rememberCoverBitmap
-import com.tyranor.next.ui.game.rpgConvertResultMessage
 import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Hosts the selected native or web home and shares game actions and launch gates with the library.
@@ -120,106 +110,38 @@ fun HomeScreen(
     onGameDeleted: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
     onQuickLaunchToggle: (ScanGame) -> Boolean,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
     /** 首页 Tab 是否处于前台（四页常驻：Web 首页据此暂停/恢复，避免后台耗电）。 */
     isActive: Boolean = true,
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val quickLaunch = libraryState.quickLaunch
-    val recentGames = libraryState.recentGames
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    // 锚点生命周期跟随页面，而不是 LazyColumn 首项；拖动时保留上一帧目标，避免立即退化为全屏拦截。
+    DisposableEffect(homeStyle, isActive) {
+        onDispose { onCoachAnchorChanged(Rect.Zero) }
+    }
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     var webReloadSignal by remember { mutableIntStateOf(0) }
     var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
-    var launchError by remember { mutableStateOf<LaunchErrorState?>(null) }
-    var patchLaunchTarget by remember { mutableStateOf<ScanGame?>(null) }
-    // MV/MZ 存档格式转化确认：待转化检测结果 + 目标游戏 + 已选补丁策略（Artemis 选择后串联）
-    var saveFormatTarget by remember { mutableStateOf<ScanGame?>(null) }
-    var saveFormatDetection by remember { mutableStateOf<RpgSaveFormat.Detection?>(null) }
-    var pendingPatchChoice by remember { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
-    val saveFormatConvertedFormat = stringResource(R.string.save_format_converted_count)
-    val saveFormatConvertedWithFailuresFormat = stringResource(R.string.save_format_converted_with_failures)
-    val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
-    val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
+    // 卡片长按的操作弹窗目标：只存 uri，每次从最新列表解析（改名/封面更新后仍是新对象）
+    var quickActionsGameUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val quickActionsGame = remember(libraryState.games, quickActionsGameUri) {
+        quickActionsGameUri?.let { uri -> libraryState.games.firstOrNull { it.uri == uri } }
+    }
 
-    LaunchedEffect(libraryState.games) {
+    LaunchedEffect(libraryState.games, quickActionsGameUri) {
         selectedGame = selectedGame?.let { selected ->
             libraryState.games.firstOrNull { it.uri == selected.uri }
+        }
+        quickActionsGameUri?.let { uri ->
+            if (libraryState.games.none { it.uri == uri }) quickActionsGameUri = null
         }
     }
 
     fun replaceGame(updated: ScanGame) {
         selectedGame = selectedGame?.let { if (it.uri == updated.uri) updated else it }
         onGameUpdated(updated)
-    }
-
-    fun deleteGame(target: ScanGame) {
-        selectedGame = null
-        onGameDeleted(target)
-    }
-
-    /** 仅删除该条最近游玩记录，不影响游戏库。 */
-    fun removeRecentRecord(target: ScanGame) {
-        onRecentRemoved(target)
-    }
-
-    /** Artemis 选择（或无需补丁）后，再检查 MV/MZ 存档格式；有标准存档则弹窗，否则直接启动。
-     *  开启存档互通时跳过弹窗——启动前同步已覆盖其语义。 */
-    fun launchWithSaveFormatGate(game: ScanGame, patchChoice: EngineLauncher.ArtemisPatchChoice?) {
-        scope.launch {
-            if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
-                return@launch
-            }
-            val pending = EngineLauncher.rpgSaveFormatPending(context, game)
-            if (pending != null) {
-                saveFormatTarget = game
-                saveFormatDetection = pending
-                pendingPatchChoice = patchChoice
-            } else {
-                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
-            }
-        }
-    }
-
-    // 点按直接启动游戏；Artemis 按既有策略弹出补丁确认（与游戏页长按启动一致）。
-    fun launchGame(game: ScanGame) {
-        scope.launch {
-            if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-                patchLaunchTarget = game
-            } else {
-                launchWithSaveFormatGate(game, null)
-            }
-        }
-    }
-
-    /** 用户确认转化后执行转化（best-effort），随后按既定策略启动。 */
-    fun resolveSaveFormat(target: ScanGame, convert: Boolean) {
-        val detection = saveFormatDetection
-        val patchChoice = pendingPatchChoice
-        saveFormatTarget = null
-        saveFormatDetection = null
-        pendingPatchChoice = null
-        scope.launch {
-            if (convert && detection != null) {
-                val op = try {
-                    withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, target) }
-                } catch (ce: CancellationException) {
-                    throw ce
-                } catch (_: Throwable) {
-                    null
-                }
-                val message = rpgConvertResultMessage(
-                    op,
-                    saveFormatConvertedFormat,
-                    saveFormatConvertedWithFailuresFormat,
-                    saveFormatConvertFailedMessage,
-                    saveBusyEngineRunningMessage,
-                )
-                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
-            }
-            launchError = EngineLauncher.launch(context, target, patchChoice).toErrorState(context)
-        }
     }
 
     // ===== Web 首页：应用设置「首页样式切换」为网页时，整页替换为 WebView（保留顶栏） =====
@@ -240,7 +162,10 @@ fun HomeScreen(
                 isActive = isActive,
                 reloadSignal = webReloadSignal,
                 // 悬浮玻璃底栏不占布局：网页底部留白避免内容被永久遮挡（侧栏布局该函数返回 0）
-                modifier = Modifier.fillMaxSize().padding(bottom = glassNavBottomInset()),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = glassNavBottomInset())
+                    .coachAnchor(isActive, onCoachAnchorChanged),
             )
         }
         return
@@ -251,20 +176,20 @@ fun HomeScreen(
         modifier = modifier,
         libraryState = libraryState,
         onGameClick = { selectedGame = it },
-        onGameLongClick = { launchGame(it) },
-        onRecentRemoved = { removeRecentRecord(it) },
+        // 长按不再直接启动：打开统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 改封面 / 删除）
+        onGameLongClick = { quickActionsGameUri = it.uri },
+        onRecentRemoved = onRecentRemoved,
+        onCoachAnchorChanged = onCoachAnchorChanged,
+        isActive = isActive,
     )
 
-    // ===== 与游戏页统一：点按打开操作抽屉，长按直接启动 =====
+    // ===== 与游戏页统一：点按打开操作抽屉，长按打开操作弹窗 =====
     selectedGame?.let { game ->
         key(game.uri) {
             GameActionsSheet(
                 game = game,
                 onDismiss = { selectedGame = null },
                 onGameUpdated = { replaceGame(it) },
-                onDeleteGame = { deleteGame(game) },
-                quickLaunched = quickLaunch.any { it.uri == game.uri },
-                onQuickLaunchToggle = { onQuickLaunchToggle(game) },
                 onEngineSettings = {
                     startActivityWithPageTransition(context, PerGameSettingsActivity.createIntent(context, game))
                     // 增强动效档由抽屉在侧推开始时自己平滑收起；普通档保持原版立即关闭
@@ -274,75 +199,22 @@ fun HomeScreen(
         }
     }
 
-    // ===== Artemis 首次启动补丁确认（与游戏页一致） =====
-    patchLaunchTarget?.let { game ->
-        AppAlertDialog(
-            onDismissRequest = { patchLaunchTarget = null },
-            title = {
-                Text(
-                    stringResource(R.string.game_auto_patch_title),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.game_auto_patch_message, game.title),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.game_patch_always),
-                    onClick = {
-                        val target = patchLaunchTarget
-                        patchLaunchTarget = null
-                        target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.ALWAYS) }
-                    },
-                )
-            },
-            dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    DialogTextButton(
-                        text = stringResource(R.string.game_patch_never),
-                        onClick = {
-                            val target = patchLaunchTarget
-                            patchLaunchTarget = null
-                            target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.NEVER) }
-                        },
-                    )
-                    DialogTextButton(
-                        text = stringResource(R.string.game_patch_once),
-                        onClick = {
-                            val target = patchLaunchTarget
-                            patchLaunchTarget = null
-                            target?.let { launchWithSaveFormatGate(it, EngineLauncher.ArtemisPatchChoice.ONCE) }
-                        },
-                    )
-                }
-            },
+    // ===== 长按卡片：统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 修改封面 / 删除） =====
+    quickActionsGame?.let { game ->
+        GameQuickActionsDialog(
+            game = game,
+            quickLaunched = quickLaunch.any { it.uri == game.uri },
+            onDismiss = { quickActionsGameUri = null },
+            onGameUpdated = { replaceGame(it) },
+            onDeleteGame = { onGameDeleted(game) },
+            onQuickLaunchToggle = { onQuickLaunchToggle(game) },
         )
-    }
-
-    // ===== MV/MZ 存档格式转化确认（标准 → Tyranor）；点遮罩 = 保持原样启动 =====
-    saveFormatTarget?.let { target ->
-        saveFormatDetection?.let { detection ->
-            val (standardCount, hashedCount) = detection.dialogArgs()
-            RpgSaveFormatDialog(
-                standardCount = standardCount,
-                hashedCount = hashedCount,
-                onChoice = { convert -> resolveSaveFormat(target, convert) },
-            )
-        }
-    }
-
-    launchError?.let { state ->
-        LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
 }
 
 /**
  * 原生首页（应用设置「首页样式」= 默认时挂载）：快捷启动大卡 + 最近打开列表。
- * 交互：点按开操作抽屉；快捷启动卡长按直接启动；最近卡片长按删除该条记录（仅删记录不删库）。
+ * 交互：点按开操作抽屉；快捷启动卡长按打开操作弹窗；最近卡片长按删除该条记录（仅删记录不删库）。
  */
 @Composable
 private fun NativeHomeContent(
@@ -351,6 +223,8 @@ private fun NativeHomeContent(
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     onRecentRemoved: (ScanGame) -> Unit,
+    onCoachAnchorChanged: (Rect) -> Unit,
+    isActive: Boolean,
 ) {
     val quickLaunch = libraryState.quickLaunch
     val recentGames = libraryState.recentGames
@@ -380,6 +254,8 @@ private fun NativeHomeContent(
                             quickLaunch = quickLaunch,
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
+                            onCoachAnchorChanged = onCoachAnchorChanged,
+                            isActive = isActive,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f).staggeredEntrance(1), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
@@ -393,6 +269,8 @@ private fun NativeHomeContent(
                             quickLaunch = quickLaunch,
                             onGameClick = onGameClick,
                             onGameLongClick = onGameLongClick,
+                            onCoachAnchorChanged = onCoachAnchorChanged,
+                            isActive = isActive,
                         )
                         Box(Modifier.fillMaxWidth().weight(1f).staggeredEntrance(1), contentAlignment = Alignment.Center) {
                             Text(
@@ -418,6 +296,8 @@ private fun NativeHomeContent(
                         quickLaunch = quickLaunch,
                         onGameClick = onGameClick,
                         onGameLongClick = onGameLongClick,
+                        onCoachAnchorChanged = onCoachAnchorChanged,
+                        isActive = isActive,
                     )
                 }
                 itemsIndexed(
@@ -470,9 +350,11 @@ private fun QuickLaunchSection(
     onGameClick: (ScanGame) -> Unit,
     onGameLongClick: (ScanGame) -> Unit,
     modifier: Modifier = Modifier,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
+    isActive: Boolean = true,
 ) {
     BoxWithConstraints(
-        modifier = modifier.fillMaxWidth().staggeredEntrance(0),
+        modifier = modifier.fillMaxWidth().staggeredEntrance(0).coachAnchor(isActive, onCoachAnchorChanged),
         contentAlignment = Alignment.Center,
     ) {
         if (maxWidth >= 600.dp) {
@@ -597,7 +479,7 @@ private fun QuickLaunchPagerIndicator(
 
 /**
  * 首页快捷启动大卡：封面高斯模糊铺满整卡作背景（无封面/加载中退回中性深灰底），
- * 左上角引擎类型（下方游戏名）、右侧游戏封面。交互与游戏页统一——点按开操作抽屉、长按直接启动。
+ * 左上角引擎类型（下方游戏名）、右侧游戏封面。交互与游戏页统一——点按开操作抽屉、长按打开操作弹窗。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

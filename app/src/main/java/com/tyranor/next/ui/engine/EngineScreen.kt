@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,9 +51,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.draw.drawWithContent
@@ -98,6 +101,7 @@ import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
+import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.isWideScreen
 import com.tyranor.next.ui.common.motion.BlurCrossfade
 import com.tyranor.next.ui.common.motion.MotionMode
@@ -123,8 +127,11 @@ import android.widget.Toast
 @Composable
 fun EngineScreen(
     modifier: Modifier = Modifier,
+    onCoachAnchorChanged: (Rect) -> Unit = {},
+    isActive: Boolean = true,
     gameCount: Int = 0,
 ) {
+    val latestOnCoachAnchorChanged = rememberUpdatedState(onCoachAnchorChanged)
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
@@ -194,8 +201,11 @@ fun EngineScreen(
                 stringResource(R.string.engine_tab_web),
             )
             MiuixSettingsTheme {
-                val tabModifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
+                val tabModifier = Modifier
+                    .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp)
                 if (AppThemeColors.isGlass || AppThemeColors.isMilkGlass) {
+                    // 玻璃外观：Miuix TabRow 不支持指示器描边，改用统一标签栏组件
+                    // （亮卡指示器 + 滑动动画 + 0.5dp 发丝描边，见 AGENTS.md「标签栏统一规范」）
                     // 玻璃/白雾外观：Miuix TabRow 的选中文字取 onBackground，会在亮指示器上
                     // 变成浅色；改用统一标签栏组件（自带亮底深字/深底浅字分派）。
                     SlidingTabRow(
@@ -253,6 +263,14 @@ fun EngineScreen(
                 key = { _, it -> it.name },
                 contentType = { _, _ -> "engine" },
             ) { engineIndex, engine ->
+                val isCoachTarget = engine == tabEngines.firstOrNull()
+                if (isCoachTarget) {
+                    DisposableEffect(engine) {
+                        onDispose {
+                            latestOnCoachAnchorChanged.value(Rect.Zero)
+                        }
+                    }
+                }
                 val module = ExternalEngineModuleRegistry.moduleForEngine(engine)
                 val emulator = ExternalEmulatorRegistry.forEngine(engine)
                 val installed = when {
@@ -285,6 +303,10 @@ fun EngineScreen(
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     compact = engineColumns > 1,
                     modifier = Modifier
+                        .coachAnchor(
+                            enabled = isCoachTarget && isActive,
+                            onBounds = onCoachAnchorChanged,
+                        )
                         .staggeredEntrance(engineIndex + 1)
                         .then(
                             if (MotionMode.enhanced) {

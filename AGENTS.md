@@ -84,7 +84,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 规则：可以依赖 `engine` 模块；不得依赖 Compose（含 `androidx.compose.ui/foundation/material*` UI 组件，以及 `androidx.compose.runtime` 的状态原语与 `@Immutable` 注解）；不得把页面类作为普通业务依赖。
   全局可观察状态一律用 `kotlinx.coroutines.flow`（`StateFlow`）或纯数据载荷（`ThemeColorPayload` 模式）由 UI 层 `collectAsState` 订阅。
 
-- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater` 等包。
+- 新增功能按域放入 `core/game`、`core/engine`、`core/cover`、`core/patch`、`core/unpack`、`core/settings`、`core/auth`、`core/updater`、`core/process` 等包。
 
 ### 3. 界面 UI 交互层
 
@@ -94,7 +94,7 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 
 - 规则：只能调用功能抽象层；禁止直接 import `com.core`、`com.akira`、`com.yuri`、`org.tvp`、`org.libsdl`、`org.cocos2dx`、`bridge` 等底层引擎包。
 
-- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`，公共组件放入 `ui/common`。
+- 页面按功能域放入 `ui/home`、`ui/game`、`ui/engine`、`ui/settings`、`ui/cover`、`ui/patch`、`ui/save`、`ui/archive`、`ui/auth`、`ui/onboarding`，公共组件放入 `ui/common`。
 
 ### 4. 资源归属
 
@@ -348,7 +348,7 @@ Column(fillMaxSize)                                // 页面根
 | VNDB 封面搜索   | `GameScreen.kt`（VndbSearchDialog）  | `ic_game_search`  | `search()` 网络请求 |
 | 安卓游戏选择过滤 | `AndroidGameAddDialog.kt`（已安装应用列表） | `ic_game_search` | 即时过滤，不传 |
 | krkr 在线补丁过滤 | `KrkrOnlinePatchActivity.kt`（列表首项） | `ic_game_search`  | 即时过滤，不传         |
-| 名称修改        | `GameScreen.kt`（RenameGameDialog）  | `ic_sheet_rename` | Done，内容有效即保存         |
+| 名称修改        | `GameQuickActionsDialog.kt`（RenameGameDialog） | `ic_sheet_rename` | Done，内容有效即保存 |
 | WebDAV 地址/用户名/密码 | `WebDavSettingsActivity.kt` | 对应字段语义图标 | Done，显式 Uri/Text/Password 与身份 autofill |
 | 云端游戏标识 | `SaveVersionsPanel.kt`（身份编辑） | `ic_sheet_rename` | Done，内容有效即保存 |
 | 图形倍率 | `GraphicsNodeParameters.kt` | `ic_graphics_parameters` | Done，Decimal 键盘 |

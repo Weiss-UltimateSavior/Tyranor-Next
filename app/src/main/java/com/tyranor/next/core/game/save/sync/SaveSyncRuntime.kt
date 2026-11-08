@@ -610,14 +610,22 @@ object SaveSyncRuntime {
             override fun identity(pid: Int): SaveHostIdentity {
                 return try {
                     SaveHostIdentity.Live(readProcessName(File("/proc/$pid/cmdline")))
-                } catch (_: java.io.FileNotFoundException) {
+                } catch (_: Exception) {
+                    // Any unreadable /proc entry (denied, gone, empty or oversized) is probed
+                    // with kill(pid, 0). A PID this app cannot signal cannot be one of its host
+                    // processes; treating it as Unknown would block every game forever once a
+                    // stale record's PID is recycled.
                     try {
                         android.system.Os.kill(pid, 0)
                         SaveHostIdentity.Unknown
                     } catch (failure: android.system.ErrnoException) {
-                        if (failure.errno == android.system.OsConstants.ESRCH) SaveHostIdentity.Dead else SaveHostIdentity.Unknown
+                        classifyUnreadableHostProcess(
+                            processGone = failure.errno == android.system.OsConstants.ESRCH,
+                            notSignalable = failure.errno == android.system.OsConstants.EPERM ||
+                                failure.errno == android.system.OsConstants.EACCES,
+                        )
                     } catch (_: Exception) { SaveHostIdentity.Unknown }
-                } catch (_: Exception) { SaveHostIdentity.Unknown }
+                }
             }
         }
         // An explicit restore creates bookkeeping without launching a host. Missing host evidence

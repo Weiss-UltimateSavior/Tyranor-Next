@@ -1,8 +1,9 @@
 package com.tyranor.next.ui.game
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
@@ -118,6 +118,20 @@ internal fun GameCoverFlow(
                     key(game.uri) {
                         CoverFlowCard(
                             game = game,
+                            onClick = {
+                                if (page == pagerState.currentPage) {
+                                    onGameClick(game)
+                                } else {
+                                    scope.launch {
+                                        if (MotionMode.enhanced) {
+                                            pagerState.animateScrollToPage(page, animationSpec = MotionTokens.layout(0.5f))
+                                        } else {
+                                            pagerState.animateScrollToPage(page)
+                                        }
+                                    }
+                                }
+                            },
+                            onLongClick = { onGameLongClick(game) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(3f / 4f)
@@ -137,24 +151,6 @@ internal fun GameCoverFlow(
                                     scaleX = scale
                                     scaleY = scale
                                     alpha = 1f - 0.45f * min(absOffset, 1f)
-                                }
-                                .pointerInput(page) {
-                                    detectTapGestures(
-                                        onTap = {
-                                            if (page == pagerState.currentPage) {
-                                                onGameClick(game)
-                                            } else {
-                                                scope.launch {
-                                                    if (MotionMode.enhanced) {
-                                                        pagerState.animateScrollToPage(page, animationSpec = MotionTokens.layout(0.5f))
-                                                    } else {
-                                                        pagerState.animateScrollToPage(page)
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        onLongPress = { onGameLongClick(game) },
-                                    )
                                 },
                         )
                     }
@@ -175,9 +171,12 @@ internal fun GameCoverFlow(
  * Displays an engine placeholder until its cover is decoded. Enhanced mode fades and sharpens the
  * image in the drawing layers; ordinary mode reveals it immediately when ready.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CoverFlowCard(
     game: ScanGame,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val cover by rememberCoverBitmap(game.coverUri)
@@ -195,7 +194,11 @@ private fun CoverFlowCard(
             .pressSquish(scale = PressSquishDefaults.CardScale)
             .clip(AppComponentShape)
             .background(game.engine.coverColor())
-            .glassBorder(),
+            .glassBorder()
+            // 点按：居中卡打开操作抽屉，侧卡先居中；长按：打开统一操作弹窗。
+            // 用 combinedClickable 而非 pointerInput，保证改名/封面更新后手势读取最新游戏对象，
+            // 并与瀑布流卡片共享长按触感与无障碍语义。
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
         // 无封面：引擎色底 + 引擎名占位（与网格卡片一致）

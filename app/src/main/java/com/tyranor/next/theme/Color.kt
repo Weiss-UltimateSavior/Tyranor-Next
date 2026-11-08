@@ -197,6 +197,9 @@ val PageSecondaryTextColor: Color
         else -> TextColorLight.copy(alpha = 0.6f)
     }
 
+/** 首次使用教练层的统一遮罩色。 */
+val CoachOverlayScrim: Color = Color.Black.copy(alpha = 0.46f)
+
 /**
  * 条目右侧箭头色：与设置页 `ArrowPreference` 的箭头保持一致
  * （默认风格 = 40% 前景色；复古玻璃 = 60% 的 [GlassTextSecondary]；白雾玻璃 = 中灰）。

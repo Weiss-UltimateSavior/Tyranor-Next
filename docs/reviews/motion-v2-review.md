@@ -422,3 +422,129 @@
 | 旧抽屉线程 | 上一轮已修复，本轮复核并标记 resolved | `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1221` | 源码门控与上一轮真实组件用例一致；GitHub API 已确认 resolved。 |
 | 文档覆盖率告警 | 已补 KDoc，远端百分比待新提交重算 | 本节完整范围中的生产/设备测试 Kotlin 文件 | 词法比较与编译通过；未更改门禁阈值。 |
 | 新增文档时机概括 | 已修正（低风险注释修改） | `app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt:240`；`app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt:704` | 新独立规范复审确认与实现一致。 |
+
+---
+
+## 上游冲突整合与第三轮修复（2026-11-07）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150 第一父提交 `da58c7d0ba6704847110df041d221660c43b6241`，合入上游 main `25134650cbd15836ea3ac272b3bb409c7fbe0b66`，保留双亲合并记录，不重写已发布历史。候选内容由包含本节的提交识别。最初 c65e3c55 完整范围与前两轮记录保持不变。
+
+相对第一父提交的完整清单（包括导入上游及本节记录）：45 个文件，文本 +2503/−803；另有六张上游截图为二进制文件。上游代码与图片属于本轮合并输入。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `AGENTS.md` | 3 | 3 |
+| `ARCHITECTURE.md` | 4 | 4 |
+| `CHANGELOG.md` | 7 | 0 |
+| `CONTEXT.md` | 8 | 0 |
+| `README.md` | 26 | 27 |
+| `SPEC.md` | 12 | 2 |
+| `app/build.gradle.kts` | 1 | 1 |
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionLifecycleDeviceTest.kt` | 35 | 0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt` | 155 | 0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/game/MotionGameInteractionsDeviceTest.kt` | 37 | 10 |
+| `app/src/main/java/com/tyranor/next/MainActivity.kt` | 109 | 13 |
+| `app/src/main/java/com/tyranor/next/Navigation.kt` | 12 | 3 |
+| `app/src/main/java/com/tyranor/next/TyranorNextApplication.kt` | 26 | 3 |
+| `app/src/main/java/com/tyranor/next/core/game/save/sync/SaveHostProbe.kt` | 10 | 0 |
+| `app/src/main/java/com/tyranor/next/core/game/save/sync/SaveSyncRuntime.kt` | 11 | 3 |
+| `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt` | 2 | 1 |
+| `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt` | 4 | 16 |
+| `app/src/main/java/com/tyranor/next/core/process/AppProcess.kt` | 27 | 0 |
+| `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt` | 56 | 1 |
+| `app/src/main/java/com/tyranor/next/core/settings/AppStorageNames.kt` | 10 | 0 |
+| `app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt` | 106 | 0 |
+| `app/src/main/java/com/tyranor/next/core/settings/PrefsRenameMigration.kt` | 1 | 1 |
+| `app/src/main/java/com/tyranor/next/theme/Color.kt` | 3 | 0 |
+| `app/src/main/java/com/tyranor/next/ui/common/OnboardingCoachAnchor.kt` | 20 | 0 |
+| `app/src/main/java/com/tyranor/next/ui/engine/EngineScreen.kt` | 23 | 1 |
+| `app/src/main/java/com/tyranor/next/ui/game/GameCoverFlow.kt` | 24 | 21 |
+| `app/src/main/java/com/tyranor/next/ui/game/GameQuickActionsDialog.kt` | 349 | 0 |
+| `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt` | 156 | 494 |
+| `app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt` | 51 | 169 |
+| `app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt` | 65 | 24 |
+| `app/src/main/java/com/tyranor/next/ui/onboarding/OnboardingScreen.kt` | 398 | 0 |
+| `app/src/main/java/com/tyranor/next/ui/settings/SettingsScreen.kt` | 22 | 3 |
+| `app/src/main/res/values-en/strings.xml` | 23 | 1 |
+| `app/src/main/res/values-ja/strings.xml` | 23 | 1 |
+| `app/src/main/res/values/strings.xml` | 23 | 1 |
+| `app/src/test/java/com/tyranor/next/core/game/save/sync/SaveHostProbeTest.kt` | 20 | 0 |
+| `app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt` | 278 | 0 |
+| `docs/SoftPAL-sena-rs引擎接入方案.md` | 237 | 0 |
+| `docs/reviews/motion-v2-review.md` | 126 | 0 |
+| `screenshots/index1.png` | - | - |
+| `screenshots/index2.png` | - | - |
+| `screenshots/index3.png` | - | - |
+| `screenshots/index4.png` | - | - |
+| `screenshots/index5.png` | - | - |
+| `screenshots/index6.png` | - | - |
+
+### 结论摘要
+
+八个真实内容冲突均已逐处整合，本地冲突索引为空；提交后须再核对 GitHub 状态。上游首次使用引导、长按管理弹窗、单点启动抽屉及最新布局均保留，同时继续接入本 PR 的两档动效、抽屉自绘运动、按压/入场、根 Miuix 浮层宿主和动作门控。抽屉单行动作、固定启动按钮及紧凑把手是上游产品变更，不能将合并前后静止布局宣称为像素一致；本轮没有调节既有增强动效曲线或参数。
+
+CodeRabbit 最新 [review 5812153375](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5812153375) 的封面搜索平台动画问题成立并已修复。五个未参与实现的独立 agent 分别从逻辑、架构、健壮性、回归、规范复审；发现一项引导自动切页未重播入场的合并遗漏，修复后再次由独立逻辑及其余视角复核，未发现新的成立问题。
+
+最终 Release / Debug / AndroidTest 构建通过，Windows JVM 1,984 项的失败集合仍为既有 43 项，新增失败 0。真机未连接，本轮设备运行和录屏对照未执行；不以编译、旧录屏代替本轮设备验收。
+
+### 问题清单
+
+| No. | 级别 | 问题与证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR3-1 | 高 | GitHub 为 CONFLICTING / DIRTY，本地合并确认 CHANGELOG 与七个 Kotlin 文件内容冲突。 | 已逐处整合两侧逻辑，最终冲突索引为空。 | 本节完整清单与下方说明 |
+| CR3-2 | 中 | 封面搜索使用默认 syncDialogWindow，普通档平台进退场被清除；review 5812153375 的 outside-diff 评论指向旧 GameScreen:1599。 | 仅普通档保留平台动画；关闭和 dispose 同步清 dim 与触摸，按捕获窗口清理。 | `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1254` |
+| CR3-3 | 中 | 初版整合的 coachPage effect 只改 selectedIndex，未走点击的重播路径；无 key remember 不会重新执行 playOnStart，未访问页 generation 为 0。 | 引导与点击共用 changeSelectedPage，保留离屏和最小间隔门控。 | `app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt:377` |
+
+### 重点问题说明
+
+**CR3-1.【高】冲突整合保留两侧功能。**
+
+- MainActivity 的 ProvideMotionEnvironment 与页面压暗包裹上游 AppEntry，引导层和主导航使用同一份组合；初始化判定与通知权限时机保留上游行为。
+- MainScreen 的 activeIndex 同时驱动引导、转场和导航。普通引导保持上游 80ms，普通常规页保持 200/160ms；增强档仍用原弹簧。页面完全停稳后启用引导锚点，增强尾段交互和 Web 首页采样锁存保留。
+- Home / Game / Engine / Settings 的引导回调、isActive、锚点清理接回；保留异步安装态查询和令牌保护、入场、按压。清除自动合并产生的重复 modifier 参数与实参。
+- 游戏管理动作按上游迁至长按 GameQuickActionsDialog；单点抽屉仍由 MotionSheetController 管理。运动 surface、跟手下拉、生命周期交接、14dp / 16ms 入场参数与 busy 守卫保留。管理操作没有消失，也没有重复放回抽屉。
+- GameCoverFlow 使用上游 combinedClickable 的最新回调与无障碍语义，保留原增强吸附、侧卡居中和按压图层。
+- DefaultBottomNavigationBar 与两个父提交逐字相同，其余保护导航路径相对两侧均无差异；滑条、开关、MotionTokens / MotionSprings / SheetMotion / PressSquish 与第一父提交相同。根透明、零 inset Miuix 浮层宿主保持，白雾额外刻度调色未恢复。
+- app/build.gradle.kts 与合入 main 逐字相同；版本 1.64 来自上游 e71c0bd5，本轮没有额外修改版本或构建配置。
+
+**CR3-2.【中】封面搜索普通档窗口退场。** `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1149` 在父级关闭前解除触摸并清零 dim；syncDialogWindow 仅普通档保留平台动画，增强档维持旧策略。DisposableEffect 捕获实际 window，旧窗口 dispose 不会通过共享数组误清新窗口。绑定成功仍经 beforeClose 清理，失败保留界面、取消原样传播。新增 `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt:42` 两档真实 UI 设备用例，对比相同 fullscreen properties 的平台参考，再检查显式关闭和外部移除；不执行搜索、下载或游戏启动。本轮仅编译，运行未执行。
+
+**CR3-3.【中】引导自动切页接回原入场。** 独立逻辑复审由 EntranceState 无 key remember、generation 初值与 isFresh 条件确认遗漏。最终引导 effect 只在实际索引变化时调用共享路径，同一游戏页内推进多步不会重播；用户点击保留原索引、普通档守卫、离屏和最小间隔判定。`app/src/androidTest/java/com/tyranor/next/ui/common/MotionLifecycleDeviceTest.kt:201` 新用例在四倍 Compose 缩放下用 512ms 区分普通引导短转场和常规转场；本轮编译通过、设备运行未执行。
+
+### 其余问题与已核对部分
+
+- **待确认，低级建议：PressSquish onDetach 取消任务。** CodeRabbit 将其标为 Unverified。本轮核对实际 Compose UI Android 1.11.2：Modifier.kt:178–179 保证 onDetach 后取消节点 scope；:284–297 先设置 isAttached=false 再取消整个 scope；NodeChain.kt:521–529 在同一同步栈执行 runDetachLifecycle → markAsDetached，无挂起点。委托 pointer 节点取消时的 finally 可调用 release，但其任务仍归父 scope，随后被整体取消，没有找到旧 scope 跨重挂运行的证据。保持执行代码，不把未证实建议写成已修复缺陷。来源：[Google Maven 官方 sources](https://dl.google.com/dl/android/maven2/androidx/compose/ui/ui-android/1.11.2/ui-android-1.11.2-sources.jar)，SHA-256 `aafb071a46db33fc841234f58061c5bc543ddaa2c8e56247409cee8e81a7b6d2`；依赖源码只留本机。
+- 上一提交 da58c7d0 的 CodeRabbit 文档覆盖率实测 **87.50%**（136 函数 / 69 文件，阈值 80%），已通过。本轮新提交仍待重算，未降低阈值。
+
+### 已执行验证
+
+构建环境为隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。
+
+| 命令 / 检查 | 结果 |
+|---|---|
+| `git fetch origin main`；`git merge --no-commit --no-ff origin/main` | 合入上游 25134650；确认八个冲突文件后逐处解决。提交前再次 fetch，main 未变化。 |
+| `git ls-files --unmerged`；`git diff --cached --check` | 最终均无输出，冲突索引与格式检查通过；解决文件 UTF-8 无 BOM、LF。 |
+| `./gradlew.bat :app:compileReleaseKotlin` | 通过；最后完整打包再次编译通过。 |
+| `./gradlew.bat testDebugUnitTest --continue --no-daemon` | 冻结最终源码后复跑：1,984 项、43 失败（app 27 / engine 16），失败 ID 与实际跑过的 c65e3c55 基线及 da58c7d0 相同，新增失败 0；新增 15 项上游测试计入总数。本轮未重复运行基线 checkout。 |
+| `./gradlew.bat :app:lintDebug --no-daemon` | 最终退出 1；29 Error / 337 Warning / 10 Hint。Error 集合无新增；增加提示来自上游引导/管理弹窗代码，不能写成全绿。 |
+| `python tools/check-hardcoded-ui-strings.py` | 通过，三语言自动合并结果一致。 |
+| `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` | 初轮失败：lintVitalAnalyzeRelease 内部异常，报 MainScreen 的 FIR 属性声明缺失，未记作通过。 |
+| `./gradlew.bat :app:compileReleaseKotlin :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` | 冻结源码后直接重跑通过，包含 release lintVitalAnalyzeRelease；没有禁用 lint、加 suppression 或跳过任务。新增及迁移设备用例编译通过。 |
+| 两侧源码核对 | 保护导航、DefaultBottomNavigationBar 与两侧一致；滑条/开关/动效 token/控制器/PressSquish 与第一父提交一致；版本/构建脚本与上游一致。 |
+| `adb devices -l`；`adb mdns services` | 无已连接设备，未发现可用 mDNS 目标。 |
+
+未执行：本轮新普通引导转场、抽屉导航防重和两档封面窗口设备用例运行；真机录屏逐帧对照；引导全流程与长按管理链路实际操作；所有主题/深浅色、平板/折叠屏/横屏、低端机/其它机型、真实引擎游戏/存档/封面下载/快捷方式、Perfetto/功耗/baseline profile 性能收益。旧 22/22、裁剪 2/2 和录屏仅为历史证据，不算本轮通过。
+
+本轮未启动手机脚本、screenrecord、perfetto 或 instrumentation，未发送 input tap/swipe，未操作官方包或修改系统设置。手机未连接，不能再次核对全机进程；本轮电脑验收脚本结束后停止自身监看进程。原始日志、依赖源码、私有路径/端点、媒体和构建包不纳入提交。
+
+### 修复记录
+
+| 项目 | 处理结果 | 文件与行号 | 验证 |
+|---|---|---|---|
+| CR3-1 冲突 | 已解决，保留双亲历史 | 八个冲突文件见本节清单 | 无冲突索引，最终编译/三类 APK 通过；提交后再核对 GitHub 状态。 |
+| CR3-2 封面窗口 | 已修复，真机未执行 | `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1149`、`app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1254`；`app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt:42` | 两档真实 UI 用例编译通过，运行/录屏未执行。 |
+| CR3-3 引导入场 | 已修复 | `app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt:377`；`app/src/androidTest/java/com/tyranor/next/ui/common/MotionLifecycleDeviceTest.kt:201` | 独立复核确认修复成立；最终编译通过。 |
+| PressSquish 建议 | 待确认，本轮不改 | 原 PressSquish.kt 与实际 Compose 1.11.2 卸载调用栈 | 未找到支持竞态的证据，保留现有生命周期实现。 |
+| 抽屉测试迁移 | 已适配上游接口并补导航防重 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionGameInteractionsDeviceTest.kt:28`、`app/src/androidTest/java/com/tyranor/next/ui/game/MotionGameInteractionsDeviceTest.kt:66` | AndroidTest 构建通过，设备运行未执行。 |
