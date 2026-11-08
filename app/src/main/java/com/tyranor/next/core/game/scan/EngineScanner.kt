@@ -124,7 +124,11 @@ object EngineScanner {
         val refreshed = GameLibraryFacade.updateGames(context) { currentGames ->
             val existingByUri = currentGames.associateBy { it.uri }
             val scanned = activeScanned.map { current ->
-                existingByUri[current.uri]?.let { previous ->
+                existingByUri[current.uri]?.let { saved ->
+                    val previous = RuntimeModuleBindings.builtInSystemNnn(saved)
+                    if (current.engine == EngineType.SYSTEMNNN && previous.isRuntimeModuleBound() &&
+                        !previous.runtimeModulePackage.isNullOrBlank()
+                    ) return@let previous
                     current.copy(
                         coverUri = previous.coverUri ?: current.coverUri,
                         coverSource = previous.coverSource
@@ -1073,6 +1077,7 @@ object EngineScanner {
         var hasMkxpZRubyRuntime = false
         var hasFvpScript = false
         var hasFvpPack = false
+        var hasSystemNnnEntry = false
         var hasAldScript = false
         var aldCount = 0
         var hasXs35Support = false
@@ -1100,6 +1105,11 @@ object EngineScanner {
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
                 if (lower == "app.asar" || childRel.endsWith("/app.asar")) hasAppAsar = true
+                if (rel.isEmpty() && lower == "spt") {
+                    hasSystemNnnEntry = hasSystemNnnEntry || childrenOf(entry).any {
+                        !isDirectory(it) && nameOf(it).equals("sys.spt", ignoreCase = true)
+                    }
+                }
                 if (lower == "config") {
                     // CatSystem2：config/startup.xml 是高价值目录特征（不递归，只看该文件名）
                     childrenOf(entry).forEach { child ->
@@ -1410,7 +1420,7 @@ object EngineScanner {
         ) {
             return Detection(EngineType.RUFFLE, 88, ruffleSwf, RUFFLE_MODULE_ALIAS)
         }
-        if (hasIndex) {
+        if (hasIndex && !hasSystemNnnEntry) {
             return Detection(EngineType.WEB_OTHER, 70, LAUNCH_TARGET_GAME_DIR)
         }
         if (xp3Files.isNotEmpty() || hasStartupTjs || hasConfigTjs) {
@@ -1430,6 +1440,9 @@ object EngineScanner {
         }
         if (isSystem4) {
             return Detection(EngineType.XSYS4, 90, LAUNCH_TARGET_GAME_DIR, titleHint = system4Title())
+        }
+        if (hasSystemNnnEntry) {
+            return Detection(EngineType.SYSTEMNNN, 96, LAUNCH_TARGET_GAME_DIR)
         }
         return UNKNOWN_DETECTION
     }

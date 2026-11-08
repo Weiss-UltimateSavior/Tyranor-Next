@@ -24,6 +24,9 @@ _Avoid_: Winlator BGI 插件、完整 BGI 支持
 AliceSoft 的两代引擎，各为独立的引擎类型（XSYS35 对应 System 3.x，XSYS4 对应 System 4）：目录特征、启动参数与设置互不相同，不合并为一类。
 _Avoid_: System3/4、AliceSoft 引擎
 
+**SystemNNN（SYSTEMNNN）**:
+通过 SystemNNN-Emberfall 在 Android 上运行 SystemNNN 游戏的内置引擎。使用游戏自带界面和配置，游戏目录内的 Emberfall 存档与 PC 存档分别管理。
+
 **视觉小说引擎组（Framebuffer 引擎）**:
 Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（RealLive、AVG32、UK2）的统称：引擎逐帧输出 RGBA 帧缓冲，宿主 `FramebufferGameActivity` 拷进 Bitmap 呈现并转发指针/键盘/文本输入；文本编码（NLS）按全局/单游戏设置。
 _Avoid_: 软渲染引擎、game_fb 引擎

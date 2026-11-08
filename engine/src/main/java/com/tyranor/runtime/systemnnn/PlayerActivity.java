@@ -1,0 +1,1555 @@
+package com.tyranor.runtime.systemnnn;
+
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+
+import android.Manifest;
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.DialogInterface;
+import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.*;
+import android.provider.Settings;
+import android.provider.DocumentsContract;
+import android.os.storage.StorageManager;
+import android.os.storage.StorageVolume;
+import android.util.TypedValue;
+import android.view.*;
+import android.widget.*;
+import java.io.File;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.DateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+public final class PlayerActivity extends Activity implements GameRunner.Listener {
+    private static final String PREFIX="com.tyranor.runtime.extra.";
+    private File game;
+    private GameRunner runner;
+    private FrameLayout root,stage;
+    private SurfaceView screen;
+    private Button panelActionButton;
+    private TextView status;
+    private DialoguePanel dialoguePanel;
+    private GameStoryControls controls;
+    private FrameLayout independentStatus;
+    private final GameStatusPartyPanel[] independentParts=new GameStatusPartyPanel[2];
+    private int independentMode;
+    private GameNotice quickNoticeView;
+    private DialogueStyle dialogueStyle=DialogueStyle.fallback();
+    private GameChoicePanel choices;
+    private TitlePanel titlePanel;
+    private LogoPanel logoPanel;
+    private TitleMenu titleModel;
+    private GameUiAssets uiAssets;
+    private GameUiPanel gamePanel,preparingPanel;
+    private UiPreviewPool.Warmup panelWarmup;
+    private boolean returningToTitle;
+    private Bitmap titlePrevious;
+    private SceneEntrance sceneEntrance;
+    private MoviePlayback moviePlayback;
+    private GameSlotsPanel gameSlots;
+    private GalleryCatalog.Page galleryPage,replayReturn;
+    private long galleryRequest;
+    private int galleryCgPage;
+    private boolean sceneReplay;
+    private Runnable panelBack;
+    private boolean fromTyn;
+    private int width=1280,height=720,lastX=0,lastY=0;
+    private final int[] storyOrigin=new int[2];
+    private float storyDownX,storyDownY;
+    private int storyTouchSlop;
+    private boolean storyDrag;
+    private boolean foreground,permissionPending;
+    private boolean uiHidden,autoMode,skipMode,typing,refreshAfterLoad;
+    private int panelsOpen,revealed;
+    private String fullBody="";
+    private GameRunner.Frame currentFrame;
+    private GameRunner.Modal visibleModal,modeUnderPanel;
+    private Bitmap optionalGalleryPrevious;
+    private boolean openGalleryAfterTitle;
+    private SharedPreferences preferences;
+    private PlayerSettings settings;
+    private final Handler ui=new Handler(Looper.getMainLooper());
+    private final ArrayList<AlertDialog> openedPanels=new ArrayList<>();
+    private AlertDialog slotsDialog;
+    private LinearLayout slotRows;
+    private boolean savingSlots;
+    private boolean syncingRuntime;
+    private int[] pendingDisplay,pendingAuxiliary;
+    private int mouseVariant=Integer.MIN_VALUE;
+    private boolean pcSaveBusy;
+    private byte[] pendingPcExport;
+    private final SharedPreferences.OnSharedPreferenceChangeListener settingsListener=(p,key) -> {
+        if(syncingRuntime||RuntimeSettingsAdapter.isPersistedKey(key))return;
+        settings=PlayerSettings.read(p);
+        if (dialoguePanel!=null) dialoguePanel.settings(settings);
+        if(PlayerSettings.READING_SIZE.equals(key))return;
+        selectDialogueVariant();
+        if (runner!=null) runner.settings(key,settings);
+        immersive();
+        updateStatus();
+    };
+
+    @Override public void onCreate(Bundle saved) {
+        super.onCreate(saved);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if(Build.VERSION.SDK_INT>=28){
+            WindowManager.LayoutParams window=getWindow().getAttributes();
+            window.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(window);
+        }
+        setVolumeControlStream(android.media.AudioManager.STREAM_MUSIC);
+        immersive();
+        root=new FrameLayout(this); root.setBackgroundColor(Color.BLACK); setContentView(root);
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            int left,top,right,bottom;
+            if(Build.VERSION.SDK_INT>=30){
+                android.graphics.Insets safe=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+                left=safe.left;top=safe.top;right=safe.right;bottom=safe.bottom;
+            }else{
+                left=insets.getSystemWindowInsetLeft();top=insets.getSystemWindowInsetTop();
+                right=insets.getSystemWindowInsetRight();bottom=insets.getSystemWindowInsetBottom();
+                if(Build.VERSION.SDK_INT>=28&&insets.getDisplayCutout()!=null){
+                    DisplayCutout cutout=insets.getDisplayCutout();
+                    left=Math.max(left,cutout.getSafeInsetLeft());top=Math.max(top,cutout.getSafeInsetTop());
+                    right=Math.max(right,cutout.getSafeInsetRight());bottom=Math.max(bottom,cutout.getSafeInsetBottom());
+                }
+            }
+            if(view.getPaddingLeft()!=left||view.getPaddingTop()!=top||view.getPaddingRight()!=right||view.getPaddingBottom()!=bottom){
+                view.setPadding(left,top,right,bottom);layoutStage();
+            }
+            return insets;
+        });
+        root.requestApplyInsets();
+        preferences=PlayerSettings.preferences(this); settings=PlayerSettings.read(preferences);
+        preferences.registerOnSharedPreferenceChangeListener(settingsListener);
+        Intent i=getIntent();
+        String path=i.getStringExtra(PREFIX+"FOLDER_PATH");
+        fromTyn="com.tyranor.runtime.action.LAUNCH".equals(i.getAction());
+        if (!fromTyn) {
+            if (saved!=null) path=saved.getString("selectedGame");
+            if (path==null || path.isEmpty()) { chooseHome(null); return; }
+        } else if (path==null || path.isEmpty()) {
+            chooseHome("TYN 没有传入游戏目录。"); return;
+        }
+        if (i.getIntExtra(PREFIX+"PROTOCOL_VERSION",1)!=1) {
+            message("启动协议不受支持","请检查 Tyranor-Next 和引擎模块的版本。",null,null); return;
+        }
+        try {
+            File input=new File(path);
+            if (!input.isAbsolute()) throw new IOException("TYN 传入的目录需要是绝对路径");
+            game=input.getCanonicalFile();
+        } catch (IOException e) { message("无法打开游戏",e.getMessage(),null,null); return; }
+        inspectAccess();
+    }
+    private void chooseHome(String reason) {
+        String hint="选择解压后的 SystemNNN 游戏文件夹，里面应有 spt/sys.spt。";
+        message(getApplicationInfo().loadLabel(getPackageManager()).toString(),reason==null?hint:reason+"\n"+hint,"选择游戏目录",
+            v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),32));
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data) {
+        super.onActivityResult(request,result,data);
+        if(request==33){
+            if(result==RESULT_OK&&data!=null&&data.getData()!=null)importPcSave(data.getData());
+            else setPcSaveBusy(false);
+            return;
+        }
+        if(request==34){
+            byte[] contents=pendingPcExport;pendingPcExport=null;
+            if(result==RESULT_OK&&data!=null&&data.getData()!=null&&contents!=null&&runner!=null){
+                Uri uri=data.getData();
+                runner.writePcExport(()->{
+                    try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){
+                        if(out==null)throw new IOException("无法打开选中的文件");
+                        out.write(contents);
+                    }
+                    return null;
+                },()->runOnUiThread(()->setPcSaveBusy(false)));
+            }else setPcSaveBusy(false);
+            return;
+        }
+        if (request!=32 || result!=RESULT_OK || data==null || data.getData()==null) return;
+        try {
+            Uri uri=data.getData();
+            if (!"com.android.externalstorage.documents".equals(uri.getAuthority()))
+                throw new IOException("请在文件选择器的「此设备」或 SD 卡中选择目录。");
+            String[] id=DocumentsContract.getTreeDocumentId(uri).split(":",2);
+            if (id.length!=2) throw new IOException("无法读取所选目录的位置。");
+            File volume=null;
+            if ("primary".equalsIgnoreCase(id[0])) volume=Environment.getExternalStorageDirectory();
+            else for (StorageVolume v:getSystemService(StorageManager.class).getStorageVolumes())
+                if (id[0].equalsIgnoreCase(v.getUuid())) {
+                    volume=Build.VERSION.SDK_INT>=30?v.getDirectory():new File("/storage",v.getUuid()); break;
+                }
+            if (volume==null) throw new IOException("找不到所选存储卷。");
+            File selected=new File(volume,id[1]).getCanonicalFile();
+            if (!selected.toPath().startsWith(volume.getCanonicalFile().toPath())) throw new IOException("游戏目录无效。");
+            game=selected; inspectAccess();
+        } catch (IOException | IllegalArgumentException e) { chooseHome(e.getMessage()); }
+    }
+    private void choosePcSave(){
+        if(runner==null||pcSaveBusy)return;
+        Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
+        setPcSaveBusy(true);
+        try{startActivityForResult(picker,33);}
+        catch(ActivityNotFoundException e){setPcSaveBusy(false);notice("无法打开文件选择器");}
+    }
+    private void choosePcExport(){
+        GameRunner owner=runner;
+        if(owner==null||pcSaveBusy)return;
+        setPcSaveBusy(true);
+        owner.preparePcExport(contents->runOnUiThread(()->{
+            if(contents==null||owner!=runner||isDestroyed()||isFinishing()){setPcSaveBusy(false);return;}
+            pendingPcExport=contents;
+            Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream")
+                .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,"data1.sav");
+            try{startActivityForResult(picker,34);}
+            catch(ActivityNotFoundException e){pendingPcExport=null;setPcSaveBusy(false);notice("无法打开文件选择器");}
+        }));
+    }
+    private void setPcSaveBusy(boolean busy){pcSaveBusy=busy;updatePanelActionEnabled();}
+    private byte[] readPcSave(Uri uri) throws IOException {
+        try(InputStream input=getContentResolver().openInputStream(uri)){
+            if(input==null)throw new IOException("无法打开选中的文件");
+            ByteArrayOutputStream data=new ByteArrayOutputStream();byte[] buffer=new byte[8192];
+            for(int n;(n=input.read(buffer))!=-1;){
+                if(n>16*1024*1024-data.size())throw new IOException("PC 存档超过 16 MiB");
+                data.write(buffer,0,n);
+            }
+            return data.toByteArray();
+        }
+    }
+    private void importPcSave(Uri uri){
+        GameRunner owner=runner;
+        if(owner==null){setPcSaveBusy(false);return;}
+        GameUiPanel panel=gamePanel;
+        setPcSaveBusy(true);
+        owner.importPcSave(()->readPcSave(uri),success->runOnUiThread(()->{
+            setPcSaveBusy(false);
+            if(!success||owner!=runner||isDestroyed()||isFinishing())return;
+            if(panel!=null&&panel==gamePanel)panel.leave(uiAssets.load,false,(picture,filled)->enterStory(picture,filled));
+            else enterStory(null);
+        }));
+    }
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        if (!fromTyn && game!=null) state.putString("selectedGame",game.getPath());
+    }
+    private void inspectAccess() {
+        if (game==null || runner!=null) return;
+        File script=GameResourcePaths.file(game,"spt","sys.spt");
+        if (script!=null) {
+            // Scoped storage may allow stat() and directory listings while denying open().
+            try (FileInputStream probe=new FileInputStream(script)) {
+                File mapping=GameResourcePaths.file(game,"sjis_ext.bin");
+                if (mapping!=null) try (FileInputStream map=new FileInputStream(mapping)) { map.read(); }
+                if (probe.read()!=-1) { startGame(); return; }
+            } catch (IOException ignored) { /* Show the appropriate storage action below. */ }
+        }
+        if(!requestStorageAccess(false))chooseHome("在所选目录里没有找到可读取的 spt/sys.spt。");
+    }
+    private boolean requestStorageAccess(boolean writing) {
+        String permission=writing?Manifest.permission.WRITE_EXTERNAL_STORAGE:Manifest.permission.READ_EXTERNAL_STORAGE;
+        boolean needsGrant=Build.VERSION.SDK_INT>=30 ? !Environment.isExternalStorageManager() :
+                checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED;
+        if (needsGrant) {
+            message("允许访问游戏目录","请为 SystemNNN 开启文件访问权限，以便读取游戏资源并写入 sav 存档目录。",
+                "打开权限设置",v -> {
+                    permissionPending=true;
+                    if (Build.VERSION.SDK_INT>=30) {
+                        Intent settings=new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:"+getPackageName()));
+                        try { startActivity(settings); }
+                        catch (android.content.ActivityNotFoundException e) { startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)); }
+                    } else requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE},21);
+                });
+        }
+        return needsGrant;
+    }
+    private void startGame() {
+        GameSavePaths saves;
+        try{saves=GameSavePaths.forGame(game);}
+        catch(IOException|SecurityException e){message("无法打开游戏存档目录",e.getMessage(),"重试",v->inspectAccess());return;}
+        File directory=saves.directory();
+        if(!(directory.isDirectory()?directory:game).canWrite() && requestStorageAccess(true))return;
+        root.removeAllViews();
+        storyTouchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
+        stage=new FrameLayout(this); root.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        panelActionButton=new Button(this);
+        panelActionButton.setSingleLine(true);
+        panelActionButton.setSoundEffectsEnabled(false);
+        panelActionButton.setVisibility(View.GONE);
+        panelActionButton.setOnClickListener(v->{
+            if(!panelActionReady())return;
+            if(gamePanel instanceof GameSettingsPanel)showReadingSettings();
+            else if(gamePanel instanceof GameSlotsPanel)((GameSlotsPanel)gamePanel).performPcTransfer();
+        });
+        FrameLayout.LayoutParams actionPosition=new FrameLayout.LayoutParams(-2,dp(48),Gravity.TOP|Gravity.END);
+        actionPosition.setMargins(dp(4),dp(4),dp(4),0);
+        root.addView(panelActionButton,actionPosition);
+        root.getViewTreeObserver().addOnPreDrawListener(()->{updatePanelActionEnabled();return true;});
+        root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
+        screen=new SurfaceView(this); screen.setContentDescription("游戏画面");screen.setSoundEffectsEnabled(false);
+        stage.addView(screen,new FrameLayout.LayoutParams(-1,-1));
+        screen.setOnTouchListener((view,event) -> {
+            if (event.getActionMasked()==MotionEvent.ACTION_UP) {advance();view.performClick();}
+            return true;
+        });
+        dialoguePanel=new DialoguePanel(this,v -> advance()); dialoguePanel.settings(settings);
+        stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
+        status=label("",12); status.setGravity(Gravity.CENTER); status.setPadding(dp(8),dp(3),dp(8),dp(3));
+        status.setBackground(rounded(0xb51a2030,6));
+        FrameLayout.LayoutParams statusParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START);
+        statusParams.setMargins(dp(8),dp(8),0,0); stage.addView(status,statusParams); status.setVisibility(View.GONE);
+        runner=new GameRunner(game,saves,getFilesDir(),preferences,settings,this);
+        screen.getHolder().addCallback(new SurfaceHolder.Callback() {
+            public void surfaceCreated(SurfaceHolder holder) {if(runner!=null)runner.surface(holder.getSurface());}
+            public void surfaceChanged(SurfaceHolder holder,int format,int w,int h) {if(runner!=null)runner.surface(holder.getSurface());}
+            public void surfaceDestroyed(SurfaceHolder holder) {if(runner!=null)runner.surface(null);}
+        });
+        if (foreground) runner.active(true);
+        layoutStage();
+    }
+    private void systemClick() {if(runner!=null)runner.playClick();}
+    private View.OnClickListener clicked(View.OnClickListener action) {return v -> {systemClick();if(action!=null)action.onClick(v);};}
+    private DialogInterface.OnClickListener dialogClick(DialogInterface.OnClickListener action) {
+        return (dialog,which) -> {systemClick();if(action!=null)action.onClick(dialog,which);};
+    }
+    private void layoutStage() {
+        if(stage==null)return;
+        if(dialoguePanel!=null)dialoguePanel.canvas(width,height);
+        if(controls!=null)controls.canvas(width,height);
+        if(quickNoticeView!=null)quickNoticeView.canvas(width,height);
+        if(gamePanel!=null)gamePanel.canvas(width,height);
+        reserveCommandSpace();
+        if(root.getWidth()==0 || root.getHeight()==0)return;
+        int availableWidth=root.getWidth()-root.getPaddingLeft()-root.getPaddingRight();
+        int availableHeight=root.getHeight()-root.getPaddingTop()-root.getPaddingBottom();
+        if(availableWidth<=0||availableHeight<=0)return;
+        float scale=Math.min((float)availableWidth/width,(float)availableHeight/height);
+        int viewportWidth=availableWidth;
+        if(panelActionButton!=null&&panelActionButton.getVisibility()==View.VISIBLE){
+            panelActionButton.measure(View.MeasureSpec.makeMeasureSpec(availableWidth,View.MeasureSpec.AT_MOST),
+                View.MeasureSpec.makeMeasureSpec(dp(48),View.MeasureSpec.EXACTLY));
+            int actionWidth=Math.min(availableWidth-1,panelActionButton.getMeasuredWidth()+dp(8));
+            if((availableWidth-Math.round(width*scale))/2<actionWidth){
+                viewportWidth-=actionWidth;
+                scale=Math.min((float)viewportWidth/width,(float)availableHeight/height);
+            }
+        }
+        int w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
+        int left=(viewportWidth-w)/2;
+        if(root.getLayoutDirection()==View.LAYOUT_DIRECTION_RTL)left+=availableWidth-viewportWidth;
+        int top=(availableHeight-h)/2;
+        FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)stage.getLayoutParams();
+        int gravity=Gravity.TOP|Gravity.LEFT;
+        if(params.width!=w||params.height!=h||params.gravity!=gravity||params.leftMargin!=left||params.topMargin!=top){
+            params.width=w;params.height=h;params.gravity=gravity;params.leftMargin=left;params.topMargin=top;
+            stage.setLayoutParams(params);
+        }
+    }
+    @Override public void loaded() {runOnUiThread(() -> {refreshAfterLoad=true;modeUnderPanel=null;});}
+    @Override public void frame(GameRunner.Frame frame) {
+        runOnUiThread(() -> {
+            if (isDestroyed() || stage==null) return;
+            if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
+            if(logoPanel!=null){stage.removeView(logoPanel);logoPanel=null;}
+            if (frame.width>0&&frame.height>0&&(width!=frame.width || height!=frame.height)) {width=frame.width;height=frame.height;layoutStage();}
+            if(frame.wait==NativeGame.MODAL){
+                currentFrame=frame;
+                // Preserve the last story composition until the modal has captured it.
+                if(gamePanel==null&&preparingPanel==null)showScriptModal(null);
+                return;
+            }
+            modeUnderPanel=null;
+            boolean changed=refreshAfterLoad || currentFrame==null || currentFrame.wait!=frame.wait || currentFrame.line!=frame.line ||
+                currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
+                !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) || currentFrame.nameWindow!=frame.nameWindow;
+            currentFrame=frame;
+            dialoguePanel.storyBody(frame.wait==NativeGame.DIALOGUE);
+            selectDialogueVariant();
+            if (changed) {
+                refreshAfterLoad=false;
+                typing=false; fullBody=frame.body;
+                dialoguePanel.speaker(frame.speaker,frame.nameWindow);dialoguePanel.read(frame.alreadyRead);
+                if(choices!=null){stage.removeView(choices);choices=null;}
+                revealed=0;typing=frame.wait==NativeGame.DIALOGUE&&!frame.body.isEmpty();
+                dialoguePanel.message(typing?frame.body:"",0);
+                if(frame.wait==NativeGame.CHOICE&&uiAssets!=null){
+                    choices=new GameChoicePanel(this,uiAssets,frame,preferences.getBoolean("changeSelectColor",false),
+                        ()->{if(runner!=null)runner.choicePressed(frame.word);},
+                        number->{if(runner!=null)runner.input(lastX,lastY,number);});
+                    choices.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});
+                    int at=controls==null?stage.getChildCount():stage.indexOfChild(controls);
+                    stage.addView(choices,at,new FrameLayout.LayoutParams(-1,-1));
+                }
+                if(frame.wait==NativeGame.END){
+                    String end="本段已结束 · 打开菜单可读档或返回标题";
+                    dialoguePanel.speaker("",false);dialoguePanel.message(end,end.length());
+                }
+            }
+            updateVisibility(); updateStatus();
+            if(frame.wait==NativeGame.PLACE&&gamePanel==null&&preparingPanel==null)showPlace(null);
+        });
+    }
+    @Override public void style(DialogueStyle style) {runOnUiThread(() -> {dialogueStyle=style;if(dialoguePanel!=null){dialoguePanel.style(style);reserveCommandSpace();}});}
+    @Override public void choiceTime(GameRunner.Frame frame,int remaining){runOnUiThread(()->{
+        if(choices!=null&&currentFrame==frame)choices.remaining(remaining);
+    });}
+    private void selectDialogueVariant(){
+        if(dialoguePanel==null||preferences==null)return;
+        boolean line=currentFrame!=null&&currentFrame.wait==NativeGame.DIALOGUE;
+        dialoguePanel.variant(currentFrame==null?0:currentFrame.windowType,currentFrame==null?0:currentFrame.fontType,
+            preferences.getInt("messageWindowIndex",0),line&&currentFrame.layoutCommand==0x22220002,!line||currentFrame.windowVisible);
+        reserveCommandSpace();
+    }
+    private void reserveCommandSpace(){
+        if(dialoguePanel!=null&&controls!=null)dialoguePanel.contentRight(controls.contentRight(dialoguePanel.bodyX(),dialoguePanel.bodyY(),
+            dialoguePanel.bodyY()+dialoguePanel.bodyHeight(),dialoguePanel.bodyX()+dialoguePanel.bodyWidth()));
+    }
+    @Override public void panels(GameUiAssets assets) {runOnUiThread(() -> {
+        uiAssets=assets;if(isDestroyed()||stage==null)return;
+        dialoguePanel.cursorAssets(assets);
+        if(controls!=null)stage.removeView(controls);
+        controls=new GameStoryControls(this,assets,new GameStoryControls.Listener(){
+            public void begin(GameStoryControlsModel.Action action){
+                if(runner!=null){runner.menu(true);warmStoryPanel(action);}
+            }
+            public void sound(int se,int voice){if(runner!=null)runner.playClick(se,voice);}
+            public void action(GameStoryControlsModel.Action action,boolean target){
+                if(runner==null)return;
+                switch(action){
+                case MENU:showMenu();break;
+                case CONFIG:runner.suspendScriptAudio();showSettings();break;
+                case BACKLOG:showBacklog();break;
+                case SAVE:runner.suspendScriptAudio();showSlots(true);break;
+                case LOAD:runner.suspendScriptAudio();showSlots(false);break;
+                case QUICK_SAVE:runner.quickSave();break;
+                case QUICK_LOAD:runner.quickLoad();break;
+                case AUTO:runner.auto(target);break;
+                case SKIP:runner.skip(target);break;
+                case HIDE:hideUi();break;
+                }
+                if(panelsOpen==0&&preparingPanel==null)runner.menu(false);
+            }
+        });
+        stage.addView(controls,new FrameLayout.LayoutParams(-1,-1));controls.canvas(width,height);
+        if(quickNoticeView!=null)stage.removeView(quickNoticeView);
+        quickNoticeView=new GameNotice(this,assets,cue->{if(runner!=null)runner.playClick(cue,-1);});
+        stage.addView(quickNoticeView,new FrameLayout.LayoutParams(-1,-1));quickNoticeView.canvas(width,height);
+        reserveCommandSpace();updateVisibility();updateStatus();
+    });}
+    @Override public void quickSlot(boolean available){runOnUiThread(()->{if(controls!=null)controls.quickSlot(available);});}
+    @Override public void quickNotice(int number,int frameMs){runOnUiThread(()->{
+        if(quickNoticeView!=null&&titlePanel==null&&panelsOpen==0&&!uiHidden)quickNoticeView.show(number,frameMs);
+    });}
+    @Override public void mode(boolean automatic,boolean skipping) {runOnUiThread(() -> {
+        autoMode=automatic;skipMode=skipping;
+        updateVisibility();updateStatus();
+    });}
+    @Override public void text(GameRunner.Frame frame,int visible,int total){runOnUiThread(()->{
+        if(currentFrame==null||currentFrame.line!=frame.line||currentFrame.word!=frame.word||!currentFrame.script.equals(frame.script))return;
+        int count=Math.min(Math.max(0,visible),fullBody.codePointCount(0,fullBody.length()));
+        revealed=fullBody.offsetByCodePoints(0,count);typing=count<total;dialoguePanel.reveal(revealed);
+        updateVisibility();
+    });}
+    @Override public void parameters(int[] raw,int[] display,int[] auxiliary){runOnUiThread(()->{
+        pendingDisplay=display;pendingAuxiliary=auxiliary;ui.removeCallbacks(syncRuntimeDisplay);ui.post(syncRuntimeDisplay);
+    });}
+    private final Runnable syncRuntimeDisplay=new Runnable(){public void run(){
+        if(uiAssets==null||pendingDisplay==null||isDestroyed())return;
+        if(gamePanel!=null&&gamePanel.isAdjusting()){ui.postDelayed(this,40);return;}
+        int[] display=pendingDisplay,aux=pendingAuxiliary;pendingDisplay=null;pendingAuxiliary=null;syncingRuntime=true;
+        try{
+            OriginalSettingsModel model=uiAssets.settingsModel(width,height);
+            RuntimeSettingsAdapter.syncDisplay(preferences,model,display);
+            if(aux!=null&&aux.length>=34){SharedPreferences.Editor edit=preferences.edit().putInt("systemVoiceSelection",aux[0]).putInt("messageWindowIndex",aux[1]);
+                for(OriginalSettingsModel.CharacterControl group:model.characters){boolean enabled=(aux[2+(group.index&31)]&(1<<(group.index/32)))==0;
+                    for(int id:group.ids)edit.putBoolean("character."+id+".enabled",enabled);}
+                edit.apply();}
+            settings=PlayerSettings.read(preferences);if(dialoguePanel!=null)dialoguePanel.settings(settings);
+            if(aux!=null&&aux.length>=36){
+                if(dialoguePanel!=null)dialoguePanel.cursorVariant(aux[34]);
+                if(stage!=null&&mouseVariant!=aux[35]){mouseVariant=aux[35];stage.setPointerIcon(uiAssets.pointer(mouseVariant));}
+            }
+            if(choices!=null)choices.changeColor(preferences.getBoolean("changeSelectColor",false));
+            selectDialogueVariant();immersive();updateStatus();
+        }finally{syncingRuntime=false;}
+    }};
+    private void advance() {
+        if(runner==null || panelsOpen>0)return;
+        if(autoMode)runner.auto(false);
+        if(skipMode)runner.skip(false);
+        autoMode=false;skipMode=false;updateStatus();
+        if(uiHidden){uiHidden=false;updateVisibility();return;}
+        if(currentFrame!=null && currentFrame.wait==NativeGame.END){showMenu();return;}
+        runner.input(lastX,lastY,0);
+    }
+    private void hideUi() {if(runner==null)return;runner.auto(false);runner.skip(false);if(quickNoticeView!=null)quickNoticeView.clear();uiHidden=true;updateVisibility();}
+    private boolean panelActionReady(){
+        return runner!=null&&preparingPanel==null&&!returningToTitle&&!pcSaveBusy&&gamePanel!=null&&
+            gamePanel.activeFrameReady()&&!gamePanel.openingRunning()&&!gamePanel.controlsBusy();
+    }
+    private void updatePanelActionEnabled(){
+        if(panelActionButton!=null&&panelActionButton.getVisibility()==View.VISIBLE){
+            boolean ready=panelActionReady();
+            if(panelActionButton.isEnabled()!=ready)panelActionButton.setEnabled(ready);
+        }
+    }
+    private void updatePanelAction(){
+        String label=gamePanel instanceof GameSettingsPanel?"阅读字号":
+            gamePanel instanceof GameSlotsPanel?((GameSlotsPanel)gamePanel).pcTransferLabel():null;
+        int visibility=label==null?View.GONE:View.VISIBLE;
+        boolean layoutChanged=panelActionButton.getVisibility()!=visibility;
+        if(label!=null&&!label.contentEquals(panelActionButton.getText())){
+            panelActionButton.setText(label);
+            layoutChanged=true;
+        }
+        panelActionButton.setVisibility(visibility);
+        updatePanelActionEnabled();
+        if(layoutChanged)layoutStage();
+    }
+    private void updateVisibility() {
+        if(dialoguePanel==null)return;
+        updatePanelAction();
+        if(gamePanel==null&&isModalPanel(preparingPanel))return;
+        boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
+        boolean inGame=titlePanel==null&&logoPanel==null&&storyVisible&&moviePlayback==null;
+        boolean hasDialogue=currentFrame!=null && (currentFrame.wait==NativeGame.DIALOGUE && !fullBody.isEmpty() || currentFrame.wait==NativeGame.END);
+        dialoguePanel.setVisibility(inGame&&!uiHidden&&hasDialogue?View.VISIBLE:View.GONE);
+        dialoguePanel.waiting(inGame&&!uiHidden&&hasDialogue&&!typing&&!skipMode&&currentFrame.wait==NativeGame.DIALOGUE,
+            autoMode,currentFrame==null?0:currentFrame.layoutCommand,currentFrame==null?20:currentFrame.frameMs);
+        if(controls!=null){if(inGame&&!uiHidden&&!sceneReplay)controls.frame(currentFrame,typing,choices!=null&&choices.menuAllowed());else controls.setVisibility(View.GONE);}
+        if(choices!=null)choices.setVisibility(inGame&&!uiHidden?View.VISIBLE:View.GONE);
+        if(uiHidden||!storyVisible)status.setVisibility(View.GONE);
+        syncIndependentStatus();
+    }
+    private int visiblePrintMode(){
+        if(moviePlayback!=null)return 27;
+        if(logoPanel!=null)return 2;
+        if(gamePanel!=null)return gamePanel.printMode;
+        if(titlePanel!=null)return 4;
+        if(currentFrame==null)return 1;
+        switch(currentFrame.wait){
+            case NativeGame.DIALOGUE:return 10;
+            case NativeGame.CHOICE:return 9;
+            case NativeGame.DRAW:return 11;
+            case NativeGame.OVERLAP:return 14;
+            case NativeGame.PLACE:return currentFrame.placeMode;
+            default:return 1;
+        }
+    }
+    private void syncIndependentStatus(){
+        if(runner==null||uiAssets==null||!uiAssets.freeStatus||stage==null)return;
+        int mode=visiblePrintMode();
+        if(mode!=independentMode){
+            independentMode=mode;
+            if(independentStatus!=null)independentStatus.setVisibility(View.GONE);
+            runner.statusMode(mode);
+        }
+        placeIndependentStatus();
+    }
+    private void placeIndependentStatus(){
+        if(independentStatus==null)return;
+        View anchor=moviePlayback!=null?moviePlayback:logoPanel!=null?logoPanel:
+            gamePanel!=null?gamePanel:titlePanel!=null?titlePanel:sceneEntrance;
+        int index=anchor!=null?stage.indexOfChild(anchor)+1:controls==null?stage.getChildCount():stage.indexOfChild(controls);
+        int old=stage.indexOfChild(independentStatus);
+        if(old>=0&&old<index)index--;
+        if(old!=index){
+            if(old>=0)stage.removeView(independentStatus);
+            stage.addView(independentStatus,Math.max(0,index),new FrameLayout.LayoutParams(-1,-1));
+        }
+        if(gamePanel!=null)gamePanel.statusForCapture(independentStatus);
+    }
+    @Override public void statusOverlays(int mode,GameRunner.Modal[] overlays){
+        runOnUiThread(()->{
+            if(stage==null||uiAssets==null||mode!=independentMode||isDestroyed()||isFinishing())return;
+            if(independentStatus==null){
+                if(overlays[0]==null&&overlays[1]==null)return;
+                independentStatus=new FrameLayout(this);
+                independentStatus.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            }
+            for(int i=0;i<overlays.length;i++){
+                GameStatusPartyPanel part=independentParts[i];
+                if(overlays[i]==null){
+                    if(part!=null)independentStatus.removeView(part);
+                    independentParts[i]=null;
+                }else if(part==null){
+                    part=new GameStatusPartyPanel(this,uiAssets,overlays[i],width,height);
+                    independentParts[i]=part;
+                    independentStatus.addView(part,i==1?independentStatus.getChildCount():0,new FrameLayout.LayoutParams(-1,-1));
+                }else {part.canvas(width,height);part.update(overlays[i]);}
+            }
+            independentStatus.setVisibility(independentStatus.getChildCount()==0?View.GONE:View.VISIBLE);
+            placeIndependentStatus();
+            statusActive(foreground);
+        });
+    }
+    private void statusActive(boolean active){
+        for(GameStatusPartyPanel panel:independentParts)if(panel!=null)panel.uiActive(active);
+    }
+    private void updateStatus() {
+        if(status==null)return;
+        if(controls!=null)controls.modes(autoMode,skipMode);
+        String text=skipMode?(settings.skipReadOnly?"快进 · 仅已读":"快进 · 全部"):
+            autoMode?"自动播放":currentFrame!=null&&currentFrame.alreadyRead?"已读":"";
+        status.setText(text);status.setVisibility((controls==null||!controls.original())&&!uiHidden&&panelsOpen==0&&titlePanel==null&&!text.isEmpty()?View.VISIBLE:View.GONE);
+    }
+    @Override public void title(TitleMenu model,int w,int h,GameRunner.Capture initial,GameRunner.Capture previous) {
+        runOnUiThread(() -> {
+            if(isDestroyed() || isFinishing() || stage==null)return;
+            boolean showLogo=titleModel!=model&&!model.logos.isEmpty();
+            if(titleModel!=model||returningToTitle)modeUnderPanel=null;
+            if(returningToTitle){returningToTitle=false;closeOriginalPanel(false);}
+            if(previous!=null){closeOriginalPanel(false);titlePrevious=previous.bitmap();}
+            typing=false;currentFrame=null;fullBody="";uiHidden=false;refreshAfterLoad=false;
+            if(titlePanel!=null)stage.removeView(titlePanel);
+            titleModel=model;if(w>0&&h>0){width=w;height=h;}layoutStage();
+            dialoguePanel.setVisibility(View.GONE);if(controls!=null)controls.setVisibility(View.GONE);status.setVisibility(View.GONE);
+            if(choices!=null){stage.removeView(choices);choices=null;}
+            if(logoPanel!=null){stage.removeView(logoPanel);logoPanel=null;}
+            if(!showLogo)showTitlePanel(model,initial);
+            else {
+                logoPanel=new LogoPanel(this,model.logos,model.frameMs,()->{
+                    if(isDestroyed()||isFinishing()||titleModel!=model||logoPanel==null)return;
+                    stage.removeView(logoPanel);logoPanel=null;
+                    if(runner!=null)runner.finishLogo();
+                    showTitlePanel(model,initial);
+                });
+                stage.addView(logoPanel,new FrameLayout.LayoutParams(-1,-1));
+                syncIndependentStatus();
+            }
+        });
+    }
+    private void showTitlePanel(TitleMenu model,GameRunner.Capture initial){
+        titlePanel=new TitlePanel(this,game.getName(),model,width,height,runner,initial==null?null:initial.bitmap(),this::titleAction,
+            item->warmTitlePanel(item.action),
+            (se,voice)->{if(runner!=null)runner.playClick(se,voice);});
+        titlePanel.previous(titlePrevious);
+        titlePrevious=null;
+        stage.addView(titlePanel,new FrameLayout.LayoutParams(-1,-1));
+        syncIndependentStatus();
+        if(openGalleryAfterTitle){
+            openGalleryAfterTitle=false;
+            if(gamePanel!=null)gamePanel.bringToFront();
+            openGallery(GalleryCatalog.Screen.OMAKE,0,0,-1);
+        }
+    }
+    private void warmTitlePanel(TitleMenu.Action action){
+        if(action==TitleMenu.Action.SETTINGS)warmStoryPanel(GameStoryControlsModel.Action.CONFIG);
+        else if(action==TitleMenu.Action.LOAD)warmStoryPanel(GameStoryControlsModel.Action.LOAD);
+    }
+    private void warmStoryPanel(GameStoryControlsModel.Action action){
+        if(uiAssets==null||uiAssets.runtime==null)return;
+        UiPreviewPool.Request request;
+        switch(action){
+        case CONFIG:request=UiPreviewPool.Request.read(uiAssets.config,12,1);break;
+        case SAVE:request=UiPreviewPool.Request.read(uiAssets.save,6,1);break;
+        case LOAD:request=UiPreviewPool.Request.read(uiAssets.load,5,1);break;
+        default:return;
+        }
+        UiPreviewPool pool=request==null?null:uiAssets.runtime.previews();
+        panelWarmup=pool==null?null:pool.warm(request);
+    }
+    private UiPreviewPool.Warmup takePanelWarmup(){
+        UiPreviewPool.Warmup warmup=panelWarmup;panelWarmup=null;return warmup;
+    }
+    private void titleAction(TitleMenu.Item item) {
+        if(runner==null || titleModel==null)return;
+        TitleMenu.Action action=item.action;
+        switch(action) {
+        case START:case CONTINUE:runner.enter(action);break;
+        case LOAD:showSlots(false);break;
+        case SETTINGS:showSettings();break;
+        case EXTRAS:openGallery(GalleryCatalog.Screen.OMAKE,0,0,-1);break;
+        case EXIT:finish();break;
+        case WEBSITE:
+            try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(titleModel.website)));}
+            catch(android.content.ActivityNotFoundException e){notice("未找到浏览器");}break;
+        case MODE:openMenuMode(item.mode,GameRunner.Modal.TITLE);break;
+        default:break;
+        }
+    }
+    private void openGallery(GalleryCatalog.Screen screen,int group,int page,int index) {
+        if (runner==null || titlePanel==null) return;
+        if (screen==GalleryCatalog.Screen.VIEW && galleryPage!=null && galleryPage.screen==GalleryCatalog.Screen.CG)
+            galleryCgPage=galleryPage.page;
+        runner.requestGallery(screen,group,page,index,++galleryRequest);
+    }
+    private final GameGalleryPanel.Actions galleryActions=new GameGalleryPanel.Actions() {
+        public void open(GalleryCatalog.Screen screen,int group,int page,int index) { openGallery(screen,group,page,index); }
+        public void mode(int mode) {openMenuMode(mode,GameRunner.Modal.OMAKE);}
+        public void back() { galleryBack(); }
+        public void replay(int group,int index) {
+            if (runner!=null) { replayReturn=galleryPage; runner.replayGallery(group,index); }
+        }
+        public void movie(int index) { if(runner!=null)runner.playGalleryMovie(index); }
+        public void play(int index) { if (runner!=null) runner.playGallerySong(index); }
+        public void moveSong(int direction) { if (runner!=null) runner.moveGallerySong(direction); }
+        public void pause() { if (runner!=null) runner.pauseGallerySong(); }
+        public void stop() { if (runner!=null) runner.stopGallerySong(); }
+        public void volume(int volume) { if (runner!=null) runner.gallerySongVolume(volume); }
+        public void cgFrame(GalleryCatalog.Page page,int frame,java.util.function.Consumer<Bitmap> done){
+            GameRunner owner=runner;
+            if(owner==null){done.accept(null);return;}
+            owner.requestCgFrame(page,frame,bitmap->runOnUiThread(()->done.accept(owner==runner?bitmap:null)));
+        }
+    };
+    @Override public void gallery(GalleryCatalog.Page page,long request) {
+        runOnUiThread(() -> {
+            if (request!=galleryRequest || isDestroyed() || isFinishing() || titlePanel==null || uiAssets==null) return;
+            galleryPage=page;
+            if (gamePanel instanceof GameGalleryPanel && ((GameGalleryPanel)gamePanel).screen()==page.screen)
+                ((GameGalleryPanel)gamePanel).update(page);
+            else {
+                GameGalleryPanel panel=new GameGalleryPanel(this,uiAssets,page,this::systemClick,galleryActions,width,height);
+                Bitmap previous=optionalGalleryPrevious;optionalGalleryPrevious=null;
+                if(previous==null)showOriginalPanel(panel,this::galleryBack);
+                else {runner.menu(true);panel.previous(previous);mountOriginalPanel(panel,this::galleryBack);}
+            }
+        });
+    }
+    @Override public void spectrum(int[] bands){runOnUiThread(()->{
+        if(gamePanel instanceof GameGalleryPanel)((GameGalleryPanel)gamePanel).spectrum(bands);
+    });}
+    private void galleryBack() {
+        if(galleryPage==null||gamePanel==null)return;
+        GalleryCatalog.Page page=galleryPage;
+        switch (page.screen) {
+        case VIEW:
+            runner.playClick(page.config.number("backSound",2)-1,-1);
+            openGallery(GalleryCatalog.Screen.CG,page.group,galleryCgPage,-1); break;
+        case CG:
+            openGallery(page.cgGroups?GalleryCatalog.Screen.CG_GROUP:GalleryCatalog.Screen.OMAKE,0,0,-1); break;
+        case SCENE:
+            openGallery(page.sceneGroups?GalleryCatalog.Screen.SCENE_GROUP:GalleryCatalog.Screen.OMAKE,0,0,-1); break;
+        case OMAKE:
+            leaveOriginalPanel(page.config); break;
+        default:
+            openGallery(GalleryCatalog.Screen.OMAKE,0,0,-1); break;
+        }
+    }
+    @Override public void galleryReplayStarted() {
+        runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing()) return;
+            sceneReplay=true; galleryPage=null; ++galleryRequest;
+            closeOriginalPanel();
+        });
+    }
+    @Override public void movie(File file,int volume,boolean canSkip){runOnUiThread(()->{
+        if(isFinishing()||isDestroyed()||stage==null||runner==null)return;
+        if(!foreground){runner.finishMovie(null);return;}
+        if(gamePanel!=null)gamePanel.uiActive(false);
+        for(int i=0;i<stage.getChildCount();i++)
+            stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        moviePlayback=new MoviePlayback(this,file,volume,canSkip,failure->{
+            MoviePlayback previous=moviePlayback;moviePlayback=null;
+            if(previous!=null)stage.removeView(previous);
+            for(int i=0;i<stage.getChildCount();i++)
+                stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
+                    ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            if(gamePanel!=null)gamePanel.uiActive(foreground);
+            if(runner!=null)runner.finishMovie(failure);
+            updateVisibility();
+        });
+        stage.addView(moviePlayback,new FrameLayout.LayoutParams(-1,-1));
+        updateVisibility();immersive();
+    });}
+    @Override public void galleryReplayFinished() {
+        runOnUiThread(() -> {
+            if (isDestroyed() || isFinishing()) return;
+            sceneReplay=false;
+            GalleryCatalog.Page page=replayReturn; replayReturn=null;
+            if (page!=null) openGallery(GalleryCatalog.Screen.SCENE,page.group,page.page,-1);
+        });
+    }
+    private void showMenu() {
+        if(runner==null){finish();return;}
+        boolean modalOptions=visibleModal!=null&&(visibleModal.advancedSelection()||
+            visibleModal.mode==GameRunner.Modal.SELECT_CHART||visibleModal.mode==GameRunner.Modal.SELECT_PLACE2);
+        if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL&&!modalOptions)return;
+        if(!modalOptions&&choices!=null){
+            if(choices.confirming())return;
+            if(!choices.menuAllowed()){if(choices.backlogAllowed())showBacklog();return;}
+        }else if(currentFrame!=null&&!currentFrame.optionsAllowed)return;
+        if(controls!=null)controls.cancelClick();
+        if(uiAssets!=null&&uiAssets.system.has("Menu1Button1FileName")){showOriginalMenu();return;}
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("游戏菜单")
+            .setItems(new String[]{"继续游戏","保存进度","读取存档","环境设置","回看台词","返回标题",fromTyn?"返回 TYN":"退出游戏"},(d,item) -> {
+                systemClick();
+                switch(item){case 1:showSlots(true);break;case 2:showSlots(false);break;case 3:showSettings();break;
+                case 4:showBacklog();break;case 5:runner.returnToTitle();break;case 6:finish();break;default:break;}
+            }).setNegativeButton("关闭",dialogClick(null)).create();
+        showPanel(dialog);
+        runner.suspendScriptAudio();
+    }
+    private void showPanel(AlertDialog dialog) {
+        panelsOpen++;openedPanels.add(dialog);if(runner!=null)runner.menu(true);updateVisibility();
+        dialog.setOnDismissListener(d -> {
+            openedPanels.remove(dialog);panelsOpen=Math.max(0,panelsOpen-1);
+            if(isOverlayMode(gamePanel)&&modeUnderPanel!=null&&openedPanels.isEmpty()){
+                if(resumeModeAfterPanel(null))return;
+                lockModalOverlay(gamePanel,false);
+            }
+            if(runner!=null&&panelsOpen==0&&!isFinishing())runner.menu(false);
+            updateVisibility();updateStatus();immersive();
+        });
+        dialog.show();
+        for(int which:new int[]{DialogInterface.BUTTON_POSITIVE,DialogInterface.BUTTON_NEGATIVE,DialogInterface.BUTTON_NEUTRAL})
+            if(dialog.getButton(which)!=null)dialog.getButton(which).setSoundEffectsEnabled(false);
+        if(dialog.getListView()!=null)dialog.getListView().setSoundEffectsEnabled(false);
+        if(dialog.getWindow()!=null)dialog.getWindow().setLayout(Math.min(dp(720),Math.max(dp(280),root.getWidth()-dp(40))),-2);
+    }
+    private void showOriginalPanel(GameUiPanel panel,Runnable back) {
+        showOriginalPanel(panel,back,null);
+    }
+    private void showOriginalPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config sceneEffect) {
+        if(preparingPanel!=null){panel.discardBackground();return;}
+        boolean needsPrevious=panel.wantsPrevious();
+        GameRunner owner=runner;
+        if(owner!=null)owner.menu(true);
+        if(owner==null||!needsPrevious&&sceneEffect==null){
+            mountOriginalPanel(panel,back);
+            return;
+        }
+        // Keep the outgoing view visible until both transition and menu images are ready.
+        preparingPanel=panel;
+        if(sceneEffect!=null&&(gamePanel instanceof GameAdvancedSelectionPanel||gamePanel instanceof GamePlacePanel)){
+            gamePanel.capture(before->{
+                if(preparingPanel!=panel)return;
+                if(before==null){captureForPanel(panel,back,sceneEffect,needsPrevious,owner);return;}
+                owner.filterPanel(before,sceneEffect,scene->runOnUiThread(()->{
+                    if(!acceptPreparedPanel(panel,owner))return;
+                    if(needsPrevious)panel.previous(before);
+                    installCapturedBackground(panel,sceneEffect,scene);
+                    mountOriginalPanel(panel,back);
+                }));
+            });
+            return;
+        }
+        if(needsPrevious&&gamePanel!=null&&sceneEffect==null){
+            gamePanel.capture(before->{
+                if(!acceptPreparedPanel(panel,owner))return;
+                panel.previous(before);
+                mountOriginalPanel(panel,back);
+            });
+            return;
+        }
+        if(needsPrevious&&sceneEffect==null&&titlePanel!=null&&copyTitleForPanel(panel,back,owner))return;
+        captureForPanel(panel,back,sceneEffect,needsPrevious,owner);
+    }
+    private boolean copyTitleForPanel(GameUiPanel panel,Runnable back,GameRunner owner){
+        TitlePanel title=titlePanel;
+        int w=title.getWidth(),h=title.getHeight();
+        if(w<=0||h<=0||!screen.getHolder().getSurface().isValid())return false;
+        float scale=UiOpening.snapshotScale(w,h);
+        Bitmap before=Bitmap.createBitmap(Math.max(1,Math.round(w*scale)),Math.max(1,Math.round(h*scale)),Bitmap.Config.ARGB_8888);
+        before.setHasAlpha(false);
+        try{
+            // Read the presented title frame without waiting behind its next script step.
+            PixelCopy.request(screen,before,result->{
+                if(result!=PixelCopy.SUCCESS){
+                    before.recycle();
+                    if(preparingPanel==panel)captureForPanel(panel,back,null,true,owner);
+                    return;
+                }
+                if(!acceptPreparedPanel(panel,owner)){before.recycle();return;}
+                UiOpening.drawOnto(title,before,c->drawTitleCapture(title,c));
+                panel.previous(before);
+                mountOriginalPanel(panel,back);
+            },ui);
+            return true;
+        }catch(IllegalArgumentException e){
+            before.recycle();
+            return false;
+        }
+    }
+    private void captureForPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config sceneEffect,boolean needsPrevious,GameRunner owner){
+        owner.capture(sceneEffect,needsPrevious,(previous,scene)->runOnUiThread(()->{
+            if(!acceptPreparedPanel(panel,owner))return;
+            if(previous!=null){
+                Bitmap before=titlePanel==null?snapshotStory(previous,true):
+                    UiOpening.snapshot(titlePanel,previous.bitmap(),c->drawTitleCapture(titlePanel,c));
+                panel.previous(before);
+            }
+            if(sceneEffect!=null)installCapturedBackground(panel,sceneEffect,scene);
+            mountOriginalPanel(panel,back);
+        }));
+    }
+    private void installCapturedBackground(GameUiPanel panel,GameUiAssets.Config config,GameRunner.Capture scene){
+        if(scene==null){panel.uiBackground(config,13,1);return;}
+        panel.capturedBackground(scene.bitmap(),()->{if(gamePanel==panel)updateVisibility();});
+        panel.uiBackground(config,13,1,scene.pixels,scene.width,scene.height);
+    }
+    private void drawTitleCapture(TitlePanel title,Canvas canvas){
+        title.draw(canvas);
+        if(independentMode==4&&independentStatus!=null&&independentStatus.getVisibility()==View.VISIBLE)
+            independentStatus.draw(canvas);
+    }
+    private Bitmap snapshotStory(GameRunner.Capture picture,boolean withUi){
+        return UiOpening.snapshot(stage,picture.bitmap(),canvas->{
+            if(!withUi)return;
+            for(int i=0;i<stage.getChildCount();i++){
+                View child=stage.getChildAt(i);
+                if(child!=dialoguePanel&&child!=choices&&child!=controls&&child!=status&&child!=quickNoticeView&&child!=independentStatus)continue;
+                if(child.getVisibility()!=View.VISIBLE||child.getAlpha()<=0)continue;
+                int saved=canvas.save();
+                canvas.translate(child.getLeft(),child.getTop());
+                canvas.concat(child.getMatrix());
+                canvas.clipRect(0,0,child.getWidth(),child.getHeight());
+                if(child.getAlpha()<1)canvas.saveLayerAlpha(0,0,child.getWidth(),child.getHeight(),Math.round(child.getAlpha()*255));
+                child.draw(canvas);
+                canvas.restoreToCount(saved);
+            }
+        });
+    }
+    private boolean acceptPreparedPanel(GameUiPanel panel,GameRunner owner){
+        if(preparingPanel!=panel)return false;
+        preparingPanel=null;
+        if(owner==runner&&!isDestroyed()&&!isFinishing()&&moviePlayback==null)return true;
+        panel.discardBackground();
+        if(owner==runner&&!isDestroyed()&&!isFinishing()&&panelsOpen==0)owner.menu(false);
+        return false;
+    }
+    private void mountOriginalPanel(GameUiPanel panel,Runnable back) {
+        if(quickNoticeView!=null)quickNoticeView.clear();
+        if(gamePanel!=null)stage.removeView(gamePanel);else panelsOpen++;
+        for(int i=0;i<stage.getChildCount();i++)stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        gamePanel=panel;if(!isModalPanel(panel))visibleModal=null;
+        panel.canvas(width,height);panelBack=back;stage.addView(panel,new FrameLayout.LayoutParams(-1,-1));
+        panel.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});panel.uiActive(foreground);
+        updateVisibility();immersive();
+    }
+    private void discardPanelPreparation() {
+        if(preparingPanel==null)return;
+        preparingPanel.discardBackground();
+        preparingPanel=null;
+        if(isOverlayMode(gamePanel)&&modeUnderPanel!=null){
+            lockModalOverlay(gamePanel,false);modeUnderPanel=null;
+        }
+    }
+    private void closeOriginalPanel() {
+        closeOriginalPanel(true);
+    }
+    private void closeOriginalPanel(boolean resume) {
+        panelWarmup=null;
+        discardPanelPreparation();
+        if(gamePanel==null)return;
+        stage.removeView(gamePanel);gamePanel=null;gameSlots=null;panelBack=null;visibleModal=null;
+        updatePanelAction();
+        for(int i=0;i<stage.getChildCount();i++)stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        panelsOpen=Math.max(0,panelsOpen-1);
+        if(resume&&runner!=null&&panelsOpen==0){
+            if(resumeModeAfterPanel(null))return;
+            if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL){showScriptModal(null);return;}
+            if(currentFrame!=null&&currentFrame.wait==NativeGame.PLACE){showPlace(null);return;}
+            runner.menu(false);
+        }
+        updateVisibility();updateStatus();immersive();
+    }
+    private void leaveOriginalPanel(GameUiAssets.Config config){
+        GameUiPanel panel=gamePanel;
+        if(panel==null||runner==null)return;
+        panel.leave(config,false,(picture,filled)->{
+            if(panel!=gamePanel||isDestroyed()||isFinishing())return;
+            if(resumeModeAfterPanel(picture))return;
+            if(titlePanel==null){
+                boolean childPanel=config==uiAssets.config||config==uiAssets.save||config==uiAssets.load;
+                enterStory(picture,filled&&childPanel);return;
+            }
+            if(galleryPage!=null){++galleryRequest;galleryPage=null;runner.closeGallery();}
+            titlePrevious=picture;returningToTitle=true;
+            runner.reenterTitle();
+        });
+        updatePanelActionEnabled();
+    }
+    private void enterStory(Bitmap previous){enterStory(previous,false);}
+    private void enterStory(Bitmap previous,boolean filledChildPanel){
+        if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL){closeOriginalPanel(false);showScriptModal(previous);return;}
+        if(currentFrame!=null&&currentFrame.wait==NativeGame.PLACE){closeOriginalPanel(false);showPlace(previous);return;}
+        if(previous==null||currentFrame==null){closeOriginalPanel(false);runner.menu(false);return;}
+        boolean choice=currentFrame.wait==NativeGame.CHOICE;
+        GameUiAssets.Config config=choice?uiAssets.selection:uiAssets.printMessage;
+        if(choice&&filledChildPanel&&config.number("enterFadeInType",0)==0)config=uiAssets.printMessage;
+        UiOpening opening=new UiOpening(config,currentFrame.frameMs,false);
+        if(!opening.hasFade()){closeOriginalPanel(false);runner.menu(false);return;}
+        if(opening.needsWipeTarget()){
+            GameRunner owner=runner;GameUiPanel panel=gamePanel;
+            owner.capture(null,true,(picture,ignored)->runOnUiThread(()->{
+                if(owner==runner&&panel==gamePanel&&!isFinishing()&&!isDestroyed())finishEnteringStory(opening,previous,picture);
+            }));
+        }else finishEnteringStory(opening,previous,null);
+    }
+    private void finishEnteringStory(UiOpening opening,Bitmap previous,GameRunner.Capture picture){
+        closeOriginalPanel(false);
+        if(picture!=null)opening.target(snapshotStory(picture,!opening.delaysControls()));
+        sceneEntrance=new SceneEntrance(opening,previous);
+        stage.addView(sceneEntrance,new FrameLayout.LayoutParams(-1,-1));
+        placeIndependentStatus();
+        runner.resumeScriptAudio();
+    }
+    private void showScriptModal(Bitmap previous){
+        GameRunner.Modal modal=currentFrame==null?null:currentFrame.modal;
+        showModePanel(modal,previous);
+    }
+    private static boolean isModalPanel(GameUiPanel panel){
+        return panel instanceof GameInputPanel||panel instanceof GameReferenceSelectionPanel||
+            panel instanceof GameOptionalCatalogPanel||panel instanceof GameProgressViewsPanel||panel instanceof GamePlacePanel||
+            isOverlayMode(panel)||panel instanceof GameInventoryPanel||panel instanceof GameStatusPartyPanel;
+    }
+    private static boolean isOverlayMode(GameUiPanel panel){
+        return panel instanceof GameAdvancedSelectionPanel||panel instanceof GameChartPanel;
+    }
+    private static void lockModalOverlay(GameUiPanel panel,boolean locked){
+        if(panel instanceof GameAdvancedSelectionPanel)((GameAdvancedSelectionPanel)panel).overlayInput(locked);
+        else if(panel instanceof GameChartPanel)((GameChartPanel)panel).overlayInput(locked);
+    }
+    private void overlayModal(Runnable action){
+        if(!isOverlayMode(gamePanel)||visibleModal==null)return;
+        lockModalOverlay(gamePanel,true);
+        modeUnderPanel=visibleModal;
+        action.run();
+    }
+    private boolean resumeModeAfterPanel(Bitmap previous){
+        GameRunner.Modal pending=modeUnderPanel;
+        if(pending==null||runner==null)return false;
+        modeUnderPanel=null;
+        GameRunner owner=runner;
+        owner.actModal(pending,GameRunner.Modal.RESUME,0,update->runOnUiThread(()->{
+            if(owner!=runner||isDestroyed()||isFinishing())return;
+            owner.resumeScriptAudio();
+            if(update.status<0){
+                if(update.modal!=null)showModePanel(update.modal,previous);else enterStory(previous);
+            }
+            else if(update.status==0)showModePanel(update.modal,previous);
+            else finishModePanel(owner,update,previous);
+        }));
+        return true;
+    }
+    private void openMenuMode(int mode,int caller){
+        GameRunner owner=runner;
+        GameUiPanel before=gamePanel;
+        if(owner==null||titlePanel==null)return;
+        owner.openMenuModal(mode,caller,modal->runOnUiThread(()->{
+            if(modal==null||owner!=runner||before!=gamePanel||isDestroyed()||isFinishing())return;
+            if(modal.problem!=null||before==null||galleryPage==null){showModePanel(modal,null);return;}
+            before.leave(galleryPage.config,false,picture->{
+                if(owner==runner&&before==gamePanel&&!isDestroyed()&&!isFinishing())showModePanel(modal,picture);
+            });
+        }));
+    }
+    private void showModePanel(GameRunner.Modal modal,Bitmap previous){
+        GameRunner owner=runner;
+        if(owner==null||uiAssets==null||modal==null)return;
+        if(modal.problem!=null){abortModePanel(modal,previous);return;}
+        visibleModal=modal;
+        GameUiPanel panel;
+        if(modal.textInput()){
+            panel=new GameInputPanel(this,uiAssets,modal.assets.config,modal.assets.images,modal.decoder,modal.mode,
+                width,height,modal.arguments,modal.byteLimits,modal.text,this::systemClick,(accepted,elapsed,values,picture)->{
+                    GameUiPanel active=gamePanel;
+                    if(!(active instanceof GameInputPanel)||owner!=runner||visibleModal!=modal)return;
+                    owner.completeModal(modal,accepted,elapsed,values,update->runOnUiThread(()->{
+                        if(active!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+                        if(update.status<0){active.cancelLeave();return;}
+                        finishModePanel(owner,update,picture);
+                    }));
+                });
+        }else if(modal.catalog()){
+            panel=new GameOptionalCatalogPanel(this,uiAssets,modal,width,height,this::systemClick,this::actModePanel);
+        }else if(modal.progressView()){
+            panel=new GameProgressViewsPanel(this,uiAssets,modal,width,height,this::systemClick,this::actModePanel);
+        }else if(modal.inventory()){
+            panel=new GameInventoryPanel(this,uiAssets,modal,width,height,this::systemClick,this::actModePanel);
+        }else if(modal.statusView()){
+            panel=new GameStatusPartyPanel(this,uiAssets,modal,width,height,this::systemClick,this::actModePanel);
+        }else if(modal.mode==GameRunner.Modal.SELECT_PLACE2){
+            panel=new GamePlacePanel(this,uiAssets,currentFrame,this::systemClick,this::showMenu,
+                place->actModePanel(GameRunner.Modal.CHOOSE,place));
+        }else if(modal.mode==GameRunner.Modal.SELECT_CHART){
+            boolean options=titlePanel==null&&(currentFrame==null||currentFrame.optionsAllowed);
+            panel=new GameChartPanel(this,uiAssets,modal,width,height,this::systemClick,this::actModePanel,
+                options?()->overlayModal(this::showMenu):null);
+        }else if(modal.advancedSelection()){
+            GameAdvancedSelectionPanel selection=new GameAdvancedSelectionPanel(this,uiAssets,modal,width,height,this::systemClick,this::actModePanel);
+            boolean object=modal.mode==GameRunner.Modal.SELECT_OBJECT;
+            boolean options=currentFrame==null||currentFrame.optionsAllowed;
+            selection.optionActions(options?()->overlayModal(this::showMenu):null,
+                options&&object?()->overlayModal(this::showSettings):null,
+                object&&titlePanel==null&&modal.assets.config.number("backLogOk",0)!=0?()->overlayModal(this::showBacklog):null);
+            panel=selection;
+        }else{
+            panel=new GameReferenceSelectionPanel(this,uiAssets,modal,width,height,this::systemClick,this::actModePanel);
+        }
+        if(modal.mode==GameRunner.Modal.SELECT_ZUKAN)panel.onBackdropFailure(error->{
+            if(owner==runner&&panel==gamePanel&&visibleModal!=null)
+                abortModePanel(visibleModal,"Cannot render reference detail: "+error.getMessage(),null);
+        });
+        else if(modal.mode==GameRunner.Modal.SELECT_PLACE2)panel.onBackdropFailure(error->{
+            if(owner==runner&&panel==gamePanel&&visibleModal==modal)
+                abortModePanel(modal,"Cannot render place background: "+error.getMessage(),null);
+        });
+        if(previous==null)showOriginalPanel(panel,null);
+        else {owner.menu(true);panel.previous(previous);mountOriginalPanel(panel,null);}
+    }
+    private void actModePanel(int action,int value){
+        GameUiPanel active=gamePanel;
+        GameRunner owner=runner;
+        GameRunner.Modal request=visibleModal;
+        if(!isModalPanel(active)||owner==null||request==null)return;
+        if((request.mode==GameRunner.Modal.SELECT_OBJECT||request.mode==GameRunner.Modal.SELECT_PLACE2)&&
+            action==GameRunner.Modal.CHOOSE){
+            active.leave(request.assets.config,false,picture->{
+                if(active!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+                owner.actModal(request,action,value,update->runOnUiThread(()->{
+                    if(active!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+                    if(update.status<0)active.cancelLeave();else finishModePanel(owner,update,picture);
+                }));
+            });
+            return;
+        }
+        owner.actModal(request,action,value,update->runOnUiThread(()->{
+            if(active!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+            if(update.status<0){active.cancelLeave();return;}
+            if(update.status==GameRunner.Modal.LEAVE_READY){
+                commitChartAfterLeave((GameChartPanel)active,owner,request);
+                return;
+            }
+            if(update.status==0){
+                if(update.modal.problem!=null){abortModePanel(update.modal,null);return;}
+                visibleModal=update.modal;
+                if(active instanceof GameOptionalCatalogPanel)((GameOptionalCatalogPanel)active).update(visibleModal);
+                else if(active instanceof GameProgressViewsPanel)((GameProgressViewsPanel)active).update(visibleModal);
+                else if(active instanceof GameAdvancedSelectionPanel)((GameAdvancedSelectionPanel)active).update(visibleModal);
+                else if(active instanceof GameInventoryPanel)((GameInventoryPanel)active).update(visibleModal);
+                else if(active instanceof GameStatusPartyPanel)((GameStatusPartyPanel)active).update(visibleModal);
+                else if(active instanceof GameChartPanel)((GameChartPanel)active).update(visibleModal);
+                else ((GameReferenceSelectionPanel)active).update(visibleModal);
+                return;
+            }
+            active.leave(request.assets.config,false,picture->{
+                if(active==gamePanel&&owner==runner&&!isDestroyed()&&!isFinishing())finishModePanel(owner,update,picture);
+            });
+        }));
+    }
+    private void commitChartAfterLeave(GameChartPanel panel,GameRunner owner,GameRunner.Modal request){
+        panel.leave(request.assets.config,false,picture->{
+            if(panel!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+            owner.actModal(request,GameRunner.Modal.COMMIT,0,update->runOnUiThread(()->{
+                if(panel!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+                if(update.status==0&&update.modal!=null){
+                    if(update.modal.problem!=null){abortModePanel(update.modal,picture);return;}
+                    visibleModal=update.modal;
+                    panel.update(visibleModal);
+                    panel.cancelLeave();
+                }else if(update.status<0)panel.cancelLeave();
+                else finishModePanel(owner,update,picture);
+            }));
+        });
+    }
+    private void abortModePanel(GameRunner.Modal modal,Bitmap previous){
+        abortModePanel(modal,modal.problem,previous);
+    }
+    private void abortModePanel(GameRunner.Modal modal,String reason,Bitmap previous){
+        GameRunner owner=runner;
+        owner.abortModal(modal,reason,update->runOnUiThread(()->{
+            if(owner==runner&&!isDestroyed()&&!isFinishing()&&update.status>=0)finishModePanel(owner,update,previous);
+        }));
+    }
+    private void finishModePanel(GameRunner owner,GameRunner.ModalUpdate update,Bitmap picture){
+        if(update.modal!=null){showModePanel(update.modal,picture);return;}
+        if(update.returnMode==GameRunner.Modal.OMAKE){
+            optionalGalleryPrevious=picture;
+            if(titlePanel==null){openGalleryAfterTitle=true;owner.returnToTitle();}
+            else openGallery(GalleryCatalog.Screen.OMAKE,0,0,-1);
+        }else if(update.returnMode==GameRunner.Modal.TITLE){
+            titlePrevious=picture;returningToTitle=true;
+            if(titlePanel==null)owner.returnToTitle();else owner.reenterTitle();
+        }else if(update.wait==NativeGame.MOVIE||update.wait==NativeGame.TITLE){
+            closeOriginalPanel(false);
+            owner.menu(false);
+        }else enterStory(picture);
+    }
+    private void showPlace(Bitmap previous){
+        GameRunner owner=runner;
+        if(owner==null||uiAssets==null||currentFrame==null||currentFrame.wait!=NativeGame.PLACE)return;
+        GameUiAssets.Config config=uiAssets.place(currentFrame.placeMode);
+        GamePlacePanel panel=new GamePlacePanel(this,uiAssets,currentFrame,this::systemClick,this::showMenu,place->{
+            GameUiPanel active=gamePanel;
+            if(!(active instanceof GamePlacePanel))return;
+            active.leave(config,false,picture->{
+                if(active!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+                owner.choosePlace(place,success->runOnUiThread(()->{
+                    if(active!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+                    if(success)enterStory(picture);else active.cancelLeave();
+                }));
+            });
+        });
+        if(previous==null)showOriginalPanel(panel,null);
+        else {owner.menu(true);panel.previous(previous);mountOriginalPanel(panel,null);}
+    }
+    private final class SceneEntrance extends View {
+        private final UiOpening opening;
+        private final GameRunner owner;
+        SceneEntrance(UiOpening opening,Bitmap previous){
+            super(PlayerActivity.this);this.opening=opening;owner=runner;opening.previous(previous);setClickable(true);
+        }
+        void skip(){opening.skip();invalidate();}
+        @Override protected void onDetachedFromWindow(){opening.close();super.onDetachedFromWindow();}
+        @Override public boolean onTouchEvent(MotionEvent event){
+            if(opening.touch(event))invalidate();
+            return true;
+        }
+        @Override protected void onDraw(Canvas canvas){
+            opening.begin();
+            if(opening.overlay(canvas,this,width,height))postInvalidateOnAnimation();
+            else if(sceneEntrance==this){
+                sceneEntrance=null;
+                setVisibility(INVISIBLE);
+                if(owner==runner&&!isDestroyed()&&!isFinishing())owner.menu(false);
+                FrameLayout container=stage;
+                // Defer the child-list mutation until this draw traversal is done.
+                container.post(()->{
+                    if(getParent()==container)container.removeView(this);
+                    placeIndependentStatus();
+                });
+            }
+        }
+    }
+    private void showOriginalMenu() {
+        GameUiAssets.Config cfg=uiAssets.system;
+        boolean scripted=cfg.number("backScriptFlag",0)!=0;
+        int backgroundType=scripted?3:cfg.number("backScreenType",2);
+        GameSystemMenuPanel panel=new GameSystemMenuPanel(this,uiAssets,backgroundType==1?cfg.value("backScreenFileName",null):null,this::systemClick);
+        if(backgroundType!=1)panel.transparentBackground();
+        panel.opening(cfg,true);
+        boolean capture=backgroundType==2||backgroundType==3&&cfg.number("screenToGetPutFlag",1)!=0;
+        if(!capture)panel.uiBackground(cfg,13,1);
+        String base=cfg.value("filenameMenuBase","");
+        Bitmap baseImage=uiAssets.image(base);
+        if(baseImage!=null)panel.picture(base,cfg.number("basePrintX",0),cfg.number("basePrintY",0),baseImage.getWidth(),baseImage.getHeight());
+        String[] keys={"saveButton","loadButton","configButton","windowButton","messageSkipButton","backlogButton","autoModeButton","cancelButton","exitButton"};
+        String[] labels={"保存进度","读取存档","环境设定","隐藏对话框","快进","历史记录","自动播放","继续游戏","返回标题"};
+        int[] ys={67,115,163,259,307,211,357,404,525};
+        Runnable back=()->leaveOriginalPanel(cfg);
+        Runnable[] actions={()->showSlots(true),()->showSlots(false),this::showSettings,
+            ()->{closeOriginalPanel();hideUi();},()->{closeOriginalPanel();runner.skip(true);},this::showBacklog,
+            ()->{closeOriginalPanel();runner.auto(true);},back,()->confirmOriginalExit(panel)};
+        Set<Integer> standardSlots=new HashSet<>();
+        for(int i=0;i<keys.length;i++){
+            int n=cfg.number(keys[i],i+1);if(n<=0||i==5&&choices!=null&&!choices.backlogAllowed())continue;
+            if(currentFrame!=null&&currentFrame.placeMode!=0&&
+                (i==3||i==4||i==6||i==5&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0))continue;
+            if(modeUnderPanel!=null&&(i==3||i==4||i==6||i==5&&modeUnderPanel.assets.config.number("backLogOk",0)==0))continue;
+            GameButton button=panel.button(cfg,"Menu1Button"+n,"Menu1Button1",labels[i],actions[i],940,ys[i],320,72);
+            standardSlots.add(n);
+            if(i==0)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.SAVE));
+            if(i==1)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.LOAD));
+            if(i==2)button.prepare(()->warmStoryPanel(GameStoryControlsModel.Action.CONFIG));
+        }
+        panel.addExtendedModes(standardSlots,GameRunner.Modal::systemMenuMode,mode->!sceneReplay&&runner!=null&&runner.systemMenuModeEnabled(mode),
+            mode->openSystemMenuMode(panel,mode));
+        showOriginalPanel(panel,back,capture?cfg:null);
+        if(runner!=null)runner.suspendScriptAudio();
+    }
+    private void openSystemMenuMode(GameSystemMenuPanel menu,int mode){
+        GameRunner owner=runner;
+        if(owner==null||menu!=gamePanel||menu.preparingExtension())return;
+        menu.preparingExtension(true);
+        owner.openSystemMenuModal(mode,modal->runOnUiThread(()->{
+            menu.preparingExtension(false);
+            if(owner!=runner||menu!=gamePanel||isDestroyed()||isFinishing()||modal==null)return;
+            modeUnderPanel=null;
+            if(modal.problem!=null){abortModePanel(modal,null);return;}
+            menu.leave(uiAssets.system,false,picture->{
+                if(owner==runner&&menu==gamePanel&&!isDestroyed()&&!isFinishing())showModePanel(modal,picture);
+            });
+        }));
+    }
+    private void confirmOriginalExit(GameSystemMenuPanel panel) {
+        if(gamePanel!=panel||runner==null)return;
+        Runnable confirm=()->{
+            if(sceneReplay){closeOriginalPanel();runner.returnToTitle();return;}
+            if(returningToTitle)return;
+            panel.leave(uiAssets.system,true,picture->{
+                if(isDestroyed()||isFinishing()||gamePanel!=panel||runner==null)return;
+                titlePrevious=picture;returningToTitle=true;
+                runner.returnToTitle();
+            });
+        };
+        if(sceneReplay||uiAssets.system.number("warningPrintFlag",1)==0){confirm.run();return;}
+        panel.confirmExit(confirm,()->leaveOriginalPanel(uiAssets.system));
+    }
+    private LinearLayout column() {LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(18),dp(8),dp(18),dp(14));return box;}
+    private void showSettings() {
+        if(uiAssets!=null&&(uiAssets.config.has("modename")||uiAssets.settingsModel(width,height).original)){
+            Runnable back=()->leaveOriginalPanel(uiAssets.config);
+            showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,runner.configMask(),takePanelWarmup()),back);return;
+        }
+        LinearLayout box=column();
+        TextView hint=label("修改会即时生效，并保留到下次启动。",14);hint.setPadding(0,0,0,dp(10));box.addView(hint);
+        volumeSetting(box,"背景音乐",PlayerSettings.MUSIC,settings.musicVolume);
+        volumeSetting(box,"音效",PlayerSettings.SOUND,settings.soundVolume);
+        volumeSetting(box,"角色语音",PlayerSettings.VOICE,settings.voiceVolume);
+        volumeSetting(box,"特效语音",PlayerSettings.EFFECT_VOICE,settings.effectVoiceVolume);
+        choiceSetting(box,"文字速度",PlayerSettings.TEXT_SPEED,new String[]{"慢","标准","快","立即"},settings.textSpeed,false);
+        choiceSetting(box,"自动播放速度",PlayerSettings.AUTO_SPEED,new String[]{"慢","标准","快"},settings.autoSpeed,false);
+        choiceSetting(box,"快进范围",PlayerSettings.SKIP_READ_ONLY,new String[]{"仅已读","全部文字"},settings.skipReadOnly?0:1,true);
+        ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(box);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("环境设置").setView(scroll)
+            .setNeutralButton("阅读字号",null).setPositiveButton("完成",dialogClick(null)).create();
+        showPanel(dialog);
+        dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v->showReadingSettings());
+        if(dialog.getWindow()!=null)dialog.getWindow().setLayout(Math.min(dp(760),root.getWidth()-dp(32)),Math.max(dp(200),root.getHeight()-dp(32)));
+    }
+    private void showReadingSettings() {
+        int[] sizes=PlayerSettings.READING_SIZES;
+        String[] labels=new String[sizes.length];
+        int selected=0;
+        for(int i=0;i<sizes.length;i++){
+            labels[i]=sizes[i]+"%";
+            if(sizes[i]==settings.readingSize)selected=i;
+        }
+        showPanel(new AlertDialog.Builder(this).setTitle("阅读字号 · 剧情正文")
+            .setSingleChoiceItems(labels,selected,(d,i)->preferences.edit().putInt(PlayerSettings.READING_SIZE,sizes[i]).apply())
+            .setNeutralButton("恢复原版",(d,i)->preferences.edit().remove(PlayerSettings.READING_SIZE).apply())
+            .setPositiveButton("完成",null).create());
+    }
+    private void volumeSetting(LinearLayout box,String title,String key,int current) {
+        TextView value=label(title+"  "+current+"%",15);box.addView(value);
+        SeekBar slider=new SeekBar(this);slider.setMax(100);slider.setProgress(current);slider.setContentDescription(title+"音量");slider.setSoundEffectsEnabled(false);
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            public void onProgressChanged(SeekBar seek,int progress,boolean user){value.setText(title+"  "+progress+"%");if(user)preferences.edit().putInt(key,progress).apply();}
+            public void onStartTrackingTouch(SeekBar seek){systemClick();}public void onStopTrackingTouch(SeekBar seek){}
+        });box.addView(slider,new LinearLayout.LayoutParams(-1,dp(40)));
+    }
+    private void choiceSetting(LinearLayout box,String title,String key,String[] labels,int selected,boolean bool) {
+        TextView heading=label(title,15);heading.setPadding(0,dp(8),0,0);box.addView(heading);
+        RadioGroup group=new RadioGroup(this);group.setOrientation(LinearLayout.HORIZONTAL);
+        for(int i=0;i<labels.length;i++){RadioButton button=new RadioButton(this);button.setId(View.generateViewId());button.setText(labels[i]);button.setTextColor(Color.WHITE);button.setTextSize(14);button.setSoundEffectsEnabled(false);button.setOnClickListener(clicked(null));button.setTag(i);group.addView(button);if(i==selected)button.setChecked(true);}
+        group.setOnCheckedChangeListener((g,id) -> {View selectedView=g.findViewById(id);if(selectedView==null)return;int index=(Integer)selectedView.getTag();
+            if(bool)preferences.edit().putBoolean(key,index==0).apply();else preferences.edit().putInt(key,index).apply();});
+        box.addView(group);
+    }
+    private void showBacklog() {
+        if(uiAssets==null||runner==null)return;
+        if(currentFrame!=null&&currentFrame.placeMode!=0&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0)return;
+        Runnable back=()->{if(runner!=null)runner.closeBacklog();leaveOriginalPanel(uiAssets.backlog);};
+        showOriginalPanel(new GameBacklogPanel(this,uiAssets,dialogueStyle,width,height,back,
+            name->{if(runner!=null)runner.replayBacklogVoice(name);},this::jumpBacklog),back);
+        runner.requestBacklog();
+    }
+    private void jumpBacklog(long id){
+        GameUiPanel panel=gamePanel;
+        GameRunner owner=runner;
+        if(!(panel instanceof GameBacklogPanel)||owner==null)return;
+        owner.backlogJumpCue();
+        panel.leaveForBacklogJump(uiAssets.backlog,picture->{
+            if(panel!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+            owner.jumpBacklog(id,success->runOnUiThread(()->{
+                if(panel!=gamePanel||owner!=runner||isDestroyed()||isFinishing())return;
+                if(success)enterStory(picture);else panel.cancelLeave();
+            }));
+        });
+    }
+    @Override public void backlog(List<GameRunner.BacklogLine> lines){runOnUiThread(()->{
+        GameUiPanel panel=preparingPanel instanceof GameBacklogPanel?preparingPanel:gamePanel;
+        if(panel instanceof GameBacklogPanel)((GameBacklogPanel)panel).entries(lines);
+    });}
+    private void showSlots(boolean saving) {
+        if(runner==null)return;savingSlots=saving;
+        if(uiAssets!=null){
+            GameUiAssets.Config config=saving?uiAssets.save:uiAssets.load;
+            Runnable back=()->leaveOriginalPanel(config);
+            gameSlots=new GameSlotsPanel(this,uiAssets,saving,runner.slotEntries(),this::systemClick,back,slot->{
+                if(saving)runner.saveSlot(slot);
+                else{
+                    GameUiPanel panel=gamePanel;
+                    panel.leave(config,false,(picture,filled)->{
+                        if(panel!=gamePanel||isDestroyed()||isFinishing())return;
+                        runner.loadSlot(slot,success->runOnUiThread(()->{
+                            if(panel!=gamePanel||isDestroyed()||isFinishing())return;
+                            if(success)enterStory(picture,filled);else panel.cancelLeave();
+                        }));
+                    });
+                }
+            },saving?this::choosePcExport:this::choosePcSave,takePanelWarmup());showOriginalPanel(gameSlots,back);return;
+        }
+        slotRows=column();ScrollView scroll=new ScrollView(this);scroll.addView(slotRows);
+        AlertDialog.Builder slotDialog=new AlertDialog.Builder(this).setTitle(saving?"保存进度":"读取存档").setView(scroll).setNegativeButton("返回",dialogClick(null));
+        slotDialog.setNeutralButton(GameSlotsPanel.pcTransferLabel(saving),(dialog,which)->{
+            if(saving)choosePcExport();else choosePcSave();
+        });
+        slotsDialog=slotDialog.create();
+        showPanel(slotsDialog);if(slotsDialog.getWindow()!=null)slotsDialog.getWindow().setLayout(Math.min(dp(850),root.getWidth()-dp(32)),Math.max(dp(200),root.getHeight()-dp(32)));
+        slotsChanged();
+    }
+    @Override public void slotsChanged() {runOnUiThread(() -> {
+        if(runner==null||isDestroyed()||isFinishing())return;
+        if(gameSlots!=null&&(gamePanel==gameSlots||preparingPanel==gameSlots)){gameSlots.entries(runner.slotEntries());return;}
+        if(slotRows==null || slotsDialog==null || !slotsDialog.isShowing())return;slotRows.removeAllViews();
+        TextView hint=label(savingSlots?"选择一个槽位保存。自动存档由游戏维护。":"选择存档继续游戏。",14);hint.setPadding(0,0,0,dp(10));slotRows.addView(hint);
+        for(SaveSlots.Entry entry:runner.slotEntries()){
+            String detail=entry.corrupt?"存档无法读取":!entry.exists?"空槽位":DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(new Date(entry.savedAt))+
+                "\n"+entry.script+" · 第 "+entry.line+" 句"+
+                (entry.speaker.isEmpty()?"":"  ·  "+entry.speaker)+(entry.summary.isEmpty()?"":"\n"+entry.summary);
+            Button button=new Button(this);button.setAllCaps(false);button.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
+            button.setPadding(dp(14),dp(8),dp(14),dp(8));button.setText(entry.label()+"\n"+detail);
+            button.setEnabled(savingSlots?entry.slot!=SaveSlots.AUTO:entry.exists&&!entry.corrupt);
+            button.setSoundEffectsEnabled(false);button.setOnClickListener(clicked(v -> {
+                if(savingSlots && entry.exists){AlertDialog confirm=new AlertDialog.Builder(this).setTitle("覆盖"+entry.label()+"？").setMessage(detail)
+                    .setNegativeButton("取消",dialogClick(null)).setPositiveButton("覆盖保存",dialogClick((d,which) -> runner.saveSlot(entry.slot))).create();showPanel(confirm);}
+                else if(savingSlots)runner.saveSlot(entry.slot);
+                else {runner.loadSlot(entry.slot);slotsDialog.dismiss();}
+            }));slotRows.addView(button,new LinearLayout.LayoutParams(-1,-2));
+        }
+    });}
+    @Override public void notice(String text) { runOnUiThread(() -> {
+        if(!isDestroyed()) Toast.makeText(this,text,Toast.LENGTH_SHORT).show();
+    }); }
+    @Override public void error(String text) { runOnUiThread(() -> {
+        if (isDestroyed() || isFinishing()) return;
+        if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
+        if (text.contains("spt/sys.spt") && (text.contains("SPT header") || text.contains("SPTHEADER0") || text.contains("Record length"))) {
+            new AlertDialog.Builder(this).setTitle("未识别为受支持的 SystemNNN 脚本")
+                .setMessage("目录里的 spt/sys.spt 未通过格式校验。请确认游戏已经解压完整。")
+                .setNegativeButton("返回",dialogClick((d,w) -> finish())).setPositiveButton("选其他目录",dialogClick((d,w) -> {
+                    startActivity(new Intent(this,PlayerActivity.class).setAction(Intent.ACTION_MAIN)); finish();
+                })).show(); return;
+        }
+        new AlertDialog.Builder(this).setTitle("游戏运行中断").setMessage(text)
+            .setNegativeButton("返回 TYN",dialogClick((d,w) -> finish()))
+            .setPositiveButton(runner!=null&&!runner.initialized()?"重试读取":"从头开始",
+                dialogClick((d,w) -> {if(runner!=null)runner.restart();})).show();
+    }); }
+    private int dp(int n) {return Math.round(n*getResources().getDisplayMetrics().density);}
+    private TextView label(String s,int size) {
+        TextView t=new TextView(this); t.setTextColor(Color.WHITE);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP,size); t.setText(s); return t;
+    }
+    private GradientDrawable rounded(int color,int radius) {
+        GradientDrawable bg=new GradientDrawable(); bg.setColor(color); bg.setCornerRadius(dp(radius)); return bg;
+    }
+    private void message(String title,String body,String action,View.OnClickListener listener) {
+        root.removeAllViews(); LinearLayout box=new LinearLayout(this); box.setGravity(Gravity.CENTER);
+        box.setPadding(dp(32),dp(16),dp(32),dp(16)); box.setOrientation(LinearLayout.VERTICAL);
+        TextView heading=label(title,22); heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD); box.addView(heading);
+        TextView description=label(body,16); description.setPadding(0,dp(12),0,dp(12)); box.addView(description);
+        if (action!=null) {Button b=new Button(this); b.setText(action);b.setSoundEffectsEnabled(false);b.setOnClickListener(clicked(listener)); box.addView(b);}
+        Button back=new Button(this); back.setText("返回");back.setSoundEffectsEnabled(false);back.setOnClickListener(clicked(v -> finish())); box.addView(back);
+        root.addView(box,new FrameLayout.LayoutParams(-1,-1));
+    }
+    private void immersive() {
+        boolean full=settings==null||settings.fullscreen;
+        View decor=getWindow().getDecorView();
+        if(full)getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        // Handle insets ourselves on every supported version. Android15+
+        // enforces edge-to-edge for target35, including the non-fullscreen mode.
+        if(Build.VERSION.SDK_INT>=30){
+            getWindow().setDecorFitsSystemWindows(false);
+            WindowInsetsController controller=decor.getWindowInsetsController();
+            if(controller!=null){
+                controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                if(full)controller.hide(WindowInsets.Type.systemBars());else controller.show(WindowInsets.Type.systemBars());
+            }
+        }
+        decor.setSystemUiVisibility(full?View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION:View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        if(root!=null)root.requestApplyInsets();
+    }
+    @Override public void onWindowFocusChanged(boolean focus) {super.onWindowFocusChanged(focus); if(focus) immersive();}
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        if(pcSaveBusy||returningToTitle||preparingPanel!=null)return true;
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN){storyDownX=event.getRawX();storyDownY=event.getRawY();storyDrag=false;}
+        if(storyPointerActive()){
+            if((action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP)&&
+                Math.hypot(event.getRawX()-storyDownX,event.getRawY()-storyDownY)>storyTouchSlop)storyDrag=true;
+            if(action==MotionEvent.ACTION_DOWN||action==MotionEvent.ACTION_MOVE||action==MotionEvent.ACTION_UP)storyPointer(event);
+        }
+        if(action==MotionEvent.ACTION_UP&&storyDrag){
+            storyDrag=false;
+            MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
+            try{super.dispatchTouchEvent(cancel);}finally{cancel.recycle();}
+            return true;
+        }
+        if(action==MotionEvent.ACTION_CANCEL)storyDrag=false;
+        return super.dispatchTouchEvent(event);
+    }
+    @Override public boolean dispatchGenericMotionEvent(MotionEvent event){
+        if(event.getActionMasked()==MotionEvent.ACTION_HOVER_MOVE&&storyPointerActive())storyPointer(event);
+        return super.dispatchGenericMotionEvent(event);
+    }
+    private boolean storyPointerActive(){
+        return runner!=null&&stage!=null&&titlePanel==null&&logoPanel==null&&panelsOpen==0&&moviePlayback==null;
+    }
+    private void storyPointer(MotionEvent event){
+        stage.getLocationOnScreen(storyOrigin);
+        int x=Math.max(0,Math.min(width-1,(int)((event.getRawX()-storyOrigin[0])*width/Math.max(1,stage.getWidth()))));
+        int y=Math.max(0,Math.min(height-1,(int)((event.getRawY()-storyOrigin[1])*height/Math.max(1,stage.getHeight()))));
+        if(x!=lastX||y!=lastY){lastX=x;lastY=y;runner.pointer(x,y);}
+    }
+    @Override public void onBackPressed() {
+        if(pcSaveBusy)return;
+        panelWarmup=null;
+        if(moviePlayback!=null){moviePlayback.skip();return;}
+        if(logoPanel!=null){logoPanel.skip();return;}
+        if(sceneEntrance!=null){sceneEntrance.skip();return;}
+        if(returningToTitle)return;
+        if(preparingPanel!=null){
+            if(preparingPanel instanceof GamePlacePanel||isModalPanel(preparingPanel))return;
+            discardPanelPreparation();
+            if(runner!=null&&panelsOpen==0)runner.menu(false);
+            return;
+        }
+        if(gamePanel!=null){
+            if(gamePanel instanceof GameSystemMenuPanel&&((GameSystemMenuPanel)gamePanel).preparingExtension())return;
+            if(gamePanel.awaitingCapturedBackdrop()){closeOriginalPanel();return;}
+            if(gamePanel.skipTransition())return;
+            if(gamePanel.backOverlay())return;
+            if(!(gamePanel instanceof GameBacklogPanel)&&
+                !(gamePanel instanceof GameGalleryPanel&&((GameGalleryPanel)gamePanel).screen()==GalleryCatalog.Screen.VIEW))systemClick();
+            if(panelBack!=null)panelBack.run();else closeOriginalPanel();
+        }else if(sceneReplay){if(runner!=null)runner.endGalleryReplay();}
+        else if(uiHidden){uiHidden=false;updateVisibility();}
+        else if(runner==null||titlePanel!=null)finish();
+        else showMenu();
+    }
+    @Override protected void onResume() { super.onResume(); foreground=true; immersive();
+        if(gamePanel!=null)gamePanel.uiActive(true);
+        statusActive(true);
+        if(permissionPending) {permissionPending=false; inspectAccess();}
+        if(runner!=null) runner.active(true);
+    }
+    @Override protected void onPause() {foreground=false;if(gamePanel!=null)gamePanel.uiActive(false);statusActive(false); if(runner!=null) runner.active(false);
+        if(moviePlayback!=null)moviePlayback.interrupted();super.onPause();}
+    @Override protected void onDestroy() {
+        ui.removeCallbacksAndMessages(null);
+        discardPanelPreparation();
+        if(preferences!=null)preferences.unregisterOnSharedPreferenceChangeListener(settingsListener);
+        for(AlertDialog dialog:new ArrayList<>(openedPanels))dialog.dismiss();
+        if(runner!=null){runner.close();runner=null;}super.onDestroy();
+    }
+    @Override public void onRequestPermissionsResult(int code,String[] perms,int[] grants) {
+        super.onRequestPermissionsResult(code,perms,grants);
+        if(code==21 && runner==null) {permissionPending=false; inspectAccess();}
+    }
+}

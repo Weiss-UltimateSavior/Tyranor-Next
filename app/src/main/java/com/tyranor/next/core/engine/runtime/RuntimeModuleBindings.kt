@@ -2,6 +2,7 @@ package com.tyranor.next.core.engine.runtime
 
 import android.content.Context
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,12 @@ import kotlinx.coroutines.withContext
  * 不删除条目、不自动重绑。发现查询失败时绝不降级，避免把全部游戏误打成 UNKNOWN。
  */
 object RuntimeModuleBindings {
+    internal fun builtInSystemNnn(game: ScanGame): ScanGame =
+        if ((game.engine == EngineType.RUNTIME_MODULE || game.engine == EngineType.UNKNOWN) &&
+            game.runtimeModulePackage == "com.tyranor.runtime.systemnnn"
+        ) {
+            game.copy(engine = EngineType.SYSTEMNNN, runtimeModulePackage = null)
+        } else game
 
     /**
      * 批量核对库中所有 [EngineType.RUNTIME_MODULE] 条目：
@@ -26,16 +33,22 @@ object RuntimeModuleBindings {
      * @return 本次降级的游戏数量；发现查询失败返回 0。
      */
     suspend fun reconcile(context: Context): Int = withContext(Dispatchers.IO) {
-        val discovery = RuntimeModuleDiscovery.discover(context)
-        if (discovery !is RuntimeModuleDiscoveryResult.Success) return@withContext 0
-
-        val enabledPackages = AppSettingsStore.getEnabledRuntimeModules(context)
-        val discoveredPackages = discovery.modules.asSequence().map { it.packageName }.toSet()
+        val discovery = RuntimeModuleDiscovery.discover(context) as? RuntimeModuleDiscoveryResult.Success
+        val enabledPackages = if (discovery != null) AppSettingsStore.getEnabledRuntimeModules(context) else emptySet()
+        val discoveredPackages = discovery?.modules?.mapTo(HashSet()) { it.packageName }
         var degraded = 0
+        var converted = false
 
         GameLibraryFacade.updateGames(context) { games ->
             var count = 0
+            converted = false
             val updated = games.map { game ->
+                val builtin = builtInSystemNnn(game)
+                if (builtin !== game) {
+                    converted = true
+                    return@map builtin
+                }
+                if (discoveredPackages == null) return@map game
                 val packageName = game.runtimeModulePackage
                 val unavailable = packageName == null ||
                     packageName.isBlank() ||
@@ -52,7 +65,7 @@ object RuntimeModuleBindings {
             degraded = count
             updated
         }
-        if (degraded > 0) GameLibraryFacade.notifyGamesChanged()
+        if (degraded > 0 || converted) GameLibraryFacade.notifyGamesChanged()
         degraded
     }
 

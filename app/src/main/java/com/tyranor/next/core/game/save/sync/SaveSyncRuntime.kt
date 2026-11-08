@@ -81,8 +81,11 @@ object SaveSyncRuntime {
         val reconciliationRunning = java.util.concurrent.atomic.AtomicBoolean(false)
         val runtime = runtimeStore(application)
         val key = SaveContentHash.text(process)
-        fun nativeOwnerPending(): Boolean = process == application.packageName + ":siglus" &&
-            com.core.siglus.SiglusEngineAdmission.hasActiveOwner()
+        fun nativeOwnerPending(): Boolean = when (process) {
+            application.packageName + ":siglus" -> com.core.siglus.SiglusEngineAdmission.hasActiveOwner()
+            application.packageName + ":systemnnn" -> com.tyranor.runtime.systemnnn.SystemNnnHost.hasActiveSaveAccess()
+            else -> false
+        }
         fun registerActivity(activity: Activity) {
             val uri = activity.intent
                 ?.getStringExtra(LaunchContract.ROOT_URI)
@@ -833,6 +836,24 @@ object SaveSyncRuntime {
         cached: CachedBaseline?,
         activeKey: String,
     ): SaveTreeSnapshot {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            val root = manager.syncSaveDirectory(game)
+            requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) { root })
+            val job = currentCoroutineContext()
+            val snapshot = manager.withSystemNnnSaveFiles(game, root) { files ->
+                val metadataHash = SaveSyncMetadataFingerprint.fingerprint(root, files) { job.ensureActive() }
+                val contentHash = if (cached?.metadataHash == metadataHash) {
+                    cached.contentHash
+                } else {
+                    SaveContentHash.files(root, files) { job.ensureActive() }
+                }
+                SaveTreeSnapshot(contentHash, metadataHash)
+            }
+            requireSameSaveDirectory(activeKey, saveDirectoryIdentity(game) {
+                manager.resolveSaveLocation(it).directory
+            })
+            return snapshot
+        }
         val observed = observeSaveMetadata(manager, game, activeKey)
         if (cached?.metadataHash == observed.metadataHash) {
             return SaveTreeSnapshot(cached.contentHash, observed.metadataHash)
@@ -844,7 +865,7 @@ object SaveSyncRuntime {
         manager: GameSaveManager,
         game: ScanGame,
         activeKey: String,
-    ): SaveTreeSnapshot = hashStableContent(manager, game, observeSaveMetadata(manager, game, activeKey), activeKey)
+    ): SaveTreeSnapshot = resolveBaselineSnapshot(manager, game, cached = null, activeKey = activeKey)
 
     private suspend fun observeSaveMetadata(
         manager: GameSaveManager,

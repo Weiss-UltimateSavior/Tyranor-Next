@@ -11,11 +11,13 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.model.SystemNnnGameDirectory
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.io.FileInputStream
@@ -230,6 +232,16 @@ class GameSaveManager(private val context: Context) {
                 text(R.string.save_location_engine_game_dir, game.engine.displayName),
                 true,
             )
+            EngineType.SYSTEMNNN -> {
+                val directory = try {
+                    SystemNnnHost.saveDirectory(appContext, File(root))
+                } catch (_: IOException) {
+                    null
+                } catch (_: SecurityException) {
+                    null
+                }
+                SaveLocation(directory, text(R.string.save_location_engine_game_dir, game.engine.displayName), directory != null)
+            }
             EngineType.UNKNOWN -> SaveLocation(null, text(R.string.save_location_unknown_unsupported), false)
         }
     }
@@ -247,6 +259,14 @@ class GameSaveManager(private val context: Context) {
     }
 
     suspend fun listSaveFiles(game: ScanGame, strict: Boolean = false, expectedDirectory: File? = null): List<File> {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            return try {
+                withSystemNnnSaveFiles(game, expectedDirectory) { it }
+            } catch (failure: GameSaveException) {
+                if (strict) throw failure
+                emptyList()
+            }
+        }
         if (game.engine == EngineType.ETHORNELL) {
             // Sync snapshots must distinguish an empty save from unavailable or busy data;
             // otherwise an empty fingerprint could retire a pending upload session.
@@ -297,6 +317,23 @@ class GameSaveManager(private val context: Context) {
         strict: Boolean = false,
         expectedDirectory: File? = null,
     ): Int {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            val store = systemNnnStore(game, expectedDirectory)
+            return store.access {
+                val files = store.files()
+                if (files.isEmpty()) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
+                val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
+                    ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
+                ZipOutputStream(output).use { zip ->
+                    for ((name, file) in files) {
+                        zip.putNextEntry(ZipEntry(safeZipEntryName(name)).apply { time = file.lastModified() })
+                        file.inputStream().use { it.copyTo(zip) }
+                        zip.closeEntry()
+                    }
+                }
+                files.size
+            }
+        }
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.export {
                 appContext.contentResolver.openOutputStream(destinationUri, "w")
@@ -342,6 +379,16 @@ class GameSaveManager(private val context: Context) {
         expectedDirectory: File? = null,
         onDirectoryCommitted: (() -> Unit)? = null,
     ): Int {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            val store = systemNnnStore(game, expectedDirectory)
+            val temporary = createTemporaryDirectory()
+            try {
+                extractZip(sourceUri, temporary)
+                return store.access { store.replace(temporary) { onDirectoryCommitted?.invoke() } }
+            } finally {
+                deleteImportTree(temporary)
+            }
+        }
         if (manualSelection) {
             resolveSaveLocation(game).directory?.let(::checkedSyncDirectory)
         }
@@ -370,13 +417,17 @@ class GameSaveManager(private val context: Context) {
     /** Completes excluded-resource recovery for an interrupted cloud version import, without importing again. */
     internal fun completePendingVersionImport(game: ScanGame, expectedDirectory: File? = null): Unit = synchronized(importLock) {
         synchronized(RpgSaveSyncState.INTEROP_LOCK) {
-            val destination = syncSaveDirectory(game)
-            if (expectedDirectory != null && destination != checkedSyncDirectory(expectedDirectory)) {
-                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            if (game.engine == EngineType.SYSTEMNNN) {
+                systemNnnStore(game, expectedDirectory).access {}
+            } else {
+                val destination = syncSaveDirectory(game)
+                if (expectedDirectory != null && destination != checkedSyncDirectory(expectedDirectory)) {
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                }
+                val backup = File(destination.parentFile, destination.name + ".import_backup")
+                checkedSyncDirectory(backup)
+                recoverImportBackup(game, destination, backup)
             }
-            val backup = File(destination.parentFile, destination.name + ".import_backup")
-            checkedSyncDirectory(backup)
-            recoverImportBackup(game, destination, backup)
         }
     }
 
@@ -463,6 +514,10 @@ class GameSaveManager(private val context: Context) {
 
     @Throws(IOException::class)
     suspend fun deleteSaves(game: ScanGame): Int {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            val store = systemNnnStore(game)
+            return store.access { store.replace(null) }
+        }
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { it.delete() }
         return synchronized(RpgSaveSyncState.INTEROP_LOCK) {
             // 与存档互通同步互斥（H3）：删除与并发同步交错会产生半删状态
@@ -618,7 +673,31 @@ class GameSaveManager(private val context: Context) {
             }
         }
 
+    private fun systemNnnStore(game: ScanGame, expectedDirectory: File? = null): SystemNnnSaveStore {
+        val root = SystemNnnGameDirectory.accessible(game.uri)
+            ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val directory = try {
+            SystemNnnHost.saveDirectory(appContext, root)
+        } catch (failure: IOException) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+        } catch (failure: SecurityException) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+        }
+        if (expectedDirectory != null && checkedSyncDirectory(directory) != checkedSyncDirectory(expectedDirectory)) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        }
+        return SystemNnnSaveStore(root, directory)
+    }
+
+    internal fun recoverSystemNnnSavesForLaunch(game: ScanGame) = systemNnnStore(game).recoverForLaunch()
+
+    internal fun <T> withSystemNnnSaveFiles(game: ScanGame, expectedDirectory: File?, use: (List<File>) -> T): T {
+        val store = systemNnnStore(game, expectedDirectory)
+        return store.access { use(store.files().values.toList()) }
+    }
+
     private fun resolveGameDirectory(game: ScanGame): String? {
+        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(game.uri)?.absolutePath
         // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
         // 两边解析出不同路径会让存档管理/清理指向错误镜像。
         GamePathUtils.safUriToPath(game.uri)?.let { path ->
@@ -777,7 +856,7 @@ class GameSaveManager(private val context: Context) {
         internal fun supportsFileSaves(engine: EngineType): Boolean = when (engine) {
             EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
             EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
-            EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL -> true
+            EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL, EngineType.SYSTEMNNN -> true
             else -> false
         }
 

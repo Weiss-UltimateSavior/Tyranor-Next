@@ -189,6 +189,14 @@
             android:taskAffinity="com.core.Xsys4"
             android:theme="@style/Theme.Xsys4" />
 
+        <activity
+            android:name="com.tyranor.runtime.systemnnn.PlayerActivity"
+            android:exported="false"
+            android:process=":systemnnn"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
         <!-- ONS（ons）SDL2 宿主 -->
         <activity
             android:name="com.yuri.onscripter.ONScripter"

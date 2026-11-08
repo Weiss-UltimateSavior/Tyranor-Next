@@ -783,6 +783,8 @@
     <string name="launch_failed">起動に失敗しました</string>
     <string name="launch_all_files_access_request">システム設定で「すべてのファイルの管理」を許可し、戻ってから再度ゲームを起動してください</string>
     <string name="launch_all_files_access_missing">「すべてのファイルの管理」権限がないため、ネイティブエンジンがゲームフォルダを読み取れません</string>
+    <string name="launch_storage_access_request">システム設定でストレージへのアクセスを許可し、戻ってからゲームを起動してください</string>
+    <string name="launch_storage_access_missing">システム設定で Tyranor-Next にストレージへのアクセスを許可してください</string>
     <string name="launch_krkr_save_path_not_dir">KRKR セーブパスは存在しますがフォルダではありません：%1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">KRKR アプリ個別セーブフォルダを作成できません：%1$s</string>
     <string name="launch_create_krkr_save_failed">KRKR セーブフォルダを作成できません：%1$s</string>
@@ -1019,6 +1021,7 @@
     <string name="engine_module_management_disable_confirm">無効化</string>
     <string name="engine_module_management_load_failed">モジュール一覧の読み込みに失敗しました</string>
     <string name="engine_settings_runtime_module_hint">このゲームはサードパーティのランタイムモジュールで動作します。モジュールの設定とセーブデータはモジュール側で管理されます。</string>
+    <string name="engine_settings_systemnnn_hint">SystemNNN の設定はゲーム内の環境設定から変更できます。</string>
     <string name="engine_desc_runtime_module">サードパーティ APK ランタイムモジュール。スキャンと実行はモジュールが行い、本体アプリは検出・有効化・フォルダーパスの受け渡しのみを担当します。</string>
     <string name="launch_runtime_module_missing">ランタイムモジュールを利用できません。ゲームは不明に降格されました。再スキャンしてください</string>
     <string name="launch_runtime_module_disabled">ランタイムモジュールが有効になっていません。ゲームは不明に降格されました。「エンジンモジュール管理」で有効化してから再スキャンしてください</string>

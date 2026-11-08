@@ -783,6 +783,8 @@
     <string name="launch_failed">启动失败</string>
     <string name="launch_all_files_access_request">请在系统页面允许“管理所有文件”，返回后再次启动游戏</string>
     <string name="launch_all_files_access_missing">缺少“管理所有文件”权限，无法让原生引擎读取游戏目录</string>
+    <string name="launch_storage_access_request">请在系统的应用权限中允许存储访问，返回后再次启动游戏</string>
+    <string name="launch_storage_access_missing">缺少存储访问权限，请在系统设置中为 Tyranor-Next 授权</string>
     <string name="launch_krkr_save_path_not_dir">KRKR 存档路径已存在但不是目录：%1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">无法创建 KRKR 应用独立存档目录：%1$s</string>
     <string name="launch_create_krkr_save_failed">无法创建 KRKR 存档目录：%1$s</string>
@@ -1019,6 +1021,7 @@
     <string name="engine_module_management_disable_confirm">禁用</string>
     <string name="engine_module_management_load_failed">模块列表加载失败</string>
     <string name="engine_settings_runtime_module_hint">该游戏由第三方运行时模块运行；模块设置与存档由模块自身管理。</string>
+    <string name="engine_settings_systemnnn_hint">请在游戏的环境设定中调整 SystemNNN 设置。</string>
     <string name="engine_desc_runtime_module">第三方 APK 运行时模块；由模块自行扫描与运行，主 App 只负责发现、启用和传入文件夹路径。</string>
     <string name="launch_runtime_module_missing">运行时模块不可用，游戏已降级为未知，请重新扫描</string>
     <string name="launch_runtime_module_disabled">运行时模块未启用，游戏已降级为未知；请到「引擎模块管理」启用后重新扫描</string>

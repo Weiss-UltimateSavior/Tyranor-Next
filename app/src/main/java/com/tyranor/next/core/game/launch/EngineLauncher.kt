@@ -1,9 +1,11 @@
 package com.tyranor.next.core.game.launch
 
+import android.Manifest
 import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -55,6 +57,8 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.model.SystemNnnGameDirectory
+import com.tyranor.runtime.systemnnn.SystemNnnHost
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.GameSaveException
@@ -67,6 +71,7 @@ import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.RpgSaveSyncState
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.save.sync.SaveSyncException
+import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.withSaveSyncLaunchAdmission
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
@@ -140,6 +145,7 @@ object EngineLauncher {
         EngineType.AVG32,
         EngineType.XSYS35,
         EngineType.XSYS4,
+        EngineType.SYSTEMNNN,
         EngineType.UK2,
         EngineType.FVP,
         EngineType.ETHORNELL,
@@ -165,10 +171,19 @@ object EngineLauncher {
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
     suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
         withContext(Dispatchers.IO) {
+            val entry = RuntimeModuleBindings.builtInSystemNnn(game)
+            if (entry.engine == EngineType.SYSTEMNNN) {
+                val path = SystemNnnGameDirectory.resolve(entry.uri)
+                    ?: return@withContext LaunchResult.Failure.GameDirUnresolved
+                requestSystemNnnStorage(context, entry, path.absolutePath)?.let { return@withContext it }
+                val root = SystemNnnGameDirectory.accessible(entry.uri, path)
+                    ?: return@withContext LaunchResult.Failure.GameDirUnresolved
+                if (!SystemNnnHost.canOpen(root)) return@withContext LaunchResult.Failure.GameDirUnresolved
+            }
             withSaveSyncLaunchAdmission(
-                resolve = { SaveSyncRuntime.launchAdmission(context, game) },
-                managed = { key -> launchManaged(context, game, patchChoice, key) },
-                unmanaged = { launchInternal(context, game, patchChoice) },
+                resolve = { SaveSyncRuntime.launchAdmission(context, entry) },
+                managed = { key -> launchManaged(context, entry, patchChoice, key) },
+                unmanaged = { recoverSystemNnnSaves(context, entry) ?: launchInternal(context, entry, patchChoice) },
             )
         }
 
@@ -186,6 +201,7 @@ object EngineLauncher {
         } catch (failure: SaveSyncException) {
             return LaunchResult.Failure.SavePreparationFailed(failure.code)
         }
+        recoverSystemNnnSaves(context, game)?.let { return it }
         var ticket: SaveSyncRuntime.LaunchTicket? = null
         var grace: String? = null
         var dispatched = false
@@ -958,6 +974,34 @@ object EngineLauncher {
         }
     }
 
+    private fun requestSystemNnnStorage(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return requestAllFilesAccessIfNeeded(context, game, path)
+        if (!needsAllFilesAccess(path) && !path.startsWith("/storage/")) return null
+        val app = context.applicationContext
+        if (app.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+            app.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        ) return null
+        val opened = runCatching {
+            app.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.isSuccess
+        return if (opened) LaunchResult.Failure.StorageAccessRequested else LaunchResult.Failure.StorageAccessMissing
+    }
+
+    private fun recoverSystemNnnSaves(context: Context, game: ScanGame): LaunchResult.Failure? {
+        if (game.engine != EngineType.SYSTEMNNN) return null
+        return try {
+            GameSaveManager(context).recoverSystemNnnSavesForLaunch(game)
+            null
+        } catch (failure: GameSaveException) {
+            LaunchResult.Failure.SavePreparationFailed(
+                if (failure.code == SaveErrorCode.ENGINE_RUNNING) SaveSyncError.GAME_RUNNING else SaveSyncError.SAVE_UNAVAILABLE,
+            )
+        }
+    }
+
     /** 判断路径是否位于共享存储（原生引擎无法仅凭 SAF 授权读取），供启动前与手动添加目录共用。 */
     internal fun needsAllFilesAccess(path: String): Boolean {
         val normalized = path.replace('\\', '/')
@@ -1074,6 +1118,7 @@ object EngineLauncher {
             EngineType.XSYS35 -> buildXs35Intent(context, path, game, settings)
 
             EngineType.XSYS4 -> buildXs4Intent(context, path, game, settings)
+            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(context, File(path), game.title)
 
             EngineType.FVP -> buildFvpIntent(context, path, game, settings)
             EngineType.ETHORNELL -> buildEthornellIntent(context, path, game, settings)
@@ -2608,6 +2653,7 @@ object EngineLauncher {
      */
     private fun resolveGameDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri
+        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.resolve(uriText)?.absolutePath
         if (game.engine == EngineType.ETHORNELL) {
             return try {
                 val uri = Uri.parse(uriText)

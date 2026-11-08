@@ -1182,6 +1182,7 @@ class SaveSyncService internal constructor(
             is SaveSyncException -> failure.code
             is com.tyranor.next.core.game.save.GameSaveException -> when (failure.code) {
                 com.tyranor.next.core.game.save.SaveErrorCode.SAVE_SELECTION_INCOMPLETE -> SaveSyncError.SELECTION_INCOMPLETE
+                com.tyranor.next.core.game.save.SaveErrorCode.ENGINE_RUNNING -> SaveSyncError.GAME_RUNNING
                 com.tyranor.next.core.game.save.SaveErrorCode.RESOLVE_SAVE_DIR_FAILED,
                 com.tyranor.next.core.game.save.SaveErrorCode.SAVE_DIR_UNAVAILABLE,
                 com.tyranor.next.core.game.save.SaveErrorCode.NO_EXPORTABLE_FILES -> SaveSyncError.SAVE_UNAVAILABLE

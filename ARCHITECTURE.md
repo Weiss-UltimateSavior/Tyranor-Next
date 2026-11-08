@@ -65,6 +65,8 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 与 `libSDL2x.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
 
+- SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。
+
 ### 第三方 APK 运行时模块
 
 `core/engine/runtime` 是独立于 JoiPlay 外置模块注册表与模拟器注册表的子系统，只使用 Android Framework 与 Kotlin；不进入 `engine/`、不走 JNI、不经过 `EnginePluginBootstrap`。数据流如下：
@@ -105,11 +107,14 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - XP3 源码与固定依赖在 [engine/rust](engine/rust/Cargo.toml)；`build-archives.sh` 先运行宿主测试，再用 cargo-ndk 生成 `libarchive_xp3_core.so`。JNI panic 防护依赖 unwind，不改为 `panic=abort`。
 - System35/4 的固定来源构建脚本位于 `engine/xsystem35/scripts/`、`engine/xsystem4/scripts/`；共享 `libSDL2x.so` / `org.libsdl.app32`，与 ONS 的 `libSDL2.so` / `org.libsdl.app` 分开维护。
 - Siglus 保留已固定的原始运行库，来源与哈希见 [说明](engine/patches/siglus/README.md)；当前 CI 不重编其 Rust 源码。
+- SystemNNN 使用 [SystemNNN-Emberfall 0.6.4 的单库接入包](https://github.com/PorisRora/SystemNNN-Emberfall/releases/tag/v0.6.4)中的 ARM64 `libsystemnnn.so`，以压缩的 `jniLibs` 随 APK 分发。运行库原始大小为 5,236,480 字节。配套许可、静态 FFmpeg 源码获取方式和重链接说明位于 `engine/src/main/assets/licenses/systemnnn/`。
 - Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。当前随包库为 `043fef05…`（27,259,224 B；`0cfff1d` + 1 个已记录的本地补丁 `77b99d93…`，`dirty=true`），补丁同时收敛双重 `bgi-resource` 的 `UserData` 前缀，并把顶层 `BGI.gdb` / `BGI####.cad` 全局数据映射到私有 user-root；发布门禁使用的 `--local-static` 已在本轮校验来源记录和产物字节并通过，但严格源码审计要求 clean/已发布源码，dirty 本地补丁产物不能通过（`release_ready=false`），也不等价于可复现构建。
 
 预编译源码归属决策见 [ADR 0002](docs/adr/0002-prebuilt-engine-libs-source-in-fork.md)。所有生成目录禁止手工维护；共享字体保持不压缩，并兼顾 System35、System4 与 ONS。
 
 ## 7. 其它功能边界
+
+- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 只替换自身格式的白名单文件，目录、锁及 PC 数据原地保留。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。
 
 - 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理已按 capability 开放（`DEVICE_SAVE_IO_VERIFIED=true` 与 `HOST_DISPATCH_PROTOCOL_VERIFIED=true`）；范围仅 App 私有 user-root 的备份/恢复/删除，ZIP 单个文件上限 64 MiB（与 native 原子写一致），总量 1 GiB 预算不等于该上限；不自动导入资源根 `UserData`，不承诺商业游戏内槽位兼容或 PC 格式互通。

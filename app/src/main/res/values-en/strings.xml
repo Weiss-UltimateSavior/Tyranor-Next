@@ -783,6 +783,8 @@
     <string name="launch_failed">Launch failed</string>
     <string name="launch_all_files_access_request">Allow “Manage all files” on the system page, then return and launch the game again</string>
     <string name="launch_all_files_access_missing">Missing “Manage all files” permission, so the native engine cannot read the game directory</string>
+    <string name="launch_storage_access_request">Allow storage access in the system app permissions, then return and launch the game again</string>
+    <string name="launch_storage_access_missing">Allow Tyranor-Next to access storage in system settings</string>
     <string name="launch_krkr_save_path_not_dir">KRKR save path exists but is not a directory: %1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">Unable to create the KRKR app-specific save directory: %1$s</string>
     <string name="launch_create_krkr_save_failed">Unable to create the KRKR save directory: %1$s</string>
@@ -1019,6 +1021,7 @@
     <string name="engine_module_management_disable_confirm">Disable</string>
     <string name="engine_module_management_load_failed">Failed to load the module list</string>
     <string name="engine_settings_runtime_module_hint">This game runs in a third-party runtime module; the module manages its own settings and saves.</string>
+    <string name="engine_settings_systemnnn_hint">Change SystemNNN settings from the game’s settings screen.</string>
     <string name="engine_desc_runtime_module">Third-party APK runtime module. The module scans and runs its own games; the main app only discovers, enables, and passes the folder path.</string>
     <string name="launch_runtime_module_missing">The runtime module is unavailable. The game was downgraded to unknown; scan again</string>
     <string name="launch_runtime_module_disabled">The runtime module is not enabled. The game was downgraded to unknown; enable it in “Engine modules” and scan again</string>

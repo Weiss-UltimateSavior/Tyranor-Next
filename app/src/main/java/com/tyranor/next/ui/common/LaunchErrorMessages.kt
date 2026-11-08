@@ -43,6 +43,12 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         LaunchResult.Failure.AllFilesAccessMissing ->
             localized.getString(R.string.launch_all_files_access_missing)
 
+        LaunchResult.Failure.StorageAccessRequested ->
+            localized.getString(R.string.launch_storage_access_request)
+
+        LaunchResult.Failure.StorageAccessMissing ->
+            localized.getString(R.string.launch_storage_access_missing)
+
         is LaunchResult.Failure.PluginBootstrapFailed -> when (val reason = reason) {
             is EnginePluginBootstrap.Failure.UnknownEngine ->
                 localized.getString(R.string.plugin_unknown_engine, reason.engineId)

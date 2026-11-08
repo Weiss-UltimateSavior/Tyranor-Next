@@ -1921,7 +1921,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.RUNTIME_MODULE -> Color(0xFF5C6BC0)
     EngineType.PSP -> Color(0xFF6D4C9F)
     EngineType.NINTENDO_SWITCH -> Color(0xFFD32F2F)
-    EngineType.UNKNOWN -> Color(0xFF607D8B)
+    EngineType.SYSTEMNNN, EngineType.UNKNOWN -> Color(0xFF607D8B)
 }
 
 internal fun shouldShowSaveManagement(engine: EngineType): Boolean =

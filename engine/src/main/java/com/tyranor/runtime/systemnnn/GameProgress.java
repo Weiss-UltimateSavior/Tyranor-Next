@@ -1,0 +1,299 @@
+package com.tyranor.runtime.systemnnn;
+
+import android.util.AtomicFile;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.EOFException;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.UTFDataFormatException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.security.DigestInputStream;
+import java.security.DigestOutputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+
+/** NNR4 stays readable by the previous player. New fields are paired with its exact contents. */
+final class GameProgress {
+    private static final int NNR1=0x4e4e5231,NNR2=0x4e4e5232,NNR3=0x4e4e5233,NNR4=0x4e4e5234,
+        NNE1=0x4e4e4531,NNE2=0x4e4e4532;
+    private static final int MAX_READ=100000,TEXT_FIELDS=102,OPTION_WORDS=NativeGame.OPTIONAL_PROGRESS_WORDS,FINGERPRINT_BYTES=32;
+    private static final int MAX_CHART_NODES=256*1024,MAX_CHART=8+2*MAX_CHART_NODES;
+    private static final long MAX_FILE=32L*1024*1024,MAX_EXTENSION=2L*1024*1024;
+    private final AtomicFile file,extension;
+
+    private static final class InvalidExtension extends IOException {
+        InvalidExtension(String message){super(message);}
+        InvalidExtension(String message,Throwable cause){super(message,cause);}
+    }
+    private static final class InvalidBase extends IOException {
+        InvalidBase(String message){super("全局进度主文件损坏，已保留原文件 · "+message);}
+        InvalidBase(String message,Throwable cause){super("全局进度主文件损坏，已保留原文件 · "+message,cause);}
+    }
+    private static final class AccessFailure extends IOException {
+        AccessFailure(String part,IOException cause){super("无法读取"+part+"进度，请恢复存储访问后重试",cause);}
+    }
+
+    static final class State {
+        final int[] read,variables,results,optional;
+        final byte[][] text;
+        final byte[] chart;
+        final List<String> legacy;
+        State(int[] read,int[] variables,int[] results,byte[][] text,int[] optional,byte[] chart,List<String> legacy){
+            this.read=read;this.variables=variables;this.results=results;this.text=text;this.optional=optional;this.chart=chart;this.legacy=legacy;
+        }
+    }
+
+    private static final class Committed {
+        final State state;
+        final byte[] fingerprint;
+        Committed(State state,byte[] fingerprint){this.state=state;this.fingerprint=fingerprint;}
+    }
+
+    GameProgress(File path){file=new AtomicFile(path);extension=new AtomicFile(new File(path.getPath()+".ext"));}
+
+    State read() throws IOException {
+        Committed saved=readCommitted(false);
+        return saved==null?null:saved.state;
+    }
+    private Committed readCommitted(boolean repairExtension) throws IOException {
+        MessageDigest digest=digest();
+        try(FileInputStream raw=file.openRead();
+            DataInputStream in=new DataInputStream(new BufferedInputStream(new DigestInputStream(raw,digest)))){
+            if(raw.getChannel().size()>MAX_FILE)throw new InvalidBase("Global progress exceeds size limit");
+            State base=decode(in);
+            byte[] fingerprint=digest.digest();
+            try{base=readExtension(base,fingerprint);}
+            catch(InvalidExtension e){
+                if(repairExtension)quarantineExtension(e);
+                else android.util.Log.w("SystemNNN","Global progress extension ignored",e);
+            }
+            catch(IOException e){throw new AccessFailure("扩展",e);}
+            return new Committed(base,fingerprint);
+        }catch(FileNotFoundException e){
+            if(!definitelyAbsent(file))throw new AccessFailure("基础",e);
+            return null;
+        }catch(InvalidBase|AccessFailure e){throw e;}
+        catch(IOException e){throw new AccessFailure("基础",e);}
+    }
+    private static boolean definitelyAbsent(AtomicFile path){
+        File base=path.getBaseFile();
+        return Files.notExists(base.toPath())&&Files.notExists(new File(base.getPath()+".bak").toPath());
+    }
+    private State readExtension(State base,byte[] fingerprint) throws IOException {
+        try(FileInputStream raw=extension.openRead();
+            DataInputStream in=new DataInputStream(new BufferedInputStream(raw))){
+            if(raw.getChannel().size()>MAX_EXTENSION)throw new InvalidExtension("Global progress extension exceeds size limit");
+            int version=in.readInt();
+            if(version!=NNE1&&version!=NNE2)throw new InvalidExtension("Invalid global progress extension version");
+            int count=in.readUnsignedByte();
+            if(count<1||count>2)throw new InvalidExtension("Invalid global progress extension count");
+            State result=base;
+            for(int i=0;i<count;i++){
+                byte[] key=new byte[FINGERPRINT_BYTES];in.readFully(key);
+                byte[][] text=readText(in);
+                int[] optional=readOptional(in);
+                byte[] chart=version==NNE2?readChart(in):null;
+                if(Arrays.equals(key,fingerprint)){
+                    if(result!=base)throw new InvalidExtension("Duplicate global progress extension record");
+                    result=new State(base.read,base.variables,base.results,text,optional,chart,base.legacy);
+                }
+            }
+            if(in.read()!=-1)throw new InvalidExtension("Unexpected global progress extension payload");
+            return result;
+        }catch(EOFException e){
+            throw new InvalidExtension("Truncated global progress extension",e);
+        }catch(FileNotFoundException e){
+            if(!definitelyAbsent(extension))throw e;
+            return base;
+        }
+    }
+    private void quarantineExtension(InvalidExtension problem) throws IOException {
+        File damaged=extension.getBaseFile();
+        File isolated=new File(damaged.getPath()+".corrupt-"+UUID.randomUUID());
+        Files.move(damaged.toPath(),isolated.toPath(),StandardCopyOption.ATOMIC_MOVE);
+        android.util.Log.w("SystemNNN","Isolated malformed global progress extension: "+isolated.getName(),problem);
+    }
+
+    static State decode(DataInputStream in) throws IOException {
+        try{
+            int version=in.readInt(),count=readCount(in,MAX_READ);
+            if(version<NNR1||version>NNR4)throw new InvalidBase("Unknown global progress format");
+            int[] read=version>=NNR2?readInts(in,count):null;
+            int[] variables=version>=NNR3?readInts(in,NativeGame.SYSTEM_VARIABLES):null;
+            int[] results=version>=NNR4?readInts(in,NativeGame.SCRIPT_PROGRESS):null;
+            if(version>=NNR2)count=readCount(in,MAX_READ);
+            List<String> legacy=new ArrayList<>();
+            for(int i=0;i<count;i++)legacy.add(in.readUTF());
+            if(in.read()!=-1)throw new InvalidBase("Unexpected global progress payload");
+            return new State(read,variables,results,null,null,null,legacy);
+        }catch(EOFException|UTFDataFormatException e){throw new InvalidBase("Malformed global progress fields",e);}
+    }
+
+    void write(State state) throws IOException {
+        Committed previous=readCommitted(true);
+        if(previous!=null&&sameBase(state,previous.state)){
+            if(!Arrays.deepEquals(state.text,previous.state.text)||!Arrays.equals(state.optional,previous.state.optional)||
+                !Arrays.equals(state.chart,previous.state.chart))
+                writeExtension(state,previous.fingerprint,null);
+            return;
+        }
+        // Publish both extension generations before committing the changed NNR4 file.
+        // An interrupted commit still finds the previous generation using the old NNR4 fingerprint.
+        FileOutputStream raw=null;
+        try{
+            MessageDigest digest=digest();
+            raw=file.startWrite();
+            DataOutputStream out=new DataOutputStream(new BufferedOutputStream(new DigestOutputStream(raw,digest)));
+            encode(out,state);
+            out.flush();
+            if(raw.getChannel().size()>MAX_FILE)throw new IOException("Global progress exceeds size limit");
+            raw.getFD().sync();
+            writeExtension(state,digest.digest(),previous);
+            file.finishWrite(raw);
+            raw=null;
+            verifyCommitted(file);
+        }catch(IOException|RuntimeException e){
+            if(raw!=null)file.failWrite(raw);
+            throw e;
+        }
+    }
+
+    static void encode(DataOutputStream out,State state) throws IOException {
+        if(state.read.length>MAX_READ||state.legacy.size()>MAX_READ||
+            state.variables.length!=NativeGame.SYSTEM_VARIABLES||state.results.length!=NativeGame.SCRIPT_PROGRESS)
+            throw new IOException("Invalid global progress field count");
+        out.writeInt(NNR4);
+        out.writeInt(state.read.length);
+        writeInts(out,state.read);
+        writeInts(out,state.variables);
+        writeInts(out,state.results);
+        out.writeInt(state.legacy.size());
+        for(String key:state.legacy)out.writeUTF(key);
+    }
+
+    private static boolean sameBase(State left,State right){
+        return Arrays.equals(left.read,right.read)&&Arrays.equals(left.variables,right.variables)&&
+            Arrays.equals(left.results,right.results)&&left.legacy.equals(right.legacy);
+    }
+    private static MessageDigest digest(){
+        try{return MessageDigest.getInstance("SHA-256");}
+        catch(NoSuchAlgorithmException e){throw new AssertionError(e);}
+    }
+    private void writeExtension(State state,byte[] fingerprint,Committed previous) throws IOException {
+        FileOutputStream raw=null;
+        try{
+            raw=extension.startWrite();
+            DataOutputStream out=new DataOutputStream(new BufferedOutputStream(raw));
+            boolean preserve=previous!=null&&previous.state.text!=null;
+            out.writeInt(NNE2);
+            out.writeByte(preserve?2:1);
+            writeExtensionRecord(out,fingerprint,state);
+            if(preserve)writeExtensionRecord(out,previous.fingerprint,previous.state);
+            out.flush();
+            raw.getFD().sync();
+            extension.finishWrite(raw);
+            raw=null;
+            verifyCommitted(extension);
+        }catch(IOException|RuntimeException e){
+            if(raw!=null)extension.failWrite(raw);
+            throw e;
+        }
+    }
+    private static void verifyCommitted(AtomicFile target) throws IOException {
+        // Android's finishWrite reports rename failures through logging.
+        String path=target.getBaseFile().getPath();
+        if(!target.getBaseFile().isFile()||new File(path+".new").exists()||new File(path+".bak").exists())
+            throw new IOException("Global progress commit did not finish: "+target.getBaseFile().getName());
+    }
+    private static void writeExtensionRecord(DataOutputStream out,byte[] fingerprint,State state) throws IOException {
+        if(state.text.length!=TEXT_FIELDS||state.optional!=null&&state.optional.length!=OPTION_WORDS)
+            throw new IOException("Invalid global progress extension field count");
+        out.write(fingerprint);
+        for(int i=0;i<state.text.length;i++){
+            byte[] field=state.text[i];
+            validateText(field,i);
+            out.writeByte(field.length);
+            out.write(field);
+        }
+        int entries=0;
+        if(state.optional!=null)for(int word:state.optional)if(word!=0)entries++;
+        out.writeShort(entries);
+        if(state.optional!=null)for(int i=0;i<state.optional.length;i++)if(state.optional[i]!=0){
+            out.writeShort(i);
+            out.writeInt(state.optional[i]);
+        }
+        int chartSize=state.chart==null?0:state.chart.length;
+        if(chartSize!=0)validateChart(state.chart);
+        out.writeInt(chartSize);
+        if(chartSize!=0)out.write(state.chart);
+    }
+
+    private static int readCount(DataInputStream in,int maximum) throws IOException {
+        int count=in.readInt();
+        if(count<0||count>maximum)throw new InvalidBase("Invalid global progress count");
+        return count;
+    }
+    private static int[] readInts(DataInputStream in,int count) throws IOException {
+        int[] values=new int[count];
+        for(int i=0;i<count;i++)values[i]=in.readInt();
+        return values;
+    }
+    private static void writeInts(DataOutputStream out,int[] values) throws IOException {
+        for(int value:values)out.writeInt(value);
+    }
+    private static int textLimit(int field){return field<2?15:32;}
+    private static void validateText(byte[] text,int field) throws IOException {
+        if(text==null||text.length>textLimit(field))throw new InvalidExtension("Invalid global text field");
+        for(byte value:text)if(value==0)throw new InvalidExtension("Embedded terminator in global text");
+    }
+    private static byte[][] readText(DataInputStream in) throws IOException {
+        byte[][] fields=new byte[TEXT_FIELDS][];
+        for(int i=0;i<fields.length;i++){
+            int size=in.readUnsignedByte();
+            if(size>textLimit(i))throw new InvalidExtension("Invalid global text field size");
+            in.readFully(fields[i]=new byte[size]);
+            validateText(fields[i],i);
+        }
+        return fields;
+    }
+    private static int[] readOptional(DataInputStream in) throws IOException {
+        int count=in.readUnsignedShort(),previous=-1;
+        if(count>OPTION_WORDS)throw new InvalidExtension("Invalid optional progress count");
+        int[] values=new int[OPTION_WORDS];
+        for(int i=0;i<count;i++){
+            int index=in.readUnsignedShort(),word=in.readInt();
+            if(index<=previous||index>=values.length||word==0)throw new InvalidExtension("Invalid optional progress word");
+            values[index]=word;
+            previous=index;
+        }
+        return values;
+    }
+    private static byte[] readChart(DataInputStream in) throws IOException {
+        int size=in.readInt();
+        if(size<0||size>MAX_CHART)throw new InvalidExtension("Invalid chart progress length");
+        byte[] result=new byte[size];
+        in.readFully(result);
+        if(size!=0)validateChart(result);
+        return result;
+    }
+    private static void validateChart(byte[] chart) throws IOException {
+        if(chart.length<8||chart.length>MAX_CHART)throw new InvalidExtension("Invalid chart progress length");
+        ByteBuffer header=ByteBuffer.wrap(chart).order(ByteOrder.LITTLE_ENDIAN);
+        int seen=header.getInt(),traversed=header.getInt();
+        if(traversed<1||traversed>MAX_CHART_NODES||seen!=((traversed+3)&~3)||chart.length!=8+seen+traversed)
+            throw new InvalidExtension("Invalid chart progress blocks");
+    }
+}

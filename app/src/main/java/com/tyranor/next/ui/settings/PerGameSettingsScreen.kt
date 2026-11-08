@@ -1357,6 +1357,16 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                         }
                     }
+                    EngineType.SYSTEMNNN -> item {
+                        SectionCard(game.engine.displayName) {
+                            Text(
+                                stringResource(R.string.engine_settings_systemnnn_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
                     EngineType.RUNTIME_MODULE -> item {
                         // 入口对运行时模块隐藏；分支仅为 when 完备性，保留只读说明。
                         SectionCard(game.engine.displayName) {

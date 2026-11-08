@@ -49,6 +49,10 @@ sealed interface LaunchResult {
         /** 无法打开授权页且缺少「管理所有文件」权限。 */
         data object AllFilesAccessMissing : Failure
 
+        /** Android 8–10 uses the app's legacy storage permissions. */
+        data object StorageAccessRequested : Failure
+        data object StorageAccessMissing : Failure
+
         /** 内置引擎原生插件保障失败。 */
         data class PluginBootstrapFailed(val reason: EnginePluginBootstrap.Failure) : Failure
 
