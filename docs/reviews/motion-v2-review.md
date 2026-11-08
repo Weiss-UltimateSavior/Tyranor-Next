@@ -548,3 +548,99 @@ CodeRabbit 最新 [review 5812153375](https://github.com/Weiss-UltimateSavior/Ty
 | CR3-3 引导入场 | 已修复 | `app/src/main/java/com/tyranor/next/ui/main/MainScreen.kt:377`；`app/src/androidTest/java/com/tyranor/next/ui/common/MotionLifecycleDeviceTest.kt:201` | 独立复核确认修复成立；最终编译通过。 |
 | PressSquish 建议 | 待确认，本轮不改 | 原 PressSquish.kt 与实际 Compose 1.11.2 卸载调用栈 | 未找到支持竞态的证据，保留现有生命周期实现。 |
 | 抽屉测试迁移 | 已适配上游接口并补导航防重 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionGameInteractionsDeviceTest.kt:28`、`app/src/androidTest/java/com/tyranor/next/ui/game/MotionGameInteractionsDeviceTest.kt:66` | AndroidTest 构建通过，设备运行未执行。 |
+
+
+---
+
+## 第四轮 CodeRabbit 修复（2026-11-07）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `f88bc932af30df3cbf6d207fbeacb2eeebd8176f`，本节候选由包含本节的提交识别；原始审查基线仍为 c65e3c55。范围包含本轮全部已跟踪修改、三个未跟踪源码/测试文件及本节记录，21 个文件、+600/−71。不把日志或构建产物算作源码范围。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `CHANGELOG.md` | 1 | 0 |
+| `SPEC.md` | 2 | 2 |
+| `app/src/androidTest/java/com/tyranor/next/ui/common/MotionActivityInitializationDeviceTest.kt` | 25 | 1 |
+| `app/src/androidTest/java/com/tyranor/next/ui/home/MotionHomeRestorationDeviceTest.kt` | 73 | 0 |
+| `app/src/main/java/com/tyranor/next/MainActivity.kt` | 32 | 5 |
+| `app/src/main/java/com/tyranor/next/TyranorNextApplication.kt` | 6 | 3 |
+| `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt` | 11 | 2 |
+| `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt` | 31 | 8 |
+| `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt` | 14 | 1 |
+| `app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt` | 22 | 6 |
+| `app/src/main/java/com/tyranor/next/core/settings/PrefsRenameMigration.kt` | 1 | 0 |
+| `app/src/main/java/com/tyranor/next/ui/engine/EngineScreen.kt` | 6 | 2 |
+| `app/src/main/java/com/tyranor/next/ui/game/GameLaunchPreparation.kt` | 29 | 0 |
+| `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt` | 55 | 35 |
+| `app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt` | 2 | 2 |
+| `app/src/main/res/values-en/strings.xml` | 1 | 1 |
+| `app/src/main/res/values-ja/strings.xml` | 1 | 1 |
+| `app/src/main/res/values/strings.xml` | 1 | 1 |
+| `app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt` | 102 | 1 |
+| `app/src/test/java/com/tyranor/next/ui/game/GameLaunchPreparationTest.kt` | 89 | 0 |
+| `docs/reviews/motion-v2-review.md` | 96 | 0 |
+
+已执行验证：
+
+- `./gradlew.bat :app:compileReleaseKotlin` → 通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 退出 1；1,991 项、43 失败（app 27 / engine 16）、22 跳过，失败 ID 与已实际跑过的 c65e3c55 基线及父轮完全相同，新增失败 0。本轮没有重复运行基线 checkout。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出 1；29 Error / 337 Warning / 10 Hint，Error 签名与基线无新增；不记为 lint 通过。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 通过；新增 Home 恢复和权限 contract 用例编译通过。全部构建使用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。
+- `git -c core.autocrlf=false diff --check` → 通过；本轮修改均为 UTF-8 无 BOM、LF。
+- 42 个保护/动效/构建文件与父提交逐字比较 → 无差异，包含整个 MainScreen（因此 DefaultBottomNavigationBar 与根浮层宿主均保持）、滑条/开关、motion 工具集、anim/interpolator、baseline profile、版本及构建脚本。
+- `android skills list` → 已发现可用技能并读取 android-cli 的设备交互说明；本机 CLI 不支持文档中的 `android skills search review`，没有据此宣称额外审查技能已安装或运行。`adb devices -l` 初次为空，随后 mDNS 发现并连接 Honor PPG-AN00 / API 37；`dumpsys window` 确认前台不是隔离包后，按用户规则立即停止设备操作。
+- 未执行：本轮设备用例运行、真机录屏逐帧对照、实际权限 UI 中断/旋转/进程重建、完整 SQLite 恢复及真实磁盘故障、全主题/深浅色、平板/折叠屏/横屏、低端机、真实游戏/引擎启动与存档、真实封面绑定、Perfetto/功耗/baseline profile 收益。未抢占正在使用的手机；旧设备结果和旧录屏不算本轮通过。
+
+### 结论摘要
+
+已逐条复核 [CodeRabbit review 5816724208](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5816724208) 的三条 inline、五条 outside-diff 与一条 nit。七项成立的产品/文案问题已修复，一项锚点清理防御改进已完成，一项低级封面绑定成功路径的设备覆盖建议保留未实现。没有通过扩大生产测试接口来掩盖测试缺口。
+
+五个未参与实现的独立 agent 分别从逻辑、架构、健壮性、回归和规范复审冻结后的全部修复，各自仅向主 agent 报告；主 agent 回到源码逐项核对，未发现新的成立问题。此轮没有调节增强动效视觉、轨迹、时长、弹簧或静态布局；普通档沿用同一缺陷修复。滑条明确例外保持，未恢复白雾刻度调色。设备证据仍缺失，因此不宣称本轮视觉逐帧验收通过。
+
+父提交在本轮开始时六项远端检查均成功，CodeRabbit 文档覆盖率为 86.67%（135 函数 / 70 文件，阈值 80%）；这不是本轮新提交的检查结果。检查期间上游 main 新增 ccf010a3、4fa21e8c，PR 再次出现冲突，需继续整合；本节不作为当前可合并的声明。
+
+### 问题清单
+
+| No. | 级别 | 问题与可核对证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR4-1 | 高 | 插件原始线程直接调用 provisionIfNeeded；插件版本 getInt 位于其内部异常保护之前，类型损坏偏好会向线程外抛 ClassCastException。 | 已在原线程捕获并记录 Exception，首次安装 gate 也置于同一异常边界内。 | `app/src/main/java/com/tyranor/next/MainActivity.kt:106`；`app/src/main/java/com/tyranor/next/core/engine/plugin/EnginePluginBootstrap.kt:127` |
+| CR4-2 | 中 | beginLaunch 原来在异步准备结束前没有同步所有权，sheetMotion.busy 仅在导航阶段变为真，重复激活可安排两条准备链。 | 已在安排协程前取得一次所有权，跨确认/存档检查交接，异常、取消或最终交付后释放。 | `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:744`；`app/src/main/java/com/tyranor/next/ui/game/GameLaunchPreparation.kt:8` |
+| CR4-3 | 中 | 初始化标记与独立快照均失败后，自动迁移/空 Room 库仍能写出“既有安装”证据，重启丢失首次安装判定。 | 已先保存原始判定；双失败暂缓迁移与首次建库，冷读返回不缓存空值并重试；旧安装凭已有证据继续。 | `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt:52`；`app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt:27`；`app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryDatabase.kt:64` |
+| CR4-4 | 中 | 通知权限原来在实际结果前写入已请求，系统中断也会永久失去后续请求机会。 | 已以结果 map 中包含权限项区分明确授权/拒绝与中断，用无 Context 的 ViewModel 保留旋转期间 inFlight。 | `app/src/main/java/com/tyranor/next/MainActivity.kt:52`；`app/src/main/java/com/tyranor/next/MainActivity.kt:156` |
+| CR4-5 | 中 | 恢复后游戏库尚未加载，Home 的空列表 effect 立即清除 rememberSaveable 管理目标 URI。 | 已把 loaded 加入 effect，仅加载完成后清理不存在的目标。 | `app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt:133` |
+| CR4-6 | 中 | Engine 行 coachAnchor 在入场变换外侧读取坐标，重建时引导框不能随行入场。 | 已把原 staggeredEntrance 放到 coachAnchor 之前，不调整运动参数或启用条件。 | `app/src/main/java/com/tyranor/next/ui/engine/EngineScreen.kt:310` |
+| CR4-7 | 低 | 高亮“添加游戏”实际用于手动添加 PC/安卓，引导却声称可添加扫描目录。 | 已同步三语言，目录扫描指向添加文件夹/设置入口。 | `app/src/main/res/values/strings.xml:923`；同键 values-en、values-ja |
+| CR4-8 | 低，防御改进 | 旧首行 DisposableEffect 无条件发送 Rect.Zero，缺少目标身份限定；设备上新旧回调的竞态帧序未复现。 | 已仅允许当前目标或无目标时清理，避免旧行清除新拥有者边界；不把未复现帧序写成已证实缺陷。 | `app/src/main/java/com/tyranor/next/ui/engine/EngineScreen.kt:269` |
+| CR4-9 | 低，测试增强 | 封面窗口设备用例仅覆盖显式关闭/外部移除，缺少成功绑定时在 onGameUpdated 内、dispose 前检查清理的真实 UI 断言。 | 未实现；保留当前测试和讨论，原因见下文。 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt:122`；`app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:1064` |
+
+### 重点问题说明
+
+**CR4-2.【中】启动准备所有权。** GameLaunchPreparation 只负责 UI 交互编排，主线程同步 tryBegin 发生在 scope.launch 之前；成功交接仍持有，step 的 finally 仅在异常/取消时释放，真正启动的 finally 负责最终释放。Artemis 确认先同步消费 showPatchConfirm，取消释放；恢复的确认可以取得新内存所有权。RPG 对话框“否”仍为不转换而直接启动，未改为取消。原 EngineLauncher、sheet 导航门控和进退场绘制均保留。新增四个 JVM 行为测试全部通过，包括调度前/挂起中防重、阶段交接、原 Throwable 传播和取消恢复。
+
+**CR4-3.【中】首次安装双失败。** OnboardingPreferences 保留未持久化原始判定，失败 commit 留下的内存 marker 不能覆盖该值；独立快照、可靠标记或既有安装数据成立时才允许基础设施写入。Application 自动迁移、PrefsRenameMigration、System4 标记、插件及 Room builder 入口共用 prepareInstallationData。GameLibraryFacade 四个冷读入口返回空而不写缓存，保留失败监听和下次重试，正常已有缓存路径不增加磁盘访问。三个新增测试通过实际 Facade/Room 前置入口验证双失败、恢复先保存 false 再迁移、模拟重启、快照快路径及完成失败后保留原判定；OnboardingPreferencesTest 共 17 项通过。真实 Room 建库成功和跨进程磁盘故障未执行。
+
+**CR4-9.【低】成功绑定设备覆盖仍有缺口。** 生产成功路径已逐行确认 `GameScreen.kt:1064` beforeClose() 紧接在 `:1065` onGameUpdated(updated) 之前。实际候选只能来自固定的外部 VNDB/Bangumi/Steam HTTPS 服务，没有现成的本地可控候选/下载夹具；当前对话框保持私有。补全真实成功路径需外部网络或新增生产注入/接口，不属于本次小而低风险的测试改动。本轮不改生产业务边界、不用假的关闭流程冒充绑定成功、不将该讨论标为已修复。后续可在有可控服务夹具时补真实成功绑定断言。
+
+### 已核对无问题的部分
+
+- core 仍不依赖 Compose/UI；临时权限状态无 Activity/Context 引用，未引入新的数据库 schema 或错误协议。
+- 未发现 Facade 缓存锁、数据库单例锁与 onboarding monitor 的反向锁链；异常与协程取消保留原始传播。
+- Home 新设备用例调用真实 HomeScreen 和 StateRestorationTester，权限用例调用实际 AndroidX parseResult；均使用共享隔离包名门控，没有生产测试后门。仅编译通过，不当作设备运行通过。
+- 本轮未启动手机脚本、screenrecord、perfetto 或 instrumentation，未发送 input tap/swipe、操作官方包或修改系统设置。发现非隔离包前台后停止设备操作，未核对全机进程；本轮没有自身设备进程需要回收。原始日志、私有路径/端点、媒体、依赖源码和构建包不入提交。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR4-1 插件线程异常 | 已修复 | `MainActivity.kt:106` | Release/Debug 编译与五视角源码复审；真实损坏偏好启动未执行。 |
+| CR4-2 启动准备防重 | 已修复 | `ui/game/GameLaunchPreparation.kt:8`；`ui/game/GameScreen.kt:712`、`:744`、`:758`、`:1003` | 新增四项 JVM 全通过；真实引擎设备启动未执行。 |
+| CR4-3 首次安装双失败 | 已修复 | `core/settings/AppSettingsStore.kt:52`、`:354`；`OnboardingPreferences.kt:27`、`:53`、`:68`；`PrefsRenameMigration.kt:26`；`TyranorNextApplication.kt:52`；`core/game/storage/GameLibraryDatabase.kt:64`；`GameLibraryFacade.kt:82`、`:106`、`:170`、`:209`、`:331` | OnboardingPreferencesTest 17/17；全 JVM 无新增失败，完整设备 SQLite 恢复未执行。 |
+| CR4-4 权限中断 | 已修复 | `MainActivity.kt:52`、`:156`、`:197`；`ui/common/MotionActivityInitializationDeviceTest.kt:23` | contract 用例编译通过，真实权限 UI/旋转未执行。 |
+| CR4-5 Home 恢复 | 已修复 | `ui/home/HomeScreen.kt:133`；`ui/home/MotionHomeRestorationDeviceTest.kt:29`（androidTest） | 新真实组件恢复用例编译通过，设备运行未执行。 |
+| CR4-6 锚点跟随 | 已修复 | `ui/engine/EngineScreen.kt:310` | Modifier 调用顺序及五视角复审通过；设备帧对照未执行。 |
+| CR4-7 引导文案 | 已修复 | 三语言 `strings.xml:923` | 字符串脚本通过。 |
+| CR4-8 清理身份 | 已完成防御改进，原竞态帧序待确认 | `ui/engine/EngineScreen.kt:237`、`:269` | 当前拥有者条件源码复核；设备竞态未复现。 |
+| CR4-9 成功绑定测试 | 未实现，非阻塞测试增强 | `ui/game/MotionCoverSearchDialogDeviceTest.kt:122`（androidTest）；`ui/game/GameScreen.kt:1064` | 成功路径清理顺序源码确认；真实成功绑定与回调内设备断言未执行。 |

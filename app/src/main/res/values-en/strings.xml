@@ -920,7 +920,7 @@
     <string name="onboarding_coach_home_web_title">Explore the web home</string>
     <string name="onboarding_coach_home_web_body">Your configured web home is shown here.</string>
     <string name="onboarding_coach_games_title">Add your games</string>
-    <string name="onboarding_coach_games_body">Use Add game to choose and save a game folder. It is scanned after you add it.</string>
+    <string name="onboarding_coach_games_body">Use Add game to add a PC or Android game manually. To scan a folder, use Add folder in an empty library or Game folders in Settings.</string>
     <string name="onboarding_coach_games_search_title">Find a game</string>
     <string name="onboarding_coach_games_search_body">Use search to filter the games in your library by name.</string>
     <string name="onboarding_coach_games_cover_title">Fill in covers</string>

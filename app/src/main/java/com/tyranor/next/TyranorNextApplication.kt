@@ -47,15 +47,18 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
             // 新安装用户仍显示引导；下一次启动或完成引导时会再次尝试落盘。
             AppSettingsStore.initializeOnboarding(this)
         }
+        // If both records failed, keep the UI usable but do not let automatic migration create
+        // evidence that would turn this fresh installation into an apparent upgrade after restart.
+        val installationReady = AppSettingsStore.prepareInstallationData(this)
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。
-        PrefsRenameMigration.migrate(this)
+        if (installationReady) PrefsRenameMigration.migrate(this)
         // 被删的旧 Winlator 设置实现遗留键清理（一次性，标记位保证只跑一次）。
-        EngineSettingsStore.cleanupLegacyWinlatorKeys(this)
+        if (installationReady) EngineSettingsStore.cleanupLegacyWinlatorKeys(this)
         UpdateNotificationManager.createChannel(this)
         GitHubUpdateChecker.restoreState(this)
         // 游戏库 Room 迁移检查 + 首页缓存预热在启动阶段触发，避免首帧 SettingsScreen 同步开库。
-        if (mainProcess) initializeMainLibrary()
+        if (mainProcess && installationReady) initializeMainLibrary()
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
     }
 

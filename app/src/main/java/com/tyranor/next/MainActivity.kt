@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
@@ -45,8 +47,15 @@ private fun coachPageOf(index: Int): Int = when (index) {
 }
 
 class MainActivity : ComponentActivity() {
+  private val notificationPermissionState by viewModels<NotificationPermissionRequestState>()
   private val notificationPermissionLauncher =
-    registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+      notificationPermissionState.inFlight = false
+      // A cancelled request has no permission entry; an explicit grant or denial has one.
+      if (Manifest.permission.POST_NOTIFICATIONS in result) {
+        UpdateNotificationManager.markPermissionRequested(this)
+      }
+    }
 
   /** Initializes the themed root and its motion environment before rendering the main navigation. */
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -94,7 +103,13 @@ class MainActivity : ComponentActivity() {
     LaunchedEffect(Unit) {
       // 启动初始化后准备插件；失败时由独立快照保护首次安装判定不被基础设施数据改变。
       Thread {
-        EnginePluginBootstrap.provisionIfNeeded(applicationContext)
+        try {
+          if (AppSettingsStore.prepareInstallationData(applicationContext)) {
+            EnginePluginBootstrap.provisionIfNeeded(applicationContext)
+          }
+        } catch (failure: Exception) {
+          android.util.Log.w("MainActivity", "Native plugin initialization failed", failure)
+        }
       }.apply { isDaemon = true }.start()
     }
     var completed by remember { mutableStateOf(AppSettingsStore.isOnboardingCompleted(this)) }
@@ -138,9 +153,16 @@ class MainActivity : ComponentActivity() {
     }
 
     LaunchedEffect(completed) {
-      if (completed && UpdateNotificationManager.shouldRequestPermission(this@MainActivity)) {
-        UpdateNotificationManager.markPermissionRequested(this@MainActivity)
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+      if (completed && !notificationPermissionState.inFlight &&
+        UpdateNotificationManager.shouldRequestPermission(this@MainActivity)
+      ) {
+        notificationPermissionState.inFlight = true
+        try {
+          notificationPermissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+        } catch (failure: Exception) {
+          notificationPermissionState.inFlight = false
+          android.util.Log.w("MainActivity", "Notification permission request failed", failure)
+        }
       }
     }
     Box(Modifier.fillMaxSize()) {
@@ -169,4 +191,9 @@ class MainActivity : ComponentActivity() {
       }
     }
   }
+}
+
+/** Retains an in-flight request across rotation; a new process may retry an unanswered request. */
+internal class NotificationPermissionRequestState : ViewModel() {
+  var inFlight = false
 }

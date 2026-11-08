@@ -17,37 +17,49 @@ internal class OnboardingPreferences(
     private val pendingStateFile: File? = null,
 ) {
     private var pendingInitialValue: Boolean? = null
+    private var initialStatePersisted = false
+
+    /** Existing install data, a saved marker, or a recovery snapshot makes later infrastructure writes safe. */
+    @Synchronized
+    fun hasPersistedInitialState(): Boolean = initialStatePersisted
 
     @Synchronized
     fun initialize(hasExistingData: () -> Boolean): OnboardingWriteResult {
         if (pendingInitialValue == null && settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
+            initialStatePersisted = true
             clearPendingInitialValue()
             return OnboardingWriteResult.SAVED
         }
         if (pendingInitialValue == null) {
             pendingInitialValue = readPendingInitialValue()
+            if (pendingInitialValue != null) initialStatePersisted = true
         }
         val completed = pendingInitialValue ?: hasExistingData().also { pendingInitialValue = it }
+        // Existing data is already durable evidence; only a fresh-install decision needs a new record.
+        if (completed) initialStatePersisted = true
         if (!settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, completed).commit()) {
             // commit 失败也已改写内存；移除未落盘标记，且保留 pending 快照以便重试。
             settings.edit().remove(AppSettingsStore.KEY_ONBOARDING_COMPLETED).apply()
-            persistPendingInitialValue(completed)
+            initialStatePersisted = persistPendingInitialValue(completed) || initialStatePersisted
             return OnboardingWriteResult.STORAGE_UNAVAILABLE
         }
         pendingInitialValue = null
+        initialStatePersisted = true
         clearPendingInitialValue()
         return OnboardingWriteResult.SAVED
     }
 
     @Synchronized
     fun isCompleted(): Boolean {
-        if (settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
+        if (pendingInitialValue == null && settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
+            initialStatePersisted = true
             pendingInitialValue = null
             clearPendingInitialValue()
             return settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
         }
         if (pendingInitialValue == null) {
             pendingInitialValue = readPendingInitialValue()
+            if (pendingInitialValue != null) initialStatePersisted = true
         }
         return pendingInitialValue ?: settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
     }
@@ -56,10 +68,12 @@ internal class OnboardingPreferences(
     fun complete(): OnboardingWriteResult {
         if (pendingInitialValue == null) {
             pendingInitialValue = readPendingInitialValue()
+            if (pendingInitialValue != null) initialStatePersisted = true
         }
         if (pendingInitialValue == null &&
             settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
         ) {
+            initialStatePersisted = true
             return OnboardingWriteResult.SAVED
         }
         if (!settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, true).commit()) {
@@ -68,6 +82,7 @@ internal class OnboardingPreferences(
             return OnboardingWriteResult.STORAGE_UNAVAILABLE
         }
         pendingInitialValue = null
+        initialStatePersisted = true
         clearPendingInitialValue()
         return OnboardingWriteResult.SAVED
     }
@@ -83,9 +98,9 @@ internal class OnboardingPreferences(
         }.getOrNull()
     }
 
-    private fun persistPendingInitialValue(value: Boolean) {
-        val file = pendingStateFile ?: return
-        runCatching {
+    private fun persistPendingInitialValue(value: Boolean): Boolean {
+        val file = pendingStateFile ?: return false
+        return runCatching {
             val parent = file.parentFile ?: File(".")
             parent.mkdirs()
             val temporary = File.createTempFile("${file.name}.", ".tmp", parent)
@@ -97,7 +112,8 @@ internal class OnboardingPreferences(
             } finally {
                 temporary.delete()
             }
-        }
+            true
+        }.getOrDefault(false)
     }
 
     private fun clearPendingInitialValue() {

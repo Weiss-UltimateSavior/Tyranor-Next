@@ -23,6 +23,7 @@ object PrefsRenameMigration {
     fun migrate(context: Context) {
         val app = context.applicationContext
         try {
+            if (!AppSettingsStore.prepareInstallationData(app)) return
             val legacy = app.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)
             val target = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)
             if (target.getBoolean(MIGRATED_MARKER, false)) return

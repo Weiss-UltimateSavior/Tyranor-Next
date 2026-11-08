@@ -3,11 +3,15 @@ package com.tyranor.next.core.settings
 import android.content.SharedPreferences
 import android.content.Context
 import android.content.ContextWrapper
+import com.tyranor.next.core.game.storage.GameLibraryDatabase
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import java.io.File
+import java.io.IOException
 import java.lang.reflect.Proxy
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -180,6 +184,102 @@ class OnboardingPreferencesTest {
     }
 
     @Test
+    fun `double persistence failure defers migration until the initial decision can be saved`() {
+        // A regular file where filesDir should be makes the independent snapshot unwritable.
+        val blockedFiles = Files.createTempFile("onboarding-blocked-files", ".tmp").toFile()
+        val database = Files.createTempFile("onboarding-deferred-library", ".db").toFile().apply { delete() }
+        val settings = MemoryPreferences().apply { writeSucceeds = false }
+        val infrastructure = MemoryPreferences()
+        val context = OnboardingContext(
+            appSettings = settings.preferences,
+            stores = mapOf("tyranor_prefs" to infrastructure.preferences),
+            gameLibrary = database,
+            appFiles = blockedFiles,
+        )
+        try {
+            assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, AppSettingsStore.initializeOnboarding(context))
+            assertFalse(AppSettingsStore.prepareInstallationData(context))
+            assertFalse(AppSettingsStore.markXs4RescanMigrationDone(context))
+            PrefsRenameMigration.migrate(context)
+            assertTrue(settings.disk.isEmpty())
+            assertTrue(infrastructure.disk.isEmpty())
+
+            val readers = listOf<(Context) -> List<*>>(
+                GameLibraryFacade::loadGames,
+                GameLibraryFacade::loadRecentGames,
+                GameLibraryFacade::loadQuickLaunch,
+                GameLibraryFacade::loadRoots,
+            )
+            for (read in readers) {
+                assertTrue(read(context).isEmpty())
+                val attempts = settings.commits
+                assertTrue(read(context).isEmpty())
+                assertTrue("An empty read must retry persistence instead of becoming cached", settings.commits > attempts)
+            }
+            assertThrows(IOException::class.java) { GameLibraryDatabase.get(context) }
+            assertFalse("Reading an unavailable fresh library must not create upgrade evidence", database.exists())
+
+            settings.writeSucceeds = true
+            assertTrue(AppSettingsStore.markXs4RescanMigrationDone(context))
+            assertEquals(false, settings.disk[AppSettingsStore.KEY_ONBOARDING_COMPLETED])
+            PrefsRenameMigration.migrate(context)
+            assertEquals(true, infrastructure.disk["prefs_rename_migrated_v1"])
+
+            AppSettingsStore.resetOnboardingForTests()
+            val restarted = OnboardingContext(
+                appSettings = MemoryPreferences(settings.disk).preferences,
+                stores = mapOf("tyranor_prefs" to MemoryPreferences(infrastructure.disk).preferences),
+                gameLibrary = database,
+                appFiles = blockedFiles,
+            )
+            assertEquals(OnboardingWriteResult.SAVED, AppSettingsStore.initializeOnboarding(restarted))
+            assertFalse(AppSettingsStore.isOnboardingCompleted(restarted))
+        } finally {
+            AppSettingsStore.resetOnboardingForTests()
+            blockedFiles.delete()
+            database.delete()
+        }
+    }
+
+    @Test
+    fun `saved recovery snapshot permits infrastructure while marker writes remain unavailable`() {
+        val files = Files.createTempDirectory("onboarding-recovery-gate").toFile()
+        val settings = MemoryPreferences().apply { writeSucceeds = false }
+        val context = OnboardingContext(
+            appSettings = settings.preferences,
+            stores = emptyMap(),
+            gameLibrary = File("missing-game-library.db"),
+            appFiles = files,
+        )
+        val pending = files.resolve("onboarding_initial_state")
+        try {
+            assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, AppSettingsStore.initializeOnboarding(context))
+            assertTrue(pending.isFile)
+            val commits = settings.commits
+            assertTrue(AppSettingsStore.prepareInstallationData(context))
+            assertEquals("The saved decision must allow the normal fast path", commits, settings.commits)
+            assertFalse(AppSettingsStore.isOnboardingCompleted(context))
+        } finally {
+            AppSettingsStore.resetOnboardingForTests()
+            pending.delete()
+            files.delete()
+        }
+    }
+
+    @Test
+    fun `failed completion cannot discard an initial decision that was never persisted`() {
+        val storage = MemoryPreferences().apply { writeSucceeds = false }
+        val state = OnboardingPreferences(storage.preferences)
+        assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, state.initialize { false })
+        assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, state.complete())
+        assertFalse(state.isCompleted())
+        assertFalse(state.hasPersistedInitialState())
+        storage.writeSucceeds = true
+        assertEquals(OnboardingWriteResult.SAVED, state.initialize { error("Must retain the initial decision") })
+        assertFalse(state.isCompleted())
+    }
+
+    @Test
     fun `failed upgrade marker keeps existing users out of onboarding and can be repaired`() {
         val storage = MemoryPreferences().apply { writeSucceeds = false }
         val state = OnboardingPreferences(storage.preferences)
@@ -256,6 +356,7 @@ class OnboardingPreferencesTest {
         appSettings: SharedPreferences,
         private val stores: Map<String, SharedPreferences>,
         private val gameLibrary: File,
+        private val appFiles: File = File("build/tmp/onboarding-preferences-test"),
     ) : ContextWrapper(null) {
         private val appSettings = appSettings
 
@@ -266,7 +367,7 @@ class OnboardingPreferencesTest {
 
         override fun getDatabasePath(name: String): File = gameLibrary
 
-        override fun getFilesDir(): File = File("build/tmp/onboarding-preferences-test")
+        override fun getFilesDir(): File = appFiles
     }
 
     companion object {

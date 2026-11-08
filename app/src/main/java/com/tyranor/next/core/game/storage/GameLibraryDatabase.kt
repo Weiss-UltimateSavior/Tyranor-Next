@@ -7,6 +7,8 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.tyranor.next.core.settings.AppStorageNames
+import com.tyranor.next.core.settings.AppSettingsStore
+import java.io.IOException
 
 /**
  * 游戏库 Room 数据库单例。主进程专用；引擎子进程不访问本库。
@@ -55,7 +57,15 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
         private var instance: GameLibraryDatabase? = null
 
         fun get(context: Context): GameLibraryDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(
+            instance ?: create(context).also { instance = it }
+        }
+
+        /** A new database must not become upgrade evidence before a fresh install decision is saved. */
+        private fun create(context: Context): GameLibraryDatabase {
+            if (!AppSettingsStore.prepareInstallationData(context)) {
+                throw IOException("Initial installation state is not persisted")
+            }
+            return Room.databaseBuilder(
                 context.applicationContext,
                 GameLibraryDatabase::class.java,
                 DB_NAME,
@@ -66,7 +76,6 @@ internal abstract class GameLibraryDatabase : RoomDatabase() {
                 .fallbackToDestructiveMigrationFrom(dropAllTables = true, 1)
                 .addMigrations(MIGRATION_2_3)
                 .build()
-                .also { instance = it }
         }
     }
 }

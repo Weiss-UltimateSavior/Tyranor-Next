@@ -686,6 +686,7 @@ internal fun GameActionsSheet(
     // MV/MZ 存档格式转化确认：待转化检测结果 + 已选定的 Artemis 补丁策略（两弹窗串联时保留）
     var rpgSaveDetection by remember(game.uri) { mutableStateOf<RpgSaveFormat.Detection?>(null) }
     var pendingPatchChoice by remember(game.uri) { mutableStateOf<EngineLauncher.ArtemisPatchChoice?>(null) }
+    val launchPreparation = remember(game.uri) { GameLaunchPreparation() }
     val batchScrapeRunningMessage = stringResource(R.string.game_batch_scraping_running)
     val coverDownloadFailedMessage = stringResource(R.string.game_cover_download_failed)
     // 抽屉动作条目的文案/颜色：buildList 的 lambda 内不允许 @Composable 调用，先在组合体取值
@@ -710,8 +711,12 @@ internal fun GameActionsSheet(
     /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
         scope.launch {
-            launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
-            if (launchError == null) dismissForNavigation()
+            try {
+                launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
+                if (launchError == null) dismissForNavigation()
+            } finally {
+                launchPreparation.finish()
+            }
         }
     }
 
@@ -719,56 +724,63 @@ internal fun GameActionsSheet(
      *  开启存档互通时跳过弹窗——启动前同步已覆盖其语义。 */
     fun launchWithSaveFormatGate(patchChoice: EngineLauncher.ArtemisPatchChoice?) {
         scope.launch {
-            if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
-                startLaunch(patchChoice)
-                return@launch
-            }
-            val pending = EngineLauncher.rpgSaveFormatPending(context, game)
-            if (pending != null) {
-                pendingPatchChoice = patchChoice
-                rpgSaveDetection = pending
-            } else {
-                startLaunch(patchChoice)
+            launchPreparation.step {
+                if (EngineLauncher.isRpgSaveInteropEnabled(context, game)) {
+                    startLaunch(patchChoice)
+                } else {
+                    val pending = EngineLauncher.rpgSaveFormatPending(context, game)
+                    if (pending != null) {
+                        pendingPatchChoice = patchChoice
+                        rpgSaveDetection = pending
+                    } else {
+                        startLaunch(patchChoice)
+                    }
+                }
             }
         }
     }
 
     /** 启动前统一门：先 Artemis 补丁确认，再 MV/MZ 存档格式确认，最后才真正拉起。 */
     fun beginLaunch() {
+        if (sheetMotion.busy || showPatchConfirm || rpgSaveDetection != null || !launchPreparation.tryBegin()) return
         scope.launch {
-            if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
-                showPatchConfirm = true
-            } else {
-                launchWithSaveFormatGate(null)
+            launchPreparation.step {
+                if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
+                    showPatchConfirm = true
+                } else {
+                    launchWithSaveFormatGate(null)
+                }
             }
         }
     }
 
     /** 用户确认转化后执行转化（best-effort），随后按既定策略启动。 */
     fun resolveSaveFormat(convert: Boolean) {
-        val detection = rpgSaveDetection
+        if (rpgSaveDetection == null) return
         rpgSaveDetection = null
         val patchChoice = pendingPatchChoice
         pendingPatchChoice = null
         scope.launch {
-            if (convert && detection != null) {
-                val op = try {
-                    withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, game) }
-                } catch (ce: CancellationException) {
-                    throw ce
-                } catch (_: Throwable) {
-                    null
+            launchPreparation.step {
+                if (convert) {
+                    val op = try {
+                        withContext(Dispatchers.IO) { EngineLauncher.convertRpgSaveFormat(context, game) }
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val message = rpgConvertResultMessage(
+                        op,
+                        saveFormatConvertedFormat,
+                        saveFormatConvertedWithFailuresFormat,
+                        saveFormatConvertFailedMessage,
+                        saveBusyEngineRunningMessage,
+                    )
+                    android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
                 }
-                val message = rpgConvertResultMessage(
-                    op,
-                    saveFormatConvertedFormat,
-                    saveFormatConvertedWithFailuresFormat,
-                    saveFormatConvertFailedMessage,
-                    saveBusyEngineRunningMessage,
-                )
-                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                startLaunch(patchChoice)
             }
-            startLaunch(patchChoice)
         }
     }
 
@@ -989,8 +1001,16 @@ internal fun GameActionsSheet(
         ArtemisPatchChoiceDialog(
             game = game,
             onChoice = { choice ->
-                showPatchConfirm = false
-                if (choice != null) launchWithSaveFormatGate(choice)
+                if (showPatchConfirm) {
+                    showPatchConfirm = false
+                    if (choice == null) {
+                        launchPreparation.finish()
+                    } else {
+                        // A restored confirmation has no in-memory owner yet; resume the same one-shot flow.
+                        launchPreparation.tryBegin()
+                        launchWithSaveFormatGate(choice)
+                    }
+                }
             },
         )
     }

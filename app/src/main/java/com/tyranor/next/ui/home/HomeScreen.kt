@@ -130,12 +130,12 @@ fun HomeScreen(
         quickActionsGameUri?.let { uri -> libraryState.games.firstOrNull { it.uri == uri } }
     }
 
-    LaunchedEffect(libraryState.games, quickActionsGameUri) {
+    LaunchedEffect(libraryState.loaded, libraryState.games, quickActionsGameUri) {
         selectedGame = selectedGame?.let { selected ->
             libraryState.games.firstOrNull { it.uri == selected.uri }
         }
         quickActionsGameUri?.let { uri ->
-            if (libraryState.games.none { it.uri == uri }) quickActionsGameUri = null
+            if (libraryState.loaded && libraryState.games.none { it.uri == uri }) quickActionsGameUri = null
         }
     }
 

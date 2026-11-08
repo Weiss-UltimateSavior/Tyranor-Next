@@ -45,6 +45,18 @@ object AppSettingsStore {
     }
 
     /**
+     * Retries the original install decision before infrastructure creates upgrade evidence.
+     * Fresh installs need a saved marker or recovery snapshot; existing installs already have evidence.
+     * Failure returns immediately, letting read-only UI stay available without creating new evidence.
+     */
+    fun prepareInstallationData(context: Context): Boolean {
+        val state = onboarding(context)
+        if (state.hasPersistedInitialState()) return true
+        initializeOnboarding(context)
+        return state.hasPersistedInitialState()
+    }
+
+    /**
      * Centralizes the legacy-install evidence used by [initializeOnboarding]. Keeping this
      * decision pure makes the upgrade/first-install boundary directly regression-testable.
      */
@@ -340,7 +352,8 @@ object AppSettingsStore {
 
     /** 同步写（commit）：迁移在 IO 线程执行，标志落盘后才视为完成。 */
     fun markXs4RescanMigrationDone(c: Context): Boolean =
-        prefs(c).edit().putBoolean(KEY_MIGRATION_XSYS4_RESCAN_DONE, true).commit()
+        prepareInstallationData(c) &&
+            prefs(c).edit().putBoolean(KEY_MIGRATION_XSYS4_RESCAN_DONE, true).commit()
 
     /** 当前主题色 HEX（#RRGGBB）。 */
     fun getThemeColorHex(c: Context): String =

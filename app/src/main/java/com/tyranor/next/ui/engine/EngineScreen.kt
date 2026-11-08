@@ -234,6 +234,7 @@ fun EngineScreen(
         } else {
             engines
         }).distinctBy { engineDisplayName(it) }
+        val latestCoachTarget = rememberUpdatedState(tabEngines.firstOrNull())
 
         // 引擎列表：竖屏单列；横屏/大屏一行三个
         val engineColumns = if (isWideScreen()) 3 else 1
@@ -267,7 +268,10 @@ fun EngineScreen(
                 if (isCoachTarget) {
                     DisposableEffect(engine) {
                         onDispose {
-                            latestOnCoachAnchorChanged.value(Rect.Zero)
+                            // A replaced row must not clear the bounds reported by its new owner.
+                            if (latestCoachTarget.value == engine || latestCoachTarget.value == null) {
+                                latestOnCoachAnchorChanged.value(Rect.Zero)
+                            }
                         }
                     }
                 }
@@ -303,11 +307,11 @@ fun EngineScreen(
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     compact = engineColumns > 1,
                     modifier = Modifier
+                        .staggeredEntrance(engineIndex + 1)
                         .coachAnchor(
                             enabled = isCoachTarget && isActive,
                             onBounds = onCoachAnchorChanged,
                         )
-                        .staggeredEntrance(engineIndex + 1)
                         .then(
                             if (MotionMode.enhanced) {
                                 Modifier.animateItem(

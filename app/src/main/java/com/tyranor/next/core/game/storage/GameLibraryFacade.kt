@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.scan.GameRootMatcher
+import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,6 +78,12 @@ object GameLibraryFacade {
         loadRoots(context)
     }
 
+    /** Failed initial persistence yields an uncached empty view; a later read can retry after recovery. */
+    private fun canLoadLibrary(context: Context): Boolean {
+        installPersistFailureListener()
+        return AppSettingsStore.prepareInstallationData(context)
+    }
+
     // ============ 游戏库 ============
 
     fun loadGames(context: Context): List<ScanGame> =
@@ -97,8 +104,12 @@ object GameLibraryFacade {
         }
 
     private fun loadGamesLocked(context: Context): List<ScanGame> =
-        gamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadGames(it) }
-            .also { gamesCache = it }
+        gamesCache ?: if (canLoadLibrary(context)) {
+            GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadGames(it) }
+                .also { gamesCache = it }
+        } else {
+            emptyList()
+        }
 
     /**
      * 封面元数据单行更新（迁移方案阶段 2）：DB 只 UPDATE 封面相关列，封面刮削等高频路径
@@ -157,8 +168,12 @@ object GameLibraryFacade {
         }
 
     private fun loadRecentGamesLocked(context: Context): List<ScanGame> =
-        recentGamesCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRecentGames(it) }
-            .also { recentGamesCache = it }
+        recentGamesCache ?: if (canLoadLibrary(context)) {
+            GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRecentGames(it) }
+                .also { recentGamesCache = it }
+        } else {
+            emptyList()
+        }
 
     /** 删除游戏时从最近打开列表移除（最近打开为 games.last_opened_at 的派生视图，写 0 即移除）。 */
     fun removeRecentGame(context: Context, uri: String) {
@@ -192,8 +207,12 @@ object GameLibraryFacade {
         }
 
     private fun loadQuickLaunchLocked(context: Context): List<ScanGame> =
-        quickLaunchCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadQuickLaunch(it) }
-            .also { quickLaunchCache = it }
+        quickLaunchCache ?: if (canLoadLibrary(context)) {
+            GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadQuickLaunch(it) }
+                .also { quickLaunchCache = it }
+        } else {
+            emptyList()
+        }
 
     fun isQuickLaunched(context: Context, uri: String): Boolean =
         loadQuickLaunch(context).any { it.uri == uri }
@@ -310,8 +329,12 @@ object GameLibraryFacade {
         }
 
     private fun loadRootsLocked(context: Context): List<String> =
-        rootsCache ?: GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRoots(it) }
-            .also { rootsCache = it }
+        rootsCache ?: if (canLoadLibrary(context)) {
+            GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRoots(it) }
+                .also { rootsCache = it }
+        } else {
+            emptyList()
+        }
 
     private fun isGameUnderRoot(rootUriText: String, gameUriText: String): Boolean =
         GameRootMatcher.isGameUnderRoot(rootUriText, gameUriText)
