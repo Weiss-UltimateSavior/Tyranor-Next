@@ -88,6 +88,12 @@ import com.tyranor.next.ui.game.startActivityWithPageTransition
 import com.tyranor.next.ui.main.MainLibraryUiState
 import com.tyranor.next.ui.settings.PerGameSettingsActivity
 
+/** 最近打开展示策略：竖屏 2 列 × 5 行 = 10 张；横屏/大屏 5 列 × 3 行 = 15 张。 */
+private const val RECENT_COLUMNS_PORTRAIT = 2
+private const val RECENT_COLUMNS_WIDE = 5
+private const val RECENT_VISIBLE_PORTRAIT = 10
+private const val RECENT_VISIBLE_WIDE = 15
+
 @Composable
 fun HomeScreen(
     modifier: Modifier = Modifier,
@@ -102,7 +108,6 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val quickLaunch = libraryState.quickLaunch
-    val recentGames = libraryState.recentGames
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
     // 锚点生命周期跟随页面，而不是 LazyColumn 首项；拖动时保留上一帧目标，避免立即退化为全屏拦截。
     DisposableEffect(homeStyle, isActive) {
@@ -213,9 +218,12 @@ private fun NativeHomeContent(
     isActive: Boolean,
 ) {
     val quickLaunch = libraryState.quickLaunch
-    val recentGames = libraryState.recentGames
-    // 横屏/大屏一行五列，竖屏手机保持两列
-    val recentColumns = if (isWideScreen()) 5 else 2
+    // 横屏/大屏一行五列，竖屏手机保持两列；展示总量随列数调整（竖屏 10 张 / 大屏 15 张）
+    val wideScreen = isWideScreen()
+    val recentColumns = if (wideScreen) RECENT_COLUMNS_WIDE else RECENT_COLUMNS_PORTRAIT
+    val recentGames = libraryState.recentGames.take(
+        if (wideScreen) RECENT_VISIBLE_WIDE else RECENT_VISIBLE_PORTRAIT,
+    )
     Column(modifier.fillMaxSize()) {
         AppTopBar(title = stringResource(R.string.nav_home))
 

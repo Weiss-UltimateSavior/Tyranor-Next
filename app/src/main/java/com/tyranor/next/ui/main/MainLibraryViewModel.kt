@@ -335,7 +335,8 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
             if (commandRevision == stateRevision.get()) {
                 current.copy(
                     games = games,
-                    recentGames = normalizedRecent.take(10),
+                    // 完整最近列表（存储侧 RECENT_LIMIT = 20 条）；展示数量由首页按布局决定
+                    recentGames = normalizedRecent,
                     quickLaunch = quick,
                     loaded = true,
                     scanning = if (finishesScan) false else current.scanning,
