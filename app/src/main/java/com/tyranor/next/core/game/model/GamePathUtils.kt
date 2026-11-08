@@ -52,16 +52,18 @@ object GamePathUtils {
     /**
      * SAF documentId（`卷:相对路径`）→ 真实路径的纯决策函数（无 Android 依赖，供 JVM 单测）。
      * `primary:` 映射到 [primaryRoot]（进程视角主存储根）；其他卷映射到 `/storage/<volume>`。
-     * documentId 来自 provider、不可信：拒绝反斜杠与任何 `..` 段，逐段规范化（清空段与 `.` 段）
-     * 后校验结果必须仍位于卷根内，越界返回 `null`。
+     * documentId 来自 provider、不可信：卷名不得为空、含分隔符或 `.`/`..` 段；相对部分拒绝
+     * 反斜杠，逐段规范化（清空段与 `.` 段、拒绝 `..` 段）后校验结果必须仍位于卷根内，越界返回 `null`。
      */
     internal fun documentIdToPath(documentId: String, primaryRoot: String): String? {
         val colon = documentId.indexOf(':')
         val volume = if (colon >= 0) documentId.substring(0, colon) else documentId
         val relative = if (colon >= 0) documentId.substring(colon + 1) else ""
-        if (volume.isEmpty() || relative.contains('\\')) return null
+        if (volume.isEmpty() || volume.contains('\\')) return null
+        if (volume.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
         val root = if (volume.equals("primary", ignoreCase = true)) primaryRoot else "/storage/$volume"
         if (relative.isEmpty()) return root
+        if (relative.contains('\\')) return null
         val segments = ArrayList<String>(root.split('/').filter { it.isNotEmpty() })
         for (segment in relative.split('/')) {
             when (segment) {

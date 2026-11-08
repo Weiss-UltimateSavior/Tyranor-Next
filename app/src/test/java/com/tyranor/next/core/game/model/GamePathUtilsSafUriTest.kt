@@ -78,6 +78,21 @@ class GamePathUtilsSafUriTest {
     }
 
     @Test
+    fun maliciousVolumeNamesAreRejected() {
+        // 卷名本身不可信：../..:etc 会把卷根抬出 /storage
+        assertNull(GamePathUtils.documentIdToPath("../..:etc", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("..:etc", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath(".:etc", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("emulated/../../..:etc", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("a\\b:etc", secureFolderRoot))
+        // 正常卷名（含 primary 与多段 uuid 形态之外的合法单段卷）不受影响
+        assertEquals(
+            "/storage/0000-0001/Games/SD",
+            GamePathUtils.documentIdToPath("0000-0001:Games/SD", secureFolderRoot),
+        )
+    }
+
+    @Test
     fun normalizedSegmentsCollapseDotAndEmpty() {
         // "." 段与空段规范化消除，结果仍位于卷根内
         assertEquals(
