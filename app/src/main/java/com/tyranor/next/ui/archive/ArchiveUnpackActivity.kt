@@ -102,7 +102,7 @@ private const val TAG = "ArchiveUnpack"
 
 private const val MAX_LISTED_ENTRIES = 2000
 
-/** 目录展示名：优先映射真实路径（从 /storage/emulated/0 起），映射失败退回解码的文档 id 路径。 */
+/** 目录展示名：优先映射真实路径（从进程视角主存储挂载根起），映射失败退回解码的文档 id 路径。 */
 private fun dirLabelOf(uri: Uri): String =
     GamePathUtils.safUriToPath(uri.toString())
         ?: uri.lastPathSegment?.let { Uri.decode(it) }?.substringAfterLast(':')

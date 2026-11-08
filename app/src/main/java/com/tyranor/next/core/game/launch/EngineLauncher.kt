@@ -12,6 +12,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import bridge.KrSafMirror
+import bridge.PrimaryStorageRoot
 import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
@@ -996,10 +997,11 @@ object EngineLauncher {
     /** 判断路径是否位于共享存储（原生引擎无法仅凭 SAF 授权读取），供启动前与手动添加目录共用。 */
     internal fun needsAllFilesAccess(path: String): Boolean {
         val normalized = path.replace('\\', '/')
+        val primaryRoot = PrimaryStorageRoot.get()
         return normalized == "/sdcard" ||
             normalized.startsWith("/sdcard/") ||
-            normalized == "/storage/emulated/0" ||
-            normalized.startsWith("/storage/emulated/0/") ||
+            normalized == primaryRoot ||
+            normalized.startsWith("$primaryRoot/") ||
             GamePathUtils.isRemovableStoragePath(normalized)
     }
 
@@ -1326,6 +1328,8 @@ object EngineLauncher {
 
     /** Ethornell preflight never writes to the resource root or guesses a save subdirectory. */
     private fun ethornellStorageRoot(path: String): File? {
+        val primaryRoot = PrimaryStorageRoot.get()
+        if (path == primaryRoot || path.startsWith("$primaryRoot/")) return File(primaryRoot)
         if (path == "/storage/emulated/0" || path.startsWith("/storage/emulated/0/")) return File("/storage/emulated/0")
         if (!path.startsWith("/storage/")) return null
         val volume = path.removePrefix("/storage/").substringBefore('/')
@@ -1783,7 +1787,11 @@ object EngineLauncher {
     }
 
     private fun parseStoragePath(path: String): Pair<String, String>? {
+        // 主存储根按进程视角解析（安全文件夹内为 emulated/<uid>）；emulated/0 分支保留以兼容既有记录
+        val primaryRoot = PrimaryStorageRoot.get()
         return when {
+            path == primaryRoot -> "primary" to ""
+            path.startsWith("$primaryRoot/") -> "primary" to path.substring(primaryRoot.length + 1)
             path == "/storage/emulated/0" -> "primary" to ""
             path.startsWith("/storage/emulated/0/") -> "primary" to path.substring("/storage/emulated/0/".length)
             path == "/sdcard" -> "primary" to ""
@@ -2658,8 +2666,9 @@ object EngineLauncher {
     }
 
     /**
-     * 将游戏 URI 解析为真实文件路径。优先按 SAF documentId 映射（主存储→/storage/emulated/0），
-     * 映射失败再用 _data 查询兜底。引擎 native 需要真实文件路径。
+     * 将游戏 URI 解析为真实文件路径。优先按 SAF documentId 映射（主存储→进程视角挂载根，
+     * 见 [PrimaryStorageRoot]；安全文件夹等隔离 user 下不是 emulated/0），
+     * 映射失败再用 _data 查询兜底（该列在隔离 user 下可能为 null）。引擎 native 需要真实文件路径。
      */
     private fun resolveGameDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri
