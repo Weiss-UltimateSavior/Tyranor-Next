@@ -1546,6 +1546,8 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             AppNavItem(
                                 title = stringResource(R.string.engine_settings_winlator_global_entry),
                                 summary = stringResource(R.string.engine_settings_winlator_global_entry_summary),
+                                // 已在 SectionCard（MiuixCard）内：卡内平面样式，避免卡片套卡片
+                                drawSurface = false,
                                 onClick = {
                                     startActivityWithPageTransition(
                                         ctx,

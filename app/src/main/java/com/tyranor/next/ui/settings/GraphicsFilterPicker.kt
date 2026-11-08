@@ -43,6 +43,8 @@ internal fun GraphicsFilterPicker(
     AppNavItem(
         title = stringResource(R.string.graphics_chain_add),
         showLeadingIcon = false,
+        // 已在 EngineCard（MiuixCard）内：使用卡内平面样式，避免卡内再叠一层条目表面
+        drawSurface = false,
         onClick = if (enabled) ({ category = null; open = true }) else null,
     )
     if (!open) return

@@ -644,3 +644,68 @@ CodeRabbit 最新 [review 5812153375](https://github.com/Weiss-UltimateSavior/Ty
 | CR4-7 引导文案 | 已修复 | 三语言 `strings.xml:923` | 字符串脚本通过。 |
 | CR4-8 清理身份 | 已完成防御改进，原竞态帧序待确认 | `ui/engine/EngineScreen.kt:237`、`:269` | 当前拥有者条件源码复核；设备竞态未复现。 |
 | CR4-9 成功绑定测试 | 未实现，非阻塞测试增强 | `ui/game/MotionCoverSearchDialogDeviceTest.kt:122`（androidTest）；`ui/game/GameScreen.kt:1064` | 成功路径清理顺序源码确认；真实成功绑定与回调内设备断言未执行。 |
+
+
+---
+
+## 第四轮期间新增上游冲突整合（2026-11-07）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：CR4 修复已提交为 `5e923bb1`；在该提交上用双亲合并接入上游 main `4fa21e8c9f6eab47445a566015fddaaccde94455`，不重写已发布历史。本节候选由包含本节的合并提交识别。上游增量为 ccf010a3（玻璃卡片去重）和 4fa21e8c（首页按布局调整最近打开数量）。相对第一父提交的完整范围（包括本节）为 7 个文件、+87/−5；没有未跟踪源码。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `CHANGELOG.md` | 3 | 0 |
+| `SPEC.md` | 1 | 1 |
+| `app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt` | 12 | 3 |
+| `app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt` | 2 | 1 |
+| `app/src/main/java/com/tyranor/next/ui/settings/GraphicsFilterPicker.kt` | 2 | 0 |
+| `app/src/main/java/com/tyranor/next/ui/settings/PerGameSettingsScreen.kt` | 2 | 0 |
+| `docs/reviews/motion-v2-review.md` | 65 | 0 |
+
+已执行验证：
+
+- `git merge --no-commit --no-ff 4fa21e8c9f6eab47445a566015fddaaccde94455` → 确认 CHANGELOG、HomeScreen 两个冲突文件，逐处整合；`git ls-files --unmerged` 最终为空。
+- `./gradlew.bat :app:compileReleaseKotlin` → 通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 合并源码冻结后 1,991 项、43 失败（app 27 / engine 16）、22 跳过，失败 ID 与 c65e3c55 既有实跑基线、f88bc932 和本轮 5e923bb1 完全相同，新增失败 0；本轮未重复运行基线 checkout。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出 1；29 Error / 337 Warning / 10 Hint，Error 签名与基线无新增。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 首次在执行环境切换时中断，日志没有成功结果，未记为通过；冻结源码后补跑同一命令通过，没有跳过任务或禁用 lint。全部命令仍采用隔离包名 `com.tyranor.next.motionv2`。
+- `git diff --cached --check`、UTF-8 无 BOM / LF 检查 → 通过；受保护导航、MainScreen、滑条/开关、整个 motion 工具集、窗口资源、baseline profile、版本/构建脚本共 42 文件与第一父提交无差异。
+- 未执行：本轮设备运行与真机录屏逐帧对照、横竖屏/平板实际布局、全部主题、真实游戏与封面/存档、权限 UI 生命周期、完整 SQLite 恢复、低端机与性能。设备连接后前台不是隔离包，已按用户规则停止操作，没有使用旧录屏代替本轮证据。
+
+### 结论摘要
+
+本地冲突已全部解除，CR4 修复及上游两项更新同时保留；五个独立视角再次复审此合并增量，主 agent 逐项核对源码和调用链，未确认新的高、中级问题。最终构建通过、JVM 与 lint 无新增失败。PR 的可合并状态和新提交检查须在推送后由 GitHub 重新计算，不把父提交的成功检查算作本轮通过。
+
+首页大屏最近打开由 10 增至 15、两处玻璃卡片取消重复表面，都是本轮接入的上游产品行为。不能把整合前后所有静止画面宣称为像素一致；本轮没有自行调整既有增强动效曲线、节奏或参数，普通档继续采用对应上游行为。上一节 CR4-9 成功绑定的设备覆盖增强仍未实现，处理理由保持。
+
+### 问题清单
+
+| No. | 级别 | 问题与证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR4M-1 | 高 | 上游新提交后 GitHub 再次 CONFLICTING / DIRTY；本地确认 CHANGELOG 和 HomeScreen 内容冲突。 | 已合并两侧记录、上游布局切片与本 PR 缓存/恢复/动效，不采用整文件覆盖。 | `CHANGELOG.md:46`、`:60`；`app/src/main/java/com/tyranor/next/ui/home/HomeScreen.kt:101`、`:237` |
+
+### 重点问题说明
+
+**CR4M-1.【高】新增冲突整合。** HomeScreen 常量与原函数 KDoc 都保留；NativeHomeContent 先按布局取 10/15，再保留原有 `remember(recentGames, recentColumns)` 分行缓存。MainLibraryViewModel 发布存储侧完整最近列表，上限仍为 GameLibraryDao 的 20；管理弹窗目标继续从完整 games 解析，未与最近列表可见子集绑定，`HomeScreen.kt:139` 的 loaded 恢复门控保留。原入场、列表放置动画、快捷启动按压与其参数均保留。
+
+GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = false`，取消已有卡片内部的重复背景/描边，尺寸、布局、点击链不变。主 agent 专门追踪了其对按压的间接影响：虽然 AppNavItem.kt:94 的子条目 scale 由 drawSurface 选取，滤镜入口实际经 GraphicsSettingsEditor.kt:34 / :86 的 EngineCard（SettingsScreen.kt:1773 / :1774 默认开启分组），Winlator 入口在 PerGameSettingsScreen.kt:1698 的 SectionCard 分组内；PressSquish.kt:171 与 :243 会让子节点向外层分组让位。因此这两处仍使用原整卡分组运动，无须新增按压参数或改变原效果。此处为实际调用链证据，未冒充设备逐帧验收。
+
+### 已核对无问题的部分
+
+- CHANGELOG 保留两侧修复与首页展示数量记录；SPEC 同时保留本轮安装/权限恢复边界及上游 10/15 展示规则。
+- MainLibraryViewModel 的修订号防过期、最近条目 URI 归一、loaded 发布及删除/更新语义未变；Home 分行数为正，chunked 不会生成空行。
+- 保护导航与整个 MainScreen 保持，透明零 inset 的 Miuix 根浮层宿主没有回退。滑条设计及白雾刻度边界保持，未改版本。
+- CR4 首轮本地检查正常结束；合并后的检查在最终打包阶段受执行环境切换中断，同命令补跑完成后无本轮检查脚本残留。手机无本轮自建录屏/Perfetto/仪器进程，前台不符后未进一步核对全机进程。原始日志、设备地址、截图/视频、认证资料、依赖源码、APK 与本机脚本均未纳入提交。
+
+### 修复记录
+
+| 项目 | 处理结果 | 文件与行号 | 验证 |
+|---|---|---|---|
+| CR4M-1 新上游冲突 | 已解决；保留双亲历史，推送后核对远端状态 | `CHANGELOG.md:46`、`:60`；`ui/home/HomeScreen.kt:101`、`:237`、`:242` | 冲突索引为空；冻结后完整编译/测试/lint/三类 APK 与五视角复审如上。 |
+| 上游首页数量 | 已整合 | `ui/home/HomeScreen.kt:239`；`ui/main/MainLibraryViewModel.kt:339`；`SPEC.md:42` | 源码核对10/15切片与20条存储，完整JVM无新增失败；设备布局未执行。 |
+| 上游玻璃表面去重 | 已整合，保留现有整卡按压 | `ui/settings/GraphicsFilterPicker.kt:47`；`ui/settings/PerGameSettingsScreen.kt:1550` | 父分组与子节点让位调用链复核，构建通过；实际主题/录屏未执行。 |
+| CR4-1 至 CR4-8 | 前一提交修复保留 | 上一节完整修复清单 | 合并后再次完整验证无新增失败。 |
+| CR4-9 | 仍未实现，低级非阻塞测试增强 | `ui/game/MotionCoverSearchDialogDeviceTest.kt:122`（androidTest） | 理由与验证边界见上一节，不标为已修复或已执行。 |
