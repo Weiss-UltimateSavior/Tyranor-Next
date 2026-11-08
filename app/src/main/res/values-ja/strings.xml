@@ -209,7 +209,6 @@
     <string name="game_patch_never">今後しない</string>
     <string name="game_patch_once">今回のみ</string>
     <string name="game_launch_failed">起動に失敗しました</string>
-    <string name="game_setting_cover">カバー画像を設定中…</string>
     <string name="game_cover_set_failed">カバー画像の設定に失敗しました</string>
     <string name="game_launch_action">ゲームを起動</string>
     <string name="game_launch_file">起動ファイル</string>

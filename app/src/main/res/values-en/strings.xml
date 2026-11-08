@@ -209,7 +209,6 @@
     <string name="game_patch_never">Never</string>
     <string name="game_patch_once">This time</string>
     <string name="game_launch_failed">Launch failed</string>
-    <string name="game_setting_cover">Setting cover…</string>
     <string name="game_cover_set_failed">Failed to set cover</string>
     <string name="game_launch_action">Launch game</string>
     <string name="game_launch_file">Launch file</string>

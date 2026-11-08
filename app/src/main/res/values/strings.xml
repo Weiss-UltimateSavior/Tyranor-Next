@@ -209,7 +209,6 @@
     <string name="game_patch_never">不再</string>
     <string name="game_patch_once">本次</string>
     <string name="game_launch_failed">启动失败</string>
-    <string name="game_setting_cover">正在设置封面…</string>
     <string name="game_cover_set_failed">封面设置失败</string>
     <string name="game_launch_action">启动游戏</string>
     <string name="game_launch_file">启动文件</string>

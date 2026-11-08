@@ -34,6 +34,10 @@
 - 缩小安装包体积：引擎原生插件改为「未压缩 zip 容器 + LZMA2（`.zip.xz`）」随包，同一引擎家族的多个近重复 `.so`（Kirikiroid2 1.3.9/1.3.4 两个内核、Artemis V1/V2/V6 与 clean 四个 revision）共享同一份字典，首次启动由 `EnginePluginBootstrap` 流式解压安装；Runtime 侧新增 `org.tukaani:xz` 依赖，构建期新增 `CompressXzArchive` 任务（隔离 worker 进程压缩）。字体仍按上游要求保持不压缩。
 - `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套与 System35/4（含 `libSDL2x.so`）移出 APK 的 `lib/`：构建期打成 `assets/engine-runtime/{siglus,fvp,ethornell,krkrsdl3,ijk,xsystem}.zip.xz`，`EngineLauncher` 在拉起对应引擎前由 `NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`（按 APK `lastUpdateTime:versionName` 失效），宿主与 JNI 桥改为按绝对路径加载（IJK 经 `IjkRuntime` 的 `IjkLibLoader`，krkrsdl3 覆写 SDL 的 `loadLibraries`/`getMainSharedObject`）；除 IJK 解压失败只记日志继续启动外，其余分片失败返回新的类型化 `LaunchResult.Failure.EngineLibraryPackFailed`。首启对应引擎需额外解压一次。
 
+### 变更
+
+- 游戏卡片长按改为统一操作弹窗：游戏页瀑布流 / 封面流卡片与首页快捷启动卡长按不再直接启动，而是弹出包含「添加快捷启动、添加到桌面、名称修改、修改封面、删除游戏」五项的管理弹窗；原游戏操作抽屉移除这五项，仅保留启动游戏、启动文件、搜索封面、存档管理与在线补丁/引擎设置入口。封面流卡片手势同步改为 `combinedClickable`，与瀑布流共享长按触感与无障碍语义。
+
 ### 移除
 
 - 移除 Kirikiroid2 1.2.6 内核（`libgame126.so` / `Kirikiroid126` / 引擎页与设置项），KRKR 版本仅保留 auto / 1.3.9 / 1.3.4；已保存的 `1.2.6` 设置回落为 auto。
