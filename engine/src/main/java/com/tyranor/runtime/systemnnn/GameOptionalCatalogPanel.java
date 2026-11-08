@@ -47,6 +47,7 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
     private Bitmap markerImage;
     private long markerStart=-1;
     private boolean actionPending,listGesture,detailGesture,swiping;
+    private int firstRow,touchStartRow;
     private float touchStartY,lastTouchY;
 
     GameOptionalCatalogPanel(Context context,GameUiAssets assets,GameRunner.Modal modal,
@@ -69,13 +70,24 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         GameRunner.Modal before=modal;
         if(before!=null&&before.mode!=next.mode)throw new IllegalArgumentException("Catalog mode changed");
         modal=next;actionPending=false;
+        boolean changedPage=before==null||before.group!=next.group||before.page!=next.page;
+        if(changedPage)firstRow=0;
         int visible=visibleRows();
-        boolean rebuild=before==null||before.group!=next.group||before.page!=next.page||
-            before.pages!=next.pages||entries.length!=visible;
+        boolean rebuild=changedPage||before.pages!=next.pages||entries.length!=visible;
         if(rebuild)render(visible);
-        for(int i=0;i<visible;i++)entries[i].setEntry(next.rows[i]);
+        bindRows();
         if(description!=null&&(rebuild||before.selection!=next.selection))
             description.show(next.selection==0?new byte[0][]:next.text);
+    }
+
+    @Override void canvas(int width,int height){
+        int oldWidth=canvasWidth,oldHeight=canvasHeight;
+        super.canvas(width,height);
+        if(modal!=null&&(oldWidth!=canvasWidth||oldHeight!=canvasHeight)){
+            render(visibleRows());
+            bindRows();
+            if(description!=null)description.show(modal.selection==0?new byte[0][]:modal.text);
+        }
     }
 
     @Override Bitmap sprite(String name){
@@ -104,9 +116,23 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         return actionPending||super.dispatchTouchEvent(event);
     }
 
+    private int listX(){return Math.min(LIST_X,Math.max(0,canvasWidth-ROW_W));}
+    private int listY(){return Math.min(LIST_Y,Math.max(0,canvasHeight-ROW_H));}
     private int visibleRows(){
-        if(canvasWidth<=LIST_X||canvasHeight<=LIST_Y)return 0;
-        return Math.min(modal.rows.length,Math.min((canvasWidth-1-LIST_X)/STEP_X+1,(canvasHeight-1-LIST_Y)/STEP_Y+1));
+        int across=1+Math.max(0,canvasWidth-listX()-ROW_W)/STEP_X;
+        int down=1+Math.max(0,canvasHeight-listY()-ROW_H)/STEP_Y;
+        return Math.min(modal.rows.length,Math.min(across,down));
+    }
+    private int maxFirstRow(){return modal.rows.length-entries.length;}
+    private void bindRows(){
+        firstRow=Math.min(firstRow,maxFirstRow());
+        for(int i=0;i<entries.length;i++)entries[i].setEntry(modal.rows[firstRow+i]);
+    }
+    private void scrollRows(int first){
+        int row=Math.max(0,Math.min(first,maxFirstRow()));
+        if(row==firstRow)return;
+        firstRow=row;
+        bindRows();
     }
 
     private void render(int visible){
@@ -122,7 +148,7 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         }
         entries=new CatalogRow[visible];
         for(int i=0;i<visible;i++){
-            int x=LIST_X+i*STEP_X,y=LIST_Y+i*STEP_Y;
+            int x=listX()+i*STEP_X,y=listY()+i*STEP_Y;
             CatalogRow row=new CatalogRow(Math.max(ROW_W,canvasWidth-x));
             entries[i]=row;
             put(row,x,y,row.logicalWidth,ROW_H);
@@ -204,6 +230,10 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
             float wheel=event.getAxisValue(MotionEvent.AXIS_VSCROLL);
             if(wheel!=0){
                 if(detailAt(event)){description.move(-wheel*DETAIL_STEP);return true;}
+                if(maxFirstRow()>0){
+                    int steps=Math.max(1,Math.round(Math.abs(wheel)));
+                    scrollRows(firstRow+(wheel>0?-steps:steps));return true;
+                }
                 if(upButton!=null&&((wheel>0)!=upReverse))return upButton.performClick();
                 if(downButton!=null&&((wheel<0)!=downReverse))return downButton.performClick();
             }
@@ -215,12 +245,13 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         switch(event.getActionMasked()){
             case MotionEvent.ACTION_DOWN:
                 lastTouchY=touchStartY=event.getY();swiping=false;
+                touchStartRow=firstRow;
                 detailGesture=detailAt(event);
                 float x=event.getX()*canvasWidth/Math.max(1,getWidth());
-                float y=event.getY()*canvasHeight/Math.max(1,getHeight())-LIST_Y;
+                float y=event.getY()*canvasHeight/Math.max(1,getHeight())-listY();
                 int row=(int)(y/STEP_Y);
                 listGesture=y>=0&&row<entries.length&&y-row*STEP_Y<ROW_H&&
-                    x>=LIST_X+row*STEP_X&&x<LIST_X+row*STEP_X+ROW_W;
+                    x>=listX()+row*STEP_X&&x<listX()+row*STEP_X+ROW_W;
                 break;
             case MotionEvent.ACTION_MOVE:
                 if(startSwipe(event))return true;
@@ -236,19 +267,29 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         return true;
     }
 
+    private void dragRows(MotionEvent event){
+        float distance=touchStartY-event.getY();
+        if(Math.abs(distance)<=swipeSlop){scrollRows(touchStartRow);return;}
+        int steps=Math.max(1,Math.round(Math.abs(distance)*canvasHeight/Math.max(1,getHeight())/STEP_Y));
+        scrollRows(touchStartRow+(distance>0?steps:-steps));
+    }
+
     @Override public boolean onTouchEvent(MotionEvent event){
         if(event.getActionMasked()==MotionEvent.ACTION_MOVE&&(swiping||startSwipe(event))){
             if(detailGesture){
                 description.move((lastTouchY-event.getY())*canvasHeight/Math.max(1,getHeight()));
                 lastTouchY=event.getY();
-            }
+            }else if(maxFirstRow()>0)dragRows(event);
             return true;
         }
         if(swiping&&event.getActionMasked()==MotionEvent.ACTION_UP){
             swiping=false;
-            if(!detailGesture){
-                GameButton page=event.getY()<touchStartY?downButton:upButton;
-                if(page!=null&&canAct())page.performClick();
+            if(!detailGesture&&canAct()){
+                if(maxFirstRow()>0)dragRows(event);
+                else{
+                    GameButton page=event.getY()<touchStartY?downButton:upButton;
+                    if(page!=null)page.performClick();
+                }
             }
             return true;
         }

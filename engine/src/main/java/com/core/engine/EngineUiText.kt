@@ -10,21 +10,20 @@ import java.util.Locale
 object EngineUiText {
     @JvmStatic
     fun get(context: Context, resourceId: Int): String {
-        if (context == null) return ""
-        var languageTag: String? = null
+        return localizedContext(context).getString(resourceId)
+    }
+
+    /** Resources for the host's UI language. The engine can keep its own game locale. */
+    @JvmStatic
+    fun localizedContext(context: Context): Context {
         return try {
-            if (context is Activity) {
-                val intent = context.intent
-                if (intent != null) languageTag = intent.getStringExtra(LaunchContract.UI_LANGUAGE_TAG)
-            }
-            if (languageTag == null || languageTag.trim().isEmpty()) {
-                return context.getString(resourceId)
-            }
+            val languageTag = (context as? Activity)?.intent?.getStringExtra(LaunchContract.UI_LANGUAGE_TAG)
+            if (languageTag.isNullOrBlank()) return context
             val configuration = Configuration(context.resources.configuration)
             configuration.setLocale(Locale.forLanguageTag(languageTag))
-            context.createConfigurationContext(configuration).getString(resourceId)
-        } catch (_: Throwable) {
-            context.getString(resourceId)
+            context.createConfigurationContext(configuration)
+        } catch (_: RuntimeException) {
+            context
         }
     }
 

@@ -61,6 +61,7 @@ import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.SystemNnnGameDirectory
 import com.tyranor.runtime.systemnnn.SystemNnnHost
+import com.tyranor.runtime.systemnnn.SystemNnnGameImport
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.GameSaveException
@@ -100,6 +101,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.nio.charset.Charset
 import java.util.Collections
 import java.util.Locale
@@ -176,12 +178,9 @@ object EngineLauncher {
         withContext(Dispatchers.IO) {
             val entry = RuntimeModuleBindings.builtInSystemNnn(game)
             if (entry.engine == EngineType.SYSTEMNNN) {
-                val path = SystemNnnGameDirectory.resolve(entry.uri)
-                    ?: return@withContext LaunchResult.Failure.GameDirUnresolved
-                requestSystemNnnStorage(context, entry, path.absolutePath)?.let { return@withContext it }
-                val root = SystemNnnGameDirectory.accessible(entry.uri, path)
-                    ?: return@withContext LaunchResult.Failure.GameDirUnresolved
-                if (!SystemNnnHost.canOpen(root)) return@withContext LaunchResult.Failure.GameDirUnresolved
+                currentCoroutineContext().ensureActive()
+                restoreSystemNnn(context, entry)?.let { return@withContext it }
+                prepareSystemNnnResources(context, entry)?.let { return@withContext it }
             }
             withSaveSyncLaunchAdmission(
                 resolve = { SaveSyncRuntime.launchAdmission(context, entry) },
@@ -416,7 +415,8 @@ object EngineLauncher {
         if (path == null) {
             return LaunchResult.Failure.GameDirUnresolved
         }
-        requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        // SystemNNN already admitted its selected root; an app-private imported copy needs no broad grant.
+        if (game.engine != EngineType.SYSTEMNNN) requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
         if (game.engine == EngineType.ETHORNELL) {
             prepareEthornell(context, game, path, settings)?.let { return it }
         }
@@ -1008,6 +1008,92 @@ object EngineLauncher {
         } else {
             LaunchResult.Failure.AllFilesAccessMissing
         }
+    }
+
+    /** Resuming a verified live player must not re-enter save recovery or start a second Activity. */
+    private suspend fun restoreSystemNnn(context: Context, game: ScanGame): LaunchResult? {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return null
+        val root = runCatching {
+            SystemNnnGameDirectory.committed(context, game.uri) ?: SystemNnnGameDirectory.resolve(game.uri)
+        }.getOrNull()
+        val task = runCatching {
+            manager.appTasks.firstOrNull { candidate ->
+                val info = candidate.taskInfo ?: return@firstOrNull false
+                val top = info.topActivity ?: return@firstOrNull false
+                @Suppress("DEPRECATION")
+                val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.taskId else info.id
+                id >= 0 && info.numActivities > 0 && top.packageName == context.packageName &&
+                    top.className == "com.tyranor.runtime.systemnnn.PlayerActivity" &&
+                    SystemNnnHost.isLivePlayerTask(context, id, game.uri, root)
+            }
+        }.getOrNull() ?: return null
+        return try {
+            currentCoroutineContext().ensureActive()
+            task.moveToFront()
+            completeLaunch(context, game) {}
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            LaunchResult.Failure.StartFailed(failure.message)
+        }
+    }
+
+    private suspend fun prepareSystemNnnResources(context: Context, game: ScanGame): LaunchResult.Failure? {
+        fun failed(error: SystemNnnResourceError) = LaunchResult.Failure.SystemNnnResourcesFailed(error)
+        try {
+            SystemNnnGameDirectory.committed(context, game.uri)?.let { copy ->
+                if (!SystemNnnGameImport.readableBootstrap(copy)) return failed(SystemNnnResourceError.CORRUPT_COPY)
+                return if (systemNnnSavesWritable(context, copy)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
+            }
+            val path = SystemNnnGameDirectory.resolve(game.uri) ?: return LaunchResult.Failure.GameDirUnresolved
+            // Validate the canonical volume boundary before probing any native resource bytes.
+            val accessible = SystemNnnGameDirectory.accessible(game.uri, path)
+            if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
+                (accessible == null || !SystemNnnGameImport.readableBootstrap(accessible) || !systemNnnSavesWritable(context, accessible))
+            ) {
+                val source = SystemNnnGameDirectory.sourceDocument(game.uri)
+                    ?: return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
+                val granted = SystemNnnGameImport.findAuthorizedSource(context, source)
+                if (granted == null) {
+                    requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
+                    return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
+                }
+                val caller = currentCoroutineContext()
+                val imported = SystemNnnGameImport.importDirectory(context, granted, SystemNnnGameImport.sourceIdentity(source)) {
+                    caller.ensureActive()
+                }
+                return if (systemNnnSavesWritable(context, imported)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
+            }
+            requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
+            val root = SystemNnnGameDirectory.accessible(game.uri, path) ?: return LaunchResult.Failure.GameDirUnresolved
+            return if (SystemNnnGameImport.readableBootstrap(root)) null else LaunchResult.Failure.GameDirUnresolved
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: SystemNnnGameImport.Failure) {
+            return failed(when (failure.reason) {
+                SystemNnnGameImport.Reason.NO_GRANT -> SystemNnnResourceError.STORAGE_RESTRICTED
+                SystemNnnGameImport.Reason.SOURCE_MISSING -> SystemNnnResourceError.SOURCE_MISSING
+                SystemNnnGameImport.Reason.INVALID_SOURCE -> SystemNnnResourceError.INVALID_SOURCE
+                SystemNnnGameImport.Reason.INCOMPLETE_SOURCE, SystemNnnGameImport.Reason.BUSY -> SystemNnnResourceError.SOURCE_BUSY
+                SystemNnnGameImport.Reason.NO_SPACE -> SystemNnnResourceError.NO_SPACE
+                SystemNnnGameImport.Reason.COMMIT_FAILED -> SystemNnnResourceError.COMMIT_FAILED
+                SystemNnnGameImport.Reason.CORRUPT_COPY -> SystemNnnResourceError.CORRUPT_COPY
+                SystemNnnGameImport.Reason.COPY_FAILED -> SystemNnnResourceError.COPY_FAILED
+            })
+        } catch (_: IOException) {
+            return failed(SystemNnnResourceError.COPY_FAILED)
+        } catch (_: SecurityException) {
+            return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
+        }
+    }
+
+    private fun systemNnnSavesWritable(context: Context, root: File): Boolean = try {
+        val saves = SystemNnnHost.saveDirectory(context, root)
+        (if (saves.exists()) saves else root).canWrite()
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 
     private fun requestSystemNnnStorage(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
@@ -2717,7 +2803,7 @@ object EngineLauncher {
      */
     private fun resolveGameDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri
-        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.resolve(uriText)?.absolutePath
+        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(context, uriText)?.absolutePath
         if (game.engine == EngineType.ETHORNELL) {
             return try {
                 val uri = Uri.parse(uriText)

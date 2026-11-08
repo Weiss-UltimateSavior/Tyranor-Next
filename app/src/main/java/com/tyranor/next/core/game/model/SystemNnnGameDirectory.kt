@@ -1,12 +1,57 @@
 package com.tyranor.next.core.game.model
 
+import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
+import bridge.PrimaryStorageRoot
+import com.tyranor.runtime.systemnnn.SystemNnnGameImport
 import java.io.File
 import java.io.IOException
 
 internal object SystemNnnGameDirectory {
     private const val STORAGE_PROVIDER = "com.android.externalstorage.documents"
     private val volumeName = Regex("[A-Za-z0-9_-]+")
+
+    /** A committed local copy remains authoritative even if direct source access later returns. */
+    fun committed(context: Context, uriText: String): File? {
+        val source = sourceDocument(uriText) ?: return null
+        return SystemNnnGameImport.committedRoot(context, SystemNnnGameImport.sourceIdentity(source))
+    }
+
+    /** Read-only path selection shared by launch, backup and WebDAV; never performs a copy. */
+    fun accessible(context: Context, uriText: String): File? = try {
+        committed(context, uriText) ?: accessible(uriText)
+    } catch (_: IOException) {
+        // A missing/corrupt committed identity must not silently switch the save authority.
+        null
+    } catch (_: SecurityException) {
+        null
+    }
+
+    fun sourceDocument(uriText: String): Uri? {
+        val uri = Uri.parse(uriText)
+        if (uri.scheme == "content") {
+            if (uri.authority != STORAGE_PROVIDER) return null
+            return runCatching {
+                DocumentsContract.buildDocumentUri(STORAGE_PROVIDER, SystemNnnGameImport.sourceIdentity(uri))
+            }.getOrNull()
+        }
+        val path = resolve(uriText)?.path ?: return null
+        val primary = PrimaryStorageRoot.get()
+        val aliases = listOf(primary, "/storage/emulated/0", "/storage/self/primary", "/sdcard")
+        val primaryPrefix = aliases.firstOrNull { path == it || path.startsWith("$it/") }
+        val id = if (primaryPrefix != null) {
+            "primary:" + path.removePrefix(primaryPrefix).trimStart('/')
+        } else {
+            val volume = storageVolume(File(path)) ?: return null
+            volume.name + ":" + path.removePrefix(volume.path).trimStart('/')
+        }
+        return runCatching {
+            val source = DocumentsContract.buildDocumentUri(STORAGE_PROVIDER, id)
+            SystemNnnGameImport.sourceIdentity(source)
+            source
+        }.getOrNull()
+    }
 
     /** Resolve the authorized directory lexically so the storage permission gate can run first. */
     fun resolve(uriText: String): File? {
@@ -47,6 +92,8 @@ internal object SystemNnnGameDirectory {
     }
 
     private fun storageVolume(path: File): File? {
+        val primary = File(PrimaryStorageRoot.get())
+        if (path.toPath().startsWith(primary.toPath())) return primary
         if (path.toPath().startsWith(File("/storage/emulated/0").toPath())) return File("/storage/emulated/0")
         if (!path.path.startsWith("/storage/")) return null
         val volume = path.path.removePrefix("/storage/").substringBefore('/')

@@ -107,7 +107,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - XP3 源码与固定依赖在 [engine/rust](engine/rust/Cargo.toml)；`build-archives.sh` 先运行宿主测试，再用 cargo-ndk 生成 `libarchive_xp3_core.so`。JNI panic 防护依赖 unwind，不改为 `panic=abort`。
 - System35/4 的固定来源构建脚本位于 `engine/xsystem35/scripts/`、`engine/xsystem4/scripts/`；共享 `libSDL2x.so` / `org.libsdl.app32`，与 ONS 的 `libSDL2.so` / `org.libsdl.app` 分开维护。
 - Siglus 保留已固定的原始运行库，来源与哈希见 [说明](engine/patches/siglus/README.md)；当前 CI 不重编其 Rust 源码。
-- SystemNNN-Emberfall 0.6.5 沿用由 0.6.4 源码构建的 ARM64 `libsystemnnn.so`，以压缩的 `jniLibs` 随 APK 分发。运行库原始大小为 5,236,480 字节。配套许可和静态 FFmpeg 的源码获取方式位于 `engine/src/main/assets/licenses/systemnnn/`。 [原生内核源码](https://github.com/PorisRora/SystemNNN-Emberfall/tree/v0.6.4) · [构建说明](https://github.com/PorisRora/SystemNNN-Emberfall/blob/main/platform/android/BUILDING.md)
+- SystemNNN-Emberfall 的 ARM64 `libsystemnnn.so` 以压缩的 `jniLibs` 随 APK 分发。本次审查修复后的单库为 5,236,576 字节，配套许可和静态 FFmpeg 源码链接位于 `engine/src/main/assets/licenses/systemnnn/`。 [构建所用源码](https://github.com/PorisRora/SystemNNN-Emberfall/tree/32c691e4c2f0ebd3ecdd74db58cf7916d4799b52) · [构建说明](https://github.com/PorisRora/SystemNNN-Emberfall/blob/main/platform/android/BUILDING.md)
 - Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。当前随包库为 `043fef05…`（27,259,224 B；`0cfff1d` + 1 个已记录的本地补丁 `77b99d93…`，`dirty=true`），补丁同时收敛双重 `bgi-resource` 的 `UserData` 前缀，并把顶层 `BGI.gdb` / `BGI####.cad` 全局数据映射到私有 user-root；发布门禁使用的 `--local-static` 已在本轮校验来源记录和产物字节并通过，但严格源码审计要求 clean/已发布源码，dirty 本地补丁产物不能通过（`release_ready=false`），也不等价于可复现构建。
 
 预编译源码归属决策见 [ADR 0002](docs/adr/0002-prebuilt-engine-libs-source-in-fork.md)。所有生成目录禁止手工维护；共享字体保持不压缩，并兼顾 System35、System4 与 ONS。

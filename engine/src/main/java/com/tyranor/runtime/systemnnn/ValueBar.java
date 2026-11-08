@@ -37,7 +37,12 @@ final class ValueBar extends View {
         case MotionEvent.ACTION_CANCEL:tracking=false;setPressed(false);if(getParent()!=null)getParent().requestDisallowInterceptTouchEvent(false);return true;default:return true;}
     }
     @Override public boolean performClick(){if(!tracking){clickCue();committed();}super.performClick();return true;}
-    @Override public boolean onKeyDown(int code,KeyEvent e){if(code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT){clickCue();update(value+(code==KeyEvent.KEYCODE_DPAD_RIGHT?1:-1));committed();return true;}return super.onKeyDown(code,e);}
+    @Override public boolean onKeyDown(int code,KeyEvent e){
+        if(isEnabled()&&(code==KeyEvent.KEYCODE_DPAD_LEFT||code==KeyEvent.KEYCODE_DPAD_RIGHT)){
+            clickCue();update(value+(code==KeyEvent.KEYCODE_DPAD_RIGHT?1:-1));committed();return true;
+        }
+        return super.onKeyDown(code,e);
+    }
     @Override public CharSequence getAccessibilityClassName(){return "android.widget.SeekBar";}
     @Override public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info){super.onInitializeAccessibilityNodeInfo(info);info.setClassName(getAccessibilityClassName());info.setRangeInfo(AccessibilityNodeInfo.RangeInfo.obtain(AccessibilityNodeInfo.RangeInfo.RANGE_TYPE_INT,min,max,value));
         info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS);info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);info.addAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);}

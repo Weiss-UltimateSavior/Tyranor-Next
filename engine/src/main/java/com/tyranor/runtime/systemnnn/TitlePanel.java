@@ -41,12 +41,16 @@ final class TitlePanel extends FrameLayout {
                 game.prepare(()->prepare.select(item));
                 game.setOnClickListener(v->{
                     if(!pending&&game.commit(()->sound.play(item.spec.sound,item.spec.voice),
-                        ()->{pending=false;click.select(item);}))pending=true;
+                        ()->finishClick(click,item)))pending=true;
                 });
                 button=game;
             } else {
                 Button text=new Button(context); text.setText(item.label); button=text;
-                button.setOnClickListener(v->click.select(item));
+                button.setOnClickListener(v->{
+                    if(pending||!item.enabled)return;
+                    pending=true;
+                    finishClick(click,item);
+                });
             }
             button.setContentDescription(item.label); button.setEnabled(item.enabled);
             button.setSoundEffectsEnabled(false);
@@ -54,8 +58,15 @@ final class TitlePanel extends FrameLayout {
             else {button.setTag(item); addView(button,new LayoutParams(1,1,Gravity.TOP|Gravity.LEFT));}
         }
     }
+    private void finishClick(Click click,TitleMenu.Item item){
+        // Story entry completes when the first story frame replaces the title.
+        if(item.action!=TitleMenu.Action.START&&item.action!=TitleMenu.Action.CONTINUE)pending=false;
+        click.select(item);
+    }
+    void entryFailed(){pending=false;}
     void previous(Bitmap picture){if(opening.needsPrevious())opening.previous(picture);}
     @Override public boolean dispatchTouchEvent(MotionEvent event){
+        if(pending)return true;
         if(opening.touch(event)){invalidate();return true;}
         return super.dispatchTouchEvent(event);
     }

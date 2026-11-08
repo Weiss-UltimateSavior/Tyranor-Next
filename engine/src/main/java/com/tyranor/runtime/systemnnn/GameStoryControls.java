@@ -6,6 +6,8 @@ import android.os.SystemClock;
 import android.view.*;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import com.core.engine.EngineUiText;
+import com.core.engine.R;
 import java.util.*;
 
 /** Transparent CSceneOptionButton layer. No Android toolbar is drawn over original game UI. */
@@ -26,13 +28,30 @@ final class GameStoryControls extends FrameLayout {
         }
         quickSlot(false);
         if(!model.original){
-            TextView menu=new TextView(context);menu.setText("菜单");menu.setTextColor(Color.WHITE);menu.setGravity(Gravity.CENTER);
-            menu.setContentDescription("菜单");menu.setSoundEffectsEnabled(false);
+            String title=EngineUiText.get(context,R.string.engine_systemnnn_ctl_menu);
+            TextView menu=new TextView(context);menu.setText(title);menu.setTextColor(Color.WHITE);menu.setGravity(Gravity.CENTER);
+            menu.setContentDescription(title);menu.setSoundEffectsEnabled(false);
             menu.setOnClickListener(v->listener.action(GameStoryControlsModel.Action.MENU,false));
             addView(menu,new LayoutParams(140,48,Gravity.BOTTOM|Gravity.RIGHT));
         }
     }
     boolean original(){return model.original;}
+    private String actionLabel(GameStoryControlsModel.Action action){
+        int label;
+        switch(action){
+        case QUICK_SAVE:label=R.string.engine_systemnnn_ctl_quick_save;break;
+        case QUICK_LOAD:label=R.string.engine_systemnnn_ctl_quick_load;break;
+        case CONFIG:label=R.string.engine_systemnnn_ctl_config;break;
+        case BACKLOG:label=R.string.engine_systemnnn_ctl_backlog;break;
+        case SAVE:label=R.string.engine_systemnnn_ctl_save;break;
+        case LOAD:label=R.string.engine_systemnnn_ctl_load;break;
+        case AUTO:label=R.string.engine_systemnnn_ctl_auto;break;
+        case SKIP:label=R.string.engine_systemnnn_ctl_skip;break;
+        case HIDE:label=R.string.engine_systemnnn_ctl_hide;break;
+        default:label=R.string.engine_systemnnn_ctl_menu;break;
+        }
+        return EngineUiText.get(getContext(),label);
+    }
     void quickSlot(boolean available){
         for(ArtButton b:buttons)if(b.spec.action==GameStoryControlsModel.Action.QUICK_LOAD)b.setEnabled(available);
     }
@@ -84,7 +103,7 @@ final class GameStoryControls extends FrameLayout {
         long stateSince;
         ArtButton(GameStoryControlsModel.Button spec,Bitmap image){super(GameStoryControls.this.getContext());this.spec=spec;this.image=image;
             sprites=SpriteAnimation.buttonStates(spec.art,spec.width,spec.height);
-            setContentDescription(spec.label);setSoundEffectsEnabled(false);setFocusable(true);setOnClickListener(v->click(this));}
+            setContentDescription(actionLabel(spec.action));setSoundEffectsEnabled(false);setFocusable(true);setOnClickListener(v->click(this));}
         @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
         @Override public boolean onTouchEvent(MotionEvent e){
             if(typing||clicked!=null)return false;

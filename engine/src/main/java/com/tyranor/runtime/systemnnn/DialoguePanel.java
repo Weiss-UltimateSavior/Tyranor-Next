@@ -100,6 +100,7 @@ final class DialoguePanel extends FrameLayout {
     void read(boolean value){wasRead=value;colors();}
     void cursorAssets(GameUiAssets assets){cursor.assets(assets);}
     void cursorVariant(int value){cursor.variant(value);}
+    void scriptCursorVariant(int value){cursor.scriptVariant(value);}
     void waiting(boolean visible,boolean automatic,int command,int period){
         cursor.waiting(visible,automatic,command,period);
     }
@@ -193,7 +194,7 @@ final class DialoguePanel extends FrameLayout {
         private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
         private final RectF dest=new RectF();
         private int period=20,mode;
-        private int variant;
+        private int variant,scriptVariant;
         private GameUiAssets assets;
         private boolean enabled,fixX,fixY;
         private long since;
@@ -220,17 +221,12 @@ final class DialoguePanel extends FrameLayout {
             loadImages();
         }
         void variant(int value){if(variant!=value){variant=value;loadImages();invalidate();}}
+        void scriptVariant(int value){if(scriptVariant!=value){scriptVariant=value;loadImages();invalidate();}}
         private void loadImages(){
             if(assets==null)return;
             GameUiAssets.Config cfg=assets.messageCursor;
-            int configCount=DialogueLayout.clamp(cfg.number("cursorNumberConfig",1),1,64);
-            int scriptCount=DialogueLayout.clamp(cfg.number("cursorNumberScript",1),1,64);
-            int index=DialogueLayout.clamp(variant,0,configCount-1)+1;
             for(int i=0;i<images.length;i++){
-                String key="filenameCursor"+(i+1);
-                String base=cfg.value(key,cfg.value("filenameCursor1","mes_cur"));
-                if(configCount>1||scriptCount>1)base=cfg.value(key+(configCount>1&&scriptCount>1?"_1_":"_")+index,base);
-                images[i]=assets.image(base);
+                images[i]=assets.image(DialogueLayout.cursorName(cfg.fields(),i,scriptVariant,variant));
             }
         }
         private int percent(int value){return Math.min(100,Math.max(0,value));}

@@ -1,12 +1,14 @@
 package com.tyranor.runtime.systemnnn;
 
 import android.os.Handler;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.os.HandlerThread;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.Surface;
+import com.core.engine.R;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
@@ -16,6 +18,7 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -27,7 +30,7 @@ import java.util.function.Supplier;
 /** One worker owns the session, controls and deterministic input journal. */
 final class GameRunner {
     static final class Frame {
-        final int wait,width,height,line,word,messageId,windowType,fontType,command,layoutCommand,frameMs,placeMode;
+        final int wait,width,height,line,word,messageId,windowType,fontType,scriptCursor,command,layoutCommand,frameMs,placeMode;
         final boolean windowVisible,nameWindow,optionsAllowed;
         final String script,speaker,body;
         final String[] choices,choiceMessages;
@@ -36,11 +39,11 @@ final class GameRunner {
         final Modal modal;
         final boolean alreadyRead;
         Frame(int wait,int width,int height,String script,int line,int word,String speaker,String body,String[] choices,boolean read,
-              int messageId,int windowType,int fontType,boolean windowVisible,boolean nameWindow,boolean optionsAllowed,int command,int layoutCommand,int frameMs,
+              int messageId,int windowType,int fontType,int scriptCursor,boolean windowVisible,boolean nameWindow,boolean optionsAllowed,int command,int layoutCommand,int frameMs,
               String[] choiceMessages,int[] choiceInfo,int[] places,int placeMode,int[] placeCharacters,Bitmap[] placePortraits,Modal modal) {
             this.wait=wait;this.width=width;this.height=height;this.script=script;this.line=line;this.word=word;
             this.speaker=speaker;this.body=body;this.choices=choices;this.alreadyRead=read;
-            this.messageId=messageId;this.windowType=windowType;this.fontType=fontType;this.windowVisible=windowVisible;
+            this.messageId=messageId;this.windowType=windowType;this.fontType=fontType;this.scriptCursor=scriptCursor;this.windowVisible=windowVisible;
             this.nameWindow=nameWindow;this.optionsAllowed=optionsAllowed;this.command=command;this.layoutCommand=layoutCommand;this.frameMs=frameMs;
             this.choiceMessages=choiceMessages;this.choiceInfo=choiceInfo;this.places=places;
             this.placeMode=placeMode;this.placeCharacters=placeCharacters;this.placePortraits=placePortraits;this.modal=modal;
@@ -137,12 +140,13 @@ final class GameRunner {
         void movie(File file,int volume,boolean canSkip);
         void loaded();
         void statusOverlays(int mode,Modal[] overlays);
+        void titleReturnCancelled();
         void notice(String message);
         void error(String message);
     }
     private final HandlerThread worker=new HandlerThread("SystemNNN-Game");
     private final Handler tasks;
-    private final File root,readFile,chartDirectory,legacyFiles;
+    private final File root,legacySource,readFile,chartDirectory,legacyFiles;
     private final GameSavePaths savePaths;
     private GameSavePaths.Access saveAccess;
     private final SaveSlots slots;
@@ -159,7 +163,8 @@ final class GameRunner {
     private final GameProgress progressStore;
     private final CompletableFuture<Void> previousProgress;
     private final Listener ui;
-    private final SharedPreferences preferences;
+    private final Context context;
+    private final SharedPreferences preferences,userPreferences;
     private final int rate=DeviceAudio.rate();
     private final int[] meta=new int[NativeGame.META_SIZE];
     private final LinkedHashSet<String> readLines=new LinkedHashSet<>();
@@ -224,8 +229,11 @@ final class GameRunner {
 
     private final GameSavePaths.Owner saveOwner;
 
-    GameRunner(File folder,GameSavePaths paths,File legacyFiles,SharedPreferences preferences,PlayerSettings initial,Listener listener) {
-        root=folder;ui=listener;this.preferences=preferences;settings=initial;
+    GameRunner(Context context,File folder,File legacySource,GameSavePaths paths,File legacyFiles,SharedPreferences preferences,
+               SharedPreferences userPreferences,PlayerSettings initial,Listener listener) {
+        this.context=context;
+        this.legacySource=legacySource;
+        root=folder;ui=listener;this.preferences=preferences;this.userPreferences=userPreferences;settings=initial;
         savePaths=paths;this.legacyFiles=legacyFiles;slots=new SaveSlots(paths);
         readFile=paths.file(GameSavePaths.READ);
         chartDirectory=paths.file(GameSavePaths.CHART);
@@ -250,7 +258,7 @@ final class GameRunner {
         if(previousProgress!=null)try{saveResult(previousProgress);}catch(ProgressWriteFailure failure){recovery=failure;}
         ProgressWriteFailure pending=recovery;
         saveResult(SAVE_FILES.submit(()->{
-            if(saveAccess==null)saveAccess=savePaths.open(legacyFiles);
+            if(saveAccess==null)saveAccess=savePaths.open(legacyFiles,legacySource);
             if(pending==null)readReadLines();else recoverProgress(previousProgress,pending);
             slots.preload();
             return null;
@@ -259,7 +267,7 @@ final class GameRunner {
         initialized=true;
     }
     private void configure(long candidate){
-        NativeGame.setParameters(candidate,RuntimeSettingsAdapter.persistedOverrides(preferences,root));
+        NativeGame.setParameters(candidate,RuntimeSettingsAdapter.persistedOverrides(userPreferences,legacySource));
         if(runtime==null&&initialProgress!=null){
             if(initialProgress.read!=null)NativeGame.restoreReadState(candidate,initialProgress.read);
             if(initialProgress.variables!=null)NativeGame.setSystemVariables(candidate,initialProgress.variables);
@@ -270,7 +278,10 @@ final class GameRunner {
             if(initialProgress.chart!=null)NativeGame.restoreChartProgress(candidate,initialProgress.chart);
         }
         java.util.ArrayList<Integer> aux=new java.util.ArrayList<>();
-        for(int i=0;i<34;i++)if(preferences.contains(RuntimeSettingsAdapter.ownerKey(root,i))){aux.add(i);aux.add(preferences.getInt(RuntimeSettingsAdapter.ownerKey(root,i),0));}
+        for(int i=0;i<34;i++)if(userPreferences.contains(RuntimeSettingsAdapter.ownerKey(legacySource,i))){
+            aux.add(i);
+            aux.add(userPreferences.getInt(RuntimeSettingsAdapter.ownerKey(legacySource,i),0));
+        }
         if(!aux.isEmpty()){int[] pairs=new int[aux.size()];for(int i=0;i<pairs.length;i++)pairs[i]=aux.get(i);NativeGame.setAuxiliaryState(candidate,pairs);}
         NativeGame.setSkip(candidate,false);
     }
@@ -284,7 +295,7 @@ final class GameRunner {
         if(requested.length>0){
             NativeGame.setParameters(handle,requested);int[] raw=NativeGame.parameters(handle),accepted=new int[requested.length];
             for(int i=0;i<requested.length;i+=2){accepted[i]=requested[i];for(int j=0;j<raw.length;j+=2)if(raw[j]==accepted[i]){accepted[i+1]=raw[j+1];break;}}
-            RuntimeSettingsAdapter.persistRawOverrides(preferences,root,accepted);
+            RuntimeSettingsAdapter.persistRawOverrides(userPreferences,legacySource,accepted);
         }else{
             int index=-1,changed=0;
             if("systemVoiceSelection".equals(key)&&desired instanceof Integer){index=0;changed=(Integer)desired;}
@@ -296,7 +307,7 @@ final class GameRunner {
                 }
             }
             if(index>=0){NativeGame.setAuxiliaryState(handle,new int[]{index,changed});int[] aux=NativeGame.auxiliaryState(handle);
-                preferences.edit().putInt(RuntimeSettingsAdapter.ownerKey(root,index),aux[index]).apply();}
+                userPreferences.edit().putInt(RuntimeSettingsAdapter.ownerKey(legacySource,index),aux[index]).apply();}
             else return;
         }
         publishParameters();
@@ -384,19 +395,40 @@ final class GameRunner {
     });}
     void finishLogo(){tasks.post(()->{if(onTitle&&handle!=0&&currentTitle!=null)currentTitle.restoreMusic(handle);});}
     void returnToTitle(){tasks.post(() -> {
-        if(onTitle)return;
+        if(onTitle||closing)return;
         if(replaying){finishReplay();return;}
+        Future<?> previousWrite=autoWrite;
+        autoWrite=null;
         try{
-            if(handle!=0&&!failed&&meta[0]!=NativeGame.END)save(SaveSlots.AUTO,false,null);
-            if(autoWrite!=null){saveResult(autoWrite);autoWrite=null;}
+            CompletableFuture<Void> currentWrite=queueSlotWrite(SaveSlots.AUTO,false,null);
+            if(currentWrite!=null){
+                writeReadLines();
+                saveResult(currentWrite);
+            }else if(previousWrite!=null){
+                // The earlier background save already reports failure to the player.
+                try{saveResult(previousWrite);}catch(IOException ignored){}
+            }
+        }catch(IOException|RuntimeException e){
+            saveFailed(e);
+            ui.titleReturnCancelled();
+            schedule();
+            return;
+        }
+        try{
             openTitle();
         }catch(Exception e){broken(e);}
     });}
-    void enter(TitleMenu.Action action){tasks.post(() -> {
-        if(!onTitle)return;
-        try{open(action==TitleMenu.Action.CONTINUE?slots.file(SaveSlots.AUTO):null,false);}
-        catch(Exception e){schedule();ui.notice("无法进入游戏 · "+e.getMessage());}
-    });}
+    void enter(TitleMenu.Action action,Runnable onFailure){
+        if(!tasks.post(()->{
+            if(!onTitle||failed||closing){onFailure.run();return;}
+            try{open(action==TitleMenu.Action.CONTINUE?slots.file(SaveSlots.AUTO):null,false);}
+            catch(Exception|LinkageError e){
+                schedule();
+                ui.notice(text(R.string.engine_systemnnn_host_enter_failed,e.getMessage()));
+                onFailure.run();
+            }
+        }))onFailure.run();
+    }
     private void open(File save,boolean holdStory) throws IOException {
         open(save,holdStory,null);
     }
@@ -408,9 +440,9 @@ final class GameRunner {
         GameSave next=pcSave!=null?GameSave.nativeBaseline():loaded==null?new GameSave():loaded.save;
         boolean live=loaded!=null&&handle!=0&&!onTitle&&!replaying&&!failed;
         boolean restoredHere=live&&GameSave.restoreSnapshot(loaded,handle,state,true,false);
-        if(loaded!=null&&!restoredHere&&(live||loaded.nativeSnapshot==null))next.requireReplayable();
+        if(loaded!=null&&loaded.nativeSnapshot==null)next.requireReplayable();
         if(restoredHere){
-            NativeGame.setParameters(handle,RuntimeSettingsAdapter.persistedOverrides(preferences,root));
+            NativeGame.setParameters(handle,RuntimeSettingsAdapter.persistedOverrides(userPreferences,legacySource));
             NativeGame.setSkip(handle,false);
         }else{
             writeGallery();
@@ -425,7 +457,7 @@ final class GameRunner {
                         NativeGame.setScriptRandomState(candidate,NativeGame.scriptRandomState(handle));
                     NativeGame.restorePcSave(candidate,pcSave,state);
                 }else if(loaded!=null){
-                    if(live||!GameSave.restoreSnapshot(loaded,candidate,state,false,onTitle&&!systemStateEstablished)){
+                    if(!GameSave.restoreSnapshot(loaded,candidate,state,false,onTitle&&!systemStateEstablished)){
                         next.requireReplayable();
                         int[] globals=NativeGame.systemVariables(candidate);
                         int[] progress=NativeGame.scriptProgress(candidate),galleryState=NativeGame.galleryState(candidate);
@@ -471,13 +503,13 @@ final class GameRunner {
         tasks.post(()->{
             boolean success=false;
             try{
-                if(handle==0||failed||replaying||moviePlaying)throw new IOException("当前无法读取PC存档");
+                if(handle==0||failed||replaying||moviePlaying)throw new IOException(text(R.string.engine_systemnnn_host_cannot_import_pc));
                 open(null,true,saveResult(SAVE_FILES.submit(read)));
                 success=true;
                 Log.i("SystemNNN","PC save imported at "+current.script+" word="+meta[1]);
             }catch(IOException|RuntimeException e){
                 Log.w("SystemNNN","Unable to import PC save",e);
-                ui.notice("读取PC存档失败 · "+e.getMessage());schedule();
+                ui.notice(text(R.string.engine_systemnnn_host_pc_load_failed,e.getMessage()));schedule();
             }
             finally{done.accept(success);}
         });
@@ -486,20 +518,21 @@ final class GameRunner {
         tasks.post(()->{
             byte[] data=null;
             try{
-                if(handle==0||failed||onTitle||replaying||moviePlaying)throw new IOException("当前无法导出存档");
+                if(handle==0||failed||onTitle||replaying||moviePlaying)throw new IOException(text(R.string.engine_systemnnn_host_cannot_export_pc));
                 data=NativeGame.exportPcSave(handle);
-            }catch(IOException|RuntimeException e){ui.notice("导出 PC 存档失败 · "+e.getMessage());}
+            }catch(IOException|RuntimeException e){ui.notice(text(R.string.engine_systemnnn_host_pc_export_failed,e.getMessage()));}
             ready.accept(data);
         });
     }
     void writePcExport(java.util.concurrent.Callable<Void> write,Runnable done){
         SAVE_FILES.execute(()->{
-            try{write.call();ui.notice("PC 存档已导出");}
-            catch(Exception e){ui.notice("导出 PC 存档失败 · "+e.getMessage());}
+            try{write.call();ui.notice(text(R.string.engine_systemnnn_host_pc_save_exported));}
+            catch(Exception e){ui.notice(text(R.string.engine_systemnnn_host_pc_export_failed,e.getMessage()));}
             finally{done.run();}
         });
     }
     void surface(Surface value){tasks.post(() -> {surface=value;if(handle!=0)NativeGame.surface(handle,value);schedule();});}
+    void windowFocused(){tasks.post(()->{if(playing()&&audio!=null)audio.requestFocus();});}
     void active(boolean value){
         if(value){tasks.post(()->{active=true;schedule();});return;}
         postProgressFlush(()->{
@@ -697,12 +730,12 @@ final class GameRunner {
             if(!acceptsModal(modal)){done.accept(rejectedModal());return;}
             try{
                 if(!NativeGame.completeModal(handle,modal.request,accepted,elapsed,values)){
-                    ui.notice("当前输入无效");done.accept(rejectedModal());return;
+                    ui.notice(text(R.string.engine_systemnnn_host_input_invalid));done.accept(rejectedModal());return;
                 }
                 done.accept(finishModal(modal.returnMode));
             }catch(RuntimeException e){
                 Log.w("SystemNNN","Script modal completion failed",e);
-                ui.notice("无法提交输入 · "+e.getMessage());done.accept(rejectedModal());
+                ui.notice(text(R.string.engine_systemnnn_host_submit_failed,e.getMessage()));done.accept(rejectedModal());
             }
         });
     }
@@ -732,7 +765,7 @@ final class GameRunner {
                 done.accept(new ModalUpdate(result,meta[0],0,next));
             }catch(RuntimeException e){
                 Log.w("SystemNNN","Script modal action failed",e);
-                ui.notice("无法完成操作 · "+e.getMessage());done.accept(rejectedModal());
+                ui.notice(text(R.string.engine_systemnnn_host_action_failed,e.getMessage()));done.accept(rejectedModal());
             }
         });
     }
@@ -817,7 +850,7 @@ final class GameRunner {
                 if (galleryPage==null || galleryPage.screen!=screen) enterGalleryScreen(next);
                 galleryRequest=request; publishGallery(next);
             } catch (IOException | RuntimeException e) {
-                Log.w("SystemNNN","Gallery unavailable",e);ui.notice("无法打开鉴赏 · "+e.getMessage());
+                Log.w("SystemNNN","Gallery unavailable",e);ui.notice(text(R.string.engine_systemnnn_host_gallery_failed,e.getMessage()));
             }
         });
     }
@@ -852,7 +885,7 @@ final class GameRunner {
         if(!onTitle||moviePlaying||galleryPage==null||galleryPage.screen!=GalleryCatalog.Screen.MOVIE)return;
         GalleryCatalog.Movie movie=gallery.movie(number);
         if(movie==null||!movie.unlocked(NativeGame.galleryState(handle)))return;
-        if(movie.file==null){ui.notice("动画文件缺失");return;}
+        if(movie.file==null){ui.notice(text(R.string.engine_systemnnn_host_movie_missing));return;}
         NativeGame.stopGalleryMusic(handle);
         NativeGame.stopScriptAudio(handle);
         galleryCue=-1;
@@ -869,7 +902,7 @@ final class GameRunner {
     private void startMovie(GalleryCatalog.Movie movie){
         moviePlaying=true;
         tasks.removeCallbacks(ticker);stopSound();
-        if(movie==null||movie.file==null){tasks.post(()->completeMovie("动画文件缺失"));return;}
+        if(movie==null||movie.file==null){tasks.post(()->completeMovie(text(R.string.engine_systemnnn_host_movie_missing)));return;}
         Log.i("SystemNNN","Movie requested "+movie.file.getName()+" gallery="+onTitle);
         ui.movie(movie.file,NativeGame.movieVolume(handle),movieList.print.number("noSkipFlag",0)==0);
     }
@@ -877,7 +910,7 @@ final class GameRunner {
     private void completeMovie(String failure){
         if(!moviePlaying)return;
         moviePlaying=false;
-        if(failure!=null){Log.w("SystemNNN","Movie playback: "+failure);ui.notice("动画播放 · "+failure);}
+        if(failure!=null){Log.w("SystemNNN","Movie playback: "+failure);ui.notice(text(R.string.engine_systemnnn_host_movie_failed,failure));}
         if(onTitle){
             if(galleryPage!=null)enterGalleryScreen(galleryPage);
         }else try{
@@ -928,7 +961,7 @@ final class GameRunner {
                 galleryPage.config.number("bgmLoopFlag",0)!=0?0:1,galleryVolume);
             gallerySong=index; galleryMusicPlaying=true; galleryMusicPaused=false;
             refreshMusic(index/galleryPage.rows);
-        } catch (RuntimeException e) { ui.notice("音乐播放失败 · "+e.getMessage()); }
+        } catch (RuntimeException e) { ui.notice(text(R.string.engine_systemnnn_host_music_failed,e.getMessage())); }
     }
     void moveGallerySong(int direction) {
         tasks.post(() -> {
@@ -976,7 +1009,7 @@ final class GameRunner {
                 NativeGame.tick(candidate,0,0,0,false,0,false,state);
             } catch (RuntimeException e) {
                 if (candidate!=0) NativeGame.close(candidate);
-                ui.notice("无法进入回想 · "+e.getMessage()); return;
+                ui.notice(text(R.string.engine_systemnnn_host_replay_failed,e.getMessage())); return;
             }
             tasks.removeCallbacks(ticker); stopSound(); NativeGame.close(handle);
             handle=candidate; galleryWritten=stored; onTitle=false; replaying=true; menuOpen=false; history=null;
@@ -1064,10 +1097,10 @@ final class GameRunner {
         try{
             int[] point=handle!=0&&menuOpen&&!onTitle&&!replaying&&!failed&&history!=null
                 ?NativeGame.backlogJump(handle,id):null;
-            if(point==null||point.length!=5)throw new IOException("回看检查点已失效");
+            if(point==null||point.length!=5)throw new IOException(text(R.string.engine_systemnnn_host_backlog_expired));
             prefix=history.rewind(point[0],point[1],point[3],point[4]);
             recordReplayBaseline(prefix,handle,point[2]);
-            if(!NativeGame.restoreBacklogJump(handle,id,point[0],meta))throw new IOException("无法恢复回看检查点");
+            if(!NativeGame.restoreBacklogJump(handle,id,point[0],meta))throw new IOException(text(R.string.engine_systemnnn_host_backlog_restore_failed));
         }catch(IOException|RuntimeException e){
             ui.notice(e.getMessage());
             done.accept(false);
@@ -1092,9 +1125,9 @@ final class GameRunner {
             success=true;
             if(quick)quickNotice(false);else if(done==null)playPanelSound(uiAssets.load,"loadSound",0);
         }catch(FileNotFoundException e){
-            if(!quick)ui.notice("此槽位还没有存档");
+            if(!quick)ui.notice(text(R.string.engine_systemnnn_host_slot_missing));
         }catch(Exception e){
-            ui.notice("读档失败 · "+e.getMessage());
+            ui.notice(text(R.string.engine_systemnnn_host_load_failed,e.getMessage()));
         }finally{
             if(!success){
                 if(done==null&&menuOpen)menu(false);else schedule();
@@ -1130,21 +1163,29 @@ final class GameRunner {
         }catch(Exception|LinkageError e){broken(e);}
     });}
     private CompletableFuture<Void> save(int slot,boolean notify,Runnable feedback){
+        try{
+            CompletableFuture<Void> write=queueSlotWrite(slot,notify,feedback);
+            if(write==null)return null;
+            if(slot==SaveSlots.AUTO)autoWrite=write;
+            write.whenComplete((unused,error)->{if(error!=null)saveFailed(error);});
+            return writeReadLines();
+        }catch(IOException|RuntimeException e){saveFailed(e);return null;}
+    }
+    private CompletableFuture<Void> queueSlotWrite(int slot,boolean notify,Runnable feedback) throws IOException {
         if(handle==0||failed||onTitle||history==null||!history.writable()||meta[0]==NativeGame.MOVIE||
             (meta[0]==NativeGame.MODAL&&!NativeGame.modalSavable(handle))||meta[0]==NativeGame.END){
-            if(notify)ui.notice("当前无法保存进度");
+            if(notify)ui.notice(text(R.string.engine_systemnnn_host_cannot_save));
             return null;
         }
         long started=SystemClock.uptimeMillis();
         if(feedback!=null)feedback.run();
-        try{
-            GameSave.Loaded data=history.capture(slot,handle,meta,current==null?"":current.speaker,current==null?"":current.body);
-            Capture picture=slotPicture();
-            long captureMs=SystemClock.uptimeMillis()-started;
-            Runnable write=()->writeSlot(data,picture,captureMs);
-            if(slot==SaveSlots.AUTO)autoWrite=SAVE_FILES.submit(write);else SAVE_FILES.execute(write);
-        }catch(Exception e){saveFailed(e);return null;}
-        return writeReadLines();
+        GameSave.Loaded data=history.capture(slot,handle,meta,current==null?"":current.speaker,current==null?"":current.body);
+        Capture picture=slotPicture();
+        long captureMs=SystemClock.uptimeMillis()-started;
+        return CompletableFuture.runAsync(()->{
+            try{writeSlot(data,picture,captureMs);}
+            catch(IOException e){throw new CompletionException(e);}
+        },SAVE_FILES);
     }
     private Capture slotPicture(){
         try{
@@ -1153,11 +1194,10 @@ final class GameRunner {
             return new Capture(NativeGame.saveThumbnail(handle,w,h),w,h);
         }catch(RuntimeException e){Log.w("SystemNNN","Unable to capture slot preview",e);return null;}
     }
-    private void writeSlot(GameSave.Loaded data,Capture picture,long captureMs){
+    private void writeSlot(GameSave.Loaded data,Capture picture,long captureMs) throws IOException {
         long started=SystemClock.uptimeMillis();
         GameSave.Metadata at=data.metadata;
-        try{GameSave.write(slots.file(at.slot),data);}
-        catch(IOException|RuntimeException e){saveFailed(e);return;}
+        GameSave.write(slots.file(at.slot),data);
         Bitmap thumbnail=null;
         if(picture!=null)try{
             thumbnail=slots.writePicture(at.slot,at.savedAt,picture.width,picture.height,picture.pixels);
@@ -1171,16 +1211,18 @@ final class GameRunner {
             " captureMs="+captureMs+" writeMs="+(SystemClock.uptimeMillis()-started)+
             " snapshotBytes="+(data.nativeSnapshot==null?0:data.nativeSnapshot.length));
     }
-    private void saveFailed(Exception error){
+    private void saveFailed(Throwable error){
+        if(error instanceof CompletionException&&error.getCause()!=null)error=error.getCause();
         Log.w("SystemNNN","Unable to save progress",error);
-        if(!closing)ui.notice("保存失败 · "+error.getMessage());
+        if(!closing)ui.notice(text(R.string.engine_systemnnn_host_save_failed,error.getMessage()));
     }
-    private static <T> T saveResult(Future<T> work) throws IOException {
+    private String text(int resource,Object... arguments){return context.getString(resource,arguments);}
+    private <T> T saveResult(Future<T> work) throws IOException {
         try{return work.get();}
-        catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException("等待存档文件时被中断",e);}
+        catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException(text(R.string.engine_systemnnn_host_save_wait_interrupted),e);}
         catch(ExecutionException e){
             if(e.getCause() instanceof IOException)throw (IOException)e.getCause();
-            throw new IOException("存档文件操作失败",e.getCause());
+            throw new IOException(text(R.string.engine_systemnnn_host_save_io_failed),e.getCause());
         }
     }
     // The original switches out of the story mode while a modal is active.
@@ -1189,7 +1231,9 @@ final class GameRunner {
     private void schedule(){
         tasks.removeCallbacks(ticker);
         if(!playing()){stopSound();return;}
-        if(audio==null)audio=new DeviceAudio(handle,rate,error -> tasks.post(() -> broken(new IOException(error))));
+        if(audio==null)audio=new DeviceAudio(context,tasks,handle,rate,(source,error)->tasks.post(()->{
+            if(audio==source&&!closing)broken(new IOException(error));
+        }));
         deadline=lastTickAt=SystemClock.uptimeMillis();tasks.post(ticker);
     }
     private final Runnable ticker=new Runnable(){public void run(){
@@ -1250,7 +1294,7 @@ final class GameRunner {
             if(meta[0]==NativeGame.MOVIE){startStoryMovie();return;}
             syncModes();updateUi();
         }catch(Exception e){
-            if(replaying){ui.notice("回想中断 · "+e.getMessage());finishReplay();}
+            if(replaying){ui.notice(text(R.string.engine_systemnnn_host_replay_interrupted,e.getMessage()));finishReplay();}
             else broken(e);
         }
     }
@@ -1426,7 +1470,8 @@ final class GameRunner {
     private void updateUi(){
         configMask=NativeGame.configMask(handle);
         refreshSystemMenuModes();
-        if(shownWait==meta[0]&&shownWord==meta[1]&&shownLine==meta[2]){
+        int scriptCursor=meta[NativeGame.SCRIPT_CURSOR];
+        if(current!=null&&shownWait==meta[0]&&shownWord==meta[1]&&shownLine==meta[2]&&current.scriptCursor==scriptCursor){
             if(shownWait==NativeGame.CHOICE&&current.choiceInfo[0]>0)ui.choiceTime(current,meta[6]);
             return;
         }
@@ -1446,14 +1491,14 @@ final class GameRunner {
         int[] placeCharacters=placeMode!=0?NativeGame.placeCharacters(handle):new int[0];
         Bitmap[] portraits=placeMode!=0?placePortraits(placeMode,placeCharacters):new Bitmap[0];
         Modal modal=shownWait==NativeGame.MODAL?readModal():null;
-        Frame next=new Frame(shownWait,meta[3],meta[4],script,shownLine,shownWord,speaker,body,options,false,properties[0],properties[1],properties[2],
+        Frame next=new Frame(shownWait,meta[3],meta[4],script,shownLine,shownWord,speaker,body,options,false,properties[0],properties[1],properties[2],scriptCursor,
             properties[3]!=0,message.nameWindow,properties[4]!=0,properties[5],properties[6],meta[5],messages,choice,places,placeMode,placeCharacters,portraits,modal);
         if(!replaying&&shownWait==NativeGame.DIALOGUE&&!readLines.isEmpty()){
             String previousBody=decode(NativeGame.dialogue(handle)[1]);
             if(readLines.remove(next.legacyReadKey(raw[0],previousBody)))NativeGame.markRead(handle,next.messageId);
         }
         current=new Frame(next.wait,next.width,next.height,next.script,next.line,next.word,next.speaker,next.body,next.choices,
-            shownWait==NativeGame.DIALOGUE&&NativeGame.isRead(handle,next.messageId),next.messageId,next.windowType,next.fontType,
+            shownWait==NativeGame.DIALOGUE&&NativeGame.isRead(handle,next.messageId),next.messageId,next.windowType,next.fontType,next.scriptCursor,
             next.windowVisible,next.nameWindow,next.optionsAllowed,next.command,next.layoutCommand,next.frameMs,messages,choice,places,placeMode,placeCharacters,portraits,modal);
         textDone=false;visibleText=-1;
         if(shownWait==NativeGame.DIALOGUE){
@@ -1486,7 +1531,7 @@ final class GameRunner {
             PROGRESS_HANDOFFS.remove(readFile,predecessor);
         }catch(IOException|RuntimeException e){
             Log.w("SystemNNN","Recovered global progress still cannot be written",e);
-            if(!closing)ui.notice("已恢复上次的全局进度，写入仍失败 · "+e.getMessage());
+            if(!closing)ui.notice(text(R.string.engine_systemnnn_host_global_progress_recovered,e.getMessage()));
         }
     }
     private CompletableFuture<Void> writeReadLines(){
@@ -1502,7 +1547,7 @@ final class GameRunner {
             catch(IOException|RuntimeException e){
                 saved.completeExceptionally(new ProgressWriteFailure(state,e));
                 Log.w("SystemNNN","Global progress save failed",e);
-                if(!closing)ui.notice("全局进度保存失败 · "+e.getMessage());
+                if(!closing)ui.notice(text(R.string.engine_systemnnn_host_global_progress_failed,e.getMessage()));
                 return;
             }
             if(pending!=null&&pending.isCompletedExceptionally())PROGRESS_HANDOFFS.remove(readFile,pending);
@@ -1510,7 +1555,11 @@ final class GameRunner {
         });
         return saved;
     }
-    private void stopSound(){if(audio!=null){audio.close();audio=null;}}
+    private void stopSound(){
+        DeviceAudio stopped=audio;
+        audio=null;
+        if(stopped!=null)stopped.close();
+    }
     private void broken(Throwable reason){tasks.removeCallbacks(ticker);failed=true;stopSound();Log.e("SystemNNN","Game session failed",reason);ui.error(reason.getMessage()!=null?reason.getMessage():reason.toString());}
     private void releaseSaveAccess(){
         GameSavePaths.Access access=saveAccess;

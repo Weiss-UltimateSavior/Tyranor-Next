@@ -547,6 +547,7 @@ final class GalleryCatalog {
         // not stored by the Android runtime, so it uses the normal variants.
         Bitmap first=animate?sprite(handle,variant.animationPicture(false,goreTag,firstFrame),true):null;
         if(first==null){
+            animate=false;
             first=sprite(handle,variant.picture(false,goreTag,0),true);
             firstFrame=-1;
         }

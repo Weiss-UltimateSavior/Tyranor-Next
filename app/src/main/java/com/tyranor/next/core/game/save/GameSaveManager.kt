@@ -712,7 +712,7 @@ class GameSaveManager(private val context: Context) {
         }
 
     private fun systemNnnStore(game: ScanGame, expectedDirectory: File? = null): SystemNnnSaveStore {
-        val root = SystemNnnGameDirectory.accessible(game.uri)
+        val root = SystemNnnGameDirectory.accessible(appContext, game.uri)
             ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
         val directory = try {
             SystemNnnHost.saveDirectory(appContext, root)
@@ -735,7 +735,7 @@ class GameSaveManager(private val context: Context) {
     }
 
     private fun resolveGameDirectory(game: ScanGame): String? {
-        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(game.uri)?.absolutePath
+        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(appContext, game.uri)?.absolutePath
         // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
         // 两边解析出不同路径会让存档管理/清理指向错误镜像。
         GamePathUtils.safUriToPath(game.uri)?.let { path ->

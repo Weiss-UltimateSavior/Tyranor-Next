@@ -1,7 +1,10 @@
 package com.tyranor.runtime.systemnnn;
 
 import android.graphics.Bitmap;
+import android.content.Context;
 import android.util.AtomicFile;
+import com.core.engine.EngineUiText;
+import com.core.engine.R;
 import java.io.*;
 import java.nio.ByteBuffer;
 
@@ -12,16 +15,20 @@ final class SaveSlots {
     private volatile Entry[] cached;
     static final class Entry {
         final int slot,line;
-        final boolean exists,corrupt;
+        final boolean exists,corrupt,legacy;
         final long savedAt;
         final String script,speaker,summary;
         final Bitmap picture;
-        Entry(int slot,boolean exists,boolean corrupt,long savedAt,String script,int line,String speaker,String summary,Bitmap picture) {
-            this.slot=slot; this.exists=exists; this.corrupt=corrupt; this.savedAt=savedAt;
+        Entry(int slot,boolean exists,boolean corrupt,boolean legacy,long savedAt,String script,int line,String speaker,String summary,Bitmap picture) {
+            this.slot=slot; this.exists=exists; this.corrupt=corrupt; this.legacy=legacy; this.savedAt=savedAt;
             this.script=script; this.line=line; this.speaker=speaker; this.summary=summary;
             this.picture=picture;
         }
-        String label() { return labelFor(slot); }
+        String label(Context context) { return labelFor(context,slot); }
+        String displaySummary(Context context) {
+            if(corrupt)return EngineUiText.get(context,R.string.engine_systemnnn_ctl_slot_unreadable);
+            return legacy?EngineUiText.get(context,R.string.engine_systemnnn_ctl_slot_legacy):summary;
+        }
     }
     SaveSlots(GameSavePaths paths) {
         this.paths=paths;
@@ -49,9 +56,9 @@ final class SaveSlots {
         next[index(metadata.slot)]=entry(metadata.slot,metadata,picture);
         cached=next;
     }
-    private static Entry empty(int slot){return new Entry(slot,false,false,0,"",0,"","",null);}
+    private static Entry empty(int slot){return new Entry(slot,false,false,false,0,"",0,"","",null);}
     private static Entry entry(int slot,GameSave.Metadata m,Bitmap picture){
-        return new Entry(slot,true,false,m.savedAt,m.script,m.line,m.speaker,m.legacy?"旧版存档":m.summary,picture);
+        return new Entry(slot,true,false,m.legacy,m.savedAt,m.script,m.line,m.speaker,m.summary,picture);
     }
     private Entry readEntry(int slot) {
         File file=file(slot);
@@ -61,7 +68,7 @@ final class SaveSlots {
             if (!m.legacy && m.slot!=slot) throw new IOException("存档编号不匹配");
             return entry(slot,m,m.legacy?null:readPicture(slot,m.savedAt));
         } catch (IOException | RuntimeException e) {
-            return new Entry(slot,true,true,Math.max(0,file.lastModified()),"",0,"","存档损坏",null);
+            return new Entry(slot,true,true,false,Math.max(0,file.lastModified()),"",0,"","",null);
         }
     }
     private File pictureFile(int slot){return paths.file(suffix(slot)+GameSavePaths.THUMB);}
@@ -110,9 +117,10 @@ final class SaveSlots {
         }
         return 0;
     }
-    private static String labelFor(int slot) {
-        if (slot==AUTO) return "自动存档";
-        if (slot==QUICK) return "快速存档";
-        return "存档 "+(slot<9?"0":"")+(slot+1);
+    private static String labelFor(Context context,int slot) {
+        Context localized=EngineUiText.localizedContext(context);
+        if (slot==AUTO) return localized.getString(R.string.engine_systemnnn_ctl_slot_auto);
+        if (slot==QUICK) return localized.getString(R.string.engine_systemnnn_ctl_slot_quick);
+        return localized.getString(R.string.engine_systemnnn_ctl_slot_number,(slot<9?"0":"")+(slot+1));
     }
 }

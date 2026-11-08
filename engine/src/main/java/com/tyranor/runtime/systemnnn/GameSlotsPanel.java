@@ -5,6 +5,8 @@ import android.graphics.*;
 import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
+import com.core.engine.EngineUiText;
+import com.core.engine.R;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -35,8 +37,13 @@ final class GameSlotsPanel extends GameUiPanel {
         opening(config,false);
         entries(slots,warmup);
     }
-    static String pcTransferLabel(boolean saving){return saving?"导出PC存档":"读取PC存档";}
-    String pcTransferLabel(){return pcTransferLabel(saving);}
+    static String pcTransferLabel(Context context,boolean saving){
+        return EngineUiText.get(context,saving?R.string.engine_systemnnn_ctl_pc_export:R.string.engine_systemnnn_ctl_pc_import);
+    }
+    String pcTransferLabel(){return pcTransferLabel(getContext(),saving);}
+    private String uiText(int resource,Object... args){
+        return EngineUiText.localizedContext(getContext()).getString(resource,args);
+    }
     void performPcTransfer(){transferPc.run();}
     @Override boolean controlsBusy(){return super.controlsBusy()||confirmation!=null||loadCard!=null;}
     void entries(SaveSlots.Entry[] value){entries(value,null);}
@@ -80,12 +87,12 @@ final class GameSlotsPanel extends GameUiPanel {
         if(config.number("pageMode",pages>1?1:0)==1){
             pageArrows(config,page,pages,616,16,646,next->{page=next;render();});
         }else if(pages>1){
-            button(config,"Up","Up","上一页",()->{page=(page+pages-1)%pages;render();},616,16,48,48);
-            button(config,"Down","Down","下一页",()->{page=(page+1)%pages;render();},616,646,48,48);
+            button(config,"Up","Up",uiText(R.string.engine_systemnnn_ctl_page_previous),()->{page=(page+pages-1)%pages;render();},616,16,48,48);
+            button(config,"Down","Down",uiText(R.string.engine_systemnnn_ctl_page_next),()->{page=(page+1)%pages;render();},616,646,48,48);
         }
         if(config.number("pagePrintFlag",1)!=0)pageNumber(pages);
         View back=back(config,close);
-        back.setContentDescription("返回，长按"+pcTransferLabel());
+        back.setContentDescription(uiText(R.string.engine_systemnnn_ctl_back_transfer,pcTransferLabel()));
         back.setOnLongClickListener(v->{performPcTransfer();return true;});
     }
     private void pageNumber(int pages){
@@ -104,7 +111,7 @@ final class GameSlotsPanel extends GameUiPanel {
                 }
             };
         }else label=text(number,Math.min(w,h),saving?0xffff6262:0xff6ad6ff);
-        label.setContentDescription("第 "+(page+1)+" / "+pages+" 页");
+        label.setContentDescription(uiText(R.string.engine_systemnnn_ctl_page_count,page+1,pages));
         put(label,config.number("pagePrintX",1189),config.number("pagePrintY",340),width,h);
     }
     private void confirm(SaveSlots.Entry e){
@@ -114,8 +121,8 @@ final class GameSlotsPanel extends GameUiPanel {
         int x=cfg.number("dialogX",331),y=cfg.number("dialogY",277);
         dialog.picture(cfg.value("filenameDialog","ta_dialog_save"),x,y,cfg.number("dialogSizeX",618),cfg.number("dialogSizeY",143));
         dialog.sound(this::sound);
-        dialog.buttonAt(cfg,"dialogOk","dialogOk","覆盖保存",()->{dismissConfirmation();select.choose(e.slot);},x,y,90,60,192,72);
-        dialog.buttonAt(cfg,"dialogCancel","dialogCancel","取消覆盖",this::dismissConfirmation,x,y,323,60,192,72);
+        dialog.buttonAt(cfg,"dialogOk","dialogOk",uiText(R.string.engine_systemnnn_ctl_overwrite),()->{dismissConfirmation();select.choose(e.slot);},x,y,90,60,192,72);
+        dialog.buttonAt(cfg,"dialogCancel","dialogCancel",uiText(R.string.engine_systemnnn_ctl_cancel_overwrite),this::dismissConfirmation,x,y,323,60,192,72);
         addView(dialog,new LayoutParams(-1,-1));
     }
     private void dismissConfirmation(){
@@ -176,7 +183,9 @@ final class GameSlotsPanel extends GameUiPanel {
                 data.value("filename"+kind+"Base","");
             base=data.number("basePrintFlag",1)!=0?sprite(image):null;
             preview=e.picture;
-            setContentDescription(e.label()+" · "+(e.corrupt?"存档无法读取":!e.exists?"空槽位":time+" · "+e.script+" · 第 "+e.line+" 句 · "+e.speaker+" · "+e.summary));
+            setContentDescription(e.label(getContext())+" · "+(e.corrupt?uiText(R.string.engine_systemnnn_ctl_slot_unreadable):
+                !e.exists?uiText(R.string.engine_systemnnn_ctl_slot_empty):time+" · "+
+                uiText(R.string.engine_systemnnn_ctl_position,e.script,e.line)+" · "+e.speaker+" · "+e.displaySummary(getContext())));
         }
         @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
         @Override protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
@@ -198,27 +207,33 @@ final class GameSlotsPanel extends GameUiPanel {
             if(!glyphs(c,p,sprite(data.value("fileNameSaveTimeFont","")),time,x,y,w,h,limit(data.number("saveTimeFontNextX",w),1,512)))
                 line(c,time,x,y,16,Color.WHITE);
         }
+        private boolean serialNumber(Canvas c,boolean mustFit){
+            if(data.number("serialPrintFlag",1)==0)return false;
+            int x=data.number("serialPrintX",cardWidth-24),y=data.number("serialPrintY",5);
+            int w=limit(data.number("serialFontSizeX",14),1,512),h=limit(data.number("serialFontSizeY",20),1,512);
+            int advance=limit(data.number("serialFontNextX",w),1,512);
+            String number=digits(serial,limit(data.number("serialNumberKeta",2),1,4));
+            int width=w+(number.length()-1)*advance;
+            if(mustFit&&(x<0||y<0||x>cardWidth-width||y>cardHeight-h))return false;
+            p.setAlpha(255);
+            return glyphs(c,p,sprite(data.value("fileNameSerialNumberFont","")),number,x,y,w,h,advance)||
+                line(c,number,x,y,14,Color.WHITE)>0;
+        }
         private void contents(Canvas c){
             int px=data.number("picPrintX",6),py=data.number("picPrintY",8);
             int pw=limit(data.number("picSizeX",182),1,512),ph=limit(data.number("picSizeY",102),1,512);
             picture(c,preview,px,py,pw,ph);
             timestamp(c);
-            if(e.slot!=SaveSlots.AUTO&&data.number("serialPrintFlag",1)!=0){
-                int x=data.number("serialPrintX",cardWidth-24),y=data.number("serialPrintY",5);
-                int w=limit(data.number("serialFontSizeX",14),1,512),h=limit(data.number("serialFontSizeY",20),1,512);
-                String number=digits(serial,limit(data.number("serialNumberKeta",2),1,4));
-                p.setAlpha(255);
-                if(!glyphs(c,p,sprite(data.value("fileNameSerialNumberFont","")),number,x,y,w,h,limit(data.number("serialFontNextX",w),1,512)))
-                    line(c,number,x,y,14,Color.WHITE);
-            }
+            if(e.slot!=SaveSlots.AUTO)serialNumber(c,false);
             int x=data.number("textPrintX",210),y=data.number("textPrintY",87),size=limit(data.number("textFontSize",16),8,40);
-            String position=e.script+" · 第 "+e.line+" 句";
+            String position=uiText(R.string.engine_systemnnn_ctl_position,e.script,e.line);
             int positionY=data.number("addPicPrintY",46);
-            if(e.slot==SaveSlots.AUTO)position="自动存档 · "+position;
+            if(e.slot==SaveSlots.AUTO)position=e.label(getContext())+" · "+position;
             line(c,position,data.number("addPicPrintX",x),positionY,14,0xffb7cddb);
             if(data.number("textPrintFlag",1)!=0){
                 int color=Color.rgb(data.number("textColorR",128)&255,data.number("textColorG",224)&255,data.number("textColorB",224)&255);
-                String summary=e.speaker.isEmpty()?e.summary:e.speaker+"　"+e.summary;
+                String body=e.displaySummary(getContext());
+                String summary=e.speaker.isEmpty()?body:e.speaker+"　"+body;
                 if(e.slot==SaveSlots.QUICK&&base!=null){
                     // The quick-slot plate already has a label in the comment box.
                     int small=Math.min(size,13),top=y-small-10;
@@ -233,8 +248,15 @@ final class GameSlotsPanel extends GameUiPanel {
             canvas.save();canvas.scale(getWidth()/(float)cardWidth,getHeight()/(float)cardHeight);
             if(base!=null)picture(canvas,base,0,0,base.getWidth(),base.getHeight());
             if(e.slot==SaveSlots.AUTO&&!e.exists||e.slot==SaveSlots.QUICK&&base==null)
-                line(canvas,e.label(),17,38,20,saving?0xffffb7aa:0xffa4e9ff);
-            if(e.corrupt)line(canvas,"存档无法读取",data.number("textPrintX",210),data.number("textPrintY",87),16,0xff91a9ba);
+                line(canvas,e.label(getContext()),17,38,20,saving?0xffffb7aa:0xffa4e9ff);
+            if(saving&&base==null&&e.slot>=0&&!e.exists&&!e.corrupt&&!serialNumber(canvas,true)){
+                int x=Math.min(17,cardWidth/4),y=Math.min(38,cardHeight/4);
+                if(line(canvas,e.label(getContext()),x,y,Math.min(20,cardHeight-y),0xffffb7aa)==0){
+                    p.setColor(0x99ffb7aa);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1);
+                    canvas.drawRect(0,0,cardWidth,cardHeight,p);p.setStyle(Paint.Style.FILL);
+                }
+            }
+            if(e.corrupt)line(canvas,uiText(R.string.engine_systemnnn_ctl_slot_unreadable),data.number("textPrintX",210),data.number("textPrintY",87),16,0xff91a9ba);
             else if(e.exists)contents(canvas);
             int selectMode=data.number("selectPrintMode",1);
             boolean selected=loadCard==this;

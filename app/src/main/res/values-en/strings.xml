@@ -1047,4 +1047,13 @@
     <string name="launch_cmvs_unregistered">CMVS only supports the 19 registered titles; this game is not registered</string>
     <string name="launch_cmvs_audio_unavailable">CMVS audio initialization failed</string>
     <string name="launch_cmvs_init_failed">CMVS engine failed to start</string>
+    <string name="launch_systemnnn_source_missing">The game directory no longer exists. Select the game folder containing spt/sys.spt again.</string>
+    <string name="launch_systemnnn_storage_restricted">Android 10 restricts direct access to this folder. Add and authorize the game folder again in the library. Launching will import an app-specific copy, with saves in its sav folder. PC saves remain available through import and export.</string>
+    <string name="launch_systemnnn_invalid_source">The folder has no readable spt/sys.spt or contains names that cannot be copied unchanged. Check that the game is fully extracted and select its folder again.</string>
+    <string name="launch_systemnnn_source_busy">The game, save migration, or import is still active. Return to the existing player, finish migration, and exit before retrying.</string>
+    <string name="launch_systemnnn_no_space">There is not enough app-specific storage for a complete game copy. Free some space and retry. Incomplete copies are never launched.</string>
+    <string name="launch_systemnnn_copy_failed">Game import failed. Check the storage volume and folder permission, then retry. The original game and committed copy were not replaced.</string>
+    <string name="launch_systemnnn_commit_failed">The game copy could not be committed atomically. Check app-specific storage and retry. Incomplete copies are never launched.</string>
+    <string name="launch_systemnnn_corrupt_copy">The app-specific game copy is unavailable. Check its storage volume and repair the copy. The original directory will not be selected automatically. Back up saves through save management before repairing it.</string>
+    <string name="launch_systemnnn_save_not_writable">The game copy cannot write to its sav folder. Check that app-specific storage is mounted, writable, and has enough free space, then retry. A different save directory will not be selected.</string>
 </resources>

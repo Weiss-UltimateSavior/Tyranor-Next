@@ -207,6 +207,7 @@
             android:name="com.tyranor.runtime.systemnnn.PlayerActivity"
             android:exported="false"
             android:process=":systemnnn"
+            android:taskAffinity="${applicationId}.systemnnn"
             android:screenOrientation="sensorLandscape"
             android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />

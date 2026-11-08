@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="engine_systemnnn_ctl_menu">菜单</string>
+    <string name="engine_systemnnn_ctl_quick_save">快速保存</string>
+    <string name="engine_systemnnn_ctl_quick_load">快速读取</string>
+    <string name="engine_systemnnn_ctl_config">环境设定</string>
+    <string name="engine_systemnnn_ctl_backlog">回看</string>
+    <string name="engine_systemnnn_ctl_save">保存进度</string>
+    <string name="engine_systemnnn_ctl_load">读取存档</string>
+    <string name="engine_systemnnn_ctl_auto">自动播放</string>
+    <string name="engine_systemnnn_ctl_skip">快进</string>
+    <string name="engine_systemnnn_ctl_hide">隐藏界面</string>
+    <string name="engine_systemnnn_ctl_surname">姓氏</string>
+    <string name="engine_systemnnn_ctl_given_name">名字</string>
+    <string name="engine_systemnnn_ctl_name_input">姓名输入</string>
+    <string name="engine_systemnnn_ctl_text_input">文字输入</string>
+    <string name="engine_systemnnn_ctl_text">文字</string>
+    <string name="engine_systemnnn_ctl_next">下一步</string>
+    <string name="engine_systemnnn_ctl_previous">上一步</string>
+    <string name="engine_systemnnn_ctl_ok">确定</string>
+    <string name="engine_systemnnn_ctl_cancel">取消</string>
+    <string name="engine_systemnnn_ctl_input_composing">请先在键盘中确认候选文字</string>
+    <string name="engine_systemnnn_ctl_input_empty">请输入文字</string>
+    <string name="engine_systemnnn_ctl_input_limit">输入超过 %1$d 字节</string>
+    <string name="engine_systemnnn_ctl_input_encoding">请使用游戏支持的字符，且编码后不超过 %1$d 字节</string>
+    <string name="engine_systemnnn_ctl_input_halfwidth">此姓名输入框只接受半角文字，且不能输入 #</string>
+    <string name="engine_systemnnn_ctl_input_fullwidth">此输入框只接受游戏支持的全角字符</string>
+    <string name="engine_systemnnn_ctl_input_rejected">游戏拒绝了这次输入</string>
+    <string name="engine_systemnnn_ctl_pc_export">导出 PC 存档</string>
+    <string name="engine_systemnnn_ctl_pc_import">读取 PC 存档</string>
+    <string name="engine_systemnnn_ctl_page_previous">上一页</string>
+    <string name="engine_systemnnn_ctl_page_next">下一页</string>
+    <string name="engine_systemnnn_ctl_back_transfer">返回，长按%1$s</string>
+    <string name="engine_systemnnn_ctl_page_count">第 %1$d / %2$d 页</string>
+    <string name="engine_systemnnn_ctl_overwrite">覆盖保存</string>
+    <string name="engine_systemnnn_ctl_cancel_overwrite">取消覆盖</string>
+    <string name="engine_systemnnn_ctl_slot_auto">自动存档</string>
+    <string name="engine_systemnnn_ctl_slot_quick">快速存档</string>
+    <string name="engine_systemnnn_ctl_slot_number">存档 %1$s</string>
+    <string name="engine_systemnnn_ctl_slot_unreadable">存档无法读取</string>
+    <string name="engine_systemnnn_ctl_slot_empty">空槽位</string>
+    <string name="engine_systemnnn_ctl_slot_legacy">旧版存档</string>
+    <string name="engine_systemnnn_ctl_position">%1$s · 第 %2$d 句</string>
+</resources>

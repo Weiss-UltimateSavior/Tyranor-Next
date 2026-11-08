@@ -36,6 +36,13 @@ final class GameSavePaths {
         return new GameSavePaths(game,directory);
     }
 
+    /** AtomicFile.finishWrite logs rename errors instead of reporting them to the caller. */
+    static void verifyCommitted(File file) throws IOException {
+        String path=file.getPath();
+        if(!file.isFile()||new File(path+".new").exists()||new File(path+".bak").exists())
+            throw new IOException("Save commit did not finish: "+file.getName());
+    }
+
     File directory(){return directory;}
     File file(String suffix){return new File(directory,PREFIX+suffix);}
     static boolean hasActiveAccess(){return OWNERS.get()!=0||!OPEN.isEmpty();}
@@ -56,9 +63,13 @@ final class GameSavePaths {
     }
 
     Access open(File legacyFiles) throws IOException {
+        return open(legacyFiles,game);
+    }
+
+    Access open(File legacyFiles,File legacySource) throws IOException {
         Access access=lock();
         try {
-            new LegacySaveMigration(directory.toPath()).migrate(game,legacyFiles);
+            new LegacySaveMigration(directory.toPath()).migrate(legacySource,legacyFiles);
             return access;
         } catch(IOException | RuntimeException e) {
             try{access.close();}catch(IOException closeFailure){e.addSuppressed(closeFailure);}

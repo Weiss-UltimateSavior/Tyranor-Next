@@ -1,10 +1,14 @@
 package com.tyranor.runtime.systemnnn;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Path;
 
 /** Host entry point for the built-in Tyranor-Next engine. */
@@ -33,6 +37,7 @@ public final class SystemNnnHost {
         }
         return new Intent(context, PlayerActivity.class)
             .setAction(ACTION_LAUNCH)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
             .putExtra(EXTRA + "FOLDER_PATH", game.getPath())
             .putExtra(EXTRA + "GAME_TITLE", title)
             .putExtra(EXTRA + "PROTOCOL_VERSION", 1);
@@ -49,6 +54,45 @@ public final class SystemNnnHost {
 
     public static boolean hasActiveSaveAccess() {
         return GameSavePaths.hasActiveAccess();
+    }
+
+    /** The live Activity keeps this lock until it is destroyed, including during save migration. */
+    static Closeable registerPlayerTask(Activity activity,File game,String sourceUri) throws IOException {
+        File record=playerTaskFile(activity,activity.getTaskId());
+        File directory=record.getParentFile();
+        if(!directory.isDirectory()&&!directory.mkdirs()&&!directory.isDirectory())
+            throw new IOException("Cannot create the SystemNNN task directory");
+        RandomAccessFile owner=new RandomAccessFile(record,"rw");
+        try{
+            if(owner.getChannel().tryLock()==null)throw new IOException("SystemNNN task already registered");
+            owner.setLength(0);
+            owner.writeUTF(sourceUri==null?"":sourceUri);
+            owner.writeUTF(game.getCanonicalPath());
+            return owner;
+        }catch(IOException|RuntimeException e){
+            try{owner.close();}catch(IOException close){e.addSuppressed(close);}
+            throw e;
+        }
+    }
+
+    /** The launcher also verifies that the matching AppTask still displays PlayerActivity. */
+    public static boolean isLivePlayerTask(Context context,int taskId,String sourceUri,File gameRoot) {
+        if(taskId<0)return false;
+        try(RandomAccessFile record=new RandomAccessFile(playerTaskFile(context,taskId),"r")){
+            FileLock unlocked=record.getChannel().tryLock(0,Long.MAX_VALUE,true);
+            if(unlocked!=null){
+                unlocked.release();
+                return false;
+            }
+            String registeredUri=record.readUTF();
+            String registeredRoot=record.readUTF();
+            return !registeredUri.isEmpty()&&registeredUri.equals(sourceUri)||
+                gameRoot!=null&&registeredRoot.equals(gameRoot.getCanonicalPath());
+        }catch(IOException|OverlappingFileLockException|SecurityException e){return false;}
+    }
+
+    private static File playerTaskFile(Context context,int taskId){
+        return new File(new File(context.getFilesDir(),"engine_sessions"),"systemnnn-"+taskId+".task");
     }
 
     public static boolean isManagedSaveFile(Path relative) {

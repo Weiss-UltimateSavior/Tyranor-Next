@@ -100,8 +100,7 @@ final class GameBacklogPanel extends GameUiPanel {
             TextView text=text(row.text,font,row.color);
             text.setMaxLines(1);text.setLetterSpacing(space/(float)font);
             put(text,x,top,canvasWidth-x,Math.max(step,font));
-            if(row.jump!=0)jumpButton(row.jump,top);
-            if(!row.voices.isEmpty()&&cfg.number("voiceFlag",1)!=0)voice(row,top);
+            rowActions(row,top);
         }
         if(first>0)arrow(true);
         if(first+visible<rows.size())arrow(false);
@@ -114,17 +113,33 @@ final class GameBacklogPanel extends GameUiPanel {
         animatedButton(spec,sprite(spec.image),"返回",()->{},close,
             back.number("BackPrintX",canvasWidth-w-25),back.number("BackPrintY",canvasHeight-h-10),w,h);
     }
-    private void voice(Row row,int top){
-        int w=limit(cfg.number("voiceSizeX",font),1,512),h=limit(cfg.number("voiceSizeY",font),1,512);
-        String image=cfg.number("voicePicFlag",0)==0?"":cfg.value("filenameVoice","ta_backlogvoice");
+    private void rowActions(Row row,int top){
+        boolean replayVoice=!row.voices.isEmpty()&&cfg.number("voiceFlag",1)!=0;
+        if(!replayVoice&&row.jump==0)return;
+        int voiceWidth=limit(cfg.number("voiceSizeX",font),1,512),voiceHeight=limit(cfg.number("voiceSizeY",font),1,512);
+        int jumpWidth=limit(cfg.number("jumpSizeX",font),1,512),jumpHeight=limit(cfg.number("jumpSizeY",font),1,512);
+        boolean voicePosition=cfg.has("voicePrintX"),jumpPosition=cfg.has("jumpPrintX");
         int vx=x+cfg.number("voicePrintX",-font),vy=top+cfg.number("voicePrintY",0);
+        int jx=x+cfg.number("jumpPrintX",-font),jy=top+cfg.number("jumpPrintY",0);
+        if(!voicePosition)vx=limit(vx,0,Math.max(0,canvasWidth-voiceWidth));
+        if(!jumpPosition)jx=limit(jx,0,Math.max(0,canvasWidth-jumpWidth));
+        if(replayVoice&&row.jump!=0&&vx<jx+jumpWidth&&jx<vx+voiceWidth&&vy<jy+jumpHeight&&jy<vy+voiceHeight){
+            if(!jumpPosition)jx=beside(vx,voiceWidth,jumpWidth);
+            else if(!voicePosition)vx=beside(jx,jumpWidth,voiceWidth);
+        }
+        if(row.jump!=0)jumpButton(row.jump,jx,jy,jumpWidth,jumpHeight);
+        if(replayVoice)voice(row,vx,vy,voiceWidth,voiceHeight);
+    }
+    private int beside(int x,int width,int otherWidth){
+        return x>=otherWidth?x-otherWidth:limit(x+width,0,Math.max(0,canvasWidth-otherWidth));
+    }
+    private void voice(Row row,int vx,int vy,int w,int h){
+        String image=cfg.number("voicePicFlag",0)==0?"":cfg.value("filenameVoice","ta_backlogvoice");
         animateIcon(image,"voicePic",w,h,"重播语音",vx,vy,()->{},()->{
             replay.play(row.voices.get(row.nextVoice));row.nextVoice=(row.nextVoice+1)%row.voices.size();
         });
     }
-    private void jumpButton(long id,int top){
-        int w=limit(cfg.number("jumpSizeX",font),1,512),h=limit(cfg.number("jumpSizeY",font),1,512);
-        int jx=x+cfg.number("jumpPrintX",-font),jy=top+cfg.number("jumpPrintY",0);
+    private void jumpButton(long id,int jx,int jy,int w,int h){
         if(cfg.number("jumpPicFlag",0)!=0){
             animateIcon(cfg.value("filenameJump",""),"jumpPic",w,h,"跳转到此处",jx,jy,()->{},()->jump.accept(id));
             return;

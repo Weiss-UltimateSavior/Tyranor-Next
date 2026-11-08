@@ -7,6 +7,7 @@ import com.tyranor.next.core.engine.plugin.EnginePluginBootstrap
 import com.tyranor.next.core.engine.runtime.RuntimeModuleLaunchResult
 import com.tyranor.next.core.game.launch.LaunchResult
 import com.tyranor.next.core.game.launch.EthornellPrepareError
+import com.tyranor.next.core.game.launch.SystemNnnResourceError
 import com.tyranor.next.core.game.launch.MirrorPrepareStage
 import com.tyranor.next.core.i18n.AppLocaleController
 
@@ -28,6 +29,18 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
             localized.getString(R.string.launch_resolve_local_dir_failed)
 
         is LaunchResult.Failure.SavePreparationFailed -> localized.getString(error.syncErrorResource())
+
+        is LaunchResult.Failure.SystemNnnResourcesFailed -> localized.getString(when (error) {
+            SystemNnnResourceError.SOURCE_MISSING -> R.string.launch_systemnnn_source_missing
+            SystemNnnResourceError.STORAGE_RESTRICTED -> R.string.launch_systemnnn_storage_restricted
+            SystemNnnResourceError.INVALID_SOURCE -> R.string.launch_systemnnn_invalid_source
+            SystemNnnResourceError.SOURCE_BUSY -> R.string.launch_systemnnn_source_busy
+            SystemNnnResourceError.NO_SPACE -> R.string.launch_systemnnn_no_space
+            SystemNnnResourceError.COPY_FAILED -> R.string.launch_systemnnn_copy_failed
+            SystemNnnResourceError.COMMIT_FAILED -> R.string.launch_systemnnn_commit_failed
+            SystemNnnResourceError.CORRUPT_COPY -> R.string.launch_systemnnn_corrupt_copy
+            SystemNnnResourceError.SAVE_NOT_WRITABLE -> R.string.launch_systemnnn_save_not_writable
+        })
 
         is LaunchResult.Failure.EthornellPrepareFailed -> localized.getString(when (error) {
             EthornellPrepareError.RESOURCE_ROOT -> R.string.ethornell_error_root

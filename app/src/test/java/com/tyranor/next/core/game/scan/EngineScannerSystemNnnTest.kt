@@ -16,6 +16,8 @@ class EngineScannerSystemNnnTest {
     @Test fun matchesOnlyARootSptDirectoryWithAScriptFile() {
         val root = temp.newFolder()
         root.resolve("nested/spt").apply { check(mkdirs()) }.resolve("sys.spt").writeText("nested")
+        // data is searched recursively; the nested spt must still fail the root-only check.
+        root.resolve("data/spt").apply { check(mkdirs()) }.resolve("sys.spt").writeText("nested")
         val spt = root.resolve("SpT").apply { check(mkdir()) }
         val marker = spt.resolve("SYS.SPT").apply { check(mkdir()) }
         assertEquals(EngineType.UNKNOWN, EngineScanner.detectEngine(root).engine)

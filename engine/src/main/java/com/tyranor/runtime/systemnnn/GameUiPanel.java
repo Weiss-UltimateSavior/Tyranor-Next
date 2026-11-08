@@ -245,7 +245,10 @@ class GameUiPanel extends FrameLayout {
         invalidate();
     }
     void onBackdropFailure(Consumer<Throwable> listener){backdropFailure=listener;}
-    void backgroundFailed(Throwable failure){
+    void backgroundFailed(GameUiBackground source,Throwable failure){
+        if(source!=backdrop)return;
+        backdrop=null;backdropRequest=null;scriptedBackground=false;
+        removeView(source);
         if(backdropFailure!=null)backdropFailure.accept(failure);
         backgroundReady();
     }

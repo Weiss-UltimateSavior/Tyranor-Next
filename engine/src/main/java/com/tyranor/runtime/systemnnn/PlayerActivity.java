@@ -7,6 +7,7 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.DialogInterface;
@@ -23,7 +24,10 @@ import android.os.storage.StorageVolume;
 import android.util.TypedValue;
 import android.view.*;
 import android.widget.*;
+import com.core.engine.EngineUiText;
+import com.core.engine.LaunchContract;
 import com.core.engine.R;
+import java.io.Closeable;
 import java.io.File;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
@@ -76,6 +80,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private int storyTouchSlop;
     private boolean storyDrag;
     private boolean foreground,permissionPending;
+    private Uri selectedGameTree;
+    private boolean copyingGame,usingGameCopy;
+    private volatile boolean cancelGameCopy;
     private boolean uiHidden,autoMode,skipMode,typing,refreshAfterLoad;
     private int panelsOpen,revealed;
     private String fullBody="";
@@ -83,7 +90,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private GameRunner.Modal visibleModal,modeUnderPanel;
     private Bitmap optionalGalleryPrevious;
     private boolean openGalleryAfterTitle;
-    private SharedPreferences preferences;
+    private SharedPreferences preferences,userPreferences;
+    private Closeable playerTask;
+    private Context uiContext;
     private PlayerSettings settings;
     private final Handler ui=new Handler(Looper.getMainLooper());
     private final ArrayList<AlertDialog> openedPanels=new ArrayList<>();
@@ -96,18 +105,23 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private boolean pcSaveBusy;
     private byte[] pendingPcExport;
     private final SharedPreferences.OnSharedPreferenceChangeListener settingsListener=(p,key) -> {
-        if(syncingRuntime||RuntimeSettingsAdapter.isPersistedKey(key))return;
-        settings=PlayerSettings.read(p);
+        if(syncingRuntime||p!=preferences)return;
+        settings=PlayerSettings.read(p,userPreferences);
         if (dialoguePanel!=null) dialoguePanel.settings(settings);
-        if(PlayerSettings.READING_SIZE.equals(key))return;
         selectDialogueVariant();
         if (runner!=null) runner.settings(key,settings);
         immersive();
         updateStatus();
     };
+    private final SharedPreferences.OnSharedPreferenceChangeListener readingListener=(p,key)->{
+        if(preferences==null||!PlayerSettings.READING_SIZE.equals(key))return;
+        settings=PlayerSettings.read(preferences,p);
+        if(dialoguePanel!=null)dialoguePanel.settings(settings);
+    };
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        uiContext=EngineUiText.localizedContext(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         if(Build.VERSION.SDK_INT>=28){
             WindowManager.LayoutParams window=getWindow().getAttributes();
@@ -137,30 +151,34 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             return insets;
         });
         root.requestApplyInsets();
-        preferences=PlayerSettings.preferences(this); settings=PlayerSettings.read(preferences);
-        preferences.registerOnSharedPreferenceChangeListener(settingsListener);
+        userPreferences=PlayerSettings.preferences(this);
+        userPreferences.registerOnSharedPreferenceChangeListener(readingListener);
         Intent i=getIntent();
         String path=i.getStringExtra(PREFIX+"FOLDER_PATH");
         fromTyn="com.tyranor.runtime.action.LAUNCH".equals(i.getAction());
         if (!fromTyn) {
-            if (saved!=null) path=saved.getString("selectedGame");
+            if (saved!=null){
+                path=saved.getString("selectedGame");
+                String tree=saved.getString("selectedGameTree");
+                if(tree!=null)selectedGameTree=Uri.parse(tree);
+            }
             if (path==null || path.isEmpty()) { chooseHome(null); return; }
         } else if (path==null || path.isEmpty()) {
-            chooseHome("TYN 没有传入游戏目录。"); return;
+            chooseHome(text(R.string.engine_systemnnn_host_launch_path_missing)); return;
         }
         if (i.getIntExtra(PREFIX+"PROTOCOL_VERSION",1)!=1) {
-            message("启动协议不受支持","请检查 Tyranor-Next 和引擎模块的版本。",null,null); return;
+            message(text(R.string.engine_systemnnn_host_protocol_unsupported),text(R.string.engine_systemnnn_host_check_versions),null,null); return;
         }
         try {
             File input=new File(path);
-            if (!input.isAbsolute()) throw new IOException("TYN 传入的目录需要是绝对路径");
+            if (!input.isAbsolute()) throw new IOException(text(R.string.engine_systemnnn_host_path_not_absolute));
             game=input.getCanonicalFile();
-        } catch (IOException e) { message("无法打开游戏",e.getMessage(),null,null); return; }
+        } catch (IOException e) { message(text(R.string.engine_systemnnn_host_open_failed),e.getMessage(),null,null); return; }
         inspectAccess();
     }
     private void chooseHome(String reason) {
-        String hint="选择解压后的 SystemNNN 游戏文件夹，里面应有 spt/sys.spt。";
-        message(getApplicationInfo().loadLabel(getPackageManager()).toString(),reason==null?hint:reason+"\n"+hint,"选择游戏目录",
+        String hint=text(R.string.engine_systemnnn_host_pick_hint);
+        message(getApplicationInfo().loadLabel(getPackageManager()).toString(),reason==null?hint:reason+"\n"+hint,text(R.string.engine_systemnnn_host_pick_directory),
             v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),32));
     }
     @Override protected void onActivityResult(int request,int result,Intent data) {
@@ -176,7 +194,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 Uri uri=data.getData();
                 runner.writePcExport(()->{
                     try(OutputStream out=getContentResolver().openOutputStream(uri,"wt")){
-                        if(out==null)throw new IOException("无法打开选中的文件");
+                        if(out==null)throw new IOException(text(R.string.engine_systemnnn_host_open_selected_failed));
                         out.write(contents);
                     }
                     return null;
@@ -188,18 +206,22 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         try {
             Uri uri=data.getData();
             if (!"com.android.externalstorage.documents".equals(uri.getAuthority()))
-                throw new IOException("请在文件选择器的「此设备」或 SD 卡中选择目录。");
+                throw new IOException(text(R.string.engine_systemnnn_host_local_directory_only));
             String[] id=DocumentsContract.getTreeDocumentId(uri).split(":",2);
-            if (id.length!=2) throw new IOException("无法读取所选目录的位置。");
+            if (id.length!=2) throw new IOException(text(R.string.engine_systemnnn_host_unreadable_directory));
             File volume=null;
             if ("primary".equalsIgnoreCase(id[0])) volume=Environment.getExternalStorageDirectory();
             else for (StorageVolume v:getSystemService(StorageManager.class).getStorageVolumes())
                 if (id[0].equalsIgnoreCase(v.getUuid())) {
                     volume=Build.VERSION.SDK_INT>=30?v.getDirectory():new File("/storage",v.getUuid()); break;
                 }
-            if (volume==null) throw new IOException("找不到所选存储卷。");
+            if (volume==null) throw new IOException(text(R.string.engine_systemnnn_host_missing_volume));
             File selected=new File(volume,id[1]).getCanonicalFile();
-            if (!selected.toPath().startsWith(volume.getCanonicalFile().toPath())) throw new IOException("游戏目录无效。");
+            if (!selected.toPath().startsWith(volume.getCanonicalFile().toPath())) throw new IOException(text(R.string.engine_systemnnn_host_invalid_directory));
+            selectedGameTree=uri;
+            if(Build.VERSION.SDK_INT==29)try{
+                getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }catch(SecurityException ignored){}
             game=selected; inspectAccess();
         } catch (IOException | IllegalArgumentException e) { chooseHome(e.getMessage()); }
     }
@@ -208,7 +230,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);
         setPcSaveBusy(true);
         try{startActivityForResult(picker,33);}
-        catch(ActivityNotFoundException e){setPcSaveBusy(false);notice("无法打开文件选择器");}
+        catch(ActivityNotFoundException e){setPcSaveBusy(false);notice(text(R.string.engine_systemnnn_host_picker_failed));}
     }
     private void choosePcExport(){
         GameRunner owner=runner;
@@ -220,16 +242,16 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             Intent picker=new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream")
                 .addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,"data1.sav");
             try{startActivityForResult(picker,34);}
-            catch(ActivityNotFoundException e){pendingPcExport=null;setPcSaveBusy(false);notice("无法打开文件选择器");}
+            catch(ActivityNotFoundException e){pendingPcExport=null;setPcSaveBusy(false);notice(text(R.string.engine_systemnnn_host_picker_failed));}
         }));
     }
     private void setPcSaveBusy(boolean busy){pcSaveBusy=busy;updatePanelActionEnabled();}
     private byte[] readPcSave(Uri uri) throws IOException {
         try(InputStream input=getContentResolver().openInputStream(uri)){
-            if(input==null)throw new IOException("无法打开选中的文件");
+            if(input==null)throw new IOException(text(R.string.engine_systemnnn_host_open_selected_failed));
             ByteArrayOutputStream data=new ByteArrayOutputStream();byte[] buffer=new byte[8192];
             for(int n;(n=input.read(buffer))!=-1;){
-                if(n>16*1024*1024-data.size())throw new IOException("PC 存档超过 16 MiB");
+                if(n>16*1024*1024-data.size())throw new IOException(text(R.string.engine_systemnnn_host_pc_save_too_large));
                 data.write(buffer,0,n);
             }
             return data.toByteArray();
@@ -250,9 +272,16 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         if (!fromTyn && game!=null) state.putString("selectedGame",game.getPath());
+        if (!fromTyn && selectedGameTree!=null)state.putString("selectedGameTree",selectedGameTree.toString());
     }
     private void inspectAccess() {
-        if (game==null || runner!=null) return;
+        if (game==null || runner!=null || copyingGame) return;
+        try{
+            String identity=sourceIdentity();
+            File copy=identity==null?null:SystemNnnGameImport.committedRoot(this,identity);
+            usingGameCopy=copy!=null;
+            if(usingGameCopy)game=copy;
+        }catch(IOException e){chooseHome(gameCopyFailure(e));return;}
         File script=GameResourcePaths.file(game,"spt","sys.spt");
         if (script!=null) {
             // Scoped storage may allow stat() and directory listings while denying open().
@@ -262,15 +291,76 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 if (probe.read()!=-1) { startGame(); return; }
             } catch (IOException ignored) { /* Show the appropriate storage action below. */ }
         }
-        if(!requestStorageAccess(false))chooseHome("在所选目录里没有找到可读取的 spt/sys.spt。");
+        if(!requestGameAccess(false))chooseHome(text(R.string.engine_systemnnn_host_marker_missing));
+    }
+    private String sourceIdentity() throws IOException {
+        if(selectedGameTree!=null)return SystemNnnGameImport.sourceIdentity(selectedGameTree);
+        if(!fromTyn)return null;
+        // The external-module launch protocol supplies an absolute path instead of a tree URI.
+        java.nio.file.Path source=game.toPath();
+        java.nio.file.Path primary=Environment.getExternalStorageDirectory().getCanonicalFile().toPath();
+        if(source.startsWith(primary))return SystemNnnGameImport.normalizeIdentity("primary:"+primary.relativize(source));
+        java.nio.file.Path storage=new File("/storage").toPath();
+        if(!source.startsWith(storage)||source.getNameCount()<2)return null;
+        String volume=source.getName(1).toString();
+        if("emulated".equals(volume)||"self".equals(volume))return null;
+        return SystemNnnGameImport.normalizeIdentity(volume+":"+storage.resolve(volume).relativize(source));
+    }
+    private boolean requestGameAccess(boolean writing){
+        if(Build.VERSION.SDK_INT!=29||selectedGameTree==null||usingGameCopy)return requestStorageAccess(writing);
+        if(Environment.isExternalStorageLegacy()&&requestStorageAccess(writing))return true;
+        message(text(R.string.engine_systemnnn_host_copy_game),text(R.string.engine_systemnnn_host_copy_offer),
+            text(R.string.engine_systemnnn_host_copy_to_app),v->copySelectedGame());
+        return true;
+    }
+    private void copySelectedGame(){
+        if(copyingGame||selectedGameTree==null)return;
+        Uri tree=selectedGameTree;
+        copyingGame=true;
+        cancelGameCopy=false;
+        message(text(R.string.engine_systemnnn_host_copy_game),text(R.string.engine_systemnnn_host_copy_running),text(R.string.engine_systemnnn_host_copy_cancel),v->cancelGameCopy=true);
+        new Thread(()->{
+            File copy=null;
+            String failure=null;
+            try{
+                copy=SystemNnnGameImport.importDirectory(this,tree,SystemNnnGameImport.sourceIdentity(tree),()->{
+                    if(cancelGameCopy)throw new java.util.concurrent.CancellationException();
+                });
+            }catch(java.util.concurrent.CancellationException e){failure=text(R.string.engine_systemnnn_host_copy_cancelled);}
+            catch(IOException e){failure=gameCopyFailure(e);}
+            File imported=copy;
+            String reason=failure;
+            ui.post(()->{
+                if(isDestroyed()||isFinishing())return;
+                copyingGame=false;
+                if(imported==null){chooseHome(reason);return;}
+                game=imported;
+                usingGameCopy=true;
+                startGame();
+            });
+        },"SystemNNN-Import").start();
+    }
+    private String gameCopyFailure(IOException error){
+        if(error instanceof SystemNnnGameImport.Failure){
+            switch(((SystemNnnGameImport.Failure)error).reason){
+                case NO_GRANT:return text(R.string.engine_systemnnn_host_copy_grant_lost);
+                case SOURCE_MISSING:case INVALID_SOURCE:return text(R.string.engine_systemnnn_host_copy_invalid);
+                case INCOMPLETE_SOURCE:return text(R.string.engine_systemnnn_host_copy_save_busy);
+                case NO_SPACE:return text(R.string.engine_systemnnn_host_copy_space);
+                case BUSY:return text(R.string.engine_systemnnn_host_copy_busy);
+                case CORRUPT_COPY:return text(R.string.engine_systemnnn_host_copy_unavailable);
+            }
+        }
+        android.util.Log.w("SystemNNN","Could not import the selected game",error);
+        return text(R.string.engine_systemnnn_host_copy_failed);
     }
     private boolean requestStorageAccess(boolean writing) {
         String permission=writing?Manifest.permission.WRITE_EXTERNAL_STORAGE:Manifest.permission.READ_EXTERNAL_STORAGE;
         boolean needsGrant=Build.VERSION.SDK_INT>=30 ? !Environment.isExternalStorageManager() :
                 checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED;
         if (needsGrant) {
-            message("允许访问游戏目录","请为 SystemNNN 开启文件访问权限，以便读取游戏资源并写入 sav 存档目录。",
-                "打开权限设置",v -> {
+            message(text(R.string.engine_systemnnn_host_storage_permission),text(R.string.engine_systemnnn_host_storage_permission_hint),
+                text(R.string.engine_systemnnn_host_open_permissions),v -> {
                     permissionPending=true;
                     if (Build.VERSION.SDK_INT>=30) {
                         Intent settings=new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
@@ -285,10 +375,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void startGame() {
         GameSavePaths saves;
-        try{saves=GameSavePaths.forGame(game);}
-        catch(IOException|SecurityException e){message("无法打开游戏存档目录",e.getMessage(),"重试",v->inspectAccess());return;}
+        File legacySource;
+        try{
+            saves=GameSavePaths.forGame(game);
+            legacySource=SystemNnnGameImport.originalGame(this,game);
+        }
+        catch(IOException|SecurityException e){message(text(R.string.engine_systemnnn_host_save_directory_failed),e.getMessage(),text(R.string.engine_systemnnn_host_retry),v->inspectAccess());return;}
         File directory=saves.directory();
-        if(!(directory.isDirectory()?directory:game).canWrite() && requestStorageAccess(true))return;
+        if(!(directory.isDirectory()?directory:game).canWrite() && requestGameAccess(true))return;
         root.removeAllViews();
         storyTouchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
         stage=new FrameLayout(this); root.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
@@ -306,19 +400,26 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         root.addView(panelActionButton,actionPosition);
         root.getViewTreeObserver().addOnPreDrawListener(()->{updatePanelActionEnabled();return true;});
         root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
-        screen=new SurfaceView(this); screen.setContentDescription("游戏画面");screen.setSoundEffectsEnabled(false);
+        screen=new SurfaceView(this); screen.setContentDescription(text(R.string.engine_systemnnn_host_game_display));screen.setSoundEffectsEnabled(false);
         stage.addView(screen,new FrameLayout.LayoutParams(-1,-1));
         screen.setOnTouchListener((view,event) -> {
             if (event.getActionMasked()==MotionEvent.ACTION_UP) {advance();view.performClick();}
             return true;
         });
-        dialoguePanel=new DialoguePanel(this,v -> advance()); dialoguePanel.settings(settings);
+        dialoguePanel=new DialoguePanel(this,v -> advance());
         stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
         status=label("",12); status.setGravity(Gravity.CENTER); status.setPadding(dp(8),dp(3),dp(8),dp(3));
         status.setBackground(rounded(0xb51a2030,6));
         FrameLayout.LayoutParams statusParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START);
         statusParams.setMargins(dp(8),dp(8),0,0); stage.addView(status,statusParams); status.setVisibility(View.GONE);
-        runner=new GameRunner(game,saves,getFilesDir(),preferences,settings,this);
+        preferences=PlayerSettings.displayPreferences(this,legacySource);
+        settings=PlayerSettings.read(preferences,userPreferences);
+        dialoguePanel.settings(settings);
+        preferences.registerOnSharedPreferenceChangeListener(settingsListener);
+        if(fromTyn)try{playerTask=SystemNnnHost.registerPlayerTask(this,game,getIntent().getStringExtra(LaunchContract.ROOT_URI));}
+        catch(IOException|RuntimeException e){android.util.Log.w("SystemNNN","Unable to register player task",e);}
+        try{runner=new GameRunner(uiContext,game,legacySource,saves,getFilesDir(),preferences,userPreferences,settings,this);}
+        catch(RuntimeException|Error e){closePlayerTask();throw e;}
         screen.getHolder().addCallback(new SurfaceHolder.Callback() {
             public void surfaceCreated(SurfaceHolder holder) {if(runner!=null)runner.surface(holder.getSurface());}
             public void surfaceChanged(SurfaceHolder holder,int format,int w,int h) {if(runner!=null)runner.surface(holder.getSurface());}
@@ -372,6 +473,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
                 !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) || currentFrame.nameWindow!=frame.nameWindow;
             currentFrame=frame;
+            dialoguePanel.scriptCursorVariant(frame.scriptCursor);
             dialoguePanel.storyBody(frame.wait==NativeGame.DIALOGUE);
             selectDialogueVariant();
             if (changed) {
@@ -390,7 +492,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                     stage.addView(choices,at,new FrameLayout.LayoutParams(-1,-1));
                 }
                 if(frame.wait==NativeGame.END){
-                    String end="本段已结束 · 打开菜单可读档或返回标题";
+                    String end=text(R.string.engine_systemnnn_host_story_ended);
                     dialoguePanel.speaker("",false);dialoguePanel.message(end,end.length());
                 }
             }
@@ -473,7 +575,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 for(OriginalSettingsModel.CharacterControl group:model.characters){boolean enabled=(aux[2+(group.index&31)]&(1<<(group.index/32)))==0;
                     for(int id:group.ids)edit.putBoolean("character."+id+".enabled",enabled);}
                 edit.apply();}
-            settings=PlayerSettings.read(preferences);if(dialoguePanel!=null)dialoguePanel.settings(settings);
+            settings=PlayerSettings.read(preferences,userPreferences);if(dialoguePanel!=null)dialoguePanel.settings(settings);
             if(aux!=null&&aux.length>=36){
                 if(dialoguePanel!=null)dialoguePanel.cursorVariant(aux[34]);
                 if(stage!=null&&mouseVariant!=aux[35]){mouseVariant=aux[35];stage.setPointerIcon(uiAssets.pointer(mouseVariant));}
@@ -503,7 +605,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
     }
     private void updatePanelAction(){
-        String label=gamePanel instanceof GameSettingsPanel?"阅读字号":
+        String label=gamePanel instanceof GameSettingsPanel?text(R.string.engine_systemnnn_host_reading_size):
             gamePanel instanceof GameSlotsPanel?((GameSlotsPanel)gamePanel).pcTransferLabel():null;
         if(label!=null&&!label.contentEquals(panelActionButton.getText()))panelActionButton.setText(label);
         panelActionButton.setVisibility(label==null?View.GONE:View.VISIBLE);
@@ -592,8 +694,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void updateStatus() {
         if(status==null)return;
         if(controls!=null)controls.modes(autoMode,skipMode);
-        String text=skipMode?(settings.skipReadOnly?"快进 · 仅已读":"快进 · 全部"):
-            autoMode?"自动播放":currentFrame!=null&&currentFrame.alreadyRead?"已读":"";
+        String text=skipMode?(settings.skipReadOnly?text(R.string.engine_systemnnn_host_skip_read):text(R.string.engine_systemnnn_host_skip_all)):
+            autoMode?text(R.string.engine_systemnnn_host_auto):currentFrame!=null&&currentFrame.alreadyRead?text(R.string.engine_systemnnn_host_already_read):"";
         status.setText(text);status.setVisibility((controls==null||!controls.original())&&!uiHidden&&panelsOpen==0&&titlePanel==null&&!text.isEmpty()?View.VISIBLE:View.GONE);
     }
     @Override public void title(TitleMenu model,int w,int h,GameRunner.Capture initial,GameRunner.Capture previous) {
@@ -659,14 +761,20 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(runner==null || titleModel==null)return;
         TitleMenu.Action action=item.action;
         switch(action) {
-        case START:case CONTINUE:runner.enter(action);break;
+        case START:case CONTINUE:
+            TitlePanel source=titlePanel;
+            GameRunner owner=runner;
+            owner.enter(action,()->runOnUiThread(()->{
+                if(source!=null&&source==titlePanel&&owner==runner&&!isDestroyed())source.entryFailed();
+            }));
+            break;
         case LOAD:showSlots(false);break;
         case SETTINGS:showSettings();break;
         case EXTRAS:openGallery(GalleryCatalog.Screen.OMAKE,0,0,-1);break;
         case EXIT:finish();break;
         case WEBSITE:
             try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(titleModel.website)));}
-            catch(android.content.ActivityNotFoundException e){notice("未找到浏览器");}break;
+            catch(android.content.ActivityNotFoundException e){notice(text(R.string.engine_systemnnn_host_browser_missing));}break;
         case MODE:openMenuMode(item.mode,GameRunner.Modal.TITLE);break;
         default:break;
         }
@@ -775,12 +883,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }else if(currentFrame!=null&&!currentFrame.optionsAllowed)return;
         if(controls!=null)controls.cancelClick();
         if(uiAssets!=null&&uiAssets.system.has("Menu1Button1FileName")){showOriginalMenu();return;}
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("游戏菜单")
-            .setItems(new String[]{"继续游戏","保存进度","读取存档","环境设置","回看台词","返回标题",fromTyn?"返回 TYN":"退出游戏"},(d,item) -> {
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_menu))
+            .setItems(new String[]{text(R.string.engine_systemnnn_host_continue_game),text(R.string.engine_systemnnn_host_save_progress),text(R.string.engine_systemnnn_host_load_save),text(R.string.engine_systemnnn_host_settings),text(R.string.engine_systemnnn_host_backlog),text(R.string.engine_systemnnn_host_title),fromTyn?text(R.string.engine_systemnnn_host_exit_to_tyn):text(R.string.engine_systemnnn_host_exit_game)},(d,item) -> {
                 systemClick();
                 switch(item){case 1:showSlots(true);break;case 2:showSlots(false);break;case 3:showSettings();break;
                 case 4:showBacklog();break;case 5:runner.returnToTitle();break;case 6:finish();break;default:break;}
-            }).setNegativeButton("关闭",dialogClick(null)).create();
+            }).setNegativeButton(text(R.string.engine_systemnnn_host_close),dialogClick(null)).create();
         showPanel(dialog);
         runner.suspendScriptAudio();
     }
@@ -1230,7 +1338,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         Bitmap baseImage=uiAssets.image(base);
         if(baseImage!=null)panel.picture(base,cfg.number("basePrintX",0),cfg.number("basePrintY",0),baseImage.getWidth(),baseImage.getHeight());
         String[] keys={"saveButton","loadButton","configButton","windowButton","messageSkipButton","backlogButton","autoModeButton","cancelButton","exitButton"};
-        String[] labels={"保存进度","读取存档","环境设定","隐藏对话框","快进","历史记录","自动播放","继续游戏","返回标题"};
+        String[] labels={text(R.string.engine_systemnnn_host_save_progress),text(R.string.engine_systemnnn_host_load_save),text(R.string.engine_systemnnn_host_settings),text(R.string.engine_systemnnn_host_hide_dialogue),text(R.string.engine_systemnnn_host_skip),text(R.string.engine_systemnnn_host_backlog),text(R.string.engine_systemnnn_host_auto),text(R.string.engine_systemnnn_host_continue_game),text(R.string.engine_systemnnn_host_title)};
         int[] ys={67,115,163,259,307,211,357,404,525};
         Runnable back=()->leaveOriginalPanel(cfg);
         Runnable[] actions={()->showSlots(true),()->showSlots(false),this::showSettings,
@@ -1288,17 +1396,17 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             showOriginalPanel(new GameSettingsPanel(this,uiAssets,preferences,runner,this::systemClick,back,width,height,runner.configMask(),takePanelWarmup()),back);return;
         }
         LinearLayout box=column();
-        TextView hint=label("修改会即时生效，并保留到下次启动。",14);hint.setPadding(0,0,0,dp(10));box.addView(hint);
-        volumeSetting(box,"背景音乐",PlayerSettings.MUSIC,settings.musicVolume);
-        volumeSetting(box,"音效",PlayerSettings.SOUND,settings.soundVolume);
-        volumeSetting(box,"角色语音",PlayerSettings.VOICE,settings.voiceVolume);
-        volumeSetting(box,"特效语音",PlayerSettings.EFFECT_VOICE,settings.effectVoiceVolume);
-        choiceSetting(box,"文字速度",PlayerSettings.TEXT_SPEED,new String[]{"慢","标准","快","立即"},settings.textSpeed,false);
-        choiceSetting(box,"自动播放速度",PlayerSettings.AUTO_SPEED,new String[]{"慢","标准","快"},settings.autoSpeed,false);
-        choiceSetting(box,"快进范围",PlayerSettings.SKIP_READ_ONLY,new String[]{"仅已读","全部文字"},settings.skipReadOnly?0:1,true);
+        TextView hint=label(text(R.string.engine_systemnnn_host_settings_hint),14);hint.setPadding(0,0,0,dp(10));box.addView(hint);
+        volumeSetting(box,text(R.string.engine_systemnnn_host_music),PlayerSettings.MUSIC,settings.musicVolume);
+        volumeSetting(box,text(R.string.engine_systemnnn_host_sound),PlayerSettings.SOUND,settings.soundVolume);
+        volumeSetting(box,text(R.string.engine_systemnnn_host_voice),PlayerSettings.VOICE,settings.voiceVolume);
+        volumeSetting(box,text(R.string.engine_systemnnn_host_effect_voice),PlayerSettings.EFFECT_VOICE,settings.effectVoiceVolume);
+        choiceSetting(box,text(R.string.engine_systemnnn_host_text_speed),PlayerSettings.TEXT_SPEED,new String[]{text(R.string.engine_systemnnn_host_slow),text(R.string.engine_systemnnn_host_normal),text(R.string.engine_systemnnn_host_fast),text(R.string.engine_systemnnn_host_instant)},settings.textSpeed,false);
+        choiceSetting(box,text(R.string.engine_systemnnn_host_auto_speed),PlayerSettings.AUTO_SPEED,new String[]{text(R.string.engine_systemnnn_host_slow),text(R.string.engine_systemnnn_host_normal),text(R.string.engine_systemnnn_host_fast)},settings.autoSpeed,false);
+        choiceSetting(box,text(R.string.engine_systemnnn_host_skip_range),PlayerSettings.SKIP_READ_ONLY,new String[]{text(R.string.engine_systemnnn_host_read_only),text(R.string.engine_systemnnn_host_all_text)},settings.skipReadOnly?0:1,true);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(box);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("环境设置").setView(scroll)
-            .setNeutralButton("阅读字号",null).setPositiveButton("完成",dialogClick(null)).create();
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_settings)).setView(scroll)
+            .setNeutralButton(text(R.string.engine_systemnnn_host_reading_size),null).setPositiveButton(text(R.string.engine_systemnnn_host_done),dialogClick(null)).create();
         showPanel(dialog);
         dialog.getButton(DialogInterface.BUTTON_NEUTRAL).setOnClickListener(v->showReadingSettings());
         if(dialog.getWindow()!=null)dialog.getWindow().setLayout(Math.min(dp(760),root.getWidth()-dp(32)),Math.max(dp(200),root.getHeight()-dp(32)));
@@ -1310,18 +1418,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         for(int i=0;i<sizes.length;i++){
             int size=sizes[i];
             labels[i]=size+"%";
-            if(size==PlayerSettings.DEFAULT_READING_SIZE)labels[i]=getString(R.string.engine_systemnnn_reading_default,labels[i]);
-            else if(size==100)labels[i]=getString(R.string.engine_systemnnn_reading_original,labels[i]);
+            if(size==PlayerSettings.DEFAULT_READING_SIZE)labels[i]=text(R.string.engine_systemnnn_reading_default,labels[i]);
+            else if(size==100)labels[i]=text(R.string.engine_systemnnn_reading_original,labels[i]);
             if(size==settings.readingSize)selected=i;
         }
-        showPanel(new AlertDialog.Builder(this).setTitle("阅读字号 · 剧情正文")
-            .setSingleChoiceItems(labels,selected,(d,i)->preferences.edit().putInt(PlayerSettings.READING_SIZE,sizes[i]).apply())
-            .setNeutralButton(R.string.engine_input_reset,(d,i)->preferences.edit().remove(PlayerSettings.READING_SIZE).apply())
-            .setPositiveButton("完成",null).create());
+        showPanel(new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_reading_title))
+            .setSingleChoiceItems(labels,selected,(d,i)->userPreferences.edit().putInt(PlayerSettings.READING_SIZE,sizes[i]).apply())
+            .setNeutralButton(text(R.string.engine_input_reset),(d,i)->userPreferences.edit().remove(PlayerSettings.READING_SIZE).apply())
+            .setPositiveButton(text(R.string.engine_systemnnn_host_done),null).create());
     }
     private void volumeSetting(LinearLayout box,String title,String key,int current) {
         TextView value=label(title+"  "+current+"%",15);box.addView(value);
-        SeekBar slider=new SeekBar(this);slider.setMax(100);slider.setProgress(current);slider.setContentDescription(title+"音量");slider.setSoundEffectsEnabled(false);
+        SeekBar slider=new SeekBar(this);slider.setMax(100);slider.setProgress(current);slider.setContentDescription(text(R.string.engine_systemnnn_host_volume_label,title));slider.setSoundEffectsEnabled(false);
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             public void onProgressChanged(SeekBar seek,int progress,boolean user){value.setText(title+"  "+progress+"%");if(user)preferences.edit().putInt(key,progress).apply();}
             public void onStartTrackingTouch(SeekBar seek){systemClick();}public void onStopTrackingTouch(SeekBar seek){}
@@ -1380,8 +1488,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             },saving?this::choosePcExport:this::choosePcSave,takePanelWarmup());showOriginalPanel(gameSlots,back);return;
         }
         slotRows=column();ScrollView scroll=new ScrollView(this);scroll.addView(slotRows);
-        AlertDialog.Builder slotDialog=new AlertDialog.Builder(this).setTitle(saving?"保存进度":"读取存档").setView(scroll).setNegativeButton("返回",dialogClick(null));
-        slotDialog.setNeutralButton(GameSlotsPanel.pcTransferLabel(saving),(dialog,which)->{
+        AlertDialog.Builder slotDialog=new AlertDialog.Builder(this).setTitle(saving?text(R.string.engine_systemnnn_host_save_progress):text(R.string.engine_systemnnn_host_load_save)).setView(scroll).setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick(null));
+        slotDialog.setNeutralButton(GameSlotsPanel.pcTransferLabel(this,saving),(dialog,which)->{
             if(saving)choosePcExport();else choosePcSave();
         });
         slotsDialog=slotDialog.create();
@@ -1392,21 +1500,31 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(runner==null||isDestroyed()||isFinishing())return;
         if(gameSlots!=null&&(gamePanel==gameSlots||preparingPanel==gameSlots)){gameSlots.entries(runner.slotEntries());return;}
         if(slotRows==null || slotsDialog==null || !slotsDialog.isShowing())return;slotRows.removeAllViews();
-        TextView hint=label(savingSlots?"选择一个槽位保存。自动存档由游戏维护。":"选择存档继续游戏。",14);hint.setPadding(0,0,0,dp(10));slotRows.addView(hint);
+        TextView hint=label(savingSlots?text(R.string.engine_systemnnn_host_save_hint):text(R.string.engine_systemnnn_host_load_hint),14);hint.setPadding(0,0,0,dp(10));slotRows.addView(hint);
         for(SaveSlots.Entry entry:runner.slotEntries()){
-            String detail=entry.corrupt?"存档无法读取":!entry.exists?"空槽位":DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(new Date(entry.savedAt))+
-                "\n"+entry.script+" · 第 "+entry.line+" 句"+
-                (entry.speaker.isEmpty()?"":"  ·  "+entry.speaker)+(entry.summary.isEmpty()?"":"\n"+entry.summary);
+            String detail=entry.corrupt?text(R.string.engine_systemnnn_host_save_corrupt):!entry.exists?text(R.string.engine_systemnnn_host_save_empty):DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT).format(new Date(entry.savedAt))+
+                "\n"+text(R.string.engine_systemnnn_host_save_location,entry.script,entry.line)+
+                (entry.speaker.isEmpty()?"":"  ·  "+entry.speaker)+(entry.displaySummary(this).isEmpty()?"":"\n"+entry.displaySummary(this));
             Button button=new Button(this);button.setAllCaps(false);button.setGravity(Gravity.START|Gravity.CENTER_VERTICAL);
-            button.setPadding(dp(14),dp(8),dp(14),dp(8));button.setText(entry.label()+"\n"+detail);
+            button.setPadding(dp(14),dp(8),dp(14),dp(8));button.setText(entry.label(this)+"\n"+detail);
             button.setEnabled(savingSlots?entry.slot!=SaveSlots.AUTO:entry.exists&&!entry.corrupt);
             button.setSoundEffectsEnabled(false);button.setOnClickListener(clicked(v -> {
-                if(savingSlots && entry.exists){AlertDialog confirm=new AlertDialog.Builder(this).setTitle("覆盖"+entry.label()+"？").setMessage(detail)
-                    .setNegativeButton("取消",dialogClick(null)).setPositiveButton("覆盖保存",dialogClick((d,which) -> runner.saveSlot(entry.slot))).create();showPanel(confirm);}
+                if(savingSlots && entry.exists){AlertDialog confirm=new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_overwrite_prompt,entry.label(this))).setMessage(detail)
+                    .setNegativeButton(text(R.string.engine_cancel),dialogClick(null)).setPositiveButton(text(R.string.engine_systemnnn_host_overwrite_save),dialogClick((d,which) -> runner.saveSlot(entry.slot))).create();showPanel(confirm);}
                 else if(savingSlots)runner.saveSlot(entry.slot);
                 else {runner.loadSlot(entry.slot);slotsDialog.dismiss();}
             }));slotRows.addView(button,new LinearLayout.LayoutParams(-1,-2));
         }
+    });}
+    @Override public void titleReturnCancelled(){runOnUiThread(()->{
+        if(isDestroyed()||isFinishing())return;
+        returningToTitle=false;
+        titlePrevious=null;
+        openGalleryAfterTitle=false;
+        optionalGalleryPrevious=null;
+        if(gamePanel instanceof GameSystemMenuPanel)gamePanel.cancelLeave();
+        else if(gamePanel!=null)closeOriginalPanel();
+        updateVisibility();
     });}
     @Override public void notice(String text) { runOnUiThread(() -> {
         if(!isDestroyed()) Toast.makeText(this,text,Toast.LENGTH_SHORT).show();
@@ -1415,17 +1533,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if (isDestroyed() || isFinishing()) return;
         if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
         if (text.contains("spt/sys.spt") && (text.contains("SPT header") || text.contains("SPTHEADER0") || text.contains("Record length"))) {
-            new AlertDialog.Builder(this).setTitle("未识别为受支持的 SystemNNN 脚本")
-                .setMessage("目录里的 spt/sys.spt 未通过格式校验。请确认游戏已经解压完整。")
-                .setNegativeButton("返回",dialogClick((d,w) -> finish())).setPositiveButton("选其他目录",dialogClick((d,w) -> {
+            new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_invalid_script_title))
+                .setMessage(text(R.string.engine_systemnnn_host_invalid_script_hint))
+                .setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick((d,w) -> finish())).setPositiveButton(text(R.string.engine_systemnnn_host_pick_other),dialogClick((d,w) -> {
                     startActivity(new Intent(this,PlayerActivity.class).setAction(Intent.ACTION_MAIN)); finish();
                 })).show(); return;
         }
-        new AlertDialog.Builder(this).setTitle("游戏运行中断").setMessage(text)
-            .setNegativeButton("返回 TYN",dialogClick((d,w) -> finish()))
-            .setPositiveButton(runner!=null&&!runner.initialized()?"重试读取":"从头开始",
+        new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_interrupted)).setMessage(text)
+            .setNegativeButton(text(R.string.engine_systemnnn_host_exit_to_tyn),dialogClick((d,w) -> finish()))
+            .setPositiveButton(runner!=null&&!runner.initialized()?text(R.string.engine_systemnnn_host_retry_load):text(R.string.engine_systemnnn_host_start_over),
                 dialogClick((d,w) -> {if(runner!=null)runner.restart();})).show();
     }); }
+    private String text(int resource,Object... arguments){return uiContext.getString(resource,arguments);}
     private int dp(int n) {return Math.round(n*getResources().getDisplayMetrics().density);}
     private TextView label(String s,int size) {
         TextView t=new TextView(this); t.setTextColor(Color.WHITE);
@@ -1440,7 +1559,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         TextView heading=label(title,22); heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD); box.addView(heading);
         TextView description=label(body,16); description.setPadding(0,dp(12),0,dp(12)); box.addView(description);
         if (action!=null) {Button b=new Button(this); b.setText(action);b.setSoundEffectsEnabled(false);b.setOnClickListener(clicked(listener)); box.addView(b);}
-        Button back=new Button(this); back.setText("返回");back.setSoundEffectsEnabled(false);back.setOnClickListener(clicked(v -> finish())); box.addView(back);
+        Button back=new Button(this); back.setText(text(R.string.engine_systemnnn_host_back));back.setSoundEffectsEnabled(false);back.setOnClickListener(clicked(v -> finish())); box.addView(back);
         root.addView(box,new FrameLayout.LayoutParams(-1,-1));
     }
     private void immersive() {
@@ -1462,7 +1581,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION:View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
         if(root!=null)root.requestApplyInsets();
     }
-    @Override public void onWindowFocusChanged(boolean focus) {super.onWindowFocusChanged(focus); if(focus) immersive();}
+    @Override public void onWindowFocusChanged(boolean focus) {
+        super.onWindowFocusChanged(focus);
+        if(focus){
+            immersive();
+            if(runner!=null)runner.windowFocused();
+        }
+    }
     @Override public boolean dispatchTouchEvent(MotionEvent event) {
         if(pcSaveBusy||returningToTitle||preparingPanel!=null)return true;
         int action=event.getActionMasked();
@@ -1495,6 +1620,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(x!=lastX||y!=lastY){lastX=x;lastY=y;runner.pointer(x,y);}
     }
     @Override public void onBackPressed() {
+        if(copyingGame){cancelGameCopy=true;return;}
         if(pcSaveBusy)return;
         panelWarmup=null;
         if(moviePlayback!=null){moviePlayback.skip();return;}
@@ -1529,11 +1655,19 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override protected void onPause() {foreground=false;if(gamePanel!=null)gamePanel.uiActive(false);statusActive(false); if(runner!=null) runner.active(false);
         if(moviePlayback!=null)moviePlayback.interrupted();super.onPause();}
     @Override protected void onDestroy() {
+        cancelGameCopy=true;
         ui.removeCallbacksAndMessages(null);
         discardPanelPreparation();
         if(preferences!=null)preferences.unregisterOnSharedPreferenceChangeListener(settingsListener);
+        if(userPreferences!=null)userPreferences.unregisterOnSharedPreferenceChangeListener(readingListener);
         for(AlertDialog dialog:new ArrayList<>(openedPanels))dialog.dismiss();
+        closePlayerTask();
         if(runner!=null){runner.close();runner=null;}super.onDestroy();
+    }
+    private void closePlayerTask(){
+        if(playerTask==null)return;
+        try{playerTask.close();}catch(IOException e){android.util.Log.w("SystemNNN","Unable to release player task",e);}
+        playerTask=null;
     }
     @Override public void onRequestPermissionsResult(int code,String[] perms,int[] grants) {
         super.onRequestPermissionsResult(code,perms,grants);

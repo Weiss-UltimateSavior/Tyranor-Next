@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="engine_systemnnn_ctl_menu">Menu</string>
+    <string name="engine_systemnnn_ctl_quick_save">Quick save</string>
+    <string name="engine_systemnnn_ctl_quick_load">Quick load</string>
+    <string name="engine_systemnnn_ctl_config">Settings</string>
+    <string name="engine_systemnnn_ctl_backlog">Backlog</string>
+    <string name="engine_systemnnn_ctl_save">Save game</string>
+    <string name="engine_systemnnn_ctl_load">Load game</string>
+    <string name="engine_systemnnn_ctl_auto">Auto advance</string>
+    <string name="engine_systemnnn_ctl_skip">Skip</string>
+    <string name="engine_systemnnn_ctl_hide">Hide interface</string>
+    <string name="engine_systemnnn_ctl_surname">Family name</string>
+    <string name="engine_systemnnn_ctl_given_name">Given name</string>
+    <string name="engine_systemnnn_ctl_name_input">Name entry</string>
+    <string name="engine_systemnnn_ctl_text_input">Text entry</string>
+    <string name="engine_systemnnn_ctl_text">Text</string>
+    <string name="engine_systemnnn_ctl_next">Next</string>
+    <string name="engine_systemnnn_ctl_previous">Previous</string>
+    <string name="engine_systemnnn_ctl_ok">OK</string>
+    <string name="engine_systemnnn_ctl_cancel">Cancel</string>
+    <string name="engine_systemnnn_ctl_input_composing">Confirm the keyboard suggestion first</string>
+    <string name="engine_systemnnn_ctl_input_empty">Enter some text</string>
+    <string name="engine_systemnnn_ctl_input_limit">Input exceeds %1$d bytes</string>
+    <string name="engine_systemnnn_ctl_input_encoding">Use characters supported by the game, within %1$d encoded bytes</string>
+    <string name="engine_systemnnn_ctl_input_halfwidth">This name field accepts only half-width characters, excluding #</string>
+    <string name="engine_systemnnn_ctl_input_fullwidth">This field accepts only full-width characters supported by the game</string>
+    <string name="engine_systemnnn_ctl_input_rejected">The game rejected this input</string>
+    <string name="engine_systemnnn_ctl_pc_export">Export PC save</string>
+    <string name="engine_systemnnn_ctl_pc_import">Load PC save</string>
+    <string name="engine_systemnnn_ctl_page_previous">Previous page</string>
+    <string name="engine_systemnnn_ctl_page_next">Next page</string>
+    <string name="engine_systemnnn_ctl_back_transfer">Back; long press for %1$s</string>
+    <string name="engine_systemnnn_ctl_page_count">Page %1$d of %2$d</string>
+    <string name="engine_systemnnn_ctl_overwrite">Overwrite save</string>
+    <string name="engine_systemnnn_ctl_cancel_overwrite">Cancel overwrite</string>
+    <string name="engine_systemnnn_ctl_slot_auto">Autosave</string>
+    <string name="engine_systemnnn_ctl_slot_quick">Quick save</string>
+    <string name="engine_systemnnn_ctl_slot_number">Save %1$s</string>
+    <string name="engine_systemnnn_ctl_slot_unreadable">Save cannot be read</string>
+    <string name="engine_systemnnn_ctl_slot_empty">Empty slot</string>
+    <string name="engine_systemnnn_ctl_slot_legacy">Legacy save</string>
+    <string name="engine_systemnnn_ctl_position">%1$s · Line %2$d</string>
+</resources>

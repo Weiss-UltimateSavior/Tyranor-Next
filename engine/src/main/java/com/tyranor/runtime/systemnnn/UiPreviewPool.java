@@ -67,6 +67,11 @@ final class UiPreviewPool {
             try{NativeUiPreview.surface(handle,surface);}
             finally{if(previous!=null)previous.release();}
         }
+        void retrySurface(){
+            long handle=handle();
+            // Rebind the existing producer to present the same, already primed frame.
+            if(handle!=0&&entry.surface!=null)NativeUiPreview.surface(handle,entry.surface);
+        }
         void release(boolean reusable){
             if(entry.lease!=this)return;
             try{if(entry.surface!=null)surface(null);}

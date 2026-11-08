@@ -12,7 +12,13 @@ import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 /** SystemNNN shares sav with PC and the standalone player, so sav itself must stay in place. */
-internal class SystemNnnSaveStore(private val game: File, val directory: File) {
+internal class SystemNnnSaveStore(
+    private val game: File,
+    val directory: File,
+    private val moveSave: (File, File) -> Unit = { source, target ->
+        Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+    },
+) {
     private val migration = File(directory, SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
     // The released standalone player rejects unknown entries in this stage before opening saves.
     private val restore = File(migration, SystemNnnHost.SAVE_RESTORE_DIRECTORY)
@@ -99,6 +105,10 @@ internal class SystemNnnSaveStore(private val game: File, val directory: File) {
         if (Files.notExists(migration.toPath(), NOFOLLOW_LINKS)) return
         SavePathSafety.requirePlainDirectoryEntry(migration)
         if (Files.notExists(restore.toPath(), NOFOLLOW_LINKS)) {
+            if (migration.listFiles()?.isEmpty() == true) {
+                Files.delete(migration.toPath())
+                return
+            }
             // An existing legacy migration must be completed by the player.
             if (!allowLegacyMigration) throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             return
@@ -132,7 +142,7 @@ internal class SystemNnnSaveStore(private val game: File, val directory: File) {
             val temporary = File.createTempFile("write-", ".tmp", restore)
             try {
                 copySynced(file, temporary)
-                Files.move(temporary.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+                moveSave(temporary, target)
             } finally {
                 Files.deleteIfExists(temporary.toPath())
             }

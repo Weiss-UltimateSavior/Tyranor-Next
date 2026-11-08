@@ -6,7 +6,7 @@ import java.nio.ByteBuffer;
 final class NativeGame {
     static { System.loadLibrary("systemnnn"); }
     static final int RUNNING=0, DRAW=1, OVERLAP=2, DIALOGUE=3, CHOICE=4, END=5, TITLE=6, MOVIE=7, PLACE=8, MODAL=9;
-    static final int META_SIZE=9, CLOCK_DATE=7, CLOCK_MILLISECONDS=8;
+    static final int META_SIZE=10, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9;
     static final int SELECT_PLACE_MODE=22,SELECT_PLACE2_MODE=35;
     static native long open(byte[] path, int sampleRate);
     static native long openWithRuntime(byte[] path,int sampleRate,long contextToken);

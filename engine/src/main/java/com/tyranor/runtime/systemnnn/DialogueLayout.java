@@ -36,6 +36,18 @@ final class DialogueLayout {
         Message(String name,String body,boolean nameWindow){this.name=name;this.body=body;this.nameWindow=nameWindow;}
     }
     static int clamp(int value,int low,int high){return Math.max(low,Math.min(value,high));}
+    static String cursorName(Map<String,String> config,int kind,int scriptVariant,int configVariant){
+        String key="filenameCursor"+(kind+1);
+        String base=value(config,key,value(config,"filenameCursor1","mes_cur"));
+        int scripts=clamp(number(config,"cursorNumberScript",1),1,64);
+        int settings=clamp(number(config,"cursorNumberConfig",1),1,64);
+        if(scripts==1&&settings==1)return base;
+        int script=clamp(scriptVariant,0,scripts-1)+1,setting=clamp(configVariant,0,settings-1)+1;
+        boolean both=scripts>1&&settings>1;
+        // PC variants inherit the first script/config cell after its override is read.
+        base=value(config,key+(both?"_1_1":"_1"),base);
+        return value(config,key+"_"+(both?script+"_"+setting:Integer.toString(scripts>1?script:setting)),base);
+    }
     static String value(Map<String,String> values,String key,String fallback){
         String v=values.get(key.toLowerCase(Locale.ROOT));return v==null||v.isEmpty()?fallback:v;
     }

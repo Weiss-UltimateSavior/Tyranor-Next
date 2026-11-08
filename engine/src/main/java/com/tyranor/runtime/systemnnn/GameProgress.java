@@ -164,7 +164,7 @@ final class GameProgress {
             writeExtension(state,digest.digest(),previous);
             file.finishWrite(raw);
             raw=null;
-            verifyCommitted(file);
+            GameSavePaths.verifyCommitted(file.getBaseFile());
         }catch(IOException|RuntimeException e){
             if(raw!=null)file.failWrite(raw);
             throw e;
@@ -206,17 +206,11 @@ final class GameProgress {
             raw.getFD().sync();
             extension.finishWrite(raw);
             raw=null;
-            verifyCommitted(extension);
+            GameSavePaths.verifyCommitted(extension.getBaseFile());
         }catch(IOException|RuntimeException e){
             if(raw!=null)extension.failWrite(raw);
             throw e;
         }
-    }
-    private static void verifyCommitted(AtomicFile target) throws IOException {
-        // Android's finishWrite reports rename failures through logging.
-        String path=target.getBaseFile().getPath();
-        if(!target.getBaseFile().isFile()||new File(path+".new").exists()||new File(path+".bak").exists())
-            throw new IOException("Global progress commit did not finish: "+target.getBaseFile().getName());
     }
     private static void writeExtensionRecord(DataOutputStream out,byte[] fingerprint,State state) throws IOException {
         if(state.text.length!=TEXT_FIELDS||state.optional!=null&&state.optional.length!=OPTION_WORDS)

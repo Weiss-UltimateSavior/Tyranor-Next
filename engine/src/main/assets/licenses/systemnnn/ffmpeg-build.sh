@@ -10,6 +10,9 @@ case "$linkage" in
     static) library_options=(--disable-shared --enable-static) ;;
     *) printf 'Expected FFmpeg linkage shared or static, got %s\n' "$linkage" >&2; exit 2 ;;
 esac
+ndk=$(CDPATH= cd -- "$ndk" && pwd -P)
+mkdir -p -- "$prefix"
+prefix=$(CDPATH= cd -- "$prefix" && pwd -P)
 source_dir="$prefix/source"
 build_dir="$prefix/obj"
 if [[ ! -f "$source_dir/configure" ]]; then

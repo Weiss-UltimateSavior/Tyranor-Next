@@ -13,6 +13,7 @@ import java.util.function.Consumer;
 
 /** A view borrows a decorative VM without stepping or replacing the story session. */
 final class GameUiBackground extends TextureView implements TextureView.SurfaceTextureListener {
+    private static final int FIRST_FRAME_RETRY_MS=100,MAX_FIRST_FRAME_RETRIES=4;
     private final UiPreviewPool pool;
     private final Handler tasks;
     private final Handler main=new Handler(Looper.getMainLooper());
@@ -22,8 +23,9 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
     private volatile SurfaceTexture requestedTexture;
     private SurfaceTexture connectedTexture;
     private long deadline;
-    private volatile boolean closed;
-    private boolean active=true,held=true,frameReady;
+    private volatile boolean closed,active=true,frameReady;
+    private boolean held=true;
+    private int firstFrameRetries;
     private boolean chartFramePending;
     private boolean chartCompositionWarning;
     private int mouseX=-1,mouseY=-1;
@@ -115,9 +117,15 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
     void hold(boolean value){tasks.post(()->{if(held!=value){held=value;schedule();}});}
     private void schedule(){
         tasks.removeCallbacks(ticker);
-        if(active&&handle()!=0&&(chart!=null||connectedTexture!=null)&&!held){
+        tasks.removeCallbacks(retryFirstFrame);
+        boolean connected=connectedTexture!=null&&connectedTexture==requestedTexture;
+        boolean usable=active&&handle()!=0&&(chart!=null||connected);
+        if(usable&&!held&&(chart!=null||frameReady)){
             deadline=SystemClock.uptimeMillis();tasks.post(ticker);
-        }else{clicked=false;pointerHeld=false;}
+        }else{
+            clicked=false;pointerHeld=false;
+            if(usable&&connected&&!frameReady)tasks.postDelayed(retryFirstFrame,FIRST_FRAME_RETRY_MS);
+        }
     }
     @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
         requestedTexture=texture;frameReady=false;
@@ -125,13 +133,34 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
         if(!tasks.post(()->{
             if(requestedTexture!=texture||handle()==0){surface.release();return;}
             try{
-                lease.surface(surface);connectedTexture=texture;schedule();
+                lease.surface(surface);connectedTexture=texture;firstFrameRetries=0;schedule();
             }catch(RuntimeException|LinkageError e){failed(e);}
         }))surface.release();
     }
+    private final Runnable retryFirstFrame=new Runnable(){public void run(){
+        SurfaceTexture texture=connectedTexture;
+        if(!active||frameReady||texture==null||texture!=requestedTexture||handle()==0)return;
+        if(firstFrameRetries>=MAX_FIRST_FRAME_RETRIES){
+            main.post(()->{
+                if(closed||!active||frameReady||texture!=requestedTexture)return;
+                closed=true;
+                tasks.post(()->release(false));
+                showFailure(new IllegalStateException("No first frame from menu background surface"));
+            });
+            return;
+        }
+        try{
+            firstFrameRetries++;
+            lease.retrySurface();
+            tasks.postDelayed(this,FIRST_FRAME_RETRY_MS);
+        }catch(RuntimeException|LinkageError e){
+            if(texture==requestedTexture)failed(e);
+        }
+    }};
     private final Runnable ticker=new Runnable(){public void run(){
         long handle=handle();
-        if(handle==0||!active||held||chart==null&&connectedTexture==null)return;
+        if(handle==0||!active||held||chart==null&&
+            (!frameReady||connectedTexture==null||connectedTexture!=requestedTexture))return;
         long now=SystemClock.uptimeMillis(),late=Math.max(0,now-deadline);
         int steps=(int)Math.min(maxSteps,1+late/frameMs);
         // Discard debt beyond the game's catch-up limit. A later pause starts a new clock.
@@ -145,14 +174,16 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
     }};
     private void failed(Throwable e){
         closed=true;release(false);
+        main.post(()->showFailure(e));
+    }
+    private void showFailure(Throwable e){
         Log.w("SystemNNN","Unable to run menu background script",e);
-        main.post(()->{
-            setVisibility(GONE);
-            if(getParent() instanceof GameUiPanel)((GameUiPanel)getParent()).backgroundFailed(e);
-        });
+        setVisibility(GONE);
+        if(getParent() instanceof GameUiPanel)((GameUiPanel)getParent()).backgroundFailed(this,e);
     }
     private void release(boolean reusable){
         tasks.removeCallbacks(ticker);
+        tasks.removeCallbacks(retryFirstFrame);
         if(lease!=null){lease.release(reusable);lease=null;}
         connectedTexture=null;
     }
@@ -177,6 +208,7 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
     @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){
         if(closed||requestedTexture!=texture||frameReady)return;
         frameReady=true;
+        tasks.post(this::schedule);
         notifyFrameReady();
     }
     private void notifyFrameReady(){if(getParent() instanceof GameUiPanel)((GameUiPanel)getParent()).backgroundReady();}

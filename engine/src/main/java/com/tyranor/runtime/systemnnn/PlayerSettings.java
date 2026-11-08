@@ -2,6 +2,9 @@ package com.tyranor.runtime.systemnnn;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 /** Immutable settings snapshot shared by the UI, game worker and audio mixer. */
 final class PlayerSettings {
@@ -25,11 +28,15 @@ final class PlayerSettings {
     static SharedPreferences preferences(Context context) {
         return context.getSharedPreferences("systemnnn_player",Context.MODE_PRIVATE);
     }
+    static SharedPreferences displayPreferences(Context context,File game) {
+        String id=UUID.nameUUIDFromBytes(game.getPath().getBytes(StandardCharsets.UTF_8)).toString();
+        return context.getSharedPreferences("systemnnn_display_"+id,Context.MODE_PRIVATE);
+    }
     static PlayerSettings defaults() { return new PlayerSettings(80,80,80,80,1,1,DEFAULT_READING_SIZE,true,100,0,true,false); }
-    static PlayerSettings read(SharedPreferences preferences) {
+    static PlayerSettings read(SharedPreferences preferences,SharedPreferences userPreferences) {
         return new PlayerSettings(preferences.getInt(MUSIC,80),preferences.getInt(SOUND,80),
             preferences.getInt(VOICE,80),preferences.getInt(EFFECT_VOICE,80),
-            preferences.getInt(TEXT_SPEED,1),preferences.getInt(AUTO_SPEED,1),readingSize(preferences),
+            preferences.getInt(TEXT_SPEED,1),preferences.getInt(AUTO_SPEED,1),readingSize(userPreferences),
             preferences.getBoolean(SKIP_READ_ONLY,true),preferences.getInt("windowOpacity",100),
             preferences.getInt("messageWindowIndex",0),preferences.getBoolean("fullscreen",true),preferences.getBoolean("changeReadColor",false));
     }

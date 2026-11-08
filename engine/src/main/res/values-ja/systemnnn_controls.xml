@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="engine_systemnnn_ctl_menu">メニュー</string>
+    <string name="engine_systemnnn_ctl_quick_save">クイックセーブ</string>
+    <string name="engine_systemnnn_ctl_quick_load">クイックロード</string>
+    <string name="engine_systemnnn_ctl_config">環境設定</string>
+    <string name="engine_systemnnn_ctl_backlog">バックログ</string>
+    <string name="engine_systemnnn_ctl_save">セーブ</string>
+    <string name="engine_systemnnn_ctl_load">ロード</string>
+    <string name="engine_systemnnn_ctl_auto">オート再生</string>
+    <string name="engine_systemnnn_ctl_skip">スキップ</string>
+    <string name="engine_systemnnn_ctl_hide">画面表示を隠す</string>
+    <string name="engine_systemnnn_ctl_surname">姓</string>
+    <string name="engine_systemnnn_ctl_given_name">名</string>
+    <string name="engine_systemnnn_ctl_name_input">名前入力</string>
+    <string name="engine_systemnnn_ctl_text_input">文字入力</string>
+    <string name="engine_systemnnn_ctl_text">文字</string>
+    <string name="engine_systemnnn_ctl_next">次へ</string>
+    <string name="engine_systemnnn_ctl_previous">前へ</string>
+    <string name="engine_systemnnn_ctl_ok">決定</string>
+    <string name="engine_systemnnn_ctl_cancel">キャンセル</string>
+    <string name="engine_systemnnn_ctl_input_composing">先にキーボードの変換候補を確定してください</string>
+    <string name="engine_systemnnn_ctl_input_empty">文字を入力してください</string>
+    <string name="engine_systemnnn_ctl_input_limit">入力が %1$d バイトを超えています</string>
+    <string name="engine_systemnnn_ctl_input_encoding">ゲームで使える文字を、エンコード後 %1$d バイト以内で入力してください</string>
+    <string name="engine_systemnnn_ctl_input_halfwidth">この名前欄には # を除く半角文字のみ入力できます</string>
+    <string name="engine_systemnnn_ctl_input_fullwidth">この欄にはゲームで使える全角文字のみ入力できます</string>
+    <string name="engine_systemnnn_ctl_input_rejected">ゲームが入力を受け付けませんでした</string>
+    <string name="engine_systemnnn_ctl_pc_export">PC セーブを書き出す</string>
+    <string name="engine_systemnnn_ctl_pc_import">PC セーブを読み込む</string>
+    <string name="engine_systemnnn_ctl_page_previous">前のページ</string>
+    <string name="engine_systemnnn_ctl_page_next">次のページ</string>
+    <string name="engine_systemnnn_ctl_back_transfer">戻る。長押しで「%1$s」</string>
+    <string name="engine_systemnnn_ctl_page_count">%2$d ページ中 %1$d ページ</string>
+    <string name="engine_systemnnn_ctl_overwrite">上書きセーブ</string>
+    <string name="engine_systemnnn_ctl_cancel_overwrite">上書きをキャンセル</string>
+    <string name="engine_systemnnn_ctl_slot_auto">オートセーブ</string>
+    <string name="engine_systemnnn_ctl_slot_quick">クイックセーブ</string>
+    <string name="engine_systemnnn_ctl_slot_number">セーブ %1$s</string>
+    <string name="engine_systemnnn_ctl_slot_unreadable">セーブを読み込めません</string>
+    <string name="engine_systemnnn_ctl_slot_empty">空きスロット</string>
+    <string name="engine_systemnnn_ctl_slot_legacy">旧形式のセーブ</string>
+    <string name="engine_systemnnn_ctl_position">%1$s · セリフ %2$d</string>
+</resources>
