@@ -6,6 +6,8 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -13,6 +15,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -65,12 +68,8 @@ private val SidePanelWidth = 250.dp
 /** 面板内条目之间的统一纵向间距（与弹窗内 AppNavItem 列表一致）。 */
 private val SidePanelItemSpacing = 8.dp
 
-/** 面板与屏幕左边缘的间距。 */
-private val SidePanelStartMargin = 10.dp
-
-/** 面板与屏幕上、下边缘的间距（上比下多 10dp）。 */
-private val SidePanelTopMargin = 35.dp
-private val SidePanelBottomMargin = 25.dp
+/** 面板与屏幕上、下边缘的间距（上下等距，保证面板垂直居中）。 */
+private val SidePanelVerticalMargin = 30.dp
 
 /** 右滑识别区起点内缩（与屏幕左缘留出的距离）。 */
 private val SidePanelSwipeStartInset = 5.dp
@@ -88,8 +87,8 @@ private val SidePanelSwipeThreshold = 40.dp
  * 应用侧边栏（空白骨架 + 顶部标题）：主界面四大页面通过**左缘右滑**唤出，自左侧滑入的浮动面板。
  *
  * 几何与材质约定：
- * - 四边圆角（[AppComponentShape]）；与屏幕边缘间距：左 [SidePanelStartMargin]、
- *   上 [SidePanelTopMargin] / 下 [SidePanelBottomMargin]，右侧为内边不设间距；宽度固定 [SidePanelWidth]；
+ * - 四边圆角（[AppComponentShape]）；水平、垂直均居中：上下各留 [SidePanelVerticalMargin]
+ *   （同时作为面板最大高度的预留），左右留白由居中平分；宽度固定 [SidePanelWidth]；
  * - 用 [Dialog] 独立窗口实现（`decorFitsSystemWindows = false` 的全屏窗口）：侧边栏需要盖住
  *   整窗（含状态栏、底部导航栏与平板侧栏），并与 [AppAlertDialog] 共用
  *   「遮罩点击 / 返回键关闭 + 进出动画」宿主；
@@ -97,6 +96,8 @@ private val SidePanelSwipeThreshold = 40.dp
  * - 顶部固定标题（[R.string.side_panel_title]，水平居中），下方 [content] 为功能条目区：
  *   条目之间统一加 [SidePanelItemSpacing] 纵向间距（调用方不要自加外边距）；条目仍必须
  *   使用 AppNavItem 等统一组件（弹窗内传 `DialogItemSurface`）。
+ * - 面板高度随内容自适应（不再强制满高）；条目总高超过可用高度时，仅条目区滚动，
+ *   标题保持固定，横屏/小高度窗口下不会出现条目被截断且无法滑动的情况。
  */
 @Composable
 internal fun AppSidePanel(
@@ -129,64 +130,72 @@ internal fun AppSidePanel(
     ) {
         // 遮罩：与 AppAlertDialog 使用同一档不透明度
         val scrimAlpha = 0.5f
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = scrimAlpha * dimAlpha.value))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = { dismiss() },
-                ),
-        ) {
-            Card(
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            // 水平居中后面板左缘到屏幕左缘的距离：滑出动画据此把面板完全移出屏幕
+            val panelLeft = ((maxWidth - SidePanelWidth) / 2).coerceAtLeast(0.dp)
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .fillMaxHeight()
-                    .padding(
-                        start = SidePanelStartMargin,
-                        top = SidePanelTopMargin,
-                        bottom = SidePanelBottomMargin,
-                    )
-                    .width(SidePanelWidth)
-                    // 滑入/滑出：位移含面板本体与左侧留白，保证收起时完全离屏
-                    .graphicsLayer {
-                        translationX = -slideFraction.value * (size.width + SidePanelStartMargin.toPx())
-                    }
-                    // 消费面板区域点击，避免穿透到遮罩
-                    .pointerInput(Unit) { detectTapGestures { } }
-                    .glassBorder(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = when {
-                        AppThemeColors.isGlass -> GlassPanel
-                        AppThemeColors.isMilkGlass -> Color.Transparent
-                        else -> NavWhite
-                    },
-                    contentColor = TextColor,
-                ),
-                shape = AppComponentShape,
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = scrimAlpha * dimAlpha.value))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { dismiss() },
+                    ),
             ) {
-                Box(Modifier.fillMaxSize().clip(AppComponentShape)) {
-                    if (AppThemeColors.isMilkGlass) {
-                        MilkGlassPanelBackground(Modifier.matchParentSize())
-                    }
-                // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
-                    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                        Text(
-                            text = stringResource(R.string.side_panel_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 18.dp, bottom = 10.dp),
+                Card(
+                    modifier = Modifier
+                        // 水平+垂直居中：面板高度随内容收缩（不再强制满高），超出可用高度时由条目区滚动
+                        .align(Alignment.Center)
+                        .padding(
+                            top = SidePanelVerticalMargin,
+                            bottom = SidePanelVerticalMargin,
                         )
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
-                        ) {
-                            content()
+                        .width(SidePanelWidth)
+                        // 滑入/滑出：位移含面板本体与居中后的左侧留白，保证收起时完全离屏
+                        .graphicsLayer {
+                            translationX = -slideFraction.value * (size.width + panelLeft.toPx())
+                        }
+                        // 消费面板区域点击，避免穿透到遮罩
+                        .pointerInput(Unit) { detectTapGestures { } }
+                        .glassBorder(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = when {
+                            AppThemeColors.isGlass -> GlassPanel
+                            AppThemeColors.isMilkGlass -> Color.Transparent
+                            else -> NavWhite
+                        },
+                        contentColor = TextColor,
+                    ),
+                    shape = AppComponentShape,
+                ) {
+                    Box(Modifier.fillMaxWidth().clip(AppComponentShape)) {
+                        if (AppThemeColors.isMilkGlass) {
+                            MilkGlassPanelBackground(Modifier.matchParentSize())
+                        }
+                        // 顶部标题（水平居中）+ 功能条目区（条目之间统一间距）
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                            Text(
+                                text = stringResource(R.string.side_panel_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 18.dp, bottom = 10.dp),
+                            )
+                            // 标题固定，条目区在剩余高度内滚动：横屏/小高度窗口下列表不再被卡片圆角截断
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .weight(1f, fill = false)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(bottom = 14.dp),
+                                verticalArrangement = Arrangement.spacedBy(SidePanelItemSpacing),
+                            ) {
+                                content()
+                            }
                         }
                     }
                 }
