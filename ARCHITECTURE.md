@@ -51,6 +51,8 @@ flowchart TD
 
 数据写入链为 UI 命令队列 → [GameLibraryFacade](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt) 缓存与修订号 → [GameLibraryRepository](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt) 单线程 FIFO + mutex → Room。封面更新只修改对应字段；一致性搜索先等待已排队写入，避免旧结果覆盖新状态。
 
+`app_settings` 及引导恢复快照由主进程持有写入权；子进程只读安装证据，不提交自身缓存的整张偏好图。首次判定未可靠保存时，普通设置与原始判定在 `OnboardingPreferences` 同一 monitor、同一 Editor 中更新；单游戏覆盖冷读在建库前复用该门控，返回不缓存的无覆盖并允许重试。根目录缓存写失败后失效；冷读在数据库结果上按顺序重放在途的幂等增删，形成完整的已接受目录视图并保留即时扫描可见性，不缓存原始中间快照。后续增删仍进入同一 FIFO，最终完成时仍失效的视图由修订号触发重读。
+
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 
 Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并从镜像修复；v2→v3 通过显式 `Migration(2,3)` 新增 `games.runtime_module_package` 列及索引，schema v3 的 `3.json` 已导出。后续版本必须显式注册 `Migration`，不能扩大全局破坏性回退。当前数据库、加密凭据、存档同步状态与备份边界统一见 [持久化数据清单](docs/应用持久化数据清单.md)；清单分别说明 v1 破坏性重建与 v2→v3 显式迁移；专题验收记录仍只对各自标注的版本有效。

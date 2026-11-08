@@ -709,3 +709,96 @@ GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = 
 | 上游玻璃表面去重 | 已整合，保留现有整卡按压 | `ui/settings/GraphicsFilterPicker.kt:47`；`ui/settings/PerGameSettingsScreen.kt:1550` | 父分组与子节点让位调用链复核，构建通过；实际主题/录屏未执行。 |
 | CR4-1 至 CR4-8 | 前一提交修复保留 | 上一节完整修复清单 | 合并后再次完整验证无新增失败。 |
 | CR4-9 | 仍未实现，低级非阻塞测试增强 | `ui/game/MotionCoverSearchDialogDeviceTest.kt:122`（androidTest） | 理由与验证边界见上一节，不标为已修复或已执行。 |
+
+
+---
+
+## 第五轮 CodeRabbit 修复（2026-11-08）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `744b95962c7c36ad96e3b13e86a6dd26ecb9a690`，本节候选由包含本节的提交识别；最初审查基线仍为上游 c65e3c55。本节列出相对父提交的全部已跟踪修改、未跟踪源码及本节记录，共20个文件、+1410/−71。初始74文件清单及历轮记录保持，不倒填历史快照。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `ARCHITECTURE.md` | 2 | 0 |
+| `CHANGELOG.md` | 1 | 0 |
+| `SPEC.md` | 2 | 0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/game/MotionArtemisRetryDeviceTest.kt` | 140 | 0 |
+| `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt` | 199 | 1 |
+| `app/src/main/java/com/tyranor/next/TyranorNextApplication.kt` | 1 | 0 |
+| `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt` | 65 | 14 |
+| `app/src/main/java/com/tyranor/next/core/game/storage/GameOverridesRepository.kt` | 3 | 1 |
+| `app/src/main/java/com/tyranor/next/core/process/AppProcess.kt` | 36 | 8 |
+| `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt` | 49 | 38 |
+| `app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt` | 40 | 3 |
+| `app/src/main/java/com/tyranor/next/core/settings/PrefsRenameMigration.kt` | 1 | 0 |
+| `app/src/test/java/android/app/OnboardingActivityManager.java` | 22 | 0 |
+| `app/src/test/java/android/net/RootsTestUri.java` | 38 | 0 |
+| `app/src/test/java/android/os/Process.java` | 57 | 0 |
+| `app/src/test/java/android/util/Log.java` | 90 | 0 |
+| `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt` | 367 | 0 |
+| `app/src/test/java/com/tyranor/next/core/process/AppProcessTest.kt` | 47 | 0 |
+| `app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt` | 157 | 6 |
+| `docs/reviews/motion-v2-review.md` | 93 | 0 |
+
+已执行验证：
+
+- `./gradlew.bat :app:compileReleaseKotlin` → 最终冻结源码通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 最终2,007项、43失败（app 27 / engine 16）、22跳过；失败ID集合与已实际跑过的c65e3c55基线、744b9596父轮完全一致，新增失败0。此轮新增16项全部通过；OnboardingPreferencesTest 21/21、GameLibraryFacadeRootsTest 9/9、AppProcessTest 3/3。本轮复用了原始基线实跑记录，没有再跑基线checkout。
+- 同一完整测试命令首轮出现57失败：新增14项来自未模拟的Android进程/日志API及其异步污染。只在app测试源集中补显式平台scope后重跑，恢复原43项；没有改变生产API、Gradle默认值、依赖或旧测试断言。随后仅修正测试镜像任务清理，再次完整重跑仍为上述2,007/43/22；roots stderr中意外DAO调用与镜像写错误均为0。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出1；29 Error / 316 Warning / 10 Hint，Error的id+message集合与原始基线一致，无新增。未把既有lint失败记为通过。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 通过。封面绑定成功与Artemis取消后重试各两档用例编译通过，未执行设备。全部构建使用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。
+- `git -c core.autocrlf=false diff --check`、变更文件UTF-8无BOM/LF检查 → 通过。49个保护导航/整个MainScreen/滑条开关/motion工具集/窗口资源/baseline profile/构建版本文件与父提交逐字比较，无差异。
+- `gh pr view 150 --repo Weiss-UltimateSavior/Tyranor-Next --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup` → 本轮开始时父head 744b9596为MERGEABLE/CLEAN、6项SUCCESS；这些是父提交结果，不算新候选通过。最终远端CI/CodeRabbit以PR最新head的重新计算为准。
+- `adb devices -l` → 本轮最后检查无已连接设备；没有安装包、发送触摸、运行instrumentation/录屏/Perfetto或修改系统设置，未操作正式安装。
+- 未执行：本轮设备用例、真实Compose saver恢复及窗口断言、真机录屏逐帧、真实跨进程设置竞争/磁盘故障/SQLite恢复、全部主题/深浅色、平板/折叠屏/横屏、低端机、实际游戏启动/封面/存档、性能及baseline profile收益。之前的设备证据不作为本轮通过。
+
+### 结论摘要
+
+已核对[CodeRabbit review 5817129043](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5817129043)的四条inline和一条unverified additional，并补齐上一轮CR4-9的成功绑定设备覆盖建议。确认成立的存储/多进程问题已修复，两条设备测试建议已实现并编译；设备运行仍未执行。当前本地未确认剩余高、中级问题，可推送现有PR继续远端审核；此结论不代表未执行的设备矩阵已通过。
+
+五个未参与实现的agent分别独立复审逻辑、架构、健壮性、回归和规范，不相互传递结论；主agent逐条回源码核对。独立审查揭示的第三次根目录修改与即时扫描窗口均纳入CR5-1修复。最终又由一个新的独立agent复审修复本身，并补审最后的平台夹具和任务清理。生产UI、视觉、轨迹、弹簧、时长和节奏没有本轮修改；普通档沿用相同缺陷修复，滑条例外、白雾刻度决定与根Miuix浮层宿主保持。
+
+### 问题清单
+
+| No. | 级别 | 问题与可核对证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR5-1 | 中 | 根目录写失败不清缓存；初始化不可用被当真空；A失败/B在途时，中间空读和后续C变更还会遮住B或使新增目录当次自动扫描跳过。 | 已区分不可用与真空、失败失效并通知；冷读按FIFO重放全部在途幂等增删，保留完整的即时扫描视图和正常乐观行为。 | `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt:54`、`:284`、`:340`、`:367`；调用链 `app/src/main/java/com/tyranor/next/ui/game/GameScreen.kt:285`、`app/src/main/java/com/tyranor/next/ui/main/MainLibraryViewModel.kt:284`、`app/src/main/java/com/tyranor/next/core/game/scan/EngineScanner.kt:87` |
+| CR5-2 | 中 | 首次marker和独立快照均失败后，普通setter仍可单独落盘扫描深度等键，重启被当作旧安装。 | 已把原判定与每次普通设置放到同一个Editor事务，并与初始化/完成共用monitor；不再remove+apply删除失败commit留下的原marker。 | `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt:355`；`app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt:55`、`:115` |
+| CR5-3 | 中 | 引擎子进程prepare会提交旧app_settings整map，覆盖主进程新设置，或清理主进程恢复快照。 | 已限制主进程写入与清理，子进程只读证据；API26/27缺进程列表时读取自身NUL截止cmdline，未知写入身份保持禁止。 | `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt:24`、`:355`、`:367`；`app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt:29`；`app/src/main/java/com/tyranor/next/core/process/AppProcess.kt:16` |
+| CR5-4 | 中，条件性防御 | 有效单游戏入口可经PerGameSettingsStore→GameOverridesRepository直接到DB，双失败时新IOException向UI传播；“普通主界面必崩”这一更广说法未获源码证实。 | 已在override冷读建库前复用安装gate，返回未缓存无覆盖，后续实际读继续重试；不改DB错误协议。 | `app/src/main/java/com/tyranor/next/core/game/storage/GameOverridesRepository.kt:101`；`app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt:207` |
+| CR5-5 | 低，测试增强 | 旧JVM测试直接finish，缺真实Artemis确认关闭后同抽屉再次启动的集成覆盖。 | 已补两档真实GameActionsSheet→确认→Back→窗口根移除→同抽屉重试；不接受补丁、不启动游戏。 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionArtemisRetryDeviceTest.kt:46` |
+| CR5-6 / CR4-9 | 低，测试增强 | 旧封面测试缺成功绑定时在onGameUpdated内、dispose前检查窗口释放。 | 已补两档生产saver恢复候选和本地合成JPEG缓存，从实际卡片点击进入真实bind链；回调内检查attached、NOT_TOUCHABLE、dim0。 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt:73`、`:130` |
+
+### 重点问题说明
+
+**CR5-1.【中】失败后队列与立即扫描。** 根变更在入原Repository队列前登记独立身份的PendingRootChange，finally精确移除同一对象；缓存锁保护登记、查询重放与移除。A失败使缓存失效后，冷读以DB结果为基础按顺序重放仍在途的B及后续增删。即使查询已看到B提交而finally尚未移除，幂等重放仍正确。save/remove基于完整投影视图判断重复并发布乐观缓存；未发生后续变更而视图仍失效时，队列最后完成再发布修订号。不可用冷读返回null，不安排未保存根写或缓存真空。
+
+没有采用“失败后所有新增根一律不缓存”的中间方案：GameScreen保存后立即请求扫描，ViewModel和EngineScanner会读取roots，仅靠最终rootsRevision不会重触发扫描。最终方案同时保留在途B与新C的即时可见性。四项新增测试驱动真实Facade/Repository FIFO与失败回调，覆盖A失败后新增C、删除在途B、重加在途删除B、正常全成功；仅Room事务协议与DAO由测试替身承担。另五项分别是不可用入口与缓存事件模型，均不是SQLite集成验收。
+
+**CR5-2/3.【中】原安装判定与写入所有权。** 普通setter先核对主进程，必要时重试原判定，再在OnboardingPreferences同一monitor内把未可靠保存的原值与设置放入同一Editor。失败commit修改过内存，因此保留原marker；完成失败按原判定回退，成功完成后不再恢复旧false。子进程initialize/isCompleted只读，complete/update不写、不删快照；引擎偏好迁移仍可依可靠既有证据继续。未以跨进程文件锁包住旧整map提交来伪装一致性。
+
+**CR5-4.【中】限定额外意见的证据。** 主UI游戏库读取经已有Facade门控，未证实普通教练页必然崩溃。实际可核对的是有效单游戏设置读链直接进入override仓库；新增前置gate使其在双失败期间返回未缓存默认值。测试通过真实PerGameSettingsStore.getStr/getBool/hasOverride分别断言null/null/false及每次重试。真实有效单游戏Activity与磁盘故障未在设备复现，报告不扩大为所有UI入口均崩溃。
+
+### 已核对无问题的部分
+
+- core未新增Compose/UI反向依赖、数据库schema或另一套写队列；普通设置仍使用既有归一化与StateFlow发布语义，各引擎/shortcut调用边界保持。
+- 封面测试未公开私有生产弹窗、未加生产注入接口：真实SaveableStateRegistry严格核对四个provider，生产listSaver恢复候选；空preview URL直接走无预览分支，真实下载命中唯一私有合成JPEG。点击前窗口附着、可触摸且dim>0，实际onGameUpdated内先确认仍attached再检查释放，dispose不能掩盖漏beforeClose。
+- Artemis测试保留真实needsArtemisPatchConfirm预检、Back/onChoice(null)、同一抽屉重试；finally精确恢复两项引擎偏好是否存在及MotionMode，仅删除自有文件/空目录。
+- Process/Log影子仅在app JVM测试源集生效，只有显式scope开放myPid和e/i；其他API和scope外保持not-mocked。根夹具在确认初始队列idle后才取得清理所有权，释放gate、等自身根写、取消所有后来替换的镜像后恢复单例并关闭scope；未改全局returnDefaultValues或降低检查。
+- 原始日志、主机路径、设备地址、认证资料、媒体、依赖源码、脚本和APK均不纳入提交；本轮没有自身设备录屏/Perfetto/仪器进程需要回收。无连接时未进一步核对手机全机进程，不宣称已检查他人进程。最终本机校验脚本正常结束。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR5-1 根目录缓存/FIFO | 已修复；包含独立复审确认的第三次变更和即时扫描窗口 | `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt:54`、`:284`、`:340`、`:367`；`app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:164` | 9/9 JVM通过，其中4项真实队列+fake Room协议；完整JVM新增0。真实SQLite/磁盘故障未执行。 |
+| CR5-2 普通设置与判定事务 | 已修复 | `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt:355`；`app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt:55`、`:115`；`app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt:309`、`:341`、`:365` | 设置、恢复、完成后继续修改断言通过，Onboarding 21/21；设备故障未执行。 |
+| CR5-3 子进程过期快照 | 已修复 | `app/src/main/java/com/tyranor/next/core/settings/AppSettingsStore.kt:24`、`:355`、`:367`；`app/src/main/java/com/tyranor/next/core/settings/OnboardingPreferences.kt:29`、`:69`、`:91`；`app/src/main/java/com/tyranor/next/core/process/AppProcess.kt:16`；`app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt:379` | 旧子进程map未创建Editor、主进程新值/恢复快照保留、必要引擎迁移继续；AppProcess 3/3。真实跨进程未执行。 |
+| CR5-4 override直接读 | 已完成条件性防御；普通主UI必崩说法未确认 | `app/src/main/java/com/tyranor/next/core/game/storage/GameOverridesRepository.kt:101`；`app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt:207` | 实际PerGameSettingsStore三种读取及重试断言通过；不缓存临时无覆盖。 |
+| CR5-5 Artemis UI重试 | 已实现两档用例，设备运行未执行 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionArtemisRetryDeviceTest.kt:46`（androidTest） | AndroidTest APK构建通过；不把编译算作真实确认窗口通过。 |
+| CR5-6 / 历史CR4-9 | 已实现两档成功绑定覆盖，取代上一轮“未实现”的状态；设备运行未执行 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt:73`、`:130`（androidTest） | APK构建与真实saver/cache/callback链源码复核；真机断言未执行。 |
+| JVM平台夹具与镜像清理 | 已修复测试环境缺口及清理竞态，不改变生产标准 | `app/src/test/java/android/os/Process.java:10`、`app/src/test/java/android/util/Log.java:17`；`app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:250` | 最终完整2,007/43/22与基线失败集合一致；无意外DAO/镜像错误、无后续Bounded测试污染。 |
+| 动效/导航/版本 | 本轮无修改，用户确认行为保留 | 49个保护/动效/构建文件 | 逐字比较无差异；设备逐帧、主题与平板矩阵未执行。 |

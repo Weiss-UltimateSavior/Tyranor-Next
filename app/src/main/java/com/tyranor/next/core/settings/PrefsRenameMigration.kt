@@ -23,6 +23,7 @@ object PrefsRenameMigration {
     fun migrate(context: Context) {
         val app = context.applicationContext
         try {
+            // This gate is read-only in engine processes; it must not commit a stale app_settings map.
             if (!AppSettingsStore.prepareInstallationData(app)) return
             val legacy = app.getSharedPreferences(LEGACY_PREFS, Context.MODE_PRIVATE)
             val target = app.getSharedPreferences(EnginePrefs.APP_PREFS, Context.MODE_PRIVATE)

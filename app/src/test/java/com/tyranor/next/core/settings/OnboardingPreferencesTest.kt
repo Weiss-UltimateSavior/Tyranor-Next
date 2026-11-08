@@ -1,25 +1,45 @@
 package com.tyranor.next.core.settings
 
+import android.app.OnboardingActivityManager
 import android.content.SharedPreferences
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Process
+import android.util.Log
 import com.tyranor.next.core.game.storage.GameLibraryDatabase
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import java.io.File
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.nio.file.Files
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 class OnboardingPreferencesTest {
+    private var processFixture: AutoCloseable? = null
+    private var loggingFixture: AutoCloseable? = null
+
     @Before
     fun resetAppSettingsOnboardingCache() {
+        processFixture = Process.fixtureScope(37_001)
+        loggingFixture = Log.fixtureScope()
         AppSettingsStore.resetOnboardingForTests()
+    }
+
+    @After
+    fun restorePlatformFixtures() {
+        try {
+            AppSettingsStore.resetOnboardingForTests()
+        } finally {
+            loggingFixture?.close()
+            processFixture?.close()
+        }
     }
 
     @Test
@@ -216,6 +236,12 @@ class OnboardingPreferencesTest {
                 assertTrue(read(context).isEmpty())
                 assertTrue("An empty read must retry persistence instead of becoming cached", settings.commits > attempts)
             }
+            val gameId = "content://onboarding-fixture/unavailable-game"
+            val beforeOverrideRead = settings.commits
+            assertNull(PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+            assertNull(PerGameSettingsStore.getBool(context, gameId, PerGameSettingsStore.F_SCOPED_SAVE_DIR))
+            assertFalse(PerGameSettingsStore.hasOverride(context, gameId))
+            assertTrue("Unavailable override reads must retry without caching a missing row", settings.commits >= beforeOverrideRead + 3)
             assertThrows(IOException::class.java) { GameLibraryDatabase.get(context) }
             assertFalse("Reading an unavailable fresh library must not create upgrade evidence", database.exists())
 
@@ -280,6 +306,117 @@ class OnboardingPreferencesTest {
     }
 
     @Test
+    fun `scan depth stays editable and successful apply preserves the original install decision atomically`() {
+        val blockedFiles = Files.createTempFile("onboarding-setting-blocked", ".tmp").toFile()
+        val storage = MemoryPreferences().apply { writeSucceeds = false }
+        val context = OnboardingContext(storage.preferences, emptyMap(), File("missing-game-library.db"), blockedFiles)
+        try {
+            assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, AppSettingsStore.initializeOnboarding(context))
+            AppSettingsStore.setScanDepth(context, 2)
+            assertEquals(2, AppSettingsStore.getScanDepth(context))
+            assertTrue(storage.disk.isEmpty())
+
+            // Model storage recovering after the separate synchronous marker retry has failed.
+            storage.applyWritesSucceed = true
+            AppSettingsStore.setScanDepth(context, 4)
+            assertEquals(4, storage.disk[AppSettingsStore.KEY_SCAN_DEPTH])
+            assertEquals(false, storage.disk[AppSettingsStore.KEY_ONBOARDING_COMPLETED])
+            assertTrue(storage.writes.filter { AppSettingsStore.KEY_SCAN_DEPTH in it }
+                .all { it[AppSettingsStore.KEY_ONBOARDING_COMPLETED] == false })
+
+            AppSettingsStore.resetOnboardingForTests()
+            val restarted = OnboardingContext(
+                MemoryPreferences(storage.disk).preferences, emptyMap(), File("missing-game-library.db"), blockedFiles,
+            )
+            assertEquals(OnboardingWriteResult.SAVED, AppSettingsStore.initializeOnboarding(restarted))
+            assertFalse(AppSettingsStore.isOnboardingCompleted(restarted))
+            assertEquals(4, AppSettingsStore.getScanDepth(restarted))
+        } finally {
+            AppSettingsStore.resetOnboardingForTests()
+            blockedFiles.delete()
+        }
+    }
+
+    @Test
+    fun `ordinary writes initialize the decision before settings become upgrade evidence`() {
+        val blockedFiles = Files.createTempFile("onboarding-first-setting", ".tmp").toFile()
+        val storage = MemoryPreferences().apply { writeSucceeds = false; applyWritesSucceed = true }
+        val context = OnboardingContext(storage.preferences, emptyMap(), File("missing-game-library.db"), blockedFiles)
+        val previousLanguage = AppSettingsStore.languageState.value
+        val previousMotion = AppSettingsStore.motionEnhancedState.value
+        try {
+            AppSettingsStore.setLanguage(context, AppSettingsStore.LANGUAGE_EN)
+            AppSettingsStore.setMotionEnhanced(context, false)
+            AppSettingsStore.setThemeMode(context, AppSettingsStore.THEME_MODE_DARK)
+            assertEquals(false, storage.disk[AppSettingsStore.KEY_ONBOARDING_COMPLETED])
+            assertEquals(AppSettingsStore.LANGUAGE_EN, storage.disk[AppSettingsStore.KEY_LANGUAGE])
+            assertEquals(false, storage.disk[AppSettingsStore.KEY_MOTION_ENHANCED])
+            assertEquals(AppSettingsStore.THEME_MODE_DARK, storage.disk[AppSettingsStore.KEY_THEME_MODE])
+            assertFalse(AppSettingsStore.isOnboardingCompleted(context))
+        } finally {
+            AppSettingsStore.resetOnboardingForTests()
+            AppSettingsStore.languageState.value = previousLanguage
+            AppSettingsStore.motionEnhancedState.value = previousMotion
+            blockedFiles.delete()
+        }
+    }
+
+    @Test
+    fun `ordinary writes after completion cannot restore the old incomplete decision`() {
+        val storage = MemoryPreferences().apply { writeSucceeds = false; applyWritesSucceed = true }
+        val state = OnboardingPreferences(storage.preferences)
+        assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, state.initialize { false })
+        state.updateSettings { putInt(AppSettingsStore.KEY_SCAN_DEPTH, 4) }
+        assertEquals(false, storage.disk[AppSettingsStore.KEY_ONBOARDING_COMPLETED])
+        storage.writeSucceeds = true
+        assertEquals(OnboardingWriteResult.SAVED, state.complete())
+        state.updateSettings { putInt(AppSettingsStore.KEY_SCAN_DEPTH, 5) }
+        assertEquals(true, storage.disk[AppSettingsStore.KEY_ONBOARDING_COMPLETED])
+        assertEquals(5, storage.disk[AppSettingsStore.KEY_SCAN_DEPTH])
+    }
+
+    @Test
+    fun `stale engine process never edits app settings or deletes the main recovery snapshot`() {
+        val files = Files.createTempDirectory("onboarding-child-reader").toFile()
+        val sharedDisk = mutableMapOf<String, Any>(AppSettingsStore.KEY_THEME_COLOR to "old-color")
+        val child = MemoryPreferences(sharedDisk, sharedDisk)
+        val main = MemoryPreferences(sharedDisk, sharedDisk)
+        val engineSettings = MemoryPreferences()
+        val mainContext = OnboardingContext(main.preferences, emptyMap(), File("missing-game-library.db"), files)
+        val childContext = OnboardingContext(
+            child.preferences,
+            mapOf("tyranor_prefs" to engineSettings.preferences),
+            File("missing-game-library.db"), files, "$PACKAGE:tyrano",
+        )
+        val pending = files.resolve("onboarding_initial_state")
+        try {
+            AppSettingsStore.initializeOnboarding(mainContext)
+            AppSettingsStore.setThemeColorHex(mainContext, "new-color")
+            pending.writeText("0")
+
+            AppSettingsStore.resetOnboardingForTests() // A child has its own singleton and an old prefs map.
+            assertEquals(OnboardingWriteResult.SAVED, AppSettingsStore.initializeOnboarding(childContext))
+            assertTrue(AppSettingsStore.prepareInstallationData(childContext))
+            assertFalse(AppSettingsStore.isOnboardingCompleted(childContext))
+            AppSettingsStore.setScanDepth(childContext, 5)
+            AppSettingsStore.setThemeColorHex(childContext, "stale-child-color")
+            assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, AppSettingsStore.setOnboardingCompleted(childContext))
+            assertFalse(AppSettingsStore.markXs4RescanMigrationDone(childContext))
+            PrefsRenameMigration.migrate(childContext)
+
+            assertEquals("new-color", sharedDisk[AppSettingsStore.KEY_THEME_COLOR])
+            assertEquals(true, sharedDisk[AppSettingsStore.KEY_ONBOARDING_COMPLETED])
+            assertEquals(0, child.edits)
+            assertTrue("The main process owns recovery snapshot cleanup", pending.isFile)
+            assertEquals(true, engineSettings.disk["prefs_rename_migrated_v1"])
+        } finally {
+            AppSettingsStore.resetOnboardingForTests()
+            pending.delete()
+            files.delete()
+        }
+    }
+
+    @Test
     fun `failed upgrade marker keeps existing users out of onboarding and can be repaired`() {
         val storage = MemoryPreferences().apply { writeSucceeds = false }
         val state = OnboardingPreferences(storage.preferences)
@@ -315,15 +452,20 @@ class OnboardingPreferencesTest {
     }
 
     /** Android commit changes memory even when the disk write fails; keep both snapshots separate. */
-    private class MemoryPreferences(initial: Map<String, Boolean> = emptyMap()) {
-        val disk = initial.toMutableMap()
+    private class MemoryPreferences(
+        initial: Map<String, Any> = emptyMap(),
+        val disk: MutableMap<String, Any> = initial.toMutableMap(),
+    ) {
         private val memory = initial.toMutableMap()
         var writeSucceeds = true
+        var applyWritesSucceed: Boolean? = null
         var commits = 0
+        var edits = 0
+        val writes = mutableListOf<Map<String, Any>>()
         val preferences: SharedPreferences = proxy { method, args ->
             when (method) {
                 "contains" -> memory.containsKey(args[0])
-                "getBoolean" -> memory[args[0]] ?: args[1]
+                "getBoolean", "getInt", "getString", "getStringSet" -> memory[args[0]] ?: args[1]
                 "getAll" -> memory.toMap()
                 "edit" -> editor()
                 else -> error("Unexpected preferences method: $method")
@@ -331,18 +473,20 @@ class OnboardingPreferencesTest {
         }
 
         private fun editor(): SharedPreferences.Editor {
-            val changes = mutableMapOf<String, Boolean?>()
+            edits++
+            val changes = mutableMapOf<String, Any?>()
             lateinit var editor: SharedPreferences.Editor
             editor = proxy { method, args ->
                 when (method) {
-                    "putBoolean" -> { changes[args[0] as String] = args[1] as Boolean; editor }
+                    "putBoolean", "putInt", "putString", "putStringSet" -> { changes[args[0] as String] = args[1]; editor }
                     "remove" -> { changes[args[0] as String] = null; editor }
                     "commit", "apply" -> {
                         for ((key, value) in changes) {
                             if (value == null) memory.remove(key) else memory[key] = value
                         }
                         if (method == "commit") commits++
-                        if (writeSucceeds) { disk.clear(); disk.putAll(memory) }
+                        val saved = if (method == "apply") applyWritesSucceed ?: writeSucceeds else writeSucceeds
+                        if (saved) { disk.clear(); disk.putAll(memory); writes += disk.toMap() }
                         if (method == "commit") writeSucceeds else null
                     }
                     else -> error("Unexpected editor method: $method")
@@ -357,10 +501,16 @@ class OnboardingPreferencesTest {
         private val stores: Map<String, SharedPreferences>,
         private val gameLibrary: File,
         private val appFiles: File = File("build/tmp/onboarding-preferences-test"),
+        private val processName: String = PACKAGE,
     ) : ContextWrapper(null) {
         private val appSettings = appSettings
 
         override fun getApplicationContext(): Context = this
+
+        override fun getPackageName(): String = PACKAGE
+
+        override fun getSystemService(name: String): Any? =
+            if (name == Context.ACTIVITY_SERVICE) OnboardingActivityManager(processName) else null
 
         override fun getSharedPreferences(name: String, mode: Int): SharedPreferences =
             if (name == "app_settings") appSettings else stores[name] ?: MemoryPreferences().preferences
@@ -371,6 +521,7 @@ class OnboardingPreferencesTest {
     }
 
     companion object {
+        private const val PACKAGE = "com.tyranor.next.motionv2"
         private inline fun <reified T> proxy(crossinline invoke: (String, Array<out Any?>) -> Any?): T =
             Proxy.newProxyInstance(T::class.java.classLoader, arrayOf(T::class.java)) { _, method, args ->
                 invoke(method.name, args ?: emptyArray())

@@ -15,6 +15,7 @@ enum class OnboardingWriteResult { SAVED, STORAGE_UNAVAILABLE }
 internal class OnboardingPreferences(
     private val settings: SharedPreferences,
     private val pendingStateFile: File? = null,
+    private val ownsSettings: () -> Boolean = { true },
 ) {
     private var pendingInitialValue: Boolean? = null
     private var initialStatePersisted = false
@@ -25,6 +26,19 @@ internal class OnboardingPreferences(
 
     @Synchronized
     fun initialize(hasExistingData: () -> Boolean): OnboardingWriteResult {
+        if (!ownsSettings()) {
+            // SharedPreferences commits rewrite the process's whole map. A child may inspect durable
+            // evidence for engine migration, but must never write its possibly stale app_settings map.
+            val saved = if (settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
+                settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
+            } else {
+                readPendingInitialValue()
+            }
+            val existing = saved == null && hasExistingData()
+            pendingInitialValue = saved ?: existing
+            initialStatePersisted = saved != null || existing
+            return if (initialStatePersisted) OnboardingWriteResult.SAVED else OnboardingWriteResult.STORAGE_UNAVAILABLE
+        }
         if (pendingInitialValue == null && settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
             initialStatePersisted = true
             clearPendingInitialValue()
@@ -38,8 +52,9 @@ internal class OnboardingPreferences(
         // Existing data is already durable evidence; only a fresh-install decision needs a new record.
         if (completed) initialStatePersisted = true
         if (!settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, completed).commit()) {
-            // commit 失败也已改写内存；移除未落盘标记，且保留 pending 快照以便重试。
-            settings.edit().remove(AppSettingsStore.KEY_ONBOARDING_COMPLETED).apply()
+            // A failed commit already changed memory. Keep that original marker there: removing it
+            // with another apply could persist pending ordinary settings without their install decision.
+            // pendingInitialValue prevents us from treating this in-memory marker as a saved commit.
             initialStatePersisted = persistPendingInitialValue(completed) || initialStatePersisted
             return OnboardingWriteResult.STORAGE_UNAVAILABLE
         }
@@ -51,6 +66,13 @@ internal class OnboardingPreferences(
 
     @Synchronized
     fun isCompleted(): Boolean {
+        if (!ownsSettings()) {
+            return if (settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
+                settings.getBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false)
+            } else {
+                readPendingInitialValue() ?: pendingInitialValue ?: false
+            }
+        }
         if (pendingInitialValue == null && settings.contains(AppSettingsStore.KEY_ONBOARDING_COMPLETED)) {
             initialStatePersisted = true
             pendingInitialValue = null
@@ -66,6 +88,7 @@ internal class OnboardingPreferences(
 
     @Synchronized
     fun complete(): OnboardingWriteResult {
+        if (!ownsSettings()) return OnboardingWriteResult.STORAGE_UNAVAILABLE
         if (pendingInitialValue == null) {
             pendingInitialValue = readPendingInitialValue()
             if (pendingInitialValue != null) initialStatePersisted = true
@@ -78,13 +101,27 @@ internal class OnboardingPreferences(
         }
         if (!settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, true).commit()) {
             // 重建 Activity/onStop 不能把失败写入留下的内存 true 当成完成。
-            settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, false).apply()
+            settings.edit().putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, pendingInitialValue ?: false).apply()
             return OnboardingWriteResult.STORAGE_UNAVAILABLE
         }
         pendingInitialValue = null
         initialStatePersisted = true
         clearPendingInitialValue()
         return OnboardingWriteResult.SAVED
+    }
+
+    /** Keeps the original install decision in the same transaction as any ordinary settings write. */
+    @Synchronized
+    fun updateSettings(update: SharedPreferences.Editor.() -> Unit) {
+        if (!ownsSettings()) return
+        val editor = settings.edit()
+        if (!initialStatePersisted) {
+            // A failed commit updates memory. If a later apply succeeds, it must not persist just
+            // the user's setting and leave the fresh install without its authoritative false marker.
+            pendingInitialValue?.let { editor.putBoolean(AppSettingsStore.KEY_ONBOARDING_COMPLETED, it) }
+        }
+        editor.update()
+        editor.apply()
     }
 
     private fun readPendingInitialValue(): Boolean? = pendingStateFile?.let { file ->

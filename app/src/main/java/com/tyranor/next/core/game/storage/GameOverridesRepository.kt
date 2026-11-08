@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.storage
 import android.content.Context
 import android.util.Log
 import com.core.engine.EnginePrefs
+import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -96,9 +97,10 @@ object GameOverridesRepository {
         return true
     }
 
-    /** 阻塞读单行（App 设置页/启动器路径）：先等启动同步完成，再走缓存 → 单行索引读。 */
+    /** 阻塞读单行：首次安装状态尚不可保存时返回不缓存的无覆盖，后续读取继续重试。 */
     internal fun loadRowBlocking(context: Context, gameId: String): GameOverrideEntity? =
         runBlocking {
+            if (!AppSettingsStore.prepareInstallationData(context)) return@runBlocking null
             ensureSynced(context)
             withContext(Dispatchers.IO) { loadRowCached(context, gameId) }
         }

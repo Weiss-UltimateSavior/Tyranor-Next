@@ -49,6 +49,7 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
         }
         // If both records failed, keep the UI usable but do not let automatic migration create
         // evidence that would turn this fresh installation into an apparent upgrade after restart.
+        // Engine processes inspect durable evidence only; AppSettingsStore reserves all writes for main.
         val installationReady = AppSettingsStore.prepareInstallationData(this)
         // 共享 prefs 文件更名（yukihub_prefs → tyranor_prefs）：所有进程（含引擎子进程）
         // 启动最早时机一次性迁移，必须先于任何 EngineSettingsStore/引擎偏好读取。

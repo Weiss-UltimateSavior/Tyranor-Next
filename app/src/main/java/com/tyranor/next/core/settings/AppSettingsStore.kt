@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import androidx.annotation.VisibleForTesting
+import com.tyranor.next.core.process.AppProcess
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -20,11 +21,14 @@ object AppSettingsStore {
     private var onboardingPreferences: OnboardingPreferences? = null
 
     @Synchronized
-    private fun onboarding(context: Context): OnboardingPreferences =
-        onboardingPreferences ?: OnboardingPreferences(
-            settings = prefs(context),
-            pendingStateFile = File(context.applicationContext.filesDir, ONBOARDING_PENDING_INITIAL_STATE_FILE),
+    private fun onboarding(context: Context): OnboardingPreferences {
+        val app = context.applicationContext
+        return onboardingPreferences ?: OnboardingPreferences(
+            settings = prefs(app),
+            pendingStateFile = File(app.filesDir, ONBOARDING_PENDING_INITIAL_STATE_FILE),
+            ownsSettings = { AppProcess.isMain(app) },
         ).also { onboardingPreferences = it }
+    }
 
     /** 在主进程的偏好迁移/游戏库预热前调用；显式 false 防止中途退出被识别为老用户。 */
     fun initializeOnboarding(context: Context): OnboardingWriteResult {
@@ -309,15 +313,16 @@ object AppSettingsStore {
         if (!p.contains(KEY_LIQUID_GLASS_ENHANCE)) return
         val legacyEnhanced = p.getBoolean(KEY_LIQUID_GLASS_ENHANCE, false)
         val stored = p.getString(KEY_NAV_STYLE, null)
-        val editor = p.edit().remove(KEY_LIQUID_GLASS_ENHANCE)
-        if (legacyEnhanced && stored == NAV_STYLE_LIQUID_GLASS) {
-            // 与 setNavStyle 一致地归一化：低版本设备读到备份里的透镜档时降为经典档
-            editor.putString(
-                KEY_NAV_STYLE,
-                normalizeNavStyle(NAV_STYLE_LIQUID_GLASS_ENHANCED, supportsLiquidGlassEnhanced),
-            )
+        updatePreferences(c) {
+            remove(KEY_LIQUID_GLASS_ENHANCE)
+            if (legacyEnhanced && stored == NAV_STYLE_LIQUID_GLASS) {
+                // 与 setNavStyle 一致地归一化：低版本设备读到备份里的透镜档时降为经典档
+                putString(
+                    KEY_NAV_STYLE,
+                    normalizeNavStyle(NAV_STYLE_LIQUID_GLASS_ENHANCED, supportsLiquidGlassEnhanced),
+                )
+            }
         }
-        editor.apply()
     }
 
     fun initLanguage(c: Context) {
@@ -346,13 +351,21 @@ object AppSettingsStore {
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(AppStorageNames.APP_SETTINGS_PREFS, Context.MODE_PRIVATE)
 
+    /** Only the main process writes app settings, with any pending install decision in the same edit. */
+    private fun updatePreferences(context: Context, update: android.content.SharedPreferences.Editor.() -> Unit) {
+        if (!AppProcess.isMain(context)) return
+        val state = onboarding(context)
+        if (!state.hasPersistedInitialState()) initializeOnboarding(context)
+        state.updateSettings(update)
+    }
+
     /** System4 一次性定点重检测迁移：读取标志。 */
     fun isXs4RescanMigrationDone(c: Context): Boolean =
         prefs(c).getBoolean(KEY_MIGRATION_XSYS4_RESCAN_DONE, false)
 
     /** 同步写（commit）：迁移在 IO 线程执行，标志落盘后才视为完成。 */
     fun markXs4RescanMigrationDone(c: Context): Boolean =
-        prepareInstallationData(c) &&
+        AppProcess.isMain(c) && prepareInstallationData(c) &&
             prefs(c).edit().putBoolean(KEY_MIGRATION_XSYS4_RESCAN_DONE, true).commit()
 
     /** 当前主题色 HEX（#RRGGBB）。 */
@@ -360,14 +373,14 @@ object AppSettingsStore {
         prefs(c).getString(KEY_THEME_COLOR, DEFAULT_THEME_COLOR) ?: DEFAULT_THEME_COLOR
 
     fun setThemeColorHex(c: Context, hex: String) =
-        prefs(c).edit().putString(KEY_THEME_COLOR, hex).apply()
+        updatePreferences(c) { putString(KEY_THEME_COLOR, hex) }
 
     fun getLanguage(c: Context): String =
         normalizeLanguage(prefs(c).getString(KEY_LANGUAGE, LANGUAGE_ZH))
 
     fun setLanguage(c: Context, language: String) {
         val normalized = normalizeLanguage(language)
-        prefs(c).edit().putString(KEY_LANGUAGE, normalized).apply()
+        updatePreferences(c) { putString(KEY_LANGUAGE, normalized) }
         languageState.value = normalized
     }
 
@@ -387,9 +400,9 @@ object AppSettingsStore {
         val normalized = normalizeNavStyle(style, supportsLiquidGlassEnhanced)
         synchronized(navStyleLock) {
             // AUTO 不落盘：清掉显式选择，回到「跟随外观风格」
-            prefs(c).edit().apply {
+            updatePreferences(c) {
                 if (normalized == NAV_STYLE_AUTO) remove(KEY_NAV_STYLE) else putString(KEY_NAV_STYLE, normalized)
-            }.apply()
+            }
             navStyleState.value = normalized
         }
     }
@@ -444,9 +457,7 @@ object AppSettingsStore {
 
     fun setFloatingNavPosition(c: Context, x: Float, y: Float) {
         val normalized = normalizeFloatingNavPosition("$x,$y")
-        prefs(c).edit()
-            .putString(KEY_FLOATING_NAV_POS, "${normalized.first},${normalized.second}")
-            .apply()
+        updatePreferences(c) { putString(KEY_FLOATING_NAV_POS, "${normalized.first},${normalized.second}") }
         floatingNavPositionState.value = normalized
     }
 
@@ -468,14 +479,14 @@ object AppSettingsStore {
         AppearanceStyle.fromStorage(prefs(c).getString(KEY_APPEARANCE_STYLE, null))
 
     fun setAppearanceStyle(c: Context, style: AppearanceStyle) =
-        prefs(c).edit().putString(KEY_APPEARANCE_STYLE, style.storageValue).apply()
+        updatePreferences(c) { putString(KEY_APPEARANCE_STYLE, style.storageValue) }
 
     /** 文件夹扫描深度（1..5，默认 3）。 */
     fun getScanDepth(c: Context): Int =
         prefs(c).getInt(KEY_SCAN_DEPTH, DEFAULT_SCAN_DEPTH).coerceIn(1, 5)
 
     fun setScanDepth(c: Context, depth: Int) =
-        prefs(c).edit().putInt(KEY_SCAN_DEPTH, depth.coerceIn(1, 5)).apply()
+        updatePreferences(c) { putInt(KEY_SCAN_DEPTH, depth.coerceIn(1, 5)) }
 
     /**
      * 应用统一圆角归一：吸附到 [APP_CORNER_RADIUS_STEPS] 中最近的档位
@@ -489,7 +500,7 @@ object AppSettingsStore {
         normalizeAppCornerRadius(prefs(c).getInt(KEY_APP_CORNER_RADIUS, DEFAULT_APP_CORNER_RADIUS))
 
     fun setAppCornerRadius(c: Context, radius: Int) {
-        prefs(c).edit().putInt(KEY_APP_CORNER_RADIUS, normalizeAppCornerRadius(radius)).apply()
+        updatePreferences(c) { putInt(KEY_APP_CORNER_RADIUS, normalizeAppCornerRadius(radius)) }
     }
 
     /** 首次组合时从持久化加载「卡片隐藏名称标签」到内存态（幂等）。 */
@@ -501,7 +512,7 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_GAME_CARD_HIDE_TITLE_TAG, DEFAULT_GAME_CARD_HIDE_TITLE_TAG)
 
     fun setGameCardHideTitleTag(c: Context, hidden: Boolean) {
-        prefs(c).edit().putBoolean(KEY_GAME_CARD_HIDE_TITLE_TAG, hidden).apply()
+        updatePreferences(c) { putBoolean(KEY_GAME_CARD_HIDE_TITLE_TAG, hidden) }
         gameCardTitleTagState.value = hidden
     }
 
@@ -533,7 +544,7 @@ object AppSettingsStore {
     fun setHomeStyle(c: Context, style: String) {
         val normalized = normalizeHomeStyle(style)
         synchronized(homeStyleLock) {
-            prefs(c).edit().putString(KEY_HOME_STYLE, normalized).apply()
+            updatePreferences(c) { putString(KEY_HOME_STYLE, normalized) }
             homeStyleState.value = normalized
         }
     }
@@ -547,7 +558,7 @@ object AppSettingsStore {
     fun setHomeWebUrl(c: Context, url: String) {
         val normalized = HomeWebUrls.normalize(url) ?: DEFAULT_HOME_WEB_URL
         synchronized(homeStyleLock) {
-            prefs(c).edit().putString(KEY_HOME_WEB_URL, normalized).apply()
+            updatePreferences(c) { putString(KEY_HOME_WEB_URL, normalized) }
             homeWebUrlState.value = normalized
         }
     }
@@ -556,7 +567,7 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_GAME_CARD_BADGE, DEFAULT_GAME_CARD_BADGE)
 
     fun setGameCardBadgeEnabled(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_GAME_CARD_BADGE, enabled).apply()
+        updatePreferences(c) { putBoolean(KEY_GAME_CARD_BADGE, enabled) }
         gameCardBadgeState.value = enabled
     }
 
@@ -573,7 +584,7 @@ object AppSettingsStore {
 
     fun setGameCardStyle(c: Context, style: String) {
         val normalized = normalizeGameCardStyle(style)
-        prefs(c).edit().putString(KEY_GAME_CARD_STYLE, normalized).apply()
+        updatePreferences(c) { putString(KEY_GAME_CARD_STYLE, normalized) }
         gameCardStyleState.value = normalized
     }
 
@@ -588,7 +599,7 @@ object AppSettingsStore {
             GAME_SORT_BRACKET_TAG -> GAME_SORT_BRACKET_TAG
             else -> GAME_SORT_ALPHA
         }
-        prefs(c).edit().putString(KEY_GAME_SORT, normalized).apply()
+        updatePreferences(c) { putString(KEY_GAME_SORT, normalized) }
         gameSortState.value = normalized
     }
 
@@ -597,7 +608,7 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_ENGINE_TABS, DEFAULT_ENGINE_TABS_ENABLED)
 
     fun setEngineTabsEnabled(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_ENGINE_TABS, enabled).apply()
+        updatePreferences(c) { putBoolean(KEY_ENGINE_TABS, enabled) }
         engineTabsState.value = enabled
     }
 
@@ -606,7 +617,7 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_SIDE_RAIL, DEFAULT_SIDE_RAIL_ENABLED)
 
     fun setSideRailEnabled(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_SIDE_RAIL, enabled).apply()
+        updatePreferences(c) { putBoolean(KEY_SIDE_RAIL, enabled) }
         sideRailState.value = enabled
     }
 
@@ -616,7 +627,7 @@ object AppSettingsStore {
 
     /** Persists the chosen mode and immediately publishes it to existing UI subscribers. */
     fun setMotionEnhanced(c: Context, enhanced: Boolean) {
-        prefs(c).edit().putBoolean(KEY_MOTION_ENHANCED, enhanced).apply()
+        updatePreferences(c) { putBoolean(KEY_MOTION_ENHANCED, enhanced) }
         motionEnhancedState.value = enhanced
     }
 
@@ -624,7 +635,7 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_COVER_SCRAPER_ONLY_MISSING, true)
 
     fun setCoverScraperOnlyMissing(c: Context, onlyMissing: Boolean) {
-        prefs(c).edit().putBoolean(KEY_COVER_SCRAPER_ONLY_MISSING, onlyMissing).apply()
+        updatePreferences(c) { putBoolean(KEY_COVER_SCRAPER_ONLY_MISSING, onlyMissing) }
         bumpCoverScraperSettingsVersion()
     }
 
@@ -632,7 +643,7 @@ object AppSettingsStore {
         prefs(c).getBoolean(KEY_VNDB_LARGE_COVER, DEFAULT_VNDB_LARGE_COVER)
 
     fun setVndbLargeCover(c: Context, enabled: Boolean) {
-        prefs(c).edit().putBoolean(KEY_VNDB_LARGE_COVER, enabled).apply()
+        updatePreferences(c) { putBoolean(KEY_VNDB_LARGE_COVER, enabled) }
         bumpCoverScraperSettingsVersion()
     }
 
@@ -648,7 +659,7 @@ object AppSettingsStore {
     fun setCoverScraperSourceOrder(c: Context, sources: List<String>) {
         val normalized = (sources.filter { it in DEFAULT_COVER_SCRAPER_SOURCES } + DEFAULT_COVER_SCRAPER_SOURCES)
             .distinct()
-        prefs(c).edit().putString(KEY_COVER_SCRAPER_SOURCE_ORDER, normalized.joinToString(",")).apply()
+        updatePreferences(c) { putString(KEY_COVER_SCRAPER_SOURCE_ORDER, normalized.joinToString(",")) }
         bumpCoverScraperSettingsVersion()
     }
 
@@ -659,7 +670,7 @@ object AppSettingsStore {
 
     fun setCoverScraperSourceEnabled(c: Context, source: String, enabled: Boolean) {
         if (source !in DEFAULT_COVER_SCRAPER_SOURCES) return
-        prefs(c).edit().putBoolean(KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX + source, enabled).apply()
+        updatePreferences(c) { putBoolean(KEY_COVER_SCRAPER_SOURCE_ENABLED_PREFIX + source, enabled) }
         bumpCoverScraperSettingsVersion()
     }
 
@@ -679,7 +690,7 @@ object AppSettingsStore {
         prefs(c).getString(KEY_THEME_MODE, THEME_MODE_LIGHT) ?: THEME_MODE_LIGHT
 
     fun setThemeMode(c: Context, mode: String) =
-        prefs(c).edit().putString(KEY_THEME_MODE, mode).apply()
+        updatePreferences(c) { putString(KEY_THEME_MODE, mode) }
 
     /** 系统当前是否深色模式（资源配置 uiMode）。 */
     fun isSystemDark(c: Context): Boolean =
@@ -708,7 +719,7 @@ object AppSettingsStore {
         val current = getEnabledRuntimeModules(context).toMutableSet()
         val changed = if (enabled) current.add(target) else current.remove(target)
         if (!changed) return
-        prefs(context).edit().putStringSet(KEY_RUNTIME_MODULE_ENABLED, current).apply()
+        updatePreferences(context) { putStringSet(KEY_RUNTIME_MODULE_ENABLED, current) }
     }
 
     fun isRuntimeModuleEnabled(context: Context, packageName: String): Boolean {

@@ -8,13 +8,14 @@ import com.tyranor.next.core.settings.AppSettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * 游戏库门面：对 UI / 启动编排暴露同步的内存缓存读与「缓存先行、FIFO 落库」写。
  *
  * 从 EngineScanner 拆出（架构优化 P0-1），Scanner 只保留扫描与引擎识别；职责边界：
  * - 读命中内存缓存，未命中阻塞读库一次（Application 启动已 [prewarmCaches] 预热）；
- * - 写同步更新缓存并按发起顺序在仓库单线程写调度器上落库（失败仅记日志，不回滚缓存）；
+ * - 写同步更新缓存并按发起顺序在仓库单线程写调度器上落库（失败后使缓存失效，下次读取回源）；
  * - 修订号广播（[libraryRevision] / [rootsRevision] / [quickLaunchRevision]）统一在本层维护。
  */
 object GameLibraryFacade {
@@ -33,6 +34,10 @@ object GameLibraryFacade {
     private var quickLaunchCache: List<ScanGame>? = null
     @Volatile
     private var rootsCache: List<String>? = null
+    private var pendingRootWrites = 0
+    private val pendingRootChanges = ArrayList<PendingRootChange>()
+
+    private class PendingRootChange(val key: String, val adding: Boolean)
 
     // 快捷启动版本号：任何增删/刷新后自增，供首页实时感知改动后重新加载
     private val _quickLaunchRevision = MutableStateFlow(0)
@@ -45,13 +50,15 @@ object GameLibraryFacade {
     @Volatile
     private var persistFailureListenerInstalled = false
 
-    /** 持久化写失败后的自愈入口：清空派生自 DB 的缓存（roots 单独管理，不受影响）。 */
+    /** 持久化写失败后丢弃乐观缓存，已有根目录视图也会收到重新读取通知。 */
     private fun invalidatePersistenceCaches() {
-        synchronized(cacheLock) {
+        val hadRoots = synchronized(cacheLock) {
             gamesCache = null
             recentGamesCache = null
             quickLaunchCache = null
+            (rootsCache != null).also { rootsCache = null }
         }
+        if (hadRoots) _rootsRevision.update { it + 1 }
         // 单游戏覆盖同样走「缓存先行、post 落库」模式，一并回源
         GameOverridesRepository.invalidateRowCache()
     }
@@ -277,25 +284,26 @@ object GameLibraryFacade {
     fun saveRoot(context: Context, rootPath: String): List<String> {
         val key = rootPath.trim().trimEnd('/').let { if (it.isEmpty()) "/" else it }
         synchronized(cacheLock) {
-            val existing = loadRootsLocked(context).toMutableList()
+            val existing = loadRootsLocked(context)?.toMutableList() ?: return emptyList()
             val added = !existing.contains(key)
             if (!added) return existing
             existing.add(key)
             rootsCache = existing.toList()
-            GameLibraryRepository.post(context) { GameLibraryRepository.saveRoot(it, key) }
-            _rootsRevision.value++
+            postRootWrite(context, key, adding = true) { GameLibraryRepository.saveRoot(it, key) }
+            _rootsRevision.update { it + 1 }
             return existing
         }
     }
 
     fun removeRoot(context: Context, uri: Uri) {
         synchronized(cacheLock) {
-            val current = loadRootsLocked(context)
-            val existing = current.filterNot { it == uri.toString() }
+            val current = loadRootsLocked(context) ?: return
+            val key = uri.toString()
+            val existing = current.filterNot { it == key }
             if (existing.size == current.size) return
             rootsCache = existing
-            GameLibraryRepository.post(context) { GameLibraryRepository.removeRoot(it, uri.toString()) }
-            _rootsRevision.value++
+            postRootWrite(context, key, adding = false) { GameLibraryRepository.removeRoot(it, key) }
+            _rootsRevision.update { it + 1 }
         }
     }
 
@@ -325,16 +333,59 @@ object GameLibraryFacade {
 
     fun loadRoots(context: Context): List<String> =
         rootsCache ?: synchronized(cacheLock) {
-            loadRootsLocked(context)
+            loadRootsLocked(context).orEmpty()
         }
 
-    private fun loadRootsLocked(context: Context): List<String> =
+    /** Null means initialization is unavailable, rather than a successfully loaded empty root list. */
+    private fun loadRootsLocked(context: Context): List<String>? =
         rootsCache ?: if (canLoadLibrary(context)) {
             GameLibraryRepository.readBlocking(context) { GameLibraryRepository.loadRoots(it) }
-                .also { rootsCache = it }
+                .let { persisted ->
+                    // A failed earlier write must not hide later accepted roots from an immediate
+                    // scan. Reapply every still-pending idempotent command in its original order.
+                    persisted.toMutableList().apply {
+                        for (change in pendingRootChanges) {
+                            if (change.adding) {
+                                if (change.key !in this) add(change.key)
+                            } else {
+                                removeAll { it == change.key }
+                            }
+                        }
+                    }.toList()
+                }
+                .also(::cacheLoadedRoots)
         } else {
-            emptyList()
+            null
         }
+
+    /** Called with cacheLock held; an in-flight write can make a just-read database snapshot temporary. */
+    private fun cacheLoadedRoots(roots: List<String>) {
+        if (pendingRootWrites == 0) rootsCache = roots
+    }
+
+    /** Called with cacheLock held so the pending count precedes the FIFO write and optimistic notification. */
+    private fun postRootWrite(context: Context, key: String, adding: Boolean, block: suspend (Context) -> Unit) {
+        val change = PendingRootChange(key, adding)
+        pendingRootChanges += change
+        pendingRootWrites++
+        GameLibraryRepository.post(context) {
+            try {
+                block(it)
+            } finally {
+                synchronized(cacheLock) { pendingRootChanges.remove(change) }
+                finishRootWrite()
+            }
+        }
+    }
+
+    /** After failure invalidation, the final queued write makes a fresh root read authoritative again. */
+    private fun finishRootWrite() {
+        val needsReload = synchronized(cacheLock) {
+            pendingRootWrites--
+            pendingRootWrites == 0 && rootsCache == null
+        }
+        if (needsReload) _rootsRevision.update { it + 1 }
+    }
 
     private fun isGameUnderRoot(rootUriText: String, gameUriText: String): Boolean =
         GameRootMatcher.isGameUnderRoot(rootUriText, gameUriText)
