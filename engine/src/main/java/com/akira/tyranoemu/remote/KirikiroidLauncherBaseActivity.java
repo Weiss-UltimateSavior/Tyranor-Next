@@ -805,7 +805,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     private static String storagePrefix(String path) {
         String p = normalizeKrPath(path);
         String lower = p.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("/storage/emulated/0/")) return "/storage/emulated/0";
+        // Primary mount root is per-process (Secure Folder mounts at /storage/emulated/<uid>).
+        String primaryRoot = bridge.PrimaryStorageRoot.get();
+        if (lower.startsWith(primaryRoot.toLowerCase(Locale.ROOT) + "/")) return primaryRoot;
         if (lower.startsWith("/sdcard/")) return "/sdcard";
         if (lower.startsWith("/storage/")) {
             String rest = p.substring("/storage/".length());

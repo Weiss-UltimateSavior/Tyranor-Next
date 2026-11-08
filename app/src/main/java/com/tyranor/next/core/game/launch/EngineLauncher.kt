@@ -14,9 +14,11 @@ import android.provider.Settings
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import bridge.KrSafMirror
+import bridge.PrimaryStorageRoot
 import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.cmvs.CmvsActivity
 import com.core.engine.ArtemisVersion
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
@@ -149,6 +151,7 @@ object EngineLauncher {
         EngineType.UK2,
         EngineType.FVP,
         EngineType.ETHORNELL,
+        EngineType.CMVS,
         EngineType.RENPY,
         EngineType.RUFFLE,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
@@ -497,6 +500,21 @@ object EngineLauncher {
             preflightXs4(context, path)?.let { return it }
             ensureXs4SaveDir(context, path, settings)?.let { return it }
         }
+        // CMVS（cmvs-rs）：NativeActivity + loader；启动前固定顶层 launch.cfg，禁止旧实例复用
+        if (game.engine == EngineType.CMVS) {
+            if (CmvsLaunchFiles.isRunning(context)) {
+                return LaunchResult.Failure.CmvsAlreadyRunning
+            }
+            val cmvsFont = CmvsLaunchFiles.ensureFont(context, settings.cmvsFont)
+            val cmvsFace = settings.cmvsFontFace
+            CmvsPreflight.check(context, game, File(path), cmvsFont, cmvsFace)?.let { return it }
+            if (cmvsFont == null) return LaunchResult.Failure.CmvsFontUnavailable
+            val token = java.util.UUID.randomUUID().toString()
+            cmvsLaunchToken = token
+            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, token)) {
+                return LaunchResult.Failure.CmvsLaunchConfigUnavailable
+            }
+        }
         // “总是/不再”持久化为全局补丁策略；“本次”不落盘，仅本次按 auto 生效
         if (game.engine == EngineType.ARTEMIS) {
             when (patchChoice) {
@@ -543,7 +561,25 @@ object EngineLauncher {
             if (game.engine == EngineType.ETHORNELL) {
                 intent.putExtra(LaunchContract.ETHORNELL_DISPATCH_TOKEN, EthornellOperationGate.issue(context, game.uri))
             }
+            File(context.filesDir, "launch-error.txt").delete()
             context.startActivity(intent)
+            if (game.engine == EngineType.CMVS) {
+                // 宿主进程与 App 解耦；即使用户离开本页/启动协程被取消，也要把失败送到常驻 UI。
+                val code = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    kotlinx.coroutines.delay(1800)
+                    runCatching {
+                        File(context.filesDir, "launch-error.txt").takeIf { it.isFile }
+                            ?.readLines()
+                            ?.firstOrNull { it.startsWith("code=") }
+                            ?.substringAfter("code=")?.trim()
+                    }.getOrNull()
+                }
+                if (!code.isNullOrEmpty()) {
+                    val failure = LaunchResult.Failure.CmvsInitFailed(code)
+                    LaunchFailureBus.publish(failure)
+                    return failure
+                }
+            }
             completeLaunch(context, game, onDispatched)
         } catch (ce: CancellationException) {
             throw ce // 取消不是启动失败，原样传播给调用方
@@ -1005,10 +1041,11 @@ object EngineLauncher {
     /** 判断路径是否位于共享存储（原生引擎无法仅凭 SAF 授权读取），供启动前与手动添加目录共用。 */
     internal fun needsAllFilesAccess(path: String): Boolean {
         val normalized = path.replace('\\', '/')
+        val primaryRoot = PrimaryStorageRoot.get()
         return normalized == "/sdcard" ||
             normalized.startsWith("/sdcard/") ||
-            normalized == "/storage/emulated/0" ||
-            normalized.startsWith("/storage/emulated/0/") ||
+            normalized == primaryRoot ||
+            normalized.startsWith("$primaryRoot/") ||
             GamePathUtils.isRemovableStoragePath(normalized)
     }
 
@@ -1026,6 +1063,8 @@ object EngineLauncher {
             EngineType.FVP -> add(NativeRuntimePack.PACK_FVP)
 
             EngineType.ETHORNELL -> add(NativeRuntimePack.PACK_ETHORNELL)
+
+            EngineType.CMVS -> add(NativeRuntimePack.PACK_CMVS)
 
             // 视频播放（ONS 覆盖层 / Artemis VideoView）依赖 IJK 三件套。
             EngineType.ONS,
@@ -1122,6 +1161,7 @@ object EngineLauncher {
 
             EngineType.FVP -> buildFvpIntent(context, path, game, settings)
             EngineType.ETHORNELL -> buildEthornellIntent(context, path, game, settings)
+            EngineType.CMVS -> buildCmvsIntent(context, path, game)
 
             EngineType.RPGMAKER,
             EngineType.RENPY,
@@ -1333,6 +1373,8 @@ object EngineLauncher {
 
     /** Ethornell preflight never writes to the resource root or guesses a save subdirectory. */
     private fun ethornellStorageRoot(path: String): File? {
+        val primaryRoot = PrimaryStorageRoot.get()
+        if (path == primaryRoot || path.startsWith("$primaryRoot/")) return File(primaryRoot)
         if (path == "/storage/emulated/0" || path.startsWith("/storage/emulated/0/")) return File("/storage/emulated/0")
         if (!path.startsWith("/storage/")) return null
         val volume = path.removePrefix("/storage/").substringBefore('/')
@@ -1373,6 +1415,23 @@ object EngineLauncher {
         } catch (_: SecurityException) {
             failed(stage)
         }
+    }
+
+    private var cmvsLaunchToken: String? = null
+
+    private fun buildCmvsIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+    ): Intent = Intent(context, CmvsActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_CMVS)
+        cmvsLaunchToken?.let { putExtra(LaunchContract.CMVS_LAUNCH_TOKEN, it) }
     }
 
     private fun buildEthornellIntent(
@@ -1773,7 +1832,11 @@ object EngineLauncher {
     }
 
     private fun parseStoragePath(path: String): Pair<String, String>? {
+        // 主存储根按进程视角解析（安全文件夹内为 emulated/<uid>）；emulated/0 分支保留以兼容既有记录
+        val primaryRoot = PrimaryStorageRoot.get()
         return when {
+            path == primaryRoot -> "primary" to ""
+            path.startsWith("$primaryRoot/") -> "primary" to path.substring(primaryRoot.length + 1)
             path == "/storage/emulated/0" -> "primary" to ""
             path.startsWith("/storage/emulated/0/") -> "primary" to path.substring("/storage/emulated/0/".length)
             path == "/sdcard" -> "primary" to ""
@@ -2648,8 +2711,9 @@ object EngineLauncher {
     }
 
     /**
-     * 将游戏 URI 解析为真实文件路径。优先按 SAF documentId 映射（主存储→/storage/emulated/0），
-     * 映射失败再用 _data 查询兜底。引擎 native 需要真实文件路径。
+     * 将游戏 URI 解析为真实文件路径。优先按 SAF documentId 映射（主存储→进程视角挂载根，
+     * 见 [PrimaryStorageRoot]；安全文件夹等隔离 user 下不是 emulated/0），
+     * 映射失败再用 _data 查询兜底（该列在隔离 user 下可能为 null）。引擎 native 需要真实文件路径。
      */
     private fun resolveGameDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri

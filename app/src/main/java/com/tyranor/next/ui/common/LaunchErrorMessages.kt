@@ -190,6 +190,34 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
                 localized.getString(R.string.launch_runtime_module_failed)
         }
 
+        LaunchResult.Failure.CmvsGameLayoutInvalid ->
+            localized.getString(R.string.launch_cmvs_layout_invalid)
+
+        LaunchResult.Failure.CmvsUserDataDirUnavailable ->
+            localized.getString(R.string.launch_cmvs_user_data_unavailable)
+
+        LaunchResult.Failure.CmvsLaunchConfigUnavailable ->
+            localized.getString(R.string.launch_cmvs_launch_config_unavailable)
+
+        is LaunchResult.Failure.CmvsInitFailed -> localized.getString(
+            when ((this as LaunchResult.Failure.CmvsInitFailed).code) {
+                "unregistered" -> R.string.launch_cmvs_unregistered
+                "audio" -> R.string.launch_cmvs_audio_unavailable
+                "vulkan" -> R.string.launch_cmvs_vulkan_unavailable
+                "font" -> R.string.launch_cmvs_font_unavailable
+                else -> R.string.launch_cmvs_init_failed
+            },
+        )
+
+        LaunchResult.Failure.CmvsFontUnavailable ->
+            localized.getString(R.string.launch_cmvs_font_unavailable)
+
+        LaunchResult.Failure.CmvsVulkanUnavailable ->
+            localized.getString(R.string.launch_cmvs_vulkan_unavailable)
+
+        LaunchResult.Failure.CmvsAlreadyRunning ->
+            localized.getString(R.string.launch_cmvs_already_running)
+
         LaunchResult.Failure.AndroidAppMissing ->
             localized.getString(R.string.launch_android_app_missing)
 

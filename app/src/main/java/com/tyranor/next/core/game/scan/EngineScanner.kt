@@ -1093,6 +1093,11 @@ object EngineScanner {
         var uk2MesNode: T? = null
         var ethornellSystemNode: T? = null
         var ambiguousEthornellSystem = false
+        var hasCmvsScript = false
+        var hasCmvsStart = false
+        var cmvsStartCount = 0
+        var hasCmvsStartHeader = false
+        var hasCmvsExe = false
 
         fun collect(entry: T, rel: String) {
             if (Thread.currentThread().isInterrupted) throw java.util.concurrent.CancellationException()
@@ -1125,6 +1130,33 @@ object EngineScanner {
                         if (childName.endsWith(".ymv")) hasYmv = true
                     }
                 }
+                if (rel.isEmpty() && lower == "data") {
+                    // CMVS: data/pack is intentionally outside the recursive whitelist.
+                    // The engine opens these paths case-sensitively, so only exact
+                    // lowercase names can be launched; don't claim Data/Pack as CMVS.
+                    childrenOf(entry).forEach { pack ->
+                        if (!isDirectory(pack) || nameOf(pack) != "pack") {
+                            return@forEach
+                        }
+                        childrenOf(pack).forEach { file ->
+                            if (isDirectory(file)) return@forEach
+                            when (nameOf(file)) {
+                                "script.cpz" -> hasCmvsScript = true
+                                "start.ps3", "start.ps2" -> {
+                                    hasCmvsStart = true
+                                    cmvsStartCount++
+                                    val head = headOf(file)
+                                    if (head != null && head.size >= 4 &&
+                                        head[0] == 0x50.toByte() && head[1] == 0x53.toByte() &&
+                                        head[2] == 0x32.toByte() && head[3] == 0x41.toByte()
+                                    ) {
+                                        hasCmvsStartHeader = true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 if (rel.isEmpty() && lower == "gamedata") {
                     // System3.x（xsystem35）CD 镜像解出形态（`<根>/GAMEDATA/SA.ALD`）：只为 XS35
                     // 特征扫描（.ALD / System39.* / .wai / .bgi / .alk），不进入通用目录白名单，
@@ -1148,6 +1180,9 @@ object EngineScanner {
                 return
             }
             when {
+                rel.isEmpty() && lower in setOf("cmvs.exe", "cmvs32.exe", "cmvs64.exe") -> {
+                    hasCmvsExe = true
+                }
                 rel.isEmpty() && lower == "system.arc" -> {
                     if (ethornellSystemNode != null) ambiguousEthornellSystem = true
                     ethornellSystemNode = entry
@@ -1443,6 +1478,16 @@ object EngineScanner {
         }
         if (hasSystemNnnEntry) {
             return Detection(EngineType.SYSTEMNNN, 96, LAUNCH_TARGET_GAME_DIR)
+        }
+        if (hasCmvsScript && hasCmvsStart && cmvsStartCount == 1) {
+            return Detection(
+                EngineType.CMVS,
+                if (hasCmvsStartHeader) 96 else 92,
+                LAUNCH_TARGET_GAME_DIR,
+            )
+        }
+        if (hasCmvsExe) {
+            return Detection(EngineType.CMVS, 82, LAUNCH_TARGET_GAME_DIR)
         }
         return UNKNOWN_DETECTION
     }

@@ -196,6 +196,8 @@ object LaunchContract {
     const val LAUNCH_MODE_SIGLUS = "internal.siglus"
     const val LAUNCH_MODE_FVP = "internal.fvp"
     const val LAUNCH_MODE_ETHORNELL = "internal.ethornell"
+    const val CMVS_LAUNCH_TOKEN = "cmvs_launch_token"
+    const val LAUNCH_MODE_CMVS = "internal.cmvs"
     const val LAUNCH_MODE_FRAMEBUFFER = "internal.framebuffer"
     const val LAUNCH_MODE_XSYS35 = "internal.xsys35"
     const val LAUNCH_MODE_XSYS4 = "internal.xsys4"

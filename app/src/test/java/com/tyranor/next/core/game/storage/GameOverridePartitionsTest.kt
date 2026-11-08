@@ -152,6 +152,11 @@ class GameOverridePartitionsTest {
         assertEquals(blob.length(), GameOverridePartitions.assemble(row).length())
     }
 
+    fun cmvsFontKeysArePartitionedIntoTyrano() {
+        assertEquals(PerGameSettingsStore.F_CMVS_FONT, GameOverridePartitions.KEY_CMVS_FONT)
+        assertTrue(GameOverridePartitions.KEY_CMVS_FONT in GameOverridePartitions.TYRANO_KEYS)
+    }
+
     @Test
     fun winlatorModeIsPartitionedIntoTyrano() {
         // 运行模式没有独立分区，必须显式建模进 tyrano；

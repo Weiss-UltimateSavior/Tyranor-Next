@@ -30,3 +30,6 @@
 -keep class com.core.gl.ArtemisOfficialBridge { public static *; }
 # The imported player uses JNI names and reflects GameResourcePaths.
 -keep class com.tyranor.runtime.systemnnn.** { *; }
+
+# CMVS NativeActivity bridge methods are resolved from native code.
+-keep class com.core.cmvs.** { *; }

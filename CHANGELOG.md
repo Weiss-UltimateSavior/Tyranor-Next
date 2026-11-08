@@ -4,6 +4,8 @@
 
 ### 新增
 
+- 新增 CMVS 引擎（Purple SOFTWARE，cmvs-rs）接入：NativeActivity + `libcmvs_loader.so`，真实运行库 `libcmvs_android.so` 走 `engine-runtime/cmvs` 分片首启解压；仅支持 19 部登记作品，字体由用户自选，要求 Vulkan，仅触摸输入；独立存档位于 App 私有 `files/cmvs/users/<hash>`，不写游戏目录。
+
 - 内置 SystemNNN-Emberfall 0.6.5。扫描游戏目录中的 `spt/sys.spt` 并直接启动 ARM64 播放器。存档管理及 WebDAV 同步只处理游戏目录内的 Emberfall 存档。
 
 - 新增首次使用七步快速入门教练层：在真实首页、游戏页、引擎页和设置页中展示添加、搜索、封面、重新扫描等入口；新安装用户可跳过或完成引导，已有数据的升级用户默认跳过，通知权限延后到引导完成后请求。
@@ -38,6 +40,7 @@
 
 ### 变更
 
+- 修复三星 Knox 安全文件夹内「无法解析游戏目录」：SAF `primary:` 卷到真实路径的映射不再硬编码 `/storage/emulated/0`，改为按进程视角解析主存储挂载根（安全文件夹等隔离 user 下为 `/storage/emulated/<userId>`，新增 `bridge.PrimaryStorageRoot` 统一解析并缓存）；`GamePathUtils.safUriToPath` / `isRemovableStoragePath` 与引擎层（KRKR/ONS/Tyrano/RPG Maker 存档、镜像与授权映射）全部同类硬编码点同步动态化，`emulated/<uid>` 不再被误判为可移动存储。旧版 Kirikiroid2 因别名展开机制不受影响，NEXT 收紧映射后在安全文件夹内启动失败（issue #152）。升级边界：在「隔离/次 user 且 ROM 的 `_data` 兜底有值」组合下，旧版本可能已将 KRKR 游戏镜像到应用私有目录并把存档落在镜像内，本版本起此类主存储改为直读模式，旧镜像存档不再被引用（保留不清理，可经存档管理手动迁移）。
 - 游戏卡片长按改为统一操作弹窗：游戏页瀑布流 / 封面流卡片与首页快捷启动卡长按不再直接启动，而是弹出包含「添加快捷启动、添加到桌面、名称修改、修改封面、删除游戏」五项的管理弹窗；原游戏操作抽屉移除这五项，仅保留启动游戏、启动文件、搜索封面、存档管理与在线补丁/引擎设置入口。封面流卡片手势同步改为 `combinedClickable`，与瀑布流共享长按触感与无障碍语义。
 
 - 首页「最近打开」的横屏/大屏展示上限由 10 张提高到 15 张（5 列 × 3 行），竖屏手机保持 10 张（2 列 × 5 行）；展示数量改由首页按布局切片，`MainLibraryUiState.recentGames` 保留存储侧最近 20 条供布局选择。

@@ -1033,4 +1033,18 @@
     <string name="save_external_exit_summary">Winlator でゲームを終了してから、セーブ保護の解除を確認します</string>
     <string name="save_external_exit_message">先に Winlator で「%1$s」と同じセーブフォルダーを共有するすべてのゲームを完全に終了してください。Tyranor に戻るだけでは終了を確認できません。確認すると今回の実行マーカーを解除し、アップロード・セーブの切り替え・削除を許可します。書き込み中の場合、セーブを失うおそれがあります。</string>
     <string name="save_external_exit_done">外部ゲームの終了を確認しました。セーブを管理できます</string>
+    <string name="launch_cmvs_layout_invalid">CMVS のゲーム構成が不正です：data/pack/script.cpz、一意の start、key.cfg のいずれかがありません</string>
+    <string name="launch_cmvs_user_data_unavailable">CMVS のセーブディレクトリを利用できません</string>
+    <string name="launch_cmvs_font_unavailable">CMVS フォントを利用できません。フォントを選択してください。</string>
+    <string name="launch_cmvs_vulkan_unavailable">この端末は Vulkan 非対応のため CMVS を起動できません</string>
+    <string name="launch_cmvs_already_running">CMVS のゲームが実行中です。セーブして終了してから起動してください。</string>
+    <string name="engine_settings_cmvs_title">CMVS エンジン設定</string>
+    <string name="cmvs_font_title">フォント</string>
+    <string name="cmvs_font_default">フォント未選択</string>
+    <string name="cmvs_font_note">CMVS のタイトルと本文に使うフォントです。通常の TTF はコレクション索引 0 を使います。</string>
+    <string name="save_error_save_dir_in_use">CMVS エンジンが実行中です。ゲームを終了してからセーブを操作してください</string>
+    <string name="launch_cmvs_launch_config_unavailable">CMVS 起動設定を書き込めません。空き容量を確認して再試行してください</string>
+    <string name="launch_cmvs_unregistered">CMVS は登録済み 19 作品のみ対応しています。このゲームは未登録です</string>
+    <string name="launch_cmvs_audio_unavailable">CMVS のオーディオ初期化に失敗しました</string>
+    <string name="launch_cmvs_init_failed">CMVS エンジンの起動に失敗しました</string>
 </resources>

@@ -86,6 +86,7 @@ import com.tyranor.next.ui.common.FloatingNavOutsideTapBridge
 import com.tyranor.next.ui.common.observeFloatingNavOutsideTaps
 import com.tyranor.next.ui.common.LaunchErrorDialog
 import com.tyranor.next.ui.common.LaunchErrorState
+import com.tyranor.next.core.game.launch.LaunchFailureBus
 import com.tyranor.next.ui.common.LiquidGlassNavigationBar
 import com.tyranor.next.ui.common.NavigationTabIcon
 import com.tyranor.next.ui.common.SidePanelEdgeExclusionBar
@@ -136,6 +137,14 @@ fun MainScreen(
   onCoachAnchorChanged: (Int, Rect) -> Unit = { _, _ -> },
 ) {
   val context = LocalContext.current
+  var globalLaunchError by remember { mutableStateOf<LaunchErrorState?>(null) }
+  val busFailure by LaunchFailureBus.failure.collectAsState()
+  LaunchedEffect(busFailure) {
+    busFailure?.let {
+      globalLaunchError = it.toErrorState(context)
+      LaunchFailureBus.clear()
+    }
+  }
   var selectedIndex by rememberSaveable { mutableStateOf(0) }
   LaunchedEffect(coachPage) {
     if (coachPage != null) selectedIndex = coachPage.coerceIn(tabItems.indices)
@@ -558,6 +567,9 @@ fun MainScreen(
   // 侧边栏条目启动失败弹窗（与首页/游戏页共用同一个错误弹窗组件）
   sidePanelLaunchError?.let { state ->
     LaunchErrorDialog(state = state, onDismiss = { sidePanelLaunchError = null })
+  }
+  globalLaunchError?.let { state ->
+    LaunchErrorDialog(state = state, onDismiss = { globalLaunchError = null })
   }
 }
 

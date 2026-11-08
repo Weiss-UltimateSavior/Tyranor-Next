@@ -6,6 +6,8 @@ import androidx.annotation.StringRes
 import androidx.documentfile.provider.DocumentFile
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.launch.CmvsLaunchFiles
+import com.tyranor.next.core.game.model.CmvsPaths
 import com.tyranor.next.core.game.launch.EthornellOperationGate
 import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.EthornellPaths
@@ -60,6 +62,17 @@ class GameSaveManager(private val context: Context) {
                 null,
                 text(R.string.save_location_engine_no_file_interface, game.engine.displayName),
                 false,
+            )
+        }
+        // CMVS: the engine writes saveNNN.dat/system.dat into the private user dir,
+        // independent of whether the shared-storage game root can be resolved.
+        if (game.engine == EngineType.CMVS) {
+            val directory = com.tyranor.next.core.game.model.CmvsPaths
+                .userDataDir(appContext.filesDir, game.uri)
+            return SaveLocation(
+                directory,
+                text(R.string.save_location_engine_scoped, game.engine.displayName),
+                directory.isDirectory || directory.mkdirs(),
             )
         }
         // Exact private identity root even when the resource volume is absent.
@@ -334,6 +347,7 @@ class GameSaveManager(private val context: Context) {
                 files.size
             }
         }
+        requireCmvsIdle(game.engine)
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.export {
                 appContext.contentResolver.openOutputStream(destinationUri, "w")
@@ -389,6 +403,7 @@ class GameSaveManager(private val context: Context) {
                 deleteImportTree(temporary)
             }
         }
+        requireCmvsIdle(game.engine)
         if (manualSelection) {
             resolveSaveLocation(game).directory?.let(::checkedSyncDirectory)
         }
@@ -518,6 +533,7 @@ class GameSaveManager(private val context: Context) {
             val store = systemNnnStore(game)
             return store.access { store.replace(null) }
         }
+        requireCmvsIdle(game.engine)
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { it.delete() }
         return synchronized(RpgSaveSyncState.INTEROP_LOCK) {
             // 与存档互通同步互斥（H3）：删除与并发同步交错会产生半删状态
@@ -548,6 +564,21 @@ class GameSaveManager(private val context: Context) {
                 // Best effort cleanup: never redirect or broaden deletion.
             } catch (_: SecurityException) {
                 // Permission failure retains the private tree.
+            }
+            return
+        }
+        if (game.engine == EngineType.CMVS) {
+            if (CmvsLaunchFiles.isRunning(appContext)) return
+            try {
+                deleteSaveDirectory(
+                    CmvsPaths.userDataDir(appContext.filesDir, game.uri),
+                    excludeFor(EngineType.CMVS),
+                )
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: IOException) {
+                // Best effort: private CMVS tree only.
+            } catch (_: SecurityException) {
             }
             return
         }
@@ -650,6 +681,13 @@ class GameSaveManager(private val context: Context) {
     }
 
     private fun ethornellStore(game: ScanGame) = EthornellSaveStore(appContext.filesDir, game.uri)
+
+    /** CMVS 运行中由引擎独占 `.cmvs-system.lock` 并持续写槽位；手动覆盖/导出/删除必须先停引擎。 */
+    private fun requireCmvsIdle(engine: EngineType) {
+        if (engine == EngineType.CMVS && CmvsLaunchFiles.isRunning(appContext)) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_IN_USE)
+        }
+    }
 
     private suspend fun <T> ethornellOperation(game: ScanGame, block: (EthornellSaveStore) -> T): T =
         EthornellOperationGate.exclusive {
@@ -786,7 +824,10 @@ class GameSaveManager(private val context: Context) {
             // AVG32/UK2 存档目录即游戏根：白名单之外的文件（含游戏资源）一律排除，
             // 导入交换后由 restoresExcludedFromBackup 从备份移回。
             (engine == EngineType.AVG32 && lower != AVG32_SAVE_FILE_NAME) ||
-            (engine == EngineType.UK2 && !UK2_SAVE_NAME_RE.matches(lower))
+            (engine == EngineType.UK2 && !UK2_SAVE_NAME_RE.matches(lower)) ||
+            (engine == EngineType.CMVS &&
+                (lower == ".cmvs-system.lock" ||
+                    (lower.startsWith(".cmvs-system-") && lower.endsWith(".tmp"))))
     }
 
     private fun recoverableImportResource(engine: EngineType, name: String): Boolean =
@@ -856,7 +897,8 @@ class GameSaveManager(private val context: Context) {
         internal fun supportsFileSaves(engine: EngineType): Boolean = when (engine) {
             EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
             EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
-            EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL, EngineType.SYSTEMNNN -> true
+            EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL,
+            EngineType.CMVS, EngineType.SYSTEMNNN -> true
             else -> false
         }
 

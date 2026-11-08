@@ -55,6 +55,7 @@
 | Siglus | `Gameexe.dat/ini`、`Scene.pck` | 内置 Siglus |
 | RealLive / AVG32 / UK2 | `SEEN` 结构/头、`UK2.CFG` 与 `.MES` 等 | 内置 game_launcher + Framebuffer 宿主 |
 | FVP | `.hcb/.bch` 脚本与资源包 | 内置 rfvp |
+| CMVS | `data/pack/script.cpz` + 唯一 `start.ps3/ps2`；仅 19 部登记作品 | 内置 cmvs-rs（NativeActivity + loader），需 Vulkan |
 | System35 / System4 | ALD、System39 特征 / `System40.ini`、`AliceStart.ini` | 内置 xsystem35 / xsystem4，两类独立识别 |
 | SystemNNN | 游戏根目录下的 `spt/sys.spt`，不区分大小写 | 内置 SystemNNN-Emberfall，进入游戏内环境设定调整运行选项 |
 | Ethornell / BGI | BGI 特征与资源组合 | 内置实验宿主，见第 10 节 |

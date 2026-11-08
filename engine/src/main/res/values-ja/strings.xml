@@ -145,4 +145,13 @@
     <string name="engine_input_screenshot_saved_private">ギャラリーフォルダーに書き込めないため、アプリ内に保存しました：%1$s</string>
     <string name="engine_input_action_screenshot">スクリーンショット</string>
     <string name="engine_input_group_actions">アクション</string>
+    <string name="engine_cmvs_init_failed">CMVS エンジンの初期化に失敗しました</string>
+    <string name="engine_cmvs_runtime_pack_missing">CMVS ランタイムが準備できていません。アプリを再起動するか再インストールしてください。</string>
+    <string name="engine_cmvs_back_again_to_exit">もう一度戻るキーを押すとゲームを終了します</string>
+    <string name="engine_cmvs_unregistered">この作品は CMVS の登録リストにないため、まだ対応していません</string>
+    <string name="engine_cmvs_font_invalid">CMVS フォントを利用できません。フォントを選び直してください。</string>
+    <string name="engine_cmvs_vulkan_unavailable">この端末は Vulkan 非対応のため CMVS を起動できません</string>
+    <string name="engine_cmvs_audio_failed">CMVS オーディオの初期化に失敗しました</string>
+    <string name="engine_cmvs_font_index_title">フォントコレクションのインデックス</string>
+    <string name="engine_cmvs_font_index_message">通常のフォントは 0 を入力してください</string>
 </resources>

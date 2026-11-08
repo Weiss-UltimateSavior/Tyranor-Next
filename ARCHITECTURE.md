@@ -63,7 +63,7 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 4. 内置启动解析真实目录及生效设置，检查权限、插件、存档位置和适用补丁；Kirikiri 的 SAF 镜像等特殊路径由 core 负责准备。SD 卡镜像（`KrSafMirror.prepare`，engine 内 `bridge/`）产出 0 字节占位树 + v2 索引 + 类型化 bootstrap/诊断载荷，经 Intent extras（`SAF_MIRROR_INDEX`/`SAF_MIRROR_ROOT`）传给 `:kirikiri2` 宿主；宿主 `NativeBridge.configureSafMirror` 装载会话快照，libc（open/fopen/freopen/stat/rename 等）GOT 钩子按「相对路径改基 → scoped 存档重定向 → 镜像路由（只读 SAF / 写 copy-up，`KrMirrorOpenRouter`）→ libc 原实现」分流，所有权标记与分片锁由 `KrMirrorLocalFiles` 维护，失败以哨兵（-2→EIO）或类型化阶段（`PrepareException`）回传 core/UI。
 5. App 与宿主使用 [LaunchContract.kt](engine/src/main/java/com/core/engine/LaunchContract.kt) 的常量传递 Intent extras。启动结果为 `LaunchResult`；`Success` 表示已发起启动，不代表游戏已显示首帧或能够通关。
 
-大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 与 `libSDL2x.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
+大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4 与 `libSDL2x.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖；CMVS 另在 `lib/` 保留 `libcmvs_loader.so`（NativeActivity `android.app.lib_name`），由 loader 从 `files/engine_runtime/cmvs/` dlopen 真实库并转发 `ANativeActivity_onCreate`。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
 
 - SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。
 
@@ -82,7 +82,7 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 ## 5. 引擎进程与生命周期
 
-以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
+以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
 
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。
 - Siglus 有效滤镜链才启用专用 engine owner 与 GLES consumer；关闭、空链或无效链沿用 SurfaceView 原路径。两种路径共享原生实例准入，不能同时启动第二个 owner。
@@ -98,7 +98,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 | `engine/src/main/assets/` | Web 注入脚本、字体与运行资源；选定的五个共享 JS 同步到 `app/build/generated/assets/engine/` |
 | `engine/src/main/nativeplugins/` + `app/src/main/nativeplugins/` | 合并共享 `.so` 与 App manifest，重名失败；先打未压缩 zip 容器，再压成 `app/build/generated/assets/nativeplugins/{kirikiroid2,ons,artemis}.zip.xz`（LZMA2 共享字典，运行时解压安装到私有目录） |
 | `app/src/main/assets/` | App 自有资源，当前主要为 `rtp/`；不在此手工保存生成插件 zip |
-| `engine/src/main/jniLibs/arm64-v8a/` | 随 APK 分发的预编译运行库；`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套与 System35/4（含 `libSDL2x.so`）只作为运行库包源，打进 `app/build/generated/assets/engine-runtime/{siglus,fvp,ethornell,krkrsdl3,ijk,xsystem}.zip.xz`，不再进 APK 的 `lib/`（首次启动该引擎时由 `NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen） |
+| `engine/src/main/jniLibs/arm64-v8a/` | 随 APK 分发的预编译运行库；`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套与 System35/4（含 `libSDL2x.so`）只作为运行库包源，打进 `app/build/generated/assets/engine-runtime/{siglus,fvp,ethornell,krkrsdl3,cmvs,ijk,xsystem}.zip.xz`（CMVS 另有 `libcmvs_loader.so` 留在 `lib/`，由 NativeActivity `lib_name` 加载并转发），不再进 APK 的 `lib/`（首次启动该引擎时由 `NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen） |
 | `engine/src/main/cpp/` | CMake 现场编译 JNI/图形桥，动态连接既有运行库 |
 | `engine/src/main/graphicsfilters/*.json`、`engine/patches/*.json` | 描述滤镜贡献与固定来源；buildSrc 生成目录并校验资源、许可与相关库哈希。滤镜资产按描述符声明顶左/底左行序契约（见 docs/graphics-filter-coordinates.md）；`asset: null` 的条目为纯重采样节点（Bilinear/Bicubic/Lanczos），不加载卷积着色器 |
 
