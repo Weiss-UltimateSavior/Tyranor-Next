@@ -1030,4 +1030,18 @@
     <string name="save_external_exit_summary">After quitting the game in Winlator, confirm to end save protection</string>
     <string name="save_external_exit_message">Fully quit “%1$s” in Winlator first, along with any other game sharing its save folder. Switching back to Tyranor does not mean the game has exited. Confirming clears this run’s protection and allows uploads, save selection and removal. If the game is still writing, saves may be lost.</string>
     <string name="save_external_exit_done">External game exit confirmed. Save management is available</string>
+    <string name="launch_cmvs_layout_invalid">CMVS game layout is invalid: missing data/pack/script.cpz, a unique start script or key.cfg</string>
+    <string name="launch_cmvs_user_data_unavailable">CMVS save directory is unavailable</string>
+    <string name="launch_cmvs_font_unavailable">CMVS font is unavailable. Select a font.</string>
+    <string name="launch_cmvs_vulkan_unavailable">This device does not support Vulkan, so CMVS cannot start</string>
+    <string name="launch_cmvs_already_running">A CMVS game is running. Save and exit it before starting another one.</string>
+    <string name="engine_settings_cmvs_title">CMVS Engine Settings</string>
+    <string name="cmvs_font_title">Font</string>
+    <string name="cmvs_font_default">No font selected</string>
+    <string name="cmvs_font_note">The CMVS font is used for titles and text. Normal TTF files use collection index 0.</string>
+    <string name="save_error_save_dir_in_use">The CMVS engine is running. Exit the game before touching its saves.</string>
+    <string name="launch_cmvs_launch_config_unavailable">Cannot write the CMVS launch configuration. Check storage and retry.</string>
+    <string name="launch_cmvs_unregistered">CMVS only supports the 19 registered titles; this game is not registered</string>
+    <string name="launch_cmvs_audio_unavailable">CMVS audio initialization failed</string>
+    <string name="launch_cmvs_init_failed">CMVS engine failed to start</string>
 </resources>

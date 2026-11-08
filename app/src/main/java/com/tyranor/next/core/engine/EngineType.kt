@@ -34,5 +34,6 @@ enum class EngineType(val displayName: String, val abbr: String, val isManual: B
     ANDROID_APP("Android", "APP", isManual = true),
     PSP("PSP", "PSP"),
     NINTENDO_SWITCH("Nintendo Switch", "NS"),
+    CMVS("CMVS", "CMVS"),
     UNKNOWN("Unknown", "UNK");
 }

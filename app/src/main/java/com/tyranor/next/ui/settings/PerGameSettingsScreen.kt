@@ -130,6 +130,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
     var fvpNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS)) }
     var ethornellNls by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_NLS)) }
     var ethornellFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_FONT)) }
+    var cmvsFont by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_CMVS_FONT)) }
     var fvpSystemFont by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT)) }
     var fvpTextHidpi by remember { mutableStateOf(PerGameSettingsStore.getBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI)) }
     var ppssppVersion by remember { mutableStateOf(PerGameSettingsStore.getStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION)) }
@@ -323,6 +324,17 @@ fun PerGameSettingsScreen(game: ScanGame) {
                 try {
                     val path = FontImport.importToPrivate(ctx, uri)
                     if (path != null) ethornellFont = path else android.widget.Toast.makeText(ctx, R.string.ethornell_error_font, android.widget.Toast.LENGTH_SHORT).show()
+                } finally { importingFont = false }
+            }
+        }
+    }
+    val cmvsFontLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && !importingFont) {
+            importingFont = true
+            scope.launch {
+                try {
+                    val path = FontImport.importToPrivate(ctx, uri)
+                    if (path != null) cmvsFont = path else android.widget.Toast.makeText(ctx, R.string.launch_cmvs_font_unavailable, android.widget.Toast.LENGTH_SHORT).show()
                 } finally { importingFont = false }
             }
         }
@@ -556,6 +568,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_FVP_NLS, fvpNls)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_NLS, ethornellNls)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_ETHORNELL_FONT, ethornellFont)
+        PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_CMVS_FONT, cmvsFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_SYSTEM_FONT, fvpSystemFont)
         PerGameSettingsStore.setBool(ctx, gid, PerGameSettingsStore.F_FVP_TEXT_HIDPI, fvpTextHidpi)
         PerGameSettingsStore.setStr(ctx, gid, PerGameSettingsStore.F_PPSSPP_VERSION, ppssppVersion)
@@ -1107,6 +1120,25 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             )
                             Text(
                                 stringResource(R.string.engine_settings_fvp_note),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                    EngineType.CMVS -> item {
+                        SectionCard("CMVS") {
+                            OverrideFontPreference(
+                                label = stringResource(R.string.cmvs_font_title),
+                                globalValue = EngineSettingsStore.getCmvsFont(ctx),
+                                override = cmvsFont,
+                                followGameDefaultLabel = stringResource(R.string.cmvs_font_default),
+                                onSet = { cmvsFont = it },
+                                onPick = { if (!importingFont) cmvsFontLauncher.launch("*/*") },
+                                enabled = !importingFont,
+                            )
+                            Text(
+                                stringResource(R.string.cmvs_font_note),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

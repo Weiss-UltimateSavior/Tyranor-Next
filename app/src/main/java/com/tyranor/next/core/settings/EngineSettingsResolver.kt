@@ -224,6 +224,11 @@ object EngineSettingsResolver {
                 str(PerGameSettingsStore.F_ETHORNELL_FONT),
                 EngineSettingsStore.getEthornellFont(app),
             ),
+            cmvsFont = EffectiveEngineSettings.resolve(
+                str(PerGameSettingsStore.F_CMVS_FONT),
+                EngineSettingsStore.getCmvsFont(app),
+            ),
+            cmvsFontFace = EngineSettingsStore.getCmvsFontFace(app),
             fvpSystemFont = EffectiveEngineSettings.resolveBool(
                 bool(PerGameSettingsStore.F_FVP_SYSTEM_FONT),
                 EngineSettingsStore.isFvpSystemFont(app),
@@ -360,6 +365,10 @@ data class ResolvedEngineSettings(
     val ethornellNls: String,
     /** Empty = engine fallback; nonempty paths must pass the private-font launch preflight. */
     val ethornellFont: String,
+    /** CMVS 字体绝对路径（空 = 未选择，启动预检失败）。 */
+    val cmvsFont: String,
+    /** CMVS 字体集合索引。 */
+    val cmvsFontFace: Int,
     /** FVP 生效系统字体回退开关。 */
     val fvpSystemFont: Boolean,
     /** FVP 生效文本高分辨率渲染开关。 */

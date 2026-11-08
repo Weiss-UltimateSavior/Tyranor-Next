@@ -829,6 +829,7 @@ private fun engineIconRes(engine: EngineType): Int = when (engine) {
     EngineType.UK2 -> R.drawable.ic_engine_card_uk2
     EngineType.FVP -> R.drawable.ic_engine_card_fvp
     EngineType.ETHORNELL -> R.drawable.ic_engine_card_ethornell
+    EngineType.CMVS -> R.drawable.ic_engine_card_cmvs
     EngineType.RENPY -> R.drawable.ic_engine_card_renpy
     EngineType.RUFFLE -> R.drawable.ic_engine_card_ruffle
     EngineType.YURIS -> R.drawable.ic_engine_card_yuris
@@ -846,7 +847,7 @@ private fun engineTabOf(engine: EngineType): EngineTab = when (engine) {
     EngineType.RPGMAKER, EngineType.RPG_MV, EngineType.RPG_MZ -> EngineTab.RPGM
     EngineType.KIRIKIRI, EngineType.ONS, EngineType.ARTEMIS, EngineType.SIGLUS,
     EngineType.REALLIVE, EngineType.AVG32, EngineType.XSYS35, EngineType.XSYS4, EngineType.UK2, EngineType.FVP,
-    EngineType.ETHORNELL,
+    EngineType.ETHORNELL, EngineType.CMVS,
     EngineType.RENPY, EngineType.YURIS, EngineType.CATSYSTEM2 -> EngineTab.GAL
     // PC（手动添加，经 Winlator 运行）与主机模拟器同属「主机」分类
     EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.PC -> EngineTab.CONSOLE
@@ -926,6 +927,9 @@ private val builtinDialogEntries: Map<EngineType, List<EngineDialogEntry>> = map
     ),
     EngineType.FVP to listOf(
         builtinEntry("fvp-rfvp", "rfvp-xmoezzz"),
+    ),
+    EngineType.CMVS to listOf(
+        builtinEntry("cmvs-rs", "cmvs-rs"),
     ),
     EngineType.KIRIKIRI to listOf(
         builtinEntry("krkr-139", "Kirikiroid2-1.3.9"),

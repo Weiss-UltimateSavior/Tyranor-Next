@@ -143,4 +143,13 @@
     <string name="engine_input_screenshot_saved_private">无法写入相册目录，截图已存到应用目录：%1$s</string>
     <string name="engine_input_action_screenshot">截屏</string>
     <string name="engine_input_group_actions">动作</string>
+    <string name="engine_cmvs_init_failed">CMVS 引擎初始化失败</string>
+    <string name="engine_cmvs_runtime_pack_missing">CMVS 引擎运行库未就绪，请重启应用或重新安装</string>
+    <string name="engine_cmvs_back_again_to_exit">再按一次返回键退出游戏</string>
+    <string name="engine_cmvs_unregistered">该作品未在 CMVS 登记列表中，暂不支持</string>
+    <string name="engine_cmvs_font_invalid">CMVS 字体不可用，请重新选择字体</string>
+    <string name="engine_cmvs_vulkan_unavailable">当前设备不支持 Vulkan，无法启动 CMVS</string>
+    <string name="engine_cmvs_audio_failed">CMVS 音频初始化失败</string>
+    <string name="engine_cmvs_font_index_title">字体集合索引</string>
+    <string name="engine_cmvs_font_index_message">普通字体请填 0</string>
 </resources>

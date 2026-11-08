@@ -143,4 +143,13 @@
     <string name="engine_input_screenshot_saved_private">Could not write to the gallery folder; saved in the app folder: %1$s</string>
     <string name="engine_input_action_screenshot">Screenshot</string>
     <string name="engine_input_group_actions">Actions</string>
+    <string name="engine_cmvs_init_failed">CMVS engine initialization failed</string>
+    <string name="engine_cmvs_runtime_pack_missing">CMVS runtime library is not ready. Restart or reinstall the app.</string>
+    <string name="engine_cmvs_back_again_to_exit">Press back again to exit the game</string>
+    <string name="engine_cmvs_unregistered">This game is not in the registered CMVS list and is not supported yet</string>
+    <string name="engine_cmvs_font_invalid">CMVS font is unavailable. Select the font again.</string>
+    <string name="engine_cmvs_vulkan_unavailable">This device does not support Vulkan, so CMVS cannot start</string>
+    <string name="engine_cmvs_audio_failed">CMVS audio initialization failed</string>
+    <string name="engine_cmvs_font_index_title">Font collection index</string>
+    <string name="engine_cmvs_font_index_message">Use 0 for a normal font file</string>
 </resources>

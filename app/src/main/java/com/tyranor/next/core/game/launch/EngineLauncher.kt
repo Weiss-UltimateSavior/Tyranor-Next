@@ -15,6 +15,7 @@ import bridge.KrSafMirror
 import com.akira.tyranoemu.remote.ArtemisActivityClean
 import com.akira.tyranoemu.remote.Kirikiroid134
 import com.akira.tyranoemu.remote.Kirikiroid139
+import com.core.cmvs.CmvsActivity
 import com.core.engine.ArtemisVersion
 import com.core.engine.EnginePrefs
 import com.core.engine.EngineSessionRegistry
@@ -143,6 +144,7 @@ object EngineLauncher {
         EngineType.UK2,
         EngineType.FVP,
         EngineType.ETHORNELL,
+        EngineType.CMVS,
         EngineType.RENPY,
         EngineType.RUFFLE,
         // YURIS / CatSystem2 / PC 由外置 Winlator 承载（GAL 分组），引擎页条目点击进入引擎专属弹窗
@@ -481,6 +483,21 @@ object EngineLauncher {
             preflightXs4(context, path)?.let { return it }
             ensureXs4SaveDir(context, path, settings)?.let { return it }
         }
+        // CMVS（cmvs-rs）：NativeActivity + loader；启动前固定顶层 launch.cfg，禁止旧实例复用
+        if (game.engine == EngineType.CMVS) {
+            if (CmvsLaunchFiles.isRunning(context)) {
+                return LaunchResult.Failure.CmvsAlreadyRunning
+            }
+            val cmvsFont = CmvsLaunchFiles.ensureFont(context, settings.cmvsFont)
+            val cmvsFace = settings.cmvsFontFace
+            CmvsPreflight.check(context, game, File(path), cmvsFont, cmvsFace)?.let { return it }
+            if (cmvsFont == null) return LaunchResult.Failure.CmvsFontUnavailable
+            val token = java.util.UUID.randomUUID().toString()
+            cmvsLaunchToken = token
+            if (!CmvsLaunchFiles.write(context, game, File(path), cmvsFont, cmvsFace, token)) {
+                return LaunchResult.Failure.CmvsLaunchConfigUnavailable
+            }
+        }
         // “总是/不再”持久化为全局补丁策略；“本次”不落盘，仅本次按 auto 生效
         if (game.engine == EngineType.ARTEMIS) {
             when (patchChoice) {
@@ -527,7 +544,25 @@ object EngineLauncher {
             if (game.engine == EngineType.ETHORNELL) {
                 intent.putExtra(LaunchContract.ETHORNELL_DISPATCH_TOKEN, EthornellOperationGate.issue(context, game.uri))
             }
+            File(context.filesDir, "launch-error.txt").delete()
             context.startActivity(intent)
+            if (game.engine == EngineType.CMVS) {
+                // 宿主进程与 App 解耦；即使用户离开本页/启动协程被取消，也要把失败送到常驻 UI。
+                val code = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    kotlinx.coroutines.delay(1800)
+                    runCatching {
+                        File(context.filesDir, "launch-error.txt").takeIf { it.isFile }
+                            ?.readLines()
+                            ?.firstOrNull { it.startsWith("code=") }
+                            ?.substringAfter("code=")?.trim()
+                    }.getOrNull()
+                }
+                if (!code.isNullOrEmpty()) {
+                    val failure = LaunchResult.Failure.CmvsInitFailed(code)
+                    LaunchFailureBus.publish(failure)
+                    return failure
+                }
+            }
             completeLaunch(context, game, onDispatched)
         } catch (ce: CancellationException) {
             throw ce // 取消不是启动失败，原样传播给调用方
@@ -983,6 +1018,8 @@ object EngineLauncher {
 
             EngineType.ETHORNELL -> add(NativeRuntimePack.PACK_ETHORNELL)
 
+            EngineType.CMVS -> add(NativeRuntimePack.PACK_CMVS)
+
             // 视频播放（ONS 覆盖层 / Artemis VideoView）依赖 IJK 三件套。
             EngineType.ONS,
             EngineType.ARTEMIS -> add(NativeRuntimePack.PACK_IJK)
@@ -1077,6 +1114,7 @@ object EngineLauncher {
 
             EngineType.FVP -> buildFvpIntent(context, path, game, settings)
             EngineType.ETHORNELL -> buildEthornellIntent(context, path, game, settings)
+            EngineType.CMVS -> buildCmvsIntent(context, path, game)
 
             EngineType.RPGMAKER,
             EngineType.RENPY,
@@ -1328,6 +1366,23 @@ object EngineLauncher {
         } catch (_: SecurityException) {
             failed(stage)
         }
+    }
+
+    private var cmvsLaunchToken: String? = null
+
+    private fun buildCmvsIntent(
+        context: Context,
+        path: String,
+        game: ScanGame,
+    ): Intent = Intent(context, CmvsActivity::class.java).apply {
+        putExtra(LaunchContract.PATH, path)
+        putExtra(LaunchContract.GAME_PATH, path)
+        putExtra(LaunchContract.PROJECT_ROOT, path)
+        putExtra(LaunchContract.GAME_DIR, path)
+        putExtra(LaunchContract.ROOT_URI, game.uri)
+        putExtra(LaunchContract.LAUNCH_TARGET, game.launchTarget)
+        putExtra(LaunchContract.LAUNCH_MODE, LaunchContract.LAUNCH_MODE_CMVS)
+        cmvsLaunchToken?.let { putExtra(LaunchContract.CMVS_LAUNCH_TOKEN, it) }
     }
 
     private fun buildEthornellIntent(

@@ -28,3 +28,6 @@
 
 # Official producer adapter is resolved by the bootstrap JNI bridge.
 -keep class com.core.gl.ArtemisOfficialBridge { public static *; }
+
+# CMVS NativeActivity bridge methods are resolved from native code.
+-keep class com.core.cmvs.** { *; }

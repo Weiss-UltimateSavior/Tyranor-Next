@@ -132,6 +132,20 @@
             android:windowSoftInputMode="adjustNothing"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
 
+        <!-- CMVS NativeActivity + loader: loader forwards only ANativeActivity_onCreate. -->
+        <activity
+            android:name="com.core.cmvs.CmvsActivity"
+            android:exported="false"
+            android:process=":cmvs"
+            android:launchMode="singleInstance"
+            android:taskAffinity="com.core.Cmvs"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Cmvs"
+            android:windowSoftInputMode="adjustNothing"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|layoutDirection|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale">
+            <meta-data android:name="android.app.lib_name" android:value="cmvs_loader" />
+        </activity>
+
         <!-- FVPEngine（rfvp）宿主：Java SurfaceView + Choreographer 主循环驱动 Rust 引擎 -->
         <activity
             android:name="com.core.fvp.FvpActivity"

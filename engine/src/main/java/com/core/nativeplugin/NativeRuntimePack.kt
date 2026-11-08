@@ -11,8 +11,8 @@ import org.tukaani.xz.XZInputStream
 /**
  * 大体积引擎运行库的「随包压缩、按需解压」入口。
  *
- * 这些运行库（`libsiglus` / `librfvp` / `libethornell` / `libkrkrsdl3` / IJK 三件套 /
- * System35+4 与 `libSDL2x`）不再放进 APK 的 `lib/arm64-v8a/`，而是打成
+ * 这些运行库（`libsiglus` / `librfvp` / `libethornell` / `libkrkrsdl3` / `libcmvs_android` /
+ * IJK 三件套 / System35+4 与 `libSDL2x`）不再放进 APK 的 `lib/arm64-v8a/`，而是打成
  * `assets/engine-runtime/<pack>.zip.xz`：LZMA2 比 APK 的 deflate 小 30–40%，代价是首次使用
  * 某个引擎时要先解压。解压目录固定在应用私有目录，正好也是各 JNI 桥按绝对路径 `dlopen`
  * 的位置（Android 10+ 允许从应用数据目录加载只读 `.so`，与既有 nativeplugin 同一机制）。
@@ -56,6 +56,9 @@ object NativeRuntimePack {
 
     /** IJK 播放器三件套（`ijkffmpeg` / `ijksdl` / `ijkplayer`），ONS 与 Artemis 的视频共用。 */
     const val PACK_IJK = "ijk"
+
+    /** `libcmvs_android.so`：CMVS NativeActivity 引擎，由 `cmvs_loader` 从私有目录 dlopen。 */
+    const val PACK_CMVS = "cmvs"
 
     /**
      * 幂等：运行库已按当前 APK 版本解压则直接返回 true，否则从 assets 重新解压。

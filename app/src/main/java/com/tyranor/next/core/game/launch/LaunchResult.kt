@@ -85,6 +85,27 @@ sealed interface LaunchResult {
         /** System4 游戏根目录缺少入口 ini（System40.ini / AliceStart.ini，大小写不敏感）。 */
         data object Xs4IniMissing : Failure
 
+        /** CMVS 游戏根不符合布局（script.cpz / start / key.cfg 缺失或不唯一）。 */
+        data object CmvsGameLayoutInvalid : Failure
+
+        /** CMVS 私有 user 目录无法创建。 */
+        data object CmvsUserDataDirUnavailable : Failure
+
+        /** 顶层 launch.cfg 原子写入失败（权限/空间/rename）。 */
+        data object CmvsLaunchConfigUnavailable : Failure
+
+        /** 宿主进程启动失败；code 来自 launch-error.txt（unregistered/audio/vulkan/...）。 */
+        data class CmvsInitFailed(val code: String) : Failure
+
+        /** CMVS 字体缺失或不可读。 */
+        data object CmvsFontUnavailable : Failure
+
+        /** 设备没有 Vulkan 硬件支持。 */
+        data object CmvsVulkanUnavailable : Failure
+
+        /** 已有 `:cmvs` 游戏在运行，拒绝覆盖 launch.cfg。 */
+        data object CmvsAlreadyRunning : Failure
+
         /** 设备不支持 OpenGL ES 3.0（System4 引擎的渲染要求）。 */
         data object Xs4Gles3Required : Failure
 

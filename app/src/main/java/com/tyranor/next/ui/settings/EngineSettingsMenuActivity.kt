@@ -120,6 +120,7 @@ enum class EngineSettingsKind(@param:StringRes val titleRes: Int, @param:Drawabl
     FRAMEBUFFER(R.string.engine_settings_framebuffer_title, R.drawable.ic_settings_engine),
     FVP(R.string.engine_settings_fvp_title, R.drawable.ic_settings_engine),
     ETHORNELL(R.string.ethornell_settings_title, R.drawable.ic_settings_engine),
+    CMVS(R.string.engine_settings_cmvs_title, R.drawable.ic_settings_engine),
     XSYS35(R.string.engine_settings_xsys35_title, R.drawable.ic_settings_engine),
     XSYS4(R.string.engine_settings_xsys4_title, R.drawable.ic_settings_engine),
     PPSSPP(R.string.engine_settings_ppsspp_title, R.drawable.ic_settings_engine),

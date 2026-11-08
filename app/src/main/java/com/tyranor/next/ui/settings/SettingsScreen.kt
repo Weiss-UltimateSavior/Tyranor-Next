@@ -725,6 +725,10 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
         RuffleSettingsScreen()
         return
     }
+    if (kind == EngineSettingsKind.CMVS) {
+        CmvsSettingsScreen()
+        return
+    }
     val ctx = LocalContext.current
     val graphicsFamily = kind.graphicsFamily()
     var graphics by remember(kind) {

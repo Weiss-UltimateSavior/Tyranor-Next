@@ -114,6 +114,7 @@ object PerGameSettingsStore {
     const val F_FVP_NLS = "fvp_nls"
     const val F_ETHORNELL_NLS = "ethornell_nls"
     const val F_ETHORNELL_FONT = "ethornell_font"
+    const val F_CMVS_FONT = "cmvs_font"
     const val F_FVP_SYSTEM_FONT = "fvp_system_font"
     const val F_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val F_FVP_FONT = "fvp_font"

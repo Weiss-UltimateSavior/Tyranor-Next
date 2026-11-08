@@ -72,6 +72,10 @@ object EngineSettingsStore {
     const val KEY_FVP_TEXT_HIDPI = "fvp_text_hidpi"
     const val KEY_FVP_FONT = "fvp_font"
 
+    // CMVS（cmvs-rs）应用级字体；路径必须位于 App 私有 files/fonts/，face 为字体集合索引
+    const val KEY_CMVS_FONT = "cmvs_font"
+    const val KEY_CMVS_FACE = "cmvs_font_face"
+
     // System35（xsystem35）应用级默认（独立存档 / 渲染后端 / 整数倍缩放 / 失焦静音）
     const val KEY_XSYS35_SCOPED_SAVE_DIR = "xsys35_scoped_save_dir"
     const val KEY_XSYS35_RENDERER = "xsys35_renderer"
@@ -797,6 +801,12 @@ object EngineSettingsStore {
     fun setFvpFont(c: Context, v: String?) =
         prefs(c).edit().putString(KEY_FVP_FONT, normalizeFvpFont(v)).apply()
     fun normalizeFvpFont(v: String?): String = v?.trim().orEmpty()
+
+    // ---------- CMVS ----------
+    fun getCmvsFont(c: Context): String = prefs(c).getString(KEY_CMVS_FONT, "").orEmpty()
+    fun setCmvsFont(c: Context, v: String?) =
+        prefs(c).edit().putString(KEY_CMVS_FONT, v?.trim().orEmpty()).apply()
+    fun getCmvsFontFace(c: Context): Int = prefs(c).getInt(KEY_CMVS_FACE, 0).coerceIn(0, 1024)
 
     // ---------- System35（xsystem35） ----------
     fun isXs35ScopedSaveDir(c: Context): Boolean =

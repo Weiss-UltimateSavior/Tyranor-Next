@@ -107,6 +107,7 @@ val bundledEngineRuntimePacks = linkedMapOf(
     "krkrsdl3" to listOf("libkrkrsdl3.so"),
     "ijk" to listOf("libijkffmpeg.so", "libijksdl.so", "libijkplayer.so"),
     "xsystem" to listOf("libxsystem35.so", "libxsystem4.so", "libSDL2x.so"),
+    "cmvs" to listOf("libcmvs_android.so"),
 )
 val engineAssetSourceDir = rootProject.layout.projectDirectory.dir("engine/src/main/assets")
 val sharedEngineAssetNames = listOf(

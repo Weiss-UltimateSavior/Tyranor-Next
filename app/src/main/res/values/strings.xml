@@ -1030,4 +1030,18 @@
     <string name="save_external_exit_summary">在 Winlator 中退出游戏后，确认结束本次存档保护</string>
     <string name="save_external_exit_message">请先在 Winlator 中完全退出“%1$s”，并确认共用存档目录的其他游戏也已退出。仅切回 Tyranor 不代表游戏退出。确认后将解除本次运行标记，允许上传、切换存档和删除；若游戏仍在写入，可能造成存档丢失。</string>
     <string name="save_external_exit_done">已确认外部游戏退出，可继续管理存档</string>
+    <string name="launch_cmvs_layout_invalid">CMVS 游戏目录缺少 data/pack/script.cpz、唯一 start 或 key.cfg</string>
+    <string name="launch_cmvs_user_data_unavailable">CMVS 存档目录不可用</string>
+    <string name="launch_cmvs_font_unavailable">CMVS 字体不可用，请选择字体</string>
+    <string name="launch_cmvs_vulkan_unavailable">当前设备不支持 Vulkan，无法启动 CMVS</string>
+    <string name="launch_cmvs_already_running">已有 CMVS 游戏在运行，请先存档并退出后再启动</string>
+    <string name="engine_settings_cmvs_title">CMVS引擎设置</string>
+    <string name="cmvs_font_title">字体</string>
+    <string name="cmvs_font_default">未选择字体</string>
+    <string name="cmvs_font_note">CMVS 字体用于标题/正文；普通 TTF 使用集合索引 0。</string>
+    <string name="save_error_save_dir_in_use">CMVS 引擎正在运行，请先退出游戏再操作存档</string>
+    <string name="launch_cmvs_launch_config_unavailable">无法写入 CMVS 启动配置，请检查存储空间后重试</string>
+    <string name="launch_cmvs_unregistered">CMVS 仅支持 19 部登记作品，当前游戏未登记</string>
+    <string name="launch_cmvs_audio_unavailable">CMVS 音频初始化失败</string>
+    <string name="launch_cmvs_init_failed">CMVS 引擎启动失败</string>
 </resources>

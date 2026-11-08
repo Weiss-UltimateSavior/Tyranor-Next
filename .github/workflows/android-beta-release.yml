@@ -186,6 +186,9 @@ jobs:
       - name: Assemble release APK
         run: ./gradlew assembleRelease --no-daemon
 
+      - name: Verify CMVS runtime provenance
+        run: python3 tools/cmvs/verify_provenance.py
+
       - name: Verify actual release APK Ethornell bytes and dependency closure
         run: |
           # Check every APK, not an arbitrary first match. No APK is also failure.

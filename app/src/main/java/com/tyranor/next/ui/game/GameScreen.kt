@@ -1911,6 +1911,7 @@ internal fun EngineType.coverColor(): Color = when (this) {
     EngineType.XSYS4 -> Color(0xFF00A176)
     EngineType.UK2 -> Color(0xFF4E6E81)
     EngineType.FVP -> Color(0xFFB05A2A)
+    EngineType.CMVS -> Color(0xFF5B4B8A)
     EngineType.ETHORNELL -> com.tyranor.next.theme.EthornellCoverColor
     EngineType.YURIS -> Color(0xFF558B2F)
     EngineType.CATSYSTEM2 -> Color(0xFF6D4C41)
