@@ -75,4 +75,39 @@ class PrimaryStorageRootTest {
         assertEquals(PrimaryStorageRoot.DEFAULT, PrimaryStorageRoot.get())
         assertFalse(PrimaryStorageRoot.get().startsWith("storage/"))
     }
+
+    @Test
+    fun selectRootPrefersStorageManagerSource() {
+        assertEquals(
+            "/storage/emulated/150",
+            PrimaryStorageRoot.selectRoot("/storage/emulated/150", "/storage/emulated/0"),
+        )
+    }
+
+    @Test
+    fun selectRootFallsBackToCanonicalWhenStorageManagerInvalid() {
+        // SM 来源缺失或非挂载根拼写时回退 canonical
+        assertEquals(
+            "/storage/emulated/0",
+            PrimaryStorageRoot.selectRoot(null, "/storage/emulated/0"),
+        )
+        assertEquals(
+            "/storage/emulated/999",
+            PrimaryStorageRoot.selectRoot("/storage/self/primary", "/storage/emulated/999"),
+        )
+    }
+
+    @Test
+    fun selectRootRejectsAliasAndBroadRootSpellings() {
+        assertEquals("", PrimaryStorageRoot.selectRoot("/storage/emulated", "/sdcard"))
+        assertEquals("", PrimaryStorageRoot.selectRoot("/storage/emulated", "/storage/self/primary"))
+        assertEquals("", PrimaryStorageRoot.selectRoot(null, "/storage/emulated"))
+    }
+
+    @Test
+    fun selectRootReturnsEmptyWhenAllSourcesFail() {
+        assertEquals("", PrimaryStorageRoot.selectRoot(null, null))
+        // 相对路径不是挂载根
+        assertEquals("", PrimaryStorageRoot.selectRoot("storage/emulated/150", null))
+    }
 }

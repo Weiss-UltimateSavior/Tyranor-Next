@@ -20,8 +20,8 @@ object PrimaryStorageRoot {
     /** 常规单 user 环境的主存储根；JVM 测试与解析失败时的兜底值。 */
     const val DEFAULT = "/storage/emulated/0"
 
-    /** 主存储根别名拼写：悬空符号链按 java.io 宽容语义 canonical 化会原样返回，不可作挂载根。 */
-    private val ALIAS_SPELLINGS = listOf("/sdcard", "/storage/self/primary")
+    /** 不可作挂载根的拼写：别名（悬空符号链宽容解析会原样返回）与缺失 uid 的 emulated 宽根。 */
+    private val NON_MOUNT_SPELLINGS = listOf("/sdcard", "/storage/self/primary", "/storage/emulated")
 
     @Volatile
     private var cache: String? = null
@@ -54,26 +54,37 @@ object PrimaryStorageRoot {
 
     /** 返回空串表示两路解析均未得到可用挂载根。 */
     private fun compute(context: Context?): String {
-        if (context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val smPath = if (context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             runCatching {
                 context.getSystemService(StorageManager::class.java)
                     ?.primaryStorageVolume?.directory?.absolutePath
-            }.getOrNull()?.takeIf { isMountRoot(it) }?.let { return it }
+            }.getOrNull()
+        } else {
+            null
         }
-        probeCanonicalRoot?.let { probe ->
-            val probed = probe()
-            if (probed != null && isMountRoot(probed)) return probed
-            return ""
-        }
-        return runCatching {
-            @Suppress("DEPRECATION")
-            Environment.getExternalStorageDirectory().canonicalPath
-        }.getOrNull()?.takeIf { isMountRoot(it) } ?: ""
+        probeCanonicalRoot?.let { return selectRoot(smPath, it()) }
+        return selectRoot(
+            smPath,
+            runCatching {
+                @Suppress("DEPRECATION")
+                Environment.getExternalStorageDirectory().canonicalPath
+            }.getOrNull(),
+        )
     }
 
-    /** 必须是真实 emulated 挂载根；别名拼写（悬空链宽容解析结果）不可作根。 */
+    /**
+     * 解析决策纯函数（供 JVM 单测）：[smPath]（StorageManager，per-user 权威）优先，
+     * [canonicalPath]（`/sdcard` 符号链解析）回退；任一来源不是真实 emulated 挂载根
+     * （别名拼写或缺失 uid 的宽根都被 [isMountRoot] 拒绝）即视为失败，返回空串。
+     */
+    internal fun selectRoot(smPath: String?, canonicalPath: String?): String =
+        smPath?.takeIf { isMountRoot(it) }
+            ?: canonicalPath?.takeIf { isMountRoot(it) }
+            ?: ""
+
+    /** 必须是真实 emulated 挂载根；别名拼写与宽根不可作根。 */
     private fun isMountRoot(root: String): Boolean =
-        root.startsWith("/storage/") && root !in ALIAS_SPELLINGS
+        root.startsWith("/storage/") && root !in NON_MOUNT_SPELLINGS
 
     /** 仅供 JVM 回归：清空缓存与探针，恢复生产语义。 */
     internal fun resetForTest() {
