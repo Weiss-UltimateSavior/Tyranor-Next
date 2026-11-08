@@ -1110,3 +1110,54 @@ GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = 
 | CR10-4 误分类 | 已修复 | `tools/prepare-gradle-distribution.py:187`；`tools/test_prepare_gradle_distribution.py:427` | Unix/Windows访问限制、代理、证书、未知gh错误不降级。 |
 | CR10-5 读取中断 | 已修复 | `tools/prepare-gradle-distribution.py:155`、`:164`；`tools/test_prepare_gradle_distribution.py:359`、`:389` | 连接成功后read抛IncompleteRead及普通短body均警告降级，响应已关闭。 |
 | CR10-6 服务停止 | 已修复 | `tools/test_gradle_compiler_cache.py:142`、`:193`、`:243` | 半请求约2s停止；两次正式集成目录清理通过，首轮失败缓存按工具拒绝保留于仓库外且无相关进程。 |
+
+
+## 第十一轮 CodeRabbit 限流与 DNS 分类修复（2026-11-08）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `bb2e0f207c8f8c8e76f82ca97a5adb51cee1a997`；本节候选由包含本节的提交识别。本轮共4个文件、+124/−3，完整清单如下，无未跟踪源码纳入。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `CHANGELOG.md` | 1 | 1 |
+| `docs/reviews/motion-v2-review.md` | 51 | 0 |
+| `tools/prepare-gradle-distribution.py` | 10 | 2 |
+| `tools/test_prepare_gradle_distribution.py` | 62 | 0 |
+
+已执行验证：
+
+- 完整GitHub评论/审核线程查询及 `gh pr view 150 --repo Weiss-UltimateSavior/Tyranor-Next --json headRefOid,statusCheckRollup,mergeable` → 父head六项检查均SUCCESS、无冲突，但[CodeRabbit review 5817702592](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5817702592)实际新增2条分类意见。父head的macOS 26项工具测试、2项真实缓存集成及完整app JVM均实际通过，Docstring Coverage 82.94%；这些不作为本轮新head结果。
+- `./gradlew.bat :app:compileReleaseKotlin` → 通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 退出1；2,012项、43失败（app 27 / engine 16）、22跳过、0 error，失败ID集合与实跑c65e3c55基线及父轮相同，新增0；本轮未重跑基线checkout。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出1；29 Error / 316 Warning / 10 Hint，Error的id+message集合与基线一致，无新增；既有错误仍记失败。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 通过；隔离包名仍为 `com.tyranor.next.motionv2`。
+- `python -B tools/test_prepare_gradle_distribution.py` → 最终29/29通过，原26项保留；新增3项方法覆盖metadata/asset的primary与secondary限流403、普通权限/混合状态拒绝、永久DNS与明确临时DNS。均为内存传输夹具，没有制造真实限流或操作真实代理。
+- `python -B tools/test_gradle_compiler_cache.py -v` → Windows真实原Wrapper正反2/2通过；正向JAR GET=0、路径/摘要/字节匹配，空cache负对照GET=1、403、Gradle非零；服务与本轮临时目录正常清理。本轮未修改集成测试或workflow。
+- Python3.9语法解析、类/函数docstring、UTF-8无BOM/LF、`git -c core.autocrlf=false diff --check`、隐私/范围检查 → 通过；49个保护文件、全部app/engine生产源集、版本与workflow对父head无差异。
+- 未执行：本轮新head完整远端CI与CodeRabbit、本机Linux/macOS/Python3.9实跑、独立actionlint、真机/录屏逐帧、全主题/平板/低端机/真实引擎与性能。没有设备输入、安装、录屏、Perfetto或系统设置修改。前轮仓库外保留缓存状态见第十轮，不混同本轮已清理目录。
+
+### 结论摘要
+
+两个CodeRabbit意见已核实并修复，只收窄CI工具的异常分类：明确的GitHub限流403可降级，永久DNS错误不降级，原408/429/5xx和权限/完整性保护保持。五个独立视角审核及新的独立agent对最终候选的复核均已完成。当前无已确认的剩余高、中级问题；须等待新head的完整CI和CodeRabbit，尚不宣称可立即合并。
+
+### 问题清单
+
+| No. | 级别 | 问题与证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR11-1 | 中 | 父head将GitHub明确primary/secondary限流HTTP403当作普通权限错误，使可选预取硬失败，即使正常Gradle解析可用。 | 仅单个403状态且gh行首为官方限流诊断时允许；普通权限、混合状态、尾部附带限流文字、TLS/权限拒绝仍严格失败，Maven裸403不放宽。 | `tools/prepare-gradle-distribution.py:217`、`:220`；`tools/test_prepare_gradle_distribution.py:477` |
+| CR11-2 | 中 | 父head放行全部URLError包装的gaierror及gh的no such host，误吞EAI_NONAME等永久代理/域名配置错误。 | 结构化DNS仅允许平台socket.EAI_AGAIN；永久/未知失败保持原异常，gh只保留明确临时解析文本。 | `tools/prepare-gradle-distribution.py:195`、`:226`；`tools/test_prepare_gradle_distribution.py:511`、`:525` |
+
+### 已核对无问题的部分
+
+- 只改分类器、三个测试方法和对应文档。三处网络包装、Kotlin可选CLI、Gradle分发必需入口、双摘要、已知坏cache阻断、原子替换与finally清理均无修改；没有弱化真实测试步骤或增加continue-on-error。
+- 403诊断要求每行gh:前缀后的明确primary/secondary说明；任何混合403状态保守拒绝，不把整段输出里出现限流文字作为放行条件。DNS使用socket常量，未硬编码POSIX或Windows数值；未知诊断保持严格失败。
+- 新增动效、视觉与节奏、普通档、滑条例外及受保护导航没有本轮差异；没有私人路径、设备端点、凭据、媒体、缓存、APK或二进制入库。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR11-1 限流403 | 已修复，远端待新head | `tools/prepare-gradle-distribution.py:217`、`:220`；`tools/test_prepare_gradle_distribution.py:477` | primary/secondary在metadata与asset边界可降级并清临时文件；普通权限、混合401/403、证书及尾部限流文字不降级。29项工具测试通过。 |
+| CR11-2 永久DNS | 已修复，远端待新head | `tools/prepare-gradle-distribution.py:195`、`:226`；`tools/test_prepare_gradle_distribution.py:511`、`:525` | EAI_NONAME/EAI_FAIL及gh no such host原样失败；EAI_AGAIN和两种明确临时解析文本警告降级。29项工具测试及真实缓存正反2项均通过。 |

@@ -474,6 +474,68 @@ class KotlinCompilerPreparationTest(unittest.TestCase):
         self.assertNotIn("::warning::", self.run_cli())
         self.assertEqual(KOTLIN_PAYLOAD, self.expected_cache().read_bytes())
 
+    def test_github_rate_limit_403_yields_without_weakening_access_errors(self):
+        """Explicit GitHub primary/secondary limits may yield; ordinary or mixed denial statuses may not."""
+        for message in (
+            b"gh: API rate limit exceeded for fixture (HTTP 403)",
+            b"gh: You have exceeded a secondary rate limit. Please wait. (HTTP 403)",
+        ):
+            with self.subTest(stderr=message):
+                error = subprocess.CalledProcessError(1, "gh", stderr=message)
+                self.metadata.side_effect = error
+                self.assertIn("::warning::", self.run_cli())
+                self.metadata.side_effect = None
+                self.metadata.return_value = json.dumps(self.release).encode()
+                self.download.side_effect = error
+                self.assertIn("::warning::", self.run_cli())
+                self.assertFalse(self.expected_cache().exists())
+                self.assertEqual([], list(self.expected_cache().parent.iterdir()))
+        for message in (
+            b"gh: Forbidden (HTTP 403)",
+            b"gh: Resource not accessible by integration (HTTP 403)",
+            b"gh: Resource not accessible by integration (HTTP 403); API rate limit exceeded",
+            b"gh: API rate limit exceeded (HTTP 403); Unauthorized (HTTP 401)",
+            b"gh: API rate limit exceeded (HTTP 403)\ngh: Forbidden (HTTP 403)",
+            b"gh: API rate limit exceeded (HTTP 403); permission denied",
+            b"gh: API rate limit exceeded (HTTP 403); x509: certificate verification failed",
+        ):
+            with self.subTest(stderr=message):
+                self.metadata.side_effect = subprocess.CalledProcessError(1, "gh", stderr=message)
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.run_cli()
+        self.checksum.side_effect = HTTPError("https://repo.maven.apache.org/fixture.sha1", 403, "Forbidden", {}, None)
+        self.addCleanup(self.checksum.side_effect.close)
+        with self.assertRaises(HTTPError):
+            self.run_cli()
+
+    def test_permanent_dns_errors_are_not_optional_network_outages(self):
+        """Invalid proxy/domain names remain visible configuration failures in urllib and gh."""
+        for code in (socket.EAI_NONAME, socket.EAI_FAIL):
+            with self.subTest(errno=code):
+                self.checksum.side_effect = URLError(socket.gaierror(code, "permanent lookup failure"))
+                with self.assertRaises(URLError):
+                    self.run_cli()
+        self.metadata.assert_not_called()
+        self.assertFalse(self.home.exists())
+        self.checksum.side_effect = lambda *a, **k: io.BytesIO(self.sha1.encode())
+        self.metadata.side_effect = subprocess.CalledProcessError(1, "gh", stderr=b"lookup wrong-proxy.invalid: no such host")
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.run_cli()
+
+    def test_explicit_temporary_dns_diagnostics_still_yield(self):
+        """Temporary DNS errno and explicit gh diagnostics retain normal Gradle resolution as fallback."""
+        self.checksum.side_effect = URLError(socket.gaierror(socket.EAI_AGAIN, "temporary lookup failure"))
+        self.assertIn("::warning::", self.run_cli())
+        self.checksum.side_effect = lambda *a, **k: io.BytesIO(self.sha1.encode())
+        for message in (
+            b"lookup proxy.invalid: Temporary failure in name resolution",
+            b"lookup proxy.invalid: This is usually a temporary error during hostname resolution.",
+        ):
+            with self.subTest(stderr=message):
+                self.metadata.side_effect = subprocess.CalledProcessError(1, "gh", stderr=message)
+                self.assertIn("::warning::", self.run_cli())
+        self.assertFalse(self.home.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

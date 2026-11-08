@@ -192,7 +192,9 @@ def is_transient_network_error(error: Exception) -> bool:
         reason = error.reason
         if isinstance(reason, ssl.SSLError):
             return False
-        return isinstance(reason, (TimeoutError, ConnectionError, socket.gaierror)) or (
+        if isinstance(reason, socket.gaierror):
+            return reason.errno == socket.EAI_AGAIN
+        return isinstance(reason, (TimeoutError, ConnectionError)) or (
             isinstance(reason, OSError) and reason.errno in (
                 errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ETIMEDOUT,
                 errno.ECONNRESET, errno.ECONNREFUSED, errno.ECONNABORTED,
@@ -212,11 +214,17 @@ def is_transient_network_error(error: Exception) -> bool:
             return False
         statuses = re.findall(r"\bHTTP(?:/[\d.]+)?[ :]+(\d{3})\b", message, re.IGNORECASE)
         if statuses:
+            rate_limited = re.search(
+                r"(?:^|\n)\s*gh:\s*(?:api rate limit exceeded\b|you have exceeded a secondary rate limit\b)", message,
+            ) is not None
+            if "403" in statuses:
+                return statuses == ["403"] and rate_limited
             return all(int(status) in (408, 429) or 500 <= int(status) <= 599 for status in statuses)
         return any(fragment in message for fragment in (
             "tls handshake timeout", "i/o timeout", "context deadline exceeded",
             "connection reset by peer", "connection refused", "network is unreachable",
-            "no such host", "unexpected eof", "http2: client connection lost",
+            "temporary failure in name resolution", "this is usually a temporary error during hostname resolution",
+            "unexpected eof", "http2: client connection lost",
         ))
     return False
 
