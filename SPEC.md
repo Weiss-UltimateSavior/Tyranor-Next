@@ -103,6 +103,7 @@ Ruffle（SWF / Flash）由外置 Ruffle APK 模块承载，当前扫描与启动
 - 容器匹配遵循「ID 优先于名称」：两者都覆盖时以 ID 为准；**只覆盖名称时会清除继承的全局 ID**（置 0 不下发），否则继承的 ID 会让名称覆盖失效。该行为是 1.61 未定义、本版本明确的新规则。
 - 不同引擎提供适用的内核/版本、编码、字体、渲染、存档位置或兼容参数；PC 游戏支持 Winlator 全局与单游戏参数覆盖，安卓游戏不提供引擎参数配置。
 - Web 宿主支持统一虚拟按键与手柄映射、按键方案导入/导出与全屏编辑；方案按归一化视口保存。默认虚拟按键 MV/MZ 开、Tyrano/VN/WebOther 关；Web 手柄映射默认开。
+- Tyrano Web 宿主在 `ScreenRatio=fix` 时于运行时把游戏的 `ScreenCentering` 收敛为 true，按引擎自带的居中路径（4.x `fitBaseSize` / 5.x `_fitBaseSize`）处理；`vchat` 与 `useCamera` 模式保留引擎的关闭决定。桌面导出可能写入的 `false` 不再导致宽屏手机左对齐、右侧单边黑边。
 - 共用画质滤镜链最多 **8** 节点，支持添加、移除、排序与参数配置；单游戏切换跟随全局后保留自定义链。滤镜预设含纯重采样的 Bilinear / Bicubic 与带抗振铃强度（缺省 0.5）的 Lanczos，按性能开销排序；参数细节见 [共用画质滤镜链](docs/graphics-filters.md)。
 - 图形能力按内核、库身份及渲染器判断：Kirikiroid2（auto/1.3.9/1.3.4）、krkrsdl3 OpenGL、受支持的官方 Artemis 与 Siglus 走各自接入；krkrsdl3 软件渲染与自研 Artemis 当前不提供同等滤镜入口。
 - 滤镜处理已合成画面（可能含文本和 UI），不承诺文本排除。性能分析器仅在支持且滤镜生效时可用；GPU 时间缺失时不得显示 CPU 时间充数。
