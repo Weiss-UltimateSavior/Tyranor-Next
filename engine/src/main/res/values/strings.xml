@@ -123,6 +123,8 @@
     <string name="engine_input_binding_empty">未绑定</string>
     <string name="engine_input_delete">删除</string>
     <string name="engine_input_reset">恢复默认</string>
+    <string name="engine_systemnnn_reading_default">%1$s（默认）</string>
+    <string name="engine_systemnnn_reading_original">%1$s（原版）</string>
     <string name="engine_input_save">保存</string>
     <string name="engine_input_cancel">取消</string>
     <string name="engine_input_confirm">确定</string>

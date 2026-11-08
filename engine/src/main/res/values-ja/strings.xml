@@ -123,6 +123,8 @@
     <string name="engine_input_binding_empty">未割り当て</string>
     <string name="engine_input_delete">削除</string>
     <string name="engine_input_reset">初期化</string>
+    <string name="engine_systemnnn_reading_default">%1$s（既定）</string>
+    <string name="engine_systemnnn_reading_original">%1$s（原版）</string>
     <string name="engine_input_save">保存</string>
     <string name="engine_input_cancel">キャンセル</string>
     <string name="engine_input_confirm">OK</string>

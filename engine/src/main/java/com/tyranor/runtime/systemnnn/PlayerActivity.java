@@ -23,6 +23,7 @@ import android.os.storage.StorageVolume;
 import android.util.TypedValue;
 import android.view.*;
 import android.widget.*;
+import com.core.engine.R;
 import java.io.File;
 import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
@@ -343,19 +344,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         int availableHeight=root.getHeight()-root.getPaddingTop()-root.getPaddingBottom();
         if(availableWidth<=0||availableHeight<=0)return;
         float scale=Math.min((float)availableWidth/width,(float)availableHeight/height);
-        int viewportWidth=availableWidth;
-        if(panelActionButton!=null&&panelActionButton.getVisibility()==View.VISIBLE){
-            panelActionButton.measure(View.MeasureSpec.makeMeasureSpec(availableWidth,View.MeasureSpec.AT_MOST),
-                View.MeasureSpec.makeMeasureSpec(dp(48),View.MeasureSpec.EXACTLY));
-            int actionWidth=Math.min(availableWidth-1,panelActionButton.getMeasuredWidth()+dp(8));
-            if((availableWidth-Math.round(width*scale))/2<actionWidth){
-                viewportWidth-=actionWidth;
-                scale=Math.min((float)viewportWidth/width,(float)availableHeight/height);
-            }
-        }
         int w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
-        int left=(viewportWidth-w)/2;
-        if(root.getLayoutDirection()==View.LAYOUT_DIRECTION_RTL)left+=availableWidth-viewportWidth;
+        int left=(availableWidth-w)/2;
         int top=(availableHeight-h)/2;
         FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)stage.getLayoutParams();
         int gravity=Gravity.TOP|Gravity.LEFT;
@@ -515,15 +505,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void updatePanelAction(){
         String label=gamePanel instanceof GameSettingsPanel?"阅读字号":
             gamePanel instanceof GameSlotsPanel?((GameSlotsPanel)gamePanel).pcTransferLabel():null;
-        int visibility=label==null?View.GONE:View.VISIBLE;
-        boolean layoutChanged=panelActionButton.getVisibility()!=visibility;
-        if(label!=null&&!label.contentEquals(panelActionButton.getText())){
-            panelActionButton.setText(label);
-            layoutChanged=true;
-        }
-        panelActionButton.setVisibility(visibility);
+        if(label!=null&&!label.contentEquals(panelActionButton.getText()))panelActionButton.setText(label);
+        panelActionButton.setVisibility(label==null?View.GONE:View.VISIBLE);
         updatePanelActionEnabled();
-        if(layoutChanged)layoutStage();
     }
     private void updateVisibility() {
         if(dialoguePanel==null)return;
@@ -1324,12 +1308,15 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         String[] labels=new String[sizes.length];
         int selected=0;
         for(int i=0;i<sizes.length;i++){
-            labels[i]=sizes[i]+"%";
-            if(sizes[i]==settings.readingSize)selected=i;
+            int size=sizes[i];
+            labels[i]=size+"%";
+            if(size==PlayerSettings.DEFAULT_READING_SIZE)labels[i]=getString(R.string.engine_systemnnn_reading_default,labels[i]);
+            else if(size==100)labels[i]=getString(R.string.engine_systemnnn_reading_original,labels[i]);
+            if(size==settings.readingSize)selected=i;
         }
         showPanel(new AlertDialog.Builder(this).setTitle("阅读字号 · 剧情正文")
             .setSingleChoiceItems(labels,selected,(d,i)->preferences.edit().putInt(PlayerSettings.READING_SIZE,sizes[i]).apply())
-            .setNeutralButton("恢复原版",(d,i)->preferences.edit().remove(PlayerSettings.READING_SIZE).apply())
+            .setNeutralButton(R.string.engine_input_reset,(d,i)->preferences.edit().remove(PlayerSettings.READING_SIZE).apply())
             .setPositiveButton("完成",null).create());
     }
     private void volumeSetting(LinearLayout box,String title,String key,int current) {

@@ -8,8 +8,8 @@ final class PlayerSettings {
     static final String MUSIC="musicVolume", SOUND="soundVolume", VOICE="voiceVolume", EFFECT_VOICE="effectVoiceVolume";
     static final String TEXT_SPEED="textSpeed", AUTO_SPEED="autoSpeed", SKIP_READ_ONLY="skipReadOnly";
     static final String READING_SIZE="androidReadingSizePercent";
-    static final int DEFAULT_READING_SIZE=100;
-    static final int[] READING_SIZES={85,100,115,130,150};
+    static final int DEFAULT_READING_SIZE=85;
+    static final int[] READING_SIZES={60,85,100,115};
     final int musicVolume,soundVolume,voiceVolume,effectVoiceVolume,textSpeed,autoSpeed,readingSize;
     final boolean skipReadOnly;
     final int windowOpacity,messageWindowIndex;
