@@ -51,7 +51,7 @@ flowchart TD
 
 数据写入链为 UI 命令队列 → [GameLibraryFacade](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt) 缓存与修订号 → [GameLibraryRepository](app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryRepository.kt) 单线程 FIFO + mutex → Room。封面更新只修改对应字段；一致性搜索先等待已排队写入，避免旧结果覆盖新状态。
 
-`app_settings` 及引导恢复快照由主进程持有写入权；子进程只读安装证据，不提交自身缓存的整张偏好图。首次判定未可靠保存时，普通设置与原始判定在 `OnboardingPreferences` 同一 monitor、同一 Editor 中更新；单游戏覆盖冷读在建库前复用该门控，返回不缓存的无覆盖并允许重试。根目录缓存写失败后失效；冷读在数据库结果上按顺序重放在途的幂等增删，形成完整的已接受目录视图并保留即时扫描可见性，不缓存原始中间快照。后续增删仍进入同一 FIFO，最终完成时仍失效的视图由修订号触发重读。
+`app_settings` 及引导恢复快照由主进程持有写入权；子进程只读安装证据，不提交自身缓存的整张偏好图。首次判定未可靠保存时，普通设置与原始判定在 `OnboardingPreferences` 同一 monitor、同一 Editor 中更新；单游戏覆盖在建库前复用该门控，暂不可建库时保留已接受的行缓存及删除墓碑，缓存未命中则只读既有 prefs 镜像，不回填临时行或缺失值，恢复后继续原有镜像回灌。根目录缓存写失败后失效；冷读在数据库结果上按顺序重放在途的幂等增删，形成完整的已接受目录视图并保留即时扫描可见性，不缓存原始中间快照。后续增删仍进入同一 FIFO，最终完成时仍失效的视图由修订号触发重读。
 
 旧 `game_scanner` prefs 仍作为幂等迁移来源和恢复镜像，不能删除为“无用缓存”。应用/引擎偏好及引擎进程读取的单游戏 blob 仍保留 prefs；Room 不是所有状态的唯一介质，也不能把普通 SharedPreferences 当成实时跨进程消息总线。
 

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.core.engine.EnginePrefs
 import com.tyranor.next.core.settings.AppSettingsStore
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -97,13 +98,37 @@ object GameOverridesRepository {
         return true
     }
 
-    /** 阻塞读单行：首次安装状态尚不可保存时返回不缓存的无覆盖，后续读取继续重试。 */
+    /** 阻塞读单行：首次安装状态尚不可保存时只读缓存/镜像，后续读取继续重试。 */
     internal fun loadRowBlocking(context: Context, gameId: String): GameOverrideEntity? =
         runBlocking {
-            if (!AppSettingsStore.prepareInstallationData(context)) return@runBlocking null
+            if (!AppSettingsStore.prepareInstallationData(context)) return@runBlocking loadAvailableRow(context, gameId)
             ensureSynced(context)
             withContext(Dispatchers.IO) { loadRowCached(context, gameId) }
         }
+
+    /** Keeps accepted edits readable without opening a database or caching a missing/corrupt mirror. */
+    private fun loadAvailableRow(context: Context, gameId: String): GameOverrideEntity? {
+        while (true) {
+            val generation = synchronized(cacheLock) {
+                // A null tombstone is an accepted clear, even before the old mirror is removed.
+                if (rowCache.containsKey(gameId)) return rowCache[gameId]
+                cacheGeneration
+            }
+            val row = try {
+                context.getSharedPreferences(EnginePrefs.GAME_OVERRIDES_PREFS, Context.MODE_PRIVATE)
+                    .getString(gameId, null)
+                    ?.let { GameOverridePartitions.split(gameId, JSONObject(it), System.currentTimeMillis()) }
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (_: Exception) {
+                null
+            }
+            synchronized(cacheLock) {
+                // A write, clear, or failure invalidation during the mirror read takes precedence.
+                if (generation == cacheGeneration) return row
+            }
+        }
+    }
 
     private suspend fun loadRowCached(context: Context, gameId: String): GameOverrideEntity? {
         while (true) {

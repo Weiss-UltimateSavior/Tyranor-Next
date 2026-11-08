@@ -6,12 +6,32 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Process
 import android.util.Log
+import androidx.room.InvalidationTracker
+import com.core.engine.EnginePrefs
+import com.tyranor.next.core.game.storage.GameLibraryDao
 import com.tyranor.next.core.game.storage.GameLibraryDatabase
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.core.game.storage.GameLibraryRepository
+import com.tyranor.next.core.game.storage.GameOverrideEntity
+import com.tyranor.next.core.game.storage.GameOverridePartitions
+import com.tyranor.next.core.game.storage.GameOverridesRepository
 import java.io.File
 import java.io.IOException
 import java.lang.reflect.Proxy
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -376,6 +396,162 @@ class OnboardingPreferencesTest {
     }
 
     @Test
+    fun `accepted overrides remain readable and cumulative after actual database writes fail`() = withUnavailableOverrides {
+        val gameId = "content://onboarding-fixture/accepted-overrides"
+        withPausedWrites {
+            PerGameSettingsStore.setStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION, "1.3.4")
+            assertEquals("1.3.4", PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+            assertTrue(PerGameSettingsStore.hasOverride(context, gameId))
+            PerGameSettingsStore.setBool(context, gameId, PerGameSettingsStore.F_SCOPED_SAVE_DIR, true)
+            assertEquals("1.3.4", PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+            assertEquals(true, PerGameSettingsStore.getBool(context, gameId, PerGameSettingsStore.F_SCOPED_SAVE_DIR))
+        }
+
+        assertEquals("Both actual post failures must run the production invalidation callback", 2, failures.get())
+        assertFalse(hasCachedRow(gameId))
+        assertEquals("1.3.4", PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+        assertEquals(true, PerGameSettingsStore.getBool(context, gameId, PerGameSettingsStore.F_SCOPED_SAVE_DIR))
+        assertFalse("A mirror read must not become an authoritative database cache entry", hasCachedRow(gameId))
+        assertFalse(database.exists())
+        assertTrue(settings.disk.isEmpty())
+        assertFalse(AppSettingsStore.isOnboardingCompleted(context))
+    }
+
+    @Test
+    fun `accepted clear tombstone wins over an old mirror and stays cleared after failure`() = withUnavailableOverrides {
+        val gameId = "content://onboarding-fixture/cleared-overrides"
+        overrides.preferences.edit().putString(gameId, "{\"engine_version\":\"old\"}").apply()
+        withPausedWrites {
+            GameOverridesRepository.clearRow(context, gameId)
+            assertTrue("The old mirror still exists before the caller removes it", overrides.preferences.contains(gameId))
+            assertTrue(hasCachedRow(gameId))
+            assertFalse(PerGameSettingsStore.hasOverride(context, gameId))
+            assertNull(PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+
+            PerGameSettingsStore.clear(context, gameId)
+            assertFalse(overrides.preferences.contains(gameId))
+            assertFalse(PerGameSettingsStore.hasOverride(context, gameId))
+        }
+        assertEquals(2, failures.get())
+        assertFalse(hasCachedRow(gameId))
+        assertFalse(PerGameSettingsStore.hasOverride(context, gameId))
+        assertFalse(database.exists())
+    }
+
+    @Test
+    fun `missing and corrupt mirrors remain uncached retry installation and propagate cancellation`() = withUnavailableOverrides {
+        val gameId = "content://onboarding-fixture/retry-overrides"
+        for (raw in listOf(null, "{")) {
+            if (raw == null) overrides.preferences.edit().remove(gameId).apply()
+            else overrides.preferences.edit().putString(gameId, raw).apply()
+            val attempts = settings.commits
+            repeat(2) {
+                assertNull(PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+                assertFalse(PerGameSettingsStore.hasOverride(context, gameId))
+                assertFalse(hasCachedRow(gameId))
+            }
+            assertTrue("Every unavailable read must retry installation persistence", settings.commits >= attempts + 4)
+        }
+        overrides.preferences.edit().putString(gameId, "{\"engine_version\":\"repaired\"}").apply()
+        assertEquals("repaired", PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+        assertFalse(hasCachedRow(gameId))
+        overrides.afterStringRead = { throw IOException("Unavailable mirror read") }
+        try {
+            assertNull(PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+            assertFalse(hasCachedRow(gameId))
+        } finally {
+            overrides.afterStringRead = null
+        }
+        overrides.afterStringRead = { throw CancellationException("Cancelled mirror read") }
+        try {
+            assertThrows(CancellationException::class.java) {
+                PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION)
+            }
+        } finally {
+            overrides.afterStringRead = null
+        }
+        assertFalse(database.exists())
+        assertFalse(AppSettingsStore.isOnboardingCompleted(context))
+    }
+
+    @Test
+    fun `mirror read retries when an accepted update clear or invalidation changes its generation`() = withUnavailableOverrides {
+        val gameId = "content://onboarding-fixture/concurrent-overrides"
+        val reader = Executors.newSingleThreadExecutor()
+        try {
+            withPausedWrites {
+                for (operation in listOf("update", "clear", "invalidate")) {
+                    GameOverridesRepository.invalidateRowCache()
+                    overrides.preferences.edit().putString(gameId, "{\"engine_version\":\"old\"}").apply()
+                    val entered = CountDownLatch(1)
+                    val release = CountDownLatch(1)
+                    val paused = AtomicBoolean()
+                    overrides.afterStringRead = { key ->
+                        if (key == gameId && paused.compareAndSet(false, true)) {
+                            entered.countDown()
+                            check(release.await(10, TimeUnit.SECONDS)) { "Timed out releasing the mirror read" }
+                        }
+                    }
+                    try {
+                        val result = reader.submit<String?> {
+                            PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION)
+                        }
+                        assertTrue("The reader never captured the old mirror", entered.await(10, TimeUnit.SECONDS))
+                        when (operation) {
+                            "update" -> GameOverridesRepository.updateRecord(
+                                context, gameId, JSONObject().put(PerGameSettingsStore.F_ENGINE_VERSION, "new"),
+                            )
+                            "clear" -> GameOverridesRepository.clearRow(context, gameId)
+                            "invalidate" -> {
+                                overrides.preferences.edit().putString(gameId, "{\"engine_version\":\"new\"}").apply()
+                                GameOverridesRepository.invalidateRowCache()
+                            }
+                        }
+                        release.countDown()
+                        assertEquals(if (operation == "clear") null else "new", result.get(10, TimeUnit.SECONDS))
+                    } finally {
+                        release.countDown()
+                        overrides.afterStringRead = null
+                    }
+                }
+            }
+        } finally {
+            reader.shutdownNow()
+            assertTrue("The owned mirror reader must stop before restoring repository state", reader.awaitTermination(10, TimeUnit.SECONDS))
+        }
+        assertFalse(database.exists())
+    }
+
+    @Test
+    fun `override mirror survives restart without skipping onboarding and imports after storage recovers`() = withUnavailableOverrides {
+        val gameId = "content://onboarding-fixture/restarted-overrides"
+        PerGameSettingsStore.setStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION, "1.3.4")
+        drainWrites()
+        PerGameSettingsStore.setBool(context, gameId, PerGameSettingsStore.F_SCOPED_SAVE_DIR, true)
+        drainWrites()
+        assertEquals(2, failures.get())
+        restart()
+        assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, AppSettingsStore.initializeOnboarding(context))
+        assertFalse(AppSettingsStore.isOnboardingCompleted(context))
+        assertEquals("1.3.4", PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+        assertEquals(true, PerGameSettingsStore.getBool(context, gameId, PerGameSettingsStore.F_SCOPED_SAVE_DIR))
+        assertFalse(database.exists())
+
+        settings.writeSucceeds = true
+        assertTrue(AppSettingsStore.prepareInstallationData(context))
+        assertEquals(false, settings.disk[AppSettingsStore.KEY_ONBOARDING_COMPLETED])
+        withRecoveredDatabase { rows ->
+            runBlocking { GameOverridesRepository.ensureSynced(context) }
+            val imported = GameOverridePartitions.assemble(checkNotNull(rows[gameId]))
+            assertEquals("1.3.4", imported.getString(PerGameSettingsStore.F_ENGINE_VERSION))
+            assertTrue(imported.getBoolean(PerGameSettingsStore.F_SCOPED_SAVE_DIR))
+            assertEquals("1.3.4", PerGameSettingsStore.getStr(context, gameId, PerGameSettingsStore.F_ENGINE_VERSION))
+            assertEquals(true, PerGameSettingsStore.getBool(context, gameId, PerGameSettingsStore.F_SCOPED_SAVE_DIR))
+            assertFalse(AppSettingsStore.isOnboardingCompleted(context))
+        }
+    }
+
+    @Test
     fun `stale engine process never edits app settings or deletes the main recovery snapshot`() {
         val files = Files.createTempDirectory("onboarding-child-reader").toFile()
         val sharedDisk = mutableMapOf<String, Any>(AppSettingsStore.KEY_THEME_COLOR to "old-color")
@@ -451,24 +627,225 @@ class OnboardingPreferencesTest {
         assertFalse(cleared.isCompleted())
     }
 
+    private fun withUnavailableOverrides(test: OverrideFixture.() -> Unit) {
+        val fixture = OverrideFixture()
+        try {
+            fixture.initialize()
+            fixture.test()
+        } finally {
+            fixture.close()
+        }
+    }
+
+    /** Owns the real post queue and snapshots globals while only installation persistence is blocked. */
+    private class OverrideFixture : AutoCloseable {
+        val database = Files.createTempFile("onboarding-overrides-library", ".db").toFile().apply { delete() }
+        private val blockedFiles = Files.createTempFile("onboarding-overrides-files", ".tmp").toFile()
+        var settings = MemoryPreferences().apply { writeSucceeds = false }
+        var overrides = MemoryPreferences()
+        val failures = AtomicInteger()
+        val context: Context
+            get() = OnboardingContext(
+                settings.preferences,
+                mapOf(EnginePrefs.GAME_OVERRIDES_PREFS to overrides.preferences),
+                database,
+                blockedFiles,
+            )
+
+        private val databaseField = GameLibraryDatabase::class.java.getDeclaredField("instance").apply { isAccessible = true }
+        private val mirrorField = GameLibraryRepository::class.java.getDeclaredField("mirrorJob").apply { isAccessible = true }
+        private val writer = (GameLibraryRepository::class.java.getDeclaredField("writeScope").apply {
+            isAccessible = true
+        }.get(GameLibraryRepository) as CoroutineScope).coroutineContext[Job]!!
+        private val cacheLock = GameOverridesRepository::class.java.getDeclaredField("cacheLock").apply {
+            isAccessible = true
+        }.get(GameOverridesRepository)
+        private val rowsField = GameOverridesRepository::class.java.getDeclaredField("rowCache").apply { isAccessible = true }
+        private val generationField = GameOverridesRepository::class.java.getDeclaredField("cacheGeneration").apply { isAccessible = true }
+        private val syncField = GameOverridesRepository::class.java.getDeclaredField("syncDone").apply { isAccessible = true }
+        private val listenerField = GameLibraryFacade::class.java.getDeclaredField("persistFailureListenerInstalled").apply { isAccessible = true }
+        private val facadeCaches = listOf("gamesCache", "recentGamesCache", "quickLaunchCache", "rootsCache").associate { name ->
+            GameLibraryFacade::class.java.getDeclaredField(name).apply { isAccessible = true }.let { it to it.get(GameLibraryFacade) }
+        }
+        private val previousDatabase = databaseField.get(null)
+        private val previousMirror = mirrorField.get(GameLibraryRepository)
+        private val previousListener = GameLibraryRepository.onPersistFailure
+        private val previousListenerInstalled = listenerField.getBoolean(GameLibraryFacade)
+        private val previousRows = synchronized(cacheLock) { cachedRows().toMap() }
+        private val previousGeneration = generationField.getLong(GameOverridesRepository)
+        private val previousSync = syncField.getBoolean(GameOverridesRepository)
+        private var started = false
+
+        /** Installs the real failure listener while database creation is blocked by the install gate. */
+        fun initialize() {
+            check(writer.children.none()) { "Override fixture requires an idle repository" }
+            started = true
+            databaseField.set(null, null)
+            GameOverridesRepository.invalidateRowCache()
+            facadeCaches.keys.forEach { it.set(GameLibraryFacade, null) }
+            listenerField.setBoolean(GameLibraryFacade, false)
+            assertEquals(OnboardingWriteResult.STORAGE_UNAVAILABLE, AppSettingsStore.initializeOnboarding(context))
+            // This real uncached entry installs the production failure callback without opening Room.
+            assertTrue(GameLibraryFacade.loadRoots(context).isEmpty())
+            val productionListener = checkNotNull(GameLibraryRepository.onPersistFailure)
+            GameLibraryRepository.onPersistFailure = {
+                productionListener()
+                failures.incrementAndGet()
+            }
+        }
+
+        /** Distinguishes an optimistic row/tombstone from an uncached mirror read. */
+        fun hasCachedRow(gameId: String): Boolean = synchronized(cacheLock) { cachedRows().containsKey(gameId) }
+
+        /** Holds the real FIFO so optimistic rows and tombstones can be inspected before persistence. */
+        fun withPausedWrites(test: () -> Unit) {
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            GameLibraryRepository.post(context) {
+                entered.countDown()
+                check(release.await(10, TimeUnit.SECONDS)) { "Timed out releasing the override queue" }
+            }
+            try {
+                assertTrue("The fixture barrier never entered the real queue", entered.await(10, TimeUnit.SECONDS))
+                test()
+            } finally {
+                release.countDown()
+                drainWrites()
+            }
+        }
+
+        /** Waits for all owned posts, cancelling delayed mirror jobs before restoring any singleton. */
+        fun drainWrites() = runBlocking {
+            withTimeout(10_000) {
+                // A finishing post can replace mirrorJob. Recheck it until every owned child is done.
+                while (writer.children.any()) {
+                    (mirrorField.get(GameLibraryRepository) as Job?)?.cancelAndJoin()
+                    delay(1)
+                }
+            }
+        }
+
+        /** Recreates preference memory from durable snapshots after all previous posts have finished. */
+        fun restart() {
+            drainWrites()
+            AppSettingsStore.resetOnboardingForTests()
+            GameOverridesRepository.invalidateRowCache()
+            settings = MemoryPreferences(settings.disk).apply { writeSucceeds = false }
+            overrides = MemoryPreferences(overrides.disk)
+        }
+
+        /** Replaces only DAO storage after the install marker is saved; no SQLite claim is implied. */
+        fun withRecoveredDatabase(test: (Map<String, GameOverrideEntity>) -> Unit) {
+            drainWrites()
+            check(AppSettingsStore.prepareInstallationData(context))
+            val rows = linkedMapOf<String, GameOverrideEntity>()
+            val dao: GameLibraryDao = proxy { method, args ->
+                synchronized(rows) {
+                    when (method) {
+                        "getOverrideRow" -> rows[args[0]]
+                        "getAllOverrideRows" -> rows.values.toList()
+                        "upsertOverrideRows" -> {
+                            @Suppress("UNCHECKED_CAST")
+                            (args[0] as List<GameOverrideEntity>).forEach { rows[it.gameUri] = it }
+                            Unit
+                        }
+                        "deleteOverrideRowsByUris" -> {
+                            @Suppress("UNCHECKED_CAST")
+                            (args[0] as Collection<String>).forEach { rows.remove(it) }
+                            Unit
+                        }
+                        "deleteOverrideRow" -> { rows.remove(args[0]); Unit }
+                        else -> error("Unexpected override DAO method: $method")
+                    }
+                }
+            }
+            val replacement = object : GameLibraryDatabase() {
+                override fun gameLibraryDao(): GameLibraryDao = dao
+                override fun createInvalidationTracker(): InvalidationTracker = error("Not used by override synchronization")
+                override fun clearAllTables() = error("Not used by override synchronization")
+            }
+            val previous = databaseField.get(null)
+            databaseField.set(null, replacement)
+            try {
+                test(rows)
+            } finally {
+                try {
+                    drainWrites()
+                } finally {
+                    databaseField.set(null, previous)
+                }
+            }
+        }
+
+        /** Restores database, callbacks, caches and files before the outer Android scopes close. */
+        override fun close() {
+            try {
+                if (started) {
+                    try {
+                        drainWrites()
+                    } finally {
+                        try {
+                            runBlocking {
+                                withTimeout(10_000) { writer.children.toList().forEach { it.cancelAndJoin() } }
+                            }
+                        } finally {
+                            databaseField.set(null, previousDatabase)
+                            mirrorField.set(GameLibraryRepository, previousMirror)
+                            GameLibraryRepository.onPersistFailure = previousListener
+                            listenerField.setBoolean(GameLibraryFacade, previousListenerInstalled)
+                            facadeCaches.forEach { (field, value) -> field.set(GameLibraryFacade, value) }
+                            synchronized(cacheLock) {
+                                cachedRows().clear()
+                                cachedRows().putAll(previousRows)
+                                generationField.setLong(GameOverridesRepository, previousGeneration)
+                                syncField.setBoolean(GameOverridesRepository, previousSync)
+                            }
+                            AppSettingsStore.resetOnboardingForTests()
+                        }
+                    }
+                }
+            } finally {
+                blockedFiles.delete()
+                database.delete()
+            }
+        }
+
+        @Suppress("UNCHECKED_CAST")
+        private fun cachedRows(): MutableMap<String, GameOverrideEntity?> =
+            rowsField.get(GameOverridesRepository) as MutableMap<String, GameOverrideEntity?>
+    }
+
     /** Android commit changes memory even when the disk write fails; keep both snapshots separate. */
     private class MemoryPreferences(
         initial: Map<String, Any> = emptyMap(),
         val disk: MutableMap<String, Any> = initial.toMutableMap(),
     ) {
         private val memory = initial.toMutableMap()
+        @Volatile
         var writeSucceeds = true
+        @Volatile
         var applyWritesSucceed: Boolean? = null
         var commits = 0
         var edits = 0
+        @Volatile
+        var afterStringRead: ((String) -> Unit)? = null
         val writes = mutableListOf<Map<String, Any>>()
         val preferences: SharedPreferences = proxy { method, args ->
-            when (method) {
-                "contains" -> memory.containsKey(args[0])
-                "getBoolean", "getInt", "getString", "getStringSet" -> memory[args[0]] ?: args[1]
-                "getAll" -> memory.toMap()
-                "edit" -> editor()
-                else -> error("Unexpected preferences method: $method")
+            if (method == "getString") {
+                val value = synchronized(memory) { memory[args[0]] ?: args[1] }
+                // Capture first, then let concurrency tests pause without holding a prefs lock.
+                afterStringRead?.invoke(args[0] as String)
+                value
+            } else {
+                synchronized(memory) {
+                    when (method) {
+                        "contains" -> memory.containsKey(args[0])
+                        "getBoolean", "getInt", "getStringSet" -> memory[args[0]] ?: args[1]
+                        "getAll" -> memory.toMap()
+                        "edit" -> editor()
+                        else -> error("Unexpected preferences method: $method")
+                    }
+                }
             }
         }
 
@@ -480,7 +857,7 @@ class OnboardingPreferencesTest {
                 when (method) {
                     "putBoolean", "putInt", "putString", "putStringSet" -> { changes[args[0] as String] = args[1]; editor }
                     "remove" -> { changes[args[0] as String] = null; editor }
-                    "commit", "apply" -> {
+                    "commit", "apply" -> synchronized(memory) {
                         for ((key, value) in changes) {
                             if (value == null) memory.remove(key) else memory[key] = value
                         }

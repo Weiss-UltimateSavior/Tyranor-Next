@@ -16,6 +16,7 @@ import java.nio.file.Files
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
@@ -125,26 +126,11 @@ class GameLibraryFacadeRootsTest {
     }
 
     @Test
-    fun aFailedEarlierWriteCannotCacheAnEmptyReadAheadOfTheLaterSuccessfulWrite() {
-        assertTrue(GameLibraryFacade.loadRoots(context).isEmpty())
-        // Model two already queued root writes without constructing Android SQLite on the host.
-        setCachedRoots(listOf("/failed-a", "/saved-b"))
-        setPendingWrites(2)
-        finishQueuedWrite()
-        // Repository reports failure only after the failed block has run its finally.
-        checkNotNull(GameLibraryRepository.onPersistFailure).invoke()
-        val revisionAfterFailure = GameLibraryFacade.rootsRevision.value
-
-        supplyDatabaseRead(emptyList())
-        val attempts = preferences.commits
-        assertTrue(GameLibraryFacade.loadRoots(context).isEmpty())
-        assertTrue("The temporary empty read must remain uncached while B is pending", preferences.commits > attempts)
-
-        finishQueuedWrite()
-        assertEquals(revisionAfterFailure + 1, GameLibraryFacade.rootsRevision.value)
-        // B is now persisted; the next authoritative read may enter the cache.
-        supplyDatabaseRead(listOf("/saved-b"))
-        assertEquals(listOf("/saved-b"), GameLibraryFacade.loadRoots(context))
+    fun aFailedEarlierWriteCannotCacheThePendingProjectionAheadOfTheLaterSuccessfulWrite() {
+        withPausedRootWrite(expected = listOf("/saved-b"), verifyColdReads = true) {
+            // Read only: no third root command may replace the failure-invalidated snapshot.
+            assertEquals(listOf("/saved-b"), GameLibraryFacade.loadRoots(context))
+        }
     }
 
     @Test
@@ -193,12 +179,14 @@ class GameLibraryFacadeRootsTest {
         removingB: Boolean = false,
         failA: Boolean = true,
         expected: List<String>,
+        verifyColdReads: Boolean = false,
         action: () -> Unit,
     ) {
         val enteredA = CountDownLatch(1)
         val enteredB = CountDownLatch(1)
         val releaseA = CountDownLatch(1)
         val releaseB = CountDownLatch(1)
+        val rootReads = AtomicInteger()
         val rows = linkedMapOf<String, ScanRootEntity>()
         if (removingB) rows["/saved-b"] = ScanRootEntity("/saved-b", addedAt = 0)
         fun pause(entered: CountDownLatch, release: CountDownLatch) {
@@ -207,7 +195,10 @@ class GameLibraryFacadeRootsTest {
         }
         val dao: GameLibraryDao = proxy { method, args ->
             when (method) {
-                "getRoots" -> synchronized(rows) { rows.values.toList() }
+                "getRoots" -> synchronized(rows) {
+                    rootReads.incrementAndGet()
+                    rows.values.toList()
+                }
                 "insertRootsIfAbsent" -> {
                     @Suppress("UNCHECKED_CAST")
                     for (row in args[0] as List<ScanRootEntity>) {
@@ -269,10 +260,18 @@ class GameLibraryFacadeRootsTest {
             assertTrue("Pending write never reached the DAO", enteredB.await(10, TimeUnit.SECONDS))
 
             action()
+            val readsBeforePendingLoad = rootReads.get()
             assertEquals("Accepted commands must be visible to the immediate scan", expected, GameLibraryFacade.loadRoots(context))
+            if (verifyColdReads) {
+                assertEquals("A pending projection must remain uncached", readsBeforePendingLoad + 1, rootReads.get())
+            }
             releaseB.countDown()
             drainOwnWrites()
+            val readsBeforeCompletedLoad = rootReads.get()
             assertEquals("Completed queue must reload the authoritative roots", expected, GameLibraryFacade.loadRoots(context))
+            if (verifyColdReads) {
+                assertEquals("Completion must read the DAO again instead of reusing the pending projection", readsBeforeCompletedLoad + 1, rootReads.get())
+            }
             assertEquals("DAO must receive the same commands in FIFO order", expected, synchronized(rows) { rows.keys.toList() })
         } finally {
             releaseA.countDown()
@@ -313,13 +312,6 @@ class GameLibraryFacadeRootsTest {
         GameLibraryFacade::class.java.getDeclaredMethod("finishRootWrite").apply {
             isAccessible = true
             invoke(GameLibraryFacade)
-        }
-    }
-
-    private fun supplyDatabaseRead(roots: List<String>) {
-        GameLibraryFacade::class.java.getDeclaredMethod("cacheLoadedRoots", List::class.java).apply {
-            isAccessible = true
-            invoke(GameLibraryFacade, roots)
         }
     }
 

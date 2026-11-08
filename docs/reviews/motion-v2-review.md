@@ -802,3 +802,81 @@ GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = 
 | CR5-6 / 历史CR4-9 | 已实现两档成功绑定覆盖，取代上一轮“未实现”的状态；设备运行未执行 | `app/src/androidTest/java/com/tyranor/next/ui/game/MotionCoverSearchDialogDeviceTest.kt:73`、`:130`（androidTest） | APK构建与真实saver/cache/callback链源码复核；真机断言未执行。 |
 | JVM平台夹具与镜像清理 | 已修复测试环境缺口及清理竞态，不改变生产标准 | `app/src/test/java/android/os/Process.java:10`、`app/src/test/java/android/util/Log.java:17`；`app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:250` | 最终完整2,007/43/22与基线失败集合一致；无意外DAO/镜像错误、无后续Bounded测试污染。 |
 | 动效/导航/版本 | 本轮无修改，用户确认行为保留 | 49个保护/动效/构建文件 | 逐字比较无差异；设备逐帧、主题与平板矩阵未执行。 |
+
+
+### CR5 远端 CI 下载失败与重试补记（2026-11-08）
+
+审查范围：`213da11175f3ad175dfb51dd4dedea446083aad3` 的远端检查及本审核文件的验证补记。产品源码、测试、动效和构建配置沿用该提交，未调整。
+
+| 命令 / 检查 | 结果 |
+|---|---|
+| `gh run view 42464543959 --repo Weiss-UltimateSavior/Tyranor-Next --log-failed` | macOS任务在下载Gradle 9.5.1分发包时收到HTTP 504；尚未启动测试。日志定位在Gradle Wrapper Download，而非Kotlin编译或断言。 |
+| `gh run rerun 42464543959 --repo Weiss-UltimateSavior/Tyranor-Next --failed` | GitHub拒绝：`Must have admin rights to Repository`。当前贡献者账号没有上游Actions直接重跑权限。 |
+| `gh pr view 150 --repo Weiss-UltimateSavior/Tyranor-Next --json statusCheckRollup` | Android CI的字符串/JVM、两项原生门禁和Debug构建均SUCCESS；macOS下载失败尚待新一次运行。CodeRabbit恢复后完成对213da111的完整审查，review 5817303221新增一条测试建议和一条unverified additional，接续处理见第六轮。不能以check SUCCESS或旧讨论已解决代替完整审查结论。 |
+
+处理：接续修复CodeRabbit新增意见后提交，触发新的PR同步检查并继续等待macOS实际测试与CodeRabbit完成；没有降低工作流、跳过任务或把网络失败记为测试通过。最终状态以PR最新head为准。
+
+
+## 第六轮 CodeRabbit 修复（2026-11-08）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `213da11175f3ad175dfb51dd4dedea446083aad3`，本节候选由包含本节的提交识别；初始基线仍为上游c65e3c55。本轮相对父提交共7个文件、+512/−39，包含上节CR5远端CI补记及本节记录；没有未跟踪文件纳入候选。初始74文件及历轮清单保留。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `ARCHITECTURE.md` | 1 | 1 |
+| `CHANGELOG.md` | 1 | 0 |
+| `SPEC.md` | 1 | 1 |
+| `app/src/main/java/com/tyranor/next/core/game/storage/GameOverridesRepository.kt` | 27 | 2 |
+| `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt` | 20 | 28 |
+| `app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt` | 384 | 7 |
+| `docs/reviews/motion-v2-review.md` | 78 | 0 |
+
+已执行验证：
+
+- `./gradlew.bat :app:compileReleaseKotlin` → 通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 退出1；2,012项、43失败（app 27 / engine 16）、22跳过。失败ID集合与已实跑c65e3c55基线及CR5父轮完全一致，新增失败0。本轮新增五项全通过；OnboardingPreferencesTest 26/26、GameLibraryFacadeRootsTest 9/9。复用原始基线实跑记录，本轮未再执行基线checkout。两组夹具stderr没有意外DAO调用或镜像任务错误；故障注入产生的预期失败日志保持可见。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出1；29 Error / 316 Warning / 10 Hint，Error的id+message集合与基线一致，无新增；既有lint失败未记为通过。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 通过。以上构建均使用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。
+- `git -c core.autocrlf=false diff --check`、变更文件UTF-8无BOM/LF检查 → 通过。49个保护导航/整个MainScreen/滑条开关/motion工具集/窗口资源/baseline profile/构建版本文件相对父提交逐字无差异；本轮生产差异仅override仓库，不含UI。
+- `gh pr view 150 --repo Weiss-UltimateSavior/Tyranor-Next --json headRefOid,mergeable,mergeStateStatus,statusCheckRollup`、完整reviews/comments/reviewThreads查询 → 提交前head仍213da111，无冲突；最新完整CodeRabbit review为5817303221，一条inline及一条unverified additional，无后来新增回复。本轮提交后的CI与CodeRabbit须重新等待并核对，不以旧head结果代替。
+- `adb devices -l` → 无已连接设备。本轮未安装、触摸、运行instrumentation、screenrecord或Perfetto，未修改系统设置，未操作正式安装；没有自身设备任务需回收。主机检查进程正常结束。
+- 未执行：本轮设备用例、录屏逐帧、真实Android进程重启/跨进程设置竞争/磁盘故障/完整SQLite恢复、全部主题/深浅色、平板/折叠屏、低端机、各引擎真实游戏与封面/存档、性能及baseline profile收益。偏好内存重建与fake DAO不作为上述验收证据。
+
+### 结论摘要
+
+已核对[CodeRabbit review 5817303221](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5817303221)。additional虽标为unverified，主agent从真实单游戏设置调用链确认连续编辑会丢字段，已修复；inline的根目录冷读测试缺口也已补齐。当前本地未确认剩余高、中级问题，可推送现有PR继续审查；最终合并条件仍须等最新head的全部CI和CodeRabbit完整回复，未合并PR。
+
+五个独立agent分别审查逻辑、架构、健壮性、回归和规范，各自只读、互不共享结论，主agent逐条回源码复核；修复冻结后再由一个新的独立agent复审。未为动效规范统一改写已调校效果，普通档、滑条例外、白雾刻度决定、根Miuix浮层宿主和保护导航保持。
+
+### 问题清单
+
+| No. | 级别 | 问题与可核对证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR6-1 | 中 | 父提交的安装gate失败直接返回null，忽略已接受的override缓存/镜像；实际setStr→setBool均先load整条记录，第二次从空对象出发覆盖前一个字段。 | 已在不可建库期间优先读取缓存及删除墓碑，未命中只读既有镜像；坏/缺镜像不缓存，保留重试；恢复后走原同步流程。 | `app/src/main/java/com/tyranor/next/core/game/storage/GameOverridesRepository.kt:102`、`:110`；调用链 `app/src/main/java/com/tyranor/next/core/settings/PerGameSettingsStore.kt:193`、`:223`、`:231`、`:442`，`app/src/main/java/com/tyranor/next/ui/settings/PerGameSettingsScreen.kt:534` |
+| CR6-2 | 低，测试增强 | 旧根目录失败用例直接反射回填cacheLoadedRoots，无法证明B暂停期间的真实冷读不缓存，以及B完成后重新访问DAO。 | 已改用真实Facade/Repository FIFO与DAO读计数；暂停期间只读，不增加第三条根命令。 | `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:129`、`:260`、`:266`、`:273` |
+
+### 重点问题说明
+
+**CR6-1.【中】已接受编辑不能被安装门控遮住。** 父提交 `GameOverridesRepository.kt:103` 无条件返回null，而`PerGameSettingsStore.persist`仍更新乐观缓存并同步apply整条镜像。单游戏设置保存连续调用setter，因此安装marker和恢复快照双失败时，A已写入后立即读不到，B从空JSON保存并丢掉A。仅把cache检查移到gate前仍不足：实际post失败经生产listener会invalidateRowCache，必须允许只读现有镜像。此修复取代CR5-4在双失败期间“一律返回默认值”的处理，保留建库门槛。
+
+新helper在同一锁内用containsKey尊重null墓碑；未命中时锁外读取既有镜像，使用原分区映射生成临时行。读取后再次核对代数，期间接受更新、清除或失效则丢弃旧结果重试。临时行、缺失与坏镜像不回填，不写镜像、不改syncDone、不触发建库；取消异常原样传播。安装证据集合没有新增单游戏镜像，恢复后仍由原ensureSynced导入。
+
+五项新增行为测试经过真实PerGameSettingsStore和Repository队列：连续setStr/get/setBool、实际post失败/生产失效回调、旧镜像与墓碑、缺失/损坏/读取异常/取消、捕获旧镜像后的update/clear/invalidate交错，以及镜像内存重建后仍fresh并在marker恢复后通过真实ensureSynced导入。恢复仅替换DAO，非SQLite/真实重启验收。夹具要求初始writer空闲，退出前释放gate、停止reader、排空自身writer并反复取消最新延迟镜像，再恢复DB/回调/缓存/代数/syncDone；外层最后关闭PID/Log scope。
+
+### 已核对无问题的部分
+
+- 不可建库分支仍属于core数据读取职责，未新增UI依赖、schema、镜像格式或另一套同步入口；取消与错误协议符合现有约定。
+- 根目录新用例在A失败/B暂停期间仅loadRoots，使用DAO计数区分相同返回值背后的错误缓存；B完成后必须再次读DAO。原私有反射回填helper已删除。
+- 新增用例只使用合成URI/临时文件与测试私有DAO，未增加生产测试hook；原始日志、主机路径、设备端点、认证资料、媒体、依赖源码、脚本与APK未纳入提交。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR6-1 override已接受编辑 | 已修复，包含主agent核实的additional；取代CR5-4的临时默认值策略 | `app/src/main/java/com/tyranor/next/core/game/storage/GameOverridesRepository.kt:102`、`:110`；`app/src/test/java/com/tyranor/next/core/settings/OnboardingPreferencesTest.kt:399`、`:421`、`:442`、`:478`、`:526` | 五项新增全部通过，Onboarding 26/26；完整JVM新增失败0；Release/Debug/AndroidTest编译构建通过。真实故障设备未执行。 |
+| CR6-2 roots冷读覆盖 | 已修复测试缺口，不改生产根目录行为 | `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:129`、`:198`、`:260`、`:266`、`:273` | Roots 9/9通过，真实FIFO+fake DAO计数；非SQLite验收。 |
+| 规格/架构/变更记录 | 已同步 | `SPEC.md:30`、`ARCHITECTURE.md:54`、`CHANGELOG.md:60` | 六个独立复审及主agent核对与生产实现一致；diff/字符串检查通过。 |
+| 动效/导航/版本及验证边界 | 本轮无修改；远端与设备边界如上保留 | 49个保护/动效/构建文件 | 对父提交逐字无差异。提交后继续等待最新head CI与CodeRabbit；未执行设备/逐帧/主题/平板/性能。 |
