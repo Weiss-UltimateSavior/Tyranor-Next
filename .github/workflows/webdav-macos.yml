@@ -115,6 +115,10 @@ jobs:
           echo "::warning::Gradle bootstrap failed after 3 attempts; trying its verified official release asset"
           python3 tools/prepare-gradle-distribution.py
           ./gradlew --version --no-daemon
+      - name: Prepare Kotlin compiler artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/prepare-gradle-distribution.py --kotlin-compiler
       - name: Run full app JVM regression with native filesystem aliases
         run: ./gradlew :app:testDebugUnitTest --no-daemon
       - name: Keep test evidence

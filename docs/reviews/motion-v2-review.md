@@ -985,3 +985,64 @@ GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = 
 | CR8-1 官方资产备用读取 | 已实现并通过本机真实空缓存启动；macOS待新head | `.github/workflows/webdav-macos.yml:100`、`:103`、`:116`；`tools/prepare-gradle-distribution.py:15`、`:31`、`:69`、`:79`；`tools/test_prepare_gradle_distribution.py:54`、`:73`、`:85`、`:98` | 7/7离线测试、六类Bash故障夹具、官方真实下载/原Wrapper启动均通过；不把Windows结果记作macOS通过。 |
 | CR8-2 完成通知覆盖 | 已补齐 | `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:268`、`:271` | Roots 9/9通过，完整JVM无新增失败；未改生产通知逻辑，未运行真实Compose collector。 |
 | 文档/范围/隐私 | 已同步并清理自有测试产物 | `CHANGELOG.md:60`、本节 | 六个独立复审与主agent核对；完整文件清单、未执行矩阵和真实证据边界如上。 |
+
+
+## 第九轮 CodeRabbit 与构建依赖修复（2026-11-08）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `39ababfefa6cdc2d777813e7006866ddbc1c1d1b`；本节候选由包含本节的提交识别。本轮相对父提交共6个文件、+339/−30，完整清单如下；没有未跟踪源码或生成物纳入候选。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `.github/workflows/webdav-macos.yml` | 4 | 0 |
+| `CHANGELOG.md` | 1 | 1 |
+| `docs/reviews/motion-v2-review.md` | 61 | 0 |
+| `gradle/wrapper/gradle-wrapper.properties` | 1 | 0 |
+| `tools/prepare-gradle-distribution.py` | 93 | 29 |
+| `tools/test_prepare_gradle_distribution.py` | 179 | 0 |
+
+已执行验证：
+
+- `./gradlew.bat :app:compileReleaseKotlin` → 通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 退出1；2,012项、43失败（app 27 / engine 16）、22跳过，与已实跑c65e3c55基线及39ababfe产品父轮的完整失败ID集合相同，新增0。基线记录复用，本轮未重新跑基线checkout。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出1；29 Error / 316 Warning / 10 Hint，Error的id+message集合与基线相同，无新增；既有失败未记为通过。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 通过；继续使用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。
+- `python -B tools/test_prepare_gradle_distribution.py` → 16/16通过，原7项保留。新增版本派生、正确缓存复用、前导零目录、双摘要/下载失败保护、坏校验与非法配置等9项；均为标准库mock和真实临时文件，不是真实下载。
+- `python -B tools/prepare-gradle-distribution.py --kotlin-compiler`（仓库外短私有缓存）→ 实际下载官方59,718,536字节资产，SHA-256与官方发布元数据一致，完整SHA-1与Maven Central一致；修正目录规范后，正确缓存复用命令再次退出0，没有重复下载。首个私有测试路径超过Windows路径长度限制，改用短的自有缓存后通过，未修改系统设置。
+- `python -B tools/prepare-gradle-distribution.py`（同一私有缓存）→ 原Gradle模式仍成功复用已验证ZIP。将同一真实ZIP放入仅含ZIP的全新缓存，再执行原 `./gradlew.bat --version --no-daemon` → 固定SHA-256下仍通过；未改Gradle版本或URL。
+- 原Wrapper运行Gradle临时 `verifySeededCompiler` 任务 → 退出0。临时本地Maven服务仅提供合成POM与真实checksum，明确拒绝JAR GET；请求记录只有POM、JAR HEAD和SHA-1，JAR GET为0，Gradle解析到预取的规范缓存文件。服务在finally关闭并join线程，无残留。此项是Windows真实Gradle缓存兼容烟测，不能作为macOS或真实远端Maven完整验收。
+- `gh run view 42469979337 --repo Weiss-UltimateSavior/Tyranor-Next --log-failed` → 第八轮已通过Gradle准备并进入构建配置，但下载原Kotlin compiler 2.3.20 JAR时最终GitHub地址返回504；测试断言未启动。本轮补齐该依赖预取，未把该运行记作全量JVM通过。
+- Python3.9语法解析、所有新增/修改Python函数docstring、UTF-8无BOM/LF、`git -c core.autocrlf=false diff --check`、范围与隐私检查 → 通过。49个保护/动效/构建文件、app/engine生产源集、版本目录与Wrapper脚本/JAR对父提交无差异；Wrapper配置仅新增公开已核实的SHA-256。
+- 未执行：最新head的macOS完整JVM与CodeRabbit重算、本机macOS、独立YAML/actionlint、真机/录屏逐帧、全主题/平板/低端机/真实引擎与性能。本轮未操作手机或系统设置，没有启动screenrecord或Perfetto。
+
+### 结论摘要
+
+已完整核对[CodeRabbit review 5817489549](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5817489549)：一条固定Gradle校验和的inline，以及Docstring Coverage 79.14%低于80%的预合并检查。已固定校验和并补齐工具函数说明，真实CodeRabbit覆盖率仍待新head重算。另核实CI的后续阻断为Kotlin依赖下载，已补同一版本官方资产预取和真实缓存消费验证。五个独立视角审查、主agent源码复核及新的独立最终复审均完成；当前本地未确认剩余高、中级代码问题，可推送继续远端验收，尚不宣称所有CI或CodeRabbit已通过。
+
+### 问题清单
+
+| No. | 级别 | 问题与可核对证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR9-1 | 中，构建稳定性 | 默认Wrapper配置未固定SHA-256，备用脚本仍依赖在线checksum端点；此端点不可用时会在读取官方资产前退出。当前端点曾实测可读，不能将其写作第八轮实际失败原因。 | 已把两官方端点及真实ZIP核对一致的Gradle9.5.1 checksum固定到Wrapper配置，默认不再查询该端点。 | `gradle/wrapper/gradle-wrapper.properties:4`；`tools/prepare-gradle-distribution.py:107` |
+| CR9-2 | 中，CI外部依赖 | macOS越过Gradle准备后，Kotlin compiler原下载入口504，实际测试尚未执行。 | 已按版本目录原版本预取同名官方发布资产，SHA-256与Maven SHA-1均须匹配，再进入Gradle内容缓存；真正测试仍独立执行。 | `.github/workflows/webdav-macos.yml:118`、`:122`；`tools/prepare-gradle-distribution.py:120`、`:129`、`:139` |
+| CR9-3 | 中，复审发现 | 初稿把完整40位SHA-1用于目录；真实Gradle目录去前导零，已有正确规范缓存仍会误判未命中并重复下载59MB。未证实带前导零文件绝对不能被候选搜索发现。 | 已仅规范化目录键，内容校验继续使用完整40位；补固定前导00资产的已有缓存复用回归。 | `tools/prepare-gradle-distribution.py:140`、`:144`；`tools/test_prepare_gradle_distribution.py:212` |
+| CR9-4 | 低，文档 | CodeRabbit预合并Docstring Coverage为79.14%，阈值80%。 | 已为新增/修改Python函数补充用途、完整性与夹具边界说明；待新head真实重算，未调整阈值或配置。 | `tools/prepare-gradle-distribution.py:32`、`:43`、`:54`、`:120`；`tools/test_prepare_gradle_distribution.py:156`、`:193`、`:212` |
+
+### 已核对无问题的部分
+
+- 编译器版本来自唯一 `[versions].kotlin`，请求固定官方Maven和JetBrains仓库；版本格式不能改写URL主机或目录。SHA-1用于独立身份与缓存目录，完整性另由官方SHA-256验证；缓存命中仍查询官方元数据，本工具不承诺离线工作。
+- 真实Gradle缓存及 `GroupedAndNamedUniqueFileStore.toPath/stripLeadingZeros` 均确认非零摘要目录去前导零；这不是 `HashCode.toCompactString` 的base36规则。全零转0只是工具防御分支，不宣称为Gradle实测规范。
+- 共用下载保留固定官方API、超时、同目录临时文件、先双校验后原子替换及异常清理；正确缓存复用，失败不覆盖旧文件。原Gradle模式的七项行为保持。
+- 新准备步骤仅提供只读token；版本、JDK、Wrapper URL/JAR、完整测试命令及证据上传保持，没有过滤、跳过或重试真实测试。附带SSRF/S310工具提示未获源码证实：Gradle分支先限定官方HTTPS/文件名，Kotlin分支是固定HTTPS主机和受限版本；未通过关闭检查来消除提示。
+- 官方二进制、私有缓存、合成服务与原始日志均在仓库外；没有认证内容、主机路径、设备端点或媒体纳入提交。应用动效、普通档、滑条例外与根浮层宿主没有本轮改动。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR9-1 固定Gradle摘要 | 已修复 | `gradle/wrapper/gradle-wrapper.properties:4` | 真实ZIP SHA-256与固定值一致，原Wrapper在仅含ZIP的新缓存启动通过；默认工具复用通过。 |
+| CR9-2 compiler预取 | 已实现；远端macOS待新head | `.github/workflows/webdav-macos.yml:118`；`tools/prepare-gradle-distribution.py:120`、`:129`、`:139` | 16项离线测试、真实官方下载双校验、禁止JAR GET的真实Gradle缓存消费均通过；不将Windows烟测记为macOS通过。 |
+| CR9-3 规范缓存命中 | 已修复 | `tools/prepare-gradle-distribution.py:140`、`:144`；`tools/test_prepare_gradle_distribution.py:212` | 前导00固定夹具验证正确缓存不下载、不建重复路径；真实现有缓存复用退出0。 |
+| CR9-4 函数文档 | 已补齐，覆盖率待CodeRabbit重算 | 两个工具Python文件 | AST核对所有函数有docstring，未修改覆盖阈值；源码与说明经独立复审一致。 |

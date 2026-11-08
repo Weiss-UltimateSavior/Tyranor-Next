@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Seed the Wrapper cache from Gradle's official GitHub release after bootstrap fails."""
+"""Prepare Gradle toolchain artifacts from their verified official GitHub releases."""
 
+import argparse
 import hashlib
 import json
 import os
@@ -26,6 +27,60 @@ def wrapper_cache_zip(distribution_url: str, gradle_home: Path) -> Path:
     if not target.is_relative_to(cache_root):
         raise ValueError("Wrapper cache path must stay in the distribution cache")
     return target
+
+
+def release_asset(repository: str, version: str, filename: str) -> dict:
+    """Select one exact release asset without trusting a metadata-provided download URL."""
+    release = json.loads(subprocess.check_output([
+        "gh", "api", f"repos/{repository}/releases/tags/v{version}",
+    ], timeout=60))
+    assets = [asset for asset in release["assets"] if asset["name"] == filename]
+    if len(assets) != 1 or type(assets[0]["id"]) is not int or assets[0]["id"] <= 0:
+        raise ValueError("The official release must contain exactly one matching asset")
+    return assets[0]
+
+
+def file_digests(path: Path) -> tuple:
+    """Read the artifact once for strong integrity and Gradle's legacy content cache identity."""
+    sha256 = hashlib.sha256()
+    sha1 = hashlib.sha1(usedforsecurity=False)
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            sha256.update(chunk)
+            sha1.update(chunk)
+    return sha256.hexdigest(), sha1.hexdigest()
+
+
+def download_verified_asset(repository: str, asset: dict, expected_sha256: str, target: Path, expected_sha1: str = None) -> Path:
+    """Reuse verified bytes or replace the cache atomically; failures preserve its previous contents."""
+    def matches(path: Path) -> bool:
+        """Require the strong digest and, for Maven artifacts, its independently published identity."""
+        sha256, sha1 = file_digests(path)
+        return sha256 == expected_sha256.lower() and (expected_sha1 is None or sha1 == expected_sha1.lower())
+
+    if target.is_file() and matches(target):
+        print(f"Reused verified official release asset: {asset['name']}")
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=target.name + ".", delete=False) as output:
+            temporary = Path(output.name)
+            subprocess.run([
+                "gh", "api", f"repos/{repository}/releases/assets/{asset['id']}",
+                "--header", "Accept: application/octet-stream",
+            ], stdout=output, check=True, timeout=300)
+        sha256, sha1 = file_digests(temporary)
+        if sha256 != expected_sha256.lower():
+            raise ValueError("Official release asset SHA-256 mismatch")
+        if expected_sha1 is not None and sha1 != expected_sha1.lower():
+            raise ValueError("Official release asset Maven SHA-1 mismatch")
+        temporary.replace(target)
+        print(f"Verified official release asset: {asset['name']}")
+        return target
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def prepare_distribution(properties_file: Path, gradle_home: Path) -> Path:
@@ -56,37 +111,46 @@ def prepare_distribution(properties_file: Path, gradle_home: Path) -> Path:
     if not re.fullmatch(r"[a-fA-F0-9]{64}", expected):
         raise ValueError("Invalid official Gradle SHA-256 checksum")
 
-    release = json.loads(subprocess.check_output([
-        "gh", "api", f"repos/gradle/gradle-distributions/releases/tags/v{version}",
-    ], timeout=60))
-    assets = [asset for asset in release["assets"] if asset["name"] == archive]
-    if len(assets) != 1 or type(assets[0]["id"]) is not int:
-        raise ValueError("The official release must contain exactly one matching asset")
+    repository = "gradle/gradle-distributions"
+    asset = release_asset(repository, version, archive)
     target = wrapper_cache_zip(distribution_url, gradle_home)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=target.parent, prefix=archive + ".", delete=False) as output:
-            temporary = Path(output.name)
-            subprocess.run([
-                "gh", "api", f"repos/gradle/gradle-distributions/releases/assets/{assets[0]['id']}",
-                "--header", "Accept: application/octet-stream",
-            ], stdout=output, check=True, timeout=300)
-        digest = hashlib.sha256()
-        with temporary.open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                digest.update(chunk)
-        if digest.hexdigest() != expected.lower():
-            raise ValueError("Official Gradle archive SHA-256 mismatch")
-        temporary.replace(target)
-        print(f"Verified official Gradle release asset: {archive}")
-        return target
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    return download_verified_asset(repository, asset, expected, target)
+
+
+def prepare_kotlin_compiler(catalog_file: Path, gradle_home: Path) -> Path:
+    """Seed only the catalog's compiler JAR, requiring official release SHA-256 and Maven SHA-1."""
+    sections = re.findall(r"(?ms)^\[versions\][ \t]*\n(.*?)(?=^\[|\Z)", catalog_file.read_text(encoding="utf-8"))
+    versions = re.findall(r'^\s*kotlin\s*=\s*"([^"\n]+)"\s*(?:#.*)?$', sections[0], re.MULTILINE) if len(sections) == 1 else []
+    if len(versions) != 1 or not re.fullmatch(r"\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", versions[0]):
+        raise ValueError("The versions catalog must declare exactly one supported Kotlin version")
+    version = versions[0]
+    filename = f"kotlin-compiler-embeddable-{version}.jar"
+    maven_url = f"https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/{version}/{filename}"
+    with urlopen(maven_url + ".sha1", timeout=60) as response:
+        expected_sha1 = response.read(1024).decode("ascii").strip()
+    if not re.fullmatch(r"[a-fA-F0-9]{40}", expected_sha1):
+        raise ValueError("Invalid official Maven SHA-1 checksum")
+    repository = "JetBrains/kotlin"
+    asset = release_asset(repository, version, filename)
+    digest = asset.get("digest")
+    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[a-fA-F0-9]{64}", digest):
+        raise ValueError("The official Kotlin release asset must provide a SHA-256 digest")
+    expected_sha256 = digest.removeprefix("sha256:")
+    cache_root = (gradle_home / "caches" / "modules-2" / "files-2.1").resolve()
+    cache_key = expected_sha1.lower().lstrip("0") or "0"
+    target = (cache_root / "org.jetbrains.kotlin" / "kotlin-compiler-embeddable" / version / cache_key / filename).resolve()
+    if not target.is_relative_to(cache_root):
+        raise ValueError("Compiler cache path must stay in the Gradle artifact cache")
+    return download_verified_asset(repository, asset, expected_sha256, target, expected_sha1)
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--kotlin-compiler", action="store_true", help="Prepare the catalog's Kotlin compiler instead of the Gradle distribution")
+    options = parser.parse_args()
     repository = Path(__file__).resolve().parent.parent
     gradle_home = Path(os.environ.get("GRADLE_USER_HOME", str(Path.home() / ".gradle")))
-    prepare_distribution(repository / "gradle/wrapper/gradle-wrapper.properties", gradle_home)
+    if options.kotlin_compiler:
+        prepare_kotlin_compiler(repository / "gradle/libs.versions.toml", gradle_home)
+    else:
+        prepare_distribution(repository / "gradle/wrapper/gradle-wrapper.properties", gradle_home)
