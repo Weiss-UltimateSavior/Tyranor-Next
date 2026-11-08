@@ -928,3 +928,60 @@ GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = 
 | CR7-1 Gradle启动下载失败 | 已补有限重试；远端新head待验证 | `.github/workflows/webdav-macos.yml:98`、`:100`、`:104`、`:109`；`CHANGELOG.md:60` | Bash语法及四类成功/失败传播夹具通过；原测试step逐字未改。真实macOS下载与完整测试须继续等待。 |
 | CR7-2 行尾 | 已修复 | `.github/workflows/webdav-macos.yml:1` | 最终UTF-8无BOM/LF、diff --check通过，13行有效增量。 |
 | 产品/动效/导航/版本 | 本轮未改；复用第六轮产品验证 | 49个保护文件及app/engine源集 | 对父提交无差异；设备/逐帧/主题/平板/性能仍未执行。 |
+
+
+## 第八轮 CodeRabbit 与 CI 修复（2026-11-08）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `fdfbc62f751eed184263937e0bc2c8d87f87a14d`；本节候选由包含本节的提交识别。本轮全部已跟踪增量与两份新增工具源码共6个文件、+299/−3，不包含生成的Python字节码、下载包或日志。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `.github/workflows/webdav-macos.yml` | 9 | 2 |
+| `CHANGELOG.md` | 1 | 1 |
+| `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt` | 4 | 0 |
+| `docs/reviews/motion-v2-review.md` | 57 | 0 |
+| `tools/prepare-gradle-distribution.py` | 92 | 0 |
+| `tools/test_prepare_gradle_distribution.py` | 136 | 0 |
+
+已执行验证：
+
+- `./gradlew.bat :app:compileReleaseKotlin` → 通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 退出1；2,012项、43失败（app 27 / engine 16）、22跳过，与已实跑c65e3c55基线、557698b4产品父轮的完整失败ID集合相同，新增0；Roots 9/9、Onboarding 26/26。基线证据复用，本轮未再重跑基线checkout。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出1；29 Error / 316 Warning / 10 Hint，Error的id+message集合与基线完全一致，无新增；未将已有失败记作通过。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 通过。产品构建继续使用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。
+- `python -B tools/test_prepare_gradle_distribution.py` → 7/7通过；使用标准库mock、真实临时文件和合成字节，覆盖缓存键兼容、官方checksum来源、错误checksum/下载失败保留旧缓存且清理临时文件、非法URL/配置/资产拒绝。
+- `jshell --class-path gradle/wrapper/gradle-wrapper.jar` 调用原 `PathAssembler.getDistribution` → 当前URL对应 `gradle-9.5.1-bin/iq79hdu3mqx29lgffhp8bfmx/gradle-9.5.1-bin.zip`，与工具及固定测试预期一致；并非测试内复制哈希算法。
+- 以仓库外全新空 `GRADLE_USER_HOME` 执行 `python tools/prepare-gradle-distribution.py`，随后执行原 `./gradlew.bat --version --no-daemon` → 两步均退出0：从官方Release API实际下载同一140,320,662字节分发包，核对原官方URL的SHA-256后，原Wrapper成功消费缓存、解包并启动Gradle 9.5.1 / JDK 17。该实测发生在Windows，不能代替macOS。
+- 提取真实准备脚本运行 `bash -n` 与六类Bash `-e -o pipefail` 故障夹具 → 全通过：立即成功、第三次成功、备用路径成功、备用工具失败、备用后Wrapper失败、实际测试失败。最后三种分别保留exit23/19/27；真正测试只有准备完整成功才执行一次，没有重试或忽略测试失败。
+- `gh run view 42468321250 --repo Weiss-UltimateSavior/Tyranor-Next --log-failed` → 第七轮3次普通bootstrap均为HTTP504，实际测试未启动；这证明只有有限重试不足以恢复该入口。官方发布标签存在，备用API和原URL的checksum均实际可读。
+- `git -c core.autocrlf=false diff --check`、UTF-8无BOM/LF、隐私与范围检查 → 通过；自有 `tools/__pycache__` 已清理，原始日志、分发包和缓存全部在仓库外。49个保护/动效/构建文件及app/engine生产源集对父提交无差异。
+- 未执行：本轮macOS实际备用下载及后续全量JVM、独立YAML/actionlint、真机/录屏逐帧、真实SQLite/Compose订阅验收、全主题/平板/低端机/真实游戏与性能。本轮没有手机操作、screenrecord、Perfetto或系统设置修改。
+
+### 结论摘要
+
+已完整核对[CodeRabbit review 5817412440](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5817412440)的一条低级测试建议，补齐真实队列完成通知断言。另确认macOS的Gradle原入口持续504，已补同一官方发布资产的备用读取并验证完整性；真实空缓存实测成功。五个独立agent分别检查逻辑、架构、健壮性、回归、规范，主agent回源码复核，最后由新的独立agent复审修复本身及记录。当前本地未确认新增高、中级代码问题，可推送继续远端验收；最新head的全部CI与CodeRabbit完整回复仍须等待，不能以check SUCCESS或旧head已无讨论代替。
+
+### 问题清单
+
+| No. | 级别 | 问题与可核对证据 | 建议 / 处理 | 位置 |
+|---|---|---|---|---|
+| CR8-1 | 中，CI外部依赖 | 原Gradle入口持续504，有限重试耗尽后仍未启动macOS测试。 | 已增加原版本同名官方GitHub发布资产备用获取；先核对配置或官方SHA-256，再原子放入原Wrapper缓存，最终仍经原Wrapper与完整测试。真实macOS结果待新head。 | `.github/workflows/webdav-macos.yml:102`、`:116`、`:118`；`tools/prepare-gradle-distribution.py:31`、`:52`、`:69`、`:79` |
+| CR8-2 | 低，测试增强 | 第六轮只断言主动loadRoots的DAO次数，未断言B完成时会通知已显示页面重读；删掉完成通知仍能通过该用例。 | 已在B释放前记录revision，排空队列后先断言恰+1，再保留权威读取计数断言。 | `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:268`、`:271`、`:274`；生产通知 `app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt:382`，订阅 `app/src/main/java/com/tyranor/next/ui/settings/SettingsScreen.kt:170` |
+
+### 已核对无问题的部分
+
+- 备用下载只读取当前Wrapper配置，限定标准缓存布局、官方HTTPS域名与分发文件名；API请求固定访问 `gradle/gradle-distributions`，不采信任意资产URL。MD5仅为匹配Wrapper原缓存键，完整性使用SHA-256。
+- 下载在同目录临时文件内完成并设超时，失败/校验不符不覆盖已有缓存，finally移除临时文件；不生成Wrapper成功标记，解包和启动仍由原Wrapper执行。token仅提供给准备步骤，权限保持contents:read，没有输出凭据。
+- helper与测试加入未来路径触发，离线工具测试先执行；原完整JVM测试、证据上传、版本、JDK、Wrapper URL/JAR保持。产品源码、动效视觉/轨迹/节奏、普通档、滑条与根浮层宿主不变。
+- roots断言仅用于A失败/B暂停且期间只读的用例。A失效回调先于B进入DAO完成，B是最后在途写入，因此+1窗口不会混入A通知；原清理与其他增删场景保持。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR8-1 官方资产备用读取 | 已实现并通过本机真实空缓存启动；macOS待新head | `.github/workflows/webdav-macos.yml:100`、`:103`、`:116`；`tools/prepare-gradle-distribution.py:15`、`:31`、`:69`、`:79`；`tools/test_prepare_gradle_distribution.py:54`、`:73`、`:85`、`:98` | 7/7离线测试、六类Bash故障夹具、官方真实下载/原Wrapper启动均通过；不把Windows结果记作macOS通过。 |
+| CR8-2 完成通知覆盖 | 已补齐 | `app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryFacadeRootsTest.kt:268`、`:271` | Roots 9/9通过，完整JVM无新增失败；未改生产通知逻辑，未运行真实Compose collector。 |
+| 文档/范围/隐私 | 已同步并清理自有测试产物 | `CHANGELOG.md:60`、本节 | 六个独立复审与主agent核对；完整文件清单、未执行矩阵和真实证据边界如上。 |

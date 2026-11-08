@@ -265,8 +265,12 @@ class GameLibraryFacadeRootsTest {
             if (verifyColdReads) {
                 assertEquals("A pending projection must remain uncached", readsBeforePendingLoad + 1, rootReads.get())
             }
+            val revisionBeforeCompletion = GameLibraryFacade.rootsRevision.value
             releaseB.countDown()
             drainOwnWrites()
+            if (verifyColdReads) {
+                assertEquals("Completion must notify the existing view", revisionBeforeCompletion + 1, GameLibraryFacade.rootsRevision.value)
+            }
             val readsBeforeCompletedLoad = rootReads.get()
             assertEquals("Completed queue must reload the authoritative roots", expected, GameLibraryFacade.loadRoots(context))
             if (verifyColdReads) {
