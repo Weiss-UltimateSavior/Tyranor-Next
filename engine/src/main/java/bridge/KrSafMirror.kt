@@ -1162,14 +1162,22 @@ object KrSafMirror {
             throw CancellationException("Mirror media scan interrupted").also { it.initCause(error) }
         }
 
-    /** 文档 ID（`卷:相对路径`）还原为 `/storage/卷/相对路径`；主存储 `primary:` 对应 emulated/0。 */
+    /**
+     * 文档 ID（`卷:相对路径`）还原为 `/storage/卷/相对路径`；主存储 `primary:` 对应
+     * 进程视角的 emulated 挂载根（单 user 为 emulated/0，安全文件夹等隔离 user 为
+     * emulated/<uid>，见 [PrimaryStorageRoot]）。
+     */
     private fun documentIdToStoragePath(documentId: String): String? {
         val colon = documentId.indexOf(':')
         if (colon <= 0 || colon == documentId.lastIndex) return null
         val volume = documentId.substring(0, colon)
         val rest = documentId.substring(colon + 1)
         if (volume.isBlank() || rest.isBlank()) return null
-        val volumeDir = if (volume.equals("primary", ignoreCase = true)) "emulated/0" else volume
+        val volumeDir = if (volume.equals("primary", ignoreCase = true)) {
+            PrimaryStorageRoot.get().removePrefix("/storage/")
+        } else {
+            volume
+        }
         return "/storage/$volumeDir/$rest"
     }
 
@@ -1405,8 +1413,14 @@ object KrSafMirror {
     fun storagePathToDocumentId(path: String?): String? {
         if (path.isNullOrBlank()) return null
         val normalized = path.replace('\\', '/').trimEnd('/')
+        // emulated/0 分支保留以兼容既有记录；主存储根按进程视角解析（安全文件夹内为 emulated/<uid>）
+        val primaryRoot = PrimaryStorageRoot.get()
         return when {
-            normalized == "/storage/emulated/0" || normalized == "/sdcard" -> "primary:"
+            normalized == primaryRoot ||
+                normalized == "/storage/emulated/0" ||
+                normalized == "/sdcard" -> "primary:"
+            normalized.startsWith("$primaryRoot/") ->
+                "primary:${normalized.substring(primaryRoot.length + 1)}"
             normalized.startsWith("/storage/emulated/0/") ->
                 "primary:${normalized.substring("/storage/emulated/0/".length)}"
             normalized.startsWith("/sdcard/") ->

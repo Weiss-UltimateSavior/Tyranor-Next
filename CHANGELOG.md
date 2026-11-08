@@ -36,6 +36,7 @@
 
 ### 变更
 
+- 修复三星 Knox 安全文件夹内「无法解析游戏目录」：SAF `primary:` 卷到真实路径的映射不再硬编码 `/storage/emulated/0`，改为按进程视角解析主存储挂载根（安全文件夹等隔离 user 下为 `/storage/emulated/<userId>`，新增 `bridge.PrimaryStorageRoot` 统一解析并缓存）；`GamePathUtils.safUriToPath` / `isRemovableStoragePath` 与引擎层（KRKR/ONS/Tyrano/RPG Maker 存档、镜像与授权映射）全部同类硬编码点同步动态化，`emulated/<uid>` 不再被误判为可移动存储。旧版 Kirikiroid2 因别名展开机制不受影响，NEXT 收紧映射后在安全文件夹内启动失败（issue #152）。
 - 游戏卡片长按改为统一操作弹窗：游戏页瀑布流 / 封面流卡片与首页快捷启动卡长按不再直接启动，而是弹出包含「添加快捷启动、添加到桌面、名称修改、修改封面、删除游戏」五项的管理弹窗；原游戏操作抽屉移除这五项，仅保留启动游戏、启动文件、搜索封面、存档管理与在线补丁/引擎设置入口。封面流卡片手势同步改为 `combinedClickable`，与瀑布流共享长按触感与无障碍语义。
 
 - 首页「最近打开」的横屏/大屏展示上限由 10 张提高到 15 张（5 列 × 3 行），竖屏手机保持 10 张（2 列 × 5 行）；展示数量改由首页按布局切片，`MainLibraryUiState.recentGames` 保留存储侧最近 20 条供布局选择。

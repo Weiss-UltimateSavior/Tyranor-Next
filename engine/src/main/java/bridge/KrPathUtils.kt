@@ -8,12 +8,17 @@ import java.io.File
 object KrPathUtils {
     private const val TAG = "KrPathUtils"
 
-    /** Mount spellings of the emulated primary volume the engine may use interchangeably. */
-    private val STORAGE_ROOT_ALIASES = listOf(
-        "/storage/emulated/0",
-        "/sdcard",
-        "/storage/self/primary",
-    )
+    /**
+     * Mount spellings of the emulated primary volume the engine may use interchangeably.
+     * The canonical mount root is resolved per-process (isolated users such as Samsung's
+     * Secure Folder mount the primary volume at `/storage/emulated/<uid>`).
+     */
+    private val storageRootAliases: List<String>
+        get() = listOf(
+            PrimaryStorageRoot.get(),
+            "/sdcard",
+            "/storage/self/primary",
+        )
 
     @JvmStatic
     fun currentActivity(): KR2Activity? {
@@ -144,10 +149,10 @@ object KrPathUtils {
         val normalized = path.replace(File.separatorChar, '/').trimEnd('/')
         val result = LinkedHashSet<String>()
         result += normalized
-        for (alias in STORAGE_ROOT_ALIASES) {
+        for (alias in storageRootAliases) {
             if (normalized.startsWith("$alias/")) {
                 val remainder = normalized.substring(alias.length)
-                for (other in STORAGE_ROOT_ALIASES) {
+                for (other in storageRootAliases) {
                     if (other != alias) result += other + remainder
                 }
             }

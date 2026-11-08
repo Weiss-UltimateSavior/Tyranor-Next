@@ -581,7 +581,14 @@ object NativeBridge {
         if (!p.startsWith("/storage/") && !p.startsWith("/sdcard")) return null
         val volume: String
         val rel: String
-        if (p.startsWith("/storage/emulated/0/")) {
+        val primaryRoot = PrimaryStorageRoot.get()
+        if (p.startsWith("$primaryRoot/")) {
+            volume = "primary"
+            rel = p.substring(primaryRoot.length + 1)
+        } else if (primaryRoot == p) {
+            volume = "primary"
+            rel = ""
+        } else if (p.startsWith("/storage/emulated/0/")) {
             volume = "primary"
             rel = p.substring("/storage/emulated/0/".length)
         } else if ("/storage/emulated/0" == p) {

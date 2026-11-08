@@ -579,10 +579,13 @@ public class KR2Activity extends Cocos2dxActivity {
         if (p == null || !p.startsWith("/")) return;
         while (p.endsWith("/") && p.length() > 1) p = p.substring(0, p.length() - 1);
         String lower = p.toLowerCase(Locale.ROOT);
+        // Primary mount root is per-process (Secure Folder mounts at /storage/emulated/<uid>).
+        String primaryRoot = bridge.PrimaryStorageRoot.get();
+        String primaryRootLower = primaryRoot.toLowerCase(Locale.ROOT);
         if (lower.equals("/sdcard") || lower.startsWith("/sdcard/")) {
             out.add("/sdcard");
-        } else if (lower.equals("/storage/emulated/0") || lower.startsWith("/storage/emulated/0/")) {
-            out.add("/storage/emulated/0");
+        } else if (lower.equals(primaryRootLower) || lower.startsWith(primaryRootLower + "/")) {
+            out.add(primaryRoot);
         } else if (lower.startsWith("/storage/")) {
             String rest = p.substring("/storage/".length());
             int slash = rest.indexOf('/');
@@ -616,7 +619,10 @@ public class KR2Activity extends Cocos2dxActivity {
             int colon = docId.indexOf(':');
             String volume = colon >= 0 ? docId.substring(0, colon) : docId;
             String rel = colon >= 0 ? docId.substring(colon + 1) : "";
-            if ("primary".equalsIgnoreCase(volume)) return rel.isEmpty() ? "/storage/emulated/0" : "/storage/emulated/0/" + rel;
+            if ("primary".equalsIgnoreCase(volume)) {
+                String primaryRoot = bridge.PrimaryStorageRoot.get();
+                return rel.isEmpty() ? primaryRoot : primaryRoot + "/" + rel;
+            }
             if (volume != null && !volume.isEmpty()) return rel.isEmpty() ? "/storage/" + volume : "/storage/" + volume + "/" + rel;
         } catch (Throwable ignored) { }
         return value;

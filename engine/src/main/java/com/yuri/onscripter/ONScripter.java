@@ -646,7 +646,7 @@ public class ONScripter extends SDLActivity {
         int colon = docId.indexOf(':');
         String volume = colon >= 0 ? docId.substring(0, colon) : docId;
         String rel = colon >= 0 ? docId.substring(colon + 1) : "";
-        if ("primary".equalsIgnoreCase(volume)) return "/storage/emulated/0" + (rel.isEmpty() ? "" : "/" + rel);
+        if ("primary".equalsIgnoreCase(volume)) return bridge.PrimaryStorageRoot.get() + (rel.isEmpty() ? "" : "/" + rel);
         if (volume != null && !volume.isEmpty()) return "/storage/" + volume + (rel.isEmpty() ? "" : "/" + rel);
         return null;
     }
