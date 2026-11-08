@@ -8,12 +8,20 @@ import java.io.File
 object KrPathUtils {
     private const val TAG = "KrPathUtils"
 
-    /** Mount spellings of the emulated primary volume the engine may use interchangeably. */
-    private val STORAGE_ROOT_ALIASES = listOf(
-        "/storage/emulated/0",
-        "/sdcard",
-        "/storage/self/primary",
-    )
+    /**
+     * Mount spellings of the emulated primary volume the engine may use interchangeably.
+     * The canonical mount root is resolved per-process (isolated users such as Samsung's
+     * Secure Folder mount the primary volume at `/storage/emulated/<uid>`); the literal
+     * `/storage/emulated/0` is kept so legacy engine-side spellings still expand to the
+     * process-visible root.
+     */
+    private val storageRootAliases: List<String>
+        get() = listOf(
+            PrimaryStorageRoot.get(),
+            "/storage/emulated/0",
+            "/sdcard",
+            "/storage/self/primary",
+        )
 
     @JvmStatic
     fun currentActivity(): KR2Activity? {
@@ -135,19 +143,21 @@ object KrPathUtils {
 
     /**
      * The engine may spell the same storage root through its mount aliases
-     * (`/sdcard`, `/storage/self/primary`, `/storage/emulated/0`). Anchor matching
-     * must cover them or internal saves silently stop redirecting (review round 9,
-     * #14). Only the leading mount segment is swapped; the game-relative remainder
-     * and the containment check stay unchanged. Pure string expansion for JVM tests.
+     * (`/sdcard`, `/storage/self/primary`, and the process-visible emulated mount root
+     * from [PrimaryStorageRoot], e.g. `/storage/emulated/0` or `/storage/emulated/<uid>`
+     * on isolated users). Anchor matching must cover them or internal saves silently
+     * stop redirecting (review round 9, #14). Only the leading mount segment is swapped;
+     * the game-relative remainder and the containment check stay unchanged. Pure string
+     * expansion for JVM tests.
      */
     internal fun expandStorageRootAliases(path: String): List<String> {
         val normalized = path.replace(File.separatorChar, '/').trimEnd('/')
         val result = LinkedHashSet<String>()
         result += normalized
-        for (alias in STORAGE_ROOT_ALIASES) {
+        for (alias in storageRootAliases) {
             if (normalized.startsWith("$alias/")) {
                 val remainder = normalized.substring(alias.length)
-                for (other in STORAGE_ROOT_ALIASES) {
+                for (other in storageRootAliases) {
                     if (other != alias) result += other + remainder
                 }
             }

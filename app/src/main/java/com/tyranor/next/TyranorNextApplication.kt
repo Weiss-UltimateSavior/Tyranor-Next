@@ -7,6 +7,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
+import bridge.PrimaryStorageRoot
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.process.AppProcess
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
@@ -26,6 +27,9 @@ class TyranorNextApplication : Application(), DefaultLifecycleObserver, Configur
 
     override fun onCreate() {
         super<Application>.onCreate()
+        // 进程视角主存储挂载根尽早解析并缓存（issue #152）：每个进程（含引擎子进程）的挂载
+        // 命名空间独立，StorageManager 视角 per-user 正确；解析失败由内部回退链兜底，不阻断启动。
+        PrimaryStorageRoot.resolve(this)
         SaveSyncRuntime.install(this)
         // 多进程 WebView 数据目录隔离：主进程（Web 首页）与 :tyrano（Tyrano/VN/WebOther 游戏宿主，
         // 承载游戏 localStorage 存档，必须保持默认目录）在 API 28+ 不能共用默认目录，否则后初始化
