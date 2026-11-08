@@ -62,6 +62,8 @@ object PrimaryStorageRoot {
         } else {
             null
         }
+        // StorageManager 已给出有效根时跳过 canonical 链解析（getCanonicalPath 涉及 IO）
+        smPath?.takeIf { isMountRoot(it) }?.let { return it }
         probeCanonicalRoot?.let { return selectRoot(smPath, it()) }
         return selectRoot(
             smPath,

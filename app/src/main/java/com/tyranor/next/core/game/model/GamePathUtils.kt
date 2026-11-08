@@ -52,20 +52,27 @@ object GamePathUtils {
     /**
      * SAF documentId（`卷:相对路径`）→ 真实路径的纯决策函数（无 Android 依赖，供 JVM 单测）。
      * `primary:` 映射到 [primaryRoot]（进程视角主存储根）；其他卷映射到 `/storage/<volume>`。
-     * documentId 来自 provider、不可信：拒绝任何 `..` 段与反斜杠，保证映射结果不越出卷根
-     * （结果形态恒为 `卷根/<relative>` 或卷根本身）。
+     * documentId 来自 provider、不可信：拒绝反斜杠与任何 `..` 段，逐段规范化（清空段与 `.` 段）
+     * 后校验结果必须仍位于卷根内，越界返回 `null`。
      */
     internal fun documentIdToPath(documentId: String, primaryRoot: String): String? {
         val colon = documentId.indexOf(':')
         val volume = if (colon >= 0) documentId.substring(0, colon) else documentId
         val relative = if (colon >= 0) documentId.substring(colon + 1) else ""
-        if (volume.isEmpty() || relative.contains('\\') || relative.split('/').any { it == ".." }) {
-            return null
+        if (volume.isEmpty() || relative.contains('\\')) return null
+        val root = if (volume.equals("primary", ignoreCase = true)) primaryRoot else "/storage/$volume"
+        if (relative.isEmpty()) return root
+        val segments = ArrayList<String>(root.split('/').filter { it.isNotEmpty() })
+        for (segment in relative.split('/')) {
+            when (segment) {
+                "", "." -> continue
+                ".." -> return null
+                else -> segments.add(segment)
+            }
         }
-        if (volume.equals("primary", ignoreCase = true)) {
-            return if (relative.isEmpty()) primaryRoot else "$primaryRoot/$relative"
-        }
-        return if (relative.isEmpty()) "/storage/$volume" else "/storage/$volume/$relative"
+        val normalized = "/${segments.joinToString("/")}"
+        // 规范化后的目标必须仍位于卷根内
+        return normalized.takeIf { it == root || it.startsWith("$root/") }
     }
 
     fun isRemovableStoragePath(path: String): Boolean {

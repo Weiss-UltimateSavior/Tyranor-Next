@@ -67,12 +67,30 @@ class GamePathUtilsSafUriTest {
         assertNull(GamePathUtils.documentIdToPath("primary:../etc", secureFolderRoot))
         assertNull(GamePathUtils.documentIdToPath("primary:Games/../../etc", secureFolderRoot))
         assertNull(GamePathUtils.documentIdToPath("primary:..", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("primary:Games/../..", secureFolderRoot))
         assertNull(GamePathUtils.documentIdToPath("0000-0001:Games/../../etc", secureFolderRoot))
         assertNull(GamePathUtils.documentIdToPath("primary:Games\\..\\x", secureFolderRoot))
         // 非穿越的相邻写法仍正常映射
         assertEquals(
             "$secureFolderRoot/Games/..x",
             GamePathUtils.documentIdToPath("primary:Games/..x", secureFolderRoot),
+        )
+    }
+
+    @Test
+    fun normalizedSegmentsCollapseDotAndEmpty() {
+        // "." 段与空段规范化消除，结果仍位于卷根内
+        assertEquals(
+            "$secureFolderRoot/Games/ATRI",
+            GamePathUtils.documentIdToPath("primary:Games/./ATRI", secureFolderRoot),
+        )
+        assertEquals(
+            "$secureFolderRoot/Games/ATRI",
+            GamePathUtils.documentIdToPath("primary:Games//ATRI", secureFolderRoot),
+        )
+        assertEquals(
+            "$secureFolderRoot",
+            GamePathUtils.documentIdToPath("primary:./", secureFolderRoot),
         )
     }
 
