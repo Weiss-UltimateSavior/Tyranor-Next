@@ -57,6 +57,7 @@ on:
       - "gradlew"
       - "tools/prepare-gradle-distribution.py"
       - "tools/test_prepare_gradle_distribution.py"
+      - "tools/test_gradle_compiler_cache.py"
 
 permissions:
   contents: read
@@ -115,6 +116,8 @@ jobs:
           echo "::warning::Gradle bootstrap failed after 3 attempts; trying its verified official release asset"
           python3 tools/prepare-gradle-distribution.py
           ./gradlew --version --no-daemon
+      - name: Check Gradle compiler cache consumption
+        run: python3 -B tools/test_gradle_compiler_cache.py -v
       - name: Prepare Kotlin compiler artifact
         env:
           GH_TOKEN: ${{ github.token }}

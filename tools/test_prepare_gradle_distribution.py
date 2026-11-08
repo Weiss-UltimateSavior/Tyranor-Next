@@ -2,14 +2,20 @@
 """Offline integrity, cache compatibility and failure tests for the CI fallback."""
 
 import hashlib
+from contextlib import redirect_stdout
+import errno
+from http.client import IncompleteRead
 import importlib.util
 import io
 import json
 from pathlib import Path
+import socket
+import ssl
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 
 spec = importlib.util.spec_from_file_location("prepare_gradle_distribution", Path(__file__).with_name("prepare-gradle-distribution.py"))
@@ -65,7 +71,7 @@ class GradleDistributionPreparationTest(unittest.TestCase):
         self.assertEqual(expected.resolve(), target)
         self.assertEqual(PAYLOAD, target.read_bytes())
         self.assertEqual([target], list(target.parent.iterdir()))
-        self.metadata.assert_called_once_with(["gh", "api", "repos/gradle/gradle-distributions/releases/tags/v9.5.1"], timeout=60)
+        self.metadata.assert_called_once_with(["gh", "api", "repos/gradle/gradle-distributions/releases/tags/v9.5.1"], timeout=60, stderr=subprocess.PIPE)
         self.assertEqual(["gh", "api", "repos/gradle/gradle-distributions/releases/assets/123", "--header", "Accept: application/octet-stream"], self.download.call_args.args[0])
         self.assertTrue(self.download.call_args.kwargs["check"])
         self.assertEqual(300, self.download.call_args.kwargs["timeout"])
@@ -161,7 +167,8 @@ class KotlinCompilerPreparationTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.catalog = self.root / "libs.versions.toml"
+        self.catalog = self.root / "gradle/libs.versions.toml"
+        self.catalog.parent.mkdir()
         self.home = self.root / "gradle-home"
         self.write_catalog()
         self.sha1 = KOTLIN_SHA1
@@ -196,7 +203,7 @@ class KotlinCompilerPreparationTest(unittest.TestCase):
         self.assertEqual(self.expected_cache().resolve(), target)
         self.assertEqual(KOTLIN_PAYLOAD, target.read_bytes())
         self.assertEqual([target], list(target.parent.iterdir()))
-        self.metadata.assert_called_once_with(["gh", "api", "repos/JetBrains/kotlin/releases/tags/v2.3.20"], timeout=60)
+        self.metadata.assert_called_once_with(["gh", "api", "repos/JetBrains/kotlin/releases/tags/v2.3.20"], timeout=60, stderr=subprocess.PIPE)
         self.checksum.assert_called_once_with(f"https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/{KOTLIN_VERSION}/{KOTLIN_ARCHIVE}.sha1", timeout=60)
         self.assertEqual(["gh", "api", "repos/JetBrains/kotlin/releases/assets/456", "--header", "Accept: application/octet-stream"], self.download.call_args.args[0])
 
@@ -234,7 +241,7 @@ class KotlinCompilerPreparationTest(unittest.TestCase):
         self.release["assets"][0]["name"] = f"kotlin-compiler-embeddable-{version}.jar"
         target = bootstrap.prepare_kotlin_compiler(self.catalog, self.home)
         self.assertEqual(self.expected_cache(version=version).resolve(), target)
-        self.metadata.assert_called_once_with(["gh", "api", "repos/JetBrains/kotlin/releases/tags/v2.4.1"], timeout=60)
+        self.metadata.assert_called_once_with(["gh", "api", "repos/JetBrains/kotlin/releases/tags/v2.4.1"], timeout=60, stderr=subprocess.PIPE)
 
     def test_either_digest_mismatch_preserves_previous_cache_and_cleans_temporary_file(self):
         """GitHub integrity and Maven identity are both required, even if the other one matches."""
@@ -309,6 +316,163 @@ class KotlinCompilerPreparationTest(unittest.TestCase):
         self.download.assert_not_called()
         self.checksum.assert_not_called()
         self.assertFalse(self.home.exists())
+
+    def run_cli(self, arguments=None):
+        """Run the real CLI policy using only this test's catalog, home and captured output."""
+        output = io.StringIO()
+        with patch.object(bootstrap, "__file__", str(self.root / "tools/prepare-gradle-distribution.py")):
+            with patch.dict(bootstrap.os.environ, {"GRADLE_USER_HOME": str(self.home)}):
+                with redirect_stdout(output):
+                    bootstrap.main(["--kotlin-compiler"] if arguments is None else arguments)
+        return output.getvalue()
+
+    def test_optional_prefetch_yields_to_transient_checksum_outages(self):
+        """Temporary checksum transport failures must leave the original Gradle resolution available."""
+        for error in (
+            HTTPError("https://repo.maven.apache.org/fixture.sha1", 504, "Gateway timeout", {}, None),
+            HTTPError("https://repo.maven.apache.org/fixture.sha1", 429, "Rate limited", {}, None),
+            URLError(socket.gaierror(socket.EAI_AGAIN, "Temporary DNS failure")),
+            URLError(TimeoutError("Read timeout")),
+            ConnectionResetError("Connection reset"),
+            IncompleteRead(b"unfinished checksum", 40),
+        ):
+            with self.subTest(error=type(error).__name__):
+                self.checksum.side_effect = error
+                self.assertIn("::warning::", self.run_cli())
+        self.metadata.assert_not_called()
+        self.download.assert_not_called()
+        self.assertFalse(self.home.exists())
+
+    def test_optional_prefetch_yields_to_retryable_github_metadata_failures(self):
+        """Only explicit GitHub transport failures and retryable statuses may bypass metadata prefetch."""
+        for error in (
+            subprocess.CalledProcessError(1, "gh", stderr=b"gh: HTTP 503: unavailable"),
+            subprocess.CalledProcessError(1, "gh", stderr=b"Get https://api.github.com/: dial tcp 127.0.0.1:443: i/o timeout"),
+            subprocess.TimeoutExpired("gh", 60),
+        ):
+            with self.subTest(error=str(error)):
+                self.metadata.side_effect = error
+                self.assertIn("::warning::", self.run_cli())
+        self.download.assert_not_called()
+        self.assertFalse(self.home.exists())
+
+    def test_incomplete_checksum_response_yields_after_closing_the_response(self):
+        """An interrupted response body is a transport outage and must release its open response."""
+        class InterruptedChecksum(io.BytesIO):
+            """Model a successful connection whose chunked checksum body ends prematurely."""
+
+            def read(self, *_):
+                """Fail during consumption, after urlopen has already returned successfully."""
+                raise IncompleteRead(b"partial checksum", 40)
+
+        response = InterruptedChecksum()
+        self.checksum.side_effect = None
+        self.checksum.return_value = response
+        self.assertIn("::warning::", self.run_cli())
+        self.assertTrue(response.closed)
+        self.metadata.assert_not_called()
+        self.download.assert_not_called()
+        self.assertFalse(self.home.exists())
+
+    def test_interrupted_optional_download_cleans_partial_file_before_fallback(self):
+        """A transient download outage can yield only after removing its unfinished cache write."""
+        def fail(command, *, stdout, **kwargs):
+            """Fail a real partial temporary write with a retryable HTTP response."""
+            stdout.write(b"partial compiler")
+            raise subprocess.CalledProcessError(1, command, stderr=b"gh: HTTP 502: Bad gateway")
+
+        self.download.side_effect = fail
+        self.assertIn("::warning::", self.run_cli())
+        self.assertFalse(self.expected_cache().exists())
+        self.assertEqual([], list(self.expected_cache().parent.iterdir()))
+
+    def test_short_content_length_response_yields_instead_of_becoming_bad_metadata(self):
+        """An ordinary HTTP body ending before its declared length is also a transport failure."""
+        response = io.BytesIO(b"partial sha")
+        response.headers = {"Content-Length": "40"}
+        self.checksum.side_effect = None
+        self.checksum.return_value = response
+        self.assertIn("::warning::", self.run_cli())
+        self.assertTrue(response.closed)
+        self.metadata.assert_not_called()
+        self.assertFalse(self.home.exists())
+
+    def test_known_bad_cache_cannot_yield_to_normal_gradle_resolution(self):
+        """A failed replacement must not turn detected cache corruption into a successful prefetch exit."""
+        target = self.expected_cache()
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"known corrupt compiler")
+        self.download.side_effect = subprocess.CalledProcessError(1, "gh", stderr=b"gh: HTTP 504: Gateway timeout")
+        with self.assertRaisesRegex(ValueError, "failed integrity validation"):
+            self.run_cli()
+        self.assertEqual(b"known corrupt compiler", target.read_bytes())
+        self.assertEqual([target], list(target.parent.iterdir()))
+
+    def test_cli_rejects_integrity_and_configuration_failures(self):
+        """Malformed metadata, digest mismatches and unsupported versions remain blocking at the CLI."""
+        self.release["assets"][0]["digest"] = "sha256:" + "0" * 64
+        with self.assertRaisesRegex(ValueError, "SHA-256 mismatch"):
+            self.run_cli()
+        self.sha1 = "0" * 40
+        self.release["assets"][0]["digest"] = "sha256:" + KOTLIN_SHA256
+        with self.assertRaisesRegex(ValueError, "Maven SHA-1 mismatch"):
+            self.run_cli()
+        self.sha1 = "malformed"
+        with self.assertRaisesRegex(ValueError, "Invalid official Maven"):
+            self.run_cli()
+        self.write_catalog("../unsupported")
+        with self.assertRaisesRegex(ValueError, "exactly one supported Kotlin"):
+            self.run_cli()
+
+    def test_cli_does_not_hide_access_tls_or_local_failures(self):
+        """Authentication, missing tools, TLS verification and local I/O failures are not network fallback."""
+        for status in (400, 401, 403, 404):
+            with self.subTest(status=status):
+                self.metadata.side_effect = subprocess.CalledProcessError(1, "gh", stderr=f"gh: HTTP {status}: denied".encode())
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.run_cli()
+        for message in (
+            b'Get "https://api.github.com/": dial tcp 127.0.0.1:443: connect: permission denied',
+            b'error connecting to api.github.com: operation not permitted',
+            b'error connecting to api.github.com: x509: certificate signed by unknown authority',
+            b'error connecting to api.github.com: connectex: An attempt was made to access a socket in a way forbidden by its access permissions.',
+            b'error connecting to api.github.com: unsupported protocol scheme "bogus"',
+            b'error connecting to api.github.com',
+            b'gh: unknown process failure',
+        ):
+            with self.subTest(stderr=message):
+                self.metadata.side_effect = subprocess.CalledProcessError(1, "gh", stderr=message)
+                with self.assertRaises(subprocess.CalledProcessError):
+                    self.run_cli()
+        self.metadata.side_effect = FileNotFoundError("missing gh executable")
+        with self.assertRaises(FileNotFoundError):
+            self.run_cli()
+        self.metadata.side_effect = None
+        self.metadata.return_value = json.dumps(self.release).encode()
+        for error in (
+            URLError(ssl.SSLCertVerificationError("certificate rejected")),
+            URLError(PermissionError(errno.EACCES, "permission denied")),
+            URLError("unknown transport error"),
+        ):
+            with self.subTest(error=str(error)):
+                self.checksum.side_effect = error
+                with self.assertRaises(URLError):
+                    self.run_cli()
+        self.checksum.side_effect = lambda *a, **k: io.BytesIO(self.sha1.encode())
+        self.download.side_effect = PermissionError("cache write denied")
+        with self.assertRaises(PermissionError):
+            self.run_cli()
+
+    def test_distribution_bootstrap_remains_mandatory_on_network_failure(self):
+        """The already-needed Gradle distribution fallback must never inherit optional compiler semantics."""
+        with patch.object(bootstrap, "prepare_distribution", side_effect=bootstrap.ArtifactNetworkError("unavailable")):
+            with self.assertRaises(bootstrap.ArtifactNetworkError):
+                self.run_cli([])
+
+    def test_successful_optional_prefetch_keeps_verified_bytes_without_warning(self):
+        """The CLI's success path still prepares and verifies the same compiler artifact."""
+        self.assertNotIn("::warning::", self.run_cli())
+        self.assertEqual(KOTLIN_PAYLOAD, self.expected_cache().read_bytes())
 
 
 if __name__ == "__main__":

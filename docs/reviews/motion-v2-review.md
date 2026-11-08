@@ -1046,3 +1046,67 @@ GraphicsFilterPicker 与 Winlator 全局设置入口保留上游 `drawSurface = 
 | CR9-2 compiler预取 | 已实现；远端macOS待新head | `.github/workflows/webdav-macos.yml:118`；`tools/prepare-gradle-distribution.py:120`、`:129`、`:139` | 16项离线测试、真实官方下载双校验、禁止JAR GET的真实Gradle缓存消费均通过；不将Windows烟测记为macOS通过。 |
 | CR9-3 规范缓存命中 | 已修复 | `tools/prepare-gradle-distribution.py:140`、`:144`；`tools/test_prepare_gradle_distribution.py:212` | 前导00固定夹具验证正确缓存不下载、不建重复路径；真实现有缓存复用退出0。 |
 | CR9-4 函数文档 | 已补齐，覆盖率待CodeRabbit重算 | 两个工具Python文件 | AST核对所有函数有docstring，未修改覆盖阈值；源码与说明经独立复审一致。 |
+
+
+## 第十轮 CodeRabbit 预取降级与缓存集成回归（2026-11-08）
+
+### 按 AGENTS.md 的审核结果
+
+审查范围：PR #150，父提交 `491ff894bff757325c74f9f1ec6e28f2ec2ba7aa`；本节候选由包含本节的提交识别。本轮共6个文件、+741/−20，完整清单如下。新增的集成测试纳入本轮；仓库外缓存、脚本和日志不纳入提交。
+
+| 文件 | 新增 | 删除 |
+|---|---:|---:|
+| `.github/workflows/webdav-macos.yml` | 3 | 0 |
+| `CHANGELOG.md` | 1 | 1 |
+| `docs/reviews/motion-v2-review.md` | 64 | 0 |
+| `tools/prepare-gradle-distribution.py` | 100 | 15 |
+| `tools/test_gradle_compiler_cache.py` | 405 | 0 |
+| `tools/test_prepare_gradle_distribution.py` | 168 | 4 |
+
+已执行验证：
+
+- `gh pr view 150 --repo Weiss-UltimateSavior/Tyranor-Next --json headRefOid,statusCheckRollup,mergeable,mergeStateStatus` 与完整 GraphQL 评论/审核线程查询 → 父head六项远端检查全部SUCCESS、无冲突；但[CodeRabbit review 5817592918](https://github.com/Weiss-UltimateSavior/Tyranor-Next/pull/150#pullrequestreview-5817592918)实际提出2条意见，不能把绿勾当作无意见。预合并5项通过，Docstring Coverage 81.63%；本轮新head仍须重新审查。
+- `./gradlew.bat :app:compileReleaseKotlin` → 通过。
+- `./gradlew.bat testDebugUnitTest --continue --no-daemon` → 退出1；2,012项、43失败（app 27 / engine 16）、22跳过、0 error，完整失败ID集合与实跑c65e3c55基线及父轮相同，新增0。基线记录复用，本轮未重跑基线checkout。
+- `./gradlew.bat :app:lintDebug --no-daemon` → 退出1；29 Error / 316 Warning / 10 Hint，Error的id+message集合与基线一致，无新增；既有失败没有记作通过。
+- `python tools/check-hardcoded-ui-strings.py` → 通过。
+- `./gradlew.bat :app:assembleRelease :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon` → 通过，继续使用隔离包名 `TYRANOR_APPLICATION_ID=com.tyranor.next.motionv2`。
+- `python -B tools/test_prepare_gradle_distribution.py` → 26/26通过；原16项保留，新增10项覆盖CLI的网络降级、完整性/权限/配置严格失败、已有坏缓存、响应读取中断、普通Content-Length短响应及原Gradle分发模式。网络均由测试夹具代替，不代表真实网络故障注入。
+- `python -B tools/test_gradle_compiler_cache.py -v` → Windows/Python3.14/JDK17/原Wrapper下2/2通过。生产预取逻辑播种有效合成JAR（SHA-1以00开头）；正向由真实Gradle解析到相同路径、摘要及字节，JAR GET=0；负对照删除种子JAR后GET=1、HTTP403、Gradle非零，整个测试按预期通过。测试只复制或硬链接既有发行和已有完成标记，不生成标记或下载发行/真实编译器；无模块元数据缓存或外部仓库。
+- `python -B tools/prepare-gradle-distribution.py` 和 `python -B tools/prepare-gradle-distribution.py --kotlin-compiler`（仓库外既有私有缓存）→ 两者仍成功复用实际官方资产。版本、SHA-256/SHA-1与原Wrapper约束保持。
+- 半请求本地HTTP探针 → 修复前shutdown等待客户端关闭；给已接受socket设读超时后，客户端仍打开时约2.006s完成shutdown/close/join，无监听线程残留。正式集成两用例的服务与临时目录也均清理完成。首轮Windows DLL短暂占用曾导致清理失败，新增仅Windows PermissionError的15s有界重试后重复通过；首轮失败目录保留在仓库外，后续删除被工具自动审批拒绝，未绕过，无相关进程。
+- Python3.9语法解析、类/函数docstring、UTF-8无BOM/LF、`git -c core.autocrlf=false diff --check` 与隐私/范围检查 → 通过。49个保护/动效/构建文件及app/engine生产源集对父head无差异，未改版本。
+- 未执行：本轮新head远端macOS集成与完整JVM、CodeRabbit重算、本机Linux/macOS和Python3.9运行、独立actionlint、真机/录屏逐帧、全主题/平板/低端机/真实引擎与性能。本轮没有设备输入、安装、录屏、Perfetto或系统设置修改；历史设备记录不算本轮通过。
+
+### 结论摘要
+
+两条CodeRabbit意见均核实成立：Kotlin预取引入额外网络硬依赖，以及缺少提交内可重复的真实Gradle缓存消费回归。已补局部、类型化的网络降级与正反集成测试；独立复审发现的候选边界也已处理。五个独立视角审查及新的独立agent对最终候选的复核均已完成。本地没有已确认的剩余高、中级问题；仍待新head完整CI与CodeRabbit，尚不宣称可立即合并。
+
+### 问题清单
+
+| No. | 级别 | 问题与可核对证据 | 处理建议 / 结果 | 位置 |
+|---|---|---|---|---|
+| CR10-1 | 中 | 父head在Kotlin预取请求失败时直接退出，已有热缓存或常规Maven可用也无法进入原Gradle测试。 | 仅明确瞬时网络故障转换为ArtifactNetworkError，Kotlin CLI警告后交回原Gradle解析；JSON、摘要、配置、认证与本地错误继续失败。 | `tools/prepare-gradle-distribution.py:41`、`:144`、`:187`、`:224`；`.github/workflows/webdav-macos.yml:121`、`:125` |
+| CR10-2 | 低 | 提交内单测只检查路径/内容，无法证明Gradle没有重新下载JAR；父轮Windows真实消费烟测存在，不能称从未验证消费。 | 已增加可重复的原Wrapper正向与空缓存负对照，并在macOS CI强制运行。 | `tools/test_gradle_compiler_cache.py:71`、`:255`、`:291`、`:377`、`:390`；`.github/workflows/webdav-macos.yml:119` |
+| CR10-3 | 中，候选复审 | 初稿网络降级会在已检测旧cache摘要不符、替换下载又失败时放行，保留的坏字节仍可能交给Gradle。 | 保留失败保护，但这种情形改为完整性错误，禁止可选降级。 | `tools/prepare-gradle-distribution.py:76`、`:93`；`tools/test_prepare_gradle_distribution.py:400` |
+| CR10-4 | 中，候选复审 | 初稿泛化dial tcp/连接主机文案会误吞Unix或Windows套接字权限、代理配置错误。 | 删除泛化前缀的放行，仅接受具体网络原因或可重试HTTP状态；未知错误严格失败，补Windows/Unix权限与代理负例。 | `tools/prepare-gradle-distribution.py:187`、`:209`、`:213`；`tools/test_prepare_gradle_distribution.py:427` |
+| CR10-5 | 中，候选复审 | 仅捕获urlopen连接异常会遗漏read时chunked提前EOF；普通Content-Length短响应也可能不抛IncompleteRead。 | 请求/读取边界识别IncompleteRead和声明长度不足，关闭响应后降级；完整但无效、过大的元数据仍拒绝。 | `tools/prepare-gradle-distribution.py:153`、`:155`、`:164`；`tools/test_prepare_gradle_distribution.py:359`、`:389` |
+| CR10-6 | 低，资源清理 | 原测试服务无socket读超时，未完成请求使shutdown阻塞，后续join超时不能限制前一步。 | 已为接受的请求设2s读超时，实际半请求探针验证客户端仍开着也能停止服务。 | `tools/test_gradle_compiler_cache.py:142`、`:193` |
+
+### 已核对无问题的部分
+
+- 没有整步continue-on-error、捕获所有异常或弱化真实测试标准。仅在三个网络边界转换明确故障；Maven格式/完整性、GitHub元数据、文件权限、用户中断均保持传播，原Gradle分发模式仍强制成功。
+- 下载异常先执行同目录临时文件清理，再交给CLI决定降级；已知坏缓存不允许作为网络降级结果继续使用。正常官方资产仍双摘要核验，原子替换与版本唯一来源不变。
+- 集成使用确定性合成JAR与本地Maven，代理限制意外外网请求；依赖/daemon/项目/临时目录独立，发行文件只读复用。正向精确核对路径和字节，负对照验证下载拦截有效；不能将合成JAR解析等同于真实Kotlin编译器功能验收。
+- 本轮所有更改限CI工具、测试和文档；新增动效、节奏、轨迹、普通档、滑条例外、白雾刻度规则及根浮层宿主没有改动。没有私人路径、设备端点、媒体、凭据、APK、缓存或依赖二进制纳入提交。
+
+### 修复记录
+
+| 项目 | 处理结果 | 改动文件与行号 | 验证 |
+|---|---|---|---|
+| CR10-1 网络硬门 | 已修复，远端待新head | `tools/prepare-gradle-distribution.py:41`、`:144`、`:224` | 26项工具测试、实际官方资产复用；普通Gradle测试命令保持。 |
+| CR10-2 可重复消费 | 已实现，macOS待新head | `tools/test_gradle_compiler_cache.py:377`、`:390`；`.github/workflows/webdav-macos.yml:119` | Windows正反2/2；禁止JAR GET时真实解析成功，空cache下载被拒绝并按预期失败。 |
+| CR10-3 坏cache | 已修复 | `tools/prepare-gradle-distribution.py:93`；`tools/test_prepare_gradle_distribution.py:400` | 已知坏文件加HTTP504严格失败，原文件保留且无临时文件。 |
+| CR10-4 误分类 | 已修复 | `tools/prepare-gradle-distribution.py:187`；`tools/test_prepare_gradle_distribution.py:427` | Unix/Windows访问限制、代理、证书、未知gh错误不降级。 |
+| CR10-5 读取中断 | 已修复 | `tools/prepare-gradle-distribution.py:155`、`:164`；`tools/test_prepare_gradle_distribution.py:359`、`:389` | 连接成功后read抛IncompleteRead及普通短body均警告降级，响应已关闭。 |
+| CR10-6 服务停止 | 已修复 | `tools/test_gradle_compiler_cache.py:142`、`:193`、`:243` | 半请求约2s停止；两次正式集成目录清理通过，首轮失败缓存按工具拒绝保留于仓库外且无相关进程。 |

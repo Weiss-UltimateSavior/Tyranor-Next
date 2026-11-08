@@ -2,15 +2,24 @@
 """Prepare Gradle toolchain artifacts from their verified official GitHub releases."""
 
 import argparse
+import errno
 import hashlib
+from http.client import IncompleteRead
 import json
 import os
 from pathlib import Path
 import re
+import socket
+import ssl
 import subprocess
 import tempfile
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import urlopen
+
+
+class ArtifactNetworkError(RuntimeError):
+    """An official artifact transport is temporarily unavailable, before any integrity failure."""
 
 
 def wrapper_cache_zip(distribution_url: str, gradle_home: Path) -> Path:
@@ -31,9 +40,15 @@ def wrapper_cache_zip(distribution_url: str, gradle_home: Path) -> Path:
 
 def release_asset(repository: str, version: str, filename: str) -> dict:
     """Select one exact release asset without trusting a metadata-provided download URL."""
-    release = json.loads(subprocess.check_output([
-        "gh", "api", f"repos/{repository}/releases/tags/v{version}",
-    ], timeout=60))
+    try:
+        metadata = subprocess.check_output([
+            "gh", "api", f"repos/{repository}/releases/tags/v{version}",
+        ], timeout=60, stderr=subprocess.PIPE)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+        if is_transient_network_error(error):
+            raise ArtifactNetworkError("Official release metadata is temporarily unavailable") from error
+        raise
+    release = json.loads(metadata)
     assets = [asset for asset in release["assets"] if asset["name"] == filename]
     if len(assets) != 1 or type(assets[0]["id"]) is not int or assets[0]["id"] <= 0:
         raise ValueError("The official release must contain exactly one matching asset")
@@ -58,18 +73,27 @@ def download_verified_asset(repository: str, asset: dict, expected_sha256: str, 
         sha256, sha1 = file_digests(path)
         return sha256 == expected_sha256.lower() and (expected_sha1 is None or sha1 == expected_sha1.lower())
 
-    if target.is_file() and matches(target):
-        print(f"Reused verified official release asset: {asset['name']}")
-        return target
+    invalid_cache = target.is_file()
+    if invalid_cache:
+        if matches(target):
+            print(f"Reused verified official release asset: {asset['name']}")
+            return target
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
         with tempfile.NamedTemporaryFile(dir=target.parent, prefix=target.name + ".", delete=False) as output:
             temporary = Path(output.name)
-            subprocess.run([
-                "gh", "api", f"repos/{repository}/releases/assets/{asset['id']}",
-                "--header", "Accept: application/octet-stream",
-            ], stdout=output, check=True, timeout=300)
+            try:
+                subprocess.run([
+                    "gh", "api", f"repos/{repository}/releases/assets/{asset['id']}",
+                    "--header", "Accept: application/octet-stream",
+                ], stdout=output, stderr=subprocess.PIPE, check=True, timeout=300)
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as error:
+                if is_transient_network_error(error):
+                    if invalid_cache:
+                        raise ValueError("Cached release asset failed integrity validation and a verified replacement is unavailable") from error
+                    raise ArtifactNetworkError("Official release asset is temporarily unavailable") from error
+                raise
         sha256, sha1 = file_digests(temporary)
         if sha256 != expected_sha256.lower():
             raise ValueError("Official release asset SHA-256 mismatch")
@@ -126,8 +150,24 @@ def prepare_kotlin_compiler(catalog_file: Path, gradle_home: Path) -> Path:
     version = versions[0]
     filename = f"kotlin-compiler-embeddable-{version}.jar"
     maven_url = f"https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embeddable/{version}/{filename}"
-    with urlopen(maven_url + ".sha1", timeout=60) as response:
-        expected_sha1 = response.read(1024).decode("ascii").strip()
+    try:
+        with urlopen(maven_url + ".sha1", timeout=60) as response:
+            declared_length = getattr(response, "headers", {}).get("Content-Length")
+            expected_length = int(declared_length) if declared_length is not None else None
+            if expected_length is not None and not 0 <= expected_length <= 1024:
+                raise ValueError("Invalid official Maven checksum response length")
+            checksum = response.read(1025)
+            if len(checksum) > 1024:
+                raise ValueError("Official Maven checksum response is too large")
+            if expected_length is not None and len(checksum) < expected_length:
+                raise IncompleteRead(checksum, expected_length - len(checksum))
+    except (URLError, TimeoutError, ConnectionError, IncompleteRead) as error:
+        if is_transient_network_error(error):
+            if isinstance(error, HTTPError):
+                error.close()
+            raise ArtifactNetworkError("Official Maven checksum is temporarily unavailable") from error
+        raise
+    expected_sha1 = checksum.decode("ascii").strip()
     if not re.fullmatch(r"[a-fA-F0-9]{40}", expected_sha1):
         raise ValueError("Invalid official Maven SHA-1 checksum")
     repository = "JetBrains/kotlin"
@@ -144,13 +184,58 @@ def prepare_kotlin_compiler(catalog_file: Path, gradle_home: Path) -> Path:
     return download_verified_asset(repository, asset, expected_sha256, target, expected_sha1)
 
 
-if __name__ == "__main__":
+def is_transient_network_error(error: Exception) -> bool:
+    """Allow only transport outages and retryable HTTP responses, never integrity or access errors."""
+    if isinstance(error, HTTPError):
+        return error.code in (408, 429) or 500 <= error.code <= 599
+    if isinstance(error, URLError):
+        reason = error.reason
+        if isinstance(reason, ssl.SSLError):
+            return False
+        return isinstance(reason, (TimeoutError, ConnectionError, socket.gaierror)) or (
+            isinstance(reason, OSError) and reason.errno in (
+                errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ETIMEDOUT,
+                errno.ECONNRESET, errno.ECONNREFUSED, errno.ECONNABORTED,
+            )
+        )
+    if isinstance(error, (TimeoutError, ConnectionError, IncompleteRead, subprocess.TimeoutExpired)):
+        return True
+    if isinstance(error, subprocess.CalledProcessError):
+        message = error.stderr or b""
+        if isinstance(message, bytes):
+            message = message.decode("utf-8", errors="replace")
+        message = message.lower()
+        if any(fragment in message for fragment in (
+            "permission denied", "operation not permitted", "access is denied", "x509:",
+            "certificate verify failed", "certificate verification failed", "unknown authority",
+        )):
+            return False
+        statuses = re.findall(r"\bHTTP(?:/[\d.]+)?[ :]+(\d{3})\b", message, re.IGNORECASE)
+        if statuses:
+            return all(int(status) in (408, 429) or 500 <= int(status) <= 599 for status in statuses)
+        return any(fragment in message for fragment in (
+            "tls handshake timeout", "i/o timeout", "context deadline exceeded",
+            "connection reset by peer", "connection refused", "network is unreachable",
+            "no such host", "unexpected eof", "http2: client connection lost",
+        ))
+    return False
+
+
+def main(argv=None) -> None:
+    """Keep Gradle bootstrap mandatory; let optional Kotlin prefetch yield only to network outages."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kotlin-compiler", action="store_true", help="Prepare the catalog's Kotlin compiler instead of the Gradle distribution")
-    options = parser.parse_args()
+    options = parser.parse_args(argv)
     repository = Path(__file__).resolve().parent.parent
     gradle_home = Path(os.environ.get("GRADLE_USER_HOME", str(Path.home() / ".gradle")))
     if options.kotlin_compiler:
-        prepare_kotlin_compiler(repository / "gradle/libs.versions.toml", gradle_home)
+        try:
+            prepare_kotlin_compiler(repository / "gradle/libs.versions.toml", gradle_home)
+        except ArtifactNetworkError:
+            print("::warning::Kotlin compiler prefetch unavailable; continuing with normal Gradle dependency resolution")
     else:
         prepare_distribution(repository / "gradle/wrapper/gradle-wrapper.properties", gradle_home)
+
+
+if __name__ == "__main__":
+    main()
