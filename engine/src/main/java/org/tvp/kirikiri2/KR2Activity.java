@@ -586,10 +586,22 @@ public class KR2Activity extends Cocos2dxActivity {
             out.add("/sdcard");
         } else if (lower.equals(primaryRootLower) || lower.startsWith(primaryRootLower + "/")) {
             out.add(primaryRoot);
+        } else if (lower.equals("/storage/emulated/0") || lower.startsWith("/storage/emulated/0/")) {
+            // Legacy engine-side spellings of the primary volume; on isolated users the
+            // native layer may still emit /0 paths, so keep it as an explicit alias root.
+            out.add("/storage/emulated/0");
         } else if (lower.startsWith("/storage/")) {
             String rest = p.substring("/storage/".length());
             int slash = rest.indexOf('/');
-            out.add(slash > 0 ? "/storage/" + rest.substring(0, slash) : p);
+            String first = slash > 0 ? rest.substring(0, slash) : rest;
+            if ("emulated".equalsIgnoreCase(first)) {
+                // The emulated volume mounts at /storage/emulated/<uid>; never collapse it
+                // to the broad /storage/emulated root.
+                int second = rest.indexOf('/', slash + 1);
+                out.add(second > slash ? "/storage/" + rest.substring(0, second) : p);
+            } else {
+                out.add(slash > 0 ? "/storage/" + first : p);
+            }
         }
     }
 
@@ -619,6 +631,8 @@ public class KR2Activity extends Cocos2dxActivity {
             int colon = docId.indexOf(':');
             String volume = colon >= 0 ? docId.substring(0, colon) : docId;
             String rel = colon >= 0 ? docId.substring(colon + 1) : "";
+            // document IDs come from the provider and are untrusted: reject traversal.
+            if (rel.indexOf('\\') >= 0 || java.util.Arrays.asList(rel.split("/")).contains("..")) return value;
             if ("primary".equalsIgnoreCase(volume)) {
                 String primaryRoot = bridge.PrimaryStorageRoot.get();
                 return rel.isEmpty() ? primaryRoot : primaryRoot + "/" + rel;

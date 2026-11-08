@@ -1165,7 +1165,8 @@ object KrSafMirror {
     /**
      * 文档 ID（`卷:相对路径`）还原为 `/storage/卷/相对路径`；主存储 `primary:` 对应
      * 进程视角的 emulated 挂载根（单 user 为 emulated/0，安全文件夹等隔离 user 为
-     * emulated/<uid>，见 [PrimaryStorageRoot]）。
+     * emulated/<uid>，见 [PrimaryStorageRoot]）。documentId 来自 provider、不可信：
+     * 拒绝 `..` 段与反斜杠，映射结果不越出卷根。
      */
     private fun documentIdToStoragePath(documentId: String): String? {
         val colon = documentId.indexOf(':')
@@ -1173,6 +1174,7 @@ object KrSafMirror {
         val volume = documentId.substring(0, colon)
         val rest = documentId.substring(colon + 1)
         if (volume.isBlank() || rest.isBlank()) return null
+        if (rest.contains('\\') || rest.split('/').any { it == ".." }) return null
         val volumeDir = if (volume.equals("primary", ignoreCase = true)) {
             PrimaryStorageRoot.get().removePrefix("/storage/")
         } else {

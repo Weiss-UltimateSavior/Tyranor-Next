@@ -62,6 +62,21 @@ class GamePathUtilsSafUriTest {
     }
 
     @Test
+    fun traversalSegmentsAreRejected() {
+        // documentId 来自 provider、不可信：拒绝 .. 段与反斜杠，映射不越出卷根
+        assertNull(GamePathUtils.documentIdToPath("primary:../etc", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("primary:Games/../../etc", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("primary:..", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("0000-0001:Games/../../etc", secureFolderRoot))
+        assertNull(GamePathUtils.documentIdToPath("primary:Games\\..\\x", secureFolderRoot))
+        // 非穿越的相邻写法仍正常映射
+        assertEquals(
+            "$secureFolderRoot/Games/..x",
+            GamePathUtils.documentIdToPath("primary:Games/..x", secureFolderRoot),
+        )
+    }
+
+    @Test
     fun emulatedVolumesAreNeverRemovable() {
         assertFalse(GamePathUtils.isRemovableStoragePath("/storage/emulated/0/Games"))
         assertFalse(GamePathUtils.isRemovableStoragePath("/storage/emulated/150/Games"))

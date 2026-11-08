@@ -26,6 +26,10 @@ object PrimaryStorageRoot {
     @Volatile
     private var cache: String? = null
 
+    /** JVM 回归注入点：非 null 时替代真实 canonical 链探测；设备代码不得使用。 */
+    @Volatile
+    internal var probeCanonicalRoot: (() -> String?)? = null
+
     /** 进程级主存储根（解析一次后缓存；无 Context 场景走 canonical 链解析）。 */
     @JvmStatic
     fun get(): String = resolve(null)
@@ -56,6 +60,11 @@ object PrimaryStorageRoot {
                     ?.primaryStorageVolume?.directory?.absolutePath
             }.getOrNull()?.takeIf { isMountRoot(it) }?.let { return it }
         }
+        probeCanonicalRoot?.let { probe ->
+            val probed = probe()
+            if (probed != null && isMountRoot(probed)) return probed
+            return ""
+        }
         return runCatching {
             @Suppress("DEPRECATION")
             Environment.getExternalStorageDirectory().canonicalPath
@@ -65,4 +74,10 @@ object PrimaryStorageRoot {
     /** 必须是真实 emulated 挂载根；别名拼写（悬空链宽容解析结果）不可作根。 */
     private fun isMountRoot(root: String): Boolean =
         root.startsWith("/storage/") && root !in ALIAS_SPELLINGS
+
+    /** 仅供 JVM 回归：清空缓存与探针，恢复生产语义。 */
+    internal fun resetForTest() {
+        cache = null
+        probeCanonicalRoot = null
+    }
 }

@@ -11,11 +11,14 @@ object KrPathUtils {
     /**
      * Mount spellings of the emulated primary volume the engine may use interchangeably.
      * The canonical mount root is resolved per-process (isolated users such as Samsung's
-     * Secure Folder mount the primary volume at `/storage/emulated/<uid>`).
+     * Secure Folder mount the primary volume at `/storage/emulated/<uid>`); the literal
+     * `/storage/emulated/0` is kept so legacy engine-side spellings still expand to the
+     * process-visible root.
      */
     private val storageRootAliases: List<String>
         get() = listOf(
             PrimaryStorageRoot.get(),
+            "/storage/emulated/0",
             "/sdcard",
             "/storage/self/primary",
         )

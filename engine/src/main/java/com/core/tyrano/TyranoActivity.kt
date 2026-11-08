@@ -510,6 +510,8 @@ class TyranoActivity : Activity() {
             if (segment != null && colon >= 0) {
                 val volume = segment.substring(0, colon)
                 val relative = segment.substring(colon + 1)
+                // document IDs come from the provider and are untrusted: reject traversal.
+                if (relative.contains('\\') || relative.split('/').any { it == ".." }) return null
                 return if (volume.equals("primary", ignoreCase = true)) {
                     // 主存储根按进程视角解析（安全文件夹等隔离 user 挂载点不同，issue #152）
                     "${PrimaryStorageRoot.get()}/$relative"
