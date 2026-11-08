@@ -140,10 +140,12 @@ object KrPathUtils {
 
     /**
      * The engine may spell the same storage root through its mount aliases
-     * (`/sdcard`, `/storage/self/primary`, `/storage/emulated/0`). Anchor matching
-     * must cover them or internal saves silently stop redirecting (review round 9,
-     * #14). Only the leading mount segment is swapped; the game-relative remainder
-     * and the containment check stay unchanged. Pure string expansion for JVM tests.
+     * (`/sdcard`, `/storage/self/primary`, and the process-visible emulated mount root
+     * from [PrimaryStorageRoot], e.g. `/storage/emulated/0` or `/storage/emulated/<uid>`
+     * on isolated users). Anchor matching must cover them or internal saves silently
+     * stop redirecting (review round 9, #14). Only the leading mount segment is swapped;
+     * the game-relative remainder and the containment check stay unchanged. Pure string
+     * expansion for JVM tests.
      */
     internal fun expandStorageRootAliases(path: String): List<String> {
         val normalized = path.replace(File.separatorChar, '/').trimEnd('/')
