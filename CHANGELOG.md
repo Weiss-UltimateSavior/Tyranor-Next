@@ -69,6 +69,7 @@
 
 ### 修复
 
+- 修复 KR（Kirikiroid2）引擎的渲染/内存 8 项设置被内核静默忽略的问题（issue #109）：写入引擎 XML（GlobalPreference.xml/Kirikiroid2Preference.xml）的 Item 键此前误用了 App 侧 prefs 键（kr_renderer 等），而内核只按 Kirikiroid2 源码 PreferenceConfig.h 中各 tTVPPreferenceInfo* 构造参数第二项的存储键读取（renderer/memusage/fps_limit 等；preference_* 仅为界面文案 id），导致渲染器、软件绘制线程数、软件/OpenGL 压缩纹理、内存占用、最大纹理尺寸、OpenGL 精确渲染与 FPS 限制 8 项设置在引擎内不生效。现改用内核真名（新增 `EngineSettingsStore.ENGINE_*` 常量并由 `KrRenderPrefs` 统一映射），App 侧 kr_* 存储键与单游戏覆盖字段不变，已保存设置升级后无需迁移直接生效。新增 `KrRenderEngineKeyTest` 锚定键名映射防回退。JVM 回归通过；真机（PDVM00 / Android 11 / 内核 libgame.so 1.3.9）验证：全局切换渲染器后引擎 XML 写入 `renderer` 键，FPS 限制=30 时游戏按 30fps 渲染、清空后恢复 60fps；单游戏覆盖渲染器=OpenGL 落盘游戏目录 Kirikiroid2Preference.xml 并生效，清空覆盖后该键被正确清除。旧版本残留在引擎 XML 中的 kr_* Item 内核按未知键忽略、无读取冲突，本版不清理。
 - 修复 Tyrano 桌面导出游戏在宽屏手机上画面左对齐、右侧留大片黑边的问题：部分游戏在 `Config.tjs` 中把 `ScreenCentering` 设为 `false`，引擎布局因此只缩放、不写居中偏移（4.x 为 `left/top`，5.x 为 `margin-left/top`）；宿主现在包裹 4.x `fitBaseSize` / 5.x `_fitBaseSize` 并把该开关收敛为 true，复用引擎自带的居中与 resize 处理，同时保留 `vchat` / `useCamera` 的引擎决定。真机 1280×720 游戏在 2700×1224 横屏下恢复左右对称黑边（各约 262 物理 px）。
 - 修复妙妙工具侧边栏在横屏/小高度窗口下条目被截断且无法滑动的问题：面板不再强制满高，改为随内容自适应高度并水平/垂直居中；标题固定，条目区在剩余高度内滚动。
 - 修复设置页卡片内的 `AppNavItem` 在玻璃系外观下重复绘制条目表面（卡片套卡片）的问题：「添加滤镜」与单游戏设置「查看/修改 Winlator 全局设置」改传 `drawSurface = false`，只保留所在 `MiuixCard` 的单层材质；默认主题因卡片与条目同为不透明 `NavWhite` 而不易察觉。

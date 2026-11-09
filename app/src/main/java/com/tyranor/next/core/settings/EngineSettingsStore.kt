@@ -188,8 +188,18 @@ object EngineSettingsStore {
     const val RENDERER_SOFTWARE = "software"
     const val RENDERER_OPENGL = "opengl"
 
-    // 写入引擎 XML（Kirikiroid2Preference.xml/GlobalPreference.xml）的 Item 键名，
-    // 与 libgame.so 内 IndividualConfigManager 读取的键一致，键名不可改。
+    // 写入引擎 XML（GlobalPreference.xml/Kirikiroid2Preference.xml）的 Item 键名。
+    // 内核（libgame.so）按 Kirikiroid2 源码 PreferenceConfig.h 中各 tTVPPreferenceInfo*
+    // 构造参数的第二项（存储键）读取，并非 locale ID（preference_* 仅为界面文案 id）；
+    // 键名不可改。App 侧 prefs 键（kr_*）只是宿主自己的存储键，内核不认识。
+    const val ENGINE_RENDERER = "renderer"
+    const val ENGINE_SOFTWARE_DRAW_THREAD = "software_draw_thread"
+    const val ENGINE_SOFTWARE_COMPRESS_TEX = "software_compress_tex"
+    const val ENGINE_OGL_COMPRESS_TEX = "ogl_compress_tex"
+    const val ENGINE_MEM_USAGE = "memusage"
+    const val ENGINE_OGL_MAX_TEXSIZE = "ogl_max_texsize"
+    const val ENGINE_OGL_ACCURATE_RENDER = "ogl_accurate_render"
+    const val ENGINE_FPS_LIMIT = "fps_limit"
     const val ENGINE_VCURSOR_SCALE = "vcursor_scale"
     const val ENGINE_MENU_HANDLER_OPA = "menu_handler_opa"
     // 虚拟鼠标缩放比（0.01..1.50，引擎默认 1.00；0.50 与原版 Ty 一致，两位小数）
