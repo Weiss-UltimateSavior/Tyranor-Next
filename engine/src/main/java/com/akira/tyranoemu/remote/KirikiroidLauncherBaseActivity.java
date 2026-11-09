@@ -237,6 +237,13 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                 Log.i(TAG, "font pref default_font='" + font + "' -> " + target
                         + (changed ? "" : " (unchanged)"));
                 clearStalePreferenceItem(target, gameFile, "default_font", markerFor("default_font"));
+                // Pre-marker legacy builds wrote the app-imported font path (inside this
+                // app's private fonts directory) without a marker; ownership tracking
+                // keeps such unmarked entries, so migrate the recognized ones here.
+                // Kernel-UI-picked fonts (paths outside the private fonts directory)
+                // carry no such prefix and are kept.
+                clearLegacyAppPrivateFontItem(gameFile, "default_font", markerFor("default_font"),
+                        new File(getFilesDir(), "fonts").getPath() + File.separatorChar);
             } catch (Exception error) {
                 Log.w(TAG, "apply default_font failed", error);
             }
@@ -377,38 +384,72 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         return applyPreferenceItem(file, name, markerName, value, true);
     }
 
+    /** Parses Item/Custom/KeyMap entries out of a preference XML file (maps stay empty when absent). */
+    private static void readPreferenceFile(
+            File file,
+            LinkedHashMap<String, String> items,
+            List<String[]> customs,
+            LinkedHashMap<Integer, Integer> keyMaps) {
+        if (!file.isFile()) return;
+        XmlPullParser parser;
+        try {
+            parser = XmlPullParserFactory.newInstance().newPullParser();
+        } catch (Exception error) {
+            return;
+        }
+        try (FileInputStream in = new FileInputStream(file)) {
+            parser.setInput(in, null);
+            for (int event = parser.getEventType();
+                    event != XmlPullParser.END_DOCUMENT;
+                    event = parser.next()) {
+                if (event != XmlPullParser.START_TAG) continue;
+                String tag = parser.getName();
+                String key = parser.getAttributeValue(null, "key");
+                String attr = parser.getAttributeValue(null, "value");
+                if ("Item".equals(tag)) {
+                    if (key != null && attr != null) items.put(key, attr);
+                } else if ("Custom".equals(tag)) {
+                    if (key != null && attr != null) customs.add(new String[]{key, attr});
+                } else if ("KeyMap".equals(tag) && key != null && attr != null) {
+                    try {
+                        int keyCode = Integer.parseInt(key);
+                        int mapped = Integer.parseInt(attr);
+                        if (keyCode != 0 && mapped != 0) keyMaps.put(keyCode, mapped);
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // Malformed or unreadable file: keep whatever was parsed so far.
+        }
+    }
+
+    /**
+     * Migrates a pre-marker legacy app-written entry whose value points into the app's
+     * private {@code appFontsDirPrefix}: ownership tracking keeps unmarked entries, but
+     * unmarked values under the private fonts directory were written by legacy launcher
+     * builds (the app only stores imported font paths from that directory), so they can
+     * be recognized and removed. Kernel-UI-written values point elsewhere and are kept.
+     */
+    static void clearLegacyAppPrivateFontItem(
+            File gameFile, String name, String markerName, String appFontsDirPrefix) throws Exception {
+        LinkedHashMap<String, String> items = new LinkedHashMap<>();
+        List<String[]> customs = new ArrayList<>();
+        LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
+        readPreferenceFile(gameFile, items, customs, keyMaps);
+        String value = items.get(name);
+        if (value == null || items.containsKey(markerName) || !value.startsWith(appFontsDirPrefix)) return;
+        items.remove(name);
+        writePreferenceXml(gameFile, items, customs, keyMaps);
+    }
+
     static boolean applyPreferenceItem(
             File file, String name, String markerName, String value, boolean trackOwnership)
             throws Exception {
         LinkedHashMap<String, String> items = new LinkedHashMap<>();
         List<String[]> customs = new ArrayList<>();
         LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
-        if (file.isFile()) {
-            XmlPullParser parser = XmlPullParserFactory.newInstance().newPullParser();
-            try (FileInputStream in = new FileInputStream(file)) {
-                parser.setInput(in, null);
-                for (int event = parser.getEventType();
-                        event != XmlPullParser.END_DOCUMENT;
-                        event = parser.next()) {
-                    if (event != XmlPullParser.START_TAG) continue;
-                    String tag = parser.getName();
-                    String key = parser.getAttributeValue(null, "key");
-                    String attr = parser.getAttributeValue(null, "value");
-                    if ("Item".equals(tag)) {
-                        if (key != null && attr != null) items.put(key, attr);
-                    } else if ("Custom".equals(tag)) {
-                        if (key != null && attr != null) customs.add(new String[]{key, attr});
-                    } else if ("KeyMap".equals(tag) && key != null && attr != null) {
-                        try {
-                            int keyCode = Integer.parseInt(key);
-                            int mapped = Integer.parseInt(attr);
-                            if (keyCode != 0 && mapped != 0) keyMaps.put(keyCode, mapped);
-                        } catch (NumberFormatException ignored) {
-                        }
-                    }
-                }
-            }
-        }
+        readPreferenceFile(file, items, customs, keyMaps);
         boolean changed = false;
         if (value != null) {
             changed |= !value.equals(items.put(name, value));

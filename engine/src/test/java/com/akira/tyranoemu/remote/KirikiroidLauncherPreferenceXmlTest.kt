@@ -82,6 +82,46 @@ class KirikiroidLauncherPreferenceXmlTest {
     }
 
     @Test
+    fun `legacy app-written font item is migrated by prefix`() {
+        val game = tmp.newFile("game.xml").apply {
+            writeText(xml("default_font" to "/data/user/0/com.tyranor.next/files/fonts/old.ttf"))
+        }
+        KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
+            game, "default_font", "_rinne_injected_default_font",
+            "/data/user/0/com.tyranor.next/files/fonts/",
+        )
+        assertFalse(items(game).containsKey("default_font"))
+    }
+
+    @Test
+    fun `kernel-ui font item outside app fonts dir is kept`() {
+        val game = tmp.newFile("game.xml").apply {
+            writeText(xml("default_font" to "/storage/emulated/0/Fonts/picked.ttf"))
+        }
+        KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
+            game, "default_font", "_rinne_injected_default_font",
+            "/data/user/0/com.tyranor.next/files/fonts/",
+        )
+        assertEquals("/storage/emulated/0/Fonts/picked.ttf", items(game)["default_font"])
+    }
+
+    @Test
+    fun `marked font item is not touched by legacy migration`() {
+        val game = tmp.newFile("game.xml").apply {
+            writeText(xml(
+                "default_font" to "/data/user/0/com.tyranor.next/files/fonts/new.ttf",
+                "_rinne_injected_default_font" to "/data/user/0/com.tyranor.next/files/fonts/new.ttf",
+            ))
+        }
+        KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
+            game, "default_font", "_rinne_injected_default_font",
+            "/data/user/0/com.tyranor.next/files/fonts/",
+        )
+        assertEquals("/data/user/0/com.tyranor.next/files/fonts/new.ttf", items(game)["default_font"])
+        assertTrue(items(game).containsKey("_rinne_injected_default_font"))
+    }
+
+    @Test
     fun `round trip preserves custom and keymap entries`() {
         val game = tmp.newFile("game.xml").apply {
             writeText(
