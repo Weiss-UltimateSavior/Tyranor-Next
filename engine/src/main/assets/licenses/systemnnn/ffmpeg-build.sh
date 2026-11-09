@@ -17,6 +17,12 @@ source_dir="$prefix/source"
 build_dir="$prefix/obj"
 exec 9>"$prefix/.emberfall-build.lock"
 flock 9
+# A killed extraction can leave behind its temporary directory.
+for stale in "$prefix"/.source.????????; do
+    if [[ -d "$stale" && ! -L "$stale" && "${stale##*/}" =~ ^\.source\.[[:alnum:]]{8}$ ]]; then
+        rm -rf -- "$stale"
+    fi
+done
 if [[ -L "$source_dir" || ! -f "$source_dir/.emberfall-extracted" || ! -f "$source_dir/configure" ]]; then
     staging=$(mktemp -d "$prefix/.source.XXXXXXXX")
     [[ "$staging" == "$prefix"/.source.* && -d "$staging" ]]

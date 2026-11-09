@@ -64,7 +64,7 @@ object SaveSyncRuntime {
     )
     private data class CachedBaseline(val contentHash: String, val metadataHash: String)
     private data class SaveMetadataObservation(val root: File, val files: List<File>, val metadataHash: String)
-    private data class SaveTreeSnapshot(val contentHash: String?, val metadataHash: String)
+    internal data class SaveTreeSnapshot(val contentHash: String?, val metadataHash: String)
     private sealed interface FlushDecision {
         data object Busy : FlushDecision
         data object StateChanged : FlushDecision
@@ -351,7 +351,8 @@ object SaveSyncRuntime {
                 val store = sessions(app)
                 val config = WebDavSettingsStore.load(app)
                 if (!config.active || (!config.mode.pulls && !config.mode.uploads)) {
-                    for (key in store.keys()) discardPending(app, store, key, store.load(key))
+                    val environment = AndroidSaveSyncEnvironment(app)
+                    for (key in store.keys()) discardPending(environment, store, key, store.load(key))
                     return@launch
                 }
                 val games = RuntimeModuleBindings.loadMigratedLibrary(app).associateBy { it.uri }
@@ -418,10 +419,27 @@ object SaveSyncRuntime {
     }
 
     internal suspend fun flushPending(context: Context, excludedUris: Set<String> = emptySet()): SaveSyncReport {
-        if (!WebDavSettingsStore.isEnabled(context)) return SaveSyncReport()
-        val config = WebDavSettingsStore.load(context)
-        val store = sessions(context)
-        val games = RuntimeModuleBindings.loadMigratedLibrary(context).associateBy { it.uri }
+        val app = context.applicationContext
+        if (!WebDavSettingsStore.isEnabled(app)) return SaveSyncReport()
+        val manager = GameSaveManager(app)
+        return flushPending(syncRoot(app), AndroidSaveSyncEnvironment(app), excludedUris) { game, key ->
+            captureContentSnapshot(manager, game, key)
+        }
+    }
+
+    internal suspend fun flushPending(
+        root: File,
+        environment: SaveSyncEnvironment,
+        excludedUris: Set<String> = emptySet(),
+        captureSnapshot: suspend (ScanGame, String) -> SaveTreeSnapshot,
+    ): SaveSyncReport {
+        if (!environment.enabled) return SaveSyncReport()
+        val config = environment.config()
+        val store = sessions(root)
+        val baselineStore = baselines(root)
+        val directoryActivations = SaveDirectoryActivationStore(root)
+        val service = SaveSyncService(root, environment)
+        val games = environment.games().associateBy { it.uri }
         var report = SaveSyncReport()
         for (key in store.keys()) {
             var token = ""
@@ -432,24 +450,23 @@ object SaveSyncRuntime {
                 token = entry.getString("token")
                 game = games[entry.optString("uri")]
                 if (game == null || !config.active || !config.mode.uploads ||
-                    !saveSessionGenerationMatches(entry, WebDavSettingsStore.sessionGeneration(context))) {
-                    discardPending(context, store, key, entry, gameMissing = game == null)
+                    !saveSessionGenerationMatches(entry, environment.generation())) {
+                    discardPending(environment, store, key, entry, gameMissing = game == null)
                     continue
                 }
                 if (game.uri in excludedUris) continue
                 val target = game
                 val baseline = entry.optString("baseline")
-                val manager = GameSaveManager(context)
-                val directoryKey = entry.optString("activeKey").ifBlank { activeKey(context, target) }
+                val directoryKey = entry.optString("activeKey").ifBlank { environment.activeKey(target) }
                 val decision = withCurrentSaveSession(store, key, entry, directoryKey,
-                    resolveActiveKey = { activeKey(context, target) }, guardMutation = true) {
-                    if (!saveSessionGenerationMatches(it, WebDavSettingsStore.sessionGeneration(context))) return@withCurrentSaveSession FlushDecision.StateChanged
-                    directoryActivations(context).requireAvailable(directoryKey)
-                    if (isGameRunning(context, target)) {
+                    resolveActiveKey = { environment.activeKey(target) }, guardMutation = true) {
+                    if (!saveSessionGenerationMatches(it, environment.generation())) return@withCurrentSaveSession FlushDecision.StateChanged
+                    directoryActivations.requireAvailable(directoryKey)
+                    if (environment.running(target)) {
                         FlushDecision.Busy
                     } else {
-                        val current = captureContentSnapshot(manager, target, directoryKey)
-                        val changed = SaveSyncService(context).hasPendingPromotion(target, config) ||
+                        val current = captureSnapshot(target, directoryKey)
+                        val changed = service.hasPendingPromotion(target, config) ||
                             (current.contentHash != null && current.contentHash != baseline)
                         if (changed) {
                             FlushDecision.Changed(current)
@@ -458,7 +475,7 @@ object SaveSyncRuntime {
                             // reporting a state change the user cannot act on.
                             FlushDecision.SessionReplaced
                         } else {
-                            persistBaseline(context, target, current, directoryKey)
+                            persistBaseline(baselineStore, target, current, directoryKey, environment.activeKey(target))
                             store.remove(key)
                             FlushDecision.Unchanged
                         }
@@ -476,13 +493,13 @@ object SaveSyncRuntime {
                         SaveSyncFailure(target.title, SaveSyncError.LOCAL_STATE_CHANGED, target.uri)))
                     FlushDecision.Unchanged -> Unit
                     is FlushDecision.Changed -> {
-                        val result = SaveSyncService(context).syncGameIfCurrent(target, SaveSyncDirection.UPLOAD,
+                        val result = service.syncGameIfCurrent(target, SaveSyncDirection.UPLOAD,
                             expectedActiveKey = directoryKey, expectedContentHash = decision.snapshot.contentHash) {
                             val current = store.load(key)
                             if (current.optString("token") != token ||
-                                !saveSessionGenerationMatches(current, WebDavSettingsStore.sessionGeneration(context))) false else {
-                                requireSessionDirectory(current, activeKey(context, target))
-                                directoryActivations(context).requireAvailable(directoryKey)
+                                !saveSessionGenerationMatches(current, environment.generation())) false else {
+                                requireSessionDirectory(current, environment.activeKey(target))
+                                directoryActivations.requireAvailable(directoryKey)
                                 true
                             }
                         }
@@ -491,17 +508,17 @@ object SaveSyncRuntime {
                             var gameBecameBusy = false
                             var sessionReplaced = false
                             val committed = withCurrentSaveSession(store, key, entry, directoryKey,
-                                resolveActiveKey = { activeKey(context, target) }, guardMutation = true) {
-                                if (isGameRunning(context, target)) {
+                                resolveActiveKey = { environment.activeKey(target) }, guardMutation = true) {
+                                if (environment.running(target)) {
                                     gameBecameBusy = true
                                     false
                                 } else if (store.load(key).optString("token") != token) {
                                     sessionReplaced = true
                                     false
                                 } else {
-                                    val final = captureContentSnapshot(manager, target, directoryKey)
+                                    val final = captureSnapshot(target, directoryKey)
                                     if (final.contentHash == decision.snapshot.contentHash) {
-                                        persistBaseline(context, target, final, directoryKey)
+                                        persistBaseline(baselineStore, target, final, directoryKey, environment.activeKey(target))
                                         store.remove(key)
                                         true
                                     } else {
@@ -538,18 +555,21 @@ object SaveSyncRuntime {
     }
 
     private suspend fun discardPending(
-        context: Context,
+        environment: SaveSyncEnvironment,
         store: SaveSyncStateStore,
         key: String,
         entry: JSONObject,
         gameMissing: Boolean = false,
-    ) = SaveSyncLocks.active(entry.optString("activeKey").ifBlank { activeKey(context, entry.optString("uri")) }) {
+    ) = SaveSyncLocks.active(entry.optString("activeKey").ifBlank {
+        val uri = entry.optString("uri")
+        environment.games().firstOrNull { it.uri == uri }?.let(environment::activeKey) ?: uri
+    }) {
         SaveSyncLocks.session(key) {
             if (store.load(key).optString("token") == entry.optString("token")) {
-                val current = WebDavSettingsStore.load(context)
+                val current = environment.config()
                 // A concurrent mode change and launch may already have replaced this ticket.
                 if (gameMissing || !current.active || !current.mode.uploads ||
-                    !saveSessionGenerationMatches(store.load(key), WebDavSettingsStore.sessionGeneration(context))) store.remove(key)
+                    !saveSessionGenerationMatches(store.load(key), environment.generation())) store.remove(key)
             }
         }
     }
@@ -915,9 +935,17 @@ object SaveSyncRuntime {
         return SaveTreeSnapshot(contentHash, observed.metadataHash)
     }
 
-    private fun persistBaseline(context: Context, game: ScanGame, snapshot: SaveTreeSnapshot, directoryKey: String) {
-        requireSameSaveDirectory(directoryKey, activeKey(context, game))
-        val store = baselines(context)
+    private fun persistBaseline(context: Context, game: ScanGame, snapshot: SaveTreeSnapshot, directoryKey: String) =
+        persistBaseline(baselines(context), game, snapshot, directoryKey, activeKey(context, game))
+
+    private fun persistBaseline(
+        store: SaveSyncStateStore,
+        game: ScanGame,
+        snapshot: SaveTreeSnapshot,
+        directoryKey: String,
+        currentActiveKey: String,
+    ) {
+        requireSameSaveDirectory(directoryKey, currentActiveKey)
         val key = SaveContentHash.text(game.uri)
         val contentHash = snapshot.contentHash
         if (contentHash.isNullOrBlank()) {
@@ -935,12 +963,14 @@ object SaveSyncRuntime {
             .put("metadataHash", snapshot.metadataHash))
     }
 
-    private fun sessions(context: Context, recoverCorrupt: Boolean = true) =
-        SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/sessions"), recoverCorrupt = recoverCorrupt)
+    private fun syncRoot(context: Context) = File(context.noBackupFilesDir, "save_sync")
+    private fun sessions(context: Context, recoverCorrupt: Boolean = true) = sessions(syncRoot(context), recoverCorrupt)
+    private fun sessions(root: File, recoverCorrupt: Boolean = true) =
+        SaveSyncStateStore(File(root, "sessions"), recoverCorrupt = recoverCorrupt)
     private fun directoryActivations(context: Context) =
-        SaveDirectoryActivationStore(File(context.noBackupFilesDir, "save_sync"))
-    private fun baselines(context: Context) =
-        SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/baselines"), recoverCorrupt = true)
+        SaveDirectoryActivationStore(syncRoot(context))
+    private fun baselines(context: Context) = baselines(syncRoot(context))
+    private fun baselines(root: File) = SaveSyncStateStore(File(root, "baselines"), recoverCorrupt = true)
     private fun runtimeStore(context: Context) = SaveSyncStateStore(File(context.noBackupFilesDir, "save_sync/hosts"))
     private fun processName(context: Context): String = if (Build.VERSION.SDK_INT >= 28) Application.getProcessName() else {
         try {

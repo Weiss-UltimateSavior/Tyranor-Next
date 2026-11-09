@@ -6,7 +6,7 @@
 
 - 新增 CMVS 引擎（Purple SOFTWARE，cmvs-rs）接入：NativeActivity + `libcmvs_loader.so`，真实运行库 `libcmvs_android.so` 走 `engine-runtime/cmvs` 分片首启解压；仅支持 19 部登记作品，字体由用户自选，要求 Vulkan，仅触摸输入；独立存档位于 App 私有 `files/cmvs/users/<hash>`，不写游戏目录。
 
-- 内置 SystemNNN-Emberfall 0.6.7。扫描游戏目录中的 `spt/sys.spt` 并直接启动 ARM64 播放器。存档管理及 WebDAV 同步只处理游戏目录内的 Emberfall 存档。
+- 内置 SystemNNN-Emberfall 0.6.8。扫描游戏目录中的 `spt/sys.spt` 并直接启动 ARM64 播放器。存档管理及 WebDAV 同步只处理游戏目录内的 Emberfall 存档。
 
 - 新增首次使用七步快速入门教练层：在真实首页、游戏页、引擎页和设置页中展示添加、搜索、封面、重新扫描等入口；新安装用户可跳过或完成引导，已有数据的升级用户默认跳过，通知权限延后到引导完成后请求。
 - 完善首次使用引导边界：初始化存储写入失败不阻断启动，完成标记支持重试；失败的首次安装判定跨进程重启保留，避免迁移标记或空数据库误跳过引导；清理不可达的启动失败重试页，修正白雾玻璃气泡材质并按页面生命周期管理锚点；引导语义保留真实高亮控件，完成后复用同一主导航组合，避免无障碍焦点丢失与页面重建；页面切换等待真实控件锚点，并处理 Activity 重建后的状态恢复，避免过期高亮或绕过引导。
@@ -95,6 +95,7 @@
 - 修复后台任务与错误提示：打开/退出的立即与 fallback 任务使用独立队列，新请求排队而不取消在途传输；fallback 的稳定排除集跨后继合并，过时排队节点跳过 IO。每游戏每轮所有经 `SaveSyncService` 发起的远程 DELETE 合计最多 20 次，超限保留 `needsPrune` / `publicationConfirmed` checkpoint，以 `cleanupPending` 继续 fallback（按 URI 跳过本链已报存储不足的游戏，同名游戏互不影响），保留 session 与同字节清理意图并在下轮确认有效替换后裁剪，不拆断已有 S→N 链。关闭功能、真实取消、凭据不可读、删除失败和无关游戏异常分别反馈，非搜索输入统一使用 Done/对应键盘与 autofill 语义。macOS 全量 app JVM 回归改为按相关存档、启动、UI/测试与构建输入路径触发。Service 已确认的 `needsPrune` 在 capture/pin 前 fresh verify，active 为空或 pin 创建失败仍可续清，但验证空间与 checkpoint 持久化必须成功、失败不删旧版本；pending cleanup 优先于非空 hash，20 次预算保留 marker，新 M 可同轮发布，create/copy ENOSPC 统一为不重试的 `STORAGE_FULL`。
 - 修复等待存档写入门禁期间启动游戏的竞态：激活重试、导入前捕获、失败回滚、同步收尾与自动会话捕获在锁内重新检查；取消后的必要回滚等锁不可取消，运行中保留恢复材料。外置 YU-RIS 的运行标记独立于上传模式与总开关，延迟前台事件不会清除后来启动；启动准入改为类型化，不受管理的外置游戏不占用同步门禁；已发出启动后的记账失败及重复启动不会误撤销保护。
 - 修复 WebDAV 界面与无障碍：密码输入具备正确 label、遮罩和 `Password` 语义，长确认弹窗可滚动且按钮固定可见，任务中弹窗不能经遮罩或返回误关闭；同步方向、待补齐信息、真实失败与危险色分别呈现。
+- SystemNNN 的全局进度恢复弹窗须通过界面按钮退出或恢复。FFmpeg 构建持锁清理上次中断留下的解压目录。
 - SystemNNN 从故障恢复并重开前会提示自动档覆盖。损坏的全局进度可隔离后重试。存档管理可清理导入副本的资源并保留全部存档，之后按需重导。菜单预览解绑后再释放纹理，FFmpeg 源码完整解压后才进入缓存。
 - 重扫可恢复已重新启用的原第三方模块。WebDAV 读取旧 Emberfall 条目时迁移为内置 SystemNNN，退出上传遇到存档锁占用会重试。
 

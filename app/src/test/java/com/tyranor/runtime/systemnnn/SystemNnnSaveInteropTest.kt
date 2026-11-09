@@ -192,14 +192,23 @@ class SystemNnnSaveInteropTest {
         put(game, "spt/sys.spt", "partial publish")
         assertFalse(SystemNnnGameImport.readableBootstrap(game))
 
-        val staging = temp.newFolder()
-        put(staging, "spt/sys.spt", "reimported script")
-        SystemNnnGameImport.restoreResources(game, staging)
-        assertFalse(SystemNnnGameImport.resourcesEvicted(game))
-        assertTrue(SystemNnnGameImport.readableBootstrap(game))
-        assertEquals("reimported script", game.resolve("spt/sys.spt").readText())
-        assertEquals("autosave", game.resolve("SaV/emberfall.resume").readText())
-        assertEquals("PC", game.resolve("SaV/sysfile3.sav").readText())
+        val restored = SystemNnnGameImport.importDirectory(base, source, {}) {
+            SystemNnnGameImport.ImportSource { staging, restoring, publish ->
+                assertTrue(restoring)
+                put(staging, "spt/sys.spt", "reimported script")
+                put(staging, "graphics.dat", "reimported graphics")
+                put(staging, "sav/emberfall.resume", "source autosave")
+                put(staging, "sav/sysfile3.sav", "source PC save")
+                publish.run()
+            }
+        }
+        assertEquals(game, restored)
+        assertFalse(SystemNnnGameImport.resourcesEvicted(restored))
+        assertTrue(SystemNnnGameImport.readableBootstrap(restored))
+        assertEquals("reimported script", restored.resolve("spt/sys.spt").readText())
+        assertEquals("reimported graphics", restored.resolve("graphics.dat").readText())
+        assertEquals("autosave", restored.resolve("SaV/emberfall.resume").readText())
+        assertEquals("PC", restored.resolve("SaV/sysfile3.sav").readText())
         assertEquals(lockIdentity, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
     }
 

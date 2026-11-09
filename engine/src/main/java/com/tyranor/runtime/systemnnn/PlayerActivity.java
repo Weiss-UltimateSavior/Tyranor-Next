@@ -1546,6 +1546,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(isDestroyed()||isFinishing()||owner==null)return;
         new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_progress_corrupt))
             .setMessage(text(R.string.engine_systemnnn_host_progress_recovery_hint))
+            .setCancelable(false)
             .setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick((d,w)->finish()))
             .setPositiveButton(text(R.string.engine_systemnnn_host_progress_recover),
                 dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress();}))

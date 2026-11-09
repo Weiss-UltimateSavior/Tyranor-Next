@@ -209,12 +209,25 @@ public final class SystemNnnGameImport {
         Cancellation check=cancellation==null?NONE:cancellation;check.check();
         String identity=normalizeIdentity(sourceId);
         if(!identity.equals(sourceIdentity(source)))throw new Failure(Reason.INVALID_SOURCE);
-        File existing=committedRoot(context,identity);if(existing!=null&&!resourcesEvicted(existing))return existing;
-        Uri granted=findAuthorizedSource(context,source);
-        if(granted==null)throw new Failure(Reason.NO_GRANT);
         File external=context.getExternalFilesDir(null);
-        if(external==null)throw new Failure(Reason.NO_SPACE);
+        if(external==null)throw new Failure(Reason.COPY_FAILED);
         File base=new File(external,DIRECTORY);
+        return importDirectory(base,identity,check,()->{
+            Uri granted=findAuthorizedSource(context,source);
+            if(granted==null)throw new Failure(Reason.NO_GRANT);
+            Source tree=new Source(context,granted,identity,check);
+            return (game,restoring,publish)->tree.copyGame(base,game,restoring,publish);
+        });
+    }
+
+    interface ImportSource {
+        // Keep the source save lock held through publication of a fresh copy.
+        File copyGame(File game,boolean restoring,CopyOperation<File> publish) throws IOException;
+    }
+    static File importDirectory(File base,String identity,Cancellation check,CopyOperation<ImportSource> authorize) throws IOException {
+        File existing=committedRoot(base,identity);
+        if(existing!=null&&!resourcesEvicted(existing))return existing;
+        ImportSource source=authorize.run();
         Files.createDirectories(base.toPath());plainDirectory(base);
         String key=key(identity);
         try{
@@ -228,36 +241,17 @@ public final class SystemNnnGameImport {
                     check.check();deleteOwnedTree(leftover);
                 }
                 check.check();
-                Source tree=new Source(context,granted,identity,check);
-                tree.requireRoot();
-                List<Entry> roots=tree.children(identity);
-                tree.requireBootstrap(roots);
-                Entry sav=null;
-                if(restoring)roots.removeIf(entry->entry.name.equalsIgnoreCase("sav"));
-                for(Entry entry:roots)if(entry.name.equalsIgnoreCase("sav")){
-                    if(!entry.directory||sav!=null)throw new Failure(Reason.INVALID_SOURCE);sav=entry;
-                }
-                Map<String,String> savesBefore=tree.saveSnapshot(sav);
-                try(SourceLock sourceLock=tree.lockSaves(sav)){
-                    File staging=new File(base,key+".pending-"+UUID.randomUUID());
-                    Files.createDirectory(staging.toPath());
-                    Throwable failure=null;
-                    try{
-                        File game=new File(staging,GAME);Files.createDirectory(game.toPath());
-                        Budget budget=new Budget(base);
-                        tree.copy(roots,game,"",0,budget);
-                        if(!readableBootstrap(game))throw new Failure(Reason.INVALID_SOURCE);
+                File staging=new File(base,key+".pending-"+UUID.randomUUID());
+                Files.createDirectory(staging.toPath());
+                Throwable failure=null;
+                try{
+                    File game=new File(staging,GAME);Files.createDirectory(game.toPath());
+                    return source.copyGame(game,restoring,()->{
+                        check.check();
                         if(restoring){
-                            check.check();
                             restoreResources(current,game);
                             return current;
                         }
-                        Entry currentSav=null;
-                        for(Entry entry:tree.children(identity))if(entry.directory&&entry.name.equalsIgnoreCase("sav")){
-                            if(currentSav!=null)throw new Failure(Reason.INVALID_SOURCE);currentSav=entry;
-                        }
-                        if(!savesBefore.equals(tree.saveSnapshot(currentSav)))throw new Failure(Reason.INCOMPLETE_SOURCE);
-                        check.check();
                         File metadata=new File(staging,IDENTITY);
                         try(FileOutputStream output=new FileOutputStream(metadata)){
                             output.write(identity.getBytes(StandardCharsets.UTF_8));output.getFD().sync();
@@ -265,11 +259,11 @@ public final class SystemNnnGameImport {
                         try{Files.move(staging.toPath(),new File(base,key).toPath(),StandardCopyOption.ATOMIC_MOVE);}
                         catch(IOException failed){throw new Failure(Reason.COMMIT_FAILED,failed);}
                         return new File(new File(base,key),GAME);
-                    }catch(IOException|RuntimeException|Error error){failure=error;throw error;}
-                    finally{if(Files.exists(staging.toPath(),LinkOption.NOFOLLOW_LINKS))try{deleteOwnedTree(staging);}catch(IOException cleanup){
-                        if(failure!=null)failure.addSuppressed(cleanup);else throw cleanup;
-                    }}
-                }
+                    });
+                }catch(IOException|RuntimeException|Error error){failure=error;throw error;}
+                finally{if(Files.exists(staging.toPath(),LinkOption.NOFOLLOW_LINKS))try{deleteOwnedTree(staging);}catch(IOException cleanup){
+                    if(failure!=null)failure.addSuppressed(cleanup);else throw cleanup;
+                }}
             });
         }catch(Failure e){throw e;}
         catch(CancellationException e){throw e;}
@@ -278,7 +272,7 @@ public final class SystemNnnGameImport {
         catch(RuntimeException e){throw new Failure(Reason.COPY_FAILED,e);}
     }
     // The marker makes an interrupted publish unrunnable while keeping the same save authority.
-    static void restoreResources(File game,File staging) throws IOException {
+    private static void restoreResources(File game,File staging) throws IOException {
         Path marker=evictionMarker(game);
         if(!Files.isRegularFile(marker,LinkOption.NOFOLLOW_LINKS))throw new Failure(Reason.CORRUPT_COPY);
         List<File> old=resourceChildren(game);
@@ -289,7 +283,7 @@ public final class SystemNnnGameImport {
             Files.delete(marker);
         }catch(SystemNnnHost.SaveBusyException e){throw new Failure(Reason.BUSY,e);}
     }
-    private interface CopyOperation<T>{T run() throws IOException;}
+    interface CopyOperation<T>{T run() throws IOException;}
     private static <T> T withCopyLock(File base,String key,CopyOperation<T> operation) throws IOException {
         Path path=base.getCanonicalFile().toPath().resolve(key+".lock");
         if(!OPEN_COPIES.add(path))throw new Failure(Reason.BUSY);
@@ -313,6 +307,29 @@ public final class SystemNnnGameImport {
         final Context context;final Uri tree;final String identity;final Cancellation check;
         Source(Context context,Uri tree,String identity,Cancellation check){
             this.context=context;this.tree=tree;this.identity=identity;this.check=check;
+        }
+        File copyGame(File base,File game,boolean restoring,CopyOperation<File> publish) throws IOException {
+            requireRoot();
+            List<Entry> roots=children(identity);
+            requireBootstrap(roots);
+            Entry sav=null;
+            if(restoring)roots.removeIf(entry->entry.name.equalsIgnoreCase("sav"));
+            for(Entry entry:roots)if(entry.name.equalsIgnoreCase("sav")){
+                if(!entry.directory||sav!=null)throw new Failure(Reason.INVALID_SOURCE);sav=entry;
+            }
+            Map<String,String> savesBefore=saveSnapshot(sav);
+            try(SourceLock sourceLock=lockSaves(sav)){
+                copy(roots,game,"",0,new Budget(base));
+                if(!readableBootstrap(game))throw new Failure(Reason.INVALID_SOURCE);
+                if(!restoring){
+                    Entry currentSav=null;
+                    for(Entry entry:children(identity))if(entry.directory&&entry.name.equalsIgnoreCase("sav")){
+                        if(currentSav!=null)throw new Failure(Reason.INVALID_SOURCE);currentSav=entry;
+                    }
+                    if(!savesBefore.equals(saveSnapshot(currentSav)))throw new Failure(Reason.INCOMPLETE_SOURCE);
+                }
+                return publish.run();
+            }
         }
         Uri uri(String id){return DocumentsContract.buildDocumentUriUsingTree(tree,id);}
         void requireBootstrap(List<Entry> roots) throws IOException {
