@@ -110,4 +110,9 @@
     <string name="engine_systemnnn_host_copy_busy">このゲームはコピー中です。しばらくしてから再試行してください。</string>
     <string name="engine_systemnnn_host_copy_unavailable">既存のゲームコピーを利用できません。アプリ領域のゲームファイルを確認してください。</string>
     <string name="engine_systemnnn_host_copy_failed">ゲームをコピーできません。アプリ領域とフォルダーのアクセス許可を確認してください。</string>
+    <string name="engine_systemnnn_host_start_over_warning">最初から始めると、既存のオートセーブが上書きされます。</string>
+    <string name="engine_systemnnn_host_progress_corrupt">全体の進行データが破損しています</string>
+    <string name="engine_systemnnn_host_progress_recovery_hint">破損したファイルを退避して再試行します。読み込める全体の進行データがあれば使用し、なければ作り直します。シナリオのセーブデータと退避した元のファイルはセーブフォルダーに残ります。</string>
+    <string name="engine_systemnnn_host_progress_recover">退避して再試行</string>
+    <string name="engine_systemnnn_host_resources_evicted">取り込んだゲームデータは削除済みです。ゲームライブラリから起動し直してください。</string>
 </resources>

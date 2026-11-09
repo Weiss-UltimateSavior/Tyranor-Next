@@ -57,7 +57,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
-| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 SystemNNN-Emberfall 0.6.5（ARM64） |
+| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 SystemNNN-Emberfall 0.6.7（ARM64） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -81,6 +81,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 - Android 8.0（API 26）及以上。
 - 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
 - SystemNNN 的阅读字号与 PC 存档操作可通过对应页面的悬浮按钮打开。剧情正文字号默认 85%，可选择 100% 恢复原版大小。
+- 使用导入副本的 SystemNNN 游戏可在存档管理中清理导入的游戏资源。原游戏目录和副本中的全部存档都会保留，下一次启动会按原目录授权重新导入资源。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
 

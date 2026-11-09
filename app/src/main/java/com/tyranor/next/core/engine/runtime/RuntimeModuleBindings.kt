@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
  * 绑定游戏的卸载/禁用降级。
  *
  * 降级只改 `engine` 与 `runtimeModulePackage`，保留标题/封面/最近时间等既有字段；
- * 不删除条目、不自动重绑。发现查询失败时绝不降级，避免把全部游戏误打成 UNKNOWN。
+ * 重扫只恢复已重新启用的原包名。发现查询失败时保留第三方绑定。
  */
 object RuntimeModuleBindings {
     internal fun builtInSystemNnn(game: ScanGame): ScanGame =
@@ -21,6 +21,15 @@ object RuntimeModuleBindings {
         ) {
             game.copy(engine = EngineType.SYSTEMNNN, runtimeModulePackage = null)
         } else game
+
+    /** Migrate the old built-in identity before save sync resolves the games and their aliases. */
+    internal fun loadMigratedLibrary(context: Context): List<ScanGame> {
+        val current = GameLibraryFacade.loadGames(context)
+        if (current.none { builtInSystemNnn(it) !== it }) return current
+        val updated = GameLibraryFacade.updateGames(context) { games -> games.map(::builtInSystemNnn) }
+        GameLibraryFacade.notifyGamesChanged()
+        return updated
+    }
 
     /**
      * 批量核对库中所有 [EngineType.RUNTIME_MODULE] 条目：
@@ -32,20 +41,20 @@ object RuntimeModuleBindings {
      *
      * @return 本次降级的游戏数量；发现查询失败返回 0。
      */
-    suspend fun reconcile(context: Context): Int = withContext(Dispatchers.IO) {
+    suspend fun reconcile(context: Context, restoreReenabled: Boolean = false): Int = withContext(Dispatchers.IO) {
         val discovery = RuntimeModuleDiscovery.discover(context) as? RuntimeModuleDiscoveryResult.Success
         val enabledPackages = if (discovery != null) AppSettingsStore.getEnabledRuntimeModules(context) else emptySet()
         val discoveredPackages = discovery?.modules?.mapTo(HashSet()) { it.packageName }
         var degraded = 0
-        var converted = false
+        var bindingChanged = false
 
         GameLibraryFacade.updateGames(context) { games ->
             var count = 0
-            converted = false
+            bindingChanged = false
             val updated = games.map { game ->
                 val builtin = builtInSystemNnn(game)
                 if (builtin !== game) {
-                    converted = true
+                    bindingChanged = true
                     return@map builtin
                 }
                 if (discoveredPackages == null) return@map game
@@ -58,6 +67,9 @@ object RuntimeModuleBindings {
                     count++
                     // 只降级引擎，保留最后已知包名；重扫合并会据此保留条目。
                     game.copy(engine = EngineType.UNKNOWN)
+                } else if (restoreReenabled && game.engine == EngineType.UNKNOWN && !unavailable) {
+                    bindingChanged = true
+                    game.copy(engine = EngineType.RUNTIME_MODULE)
                 } else {
                     game
                 }
@@ -65,7 +77,7 @@ object RuntimeModuleBindings {
             degraded = count
             updated
         }
-        if (degraded > 0 || converted) GameLibraryFacade.notifyGamesChanged()
+        if (degraded > 0 || bindingChanged) GameLibraryFacade.notifyGamesChanged()
         degraded
     }
 

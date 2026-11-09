@@ -15,9 +15,23 @@ mkdir -p -- "$prefix"
 prefix=$(CDPATH= cd -- "$prefix" && pwd -P)
 source_dir="$prefix/source"
 build_dir="$prefix/obj"
-if [[ ! -f "$source_dir/configure" ]]; then
-    mkdir -p "$source_dir"
-    tar -xzf "$archive" --strip-components=1 -C "$source_dir"
+exec 9>"$prefix/.emberfall-build.lock"
+flock 9
+if [[ -L "$source_dir" || ! -f "$source_dir/.emberfall-extracted" || ! -f "$source_dir/configure" ]]; then
+    staging=$(mktemp -d "$prefix/.source.XXXXXXXX")
+    [[ "$staging" == "$prefix"/.source.* && -d "$staging" ]]
+    trap 'rm -rf -- "$staging"' EXIT
+    mkdir "$staging/tree"
+    tar -xzf "$archive" --strip-components=1 -C "$staging/tree"
+    [[ -f "$staging/tree/configure" ]]
+    touch "$staging/tree/.emberfall-extracted"
+    # Invalidate configuration before publishing the new tree, including on an interrupted build.
+    rm -f -- "$build_dir/ffbuild/emberfall-options"
+    if [[ -e "$source_dir" || -L "$source_dir" ]]; then
+        previous=$(mktemp -d "$prefix/source-previous.XXXXXXXX")
+        mv -T -- "$source_dir" "$previous/source"
+    fi
+    mv -T -- "$staging/tree" "$source_dir"
 fi
 mkdir -p "$build_dir"
 cd "$build_dir"

@@ -9,6 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.file.Files
@@ -164,6 +165,88 @@ class SystemNnnSaveInteropTest {
         }
         assertTrue(source.isFile)
         assertFalse(original.resolve("sav").exists())
+    }
+
+    @Test fun clearingAndRestoringImportedResourcesKeepsTheOriginalSaveDirectoryAndLock() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val source = "primary:Games/Sample"
+        val entry = base.resolve(SystemNnnGameImport.key(source))
+        val game = entry.resolve("game")
+        put(entry, "source.id", source)
+        put(game, "spt/sys.spt", "script")
+        put(game, "graphics.dat", "resources")
+        put(game, "SaV/emberfall.resume", "autosave")
+        put(game, "SaV/sysfile3.sav", "PC")
+        val lock = game.resolve("SaV/emberfall.lock").toPath()
+        val lockIdentity = SystemNnnHost.lockSaveDirectory(game).use {
+            val refused = runCatching { SystemNnnGameImport.clearResources(base, source) }.exceptionOrNull()
+            assertTrue(refused is SystemNnnHost.SaveBusyException)
+            assertTrue(SystemNnnGameImport.readableBootstrap(game))
+            Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey()
+        }
+
+        assertTrue(SystemNnnGameImport.clearResources(base, source))
+        assertFalse(SystemNnnGameImport.hasImportedResources(game))
+        assertEquals(game, SystemNnnGameImport.committedRoot(base, source))
+        assertTrue(SystemNnnGameImport.resourcesEvicted(game))
+        put(game, "spt/sys.spt", "partial publish")
+        assertFalse(SystemNnnGameImport.readableBootstrap(game))
+
+        val staging = temp.newFolder()
+        put(staging, "spt/sys.spt", "reimported script")
+        SystemNnnGameImport.restoreResources(game, staging)
+        assertFalse(SystemNnnGameImport.resourcesEvicted(game))
+        assertTrue(SystemNnnGameImport.readableBootstrap(game))
+        assertEquals("reimported script", game.resolve("spt/sys.spt").readText())
+        assertEquals("autosave", game.resolve("SaV/emberfall.resume").readText())
+        assertEquals("PC", game.resolve("SaV/sysfile3.sav").readText())
+        assertEquals(lockIdentity, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
+    }
+
+    @Test fun globalProgressRecoveryKeepsValidGenerationAndStorySaves() {
+        val saves = temp.newFolder()
+        val base = saves.resolve("emberfall.read")
+        val backup = saves.resolve("emberfall.read.bak")
+        val extension = saves.resolve("emberfall.read.ext").apply { writeText("paired extension") }
+        val pc = saves.resolve("sysfile3.sav").apply { writeText("PC") }
+        val autosave = saves.resolve("emberfall.resume").apply { writeText("autosave") }
+        base.writeText("truncated base")
+        DataOutputStream(backup.outputStream()).use {
+            it.writeInt(0x4e4e5231)
+            it.writeInt(0)
+        }
+        val valid = backup.readBytes()
+
+        GameProgress.recoverCorruptBase(base)
+        assertFalse(base.exists())
+        assertTrue(valid.contentEquals(backup.readBytes()))
+        assertEquals("paired extension", extension.readText())
+        assertEquals("truncated base", saves.listFiles()!!.single {
+            it.name.startsWith("emberfall.read.corrupt-")
+        }.readText())
+
+        base.writeBytes(valid)
+        backup.writeText("bad backup")
+        GameProgress.recoverCorruptBase(base)
+        assertTrue(valid.contentEquals(base.readBytes()))
+        assertFalse(backup.exists())
+        assertEquals("paired extension", extension.readText())
+
+        base.writeText("unusable progress")
+        assertTrue(backup.mkdir())
+        val refused = runCatching { GameProgress.recoverCorruptBase(base) }.exceptionOrNull()
+        assertTrue(refused is IOException)
+        assertEquals("unusable progress", base.readText())
+        assertEquals("paired extension", extension.readText())
+        Files.delete(backup.toPath())
+        GameProgress.recoverCorruptBase(base)
+        assertFalse(base.exists())
+        assertFalse(extension.exists())
+        assertEquals("paired extension", saves.listFiles()!!.single {
+            it.name.startsWith("emberfall.read.ext.corrupt-")
+        }.readText())
+        assertEquals("PC", pc.readText())
+        assertEquals("autosave", autosave.readText())
     }
 
     @Test fun countsAPlayerOwnerBeforeAndAfterTheFileLock() {

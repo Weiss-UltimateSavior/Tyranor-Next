@@ -3,11 +3,11 @@ package com.tyranor.next.core.game.save.sync
 import android.content.Context
 import android.net.Uri
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.RpgSaveFormat
 import com.tyranor.next.core.game.save.RpgSaveSyncState
-import com.tyranor.next.core.game.storage.GameLibraryFacade
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import java.io.File
@@ -83,7 +83,7 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
             throw SaveSyncException(if (enabled) SaveSyncError.LOCAL_STATE_CHANGED else SaveSyncError.DISABLED)
         }
     }
-    override fun games() = GameLibraryFacade.loadGames(context)
+    override fun games() = RuntimeModuleBindings.loadMigratedLibrary(context)
     override fun available(game: ScanGame) = manager.resolveSaveLocation(game).available
     override fun running(game: ScanGame) = SaveSyncRuntime.isGameRunning(context, game)
     override fun activeKey(game: ScanGame) = SaveSyncRuntime.activeKey(context, game)

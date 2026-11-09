@@ -142,6 +142,8 @@ final class GameRunner {
         void statusOverlays(int mode,Modal[] overlays);
         void titleReturnCancelled();
         void notice(String message);
+        void resourcesEvicted();
+        void progressCorrupt();
         void error(String message);
     }
     private final HandlerThread worker=new HandlerThread("SystemNNN-Game");
@@ -253,16 +255,23 @@ final class GameRunner {
     }
     boolean initialized(){return initialized;}
     private void initialize() throws IOException {
-        codec=GameTextDecoder.load(root);
         ProgressWriteFailure recovery=null;
         if(previousProgress!=null)try{saveResult(previousProgress);}catch(ProgressWriteFailure failure){recovery=failure;}
         ProgressWriteFailure pending=recovery;
-        saveResult(SAVE_FILES.submit(()->{
+        boolean resourcesReady=saveResult(SAVE_FILES.submit(()->{
             if(saveAccess==null)saveAccess=savePaths.open(legacyFiles,legacySource);
+            if(SystemNnnGameImport.resourcesEvicted(root)){
+                GameSavePaths.Access access=saveAccess;
+                saveAccess=null;
+                access.close();
+                return false;
+            }
             if(pending==null)readReadLines();else recoverProgress(previousProgress,pending);
             slots.preload();
-            return null;
+            return true;
         }));
+        if(!resourcesReady){ui.resourcesEvicted();return;}
+        codec=GameTextDecoder.load(root);
         openTitle();
         initialized=true;
     }
@@ -1156,10 +1165,18 @@ final class GameRunner {
         int cue=config.number(key,fallback);
         if(cue>0)NativeGame.playSystemSe(handle,cue-1);
     }
-    void restart(){tasks.post(()->{
+    void restart(boolean replaceResume){tasks.post(()->{
+        if(closing)return;
         try{
             if(!initialized)initialize();
-            else{open(null,false);save(SaveSlots.AUTO,false,null);}
+            else if(replaceResume){open(null,false);save(SaveSlots.AUTO,false,null);}
+        }catch(Exception|LinkageError e){broken(e);}
+    });}
+    void recoverCorruptProgress(){tasks.post(()->{
+        if(closing||initialized||saveAccess==null)return;
+        try{
+            saveResult(SAVE_FILES.submit(()->{GameProgress.recoverCorruptBase(readFile);return null;}));
+            initialize();
         }catch(Exception|LinkageError e){broken(e);}
     });}
     private CompletableFuture<Void> save(int slot,boolean notify,Runnable feedback){
@@ -1560,7 +1577,12 @@ final class GameRunner {
         audio=null;
         if(stopped!=null)stopped.close();
     }
-    private void broken(Throwable reason){tasks.removeCallbacks(ticker);failed=true;stopSound();Log.e("SystemNNN","Game session failed",reason);ui.error(reason.getMessage()!=null?reason.getMessage():reason.toString());}
+    private void broken(Throwable reason){
+        tasks.removeCallbacks(ticker);failed=true;stopSound();
+        Log.e("SystemNNN","Game session failed",reason);
+        if(!initialized&&reason instanceof GameProgress.InvalidBase)ui.progressCorrupt();
+        else ui.error(reason.getMessage()!=null?reason.getMessage():reason.toString());
+    }
     private void releaseSaveAccess(){
         GameSavePaths.Access access=saveAccess;
         SAVE_FILES.execute(()->{

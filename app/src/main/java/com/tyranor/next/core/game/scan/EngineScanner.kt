@@ -112,8 +112,8 @@ object EngineScanner {
 
     /** 全量刷新游戏库：以当前扫描结果为准，移除已删除/改名路径的旧缓存条目。 */
     suspend fun rescanLibrary(context: Context): List<ScanGame> = withContext(Dispatchers.IO) {
-        // 先用最新模块集合核对旧绑定：卸载/禁用模块的游戏先降级，避免拿过期绑定参与重扫合并。
-        RuntimeModuleBindings.reconcile(context.applicationContext)
+        // 在合并扫描结果前核对旧绑定，并恢复已重新启用的原模块。
+        RuntimeModuleBindings.reconcile(context.applicationContext, restoreReenabled = true)
         val scanned = scanAll(context)
         // 扫描可能耗时较长；提交结果前再次读取当前 roots，避免扫描期间设置页删除目录后，
         // 旧 root 的扫描结果在任务结束时被重新写回游戏库。

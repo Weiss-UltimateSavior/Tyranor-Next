@@ -12,9 +12,11 @@ import android.os.Process
 import android.os.SystemClock
 import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.GameSaveManager
-import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.core.game.save.SaveErrorCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -352,7 +354,7 @@ object SaveSyncRuntime {
                     for (key in store.keys()) discardPending(app, store, key, store.load(key))
                     return@launch
                 }
-                val games = GameLibraryFacade.loadGames(app).associateBy { it.uri }
+                val games = RuntimeModuleBindings.loadMigratedLibrary(app).associateBy { it.uri }
                 for (key in store.keys()) {
                     val entry = store.load(key)
                     if (!entry.has("token") || !saveSessionGenerationMatches(entry, WebDavSettingsStore.sessionGeneration(app))) continue
@@ -419,7 +421,7 @@ object SaveSyncRuntime {
         if (!WebDavSettingsStore.isEnabled(context)) return SaveSyncReport()
         val config = WebDavSettingsStore.load(context)
         val store = sessions(context)
-        val games = GameLibraryFacade.loadGames(context).associateBy { it.uri }
+        val games = RuntimeModuleBindings.loadMigratedLibrary(context).associateBy { it.uri }
         var report = SaveSyncReport()
         for (key in store.keys()) {
             var token = ""
@@ -522,7 +524,14 @@ object SaveSyncRuntime {
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                report += SaveSyncReport(failures = listOf(SaveSyncFailure(game?.title.orEmpty(), SaveSyncService.errorCode(failure), game?.uri.orEmpty())))
+                report += if (game?.engine == EngineType.SYSTEMNNN &&
+                    failure is GameSaveException && failure.code == SaveErrorCode.ENGINE_RUNNING
+                ) {
+                    SaveSyncReport(busy = 1)
+                } else {
+                    SaveSyncReport(failures = listOf(
+                        SaveSyncFailure(game?.title.orEmpty(), SaveSyncService.errorCode(failure), game?.uri.orEmpty())))
+                }
             }
         }
         return report
@@ -561,7 +570,7 @@ object SaveSyncRuntime {
 
     private fun isGameRunning(context: Context, game: ScanGame, includeExternal: Boolean): Boolean {
         val manager = GameSaveManager(context)
-        val library = GameLibraryFacade.loadGames(context).let { games ->
+        val library = RuntimeModuleBindings.loadMigratedLibrary(context).let { games ->
             if (games.any { it.uri == game.uri }) games else games + game
         }
         val related = relatedSaveUris(game, library) { manager.resolveSaveLocation(it).directory }
@@ -778,7 +787,7 @@ object SaveSyncRuntime {
     }
 
     private fun activeKey(context: Context, uri: String): String =
-        GameLibraryFacade.loadGames(context).firstOrNull { it.uri == uri }?.let { activeKey(context, it) } ?: uri
+        RuntimeModuleBindings.loadMigratedLibrary(context).firstOrNull { it.uri == uri }?.let { activeKey(context, it) } ?: uri
 
     private fun secondaryActivityProcessNames(context: Context): Set<String>? {
         cachedSecondaryActivityProcessNames?.let { return it }

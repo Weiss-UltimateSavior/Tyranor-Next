@@ -110,4 +110,9 @@
     <string name="engine_systemnnn_host_copy_busy">This game is already being copied. Try again later.</string>
     <string name="engine_systemnnn_host_copy_unavailable">The existing game copy is unavailable. Check the game files in app storage.</string>
     <string name="engine_systemnnn_host_copy_failed">Cannot copy the game. Check app storage and folder access.</string>
+    <string name="engine_systemnnn_host_start_over_warning">Starting over replaces the current autosave, if one exists.</string>
+    <string name="engine_systemnnn_host_progress_corrupt">Global progress is damaged</string>
+    <string name="engine_systemnnn_host_progress_recovery_hint">Keep the damaged files aside and retry. The game uses any readable global progress or starts global progress afresh if none is available. Story saves and the original files stay in the save directory.</string>
+    <string name="engine_systemnnn_host_progress_recover">Keep files aside and retry</string>
+    <string name="engine_systemnnn_host_resources_evicted">The imported game resources were cleared. Launch the game again from the library.</string>
 </resources>

@@ -1,8 +1,11 @@
 package com.tyranor.next.core.game.save.sync
 
 import android.content.Context
+import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.SavePathSafety
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -1019,8 +1022,11 @@ class SaveSyncService internal constructor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = busy,
-                failures = listOf(SaveSyncFailure(game.title, errorCode(failure), game.uri)), cleanupPending = cleanupPending,
+            val saveLocked = game.engine == EngineType.SYSTEMNNN &&
+                failure is GameSaveException && failure.code == SaveErrorCode.ENGINE_RUNNING
+            SaveSyncReport(uploaded = uploaded, downloaded = downloaded, busy = if (saveLocked) busy + 1 else busy,
+                failures = if (saveLocked) emptyList() else listOf(SaveSyncFailure(game.title, errorCode(failure), game.uri)),
+                cleanupPending = cleanupPending,
                 cleanupPendingGames = if (cleanupPending > 0) setOf(game.uri) else emptySet())
         } finally {
             uploadArchive?.let(SaveSyncTemporaryFiles::release)

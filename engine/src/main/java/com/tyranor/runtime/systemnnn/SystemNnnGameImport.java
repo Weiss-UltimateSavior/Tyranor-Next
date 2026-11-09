@@ -19,6 +19,7 @@ import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Durable real files for a game whose shared-storage path is blocked but whose SAF tree is readable. */
 public final class SystemNnnGameImport {
@@ -44,10 +46,11 @@ public final class SystemNnnGameImport {
         Failure(Reason reason,Throwable cause){super(reason.name(),cause);this.reason=reason;}
     }
     private static final String PROVIDER="com.android.externalstorage.documents";
-    private static final String DIRECTORY="systemnnn-imports",IDENTITY="source.id",GAME="game";
+    private static final String DIRECTORY="systemnnn-imports",IDENTITY="source.id",GAME="game",EVICTED="resources-evicted";
     private static final int MAX_ENTRIES=100000,MAX_DEPTH=64,MAX_ID_BYTES=8192,CHUNK=64*1024;
     private static final long FREE_HEADROOM=256L*1024*1024;
     private static final Cancellation NONE=()->{};
+    private static final Set<Path> OPEN_COPIES=ConcurrentHashMap.newKeySet();
     private static final String[] COLUMNS={DocumentsContract.Document.COLUMN_DOCUMENT_ID,
         DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,
         DocumentsContract.Document.COLUMN_SIZE,DocumentsContract.Document.COLUMN_LAST_MODIFIED};
@@ -110,6 +113,51 @@ public final class SystemNnnGameImport {
         plainDirectory(game);
         return game;
     }
+    private static Path evictionMarker(File game){return new File(game.getParentFile(),EVICTED).toPath();}
+    public static boolean resourcesEvicted(File game){
+        File entry=game.getParentFile(),base=entry==null?null:entry.getParentFile();
+        return GAME.equals(game.getName())&&base!=null&&DIRECTORY.equals(base.getName())&&
+            entry.getName().matches("[0-9a-f]{64}")&&!Files.notExists(evictionMarker(game),LinkOption.NOFOLLOW_LINKS);
+    }
+    public static boolean hasImportedResources(File game) throws IOException {
+        return !resourceChildren(game).isEmpty();
+    }
+    public static boolean clearResources(Context context,String sourceId) throws IOException {
+        File external=context.getExternalFilesDir(null);
+        if(external==null)throw new Failure(Reason.COPY_FAILED);
+        return clearResources(new File(external,DIRECTORY),sourceId);
+    }
+    static boolean clearResources(File base,String sourceId) throws IOException {
+        String identity=normalizeIdentity(sourceId);
+        if(committedRoot(base,identity)==null)return false;
+        return withCopyLock(base,key(identity),()->{
+            File game=committedRoot(base,identity);
+            if(game==null)return false;
+            List<File> resources=resourceChildren(game);
+            if(resources.isEmpty())return false;
+            try(GameSavePaths.Access access=GameSavePaths.forGame(game).lock()){
+                Path marker=evictionMarker(game);
+                if(Files.notExists(marker,LinkOption.NOFOLLOW_LINKS))Files.createFile(marker);
+                else if(!Files.isRegularFile(marker,LinkOption.NOFOLLOW_LINKS))throw new Failure(Reason.CORRUPT_COPY);
+                for(File resource:resources)deleteOwnedTree(resource);
+            }
+            return true;
+        });
+    }
+    private static List<File> resourceChildren(File game) throws IOException {
+        plainDirectory(game);
+        File[] children=game.listFiles();
+        if(children==null)throw new Failure(Reason.COPY_FAILED);
+        List<File> resources=new ArrayList<>();
+        boolean sawSaves=false;
+        for(File child:children){
+            if(!child.getName().equalsIgnoreCase("sav")){resources.add(child);continue;}
+            if(sawSaves)throw new Failure(Reason.CORRUPT_COPY);
+            plainDirectory(child);
+            sawSaves=true;
+        }
+        return resources;
+    }
     private static String readIdentity(File entry) throws IOException {
         File id=new File(entry,IDENTITY);
         if(Files.isSymbolicLink(id.toPath())||!id.isFile()||id.length()>MAX_ID_BYTES)
@@ -140,6 +188,7 @@ public final class SystemNnnGameImport {
     /** Open actual bytes: canRead/stat alone do not establish access on scoped-storage devices. */
     public static boolean readableBootstrap(File root){
         try{
+            if(resourcesEvicted(root))return false;
             File spt=child(root,"spt",true),script=spt==null?null:child(spt,"sys.spt",false);
             if(script==null||Files.isSymbolicLink(spt.toPath())||Files.isSymbolicLink(script.toPath()))return false;
             try(InputStream input=new FileInputStream(script)){return input.read()!=-1;}
@@ -155,27 +204,24 @@ public final class SystemNnnGameImport {
                 (found==null||entry.getName().compareTo(found.getName())<0))found=entry;
         return found;
     }
-    /** Copies once, without changing the source. The returned game/sav is also the backup/WebDAV authority. */
+    /** Imports resources without changing the source or replacing an existing game/sav. */
     public static File importDirectory(Context context,Uri source,String sourceId,Cancellation cancellation) throws IOException {
         Cancellation check=cancellation==null?NONE:cancellation;check.check();
         String identity=normalizeIdentity(sourceId);
         if(!identity.equals(sourceIdentity(source)))throw new Failure(Reason.INVALID_SOURCE);
-        File existing=committedRoot(context,identity);if(existing!=null)return existing;
+        File existing=committedRoot(context,identity);if(existing!=null&&!resourcesEvicted(existing))return existing;
         Uri granted=findAuthorizedSource(context,source);
         if(granted==null)throw new Failure(Reason.NO_GRANT);
         File external=context.getExternalFilesDir(null);
         if(external==null)throw new Failure(Reason.NO_SPACE);
         File base=new File(external,DIRECTORY);
         Files.createDirectories(base.toPath());plainDirectory(base);
-        String key=key(identity);File lockPath=new File(base,key+".lock");
-        if(Files.isSymbolicLink(lockPath.toPath()))throw new Failure(Reason.CORRUPT_COPY);
-        try(FileChannel channel=FileChannel.open(lockPath.toPath(),StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS)){
-            FileLock lock;
-            try{lock=channel.tryLock();}catch(OverlappingFileLockException busy){lock=null;}
-            if(lock==null)throw new Failure(Reason.BUSY);
-            try(FileLock held=lock){
-                existing=committedRoot(base,identity);if(existing!=null)return existing;
+        String key=key(identity);
+        try{
+            return withCopyLock(base,key,()->{
+                File current=committedRoot(base,identity);
+                boolean restoring=current!=null;
+                if(restoring&&!resourcesEvicted(current))return current;
                 File[] leftovers=base.listFiles();
                 if(leftovers==null)throw new Failure(Reason.COPY_FAILED);
                 for(File leftover:leftovers)if(leftover.getName().startsWith(key+".pending-")){
@@ -187,6 +233,7 @@ public final class SystemNnnGameImport {
                 List<Entry> roots=tree.children(identity);
                 tree.requireBootstrap(roots);
                 Entry sav=null;
+                if(restoring)roots.removeIf(entry->entry.name.equalsIgnoreCase("sav"));
                 for(Entry entry:roots)if(entry.name.equalsIgnoreCase("sav")){
                     if(!entry.directory||sav!=null)throw new Failure(Reason.INVALID_SOURCE);sav=entry;
                 }
@@ -194,12 +241,17 @@ public final class SystemNnnGameImport {
                 try(SourceLock sourceLock=tree.lockSaves(sav)){
                     File staging=new File(base,key+".pending-"+UUID.randomUUID());
                     Files.createDirectory(staging.toPath());
-                    boolean committed=false;Throwable failure=null;
+                    Throwable failure=null;
                     try{
                         File game=new File(staging,GAME);Files.createDirectory(game.toPath());
                         Budget budget=new Budget(base);
                         tree.copy(roots,game,"",0,budget);
                         if(!readableBootstrap(game))throw new Failure(Reason.INVALID_SOURCE);
+                        if(restoring){
+                            check.check();
+                            restoreResources(current,game);
+                            return current;
+                        }
                         Entry currentSav=null;
                         for(Entry entry:tree.children(identity))if(entry.directory&&entry.name.equalsIgnoreCase("sav")){
                             if(currentSav!=null)throw new Failure(Reason.INVALID_SOURCE);currentSav=entry;
@@ -212,19 +264,41 @@ public final class SystemNnnGameImport {
                         }
                         try{Files.move(staging.toPath(),new File(base,key).toPath(),StandardCopyOption.ATOMIC_MOVE);}
                         catch(IOException failed){throw new Failure(Reason.COMMIT_FAILED,failed);}
-                        committed=true;
                         return new File(new File(base,key),GAME);
                     }catch(IOException|RuntimeException|Error error){failure=error;throw error;}
-                    finally{if(!committed)try{deleteOwnedTree(staging);}catch(IOException cleanup){
+                    finally{if(Files.exists(staging.toPath(),LinkOption.NOFOLLOW_LINKS))try{deleteOwnedTree(staging);}catch(IOException cleanup){
                         if(failure!=null)failure.addSuppressed(cleanup);else throw cleanup;
                     }}
                 }
-            }
+            });
         }catch(Failure e){throw e;}
         catch(CancellationException e){throw e;}
         catch(SecurityException e){throw new Failure(Reason.NO_GRANT,e);}
         catch(IOException e){throw new Failure(Reason.COPY_FAILED,e);}
         catch(RuntimeException e){throw new Failure(Reason.COPY_FAILED,e);}
+    }
+    // The marker makes an interrupted publish unrunnable while keeping the same save authority.
+    static void restoreResources(File game,File staging) throws IOException {
+        Path marker=evictionMarker(game);
+        if(!Files.isRegularFile(marker,LinkOption.NOFOLLOW_LINKS))throw new Failure(Reason.CORRUPT_COPY);
+        List<File> old=resourceChildren(game);
+        try(GameSavePaths.Access access=GameSavePaths.forGame(game).lock()){
+            for(File resource:old)deleteOwnedTree(resource);
+            for(File resource:resourceChildren(staging))
+                Files.move(resource.toPath(),new File(game,resource.getName()).toPath(),StandardCopyOption.ATOMIC_MOVE);
+            Files.delete(marker);
+        }catch(SystemNnnHost.SaveBusyException e){throw new Failure(Reason.BUSY,e);}
+    }
+    private interface CopyOperation<T>{T run() throws IOException;}
+    private static <T> T withCopyLock(File base,String key,CopyOperation<T> operation) throws IOException {
+        Path path=base.getCanonicalFile().toPath().resolve(key+".lock");
+        if(!OPEN_COPIES.add(path))throw new Failure(Reason.BUSY);
+        try(FileChannel channel=FileChannel.open(path,StandardOpenOption.CREATE,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS)){
+            FileLock lock;
+            try{lock=channel.tryLock();}catch(OverlappingFileLockException e){lock=null;}
+            if(lock==null)throw new Failure(Reason.BUSY);
+            try(FileLock held=lock){return operation.run();}
+        }finally{OPEN_COPIES.remove(path);}
     }
     private static final class Entry {
         final String id,name;final boolean directory;final long size,modified;
@@ -385,12 +459,10 @@ public final class SystemNnnGameImport {
         }catch(NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}
     }
     private static void deleteOwnedTree(File root) throws IOException {
-        if(Files.isSymbolicLink(root.toPath())){Files.delete(root.toPath());return;}
-        File[] children=root.listFiles();
-        if(children==null)throw new IOException("Cannot remove incomplete import");
-        for(File child:children){
-            if(Files.isDirectory(child.toPath(),LinkOption.NOFOLLOW_LINKS)&&!Files.isSymbolicLink(child.toPath()))deleteOwnedTree(child);
-            else Files.delete(child.toPath());
+        if(Files.isDirectory(root.toPath(),LinkOption.NOFOLLOW_LINKS)){
+            File[] children=root.listFiles();
+            if(children==null)throw new IOException("Cannot list imported resources");
+            for(File child:children)deleteOwnedTree(child);
         }
         Files.delete(root.toPath());
     }

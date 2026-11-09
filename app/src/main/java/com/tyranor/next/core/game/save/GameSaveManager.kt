@@ -16,9 +16,12 @@ import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.SystemNnnGameDirectory
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
+import com.tyranor.next.core.game.save.sync.SaveSyncLocks
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.i18n.AppLocaleController
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.runtime.systemnnn.SystemNnnGameImport
 import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.ensureActive
 import java.io.File
@@ -728,6 +731,42 @@ class GameSaveManager(private val context: Context) {
     }
 
     internal fun recoverSystemNnnSavesForLaunch(game: ScanGame) = systemNnnStore(game).recoverForLaunch()
+
+    internal fun hasImportedSystemNnnResources(game: ScanGame): Boolean =
+        game.engine == EngineType.SYSTEMNNN && runCatching {
+            SystemNnnGameDirectory.committed(appContext, game.uri)
+                ?.let(SystemNnnGameImport::hasImportedResources) == true
+        }.getOrDefault(false)
+
+    internal suspend fun clearImportedSystemNnnResources(game: ScanGame): Boolean {
+        if (game.engine != EngineType.SYSTEMNNN) return false
+        val source = SystemNnnGameDirectory.sourceDocument(game.uri)
+            ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val key = SaveSyncRuntime.activeKey(appContext, game)
+        return SaveSyncLocks.active(key) {
+            SaveSyncLocks.mutation(key) {
+                if (SaveSyncRuntime.activeKey(appContext, game) != key) {
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                }
+                if (SaveSyncRuntime.isGameRunning(appContext, game)) {
+                    throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                }
+                try {
+                    SystemNnnGameImport.clearResources(appContext, SystemNnnGameImport.sourceIdentity(source))
+                } catch (failure: SystemNnnHost.SaveBusyException) {
+                    throw GameSaveException(SaveErrorCode.ENGINE_RUNNING, cause = failure)
+                } catch (failure: SystemNnnGameImport.Failure) {
+                    val code = if (failure.reason == SystemNnnGameImport.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
+                    else SaveErrorCode.SAVE_DIR_UNAVAILABLE
+                    throw GameSaveException(code, cause = failure)
+                } catch (failure: IOException) {
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+                } catch (failure: SecurityException) {
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+                }
+            }
+        }
+    }
 
     internal fun <T> withSystemNnnSaveFiles(game: ScanGame, expectedDirectory: File?, use: (List<File>) -> T): T {
         val store = systemNnnStore(game, expectedDirectory)

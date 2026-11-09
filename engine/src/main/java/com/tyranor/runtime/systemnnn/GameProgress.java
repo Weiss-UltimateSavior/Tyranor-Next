@@ -14,8 +14,15 @@ import java.io.IOException;
 import java.io.UTFDataFormatException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.DigestInputStream;
 import java.security.DigestOutputStream;
 import java.security.MessageDigest;
@@ -38,7 +45,7 @@ final class GameProgress {
         InvalidExtension(String message){super(message);}
         InvalidExtension(String message,Throwable cause){super(message,cause);}
     }
-    private static final class InvalidBase extends IOException {
+    static final class InvalidBase extends IOException {
         InvalidBase(String message){super("全局进度主文件损坏，已保留原文件 · "+message);}
         InvalidBase(String message,Throwable cause){super("全局进度主文件损坏，已保留原文件 · "+message,cause);}
     }
@@ -69,12 +76,20 @@ final class GameProgress {
         return saved==null?null:saved.state;
     }
     private Committed readCommitted(boolean repairExtension) throws IOException {
-        MessageDigest digest=digest();
-        try(FileInputStream raw=file.openRead();
-            DataInputStream in=new DataInputStream(new BufferedInputStream(new DigestInputStream(raw,digest)))){
-            if(raw.getChannel().size()>MAX_FILE)throw new InvalidBase("Global progress exceeds size limit");
-            State base=decode(in);
-            byte[] fingerprint=digest.digest();
+        try{
+            Path path=file.getBaseFile().toPath();
+            Path legacy=sibling(path,".bak");
+            Committed primary=null,backup=null;
+            InvalidBase damaged=null;
+            try{primary=readBase(path);}catch(InvalidBase e){damaged=e;}
+            try{backup=readBase(legacy);}catch(InvalidBase e){
+                if(damaged==null)damaged=e;else damaged.addSuppressed(e);
+            }
+            if(damaged!=null)throw damaged;
+            Committed committed=backup!=null?backup:primary;
+            if(committed==null)return null;
+            State base=committed.state;
+            byte[] fingerprint=committed.fingerprint;
             try{base=readExtension(base,fingerprint);}
             catch(InvalidExtension e){
                 if(repairExtension)quarantineExtension(e);
@@ -82,11 +97,58 @@ final class GameProgress {
             }
             catch(IOException e){throw new AccessFailure("扩展",e);}
             return new Committed(base,fingerprint);
-        }catch(FileNotFoundException e){
-            if(!definitelyAbsent(file))throw new AccessFailure("基础",e);
-            return null;
         }catch(InvalidBase|AccessFailure e){throw e;}
         catch(IOException e){throw new AccessFailure("基础",e);}
+    }
+    // AtomicFile.openRead() promotes a legacy .bak before validating it.
+    private static Committed readBase(Path path) throws IOException {
+        if(!regularFile(path))return null;
+        MessageDigest digest=digest();
+        try(FileChannel raw=FileChannel.open(path,StandardOpenOption.READ,LinkOption.NOFOLLOW_LINKS);
+            DataInputStream in=new DataInputStream(new BufferedInputStream(new DigestInputStream(Channels.newInputStream(raw),digest)))){
+            if(raw.size()>MAX_FILE)throw new InvalidBase("Global progress exceeds size limit");
+            State state=decode(in);
+            return new Committed(state,digest.digest());
+        }
+    }
+    private static Path sibling(Path path,String suffix){return path.resolveSibling(path.getFileName()+suffix);}
+    private static boolean regularFile(Path path) throws IOException {
+        try{
+            if(!Files.readAttributes(path,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS).isRegularFile())
+                throw new IOException("Cannot access progress file: "+path.getFileName());
+            return true;
+        }catch(NoSuchFileException e){return false;}
+    }
+
+    /** Called with the game's save lock held, after explicit confirmation. */
+    static void recoverCorruptBase(File file) throws IOException {
+        Path base=file.toPath(),backup=sibling(base,".bak"),ext=sibling(base,".ext");
+        Committed primary=null,legacy=null;
+        boolean corruptPrimary=false,corruptBackup=false;
+        try{primary=readBase(base);}catch(InvalidBase e){corruptPrimary=true;}
+        try{legacy=readBase(backup);}catch(InvalidBase e){corruptBackup=true;}
+        if(!corruptPrimary&&!corruptBackup)return;
+        Path[] candidates;
+        if(legacy!=null)candidates=new Path[]{base};
+        else if(primary!=null)candidates=new Path[]{backup};
+        else candidates=new Path[]{ext,sibling(ext,".new"),sibling(ext,".bak"),sibling(base,".new"),backup,base};
+        List<Path> sources=new ArrayList<>();
+        for(Path candidate:candidates)if(regularFile(candidate))sources.add(candidate);
+        String suffix=".corrupt-"+UUID.randomUUID();
+        List<Path> moved=new ArrayList<>();
+        try{
+            for(Path source:sources){
+                Files.move(source,sibling(source,suffix),StandardCopyOption.ATOMIC_MOVE);
+                moved.add(source);
+            }
+        }catch(IOException e){
+            for(int i=moved.size()-1;i>=0;i--){
+                Path source=moved.get(i);
+                try{Files.move(sibling(source,suffix),source,StandardCopyOption.ATOMIC_MOVE);}
+                catch(IOException rollback){e.addSuppressed(rollback);}
+            }
+            throw e;
+        }
     }
     private static boolean definitelyAbsent(AtomicFile path){
         File base=path.getBaseFile();

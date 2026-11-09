@@ -1048,12 +1048,15 @@
     <string name="launch_cmvs_audio_unavailable">CMVS のオーディオ初期化に失敗しました</string>
     <string name="launch_cmvs_init_failed">CMVS エンジンの起動に失敗しました</string>
     <string name="launch_systemnnn_source_missing">ゲームフォルダーが見つかりません。spt/sys.spt を含むフォルダーを選び直してください。</string>
-    <string name="launch_systemnnn_storage_restricted">Android 10 がこのフォルダーへの直接アクセスを制限しています。ライブラリでゲームフォルダーを追加し直してアクセスを許可してください。起動時にアプリ専用のコピーを作成し、セーブはコピー内の sav に保存します。PC セーブはインポートとエクスポートで利用できます。</string>
+    <string name="launch_systemnnn_storage_restricted">ゲームデータの取り込みにはフォルダーへのアクセス許可が必要です。ライブラリで元のゲームフォルダーを追加し直し、アクセスを許可して起動してください。セーブデータはコピー内の sav に保存されます。</string>
     <string name="launch_systemnnn_invalid_source">読み取り可能な spt/sys.spt がないか、そのままコピーできないファイル名が含まれています。ゲームの展開状態を確認し、フォルダーを選び直してください。</string>
     <string name="launch_systemnnn_source_busy">ゲーム、セーブ移行、またはインポートが進行中です。既存のプレイヤーに戻り、移行を完了して終了してから再試行してください。</string>
     <string name="launch_systemnnn_no_space">ゲーム全体をコピーするためのアプリ専用ストレージ容量が不足しています。空き容量を確保して再試行してください。未完成のコピーでは起動しません。</string>
-    <string name="launch_systemnnn_copy_failed">ゲームのインポートに失敗しました。ストレージとフォルダーのアクセス権を確認して再試行してください。元のゲームと完了済みコピーは置き換えていません。</string>
+    <string name="launch_systemnnn_copy_failed">ゲームデータの取り込みに失敗しました。ストレージとフォルダーのアクセス権を確認して再試行してください。元のゲームフォルダーとセーブデータは保持されています。</string>
     <string name="launch_systemnnn_commit_failed">ゲームコピーを安全に確定できませんでした。アプリ専用ストレージを確認して再試行してください。未完成のコピーでは起動しません。</string>
     <string name="launch_systemnnn_corrupt_copy">アプリ専用のゲームコピーを利用できません。ストレージを確認してコピーを修復してください。進行状況を保護するため、元のフォルダーには自動で戻しません。修復前にセーブ管理からセーブをバックアップしてください。</string>
     <string name="launch_systemnnn_save_not_writable">ゲームコピー内の sav に書き込めません。アプリ専用ストレージがマウントされ、書き込み可能で空き容量があることを確認して再試行してください。別のセーブ先には切り替えません。</string>
+    <string name="save_systemnnn_clear_resources">取り込んだゲームデータを削除</string>
+    <string name="save_systemnnn_clear_resources_message">アプリ内のコピーからゲームデータを削除して空き容量を増やします。元のゲームフォルダーとコピー内のすべてのセーブデータは残ります。次回の起動時に元のフォルダーからゲームデータを取り込み直します。</string>
+    <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
 </resources>

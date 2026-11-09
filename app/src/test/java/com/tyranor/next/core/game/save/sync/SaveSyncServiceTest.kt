@@ -2,6 +2,8 @@ package com.tyranor.next.core.game.save.sync
 
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.SaveErrorCode
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -33,6 +35,28 @@ import java.util.zip.ZipOutputStream
 class SaveSyncServiceTest {
     @get:Rule
     val temp = TemporaryFolder()
+
+    @Test
+    fun systemNnnSaveLockRetriesExitUpload() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-locked", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        harness.setActive(game, "local")
+        harness.world.onExport = { throw GameSaveException(SaveErrorCode.ENGINE_RUNNING) }
+
+        val busy = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(1, busy.busy)
+        assertTrue(busy.failures.isEmpty())
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+
+        harness.world.onExport = { throw SaveSyncException(SaveSyncError.GAME_RUNNING) }
+        val failure = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertEquals(0, failure.busy)
+        assertEquals(SaveSyncError.GAME_RUNNING, failure.failures.single().error)
+
+        harness.world.onExport = null
+        assertEquals(1, harness.service.syncGame(game, SaveSyncDirection.UPLOAD).uploaded)
+    }
 
     @Test
     fun excludedGameIsSkippedByUriWhileSameTitleGameStillUploads() = runBlocking {
@@ -3466,11 +3490,11 @@ class SaveSyncServiceTest {
         val baselines = SaveSyncStateStore(File(root, "baselines"))
         private var archiveIndex = 0
 
-        fun addGame(label: String): ScanGame {
+        fun addGame(label: String, engine: EngineType = EngineType.ONS): ScanGame {
             val game = ScanGame(
                 title = label,
                 uri = "file:///library/$label-${UUID.randomUUID()}",
-                engine = EngineType.ONS,
+                engine = engine,
                 launchTarget = "__game_dir__",
             )
             world.addGame(game)

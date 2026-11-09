@@ -195,14 +195,16 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
     @Override protected void onDetachedFromWindow(){close();super.onDetachedFromWindow();}
     @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
         if(requestedTexture==texture){requestedTexture=null;frameReady=false;}
-        tasks.post(()->{
-            if(connectedTexture!=texture)return;
+        boolean posted=tasks.post(()->{
             try{
+                if(connectedTexture!=texture)return;
                 if(lease!=null)lease.surface(null);
                 connectedTexture=null;schedule();
             }catch(RuntimeException|LinkageError e){failed(e);}
+            finally{texture.release();}
         });
-        return true;
+        // The preview pool releases its native windows before quitting this queue.
+        return !posted;
     }
     @Override public void onSurfaceTextureSizeChanged(SurfaceTexture s,int w,int h){}
     @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){

@@ -282,6 +282,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             usingGameCopy=copy!=null;
             if(usingGameCopy)game=copy;
         }catch(IOException e){chooseHome(gameCopyFailure(e));return;}
+        if(SystemNnnGameImport.resourcesEvicted(game)){
+            if(selectedGameTree!=null)copySelectedGame();
+            else resourcesEvicted();
+            return;
+        }
         File script=GameResourcePaths.file(game,"spt","sys.spt");
         if (script!=null) {
             // Scoped storage may allow stat() and directory listings while denying open().
@@ -1529,6 +1534,23 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void notice(String text) { runOnUiThread(() -> {
         if(!isDestroyed()) Toast.makeText(this,text,Toast.LENGTH_SHORT).show();
     }); }
+    @Override public void resourcesEvicted(){runOnUiThread(()->{
+        if(isDestroyed()||isFinishing())return;
+        closePlayerTask();
+        if(runner!=null){runner.close();runner=null;}
+        message(getApplicationInfo().loadLabel(getPackageManager()).toString(),
+            text(R.string.engine_systemnnn_host_resources_evicted),null,null);
+    });}
+    @Override public void progressCorrupt(){runOnUiThread(()->{
+        GameRunner owner=runner;
+        if(isDestroyed()||isFinishing()||owner==null)return;
+        new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_progress_corrupt))
+            .setMessage(text(R.string.engine_systemnnn_host_progress_recovery_hint))
+            .setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick((d,w)->finish()))
+            .setPositiveButton(text(R.string.engine_systemnnn_host_progress_recover),
+                dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress();}))
+            .show();
+    });}
     @Override public void error(String text) { runOnUiThread(() -> {
         if (isDestroyed() || isFinishing()) return;
         if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
@@ -1539,10 +1561,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                     startActivity(new Intent(this,PlayerActivity.class).setAction(Intent.ACTION_MAIN)); finish();
                 })).show(); return;
         }
-        new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_interrupted)).setMessage(text)
+        GameRunner owner=runner;
+        boolean startOver=owner!=null&&owner.initialized();
+        String message=startOver?text+"\n\n"+text(R.string.engine_systemnnn_host_start_over_warning):text;
+        new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_interrupted)).setMessage(message)
             .setNegativeButton(text(R.string.engine_systemnnn_host_exit_to_tyn),dialogClick((d,w) -> finish()))
-            .setPositiveButton(runner!=null&&!runner.initialized()?text(R.string.engine_systemnnn_host_retry_load):text(R.string.engine_systemnnn_host_start_over),
-                dialogClick((d,w) -> {if(runner!=null)runner.restart();})).show();
+            .setPositiveButton(startOver?text(R.string.engine_systemnnn_host_start_over):text(R.string.engine_systemnnn_host_retry_load),
+                dialogClick((d,w) -> {if(owner!=null&&owner==runner)owner.restart(startOver);})).show();
     }); }
     private String text(int resource,Object... arguments){return uiContext.getString(resource,arguments);}
     private int dp(int n) {return Math.round(n*getResources().getDisplayMetrics().density);}
