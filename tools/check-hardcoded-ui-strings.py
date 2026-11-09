@@ -66,7 +66,6 @@ SYSTEMNNN_DIAGNOSTIC_BASELINE = {
     "GameSave.java": 52,
     "GameSavePaths.java": 2,
     "LegacySaveMigration.java": 5,
-    "MoviePlayback.java": 3,
     "SaveSlots.java": 3,
     "SystemNnnHost.java": 1,
 }

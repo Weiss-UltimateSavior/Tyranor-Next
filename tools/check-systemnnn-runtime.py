@@ -42,7 +42,7 @@ def main() -> int:
     ).splitlines())
     missing = []
     java = ENGINE / "java/com/tyranor/runtime/systemnnn"
-    for name in ("NativeGame", "NativeUiPreview"):
+    for name in ("NativeGame", "NativeUiPreview", "MoviePlayback"):
         methods = re.findall(r"\bstatic\s+native\s+[\w\[\]]+\s+(\w+)\s*\(",
                              (java / f"{name}.java").read_text(encoding="utf-8"))
         for method in methods:

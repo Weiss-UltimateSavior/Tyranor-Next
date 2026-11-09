@@ -41,12 +41,13 @@ final class ChartBackdrop {
     private boolean rendered;
 
     ChartBackdrop(int width,int height,int centerLayer,int scriptTiles,Consumer<Frame> display){
-        this.width=width;this.height=height;this.centerLayer=centerLayer;this.scriptTiles=scriptTiles;this.display=display;
+        this.width=width;this.height=height;this.centerLayer=centerLayer;this.display=display;
+        tiles(scriptTiles);
     }
     static boolean supportsCanvas(int width,int height){
         return width>0&&height>0&&(long)width*height<=MAX_CANVAS_PIXELS&&UiOpening.snapshotScale(width,height)==1f;
     }
-    void tiles(int count){scriptTiles=count;}
+    void tiles(int count){scriptTiles=Math.min(count,4);}
     Frame render(long handle,Function<long[],Composer> composite){
         long current=NativeUiPreview.chartLayerRevision(handle,centerLayer);
         long[] ids=scriptTiles<0?new long[0]:NativeUiPreview.chartTextureIds(handle,scriptTiles,centerLayer);
