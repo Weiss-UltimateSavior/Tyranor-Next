@@ -10,7 +10,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,13 +21,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -86,7 +82,6 @@ import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.NoticeDotRed
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -97,6 +92,7 @@ import com.tyranor.next.ui.common.AppDialogMaxWidth
 import com.tyranor.next.ui.common.AppSheetDragHandle
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.ByteFormats
@@ -1095,56 +1091,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onWinlator = { winlator = it },
                 onPpssppVersion = { ppssppVersion = it },
                 onWebShellPort = { webShellPort = it },
-            )
-        }
-    }
-}
-
-/**
- * 单条功能入口卡：一张 MiuixCard 只承载一条 ArrowPreference。
- * 每个入口独立成卡，避免多个不相关功能挤在同一张卡里；卡片间距由外层列表统一提供，
- * 多行同类设置仍由 `EngineCard` 这类分组卡承载。
- */
-@Composable
-private fun SettingsEntryCard(
-    title: String,
-    @DrawableRes iconRes: Int,
-    modifier: Modifier = Modifier,
-    showBadge: Boolean = false,
-    onClick: () -> Unit,
-) {
-    MiuixCard(
-        modifier = modifier.fillMaxWidth().glassBorder(),
-        cornerRadius = AppComponentCornerRadius,
-    ) {
-        Column(Modifier.padding(vertical = 4.dp)) {
-            ArrowPreference(
-                title = title,
-                startAction = { SettingsItemIcon(iconRes, showBadge = showBadge) },
-                onClick = onClick,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false) {
-    Box(modifier = Modifier.padding(end = 6.dp).size(24.dp)) {
-        Image(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            // 左侧图标统一跟随主题色调（Miuix 页面取 MiuixTheme 的 primary）
-            colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
-            modifier = Modifier.fillMaxSize(),
-        )
-        if (showBadge) {
-            // 红点提醒：固定亮红，不随主题色变化
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 5.dp, y = (-5).dp)
-                    .size(8.dp)
-                    .background(NoticeDotRed, CircleShape),
             )
         }
     }
