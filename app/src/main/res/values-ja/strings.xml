@@ -24,6 +24,12 @@
     <string name="nav_floating_collapse">ナビゲーションを折りたたむ</string>
 
     <string name="settings_app_title">アプリ設定</string>
+    <string name="settings_about_app">アプリについて</string>
+    <string name="about_project_url">プロジェクト URL</string>
+    <string name="about_app_version">Tyranor NEXT %1$s</string>
+    <string name="about_acknowledgements">謝辞</string>
+    <string name="about_disclaimer">免責事項</string>
+    <string name="about_disclaimer_body">本アプリはゲーム実行環境の起動・設定・管理機能のみを提供するものであり、ゲーム本体、商業素材、破解（クラック）リソースを同梱・配布・提供するものではありません。\n\n本アプリで使用するエミュレータおよび互換実行レイヤー（第三者製コンポーネントを含む）はそれぞれ独立したプロジェクトであり、著作権は各作者に帰属します。使用前に、対象ゲームを適法に保有し実行する権利があることを確認し、当該ゲームおよびエミュレータのライセンスに従ってください。\n\n本アプリを使用してゲームを実行したことに起因するセーブデータの破損、データ損失、端末の不具合、アカウント停止、その他の直接的・間接的損害は、すべて利用者の責任で負担するものとします。開発者は、ゲームの互換性・安定性・動作結果について一切保証しません。\n\n本アプリを著作権侵害、海賊版の拡散、または現地の法令に違反する用途に使用しないでください。</string>
     <string name="settings_language_title">言語</string>
     <string name="settings_language_system">システムに従う</string>
     <string name="settings_language_zh">简体中文</string>
@@ -41,6 +47,7 @@
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
     <string name="settings_engine_tabs">エンジンページを分類表示</string>
+    <string name="settings_engine_card_icon">エンジンカードのアイコンを表示</string>
     <string name="settings_side_rail">タブレットサイドレール</string>
     <string name="settings_side_rail_summary">タブレット・大画面ではナビを側面に移動。オフの場合は下部のまま</string>
     <string name="settings_nav_bar_title">ナビゲーションバーのスタイル</string>
@@ -53,6 +60,8 @@
     <string name="settings_nav_bar_desc_enhanced">Android 13 以上のみ対応</string>
     <string name="settings_nav_bar_desc_floating_button">右下に浮かび、タップで展開</string>
     <string name="settings_nav_bar_desc_rail">タブレットではサイドレールで表示</string>
+    <string name="settings_show_home_page">ホームを表示</string>
+    <string name="settings_show_home_page_summary">オフにするとホームとナビゲーションのホーム項目が非表示になり、ゲームページが最初のページになります</string>
     <string name="settings_home_style">ホームスタイル</string>
     <string name="settings_home_style_native">デフォルト</string>
     <string name="settings_home_style_web">Web</string>
@@ -82,6 +91,7 @@
     <string name="settings_sort_alpha">名前順</string>
     <string name="settings_sort_bracket_tag">括弧タグ</string>
     <string name="settings_game_card_style">ゲームカードのスタイル</string>
+    <string name="settings_game_card_style_waterfall">ウォーターフォール</string>
     <string name="settings_game_card_style_grid">グリッド</string>
     <string name="settings_game_card_style_cover_flow">リスト</string>
     <string name="settings_game_card_badge">カードのエンジンバッジ</string>
@@ -96,7 +106,6 @@
     <string name="settings_no_game_dirs">ゲームフォルダはありません</string>
     <string name="settings_invalid_suffix">無効</string>
     <string name="settings_add_dir">フォルダを追加</string>
-    <string name="settings_done">完了</string>
     <string name="settings_input_path">パスを入力</string>
     <string name="settings_input_dir_title">フォルダのパスを入力</string>
     <string name="settings_path_invalid">パスが存在しないか、フォルダではありません</string>
@@ -158,8 +167,6 @@
     <string name="engine_desc_android">手動追加の Android アプリ。ゲームライブラリから直接起動</string>
     <string name="engine_desc_cs2">CatSystem2（.int/.cst/.hg3 のゲーム）。外部 Winlator で実行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch ゲームは外部 Eden で実行します</string>
-    <string name="engine_external_jump_title">外部エミュレータ連携</string>
-    <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
     <string name="engine_tab_rpgm">RPGM</string>
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">携帯機</string>
@@ -180,7 +187,7 @@
     <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理はありません。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
     <string name="engine_settings_android_hint">このゲームはインストール済みの Android アプリです。ライブラリから起動するとアプリが直接開きます。セーブ管理とエンジン設定はありません。</string>
     <string name="engine_settings_winlator_per_game_note">上書きはこのゲームにのみ適用されます。各項目は「グローバルに従う」に戻せます。空欄（コンテナ設定に従う）はそのパラメータを送信せず、Winlator のコンテナ設定に委ねます。 WineD3D + OpenGL/GDI を明示的に選ぶと WineD3D 設定全体が置き換わり、他の詳細項目は既定値になります。「コンテナ設定に書き込む」が有効なら、このプリセットも保存されます。</string>
-    <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
+    <string name="launch_emulator_missing">%1$s がインストールされていません。インストール後に再試行してください</string>
     <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
     <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
     <string name="launch_emulator_failed">%1$s の起動に失敗しました</string>
@@ -262,6 +269,7 @@
     <string name="engine_settings_save_content_description">設定を保存</string>
     <string name="engine_settings_saved">エンジン設定を保存しました</string>
     <string name="engine_settings_per_game_saved">保存しました</string>
+    <string name="engine_global_settings">エンジン全体設定</string>
     <string name="engine_settings_krkr_title">KRKR エンジン設定</string>
     <string name="engine_settings_ons_title">ONS エンジン設定</string>
     <string name="engine_settings_artemis_title">Artemis エンジン設定</string>

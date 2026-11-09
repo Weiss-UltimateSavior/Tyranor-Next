@@ -97,11 +97,13 @@ internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle = effectiveNavStyle()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
+    val engineCardIcon by AppSettingsStore.engineCardIconState.collectAsState()
     val sideRailEnabled by AppSettingsStore.sideRailState.collectAsState()
     val hideCardTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
     val gameCardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
     val gameCardBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
     val homeStyle by AppSettingsStore.homeStyleState.collectAsState()
+    val homePageEnabled by AppSettingsStore.homePageEnabledState.collectAsState()
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     val fixedPalette = AppThemeColors.hasFixedContentPalette
     // 平板/大窗口 + 侧边栏开关开启：导航以侧栏显示（液态玻璃两档不参与侧栏适配）
@@ -115,10 +117,12 @@ internal fun AppSettingsScreen() {
         withContext(Dispatchers.IO) {
             AppSettingsStore.initNavStyle(ctx)
             AppSettingsStore.initSideRail(ctx)
+            AppSettingsStore.initEngineCardIcon(ctx)
             AppSettingsStore.initGameCardHideTitleTag(ctx)
             AppSettingsStore.initGameCardStyle(ctx)
             AppSettingsStore.initGameCardBadge(ctx)
             AppSettingsStore.initHomeStyle(ctx)
+            AppSettingsStore.initHomePageEnabled(ctx)
         }
     }
 
@@ -360,6 +364,15 @@ internal fun AppSettingsScreen() {
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
+                            // 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页成为第一页
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_show_home_page),
+                                summary = stringResource(R.string.settings_show_home_page_summary),
+                                checked = homePageEnabled,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setHomePageEnabled(ctx, checked)
+                                },
+                            )
                             // 首页样式：默认（最近打开/快捷启动）/ 网页（内置 WebView 展示所选网址）
                             val homeStyles = listOf(
                                 AppSettingsStore.HOME_STYLE_NATIVE to stringResource(R.string.settings_home_style_native),
@@ -419,14 +432,22 @@ internal fun AppSettingsScreen() {
                                     AppSettingsStore.setEngineTabsEnabled(ctx, checked)
                                 },
                             )
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_engine_card_icon),
+                                checked = engineCardIcon,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setEngineCardIconEnabled(ctx, checked)
+                                },
+                            )
                         }
                     }
                 }
                 item {
                     MiuixCard(modifier = Modifier.fillMaxWidth().glassBorder(), cornerRadius = AppComponentCornerRadius) {
                         Column(Modifier.padding(vertical = 4.dp)) {
-                            // 游戏页卡片风格：网格 / 列表（封面流）
+                            // 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）
                             val cardStyleModes = listOf(
+                                AppSettingsStore.GAME_CARD_STYLE_WATERFALL to stringResource(R.string.settings_game_card_style_waterfall),
                                 AppSettingsStore.GAME_CARD_STYLE_GRID to stringResource(R.string.settings_game_card_style_grid),
                                 AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW to stringResource(R.string.settings_game_card_style_cover_flow),
                             )

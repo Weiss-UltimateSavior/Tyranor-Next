@@ -73,7 +73,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
@@ -91,12 +90,16 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.settings.EngineSettingsActivity
 import com.tyranor.next.ui.settings.artVersionOptions
+import com.tyranor.next.ui.settings.engineSettingsKindOf
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -118,6 +121,8 @@ fun EngineScreen(
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
+    // 应用设置「显示引擎卡片图标」：关闭后条目只显示引擎名与状态图标
+    val showEngineCardIcon by AppSettingsStore.engineCardIconState.collectAsState()
     var externalInstallStates by remember {
         mutableStateOf(refreshExternalInstallStates(context, engines))
     }
@@ -129,7 +134,6 @@ fun EngineScreen(
     }
     var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(context)) }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
-    var showExternalJumpDialog by remember { mutableStateOf(false) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
     var emulatorDialogEngine by remember { mutableStateOf<EngineType?>(null) }
     // 内部存储读取是常数级开销，先同步显示；游戏目录大小在后台用批量查询补齐，
@@ -201,8 +205,8 @@ fun EngineScreen(
             engines
         }).distinctBy { engineDisplayName(it) }
 
-        // 引擎列表：竖屏单列；横屏/大屏一行三个
-        val engineColumns = if (isWideScreen()) 3 else 1
+        // 引擎列表：竖屏单列；横屏/大屏一行两个
+        val engineColumns = if (isWideScreen()) 2 else 1
         LazyVerticalGrid(
             columns = GridCells.Fixed(engineColumns),
             modifier = Modifier.fillMaxSize(),
@@ -271,30 +275,15 @@ fun EngineScreen(
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     compact = engineColumns > 1,
+                    showIcon = showEngineCardIcon,
                     onClick = {
                         when {
-                            // Winlator 系（YU-RIS / 手动 PC）：只展示本引擎的外置运行时，标题「<引擎> 引擎列表」
-                            emulator != null && emulator.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL ->
-                                emulatorDialogEngine = engine
-                            emulator != null -> showExternalJumpDialog = true
+                            // 外置模拟器（PPSSPP / Eden / Winlator）：打开本引擎的运行时列表弹窗
+                            emulator != null -> emulatorDialogEngine = engine
                             else -> moduleDialogEngine = engine
                         }
                     },
                 )
-            }
-
-            // 外置跳转支持（PPSSPP / Eden / Winlator 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
-            if (!categorizeEngines || selectedTab == EngineTab.CONSOLE.ordinal) {
-                item(
-                    key = "external-jump",
-                    contentType = "external-jump",
-                    span = { GridItemSpan(maxLineSpan) },
-                ) {
-                    ExternalJumpRow(
-                        installedCount = emulatorInstallStates.values.count { it },
-                        onClick = { showExternalJumpDialog = true },
-                    )
-                }
             }
         }
     }
@@ -338,8 +327,10 @@ fun EngineScreen(
                     }
                 }
             },
-            // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
-            confirmButton = {},
+            // 底部主操作：进入该引擎族的全局引擎设置页（长按钮）
+            confirmButton = {
+                EngineGlobalSettingsButton(engine = dialogEngine) { moduleDialogEngine = null }
+            },
         )
     }
 
@@ -383,54 +374,33 @@ fun EngineScreen(
                     }
                 }
             },
-            // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
-            confirmButton = {},
+            // 底部主操作：进入该引擎族的全局引擎设置页（长按钮）
+            confirmButton = {
+                EngineGlobalSettingsButton(engine = dialogEngine) { emulatorDialogEngine = null }
+            },
         )
     }
+}
 
-    // 外置跳转支持弹窗：列 PPSSPP / Eden / Winlator，未安装点击跳下载页，已安装点击打开主界面
-    if (showExternalJumpDialog) {
-        AppAlertDialog(
-            onDismissRequest = { showExternalJumpDialog = false },
-            title = {
-                Text(
-                    stringResource(R.string.engine_external_jump_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ExternalEmulatorRegistry.targets.forEach { target ->
-                        val installed = emulatorInstallStates[target.packageName] == true
-                        AppNavItem(
-                            title = stringResource(target.displayNameRes),
-                            summary = stringResource(
-                                if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
-                            ),
-                            leadingIcon = R.drawable.ic_engine_chip,
-                            containerColor = DialogItemSurface,
-                        ) {
-                            if (installed) {
-                                ExternalEmulatorLauncher.openHome(context, target)
-                            } else {
-                                val opened = ExternalEngineLauncher.openInstallPage(context, target.installUrl)
-                                if (!opened) {
-                                    Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            showExternalJumpDialog = false
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-        )
-    }
+/**
+ * 引擎条目弹窗底部的长按钮：直接进入该引擎族的全局引擎设置页。
+ * 无全局设置入口的引擎（Switch / 第三方运行时模块 / 安卓游戏 / 未知）不渲染。
+ */
+@Composable
+private fun EngineGlobalSettingsButton(
+    engine: EngineType,
+    onNavigate: () -> Unit,
+) {
+    val context = LocalContext.current
+    val kind = engineSettingsKindOf(engine) ?: return
+    NoRippleButton(
+        text = stringResource(R.string.engine_global_settings),
+        modifier = Modifier.fillMaxWidth(),
+        onClick = {
+            onNavigate()
+            startActivityWithPageTransition(context, EngineSettingsActivity.createIntent(context, kind))
+        },
+    )
 }
 
 /** 本机存储概览：内部存储 + 已添加游戏目录的总占用比例，附剩余空间与库数量。 */
@@ -666,6 +636,7 @@ private fun EngineRow(
     modifier: Modifier = Modifier,
     enabled: Boolean,
     compact: Boolean = false,
+    showIcon: Boolean = true,
     onClick: () -> Unit,
 ) {
     EngineRowCard(
@@ -676,30 +647,14 @@ private fun EngineRow(
         installed = installed,
         enabled = enabled,
         compact = compact,
-        onClick = onClick,
-    )
-}
-
-/** 外置跳转支持行：与引擎行同视觉，右侧按“是否至少装了一个模拟器”显示状态。 */
-@Composable
-private fun ExternalJumpRow(
-    installedCount: Int,
-    onClick: () -> Unit,
-) {
-    EngineRowCard(
-        iconRes = R.drawable.ic_engine_card_external,
-        title = stringResource(R.string.engine_external_jump_title),
-        statusTextRes = R.string.engine_external_jump_summary,
-        installed = installedCount > 0,
-        enabled = true,
-        compact = false,
+        showIcon = showIcon,
         onClick = onClick,
     )
 }
 
 /**
  * 原引擎条目布局：左侧引擎图标横幅（右侧渐变融入卡片）+ 标题 + 右侧原状态图标。
- * 高度 60dp；三列紧凑模式下横幅收窄到 88dp。状态图标保持 CheckCircle / Cancel。
+ * 高度 60dp；两列紧凑模式下横幅收窄到 88dp；应用设置可关闭横幅，仅保留名称与状态图标。
  */
 @Composable
 private fun EngineRowCard(
@@ -710,6 +665,7 @@ private fun EngineRowCard(
     installed: Boolean,
     enabled: Boolean,
     compact: Boolean,
+    showIcon: Boolean,
     onClick: () -> Unit,
 ) {
     val bannerWidth = if (compact) 88.dp else 120.dp
@@ -736,55 +692,57 @@ private fun EngineRowCard(
                 .height(60.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .width(bannerWidth)
-                    .fillMaxHeight(),
-            ) {
-                if (useImageFadeMask) {
-                    Image(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                // DstIn 必须先离屏，否则会作用到整张卡片/父层而不是这张图片。
-                                compositingStrategy = CompositingStrategy.Offscreen
-                                clip = true
-                            }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.horizontalGradient(
-                                        0f to Color.Black,
-                                        fadeStart to Color.Black,
-                                        1f to Color.Transparent,
+            if (showIcon) {
+                Box(
+                    modifier = Modifier
+                        .width(bannerWidth)
+                        .fillMaxHeight(),
+                ) {
+                    if (useImageFadeMask) {
+                        Image(
+                            painter = painterResource(iconRes),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    // DstIn 必须先离屏，否则会作用到整张卡片/父层而不是这张图片。
+                                    compositingStrategy = CompositingStrategy.Offscreen
+                                    clip = true
+                                }
+                                .drawWithContent {
+                                    drawContent()
+                                    drawRect(
+                                        brush = Brush.horizontalGradient(
+                                            0f to Color.Black,
+                                            fadeStart to Color.Black,
+                                            1f to Color.Transparent,
+                                        ),
+                                        blendMode = BlendMode.DstIn,
+                                    )
+                                },
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(iconRes),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        // 默认主题保持原有的 NavWhite 色遮罩（44 → 47dp，再加长 3dp）
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .width(fadeWidth)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        0f to Color.Transparent,
+                                        1f to NavWhite,
                                     ),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            },
-                    )
-                } else {
-                    Image(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    // 默认主题保持原有的 NavWhite 色遮罩（44 → 47dp，再加长 3dp）
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .width(fadeWidth)
-                            .background(
-                                Brush.horizontalGradient(
-                                    0f to Color.Transparent,
-                                    1f to NavWhite,
                                 ),
-                            ),
-                    )
+                        )
+                    }
                 }
             }
             Text(
@@ -794,7 +752,7 @@ private fun EngineRowCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp, end = 8.dp),
+                    .padding(start = if (showIcon) 12.dp else 16.dp, end = 8.dp),
             )
             Icon(
                 if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,

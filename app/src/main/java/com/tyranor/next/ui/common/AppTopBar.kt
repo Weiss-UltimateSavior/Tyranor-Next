@@ -43,7 +43,7 @@ import com.tyranor.next.theme.PageTextColor
  * @param contentColor 标题前景色；默认 [PageTextColor]（页面级前景色）。
  *   白雾玻璃的 Miuix `onBackground` 取深色（库内 preference 标题与卡片共用该色槽），
  *   顶栏必须走页面级前景色；默认值已处理，调用方通常无需显式传。
- * @param underTitle 标题行下方的附加内容（可选，如游戏页折叠的搜索框）；置于状态栏背景延伸区内
+ * @param underTitle 标题行下方的附加内容（可选，如游戏页常驻搜索框，可随列表滚动折叠）；置于状态栏背景延伸区内
  * @param trailing 标题右侧的图标/内容（可选，必须用 [TopBarIcon] 等公共组件）
  */
 @Composable

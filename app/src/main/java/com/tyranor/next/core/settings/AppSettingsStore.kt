@@ -85,19 +85,25 @@ object AppSettingsStore {
     /** 首页样式：原生（最近打开/快捷启动）/ 网页。 */
     const val KEY_HOME_STYLE = "home_style"
 
+    /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认开。 */
+    const val KEY_HOME_PAGE_ENABLED = "home_page_enabled"
+
     /** Web 首页展示的地址。 */
     const val KEY_HOME_WEB_URL = "home_web_url"
 
     /** 游戏页卡片隐藏名称标签（【】/[]）；默认开。 */
     const val KEY_GAME_CARD_HIDE_TITLE_TAG = "game_card_hide_title_tag"
 
-    /** 游戏页卡片风格：网格 / 列表（封面流）；默认网格。 */
+    /** 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）。 */
     const val KEY_GAME_CARD_STYLE = "game_card_style"
 
     /** 游戏页卡片左上角引擎类型角标；默认关。 */
     const val KEY_GAME_CARD_BADGE = "game_card_badge"
 
     const val KEY_ENGINE_TABS = "engine_tabs"
+
+    /** 引擎页条目左侧图标（引擎横幅图）开关；默认开。 */
+    const val KEY_ENGINE_CARD_ICON = "engine_card_icon"
     const val KEY_SIDE_RAIL = "side_rail"
     const val KEY_COVER_SCRAPER_ONLY_MISSING = "cover_scraper_only_missing"
     const val KEY_COVER_SCRAPER_SOURCE_ORDER = "cover_scraper_source_order"
@@ -171,11 +177,17 @@ object AppSettingsStore {
     /** 卡片隐藏名称标签默认值：开。 */
     const val DEFAULT_GAME_CARD_HIDE_TITLE_TAG = true
 
-    const val GAME_CARD_STYLE_GRID = "grid"
+    /** 瀑布流（默认）：封面高低错落，标题在封面下方白色信息区内。 */
+    const val GAME_CARD_STYLE_WATERFALL = "waterfall"
+
+    /** 网格：恢复瀑布流之前的等高卡片（3:4 封面 + 封面下方单行标题）。 */
+    const val GAME_CARD_STYLE_GRID = "uniform_grid"
+
+    /** 列表：封面流横向轮播。 */
     const val GAME_CARD_STYLE_COVER_FLOW = "cover_flow"
 
-    /** 卡片风格默认值：网格。 */
-    const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_GRID
+    /** 卡片风格默认值：瀑布。 */
+    const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_WATERFALL
 
     /** 卡片引擎角标默认值：关。 */
     const val DEFAULT_GAME_CARD_BADGE = false
@@ -211,6 +223,9 @@ object AppSettingsStore {
     /** 首页样式默认值：原生。 */
     const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
 
+    /** 显示首页默认值：开。 */
+    const val DEFAULT_HOME_PAGE_ENABLED = true
+
     /** Web 首页预设：鲲Gal。 */
     const val HOME_WEB_URL_KUNGAL = "https://www.kungal.com"
 
@@ -231,6 +246,9 @@ object AppSettingsStore {
     /** 引擎页分类显示默认关闭：关闭时平铺展示全部引擎项，开启后按 GAL/RPGM/主机/网页 分页。 */
     const val DEFAULT_ENGINE_TABS_ENABLED = false
 
+    /** 引擎页条目左侧图标默认开启：关闭后条目只显示引擎名与状态图标。 */
+    const val DEFAULT_ENGINE_CARD_ICON = true
+
     /** 平板侧边栏默认开启：平板/大窗口下主导航移到侧边，关闭则保持底部导航。 */
     const val DEFAULT_SIDE_RAIL_ENABLED = true
 
@@ -239,6 +257,9 @@ object AppSettingsStore {
 
     /** 引擎页分类显示内存态：设置页切换后引擎页即时重组。 */
     val engineTabsState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_TABS_ENABLED)
+
+    /** 引擎页条目左侧图标内存态：设置页切换后引擎页即时重组。 */
+    val engineCardIconState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_ENGINE_CARD_ICON)
 
     /** 游戏排序内存态：设置页切换后游戏页可随重组读取。 */
     val gameSortState: MutableStateFlow<String> = MutableStateFlow(GAME_SORT_ALPHA)
@@ -254,6 +275,9 @@ object AppSettingsStore {
 
     /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页形态。 */
     val homeStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_STYLE)
+
+    /** 首页显示内存态：设置页切换后主导航即时隐藏/恢复首页入口。 */
+    val homePageEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_HOME_PAGE_ENABLED)
 
     /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
     val homeWebUrlState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_WEB_URL)
@@ -312,6 +336,11 @@ object AppSettingsStore {
     /** 首次组合时从持久化加载引擎页分类显示开关到内存态（幂等）。 */
     fun initEngineTabs(c: Context) {
         engineTabsState.value = isEngineTabsEnabled(c)
+    }
+
+    /** 首次组合时从持久化加载引擎页条目图标开关到内存态（幂等）。 */
+    fun initEngineCardIcon(c: Context) {
+        engineCardIconState.value = isEngineCardIconEnabled(c)
     }
 
     /** 首次组合时从持久化加载平板侧边栏开关到内存态（幂等）。 */
@@ -493,6 +522,11 @@ object AppSettingsStore {
         }
     }
 
+    /** 首次组合时从持久化加载首页显示开关到内存态（幂等）。 */
+    fun initHomePageEnabled(c: Context) {
+        homePageEnabledState.value = isHomePageEnabled(c)
+    }
+
     /**
      * 首页样式归一：仅 web 精确接受，其余（含空/未知/历史值 "category"）回退原生
      * （纯函数，便于单测）。
@@ -511,6 +545,15 @@ object AppSettingsStore {
             prefs(c).edit().putString(KEY_HOME_STYLE, normalized).apply()
             homeStyleState.value = normalized
         }
+    }
+
+    /** 是否显示首页（关闭后首页不参与主导航）。 */
+    fun isHomePageEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_HOME_PAGE_ENABLED, DEFAULT_HOME_PAGE_ENABLED)
+
+    fun setHomePageEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).apply()
+        homePageEnabledState.value = enabled
     }
 
     /** 当前 Web 首页地址；磁盘值非法/为空时回退默认（一起萌）。 */
@@ -542,9 +585,14 @@ object AppSettingsStore {
     fun getGameCardStyle(c: Context): String =
         normalizeGameCardStyle(prefs(c).getString(KEY_GAME_CARD_STYLE, DEFAULT_GAME_CARD_STYLE))
 
-    /** 卡片风格归一：仅接受 cover_flow / grid，其余（含空）回退网格。 */
+    /** 卡片风格归一：仅接受 waterfall / uniform_grid / cover_flow；历史值 grid 与空值回退瀑布。 */
     fun normalizeGameCardStyle(style: String?): String =
-        if (style?.trim()?.lowercase() == GAME_CARD_STYLE_COVER_FLOW) GAME_CARD_STYLE_COVER_FLOW else GAME_CARD_STYLE_GRID
+        when (style?.trim()?.lowercase()) {
+            GAME_CARD_STYLE_GRID -> GAME_CARD_STYLE_GRID
+            GAME_CARD_STYLE_COVER_FLOW -> GAME_CARD_STYLE_COVER_FLOW
+            // 历史值 "grid"（当时渲染瀑布流）与空值/未知值统一归一到瀑布，避免升级后样式跳变
+            else -> GAME_CARD_STYLE_WATERFALL
+        }
 
     fun setGameCardStyle(c: Context, style: String) {
         val normalized = normalizeGameCardStyle(style)
@@ -574,6 +622,15 @@ object AppSettingsStore {
     fun setEngineTabsEnabled(c: Context, enabled: Boolean) {
         prefs(c).edit().putBoolean(KEY_ENGINE_TABS, enabled).apply()
         engineTabsState.value = enabled
+    }
+
+    /** 引擎页条目是否显示左侧图标（引擎横幅图）。 */
+    fun isEngineCardIconEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_ENGINE_CARD_ICON, DEFAULT_ENGINE_CARD_ICON)
+
+    fun setEngineCardIconEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_ENGINE_CARD_ICON, enabled).apply()
+        engineCardIconState.value = enabled
     }
 
     /** 平板/大窗口下是否使用侧边导航（默认开）。 */

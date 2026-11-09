@@ -24,6 +24,12 @@
     <string name="nav_floating_collapse">收起导航</string>
 
     <string name="settings_app_title">应用设置</string>
+    <string name="settings_about_app">关于应用</string>
+    <string name="about_project_url">项目地址</string>
+    <string name="about_app_version">Tyranor NEXT %1$s</string>
+    <string name="about_acknowledgements">致谢说明</string>
+    <string name="about_disclaimer">免责声明</string>
+    <string name="about_disclaimer_body">本应用仅提供游戏运行环境的启动、配置与管理功能，不包含、不提供下载，也不分发任何游戏本体、商业素材或破解资源。\n\n应用内使用的模拟器与兼容运行层（含第三方组件）均为独立项目，版权归各自作者所有。使用前请确认你已合法持有并有权运行相关游戏，并遵守对应游戏与模拟器的许可协议。\n\n因使用本应用运行游戏而导致的存档损坏、数据丢失、设备异常、账号封禁或其他直接或间接损失，由使用者自行承担；开发者不对任何游戏的兼容性、稳定性与运行结果作出保证。\n\n请勿将本应用用于侵犯版权、传播盗版或违反当地法律法规的用途。</string>
     <string name="settings_language_title">语言</string>
     <string name="settings_language_system">跟随系统</string>
     <string name="settings_language_zh">简体中文</string>
@@ -41,6 +47,7 @@
     <string name="settings_theme_mode_light">浅色</string>
     <string name="settings_theme_mode_dark">深色</string>
     <string name="settings_engine_tabs">引擎页分类显示</string>
+    <string name="settings_engine_card_icon">显示引擎卡片图标</string>
     <string name="settings_side_rail">平板侧边栏</string>
     <string name="settings_side_rail_summary">平板/大窗口下导航移到侧边；关闭后保持底部导航</string>
     <string name="settings_nav_bar_title">导航栏样式</string>
@@ -53,6 +60,8 @@
     <string name="settings_nav_bar_desc_enhanced">仅 Android 13 及以上支持</string>
     <string name="settings_nav_bar_desc_floating_button">悬浮于右下角，点击展开</string>
     <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
+    <string name="settings_show_home_page">显示首页</string>
+    <string name="settings_show_home_page_summary">关闭后隐藏首页与导航栏首页入口，游戏页作为第一页</string>
     <string name="settings_home_style">首页样式切换</string>
     <string name="settings_home_style_native">默认</string>
     <string name="settings_home_style_web">网页</string>
@@ -82,6 +91,7 @@
     <string name="settings_sort_alpha">字母大小</string>
     <string name="settings_sort_bracket_tag">括号标签</string>
     <string name="settings_game_card_style">游戏卡片风格</string>
+    <string name="settings_game_card_style_waterfall">瀑布</string>
     <string name="settings_game_card_style_grid">网格</string>
     <string name="settings_game_card_style_cover_flow">列表</string>
     <string name="settings_game_card_badge">卡片引擎角标</string>
@@ -96,7 +106,6 @@
     <string name="settings_no_game_dirs">暂无游戏目录</string>
     <string name="settings_invalid_suffix">已失效</string>
     <string name="settings_add_dir">添加目录</string>
-    <string name="settings_done">完成</string>
     <string name="settings_input_path">输入路径</string>
     <string name="settings_input_dir_title">输入文件夹路径</string>
     <string name="settings_path_invalid">路径不存在或不是文件夹</string>
@@ -158,8 +167,6 @@
     <string name="engine_desc_android">手动添加的 Android 应用，从游戏库直接跳转启动</string>
     <string name="engine_desc_cs2">CatSystem2，.int/.cst/.hg3 资源游戏，经外置 Winlator 运行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
-    <string name="engine_external_jump_title">外置跳转支持</string>
-    <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
     <string name="engine_tab_rpgm">RPGM</string>
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">主机</string>
@@ -180,7 +187,7 @@
     <string name="engine_settings_pc_hint">该游戏经外置 Winlator 运行；启动程序可在游戏详情「启动文件」中切换。无存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
     <string name="engine_settings_android_hint">该游戏为已安装的 Android 应用；从游戏库启动将直接跳转打开该应用。无存档管理与引擎设置。</string>
     <string name="engine_settings_winlator_per_game_note">覆盖仅对本游戏生效；每项可单独切回「跟随全局」。留空（跟随容器配置）表示不下发该参数，交由 Winlator 按容器配置处理。 显式选择 WineD3D + OpenGL/GDI 会替换整项 WineD3D 配置，其它子参数使用默认值；开启「写入容器配置」时也会保存该预设。</string>
-    <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
+    <string name="launch_emulator_missing">未安装 %1$s，请先安装后重试</string>
     <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
     <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
     <string name="launch_emulator_failed">%1$s 启动失败</string>
@@ -262,6 +269,7 @@
     <string name="engine_settings_save_content_description">保存设置</string>
     <string name="engine_settings_saved">引擎设置已保存</string>
     <string name="engine_settings_per_game_saved">已保存</string>
+    <string name="engine_global_settings">全局引擎设置</string>
     <string name="engine_settings_krkr_title">KRKR引擎设置</string>
     <string name="engine_settings_ons_title">ONS引擎设置</string>
     <string name="engine_settings_artemis_title">Artemis引擎设置</string>

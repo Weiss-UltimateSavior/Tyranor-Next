@@ -233,7 +233,7 @@ Column(fillMaxSize)                                // 页面根
 
 - 顶部栏下方禁止放置页面说明/描述文案；正文区域应直接展示该页面的实际内容或列表。
 
-- 页面切换动画必须保持统一：主 Screen 四个 Tab 间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
+- 页面切换动画必须保持统一：主 Screen 可见 Tab（首页可关闭；默认四页，关闭后三页）间切换使用水平移动动画；其他独立 Activity 页面进入使用向上翻页动画，退出/返回使用向下翻页动画。
 
 - 组件统一圆角由应用设置「应用圆角调整」控制（**5–50dp，十档：5/10/15/20/25/30/35/40/45/50，默认 15dp**），默认外观、复古玻璃与白雾玻璃共用该值；列表项卡片、功能项卡片、弹窗等圆角组件统一引用 `theme/AppShapes.kt`：
   `AppComponentShape`、Miuix 组件用 `AppComponentCornerRadius`、
@@ -281,7 +281,7 @@ Column(fillMaxSize)                                // 页面根
 
 - **明文豁免**：首页快捷启动卡（`ui/home/HomeScreen.kt` 的 QuickLaunchCard）以封面模糊图 + 黑色压暗遮罩为背景、白色文字展示，卡片内游戏名使用 `MaterialTheme.typography.titleLarge` Bold、引擎名使用 `MaterialTheme.typography.headlineSmall` Bold，均不受两档制限制；该卡片其余文字仍遵循两档制。
 
-- **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCard`，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色与外观模式变化**。
+- **明文豁免**：游戏页卡片左上角的引擎类型角标（`ui/game/GameScreen.kt` 的 `GameCoverEngineBadge`，`GameCard` 与 `UniformGameCard` 共用，仅覆盖在封面上）使用 `MaterialTheme.typography.labelSmall`（11sp）——角标属封面上的小型标注，按两档制会过大；仅此一处豁免，其余正文仍遵循两档制。角标底色/文字色为**固定样式**（`theme/Color.kt` 的 `CoverBadgeBackground` / `CoverBadgeText`：半透明黑底 + 白字），**不随主题色与外观模式变化**。
 
 - **明文豁免**：游戏页瀑布流卡片（`ui/game/GameScreen.kt` 的 `GameCard`）标题在 `bodyMedium` 基础上缩小 2sp（12sp），用于 3/6 列窄卡片；仅此一处豁免，其余正文仍遵循两档制。
 

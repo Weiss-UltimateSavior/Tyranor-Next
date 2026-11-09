@@ -92,7 +92,7 @@
             android:name=".ui.settings.EngineSettingsActivity"
             android:exported="false" />
         <activity
-            android:name=".ui.settings.EngineSettingsMenuActivity"
+            android:name=".ui.settings.AboutAppActivity"
             android:exported="false" />
         <activity
             android:name=".ui.runtime.EngineModuleManagementActivity"
