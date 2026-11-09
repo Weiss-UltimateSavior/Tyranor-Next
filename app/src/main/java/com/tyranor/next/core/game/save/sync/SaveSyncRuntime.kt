@@ -182,7 +182,7 @@ object SaveSyncRuntime {
         if (game.engine != EngineType.SYSTEMNNN) return false
         return try {
             val generation = WebDavSettingsStore.enabledGeneration(context) ?: return false
-            val previous = sessions(context).load(SaveContentHash.text(game.uri))
+            val previous = sessions(context).inspect(SaveContentHash.text(game.uri))
             previous.has("token") && saveSessionGenerationMatches(previous, generation) &&
                 inheritedSessionBaseline(previous) != null && previous.optString("activeKey") != activeKey(context, game)
         } catch (cancelled: CancellationException) {
