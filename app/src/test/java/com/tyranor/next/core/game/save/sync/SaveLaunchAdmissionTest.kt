@@ -18,6 +18,44 @@ import java.util.concurrent.atomic.AtomicReference
 
 class SaveLaunchAdmissionTest {
     @Test
+    fun exclusiveImportLaunchWaitsForTheOriginalDirectoryMutationBeforeTakingItsSession() = runBlocking {
+        val original = "systemnnn-original-directory"
+        val imported = "systemnnn-imported-directory"
+        val session = "systemnnn-session"
+        val resumeRestore = CompletableDeferred<Unit>()
+        val finishedRestore = CompletableDeferred<Unit>()
+        val enteredLaunch = CompletableDeferred<String?>()
+        val restore = launch(start = CoroutineStart.UNDISPATCHED) {
+            SaveSyncLocks.active(original) {
+                SaveSyncLocks.mutation(original) {
+                    resumeRestore.await()
+                    SaveSyncLocks.session(session) { finishedRestore.complete(Unit) }
+                }
+            }
+        }
+        val gameLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
+            withSaveSyncLaunchAdmission(
+                resolve = { SaveSyncLaunchAdmission.Directory(imported) },
+                managed = { key ->
+                    SaveSyncLocks.session(session) {
+                        assertTrue(finishedRestore.isCompleted)
+                        enteredLaunch.complete(key)
+                    }
+                },
+                unmanaged = { throw AssertionError("Imported saves must stay managed") },
+                exclusiveMutation = true,
+            )
+        }
+        assertFalse(enteredLaunch.isCompleted)
+        resumeRestore.complete(Unit)
+        withTimeout(5_000) {
+            assertEquals(imported, enteredLaunch.await())
+            restore.join()
+            gameLaunch.join()
+        }
+    }
+
+    @Test
     fun enginesWithoutUsableSaveInterfaceStayUnmanaged() {
         assertEquals(EthornellSaveCapability.available, supportsManagedSave(EngineType.ETHORNELL))
         assertTrue(supportsManagedSave(EngineType.KIRIKIRI))

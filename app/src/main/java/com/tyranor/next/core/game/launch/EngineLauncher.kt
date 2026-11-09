@@ -183,10 +183,12 @@ object EngineLauncher {
                 restoreSystemNnn(context, entry)?.let { return@withContext it }
                 prepareSystemNnnResources(context, entry)?.let { return@withContext it }
             }
+            val rebindSystemNnnSession = SaveSyncRuntime.needsSystemNnnSessionRebind(context, entry)
             withSaveSyncLaunchAdmission(
                 resolve = { SaveSyncRuntime.launchAdmission(context, entry) },
-                managed = { key -> launchManaged(context, entry, patchChoice, key) },
+                managed = { key -> launchManaged(context, entry, patchChoice, key, rebindSystemNnnSession) },
                 unmanaged = { recoverSystemNnnSaves(context, entry) ?: launchInternal(context, entry, patchChoice) },
+                exclusiveMutation = rebindSystemNnnSession,
             )
         }
 
@@ -196,6 +198,7 @@ object EngineLauncher {
         game: ScanGame,
         patchChoice: ArtemisPatchChoice?,
         directoryKey: String?,
+        rebindSystemNnnSession: Boolean,
     ): LaunchResult {
         try {
             // A pending selection owns this directory even in manual/pull-only mode.
@@ -215,7 +218,7 @@ object EngineLauncher {
         var grace: String? = null
         var dispatched = false
         try {
-            ticket = directoryKey?.let { SaveSyncRuntime.prepareLaunch(context, game, it) }
+            ticket = directoryKey?.let { SaveSyncRuntime.prepareLaunch(context, game, it, rebindSystemNnnSession) }
             // Optional persistence may fail; every actual start still needs a protected handoff.
             grace = SaveSyncRuntime.prepareOptionalLaunchGrace(context, game, directoryKey)
             return launchInternal(context, game, patchChoice) {

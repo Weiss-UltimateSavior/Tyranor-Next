@@ -44,6 +44,7 @@ internal suspend fun <T> withSaveSyncLaunchAdmission(
     resolve: () -> SaveSyncLaunchAdmission,
     managed: suspend (String?) -> T,
     unmanaged: suspend () -> T,
+    exclusiveMutation: Boolean = false,
 ): T {
     class Completed(val value: T)
     while (true) {
@@ -55,7 +56,10 @@ internal suspend fun <T> withSaveSyncLaunchAdmission(
             return Completed(managed((admission as? SaveSyncLaunchAdmission.Directory)?.key))
         }
         val completed = if (admission is SaveSyncLaunchAdmission.Directory) {
-            SaveSyncLocks.active(admission.key) { SaveSyncLocks.mutation(admission.key) { admitted() } }
+            SaveSyncLocks.active(admission.key) {
+                if (exclusiveMutation) SaveSyncLocks.mutation { admitted() }
+                else SaveSyncLocks.mutation(admission.key) { admitted() }
+            }
         } else SaveSyncLocks.mutation { admitted() }
         if (completed != null) return completed.value
     }

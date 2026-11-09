@@ -177,12 +177,34 @@ object SaveSyncRuntime {
         directoryActivations(context).requireAvailable(directoryKey)
     }
 
-    /** Called under the same active-save mutex as launch and explicit version selection. */
-    internal suspend fun prepareLaunch(context: Context, game: ScanGame,
-        expectedActiveKey: String = activeKey(context, game)): LaunchTicket? =
-        SaveSyncLocks.session(SaveContentHash.text(game.uri)) { prepareLaunchLocked(context, game, expectedActiveKey) }
+    /** Only a possible source-to-copy rebind needs to exclude mutations in both directories. */
+    internal fun needsSystemNnnSessionRebind(context: Context, game: ScanGame): Boolean {
+        if (game.engine != EngineType.SYSTEMNNN) return false
+        return try {
+            val generation = WebDavSettingsStore.enabledGeneration(context) ?: return false
+            val previous = sessions(context).load(SaveContentHash.text(game.uri))
+            previous.has("token") && saveSessionGenerationMatches(previous, generation) &&
+                inheritedSessionBaseline(previous) != null && previous.optString("activeKey") != activeKey(context, game)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
 
-    private suspend fun prepareLaunchLocked(context: Context, game: ScanGame, expectedActiveKey: String): LaunchTicket? {
+    /** The caller holds the launch admission, exclusive for a source-to-copy rebind. */
+    internal suspend fun prepareLaunch(
+        context: Context,
+        game: ScanGame,
+        expectedActiveKey: String = activeKey(context, game),
+        rebindSystemNnnSession: Boolean = false,
+    ): LaunchTicket? = SaveSyncLocks.session(SaveContentHash.text(game.uri)) {
+        prepareLaunchLocked(context, game, expectedActiveKey, rebindSystemNnnSession)
+    }
+
+    private suspend fun prepareLaunchLocked(
+        context: Context, game: ScanGame, expectedActiveKey: String, rebindSystemNnnSession: Boolean,
+    ): LaunchTicket? {
         try {
             val enabledGeneration = WebDavSettingsStore.enabledGeneration(context) ?: return null
             requireSameSaveDirectory(expectedActiveKey, activeKey(context, game))
@@ -203,7 +225,7 @@ object SaveSyncRuntime {
             val directoryKey = expectedActiveKey
             previous?.let {
                 if (it.optString("activeKey") != directoryKey &&
-                    !continuesSystemNnnImport(context, game, config, it, directoryKey)) {
+                    !(rebindSystemNnnSession && continuesSystemNnnImport(context, game, config, it, directoryKey))) {
                     requireSessionDirectory(it, directoryKey)
                 }
             }
@@ -255,10 +277,13 @@ object SaveSyncRuntime {
         val source = SystemNnnGameDirectory.resolve(game.uri) ?: return false
         val copy = SystemNnnGameDirectory.committed(context, game.uri) ?: return false
         val saves = SystemNnnHost.saveDirectory(context, copy)
+        val originalKey = previous.optString("activeKey")
+        if (!matchesImportedSystemNnnSaves(originalKey, directoryKey, source, saves)) return false
         // The copy commits the original sav under its source identity. An explicit version
         // activation has separate ownership and must resolve under its original directory.
-        return matchesImportedSystemNnnSaves(previous.optString("activeKey"), directoryKey, source, saves) &&
-            directoryActivations(context).owned(game.uri).isEmpty() &&
+        val activations = directoryActivations(context)
+        activations.requireAvailable(originalKey)
+        return activations.owned(game.uri).isEmpty() &&
             !SaveSyncService(syncRoot(context), AndroidSaveSyncEnvironment(context)).hasPendingPromotion(game, config)
     }
 

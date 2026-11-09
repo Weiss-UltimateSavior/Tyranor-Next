@@ -122,7 +122,7 @@ final class DialogueTextView extends TextView {
             if(stop<=start)break;
             int labelStart=span.labelOffset(markup.text,start),labelEnd=span.labelOffset(markup.text,stop);
             if(labelStart<labelEnd){
-                float left=lines.getLineLeft(line),right=lines.getWidth();
+                float left=lines.getLineLeft(line),right=lines.getLineRight(line);
                 float center=(edge(lines,line,start)+edge(lines,line,stop))/2f;
                 float gap=annotationStyle.spacing*scale,advance=0;
                 int last=span.label.offsetByCodePoints(labelEnd,-1);
