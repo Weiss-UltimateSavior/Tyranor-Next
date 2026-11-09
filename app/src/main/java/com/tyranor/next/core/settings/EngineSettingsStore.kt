@@ -600,6 +600,9 @@ object EngineSettingsStore {
                     if (it.isEmpty()) it else normalizeVcursorScale(it)
                 }
                 KEY_KR_MENU_HANDLER_OPA -> override?.let { if (it.isEmpty() || it in KR_MENU_HANDLER_OPAS) it else null }
+                // 布尔开关没有「引擎默认」语义：存量 "" 是旧版「跟随全局」的写法，按 null
+                // （跟随全局）处理，避免游戏级空值删项压过全局 XML 的当前值（PR #155 审查）
+                KEY_KR_OGL_ACCURATE_RENDER -> override?.takeIf { it.isNotEmpty() }
                 else -> override
             }
             val globalRaw = prefs(c).getString(key, null).orEmpty().trim()
