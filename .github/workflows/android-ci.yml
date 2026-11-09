@@ -80,7 +80,7 @@ jobs:
       - name: Check graphics resource ownership and provenance
         run: ./gradlew -p buildSrc graphicsResourcesRegression --no-daemon
 
-      # 硬编码界面文案门禁（三语言键齐平 + Kotlin CJK 字面量 + 豁免文件数量基线）：
+      # 硬编码界面文案门禁（三语言键齐平 + Kotlin 与 SystemNNN Java 的 CJK 字面量）：
       # 脚本此前只在本地手动跑，扩展 engine 扫描范围后必须有自动保障
       - name: Check hardcoded UI strings
         run: python3 tools/check-hardcoded-ui-strings.py

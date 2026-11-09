@@ -1068,7 +1068,7 @@
     <string name="launch_systemnnn_copy_failed">Game resource import failed. Check the storage volume and folder permission, then retry. The original game folder and existing saves are kept.</string>
     <string name="launch_systemnnn_commit_failed">The game copy could not be committed atomically. Check app-specific storage and retry. Incomplete copies are never launched.</string>
     <string name="launch_systemnnn_corrupt_copy">The app-specific game copy is unavailable. Check its storage volume and repair the copy. The original directory will not be selected automatically. Back up saves through save management before repairing it.</string>
-    <string name="launch_systemnnn_save_not_writable">The game copy cannot write to its sav folder. Check that app-specific storage is mounted, writable, and has enough free space, then retry. A different save directory will not be selected.</string>
+    <string name="launch_systemnnn_save_not_writable">The game’s sav folder is not writable. Check folder access, storage availability, and free space, then retry.</string>
     <string name="save_systemnnn_clear_resources">Clear imported game resources</string>
     <string name="save_systemnnn_clear_resources_message">Free space by clearing resources from the imported copy. The original game folder and all saves in the copy will be kept. The next launch imports the resources again from the original folder.</string>
     <string name="save_systemnnn_clear_resources_done">Imported game resources cleared</string>

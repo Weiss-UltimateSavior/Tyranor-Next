@@ -1068,7 +1068,7 @@
     <string name="launch_systemnnn_copy_failed">游戏资源导入失败。请检查存储卷和文件夹授权后重试。原游戏目录与已有存档仍保留。</string>
     <string name="launch_systemnnn_commit_failed">无法完成游戏副本的原子提交。请检查应用专用存储后重试；未完成副本不会用于启动。</string>
     <string name="launch_systemnnn_corrupt_copy">应用专用游戏副本不可用。请检查存储卷并修复副本；为保护进度，不会切回原目录。修复前请通过存档管理备份副本中的存档。</string>
-    <string name="launch_systemnnn_save_not_writable">游戏副本的 sav 目录无法写入。请检查应用专用存储是否已挂载、可写且有足够空间，然后重试；不会切换到另一份存档。</string>
+    <string name="launch_systemnnn_save_not_writable">游戏的 sav 目录无法写入。请检查目录权限、存储是否可用及剩余空间，然后重试。</string>
     <string name="save_systemnnn_clear_resources">清理导入的游戏资源</string>
     <string name="save_systemnnn_clear_resources_message">清理应用内副本的游戏资源可以释放空间，原游戏目录和副本中的全部存档都会保留。下次启动时需要从原目录重新导入资源。</string>
     <string name="save_systemnnn_clear_resources_done">已清理导入的游戏资源</string>
