@@ -97,6 +97,7 @@ internal fun AppSettingsScreen() {
     val ctx = LocalContext.current
     val navStyle = effectiveNavStyle()
     val engineTabs by AppSettingsStore.engineTabsState.collectAsState()
+    val engineCardIcon by AppSettingsStore.engineCardIconState.collectAsState()
     val sideRailEnabled by AppSettingsStore.sideRailState.collectAsState()
     val hideCardTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
     val gameCardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
@@ -115,6 +116,7 @@ internal fun AppSettingsScreen() {
         withContext(Dispatchers.IO) {
             AppSettingsStore.initNavStyle(ctx)
             AppSettingsStore.initSideRail(ctx)
+            AppSettingsStore.initEngineCardIcon(ctx)
             AppSettingsStore.initGameCardHideTitleTag(ctx)
             AppSettingsStore.initGameCardStyle(ctx)
             AppSettingsStore.initGameCardBadge(ctx)
@@ -417,6 +419,13 @@ internal fun AppSettingsScreen() {
                                 checked = engineTabs,
                                 onCheckedChange = { checked ->
                                     AppSettingsStore.setEngineTabsEnabled(ctx, checked)
+                                },
+                            )
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_engine_card_icon),
+                                checked = engineCardIcon,
+                                onCheckedChange = { checked ->
+                                    AppSettingsStore.setEngineCardIconEnabled(ctx, checked)
                                 },
                             )
                         }

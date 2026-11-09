@@ -179,6 +179,7 @@ fun MainScreen(
     }
     AppSettingsStore.gameSortState.value = gameSort
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initEngineCardIcon(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }

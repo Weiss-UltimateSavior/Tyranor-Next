@@ -41,6 +41,7 @@
     <string name="settings_theme_mode_light">ライト</string>
     <string name="settings_theme_mode_dark">ダーク</string>
     <string name="settings_engine_tabs">エンジンページを分類表示</string>
+    <string name="settings_engine_card_icon">エンジンカードのアイコンを表示</string>
     <string name="settings_side_rail">タブレットサイドレール</string>
     <string name="settings_side_rail_summary">タブレット・大画面ではナビを側面に移動。オフの場合は下部のまま</string>
     <string name="settings_nav_bar_title">ナビゲーションバーのスタイル</string>

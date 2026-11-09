@@ -117,6 +117,8 @@ fun EngineScreen(
     val context = LocalContext.current
     val engineOpenDownloadFailedMessage = stringResource(R.string.engine_open_download_failed)
     val engines = EngineLauncher.supportedEngines
+    // 应用设置「显示引擎卡片图标」：关闭后条目只显示引擎名与状态图标
+    val showEngineCardIcon by AppSettingsStore.engineCardIconState.collectAsState()
     var externalInstallStates by remember {
         mutableStateOf(refreshExternalInstallStates(context, engines))
     }
@@ -199,8 +201,8 @@ fun EngineScreen(
             engines
         }).distinctBy { engineDisplayName(it) }
 
-        // 引擎列表：竖屏单列；横屏/大屏一行三个
-        val engineColumns = if (isWideScreen()) 3 else 1
+        // 引擎列表：竖屏单列；横屏/大屏一行两个
+        val engineColumns = if (isWideScreen()) 2 else 1
         LazyVerticalGrid(
             columns = GridCells.Fixed(engineColumns),
             modifier = Modifier.fillMaxSize(),
@@ -269,6 +271,7 @@ fun EngineScreen(
                     // 外置模块 / 外置模拟器 / Tyrano/WebOther/VN/Artemis（内置版本条目）：点击弹窗
                     enabled = module != null || emulator != null || engine in dialogOnlyEngines,
                     compact = engineColumns > 1,
+                    showIcon = showEngineCardIcon,
                     onClick = {
                         when {
                             // 外置模拟器（PPSSPP / Eden / Winlator）：打开本引擎的运行时列表弹窗
@@ -604,6 +607,7 @@ private fun EngineRow(
     modifier: Modifier = Modifier,
     enabled: Boolean,
     compact: Boolean = false,
+    showIcon: Boolean = true,
     onClick: () -> Unit,
 ) {
     EngineRowCard(
@@ -614,13 +618,14 @@ private fun EngineRow(
         installed = installed,
         enabled = enabled,
         compact = compact,
+        showIcon = showIcon,
         onClick = onClick,
     )
 }
 
 /**
  * 原引擎条目布局：左侧引擎图标横幅（右侧渐变融入卡片）+ 标题 + 右侧原状态图标。
- * 高度 60dp；三列紧凑模式下横幅收窄到 88dp。状态图标保持 CheckCircle / Cancel。
+ * 高度 60dp；两列紧凑模式下横幅收窄到 88dp；应用设置可关闭横幅，仅保留名称与状态图标。
  */
 @Composable
 private fun EngineRowCard(
@@ -631,6 +636,7 @@ private fun EngineRowCard(
     installed: Boolean,
     enabled: Boolean,
     compact: Boolean,
+    showIcon: Boolean,
     onClick: () -> Unit,
 ) {
     val bannerWidth = if (compact) 88.dp else 120.dp
@@ -657,55 +663,57 @@ private fun EngineRowCard(
                 .height(60.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .width(bannerWidth)
-                    .fillMaxHeight(),
-            ) {
-                if (useImageFadeMask) {
-                    Image(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .graphicsLayer {
-                                // DstIn 必须先离屏，否则会作用到整张卡片/父层而不是这张图片。
-                                compositingStrategy = CompositingStrategy.Offscreen
-                                clip = true
-                            }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.horizontalGradient(
-                                        0f to Color.Black,
-                                        fadeStart to Color.Black,
-                                        1f to Color.Transparent,
+            if (showIcon) {
+                Box(
+                    modifier = Modifier
+                        .width(bannerWidth)
+                        .fillMaxHeight(),
+                ) {
+                    if (useImageFadeMask) {
+                        Image(
+                            painter = painterResource(iconRes),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    // DstIn 必须先离屏，否则会作用到整张卡片/父层而不是这张图片。
+                                    compositingStrategy = CompositingStrategy.Offscreen
+                                    clip = true
+                                }
+                                .drawWithContent {
+                                    drawContent()
+                                    drawRect(
+                                        brush = Brush.horizontalGradient(
+                                            0f to Color.Black,
+                                            fadeStart to Color.Black,
+                                            1f to Color.Transparent,
+                                        ),
+                                        blendMode = BlendMode.DstIn,
+                                    )
+                                },
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(iconRes),
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        // 默认主题保持原有的 NavWhite 色遮罩（44 → 47dp，再加长 3dp）
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .width(fadeWidth)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        0f to Color.Transparent,
+                                        1f to NavWhite,
                                     ),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            },
-                    )
-                } else {
-                    Image(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    // 默认主题保持原有的 NavWhite 色遮罩（44 → 47dp，再加长 3dp）
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .width(fadeWidth)
-                            .background(
-                                Brush.horizontalGradient(
-                                    0f to Color.Transparent,
-                                    1f to NavWhite,
                                 ),
-                            ),
-                    )
+                        )
+                    }
                 }
             }
             Text(
@@ -715,7 +723,7 @@ private fun EngineRowCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp, end = 8.dp),
+                    .padding(start = if (showIcon) 12.dp else 16.dp, end = 8.dp),
             )
             Icon(
                 if (installed) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
