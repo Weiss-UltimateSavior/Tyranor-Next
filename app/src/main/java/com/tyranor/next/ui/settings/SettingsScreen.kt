@@ -21,16 +21,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -49,12 +55,14 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -68,6 +76,13 @@ import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.theme.AppSheetTopShape
+import com.tyranor.next.theme.AppThemeColors
+import com.tyranor.next.theme.GlassPanelSolid
+import com.tyranor.next.theme.GlassSurfaceSolid
+import com.tyranor.next.theme.MilkGlassPanelBackground
+import com.tyranor.next.theme.NavWhite
+import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
@@ -78,6 +93,8 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.AppComponentCornerRadius
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppAlertDialog
+import com.tyranor.next.ui.common.AppDialogMaxWidth
+import com.tyranor.next.ui.common.AppSheetDragHandle
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.coachAnchor
@@ -85,6 +102,7 @@ import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.DialogTextButton
 import com.tyranor.next.ui.common.NoIndication
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.TopBarIcon
 import com.tyranor.next.ui.common.formatUiDecimal
 import com.tyranor.next.ui.common.glassNavBottomInset
@@ -126,6 +144,7 @@ private sealed interface UpdateDownloadPhase {
 private fun formatUpdateBytes(bytes: Long): String = ByteFormats.formatBinarySize(bytes)
 
 /** 设置页：只展示各引擎全局设置入口，具体设置内容由独立 Activity 承载。列表项采用 Miuix Card + Preference 体系。 */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     modifier: Modifier = Modifier,
@@ -384,83 +403,135 @@ fun SettingsScreen(
     }
 
     if (showScanDirs) {
-        AppAlertDialog(
+        // 抽屉内条目底色：与游戏操作抽屉一致（复古玻璃用不透明条目色，白雾玻璃用弹窗内条目色）
+        val dirItemSurface = when {
+            AppThemeColors.isGlass -> GlassSurfaceSolid
+            AppThemeColors.isMilkGlass -> DialogItemSurface
+            else -> NavWhite
+        }
+        ModalBottomSheet(
             onDismissRequest = { showScanDirs = false },
-            title = { Text(stringResource(R.string.settings_game_dirs_title), style = MaterialTheme.typography.titleMedium) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (scanDirs.isEmpty()) {
-                        Text(
-                            stringResource(R.string.settings_no_game_dirs),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetMaxWidth = AppDialogMaxWidth,
+            // 关闭拖拽手势：只允许遮罩/返回键关闭（与游戏操作抽屉一致）
+            sheetGesturesEnabled = false,
+            containerColor = when {
+                AppThemeColors.isGlass -> GlassPanelSolid
+                AppThemeColors.isMilkGlass -> Color.Transparent
+                else -> MaterialTheme.colorScheme.background
+            },
+            contentColor = TextColor,
+            scrimColor = when {
+                AppThemeColors.isGlass -> Color.Black.copy(alpha = 0.6f)
+                AppThemeColors.isMilkGlass -> Color.Black.copy(alpha = 0.45f)
+                else -> Color.Black.copy(alpha = 0.32f)
+            },
+            contentWindowInsets = { WindowInsets(0.dp) },
+            shape = AppSheetTopShape,
+            dragHandle = {
+                if (!AppThemeColors.isMilkGlass) AppSheetDragHandle(showGlassTopBorder = true)
+            },
+        ) {
+            // 列表最大高度为底部两个长按钮与标题预留空间，避免抽屉整体超出屏幕
+            val sheetMaxHeight = with(LocalConfiguration.current) {
+                (screenHeightDp - 280).dp.coerceIn(80.dp, 420.dp)
+            }
+            Box(Modifier.fillMaxWidth().clip(AppSheetTopShape)) {
+                if (AppThemeColors.isMilkGlass) {
+                    MilkGlassPanelBackground(Modifier.matchParentSize())
+                }
+                Column(Modifier.fillMaxWidth()) {
+                    if (AppThemeColors.isMilkGlass) {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            AppSheetDragHandle()
+                        }
+                    }
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = sheetMaxHeight),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item {
+                            Text(
+                                stringResource(R.string.settings_game_dirs_title),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+                            )
+                        }
+                        if (scanDirs.isEmpty()) {
+                            item {
+                                Text(
+                                    stringResource(R.string.settings_no_game_dirs),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = PageSecondaryTextColor,
+                                )
+                            }
+                        }
+                        items(scanDirs, key = { it }) { dir ->
+                            // 目录被改名/删除或权限失效后标记为已失效，提示用户手动清理。
+                            // DocumentFile.isDirectory 可能触发 binder 调用，放到 IO 线程执行。
+                            val valid by produceState(initialValue = false, dir) {
+                                value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
+                            }
+                            // 抽屉风格条目：圆角卡片 + 文件夹图标 + 目录名 + 删除按钮
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(AppComponentShape)
+                                    .background(dirItemSurface)
+                                    .glassBorder()
+                                    .padding(start = 16.dp, end = 4.dp, top = 4.5.dp, bottom = 4.5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Folder,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                Text(
+                                    if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (valid) TextColor else MaterialTheme.colorScheme.error,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+                                )
+                                DialogTextButton(
+                                    text = stringResource(R.string.common_delete),
+                                    contentColor = MaterialTheme.colorScheme.error,
+                                    onClick = {
+                                        GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
+                                        scanDirs = GameLibraryFacade.loadRoots(ctx)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    // 底部主操作：输入路径 / 添加目录 改为两个长按钮；
+                    // 点击后抽屉保持展开，列表随 rootsRevision 自动刷新
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        NoRippleButton(
+                            text = stringResource(R.string.settings_input_path),
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { showPathDialog = true },
+                        )
+                        NoRippleButton(
+                            text = stringResource(R.string.settings_add_dir),
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { dirPicker.launch(null) },
                         )
                     }
-                    scanDirs.forEach { dir ->
-                        // 目录被改名/删除或权限失效后标记为已失效，提示用户手动清理。
-                        // DocumentFile.isDirectory 可能触发 binder 调用，放到 IO 线程执行。
-                        val valid by produceState(initialValue = false, dir) {
-                            value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
-                        }
-                        // Miuix 风格条目：圆角卡片 + 文件夹图标 + 目录名 + 删除按钮
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(AppComponentShape)
-                                // 弹窗内条目底色：玻璃风格用亮玻璃面
-                                .background(DialogItemSurface)
-                                .padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Folder,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text(
-                                if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (valid) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.error
-                                },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
-                            )
-                            DialogTextButton(
-                                text = stringResource(R.string.common_delete),
-                                contentColor = MaterialTheme.colorScheme.error,
-                                onClick = {
-                                    GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                    scanDirs = GameLibraryFacade.loadRoots(ctx)
-                                },
-                            )
-                        }
-                    }
                 }
-            },
-            confirmButton = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    DialogTextButton(
-                        text = stringResource(R.string.settings_input_path),
-                        modifier = Modifier.padding(end = 8.dp),
-                        onClick = { showPathDialog = true },
-                    )
-                    DialogTextButton(
-                        text = stringResource(R.string.settings_add_dir),
-                        modifier = Modifier.padding(end = 8.dp),
-                        onClick = { dirPicker.launch(null) },
-                    )
-                    DialogTextButton(
-                        text = stringResource(R.string.settings_done),
-                        onClick = { showScanDirs = false },
-                    )
-                }
-            },
-        )
+            }
+        }
     }
 
     if (showPathDialog) {

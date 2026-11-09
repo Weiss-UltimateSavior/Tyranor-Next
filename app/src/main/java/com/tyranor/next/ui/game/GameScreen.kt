@@ -18,7 +18,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.combinedClickable
@@ -131,7 +130,6 @@ import com.tyranor.next.core.auth.HikarinagiAuthStore
 import com.tyranor.next.core.settings.PerGameSettingsStore
 import com.tyranor.next.theme.AppThemeColors
 import com.tyranor.next.theme.DialogItemSurface
-import com.tyranor.next.theme.GlassBorder
 import com.tyranor.next.theme.GlassPanel
 import com.tyranor.next.theme.GlassPanelSolid
 import com.tyranor.next.theme.GlassSurfaceSolid
@@ -151,6 +149,7 @@ import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.AppDialogMaxWidth
 import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.AppSheetDragHandle
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
@@ -614,21 +613,6 @@ private data class DrawerAction(
     val onClick: () -> Unit,
 )
 
-/**
- * 抽屉顶部装饰把手：抽屉已禁用拖拽手势（[ModalBottomSheet] 的 sheetGesturesEnabled = false），
- * 因此使用紧凑内边距替代 M3 默认把手的 22dp 垂直留白，收紧内容顶部间距。
- */
-@Composable
-private fun DrawerDragHandle() {
-    Box(
-        Modifier
-            .padding(top = 13.dp, bottom = 6.dp)
-            .size(width = 32.dp, height = 4.dp)
-            .clip(CircleShape)
-            .background(PageSecondaryTextColor),
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GameActionsSheet(
@@ -770,20 +754,8 @@ internal fun GameActionsSheet(
         // 玻璃描边只能画在抽屉真实顶边（dragHandle 槽首位）；不能挂 Surface 外层 modifier，
         // 否则描边会按未偏移的布局位置落到背景里形成一条白线。
         dragHandle = {
-            if (!AppThemeColors.isMilkGlass) {
-                // Column 默认水平 Start 对齐会让把手贴左；需显式居中，描边线仍铺满整宽
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    if (AppThemeColors.isGlass) {
-                        Box(
-                            Modifier.fillMaxWidth().height(0.5.dp).background(GlassBorder),
-                        )
-                    }
-                    DrawerDragHandle()
-                }
-            }
+            // 白雾玻璃由内容区自绘把手；复古玻璃在真实顶边补发丝描边
+            if (!AppThemeColors.isMilkGlass) AppSheetDragHandle(showGlassTopBorder = true)
         },
     ) {
         // 小平板横屏下屏幕高度可能 < 560dp，硬编码会导致抽屉填满屏幕，
@@ -801,7 +773,7 @@ internal fun GameActionsSheet(
             Column(Modifier.fillMaxWidth()) {
                 if (AppThemeColors.isMilkGlass) {
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        DrawerDragHandle()
+                        AppSheetDragHandle()
                     }
                 }
                 LazyColumn(
