@@ -171,8 +171,8 @@ internal class RpgMakerLocalHttpServer(
         private const val ASSET_CACHE_CONTROL = "max-age=3600"
 
         /**
-         * 可被插件原地改写的目录必须每次重新验证：v2 的 fs 桥会让插件改完 `data/*.json`
-         * 后再让引擎重新读取，命中 `max-age` 就会读到旧值。ETag 让这次重新验证只花一个 304。
+         * 可被插件原地改写的目录必须每次重新验证：v2 的 fs 桥会让插件改完 `data/` 里的
+         * JSON 再让引擎重新读取，命中 `max-age` 就会读到旧值。ETag 让这次重新验证只花一个 304。
          */
         private const val REWRITABLE_CACHE_CONTROL = "no-cache"
 
