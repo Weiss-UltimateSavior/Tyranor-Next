@@ -8,7 +8,12 @@ import android.util.LruCache
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -390,7 +395,6 @@ private fun GameLibraryContent(
     onCoachAnchorChanged: (Int, Rect) -> Unit,
     isActive: Boolean,
 ) {
-    var showSearch by rememberSaveable { mutableStateOf(false) }
     // 「添加游戏」分支流程：null=关闭；CHOICE=分支弹窗，PC/ANDROID=对应二级添加弹窗
     var addGameStep by remember { mutableStateOf<AddGameStep?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -412,18 +416,51 @@ private fun GameLibraryContent(
         else -> fallbackFiltered
     }
     val scrapingCoversDescription = stringResource(R.string.game_scraping_covers_content_description)
+    val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
+    // 搜索栏仅在列表顶部显示：离开顶部立即收起，向上滚动过程中不提前展开，滚回顶部才重新出现。
+    // 封面流无纵向滚动，始终显示。
+    var searchBarVisible by remember { mutableStateOf(true) }
+    LaunchedEffect(cardStyle) {
+        searchBarVisible = true
+        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) return@LaunchedEffect
+        val positions = when (cardStyle) {
+            AppSettingsStore.GAME_CARD_STYLE_GRID -> snapshotFlow {
+                uniformGridState.firstVisibleItemIndex to uniformGridState.firstVisibleItemScrollOffset
+            }
+            else -> snapshotFlow {
+                gridState.firstVisibleItemIndex to gridState.firstVisibleItemScrollOffset
+            }
+        }
+        positions.collect { (index, offset) ->
+            searchBarVisible = index == 0 && offset == 0
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
-        // ===== 顶部栏：统一 AppTopBar（标题居左 + 右侧图标 + 折叠搜索框） =====
+        // ===== 顶部栏：统一 AppTopBar（标题居左 + 右侧图标 + 常驻搜索栏） =====
         AppTopBar(
             title = stringResource(R.string.game_title),
             underTitle = {
-                if (showSearch) {
-                    AppSearchField(
-                        query = query,
-                        onQueryChange = { query = it },
-                        modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
-                    )
+                // 搜索栏仅在列表顶部显示；离开顶部收起，滚回顶部才展开
+                AnimatedVisibility(
+                    visible = searchBarVisible,
+                    enter = expandVertically() + fadeIn(),
+                    exit = shrinkVertically() + fadeOut(),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .coachAnchor(isActive) {
+                                onCoachAnchorChanged(CoachAnchor.GAME_SEARCH, it)
+                            }
+                            .padding(start = 4.dp, end = 4.dp, bottom = 10.dp),
+                    ) {
+                        AppSearchField(
+                            query = query,
+                            onQueryChange = { query = it },
+                            iconContentDescription = stringResource(R.string.game_search_content_description),
+                        )
+                    }
                 }
             },
             trailing = {
@@ -437,16 +474,6 @@ private fun GameLibraryContent(
                         stringResource(R.string.game_add_content_description),
                         MaterialTheme.colorScheme.primary,
                     ) { addGameStep = AddGameStep.CHOICE }
-                }
-                Box(
-                    Modifier.coachAnchor(isActive) {
-                        onCoachAnchorChanged(CoachAnchor.GAME_SEARCH, it)
-                    },
-                ) {
-                    TopBarIcon(painterResource(R.drawable.ic_game_search), stringResource(R.string.game_search_content_description), MaterialTheme.colorScheme.primary) {
-                        showSearch = !showSearch
-                        if (!showSearch) query = ""
-                    }
                 }
                 if (scrapingCovers) {
                     Box(
@@ -523,7 +550,6 @@ private fun GameLibraryContent(
                             modifier = Modifier.align(Alignment.Center),
                         )
                     } else {
-                        val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
                         when (cardStyle) {
                             // 「列表」风格：封面流横向轮播
                             AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW -> GameCoverFlow(
