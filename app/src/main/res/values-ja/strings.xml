@@ -159,8 +159,6 @@
     <string name="engine_desc_android">手動追加の Android アプリ。ゲームライブラリから直接起動</string>
     <string name="engine_desc_cs2">CatSystem2（.int/.cst/.hg3 のゲーム）。外部 Winlator で実行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch ゲームは外部 Eden で実行します</string>
-    <string name="engine_external_jump_title">外部エミュレータ連携</string>
-    <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
     <string name="engine_tab_rpgm">RPGM</string>
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">携帯機</string>
@@ -181,7 +179,7 @@
     <string name="engine_settings_pc_hint">このゲームは外部 Winlator で実行されます。起動プログラムはゲーム詳細の「起動ファイル」で変更できます。セーブ管理はありません。実行設定は下の Winlator カードで項目ごとに上書きできます。</string>
     <string name="engine_settings_android_hint">このゲームはインストール済みの Android アプリです。ライブラリから起動するとアプリが直接開きます。セーブ管理とエンジン設定はありません。</string>
     <string name="engine_settings_winlator_per_game_note">上書きはこのゲームにのみ適用されます。各項目は「グローバルに従う」に戻せます。空欄（コンテナ設定に従う）はそのパラメータを送信せず、Winlator のコンテナ設定に委ねます。 WineD3D + OpenGL/GDI を明示的に選ぶと WineD3D 設定全体が置き換わり、他の詳細項目は既定値になります。「コンテナ設定に書き込む」が有効なら、このプリセットも保存されます。</string>
-    <string name="launch_emulator_missing">%1$s がインストールされていません。「外部エミュレータ連携」からダウンロードしてください</string>
+    <string name="launch_emulator_missing">%1$s がインストールされていません。インストール後に再試行してください</string>
     <string name="launch_emulator_no_activity">%1$s にゲームを受け取る入口がありません</string>
     <string name="launch_emulator_denied">%1$s の起動がシステムに拒否されました</string>
     <string name="launch_emulator_failed">%1$s の起動に失敗しました</string>

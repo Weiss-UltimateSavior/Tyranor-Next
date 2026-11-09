@@ -49,6 +49,7 @@
 
 ### 移除
 
+- 移除引擎页「外置跳转支持」聚合条目及其弹窗：外置模拟器入口保留在各引擎行的引擎列表弹窗中（PSP / Nintendo Switch / YU-RIS / CatSystem2 / PC 只列本引擎对应的运行环境）；未安装模拟器的启动失败文案不再指向该入口。
 - 移除 Kirikiroid2 1.2.6 内核（`libgame126.so` / `Kirikiroid126` / 引擎页与设置项），KRKR 版本仅保留 auto / 1.3.9 / 1.3.4；已保存的 `1.2.6` 设置回落为 auto。
 - 移除 Artemis Rev.3201 / Rev.2958 / Rev.3288 三个内核（V3/V4/V5 宿主与 `libartemis-compatible-v2.so` / `libartemis-v4.so` / `libartemis-v5.so`），Artemis 版本仅保留 auto / V1 / V2 / V6；自动指纹候选链与旧 `internal.artemis.*` 识别值同步收窄，旧值归一为 null（按 auto 处理）。native plugin `pluginVersion` 提升（kirikiroid2 2、artemis 33），升级后自动重新解压。
 

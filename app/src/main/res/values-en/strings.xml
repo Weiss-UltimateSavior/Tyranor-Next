@@ -159,8 +159,6 @@
     <string name="engine_desc_android">Manually added Android apps, launched directly from the library</string>
     <string name="engine_desc_cs2">CatSystem2 (.int/.cst/.hg3 games), runs via external Winlator</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch games run through the external Eden</string>
-    <string name="engine_external_jump_title">External emulator support</string>
-    <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
     <string name="engine_tab_rpgm">RPGM</string>
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">Handheld</string>
@@ -181,7 +179,7 @@
     <string name="engine_settings_pc_hint">Runs via external Winlator. Change the executable via "Launch file" in game details. No save management; runtime options can be overridden per item in the Winlator card below.</string>
     <string name="engine_settings_android_hint">This game is an installed Android app. Launching from the library opens the app directly. No save management or engine settings.</string>
     <string name="engine_settings_winlator_per_game_note">Overrides apply to this game only; each item can be switched back to "Follow global". An empty value (follow container config) sends no such parameter, leaving it to the Winlator container config. Explicit WineD3D + OpenGL/GDI presets replace the entire WineD3D config; other sub-options use defaults. Enabling Write to container config also persists the preset.</string>
-    <string name="launch_emulator_missing">%1$s is not installed. Download it from “External emulator support”</string>
+    <string name="launch_emulator_missing">%1$s is not installed. Install it and try again.</string>
     <string name="launch_emulator_no_activity">%1$s does not provide an entry to receive games</string>
     <string name="launch_emulator_denied">%1$s launch was denied by the system</string>
     <string name="launch_emulator_failed">%1$s failed to launch</string>

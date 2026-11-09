@@ -73,7 +73,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.storage.GameLibraryFacade
-import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorLauncher
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineLauncher
@@ -129,7 +128,6 @@ fun EngineScreen(
     }
     var ppssppVersion by remember { mutableStateOf(EngineSettingsStore.getPpssppVersion(context)) }
     var moduleDialogEngine by remember { mutableStateOf<EngineType?>(null) }
-    var showExternalJumpDialog by remember { mutableStateOf(false) }
     // YU-RIS 等「引擎专属外置运行时」弹窗：只列该引擎的目标（如 Winlator），标题与内置版本弹窗同构
     var emulatorDialogEngine by remember { mutableStateOf<EngineType?>(null) }
     // 内部存储读取是常数级开销，先同步显示；游戏目录大小在后台用批量查询补齐，
@@ -273,28 +271,12 @@ fun EngineScreen(
                     compact = engineColumns > 1,
                     onClick = {
                         when {
-                            // Winlator 系（YU-RIS / 手动 PC）：只展示本引擎的外置运行时，标题「<引擎> 引擎列表」
-                            emulator != null && emulator.launchStyle == EmulatorLaunchStyle.WINLATOR_EXTERNAL ->
-                                emulatorDialogEngine = engine
-                            emulator != null -> showExternalJumpDialog = true
+                            // 外置模拟器（PPSSPP / Eden / Winlator）：打开本引擎的运行时列表弹窗
+                            emulator != null -> emulatorDialogEngine = engine
                             else -> moduleDialogEngine = engine
                         }
                     },
                 )
-            }
-
-            // 外置跳转支持（PPSSPP / Eden / Winlator 聚合入口）：分类模式仅主机系列展示，平铺模式始终展示
-            if (!categorizeEngines || selectedTab == EngineTab.CONSOLE.ordinal) {
-                item(
-                    key = "external-jump",
-                    contentType = "external-jump",
-                    span = { GridItemSpan(maxLineSpan) },
-                ) {
-                    ExternalJumpRow(
-                        installedCount = emulatorInstallStates.values.count { it },
-                        onClick = { showExternalJumpDialog = true },
-                    )
-                }
             }
         }
     }
@@ -384,50 +366,6 @@ fun EngineScreen(
                 }
             },
             // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
-            confirmButton = {},
-        )
-    }
-
-    // 外置跳转支持弹窗：列 PPSSPP / Eden / Winlator，未安装点击跳下载页，已安装点击打开主界面
-    if (showExternalJumpDialog) {
-        AppAlertDialog(
-            onDismissRequest = { showExternalJumpDialog = false },
-            title = {
-                Text(
-                    stringResource(R.string.engine_external_jump_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ExternalEmulatorRegistry.targets.forEach { target ->
-                        val installed = emulatorInstallStates[target.packageName] == true
-                        AppNavItem(
-                            title = stringResource(target.displayNameRes),
-                            summary = stringResource(
-                                if (installed) R.string.engine_emulator_installed else R.string.engine_emulator_not_installed,
-                            ),
-                            leadingIcon = R.drawable.ic_engine_chip,
-                            containerColor = DialogItemSurface,
-                        ) {
-                            if (installed) {
-                                ExternalEmulatorLauncher.openHome(context, target)
-                            } else {
-                                val opened = ExternalEngineLauncher.openInstallPage(context, target.installUrl)
-                                if (!opened) {
-                                    Toast.makeText(context, engineOpenDownloadFailedMessage, Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            showExternalJumpDialog = false
-                        }
-                    }
-                }
-            },
             confirmButton = {},
         )
     }
@@ -676,23 +614,6 @@ private fun EngineRow(
         installed = installed,
         enabled = enabled,
         compact = compact,
-        onClick = onClick,
-    )
-}
-
-/** 外置跳转支持行：与引擎行同视觉，右侧按“是否至少装了一个模拟器”显示状态。 */
-@Composable
-private fun ExternalJumpRow(
-    installedCount: Int,
-    onClick: () -> Unit,
-) {
-    EngineRowCard(
-        iconRes = R.drawable.ic_engine_card_external,
-        title = stringResource(R.string.engine_external_jump_title),
-        statusTextRes = R.string.engine_external_jump_summary,
-        installed = installedCount > 0,
-        enabled = true,
-        compact = false,
         onClick = onClick,
     )
 }

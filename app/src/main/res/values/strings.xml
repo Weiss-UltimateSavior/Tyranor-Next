@@ -159,8 +159,6 @@
     <string name="engine_desc_android">手动添加的 Android 应用，从游戏库直接跳转启动</string>
     <string name="engine_desc_cs2">CatSystem2，.int/.cst/.hg3 资源游戏，经外置 Winlator 运行</string>
     <string name="engine_desc_nintendo_switch">Nintendo Switch 游戏通过外置 Eden 运行</string>
-    <string name="engine_external_jump_title">外置跳转支持</string>
-    <string name="engine_external_jump_summary">PPSSPP / Eden / Winlator</string>
     <string name="engine_tab_rpgm">RPGM</string>
     <string name="engine_tab_gal">GAL</string>
     <string name="engine_tab_console">主机</string>
@@ -181,7 +179,7 @@
     <string name="engine_settings_pc_hint">该游戏经外置 Winlator 运行；启动程序可在游戏详情「启动文件」中切换。无存档管理；运行参数可在下方 Winlator 卡片中逐项覆盖。</string>
     <string name="engine_settings_android_hint">该游戏为已安装的 Android 应用；从游戏库启动将直接跳转打开该应用。无存档管理与引擎设置。</string>
     <string name="engine_settings_winlator_per_game_note">覆盖仅对本游戏生效；每项可单独切回「跟随全局」。留空（跟随容器配置）表示不下发该参数，交由 Winlator 按容器配置处理。 显式选择 WineD3D + OpenGL/GDI 会替换整项 WineD3D 配置，其它子参数使用默认值；开启「写入容器配置」时也会保存该预设。</string>
-    <string name="launch_emulator_missing">未安装 %1$s，请在“外置跳转支持”中下载</string>
+    <string name="launch_emulator_missing">未安装 %1$s，请先安装后重试</string>
     <string name="launch_emulator_no_activity">%1$s 未提供可接收游戏的入口</string>
     <string name="launch_emulator_denied">%1$s 启动被系统拒绝</string>
     <string name="launch_emulator_failed">%1$s 启动失败</string>
