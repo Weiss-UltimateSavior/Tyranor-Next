@@ -253,10 +253,14 @@ final class GameRunner {
         try{
             byte[] path=root.getPath().getBytes(StandardCharsets.UTF_8);
             long candidate=token==0?NativeGame.open(path,rate):NativeGame.openWithRuntime(path,rate,token);
+            if(candidate==0)throw new IllegalStateException("Native game open returned a zero handle");
             try{
-                if(candidate!=0)NativeGame.setChartStorage(candidate,chartDirectory.getPath().getBytes(StandardCharsets.UTF_8));
+                NativeGame.setChartStorage(candidate,chartDirectory.getPath().getBytes(StandardCharsets.UTF_8));
                 return candidate;
-            }catch(RuntimeException|LinkageError e){if(candidate!=0)NativeGame.close(candidate);throw e;}
+            }catch(RuntimeException|LinkageError e){
+                NativeGame.close(candidate);
+                throw e;
+            }
         }
         finally{if(token!=0)NativeGame.releaseContext(token);}
     }
