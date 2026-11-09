@@ -10,7 +10,10 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,8 +29,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -470,38 +472,54 @@ fun SettingsScreen(
                             val valid by produceState(initialValue = false, dir) {
                                 value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
                             }
-                            // 抽屉风格条目：圆角卡片 + 文件夹图标 + 目录名 + 删除按钮
+                            // 与游戏操作抽屉的 AppNavItem 同规格：约 58dp 高、16dp 左右视觉留白、
+                            // 24dp 左侧图标、标题 bodyMedium；删除动作以行尾图标按钮承载
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(AppComponentShape)
                                     .background(dirItemSurface)
                                     .glassBorder()
-                                    .padding(start = 16.dp, end = 4.dp, top = 4.5.dp, bottom = 4.5.dp),
+                                    .padding(start = 16.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Folder,
+                                Image(
+                                    painter = painterResource(R.drawable.ic_settings_game_dir),
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(22.dp),
+                                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier.size(24.dp),
                                 )
                                 Text(
                                     if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
                                     style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
                                     color = if (valid) TextColor else MaterialTheme.colorScheme.error,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                                 )
-                                DialogTextButton(
-                                    text = stringResource(R.string.common_delete),
-                                    contentColor = MaterialTheme.colorScheme.error,
-                                    onClick = {
-                                        GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                        scanDirs = GameLibraryFacade.loadRoots(ctx)
-                                    },
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(AppComponentShape)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = {
+                                                GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
+                                                scanDirs = GameLibraryFacade.loadRoots(ctx)
+                                            },
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    // 复用长按游戏卡片操作弹窗「删除游戏」的左侧图标
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_sheet_delete),
+                                        contentDescription = stringResource(R.string.common_delete),
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
                         }
                     }
