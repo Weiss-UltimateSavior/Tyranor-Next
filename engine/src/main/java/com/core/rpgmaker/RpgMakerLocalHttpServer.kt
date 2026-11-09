@@ -24,6 +24,11 @@ import java.util.concurrent.TimeUnit
 // ASAR 条目走流式的体积阈值：低于此值一次性读取更简单高效
 internal const val ASAR_STREAM_THRESHOLD = 256L * 1024L
 
+// 路径归一规则：每个请求都要用到，不要在热路径里新建 Regex。
+// 注意 Kotlin 块注释可以嵌套，注释文本里不要出现「斜杠 + 星号」组合（会多开一层注释）。
+private val DOT_SEGMENT = Regex("""/\./""")
+private val DOUBLE_SLASH = Regex("""//+""")
+
 internal class RpgMakerLocalHttpServer(
     root: File,
     asar: AsarArchive?,
