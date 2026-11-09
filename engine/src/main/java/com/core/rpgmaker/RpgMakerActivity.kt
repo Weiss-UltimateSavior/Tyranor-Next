@@ -190,7 +190,8 @@ class RpgMakerActivity : Activity() {
         val lateHook: ByteArray,
         val scriptAppends: Map<String, ByteArray>,
         val internalResources: Map<String, ByteArray>,
-        val nwPolyfill: ByteArray?,
+        /** 首页 `</head>` 前的原始 HTML：兼容层改为外链 `<script src>`，不再内联。 */
+        val earlyHtml: String,
         val modHtml: String,
         val legacyRenderer: Boolean,
     )
@@ -258,28 +259,46 @@ class RpgMakerActivity : Activity() {
                 emptyMap()
             }
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
-            // v1/v2 会话注入 NWJS 兼容层（earlyHook，</head> 处），v0 兜底会话不注入（与 v0 宿主一致）
-            val nwPolyfill: ByteArray? = if (v12Session) {
-                val base = loadAssetOrNull(NWJS_POLYFILL_ASSET)?.toString(Charsets.UTF_8)
+            // v1/v2 会话注入 NWJS 兼容层，v0 兜底会话不注入（与 v0 宿主一致）。
+            // 兼容层改为**外链脚本**（`/__tyranor__/…`），首页只留三个 <script src>：
+            // 过去把 41 KB + 4.6 KB（+230 KB）拼成一段内联脚本塞进 </head>，每次启动
+            // 都要把 276 KB 脚本重新解析一遍，且无法利用 WebView 的脚本缓存。
+            // base 是地基（require/process/fs 桩/全局装配）：缺了就整组放弃并报错，
+            // 拼半套只会让后续插件异常更难定位。
+            val polyfillAssets: List<Pair<String, ByteArray>> = if (v12Session) {
+                val base = loadAssetOrNull(NWJS_POLYFILL_ASSET)
                 if (base == null) {
-                    null
+                    Log.e(TAG, "nw.js compat base asset missing: $NWJS_POLYFILL_ASSET")
+                    emptyList()
                 } else {
-                    // v1/v2 的 NWJS 兼容层兜底统一注入；v2 追加额外兼容层（仅 v2 生效）
-                    val compatExtra = loadAssetOrNull(NWJS_POLYFILL_V1_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()
-                    val v2Extra = if (isRpgMvV2 || isRpgMzV2) {
-                        loadAssetOrNull(NWJS_POLYFILL_V2_EXTRA_ASSET)?.toString(Charsets.UTF_8).orEmpty()
-                    } else {
-                        ""
+                    buildList {
+                        add(NWJS_POLYFILL_RESOURCE to base)
+                        loadAssetOrNull(NWJS_POLYFILL_V1_EXTRA_ASSET)?.let { add(NWJS_POLYFILL_V1_RESOURCE to it) }
+                        if (isRpgMvV2 || isRpgMzV2) {
+                            loadAssetOrNull(NWJS_POLYFILL_V2_EXTRA_ASSET)?.let { add(NWJS_POLYFILL_V2_RESOURCE to it) }
+                        }
                     }
-                    (base + compatExtra + v2Extra).toByteArray(Charsets.UTF_8)
                 }
             } else {
-                null
+                emptyList()
             }
-            val internalResources = modResources + v1Overlay
-            Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} early=${nwPolyfill?.size ?: 0} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
+            // 顺序即执行顺序（经典脚本同步执行）；末尾哨兵把「脚本没加载/404/半套」从
+            // 静默降级变成一条可检索的错误日志（按本次会话的期望逐层校验）。
+            val sentinel = buildString {
+                append("window.__tyranorNwPolyfill&&window.__tyranorNwPolyfillV1")
+                if (isRpgMvV2 || isRpgMzV2) append("&&window.__tyranorNwPolyfillV2")
+            }
+            val earlyHtml = if (polyfillAssets.isEmpty()) {
+                ""
+            } else {
+                polyfillAssets.joinToString(separator = "") { (name, _) ->
+                    "<script src='/__tyranor__/$name'></script>"
+                } + "<script>if(!($sentinel)){console.error('[tyranor] nw.js compat layer incomplete');}</script>"
+            }
+            val internalResources = modResources + v1Overlay + polyfillAssets.toMap()
+            Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} earlyHtml=${earlyHtml.length} polyfill=${polyfillAssets.map { it.first }} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
             val legacyRenderer = intent.getBooleanExtra(LaunchContract.RPG_LEGACY_RENDERER, false)
-            InjectionBundle(contentRoot, lateHook, scriptAppends, internalResources, nwPolyfill, modHtml, legacyRenderer)
+            InjectionBundle(contentRoot, lateHook, scriptAppends, internalResources, earlyHtml, modHtml, legacyRenderer)
         } catch (error: Throwable) {
             Log.e(TAG, "build injection bundle failed", error)
             failLaunch(getString(R.string.engine_rpgmaker_server_failed))
@@ -292,11 +311,18 @@ class RpgMakerActivity : Activity() {
         try {
             localServer = if (gameUsesAsar) {
                 RpgMakerLocalHttpServer(
-                    bundle.contentRoot, asarArchive, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session, v2Session,
+                    bundle.contentRoot, asarArchive, bundle.lateHook, true, bundle.scriptAppends,
+                    bundle.modHtml, bundle.internalResources,
+                    // earlyHook 仅保留给历史内联形态；生产路径已改用 earlyHtml 外链
+                    earlyHook = null, v12Compat = v12Session, fuzzyNames = v2Session,
+                    earlyHtml = bundle.earlyHtml,
                 )
             } else {
                 RpgMakerLocalHttpServer(
-                    bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends, bundle.modHtml, bundle.internalResources, bundle.nwPolyfill, v12Session, v2Session,
+                    bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends,
+                    bundle.modHtml, bundle.internalResources,
+                    earlyHook = null, v12Compat = v12Session, fuzzyNames = v2Session,
+                    earlyHtml = bundle.earlyHtml,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
@@ -691,6 +717,9 @@ class RpgMakerActivity : Activity() {
                 null,
             )
         }
+        // v2 会话的 localStorage 落盘是 200ms 合并写：容器切后台是最可靠的落盘点
+        // （pagehide 在 WebView 里并不保证触发，进程被杀则什么都不触发）
+        runCatching { webView?.evaluateJavascript(FLUSH_LOCAL_STORAGE_JS, null) }
         runCatching { webView?.onPause() }
         super.onPause()
     }
@@ -717,6 +746,8 @@ class RpgMakerActivity : Activity() {
         runCatching { inputRemap?.onDestroy() }
         inputRemap = null
         runCatching {
+            // 销毁前尽力落盘：loadUrl 是异步的，紧跟 destroy() 时 pagehide 不一定跑得完
+            webView?.evaluateJavascript(FLUSH_LOCAL_STORAGE_JS, null)
             webView?.stopLoading()
             webView?.loadUrl("about:blank")
             webView?.destroy()
@@ -864,6 +895,18 @@ class RpgMakerActivity : Activity() {
         private const val NWJS_POLYFILL_ASSET = "rpgmaker/__nwjs_polyfill.js"
         private const val NWJS_POLYFILL_V1_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v1.js"
         private const val NWJS_POLYFILL_V2_EXTRA_ASSET = "rpgmaker/__nwjs_polyfill_v2.js"
+
+        /**
+         * 兼容层的外链地址（内部资源，与 [RPG_MAKER_MOD_CORE_PATH] 同一套 `/__tyranor__/` 命名）。
+         * 必须是首页可以带 Cookie 请求的同源路径，且大小写与注册进 internalResources 的键一致。
+         */
+        private const val NWJS_POLYFILL_RESOURCE = "__tyranor__/nwjs_polyfill.js"
+        private const val NWJS_POLYFILL_V1_RESOURCE = "__tyranor__/nwjs_polyfill_v1.js"
+        private const val NWJS_POLYFILL_V2_RESOURCE = "__tyranor__/nwjs_polyfill_v2.js"
+
+        /** v2 会话的 localStorage 合并落盘入口（见 `__nwjs_polyfill_v2.js` 的 `__tyranorLocalStorageFlush`）。 */
+        private const val FLUSH_LOCAL_STORAGE_JS =
+            "try{if(window.__tyranorLocalStorageFlush){window.__tyranorLocalStorageFlush();}}catch(e){}"
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"

@@ -4,8 +4,9 @@ import android.util.Log
 import android.webkit.JavascriptInterface
 import com.core.web.AsarWebRoot
 import java.io.File
-import java.util.Base64
 import java.nio.charset.StandardCharsets
+import java.util.Base64
+import java.util.LinkedHashMap
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -37,6 +38,21 @@ internal class RpgMakerFsBridge(
      */
     private val asarPrefix: String = if (asar == null) "" else AsarWebRoot.prefixFor { asar.has(it) }
 
+    /** 宽松名解析用的目录名索引；本桥的写/删/建目录操作会让它整体失效。 */
+    private val dirIndex = RpgMakerDirIndex()
+
+    /**
+     * 原始路径 → 规范化路径（realpath）缓存。
+     *
+     * 规范化结果在一次会话内稳定（只有符号链接被重建才会变），而 realpath 要逐级解析
+     * 整条路径——它是每个 fs 调用最贵的一步。命中后只剩目标自身的 exists/stat。
+     * 只缓存成功结果：被拒绝（越界/非法字符）的路径保持每次重新判定与记日志。
+     */
+    private val pathCache = object : LinkedHashMap<String, File>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, File>): Boolean =
+            size > PATH_CACHE_MAX_ENTRIES
+    }
+
     /**
      * 请求路径 → 相对网页根的路径。绝对路径只有在位于 contentRoot 之下时才可映射到
      * asar 条目；范围外返回 null（避免把 /sdcard/... 之类当成包内路径）。
@@ -62,54 +78,55 @@ internal class RpgMakerFsBridge(
     }
 
     /**
-     * 覆盖层优先级必须是**磁盘优先**，理由有二：
-     *  1. 与本地 HTTP 服务器一致——服务器承载引擎全部资源加载（XHR 取 data/、图片、音频），
-     *     其 `canonicalIfValid` 要求磁盘命中且是**文件**（`isFile`）才返回，asar 仅兜底。
-     *     若桥反过来，同一个路径经 XHR 与经 fs 会解析出不同内容。
-     *  2. 写入必须可读回——插件写出的文件若被同名 asar 条目遮蔽，读回的是包内旧值，
-     *     表现为「配置/数据表改了却不生效」，且写入本身没有报错。
-     */
-
-    /**
-     * 读路径解析：精确优先，未命中时逐段宽松匹配——与 HTTP 服务器的 `fuzzyNames`
-     * 行为保持一致（bridges 仅在 v2 会话注册，故这里等价于服务器的容忍分支）。
+     * 宽松名解析（仅精确路径未命中时使用）：逐段用目录索引匹配磁盘名。
      *
-     * 为何必须一致：服务器承载引擎的全部资源加载，若同一路径经 XHR 得 200、经 fs 得 null，
-     * 就会出现「引擎能加载素材、插件读不到同一文件」的矛盾（素材名被规范化时必然触发）。
-     * 写入**不做**宽松匹配：写请求应当创建/覆盖它明确指定的名字，避免误改相邻文件。
+     * 与旧实现的差别：目录名来自 [RpgMakerDirIndex]（按「目录 + mtime」缓存），且不再为
+     * 每个子项构造 `File`。语义不变：含 `..`/控制字符的路径、越界结果一律 null。
      */
-    private fun resolveForRead(path: String?): File? {
-        resolve(path)?.takeIf { it.exists() }?.let { return it }
+    private fun fuzzyEntry(path: String?): File? {
         val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
         if (raw.any { it == '\u0000' || it.isISOControl() }) return null
         val normalized = raw.removePrefix("file://").replace('\\', '/')
         val relative = if (normalized.startsWith("/")) relativeFor(normalized) ?: return null else normalized
         if (relative.isEmpty()) return null
 
-        var current: File = contentRoot
+        // 从规范化根开始逐段匹配：目录索引的键是 `dir.path`，而本桥的写/删/建目录用
+        // `resolve()` 的 canonical 路径去失效。若根路径含符号链接（外置目录软链、
+        // macOS /var → /private/var），两套键永不相等，定向失效会静默落空。
+        var current: File = try { contentRoot.canonicalFile } catch (error: Throwable) { contentRoot }
         for (part in relative.split("/")) {
             if (part.isEmpty() || part == ".") continue
             if (part == "..") return null
-            val children = current.listFiles() ?: return null
-            // 逐段解析一律走 RpgMakerNameMatcher（首级即精确匹配，与「先精确」等价），
-            // 不再自留「大小写首中优先」分支——该分支在目录内同时存在 `A.json`/`a.json`
-            // 时会任选其一命中，而服务器对同一情形返回 404；两边结论不一致会导致
-            // 「引擎加载得到、插件读到另一个或读不到」。
-            val matchedName = RpgMakerNameMatcher.match(children.map { it.name }, part) ?: return null
-            current = children.firstOrNull { it.name == matchedName } ?: return null
+            val children = dirIndex.children(current) ?: return null
+            val matchedName = RpgMakerNameMatcher.match(children, part) ?: return null
+            current = File(current, matchedName)
         }
         return try {
-            current.canonicalFile.takeIf { isInsideRoot(it) }
+            current.canonicalFile.takeIf { isInsideRoot(it) && it.exists() }
         } catch (error: Throwable) {
             null
         }
     }
 
-    /** 磁盘上的同名**文件**（与服务器的命中条件一致）；目录不算命中，会继续检查 asar。 */
-    private fun diskFile(path: String?): File? = resolveForRead(path)?.takeIf { it.isFile }
+    /** 磁盘上的**文件**（与服务器的命中条件一致）；目录不算命中，会继续检查 asar。 */
+    private fun diskFileFast(path: String?): File? = diskEntryFast(path)?.takeIf { it.isFile }
 
-    /** 磁盘上的同名条目（文件或目录），用于存在性/类型/stat 判定。 */
-    private fun diskEntry(path: String?): File? = resolveForRead(path)?.takeIf { it.exists() }
+    /**
+     * 磁盘条目解析（存在性/类型/读写的统一入口）。
+     *
+     * 精确路径优先——[resolve] 的 realpath 结果已缓存，成本只剩一次 `exists()`；
+     * 未命中再走 [fuzzyEntry]。旧的 `resolveForRead` 把这两步做了两遍（`readText`
+     * 甚至在模糊命中后又精确解析一次），这里收敛为一次。
+     *
+     * **磁盘优先**（先磁盘、后 asar）是覆盖层契约，两个理由：
+     *  1. 与本地 HTTP 服务器一致——服务器同样要求磁盘命中且是**文件**才返回，否则同一路径
+     *     经 XHR 与经 fs 会解析出不同内容（素材名被规范化时必然触发）；
+     *  2. 写入必须可读回——插件写出的文件若被同名 asar 条目遮蔽，读回的是包内旧值。
+     */
+    private fun diskEntryFast(path: String?): File? {
+        resolve(path)?.takeIf { it.exists() }?.let { return it }
+        return fuzzyEntry(path)
+    }
 
     /** __dirname 的取值：网页根（游戏 www/ 目录）。 */
     @JavascriptInterface
@@ -121,14 +138,14 @@ internal class RpgMakerFsBridge(
 
     @JavascriptInterface
     fun exists(path: String?): Boolean {
-        if (diskEntry(path) != null) return true
+        if (diskEntryFast(path) != null) return true
         asarKey(path?.let { relativeFor(it) })?.let { if (asar?.has(it) == true) return true }
         return false
     }
 
     @JavascriptInterface
     fun isFile(path: String?): Boolean {
-        diskEntry(path)?.let { return it.isFile }
+        diskEntryFast(path)?.let { return it.isFile }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) return asar.isDirectory(key).not()
         }
@@ -137,7 +154,7 @@ internal class RpgMakerFsBridge(
 
     @JavascriptInterface
     fun isDir(path: String?): Boolean {
-        diskEntry(path)?.let { return it.isDirectory }
+        diskEntryFast(path)?.let { return it.isDirectory }
         asarKey(path?.let { relativeFor(it) })?.let { key ->
             if (asar?.has(key) == true) return asar.isDirectory(key)
         }
@@ -154,7 +171,7 @@ internal class RpgMakerFsBridge(
     @JavascriptInterface
     fun errorFor(path: String?): String {
         // 磁盘优先：磁盘有同名条目时按磁盘判定（与读路径同一顺序）
-        diskEntry(path)?.let { entry ->
+        diskEntryFast(path)?.let { entry ->
             if (entry.isDirectory) return "EISDIR"
             if (entry.length() > MAX_READ_BYTES) return "E2BIG"
             return "ENOENT"
@@ -176,14 +193,14 @@ internal class RpgMakerFsBridge(
     fun readText(path: String?): String? {
         // 磁盘优先（与 HTTP 服务器及写入语义一致）：磁盘无同名文件时才回退 asar。
         // 顺序反了会让「插件写入的文件」被 asar 遮蔽，读回包内旧值。
-        if (diskFile(path) != null) return readDiskText(path)
+        // 只解析一次：旧实现先 diskFile() 再 readDiskText() 又解析一遍（realpath ×2）。
+        val file = diskFileFast(path)
+        if (file != null) return readResolvedText(file)
         return readAsarBytes(path)?.let { String(it, StandardCharsets.UTF_8) }
     }
 
-    private fun readDiskText(path: String?): String? {
-        // 与 diskFile 同一解析：用 resolve 会在模糊命中后重新精确解析而落空
-        val file = resolveForRead(path) ?: return null
-        if (!file.isFile) return null
+    /** 已在 [diskFileFast] 里解析完成的文件读取（不再做路径解析）。 */
+    private fun readResolvedText(file: File): String? {
         if (file.length() > MAX_READ_BYTES) {
             Log.w(TAG, "fs read rejected (too large ${file.length()}): ${file.path}")
             return null
@@ -225,16 +242,14 @@ internal class RpgMakerFsBridge(
     /** 读二进制（base64）；Buffer 语义用，避免桥只能传字符串的限制。 */
     @JavascriptInterface
     fun readBase64(path: String?): String? {
-        // 磁盘优先（见 readText 的说明）：磁盘无同名文件时才回退 asar
-        if (diskFile(path) != null) return readDiskBase64(path)
+        // 磁盘优先（见 readText 的说明），且与读文本一样只解析一次
+        val file = diskFileFast(path)
+        if (file != null) return readResolvedBase64(file)
         readAsarBytes(path)?.let { return Base64.getEncoder().encodeToString(it) }
-        return readDiskBase64(path)
+        return null
     }
 
-    private fun readDiskBase64(path: String?): String? {
-        // 同 readDiskText：必须与 diskFile 的解析一致
-        val file = resolveForRead(path) ?: return null
-        if (!file.isFile) return null
+    private fun readResolvedBase64(file: File): String? {
         if (file.length() > MAX_READ_BYTES) {
             Log.w(TAG, "fs read(Buffer) rejected (too large ${file.length()}): ${file.path}")
             return null
@@ -253,7 +268,7 @@ internal class RpgMakerFsBridge(
         // 磁盘上有同名条目即不再回退 asar——覆盖层规则必须与 exists/isFile/isDir/stat
         // 完全一致，否则同一路径会「既是文件又是目录」：例如磁盘有文件 `data`、
         // asar 内有目录 `data/`，若这里回退 asar 就会列出子项，而 isDir 返回 false。
-        diskEntry(path)?.let { entry ->
+        diskEntryFast(path)?.let { entry ->
             if (!entry.isDirectory) return "[]"   // 磁盘是文件（或其它非目录）→ 不是目录
             // list() 为 null 是 IO 错误（权限/句柄耗尽等），与「空目录」语义不同：
             // 折叠成 [] 会让插件以为目录真的空了（并可能据此清空自建索引）。
@@ -282,7 +297,7 @@ internal class RpgMakerFsBridge(
     @JavascriptInterface
     fun stat(path: String?): String {
         // 磁盘优先：写入后 size/mtime 必须来自磁盘，否则插件按 asar 的旧 size 判断会误判
-        diskEntry(path)?.let { file ->
+        diskEntryFast(path)?.let { file ->
             return try {
                 JSONObject()
                     .put("file", file.isFile)
@@ -310,18 +325,9 @@ internal class RpgMakerFsBridge(
                     .toString()
             }
         }
-        val file = resolveForRead(path) ?: return ""
-        return try {
-            JSONObject()
-                .put("file", file.isFile)
-                .put("dir", file.isDirectory)
-                .put("size", file.length())
-                .put("mtime", file.lastModified())
-                .toString()
-        } catch (error: Throwable) {
-            Log.w(TAG, "fs stat failed: ${file.path}", error)
-            ""
-        }
+        // 磁盘与 asar 都没有：空串（JS 侧按 `{file:false,dir:false,size:0}` 兜底，
+        // 与旧实现把「可解析但不存在」的路径也报成同形结果等价，省掉一次解析）
+        return ""
     }
 
     @JavascriptInterface
@@ -369,7 +375,15 @@ internal class RpgMakerFsBridge(
     fun makeDirs(path: String?): Boolean {
         val dir = resolve(path) ?: return false
         return try {
-            dir.isDirectory || dir.mkdirs() || dir.isDirectory
+            val existed = dir.isDirectory
+            // mkdirs() 可能一次创建多级：上级目录也变了，与 write 一样退回整表失效
+            val parentExisted = dir.parentFile?.isDirectory == true
+            val done = existed || dir.mkdirs() || dir.isDirectory
+            if (done && !existed) {
+                if (parentExisted) dirIndex.invalidate(dir.parentFile) else dirIndex.invalidate()
+                dirIndex.invalidate(dir)
+            }
+            done
         } catch (error: Throwable) {
             Log.w(TAG, "fs mkdir failed: ${dir.path}", error)
             false
@@ -380,7 +394,16 @@ internal class RpgMakerFsBridge(
     fun remove(path: String?): Boolean {
         val file = resolve(path) ?: return false
         return try {
-            !file.exists() || file.delete()
+            if (!file.exists()) {
+                true
+            } else {
+                file.delete().also { removed ->
+                    if (removed) {
+                        dirIndex.invalidate(file.parentFile)
+                        dirIndex.invalidate(file)
+                    }
+                }
+            }
         } catch (error: Throwable) {
             Log.w(TAG, "fs remove failed: ${file.path}", error)
             false
@@ -411,7 +434,8 @@ internal class RpgMakerFsBridge(
         val parent = file.parentFile ?: return false
         var tmp: File? = null
         return try {
-            if (!parent.isDirectory && !parent.mkdirs() && !parent.isDirectory) return false
+            val parentExisted = parent.isDirectory
+            if (!parentExisted && !parent.mkdirs() && !parent.isDirectory) return false
             val temp = File(parent, file.name + ".tmp." + System.nanoTime())
             tmp = temp
             java.io.FileOutputStream(temp).use { out ->
@@ -444,6 +468,8 @@ internal class RpgMakerFsBridge(
                 }
             }
             tmp = null
+            // 目录条目已变：只失效这一层；若刚补建了整条路径（上级目录也变了）则整体失效
+            if (parentExisted) dirIndex.invalidate(parent) else dirIndex.invalidate()
             true
         } catch (error: Throwable) {
             Log.w(TAG, "fs write failed: ${file.path}", error)
@@ -481,6 +507,8 @@ internal class RpgMakerFsBridge(
         // 注意不要 trim()：文件名里的尾随空格是真实存在的（部分素材名带尾随空格），
         // trim 会让这类文件永远无法访问（Node 的 fs 同样不做 trim）。
         val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
+        // realpath 是每个 fs 调用里最贵的一步，且结果在会话内稳定：命中即返回
+        synchronized(pathCache) { pathCache[raw]?.let { return it } }
         if (raw.any { it == '\u0000' || it.isISOControl() }) return null
         val normalized = raw.removePrefix("file://").replace('\\', '/')
         val candidate = if (normalized.startsWith("/")) File(normalized) else File(contentRoot, normalized)
@@ -494,6 +522,7 @@ internal class RpgMakerFsBridge(
             Log.w(TAG, "fs path rejected (outside game dir): $path")
             return null
         }
+        synchronized(pathCache) { pathCache[raw] = canonical }
         return canonical
     }
 
@@ -512,5 +541,8 @@ internal class RpgMakerFsBridge(
 
         /** 单次写入上限；与读取上限分开命名以便独立调整（当前同值）。 */
         private const val MAX_WRITE_BYTES = 16L * 1024L * 1024L
+
+        /** 规范化路径缓存的条目上限：游戏目录内路径远多于此，按访问顺序淘汰。 */
+        private const val PATH_CACHE_MAX_ENTRIES = 512
     }
 }

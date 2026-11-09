@@ -18,8 +18,21 @@ import java.util.Locale
  *   2. 大小写不敏感
  *   3. 空白字符类别归一（U+3000↔U+0020 等，保留空白出现次数）
  *   4. 忽略扩展名前的尾随空白
+ *
+ * **条目上限**（见 [DEFAULT_MAX_FUZZY_ENTRIES]）：后两级是 O(n) 字符串比对，
+ * 超过上限的目录只保留前两级。上限必须由所有调用方共用同一份实现——HTTP 服务器
+ * 与 fs 桥对同一路径必须给出同一结论，否则会出现「引擎加载得到、插件读不到」。
  */
 internal object RpgMakerNameMatcher {
+
+    /**
+     * 宽松匹配（第 3/4 级）的目录条目上限。
+     *
+     * 超过上限的目录仍支持精确与大小写不敏感（一次无分配的线性扫描，与 v0/v1 语义
+     * 一致），只是不再做空白类别归一：宁可少匹配，也不要在上万素材的目录上为每次
+     * miss 做全目录比对。
+     */
+    const val DEFAULT_MAX_FUZZY_ENTRIES = 4096
 
     /** 空白字符类别归一：任何空白字符替换为单个 U+0020，保留出现次数。 */
     fun whitespaceClassKey(name: String): String {
@@ -39,10 +52,17 @@ internal object RpgMakerNameMatcher {
     /**
      * 在 [children] 中为 [requested] 找出唯一匹配的磁盘名；无匹配返回 null。
      * 调用方保证 [children] 单调（同一目录下的直接子项名）。
+     *
+     * [maxFuzzyEntries] ≤ 0 表示不设上限（仅供测试/特殊场景）；默认值即生产策略。
      */
-    fun match(children: List<String>, requested: String): String? {
+    fun match(
+        children: List<String>,
+        requested: String,
+        maxFuzzyEntries: Int = DEFAULT_MAX_FUZZY_ENTRIES,
+    ): String? {
         children.firstOrNull { it == requested }?.let { return it }
         uniqueIgnoreCase(children, requested)?.let { return it }
+        if (maxFuzzyEntries > 0 && children.size > maxFuzzyEntries) return null
         uniqueByKey(children, requested, ::whitespaceClassKey)?.let { return it }
         uniqueByKey(children, requested, ::trailingWhitespaceTrimmedKey)?.let { return it }
         return null

@@ -47,8 +47,11 @@ Graphics._createRenderer = function() {
             break;
         }
 
-        if(this._renderer && this._renderer.textureGC)
-            this._renderer.textureGC.maxIdle = 1;
+        // 曾把 textureGC.maxIdle 压到 1（纹理空闲一帧即销毁），本意是压低显存，
+        // 实际代价是切场景/连续播放动画时反复重建并重传纹理：MV 的窗皮肤、行走图、
+        // 图块集会在后台场景里闲置两帧就被回收，回到前台再整体上传，表现为规律性掉帧。
+        // 恢复 PIXI 默认回收策略（maxIdle 3600 帧 / 每 600 帧扫描），显存仍由引擎自管。
+        // 若后续确需压显存，应按「设备内存等级」选值，不能固定 1。
 
         console.log(typeof this._renderer);
 

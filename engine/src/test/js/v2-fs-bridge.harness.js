@@ -75,8 +75,23 @@ const run = (file) => {
     // 用间接 eval 在全局作用域执行，模拟 <script> 注入
     (0, eval)(code);
 };
-run(process.env.POLY_BASE || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill.js'));
-run(process.env.POLY_V2 || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill_v2.js'));
+const BASE_ASSET = process.env.POLY_BASE || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill.js');
+const V2_ASSET = process.env.POLY_V2 || nodePath.join(__dirname, '..', '..', 'main', 'assets', 'rpgmaker', '__nwjs_polyfill_v2.js');
+run(BASE_ASSET);
+run(V2_ASSET);
+
+// 模拟「重启」：两层 polyfill 的安装标记与 localStorage 闭包状态都是进程内的，
+// 清掉标记后按真实注入顺序重新执行 = 新会话（磁盘目录保持不变）。
+// 这正是超长键（哈希文件名）跨会话回归唯一能被发现的形态。
+function newSession() {
+    delete global.__tyranorNwPolyfill;
+    delete global.__tyranorNwPolyfillV2;
+    delete global.__tyranorLocalStoragePersisted;
+    delete global.__tyranorLocalStorageFlush;
+    delete global.__tyranorLocalStorageMode;
+    run(BASE_ASSET);
+    run(V2_ASSET);
+}
 
 // ---- 断言 ----
 let failed = 0;
@@ -391,37 +406,80 @@ check(
     })(),
 );
 
-console.log('\n== localStorage 落地（修随机端口导致的清空）==');
+console.log('\n== localStorage 落地（内存镜像 + 合并落盘）==');
 check('Storage.prototype 已被接管', window.__tyranorLocalStoragePersisted === true);
+const storeDir = nodePath.join(gameRoot, 'AppData', 'Local Storage');
 check(
-    'setItem 落盘到游戏目录',
+    '写入先进内存（落盘前不产生文件）',
     (() => {
-        const store = {};
-        const fakeStorage = Object.create(global.Storage.prototype);
-        fakeStorage.setItem('ConfigManager.data', '{"volume":80}');
-        return fs.existsSync(nodePath.join(gameRoot, 'AppData', 'Local Storage'));
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('ConfigManager.data', '{"volume":80}');
+        const target = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
+        // 去抖窗口内盘上不应有文件（flush 由 200ms 定时器触发，同步断言必然早于它）
+        return s.getItem('ConfigManager.data') === '{"volume":80}' && !fs.existsSync(target);
     })(),
 );
 check(
-    '换一个「会话」（新 origin）仍能读到',
+    '重复 getItem 不再过桥（内存镜像）',
     (() => {
-        const reader = Object.create(global.Storage.prototype);
-        return reader.getItem('ConfigManager.data') === '{"volume":80}';
+        // 首读会走 existsSync/readFileSync，缓存后必须 0 次桥调用；两个都计数才测得出来
+        const bridgeFs = global.TyranorFs;
+        const origExists = bridgeFs.exists;
+        const origReadText = bridgeFs.readText;
+        let calls = 0;
+        bridgeFs.exists = function (p) { calls++; return origExists.call(this, p); };
+        bridgeFs.readText = function (p) { calls++; return origReadText.call(this, p); };
+        try {
+            const s = Object.create(global.Storage.prototype);
+            s.getItem('ConfigManager.data');
+            s.getItem('ConfigManager.data');
+            return calls === 0;
+        } finally {
+            bridgeFs.exists = origExists;
+            bridgeFs.readText = origReadText;
+        }
     })(),
-    (() => { const r = Object.create(global.Storage.prototype); return r.getItem('ConfigManager.data'); })(),
 );
 check(
-    'removeItem 删除后读不到',
+    'flush 后落盘到游戏目录（键 → 一个 .dat 文件）',
+    (() => {
+        window.__tyranorLocalStorageFlush();
+        if (!fs.existsSync(storeDir)) return false;
+        // 文件名是键的 UTF-8 十六进制 + .dat（可逆，便于排查）
+        return fs.readdirSync(storeDir).indexOf('436f6e6669674d616e616765722e64617461.dat') >= 0;
+    })(),
+);
+check(
+    '落盘内容可直接读回',
+    (() => {
+        const path = nodePath.join(storeDir, '436f6e6669674d616e616765722e64617461.dat');
+        return fs.existsSync(path) && fs.readFileSync(path, 'utf8') === '{"volume":80}';
+    })(),
+);
+check(
+    'length/key 走内存键集合',
+    (() => {
+        const s = Object.create(global.Storage.prototype);
+        const n = s.length;
+        const keys = [];
+        for (let i = 0; i < n; i++) keys.push(s.key(i));
+        return n >= 1 && keys.indexOf('ConfigManager.data') >= 0;
+    })(),
+);
+check(
+    'removeItem 同步删除磁盘文件并读不到',
     (() => {
         const s = Object.create(global.Storage.prototype);
         s.setItem('temp.key', 'x');
-        const before = s.getItem('temp.key');
+        window.__tyranorLocalStorageFlush();
+        const file = nodePath.join(storeDir, '74656d702e6b6579.dat');
+        const existed = fs.existsSync(file);
         s.removeItem('temp.key');
-        return before === 'x' && s.getItem('temp.key') === null;
+        return existed && !fs.existsSync(file) && s.getItem('temp.key') === null;
     })(),
 );
 check(
-    '超长键名（整段 JSON 当键）不崩且可读回',
+    '超长键名（整段 JSON 当键）同会话可读回',
     (() => {
         const s = Object.create(global.Storage.prototype);
         const longKey = 'k' + 'x'.repeat(4000);
@@ -1227,6 +1285,41 @@ check('不再渲染出 001undefined', rendered !== '[001undefined]', rendered);
         const big = nodePath.join(contentRoot, 'data', 'append-big.bin');
         return fs.existsSync(big) ? 'size=' + fs.statSync(big).size : '已删除';
     })());
+
+console.log('\n== localStorage 跨会话（模拟重启）==');
+{
+    const longKey = 'cache.' + 'k'.repeat(400);
+    const s = Object.create(global.Storage.prototype);
+    s.setItem('restart.short', 'SHORT');
+    s.setItem(longKey, 'LONG');
+    window.__tyranorLocalStorageFlush();
+
+    newSession();
+    const after = Object.create(global.Storage.prototype);
+    check('短键重启后读回', after.getItem('restart.short') === 'SHORT',
+        String(after.getItem('restart.short')));
+    // 回归：超长键落盘成哈希名，索引反推不出原键；读取必须按 key 直接算路径兜底
+    check('超长键（哈希文件名）重启后读回', after.getItem(longKey) === 'LONG',
+        String(after.getItem(longKey)));
+
+    const keys = [];
+    for (let i = 0; i < after.length; i++) keys.push(after.key(i));
+    check('重启后枚举含短键、不含无法反推的哈希键',
+        keys.indexOf('restart.short') >= 0 && keys.indexOf(longKey) < 0,
+        JSON.stringify(keys.slice(0, 5)));
+
+    check('clear() 同步清空磁盘（含哈希文件）', (() => {
+        after.clear();
+        const names = fs.existsSync(storeDir) ? fs.readdirSync(storeDir).filter((n) => n.endsWith('.dat')) : [];
+        return names.length === 0;
+    })());
+
+    check('clear() 后重启读不到旧值', (() => {
+        newSession();
+        const fresh = Object.create(global.Storage.prototype);
+        return fresh.getItem('restart.short') === null && fresh.getItem(longKey) === null;
+    })());
+}
 
     console.log(failed === 0 ? '\n全部通过' : '\n失败 ' + failed + ' 项');
     process.exit(failed === 0 ? 0 : 1);

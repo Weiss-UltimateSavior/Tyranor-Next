@@ -71,6 +71,28 @@ class RpgMakerHtmlInjectionTest {
     }
 
     @Test
+    fun externalEarlyScriptsLandInHeadInOrderBeforeLateHook() {
+        // v1/v2 的兼容层改为外链脚本：顺序必须保持 a → b → 内联 → late，
+        // 且全部早于 </head>（否则游戏脚本会先跑，兼容层失效）
+        val html = "<html><head></head><body><canvas></canvas></body></html>"
+        val result = String(
+            buildInjectedHtmlTwoPhase(
+                html,
+                ByteArray(0),
+                "window.__late=1;".toByteArray(),
+                "",
+                injectBeforeBody = true,
+                earlyHtml = "<script src='/__tyranor__/a.js'></script><script src='/__tyranor__/b.js'></script>",
+            ),
+            StandardCharsets.UTF_8,
+        )
+
+        assertTrue("外链脚本必须按注册顺序出现", result.indexOf("/__tyranor__/a.js") < result.indexOf("/__tyranor__/b.js"))
+        assertTrue("外链脚本必须在 </head> 之前", result.indexOf("/__tyranor__/b.js") < result.indexOf("</head>"))
+        assertTrue("late hook 仍在 body 内", result.indexOf("</head>") < result.indexOf("window.__late=1;"))
+    }
+
+    @Test
     fun rangeParsingCoversStandardSuffixMultiAndMalformed() {
         // bytes=0- → 全量 206
         val full = parseRangeHeader("bytes=0-", 1000L)!!
