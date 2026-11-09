@@ -74,12 +74,15 @@ internal class SystemNnnSaveStore(
     /** Caller holds the engine's lock. A complete backup precedes any changes to live files. */
     fun replace(source: File?, onCommitted: () -> Unit = {}): Int {
         val incoming = source?.let(::files).orEmpty()
-        if (source != null && incoming.none { (name, file) ->
-                name != SystemNnnHost.SAVE_SLOT_PRESENTATION_FILE && file.length() > 0
-            }) {
-            throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
-        }
         val existing = files()
+        if (source != null) {
+            val restorable = try {
+                SystemNnnHost.canReplaceSaveSnapshot(incoming, existing.keys)
+            } catch (invalid: IOException) {
+                throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP, cause = invalid)
+            }
+            if (!restorable) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
+        }
         if (existing.isEmpty() && incoming.isEmpty()) return 0
         Files.createDirectory(migration.toPath())
         try {

@@ -28,6 +28,8 @@ final class GameSave {
     private static final int SNAPSHOT_CURSOR=MAX_TICKS+1;
     private static final int LEGACY_RUN_BYTES=5*Integer.BYTES+1;
     private static final int SNAPSHOT_TAG=0x534e5031, MAX_SNAPSHOT=48*1024*1024;
+    // Raw snapshots start with NNS1 and a little-endian schema version.
+    private static final int NATIVE_SNAPSHOT_MAGIC=0x4e4e5331, NATIVE_SNAPSHOT_HEADER=2*Integer.BYTES;
     static final class Run {
         int repeats;
         final int ms,x,y,choice;
@@ -315,6 +317,39 @@ final class GameSave {
             return (int)crc.getValue()==checksum?snapshot:null;
         }catch(IOException e){return null;}
     }
+    private static boolean validateSnapshot(DataInputStream in) throws IOException {
+        int size=in.readInt(),packedSize=in.readInt(),checksum=in.readInt();
+        if(size<=NATIVE_SNAPSHOT_HEADER||size>MAX_SNAPSHOT||packedSize<=0||packedSize>MAX_SNAPSHOT)return false;
+        class PackedInput extends InputStream {
+            int remaining=packedSize;
+            @Override public int read() throws IOException {
+                if(remaining==0)return -1;
+                int value=in.readUnsignedByte();
+                remaining--;
+                return value;
+            }
+            @Override public int read(byte[] buffer,int offset,int length) throws IOException {
+                if(length==0)return 0;
+                if(remaining==0)return -1;
+                int count=Math.min(remaining,length);
+                in.readFully(buffer,offset,count);
+                remaining-=count;
+                return count;
+            }
+        }
+        PackedInput packed=new PackedInput();
+        CRC32 crc=new CRC32();
+        byte[] buffer=new byte[8192];
+        try(DataInputStream zip=new DataInputStream(new CheckedInputStream(new InflaterInputStream(packed),crc))){
+            if(zip.readInt()!=NATIVE_SNAPSHOT_MAGIC||Integer.reverseBytes(zip.readInt())<=0)return false;
+            for(int remaining=size-NATIVE_SNAPSHOT_HEADER;remaining>0;){
+                int count=Math.min(remaining,buffer.length);
+                zip.readFully(buffer,0,count);
+                remaining-=count;
+            }
+            return zip.read()==-1&&packed.remaining==0&&in.read()==-1&&(int)crc.getValue()==checksum;
+        }
+    }
     static Metadata readMetadata(File file) throws IOException {
         try (InputStream in=new AtomicFile(file).openRead()) {
             Metadata metadata=readMetadata(in,file.lastModified(),SaveSlots.slotForFile(file));
@@ -368,13 +403,14 @@ final class GameSave {
         }
         int count=in.readInt();
         if (count<1 || count>MAX_RUNS) throw new IOException("存档长度无效");
-        GameSave save=keepRuns?new GameSave():null; int total=0;boolean hasInput=false;
+        GameSave save=keepRuns?new GameSave():null; int total=0;boolean hasInput=false,needsSnapshot=false;
         for (int i=0;i<count;i++) {
             int repeats=in.readInt(),ms=in.readInt(),x=in.readInt(),y=in.readInt();
             boolean advance=readFlag(in); int choice=in.readInt(); boolean skip=modern && readFlag(in);
             if (!modern && choice<0) throw new IOException("旧版存档输入无效");
             Run run=new Run(repeats,ms,x,y,advance,choice,skip);
             validateRun(run,total); total+=repeats;hasInput|=choice>=TIMED_OUT||choice==NATIVE_BASELINE;
+            needsSnapshot|=choice==NATIVE_BASELINE;
             if (keepRuns) save.runs.add(run);
         }
         if(!hasInput)throw new IOException("缺少存档输入");
@@ -384,6 +420,7 @@ final class GameSave {
             if (actual!=expected) throw new IOException("存档校验失败，文件可能已损坏");
         }
         byte[] snapshot=null;
+        boolean validRequiredSnapshot=false;
         int first=buffered.read();
         if(first!=-1){
             if(!modern||first!=(SNAPSHOT_TAG>>>24))throw new IOException("存档尾部无效");
@@ -392,8 +429,11 @@ final class GameSave {
             if(second>=0&&third>=0&&fourth>=0){
                 if((first<<24|second<<16|third<<8|fourth)!=SNAPSHOT_TAG)throw new IOException("存档尾部无效");
                 if(keepRuns)snapshot=readSnapshot(extension);
+                else if(needsSnapshot)validRequiredSnapshot=validateSnapshot(extension);
             }
         }
+        if(!keepRuns&&(needsSnapshot||metadata.wait==NativeGame.MODAL)&&!validRequiredSnapshot)
+            throw new IOException("Missing or invalid required native save snapshot");
         if (save!=null) {
             if(metadata.wait==NativeGame.MODAL&&(!save.requiresSnapshot()||snapshot==null))
                 throw new IOException("选择场景存档缺少有效原生快照");

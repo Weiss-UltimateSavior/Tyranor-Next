@@ -14,12 +14,15 @@ import org.junit.rules.TemporaryFolder
 import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import java.util.UUID
+import kotlin.random.Random
 
 class SystemNnnSaveInteropTest {
     @get:Rule val temp = TemporaryFolder()
@@ -31,10 +34,25 @@ class SystemNnnSaveInteropTest {
         val pc = saves.resolve("sysfile3.sav").apply { writeText("PC") }
         val temporary = saves.resolve("emberfall.sav.new").apply { writeText("temporary") }
         val incoming = temp.newFolder().canonicalFile
-        put(incoming, "emberfall.sav", "slot")
-        put(incoming, "emberfall.quick.sav.bak", "backup")
+        val story = incoming.resolve("emberfall.sav").apply {
+            DataOutputStream(outputStream()).use {
+                it.writeInt(GameSave.MAGIC_NS1)
+                it.writeInt(1)
+                it.writeInt(1)
+                it.writeInt(20)
+                it.writeInt(0)
+                it.writeInt(0)
+                it.writeBoolean(false)
+                it.writeInt(0)
+                it.writeUTF("start.spt")
+                it.writeInt(1)
+                it.writeInt(0)
+                it.writeInt(1)
+            }
+        }
+        val backup = putStory(incoming, "emberfall.quick.sav.bak", SaveSlots.QUICK)
         put(incoming, "emberfall.chart/chart1/slot0.dat", "chart")
-        put(incoming, "emberfall.slot118.sav", "high slot")
+        val highSlot = putStory(incoming, "emberfall.slot118.sav", 118, snapshotPayload())
         put(incoming, "emberfall.slot118.sav.thumb", "high slot thumbnail")
         put(incoming, "emberfall.last-slot", "last selection")
         put(incoming, "emberfall.last-slot.new", "interrupted selection")
@@ -54,8 +72,11 @@ class SystemNnnSaveInteropTest {
             assertTrue(busy is SystemNnnHost.SaveBusyException)
             assertEquals(7, store.replace(incoming))
             assertEquals(7, store.files().size)
-            assertEquals("slot", saves.resolve("emberfall.sav").readText())
-            assertEquals("high slot", saves.resolve("emberfall.slot118.sav").readText())
+            assertArrayEquals(story.readBytes(), saves.resolve(story.name).readBytes())
+            assertArrayEquals(backup.readBytes(), saves.resolve(backup.name).readBytes())
+            assertFalse(incoming.resolve("emberfall.quick.sav").exists())
+            assertFalse(saves.resolve("emberfall.quick.sav").exists())
+            assertArrayEquals(highSlot.readBytes(), saves.resolve(highSlot.name).readBytes())
             assertEquals("high slot thumbnail", saves.resolve("emberfall.slot118.sav.thumb").readText())
             assertEquals("last selection", saves.resolve("emberfall.last-slot").readText())
             assertFalse(saves.resolve("emberfall.last-slot.new").exists())
@@ -67,13 +88,93 @@ class SystemNnnSaveInteropTest {
             assertEquals(fileKey, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
             val error = assertThrows(GameSaveException::class.java) { store.replace(metadataOnly) }
             assertEquals(SaveErrorCode.NO_FILES_IN_ZIP, error.code)
-            assertEquals("slot", saves.resolve("emberfall.sav").readText())
+            assertArrayEquals(story.readBytes(), saves.resolve(story.name).readBytes())
             assertEquals(7, store.replace(null))
             assertTrue(store.files().isEmpty())
         }
         assertTrue(Files.isRegularFile(lock))
         assertEquals("PC", pc.readText())
         assertEquals("temporary", temporary.readText())
+    }
+
+    @Test fun rejectsIncompleteOrDamagedSnapshotsBeforeChangingLiveSaves() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val store = SystemNnnSaveStore(game, saves)
+        val story = putStory(saves, "emberfall.resume.bak", SaveSlots.AUTO)
+        val progress = putProgress(saves, 9)
+        val storyBytes = story.readBytes()
+        val progressBytes = progress.readBytes()
+
+        fun rejectsSnapshot(prepare: (File) -> Unit) {
+            val incoming = temp.newFolder().canonicalFile
+            prepare(incoming)
+            val original = incoming.listFiles()!!.associate { it.name to it.readBytes() }
+            var committed = false
+            val error = assertThrows(GameSaveException::class.java) {
+                store.access { store.replace(incoming) { committed = true } }
+            }
+            assertEquals(SaveErrorCode.NO_FILES_IN_ZIP, error.code)
+            assertFalse(committed)
+            assertFalse(saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).exists())
+            assertArrayEquals(storyBytes, story.readBytes())
+            assertArrayEquals(progressBytes, progress.readBytes())
+            assertEquals(original.keys, incoming.list()!!.toSet())
+            for ((name, bytes) in original) assertArrayEquals(bytes, incoming.resolve(name).readBytes())
+        }
+
+        rejectsSnapshot { put(it, "emberfall.last-slot", "index") }
+        rejectsSnapshot { put(it, "emberfall.sav.thumb", "thumbnail") }
+        rejectsSnapshot { putProgress(it, 11) }
+        rejectsSnapshot { put(it, "emberfall.sav", "damaged") }
+        rejectsSnapshot { putStory(it, "emberfall.sav", 1) }
+        rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9)) }
+        rejectsSnapshot {
+            putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload()).apply {
+                val bytes = readBytes()
+                writeBytes(bytes.copyOf(bytes.size - 1))
+            }
+        }
+        rejectsSnapshot {
+            putStory(it, "emberfall.sav", 0)
+            put(it, "emberfall.sav.bak", "damaged legacy backup")
+            putStory(it, "emberfall.slot01.sav", 1)
+        }
+        rejectsSnapshot {
+            putStory(it, "emberfall.sav", 0)
+            putProgress(it, 11)
+            put(it, "emberfall.read.bak", "damaged progress backup")
+        }
+    }
+
+    @Test fun restoresAValidBackupOnlyStorySnapshot() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val store = SystemNnnSaveStore(game, saves)
+        val incoming = temp.newFolder().canonicalFile
+        val backup = putStory(incoming, "emberfall.quick.sav.bak", SaveSlots.QUICK)
+        store.access {
+            assertEquals(1, store.replace(incoming))
+            assertArrayEquals(backup.readBytes(), saves.resolve(backup.name).readBytes())
+        }
+        assertFalse(incoming.resolve("emberfall.quick.sav").exists())
+        assertFalse(saves.resolve("emberfall.quick.sav").exists())
+    }
+
+    @Test fun restoresGlobalProgressOnlyWhenTheDestinationHasNoStoryOrChart() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val store = SystemNnnSaveStore(game, saves)
+        val incoming = temp.newFolder().canonicalFile
+        val progress = putProgress(incoming, 27)
+        store.access {
+            assertEquals(1, store.replace(incoming))
+            assertArrayEquals(progress.readBytes(), saves.resolve(progress.name).readBytes())
+            put(saves, "emberfall.chart/chart1/slot0.dat", "checkpoint")
+            val error = assertThrows(GameSaveException::class.java) { store.replace(incoming) }
+            assertEquals(SaveErrorCode.NO_FILES_IN_ZIP, error.code)
+            assertEquals("checkpoint", saves.resolve("emberfall.chart/chart1/slot0.dat").readText())
+        }
     }
 
     @Test fun interruptedRestoreBlocksStandaloneUntilTyranorRecoversTheOldSaves() {
@@ -133,14 +234,16 @@ class SystemNnnSaveInteropTest {
         for ((name, content) in original) put(saves, name, content)
         val pc = saves.resolve("sysfile3.sav").apply { writeText("PC") }
         val incoming = temp.newFolder().canonicalFile
-        for ((name, _) in original) put(incoming, name, "replacement $name")
-        put(incoming, "emberfall.quick.sav", "new slot")
+        val replacement = putStory(incoming, "emberfall.sav", 0)
+        for (name in original.keys - setOf(replacement.name, "emberfall.read")) put(incoming, name, "replacement $name")
+        putProgress(incoming, 34)
+        putStory(incoming, "emberfall.quick.sav", SaveSlots.QUICK)
         var interrupted = false
         val store = SystemNnnSaveStore(game, saves) { source, target ->
             Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
             if (!interrupted && target == saves.resolve("emberfall.sav")) {
                 interrupted = true
-                assertEquals("replacement emberfall.sav", target.readText())
+                assertArrayEquals(replacement.readBytes(), target.readBytes())
                 throw IOException("Interrupted after replacing an existing slot")
             }
         }
@@ -407,6 +510,27 @@ class SystemNnnSaveInteropTest {
         }
         owner.close()
         assertFalse(SystemNnnHost.hasActiveSaveAccess())
+    }
+
+    private fun snapshotPayload(): ByteArray =
+        ByteBuffer.wrap(Random(7).nextBytes(32768)).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(0x31534e4e).putInt(13).array()
+
+    private fun putStory(root: File, name: String, slot: Int, snapshot: ByteArray? = null): File {
+        val script = "start.spt"
+        val save = if (snapshot == null) GameSave().apply { append(20, 0, 0, false, 0) }
+        else GameSave.nativeBaseline()
+        val metadata = GameSave.Metadata(slot, 1L, script, 1, 0, 1, "", "Story", false)
+        val loaded = GameSave.Loaded(save, metadata, arrayOf(script.toByteArray(), byteArrayOf()), snapshot)
+        return root.resolve(name).apply { outputStream().use { GameSave.writePayload(it, loaded) } }
+    }
+
+    private fun putProgress(root: File, read: Int): File {
+        val progress = GameProgress.State(intArrayOf(read), IntArray(NativeGame.SYSTEM_VARIABLES),
+            IntArray(NativeGame.SCRIPT_PROGRESS), null, null, null, emptyList())
+        return root.resolve("emberfall.read").apply {
+            DataOutputStream(outputStream()).use { GameProgress.encode(it, progress) }
+        }
     }
 
     private fun put(root: File, name: String, content: String) {

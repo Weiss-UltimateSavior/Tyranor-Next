@@ -114,6 +114,10 @@ final class GameProgress {
         catch(IOException e){throw new AccessFailure("基础",e);}
     }
     // AtomicFile.openRead() promotes a legacy .bak before validating it.
+    static boolean hasReadableBase(Path path) throws IOException {
+        return readBase(path)!=null;
+    }
+
     private static Committed readBase(Path path) throws IOException {
         if(!regularFile(path))return null;
         MessageDigest digest=digest();
