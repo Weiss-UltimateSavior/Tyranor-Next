@@ -12,6 +12,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,15 +24,11 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -86,7 +84,6 @@ import com.tyranor.next.theme.PageSecondaryTextColor
 import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.MiuixSettingsTheme
-import com.tyranor.next.theme.NoticeDotRed
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -97,6 +94,7 @@ import com.tyranor.next.ui.common.AppDialogMaxWidth
 import com.tyranor.next.ui.common.AppSheetDragHandle
 import com.tyranor.next.ui.common.AppSearchField
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.BottomInsetSpacer
 import com.tyranor.next.ui.common.ByteFormats
@@ -474,38 +472,54 @@ fun SettingsScreen(
                             val valid by produceState(initialValue = false, dir) {
                                 value = withContext(Dispatchers.IO) { isScanDirValid(ctx, dir) }
                             }
-                            // 抽屉风格条目：圆角卡片 + 文件夹图标 + 目录名 + 删除按钮
+                            // 与游戏操作抽屉的 AppNavItem 同规格：约 58dp 高、16dp 左右视觉留白、
+                            // 24dp 左侧图标、标题 bodyMedium；删除动作以行尾图标按钮承载
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(AppComponentShape)
                                     .background(dirItemSurface)
                                     .glassBorder()
-                                    .padding(start = 16.dp, end = 4.dp, top = 4.5.dp, bottom = 4.5.dp),
+                                    .padding(start = 16.dp, end = 8.dp, top = 11.dp, bottom = 11.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Folder,
+                                Image(
+                                    painter = painterResource(R.drawable.ic_settings_game_dir),
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(22.dp),
+                                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.primary),
+                                    modifier = Modifier.size(24.dp),
                                 )
                                 Text(
                                     if (valid) scanDirName(ctx, dir) else "${scanDirName(ctx, dir)}（${stringResource(R.string.settings_invalid_suffix)}）",
                                     style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
                                     color = if (valid) TextColor else MaterialTheme.colorScheme.error,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                                 )
-                                DialogTextButton(
-                                    text = stringResource(R.string.common_delete),
-                                    contentColor = MaterialTheme.colorScheme.error,
-                                    onClick = {
-                                        GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                        scanDirs = GameLibraryFacade.loadRoots(ctx)
-                                    },
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(AppComponentShape)
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = {
+                                                GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
+                                                scanDirs = GameLibraryFacade.loadRoots(ctx)
+                                            },
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    // 复用长按游戏卡片操作弹窗「删除游戏」的左侧图标
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_sheet_delete),
+                                        contentDescription = stringResource(R.string.common_delete),
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
                         }
                     }
@@ -1095,56 +1109,6 @@ internal fun EngineSettingsDetailScreen(kind: EngineSettingsKind) {
                 onWinlator = { winlator = it },
                 onPpssppVersion = { ppssppVersion = it },
                 onWebShellPort = { webShellPort = it },
-            )
-        }
-    }
-}
-
-/**
- * 单条功能入口卡：一张 MiuixCard 只承载一条 ArrowPreference。
- * 每个入口独立成卡，避免多个不相关功能挤在同一张卡里；卡片间距由外层列表统一提供，
- * 多行同类设置仍由 `EngineCard` 这类分组卡承载。
- */
-@Composable
-private fun SettingsEntryCard(
-    title: String,
-    @DrawableRes iconRes: Int,
-    modifier: Modifier = Modifier,
-    showBadge: Boolean = false,
-    onClick: () -> Unit,
-) {
-    MiuixCard(
-        modifier = modifier.fillMaxWidth().glassBorder(),
-        cornerRadius = AppComponentCornerRadius,
-    ) {
-        Column(Modifier.padding(vertical = 4.dp)) {
-            ArrowPreference(
-                title = title,
-                startAction = { SettingsItemIcon(iconRes, showBadge = showBadge) },
-                onClick = onClick,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SettingsItemIcon(@DrawableRes iconRes: Int, showBadge: Boolean = false) {
-    Box(modifier = Modifier.padding(end = 6.dp).size(24.dp)) {
-        Image(
-            painter = painterResource(iconRes),
-            contentDescription = null,
-            // 左侧图标统一跟随主题色调（Miuix 页面取 MiuixTheme 的 primary）
-            colorFilter = ColorFilter.tint(MiuixTheme.colorScheme.primary),
-            modifier = Modifier.fillMaxSize(),
-        )
-        if (showBadge) {
-            // 红点提醒：固定亮红，不随主题色变化
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 5.dp, y = (-5).dp)
-                    .size(8.dp)
-                    .background(NoticeDotRed, CircleShape),
             )
         }
     }

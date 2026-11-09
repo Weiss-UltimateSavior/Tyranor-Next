@@ -887,7 +887,7 @@ internal fun GameActionsSheet(
                     modifier = Modifier
                         .fillMaxWidth()
                         .navigationBarsPadding()
-                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 12.dp),
+                        .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 22.dp),
                     onClick = { beginLaunch() },
                 )
             }

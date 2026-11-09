@@ -37,8 +37,9 @@ import androidx.compose.ui.unit.dp
 import com.tyranor.next.BuildConfig
 import com.tyranor.next.R
 import com.tyranor.next.theme.AppComponentShape
+import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.ui.common.AppAlertDialog
-import com.tyranor.next.ui.common.AppNavItem
+import com.tyranor.next.ui.common.SettingsEntryCard
 import com.tyranor.next.ui.common.AppScreenActivity
 import com.tyranor.next.ui.common.AppTopBar
 import com.tyranor.next.ui.common.DialogTextButton
@@ -71,7 +72,6 @@ internal fun AboutAppScreen() {
     val context = LocalContext.current
     // 免责声明弹窗开关（保存状态，旋转/进程恢复后仍保持）
     var showDisclaimer by rememberSaveable { mutableStateOf(false) }
-    val iconTint = MaterialTheme.colorScheme.primary
     val appLabel = stringResource(R.string.app_name)
     val versionLabel = stringResource(R.string.about_app_version, BuildConfig.VERSION_NAME)
     Column(Modifier.fillMaxSize()) {
@@ -106,35 +106,36 @@ internal fun AboutAppScreen() {
                     color = MaterialTheme.colorScheme.onBackground,
                 )
             }
-            Spacer(Modifier.height(28.dp))
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                // 点击行为待接入：暂为空实现，先保持条目正常外观
-                AppNavItem(
-                    title = stringResource(R.string.about_project_url),
-                    leadingIcon = R.drawable.ic_update_github,
-                    leadingIconTint = iconTint,
-                    onClick = {
-                        // 交给系统浏览器打开项目仓库；无可用浏览器时静默失败
-                        runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)))
-                        }
-                    },
-                )
-                AppNavItem(
-                    title = stringResource(R.string.about_acknowledgements),
-                    leadingIcon = R.drawable.ic_about_acknowledgements,
-                    leadingIconTint = iconTint,
-                    onClick = {},
-                )
-                AppNavItem(
-                    title = stringResource(R.string.about_disclaimer),
-                    leadingIcon = R.drawable.ic_about_disclaimer,
-                    leadingIconTint = iconTint,
-                    onClick = { showDisclaimer = true },
-                )
+            // 图标/版本行与下方条目之间：原 28dp 基础上再增加 30dp
+            Spacer(Modifier.height(58.dp))
+            // 复用设置页的单条入口卡（MiuixCard + ArrowPreference + 主题色图标）
+            MiuixSettingsTheme {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.about_project_url),
+                        iconRes = R.drawable.ic_update_github,
+                        onClick = {
+                            // 交给系统浏览器打开项目仓库；无可用浏览器时静默失败
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PROJECT_URL)))
+                            }
+                        },
+                    )
+                    // 点击行为待接入：暂为空实现，先保持条目正常外观
+                    SettingsEntryCard(
+                        title = stringResource(R.string.about_acknowledgements),
+                        iconRes = R.drawable.ic_about_acknowledgements,
+                        onClick = {},
+                    )
+                    SettingsEntryCard(
+                        title = stringResource(R.string.about_disclaimer),
+                        iconRes = R.drawable.ic_about_disclaimer,
+                        onClick = { showDisclaimer = true },
+                    )
+                }
             }
         }
     }
