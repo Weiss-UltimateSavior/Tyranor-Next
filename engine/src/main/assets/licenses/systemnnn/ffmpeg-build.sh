@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Build host: x86-64 Linux or x86-64 WSL with the Linux Android NDK, GNU tools and flock.
 set -euo pipefail
 
 archive=$1
