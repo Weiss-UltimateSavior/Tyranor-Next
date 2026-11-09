@@ -66,7 +66,7 @@ class SaveSyncServiceTest {
         val game = harness.addGame("systemnnn-exit", EngineType.SYSTEMNNN)
         harness.identify(game)
         val before = harness.setActive(game, "before")
-        val gameDirectory = temp.newFolder("systemnnn")
+        val gameDirectory = temp.newFolder("systemnnn").canonicalFile
         val saveDirectory = File(gameDirectory, "sav").apply { mkdir() }
         val save = File(saveDirectory, "emberfall.sav").apply { writeText("progress after exit") }
         val archive = temp.newFile("systemnnn-progress.zip")
