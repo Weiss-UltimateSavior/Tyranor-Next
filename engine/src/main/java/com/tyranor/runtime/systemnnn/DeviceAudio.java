@@ -2,7 +2,6 @@ package com.tyranor.runtime.systemnnn;
 
 import android.content.Context;
 import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
@@ -12,6 +11,7 @@ import android.util.Log;
 import com.core.engine.R;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.function.BooleanSupplier;
 
 // The game worker joins this consumer before replacing or freeing the native session.
 final class DeviceAudio {
@@ -21,22 +21,15 @@ final class DeviceAudio {
     }
     interface ErrorHandler { void failed(DeviceAudio source, String reason); }
     private volatile boolean running = true;
-    private volatile boolean focused;
-    private boolean focusRequested;
-    private final AudioManager manager;
-    private final AudioFocusRequest focus;
+    private final PlayerAudioFocus focus;
     private final Thread thread;
 
-    DeviceAudio(Context context, Handler owner, long handle, int rate, ErrorHandler errors) {
+    DeviceAudio(Context context, Handler owner, long handle, int rate, BooleanSupplier mayRequestFocus,
+                Runnable focusUnavailable, ErrorHandler errors) {
         AudioAttributes attributes = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
-        manager=context.getSystemService(AudioManager.class);
-        focus=new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(attributes).setAcceptsDelayedFocusGain(true).setWillPauseWhenDucked(true)
-            .setOnAudioFocusChangeListener(change->{
-                focused=change==AudioManager.AUDIOFOCUS_GAIN;
-                if(change==AudioManager.AUDIOFOCUS_LOSS)focusRequested=false;
-            },owner).build();
+        focus = new PlayerAudioFocus(context, owner, attributes,
+            () -> running && mayRequestFocus.getAsBoolean(), focusUnavailable);
         thread = new Thread(() -> {
             AudioTrack track = null;
             try {
@@ -54,7 +47,7 @@ final class DeviceAudio {
                 boolean announced = false;
                 boolean playing=false;
                 while (running) {
-                    if(!focused){
+                    if(!focus.hasFocus()){
                         if(playing){
                             track.pause();
                             track.flush();
@@ -69,7 +62,7 @@ final class DeviceAudio {
                     }
                     buffer.clear();
                     NativeGame.audio(handle, buffer, frames);
-                    while (running && focused && buffer.hasRemaining()) {
+                    while (focus.hasFocus() && buffer.hasRemaining()) {
                         int start = buffer.position();
                         int count = track.write(buffer, buffer.remaining(), AudioTrack.WRITE_NON_BLOCKING);
                         if (count < 0) throw new IllegalStateException("AudioTrack " + count);
@@ -94,18 +87,10 @@ final class DeviceAudio {
         thread.start();
         requestFocus();
     }
-    void requestFocus(){
-        if(!running||focusRequested||manager==null)return;
-        try{
-            int result=manager.requestAudioFocus(focus);
-            focusRequested=result!=AudioManager.AUDIOFOCUS_REQUEST_FAILED;
-            focused=result==AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
-        }catch(RuntimeException e){Log.w("SystemNNN","Could not request audio focus",e);}
-    }
+    void requestFocus() { focus.request(); }
     void close() {
         running = false;
-        if(manager!=null)try{manager.abandonAudioFocusRequest(focus);}
-        catch(RuntimeException e){Log.w("SystemNNN","Could not release audio focus",e);}
+        focus.abandon();
         thread.interrupt();
         boolean interrupted = false;
         while (thread.isAlive()) {

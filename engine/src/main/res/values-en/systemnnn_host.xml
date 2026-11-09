@@ -119,4 +119,5 @@
     <string name="engine_systemnnn_host_save_busy">This game’s saves are in use. Close the other player and retry.</string>
     <string name="engine_systemnnn_host_runtime_interrupted">A runtime error occurred. You can return and continue from an existing save.</string>
     <string name="engine_systemnnn_host_startup_retry_hint">Check the game files and access to its save folder, then retry.</string>
+    <string name="engine_systemnnn_host_audio_focus_unavailable">Audio focus is temporarily unavailable. The player will retry when you return or interact.</string>
 </resources>

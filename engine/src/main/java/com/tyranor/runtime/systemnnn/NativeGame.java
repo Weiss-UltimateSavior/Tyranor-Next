@@ -18,7 +18,10 @@ final class NativeGame {
     static native long forkContext(long contextToken);
     static native void releaseContext(long contextToken);
     static native void close(long handle);
-    static native void surface(long handle, Surface target);
+    static native long createSurface(Surface target);
+    static native void releaseSurface(long token);
+    static native void bindSurface(long handle,long token);
+    static native void presentSurface(long handle);
     static native boolean configureMenuBackground(long handle,int mode,byte[] script,byte[] background,boolean repeat);
     // A zero result signals script end. A positive result is the current engine frame period.
     static native int advanceOpening(long handle,int frames);

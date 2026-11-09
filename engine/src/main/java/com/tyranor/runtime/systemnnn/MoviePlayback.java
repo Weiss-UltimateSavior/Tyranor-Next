@@ -8,6 +8,8 @@ import android.graphics.SurfaceTexture;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioTrack;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
@@ -17,156 +19,500 @@ import android.widget.FrameLayout;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 
-/** Plays a local game movie over the canvas. The AudioTrack head is the presentation clock. */
+/** Plays a local game movie over the canvas. Both decoders survive a temporary loss of the view. */
 final class MoviePlayback extends FrameLayout implements TextureView.SurfaceTextureListener {
-    interface Listener {void finished(MoviePlayback source,String failure);}
-    private static final String TAG="SystemNNN";
-    private static final int RATE=48000;
+    enum Outcome { COMPLETED, SKIPPED, FAILED }
+    interface Listener { void finished(MoviePlayback source, Outcome outcome, String failure); }
+
+    private static final String TAG = "SystemNNN";
+    private static final int RATE = 48000;
+    private final Handler owner = new Handler(Looper.getMainLooper());
     private final TextureView picture;
     private final byte[] filename;
     private final boolean canSkip;
     private final float volume;
     private final Listener listener;
+    private final AudioAttributes audioAttributes = new AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_MOVIE).build();
+    private final PlayerAudioFocus audioFocus;
+
+    // The gate guards playback state, never decoder calls or AudioTrack operations.
+    private final Object gate = new Object();
+    private final Clock clock = new Clock();
+    private SurfaceTexture requestedTexture, boundTexture;
+    private boolean releaseBoundTexture;
+    private boolean paused, decoderFinished, audioReady, audioEnded;
+    private String audioFailure;
     private volatile boolean stopped;
-    private volatile long position=-1,audioEndedAt;
-    private volatile String audioFailure;
-    private boolean started,finished;
-    private int videoWidth,videoHeight;
+    // The main thread owns view layout and terminal callbacks.
+    private boolean started;
+    private Outcome pendingOutcome;
+    private String pendingFailure;
+    private int videoWidth, videoHeight;
 
-    MoviePlayback(Context context,File file,int volume,boolean canSkip,Listener listener) {
+    MoviePlayback(Context context, File file, int volume, boolean canSkip, Listener listener) {
         super(context);
-        this.listener=listener;this.canSkip=canSkip;this.volume=Math.max(0,Math.min(100,volume))/100f;
-        filename=file.getPath().getBytes(StandardCharsets.UTF_8);
-        setBackgroundColor(Color.BLACK);setSoundEffectsEnabled(false);
-        setContentDescription(EngineUiText.get(context,canSkip?R.string.engine_systemnnn_ctl_movie_skippable:
+        this.listener = listener;
+        this.canSkip = canSkip;
+        this.volume = Math.max(0, Math.min(100, volume)) / 100f;
+        filename = file.getPath().getBytes(StandardCharsets.UTF_8);
+        audioFocus = new PlayerAudioFocus(context, owner, audioAttributes, this::mayRequestFocus,
+            () -> Log.i(TAG, "Movie playing muted while audio focus is unavailable"));
+        setBackgroundColor(Color.BLACK);
+        setSoundEffectsEnabled(false);
+        setContentDescription(EngineUiText.get(context, canSkip ? R.string.engine_systemnnn_ctl_movie_skippable :
             R.string.engine_systemnnn_ctl_movie_playing));
-        setOnClickListener(v->skip());
-        picture=new TextureView(context);
+        setOnClickListener(v -> skip());
+        picture = new TextureView(context);
         picture.setSurfaceTextureListener(this);
-        addView(picture,new LayoutParams(-1,-1,Gravity.CENTER));
+        addView(picture, new LayoutParams(-1, -1, Gravity.CENTER));
     }
 
-    void skip(){if(canSkip)finish(null);}
-    void interrupted(){finish(null);}
-    private void finish(String failure){
-        if(finished)return;
-        finished=true;stopped=true;listener.finished(this,failure);
-    }
-    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
-        if(started||stopped)return;
-        started=true;
-        Surface surface=new Surface(texture);
-        new Thread(()->decodeVideo(surface),"SystemNNN-MovieVideo").start();
-    }
-    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){}
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){}
-    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){if(started&&!finished)finish(null);return true;}
-    @Override protected void onDetachedFromWindow(){stopped=true;finished=true;super.onDetachedFromWindow();}
-    @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);fit();}
-    private void fit(){
-        if(videoWidth<=0||videoHeight<=0||getWidth()==0||getHeight()==0)return;
-        float scale=Math.min(getWidth()/(float)videoWidth,getHeight()/(float)videoHeight);
-        LayoutParams lp=(LayoutParams)picture.getLayoutParams();
-        int w=Math.round(videoWidth*scale),h=Math.round(videoHeight*scale);
-        if(lp.width!=w||lp.height!=h){lp.width=w;lp.height=h;picture.setLayoutParams(lp);}
+    void skip() {
+        if (canSkip) finish(Outcome.SKIPPED, null);
     }
 
-    private void decodeVideo(Surface surface){
-        long token=0;String error=null;int rendered=0,dropped=0;
-        try{
-            try{token=open(filename,surface);}finally{surface.release();}
-            int[] size=size(token);
-            post(()->{videoWidth=size[0];videoHeight=size[1];fit();});
-            new Thread(this::decodeAudio,"SystemNNN-MovieAudio").start();
-            long lastDraw=0,previousPts=0;
-            while(!stopped){
-                long lag=position-previousPts;
-                // Catch up at a keyframe only when dropping disposable pictures cannot keep pace.
-                long pts=next(token,lag>1500000?2:lag>250000?1:0);
-                if(pts<0)break;
-                previousPts=pts;
-                long now=waitForFrame(pts);
-                if(stopped||audioFailure!=null)break;
-                long wall=SystemClock.uptimeMillis();
-                // A slow device must keep presenting even if it cannot catch the audio clock.
-                if(rendered!=0&&now-pts>140000&&wall-lastDraw<120){dropped++;continue;}
-                if(!present(token))throw new IllegalStateException("动画画面已不可用");
-                lastDraw=wall;
-                if(rendered++==0)Log.i(TAG,"Movie first frame "+size[0]+"x"+size[1]+" pts="+pts);
-                if(rendered==10)Log.i(TAG,"Movie video running frames="+rendered+" dropped="+dropped+" pts="+pts+" clock="+now);
-            }
-            long timeout=SystemClock.uptimeMillis()+10000;
-            while(!stopped&&audioFailure==null&&audioEndedAt==0&&SystemClock.uptimeMillis()<timeout)SystemClock.sleep(10);
-            error=audioFailure;
-        }catch(RuntimeException e){error=e.getMessage();}
-        finally{
-            if(token!=0)close(token);
-            if(!stopped){
-                Log.i(TAG,"Movie video finished frames="+rendered+" dropped="+dropped);
-                String failure=error;
-                post(()->finish(failure));
+    void pause() {
+        synchronized (gate) {
+            paused = true;
+            updatePlaybackLocked();
+        }
+        audioFocus.abandon();
+    }
+
+    void resume() {
+        synchronized (gate) {
+            paused = false;
+            updatePlaybackLocked();
+        }
+        retryFocus();
+        deliverOutcome();
+    }
+
+    void retryFocus() {
+        if (mayRequestFocus()) audioFocus.request();
+    }
+
+    void dispose() {
+        synchronized (gate) {
+            if (stopped) return;
+            stopped = true;
+            requestedTexture = null;
+            updatePlaybackLocked();
+        }
+        pendingOutcome = null;
+        pendingFailure = null;
+        audioFocus.abandon();
+    }
+
+    private boolean mayRequestFocus() {
+        synchronized (gate) { return volume > 0 && clock.running && audioReady && !decoderFinished; }
+    }
+
+    private void updatePlaybackLocked() {
+        clock.setRunning(!stopped && !paused && requestedTexture != null, System.nanoTime());
+        gate.notifyAll();
+    }
+
+    private void finish(Outcome outcome, String failure) {
+        if (stopped) return;
+        dispose();
+        listener.finished(this, outcome, failure);
+    }
+
+    private void deliverOutcome() {
+        if (pendingOutcome == null) return;
+        synchronized (gate) { if (!clock.running) return; }
+        finish(pendingOutcome, pendingFailure);
+    }
+
+    @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
+        synchronized (gate) {
+            if (stopped) return;
+            requestedTexture = texture;
+            updatePlaybackLocked();
+        }
+        if (!started) {
+            started = true;
+            new Thread(this::decodeVideo, "SystemNNN-MovieVideo").start();
+        }
+        retryFocus();
+        deliverOutcome();
+    }
+
+    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {}
+    @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
+
+    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
+        boolean workerOwnsTexture, stillPlaying;
+        synchronized (gate) {
+            if (requestedTexture == texture) requestedTexture = null;
+            workerOwnsTexture = boundTexture == texture;
+            // Keep the texture alive through any present already using it.
+            if (workerOwnsTexture) releaseBoundTexture = true;
+            updatePlaybackLocked();
+            stillPlaying = clock.running;
+        }
+        if (!stillPlaying) audioFocus.abandon();
+        return !workerOwnsTexture;
+    }
+
+    @Override protected void onSizeChanged(int w, int h, int oldW, int oldH) {
+        super.onSizeChanged(w, h, oldW, oldH);
+        fit();
+    }
+
+    private void fit() {
+        if (videoWidth <= 0 || videoHeight <= 0 || getWidth() == 0 || getHeight() == 0) return;
+        float scale = Math.min(getWidth() / (float) videoWidth, getHeight() / (float) videoHeight);
+        LayoutParams lp = (LayoutParams) picture.getLayoutParams();
+        int w = Math.round(videoWidth * scale), h = Math.round(videoHeight * scale);
+        if (lp.width != w || lp.height != h) {
+            lp.width = w;
+            lp.height = h;
+            picture.setLayoutParams(lp);
+        }
+    }
+
+    private boolean awaitPlayback() throws InterruptedException {
+        synchronized (gate) {
+            while (!clock.running && !stopped && !decoderFinished) gate.wait();
+            return !stopped && !decoderFinished;
+        }
+    }
+
+    // The video worker owns the decoder and its ANativeWindow across every rebind.
+    private void bindSurface(long token) {
+        SurfaceTexture previous;
+        synchronized (gate) {
+            previous = boundTexture;
+            if (previous == requestedTexture) return;
+        }
+        if (previous != null) {
+            setSurface(token, null);
+            releaseBinding();
+        }
+
+        SurfaceTexture target;
+        synchronized (gate) {
+            if (!clock.running || audioFailure != null) return;
+            target = requestedTexture;
+            boundTexture = target;
+        }
+        Surface surface = null;
+        try {
+            surface = new Surface(target);
+            if (setSurface(token, surface)) return;
+            if (currentSurface()) throw new IllegalStateException("Movie surface unavailable");
+        } catch (RuntimeException e) {
+            if (currentSurface()) throw e;
+        } finally {
+            if (surface != null) surface.release();
+        }
+        releaseBinding();
+    }
+
+    private void releaseBinding() {
+        SurfaceTexture release;
+        synchronized (gate) {
+            release = releaseBoundTexture ? boundTexture : null;
+            boundTexture = null;
+            releaseBoundTexture = false;
+        }
+        if (release != null) owner.post(release::release);
+    }
+
+    private boolean currentSurface() {
+        synchronized (gate) {
+            return clock.running && boundTexture != null && boundTexture == requestedTexture;
+        }
+    }
+
+    private boolean awaitFrame(long token, long pts) throws InterruptedException {
+        for (;;) {
+            bindSurface(token);
+            synchronized (gate) {
+                if (stopped || audioFailure != null) return false;
+                if (boundTexture != requestedTexture && (boundTexture != null || clock.running)) continue;
+                if (clock.running && boundTexture != null) {
+                    long now = clock.position(System.nanoTime());
+                    if (pts < 0 || now >= 0 && now + 3000 >= pts) return true;
+                    gate.wait(now < 0 ? 5 : Math.max(1, Math.min(10, (pts - now) / 1000)));
+                } else gate.wait();
             }
         }
     }
-    private long waitForFrame(long pts){
-        long now=position;
-        while(!stopped&&audioFailure==null){
-            long end=audioEndedAt;
-            now=position;
-            if(end!=0)now=Math.max(0,now)+(System.nanoTime()-end)/1000;
-            if(now>=0&&now+3000>=pts)break;
-            SystemClock.sleep(now<0?5:Math.max(1,Math.min(10,(pts-now)/1000)));
-        }
-        return now;
+
+    private long position() {
+        synchronized (gate) { return clock.position(System.nanoTime()); }
     }
-    private void decodeAudio(){
-        long token=0;AudioTrack output=null;
-        try{
-            token=open(filename,null);
-            if(token==0)return;
-            int mask=AudioFormat.CHANNEL_OUT_STEREO,pcm=AudioFormat.ENCODING_PCM_16BIT;
-            int buffer=AudioTrack.getMinBufferSize(RATE,mask,pcm);
-            if(buffer<=0)throw new IllegalStateException("无法初始化动画音频");
-            output=new AudioTrack.Builder()
-                .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).build())
-                .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setChannelMask(mask).setEncoding(pcm).build())
-                .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(buffer,RATE*4/10)).build();
-            output.setVolume(volume);
-            short[] data=new short[65536];
-            long first=next(token,0),written=0;
-            if(first<0)return;
-            output.play();position=first;
-            boolean reported=false;
-            do{
-                int count=samples(token,data);
-                for(int offset=0;!stopped&&offset<count;){
-                    int n=output.write(data,offset,count-offset,AudioTrack.WRITE_NON_BLOCKING);
-                    if(n<0)throw new IllegalStateException("动画音频输出失败 "+n);
-                    if(n==0)SystemClock.sleep(5);
-                    offset+=n;written+=n;
-                    position=first+Integer.toUnsignedLong(output.getPlaybackHeadPosition())*1000000/RATE;
-                    if(n>0&&!reported){reported=true;Log.i(TAG,"Movie PCM accepted 48000 Hz stereo, volume="+volume);}
+
+    private long activeMicros() {
+        synchronized (gate) { return clock.activeMicros(System.nanoTime()); }
+    }
+
+    private void decodeVideo() {
+        long token = 0;
+        String error = null;
+        int rendered = 0, dropped = 0;
+        try {
+            if (!awaitPlayback()) return;
+            token = openVideo(filename);
+            if (token == 0) throw new IllegalStateException("Movie video track unavailable");
+            int[] size = size(token);
+            owner.post(() -> {
+                if (stopped) return;
+                videoWidth = size[0];
+                videoHeight = size[1];
+                fit();
+            });
+            new Thread(this::decodeAudio, "SystemNNN-MovieAudio").start();
+
+            long lastDraw = 0, previousPts = 0;
+            while (awaitFrame(token, -1)) {
+                long lag = position() - previousPts;
+                // Drop disposable pictures before seeking to the next keyframe on a slow device.
+                long pts = next(token, lag > 1500000 ? 2 : lag > 250000 ? 1 : 0);
+                if (pts < 0) {
+                    awaitAudioEnd(token);
+                    break;
                 }
-            }while(!stopped&&next(token,0)>=0);
-            long timeout=SystemClock.uptimeMillis()+1000;
-            while(!stopped&&SystemClock.uptimeMillis()<timeout){
-                long played=Integer.toUnsignedLong(output.getPlaybackHeadPosition());
-                position=first+played*1000000/RATE;
-                if(played>=written/2)break;
-                SystemClock.sleep(5);
+                previousPts = pts;
+                while (awaitFrame(token, pts)) {
+                    long now = position(), wall = SystemClock.uptimeMillis();
+                    if (rendered != 0 && now - pts > 140000 && wall - lastDraw < 120) {
+                        dropped++;
+                        break;
+                    }
+                    if (!currentSurface()) continue;
+                    boolean drawn = present(token);
+                    if (!currentSurface()) continue; // Retry this decoded frame after the new target is ready.
+                    if (!drawn) throw new IllegalStateException("Movie frame could not be presented");
+                    lastDraw = wall;
+                    if (rendered++ == 0) Log.i(TAG, "Movie first frame " + size[0] + "x" + size[1] + " pts=" + pts);
+                    if (rendered == 10) Log.i(TAG, "Movie video running frames=" + rendered + " dropped=" + dropped + " pts=" + pts + " clock=" + now);
+                    break;
+                }
             }
-        }catch(RuntimeException e){audioFailure=e.getMessage();}
-        finally{
-            audioEndedAt=System.nanoTime();
-            if(output!=null)output.release();
-            if(token!=0)close(token);
+            synchronized (gate) { error = audioFailure; }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            error = reason(e);
+        } catch (RuntimeException | LinkageError e) {
+            error = reason(e);
+        } finally {
+            if (token != 0) close(token);
+            releaseBinding();
+            synchronized (gate) {
+                decoderFinished = true;
+                gate.notifyAll();
+            }
+            if (!stopped) {
+                Log.i(TAG, "Movie video finished frames=" + rendered + " dropped=" + dropped);
+                String failure = error;
+                owner.post(() -> {
+                    if (stopped) return;
+                    audioFocus.abandon();
+                    pendingOutcome = failure == null ? Outcome.COMPLETED : Outcome.FAILED;
+                    pendingFailure = failure;
+                    deliverOutcome();
+                });
+            }
         }
     }
 
-    private static native long open(byte[] filename,Surface surface);
+    private void awaitAudioEnd(long token) throws InterruptedException {
+        long deadline = activeMicros() + 10_000_000;
+        while (awaitFrame(token, -1)) {
+            synchronized (gate) {
+                if (audioEnded) return;
+                if (clock.activeMicros(System.nanoTime()) >= deadline)
+                    throw new IllegalStateException("Movie audio did not finish");
+                gate.wait(10);
+            }
+        }
+    }
+
+    private void decodeAudio() {
+        long token = 0;
+        AudioTrack track = null;
+        String error = null;
+        try {
+            if (!awaitPlayback()) return;
+            token = open(filename, null);
+            if (token == 0) return;
+            long first = next(token, 0);
+            if (first < 0) return;
+            int mask = AudioFormat.CHANNEL_OUT_STEREO, pcm = AudioFormat.ENCODING_PCM_16BIT;
+            int buffer = AudioTrack.getMinBufferSize(RATE, mask, pcm);
+            if (buffer <= 0) throw new IllegalStateException("Movie audio format unavailable");
+            track = new AudioTrack.Builder().setAudioAttributes(audioAttributes)
+                .setAudioFormat(new AudioFormat.Builder().setSampleRate(RATE).setChannelMask(mask).setEncoding(pcm).build())
+                .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(buffer, RATE * 4 / 10)).build();
+            setGain(track, 0f);
+            AudioOutput output = new AudioOutput(track, first);
+            synchronized (gate) { audioReady = true; }
+            owner.post(this::retryFocus);
+            short[] data = new short[65536];
+            boolean reported = false;
+            do {
+                int count = samples(token, data);
+                for (int offset = 0; offset < count;) {
+                    if (!output.ready()) return;
+                    int n = track.write(data, offset, count - offset, AudioTrack.WRITE_NON_BLOCKING);
+                    if (n < 0) throw new IllegalStateException("Movie audio output failed " + n);
+                    offset += n;
+                    output.written += n;
+                    output.publishPosition();
+                    if (n == 0) {
+                        if (output.stalled()) {
+                            Log.w(TAG, "Movie audio clock stalled, continuing without audio");
+                            return;
+                        }
+                        SystemClock.sleep(5);
+                    } else if (!reported) {
+                        reported = true;
+                        Log.i(TAG, "Movie PCM accepted 48000 Hz stereo, volume=" + volume);
+                    }
+                }
+                if (!output.ready()) return;
+            } while (next(token, 0) >= 0);
+
+            long deadline = activeMicros() + 1_000_000;
+            while (output.ready() && activeMicros() < deadline && output.publishPosition() < output.written / 2)
+                SystemClock.sleep(5);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            error = reason(e);
+        } catch (RuntimeException | LinkageError e) {
+            error = reason(e);
+        } finally {
+            if (track != null) try {
+                track.release();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Could not release movie audio output", e);
+            }
+            if (token != 0) close(token);
+            endAudio(error);
+        }
+    }
+
+    private void endAudio(String error) {
+        synchronized (gate) {
+            audioReady = false;
+            audioEnded = true;
+            if (!stopped && !decoderFinished) audioFailure = error;
+            clock.continueSilently(System.nanoTime());
+            gate.notifyAll();
+        }
+        owner.post(() -> { if (!mayRequestFocus()) audioFocus.abandon(); });
+    }
+
+    private static String reason(Throwable error) {
+        return error.getMessage() == null ? error.toString() : error.getMessage();
+    }
+
+    private static void setGain(AudioTrack track, float gain) {
+        int result = track.setVolume(gain);
+        if (result != AudioTrack.SUCCESS) throw new IllegalStateException("Movie audio gain failed " + result);
+    }
+
+    private final class AudioOutput {
+        private final AudioTrack track;
+        private final long first;
+        private boolean playing;
+        private float gain;
+        private long written, lastHead, lastAdvance = activeMicros();
+
+        AudioOutput(AudioTrack track, long first) {
+            this.track = track;
+            this.first = first;
+        }
+
+        boolean ready() throws InterruptedException {
+            for (;;) {
+                boolean run;
+                synchronized (gate) {
+                    if (stopped || decoderFinished) return false;
+                    run = clock.running;
+                }
+                if (run) {
+                    // A muted track still drives the A/V clock during focus denial or loss.
+                    float nextGain = audioFocus.hasFocus() ? volume : 0f;
+                    if (gain != nextGain) {
+                        setGain(track, nextGain);
+                        gain = nextGain;
+                    }
+                    if (!playing) {
+                        track.play();
+                        playing = true;
+                        lastAdvance = activeMicros();
+                        publishPosition();
+                    }
+                    return true;
+                }
+                if (playing) {
+                    track.pause();
+                    playing = false;
+                    publishPosition();
+                }
+                if (!awaitPlayback()) return false;
+            }
+        }
+
+        long publishPosition() {
+            long head = Integer.toUnsignedLong(track.getPlaybackHeadPosition());
+            if (head > lastHead) {
+                lastHead = head;
+                lastAdvance = activeMicros();
+            }
+            synchronized (gate) {
+                clock.audioPosition(first + head * 1000000 / RATE);
+                gate.notifyAll();
+            }
+            return head;
+        }
+
+        boolean stalled() {
+            return lastHead < written / 2 && activeMicros() - lastAdvance >= 2_000_000;
+        }
+    }
+
+    static final class Clock {
+        private boolean running;
+        private long since, elapsed, position = -1, silentAt = -1;
+
+        void setRunning(boolean value, long now) {
+            if (running == value) return;
+            if (running) elapsed += now - since;
+            since = now;
+            running = value;
+        }
+
+        long activeMicros(long now) {
+            return (elapsed + (running ? now - since : 0)) / 1000;
+        }
+
+        void audioPosition(long pts) {
+            position = Math.max(position, pts);
+        }
+
+        void continueSilently(long now) {
+            position = Math.max(0, position);
+            silentAt = activeMicros(now);
+        }
+
+        long position(long now) {
+            return silentAt < 0 ? position : position + activeMicros(now) - silentAt;
+        }
+    }
+
+    private static native long open(byte[] filename, Surface surface);
+    private static native long openVideo(byte[] filename);
+    private static native boolean setSurface(long token, Surface surface);
     private static native int[] size(long token);
-    private static native long next(long token,int catchUp);
+    private static native long next(long token, int catchUp);
     private static native boolean present(long token);
-    private static native int samples(long token,short[] buffer);
+    private static native int samples(long token, short[] buffer);
     private static native void close(long token);
 }

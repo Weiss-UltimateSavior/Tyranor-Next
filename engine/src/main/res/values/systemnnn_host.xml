@@ -119,4 +119,5 @@
     <string name="engine_systemnnn_host_save_busy">这款游戏的存档正在使用。请退出另一个播放器后重试。</string>
     <string name="engine_systemnnn_host_runtime_interrupted">运行过程中出现错误。可返回后尝试从已有存档继续。</string>
     <string name="engine_systemnnn_host_startup_retry_hint">请检查游戏文件和存档目录的访问权限后重试。</string>
+    <string name="engine_systemnnn_host_audio_focus_unavailable">系统暂未授予音频焦点。返回游戏或操作时会重试。</string>
 </resources>

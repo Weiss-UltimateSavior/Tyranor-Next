@@ -119,4 +119,5 @@
     <string name="engine_systemnnn_host_save_busy">このゲームのセーブデータは使用中です。別のプレイヤーを閉じてから再試行してください。</string>
     <string name="engine_systemnnn_host_runtime_interrupted">実行中にエラーが発生しました。戻って既存のセーブから再開できます。</string>
     <string name="engine_systemnnn_host_startup_retry_hint">ゲームファイルとセーブフォルダーへのアクセスを確認して再試行してください。</string>
+    <string name="engine_systemnnn_host_audio_focus_unavailable">音声フォーカスを一時的に取得できません。ゲームに戻るか操作すると再試行します。</string>
 </resources>
