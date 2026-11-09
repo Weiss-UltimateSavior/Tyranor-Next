@@ -143,9 +143,33 @@ class SystemNnnSaveInteropTest {
         }
         rejectsSnapshot {
             putStory(it, "emberfall.sav", 0)
-            putProgress(it, 11)
+            put(it, "emberfall.read", "damaged progress primary")
             put(it, "emberfall.read.bak", "damaged progress backup")
         }
+    }
+
+    @Test fun validatesStagedProgressPairsWithoutChangingEitherGeneration() {
+        val incoming = temp.newFolder().canonicalFile
+        val story = putStory(incoming, "emberfall.sav", 0)
+        val primary = putProgress(incoming, 21)
+        val backup = incoming.resolve("emberfall.read.bak").apply { writeText("damaged backup") }
+        val files = listOf(story, primary, backup).associateBy { it.name }
+
+        fun validatesUnchanged() {
+            val before = files.mapValues { (_, file) -> file.readBytes() }
+            assertTrue(SystemNnnHost.canReplaceSaveSnapshot(files, emptySet()))
+            assertEquals(files.keys, incoming.list()!!.toSet())
+            for ((name, bytes) in before) assertArrayEquals(bytes, files.getValue(name).readBytes())
+        }
+
+        validatesUnchanged()
+        primary.writeText("damaged primary")
+        DataOutputStream(backup.outputStream()).use { output ->
+            output.writeInt(0x4e4e5231)
+            output.writeInt(1)
+            output.writeUTF("legacy progress")
+        }
+        validatesUnchanged()
     }
 
     @Test fun restoresAValidBackupOnlyStorySnapshot() {
@@ -167,7 +191,7 @@ class SystemNnnSaveInteropTest {
         val saves = game.resolve("sav").apply { check(mkdir()) }
         val store = SystemNnnSaveStore(game, saves)
         val incoming = temp.newFolder().canonicalFile
-        val progress = putProgress(incoming, 27)
+        val progress = putProgress(incoming, 27, "emberfall.read.bak")
         store.access {
             assertEquals(1, store.replace(incoming))
             assertArrayEquals(progress.readBytes(), saves.resolve(progress.name).readBytes())
@@ -379,7 +403,7 @@ class SystemNnnSaveInteropTest {
         val extensionBytes = extension.readBytes()
 
         SystemNnnHost.lockSaveDirectory(game).use {
-            val restored = checkNotNull(GameProgress.readFrom(base) { extension.inputStream() })
+            val restored = checkNotNull(GameProgress(base).read())
             assertArrayEquals(read, restored.read)
             assertArrayEquals(variables, restored.variables)
             assertArrayEquals(results, restored.results)
@@ -392,15 +416,115 @@ class SystemNnnSaveInteropTest {
             assertArrayEquals(extensionBytes, extension.readBytes())
             val archived = saves.listFiles()!!.single { it.name.startsWith("emberfall.read.corrupt-") }
             assertArrayEquals(corrupt, archived.readBytes())
-
-            // An interrupted recovery may have archived the primary before promoting the backup.
-            Files.move(base.toPath(), backup.toPath(), ATOMIC_MOVE)
-            val resumed = checkNotNull(GameProgress.readFrom(base) { extension.inputStream() })
-            assertArrayEquals(restoredText, resumed.text[0])
-            assertArrayEquals(valid, base.readBytes())
-            assertFalse(backup.exists())
-            assertArrayEquals(corrupt, archived.readBytes())
         }
+    }
+
+    @Test fun validPrimaryWinsAndSelectsItsOwnExtension() {
+        val saves = temp.newFolder()
+        val primary = putProgress(saves, 21)
+        val backup = putProgress(saves, 9, "emberfall.read.bak")
+        val old = backup.readBytes()
+        val extension = saves.resolve("emberfall.read.ext")
+        putExtension(extension, backup to 9, primary to 21)
+
+        val progress = GameProgress(primary)
+        val current = checkNotNull(progress.read())
+        assertArrayEquals(intArrayOf(21), current.read)
+        assertArrayEquals(byteArrayOf(21), current.text[0])
+        assertArrayEquals(old, backup.readBytes())
+
+        // A legacy extension backup can still contain the selected base's record.
+        putExtension(saves.resolve("emberfall.read.ext.bak"), primary to 21)
+        putExtension(extension, backup to 9)
+        val recovered = checkNotNull(progress.read())
+        assertArrayEquals(intArrayOf(21), recovered.read)
+        assertArrayEquals(byteArrayOf(21), recovered.text[0])
+    }
+
+    @Test fun healthyPrimaryReadsEvenWhenMalformedBackupCannotBeIsolated() {
+        val saves = temp.newFolder()
+        val primary = putProgress(saves, 21)
+        val backup = saves.resolve("emberfall.read.bak").apply { writeText("broken backup") }
+        val extension = saves.resolve("emberfall.read.ext")
+        putExtension(extension, primary to 21)
+        var attempted = false
+        val locked = GameProgress(primary) { from, _ ->
+            assertEquals(backup.toPath(), from)
+            attempted = true
+            throw IOException("cannot isolate backup")
+        }
+        val healthy = checkNotNull(locked.read())
+        assertTrue(attempted)
+        assertArrayEquals(intArrayOf(21), healthy.read)
+        assertArrayEquals(byteArrayOf(21), healthy.text[0])
+        assertEquals("broken backup", backup.readText())
+
+        assertArrayEquals(intArrayOf(21), checkNotNull(GameProgress(primary).read()).read)
+        assertFalse(backup.exists())
+        assertEquals("broken backup", saves.listFiles()!!.single {
+            it.name.startsWith("emberfall.read.bak.corrupt-")
+        }.readText())
+    }
+
+    @Test fun backupRecoveryCanRetryAfterEitherMoveFails() {
+        val saves = temp.newFolder()
+        val primary = saves.resolve("emberfall.read").apply { writeText("broken primary") }
+        val backup = putProgress(saves, 9, "emberfall.read.bak")
+        val backupBytes = backup.readBytes()
+        putExtension(saves.resolve("emberfall.read.ext"), backup to 9)
+
+        fun failsAt(file: File) {
+            val store = GameProgress(primary) { from, to ->
+                if (from == file.toPath()) throw IOException("interrupted recovery")
+                Files.move(from, to, ATOMIC_MOVE, REPLACE_EXISTING)
+            }
+            val failure = assertThrows(IOException::class.java) { store.read() }
+            assertFalse(failure is GameProgress.InvalidBase)
+            assertArrayEquals(backupBytes, backup.readBytes())
+        }
+
+        failsAt(primary)
+        assertEquals("broken primary", primary.readText())
+        failsAt(backup)
+        assertFalse(primary.exists())
+        val isolated = saves.listFiles()!!.single { it.name.startsWith("emberfall.read.corrupt-") }
+        assertEquals("broken primary", isolated.readText())
+
+        val restored = checkNotNull(GameProgress(primary).read())
+        assertArrayEquals(intArrayOf(9), restored.read)
+        assertArrayEquals(byteArrayOf(9), restored.text[0])
+        assertArrayEquals(backupBytes, primary.readBytes())
+        assertFalse(backup.exists())
+        assertEquals("broken primary", isolated.readText())
+    }
+
+    @Test fun failedReopenWriteKeepsCurrentBaseAndMatchingExtensionForRetry() {
+        val saves = temp.newFolder()
+        val primary = saves.resolve("emberfall.read")
+        val store = GameProgress(primary)
+        store.write(progressState(21, 21))
+        val current = primary.readBytes()
+        val backup = putProgress(saves, 9, "emberfall.read.bak")
+        val old = backup.readBytes()
+        val pending = progressState(34, 34)
+
+        val interrupted = GameProgress(primary) { from, to ->
+            if (to == primary.toPath()) throw IOException("cannot commit recovered progress")
+            Files.move(from, to, ATOMIC_MOVE, REPLACE_EXISTING)
+        }
+        assertThrows(IOException::class.java) { interrupted.write(pending) }
+        assertArrayEquals(current, primary.readBytes())
+        val previous = checkNotNull(store.read())
+        assertArrayEquals(intArrayOf(21), previous.read)
+        assertArrayEquals(byteArrayOf(21), previous.text[0])
+        assertFalse(saves.resolve("emberfall.read.new").exists())
+        val archived = saves.listFiles()!!.single { it.name.startsWith("emberfall.read.bak.previous-") }
+        assertArrayEquals(old, archived.readBytes())
+
+        store.write(pending)
+        val recovered = checkNotNull(store.read())
+        assertArrayEquals(intArrayOf(34), recovered.read)
+        assertArrayEquals(byteArrayOf(34), recovered.text[0])
     }
 
     @Test fun readsSeparateVoiceRoleAndClipFlags() {
@@ -425,7 +549,7 @@ class SystemNnnSaveInteropTest {
             output.writeInt(0)
         }
 
-        val restored = checkNotNull(GameProgress.readFrom(base) { extension.inputStream() })
+        val restored = checkNotNull(GameProgress(base).read())
         assertArrayEquals(state.read, restored.read)
         assertEquals(NativeGame.OPTIONAL_PROGRESS_WORDS, restored.optional.size)
         assertEquals(1 shl 17, restored.optional[1024])
@@ -436,18 +560,19 @@ class SystemNnnSaveInteropTest {
         val saves = temp.newFolder()
         val base = saves.resolve("emberfall.read").apply { writeText("truncated main") }
         val backup = saves.resolve("emberfall.read.bak")
-        fun readProgress() = GameProgress.readFrom(base) { error("extension read before validating the backup") }
+        val progress = GameProgress(base)
 
-        assertThrows(GameProgress.InvalidBase::class.java) { readProgress() }
+        assertThrows(GameProgress.InvalidBase::class.java) { progress.read() }
         backup.writeText("truncated backup")
-        assertThrows(GameProgress.InvalidBase::class.java) { readProgress() }
+        assertThrows(GameProgress.InvalidBase::class.java) { progress.read() }
+        assertThrows(GameProgress.InvalidBase::class.java) { progress.write(progressState(21, 21)) }
         assertEquals("truncated main", base.readText())
         assertEquals("truncated backup", backup.readText())
         assertEquals(setOf(base.name, backup.name), saves.list()!!.toSet())
 
         Files.delete(backup.toPath())
         check(backup.mkdir())
-        val access = assertThrows(IOException::class.java) { readProgress() }
+        val access = assertThrows(IOException::class.java) { progress.read() }
         assertFalse(access is GameProgress.InvalidBase)
         assertEquals("truncated main", base.readText())
         assertTrue(backup.isDirectory)
@@ -526,11 +651,29 @@ class SystemNnnSaveInteropTest {
         return root.resolve(name).apply { outputStream().use { GameSave.writePayload(it, loaded) } }
     }
 
-    private fun putProgress(root: File, read: Int): File {
-        val progress = GameProgress.State(intArrayOf(read), IntArray(NativeGame.SYSTEM_VARIABLES),
-            IntArray(NativeGame.SCRIPT_PROGRESS), null, null, null, emptyList())
-        return root.resolve("emberfall.read").apply {
-            DataOutputStream(outputStream()).use { GameProgress.encode(it, progress) }
+    private fun progressState(read: Int, text: Byte? = null): GameProgress.State =
+        GameProgress.State(intArrayOf(read), IntArray(NativeGame.SYSTEM_VARIABLES), IntArray(NativeGame.SCRIPT_PROGRESS),
+            text?.let { value -> Array(102) { if (it == 0) byteArrayOf(value) else byteArrayOf() } },
+            null, null, emptyList())
+
+    private fun putProgress(root: File, read: Int, name: String = "emberfall.read"): File {
+        return root.resolve(name).apply {
+            DataOutputStream(outputStream()).use { GameProgress.encode(it, progressState(read)) }
+        }
+    }
+
+    private fun putExtension(file: File, vararg records: Pair<File, Int>) {
+        DataOutputStream(file.outputStream()).use { output ->
+            output.writeInt(0x4e4e4532)
+            output.writeByte(records.size)
+            for ((base, value) in records) {
+                output.write(MessageDigest.getInstance("SHA-256").digest(base.readBytes()))
+                output.writeByte(1)
+                output.writeByte(value)
+                repeat(101) { output.writeByte(0) }
+                output.writeShort(0)
+                output.writeInt(0)
+            }
         }
     }
 

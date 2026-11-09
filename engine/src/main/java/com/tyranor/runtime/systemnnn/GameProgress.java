@@ -1,16 +1,13 @@
 package com.tyranor.runtime.systemnnn;
 
-import android.util.AtomicFile;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.UTFDataFormatException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -31,6 +28,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /** NNR4 stays readable by the previous player. New fields are paired with its exact contents. */
 final class GameProgress {
@@ -39,7 +38,14 @@ final class GameProgress {
     private static final int MAX_READ=100000,TEXT_FIELDS=102,OPTION_WORDS=NativeGame.OPTIONAL_PROGRESS_WORDS,FINGERPRINT_BYTES=32;
     private static final int MAX_CHART_NODES=256*1024,MAX_CHART=8+2*MAX_CHART_NODES;
     private static final long MAX_FILE=32L*1024*1024,MAX_EXTENSION=2L*1024*1024;
-    private final AtomicFile file,extension;
+    private static final Logger LOG=Logger.getLogger(GameProgress.class.getName());
+    private static final MoveFile ATOMIC_MOVE=(source,target)->
+        Files.move(source,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+    private final Path file,extension;
+    private final MoveFile move;
+
+    interface MoveFile { void move(Path source,Path target) throws IOException; }
+    private interface Encoder { void write(OutputStream output) throws IOException; }
 
     private static final class InvalidExtension extends IOException {
         InvalidExtension(String message){super(message);}
@@ -50,7 +56,7 @@ final class GameProgress {
         InvalidBase(String message,Throwable cause){super("全局进度主文件损坏，已保留原文件 · "+message,cause);}
     }
     private static final class AccessFailure extends IOException {
-        AccessFailure(String part,IOException cause){super("无法读取"+part+"进度，请恢复存储访问后重试",cause);}
+        AccessFailure(String part,Exception cause){super("无法读取"+part+"进度，请恢复存储访问后重试",cause);}
     }
 
     static final class State {
@@ -69,57 +75,69 @@ final class GameProgress {
         Committed(State state,byte[] fingerprint){this.state=state;this.fingerprint=fingerprint;}
     }
 
-    GameProgress(File path){file=new AtomicFile(path);extension=new AtomicFile(new File(path.getPath()+".ext"));}
-
-    interface ExtensionOpener { FileInputStream open() throws IOException; }
+    GameProgress(File path){this(path,ATOMIC_MOVE);}
+    GameProgress(File path,MoveFile move){file=path.toPath();extension=sibling(file,".ext");this.move=move;}
 
     State read() throws IOException {
-        return readFrom(file.getBaseFile(),extension::openRead);
-    }
-    static State readFrom(File file,ExtensionOpener opener) throws IOException {
-        Committed saved=readCommitted(file,opener,false);
+        Committed saved=readCommitted(false);
         return saved==null?null:saved.state;
     }
-    private static Committed readCommitted(File file,ExtensionOpener opener,boolean repairExtension) throws IOException {
+    private Committed readCommitted(boolean repairExtension) throws IOException {
+        Committed committed;
         try{
-            Path path=file.toPath();
-            Path legacy=sibling(path,".bak");
-            Committed primary=null,backup=null;
-            InvalidBase damaged=null;
-            try{primary=readBase(path);}catch(InvalidBase e){damaged=e;}
-            try{backup=readBase(legacy);}catch(InvalidBase e){
-                if(damaged==null)damaged=e;else damaged.addSuppressed(e);
-            }
-            if(damaged!=null){
-                if(backup==null)throw damaged;
-                Files.move(path,sibling(path,".corrupt-"+UUID.randomUUID()),StandardCopyOption.ATOMIC_MOVE);
-            }
-            // The backup stays in place until promotion, so an interrupted repair can retry.
-            if(primary==null&&backup!=null){
-                Files.move(legacy,path,StandardCopyOption.ATOMIC_MOVE);
-            }
-            Committed committed=backup!=null?backup:primary;
-            if(committed==null)return null;
-            State base=committed.state;
-            byte[] fingerprint=committed.fingerprint;
-            Path ext=sibling(path,".ext");
-            try{base=readExtension(ext,opener,base,fingerprint);}
-            catch(InvalidExtension e){
-                if(repairExtension)quarantineExtension(ext,e);
-                else android.util.Log.w("SystemNNN","Global progress extension ignored",e);
-            }
-            catch(IOException e){throw new AccessFailure("扩展",e);}
-            return new Committed(base,fingerprint);
-        }catch(InvalidBase|AccessFailure e){throw e;}
-        catch(IOException e){throw new AccessFailure("基础",e);}
+            committed=selectBase(file,sibling(file,".bak"),move);
+        }catch(InvalidBase e){throw e;}
+        catch(IOException|SecurityException e){throw new AccessFailure("基础",e);}
+        if(committed==null)return null;
+        try{
+            State state=readExtension(extension,committed,repairExtension);
+            if(state==committed.state)state=readExtension(sibling(extension,".bak"),committed,repairExtension);
+            return new Committed(state,committed.fingerprint);
+        }catch(IOException|SecurityException e){throw new AccessFailure("扩展",e);}
     }
-    // AtomicFile.openRead() promotes a legacy .bak before validating it.
-    static boolean hasReadableBase(Path path) throws IOException {
-        return readBase(path)!=null;
+
+    /** Snapshot validation shares the same preference without altering the staging directory. */
+    static boolean hasReadableBase(File primary,File backup) throws IOException {
+        return selectBase(primary==null?null:primary.toPath(),backup==null?null:backup.toPath(),null)!=null;
+    }
+    private static Committed selectBase(Path path,Path legacy,MoveFile repair) throws IOException {
+        InvalidBase damaged=null;
+        Committed primary=null;
+        try{primary=readBase(path);}catch(InvalidBase e){damaged=e;}
+        if(primary!=null){
+            if(repair!=null)quarantineBadBackup(legacy,repair);
+            return primary;
+        }
+
+        Committed backup;
+        try{backup=readBase(legacy);}
+        catch(InvalidBase e){
+            if(damaged==null)throw e;
+            damaged.addSuppressed(e);
+            throw damaged;
+        }
+        if(backup==null){
+            if(damaged!=null)throw damaged;
+            return null;
+        }
+        if(repair!=null){
+            if(damaged!=null)repair.move(path,sibling(path,".corrupt-"+UUID.randomUUID()));
+            // Keep the backup at its original path until promotion can complete.
+            repair.move(legacy,path);
+        }
+        return backup;
+    }
+    private static void quarantineBadBackup(Path backup,MoveFile repair){
+        try{
+            try{readBase(backup);}
+            catch(InvalidBase e){repair.move(backup,sibling(backup,".corrupt-"+UUID.randomUUID()));}
+        }catch(IOException|SecurityException e){
+            LOG.log(Level.WARNING,"Unable to inspect or isolate the legacy global progress backup",e);
+        }
     }
 
     private static Committed readBase(Path path) throws IOException {
-        if(!regularFile(path))return null;
+        if(path==null||!regularFile(path))return null;
         MessageDigest digest=digest();
         try(FileChannel raw=FileChannel.open(path,StandardOpenOption.READ,LinkOption.NOFOLLOW_LINKS);
             DataInputStream in=new DataInputStream(new BufferedInputStream(new DigestInputStream(Channels.newInputStream(raw),digest)))){
@@ -167,13 +185,19 @@ final class GameProgress {
             throw e;
         }
     }
-    private static boolean definitelyAbsent(Path path){
-        return Files.notExists(path)&&Files.notExists(sibling(path,".bak"));
+    private State readExtension(Path path,Committed committed,boolean repair) throws IOException {
+        try{return decodeExtension(path,committed.state,committed.fingerprint);}
+        catch(InvalidExtension e){
+            if(repair)move.move(path,sibling(path,".corrupt-"+UUID.randomUUID()));
+            LOG.log(Level.WARNING,"Malformed global progress extension ignored",e);
+            return committed.state;
+        }
     }
-    private static State readExtension(Path path,ExtensionOpener opener,State base,byte[] fingerprint) throws IOException {
-        try(FileInputStream raw=opener.open();
-            DataInputStream in=new DataInputStream(new BufferedInputStream(raw))){
-            if(raw.getChannel().size()>MAX_EXTENSION)throw new InvalidExtension("Global progress extension exceeds size limit");
+    private static State decodeExtension(Path path,State base,byte[] fingerprint) throws IOException {
+        if(!regularFile(path))return base;
+        try(FileChannel raw=FileChannel.open(path,StandardOpenOption.READ,LinkOption.NOFOLLOW_LINKS);
+            DataInputStream in=new DataInputStream(new BufferedInputStream(Channels.newInputStream(raw)))){
+            if(raw.size()>MAX_EXTENSION)throw new InvalidExtension("Global progress extension exceeds size limit");
             int version=in.readInt();
             if(version!=NNE1&&version!=NNE2&&version!=NNE3)throw new InvalidExtension("Invalid global progress extension version");
             int count=in.readUnsignedByte();
@@ -193,15 +217,7 @@ final class GameProgress {
             return result;
         }catch(EOFException e){
             throw new InvalidExtension("Truncated global progress extension",e);
-        }catch(FileNotFoundException e){
-            if(!definitelyAbsent(path))throw e;
-            return base;
         }
-    }
-    private static void quarantineExtension(Path damaged,InvalidExtension problem) throws IOException {
-        Path isolated=sibling(damaged,".corrupt-"+UUID.randomUUID());
-        Files.move(damaged,isolated,StandardCopyOption.ATOMIC_MOVE);
-        android.util.Log.w("SystemNNN","Isolated malformed global progress extension: "+isolated.getFileName(),problem);
     }
 
     static State decode(DataInputStream in) throws IOException {
@@ -220,7 +236,7 @@ final class GameProgress {
     }
 
     void write(State state) throws IOException {
-        Committed previous=readCommitted(file.getBaseFile(),extension::openRead,true);
+        Committed previous=readCommitted(true);
         if(previous!=null&&sameBase(state,previous.state)){
             if(!Arrays.deepEquals(state.text,previous.state.text)||!Arrays.equals(state.optional,previous.state.optional)||
                 !Arrays.equals(state.chart,previous.state.chart))
@@ -229,23 +245,47 @@ final class GameProgress {
         }
         // Publish both extension generations before committing the changed NNR4 file.
         // An interrupted commit still finds the previous generation using the old NNR4 fingerprint.
-        FileOutputStream raw=null;
-        try{
-            MessageDigest digest=digest();
-            raw=file.startWrite();
+        MessageDigest digest=digest();
+        Path pending=stage(file,MAX_FILE,raw->{
             DataOutputStream out=new DataOutputStream(new BufferedOutputStream(new DigestOutputStream(raw,digest)));
             encode(out,state);
             out.flush();
-            if(raw.getChannel().size()>MAX_FILE)throw new IOException("Global progress exceeds size limit");
-            raw.getFD().sync();
+        });
+        try{
             writeExtension(state,digest.digest(),previous);
-            file.finishWrite(raw);
-            raw=null;
-            GameSavePaths.verifyCommitted(file.getBaseFile());
+            retireLegacyBackup(file);
+            move.move(pending,file);
         }catch(IOException|RuntimeException e){
-            if(raw!=null)file.failWrite(raw);
+            discardPending(pending,e);
             throw e;
         }
+    }
+
+    // AtomicFile.startWrite() may promote a legacy .bak before writing. Stage separately
+    // so a failed write cannot replace the selected generation with that older backup.
+    private static Path stage(Path target,long maximum,Encoder encoder) throws IOException {
+        Path pending=sibling(target,".new");
+        regularFile(pending);
+        try{
+            try(FileChannel raw=FileChannel.open(pending,StandardOpenOption.WRITE,StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,LinkOption.NOFOLLOW_LINKS)){
+                encoder.write(Channels.newOutputStream(raw));
+                if(raw.size()>maximum)throw new IOException("Global progress exceeds size limit: "+target.getFileName());
+                raw.force(true);
+            }
+            return pending;
+        }catch(IOException|RuntimeException e){
+            discardPending(pending,e);
+            throw e;
+        }
+    }
+    private static void discardPending(Path pending,Exception failure){
+        try{Files.deleteIfExists(pending);}
+        catch(IOException|SecurityException e){failure.addSuppressed(e);}
+    }
+    private void retireLegacyBackup(Path target) throws IOException {
+        Path backup=sibling(target,".bak");
+        if(regularFile(backup))move.move(backup,sibling(backup,".previous-"+UUID.randomUUID()));
     }
 
     static void encode(DataOutputStream out,State state) throws IOException {
@@ -270,9 +310,7 @@ final class GameProgress {
         catch(NoSuchAlgorithmException e){throw new AssertionError(e);}
     }
     private void writeExtension(State state,byte[] fingerprint,Committed previous) throws IOException {
-        FileOutputStream raw=null;
-        try{
-            raw=extension.startWrite();
+        Path pending=stage(extension,MAX_EXTENSION,raw->{
             DataOutputStream out=new DataOutputStream(new BufferedOutputStream(raw));
             boolean preserve=previous!=null&&previous.state.text!=null;
             out.writeInt(hasVoiceRoles(state)||preserve&&hasVoiceRoles(previous.state)?NNE3:NNE2);
@@ -280,12 +318,12 @@ final class GameProgress {
             writeExtensionRecord(out,fingerprint,state);
             if(preserve)writeExtensionRecord(out,previous.fingerprint,previous.state);
             out.flush();
-            raw.getFD().sync();
-            extension.finishWrite(raw);
-            raw=null;
-            GameSavePaths.verifyCommitted(extension.getBaseFile());
+        });
+        try{
+            move.move(pending,extension);
+            retireLegacyBackup(extension);
         }catch(IOException|RuntimeException e){
-            if(raw!=null)extension.failWrite(raw);
+            discardPending(pending,e);
             throw e;
         }
     }

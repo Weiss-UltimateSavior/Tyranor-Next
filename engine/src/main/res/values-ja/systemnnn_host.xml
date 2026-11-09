@@ -95,7 +95,6 @@
     <string name="engine_systemnnn_host_load_failed">ロードに失敗しました · %1$s</string>
     <string name="engine_systemnnn_host_save_failed">セーブに失敗しました · %1$s</string>
     <string name="engine_systemnnn_host_replay_interrupted">回想が中断しました · %1$s</string>
-    <string name="engine_systemnnn_host_global_progress_recovered">全体の進行状況を復元しましたが、保存できませんでした · %1$s</string>
     <string name="engine_systemnnn_host_global_progress_failed">全体の進行状況を保存できません · %1$s</string>
     <string name="engine_systemnnn_host_copy_game">ゲームをコピー</string>
     <string name="engine_systemnnn_host_copy_offer">選択したフォルダーに直接アクセスできません。ゲームをアプリの領域にコピーすると起動できます。セーブはコピー先の sav フォルダーに保存されます。</string>

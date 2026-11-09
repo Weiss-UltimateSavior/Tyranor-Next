@@ -1896,6 +1896,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         boolean startOver=owner!=null&&owner.initialized();
         String message=startOver?text+"\n\n"+text(R.string.engine_systemnnn_host_start_over_warning):text;
         new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_interrupted)).setMessage(message)
+            .setCancelable(startOver)
             .setNegativeButton(text(R.string.engine_systemnnn_host_exit_to_tyn),dialogClick((d,w) -> finish()))
             .setPositiveButton(startOver?text(R.string.engine_systemnnn_host_start_over):text(R.string.engine_systemnnn_host_retry_load),
                 dialogClick((d,w) -> {if(owner!=null&&owner==runner)owner.restart(startOver);})).show();

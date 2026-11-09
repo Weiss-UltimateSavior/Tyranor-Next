@@ -131,11 +131,12 @@ public final class SystemNnnHost {
             hasStory=true;
         }
         String progress=GameSavePaths.PREFIX+GameSavePaths.READ;
-        File base=incoming.getOrDefault(progress+".bak",incoming.get(progress));
-        if(base!=null&&!GameProgress.hasReadableBase(base.toPath()))return false;
+        File primary=incoming.get(progress),backup=incoming.get(progress+".bak");
+        boolean hasProgress=primary!=null||backup!=null;
+        if(hasProgress&&!GameProgress.hasReadableBase(primary,backup))return false;
         if(hasStory)return true;
         String chart=GameSavePaths.PREFIX+GameSavePaths.CHART+"/";
-        return base!=null&&existing.stream().noneMatch(name->storySaveSlot(name)!=null||name.startsWith(chart));
+        return hasProgress&&existing.stream().noneMatch(name->storySaveSlot(name)!=null||name.startsWith(chart));
     }
 
     private static Integer storySaveSlot(String name){

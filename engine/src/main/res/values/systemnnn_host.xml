@@ -95,7 +95,6 @@
     <string name="engine_systemnnn_host_load_failed">读档失败 · %1$s</string>
     <string name="engine_systemnnn_host_save_failed">保存失败 · %1$s</string>
     <string name="engine_systemnnn_host_replay_interrupted">回想中断 · %1$s</string>
-    <string name="engine_systemnnn_host_global_progress_recovered">已恢复上次的全局进度，写入仍失败 · %1$s</string>
     <string name="engine_systemnnn_host_global_progress_failed">全局进度保存失败 · %1$s</string>
     <string name="engine_systemnnn_host_copy_game">复制游戏</string>
     <string name="engine_systemnnn_host_copy_offer">系统无法直接访问所选目录。可复制游戏到应用目录后启动，存档会保存在副本的 sav 目录。</string>

@@ -95,7 +95,6 @@
     <string name="engine_systemnnn_host_load_failed">Cannot load save · %1$s</string>
     <string name="engine_systemnnn_host_save_failed">Cannot save game · %1$s</string>
     <string name="engine_systemnnn_host_replay_interrupted">Scene replay interrupted · %1$s</string>
-    <string name="engine_systemnnn_host_global_progress_recovered">Restored global progress, but it could not be saved · %1$s</string>
     <string name="engine_systemnnn_host_global_progress_failed">Cannot save global progress · %1$s</string>
     <string name="engine_systemnnn_host_copy_game">Copy game</string>
     <string name="engine_systemnnn_host_copy_offer">Android cannot access this folder directly. Copy the game to app storage to play. Saves will be stored in the copy\'s sav folder.</string>
