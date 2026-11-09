@@ -182,7 +182,7 @@ _Avoid_: 设置优先级、全局设置
 _Avoid_: 设置合并、覆盖层
 
 **引擎设置种类（EngineSettingsKind）**:
-引擎设置页的分类入口（KRKR / ONS / ARTEMIS / RPG_MAKER / TYRANO / RENPY / RUFFLE / SIGLUS / FRAMEBUFFER / FVP / XSYS35 / XSYS4 / ETHORNELL / CMVS / PPSSPP / WINLATOR），各自提供该引擎族专属参数项。
+引擎全局设置的分类（KRKR / ONS / ARTEMIS / RPG_MAKER / TYRANO / RENPY / RUFFLE / SIGLUS / FRAMEBUFFER / FVP / XSYS35 / XSYS4 / ETHORNELL / CMVS / PPSSPP / WINLATOR），各自提供该引擎族专属参数项；入口为引擎页条目弹窗底部的「全局引擎设置」长按钮，不再有独立的引擎设置入口页。
 _Avoid_: 引擎设置 Tab
 
 **运行模式（Winlator Run Mode）**:

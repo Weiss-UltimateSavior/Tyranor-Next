@@ -264,6 +264,7 @@
     <string name="engine_settings_save_content_description">Save settings</string>
     <string name="engine_settings_saved">Engine settings saved</string>
     <string name="engine_settings_per_game_saved">Saved</string>
+    <string name="engine_global_settings">Global engine settings</string>
     <string name="engine_settings_krkr_title">KRKR engine settings</string>
     <string name="engine_settings_ons_title">ONS engine settings</string>
     <string name="engine_settings_artemis_title">Artemis engine settings</string>

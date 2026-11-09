@@ -339,14 +339,6 @@ fun SettingsScreen(
                     }
                 }
                 item {
-                    // 工具入口：引擎设置；输入与手柄、解包 / 封包入口已迁至侧边栏「妙妙工具」面板
-                    SettingsEntryCard(
-                        title = stringResource(R.string.settings_engine_settings),
-                        iconRes = R.drawable.ic_engine_manage,
-                        onClick = { startActivityWithPageTransition(ctx, EngineSettingsMenuActivity.createIntent(ctx)) },
-                    )
-                }
-                item {
                     SettingsEntryCard(
                         title = stringResource(R.string.settings_app_title),
                         iconRes = R.drawable.ic_settings_app,

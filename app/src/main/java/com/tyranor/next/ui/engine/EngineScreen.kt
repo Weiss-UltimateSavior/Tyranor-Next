@@ -90,12 +90,16 @@ import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.AppNavItem
 import com.tyranor.next.ui.common.AppTopBar
+import com.tyranor.next.ui.common.NoRippleButton
 import com.tyranor.next.ui.common.ByteFormats
 import com.tyranor.next.ui.common.SlidingTabRow
 import com.tyranor.next.ui.common.glassNavBottomInset
 import com.tyranor.next.ui.common.coachAnchor
 import com.tyranor.next.ui.common.isWideScreen
+import com.tyranor.next.ui.game.startActivityWithPageTransition
+import com.tyranor.next.ui.settings.EngineSettingsActivity
 import com.tyranor.next.ui.settings.artVersionOptions
+import com.tyranor.next.ui.settings.engineSettingsKindOf
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -323,8 +327,10 @@ fun EngineScreen(
                     }
                 }
             },
-            // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
-            confirmButton = {},
+            // 底部主操作：进入该引擎族的全局引擎设置页（长按钮）
+            confirmButton = {
+                EngineGlobalSettingsButton(engine = dialogEngine) { moduleDialogEngine = null }
+            },
         )
     }
 
@@ -368,10 +374,33 @@ fun EngineScreen(
                     }
                 }
             },
-            // 不放取消按钮：点击条目或遮罩即关闭（confirmButton 槽位必填，传空）
-            confirmButton = {},
+            // 底部主操作：进入该引擎族的全局引擎设置页（长按钮）
+            confirmButton = {
+                EngineGlobalSettingsButton(engine = dialogEngine) { emulatorDialogEngine = null }
+            },
         )
     }
+}
+
+/**
+ * 引擎条目弹窗底部的长按钮：直接进入该引擎族的全局引擎设置页。
+ * 无全局设置入口的引擎（Switch / 第三方运行时模块 / 安卓游戏 / 未知）不渲染。
+ */
+@Composable
+private fun EngineGlobalSettingsButton(
+    engine: EngineType,
+    onNavigate: () -> Unit,
+) {
+    val context = LocalContext.current
+    val kind = engineSettingsKindOf(engine) ?: return
+    NoRippleButton(
+        text = stringResource(R.string.engine_global_settings),
+        modifier = Modifier.fillMaxWidth(),
+        onClick = {
+            onNavigate()
+            startActivityWithPageTransition(context, EngineSettingsActivity.createIntent(context, kind))
+        },
+    )
 }
 
 /** 本机存储概览：内部存储 + 已添加游戏目录的总占用比例，附剩余空间与库数量。 */

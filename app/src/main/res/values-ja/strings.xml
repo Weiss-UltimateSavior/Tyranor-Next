@@ -264,6 +264,7 @@
     <string name="engine_settings_save_content_description">設定を保存</string>
     <string name="engine_settings_saved">エンジン設定を保存しました</string>
     <string name="engine_settings_per_game_saved">保存しました</string>
+    <string name="engine_global_settings">エンジン全体設定</string>
     <string name="engine_settings_krkr_title">KRKR エンジン設定</string>
     <string name="engine_settings_ons_title">ONS エンジン設定</string>
     <string name="engine_settings_artemis_title">Artemis エンジン設定</string>
