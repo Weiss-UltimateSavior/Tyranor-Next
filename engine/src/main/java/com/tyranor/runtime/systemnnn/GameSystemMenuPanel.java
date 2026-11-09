@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.view.MotionEvent;
@@ -56,7 +58,7 @@ final class GameSystemMenuPanel extends GameUiPanel {
             Bitmap image=sprite(spec.image);
             boolean enabled=config.number(key+"EnableFlag",1)!=0&&modeEnabled.test(mode)&&hasHit(image,spec);
             if(!hasFrame(image,spec.states[0])&&(enabled||!hasFrame(image,spec.states[3])))continue;
-            String label=config.text(key+"Name","菜单项 "+slot);
+            String label=config.text(key+"Name",hostText(R.string.engine_systemnnn_ctl_menu_item, slot));
             GameButton button=animatedButton(spec,image,label,()->sound(spec.sound,spec.voice),
                 ()->open.accept(mode),x,y,previous.width,previous.height);
             button.setEnabled(enabled);
@@ -102,8 +104,8 @@ final class GameSystemMenuPanel extends GameUiPanel {
         if(printMenu||cfg.number("backScriptFlag",0)==0)
             warning.picture(cfg.value("filenameDialog","ta_dialog_quit"),x,y,
                 cfg.number("dialogSizeX",618),cfg.number("dialogSizeY",143));
-        View ok=warning.buttonAt(cfg,"dialogOk","dialogOk","确认返回标题",confirm,x,y,125,54,192,72);
-        cancelWarning=warning.buttonAt(cfg,"dialogCancel","dialogCancel","不结束",cancel,x,y,323,54,192,72);
+        View ok=warning.buttonAt(cfg,"dialogOk","dialogOk",hostText(R.string.engine_systemnnn_ctl_menu_confirm_title),confirm,x,y,125,54,192,72);
+        cancelWarning=warning.buttonAt(cfg,"dialogCancel","dialogCancel",hostText(R.string.engine_systemnnn_ctl_menu_keep_playing),cancel,x,y,323,54,192,72);
         if(!printMenu){ok.setAlpha(0f);cancelWarning.setAlpha(0f);}
 
         for(int i=0;i<getChildCount();i++){

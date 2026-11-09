@@ -160,7 +160,7 @@ final class GameRunner {
         void notice(String message);
         void resourcesEvicted();
         void progressCorrupt();
-        void error(String message);
+        void error(Throwable reason);
     }
     private final HandlerThread worker=new HandlerThread("SystemNNN-Game");
     private final AtomicLong pendingScreenLayer=new AtomicLong();
@@ -691,13 +691,13 @@ final class GameRunner {
                 if(action==TitleMenu.Action.CONTINUE)slot=SaveSlots.AUTO;
                 else if(action==TitleMenu.Action.LAST_LOAD){
                     slot=slots.lastSelectedSlot();
-                    if(slot==null)throw new FileNotFoundException("上次的存档无法读取");
+                    if(slot==null)throw new FileNotFoundException("Last selected save is unavailable");
                 }
                 open(slot==null?null:slots.file(slot),false);
             }
             catch(Exception|LinkageError e){
                 schedule();
-                ui.notice(text(R.string.engine_systemnnn_host_enter_failed,e.getMessage()));
+                noticeFailure(R.string.engine_systemnnn_host_enter_failed,e);
                 onFailure.run();
             }
         }))onFailure.run();
@@ -785,7 +785,7 @@ final class GameRunner {
                 Log.i("SystemNNN","PC save imported at "+current.script+" word="+meta[1]);
             }catch(IOException|RuntimeException e){
                 Log.w("SystemNNN","Unable to import PC save",e);
-                ui.notice(text(R.string.engine_systemnnn_host_pc_load_failed,e.getMessage()));schedule();
+                noticeFailure(R.string.engine_systemnnn_host_pc_load_failed,e);schedule();
             }
             finally{done.accept(success);}
         });
@@ -796,14 +796,14 @@ final class GameRunner {
             try{
                 if(handle==0||failed||onTitle||replaying||moviePlaying)throw new IOException(text(R.string.engine_systemnnn_host_cannot_export_pc));
                 data=NativeGame.exportPcSave(handle);
-            }catch(IOException|RuntimeException e){ui.notice(text(R.string.engine_systemnnn_host_pc_export_failed,e.getMessage()));}
+            }catch(IOException|RuntimeException e){noticeFailure(R.string.engine_systemnnn_host_pc_export_failed,e);}
             ready.accept(data);
         });
     }
     void writePcExport(java.util.concurrent.Callable<Void> write,Runnable done){
         SAVE_FILES.execute(()->{
             try{write.call();ui.notice(text(R.string.engine_systemnnn_host_pc_save_exported));}
-            catch(Exception e){ui.notice(text(R.string.engine_systemnnn_host_pc_export_failed,e.getMessage()));}
+            catch(Exception e){noticeFailure(R.string.engine_systemnnn_host_pc_export_failed,e);}
             finally{done.run();}
         });
     }
@@ -1031,7 +1031,7 @@ final class GameRunner {
                 done.accept(finishModal(modal.returnMode));
             }catch(RuntimeException e){
                 Log.w("SystemNNN","Script modal completion failed",e);
-                ui.notice(text(R.string.engine_systemnnn_host_submit_failed,e.getMessage()));done.accept(rejectedModal());
+                noticeFailure(R.string.engine_systemnnn_host_submit_failed,e);done.accept(rejectedModal());
             }
         });
     }
@@ -1061,7 +1061,7 @@ final class GameRunner {
                 done.accept(new ModalUpdate(result,meta[0],0,next));
             }catch(RuntimeException e){
                 Log.w("SystemNNN","Script modal action failed",e);
-                ui.notice(text(R.string.engine_systemnnn_host_action_failed,e.getMessage()));done.accept(rejectedModal());
+                noticeFailure(R.string.engine_systemnnn_host_action_failed,e);done.accept(rejectedModal());
             }
         });
     }
@@ -1146,7 +1146,7 @@ final class GameRunner {
                 if (galleryPage==null || galleryPage.screen!=screen) enterGalleryScreen(next);
                 galleryRequest=request; publishGallery(next);
             } catch (IOException | RuntimeException e) {
-                Log.w("SystemNNN","Gallery unavailable",e);ui.notice(text(R.string.engine_systemnnn_host_gallery_failed,e.getMessage()));
+                noticeFailure(R.string.engine_systemnnn_host_gallery_failed,e);
             }
         });
     }
@@ -1213,7 +1213,7 @@ final class GameRunner {
             tasks.postDelayed(()->advanceStartup(exit),wait);
             return;
         }
-        if(failure!=null){Log.w("SystemNNN","Movie playback: "+failure);ui.notice(text(R.string.engine_systemnnn_host_movie_failed,failure));}
+        if(failure!=null){Log.w("SystemNNN","Movie playback: "+failure);ui.notice(text(R.string.engine_systemnnn_host_movie_failed));}
         if(onTitle){
             if(galleryPage!=null)enterGalleryScreen(galleryPage);
         }else try{
@@ -1264,7 +1264,7 @@ final class GameRunner {
                 galleryPage.config.number("bgmLoopFlag",0)!=0?0:1,galleryVolume);
             gallerySong=index; galleryMusicPlaying=true; galleryMusicPaused=false;
             refreshMusic(index/galleryPage.rows);
-        } catch (RuntimeException e) { ui.notice(text(R.string.engine_systemnnn_host_music_failed,e.getMessage())); }
+        } catch (RuntimeException e) { noticeFailure(R.string.engine_systemnnn_host_music_failed,e); }
     }
     void moveGallerySong(int direction) {
         tasks.post(() -> {
@@ -1312,7 +1312,7 @@ final class GameRunner {
                 NativeGame.tick(candidate,0,0,0,false,0,false,state);
             } catch (RuntimeException e) {
                 if (candidate!=0) NativeGame.close(candidate);
-                ui.notice(text(R.string.engine_systemnnn_host_replay_failed,e.getMessage())); return;
+                noticeFailure(R.string.engine_systemnnn_host_replay_failed,e); return;
             }
             tasks.removeCallbacks(ticker); stopSound(); NativeGame.close(handle);
             offerScreenLayer(-1);
@@ -1401,12 +1401,16 @@ final class GameRunner {
         try{
             int[] point=handle!=0&&menuOpen&&!onTitle&&!replaying&&!failed&&history!=null
                 ?NativeGame.backlogJump(handle,id):null;
-            if(point==null||point.length!=5)throw new IOException(text(R.string.engine_systemnnn_host_backlog_expired));
+            if(point==null||point.length!=5){
+                ui.notice(text(R.string.engine_systemnnn_host_backlog_expired));
+                done.accept(false);
+                return;
+            }
             prefix=history.rewind(point[0],point[1],point[3],point[4]);
             recordReplayBaseline(prefix,handle,point[2]);
             if(!NativeGame.restoreBacklogJump(handle,id,point[0],meta))throw new IOException(text(R.string.engine_systemnnn_host_backlog_restore_failed));
         }catch(IOException|RuntimeException e){
-            ui.notice(e.getMessage());
+            noticeFailure(R.string.engine_systemnnn_host_backlog_restore_failed,e);
             done.accept(false);
             return;
         }
@@ -1433,7 +1437,7 @@ final class GameRunner {
         }catch(FileNotFoundException e){
             if(!quick)ui.notice(text(R.string.engine_systemnnn_host_slot_missing));
         }catch(Exception e){
-            ui.notice(text(R.string.engine_systemnnn_host_load_failed,e.getMessage()));
+            noticeFailure(R.string.engine_systemnnn_host_load_failed,e);
         }finally{
             if(!success){
                 if(done==null&&menuOpen)menu(false);else schedule();
@@ -1544,7 +1548,12 @@ final class GameRunner {
     private void saveFailed(Throwable error){
         if(error instanceof CompletionException&&error.getCause()!=null)error=error.getCause();
         Log.w("SystemNNN","Unable to save progress",error);
-        if(!closing)ui.notice(text(R.string.engine_systemnnn_host_save_failed,error.getMessage()));
+        if(!closing)ui.notice(text(R.string.engine_systemnnn_host_save_failed));
+    }
+    private void noticeFailure(int resource,Throwable failure){
+        String message=text(resource);
+        Log.w("SystemNNN",message,failure);
+        ui.notice(message);
     }
     private String text(int resource,Object... arguments){return context.getString(resource,arguments);}
     private <T> T saveResult(Future<T> work) throws IOException {
@@ -1638,7 +1647,7 @@ final class GameRunner {
             if(meta[0]==NativeGame.MOVIE){startStoryMovie();return;}
             syncModes();updateUi();
         }catch(Exception e){
-            if(replaying){ui.notice(text(R.string.engine_systemnnn_host_replay_interrupted,e.getMessage()));finishReplay();}
+            if(replaying){noticeFailure(R.string.engine_systemnnn_host_replay_interrupted,e);finishReplay();}
             else broken(e);
         }
     }
@@ -1919,7 +1928,7 @@ final class GameRunner {
             catch(IOException|RuntimeException e){
                 saved.completeExceptionally(new ProgressWriteFailure(state,e));
                 Log.w("SystemNNN","Global progress save failed",e);
-                if(!closing)ui.notice(text(R.string.engine_systemnnn_host_global_progress_failed,e.getMessage()));
+                if(!closing)ui.notice(text(R.string.engine_systemnnn_host_global_progress_failed));
                 return;
             }
             if(pending!=null&&pending.isCompletedExceptionally())PROGRESS_HANDOFFS.remove(readFile,pending);
@@ -1936,7 +1945,7 @@ final class GameRunner {
         tasks.removeCallbacks(ticker);failed=true;stopSound();
         Log.e("SystemNNN","Game session failed",reason);
         if(!initialized&&reason instanceof GameProgress.InvalidBase)ui.progressCorrupt();
-        else ui.error(reason.getMessage()!=null?reason.getMessage():reason.toString());
+        else ui.error(reason);
     }
     private void releaseSaveAccess(){
         GameSavePaths.Access access=saveAccess;

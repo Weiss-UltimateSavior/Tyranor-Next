@@ -2,6 +2,7 @@ package com.tyranor.runtime.systemnnn;
 
 import android.util.AtomicFile;
 import java.io.*;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -256,7 +257,7 @@ final class GameSave {
         }
         catch (IOException | RuntimeException e) { if(raw!=null)atomic.failWrite(raw); throw e; }
     }
-    static void writePayload(OutputStream raw,Loaded data) throws IOException {
+    static void writePayload(FileOutputStream raw,Loaded data) throws IOException {
         data.save.writeTo(raw,data.metadata,data.content);
         if(!writeSnapshot(raw,data.nativeSnapshot)&&data.save.requiresSnapshot())
             throw new IOException("无法写入完整的原生快照");
@@ -291,54 +292,74 @@ final class GameSave {
         out.flush();
         DataOutputStream footer=new DataOutputStream(raw); footer.writeInt((int)crc.getValue()); footer.flush();
     }
-    private static boolean writeSnapshot(OutputStream raw,byte[] snapshot) throws IOException {
+    private static boolean writeSnapshot(FileOutputStream raw,byte[] snapshot) throws IOException {
         if(snapshot==null||snapshot.length==0||snapshot.length>MAX_SNAPSHOT)return false;
-        ByteArrayOutputStream compressed=new ByteArrayOutputStream();
-        Deflater deflater=new Deflater(Deflater.BEST_SPEED);
-        try(DeflaterOutputStream zip=new DeflaterOutputStream(compressed,deflater,8192)){zip.write(snapshot);}
-        finally{deflater.end();}
-        if(compressed.size()>MAX_SNAPSHOT)return false;
+        FileChannel file=raw.getChannel();
+        long start=file.position();
         CRC32 crc=new CRC32();crc.update(snapshot);
         DataOutputStream out=new DataOutputStream(raw);
-        out.writeInt(SNAPSHOT_TAG);out.writeInt(snapshot.length);out.writeInt(compressed.size());out.writeInt((int)crc.getValue());
-        compressed.writeTo(out);out.flush();
+        out.writeInt(SNAPSHOT_TAG);out.writeInt(snapshot.length);
+        long sizeField=file.position();
+        out.writeInt(0);out.writeInt((int)crc.getValue());
+        long payloadStart=file.position();
+        Deflater deflater=new Deflater(Deflater.BEST_SPEED);
+        try{
+            DeflaterOutputStream zip=new DeflaterOutputStream(raw,deflater,8192);
+            zip.write(snapshot);
+            zip.finish();
+        }finally{deflater.end();}
+        long end=file.position(),packedSize=end-payloadStart;
+        // The AtomicFile staging stream is seekable. Keep the SNP1 header
+        // and size limit without retaining a second full snapshot in memory.
+        if(packedSize>MAX_SNAPSHOT){
+            file.truncate(start);
+            return false;
+        }
+        file.position(sizeField);
+        out.writeInt((int)packedSize);
+        file.position(end);
         return true;
     }
     private static byte[] readSnapshot(DataInputStream in){
         try{
             int size=in.readInt(),compressedSize=in.readInt(),checksum=in.readInt();
             if(size<=0||size>MAX_SNAPSHOT||compressedSize<=0||compressedSize>MAX_SNAPSHOT)return null;
-            byte[] compressed=new byte[compressedSize];in.readFully(compressed);
-            if(in.read()!=-1)return null;
+            PackedSnapshotInput compressed=new PackedSnapshotInput(in,compressedSize);
             byte[] snapshot=new byte[size];
-            try(DataInputStream zip=new DataInputStream(new InflaterInputStream(new ByteArrayInputStream(compressed)))){
-                zip.readFully(snapshot);if(zip.read()!=-1)return null;
+            try(DataInputStream zip=new DataInputStream(new InflaterInputStream(compressed))){
+                zip.readFully(snapshot);
+                if(zip.read()!=-1||compressed.remaining!=0||in.read()!=-1)return null;
             }
             CRC32 crc=new CRC32();crc.update(snapshot);
             return (int)crc.getValue()==checksum?snapshot:null;
         }catch(IOException e){return null;}
     }
+    private static final class PackedSnapshotInput extends InputStream {
+        private final DataInputStream input;
+        int remaining;
+
+        PackedSnapshotInput(DataInputStream input,int size){
+            this.input=input;remaining=size;
+        }
+        @Override public int read() throws IOException {
+            if(remaining==0)return -1;
+            int value=input.readUnsignedByte();
+            remaining--;
+            return value;
+        }
+        @Override public int read(byte[] buffer,int offset,int length) throws IOException {
+            if(length==0)return 0;
+            if(remaining==0)return -1;
+            int count=Math.min(remaining,length);
+            input.readFully(buffer,offset,count);
+            remaining-=count;
+            return count;
+        }
+    }
     private static boolean validateSnapshot(DataInputStream in) throws IOException {
         int size=in.readInt(),packedSize=in.readInt(),checksum=in.readInt();
         if(size<=NATIVE_SNAPSHOT_HEADER||size>MAX_SNAPSHOT||packedSize<=0||packedSize>MAX_SNAPSHOT)return false;
-        class PackedInput extends InputStream {
-            int remaining=packedSize;
-            @Override public int read() throws IOException {
-                if(remaining==0)return -1;
-                int value=in.readUnsignedByte();
-                remaining--;
-                return value;
-            }
-            @Override public int read(byte[] buffer,int offset,int length) throws IOException {
-                if(length==0)return 0;
-                if(remaining==0)return -1;
-                int count=Math.min(remaining,length);
-                in.readFully(buffer,offset,count);
-                remaining-=count;
-                return count;
-            }
-        }
-        PackedInput packed=new PackedInput();
+        PackedSnapshotInput packed=new PackedSnapshotInput(in,packedSize);
         CRC32 crc=new CRC32();
         byte[] buffer=new byte[8192];
         try(DataInputStream zip=new DataInputStream(new CheckedInputStream(new InflaterInputStream(packed),crc))){

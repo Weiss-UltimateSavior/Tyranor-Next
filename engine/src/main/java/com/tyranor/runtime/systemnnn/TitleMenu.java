@@ -2,6 +2,7 @@ package com.tyranor.runtime.systemnnn;
 
 import android.graphics.Bitmap;
 import android.util.Log;
+import com.core.engine.R;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -12,10 +13,12 @@ import java.util.Map;
 /** Title assets are decoded from the selected game. Button source rectangles use the untrimmed canvas. */
 final class TitleMenu {
     enum Action {
-        START("新游戏"), LOAD("读取存档"), SETTINGS("设置"), EXTRAS("鉴赏"), EXIT("退出"),
-        CONTINUE("继续游戏"), LAST_LOAD("读取上次存档"), WEBSITE("官方网站"), MODE("扩展");
-        final String label;
-        Action(String label) { this.label=label; }
+        START(R.string.engine_systemnnn_ctl_title_new), LOAD(R.string.engine_systemnnn_host_load_save),
+        SETTINGS(R.string.engine_systemnnn_host_settings), EXTRAS(R.string.engine_systemnnn_ctl_title_gallery),
+        EXIT(R.string.engine_systemnnn_host_exit_game), CONTINUE(R.string.engine_systemnnn_host_continue_game),
+        LAST_LOAD(R.string.engine_systemnnn_ctl_title_last_load), WEBSITE(R.string.engine_systemnnn_ctl_title_website), MODE(R.string.engine_systemnnn_ctl_title_extension);
+        final int labelRes;
+        Action(int labelRes) { this.labelRes=labelRes; }
     }
     static final class Item {
         final Action action;
@@ -25,7 +28,7 @@ final class TitleMenu {
         Bitmap image;
         GameButton.Spec spec;
         Item(Action action,int x,int y,int width,int height,boolean enabled) {
-            this(action,x,y,width,height,enabled,0,action.label);
+            this(action,x,y,width,height,enabled,0,null);
         }
         Item(Action action,int x,int y,int width,int height,boolean enabled,int mode,String label){
             this.action=action;this.x=x;this.y=y;this.width=width;this.height=height;this.enabled=enabled;
@@ -63,7 +66,7 @@ final class TitleMenu {
             ButtonArt.Setup setup=button.setup;
             boolean enabled=button.enabled&&(action!=Action.EXTRAS||extras);
             Item item=new Item(action,button.x,button.y,setup.width,setup.height,enabled,
-                button.mode,action==Action.MODE?button.label:action.label);
+                button.mode,action==Action.MODE?button.label:null);
             if(skinned){
                 item.spec=new GameButton.Spec(setup);
                 loadArtwork(handle,item,artwork);

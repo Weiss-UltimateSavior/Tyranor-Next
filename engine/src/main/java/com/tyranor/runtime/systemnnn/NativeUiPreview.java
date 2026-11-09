@@ -8,7 +8,8 @@ final class NativeUiPreview {
     static native boolean chartNeedsComposite(long handle,int center);
     static native boolean chartComposite(long handle,int center,Bitmap base,Bitmap centerPlane,Bitmap content,Bitmap output);
     static native long[] chartTextureIds(long handle,int tiles,int center);
-    static native int[] chartTexture(long handle,int slot,boolean transparent);
+    // A texture over the remaining budget supplies only its logical width and height.
+    static native int[] chartTextureWithinBudget(long handle,int slot,boolean transparent,int pixelBudget);
     static {System.loadLibrary("systemnnn");}
     static native long create(byte[] root,long runtime,long assetPeer);
     static native boolean reset(long handle,byte[] script,int mode,byte[] variable,int page,boolean restartOnPage,boolean loop,long runtime,boolean speculative);

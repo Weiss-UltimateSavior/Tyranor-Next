@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -95,7 +97,7 @@ final class GameBacklogPanel extends GameUiPanel {
             if(sprite(name)!=null)picture(name,cfg.number("titlePicPrintX",0),cfg.number("titlePicPrintY",0),
                 sprite(name).getWidth(),sprite(name).getHeight());
         }else if(cfg.number("titlePrintFlag",1)!=0){
-            TextView title=text(cfg.text("titleMessage","历史记录"),font,Color.WHITE);
+            TextView title=text(cfg.text("titleMessage",hostText(R.string.engine_systemnnn_ctl_backlog_title)),font,Color.WHITE);
             put(title,cfg.number("titlePrintX",canvasWidth/2-font*3),cfg.number("titlePrintY",0),font*10,step);
         }
         for(int i=0;i<visible&&first+i<rows.size();i++){
@@ -119,7 +121,7 @@ final class GameBacklogPanel extends GameUiPanel {
         GameUiAssets.Config back=cfg.has("BackFileName")?cfg:assets.load;
         int w=limit(back.number("BackSizeX",220),1,4096),h=limit(back.number("BackSizeY",54),1,4096);
         GameButton.Spec spec=new GameButton.Spec(back,"Back",null,w,h);
-        animatedButton(spec,sprite(spec.image),"返回",()->{},close,
+        animatedButton(spec,sprite(spec.image),hostText(R.string.engine_systemnnn_host_back),()->{},close,
             back.number("BackPrintX",canvasWidth-w-25),back.number("BackPrintY",canvasHeight-h-10),w,h);
     }
     private void rowActions(Row row,int top){
@@ -144,13 +146,13 @@ final class GameBacklogPanel extends GameUiPanel {
     }
     private void voice(Row row,int vx,int vy,int w,int h){
         String image=cfg.number("voicePicFlag",0)==0?"":cfg.value("filenameVoice","ta_backlogvoice");
-        animateIcon(image,"voicePic",w,h,"重播语音",vx,vy,()->{},()->{
+        animateIcon(image,"voicePic",w,h,hostText(R.string.engine_systemnnn_ctl_backlog_voice),vx,vy,()->{},()->{
             replay.play(row.voices.get(row.nextVoice));row.nextVoice=(row.nextVoice+1)%row.voices.size();
         });
     }
     private void jumpButton(long id,int jx,int jy,int w,int h){
         if(cfg.number("jumpPicFlag",0)!=0){
-            animateIcon(cfg.value("filenameJump",""),"jumpPic",w,h,"跳转到此处",jx,jy,()->{},()->jump.accept(id));
+            animateIcon(cfg.value("filenameJump",""),"jumpPic",w,h,hostText(R.string.engine_systemnnn_ctl_backlog_jump),jx,jy,()->{},()->jump.accept(id));
             return;
         }
         TextView label=text(cfg.text("jumpMessage","⇒"),font,Color.WHITE);
@@ -160,7 +162,7 @@ final class GameBacklogPanel extends GameUiPanel {
         View hit=new View(getContext()){
             @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
         };
-        hit.setContentDescription("跳转到此处");hit.setSoundEffectsEnabled(false);hit.setFocusable(true);
+        hit.setContentDescription(hostText(R.string.engine_systemnnn_ctl_backlog_jump));hit.setSoundEffectsEnabled(false);hit.setFocusable(true);
         hit.setOnClickListener(v->jump.accept(id));
         put(hit,jx,jy,w,h);
     }
@@ -170,7 +172,7 @@ final class GameBacklogPanel extends GameUiPanel {
         int ax=cfg.number(prefix+"PrintX",(canvasWidth-w)/2);
         int ay=cfg.number(prefix+"PrintY",up?y-step:y+visible*step);
         String name=cfg.number("updownArrowPicFlag",0)!=0?cfg.value(prefix+"FileName",up?"ta_up_bt01":"ta_down_bt01"):"";
-        animateIcon(name,"updownArrow",w,h,up?"较早记录":"较新记录",ax,ay,
+        animateIcon(name,"updownArrow",w,h,up?hostText(R.string.engine_systemnnn_ctl_backlog_earlier):hostText(R.string.engine_systemnnn_ctl_backlog_later),ax,ay,
             ()->sound(cfg.number(prefix+"ClickSound",0)-1,-1),()->move(up?-1:1));
     }
     private GameButton animateIcon(String name,String prefix,int w,int h,String label,int x,int y,Runnable cue,Runnable action){

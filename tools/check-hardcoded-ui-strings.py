@@ -3,8 +3,8 @@
 
 三条规则：
 
-1. 三语言 `strings.xml` 的键必须齐平（app 与 engine 各自内部齐平）；
-2. Kotlin 源码不得出现含 CJK 的字符串字面量（界面文案必须走 `strings.xml`）；
+1. 三语言 `strings.xml` 和 SystemNNN 宿主资源的键必须齐平；
+2. Kotlin 与 SystemNNN Java 的 CJK 字面量限于注明的游戏匹配键和诊断基线；
 3. drawable / XML 资源不得出现主题色（由各自模块的规范约束，此处不覆盖）。
 
 engine 模块的扫描范围与边界：
@@ -56,11 +56,28 @@ LITERAL_ALLOWLIST = {
     ROOT / "engine" / "src" / "main" / "java" / "com" / "core" / "engine" / "EngineUiText.kt": 6,
 }
 
+ENGINE_RES = ROOT / "engine" / "src" / "main" / "res"
+SYSTEMNNN_JAVA = ROOT / "engine" / "src" / "main" / "java" / "com" / "tyranor" / "runtime" / "systemnnn"
+# 原始错误仅供日志诊断。GameRunner/PlayerActivity 向用户显示三语资源。
+SYSTEMNNN_DIAGNOSTIC_BASELINE = {
+    "GalleryCatalog.java": 14,
+    "GalleryStore.java": 5,
+    "GameProgress.java": 5,
+    "GameSave.java": 52,
+    "GameSavePaths.java": 2,
+    "LegacySaveMigration.java": 5,
+    "MoviePlayback.java": 3,
+    "SaveSlots.java": 3,
+    "SystemNnnHost.java": 1,
+}
+# 游戏数据包含原版变量名和全角假名表。
+SYSTEMNNN_GAME_DATA_BASELINE = {"GameRunner.java": 1, "GameTextDecoder.java": 7, "UiPreviewPool.java": 1}
 
-def check_kotlin_cjk_literals(name: str, java_root: Path) -> list[str]:
+
+def check_cjk_literals(name: str, paths, allowlist: dict[Path, int]) -> list[str]:
     errors: list[str] = []
-    for path in sorted(java_root.rglob("*.kt")):
-        allowed_count = LITERAL_ALLOWLIST.get(path)
+    for path in sorted(paths):
+        allowed_count = allowlist.get(path)
         source = path.read_text(encoding="utf-8")
         hits = [
             (index, code)
@@ -150,7 +167,13 @@ def main() -> int:
     errors: list[str] = []
     for name, java_root, string_files in MODULES:
         errors += check_resource_parity(name, string_files)
-        errors += check_kotlin_cjk_literals(name, java_root)
+        errors += check_cjk_literals(name, java_root.rglob("*.kt"), LITERAL_ALLOWLIST)
+    for filename in ("systemnnn_controls.xml", "systemnnn_host.xml"):
+        files = [ENGINE_RES / directory / filename for directory in ("values", "values-en", "values-ja")]
+        errors += check_resource_parity("SystemNNN", files)
+    baseline = SYSTEMNNN_DIAGNOSTIC_BASELINE | SYSTEMNNN_GAME_DATA_BASELINE
+    errors += check_cjk_literals("SystemNNN", SYSTEMNNN_JAVA.glob("*.java"),
+                                 {SYSTEMNNN_JAVA / name: count for name, count in baseline.items()})
     if errors:
         print("Hardcoded UI string check failed:")
         print("\n".join(errors))

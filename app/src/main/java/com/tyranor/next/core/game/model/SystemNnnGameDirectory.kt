@@ -14,9 +14,14 @@ internal object SystemNnnGameDirectory {
 
     /** A committed local copy remains authoritative even if direct source access later returns. */
     fun committed(context: Context, uriText: String): File? {
-        val source = sourceDocument(uriText) ?: return null
-        return SystemNnnGameImport.committedRoot(context, SystemNnnGameImport.sourceIdentity(source))
+        val sourceId = sourceIdentity(uriText) ?: return null
+        return SystemNnnGameImport.committedRoot(context, sourceId)
     }
+
+    fun sourceIdentity(uriText: String): String? =
+        sourceDocument(uriText)?.let(SystemNnnGameImport::sourceIdentity)
+
+    fun sourceUri(sourceId: String): Uri = DocumentsContract.buildDocumentUri(STORAGE_PROVIDER, sourceId)
 
     /** Read-only path selection shared by launch, backup and WebDAV; never performs a copy. */
     fun accessible(context: Context, uriText: String): File? = try {
@@ -33,7 +38,7 @@ internal object SystemNnnGameDirectory {
         if (uri.scheme == "content") {
             if (uri.authority != STORAGE_PROVIDER) return null
             return runCatching {
-                DocumentsContract.buildDocumentUri(STORAGE_PROVIDER, SystemNnnGameImport.sourceIdentity(uri))
+                sourceUri(SystemNnnGameImport.sourceIdentity(uri))
             }.getOrNull()
         }
         val path = resolve(uriText)?.path ?: return null
@@ -47,7 +52,7 @@ internal object SystemNnnGameDirectory {
             volume.name + ":" + path.removePrefix(volume.path).trimStart('/')
         }
         return runCatching {
-            val source = DocumentsContract.buildDocumentUri(STORAGE_PROVIDER, id)
+            val source = sourceUri(id)
             SystemNnnGameImport.sourceIdentity(source)
             source
         }.getOrNull()

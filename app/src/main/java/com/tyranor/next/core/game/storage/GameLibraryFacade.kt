@@ -280,23 +280,24 @@ object GameLibraryFacade {
         }
     }
 
-    fun removeRootAndGames(context: Context, uri: Uri) {
+    fun removeRootAndGames(context: Context, uri: Uri): List<ScanGame> {
         removeRoot(context, uri)
         val root = uri.toString()
-        var removedUris = emptySet<String>()
+        var removed = emptyList<ScanGame>()
         updateGames(context) { games ->
-            removedUris = games
-                .filter { isGameUnderRoot(root, it.uri) }
-                .mapTo(HashSet()) { it.uri }
+            removed = games.filter { isGameUnderRoot(root, it.uri) }
+            val removedUris = removed.mapTo(HashSet()) { it.uri }
             games.filterNot { it.uri in removedUris }
         }
-        if (removedUris.isEmpty()) return
+        if (removed.isEmpty()) return emptyList()
+        val removedUris = removed.mapTo(HashSet()) { it.uri }
         // 最近打开/快捷启动的 DB 行已随游戏行删除（派生视图 + 级联），这里只需同步内存缓存。
         synchronized(cacheLock) {
             recentGamesCache = recentGamesCache?.filterNot { it.uri in removedUris }
         }
         updateQuickLaunch(context) { list -> list.filterNot { it.uri in removedUris } }
         _libraryRevision.value++
+        return removed
     }
 
     /** 外部逻辑（如运行时模块降级）直接改库后通知 UI 重新读取派生列表。 */

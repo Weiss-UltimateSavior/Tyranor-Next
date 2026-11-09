@@ -1,10 +1,13 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.*;
 import android.util.TypedValue;
 import android.view.*;
 import android.widget.*;
+import com.core.engine.EngineUiText;
 import java.util.ArrayList;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -14,6 +17,7 @@ import java.util.function.IntConsumer;
 class GameUiPanel extends FrameLayout {
     protected final GameUiAssets assets;
     protected final Runnable click;
+    private final Context hostContext;
     protected int canvasWidth=1280,canvasHeight=720;
     private String backgroundName;
     private boolean transparentBackground,scriptedBackground;
@@ -38,9 +42,13 @@ class GameUiPanel extends FrameLayout {
     }
     GameUiPanel(Context context,GameUiAssets assets,String background,Runnable click) {
         super(context);this.assets=assets;this.backgroundName=background;this.click=click;
+        hostContext=EngineUiText.localizedContext(context);
         frameMs=Math.max(1,assets.game.number("frameTime",20));
         setWillNotDraw(false);setClickable(true);setSoundEffectsEnabled(false);
         setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+    }
+    final String hostText(int resource,Object... args){
+        return args.length==0?hostContext.getString(resource):hostContext.getString(resource,args);
     }
     void background(String name){backgroundName=name;invalidate();}
     void transparentBackground(){transparentBackground=true;invalidate();}
@@ -156,11 +164,17 @@ class GameUiPanel extends FrameLayout {
     }
     void chartBackground(GameUiAssets.Config cfg,int mode,int page,int centerLayer,int scriptTiles,Consumer<ChartBackdrop.Frame> display){
         printMode=mode;
+        boolean supported=ChartBackdrop.supportsCanvas(canvasWidth,canvasHeight);
         UiPreviewPool.Request request=UiPreviewPool.Request.read(cfg,mode,page);
-        if(backdrop!=null&&backdrop.splitChart()&&request!=null&&request.sameScript(backdropRequest)){
+        if(supported&&backdrop!=null&&backdrop.splitChart()&&request!=null&&request.sameScript(backdropRequest)){
             backdrop.page(page,scriptTiles);return;
         }
         if(backdrop!=null){removeView(backdrop);backdrop.close();backdrop=null;backdropRequest=null;}
+        if(!supported){
+            scriptedBackground=false;
+            display.accept(null);
+            return;
+        }
         UiPreviewPool pool=request==null||assets.runtime==null?null:assets.runtime.previews();
         if(pool==null)return;
         backdropRequest=request;backdropHeld=true;
@@ -313,8 +327,10 @@ class GameUiPanel extends FrameLayout {
     }
     void pageArrows(GameUiAssets.Config cfg,int page,int pageCount,int x,int upY,int downY,IntConsumer selectPage){
         if(pageCount<=1)return;
-        if(page>0)button(cfg,"Up","Up","上一页",()->selectPage.accept(page-1),x,upY,48,48);
-        if(page<pageCount-1)button(cfg,"Down","Down","下一页",()->selectPage.accept(page+1),x,downY,48,48);
+        if(page>0)button(cfg,"Up","Up","↑",()->selectPage.accept(page-1),x,upY,48,48)
+            .setContentDescription(hostText(R.string.engine_systemnnn_ctl_page_previous));
+        if(page<pageCount-1)button(cfg,"Down","Down","↓",()->selectPage.accept(page+1),x,downY,48,48)
+            .setContentDescription(hostText(R.string.engine_systemnnn_ctl_page_next));
     }
     GameButton buttonAt(GameUiAssets.Config cfg,String tag,String fallbackTag,String label,Runnable action,int baseX,int baseY,int dx,int dy,int dw,int dh){
         int w=cfg.number(tag+"SizeX",cfg.number(fallbackTag+"SizeX",dw));
@@ -351,6 +367,6 @@ class GameUiPanel extends FrameLayout {
         b.setOnClickListener(v->{click.run();action.run();});put(b,x,y,w,h);
     }
     View back(GameUiAssets.Config cfg,Runnable close){
-        return button(cfg,"Back","Back","返回",close,1035,655,220,54);
+        return button(cfg,"Back","Back",hostText(R.string.engine_systemnnn_host_back),close,1035,655,220,54);
     }
 }

@@ -104,6 +104,11 @@
     <string name="settings_join_group">Join community</string>
     <string name="settings_game_dirs_title">Game folders</string>
     <string name="settings_no_game_dirs">No game folders yet</string>
+    <string name="settings_systemnnn_clear_orphan_resources">Clear unused SystemNNN resources</string>
+    <string name="settings_systemnnn_clear_orphan_resources_message">Clear game resources from imported SystemNNN copies that are no longer in your library. The original game folders and all saves are kept. You can import the resources again when you add the game back.</string>
+    <string name="settings_systemnnn_clear_orphan_resources_done">Cleared resources from %1$d SystemNNN copies</string>
+    <string name="settings_systemnnn_clear_orphan_resources_empty">No unused SystemNNN resources to clear</string>
+    <string name="settings_systemnnn_clear_orphan_resources_incomplete">Cleared %1$d copies. Could not clear %2$d copies. Close any running games and try again.</string>
     <string name="settings_invalid_suffix">invalid</string>
     <string name="settings_add_dir">Add folder</string>
     <string name="settings_input_path">Enter path</string>

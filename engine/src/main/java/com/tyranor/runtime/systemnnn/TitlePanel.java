@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.*;
+import com.core.engine.EngineUiText;
 import java.util.function.Consumer;
 
 /** Scale the game's clickable rectangles with the same letterbox as the background. */
@@ -38,10 +39,15 @@ final class TitlePanel extends FrameLayout {
             label.setTextSize(22); label.setTextColor(Color.WHITE); fallback.addView(label);
             addView(fallback,new LayoutParams(-1,-1));
         }
+        Context languageContext=EngineUiText.localizedContext(context);
         for (TitleMenu.Item item:title.items) {
+            String buttonLabel=item.label;
+            if(buttonLabel==null||buttonLabel.isEmpty())
+                buttonLabel=item.action==TitleMenu.Action.MODE?MenuModeButton.fallbackLabel(languageContext,item.mode):
+                    languageContext.getString(item.action.labelRes);
             View button;
             if (item.spec!=null && fallback==null) {
-                GameButton game=new GameButton(context,item.spec,item.image,item.label,title.frameMs);
+                GameButton game=new GameButton(context,item.spec,item.image,buttonLabel,title.frameMs);
                 game.prepare(()->prepare.select(item));
                 game.setOnClickListener(v->{
                     if(!pending&&!restarting&&game.commit(()->sound.play(item.spec.sound,item.spec.voice),
@@ -49,14 +55,14 @@ final class TitlePanel extends FrameLayout {
                 });
                 button=game;
             } else {
-                Button text=new Button(context); text.setText(item.label); button=text;
+                Button text=new Button(context); text.setText(buttonLabel); button=text;
                 button.setOnClickListener(v->{
                     if(pending||restarting||!item.enabled)return;
                     pending(true);
                     finishClick(click,item);
                 });
             }
-            button.setContentDescription(item.label); button.setEnabled(item.enabled);
+            button.setContentDescription(buttonLabel); button.setEnabled(item.enabled);
             button.setSoundEffectsEnabled(false);
             if (fallback!=null) fallback.addView(button,new LinearLayout.LayoutParams(-2,-2));
             else {button.setTag(item); addView(button,new LayoutParams(1,1,Gravity.TOP|Gravity.LEFT));}

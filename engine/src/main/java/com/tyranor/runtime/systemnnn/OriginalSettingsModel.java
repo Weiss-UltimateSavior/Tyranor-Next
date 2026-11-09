@@ -45,8 +45,8 @@ final class OriginalSettingsModel {
         CharacterControl(int index,int page,int[] ids,Button button,boolean hasSlider,int x,int y,int w,int h){this.index=index;this.page=page;this.ids=ids;this.button=button;this.hasSlider=hasSlider;this.x=x;this.y=y;width=w;height=h;}
     }
     static final class Choice {
-        final String key,label;final int page;final boolean defaultValue;final Button[] buttons;
-        Choice(String key,String label,int page,boolean value,Button... buttons){this.key=key;this.label=label;this.page=page;defaultValue=value;this.buttons=buttons;}
+        final String key;final int page;final boolean defaultValue;final Button[] buttons;
+        Choice(String key,int page,boolean value,Button... buttons){this.key=key;this.page=page;defaultValue=value;this.buttons=buttons;}
     }
     static final class Extended {
         final int index,page;
@@ -106,13 +106,13 @@ final class OriginalSettingsModel {
                 b.x+c.number("charaVolumePrintX",0),b.y+c.number("charaVolumePrintY",30),bound(c.number("charaVolumeSizeX",200),1,canvasWidth),bound(c.number("charaVolumeSizeY",20),1,canvasHeight)));
             previousCharacter=b;
         }
-        String[] kinds={"screen","skip","auto"},modeKeys={"fullscreen","skipReadOnly","autoEnabled"},modeLabels={"显示模式","快进范围","自动播放"};
+        String[] kinds={"screen","skip","auto"},modeKeys={"fullscreen","skipReadOnly","autoEnabled"};
         for(int i=0;i<kinds.length;i++)if(c.number(kinds[i]+"ModeButtonExistFlag",1)!=0){String p=kinds[i];
             Button first=button(p+"1Button",null,true);
-            modes.add(new Choice(modeKeys[i],modeLabels[i],page(p+"ModeButtonPrintPage",1),i<2,
+            modes.add(new Choice(modeKeys[i],page(p+"ModeButtonPrintPage",1),i<2,
                 first,button(p+"2Button",first,true)));}
         for(String p:new String[]{"autoContinue","autoSkip","changeReadColor","changeSelectColor","continueVoice"})
-            if(c.number(p+"CheckButtonExistFlag",0)!=0)checks.add(new Choice(p,p,page(p+"CheckButtonPrintPage",1),false,button(p+"Check",null,false)));
+            if(c.number(p+"CheckButtonExistFlag",0)!=0)checks.add(new Choice(p,page(p+"CheckButtonPrintPage",1),false,button(p+"Check",null,false)));
         for(int i=0;i<radioCount;i++){
             String prefix="exp"+(i+1)+"Radio";
             int pg=page(prefix+"PrintPage",1);

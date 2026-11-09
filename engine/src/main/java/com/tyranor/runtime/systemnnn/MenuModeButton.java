@@ -1,5 +1,9 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
+import android.content.Context;
+import com.core.engine.EngineUiText;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,26 +59,28 @@ final class MenuModeButton {
                 resolved=new ButtonArt.Setup(config,tag,resolved,false);
                 atX=config.number(tag+"PrintX",atX);atY=config.number(tag+"PrintY",atY);
             }
-            if(exists)buttons.add(new MenuModeButton(index,target,atX,atY,config.text(tag+"Name",label(target)),enabled,resolved));
+            if(exists)buttons.add(new MenuModeButton(index,target,atX,atY,config.text(tag+"Name",""),enabled,resolved));
         }
         return buttons;
     }
 
-    private static String label(int mode){
+    static String fallbackLabel(Context context,int mode){
+        int resource;
         switch(mode){
-        case 24:return "图鉴";
-        case 29:return "姓名输入";
-        case 33:return "结果";
-        case 34:return "流程图";
-        case 36:case 39:return "提示";
-        case 38:return "状态";
-        case 42:return "成就";
-        case 43:return "术语";
-        case 44:return "语音鉴赏";
-        case 47:return "道具";
-        case 48:return "商店";
-        case 49:return "队伍";
-        default:return "扩展 · "+mode;
+        case 24:resource=R.string.engine_systemnnn_ctl_mode_encyclopedia;break;
+        case 29:resource=R.string.engine_systemnnn_ctl_name_input;break;
+        case 33:resource=R.string.engine_systemnnn_ctl_mode_result;break;
+        case 34:resource=R.string.engine_systemnnn_ctl_mode_chart;break;
+        case 36:case 39:resource=R.string.engine_systemnnn_ctl_mode_hint;break;
+        case 38:resource=R.string.engine_systemnnn_ctl_mode_status;break;
+        case 42:resource=R.string.engine_systemnnn_ctl_mode_achievement;break;
+        case 43:resource=R.string.engine_systemnnn_ctl_mode_terms;break;
+        case 44:resource=R.string.engine_systemnnn_ctl_mode_voice;break;
+        case 47:resource=R.string.engine_systemnnn_ctl_mode_items;break;
+        case 48:resource=R.string.engine_systemnnn_ctl_mode_shop;break;
+        case 49:resource=R.string.engine_systemnnn_ctl_mode_party;break;
+        default:return EngineUiText.localizedContext(context).getString(R.string.engine_systemnnn_ctl_mode_extension,mode);
         }
+        return EngineUiText.get(context,resource);
     }
 }

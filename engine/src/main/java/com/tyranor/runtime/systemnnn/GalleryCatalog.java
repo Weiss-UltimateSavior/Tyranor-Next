@@ -96,7 +96,7 @@ final class GalleryCatalog {
     }
     static Movie openingMovie(File root,GameUiAssets.Config print) throws IOException {
         String name=GameResourcePaths.decodeFilename(raw(print.value("movieFileName","default.wmv")));
-        return new Movie(0,movieFile(root,name),"开场动画");
+        return new Movie(0,movieFile(root,name),"");
     }
     static final class ScrollAxis {
         final int direction,tiles,time,wait;
@@ -350,7 +350,7 @@ final class GalleryCatalog {
                 row.add(new Scene((int)scriptId,project.get((int)scriptId),films));
             }
             scenes.add(row);
-            sceneNames.add("回想分类 "+(group+1));
+            sceneNames.add("");
         }
         if (in.hasRemaining()) throw new IOException("scene.dat 尾部无效");
         int group=-1,index=0;
@@ -482,7 +482,7 @@ final class GalleryCatalog {
                 if (i<from || i>=to) continue;
                 String prefix=cfg.value(open?"prefixOn":"prefixOff",open?"ta_sm_movie_on":"ta_sm_movie_off");
                 cells.add(new Cell(movie.number,movie.title,GameUiAssets.systemImageKey(prefix+movie.number),
-                    open&&movie.file==null?"影片文件缺失":"",open&&movie.file!=null));
+                    "",open&&movie.file!=null));
             }
         } else if (screen==Screen.CG) {
             List<Cg> album=albums.get(group);
@@ -503,7 +503,7 @@ final class GalleryCatalog {
                 Scene scene=groupScenes.get(i);
                 boolean open=scene.unlocked(keys);
                 if (open) unlocked++;
-                if (i>=from && i<to) cells.add(new Cell(i,"回想 "+(i+1),scene.thumbnail.isEmpty()?"":"sys/sc/"+scene.thumbnail,"",open));
+                if (i>=from && i<to) cells.add(new Cell(i,"",scene.thumbnail.isEmpty()?"":"sys/sc/"+scene.thumbnail,"",open));
             }
         } else if (screen==Screen.MUSIC) {
             boolean check=cfg.number("checkListen",0)!=0;
@@ -514,7 +514,7 @@ final class GalleryCatalog {
                 cells.add(new Cell(i,open?song.title:locked,"",song.duration,open));
             }
         } else if (screen==Screen.CG_GROUP || screen==Screen.SCENE_GROUP) {
-            for (int i=0;i<size;i++) cells.add(new Cell(i,screen==Screen.CG_GROUP?"CG 分类 "+(i+1):sceneNames.get(i),"","",true));
+            for (int i=0;i<size;i++) cells.add(new Cell(i,screen==Screen.CG_GROUP?"":sceneNames.get(i),"","",true));
         }
         int basic=DialogueLayout.clamp(cfg.number("basicButtonNumber",4),0,64);
         List<MenuModeButton> modes=screen==Screen.OMAKE?MenuModeButton.read(cfg,handle,basic,basic>=5?5:4):Collections.emptyList();

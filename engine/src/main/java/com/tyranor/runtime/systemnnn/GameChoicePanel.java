@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.*;
 import android.os.SystemClock;
@@ -136,8 +138,12 @@ final class GameChoicePanel extends GameUiPanel {
         }
         int last=Math.max(0,frame.choices.length-visible);
         if(last>0){
-            button(cfg,"Up","Up","上一项",()->move(-1,last),canvasWidth/2-24,y-66,48,48).setEnabled(page>0);
-            button(cfg,"Down","Down","下一项",()->move(1,last),canvasWidth/2-24,y+(visible+frame.choiceMessages.length)*step+4,48,48).setEnabled(page<last);
+            GameButton previous=button(cfg,"Up","Up","↑",()->move(-1,last),canvasWidth/2-24,y-66,48,48);
+            previous.setContentDescription(hostText(R.string.engine_systemnnn_ctl_choice_previous));
+            previous.setEnabled(page>0);
+            GameButton next=button(cfg,"Down","Down","↓",()->move(1,last),canvasWidth/2-24,y+(visible+frame.choiceMessages.length)*step+4,48,48);
+            next.setContentDescription(hostText(R.string.engine_systemnnn_ctl_choice_next));
+            next.setEnabled(page<last);
         }
         if(frame.choiceInfo[0]>0&&(cfg.number("timerPrintType",1)>0||cfg.number("timerTimePrintFlag",0)>=2)){
             timer=new ChoiceTimer();

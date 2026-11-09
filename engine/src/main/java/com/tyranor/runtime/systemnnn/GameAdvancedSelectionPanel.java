@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -249,10 +251,10 @@ final class GameAdvancedSelectionPanel extends GameUiPanel {
             objectButtons=objectLayout(assets,modal);
             for(ObjectButton item:objectButtons)addObject(item);
         }
-        menuButton=option("optionButton","systemMenu","菜单",menu,1);
+        menuButton=option("optionButton","systemMenu",hostText(R.string.engine_systemnnn_ctl_menu),menu,1);
         if(!heroine){
-            option("quickConfigButton","config","环境设定",settings,0);
-            option("quickBacklogButton","backlog","回看",backlog,0);
+            option("quickConfigButton","config",hostText(R.string.engine_systemnnn_ctl_config),settings,0);
+            option("quickBacklogButton","backlog",hostText(R.string.engine_systemnnn_ctl_backlog),backlog,0);
         }
     }
 
@@ -265,16 +267,16 @@ final class GameAdvancedSelectionPanel extends GameUiPanel {
         if(canTurn(config,modal.rows.length)){
             GameUiAssets.Config cfg=arrowSetup(assets,config);
             ButtonArt.Setup up=new ButtonArt.Setup(cfg,"Up",null,false),down=new ButtonArt.Setup(cfg,"Down",up,false);
-            upButton=control(up,"ta_upButton","轮选上一位",()->beginTurn(1),
+            upButton=control(up,"ta_upButton",hostText(R.string.engine_systemnnn_ctl_character_previous),()->beginTurn(1),
                 config.number("UpPrintX",cfg.number("UpPrintX",0)),config.number("UpPrintY",cfg.number("UpPrintY",0)));
-            downButton=control(down,"ta_downButton","轮选下一位",()->beginTurn(-1),
+            downButton=control(down,"ta_downButton",hostText(R.string.engine_systemnnn_ctl_character_next),()->beginTurn(-1),
                 config.number("DownPrintX",cfg.number("DownPrintX",0)),config.number("DownPrintY",cfg.number("DownPrintY",0)));
         }
         if((modal.group&OK_ALLOWED)!=0&&modal.page>=0&&modal.page<carousel.images.length&&carousel.images[modal.page]!=null)
-            okButton=control(new ButtonArt.Setup(config,"Ok",null,false),"","确定",()->action(CONFIRM,modal.selection),
+            okButton=control(new ButtonArt.Setup(config,"Ok",null,false),"",hostText(R.string.engine_systemnnn_ctl_ok),()->action(CONFIRM,modal.selection),
                 config.number("OkPrintX",0),config.number("OkPrintY",0));
         if((modal.group&NEXT_ALLOWED)!=0)
-            nextButton=control(new ButtonArt.Setup(config,"Next",null,false),"","下一步",()->action(CONFIRM,0),
+            nextButton=control(new ButtonArt.Setup(config,"Next",null,false),"",hostText(R.string.engine_systemnnn_ctl_next),()->action(CONFIRM,0),
                 config.number("NextPrintX",0),config.number("NextPrintY",0));
     }
 
@@ -439,7 +441,7 @@ final class GameAdvancedSelectionPanel extends GameUiPanel {
 
     private void addObject(ObjectButton item){
         GameButton.Spec spec=item.spec;
-        String label=item.row.label.isEmpty()?(item.row.id>0?"对象 ":"附属项 ")+Math.abs(item.row.id):item.row.label;
+        String label=item.row.label.isEmpty()?hostText(item.row.id>0?R.string.engine_systemnnn_ctl_object_number:R.string.engine_systemnnn_ctl_attachment_number, Math.abs(item.row.id)):item.row.label;
         GameButton button=animatedButton(spec,item.image,label,()->sound(spec.sound,spec.voice),
             ()->action(CHOOSE,item.row.id),item.x,item.y,spec.states[0].w,spec.states[0].h);
         button.setEnabled(item.row.enabled());

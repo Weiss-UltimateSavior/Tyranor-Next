@@ -6,8 +6,8 @@ package com.core.engine
  * 内置启动链路的 extras 键与 [LAUNCH_MODE] 固定取值只在**本文件**定义；app 侧
  * `EngineLauncher` 与 engine 侧各宿主 Activity 均引用这里，禁止再写裸字符串字面量。
  * 引擎自有的功能/策略键保留在各自契约（如 [KrkrStartupDialogPolicy.EXTRA_ENABLED]、
- * `com.core.gl.Anime4kRuntime.EXTRA_MODE`）；外置 APK 模块协议见 core 侧
- * `ExternalEngineContract`；共享 prefs 键由 [EnginePrefs] 收敛。
+ * `com.core.gl.Anime4kRuntime.EXTRA_MODE`）；运行时模块 v1 由此处与 SystemNNN 共享，
+ * 其它外置引擎协议见 `ExternalEngineContract`。共享 prefs 键由 [EnginePrefs] 收敛。
  */
 object LaunchContract {
 
@@ -52,6 +52,14 @@ object LaunchContract {
     const val SCOPED_SAVE_ROOT = "scopedSaveRoot"
     const val SCOPED_SAVE_NAME = "scopedSaveName"
     const val GAME_SAVE_ROOT = "gameSaveRoot"
+
+    // ---------- 运行时模块 v1（内置 SystemNNN 沿用此协议） ----------
+
+    const val RUNTIME_MODULE_ACTION = "com.tyranor.runtime.action.LAUNCH"
+    const val RUNTIME_MODULE_FOLDER_PATH = "com.tyranor.runtime.extra.FOLDER_PATH"
+    const val RUNTIME_MODULE_GAME_TITLE = "com.tyranor.runtime.extra.GAME_TITLE"
+    const val RUNTIME_MODULE_PROTOCOL_VERSION = "com.tyranor.runtime.extra.PROTOCOL_VERSION"
+    const val RUNTIME_MODULE_VERSION = 1
 
     // ---------- ONS ----------
 

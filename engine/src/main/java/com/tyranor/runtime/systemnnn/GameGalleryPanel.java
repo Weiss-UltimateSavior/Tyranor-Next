@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.*;
 import android.os.SystemClock;
@@ -73,16 +75,16 @@ final class GameGalleryPanel extends GameUiPanel {
     }
     private void menu() {
         GameUiAssets.Config cfg=page.config;
-        menuButton(1,"CG 鉴赏",page.cgAvailable,() -> actions.open(page.cgGroups?GalleryCatalog.Screen.CG_GROUP:GalleryCatalog.Screen.CG,0,0,-1));
-        menuButton(2,"场景回想",page.sceneAvailable,() -> actions.open(page.sceneGroups?GalleryCatalog.Screen.SCENE_GROUP:GalleryCatalog.Screen.SCENE,0,0,-1));
-        menuButton(3,"音乐鉴赏",page.musicAvailable,() -> actions.open(GalleryCatalog.Screen.MUSIC,0,0,-1));
-        if (cfg.has("menu1Button4FileName")) menuButton(4,"返回标题",true,actions::back);
+        menuButton(1,hostText(R.string.engine_systemnnn_ctl_gallery_cg),page.cgAvailable,() -> actions.open(page.cgGroups?GalleryCatalog.Screen.CG_GROUP:GalleryCatalog.Screen.CG,0,0,-1));
+        menuButton(2,hostText(R.string.engine_systemnnn_ctl_gallery_scene),page.sceneAvailable,() -> actions.open(page.sceneGroups?GalleryCatalog.Screen.SCENE_GROUP:GalleryCatalog.Screen.SCENE,0,0,-1));
+        menuButton(3,hostText(R.string.engine_systemnnn_ctl_gallery_music),page.musicAvailable,() -> actions.open(GalleryCatalog.Screen.MUSIC,0,0,-1));
+        if (cfg.has("menu1Button4FileName")) menuButton(4,hostText(R.string.engine_systemnnn_host_title),true,actions::back);
         else back(cfg,actions::back);
         if (page.movieAvailable && cfg.number("basicButtonNumber",4)>=5 && cfg.number("menu1Button5ExistFlag",1)!=0)
-            menuButton(5,"动画鉴赏",cfg.number("menu1Button5EnableFlag",1)!=0,()->actions.open(GalleryCatalog.Screen.MOVIE,0,0,-1));
+            menuButton(5,hostText(R.string.engine_systemnnn_ctl_gallery_movie),cfg.number("menu1Button5EnableFlag",1)!=0,()->actions.open(GalleryCatalog.Screen.MOVIE,0,0,-1));
         for(MenuModeButton entry:page.modeButtons){
             GameButton.Spec spec=new GameButton.Spec(entry.setup);
-            animatedButton(spec,sprite(entry.setup.art.image),entry.label,()->sound(spec.sound,spec.voice),
+            animatedButton(spec,sprite(entry.setup.art.image),entry.label.isEmpty()?MenuModeButton.fallbackLabel(getContext(),entry.mode):entry.label,()->sound(spec.sound,spec.voice),
                 ()->actions.mode(entry.mode),entry.x,entry.y,entry.setup.width,entry.setup.height).setEnabled(entry.enabled);
         }
     }
@@ -343,17 +345,17 @@ final class GameGalleryPanel extends GameUiPanel {
             put(name,atX+labelX,atY+labelY,Math.max(1,w-labelX),h);
         }
         final int selected=page.index>=0?page.index:first;
-        button(cfg,"rew1","rew1","上一曲",() -> actions.moveSong(-1),359,72,67,38);
-        button(cfg,page.musicState==1?"play2":"play1","play1","播放",() -> actions.play(selected),
+        button(cfg,"rew1","rew1",hostText(R.string.engine_systemnnn_ctl_gallery_previous_song),() -> actions.moveSong(-1),359,72,67,38);
+        button(cfg,page.musicState==1?"play2":"play1","play1",hostText(R.string.engine_systemnnn_ctl_gallery_play),() -> actions.play(selected),
             cfg.number("play1PrintX",425),cfg.number("play1PrintY",72),82,38).setEnabled(selected>=0);
-        button(cfg,"ff1","ff1","下一曲",() -> actions.moveSong(1),503,72,67,38);
-        button(cfg,page.musicState==2?"pause2":"pause1","pause1","暂停",actions::pause,
+        button(cfg,"ff1","ff1",hostText(R.string.engine_systemnnn_ctl_gallery_next_song),() -> actions.moveSong(1),503,72,67,38);
+        button(cfg,page.musicState==2?"pause2":"pause1","pause1",hostText(R.string.engine_systemnnn_ctl_gallery_pause),actions::pause,
             cfg.number("pause1PrintX",569),cfg.number("pause1PrintY",72),67,38);
-        button(cfg,page.musicState==0&&cfg.has("stop2FileName")?"stop2":"stop1","stop1","停止",actions::stop,
+        button(cfg,page.musicState==0&&cfg.has("stop2FileName")?"stop2":"stop1","stop1",hostText(R.string.engine_systemnnn_ctl_gallery_stop),actions::stop,
             cfg.number("stop1PrintX",635),cfg.number("stop1PrintY",72),67,38);
         int min=bounded(cfg.number("volumeMin",0),0,100),max=bounded(cfg.number("volumeMax",100),min,100);
         int volumeW=dimension(cfg,"volumeSizeX",205),volumeH=dimension(cfg,"volumeSizeY",20);
-        ValueBar volume=new ValueBar(getContext(),sprite(cfg.value("filenameVolume","ta_musicbar01")),"鉴赏音量",
+        ValueBar volume=new ValueBar(getContext(),sprite(cfg.value("filenameVolume","ta_musicbar01")),hostText(R.string.engine_systemnnn_ctl_gallery_volume),
             min,max,page.musicVolume,volumeW,volumeH,0,()->{},actions::volume);
         put(volume,cfg.number("volumePrintX",715),cfg.number("volumePrintY",87),volumeW,volumeH);
         if(cfg.number("spectrumPrintFlag",0)!=0){
@@ -381,7 +383,7 @@ final class GameGalleryPanel extends GameUiPanel {
             gravity=bounded(cfg.number("spectrumMaxGrav",1),0,100);
             barColor=spectrumColor(cfg,"spectrum",128,255,192);
             peakColor=spectrumColor(cfg,"spectrumMax",255,0,0);
-            setContentDescription("音乐频谱");
+            setContentDescription(hostText(R.string.engine_systemnnn_ctl_gallery_spectrum));
         }
         private int spectrumColor(GameUiAssets.Config cfg,String key,int r,int g,int b){
             return Color.argb(bounded(cfg.number(key+"Percent",100),0,100)*255/100,
@@ -415,8 +417,21 @@ final class GameGalleryPanel extends GameUiPanel {
     }
     private static int bounded(int value,int min,int max) { return Math.max(min,Math.min(max,value)); }
 
+    private String cellLabel(GalleryCatalog.Cell cell){
+        if(!cell.label.isEmpty())return cell.label;
+        switch(page.screen){
+        case SCENE:return hostText(R.string.engine_systemnnn_ctl_gallery_scene_number,cell.index+1);
+        case SCENE_GROUP:return hostText(R.string.engine_systemnnn_ctl_gallery_scene_group,cell.index+1);
+        case CG_GROUP:return hostText(R.string.engine_systemnnn_ctl_gallery_cg_group,cell.index+1);
+        case MOVIE:return cell.index==0?hostText(R.string.engine_systemnnn_ctl_gallery_opening):
+            hostText(R.string.engine_systemnnn_ctl_gallery_movie_number,cell.index);
+        default:return "";
+        }
+    }
+
     private final class Tile extends View {
         private final GalleryCatalog.Cell cell;
+        private final String label;
         private final Bitmap image,frame,cursor;
         private final Rect source,dest=new Rect();
         private final int dark;
@@ -430,7 +445,8 @@ final class GameGalleryPanel extends GameUiPanel {
             super(GameGalleryPanel.this.getContext());
             this.cell=cell; this.image=image; this.source=source; this.frame=frame; this.cursor=cursor; this.dark=dark;
             ColorMatrix matrix=new ColorMatrix(); matrix.setSaturation(0); gray=new ColorMatrixColorFilter(matrix);
-            setContentDescription(cell.label+(cell.enabled?"":" · 未解锁"));
+            label=cellLabel(cell);
+            setContentDescription(cell.enabled?label:hostText(R.string.engine_systemnnn_ctl_gallery_locked,label));
             setSoundEffectsEnabled(false);
         }
         boolean startMovieSelection(){
@@ -457,7 +473,7 @@ final class GameGalleryPanel extends GameUiPanel {
                 paint.setColor(0xbf0c2339); canvas.drawRect(dest,paint);
                 paint.setColor(cell.enabled?Color.WHITE:0xff8f9eaa); paint.setTextAlign(Paint.Align.CENTER);
                 paint.setTextSize(Math.max(12,Math.min(22,getHeight()/2f)));
-                canvas.drawText(cell.label,getWidth()/2f,getHeight()*.65f,paint); paint.setAlpha(255);
+                canvas.drawText(label,getWidth()/2f,getHeight()*.65f,paint); paint.setAlpha(255);
             }
             if(animationBadge!=null&&valid&&(cell.enabled||dark>0)){
                 GameUiAssets.Config cfg=page.config;

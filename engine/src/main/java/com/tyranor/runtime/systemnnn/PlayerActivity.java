@@ -46,7 +46,6 @@ import java.util.List;
 import java.util.Set;
 
 public final class PlayerActivity extends Activity implements GameRunner.Listener {
-    private static final String PREFIX="com.tyranor.runtime.extra.";
     private File game;
     private GameRunner runner;
     private FrameLayout root,stage;
@@ -163,8 +162,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         userPreferences=PlayerSettings.preferences(this);
         userPreferences.registerOnSharedPreferenceChangeListener(readingListener);
         Intent i=getIntent();
-        String path=i.getStringExtra(PREFIX+"FOLDER_PATH");
-        fromTyn="com.tyranor.runtime.action.LAUNCH".equals(i.getAction());
+        String path=i.getStringExtra(LaunchContract.RUNTIME_MODULE_FOLDER_PATH);
+        fromTyn=LaunchContract.RUNTIME_MODULE_ACTION.equals(i.getAction());
         if (!fromTyn) {
             if (saved!=null){
                 path=saved.getString("selectedGame");
@@ -175,14 +174,21 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         } else if (path==null || path.isEmpty()) {
             chooseHome(text(R.string.engine_systemnnn_host_launch_path_missing)); return;
         }
-        if (i.getIntExtra(PREFIX+"PROTOCOL_VERSION",1)!=1) {
+        if (i.getIntExtra(LaunchContract.RUNTIME_MODULE_PROTOCOL_VERSION,LaunchContract.RUNTIME_MODULE_VERSION)!=LaunchContract.RUNTIME_MODULE_VERSION) {
             message(text(R.string.engine_systemnnn_host_protocol_unsupported),text(R.string.engine_systemnnn_host_check_versions),null,null); return;
         }
         try {
             File input=new File(path);
-            if (!input.isAbsolute()) throw new IOException(text(R.string.engine_systemnnn_host_path_not_absolute));
+            if(!input.isAbsolute()){
+                message(text(R.string.engine_systemnnn_host_open_failed),text(R.string.engine_systemnnn_host_path_not_absolute),null,null);
+                return;
+            }
             game=input.getCanonicalFile();
-        } catch (IOException e) { message(text(R.string.engine_systemnnn_host_open_failed),e.getMessage(),null,null); return; }
+        }catch(IOException|SecurityException e){
+            Log.w("SystemNNN","Unable to resolve the game path",e);
+            message(text(R.string.engine_systemnnn_host_open_failed),text(R.string.engine_systemnnn_host_unreadable_directory),null,null);
+            return;
+        }
         inspectAccess();
     }
     private void chooseHome(String reason) {
@@ -214,25 +220,39 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if (request!=32 || result!=RESULT_OK || data==null || data.getData()==null) return;
         try {
             Uri uri=data.getData();
-            if (!"com.android.externalstorage.documents".equals(uri.getAuthority()))
-                throw new IOException(text(R.string.engine_systemnnn_host_local_directory_only));
+            if(!"com.android.externalstorage.documents".equals(uri.getAuthority())){
+                chooseHome(text(R.string.engine_systemnnn_host_local_directory_only));
+                return;
+            }
             String[] id=DocumentsContract.getTreeDocumentId(uri).split(":",2);
-            if (id.length!=2) throw new IOException(text(R.string.engine_systemnnn_host_unreadable_directory));
+            if(id.length!=2){
+                chooseHome(text(R.string.engine_systemnnn_host_unreadable_directory));
+                return;
+            }
             File volume=null;
             if ("primary".equalsIgnoreCase(id[0])) volume=Environment.getExternalStorageDirectory();
             else for (StorageVolume v:getSystemService(StorageManager.class).getStorageVolumes())
                 if (id[0].equalsIgnoreCase(v.getUuid())) {
                     volume=Build.VERSION.SDK_INT>=30?v.getDirectory():new File("/storage",v.getUuid()); break;
                 }
-            if (volume==null) throw new IOException(text(R.string.engine_systemnnn_host_missing_volume));
+            if(volume==null){
+                chooseHome(text(R.string.engine_systemnnn_host_missing_volume));
+                return;
+            }
             File selected=new File(volume,id[1]).getCanonicalFile();
-            if (!selected.toPath().startsWith(volume.getCanonicalFile().toPath())) throw new IOException(text(R.string.engine_systemnnn_host_invalid_directory));
+            if(!selected.toPath().startsWith(volume.getCanonicalFile().toPath())){
+                chooseHome(text(R.string.engine_systemnnn_host_invalid_directory));
+                return;
+            }
             selectedGameTree=uri;
             if(Build.VERSION.SDK_INT==29)try{
                 getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);
             }catch(SecurityException ignored){}
             game=selected; inspectAccess();
-        } catch (IOException | IllegalArgumentException e) { chooseHome(e.getMessage()); }
+        }catch(IOException|IllegalArgumentException|SecurityException e){
+            Log.w("SystemNNN","Unable to resolve the selected game directory",e);
+            chooseHome(text(R.string.engine_systemnnn_host_unreadable_directory));
+        }
     }
     private void choosePcSave(){
         if(runner==null||pcSaveBusy)return;
@@ -394,7 +414,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             saves=GameSavePaths.forGame(game);
             legacySource=SystemNnnGameImport.originalGame(this,game);
         }
-        catch(IOException|SecurityException e){message(text(R.string.engine_systemnnn_host_save_directory_failed),e.getMessage(),text(R.string.engine_systemnnn_host_retry),v->inspectAccess());return;}
+        catch(IOException|SecurityException e){
+            Log.w("SystemNNN","Unable to open the save directory",e);
+            message(text(R.string.engine_systemnnn_host_save_directory_failed),text(R.string.engine_systemnnn_host_check_save_access),
+                text(R.string.engine_systemnnn_host_retry),v->inspectAccess());
+            return;
+        }
         File directory=saves.directory();
         if(!(directory.isDirectory()?directory:game).canWrite() && requestGameAccess(true))return;
         root.removeAllViews();
@@ -1882,19 +1907,25 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 dialogClick((d,w)->{if(owner==runner)owner.recoverCorruptProgress();}))
             .show();
     });}
-    @Override public void error(String text) { runOnUiThread(() -> {
+    @Override public void error(Throwable reason) { runOnUiThread(() -> {
         if (isDestroyed() || isFinishing()) return;
         if(returningToTitle){returningToTitle=false;titlePrevious=null;closeOriginalPanel(false);}
-        if (text.contains("spt/sys.spt") && (text.contains("SPT header") || text.contains("SPTHEADER0") || text.contains("Record length"))) {
+        String detail=reason.getMessage();
+        if(detail!=null&&detail.contains("spt/sys.spt")&&
+            (detail.contains("SPT header")||detail.contains("SPTHEADER0")||detail.contains("Record length"))) {
             new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_invalid_script_title))
                 .setMessage(text(R.string.engine_systemnnn_host_invalid_script_hint))
                 .setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick((d,w) -> finish())).setPositiveButton(text(R.string.engine_systemnnn_host_pick_other),dialogClick((d,w) -> {
-                    startActivity(new Intent(this,PlayerActivity.class).setAction(Intent.ACTION_MAIN)); finish();
+                    startActivity(new Intent(this,PlayerActivity.class).setAction(Intent.ACTION_MAIN)
+                        .putExtra(LaunchContract.UI_LANGUAGE_TAG,getIntent().getStringExtra(LaunchContract.UI_LANGUAGE_TAG)));
+                    finish();
                 })).show(); return;
         }
         GameRunner owner=runner;
         boolean startOver=owner!=null&&owner.initialized();
-        String message=startOver?text+"\n\n"+text(R.string.engine_systemnnn_host_start_over_warning):text;
+        String message=text(reason instanceof SystemNnnHost.SaveBusyException?R.string.engine_systemnnn_host_save_busy:
+            startOver?R.string.engine_systemnnn_host_runtime_interrupted:R.string.engine_systemnnn_host_startup_retry_hint);
+        if(startOver)message+="\n\n"+text(R.string.engine_systemnnn_host_start_over_warning);
         new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_host_game_interrupted)).setMessage(message)
             .setCancelable(startOver)
             .setNegativeButton(text(R.string.engine_systemnnn_host_exit_to_tyn),dialogClick((d,w) -> finish()))

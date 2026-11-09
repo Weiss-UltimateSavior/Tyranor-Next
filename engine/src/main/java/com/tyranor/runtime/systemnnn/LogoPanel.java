@@ -1,6 +1,9 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
+import com.core.engine.EngineUiText;
 import android.graphics.*;
 import android.os.SystemClock;
 import android.view.View;
@@ -61,7 +64,7 @@ final class LogoPanel extends View {
     private boolean finished;
     LogoPanel(Context context,List<Slide> slides,int frameMs,Runnable done){
         super(context);this.slides=slides;this.frameMs=frameMs;this.done=done;
-        setContentDescription("启动 Logo");setSoundEffectsEnabled(false);setOnClickListener(v->skip());
+        setContentDescription(EngineUiText.get(context,R.string.engine_systemnnn_ctl_startup_logo));setSoundEffectsEnabled(false);setOnClickListener(v->skip());
     }
     void skip(){if(!finished&&slides.get(index).skip)next();}
     Bitmap exitScreen(){

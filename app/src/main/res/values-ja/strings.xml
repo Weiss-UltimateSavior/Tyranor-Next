@@ -104,6 +104,11 @@
     <string name="settings_join_group">コミュニティに参加</string>
     <string name="settings_game_dirs_title">ゲームフォルダ</string>
     <string name="settings_no_game_dirs">ゲームフォルダはありません</string>
+    <string name="settings_systemnnn_clear_orphan_resources">未登録の SystemNNN ゲームデータを削除</string>
+    <string name="settings_systemnnn_clear_orphan_resources_message">ゲームライブラリに登録されていない SystemNNN の取り込み済みコピーから、ゲームデータを削除します。元のゲームフォルダとすべてのセーブデータは残ります。ゲームを再登録すると、ゲームデータを取り込み直せます。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_done">SystemNNN のコピー %1$d 件からゲームデータを削除しました</string>
+    <string name="settings_systemnnn_clear_orphan_resources_empty">削除できる未登録の SystemNNN ゲームデータはありません</string>
+    <string name="settings_systemnnn_clear_orphan_resources_incomplete">%1$d 件を削除しました。%2$d 件は削除できませんでした。実行中のゲームを終了して再試行してください。</string>
     <string name="settings_invalid_suffix">無効</string>
     <string name="settings_add_dir">フォルダを追加</string>
     <string name="settings_input_path">パスを入力</string>

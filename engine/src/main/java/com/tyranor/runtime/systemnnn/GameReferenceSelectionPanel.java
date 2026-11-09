@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -102,7 +104,7 @@ final class GameReferenceSelectionPanel extends GameUiPanel {
             if(rowIndex==modal.rows.length||modal.rows[rowIndex].id!=id)continue;
             GameRunner.Modal.Row row=modal.rows[rowIndex++];
             if(!row.enabled())continue;
-            String label=config.text(key+"Name","提示组 "+id);
+            String label=config.text(key+"Name",hostText(R.string.engine_systemnnn_ctl_hint_group, id));
             configuredButton(previous,previous.art.image,label,()->send(GameRunner.Modal.CHOOSE,row.id),x,y);
         }
     }
@@ -130,10 +132,10 @@ final class GameReferenceSelectionPanel extends GameUiPanel {
         ButtonArt.Setup down=new ButtonArt.Setup(buttons,"Down",up,false);
         int upX=buttons.number("UpPrintX",0),upY=buttons.number("UpPrintY",0);
         if(modal.page>0)
-            configuredButton(up,buttons.value("UpFileName","ta_upButton"),"上一页",
+            configuredButton(up,buttons.value("UpFileName","ta_upButton"),hostText(R.string.engine_systemnnn_ctl_page_previous),
                 ()->send(GameRunner.Modal.PAGE,modal.page-1),upX,upY);
         if(modal.page+1<modal.pages)
-            configuredButton(down,buttons.value("DownFileName","ta_downButton"),"下一页",
+            configuredButton(down,buttons.value("DownFileName","ta_downButton"),hostText(R.string.engine_systemnnn_ctl_page_next),
                 ()->send(GameRunner.Modal.PAGE,modal.page+1),
                 buttons.number("DownPrintX",upX+up.width),buttons.number("DownPrintY",upY+up.height));
     }
@@ -157,7 +159,7 @@ final class GameReferenceSelectionPanel extends GameUiPanel {
         ButtonArt.Setup setup=new ButtonArt.Setup(controls,"Back",null,false);
         int x=controls.number("BackPrintX",0),y=controls.number("BackPrintY",0);
         if(mode==SELECT_ZUKAN){x=config.number("BackPrintX",x);y=config.number("BackPrintY",y);}
-        backButton=configuredButton(setup,controls.value("BackFileName","ta_backButton"),"返回",
+        backButton=configuredButton(setup,controls.value("BackFileName","ta_backButton"),hostText(R.string.engine_systemnnn_host_back),
             ()->send(GameRunner.Modal.BACK,0),x,y);
     }
 

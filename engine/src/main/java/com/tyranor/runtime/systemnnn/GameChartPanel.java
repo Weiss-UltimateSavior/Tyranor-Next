@@ -1,6 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
 import android.content.Context;
+import com.core.engine.R;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
@@ -498,7 +499,7 @@ final class GameChartPanel extends GameUiPanel {
             PageTab tab=tabs[page];
             if(tab==null)continue;
             int target=page;
-            GameButton button=control(tab.setup,"章节 "+(page+1),
+            GameButton button=control(tab.setup,hostText(R.string.engine_systemnnn_ctl_chart_chapter,page+1),
                 ()->enqueue(PAGE,target),tab.x,tab.y,tab.enabled);
             tab.button=button;
             if(button!=null)button.prepare(this::invalidateComposition);
@@ -542,15 +543,15 @@ final class GameChartPanel extends GameUiPanel {
             ButtonArt.Setup no=new ButtonArt.Setup(config,"dialogCancel",yes,false);
             int x=config.number("dialogOkPrintX",0),y=config.number("dialogOkPrintY",0);
             if(confirmationVisible(assets,modal,canvasWidth,canvasHeight))
-                control(yes,"确认跳转",()->enqueue(CONFIRM,1),dialogX+x,dialogY+y,true);
-            cancelButton=control(no,"取消跳转",()->enqueue(CONFIRM,0),
+                control(yes,hostText(R.string.engine_systemnnn_ctl_chart_confirm),()->enqueue(CONFIRM,1),dialogX+x,dialogY+y,true);
+            cancelButton=control(no,hostText(R.string.engine_systemnnn_ctl_chart_cancel),()->enqueue(CONFIRM,0),
                 dialogX+config.number("dialogCancelPrintX",x+yes.width),dialogY+config.number("dialogCancelPrintY",y),true);
         }
         GameUiAssets.Config menu=assets.storyButtons.get("optionButton");
         if(options!=null&&menu!=null&&assets.game.number("optionButtonCreateFlag",1)!=0&&
             config.number("disableQuickSystemMenuButton",0)==0){
             ButtonArt.Setup art=new ButtonArt.Setup(menu,"optionButton",null,false);
-            menuButton=control(art,"菜单",()->enqueue(OPEN_OPTIONS,0),menu.number("optionButtonPrintX",0),
+            menuButton=control(art,hostText(R.string.engine_systemnnn_ctl_menu),()->enqueue(OPEN_OPTIONS,0),menu.number("optionButtonPrintX",0),
                 menu.number("optionButtonPrintY",0),true);
             if(menuButton!=null&&warning()){
                 menuButton.setClickable(false);
@@ -824,10 +825,10 @@ final class GameChartPanel extends GameUiPanel {
         private void tiles(Canvas c,ChartBackdrop.Frame backdrop){
             if(scriptTiles&&backdrop!=null){
                 int y=chart.limit<=0?0:-(int)(scrollDistance()/chart.limit);
-                for(Bitmap tile:backdrop.tiles){
+                for(ChartBackdrop.Tile tile:backdrop.tiles){
                     if(tile==null)continue;
-                    image(c,tile,0,y);
-                    y+=tile.getHeight();
+                    image(c,tile.image,0,y);
+                    y+=tile.height;
                 }
             }else for(ChartView.Tile tile:chart.tiles){
                 Bitmap opaque=modal.assets.opaqueImages.get(GameUiAssets.systemImageKey(tile.asset));

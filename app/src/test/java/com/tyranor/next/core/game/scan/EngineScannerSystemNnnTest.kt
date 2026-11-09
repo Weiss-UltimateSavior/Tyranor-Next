@@ -48,4 +48,16 @@ class EngineScannerSystemNnnTest {
         val thirdParty = old.copy(runtimeModulePackage = "com.tyranor.runtime.other")
         assertSame(thirdParty, RuntimeModuleBindings.builtInSystemNnn(thirdParty))
     }
+
+    @Test fun strongSystemNnnDetectionReplacesOnlyUnavailableThirdPartyBindings() {
+        val detected = ScanGame("Game", "/storage/emulated/0/game", EngineType.SYSTEMNNN,
+            EngineScanner.LAUNCH_TARGET_GAME_DIR)
+        val unavailable = detected.copy(engine = EngineType.UNKNOWN, runtimeModulePackage = "com.tyranor.runtime.other",
+            coverUri = "file:///cover.png", openTime = 123)
+        val fallback = detected.copy(coverUri = unavailable.coverUri, openTime = unavailable.openTime)
+        assertEquals(fallback, EngineScanner.mergeScannedGame(detected, unavailable, emptySet()))
+        val bound = unavailable.copy(engine = EngineType.RUNTIME_MODULE)
+        assertEquals(fallback, EngineScanner.mergeScannedGame(detected, bound, emptySet()))
+        assertSame(bound, EngineScanner.mergeScannedGame(detected, bound, setOf("com.tyranor.runtime.other")))
+    }
 }

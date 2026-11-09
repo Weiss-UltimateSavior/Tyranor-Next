@@ -73,6 +73,8 @@ import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.theme.AppThemeColors
@@ -162,6 +164,8 @@ fun SettingsScreen(
     var showGroupDialog by remember { mutableStateOf(false) }
     var showScanDirs by remember { mutableStateOf(false) }
     var scanDirs by remember { mutableStateOf(emptyList<String>()) }
+    var showOrphanResourceCleanup by remember { mutableStateOf(false) }
+    var clearingOrphanResources by remember { mutableStateOf(false) }
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
@@ -506,8 +510,21 @@ fun SettingsScreen(
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
                                             onClick = {
-                                                GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
+                                                val removed = GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
                                                 scanDirs = GameLibraryFacade.loadRoots(ctx)
+                                                val imported = removed.filter { it.engine == EngineType.SYSTEMNNN }
+                                                if (imported.isNotEmpty()) scope.launch(Dispatchers.IO) {
+                                                    val manager = GameSaveManager(ctx.applicationContext)
+                                                    for (game in imported) {
+                                                        try {
+                                                            manager.clearImportedSystemNnnResources(game, onlyIfUnreferenced = true)
+                                                        } catch (cancelled: CancellationException) {
+                                                            throw cancelled
+                                                        } catch (failure: Exception) {
+                                                            android.util.Log.w("SettingsScreen", "Could not clear removed SystemNNN resources", failure)
+                                                        }
+                                                    }
+                                                }
                                             },
                                         ),
                                     contentAlignment = Alignment.Center,
@@ -521,6 +538,15 @@ fun SettingsScreen(
                                     )
                                 }
                             }
+                        }
+                        item {
+                            NoRippleButton(
+                                text = stringResource(R.string.settings_systemnnn_clear_orphan_resources),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !clearingOrphanResources,
+                                tonal = true,
+                                onClick = { showOrphanResourceCleanup = true },
+                            )
                         }
                     }
                     // 底部主操作：输入路径 / 添加目录 改为两个长按钮；
@@ -546,6 +572,65 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showOrphanResourceCleanup) {
+        AppAlertDialog(
+            onDismissRequest = { showOrphanResourceCleanup = false },
+            title = {
+                Text(
+                    stringResource(R.string.settings_systemnnn_clear_orphan_resources),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.settings_systemnnn_clear_orphan_resources_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_confirm),
+                    enabled = !clearingOrphanResources,
+                    onClick = {
+                        showOrphanResourceCleanup = false
+                        clearingOrphanResources = true
+                        scope.launch {
+                            try {
+                                val result = GameSaveManager(ctx).clearUnreferencedSystemNnnResources()
+                                val message = when {
+                                    result.failed > 0 -> ctx.getString(
+                                        R.string.settings_systemnnn_clear_orphan_resources_incomplete,
+                                        result.cleared,
+                                        result.failed,
+                                    )
+                                    result.cleared > 0 -> ctx.getString(
+                                        R.string.settings_systemnnn_clear_orphan_resources_done,
+                                        result.cleared,
+                                    )
+                                    else -> ctx.getString(R.string.settings_systemnnn_clear_orphan_resources_empty)
+                                }
+                                Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (failure: Exception) {
+                                android.util.Log.w("SettingsScreen", "Could not list imported SystemNNN resources", failure)
+                                Toast.makeText(ctx, R.string.save_operation_failed, Toast.LENGTH_SHORT).show()
+                            } finally {
+                                clearingOrphanResources = false
+                            }
+                        }
+                    },
+                )
+            },
+            dismissButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { showOrphanResourceCleanup = false },
+                )
+            },
+        )
     }
 
     if (showPathDialog) {

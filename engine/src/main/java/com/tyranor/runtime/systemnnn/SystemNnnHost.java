@@ -3,6 +3,7 @@ package com.tyranor.runtime.systemnnn;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import com.core.engine.LaunchContract;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -18,8 +19,6 @@ import java.util.Set;
 
 /** Host entry point for the built-in Tyranor-Next engine. */
 public final class SystemNnnHost {
-    private static final String ACTION_LAUNCH = "com.tyranor.runtime.action.LAUNCH";
-    private static final String EXTRA = "com.tyranor.runtime.extra.";
     public static final String SAVE_MIGRATION_DIRECTORY = GameSavePaths.PREFIX + ".migrate";
     public static final String SAVE_RESTORE_DIRECTORY = "tyn-restore";
     public static final String SAVE_SLOT_PRESENTATION_FILE = GameSavePaths.PREFIX + SaveSlots.SLOT_UI;
@@ -42,11 +41,11 @@ public final class SystemNnnHost {
             throw new IOException("Cannot read spt/sys.spt in " + game);
         }
         return new Intent(context, PlayerActivity.class)
-            .setAction(ACTION_LAUNCH)
+            .setAction(LaunchContract.RUNTIME_MODULE_ACTION)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
-            .putExtra(EXTRA + "FOLDER_PATH", game.getPath())
-            .putExtra(EXTRA + "GAME_TITLE", title)
-            .putExtra(EXTRA + "PROTOCOL_VERSION", 1);
+            .putExtra(LaunchContract.RUNTIME_MODULE_FOLDER_PATH, game.getPath())
+            .putExtra(LaunchContract.RUNTIME_MODULE_GAME_TITLE, title)
+            .putExtra(LaunchContract.RUNTIME_MODULE_PROTOCOL_VERSION, LaunchContract.RUNTIME_MODULE_VERSION);
     }
 
     /** Returns the shared sav directory without creating it. */

@@ -321,10 +321,13 @@ final class GameProgress {
         });
         try{
             move.move(pending,extension);
-            retireLegacyBackup(extension);
         }catch(IOException|RuntimeException e){
             discardPending(pending,e);
             throw e;
+        }
+        try{retireLegacyBackup(extension);}
+        catch(IOException|SecurityException e){
+            LOG.log(Level.WARNING,"Unable to retire the legacy global progress extension backup",e);
         }
     }
     private static boolean hasVoiceRoles(State state){

@@ -115,6 +115,12 @@ object EngineScanner {
         // 在合并扫描结果前核对旧绑定，并恢复已重新启用的原模块。
         RuntimeModuleBindings.reconcile(context.applicationContext, restoreReenabled = true)
         val scanned = scanAll(context)
+        val runtimeSnapshot = RuntimeModuleRegistry.state.value
+        val availableModules = if (runtimeSnapshot.lastError == null) {
+            runtimeSnapshot.modules.filter { it.enabled }.mapTo(HashSet()) { it.packageName }
+        } else {
+            emptySet()
+        }
         // 扫描可能耗时较长；提交结果前再次读取当前 roots，避免扫描期间设置页删除目录后，
         // 旧 root 的扫描结果在任务结束时被重新写回游戏库。
         val activeRoots = GameLibraryFacade.loadRoots(context)
@@ -124,32 +130,7 @@ object EngineScanner {
         val refreshed = GameLibraryFacade.updateGames(context) { currentGames ->
             val existingByUri = currentGames.associateBy { it.uri }
             val scanned = activeScanned.map { current ->
-                existingByUri[current.uri]?.let { saved ->
-                    val previous = RuntimeModuleBindings.builtInSystemNnn(saved)
-                    if (current.engine == EngineType.SYSTEMNNN && previous.isRuntimeModuleBound() &&
-                        !previous.runtimeModulePackage.isNullOrBlank()
-                    ) return@let previous
-                    current.copy(
-                        coverUri = previous.coverUri ?: current.coverUri,
-                        coverSource = previous.coverSource
-                            ?: current.coverSource?.takeIf {
-                                previous.coverUri == null || previous.coverUri == current.coverUri
-                            },
-                        vndbId = previous.vndbId,
-                        metadataTitle = previous.metadataTitle,
-                        externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
-                        // 旧绑定优先：仅旧记录本身是运行时模块时保留旧包名；当前识别为内置引擎则清空，
-                        // 当前识别为其它模块时采用当前包名，避免“内置引擎 + 残留包名”或错绑。
-                        runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {
-                            (if (previous.engine == EngineType.RUNTIME_MODULE) previous.runtimeModulePackage else null)
-                                ?: current.runtimeModulePackage
-                        } else {
-                            null
-                        },
-                        launchFile = previous.launchFile,
-                        openTime = previous.openTime,
-                    )
-                } ?: current
+                existingByUri[current.uri]?.let { saved -> mergeScannedGame(current, saved, availableModules) } ?: current
             }
             val merged = mergeScannedWithManual(currentGames, scanned)
             // 运行时绑定条目（含已降级为 UNKNOWN 但仍保留最后已知包名的条目）只在仍属于
@@ -248,6 +229,32 @@ object EngineScanner {
                 game.uri !in scannedUris
         }
         return manual + scanned
+    }
+
+    internal fun mergeScannedGame(current: ScanGame, saved: ScanGame, availableModules: Set<String>): ScanGame {
+        val previous = RuntimeModuleBindings.builtInSystemNnn(saved)
+        val boundPackage = previous.runtimeModulePackage
+        if (current.engine == EngineType.SYSTEMNNN && previous.engine == EngineType.RUNTIME_MODULE &&
+            boundPackage != null && boundPackage in availableModules
+        ) return previous
+        return current.copy(
+            coverUri = previous.coverUri ?: current.coverUri,
+            coverSource = previous.coverSource
+                ?: current.coverSource?.takeIf {
+                    previous.coverUri == null || previous.coverUri == current.coverUri
+                },
+            vndbId = previous.vndbId,
+            metadataTitle = previous.metadataTitle,
+            externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
+            runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {
+                (if (previous.engine == EngineType.RUNTIME_MODULE) previous.runtimeModulePackage else null)
+                    ?: current.runtimeModulePackage
+            } else {
+                null
+            },
+            launchFile = previous.launchFile,
+            openTime = previous.openTime,
+        )
     }
 
     /** 运行时绑定条目：引擎仍是 RUNTIME_MODULE，或已降级为 UNKNOWN 但保留最后已知包名。 */

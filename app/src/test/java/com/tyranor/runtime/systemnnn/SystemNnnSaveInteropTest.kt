@@ -370,6 +370,34 @@ class SystemNnnSaveInteropTest {
         assertEquals(lockIdentity, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
     }
 
+    @Test fun orphanEnumerationAcceptsOnlyValidatedCopiesWithResources() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val source = "primary:Games/Orphan"
+        val entry = base.resolve(SystemNnnGameImport.key(source))
+        put(entry, "source.id", source)
+        put(entry, "game/spt/sys.spt", "script")
+        put(entry, "game/SaV/sysfile3.sav", "PC")
+
+        val saveOnly = "primary:Games/SaveOnly"
+        val emptyCopy = base.resolve(SystemNnnGameImport.key(saveOnly))
+        put(emptyCopy, "source.id", saveOnly)
+        put(emptyCopy, "game/sav/emberfall.resume", "autosave")
+
+        val wrongHash = base.resolve(SystemNnnGameImport.key("primary:Games/WrongHash"))
+        put(wrongHash, "source.id", source)
+        put(wrongHash, "game/spt/sys.spt", "wrong source")
+        val staging = base.resolve("${entry.name}.pending-test")
+        put(staging, "source.id", source)
+        put(staging, "game/spt/sys.spt", "staged")
+
+        assertEquals(listOf(source), SystemNnnGameImport.importedResourceSourceIds(base))
+        assertTrue(SystemNnnGameImport.clearResources(base, source))
+        assertTrue(SystemNnnGameImport.importedResourceSourceIds(base).isEmpty())
+        assertEquals("PC", entry.resolve("game/SaV/sysfile3.sav").readText())
+        assertEquals("wrong source", wrongHash.resolve("game/spt/sys.spt").readText())
+        assertEquals("staged", staging.resolve("game/spt/sys.spt").readText())
+    }
+
     @Test fun readingCorruptProgressRestoresValidatedBackupAndItsExtension() {
         val game = temp.newFolder()
         val saves = game.resolve("sav").apply { check(mkdir()) }
@@ -525,6 +553,33 @@ class SystemNnnSaveInteropTest {
         val recovered = checkNotNull(store.read())
         assertArrayEquals(intArrayOf(34), recovered.read)
         assertArrayEquals(byteArrayOf(34), recovered.text[0])
+    }
+
+    @Test fun extensionOnlyCommitSucceedsWhenTheLegacyBackupCannotBeRetired() {
+        val saves = temp.newFolder()
+        val primary = saves.resolve("emberfall.read")
+        val extension = saves.resolve("emberfall.read.ext")
+        val backup = saves.resolve("emberfall.read.ext.bak")
+        val store = GameProgress(primary)
+        store.write(progressState(21, 21))
+        extension.copyTo(backup)
+        val previous = backup.readBytes()
+        val currentBase = primary.readBytes()
+        var attempted = false
+        val interrupted = GameProgress(primary) { from, to ->
+            if (from == backup.toPath()) {
+                attempted = true
+                throw IOException("cannot retire the legacy extension backup")
+            }
+            Files.move(from, to, ATOMIC_MOVE, REPLACE_EXISTING)
+        }
+
+        interrupted.write(progressState(21, 34))
+
+        assertTrue(attempted)
+        assertArrayEquals(currentBase, primary.readBytes())
+        assertArrayEquals(previous, backup.readBytes())
+        assertArrayEquals(byteArrayOf(34), checkNotNull(store.read()).text[0])
     }
 
     @Test fun readsSeparateVoiceRoleAndClipFlags() {

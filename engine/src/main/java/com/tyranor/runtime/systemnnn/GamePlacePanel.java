@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -35,7 +37,7 @@ final class GamePlacePanel extends GameUiPanel {
             if(frame.places[i]==0)continue;
             int place=i+1;
             String key="place"+place;
-            String label=cfg.text(key+"Name",cfg.text("placeAppearVarName"+place,"地点 "+place));
+            String label=cfg.text(key+"Name",cfg.text("placeAppearVarName"+place,hostText(R.string.engine_systemnnn_ctl_place_number, place)));
             GameButton button=(GameButton)button(cfg,key,"place1",label,()->choose.accept(place),0,0,w,h);
             boolean enabled=frame.places[i]==2;
             button.setEnabled(enabled);

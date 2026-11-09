@@ -1,6 +1,8 @@
 package com.tyranor.runtime.systemnnn;
 
 import android.content.Context;
+import com.core.engine.EngineUiText;
+import com.core.engine.R;
 import android.graphics.Color;
 import android.graphics.SurfaceTexture;
 import android.media.AudioAttributes;
@@ -36,7 +38,8 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         this.listener=listener;this.canSkip=canSkip;this.volume=Math.max(0,Math.min(100,volume))/100f;
         filename=file.getPath().getBytes(StandardCharsets.UTF_8);
         setBackgroundColor(Color.BLACK);setSoundEffectsEnabled(false);
-        setContentDescription(canSkip?"动画播放 · 轻触返回":"动画播放");
+        setContentDescription(EngineUiText.get(context,canSkip?R.string.engine_systemnnn_ctl_movie_skippable:
+            R.string.engine_systemnnn_ctl_movie_playing));
         setOnClickListener(v->skip());
         picture=new TextureView(context);
         picture.setSurfaceTextureListener(this);

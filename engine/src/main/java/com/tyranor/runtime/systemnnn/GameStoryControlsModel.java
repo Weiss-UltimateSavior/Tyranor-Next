@@ -9,17 +9,16 @@ final class GameStoryControlsModel {
         "quickBacklogButton","freeSaveButton","freeLoadButton","freeAutoButton","freeSkipButton","freeWindowOffButton"};
     static final Action[] ACTIONS={Action.MENU,Action.QUICK_SAVE,Action.QUICK_LOAD,Action.CONFIG,Action.BACKLOG,
         Action.SAVE,Action.LOAD,Action.AUTO,Action.SKIP,Action.HIDE};
-    static final String[] LABELS={"菜单","QSave","QLoad","环境设定","回看","保存进度","读取存档","Auto","Skip","隐藏"};
     final List<Button> buttons=new ArrayList<>();
     final boolean original;
     final boolean drawDuringTransitions;
     static final class Button {
-        final Action action;final String label;
+        final Action action;
         final ButtonArt art;
         final int x,y,width,height;
         final int checkX,checkY,checkWidth,checkHeight,checkDeltaX,checkDeltaY,printMode,clickTime,sound,voice;
-        Button(Action action,String label,String prefix,GameUiAssets.Config c){
-            this.action=action;this.label=label;art=new ButtonArt(c,prefix,null);
+        Button(Action action,String prefix,GameUiAssets.Config c){
+            this.action=action;art=new ButtonArt(c,prefix,null);
             x=bound(c.number(prefix+"PrintX",0),-4096,4096);y=bound(c.number(prefix+"PrintY",0),-4096,4096);
             width=bound(c.number(prefix+"SizeX",16),1,4096);height=bound(c.number(prefix+"SizeY",16),1,4096);
             checkX=c.number(prefix+"CheckPicX",art.states[0].x);checkY=c.number(prefix+"CheckPicY",art.states[0].y);
@@ -39,7 +38,7 @@ final class GameStoryControlsModel {
             if(c==null||!c.has(name+"FileName")||game.number(name+"CreateFlag",i==0?1:0)==0)continue;
             if(i==1&&save==0)continue;
             if(i==2&&load==0)continue;
-            buttons.add(new Button(ACTIONS[i],LABELS[i],name,c));
+            buttons.add(new Button(ACTIONS[i],name,c));
         }
         original=!buttons.isEmpty();
     }

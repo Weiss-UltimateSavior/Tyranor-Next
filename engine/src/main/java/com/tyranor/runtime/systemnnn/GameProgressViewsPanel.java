@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -291,20 +293,20 @@ final class GameProgressViewsPanel extends GameUiPanel {
             upReverse=pages.number("UpUpDownReverse",0)!=0;
             downReverse=pages.number("DownUpDownReverse",0)!=0;
             int x=pages.number("UpPrintX",0),y=pages.number("UpPrintY",0);
-            if(modal.page>0)upButton=control(up,"ta_upButton","上一页",()->send(PAGE,modal.page-1),
+            if(modal.page>0)upButton=control(up,"ta_upButton",hostText(R.string.engine_systemnnn_ctl_page_previous),()->send(PAGE,modal.page-1),
                 config.number("UpPrintX",x),config.number("UpPrintY",y));
-            if(modal.page+1<modal.pages)downButton=control(down,"ta_downButton","下一页",()->send(PAGE,modal.page+1),
+            if(modal.page+1<modal.pages)downButton=control(down,"ta_downButton",hostText(R.string.engine_systemnnn_ctl_page_next),()->send(PAGE,modal.page+1),
                 config.number("DownPrintX",pages.number("DownPrintX",0)),config.number("DownPrintY",pages.number("DownPrintY",0)));
         }
         int x=back.number("BackPrintX",0),y=back.number("BackPrintY",0);
         if(!achievements){x=config.number("BackPrintX",x);y=config.number("BackPrintY",y);}
-        backButton=control(new ButtonArt.Setup(back,"Back",null,false),"ta_backButton","返回",()->send(BACK,0),x,y);
+        backButton=control(new ButtonArt.Setup(back,"Back",null,false),"ta_backButton",hostText(R.string.engine_systemnnn_host_back),()->send(BACK,0),x,y);
     }
 
     private void confirmation(){
         if(confirmationFailure(assets,modal)!=null)return;
         int id=modal.selection;
-        okButton=control(new ButtonArt.Setup(config,"Ok",null,false),"","确定",()->send(CONFIRM,id),
+        okButton=control(new ButtonArt.Setup(config,"Ok",null,false),"",hostText(R.string.engine_systemnnn_ctl_ok),()->send(CONFIRM,id),
             config.number("dialogPrintX",170)+config.number("OkPrintX",0),
             config.number("dialogPrintY",130)+config.number("OkPrintY",0));
     }

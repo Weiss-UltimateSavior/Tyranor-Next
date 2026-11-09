@@ -1075,7 +1075,8 @@ object EngineLauncher {
             }
             requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
             val root = SystemNnnGameDirectory.accessible(game.uri, path) ?: return LaunchResult.Failure.GameDirUnresolved
-            return if (SystemNnnGameImport.readableBootstrap(root)) null else LaunchResult.Failure.GameDirUnresolved
+            if (!SystemNnnGameImport.readableBootstrap(root)) return LaunchResult.Failure.GameDirUnresolved
+            return if (systemNnnSavesWritable(context, root)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: SystemNnnGameImport.Failure) {

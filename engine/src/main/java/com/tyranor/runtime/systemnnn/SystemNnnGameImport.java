@@ -25,6 +25,7 @@ import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,6 +34,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 /** Durable real files for a game whose shared-storage path is blocked but whose SAF tree is readable. */
 public final class SystemNnnGameImport {
@@ -47,6 +49,7 @@ public final class SystemNnnGameImport {
     }
     private static final String PROVIDER="com.android.externalstorage.documents";
     private static final String DIRECTORY="systemnnn-imports",IDENTITY="source.id",GAME="game",EVICTED="resources-evicted";
+    private static final Pattern COPY_KEY=Pattern.compile("[0-9a-f]{64}");
     private static final int MAX_ENTRIES=100000,MAX_DEPTH=64,MAX_ID_BYTES=8192,CHUNK=64*1024;
     private static final long FREE_HEADROOM=256L*1024*1024;
     private static final Cancellation NONE=()->{};
@@ -117,10 +120,34 @@ public final class SystemNnnGameImport {
     public static boolean resourcesEvicted(File game){
         File entry=game.getParentFile(),base=entry==null?null:entry.getParentFile();
         return GAME.equals(game.getName())&&base!=null&&DIRECTORY.equals(base.getName())&&
-            entry.getName().matches("[0-9a-f]{64}")&&!Files.notExists(evictionMarker(game),LinkOption.NOFOLLOW_LINKS);
+            COPY_KEY.matcher(entry.getName()).matches()&&!Files.notExists(evictionMarker(game),LinkOption.NOFOLLOW_LINKS);
     }
     public static boolean hasImportedResources(File game) throws IOException {
         return !resourceChildren(game).isEmpty();
+    }
+    public static List<String> importedResourceSourceIds(Context context) throws IOException {
+        File external=context.getExternalFilesDir(null);
+        if(external==null)throw new Failure(Reason.COPY_FAILED);
+        return importedResourceSourceIds(new File(external,DIRECTORY));
+    }
+    static List<String> importedResourceSourceIds(File base) throws IOException {
+        if(Files.notExists(base.toPath(),LinkOption.NOFOLLOW_LINKS))return Collections.emptyList();
+        plainDirectory(base);
+        File[] entries=base.listFiles();
+        if(entries==null)throw new Failure(Reason.COPY_FAILED);
+        List<String> sources=new ArrayList<>();
+        for(File entry:entries){
+            if(!COPY_KEY.matcher(entry.getName()).matches()||
+                !Files.isDirectory(entry.toPath(),LinkOption.NOFOLLOW_LINKS))continue;
+            try{
+                String sourceId=readIdentity(entry);
+                if(!sourceId.equals(normalizeIdentity(sourceId))||!entry.getName().equals(key(sourceId)))continue;
+                if(hasImportedResources(new File(entry,GAME)))sources.add(sourceId);
+            }catch(IOException|SecurityException ignored){
+                // An entry whose identity or layout cannot be verified is ineligible for eviction.
+            }
+        }
+        return sources;
     }
     public static boolean clearResources(Context context,String sourceId) throws IOException {
         File external=context.getExternalFilesDir(null);
@@ -159,11 +186,11 @@ public final class SystemNnnGameImport {
         return resources;
     }
     private static String readIdentity(File entry) throws IOException {
-        File id=new File(entry,IDENTITY);
-        if(Files.isSymbolicLink(id.toPath())||!id.isFile()||id.length()>MAX_ID_BYTES)
+        Path id=new File(entry,IDENTITY).toPath();
+        if(!Files.isRegularFile(id,LinkOption.NOFOLLOW_LINKS)||Files.size(id)>MAX_ID_BYTES)
             throw new Failure(Reason.CORRUPT_COPY);
         ByteArrayOutputStream identity=new ByteArrayOutputStream();
-        try(InputStream input=new FileInputStream(id)){
+        try(InputStream input=Files.newInputStream(id,LinkOption.NOFOLLOW_LINKS)){
             for(int value;(value=input.read())!=-1;){
                 if(identity.size()>=MAX_ID_BYTES)throw new Failure(Reason.CORRUPT_COPY);
                 identity.write(value);

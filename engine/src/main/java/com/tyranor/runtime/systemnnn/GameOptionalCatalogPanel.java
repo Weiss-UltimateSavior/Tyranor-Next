@@ -1,5 +1,7 @@
 package com.tyranor.runtime.systemnnn;
 
+import com.core.engine.R;
+
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -182,7 +184,7 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
             onY=config.number(key+"2PrintY",offY);
             previousOn=on;
             int target=group;
-            String label=(terms?"术语分类 ":"角色语音 ")+(group+1);
+            String label=hostText(terms?R.string.engine_systemnnn_ctl_term_group:R.string.engine_systemnnn_ctl_voice_group,group+1);
             if(group==modal.group){
                 GameButton selected=new GameButton(getContext(),new GameButton.Spec(on),sprite(on.art.image),label,frameMs);
                 selected.setFocusable(false);selected.setSelected(true);
@@ -204,12 +206,12 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         downReverse=pages.number("DownUpDownReverse",0)!=0;
         String upImage=up.art.image.isEmpty()?"ta_upButton":up.art.image;
         String downImage=down.art.image.isEmpty()?"ta_downButton":down.art.image;
-        upButton=modal.page>0?originalButton(up,upImage,"上一页",
+        upButton=modal.page>0?originalButton(up,upImage,hostText(R.string.engine_systemnnn_ctl_page_previous),
             ()->send(PAGE,modal.page-1),upX,upY):null;
-        downButton=modal.page+1<modal.pages?originalButton(down,downImage,"下一页",
+        downButton=modal.page+1<modal.pages?originalButton(down,downImage,hostText(R.string.engine_systemnnn_ctl_page_next),
             ()->send(PAGE,modal.page+1),pages.number("DownPrintX",upX+up.width),
             pages.number("DownPrintY",upY+up.height)):null;
-        backButton=originalButton(backArt,back.value("BackFileName","ta_backButton"),"返回",
+        backButton=originalButton(backArt,back.value("BackFileName","ta_backButton"),hostText(R.string.engine_systemnnn_host_back),
             ()->send(BACK,0),back.number("BackPrintX",0),back.number("BackPrintY",0));
     }
 

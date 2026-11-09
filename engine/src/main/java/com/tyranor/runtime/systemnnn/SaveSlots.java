@@ -19,7 +19,7 @@ final class SaveSlots {
     private static final int LAST_MAGIC=0x4c535431; // LST1
     private static final int SLOT_UI_MAGIC=0x534c5531; // SLU1
     private static final int MAX_PICTURE_SIZE=512;
-    private static final int MAX_PRELOAD_PICTURE_PIXELS=6*1024*1024;
+    private static final int MAX_CACHED_PICTURE_PIXELS=6*1024*1024;
     private final GameSavePaths paths;
     private volatile Map<Integer,Entry> cached=Collections.emptyMap();
     private volatile int manualCount=LEGACY_MANUAL_COUNT;
@@ -138,11 +138,11 @@ final class SaveSlots {
             }
         }
         Map<Integer,Entry> entries=new TreeMap<>();
-        int remainingPixels=MAX_PRELOAD_PICTURE_PIXELS;
+        int remainingPixels=MAX_CACHED_PICTURE_PIXELS;
         for(int slot:found){
             Entry entry=readEntry(slot,remainingPixels);
             if(entry.exists)entries.put(slot,entry);
-            if(entry.picture!=null)remainingPixels-=entry.picture.getWidth()*entry.picture.getHeight();
+            remainingPixels-=(int)picturePixels(entry.picture);
         }
         cached=entries;
         this.manualCount=manualCount;
@@ -165,8 +165,14 @@ final class SaveSlots {
     }
     void saved(GameSave.Metadata metadata,Bitmap picture){
         Map<Integer,Entry> next=new TreeMap<>(cached);
-        next.put(metadata.slot,entry(metadata.slot,metadata,picture));
+        next.remove(metadata.slot);
+        long available=MAX_CACHED_PICTURE_PIXELS;
+        for(Entry entry:next.values())available-=picturePixels(entry.picture);
+        next.put(metadata.slot,entry(metadata.slot,metadata,picturePixels(picture)<=available?picture:null));
         cached=next;
+    }
+    private static long picturePixels(Bitmap picture){
+        return picture==null?0:(long)picture.getWidth()*picture.getHeight();
     }
     Integer lastSelectedSlot(){
         Integer slot=lastSelected;
