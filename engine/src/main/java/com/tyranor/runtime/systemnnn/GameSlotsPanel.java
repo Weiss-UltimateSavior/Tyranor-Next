@@ -8,10 +8,12 @@ import android.view.View;
 import com.core.engine.EngineUiText;
 import com.core.engine.R;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Map;
 
 /** Save and load slot artwork in the game's configured grid. */
 final class GameSlotsPanel extends GameUiPanel {
@@ -20,20 +22,44 @@ final class GameSlotsPanel extends GameUiPanel {
     private final Select select;
     private final Runnable close,transferPc;
     private final GameUiAssets.Config config,data;
-    private final List<SaveSlots.Entry> entries=new ArrayList<>();
+    private final SaveSlots.Layout layout;
+    private final Map<Integer,SaveSlots.Entry> entries=new HashMap<>();
     private final int cardWidth,cardHeight;
-    private int page;
+    private final Bitmap artworkAtlas,lastSaveAtlas;
+    private final int artworkColumns,artworkMinimum;
+    private final Rect artworkDestination;
+    private final SpriteAnimation lastSaveAnimation;
+    private final RectF lastSaveDestination;
+    private long lastSaveSince=SystemClock.uptimeMillis();
+    private int page,backgroundPage=-1;
     private GameUiPanel confirmation;
     private SlotCard loadCard;
     private Runnable pendingLoad;
     private long loadClickAt;
     private boolean refreshEntries;
-    GameSlotsPanel(Context c,GameUiAssets assets,boolean saving,SaveSlots.Entry[] slots,Runnable click,Runnable close,Select select,Runnable transferPc,
+    GameSlotsPanel(Context c,GameUiAssets assets,boolean saving,SaveSlots.Entry[] slots,Integer lastSelected,Runnable click,Runnable close,Select select,Runnable transferPc,
                    UiPreviewPool.Warmup warmup){
         super(c,assets,(saving?assets.save:assets.load).value("filenameBG",saving?"ta_savebg01":"ta_loadbg01"),click);
         this.saving=saving;this.select=select;this.close=close;this.transferPc=transferPc;
         config=saving?assets.save:assets.load;data=assets.dataFile;
-        cardWidth=limit(data.number("areaSizeX",535),1,4096);cardHeight=limit(data.number("areaSizeY",123),1,4096);
+        layout=new SaveSlots.Layout(config,assets.game,data,saving);
+        page=layout.openingPage(lastSelected);
+        cardWidth=limit(data.number("areaSizeX",132),1,4096);cardHeight=limit(data.number("areaSizeY",100),1,4096);
+        artworkAtlas=data.number("addPicPrintFlag",0)!=0?sprite(data.value("fileNameAddPic","ta_sl_font")):null;
+        artworkColumns=data.number("addPicMultiFlag",0)!=0?Math.max(1,data.number("addPicMultiNumberX",1)):0;
+        int specialLimit=data.number("specialNumberPrintFlag",0)!=0?data.number("specialNumberPrintLimit",-1):-1;
+        artworkMinimum=data.number("addPicWithSpecialFlag",0)!=0?specialLimit:Integer.MIN_VALUE;
+        int artX=limit(data.number("addPicPrintX",0),-4096,4096),artY=limit(data.number("addPicPrintY",0),-4096,4096);
+        artworkDestination=new Rect(artX,artY,artX+limit(data.number("addPicSizeX",16),1,4096),
+            artY+limit(data.number("addPicSizeY",16),1,4096));
+        lastSaveAtlas=config.number("lastSelectFlag",0)!=0?sprite(data.value("filenameLastSave","")):null;
+        int markX=limit(data.number("lastSavePrintX",0),-4096,4096),markY=limit(data.number("lastSavePrintY",0),-4096,4096);
+        int markWidth=limit(data.number("lastSaveSizeX",16),1,4096),markHeight=limit(data.number("lastSaveSizeY",16),1,4096);
+        lastSaveDestination=new RectF(markX,markY,markX+markWidth,markY+markHeight);
+        lastSaveAnimation=new SpriteAnimation(0,0,markWidth,markHeight,data.number("lastSaveType",1),
+            data.number("lastSavePattern",1),data.number("lastSaveSpeed",1),true);
+        // Original decorations may extend past the slot base, e.g. lastSavePrintY=-6.
+        if(artworkAtlas!=null||lastSaveAtlas!=null)setClipChildren(false);
         opening(config,false);
         entries(slots,warmup);
     }
@@ -48,61 +74,100 @@ final class GameSlotsPanel extends GameUiPanel {
     @Override boolean controlsBusy(){return super.controlsBusy()||confirmation!=null||loadCard!=null;}
     void entries(SaveSlots.Entry[] value){entries(value,null);}
     private void entries(SaveSlots.Entry[] value,UiPreviewPool.Warmup warmup){
-        entries.clear();SaveSlots.Entry quick=null,automatic=null;
-        for(SaveSlots.Entry entry:value){
-            if(entry.slot==SaveSlots.QUICK)quick=entry;
-            else if(entry.slot==SaveSlots.AUTO)automatic=entry;
-            else entries.add(entry);
-        }
-        int quickSave=assets.game.number("quickSaveEnable",0);
-        if(quick!=null&&(saving?quickSave:assets.game.number("quickLoadEnable",quickSave))!=0){
-            int index=limit(data.number("quickSlotNumber",1),1,entries.size()+1)-1;
-            entries.add(index,quick);
-        }
-        if(automatic!=null)entries.add(automatic);
+        entries.clear();
+        for(SaveSlots.Entry entry:value)entries.put(entry.slot,entry);
         if(confirmation==null&&loadCard==null)render(warmup);else refreshEntries=true;
+    }
+    boolean hasOtherSaves(){
+        if(saving)return false;
+        for(SaveSlots.Entry entry:entries.values())
+            if(entry.exists&&!entry.corrupt&&!layout.shows(entry.slot))return true;
+        return false;
+    }
+    List<SaveSlots.Entry> otherSaves(){
+        List<SaveSlots.Entry> result=new ArrayList<>();
+        if(!saving)for(SaveSlots.Entry entry:entries.values())
+            if(entry.exists&&!entry.corrupt&&!layout.shows(entry.slot))result.add(entry);
+        result.sort((a,b)->Integer.compare(a.slot,b.slot));
+        return result;
+    }
+    void loadOther(int slot){
+        SaveSlots.Entry entry=entries.get(slot);
+        if(!saving&&entry!=null&&entry.exists&&!entry.corrupt&&!layout.shows(slot))select.choose(slot);
     }
     private void render(){render(null);}
     private void render(UiPreviewPool.Warmup warmup){
         clearControls();
-        int cols=limit(config.number("blockNumberX",2),1,16);
-        int rows=limit(config.number("blockNumberY",5),1,16),perPage=cols*rows;
-        int pages=Math.max(1,(entries.size()+perPage-1)/perPage);page=Math.min(page,pages-1);
-        uiBackground(config,saving?6:5,page+1,warmup);
-        int x=config.number("printX",85),y=config.number("printY",51);
-        int dx=config.number("nextX",cardWidth+10),dy=config.number("nextY",cardHeight);
+        if(backgroundPage!=page){uiBackground(config,saving?6:5,page+1,warmup);backgroundPage=page;}
+        int x=config.number("printX",85),y=config.number("printY",113);
+        int dx=config.number("nextX",166),dy=config.number("nextY",124);
         boolean allowQuick=config.number(saving?"quickSaveSelectOk":"quickLoadSelectOk",0)!=0;
-        for(int i=0;i<perPage&&page*perPage+i<entries.size();i++){
-            int index=page*perPage+i;
-            SaveSlots.Entry e=entries.get(index);SlotCard card=new SlotCard(e,index+1);
-            card.setEnabled((e.slot!=SaveSlots.QUICK||allowQuick)&&(saving?e.slot!=SaveSlots.AUTO:e.exists&&!e.corrupt));
+        for(int i=0;i<layout.perPage;i++){
+            int index=page*layout.perPage+i;
+            SaveSlots.Entry e=entries.get(layout.slotAt(index));
+            if(e==null)continue;
+            SlotCard card=new SlotCard(e,index+1);
+            card.setEnabled((e.slot!=SaveSlots.QUICK||allowQuick)&&(saving||e.exists&&!e.corrupt));
             card.setOnClickListener(v->{
                 if(!saving)beginLoad(card,e.slot);
                 else if(e.exists&&config.number("warningPrintFlag",1)!=0){
                     sound(config.number("warningSound",0)-1,-1);confirm(e);
                 }else select.choose(e.slot);
             });
-            put(card,x+(i%cols)*dx,y+(i/cols)*dy,cardWidth,cardHeight);
+            put(card,x+(i%layout.columns)*dx,y+(i/layout.columns)*dy,cardWidth,cardHeight);
         }
-        if(config.number("pageMode",pages>1?1:0)==1){
-            pageArrows(config,page,pages,616,16,646,next->{page=next;render();});
-        }else if(pages>1){
-            button(config,"Up","Up",uiText(R.string.engine_systemnnn_ctl_page_previous),()->{page=(page+pages-1)%pages;render();},616,16,48,48);
-            button(config,"Down","Down",uiText(R.string.engine_systemnnn_ctl_page_next),()->{page=(page+1)%pages;render();},616,646,48,48);
-        }
-        if(config.number("pagePrintFlag",1)!=0)pageNumber(pages);
+        if(layout.pageMode==1)pageArrows(config,page,layout.pages,616,16,646,this::showPage);
+        else if(layout.pageMode==2)pageTabs();
+        if(config.number("pagePrintFlag",0)!=0)pageNumber(layout.pages);
         View back=back(config,close);
         back.setContentDescription(uiText(R.string.engine_systemnnn_ctl_back_transfer,pcTransferLabel()));
         back.setOnLongClickListener(v->{performPcTransfer();return true;});
     }
+    private void showPage(int next){page=next;lastSaveSince=SystemClock.uptimeMillis();render();}
+    private void pageTabs(){
+        ButtonArt.Setup previous=null;
+        int nextX=0,nextY=0;
+        boolean resetSource=assets.game.number("notSrcCopyFlagEnable",0)!=0;
+        for(int i=0;i<layout.pages;i++){
+            String key="tab"+(i+1)+"Button";
+            ButtonArt.Setup off=new ButtonArt.Setup(config,key+"1",previous,resetSource);
+            ButtonArt.Setup on=new ButtonArt.Setup(config,key+"2",off,false);
+            int x=config.number(key+"1PrintX",nextX),y=config.number(key+"1PrintY",nextY);
+            int onX=config.number(key+"2PrintX",x),onY=config.number(key+"2PrintY",y);
+            previous=on;nextX=onX+on.width;nextY=onY;
+            boolean selected=i==page;
+            ButtonArt.Setup setup=selected?on:off;
+            GameButton.Spec spec=new GameButton.Spec(setup);
+            int target=i;
+            GameButton tab=animatedButton(spec,sprite(spec.image),Integer.toString(i+1),
+                ()->sound(spec.sound,spec.voice),()->showPage(target),selected?onX:x,selected?onY:y,setup.width,setup.height);
+            tab.setContentDescription(uiText(R.string.engine_systemnnn_ctl_page_count,i+1,layout.pages));
+            tab.setSelected(selected);
+            if(selected){tab.setOnClickListener(null);tab.setClickable(false);}
+        }
+    }
     private void pageNumber(int pages){
-        int digits=limit(config.number("pageKeta",2),1,4);
-        String number=config.number("pageUpZeroPrintFlag",1)!=0?digits(page+1,digits):Integer.toString(page+1);
-        int w=limit(config.number("pageFontSizeX",32),1,512),h=limit(config.number("pageFontSizeY",54),1,512);
-        int advance=limit(config.number("pageFontNextX",w),1,512),width=w+(number.length()-1)*advance;
-        Bitmap font=sprite(config.value("fileNamePageFont",""));
+        int places=limit(config.number("pageKeta",2),1,4);
+        int zero=config.number("pageUpZeroPrintFlag",0);
+        int w=limit(config.number("pageFontSizeX",21),1,512),h=limit(config.number("pageFontSizeY",27),1,512);
+        int advance=limit(config.number("pageFontNextX",w),1,512);
+        int x=config.number("pagePrintX",0),y=config.number("pagePrintY",0);
+        Bitmap font=sprite(config.value("fileNamePageFont","ta_font_sl3"));
+        String number=zero!=0?digits(page+1,places):Integer.toString(page+1);
+        View label=pageGlyphs(font,number,w,h,advance,x+Math.max(0,places-number.length())*advance,y);
+        label.setContentDescription(uiText(R.string.engine_systemnnn_ctl_page_count,page+1,pages));
+        if(config.number("pageMaxPrintFlag",0)==0)return;
+        String maximum=config.number("maxPageUpZeroPrintFlag",zero)!=0?digits(pages,places):Integer.toString(pages);
+        int maxX=config.number("pageMaxPrintX",x+(places+1)*advance);
+        if(config.number("pageMaxLeftAlign",0)==0)maxX+=Math.max(0,places-maximum.length())*advance;
+        pageGlyphs(font,maximum,w,h,advance,maxX,config.number("pageMaxPrintY",y));
+        if(config.number("slashPrintFlag",0)!=0)
+            pageGlyphs(font,"/",w,h,advance,config.number("slashPrintX",x+places*advance),config.number("slashPrintY",y));
+    }
+    private View pageGlyphs(Bitmap font,String number,int w,int h,int advance,int x,int y){
+        int width=w+(number.length()-1)*advance;
         View label;
-        if(font!=null){
+        if(font!=null&&font.getWidth()>=w*(number.equals("/")?12:10)&&font.getHeight()>=h){
             label=new View(getContext()){
                 private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
                 @Override protected void onDraw(Canvas canvas){
@@ -111,8 +176,8 @@ final class GameSlotsPanel extends GameUiPanel {
                 }
             };
         }else label=text(number,Math.min(w,h),saving?0xffff6262:0xff6ad6ff);
-        label.setContentDescription(uiText(R.string.engine_systemnnn_ctl_page_count,page+1,pages));
-        put(label,config.number("pagePrintX",1189),config.number("pagePrintY",340),width,h);
+        put(label,x,y,width,h);
+        return label;
     }
     private void confirm(SaveSlots.Entry e){
         GameUiAssets.Config cfg=assets.save;
@@ -156,6 +221,15 @@ final class GameSlotsPanel extends GameUiPanel {
     }
     private static int limit(int v,int lo,int hi){return Math.min(hi,Math.max(lo,v));}
     private static String digits(int value,int digits){return String.format(Locale.ROOT,"%0"+digits+"d",value);}
+    private Rect artworkSource(Integer number){
+        if(artworkAtlas==null||number==null||number<artworkMinimum)return null;
+        int width=artworkDestination.width(),height=artworkDestination.height();
+        if(artworkColumns>0&&number<0)return null;
+        long x=artworkColumns==0?0:(long)(number%artworkColumns)*width;
+        long y=artworkColumns==0?0:(long)(number/artworkColumns)*height;
+        if(x+width>artworkAtlas.getWidth()||y+height>artworkAtlas.getHeight())return null;
+        return new Rect((int)x,(int)y,(int)x+width,(int)y+height);
+    }
     private static boolean glyphs(Canvas c,Paint paint,Bitmap font,String value,int x,int y,int w,int h,int advance){
         if(font==null||w<=0||h<=0||font.getHeight()<h||font.getWidth()<w*10)return false;
         for(int i=0;i<value.length();i++){
@@ -172,6 +246,7 @@ final class GameSlotsPanel extends GameUiPanel {
     private final class SlotCard extends View {
         private final SaveSlots.Entry e;
         private final Bitmap preview,base;
+        private final Rect artworkTile;
         private final int serial;
         private final String time;
         private final Paint p=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
@@ -183,6 +258,7 @@ final class GameSlotsPanel extends GameUiPanel {
                 data.value("filename"+kind+"Base","");
             base=data.number("basePrintFlag",1)!=0?sprite(image):null;
             preview=e.picture;
+            artworkTile=artworkSource(e.artwork);
             setContentDescription(e.label(getContext())+" · "+(e.corrupt?uiText(R.string.engine_systemnnn_ctl_slot_unreadable):
                 !e.exists?uiText(R.string.engine_systemnnn_ctl_slot_empty):time+" · "+
                 uiText(R.string.engine_systemnnn_ctl_position,e.script,e.line)+" · "+e.speaker+" · "+e.displaySummary(getContext())));
@@ -219,17 +295,21 @@ final class GameSlotsPanel extends GameUiPanel {
             return glyphs(c,p,sprite(data.value("fileNameSerialNumberFont","")),number,x,y,w,h,advance)||
                 line(c,number,x,y,14,Color.WHITE)>0;
         }
-        private void contents(Canvas c){
+        private void thumbnail(Canvas c){
             int px=data.number("picPrintX",6),py=data.number("picPrintY",8);
             int pw=limit(data.number("picSizeX",182),1,512),ph=limit(data.number("picSizeY",102),1,512);
             picture(c,preview,px,py,pw,ph);
+        }
+        private void contents(Canvas c){
             timestamp(c);
             if(e.slot!=SaveSlots.AUTO)serialNumber(c,false);
             int x=data.number("textPrintX",210),y=data.number("textPrintY",87),size=limit(data.number("textFontSize",16),8,40);
-            String position=uiText(R.string.engine_systemnnn_ctl_position,e.script,e.line);
             int positionY=data.number("addPicPrintY",46);
-            if(e.slot==SaveSlots.AUTO)position=e.label(getContext())+" · "+position;
-            line(c,position,data.number("addPicPrintX",x),positionY,14,0xffb7cddb);
+            if(artworkTile==null){
+                String position=uiText(R.string.engine_systemnnn_ctl_position,e.script,e.line);
+                if(e.slot==SaveSlots.AUTO)position=e.label(getContext())+" · "+position;
+                line(c,position,data.number("addPicPrintX",x),positionY,14,0xffb7cddb);
+            }
             if(data.number("textPrintFlag",1)!=0){
                 int color=Color.rgb(data.number("textColorR",128)&255,data.number("textColorG",224)&255,data.number("textColorB",224)&255);
                 String body=e.displaySummary(getContext());
@@ -245,7 +325,10 @@ final class GameSlotsPanel extends GameUiPanel {
             }
         }
         @Override protected void onDraw(Canvas canvas){
-            canvas.save();canvas.scale(getWidth()/(float)cardWidth,getHeight()/(float)cardHeight);
+            int save=canvas.save();
+            canvas.scale(getWidth()/(float)cardWidth,getHeight()/(float)cardHeight);
+            int clip=canvas.save();
+            canvas.clipRect(0,0,cardWidth,cardHeight);
             if(base!=null)picture(canvas,base,0,0,base.getWidth(),base.getHeight());
             if(e.slot==SaveSlots.AUTO&&!e.exists||e.slot==SaveSlots.QUICK&&base==null)
                 line(canvas,e.label(getContext()),17,38,20,saving?0xffffb7aa:0xffa4e9ff);
@@ -257,7 +340,16 @@ final class GameSlotsPanel extends GameUiPanel {
                 }
             }
             if(e.corrupt)line(canvas,uiText(R.string.engine_systemnnn_ctl_slot_unreadable),data.number("textPrintX",210),data.number("textPrintY",87),16,0xff91a9ba);
-            else if(e.exists)contents(canvas);
+            else if(e.exists){
+                thumbnail(canvas);
+                if(artworkTile!=null){
+                    canvas.restoreToCount(clip);
+                    p.setAlpha(255);canvas.drawBitmap(artworkAtlas,artworkTile,artworkDestination,p);
+                    clip=canvas.save();
+                    canvas.clipRect(0,0,cardWidth,cardHeight);
+                }
+                contents(canvas);
+            }
             int selectMode=data.number("selectPrintMode",1);
             boolean selected=loadCard==this;
             if(selected&&pendingLoad!=null)postInvalidateOnAnimation();
@@ -277,7 +369,13 @@ final class GameSlotsPanel extends GameUiPanel {
                     canvas.drawRect(2,2,cardWidth-2,cardHeight-2,p);p.setStyle(Paint.Style.FILL);
                 }
             }
-            canvas.restore();
+            canvas.restoreToCount(clip);
+            if(e.lastSaved&&lastSaveAtlas!=null){
+                long frame=(SystemClock.uptimeMillis()-lastSaveSince)/frameMs;
+                if(lastSaveAnimation.draw(canvas,lastSaveAtlas,lastSaveDestination,p,frame,255)&&lastSaveAnimation.active(frame))
+                    postInvalidateOnAnimation();
+            }
+            canvas.restoreToCount(save);
         }
     }
 }

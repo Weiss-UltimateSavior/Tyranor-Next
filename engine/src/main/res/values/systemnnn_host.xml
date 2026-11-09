@@ -115,4 +115,5 @@
     <string name="engine_systemnnn_host_progress_recovery_hint">隔离后会使用仍可读取的全局进度，找不到有效进度时将重新建立。剧情存档和隔离的原文件会留在存档目录。</string>
     <string name="engine_systemnnn_host_progress_recover">隔离并重试</string>
     <string name="engine_systemnnn_host_resources_evicted">导入的游戏资源已清理，请返回游戏库重新启动。</string>
+    <string name="engine_systemnnn_host_opening">开场动画，点按跳过</string>
 </resources>

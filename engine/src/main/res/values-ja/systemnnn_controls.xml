@@ -36,6 +36,7 @@
     <string name="engine_systemnnn_ctl_cancel_overwrite">上書きをキャンセル</string>
     <string name="engine_systemnnn_ctl_slot_auto">オートセーブ</string>
     <string name="engine_systemnnn_ctl_slot_quick">クイックセーブ</string>
+    <string name="engine_systemnnn_ctl_other_saves">その他のセーブ</string>
     <string name="engine_systemnnn_ctl_slot_number">セーブ %1$s</string>
     <string name="engine_systemnnn_ctl_slot_unreadable">セーブを読み込めません</string>
     <string name="engine_systemnnn_ctl_slot_empty">空きスロット</string>

@@ -36,6 +36,7 @@
     <string name="engine_systemnnn_ctl_cancel_overwrite">取消覆盖</string>
     <string name="engine_systemnnn_ctl_slot_auto">自动存档</string>
     <string name="engine_systemnnn_ctl_slot_quick">快速存档</string>
+    <string name="engine_systemnnn_ctl_other_saves">其他存档</string>
     <string name="engine_systemnnn_ctl_slot_number">存档 %1$s</string>
     <string name="engine_systemnnn_ctl_slot_unreadable">存档无法读取</string>
     <string name="engine_systemnnn_ctl_slot_empty">空槽位</string>

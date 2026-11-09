@@ -17,6 +17,7 @@ public final class SystemNnnHost {
     private static final String EXTRA = "com.tyranor.runtime.extra.";
     public static final String SAVE_MIGRATION_DIRECTORY = GameSavePaths.PREFIX + ".migrate";
     public static final String SAVE_RESTORE_DIRECTORY = "tyn-restore";
+    public static final String SAVE_SLOT_PRESENTATION_FILE = GameSavePaths.PREFIX + SaveSlots.SLOT_UI;
 
     private SystemNnnHost() {}
 
@@ -99,7 +100,9 @@ public final class SystemNnnHost {
         if (relative.isAbsolute() || relative.getFileName() == null) return false;
         String name = relative.getFileName().toString();
         if (relative.getNameCount() == 1 && name.endsWith(".bak")) {
-            relative = relative.resolveSibling(name.substring(0, name.length() - 4));
+            name = name.substring(0, name.length() - 4);
+            if (name.equals(SAVE_SLOT_PRESENTATION_FILE)) return false;
+            relative = relative.resolveSibling(name);
         }
         return LegacySaveMigration.ownedFile(relative);
     }

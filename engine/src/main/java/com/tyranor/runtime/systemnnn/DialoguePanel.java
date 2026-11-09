@@ -8,44 +8,40 @@ import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.util.TypedValue;
 import android.text.method.ScrollingMovementMethod;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.Layout;
-import android.text.TextPaint;
-import android.text.style.CharacterStyle;
 import android.text.style.LeadingMarginSpan;
-import android.text.style.UpdateAppearance;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
 /** Message and name windows use the game's logical canvas. */
 final class DialoguePanel extends FrameLayout {
-    final TextView speaker,body;
+    final DialogueTextView speaker,body;
     private final ImageView window,nameWindow;
     private final MessageCursor cursor;
+    private boolean drawingMessagePlane;
     private DialogueStyle style=DialogueStyle.fallback();
     private PlayerSettings settings=PlayerSettings.defaults();
-    private boolean hasSpeaker,showNameWindow,wasRead,longPrint,showWindow=true,storyBody;
+    private boolean hasSpeaker,showNameWindow,wasRead,longPrint,showWindow=true,storyBody,passive;
     private int contentRight=1280;
     private int canvasWidth=1280,canvasHeight=720,windowType,fontType,configType;
     private DialogueLayout.Text layout=style.layouts[0];
-    private String message="";
+    private String message="",speakerName="";
     private int revealed,lastLogicalRow,textOrigin,textRight;
     private float textScale=-1;
     private Spannable rendered;
-    private static final class HiddenText extends CharacterStyle implements UpdateAppearance {
-        @Override public void updateDrawState(TextPaint paint){paint.setColor(Color.TRANSPARENT);paint.clearShadowLayer();}
-    }
-    private final HiddenText hiddenText=new HiddenText();
+    private final DialogueTextView.HiddenText hiddenText=new DialogueTextView.HiddenText();
 
     DialoguePanel(Context context,OnClickListener click) {
         super(context);
         window=image(); nameWindow=image();
-        speaker=text();speaker.setGravity(Gravity.TOP|Gravity.LEFT);speaker.setTextDirection(TEXT_DIRECTION_LTR);speaker.setSingleLine(true);
-        body=text();body.setGravity(Gravity.TOP|Gravity.LEFT);body.setTextDirection(TEXT_DIRECTION_LTR);
+        speaker=text(new DialogueTextView(context));speaker.setGravity(Gravity.TOP|Gravity.LEFT);speaker.setTextDirection(TEXT_DIRECTION_LTR);speaker.setSingleLine(true);
+        body=text(new DialogueTextView(context));body.setGravity(Gravity.TOP|Gravity.LEFT);body.setTextDirection(TEXT_DIRECTION_LTR);
         body.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE);body.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
         body.setAccessibilityDelegate(new AccessibilityDelegate(){
             @Override public void onInitializeAccessibilityNodeInfo(View host,AccessibilityNodeInfo info){
@@ -59,8 +55,20 @@ final class DialoguePanel extends FrameLayout {
         cursor=new MessageCursor();addView(cursor,new LayoutParams(-1,-1));
     }
     private ImageView image() { ImageView v=new ImageView(getContext());v.setSoundEffectsEnabled(false);v.setScaleType(ImageView.ScaleType.FIT_XY); addView(v,new LayoutParams(1,1)); return v; }
-    private TextView text() {
-        TextView v=new TextView(getContext());v.setSoundEffectsEnabled(false);v.setIncludeFontPadding(false);v.setTextColor(Color.WHITE);
+    void drawMessagePlane(Canvas canvas){
+        if(getVisibility()!=VISIBLE)return;
+        drawingMessagePlane=true;
+        try{draw(canvas);}finally{drawingMessagePlane=false;}
+    }
+    void drawMessageCursor(Canvas canvas){
+        if(getVisibility()==VISIBLE&&cursor.getVisibility()==VISIBLE)cursor.draw(canvas);
+    }
+    boolean isMessageCursor(View view){return view==cursor;}
+    @Override protected boolean drawChild(Canvas canvas,View child,long time){
+        return (!drawingMessagePlane||child!=cursor)&&super.drawChild(canvas,child,time);
+    }
+    private <T extends TextView> T text(T v) {
+        v.setSoundEffectsEnabled(false);v.setIncludeFontPadding(false);v.setTextColor(Color.WHITE);
         textShadow(v,Color.BLACK); addView(v,new LayoutParams(1,1)); return v;
     }
     static void textShadow(TextView view,int color){view.setShadowLayer(2,1,1,color);}
@@ -72,6 +80,7 @@ final class DialoguePanel extends FrameLayout {
         }
         body.setTypeface(face);speaker.setTypeface(face);
         textShadow(speaker,style.nameShadeColor);
+        updateSpeakerMarkup();
         style.canvas(canvasWidth,canvasHeight);select();
     }
     void canvas(int width,int height){
@@ -97,6 +106,8 @@ final class DialoguePanel extends FrameLayout {
     }
     void settings(PlayerSettings value) { settings=value;window.setAlpha(value.windowOpacity/100f);nameWindow.setAlpha(value.windowOpacity/100f);colors(); requestLayout(); }
     void storyBody(boolean value){if(storyBody!=value){storyBody=value;requestLayout();}}
+    void passive(boolean value){passive=value;}
+    @Override public boolean dispatchTouchEvent(MotionEvent event){return !passive&&super.dispatchTouchEvent(event);}
     void read(boolean value){wasRead=value;colors();}
     void cursorAssets(GameUiAssets assets){cursor.assets(assets);}
     void cursorVariant(int value){cursor.variant(value);}
@@ -109,29 +120,41 @@ final class DialoguePanel extends FrameLayout {
     int bodyY(){return style.bodyY(layout);}
     int bodyWidth(){return style.bodyWidth(layout);}
     int bodyHeight(){return style.bodyHeight(layout);}
-    private void colors(){boolean read=wasRead&&settings.changeReadColor;body.setTextColor(read?style.readBodyColor:style.bodyColor);speaker.setTextColor(read?style.readNameColor:style.speakerColor(speaker.getText().toString()));}
+    private void colors(){
+        boolean read=wasRead&&settings.changeReadColor;
+        body.setTextColor(read?style.readBodyColor:style.bodyColor);body.markupTextColor(read);
+        speaker.setTextColor(read?style.readNameColor:style.speakerColor(speakerName));speaker.markupTextColor(read);
+    }
     private GradientDrawable rounded(int color,int radius) {
         GradientDrawable background=new GradientDrawable();background.setColor(color);
         background.setCornerRadius(radius*getResources().getDisplayMetrics().density);return background;
     }
     void speaker(String name,boolean nameWindow) { hasSpeaker=name!=null&&!name.isEmpty();showNameWindow=nameWindow;
-        speaker.setText(hasSpeaker?name:"");
+        speakerName=hasSpeaker?name:"";
+        updateSpeakerMarkup();
         colors();
         showWindows();
         requestLayout();
+    }
+    private void updateSpeakerMarkup(){
+        DialogueMarkup name=style.markup(speakerName);
+        speaker.setText(name.text);speaker.markup(name,style.markupStyle);
     }
     private void showWindows(){
         window.setVisibility(showWindow?VISIBLE:GONE);
         nameWindow.setVisibility(showWindow&&showNameWindow&&style.nameWindowEnabled?VISIBLE:GONE);
         speaker.setVisibility(!longPrint&&hasSpeaker?VISIBLE:GONE);
     }
-    void message(String text,int visible){
-        message=text;revealed=DialogueLayout.clamp(visible,0,text.length());rendered=null;lastLogicalRow=0;
-        for(int i=0;i<text.length();i++)if(text.charAt(i)=='\n')lastLogicalRow++;
+    void message(String text,int visible){message(DialogueMarkup.plain(text),visible);}
+    void message(DialogueMarkup text,int visible){
+        message=text.text;revealed=DialogueLayout.clamp(visible,0,message.length());rendered=null;lastLogicalRow=0;
+        body.markup(text,style.markupStyle);body.markupReveal(revealed);
+        for(int i=0;i<message.length();i++)if(message.charAt(i)=='\n')lastLogicalRow++;
         body.scrollTo(0,0);requestLayout();
     }
     void reveal(int visible){
         revealed=DialogueLayout.clamp(visible,0,message.length());
+        body.markupReveal(revealed);
         if(rendered!=null)applyReveal(rendered);
     }
     private void applyReveal(Spannable text){
@@ -167,10 +190,22 @@ final class DialoguePanel extends FrameLayout {
         place(body,origin,bodyY(),right-origin,bodyHeight(),sx,sy);
         float factor=storyBody?settings.readingSize/100f:1f;
         body.setTextSize(TypedValue.COMPLEX_UNIT_PX,Math.max(style.original?1:12,layout.font*sx)*factor);
+        body.markupFont(layout.font*factor);
+        int markupTop=body.markupTopInset(body.getTextSize());
+        if(markupTop>0){
+            LayoutParams position=(LayoutParams)body.getLayoutParams();
+            position.topMargin-=markupTop;position.height+=markupTop;
+        }
         body.setLetterSpacing((float)layout.space/Math.max(1,layout.font));
         android.graphics.Paint.FontMetrics metrics=body.getPaint().getFontMetrics();
         body.setLineSpacing(Math.max(1,layout.nextY*sy*factor)-(metrics.descent-metrics.ascent),1f);
         speaker.setTextSize(TypedValue.COMPLEX_UNIT_PX,Math.max(1,name.font*sx));
+        speaker.markupFont(name.font);
+        int nameMarkupTop=speaker.markupTopInset(speaker.getTextSize());
+        if(nameMarkupTop>0){
+            LayoutParams position=(LayoutParams)speaker.getLayoutParams();
+            position.topMargin-=nameMarkupTop;position.height+=nameMarkupTop;
+        }
         speaker.setLetterSpacing((float)name.space/name.font);
         layoutMessage(sx,origin,right);
         super.onMeasure(widthSpec,heightSpec);

@@ -3,8 +3,10 @@ package com.tyranor.runtime.systemnnn
 import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.SystemNnnSaveStore
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -16,6 +18,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.BasicFileAttributes
+import java.security.MessageDigest
 import java.util.UUID
 
 class SystemNnnSaveInteropTest {
@@ -31,19 +34,41 @@ class SystemNnnSaveInteropTest {
         put(incoming, "emberfall.sav", "slot")
         put(incoming, "emberfall.quick.sav.bak", "backup")
         put(incoming, "emberfall.chart/chart1/slot0.dat", "chart")
-        put(incoming, "emberfall.slot20.sav", "outside range")
+        put(incoming, "emberfall.slot118.sav", "high slot")
+        put(incoming, "emberfall.slot118.sav.thumb", "high slot thumbnail")
+        put(incoming, "emberfall.last-slot", "last selection")
+        put(incoming, "emberfall.last-slot.new", "interrupted selection")
+        put(incoming, "emberfall.slot-ui", "slot presentation")
+        put(incoming, "emberfall.slot-ui.new", "interrupted presentation")
+        put(incoming, "emberfall.slot-ui.bak", "unknown presentation backup")
+        put(incoming, "emberfall.slot0118.sav", "noncanonical alias")
+        put(incoming, "emberfall.slot4096.sav", "outside range")
         put(incoming, "sysfile3.sav", "excluded")
+        val metadataOnly = temp.newFolder().canonicalFile
+        put(metadataOnly, "emberfall.slot-ui", "slot presentation only")
         val lock = saves.resolve("emberfall.lock").toPath()
 
         store.access {
             val fileKey = Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey()
             val busy = runCatching { SystemNnnHost.lockSaveDirectory(game).close() }.exceptionOrNull()
             assertTrue(busy is SystemNnnHost.SaveBusyException)
-            assertEquals(3, store.replace(incoming))
-            assertEquals(3, store.files().size)
+            assertEquals(7, store.replace(incoming))
+            assertEquals(7, store.files().size)
             assertEquals("slot", saves.resolve("emberfall.sav").readText())
+            assertEquals("high slot", saves.resolve("emberfall.slot118.sav").readText())
+            assertEquals("high slot thumbnail", saves.resolve("emberfall.slot118.sav.thumb").readText())
+            assertEquals("last selection", saves.resolve("emberfall.last-slot").readText())
+            assertFalse(saves.resolve("emberfall.last-slot.new").exists())
+            assertEquals("slot presentation", saves.resolve("emberfall.slot-ui").readText())
+            assertFalse(saves.resolve("emberfall.slot-ui.new").exists())
+            assertFalse(saves.resolve("emberfall.slot-ui.bak").exists())
+            assertFalse(saves.resolve("emberfall.slot0118.sav").exists())
+            assertFalse(saves.resolve("emberfall.slot4096.sav").exists())
             assertEquals(fileKey, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
-            assertEquals(3, store.replace(null))
+            val error = assertThrows(GameSaveException::class.java) { store.replace(metadataOnly) }
+            assertEquals(SaveErrorCode.NO_FILES_IN_ZIP, error.code)
+            assertEquals("slot", saves.resolve("emberfall.sav").readText())
+            assertEquals(7, store.replace(null))
             assertTrue(store.files().isEmpty())
         }
         assertTrue(Files.isRegularFile(lock))
@@ -157,11 +182,16 @@ class SystemNnnSaveInteropTest {
         val original = temp.newFolder().canonicalFile
         val imported = temp.newFolder().canonicalFile
         val legacy = temp.newFolder()
-        val source = legacy.resolve(UUID.nameUUIDFromBytes(original.path.toByteArray(Charsets.UTF_8)).toString() + ".resume")
+        val oldKey = UUID.nameUUIDFromBytes(original.path.toByteArray(Charsets.UTF_8)).toString()
+        val source = legacy.resolve(oldKey + ".resume")
         source.writeText("old private autosave")
+        val high = legacy.resolve(oldKey + ".slot118.sav.bak").apply { writeText("old high slot backup") }
+        val selected = legacy.resolve(oldKey + ".last-slot").apply { writeText("old last selection") }
 
         GameSavePaths.forGame(imported).open(legacy, original).use {
             assertEquals(source.readText(), imported.resolve("sav/emberfall.resume").readText())
+            assertEquals(high.readText(), imported.resolve("sav/emberfall.slot118.sav").readText())
+            assertEquals(selected.readText(), imported.resolve("sav/emberfall.last-slot").readText())
         }
         assertTrue(source.isFile)
         assertFalse(original.resolve("sav").exists())
@@ -210,6 +240,113 @@ class SystemNnnSaveInteropTest {
         assertEquals("autosave", restored.resolve("SaV/emberfall.resume").readText())
         assertEquals("PC", restored.resolve("SaV/sysfile3.sav").readText())
         assertEquals(lockIdentity, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
+    }
+
+    @Test fun readingCorruptProgressRestoresValidatedBackupAndItsExtension() {
+        val game = temp.newFolder()
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val base = saves.resolve("emberfall.read")
+        val backup = saves.resolve("emberfall.read.bak")
+        val extension = saves.resolve("emberfall.read.ext")
+        val corrupt = byteArrayOf(0x4e, 0x4e, 0x52, 0x34, 0, 0, 0, 1, 0)
+        base.writeBytes(corrupt)
+        val read = intArrayOf(9, 117)
+        val variables = IntArray(NativeGame.SYSTEM_VARIABLES).apply { this[5] = 37 }
+        val results = IntArray(NativeGame.SCRIPT_PROGRESS).apply { this[7] = 12 }
+        val expected = GameProgress.State(read, variables, results, null, null, null, listOf("legacy"))
+        DataOutputStream(backup.outputStream()).use { GameProgress.encode(it, expected) }
+        val valid = backup.readBytes()
+        val matchingFingerprint = MessageDigest.getInstance("SHA-256").digest(valid)
+        val restoredText = "recovered".toByteArray()
+        DataOutputStream(extension.outputStream()).use { output ->
+            output.writeInt(0x4e4e4532)
+            output.writeByte(2)
+            for ((fingerprint, label) in listOf(ByteArray(32) to "stale".toByteArray(), matchingFingerprint to restoredText)) {
+                output.write(fingerprint)
+                output.writeByte(label.size)
+                output.write(label)
+                repeat(101) { output.writeByte(0) }
+                output.writeShort(1)
+                output.writeShort(2)
+                output.writeInt(16)
+                output.writeInt(0)
+            }
+        }
+        val extensionBytes = extension.readBytes()
+
+        SystemNnnHost.lockSaveDirectory(game).use {
+            val restored = checkNotNull(GameProgress.readFrom(base) { extension.inputStream() })
+            assertArrayEquals(read, restored.read)
+            assertArrayEquals(variables, restored.variables)
+            assertArrayEquals(results, restored.results)
+            assertEquals(expected.legacy, restored.legacy)
+            assertArrayEquals(restoredText, restored.text[0])
+            assertEquals(16, restored.optional[2])
+            assertEquals(0, restored.optional[NativeGame.LEGACY_OPTIONAL_PROGRESS_WORDS])
+            assertArrayEquals(valid, base.readBytes())
+            assertFalse(backup.exists())
+            assertArrayEquals(extensionBytes, extension.readBytes())
+            val archived = saves.listFiles()!!.single { it.name.startsWith("emberfall.read.corrupt-") }
+            assertArrayEquals(corrupt, archived.readBytes())
+
+            // An interrupted recovery may have archived the primary before promoting the backup.
+            Files.move(base.toPath(), backup.toPath(), ATOMIC_MOVE)
+            val resumed = checkNotNull(GameProgress.readFrom(base) { extension.inputStream() })
+            assertArrayEquals(restoredText, resumed.text[0])
+            assertArrayEquals(valid, base.readBytes())
+            assertFalse(backup.exists())
+            assertArrayEquals(corrupt, archived.readBytes())
+        }
+    }
+
+    @Test fun readsSeparateVoiceRoleAndClipFlags() {
+        val saves = temp.newFolder()
+        val base = saves.resolve("emberfall.read")
+        val extension = saves.resolve("emberfall.read.ext")
+        val state = GameProgress.State(
+            intArrayOf(9), IntArray(NativeGame.SYSTEM_VARIABLES), IntArray(NativeGame.SCRIPT_PROGRESS),
+            null, null, null, emptyList(),
+        )
+        DataOutputStream(base.outputStream()).use { GameProgress.encode(it, state) }
+        DataOutputStream(extension.outputStream()).use { output ->
+            output.writeInt(0x4e4e4533)
+            output.writeByte(1)
+            output.write(MessageDigest.getInstance("SHA-256").digest(base.readBytes()))
+            repeat(102) { output.writeByte(0) }
+            output.writeShort(2)
+            output.writeShort(1024)
+            output.writeInt(1 shl 17)
+            output.writeShort(NativeGame.LEGACY_OPTIONAL_PROGRESS_WORDS)
+            output.writeInt(1 shl 6)
+            output.writeInt(0)
+        }
+
+        val restored = checkNotNull(GameProgress.readFrom(base) { extension.inputStream() })
+        assertArrayEquals(state.read, restored.read)
+        assertEquals(NativeGame.OPTIONAL_PROGRESS_WORDS, restored.optional.size)
+        assertEquals(1 shl 17, restored.optional[1024])
+        assertEquals(1 shl 6, restored.optional[NativeGame.LEGACY_OPTIONAL_PROGRESS_WORDS])
+    }
+
+    @Test fun readingCorruptProgressWithoutValidBackupPreservesBothFiles() {
+        val saves = temp.newFolder()
+        val base = saves.resolve("emberfall.read").apply { writeText("truncated main") }
+        val backup = saves.resolve("emberfall.read.bak")
+        fun readProgress() = GameProgress.readFrom(base) { error("extension read before validating the backup") }
+
+        assertThrows(GameProgress.InvalidBase::class.java) { readProgress() }
+        backup.writeText("truncated backup")
+        assertThrows(GameProgress.InvalidBase::class.java) { readProgress() }
+        assertEquals("truncated main", base.readText())
+        assertEquals("truncated backup", backup.readText())
+        assertEquals(setOf(base.name, backup.name), saves.list()!!.toSet())
+
+        Files.delete(backup.toPath())
+        check(backup.mkdir())
+        val access = assertThrows(IOException::class.java) { readProgress() }
+        assertFalse(access is GameProgress.InvalidBase)
+        assertEquals("truncated main", base.readText())
+        assertTrue(backup.isDirectory)
     }
 
     @Test fun globalProgressRecoveryKeepsValidGenerationAndStorySaves() {

@@ -16,13 +16,15 @@ final class GameSettingsPanel extends GameUiPanel {
     private final Runnable close;
     private final boolean previewMutedVoice;
     private final int configMask;
+    private final DialogueMarkup.Style previewMarkup;
     private OriginalSettingsModel model;
     private View returnButton;
-    private ImageView previewWindow;
+    private ImageView previewWindow,previewNameWindow;
+    private boolean[] visibleVoiceThemes;
     private int page,backgroundPage=-1;
     private boolean writingPreferences,watchingPreferences;
     private final ArrayList<TextView> sampleRows=new ArrayList<>();
-    private final ArrayList<String> sampleLines=new ArrayList<>();
+    private final ArrayList<DialogueMarkup> sampleLines=new ArrayList<>();
     private int sampleSpeed,sampleLine;
     private long sampleSince;
     private final Runnable typeSample=this::drawSample;
@@ -42,6 +44,7 @@ final class GameSettingsPanel extends GameUiPanel {
                       UiPreviewPool.Warmup warmup){
         super(context,assets,"ta_cnf_bg01",click);preferences=prefs;this.runner=runner;this.close=close;this.configMask=configMask;
         previewMutedVoice=assets.config.number("playOffToOnSoundFlag",0)!=0;
+        previewMarkup=new DialogueMarkup.Style(assets.game.fields());
         canvas(width,height);model=settingsModel();setContentDescription("环境设置");
         printMode=12;
         if(model.original){uiBackground(assets.config,12,1,warmup);backgroundPage=0;}
@@ -55,6 +58,14 @@ final class GameSettingsPanel extends GameUiPanel {
     private OriginalSettingsModel settingsModel(){return assets.settingsModel(canvasWidth,canvasHeight);}
     @Override protected void onAttachedToWindow(){super.onAttachedToWindow();
         if(!watchingPreferences){preferences.registerOnSharedPreferenceChangeListener(preferenceListener);watchingPreferences=true;}showPage(page);
+        if(model.systemVoices.size()>1)runner.settingsVoiceRoles(assets.config,model.systemVoices.size(),visible->post(()->{
+            if(!isAttachedToWindow())return;
+            visibleVoiceThemes=visible;
+            if(page+1==model.page("systemVoiceButtonPrintPage",1)){
+                removeCallbacks(refresh);
+                post(refresh);
+            }
+        }));
     }
     @Override protected void onDetachedFromWindow(){
         removeCallbacks(typeSample);removeCallbacks(refresh);
@@ -65,7 +76,7 @@ final class GameSettingsPanel extends GameUiPanel {
     private void writeBoolean(String key,boolean value){write(()->preferences.edit().putBoolean(key,value).apply());}
     private void showPage(int selected){
         page=Math.max(0,Math.min(selected,(model.original?model.pages:2)-1));clearControls();
-        previewWindow=null;
+        previewWindow=null;previewNameWindow=null;
         removeCallbacks(typeSample);sampleRows.clear();sampleLines.clear();
         sampleSpeed=preferences.getInt("originalSlider.messageSpeed",Math.round(preferences.getInt("textSpeed",1)*4/3f));
         background(model.background(page+1));
@@ -89,6 +100,9 @@ final class GameSettingsPanel extends GameUiPanel {
         int selected=preferences.getInt("systemVoiceSelection",0);
         for(int i=0;i<model.systemVoices.size();i++){
             int theme=i;
+            boolean unlocked=visibleVoiceThemes!=null?visibleVoiceThemes[theme]:
+                theme==0||assets.config.number("systemVoice"+theme+"On",0)==0;
+            if(!unlocked)continue;
             OriginalSettingsModel.Button art=model.systemVoices.get(theme);
             boolean active=selected==theme;
             ButtonArt.Setup setup=art.state(active);
@@ -100,7 +114,7 @@ final class GameSettingsPanel extends GameUiPanel {
                 if(setup.clickTime==0)cue.run();
                 showPage(page);
             },setup.clickTime==0?()->{}:cue);
-            button.setEnabled(preferences.getBoolean("systemVoice."+(theme+1)+".enabled",true));
+            if(active){button.setOnClickListener(null);button.setClickable(false);}
         }
     }
     private String checkLabel(String key){switch(key){case "continueVoice":return "阅读文本时的语音播放";case "autoContinue":return "确认选项后关闭自动播放";
@@ -120,7 +134,11 @@ final class GameSettingsPanel extends GameUiPanel {
             if(speed)write(()->preferences.edit().putInt(s.key,s.toPreference(next)).putInt(exact,next).apply());
             else writeInt(s.key,s.toPreference(next));
             if(s.index==0){sampleSpeed=next;restartSample();}
-            if(s.index==6&&previewWindow!=null)previewWindow.setAlpha(s.toPreference(next)/100f);
+            if(s.index==6){
+                float opacity=s.toPreference(next)/100f;
+                if(previewWindow!=null)previewWindow.setAlpha(opacity);
+                if(previewNameWindow!=null)previewNameWindow.setAlpha(opacity);
+            }
         });
         if(assets.config.number("extSeFlag",0)!=0)
             bar.onCommit(next->runner.playConfigFeedback(s.index,next,s.steps));
@@ -169,32 +187,64 @@ final class GameSettingsPanel extends GameUiPanel {
     private void play(ButtonArt.Setup setup,boolean ignoreSwitch,boolean ignoreRole){
         runner.playSettingsClick(setup.sound,setup.voice,setup.volumeType,ignoreSwitch,ignoreRole);
     }
-    private TextView previewText(String label,int font,int color){
-        TextView view=text(label,font,color);DialoguePanel.textShadow(view,Color.BLACK);return view;
+    private TextView putPreview(DialogueMarkup label,int font,int color,int x,int y,int width,int height){
+        TextView view;
+        int inset=0;
+        if(label.annotations.isEmpty())view=text(label.text,font,color);
+        else{
+            DialogueTextView annotated=DialogueTextView.panel(getContext(),label,previewMarkup,font,color);
+            inset=annotated.markupTopInset(font);view=annotated;
+        }
+        DialoguePanel.textShadow(view,Color.BLACK);
+        put(view,x,y-inset,width,height+inset);
+        return view;
+    }
+    private ImageView putPreviewSkin(String name,int x,int y,int w,int h,float opacity,Runnable cycle){
+        Bitmap bitmap=assets.image(name);
+        if(bitmap==null)return null;
+        ImageView image=new ImageView(getContext());
+        image.setImageBitmap(bitmap);
+        image.setScaleType(ImageView.ScaleType.FIT_XY);
+        image.setAlpha(opacity);
+        image.setSoundEffectsEnabled(false);
+        if(cycle!=null){
+            image.setContentDescription("切换对话框样式");
+            image.setOnClickListener(v->cycle.run());
+        }
+        put(image,x,y,w,h);
+        return image;
     }
     private void preview(){
         GameUiAssets.Config cfg=assets.config,window=assets.messageWindow;
-        if(cfg.number("windowPrintFlag",0)!=0&&page+1==cfg.number("windowPrintPage",1)){
-            DialogueLayout.Counts counts=DialogueLayout.counts(window.fields());
+        DialogueLayout.Counts counts=DialogueLayout.counts(window.fields());
+        if(cfg.number("windowPrintFlag",counts.config-1)!=0&&page+1==cfg.number("windowPrintPage",1)){
             int count=counts.config;
             int selected=Math.max(0,Math.min(count-1,preferences.getInt("messageWindowIndex",0)));
+            int index=DialogueLayout.index(counts,0,selected,0);
             String[] names=DialogueLayout.names(window.fields(),"filenameWindow","ta_meswin",counts);
-            String name=names[DialogueLayout.index(counts,0,selected,0)];Bitmap bitmap=assets.image(name);
-            int x=cfg.number("windowPrintX",0),y=cfg.number("windowPrintY",0),w=window.number("sizeX",canvasWidth),h=window.number("sizeY",188);
-            if(bitmap!=null){ImageView image=new ImageView(getContext());image.setImageBitmap(bitmap);image.setScaleType(ImageView.ScaleType.FIT_XY);previewWindow=image;
-                image.setAlpha(Math.max(0,Math.min(100,preferences.getInt("windowOpacity",100)))/100f);put(image,x,y,w,h);
-                if(count>1){image.setContentDescription("切换对话框样式");image.setOnClickListener(v->{click.run();writeInt("messageWindowIndex",(selected+1)%count);showPage(page);});}}
+            int x=cfg.number("windowPrintX",0),y=cfg.number("windowPrintY",0);
+            float opacity=DialogueLayout.clamp(preferences.getInt("windowOpacity",100),0,100)/100f;
+            Runnable cycle=count>1?()->{click.run();writeInt("messageWindowIndex",(selected+1)%count);showPage(page);}:null;
+            previewWindow=putPreviewSkin(names[index],x,y,window.number("sizeX",640),window.number("sizeY",180),opacity,cycle);
+            if(window.number("nameWindowFlag",0)!=0){
+                String[] nameWindows=DialogueLayout.names(window.fields(),"filenameNameWindow","ta_namewin",counts);
+                // PrintDirect translates the name window by the same delta as the body window.
+                int nameX=x+window.number("namePrintX",0)-window.number("printX",0);
+                int nameY=y+window.number("namePrintY",200)-window.number("printY",300);
+                previewNameWindow=putPreviewSkin(nameWindows[index],nameX,nameY,
+                    window.number("nameSizeX",640),window.number("nameSizeY",100),opacity,cycle);
+            }
             int color=Color.rgb(cfg.number("messageColorR",255)&255,cfg.number("messageColorG",255)&255,cfg.number("messageColorB",255)&255);
             int font=Math.max(1,cfg.number("messageFontSize",24));
             int lineHeight=Math.max(font,cfg.number("messageNextY",30));
             for(int i=0;i<Math.min(32,cfg.number("windowMessageNumber",0));i++){
-                String line=cfg.text("windowMessage"+(i+1),"");if(!line.isEmpty()&&!line.startsWith("@"))put(previewText(line,font,color),
+                String line=cfg.text("windowMessage"+(i+1),"");if(!line.isEmpty()&&!line.startsWith("@"))putPreview(previewMarkup.parse(line),font,color,
                     x+cfg.number("messagePrintX",0)+i*cfg.number("messageNextX",0),y+cfg.number("messagePrintY",0)+i*lineHeight,canvasWidth-x-cfg.number("messagePrintX",0),lineHeight);
             }
             String title=cfg.text("nameWindowMessage","");
             int nameFont=Math.max(1,cfg.number("nameFontSize",cfg.number("messageFontSize",24)));
-            if(!title.isEmpty()&&!title.startsWith("@"))put(previewText(title,nameFont,
-                Color.rgb(cfg.number("nameColorR",Color.red(color))&255,cfg.number("nameColorG",Color.green(color))&255,cfg.number("nameColorB",Color.blue(color))&255)),
+            if(!title.isEmpty()&&!title.startsWith("@"))putPreview(previewMarkup.parse(title),nameFont,
+                Color.rgb(cfg.number("nameColorR",Color.red(color))&255,cfg.number("nameColorG",Color.green(color))&255,cfg.number("nameColorB",Color.blue(color))&255),
                 x+cfg.number("namePrintX",0),y+cfg.number("namePrintY",0),600,nameFont+6);
         }
         if(cfg.number("useSampleText",0)!=0&&page+1==cfg.number("sampleTextPrintPage",1)){
@@ -203,9 +253,9 @@ final class GameSettingsPanel extends GameUiPanel {
             int next=Math.max(font,cfg.number("sampleTextNextY",28));
             int color=Color.rgb(cfg.number("sampleTextColorR",255)&255,cfg.number("sampleTextColorG",255)&255,cfg.number("sampleTextColorB",255)&255);
             for(int i=0;i<Math.min(32,cfg.number("sampleTextGyo",1));i++){
-                sampleLines.add(cfg.text("sampleText"+(i+1),""));
-                TextView row=previewText("",font,color);sampleRows.add(row);
-                put(row,x,y+i*next,Math.max(1,canvasWidth-x),next);
+                DialogueMarkup sample=previewMarkup.parse(cfg.text("sampleText"+(i+1),""));
+                sampleLines.add(sample);
+                sampleRows.add(putPreview(sample,font,color,x,y+i*next,Math.max(1,canvasWidth-x),next));
             }
             restartSample();
         }
@@ -213,7 +263,10 @@ final class GameSettingsPanel extends GameUiPanel {
     private void restartSample(){
         removeCallbacks(typeSample);
         if(sampleRows.isEmpty())return;
-        for(TextView row:sampleRows)row.setText("");
+        for(TextView row:sampleRows){
+            if(row instanceof DialogueTextView)((DialogueTextView)row).previewReveal(0);
+            else row.setText("");
+        }
         sampleSince=-1;sampleLine=0;post(typeSample);
     }
     private void drawSample(){
@@ -223,13 +276,17 @@ final class GameSettingsPanel extends GameUiPanel {
         if(sampleSince<0)sampleSince=now;
         int rate=assets.settingsTextRate(sampleSpeed,preferences.getBoolean("autoEnabled",false));
         if(rate<=0)return;
-        String line=sampleLines.get(sampleLine);
-        int length=line.codePointCount(0,line.length());
+        DialogueMarkup line=sampleLines.get(sampleLine);
+        int length=line.glyphCount;
         long elapsed=now-sampleSince;
         int shown=(int)Math.min(length,elapsed*rate/1000);
         TextView row=sampleRows.get(sampleLine);
-        String visible=line.substring(0,line.offsetByCodePoints(0,shown));
-        if(!visible.contentEquals(row.getText()))row.setText(visible);
+        int end=line.text.offsetByCodePoints(0,shown);
+        if(row instanceof DialogueTextView)((DialogueTextView)row).previewReveal(end);
+        else{
+            String visible=line.text.substring(0,end);
+            if(!visible.contentEquals(row.getText()))row.setText(visible);
+        }
         if(shown<length){postDelayed(typeSample,frameMs);return;}
         if(sampleLine+1<sampleRows.size()){
             sampleLine++;sampleSince=now;postDelayed(typeSample,frameMs);

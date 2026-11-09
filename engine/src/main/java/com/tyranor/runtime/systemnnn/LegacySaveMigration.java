@@ -68,8 +68,14 @@ final class LegacySaveMigration {
 
     private void plan(Path files,String key) throws IOException {
         if(!exists(files,true))return;
-        for(int slot=SaveSlots.QUICK;slot<SaveSlots.MANUAL_COUNT;slot++)
-            planFile(files,key,SaveSlots.suffix(slot),THUMB);
+        try(DirectoryStream<Path> candidates=Files.newDirectoryStream(files,key+"*")){
+            for(Path file:candidates){
+                String suffix=file.getFileName().toString().substring(key.length());
+                Integer slot=SaveSlots.committedSlot(suffix);
+                if(slot!=null)planFile(files,key,SaveSlots.suffix(slot),THUMB);
+            }
+        }
+        planFile(files,key,SaveSlots.LAST_SELECTION,null);
         planFile(files,key,READ,".ext");
         planFile(files,key,GALLERY,null);
         planChart(files.resolve(key+CHART));
@@ -157,12 +163,12 @@ final class LegacySaveMigration {
                 chartPage(relative.getName(1)) && chartNode(relative.getName(2));
         if(relative.getNameCount()!=1)return false;
         String name=relative.toString();
-        if(name.equals(PREFIX+READ) || name.equals(PREFIX+READ+".ext") || name.equals(PREFIX+GALLERY))return true;
-        for(int slot=SaveSlots.QUICK;slot<SaveSlots.MANUAL_COUNT;slot++){
-            String base=PREFIX+SaveSlots.suffix(slot);
-            if(name.equals(base)||name.equals(base+THUMB))return true;
-        }
-        return false;
+        if(name.equals(PREFIX+READ) || name.equals(PREFIX+READ+".ext") || name.equals(PREFIX+GALLERY) ||
+            name.equals(PREFIX+SaveSlots.LAST_SELECTION) || name.equals(PREFIX+SaveSlots.SLOT_UI))return true;
+        if(!name.startsWith(PREFIX))return false;
+        String suffix=name.substring(PREFIX.length());
+        if(suffix.endsWith(THUMB))suffix=suffix.substring(0,suffix.length()-THUMB.length());
+        return SaveSlots.slotForSuffix(suffix)!=null;
     }
 
     static boolean chartDirectory(Path relative) {

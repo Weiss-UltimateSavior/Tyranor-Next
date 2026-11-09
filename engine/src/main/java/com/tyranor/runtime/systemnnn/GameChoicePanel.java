@@ -11,10 +11,12 @@ import java.util.ArrayList;
 final class GameChoicePanel extends GameUiPanel {
     interface Select {void choose(int oneBased);}
     private final GameUiAssets.Config cfg;
+    private final DialogueMarkup.Style markup;
     private final GameRunner.Frame frame;
     private final Select select;
-    private final Runnable pressed;
+    private final java.util.function.BooleanSupplier pressed;
     private final ArrayList<ChoiceRow> rows=new ArrayList<>();
+    private final ArrayList<android.widget.TextView> messages=new ArrayList<>();
     private final int cursorW,cursorH,dx,dy,font,visible,appearType;
     private final Bitmap cursor;
     private final SpriteAnimation animation;
@@ -24,11 +26,14 @@ final class GameChoicePanel extends GameUiPanel {
     private boolean changeColor;
     private Runnable confirmation;
     private ChoiceTimer timer;
+    private boolean drawingOptions;
     private int remaining;
 
-    GameChoicePanel(Context context,GameUiAssets assets,GameRunner.Frame frame,boolean changeColor,Runnable pressed,Select select){
+    GameChoicePanel(Context context,GameUiAssets assets,GameRunner.Frame frame,boolean changeColor,
+                    java.util.function.BooleanSupplier pressed,Select select){
         super(context,assets,null,()->{});
         this.frame=frame;this.select=select;this.pressed=pressed;this.changeColor=changeColor;cfg=assets.selection;
+        markup=new DialogueMarkup.Style(assets.game.fields());
         remaining=frame.choiceInfo[4];
         setWillNotDraw(true);setClickable(false);canvas(frame.width,frame.height);
         special=frame.choiceInfo[2]>0&&frame.choices.length<=cfg.number("useSpecialNumber",0);
@@ -52,17 +57,45 @@ final class GameChoicePanel extends GameUiPanel {
         readyAt=appearAt+(appearType==0?0:bound(cfg.number("firstAppearTime",10),0,1000))*(long)frame.frameMs;
         render();
     }
-    void changeColor(boolean value){if(value!=changeColor){changeColor=value;for(ChoiceRow row:rows)row.invalidate();}}
+    void changeColor(boolean value){
+        if(value==changeColor)return;
+        changeColor=value;
+        for(int i=0;i<messages.size();i++)messages.get(i).setTextColor(textColor(i));
+        for(ChoiceRow row:rows)row.invalidate();
+    }
     void remaining(int value){remaining=value;if(timer!=null)timer.invalidate();}
+    boolean isTimer(View view){return timer!=null&&view==timer;}
+    void drawOptions(Canvas canvas){
+        if(getVisibility()!=VISIBLE)return;
+        drawingOptions=true;
+        try{draw(canvas);}finally{drawingOptions=false;}
+    }
+    void drawTimer(Canvas canvas){
+        if(getVisibility()==VISIBLE&&timer!=null&&timer.getVisibility()==VISIBLE)timer.draw(canvas);
+    }
+    @Override protected boolean drawChild(Canvas canvas,View child,long drawingTime){
+        return (!drawingOptions||child!=timer)&&super.drawChild(canvas,child,drawingTime);
+    }
     boolean confirming(){return confirmation!=null;}
-    boolean menuAllowed(){return cfg.number("optionOK",0)!=0&&
-        (frame.choiceInfo[0]==0||cfg.number("timeLimitOptionOk",0)!=0);}
-    boolean backlogAllowed(){return cfg.number("optionOK",0)!=0||cfg.number("backlogOK",1)!=0;}
+    private boolean timeLimitActionAllowed(){return frame.choiceInfo[0]==0||cfg.number("timeLimitOptionOk",0)!=0;}
+    boolean menuAllowed(){
+        return timeLimitActionAllowed()&&cfg.number("optionOK",0)!=0&&cfg.number("disableQuickSystemMenuButton",0)==0;
+    }
+    boolean backlogAllowed(){
+        return timeLimitActionAllowed()&&(cfg.number("optionOK",0)!=0||cfg.number("backlogOK",1)!=0);
+    }
+    boolean storyButtonsAllowed(){return frame.optionsAllowed&&menuAllowed();}
+    boolean quickSlotAllowed(boolean saving){return cfg.number(saving?"disableQuickSaveButton":"disableQuickLoadButton",0)==0;}
     private int color(String prefix,int r,int g,int b){
         return Color.rgb(bound(cfg.number(prefix+"R",r),0,255),bound(cfg.number(prefix+"G",g),0,255),bound(cfg.number(prefix+"B",b),0,255));
     }
+    private int textColor(int index){
+        boolean visited=changeColor&&index<32&&(frame.choiceInfo[3]&(1<<index))!=0;
+        return visited?color("selectedColor",255,0,0):color("messageColor",255,255,255);
+    }
     private void render(){
-        clearControls();rows.clear();
+        clearControls();rows.clear();messages.clear();
+        setClipChildren(true);
         if(!special){
             String tag=frame.choiceInfo[0]>0?"timeLimitWindow":"window";
             if(cfg.number(tag+"PrintFlag",0)!=0){
@@ -76,9 +109,19 @@ final class GameChoicePanel extends GameUiPanel {
         int horizontal=cfg.number("messageNextX",0);
         int step=cfg.number("newMessageNextY"+count,cfg.number("messageNextY",30));
         for(int i=0;i<frame.choiceMessages.length;i++){
-            android.widget.TextView message=text(frame.choiceMessages[i],font,color("messageColor",255,255,255));
+            DialogueMarkup caption=markup.parse(frame.choiceMessages[i]);
+            int tone=textColor(i),inset=0;
+            android.widget.TextView message;
+            if(caption.annotations.isEmpty())message=text(caption.text,font,tone);
+            else{
+                DialogueTextView annotated=DialogueTextView.panel(getContext(),caption,markup,font,tone);
+                annotated.markupTextColor(true);
+                inset=annotated.markupTopInset(font);
+                message=annotated;
+            }
             int mx=x+i*horizontal;
-            put(message,mx,y+i*step,Math.max(1,canvasWidth-mx),Math.max(font+4,step));
+            messages.add(message);
+            put(message,mx,y+i*step-inset,Math.max(1,canvasWidth-mx),Math.max(font+4,step)+inset);
         }
         for(int i=0;i<visible&&page+i<frame.choices.length;i++){
             int rowIndex=i+frame.choiceMessages.length;
@@ -104,9 +147,8 @@ final class GameChoicePanel extends GameUiPanel {
     private void move(int direction,int last){if(!confirming()){page=bound(page+direction,0,last);highlight(-1);render();}}
     private void highlight(int index){if(!confirming()){focused=index;for(ChoiceRow row:rows)row.invalidate();}}
     private void choose(int index){
-        if(confirming()||SystemClock.uptimeMillis()<readyAt)return;
+        if(confirming()||SystemClock.uptimeMillis()<readyAt||!pressed.getAsBoolean())return;
         highlight(index);sound(cfg.number("selectSound",0)-1,-1);
-        pressed.run();
         confirmation=()->{confirmation=null;select.choose(index+1);};
         postDelayed(confirmation,bound(cfg.number("clickingTime",5),0,1000)*(long)frame.frameMs);
     }
@@ -184,11 +226,26 @@ final class GameChoicePanel extends GameUiPanel {
     @Override protected void onDetachedFromWindow(){if(confirmation!=null)removeCallbacks(confirmation);confirmation=null;super.onDetachedFromWindow();}
     private final class ChoiceRow extends View {
         final int index;
+        final String label;
+        final DialogueTextView annotated;
         final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
         final RectF dest=new RectF();
         ChoiceRow(int index){
             super(GameChoicePanel.this.getContext());this.index=index;
-            setContentDescription(frame.choices[index]);setFocusable(true);setSoundEffectsEnabled(false);
+            DialogueMarkup content=markup.parse(frame.choices[index]);
+            label=content.text;
+            if(content.annotations.isEmpty())annotated=null;
+            else{
+                annotated=DialogueTextView.panel(getContext(),content,markup,font,Color.WHITE);
+                annotated.setGravity(android.view.Gravity.TOP|android.view.Gravity.LEFT);
+                annotated.setSingleLine(true);annotated.markupTextColor(true);
+                int height=font*2+annotated.markupTopInset(font);
+                annotated.measure(MeasureSpec.makeMeasureSpec(cursorW,MeasureSpec.EXACTLY),MeasureSpec.makeMeasureSpec(height,MeasureSpec.EXACTLY));
+                annotated.layout(0,0,cursorW,height);
+                // Ruby may sit above the row without enlarging its touch target.
+                GameChoicePanel.this.setClipChildren(false);
+            }
+            setContentDescription(label);setFocusable(true);setSoundEffectsEnabled(false);
             setOnClickListener(v->choose(index));
         }
         @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
@@ -209,18 +266,25 @@ final class GameChoicePanel extends GameUiPanel {
                 }
                 if(animation.active(elapsed))postInvalidateOnAnimation();
             }
-            boolean visited=changeColor&&(frame.choiceInfo[3]&(1<<(index&31)))!=0;
-            paint.setColor(visited?color("selectedColor",255,0,0):color("messageColor",255,255,255));
+            int tone=textColor(index);
+            paint.setColor(tone);
             paint.setTextSize(font);
             float textX=-dx;
-            if(center)textX+=(cfg.number(special?"centerAreaSizeX":"newCenteringSizeX",cursorW)-paint.measureText(frame.choices[index]))/2;
+            if(center)textX+=(cfg.number(special?"centerAreaSizeX":"newCenteringSizeX",cursorW)-paint.measureText(label))/2;
+            int rubyTop=annotated==null?0:annotated.getPaddingTop();
+            canvas.clipRect(0,annotated==null?0:Math.min(0,-dy-rubyTop),cursorW,cursorH);
             if(now<readyAt){
                 float shown=font*Math.max(0,now-appearAt)/(float)(readyAt-appearAt);
                 float top=appearType==1?(font-shown)/2:appearType==3?font-shown:0;
-                canvas.clipRect(0,top-dy,cursorW,top+shown-dy);
+                canvas.clipRect(0,top-dy-rubyTop,cursorW,top+shown-dy);
                 postInvalidateOnAnimation();
             }
-            canvas.drawText(frame.choices[index],textX,-dy-paint.ascent(),paint);
+            if(annotated==null)canvas.drawText(label,textX,-dy-paint.ascent(),paint);
+            else{
+                annotated.setTextColor(tone);
+                canvas.translate(textX,-dy-rubyTop);
+                annotated.draw(canvas);
+            }
             canvas.restore();
         }
     }

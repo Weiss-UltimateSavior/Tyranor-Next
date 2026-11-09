@@ -115,4 +115,5 @@
     <string name="engine_systemnnn_host_progress_recovery_hint">破損したファイルを退避して再試行します。読み込める全体の進行データがあれば使用し、なければ作り直します。シナリオのセーブデータと退避した元のファイルはセーブフォルダーに残ります。</string>
     <string name="engine_systemnnn_host_progress_recover">退避して再試行</string>
     <string name="engine_systemnnn_host_resources_evicted">取り込んだゲームデータは削除済みです。ゲームライブラリから起動し直してください。</string>
+    <string name="engine_systemnnn_host_opening">オープニング。タップでスキップ</string>
 </resources>

@@ -38,7 +38,7 @@ final class UiOpening {
         String prefix=exiting?"exitFadeOut":"enterFadeIn";
         int jumpType=jumping?cfg.number("jumpFadeType",-1):-1;
         fadeType=jumping?Math.max(1,jumpType):cfg.number(prefix+"Type",0);
-        boolean supported=(fadeType>=1&&fadeType<=96)||(!exiting&&fadeType==-1);
+        boolean supported=supportedFade(fadeType,exiting);
         fadeFrames=supported&&(!jumping||jumpType>=0)?frames(cfg.number(jumping?"jumpFadeFrame":prefix+"Time",jumping?0:10)):0;
         fadeLast=Math.max(1,fadeFrames-(exiting&&!(jumping&&jumpType==0)?1:0));
         String colorPrefix=jumping?"jumpExitScreen":prefix+"Color";
@@ -51,6 +51,10 @@ final class UiOpening {
         reveal=exiting||system&&menuType==0?0:frames(cfg.number(system?"MenuPrintTime":"menuStartEffectTime",0));
         revealType=menuType;stagger=system;
         deltaX=cfg.number("menuStartDeltaX",0);deltaY=cfg.number("menuStartDeltaY",0);
+    }
+    private static boolean supportedFade(int type,boolean exiting){return type>=1&&type<=96||!exiting&&type==-1;}
+    static boolean hasEnterFade(GameUiAssets.Config config){
+        return supportedFade(config.number("enterFadeInType",0),false)&&config.number("enterFadeInTime",10)>0;
     }
     private static int frames(int n){return Math.max(0,Math.min(1000,n));}
     private static int channel(int n){return Math.max(0,Math.min(255,n));}

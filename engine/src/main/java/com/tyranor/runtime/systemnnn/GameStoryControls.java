@@ -20,6 +20,7 @@ final class GameStoryControls extends FrameLayout {
     private boolean typing=true,automatic,skipping;
     private ArtButton clicked;
     private Runnable dispatch;
+    private GameChoicePanel choice;
     GameStoryControls(Context context,GameUiAssets assets,Listener listener){
         super(context);this.listener=listener;setSoundEffectsEnabled(false);setClickable(false);
         model=new GameStoryControlsModel(assets.game,assets.printMessage,assets.storyButtons);
@@ -36,6 +37,7 @@ final class GameStoryControls extends FrameLayout {
         }
     }
     boolean original(){return model.original;}
+    boolean clicking(){return clicked!=null;}
     private String actionLabel(GameStoryControlsModel.Action action){
         int label;
         switch(action){
@@ -61,15 +63,24 @@ final class GameStoryControls extends FrameLayout {
         for(ArtButton b:buttons){b.setClickable(!typing);b.invalidate();}
     }
     void canvas(int width,int height){canvasWidth=Math.max(1,width);canvasHeight=Math.max(1,height);requestLayout();}
-    void frame(GameRunner.Frame frame,boolean typing,boolean choiceMenu){
-        this.typing=!choiceMenu&&(typing||frame==null||frame.wait!=NativeGame.DIALOGUE);
+    void frame(GameRunner.Frame frame,boolean typing,GameChoicePanel choice){
+        this.choice=choice;
+        boolean choiceButtons=choice!=null&&choice.storyButtonsAllowed();
+        this.typing=!choiceButtons&&(typing||frame==null||frame.wait!=NativeGame.DIALOGUE);
         if(frame!=null&&frame.width>0&&frame.height>0&&(canvasWidth!=frame.width||canvasHeight!=frame.height))canvas(frame.width,frame.height);
         if(frame!=null)period=Math.max(1,frame.frameMs);
-        boolean visible=frame!=null&&frame.optionsAllowed&&frame.windowVisible&&
-            (frame.wait==NativeGame.DIALOGUE&&(frame.command!=0x22220002||model.largePrintOptions)||
-             (frame.wait==NativeGame.DRAW||frame.wait==NativeGame.OVERLAP)&&model.drawDuringTransitions);
-        setVisibility(visible||choiceMenu?VISIBLE:GONE);
-        for(ArtButton b:buttons){b.setVisibility(!choiceMenu||b.spec.action==GameStoryControlsModel.Action.MENU?VISIBLE:GONE);b.setClickable(!this.typing&&clicked==null);}
+        boolean visible=frame!=null&&frame.optionsAllowed&&
+            (frame.wait==NativeGame.DIALOGUE||
+             (frame.wait==NativeGame.DRAW||frame.wait==NativeGame.OVERLAP)&&model.original&&model.drawDuringTransitions);
+        setVisibility(visible||choiceButtons?VISIBLE:GONE);
+        for(ArtButton button:buttons){
+            GameStoryControlsModel.Action action=button.spec.action;
+            boolean show=!choiceButtons||action==GameStoryControlsModel.Action.MENU||
+                action==GameStoryControlsModel.Action.QUICK_SAVE&&choice.quickSlotAllowed(true)||
+                action==GameStoryControlsModel.Action.QUICK_LOAD&&choice.quickSlotAllowed(false);
+            button.setVisibility(show?VISIBLE:GONE);
+            button.setClickable(show&&!this.typing&&clicked==null);
+        }
     }
     void modes(boolean auto,boolean skip){automatic=auto;skipping=skip;invalidate();}
     int contentRight(int x,int y,int bottom,int fallback){
@@ -86,7 +97,7 @@ final class GameStoryControls extends FrameLayout {
         super.onMeasure(ws,hs);
     }
     private void click(ArtButton b){
-        if(typing||clicked!=null||!b.isEnabled())return;
+        if(typing||clicked!=null||!b.isEnabled()||choice!=null&&choice.confirming())return;
         clicked=b;
         for(ArtButton button:buttons)button.setClickable(false);
         boolean target=b.spec.action==GameStoryControlsModel.Action.AUTO?!automatic:!skipping;

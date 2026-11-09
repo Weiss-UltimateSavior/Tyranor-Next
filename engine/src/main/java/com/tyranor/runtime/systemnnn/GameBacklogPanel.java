@@ -16,12 +16,12 @@ import java.util.function.LongConsumer;
 final class GameBacklogPanel extends GameUiPanel {
     interface Replay {void play(byte[] name);}
     private static final class Row {
-        final String text;
+        final DialogueMarkup text;
         final int color;
         final List<byte[]> voices;
         final long jump;
         int nextVoice;
-        Row(String text,int color,List<byte[]> voices,long jump){this.text=text;this.color=color;this.voices=voices;this.jump=jump;}
+        Row(DialogueMarkup text,int color,List<byte[]> voices,long jump){this.text=text;this.color=color;this.voices=voices;this.jump=jump;}
     }
     private final GameUiAssets.Config cfg;
     private final DialogueStyle style;
@@ -55,22 +55,23 @@ final class GameBacklogPanel extends GameUiPanel {
         Paint measure=new Paint(Paint.ANTI_ALIAS_FLAG);measure.setTextSize(font);
         int available=Math.max(font,canvasWidth-x-Math.max(font,canvasWidth/10));
         for(GameRunner.BacklogLine line:entries){
-            if(line.color<0)for(int i=0;i<gap;i++)rows.add(new Row("",style.bodyColor,Collections.emptyList(),0));
+            if(line.color<0)for(int i=0;i<gap;i++)rows.add(new Row(DialogueMarkup.EMPTY,style.bodyColor,Collections.emptyList(),0));
             List<byte[]> voices=line.voices.subList(0,Math.min(voiceCount,line.voices.size()));
             long jumpId=line.jump;
             if(!line.speaker.isEmpty()){
-                wrap(line.speaker,style.speakerColor(line.speaker),voices,jumpId,measure,available);
+                wrap(style.markup(line.speaker),style.speakerColor(line.speaker),voices,jumpId,measure,available);
                 voices=Collections.emptyList();
                 jumpId=0;
             }
-            wrap(line.body,line.color<0?style.bodyColor:0xff000000|line.color,voices,jumpId,measure,available);
+            wrap(style.markup(line.body),line.color<0?style.bodyColor:0xff000000|line.color,voices,jumpId,measure,available);
         }
         first=Math.max(0,rows.size()-visible);
         render();
     }
-    private void wrap(String text,int color,List<byte[]> voices,long jumpId,Paint measure,int width){
+    private void wrap(DialogueMarkup text,int color,List<byte[]> voices,long jumpId,Paint measure,int width){
         boolean firstRow=true;
-        for(String paragraph:text.split("\n",-1)){
+        int paragraphOffset=0;
+        for(String paragraph:text.text.split("\n",-1)){
             int start=0;
             do{
                 int count=measure.breakText(paragraph,start,paragraph.length(),true,width,null);
@@ -80,9 +81,11 @@ final class GameBacklogPanel extends GameUiPanel {
                 }
                 if(end<paragraph.length()&&end>start&&Character.isHighSurrogate(paragraph.charAt(end-1)))end--;
                 if(end==start&&start<paragraph.length())end+=Character.charCount(paragraph.codePointAt(start));
-                rows.add(new Row(paragraph.substring(start,end),color,firstRow?voices:Collections.emptyList(),firstRow?jumpId:0));
+                rows.add(new Row(text.slice(paragraphOffset+start,paragraphOffset+end),color,
+                    firstRow?voices:Collections.emptyList(),firstRow?jumpId:0));
                 firstRow=false;start=end;
             }while(start<paragraph.length());
+            paragraphOffset+=paragraph.length()+1;
         }
     }
     private void render(){
@@ -97,9 +100,15 @@ final class GameBacklogPanel extends GameUiPanel {
         }
         for(int i=0;i<visible&&first+i<rows.size();i++){
             Row row=rows.get(first+i);int top=y+i*step;
-            TextView text=text(row.text,font,row.color);
+            TextView text;
+            int inset=0;
+            if(row.text.annotations.isEmpty())text=text(row.text.text,font,row.color);
+            else{
+                DialogueTextView annotated=DialogueTextView.panel(getContext(),row.text,style.markupStyle,font,row.color);
+                inset=annotated.markupTopInset(font);text=annotated;
+            }
             text.setMaxLines(1);text.setLetterSpacing(space/(float)font);
-            put(text,x,top,canvasWidth-x,Math.max(step,font));
+            put(text,x,top-inset,canvasWidth-x,Math.max(step,font)+inset);
             rowActions(row,top);
         }
         if(first>0)arrow(true);

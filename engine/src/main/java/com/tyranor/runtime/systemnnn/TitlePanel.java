@@ -8,6 +8,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.*;
+import java.util.function.Consumer;
 
 /** Scale the game's clickable rectangles with the same letterbox as the background. */
 final class TitlePanel extends FrameLayout {
@@ -15,8 +16,11 @@ final class TitlePanel extends FrameLayout {
     private final TitleMenu model;
     private final int baseWidth,baseHeight;
     private final GameRunner runner;
-    private boolean pending,backgroundStarted;
+    private boolean pending,touching,backgroundStarted,shown;
     private final UiOpening opening;
+    private boolean restarting;
+    private UiOpening restartExit;
+    private Runnable finishRestart;
     private Bitmap initial;
 
     TitlePanel(Context context,String name,TitleMenu title,int width,int height,GameRunner runner,Bitmap initial,
@@ -40,15 +44,15 @@ final class TitlePanel extends FrameLayout {
                 GameButton game=new GameButton(context,item.spec,item.image,item.label,title.frameMs);
                 game.prepare(()->prepare.select(item));
                 game.setOnClickListener(v->{
-                    if(!pending&&game.commit(()->sound.play(item.spec.sound,item.spec.voice),
-                        ()->finishClick(click,item)))pending=true;
+                    if(!pending&&!restarting&&game.commit(()->sound.play(item.spec.sound,item.spec.voice),
+                        ()->finishClick(click,item)))pending(true);
                 });
                 button=game;
             } else {
                 Button text=new Button(context); text.setText(item.label); button=text;
                 button.setOnClickListener(v->{
-                    if(pending||!item.enabled)return;
-                    pending=true;
+                    if(pending||restarting||!item.enabled)return;
+                    pending(true);
                     finishClick(click,item);
                 });
             }
@@ -60,17 +64,80 @@ final class TitlePanel extends FrameLayout {
     }
     private void finishClick(Click click,TitleMenu.Item item){
         // Story entry completes when the first story frame replaces the title.
-        if(item.action!=TitleMenu.Action.START&&item.action!=TitleMenu.Action.CONTINUE)pending=false;
         click.select(item);
+        if(item.action!=TitleMenu.Action.START&&item.action!=TitleMenu.Action.CONTINUE&&
+            item.action!=TitleMenu.Action.LAST_LOAD)pending(false);
     }
-    void entryFailed(){pending=false;}
+    private void pending(boolean busy){
+        pending=busy;
+        runner.titleInteraction(model,pending||touching);
+    }
+    void entryFailed(){pending(false);}
+    boolean leaveForRestart(GameRunner.Capture background,Consumer<Bitmap> done){
+        if(pending||touching||restarting)return false;
+        restarting=true;
+        Bitmap picture=null;
+        if(background!=null){
+            try{
+                picture=background.bitmap();
+                Bitmap composed=UiOpening.snapshot(this,picture,c->super.draw(c));
+                if(composed!=picture)picture.recycle();
+                picture=composed;
+            }catch(RuntimeException|OutOfMemoryError e){
+                android.util.Log.w("SystemNNN","Unable to compose outgoing title",e);
+            }
+        }
+        if(picture==null){done.accept(null);return true;}
+        restartExit=UiOpening.exit(model.config,model.frameMs);
+        restartExit.previous(picture);
+        if(restartExit.hasFade()){
+            Bitmap outgoing=model.config.number("fillExitScreenFlag",1)!=0?
+                UiOpening.solid(restartExit.color()):picture;
+            finishRestart=()->done.accept(outgoing);
+        }else done.accept(picture);
+        invalidate();
+        return true;
+    }
+    boolean skipRestartExit(){
+        if(finishRestart==null)return false;
+        restartExit.skip();
+        invalidate();
+        return true;
+    }
     void previous(Bitmap picture){if(opening.needsPrevious())opening.previous(picture);}
     @Override public boolean dispatchTouchEvent(MotionEvent event){
-        if(pending)return true;
-        if(opening.touch(event)){invalidate();return true;}
-        return super.dispatchTouchEvent(event);
+        int action=event.getActionMasked();
+        if(restarting){
+            if(action==MotionEvent.ACTION_DOWN)skipRestartExit();
+            return true;
+        }
+        if(action==MotionEvent.ACTION_DOWN){
+            touching=true;
+            runner.titleInteraction(model,true);
+        }
+        try{
+            if(pending)return true;
+            if(opening.touch(event)){invalidate();return true;}
+            return super.dispatchTouchEvent(event);
+        }finally{
+            if(touching&&(action==MotionEvent.ACTION_UP||action==MotionEvent.ACTION_CANCEL)){
+                touching=false;
+                runner.titleInteraction(model,pending);
+            }
+        }
     }
     @Override public void draw(Canvas canvas){
+        if(restartExit!=null){
+            if(restartExit.hasFade()){
+                restartExit.begin();
+                if(restartExit.overlay(canvas,this,baseWidth,baseHeight))postInvalidateOnAnimation();
+                else if(finishRestart!=null){
+                    post(finishRestart);
+                    finishRestart=null;
+                }
+            }else restartExit.drawPrevious(canvas,this);
+            return;
+        }
         if(opening.needsTarget()){
             opening.target(opening.delaysControls()||initial==null?initial:
                 UiOpening.snapshot(this,initial,c->super.draw(c)));
@@ -82,9 +149,13 @@ final class TitlePanel extends FrameLayout {
         }
         if(!opening.drawTarget(canvas,this))super.draw(canvas);
         opening.overlay(canvas,this,baseWidth,baseHeight);
+        if(!shown){shown=true;runner.titleShown();}
         if(!backgroundStarted||opening.running())postInvalidateOnAnimation();
     }
     @Override protected void onDetachedFromWindow(){
+        if(pending||touching){touching=false;pending(false);}
+        if(restartExit!=null)restartExit.close();
+        finishRestart=null;
         opening.close();
         super.onDetachedFromWindow();
     }

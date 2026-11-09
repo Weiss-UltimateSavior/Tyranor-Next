@@ -1,12 +1,14 @@
 package com.tyranor.runtime.systemnnn;
 
+import android.graphics.Bitmap;
 import android.view.Surface;
 import java.nio.ByteBuffer;
 
 final class NativeGame {
     static { System.loadLibrary("systemnnn"); }
     static final int RUNNING=0, DRAW=1, OVERLAP=2, DIALOGUE=3, CHOICE=4, END=5, TITLE=6, MOVIE=7, PLACE=8, MODAL=9;
-    static final int META_SIZE=10, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9;
+    static final int META_SIZE=12, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9, DRAW_MESSAGE=10,
+        TITLE_BACKGROUND_ENDED=11;
     static final int SELECT_PLACE_MODE=22,SELECT_PLACE2_MODE=35;
     static native long open(byte[] path, int sampleRate);
     static native long openWithRuntime(byte[] path,int sampleRate,long contextToken);
@@ -17,7 +19,9 @@ final class NativeGame {
     static native void releaseContext(long contextToken);
     static native void close(long handle);
     static native void surface(long handle, Surface target);
-    static native void configureTitle(long handle,byte[] script,byte[] background,boolean repeat,int bgm,int plays,int volume,int fade);
+    static native boolean configureMenuBackground(long handle,int mode,byte[] script,byte[] background,boolean repeat);
+    // A zero result signals script end. A positive result is the current engine frame period.
+    static native int advanceOpening(long handle,int frames);
     static native void restartTitle(long handle);
     static native int[] titleSprite(long handle,byte[] name);
     static native int[] gallerySprite(long handle,byte[] name);
@@ -64,7 +68,8 @@ final class NativeGame {
     static native void trimReplayedBacklog(long handle,int keep);
     static final int SYSTEM_VARIABLES=1000;
     static final int SCRIPT_PROGRESS=2048;
-    static final int OPTIONAL_PROGRESS_WORDS=1024+16384;
+    static final int LEGACY_OPTIONAL_PROGRESS_WORDS=1024+16384;
+    static final int OPTIONAL_PROGRESS_WORDS=LEGACY_OPTIONAL_PROGRESS_WORDS+8;
     static native int[] systemVariables(long handle);
     static native void seedLegacyReplayVariables(long handle);
     static native void setSystemVariables(long handle,int[] values);
@@ -77,6 +82,7 @@ final class NativeGame {
     static native boolean restoreRuntimeText(long handle,byte[][] fields);
     static native int[] optionalProgress(long handle);
     static native void restoreOptionalProgress(long handle,int[] words);
+    static native boolean voiceRoleHeard(long handle,int character);
     static native byte[] chartProgress(long handle);
     static native void restoreChartProgress(long handle,byte[] flags);
     static native int configMask(long handle);
@@ -89,6 +95,12 @@ final class NativeGame {
     static native void replayBacklogVoice(long handle,byte[] name);
     static native void stopScriptAudio(long handle);
     static native int[] saveThumbnail(long handle,int width,int height);
+    static native int saveSlotArt(long handle);
+    // Zero means no change, -1 ends the current layer, a positive token owns a detached frame.
+    static native long takeScreenLayer(long handle);
+    static native boolean compositeScreenLayer(long token,Bitmap messagePlane,int wait,int word,int line,
+                                               boolean showBackdrop,boolean record);
+    static native void releaseScreenLayer(long token);
     static native int[] dialogueProperties(long handle);
     static native void setVolumes(long handle,int music,int sound,int voice,int effectVoice);
     static native void setParameters(long handle,int[] idValuePairs);
@@ -98,7 +110,8 @@ final class NativeGame {
     static native boolean legacyVolumeDefaults(long handle);
     // DTO indices 0=theme, 1=window, 2..33=voice-off, 34..35=cursor variants (read-only).
     static native void setAuxiliaryState(long handle,int[] indexValuePairs);
-    static native void setTextLength(long handle,int length);
+    static native byte[] appendPrefix(long handle);
+    static native void setTextLength(long handle,int length,int visible);
     static native int[] textState(long handle);
     static native int[] settingsTextRates(long handle);
     static native boolean requestAdvance(long handle);
@@ -127,6 +140,7 @@ final class NativeGame {
     static native int musicNumber(long handle,byte[] name);
     static native int galleryVariable(long handle,byte[] name);
     static native int menuVariable(long handle,byte[] name);
+    static native int openingVariable(long handle,byte[] name);
     static native void menuMusic(long handle,int number,int plays,int volume,int fade,boolean restart);
     static native void playGalleryMusic(long handle,byte[] name,int plays,int volume);
     static native void stopGalleryMusic(long handle);

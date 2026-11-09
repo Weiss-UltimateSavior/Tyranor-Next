@@ -17,7 +17,7 @@ import java.nio.charset.StandardCharsets;
 
 /** Plays a local game movie over the canvas. The AudioTrack head is the presentation clock. */
 final class MoviePlayback extends FrameLayout implements TextureView.SurfaceTextureListener {
-    interface Listener {void finished(String failure);}
+    interface Listener {void finished(MoviePlayback source,String failure);}
     private static final String TAG="SystemNNN";
     private static final int RATE=48000;
     private final TextureView picture;
@@ -47,7 +47,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     void interrupted(){finish(null);}
     private void finish(String failure){
         if(finished)return;
-        finished=true;stopped=true;listener.finished(failure);
+        finished=true;stopped=true;listener.finished(this,failure);
     }
     @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
         if(started||stopped)return;

@@ -17,6 +17,7 @@ final class DialogueStyle {
     int windowX,windowY,windowWidth,windowHeight,nameX,nameY,nameWidth,nameHeight;
     final boolean original,nameWindowEnabled;
     final int fontWeight,bodyColor,defaultNameColor,nameShadeColor;
+    final DialogueMarkup.Style markupStyle;
     private final boolean printName,autoNameWindow,nameTableEnabled;
     final int readBodyColor,readNameColor;
     private final Map<String,Integer> names;
@@ -33,7 +34,8 @@ final class DialogueStyle {
         printName=DialogueLayout.number(config,"nameFlag",1)!=0;
         autoNameWindow=DialogueLayout.number(config,"autoNameWindowFlag",0)!=0;
         nameTableEnabled=DialogueLayout.usesNameTable(config);
-        nameLayouts=DialogueLayout.nameLayouts(config,layouts,DialogueLayout.number(game,"codeByte",2)==1);
+        markupStyle=new DialogueMarkup.Style(game);
+        nameLayouts=DialogueLayout.nameLayouts(config,layouts,markupStyle.singleByte);
         int weight=DialogueLayout.number(game,"fontWeight",700);
         fontWeight=weight>=0&&weight<=1000?weight:700;
         boolean custom=DialogueLayout.number(config,"colorCustomFlag",0)!=0;
@@ -91,6 +93,7 @@ final class DialogueStyle {
         return new DialogueStyle(images,nameImages,windows,config,assets.game.fields(),palette);
     }
     DialogueLayout.Name nameLayout(int font){return nameLayouts[DialogueLayout.clamp(font,0,nameLayouts.length-1)];}
+    DialogueMarkup markup(String text){return markupStyle.parse(text);}
     DialogueLayout.Message split(String text,boolean print){return DialogueLayout.split(text,print,printName,autoNameWindow,names.keySet());}
     int speakerColor(String name) { return nameTableEnabled?names.getOrDefault(name,Color.WHITE):defaultNameColor; }
     private static int number(Map<String,String> values,String key,int fallback,int min,int max) {

@@ -35,7 +35,7 @@ import java.util.UUID;
 /** NNR4 stays readable by the previous player. New fields are paired with its exact contents. */
 final class GameProgress {
     private static final int NNR1=0x4e4e5231,NNR2=0x4e4e5232,NNR3=0x4e4e5233,NNR4=0x4e4e5234,
-        NNE1=0x4e4e4531,NNE2=0x4e4e4532;
+        NNE1=0x4e4e4531,NNE2=0x4e4e4532,NNE3=0x4e4e4533;
     private static final int MAX_READ=100000,TEXT_FIELDS=102,OPTION_WORDS=NativeGame.OPTIONAL_PROGRESS_WORDS,FINGERPRINT_BYTES=32;
     private static final int MAX_CHART_NODES=256*1024,MAX_CHART=8+2*MAX_CHART_NODES;
     private static final long MAX_FILE=32L*1024*1024,MAX_EXTENSION=2L*1024*1024;
@@ -71,13 +71,18 @@ final class GameProgress {
 
     GameProgress(File path){file=new AtomicFile(path);extension=new AtomicFile(new File(path.getPath()+".ext"));}
 
+    interface ExtensionOpener { FileInputStream open() throws IOException; }
+
     State read() throws IOException {
-        Committed saved=readCommitted(false);
+        return readFrom(file.getBaseFile(),extension::openRead);
+    }
+    static State readFrom(File file,ExtensionOpener opener) throws IOException {
+        Committed saved=readCommitted(file,opener,false);
         return saved==null?null:saved.state;
     }
-    private Committed readCommitted(boolean repairExtension) throws IOException {
+    private static Committed readCommitted(File file,ExtensionOpener opener,boolean repairExtension) throws IOException {
         try{
-            Path path=file.getBaseFile().toPath();
+            Path path=file.toPath();
             Path legacy=sibling(path,".bak");
             Committed primary=null,backup=null;
             InvalidBase damaged=null;
@@ -85,14 +90,22 @@ final class GameProgress {
             try{backup=readBase(legacy);}catch(InvalidBase e){
                 if(damaged==null)damaged=e;else damaged.addSuppressed(e);
             }
-            if(damaged!=null)throw damaged;
+            if(damaged!=null){
+                if(backup==null)throw damaged;
+                Files.move(path,sibling(path,".corrupt-"+UUID.randomUUID()),StandardCopyOption.ATOMIC_MOVE);
+            }
+            // The backup stays in place until promotion, so an interrupted repair can retry.
+            if(primary==null&&backup!=null){
+                Files.move(legacy,path,StandardCopyOption.ATOMIC_MOVE);
+            }
             Committed committed=backup!=null?backup:primary;
             if(committed==null)return null;
             State base=committed.state;
             byte[] fingerprint=committed.fingerprint;
-            try{base=readExtension(base,fingerprint);}
+            Path ext=sibling(path,".ext");
+            try{base=readExtension(ext,opener,base,fingerprint);}
             catch(InvalidExtension e){
-                if(repairExtension)quarantineExtension(e);
+                if(repairExtension)quarantineExtension(ext,e);
                 else android.util.Log.w("SystemNNN","Global progress extension ignored",e);
             }
             catch(IOException e){throw new AccessFailure("扩展",e);}
@@ -150,24 +163,23 @@ final class GameProgress {
             throw e;
         }
     }
-    private static boolean definitelyAbsent(AtomicFile path){
-        File base=path.getBaseFile();
-        return Files.notExists(base.toPath())&&Files.notExists(new File(base.getPath()+".bak").toPath());
+    private static boolean definitelyAbsent(Path path){
+        return Files.notExists(path)&&Files.notExists(sibling(path,".bak"));
     }
-    private State readExtension(State base,byte[] fingerprint) throws IOException {
-        try(FileInputStream raw=extension.openRead();
+    private static State readExtension(Path path,ExtensionOpener opener,State base,byte[] fingerprint) throws IOException {
+        try(FileInputStream raw=opener.open();
             DataInputStream in=new DataInputStream(new BufferedInputStream(raw))){
             if(raw.getChannel().size()>MAX_EXTENSION)throw new InvalidExtension("Global progress extension exceeds size limit");
             int version=in.readInt();
-            if(version!=NNE1&&version!=NNE2)throw new InvalidExtension("Invalid global progress extension version");
+            if(version!=NNE1&&version!=NNE2&&version!=NNE3)throw new InvalidExtension("Invalid global progress extension version");
             int count=in.readUnsignedByte();
             if(count<1||count>2)throw new InvalidExtension("Invalid global progress extension count");
             State result=base;
             for(int i=0;i<count;i++){
                 byte[] key=new byte[FINGERPRINT_BYTES];in.readFully(key);
                 byte[][] text=readText(in);
-                int[] optional=readOptional(in);
-                byte[] chart=version==NNE2?readChart(in):null;
+                int[] optional=readOptional(in,version==NNE3?OPTION_WORDS:NativeGame.LEGACY_OPTIONAL_PROGRESS_WORDS);
+                byte[] chart=version==NNE1?null:readChart(in);
                 if(Arrays.equals(key,fingerprint)){
                     if(result!=base)throw new InvalidExtension("Duplicate global progress extension record");
                     result=new State(base.read,base.variables,base.results,text,optional,chart,base.legacy);
@@ -178,15 +190,14 @@ final class GameProgress {
         }catch(EOFException e){
             throw new InvalidExtension("Truncated global progress extension",e);
         }catch(FileNotFoundException e){
-            if(!definitelyAbsent(extension))throw e;
+            if(!definitelyAbsent(path))throw e;
             return base;
         }
     }
-    private void quarantineExtension(InvalidExtension problem) throws IOException {
-        File damaged=extension.getBaseFile();
-        File isolated=new File(damaged.getPath()+".corrupt-"+UUID.randomUUID());
-        Files.move(damaged.toPath(),isolated.toPath(),StandardCopyOption.ATOMIC_MOVE);
-        android.util.Log.w("SystemNNN","Isolated malformed global progress extension: "+isolated.getName(),problem);
+    private static void quarantineExtension(Path damaged,InvalidExtension problem) throws IOException {
+        Path isolated=sibling(damaged,".corrupt-"+UUID.randomUUID());
+        Files.move(damaged,isolated,StandardCopyOption.ATOMIC_MOVE);
+        android.util.Log.w("SystemNNN","Isolated malformed global progress extension: "+isolated.getFileName(),problem);
     }
 
     static State decode(DataInputStream in) throws IOException {
@@ -205,7 +216,7 @@ final class GameProgress {
     }
 
     void write(State state) throws IOException {
-        Committed previous=readCommitted(true);
+        Committed previous=readCommitted(file.getBaseFile(),extension::openRead,true);
         if(previous!=null&&sameBase(state,previous.state)){
             if(!Arrays.deepEquals(state.text,previous.state.text)||!Arrays.equals(state.optional,previous.state.optional)||
                 !Arrays.equals(state.chart,previous.state.chart))
@@ -260,7 +271,7 @@ final class GameProgress {
             raw=extension.startWrite();
             DataOutputStream out=new DataOutputStream(new BufferedOutputStream(raw));
             boolean preserve=previous!=null&&previous.state.text!=null;
-            out.writeInt(NNE2);
+            out.writeInt(hasVoiceRoles(state)||preserve&&hasVoiceRoles(previous.state)?NNE3:NNE2);
             out.writeByte(preserve?2:1);
             writeExtensionRecord(out,fingerprint,state);
             if(preserve)writeExtensionRecord(out,previous.fingerprint,previous.state);
@@ -274,8 +285,14 @@ final class GameProgress {
             throw e;
         }
     }
+    private static boolean hasVoiceRoles(State state){
+        if(state.optional!=null)for(int i=NativeGame.LEGACY_OPTIONAL_PROGRESS_WORDS;i<state.optional.length;i++)
+            if(state.optional[i]!=0)return true;
+        return false;
+    }
     private static void writeExtensionRecord(DataOutputStream out,byte[] fingerprint,State state) throws IOException {
-        if(state.text.length!=TEXT_FIELDS||state.optional!=null&&state.optional.length!=OPTION_WORDS)
+        if(state.text.length!=TEXT_FIELDS||state.optional!=null&&state.optional.length!=OPTION_WORDS&&
+            state.optional.length!=NativeGame.LEGACY_OPTIONAL_PROGRESS_WORDS)
             throw new IOException("Invalid global progress extension field count");
         out.write(fingerprint);
         for(int i=0;i<state.text.length;i++){
@@ -325,13 +342,13 @@ final class GameProgress {
         }
         return fields;
     }
-    private static int[] readOptional(DataInputStream in) throws IOException {
+    private static int[] readOptional(DataInputStream in,int limit) throws IOException {
         int count=in.readUnsignedShort(),previous=-1;
-        if(count>OPTION_WORDS)throw new InvalidExtension("Invalid optional progress count");
+        if(count>limit)throw new InvalidExtension("Invalid optional progress count");
         int[] values=new int[OPTION_WORDS];
         for(int i=0;i<count;i++){
             int index=in.readUnsignedShort(),word=in.readInt();
-            if(index<=previous||index>=values.length||word==0)throw new InvalidExtension("Invalid optional progress word");
+            if(index<=previous||index>=limit||word==0)throw new InvalidExtension("Invalid optional progress word");
             values[index]=word;
             previous=index;
         }

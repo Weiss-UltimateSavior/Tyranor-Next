@@ -77,7 +77,7 @@ final class GalleryCatalog {
         final List<Movie> entries=new ArrayList<>();
         MovieList(File root,GameTextDecoder codec) throws IOException {
             print=GameUiAssets.readConfig(root,"printMovie",codec);
-            opening=new Movie(0,movieFile(root,GameResourcePaths.decodeFilename(raw(print.value("movieFileName","default.wmv")))),"开场动画");
+            opening=openingMovie(root,print);
             byte[] bytes=listBytes(root,"spt","movielist.xtx");
             if(bytes==null)return;
             String data;
@@ -93,6 +93,10 @@ final class GalleryCatalog {
             }
         }
         Movie find(int number){return number==0?opening:number>0&&number<=entries.size()?entries.get(number-1):null;}
+    }
+    static Movie openingMovie(File root,GameUiAssets.Config print) throws IOException {
+        String name=GameResourcePaths.decodeFilename(raw(print.value("movieFileName","default.wmv")));
+        return new Movie(0,movieFile(root,name),"开场动画");
     }
     static final class ScrollAxis {
         final int direction,tiles,time,wait;

@@ -209,7 +209,7 @@
             android:process=":systemnnn"
             android:taskAffinity="${applicationId}.systemnnn"
             android:screenOrientation="sensorLandscape"
-            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+            android:theme="@style/SystemNnnPlayerTheme"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
 
         <!-- ONS（ons）SDL2 宿主 -->

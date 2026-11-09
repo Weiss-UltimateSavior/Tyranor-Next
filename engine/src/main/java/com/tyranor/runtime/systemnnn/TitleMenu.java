@@ -5,7 +5,6 @@ import android.util.Log;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +13,7 @@ import java.util.Map;
 final class TitleMenu {
     enum Action {
         START("新游戏"), LOAD("读取存档"), SETTINGS("设置"), EXTRAS("鉴赏"), EXIT("退出"),
-        CONTINUE("继续游戏"), WEBSITE("官方网站"), MODE("扩展");
+        CONTINUE("继续游戏"), LAST_LOAD("读取上次存档"), WEBSITE("官方网站"), MODE("扩展");
         final String label;
         Action(String label) { this.label=label; }
     }
@@ -37,18 +36,19 @@ final class TitleMenu {
     final boolean skinned;
     final String website;
     final GameUiAssets.Config config;
-    final int frameMs;
-    final List<LogoPanel.Slide> logos;
-
-    TitleMenu(File root,long handle,boolean resume,boolean first) throws IOException {
+    final int frameMs,autoRestartTime;
+    final boolean restartOnBackgroundEnd;
+    TitleMenu(File root,long handle,boolean resume,boolean lastLoad) throws IOException {
         config=GameUiAssets.readConfig(root,"title");
         frameMs=Math.max(1,GameUiAssets.readConfig(root,"game").number("frameTime",20));
-        logos=first?LogoPanel.load(root,handle):Collections.emptyList();
         boolean scripted=number("backScriptFlag",0)!=0;
+        autoRestartTime=number("autoRestartTime",0);
+        restartOnBackgroundEnd=scripted&&number("scriptEndIsModeEnd",0)!=0;
         String script=scripted ? value("backScriptName","") : "";
         String background=scripted ? "" : GameUiAssets.systemImageKey(value("filenameBG","title_bg"));
-        NativeGame.configureTitle(handle,raw(script),raw(background),number("backScriptLoopFlag",0)!=0,
-            logos.isEmpty()?musicNumber():-1,number("bgmLoop",0),number("bgmVolume",0),number("bgmFadeInTime",-1));
+        NativeGame.configureMenuBackground(handle,4,raw(script),raw(background),number("backScriptLoopFlag",0)!=0);
+        try{restoreMusic(handle);}
+        catch(RuntimeException e){Log.w("SystemNNN","Title music unavailable",e);}
         website=value("HTMLaddr","");
         boolean extras=GameResourcePaths.file(root,"init","omake.xtx")!=null||GameResourcePaths.file(root,"init2","omake.fxf")!=null;
         Action[] basic={Action.START,Action.LOAD,Action.SETTINGS,Action.EXTRAS,Action.EXIT};
@@ -71,7 +71,7 @@ final class TitleMenu {
             items.add(item);
         }
         if(skinned){
-            if (number("EnableLastLoadButton",0)!=0) add(handle,"LastLoad",Action.CONTINUE,resume,artwork);
+            if (number("EnableLastLoadButton",0)>0) add(handle,"LastLoad",Action.LAST_LOAD,lastLoad,artwork);
             if (number("EnableHTMLButton",0)!=0) add(handle,"HTML",Action.WEBSITE,
                 website.startsWith("https://")||website.startsWith("http://"),artwork);
         }else{

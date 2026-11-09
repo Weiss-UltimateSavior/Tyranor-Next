@@ -36,6 +36,7 @@
     <string name="engine_systemnnn_ctl_cancel_overwrite">Cancel overwrite</string>
     <string name="engine_systemnnn_ctl_slot_auto">Autosave</string>
     <string name="engine_systemnnn_ctl_slot_quick">Quick save</string>
+    <string name="engine_systemnnn_ctl_other_saves">Other saves</string>
     <string name="engine_systemnnn_ctl_slot_number">Save %1$s</string>
     <string name="engine_systemnnn_ctl_slot_unreadable">Save cannot be read</string>
     <string name="engine_systemnnn_ctl_slot_empty">Empty slot</string>

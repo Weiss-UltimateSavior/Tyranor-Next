@@ -12,7 +12,7 @@ final class GameStoryControlsModel {
     static final String[] LABELS={"菜单","QSave","QLoad","环境设定","回看","保存进度","读取存档","Auto","Skip","隐藏"};
     final List<Button> buttons=new ArrayList<>();
     final boolean original;
-    final boolean drawDuringTransitions,largePrintOptions;
+    final boolean drawDuringTransitions;
     static final class Button {
         final Action action;final String label;
         final ButtonArt art;
@@ -33,7 +33,6 @@ final class GameStoryControlsModel {
     }
     GameStoryControlsModel(GameUiAssets.Config game,GameUiAssets.Config print,Map<String,GameUiAssets.Config> configurations){
         drawDuringTransitions=print.number("drawOverrapOptionFlag",1)!=0;
-        largePrintOptions=print.number("LPrintOptionFlag",1)!=0;
         int save=game.number("quickSaveEnable",0),load=game.number("quickLoadEnable",save);
         for(int i=0;i<CONFIG_NAMES.length;i++){
             String name=CONFIG_NAMES[i];GameUiAssets.Config c=configurations.get(name);

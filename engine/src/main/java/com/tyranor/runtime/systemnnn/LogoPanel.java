@@ -4,8 +4,6 @@ import android.content.Context;
 import android.graphics.*;
 import android.os.SystemClock;
 import android.view.View;
-import java.io.File;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +13,7 @@ final class LogoPanel extends View {
     static final class Slide {
         final Bitmap image;
         final int in,hold,out,inColor,outColor;
-        final boolean skip;
+        final boolean skip,captureExit;
         Slide(Bitmap image,GameUiAssets.Config cfg,int index){
             this.image=image;
             boolean times=cfg.number("useCustomTimeFlag",0)!=0,colors=cfg.number("useCustomColorFlag",0)!=0;
@@ -24,10 +22,10 @@ final class LogoPanel extends View {
             out=frames(cfg,"FadeOutTime",index,10,times);
             inColor=color(cfg,"FadeInColor",index,colors);outColor=color(cfg,"FadeOutColor",index,colors);
             skip=cfg.number("useCustomSkipFlag",0)==0||cfg.number("skipOK"+index,1)!=0;
+            captureExit=cfg.number("createExitScreenFlag",1)!=0||cfg.number("exitFadeOutType",0)!=0;
         }
     }
-    static List<Slide> load(File root,long handle) throws IOException {
-        GameUiAssets.Config cfg=GameUiAssets.readConfig(root,"logo");
+    static List<Slide> load(GameUiAssets.Config cfg,long handle) {
         List<Slide> slides=new ArrayList<>();
         long total=0;
         for(int i=1;i<=Math.min(8,cfg.number("logoNumber",1));i++){
@@ -66,23 +64,37 @@ final class LogoPanel extends View {
         setContentDescription("启动 Logo");setSoundEffectsEnabled(false);setOnClickListener(v->skip());
     }
     void skip(){if(!finished&&slides.get(index).skip)next();}
+    Bitmap exitScreen(){
+        Slide slide=slides.get(index);
+        if(!slide.captureExit)return null;
+        return slide.out==0?slide.image:UiOpening.solid(slide.outColor);
+    }
     private void next(){
         removeCallbacks(refresh);
-        if(++index==slides.size()){finished=true;post(done);}
-        else{since=-1;invalidate();}
+        if(index+1==slides.size()){finished=true;post(done);}
+        else{index++;since=-1;invalidate();}
     }
     @Override protected void onDraw(Canvas c){
-        if(finished)return;
-        long now=SystemClock.uptimeMillis();if(since<0)since=now;
+        long now=SystemClock.uptimeMillis();
+        while(!finished){
+            Slide slide=slides.get(index);
+            if(since<0)since=now;
+            long elapsed=now-since,in=(long)slide.in*frameMs,hold=(long)slide.hold*frameMs,out=(long)slide.out*frameMs;
+            if(elapsed>=in+hold+out){next();continue;}
+            c.drawColor(elapsed<in?slide.inColor:slide.outColor);
+            float ratio=elapsed<in?elapsed/(float)in:elapsed<in+hold?1:(in+hold+out-elapsed)/(float)out;
+            drawSlide(c,slide,Math.round(ratio*255));
+            if(elapsed<in||elapsed>=in+hold)postInvalidateOnAnimation();
+            else{removeCallbacks(refresh);postDelayed(refresh,in+hold-elapsed);}
+            return;
+        }
         Slide slide=slides.get(index);
-        long elapsed=now-since,in=(long)slide.in*frameMs,hold=(long)slide.hold*frameMs,out=(long)slide.out*frameMs;
-        if(elapsed>=in+hold+out){next();return;}
-        c.drawColor(elapsed<in?slide.inColor:slide.outColor);
-        float ratio=elapsed<in?elapsed/(float)in:elapsed<in+hold?1:(in+hold+out-elapsed)/(float)out;
-        paint.setAlpha(Math.round(ratio*255));dest.set(0,0,getWidth(),getHeight());
+        c.drawColor(slide.outColor);
+        if(slide.out==0)drawSlide(c,slide,255);
+    }
+    private void drawSlide(Canvas c,Slide slide,int alpha){
+        paint.setAlpha(alpha);dest.set(0,0,getWidth(),getHeight());
         c.drawBitmap(slide.image,null,dest,paint);
-        if(elapsed<in||elapsed>=in+hold)postInvalidateOnAnimation();
-        else{removeCallbacks(refresh);postDelayed(refresh,in+hold-elapsed);}
     }
     @Override protected void onDetachedFromWindow(){removeCallbacks(refresh);removeCallbacks(done);super.onDetachedFromWindow();}
 }

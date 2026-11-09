@@ -115,4 +115,5 @@
     <string name="engine_systemnnn_host_progress_recovery_hint">Keep the damaged files aside and retry. The game uses any readable global progress or starts global progress afresh if none is available. Story saves and the original files stay in the save directory.</string>
     <string name="engine_systemnnn_host_progress_recover">Keep files aside and retry</string>
     <string name="engine_systemnnn_host_resources_evicted">The imported game resources were cleared. Launch the game again from the library.</string>
+    <string name="engine_systemnnn_host_opening">Opening animation. Tap to skip</string>
 </resources>

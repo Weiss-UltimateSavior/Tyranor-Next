@@ -2,6 +2,8 @@ package com.tyranor.runtime.systemnnn;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
 
 import android.Manifest;
 import android.app.Activity;
@@ -15,6 +17,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.*;
 import android.provider.Settings;
@@ -22,6 +25,7 @@ import android.provider.DocumentsContract;
 import android.os.storage.StorageManager;
 import android.os.storage.StorageVolume;
 import android.util.TypedValue;
+import android.util.Log;
 import android.view.*;
 import android.widget.*;
 import com.core.engine.EngineUiText;
@@ -47,8 +51,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private GameRunner runner;
     private FrameLayout root,stage;
     private SurfaceView screen;
-    private Button panelActionButton;
+    private Button panelActionButton,otherSavesButton;
     private TextView status;
+    private View longPrintBackdrop;
+    private volatile StoryScreen storyScreen;
     private DialoguePanel dialoguePanel;
     private GameStoryControls controls;
     private FrameLayout independentStatus;
@@ -59,6 +65,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private GameChoicePanel choices;
     private TitlePanel titlePanel;
     private LogoPanel logoPanel;
+    private OpeningScreen startupOpening;
+    private boolean launchingGame;
     private TitleMenu titleModel;
     private GameUiAssets uiAssets;
     private GameUiPanel gamePanel,preparingPanel;
@@ -87,6 +95,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private int panelsOpen,revealed;
     private String fullBody="";
     private GameRunner.Frame currentFrame;
+    private GameRunner.Frame drawnStoryFrame;
     private GameRunner.Modal visibleModal,modeUnderPanel;
     private Bitmap optionalGalleryPrevious;
     private boolean openGalleryAfterTitle;
@@ -390,7 +399,21 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(!(directory.isDirectory()?directory:game).canWrite() && requestGameAccess(true))return;
         root.removeAllViews();
         storyTouchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
-        stage=new FrameLayout(this); root.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
+        stage=new FrameLayout(this){
+            @Override public void onDescendantInvalidated(View child,View target){
+                super.onDescendantInvalidated(child,target);
+                StoryScreen foreground=storyScreen;
+                if(foreground==null)return;
+                if(child==dialoguePanel||child==choices||child==longPrintBackdrop){
+                    boolean separateCursor=dialoguePanel!=null&&dialoguePanel.isMessageCursor(target);
+                    boolean separateTimer=choices!=null&&choices.isTimer(target);
+                    foreground.messageChanged(!separateCursor&&!separateTimer);
+                }
+            }
+        };
+        launchingGame=true;
+        stage.setForeground(new ColorDrawable(Color.BLACK));
+        root.addView(stage,new FrameLayout.LayoutParams(-1,-1,Gravity.CENTER));
         panelActionButton=new Button(this);
         panelActionButton.setSingleLine(true);
         panelActionButton.setSoundEffectsEnabled(false);
@@ -403,6 +426,15 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         FrameLayout.LayoutParams actionPosition=new FrameLayout.LayoutParams(-2,dp(48),Gravity.TOP|Gravity.END);
         actionPosition.setMargins(dp(4),dp(4),dp(4),0);
         root.addView(panelActionButton,actionPosition);
+        otherSavesButton=new Button(this);
+        otherSavesButton.setText(text(R.string.engine_systemnnn_ctl_other_saves));
+        otherSavesButton.setSingleLine(true);
+        otherSavesButton.setSoundEffectsEnabled(false);
+        otherSavesButton.setVisibility(View.GONE);
+        otherSavesButton.setOnClickListener(v->{if(panelActionReady())showOtherSaves();});
+        FrameLayout.LayoutParams otherPosition=new FrameLayout.LayoutParams(-2,dp(48),Gravity.TOP|Gravity.END);
+        otherPosition.setMargins(dp(4),dp(52),dp(4),0);
+        root.addView(otherSavesButton,otherPosition);
         root.getViewTreeObserver().addOnPreDrawListener(()->{updatePanelActionEnabled();return true;});
         root.addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> layoutStage());
         screen=new SurfaceView(this); screen.setContentDescription(text(R.string.engine_systemnnn_host_game_display));screen.setSoundEffectsEnabled(false);
@@ -411,8 +443,24 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if (event.getActionMasked()==MotionEvent.ACTION_UP) {advance();view.performClick();}
             return true;
         });
+        longPrintBackdrop=new View(this){
+            private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+            private final RectF destination=new RectF();
+            @Override protected void onDraw(Canvas canvas){
+                Bitmap bitmap=uiAssets==null?null:uiAssets.longPrintImage;
+                if(bitmap==null)return;
+                float sx=getWidth()/(float)width,sy=getHeight()/(float)height;
+                destination.set(0,0,bitmap.getWidth()*sx,bitmap.getHeight()*sy);
+                canvas.drawBitmap(bitmap,null,destination,paint);
+            }
+        };
+        longPrintBackdrop.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        longPrintBackdrop.setVisibility(View.GONE);
+        stage.addView(longPrintBackdrop,new FrameLayout.LayoutParams(-1,-1));
         dialoguePanel=new DialoguePanel(this,v -> advance());
         stage.addView(dialoguePanel,new FrameLayout.LayoutParams(-1,-1)); dialoguePanel.setVisibility(View.GONE);
+        storyScreen=new StoryScreen();
+        stage.addView(storyScreen,new FrameLayout.LayoutParams(-1,-1));
         status=label("",12); status.setGravity(Gravity.CENTER); status.setPadding(dp(8),dp(3),dp(8),dp(3));
         status.setBackground(rounded(0xb51a2030,6));
         FrameLayout.LayoutParams statusParams=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.START);
@@ -440,6 +488,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void layoutStage() {
         if(stage==null)return;
+        if(longPrintBackdrop!=null)longPrintBackdrop.invalidate();
         if(dialoguePanel!=null)dialoguePanel.canvas(width,height);
         if(controls!=null)controls.canvas(width,height);
         if(quickNoticeView!=null)quickNoticeView.canvas(width,height);
@@ -461,11 +510,11 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
     }
     @Override public void loaded() {runOnUiThread(() -> {refreshAfterLoad=true;modeUnderPanel=null;});}
-    @Override public void frame(GameRunner.Frame frame) {
+    @Override public void frame(GameRunner.Frame frame,int initialVisible) {
         runOnUiThread(() -> {
             if (isDestroyed() || stage==null) return;
             if (titlePanel!=null) {stage.removeView(titlePanel); titlePanel=null; titleModel=null;}
-            if(logoPanel!=null){stage.removeView(logoPanel);logoPanel=null;}
+            clearStartupForStory();
             if (frame.width>0&&frame.height>0&&(width!=frame.width || height!=frame.height)) {width=frame.width;height=frame.height;layoutStage();}
             if(frame.wait==NativeGame.MODAL){
                 currentFrame=frame;
@@ -477,24 +526,30 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             boolean changed=refreshAfterLoad || currentFrame==null || currentFrame.wait!=frame.wait || currentFrame.line!=frame.line ||
                 currentFrame.word!=frame.word || !currentFrame.script.equals(frame.script) ||
                 !currentFrame.body.equals(frame.body) || !currentFrame.speaker.equals(frame.speaker) || currentFrame.nameWindow!=frame.nameWindow;
-            currentFrame=frame;
+            currentFrame=drawnStoryFrame=frame;
             dialoguePanel.scriptCursorVariant(frame.scriptCursor);
-            dialoguePanel.storyBody(frame.wait==NativeGame.DIALOGUE);
+            dialoguePanel.storyBody(frame.hasDialogueText());
+            dialoguePanel.passive(frame.wait==NativeGame.DRAW);
             selectDialogueVariant();
             if (changed) {
                 refreshAfterLoad=false;
-                typing=false; fullBody=frame.body;
+                typing=false; fullBody=frame.displayBody.text;
                 dialoguePanel.speaker(frame.speaker,frame.nameWindow);dialoguePanel.read(frame.alreadyRead);
                 if(choices!=null){stage.removeView(choices);choices=null;}
-                revealed=0;typing=frame.wait==NativeGame.DIALOGUE&&!frame.body.isEmpty();
-                dialoguePanel.message(typing?frame.body:"",0);
+                boolean dialogue=frame.wait==NativeGame.DIALOGUE;
+                typing=dialogue&&initialVisible<frame.displayBody.glyphCount;
+                revealed=dialogue?fullBody.offsetByCodePoints(0,initialVisible):fullBody.length();
+                dialoguePanel.message(frame.displayBody,revealed);
                 if(frame.wait==NativeGame.CHOICE&&uiAssets!=null){
                     choices=new GameChoicePanel(this,uiAssets,frame,preferences.getBoolean("changeSelectColor",false),
-                        ()->{if(runner!=null)runner.choicePressed(frame.word);},
+                        ()->{
+                            if(runner==null||controls!=null&&controls.clicking())return false;
+                            runner.choicePressed(frame.word);
+                            return true;
+                        },
                         number->{if(runner!=null)runner.input(lastX,lastY,number);});
                     choices.sound((se,voice)->{if(runner!=null)runner.playClick(se,voice);});
-                    int at=controls==null?stage.getChildCount():stage.indexOfChild(controls);
-                    stage.addView(choices,at,new FrameLayout.LayoutParams(-1,-1));
+                    stage.addView(choices,stage.indexOfChild(storyScreen),new FrameLayout.LayoutParams(-1,-1));
                 }
                 if(frame.wait==NativeGame.END){
                     String end=text(R.string.engine_systemnnn_host_story_ended);
@@ -505,6 +560,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             if(frame.wait==NativeGame.PLACE&&gamePanel==null&&preparingPanel==null)showPlace(null);
         });
     }
+    @Override public void screenLayerChanged(){
+        StoryScreen view=storyScreen;
+        if(view!=null)view.postInvalidate();
+    }
     @Override public void style(DialogueStyle style) {runOnUiThread(() -> {dialogueStyle=style;if(dialoguePanel!=null){dialoguePanel.style(style);reserveCommandSpace();}});}
     @Override public void choiceTime(GameRunner.Frame frame,int remaining){runOnUiThread(()->{
         if(choices!=null&&currentFrame==frame)choices.remaining(remaining);
@@ -512,8 +571,10 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private void selectDialogueVariant(){
         if(dialoguePanel==null||preferences==null)return;
         boolean line=currentFrame!=null&&currentFrame.wait==NativeGame.DIALOGUE;
+        boolean draw=currentFrame!=null&&currentFrame.wait==NativeGame.DRAW;
         dialoguePanel.variant(currentFrame==null?0:currentFrame.windowType,currentFrame==null?0:currentFrame.fontType,
-            preferences.getInt("messageWindowIndex",0),line&&currentFrame.layoutCommand==0x22220002,!line||currentFrame.windowVisible);
+            preferences.getInt("messageWindowIndex",0),line&&currentFrame.layoutCommand==0x22220002,
+            draw?currentFrame.showsDialogue():!line||currentFrame.windowVisible);
         reserveCommandSpace();
     }
     private void reserveCommandSpace(){
@@ -522,6 +583,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     @Override public void panels(GameUiAssets assets) {runOnUiThread(() -> {
         uiAssets=assets;if(isDestroyed()||stage==null)return;
+        longPrintBackdrop.invalidate();
         dialoguePanel.cursorAssets(assets);
         if(controls!=null)stage.removeView(controls);
         controls=new GameStoryControls(this,assets,new GameStoryControls.Listener(){
@@ -590,7 +652,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }finally{syncingRuntime=false;}
     }};
     private void advance() {
-        if(runner==null || panelsOpen>0)return;
+        if(runner==null || launchingGame || panelsOpen>0)return;
         if(autoMode)runner.auto(false);
         if(skipMode)runner.skip(false);
         autoMode=false;skipMode=false;updateStatus();
@@ -604,16 +666,20 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             gamePanel.activeFrameReady()&&!gamePanel.openingRunning()&&!gamePanel.controlsBusy();
     }
     private void updatePanelActionEnabled(){
-        if(panelActionButton!=null&&panelActionButton.getVisibility()==View.VISIBLE){
-            boolean ready=panelActionReady();
-            if(panelActionButton.isEnabled()!=ready)panelActionButton.setEnabled(ready);
-        }
+        if(panelActionButton==null)return;
+        boolean ready=panelActionReady();
+        if(panelActionButton.getVisibility()==View.VISIBLE&&panelActionButton.isEnabled()!=ready)
+            panelActionButton.setEnabled(ready);
+        if(otherSavesButton.getVisibility()==View.VISIBLE&&otherSavesButton.isEnabled()!=ready)
+            otherSavesButton.setEnabled(ready);
     }
     private void updatePanelAction(){
         String label=gamePanel instanceof GameSettingsPanel?text(R.string.engine_systemnnn_host_reading_size):
             gamePanel instanceof GameSlotsPanel?((GameSlotsPanel)gamePanel).pcTransferLabel():null;
         if(label!=null&&!label.contentEquals(panelActionButton.getText()))panelActionButton.setText(label);
         panelActionButton.setVisibility(label==null?View.GONE:View.VISIBLE);
+        otherSavesButton.setVisibility(gamePanel instanceof GameSlotsPanel&&
+            ((GameSlotsPanel)gamePanel).hasOtherSaves()?View.VISIBLE:View.GONE);
         updatePanelActionEnabled();
     }
     private void updateVisibility() {
@@ -621,12 +687,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         updatePanelAction();
         if(gamePanel==null&&isModalPanel(preparingPanel))return;
         boolean storyVisible=panelsOpen==0||gamePanel!=null&&gamePanel.awaitingCapturedBackdrop();
-        boolean inGame=titlePanel==null&&logoPanel==null&&storyVisible&&moviePlayback==null;
-        boolean hasDialogue=currentFrame!=null && (currentFrame.wait==NativeGame.DIALOGUE && !fullBody.isEmpty() || currentFrame.wait==NativeGame.END);
+        boolean inGame=!launchingGame&&titlePanel==null&&storyVisible&&moviePlayback==null;
+        storyScreen.setVisibility(inGame?View.VISIBLE:View.GONE);
+        storyScreen.windowChanged();
+        boolean line=currentFrame!=null&&currentFrame.wait==NativeGame.DIALOGUE;
+        boolean showBackdrop=inGame&&line&&currentFrame.layoutCommand==0x22220002&&uiAssets!=null&&
+            uiAssets.longPrintImage!=null&&(!uiHidden||!uiAssets.longPrintImageOffWithWindow);
+        longPrintBackdrop.setVisibility(showBackdrop?View.VISIBLE:View.GONE);
+        boolean hasDialogue=currentFrame!=null&&(currentFrame.showsDialogue()&&(!line||!fullBody.isEmpty())||currentFrame.wait==NativeGame.END);
         dialoguePanel.setVisibility(inGame&&!uiHidden&&hasDialogue?View.VISIBLE:View.GONE);
         dialoguePanel.waiting(inGame&&!uiHidden&&hasDialogue&&!typing&&!skipMode&&currentFrame.wait==NativeGame.DIALOGUE,
             autoMode,currentFrame==null?0:currentFrame.layoutCommand,currentFrame==null?20:currentFrame.frameMs);
-        if(controls!=null){if(inGame&&!uiHidden&&!sceneReplay)controls.frame(currentFrame,typing,choices!=null&&choices.menuAllowed());else controls.setVisibility(View.GONE);}
+        if(controls!=null){if(inGame&&!uiHidden&&!sceneReplay)controls.frame(currentFrame,typing,choices);else controls.setVisibility(View.GONE);}
         if(choices!=null)choices.setVisibility(inGame&&!uiHidden?View.VISIBLE:View.GONE);
         if(uiHidden||!storyVisible)status.setVisibility(View.GONE);
         syncIndependentStatus();
@@ -634,6 +706,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private int visiblePrintMode(){
         if(moviePlayback!=null)return 27;
         if(logoPanel!=null)return 2;
+        if(startupOpening!=null)return 3;
         if(gamePanel!=null)return gamePanel.printMode;
         if(titlePanel!=null)return 4;
         if(currentFrame==null)return 1;
@@ -703,30 +776,117 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             autoMode?text(R.string.engine_systemnnn_host_auto):currentFrame!=null&&currentFrame.alreadyRead?text(R.string.engine_systemnnn_host_already_read):"";
         status.setText(text);status.setVisibility((controls==null||!controls.original())&&!uiHidden&&panelsOpen==0&&titlePanel==null&&!text.isEmpty()?View.VISIBLE:View.GONE);
     }
+    private void clearStartupViews(){
+        if(logoPanel!=null){stage.removeView(logoPanel);logoPanel=null;}
+        if(startupOpening!=null){stage.removeView(startupOpening);startupOpening=null;}
+        stage.setForeground(null);
+    }
+    private void removeTitleForStartup(){
+        if(titlePanel==null)return;
+        stage.removeView(titlePanel);
+        titlePanel=null;
+        titleModel=null;
+        launchingGame=true;
+    }
+    private void clearStartupForStory(){
+        if(!launchingGame)return;
+        launchingGame=false;
+        clearStartupViews();
+        titlePrevious=null;
+        MoviePlayback previous=moviePlayback;moviePlayback=null;
+        if(previous!=null)stage.removeView(previous);
+    }
+    @Override public void logo(List<LogoPanel.Slide> slides,int w,int h,int frameMs){
+        runOnUiThread(()->{
+            GameRunner owner=runner;
+            if(isDestroyed()||isFinishing()||stage==null||owner==null)return;
+            if(w>0&&h>0){width=w;height=h;}layoutStage();
+            if(slides.isEmpty())return;
+            clearStartupViews();
+            logoPanel=new LogoPanel(this,slides,frameMs,()->{
+                if(isDestroyed()||isFinishing()||runner!=owner||logoPanel==null)return;
+                titlePrevious=logoPanel.exitScreen();
+                owner.finishLogo();
+            });
+            stage.addView(logoPanel,new FrameLayout.LayoutParams(-1,-1));
+            removeTitleForStartup();
+            updateVisibility();
+        });
+    }
+    @Override public void opening(GameUiAssets.Config config,int frameMs,GameRunner.Capture initial,GameRunner.Capture previous){
+        runOnUiThread(()->{
+            GameRunner owner=runner;
+            if(isDestroyed()||isFinishing()||stage==null||owner==null)return;
+            clearStartupViews();
+            if(previous!=null)titlePrevious=previous.bitmap();
+            startupOpening=new OpeningScreen(owner,config,frameMs,initial);
+            stage.addView(startupOpening,new FrameLayout.LayoutParams(-1,-1));
+            removeTitleForStartup();
+            updateVisibility();
+        });
+    }
+    private final class OpeningScreen extends View {
+        private final GameRunner owner;
+        private final UiOpening transition;
+        private boolean shown;
+        OpeningScreen(GameRunner owner,GameUiAssets.Config config,int frameMs,GameRunner.Capture initial){
+            super(PlayerActivity.this);
+            this.owner=owner;
+            transition=new UiOpening(config,frameMs,false);
+            transition.previous(titlePrevious);
+            transition.target(initial==null?null:initial.bitmap());
+            setSoundEffectsEnabled(false);
+            setContentDescription(text(R.string.engine_systemnnn_host_opening));
+            setOnClickListener(v->owner.finishOpening());
+        }
+        @Override protected void onDraw(Canvas canvas){
+            transition.begin();
+            transition.drawTarget(canvas,this);
+            transition.overlay(canvas,this,width,height);
+            if(transition.fading())postInvalidateOnAnimation();
+            else if(!shown){shown=true;owner.openingShown();}
+        }
+        @Override public boolean onTouchEvent(MotionEvent event){
+            if(transition.touch(event)){invalidate();return true;}
+            return super.onTouchEvent(event);
+        }
+        void skip(){
+            if(transition.fading()){transition.skip();invalidate();}
+            else owner.finishOpening();
+        }
+        @Override protected void onDetachedFromWindow(){transition.close();super.onDetachedFromWindow();}
+    }
+    @Override public void titleRestart(TitleMenu model,GameRunner.Capture background){
+        runOnUiThread(()->{
+            GameRunner owner=runner;
+            TitlePanel panel=titlePanel;
+            if(owner==null)return;
+            if(!foreground||isDestroyed()||isFinishing()||model!=titleModel||panel==null||
+                panelsOpen!=0||preparingPanel!=null||gamePanel!=null||galleryPage!=null||returningToTitle||
+                !panel.leaveForRestart(background,picture->{
+                    if(owner!=runner||panel!=titlePanel||isDestroyed()||isFinishing())return;
+                    titlePrevious=picture;
+                    owner.finishTitleRestart(model,true);
+                }))owner.finishTitleRestart(model,false);
+        });
+    }
     @Override public void title(TitleMenu model,int w,int h,GameRunner.Capture initial,GameRunner.Capture previous) {
         runOnUiThread(() -> {
             if(isDestroyed() || isFinishing() || stage==null)return;
-            boolean showLogo=titleModel!=model&&!model.logos.isEmpty();
             if(titleModel!=model||returningToTitle)modeUnderPanel=null;
             if(returningToTitle){returningToTitle=false;closeOriginalPanel(false);}
             if(previous!=null){closeOriginalPanel(false);titlePrevious=previous.bitmap();}
-            typing=false;currentFrame=null;fullBody="";uiHidden=false;refreshAfterLoad=false;
+            typing=false;currentFrame=drawnStoryFrame=null;fullBody="";uiHidden=false;refreshAfterLoad=false;
             if(titlePanel!=null)stage.removeView(titlePanel);
             titleModel=model;if(w>0&&h>0){width=w;height=h;}layoutStage();
+            storyScreen.clear();
+            storyScreen.setVisibility(View.GONE);
+            longPrintBackdrop.setVisibility(View.GONE);
             dialoguePanel.setVisibility(View.GONE);if(controls!=null)controls.setVisibility(View.GONE);status.setVisibility(View.GONE);
             if(choices!=null){stage.removeView(choices);choices=null;}
-            if(logoPanel!=null){stage.removeView(logoPanel);logoPanel=null;}
-            if(!showLogo)showTitlePanel(model,initial);
-            else {
-                logoPanel=new LogoPanel(this,model.logos,model.frameMs,()->{
-                    if(isDestroyed()||isFinishing()||titleModel!=model||logoPanel==null)return;
-                    stage.removeView(logoPanel);logoPanel=null;
-                    if(runner!=null)runner.finishLogo();
-                    showTitlePanel(model,initial);
-                });
-                stage.addView(logoPanel,new FrameLayout.LayoutParams(-1,-1));
-                syncIndependentStatus();
-            }
+            launchingGame=false;
+            clearStartupViews();
+            showTitlePanel(model,initial);
         });
     }
     private void showTitlePanel(TitleMenu model,GameRunner.Capture initial){
@@ -752,8 +912,12 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         UiPreviewPool.Request request;
         switch(action){
         case CONFIG:request=UiPreviewPool.Request.read(uiAssets.config,12,1);break;
-        case SAVE:request=UiPreviewPool.Request.read(uiAssets.save,6,1);break;
-        case LOAD:request=UiPreviewPool.Request.read(uiAssets.load,5,1);break;
+        case SAVE:case LOAD:
+            boolean saving=action==GameStoryControlsModel.Action.SAVE;
+            GameUiAssets.Config config=saving?uiAssets.save:uiAssets.load;
+            SaveSlots.Layout layout=new SaveSlots.Layout(config,uiAssets.game,uiAssets.dataFile,saving);
+            request=UiPreviewPool.Request.read(config,saving?6:5,layout.openingPage(runner.lastSelectedSlot())+1);
+            break;
         default:return;
         }
         UiPreviewPool pool=request==null?null:uiAssets.runtime.previews();
@@ -766,7 +930,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(runner==null || titleModel==null)return;
         TitleMenu.Action action=item.action;
         switch(action) {
-        case START:case CONTINUE:
+        case START:case CONTINUE:case LAST_LOAD:
             TitlePanel source=titlePanel;
             GameRunner owner=runner;
             owner.enter(action,()->runOnUiThread(()->{
@@ -850,23 +1014,31 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             closeOriginalPanel();
         });
     }
-    @Override public void movie(File file,int volume,boolean canSkip){runOnUiThread(()->{
+    @Override public void movie(File file,int volume,boolean canSkip,boolean startup){runOnUiThread(()->{
         if(isFinishing()||isDestroyed()||stage==null||runner==null)return;
-        if(!foreground){runner.finishMovie(null);return;}
+        GameRunner owner=runner;
+        if(!foreground){owner.finishMovie(null);return;}
+        if(!startup)clearStartupForStory();
         if(gamePanel!=null)gamePanel.uiActive(false);
         for(int i=0;i<stage.getChildCount();i++)
             stage.getChildAt(i).setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        moviePlayback=new MoviePlayback(this,file,volume,canSkip,failure->{
-            MoviePlayback previous=moviePlayback;moviePlayback=null;
-            if(previous!=null)stage.removeView(previous);
+        moviePlayback=new MoviePlayback(this,file,volume,canSkip,(source,failure)->{
+            if(owner!=runner||source!=moviePlayback)return;
+            moviePlayback=null;
+            if(startup)stage.setForeground(new ColorDrawable(Color.BLACK));
+            stage.removeView(source);
             for(int i=0;i<stage.getChildCount();i++)
                 stage.getChildAt(i).setImportantForAccessibility(gamePanel==null||stage.getChildAt(i)==gamePanel
                     ?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
             if(gamePanel!=null)gamePanel.uiActive(foreground);
-            if(runner!=null)runner.finishMovie(failure);
+            owner.finishMovie(failure);
             updateVisibility();
         });
         stage.addView(moviePlayback,new FrameLayout.LayoutParams(-1,-1));
+        if(startup){
+            clearStartupViews();
+            removeTitleForStartup();
+        }
         updateVisibility();immersive();
     });}
     @Override public void galleryReplayFinished() {
@@ -883,7 +1055,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             visibleModal.mode==GameRunner.Modal.SELECT_CHART||visibleModal.mode==GameRunner.Modal.SELECT_PLACE2);
         if(currentFrame!=null&&currentFrame.wait==NativeGame.MODAL&&!modalOptions)return;
         if(!modalOptions&&choices!=null){
-            if(choices.confirming())return;
+            if(choices.confirming()||controls!=null&&controls.clicking())return;
             if(!choices.menuAllowed()){if(choices.backlogAllowed())showBacklog();return;}
         }else if(currentFrame!=null&&!currentFrame.optionsAllowed)return;
         if(controls!=null)controls.cancelClick();
@@ -928,16 +1100,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
         // Keep the outgoing view visible until both transition and menu images are ready.
         preparingPanel=panel;
-        if(sceneEffect!=null&&(gamePanel instanceof GameAdvancedSelectionPanel||gamePanel instanceof GamePlacePanel)){
+        if(sceneEffect!=null&&(captureStoryUi(sceneEffect)||needsPrevious)&&
+            (gamePanel instanceof GameAdvancedSelectionPanel||gamePanel instanceof GamePlacePanel)){
+            boolean withStoryUi=captureStoryUi(sceneEffect);
             gamePanel.capture(before->{
                 if(preparingPanel!=panel)return;
                 if(before==null){captureForPanel(panel,back,sceneEffect,needsPrevious,owner);return;}
-                owner.filterPanel(before,sceneEffect,scene->runOnUiThread(()->{
-                    if(!acceptPreparedPanel(panel,owner))return;
-                    if(needsPrevious)panel.previous(before);
-                    installCapturedBackground(panel,sceneEffect,scene);
-                    mountOriginalPanel(panel,back);
-                }));
+                if(withStoryUi)filterCapturedPanel(panel,back,sceneEffect,needsPrevious,owner,before);
+                else captureNativeBackground(panel,back,sceneEffect,owner,before);
             });
             return;
         }
@@ -978,17 +1148,47 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             return false;
         }
     }
+    private boolean captureStoryUi(GameUiAssets.Config config){
+        if(config==null||titlePanel!=null||currentFrame==null||uiAssets==null)return false;
+        if(config.number("backScriptFlag",0)!=0&&config.number("getWithMessageFlag",1)==0)return false;
+        String eraseFlag=currentFrame.wait==NativeGame.CHOICE?"selectMiniCGNoMessageFlag":"messageMiniCGNoMessageFlag";
+        return uiAssets.game.number(eraseFlag,0)==0;
+    }
     private void captureForPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config sceneEffect,boolean needsPrevious,GameRunner owner){
-        owner.capture(sceneEffect,needsPrevious,(previous,scene)->runOnUiThread(()->{
-            if(!acceptPreparedPanel(panel,owner))return;
-            if(previous!=null){
-                Bitmap before=titlePanel==null?snapshotStory(previous,true):
-                    UiOpening.snapshot(titlePanel,previous.bitmap(),c->drawTitleCapture(titlePanel,c));
-                panel.previous(before);
+        boolean withStoryUi=captureStoryUi(sceneEffect);
+        owner.capture(withStoryUi?null:sceneEffect,needsPrevious||withStoryUi,(previous,scene)->runOnUiThread(()->{
+            if(preparingPanel!=panel)return;
+            Bitmap before=null;
+            try{
+                TitlePanel title=titlePanel;
+                if(previous!=null)before=title==null?snapshotStory(previous,true,withStoryUi):
+                    UiOpening.snapshot(title,previous.bitmap(),canvas->drawTitleCapture(title,canvas));
+            }catch(RuntimeException|OutOfMemoryError e){
+                Log.w("SystemNNN","Unable to capture the full menu screen",e);
             }
-            if(sceneEffect!=null)installCapturedBackground(panel,sceneEffect,scene);
-            mountOriginalPanel(panel,back);
+            if(withStoryUi&&before!=null)filterCapturedPanel(panel,back,sceneEffect,needsPrevious,owner,before);
+            else if(withStoryUi)captureNativeBackground(panel,back,sceneEffect,owner,null);
+            else finishCapturedPanel(panel,back,sceneEffect,owner,before,scene);
         }));
+    }
+    private void filterCapturedPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,boolean needsPrevious,
+                                     GameRunner owner,Bitmap before){
+        owner.filterPanel(before,effect,filtered->runOnUiThread(()->{
+            if(preparingPanel!=panel)return;
+            Bitmap previous=needsPrevious?before:null;
+            if(filtered!=null)finishCapturedPanel(panel,back,effect,owner,previous,filtered);
+            else captureNativeBackground(panel,back,effect,owner,previous);
+        }));
+    }
+    private void captureNativeBackground(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,GameRunner owner,Bitmap before){
+        owner.capture(effect,false,(unused,scene)->runOnUiThread(()->finishCapturedPanel(panel,back,effect,owner,before,scene)));
+    }
+    private void finishCapturedPanel(GameUiPanel panel,Runnable back,GameUiAssets.Config effect,GameRunner owner,
+                                     Bitmap before,GameRunner.Capture scene){
+        if(!acceptPreparedPanel(panel,owner))return;
+        if(before!=null)panel.previous(before);
+        if(effect!=null)installCapturedBackground(panel,effect,scene);
+        mountOriginalPanel(panel,back);
     }
     private void installCapturedBackground(GameUiPanel panel,GameUiAssets.Config config,GameRunner.Capture scene){
         if(scene==null){panel.uiBackground(config,13,1);return;}
@@ -1001,21 +1201,133 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             independentStatus.draw(canvas);
     }
     private Bitmap snapshotStory(GameRunner.Capture picture,boolean withUi){
-        return UiOpening.snapshot(stage,picture.bitmap(),canvas->{
-            if(!withUi)return;
-            for(int i=0;i<stage.getChildCount();i++){
-                View child=stage.getChildAt(i);
-                if(child!=dialoguePanel&&child!=choices&&child!=controls&&child!=status&&child!=quickNoticeView&&child!=independentStatus)continue;
-                if(child.getVisibility()!=View.VISIBLE||child.getAlpha()<=0)continue;
-                int saved=canvas.save();
-                canvas.translate(child.getLeft(),child.getTop());
-                canvas.concat(child.getMatrix());
-                canvas.clipRect(0,0,child.getWidth(),child.getHeight());
-                if(child.getAlpha()<1)canvas.saveLayerAlpha(0,0,child.getWidth(),child.getHeight(),Math.round(child.getAlpha()*255));
-                child.draw(canvas);
-                canvas.restoreToCount(saved);
+        return snapshotStory(picture,withUi,false);
+    }
+    private Bitmap snapshotStory(GameRunner.Capture picture,boolean withUi,boolean logicalSize){
+        if(logicalSize){
+            Bitmap base=picture.mutableBitmap();
+            if(stage.getWidth()>0&&stage.getHeight()>0)
+                UiOpening.drawOnto(stage,base,canvas->drawStorySnapshot(canvas,withUi,false));
+            return base;
+        }
+        return UiOpening.snapshot(stage,picture.bitmap(),canvas->drawStorySnapshot(canvas,withUi,true));
+    }
+    private void drawStorySnapshot(Canvas canvas,boolean withUi,boolean withFloatingUi){
+        boolean screenComposited=storyScreen.paint(canvas,withUi,withFloatingUi,false);
+        for(int i=0;i<stage.getChildCount();i++){
+            View child=stage.getChildAt(i);
+            if(child==dialoguePanel&&!withFloatingUi){
+                // The PC removes the wait cursor and quick buttons before capturing the menu background.
+                if(!screenComposited&&withUi)dialoguePanel.drawMessagePlane(canvas);
+            }else if(child==longPrintBackdrop||child==dialoguePanel||child==choices){
+                if(!screenComposited&&(withUi||child==longPrintBackdrop))drawStageChild(canvas,child);
+            }else if(withUi&&withFloatingUi&&(child==controls||child==status||child==quickNoticeView||child==independentStatus)){
+                drawStageChild(canvas,child);
             }
-        });
+        }
+    }
+    private static void drawStageChild(Canvas canvas,View child){
+        if(child==null||child.getVisibility()!=View.VISIBLE||child.getAlpha()<=0)return;
+        int saved=canvas.save();
+        canvas.translate(child.getLeft(),child.getTop());
+        canvas.concat(child.getMatrix());
+        canvas.clipRect(0,0,child.getWidth(),child.getHeight());
+        if(child.getAlpha()<1)canvas.saveLayerAlpha(0,0,child.getWidth(),child.getHeight(),Math.round(child.getAlpha()*255));
+        child.draw(canvas);
+        canvas.restoreToCount(saved);
+    }
+
+    // Slot 31 is a screen effect. It sees the game and message art together,
+    // while the option buttons keep their original drawing and hit positions.
+    private final class StoryScreen extends View {
+        private final Paint paint=new Paint(Paint.FILTER_BITMAP_FLAG);
+        private final RectF destination=new RectF();
+        private GameRunner owner;
+        private long layer;
+        private Bitmap image;
+        private Canvas messagePlane;
+        private GameRunner.Frame composedFrame;
+        private boolean composedWithUi,composedWithBackdrop,composedForStory,compositionDirty=true;
+
+        StoryScreen(){
+            super(PlayerActivity.this);
+            setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        }
+        private void releaseLayer(){
+            if(layer>0)NativeGame.releaseScreenLayer(layer);
+            layer=0;
+        }
+        void clear(){
+            releaseLayer();
+            owner=null;image=null;messagePlane=null;composedFrame=null;compositionDirty=true;
+        }
+        void messageChanged(boolean recomposite){
+            if(recomposite)compositionDirty=true;
+            if(layer>0)invalidate();
+        }
+        void windowChanged(){
+            if(layer!=0&&composedWithBackdrop==uiHidden)invalidate();
+        }
+        @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){
+            super.onSizeChanged(w,h,oldw,oldh);
+            compositionDirty=true;
+        }
+        boolean paint(Canvas canvas,boolean withUi,boolean withFloatingUi,boolean live){
+            if(owner!=runner){clear();owner=runner;}
+            if(owner==null)return false;
+            long update=owner.takeScreenLayer();
+            if(update!=0){
+                releaseLayer();
+                layer=update>0?update:0;
+                compositionDirty=true;
+                if(layer==0){image=null;messagePlane=null;}
+            }
+            GameRunner.Frame visible=drawnStoryFrame;
+            if(layer==0||visible==null||getWidth()<=0||getHeight()<=0)return false;
+            try{
+                if(image==null||image.getWidth()!=width||image.getHeight()!=height){
+                    image=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);
+                    messagePlane=new Canvas(image);
+                    compositionDirty=true;
+                }
+                boolean withBackdrop=withUi&&!uiHidden;
+                if(compositionDirty||composedWithUi!=withUi||composedWithBackdrop!=withBackdrop||
+                    composedFrame!=visible||live&&!composedForStory){
+                    compositionDirty=false;
+                    image.eraseColor(Color.TRANSPARENT);
+                    int saved=messagePlane.save();
+                    messagePlane.scale(width/(float)getWidth(),height/(float)getHeight());
+                    drawStageChild(messagePlane,longPrintBackdrop);
+                    if(withUi){
+                        dialoguePanel.drawMessagePlane(messagePlane);
+                        if(choices!=null)choices.drawOptions(messagePlane);
+                    }
+                    messagePlane.restoreToCount(saved);
+                    if(!NativeGame.compositeScreenLayer(layer,image,visible.wait,visible.word,visible.line,withBackdrop,live)){
+                        compositionDirty=true;
+                        return false;
+                    }
+                    composedFrame=visible;
+                    composedWithUi=withUi;
+                    composedWithBackdrop=withBackdrop;composedForStory=live;
+                }
+                destination.set(0,0,getWidth(),getHeight());
+                canvas.drawBitmap(image,null,destination,paint);
+                if(withUi){
+                    if(choices!=null)choices.drawTimer(canvas);
+                    if(withFloatingUi)dialoguePanel.drawMessageCursor(canvas);
+                }
+                return true;
+            }catch(RuntimeException|OutOfMemoryError e){
+                clear();
+                Log.w("SystemNNN","Unable to compose the message screen layer",e);
+                return false;
+            }
+        }
+        @Override protected void onDraw(Canvas canvas){
+            paint(canvas,true,true,true);
+        }
+        @Override protected void onDetachedFromWindow(){clear();super.onDetachedFromWindow();}
     }
     private boolean acceptPreparedPanel(GameUiPanel panel,GameRunner owner){
         if(preparingPanel!=panel)return false;
@@ -1337,7 +1649,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         GameSystemMenuPanel panel=new GameSystemMenuPanel(this,uiAssets,backgroundType==1?cfg.value("backScreenFileName",null):null,this::systemClick);
         if(backgroundType!=1)panel.transparentBackground();
         panel.opening(cfg,true);
-        boolean capture=backgroundType==2||backgroundType==3&&cfg.number("screenToGetPutFlag",1)!=0;
+        boolean capture=backgroundType==2||backgroundType==3&&cfg.number("screenToGetPutFlag",0)!=0;
         if(!capture)panel.uiBackground(cfg,13,1);
         String base=cfg.value("filenameMenuBase","");
         Bitmap baseImage=uiAssets.image(base);
@@ -1450,6 +1762,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void showBacklog() {
         if(uiAssets==null||runner==null)return;
+        if(choices!=null&&(choices.confirming()||!choices.backlogAllowed()))return;
         if(currentFrame!=null&&currentFrame.placeMode!=0&&uiAssets.place(currentFrame.placeMode).number("backLogOk",0)==0)return;
         Runnable back=()->{if(runner!=null)runner.closeBacklog();leaveOriginalPanel(uiAssets.backlog);};
         showOriginalPanel(new GameBacklogPanel(this,uiAssets,dialogueStyle,width,height,back,
@@ -1478,7 +1791,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(uiAssets!=null){
             GameUiAssets.Config config=saving?uiAssets.save:uiAssets.load;
             Runnable back=()->leaveOriginalPanel(config);
-            gameSlots=new GameSlotsPanel(this,uiAssets,saving,runner.slotEntries(),this::systemClick,back,slot->{
+            gameSlots=new GameSlotsPanel(this,uiAssets,saving,runner.slotEntries(),runner.lastSelectedSlot(),this::systemClick,back,slot->{
                 if(saving)runner.saveSlot(slot);
                 else{
                     GameUiPanel panel=gamePanel;
@@ -1501,9 +1814,26 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         showPanel(slotsDialog);if(slotsDialog.getWindow()!=null)slotsDialog.getWindow().setLayout(Math.min(dp(850),root.getWidth()-dp(32)),Math.max(dp(200),root.getHeight()-dp(32)));
         slotsChanged();
     }
+    private void showOtherSaves(){
+        if(!(gamePanel instanceof GameSlotsPanel))return;
+        GameSlotsPanel panel=(GameSlotsPanel)gamePanel;
+        List<SaveSlots.Entry> entries=panel.otherSaves();
+        if(entries.isEmpty())return;
+        CharSequence[] labels=new CharSequence[entries.size()];
+        DateFormat format=DateFormat.getDateTimeInstance(DateFormat.SHORT,DateFormat.SHORT);
+        for(int i=0;i<entries.size();i++){
+            SaveSlots.Entry entry=entries.get(i);
+            labels[i]=entry.label(this)+" · "+format.format(new Date(entry.savedAt))+"\n"+entry.displaySummary(this);
+        }
+        showPanel(new AlertDialog.Builder(this).setTitle(text(R.string.engine_systemnnn_ctl_other_saves)).setItems(labels,(dialog,index)->{
+            if(panel==gamePanel){systemClick();panel.loadOther(entries.get(index).slot);}
+        }).setNegativeButton(text(R.string.engine_systemnnn_host_back),dialogClick(null)).create());
+    }
     @Override public void slotsChanged() {runOnUiThread(() -> {
         if(runner==null||isDestroyed()||isFinishing())return;
-        if(gameSlots!=null&&(gamePanel==gameSlots||preparingPanel==gameSlots)){gameSlots.entries(runner.slotEntries());return;}
+        if(gameSlots!=null&&(gamePanel==gameSlots||preparingPanel==gameSlots)){
+            gameSlots.entries(runner.slotEntries());updatePanelAction();return;
+        }
         if(slotRows==null || slotsDialog==null || !slotsDialog.isShowing())return;slotRows.removeAllViews();
         TextView hint=label(savingSlots?text(R.string.engine_systemnnn_host_save_hint):text(R.string.engine_systemnnn_host_load_hint),14);hint.setPadding(0,0,0,dp(10));slotRows.addView(hint);
         for(SaveSlots.Entry entry:runner.slotEntries()){
@@ -1651,6 +1981,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         panelWarmup=null;
         if(moviePlayback!=null){moviePlayback.skip();return;}
         if(logoPanel!=null){logoPanel.skip();return;}
+        if(startupOpening!=null){startupOpening.skip();return;}
+        if(titlePanel!=null&&titlePanel.skipRestartExit())return;
+        if(launchingGame&&runner!=null)return;
         if(sceneEntrance!=null){sceneEntrance.skip();return;}
         if(returningToTitle)return;
         if(preparingPanel!=null){

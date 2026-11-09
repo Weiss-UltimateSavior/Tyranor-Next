@@ -65,6 +65,8 @@ final class GameUiAssets {
     final Config system,config,save,load,backlog,messageWindow,game,printMessage,dataFile,notice,messageCursor,selection;
     final Config gameMouse,selectPlace,selectPlace2;
     final boolean freeStatus;
+    final Bitmap longPrintImage;
+    final boolean longPrintImageOffWithWindow;
     final long systemExtensionModes;
     final Map<String,Config> storyButtons;
     final File root;
@@ -82,6 +84,8 @@ final class GameUiAssets {
         this.game=game;this.printMessage=printMessage;this.storyButtons=Collections.unmodifiableMap(storyButtons);
         this.gameMouse=gameMouse;this.selectPlace=selectPlace;this.selectPlace2=selectPlace2;
         this.images=Collections.unmodifiableMap(images);
+        this.longPrintImage=images.get(longPrintImageKey(printMessage));
+        this.longPrintImageOffWithWindow=printMessage.number("addLPrintImageOffWithWindow",0)!=0;
         this.textRates=textRates;
         this.freeStatus=freeStatus;
         this.legacyVolumeDefaults=legacyVolumeDefaults;
@@ -121,6 +125,10 @@ final class GameUiAssets {
     static String systemImageKey(String value) {
         String name=imageKey(value);
         return name.isEmpty()||name.indexOf('/')>=0?name:"sys/"+name;
+    }
+    private static String longPrintImageKey(Config config) {
+        if(config.number("LPrintAddImageFlag",0)==0)return "";
+        return systemImageKey(config.value("FilenameLPrintImage","lprintimage"));
     }
     /** Does not perform I/O, decoding or JNI calls; safe to query from UI drawing code. */
     Bitmap image(String name) { return name==null ? null : images.get(systemImageKey(name)); }
@@ -289,6 +297,8 @@ final class GameUiAssets {
         if(messageWindow.number("nameWindowFlag",0)!=0)
             for(String name:DialogueLayout.names(messageWindow.fields(),"filenameNameWindow","ta_namewin",windowCounts))
                 messageImages.add(systemImageKey(name));
+        String longPrintImage=longPrintImageKey(printMessage);
+        if(!longPrintImage.isEmpty())messageImages.add(longPrintImage);
         Set<String> names=new LinkedHashSet<>(messageImages);
         for(String name:new String[]{
             "ta_menu_bg01","ta_cnf_bg01","ta_cnf_bg02","ta_cnf_bg03",
@@ -306,6 +316,8 @@ final class GameUiAssets {
             request(names,system,"Menu1Button"+i+"FileName");
         request(names,system,"backScreenFileName","filenameMenuBase");
         common(names,system); common(names,config); common(names,save); common(names,load);
+        names.addAll(save.imageNames(field->field.matches("tab[0-9]+button[12]filename")));
+        names.addAll(load.imageNames(field->field.matches("tab[0-9]+button[12]filename")));
         for (int i=1;i<=2;++i)
             request(names,config,"tab"+i+"Button1FileName","tab"+i+"Button2FileName");
         for (String kind:new String[]{"music","sound","voice","soundvoice","total"})
@@ -319,6 +331,7 @@ final class GameUiAssets {
         request(names,data,"filenameSaveCursor","filenameLoadCursor","fileNameSaveTimeFont",
             "fileNameSerialNumberFont","filenameSaveBase","filenameLoadBase","filenameQuickSaveBase","filenameQuickLoadBase","filenameLastSave",
             "fileNameError","fileNameBad","fileNameOld");
+        if(data.number("addPicPrintFlag",0)!=0)names.add(systemImageKey(data.value("fileNameAddPic","ta_sl_font")));
         if(game.number("noticeFlag",0)!=0){
             for(int number:new int[]{game.number("loadNoticeNumber",1),game.number("saveNoticeNumber",2)})
                 if(number>0&&number<=Math.min(64,notice.number("noticeNumber",1)))names.add(systemImageKey(GameNotice.filename(notice,number)));
