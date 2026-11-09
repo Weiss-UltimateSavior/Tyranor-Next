@@ -827,14 +827,14 @@ fun PerGameSettingsScreen(game: ScanGame) {
                         item {
                             SectionCard(stringResource(R.string.engine_settings_render)) {
                                 if (!isSdl3) {
-                                    // 覆盖存储为三态字符串：""=跟随全局、"0"/"1"=显式值；
-                                    // 直接 `== "1"` 会把跟随全局坍缩显示成「关」（issue #109 反馈入口）
+                                    // 覆盖存储为三态：null=跟随全局（不下发游戏级覆盖，内核按全局回落）、
+                                    // "1"/"0"=显式值；直接 `== "1"` 会把跟随全局坍缩显示成「关」（issue #109 反馈入口）
                                     OverrideSwitch(
                                         stringResource(R.string.engine_settings_opengl_accurate_render),
                                         globalAccurate,
                                         krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value?.takeIf { it.isNotEmpty() }?.let { it == "1" },
                                     ) { b ->
-                                        krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value = when (b) { null -> ""; true -> "1"; false -> "0" }
+                                        krRender[PerGameSettingsStore.F_OGL_ACCURATE_RENDER]!!.value = when (b) { null -> null; true -> "1"; false -> "0" }
                                     }
                                     OverrideChoice(stringResource(R.string.engine_settings_memory_usage), krMemMap, globalMem, krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value, emptyLabel = engineDefault) {
                                         krRender[PerGameSettingsStore.F_MEM_USAGE]!!.value = it
