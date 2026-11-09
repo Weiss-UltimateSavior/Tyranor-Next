@@ -112,6 +112,19 @@ class SaveSyncSessionTest {
         verifyDirectoryChange(empty = false)
     }
 
+    @Test
+    fun committedSystemNnnCopyMustMatchBothSaveDirectories() {
+        val source = temp.newFolder("original")
+        val copiedSaves = temp.newFolder("copy", "SAV")
+        val oldKey = SAVE_DIRECTORY_KEY_PREFIX + File(source, "SAV").canonicalPath
+        val newKey = SAVE_DIRECTORY_KEY_PREFIX + copiedSaves.canonicalPath
+        assertTrue(matchesImportedSystemNnnSaves(oldKey, newKey, source, copiedSaves))
+        assertFalse(matchesImportedSystemNnnSaves(newKey, oldKey, source, copiedSaves))
+        assertFalse(matchesImportedSystemNnnSaves("unresolved-uri", newKey, source, copiedSaves))
+        assertFalse(matchesImportedSystemNnnSaves(oldKey, newKey, temp.newFolder("other"), copiedSaves))
+        assertFalse(matchesImportedSystemNnnSaves(oldKey, newKey, source, temp.newFolder("other-copy", "SAV")))
+    }
+
     private suspend fun verifyDirectoryChange(empty: Boolean) {
         val store = SaveSyncStateStore(File(temp.root, "sessions"))
         val original = session("pending").put("baseline", "before-A")

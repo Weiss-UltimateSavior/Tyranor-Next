@@ -122,23 +122,27 @@ final class DialogueTextView extends TextView {
             if(stop<=start)break;
             int labelStart=span.labelOffset(markup.text,start),labelEnd=span.labelOffset(markup.text,stop);
             if(labelStart<labelEnd){
-                float left=lines.getLineLeft(line),right=lines.getLineRight(line);
+                float left=lines.getLineLeft(line),right=lines.getWidth();
                 float center=(edge(lines,line,start)+edge(lines,line,stop))/2f;
-                float gap=annotationStyle.spacing*scale,width=0;
-                for(int offset=labelStart;offset<labelEnd;){
+                float gap=annotationStyle.spacing*scale,advance=0;
+                int last=span.label.offsetByCodePoints(labelEnd,-1);
+                for(int offset=labelStart;offset<last;){
                     int next=span.label.offsetByCodePoints(offset,1);
-                    width+=annotationPaint.measureText(span.label,offset,next);
-                    if(next<labelEnd)width+=gap;
+                    advance+=Math.max(0,annotationPaint.measureText(span.label,offset,next)+gap);
                     offset=next;
                 }
+                float lastWidth=annotationPaint.measureText(span.label,last,labelEnd);
+                float fit=advance==0?1:Math.min(1,Math.max(0,right-left-lastWidth)/advance);
+                float width=advance*fit+lastWidth;
                 float x=Math.max(left,Math.min(center-width/2f,right-width));
                 int saved=canvas.save();
-                clipLine(canvas,lines,line);
+                canvas.clipRect(left,lines.getLineTop(line)-getTotalPaddingTop(),right,lines.getLineBottom(line));
+                int visible=span.labelOffset(markup.text,Math.min(stop,revealed));
                 float baseline=baseline(lines,line,scale);
-                for(int offset=labelStart;offset<labelEnd;){
+                for(int offset=labelStart;offset<visible;){
                     int next=span.label.offsetByCodePoints(offset,1);
                     canvas.drawText(span.label,offset,next,x,baseline,annotationPaint);
-                    x+=annotationPaint.measureText(span.label,offset,next)+gap;
+                    x+=Math.max(0,annotationPaint.measureText(span.label,offset,next)+gap)*fit;
                     offset=next;
                 }
                 canvas.restoreToCount(saved);

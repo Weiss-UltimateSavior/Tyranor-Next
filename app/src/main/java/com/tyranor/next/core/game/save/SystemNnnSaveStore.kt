@@ -3,6 +3,7 @@ package com.tyranor.next.core.game.save
 import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.CancellationException
+import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -71,7 +72,10 @@ internal class SystemNnnSaveStore(
         return result
     }
 
-    /** Caller holds the engine's lock. A complete backup precedes any changes to live files. */
+    /**
+     * Caller holds the engine's lock. A complete backup precedes any changes to live files.
+     * [onCommitted] runs after the rollback marker is removed. Cleanup still runs if it throws.
+     */
     fun replace(source: File?, onCommitted: () -> Unit = {}): Int {
         val incoming = source?.let(::files).orEmpty()
         val existing = files()
@@ -101,8 +105,7 @@ internal class SystemNnnSaveStore(
             }
             throw failure
         }
-        onCommitted()
-        clearRestore()
+        Closeable { clearRestore() }.use { onCommitted() }
         return if (source == null) existing.size else incoming.size
     }
 

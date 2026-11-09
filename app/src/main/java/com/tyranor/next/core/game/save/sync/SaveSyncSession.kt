@@ -1,6 +1,7 @@
 package com.tyranor.next.core.game.save.sync
 
 import org.json.JSONObject
+import java.io.File
 
 /** A delayed callback may mutate only the session it observed before waiting for the lock. */
 internal suspend fun <T> withCurrentSaveSession(
@@ -33,6 +34,16 @@ internal fun requireSameSaveDirectory(expected: String, current: String) {
         throw SaveSyncException(SaveSyncError.SAVE_LOCATION_CHANGED)
     }
 }
+
+/** The caller has verified the committed copy's source identity before checking the two save keys. */
+internal fun matchesImportedSystemNnnSaves(
+    previousKey: String,
+    directoryKey: String,
+    source: File,
+    importedSaves: File,
+): Boolean = importedSaves.name.equals("sav", ignoreCase = true) &&
+    previousKey == SAVE_DIRECTORY_KEY_PREFIX + File(source, importedSaves.name).canonicalPath &&
+    directoryKey == SAVE_DIRECTORY_KEY_PREFIX + importedSaves.canonicalPath
 
 /** Historical returned/leftApp/ownerPid hints cannot prove an independent external host exited. */
 internal fun externalSessionNeedsExitConfirmation(session: JSONObject): Boolean {

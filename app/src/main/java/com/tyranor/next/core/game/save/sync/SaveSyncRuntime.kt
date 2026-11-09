@@ -14,9 +14,11 @@ import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.model.SystemNnnGameDirectory
 import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.SaveErrorCode
+import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -199,8 +201,12 @@ object SaveSyncRuntime {
             val key = SaveContentHash.text(game.uri)
             val previous = store.load(key).takeIf { it.has("token") && saveSessionGenerationMatches(it, enabledGeneration) }
             val directoryKey = expectedActiveKey
-            // Keep the old task intact rather than relabelling directory A's baseline as B's.
-            previous?.let { requireSessionDirectory(it, directoryKey) }
+            previous?.let {
+                if (it.optString("activeKey") != directoryKey &&
+                    !continuesSystemNnnImport(context, game, config, it, directoryKey)) {
+                    requireSessionDirectory(it, directoryKey)
+                }
+            }
             val inherited = inheritedSessionBaseline(previous)
             val previousBaseline = inherited.orEmpty()
             val inheritBaseline = inherited != null
@@ -241,6 +247,19 @@ object SaveSyncRuntime {
             recordReport(SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, SaveSyncService.errorCode(failure)))))
             return null
         }
+    }
+
+    private fun continuesSystemNnnImport(context: Context, game: ScanGame, config: WebDavConfig,
+        previous: JSONObject, directoryKey: String): Boolean {
+        if (game.engine != EngineType.SYSTEMNNN || inheritedSessionBaseline(previous) == null) return false
+        val source = SystemNnnGameDirectory.resolve(game.uri) ?: return false
+        val copy = SystemNnnGameDirectory.committed(context, game.uri) ?: return false
+        val saves = SystemNnnHost.saveDirectory(context, copy)
+        // The copy commits the original sav under its source identity. An explicit version
+        // activation has separate ownership and must resolve under its original directory.
+        return matchesImportedSystemNnnSaves(previous.optString("activeKey"), directoryKey, source, saves) &&
+            directoryActivations(context).owned(game.uri).isEmpty() &&
+            !SaveSyncService(syncRoot(context), AndroidSaveSyncEnvironment(context)).hasPendingPromotion(game, config)
     }
 
     internal suspend fun finishLaunch(context: Context, game: ScanGame, ticket: LaunchTicket?, success: Boolean) =

@@ -282,7 +282,7 @@ final class DialoguePanel extends FrameLayout {
                 int line=lines.getLineCount()-1;
                 if(!fixX)px+=message.endsWith("\n")?DialogueLayout.lineX(layout,lastLogicalRow,textRight)*sx:
                     body.getLeft()+lines.getLineRight(line);
-                if(!fixY)py+=body.getTop()+lines.getLineTop(line)-body.getScrollY();
+                if(!fixY)py+=body.getTop()+body.getTotalPaddingTop()+lines.getLineTop(line)-body.getScrollY();
             }
             SpriteAnimation clip=clips[mode];dest.set(px,py,px+clip.w*sx,py+clip.h*sy);
             long frame=(SystemClock.uptimeMillis()-since)/period;

@@ -6,6 +6,7 @@ import com.tyranor.next.core.game.save.SystemNnnSaveStore
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -22,6 +23,9 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 class SystemNnnSaveInteropTest {
@@ -304,6 +308,100 @@ class SystemNnnSaveInteropTest {
         Files.move(pending.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         GameSavePaths.verifyCommitted(target)
         assertEquals("next", target.readText())
+    }
+
+    @Test fun committedCallbackFailureKeepsTheReplacementAndCleansTheStage() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val previous = putStory(saves, "emberfall.sav", 0)
+        val incoming = temp.newFolder().canonicalFile
+        val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
+        val store = SystemNnnSaveStore(game, saves)
+        val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
+        val error = IOException("Could not record the committed save")
+
+        val failure = assertThrows(GameSaveException::class.java) {
+            store.access { store.replace(incoming) { throw error } }
+        }
+
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
+        assertSame(error, failure.cause)
+        assertFalse(stage.exists())
+        assertFalse(previous.exists())
+        store.access {
+            assertArrayEquals(replacement.readBytes(), store.files().getValue(replacement.name).readBytes())
+        }
+    }
+
+    @Test fun committedCallbackCancellationKeepsTheReplacementAndPreservesCleanupFailure() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val previous = putStory(saves, "emberfall.sav", 0)
+        val incoming = temp.newFolder().canonicalFile
+        val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
+        val store = SystemNnnSaveStore(game, saves)
+        val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
+        val restore = stage.resolve(SystemNnnHost.SAVE_RESTORE_DIRECTORY)
+        val cancelled = CancellationException("Version update cancelled")
+
+        val failure = assertThrows(CancellationException::class.java) {
+            store.access {
+                store.replace(incoming) {
+                    assertFalse(restore.resolve("pending").exists())
+                    stage.resolve("cleanup-blocker").writeText("Keep the parent directory nonempty")
+                    throw cancelled
+                }
+            }
+        }
+
+        assertSame(cancelled, failure)
+        assertTrue(failure.suppressed.single() is IOException)
+        assertFalse(restore.exists())
+        assertFalse(previous.exists())
+        assertArrayEquals(replacement.readBytes(), saves.resolve(replacement.name).readBytes())
+    }
+
+    @Test fun aSeparateJvmLockBlocksSaveReplacementUntilTheHolderExits() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val previous = putStory(saves, "emberfall.sav", 0)
+        val incoming = temp.newFolder().canonicalFile
+        val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
+        val store = SystemNnnSaveStore(game, saves)
+        val java = File(System.getProperty("java.home"), "bin/java").let {
+            if (it.isFile) it else File(it.parentFile, "java.exe")
+        }
+        val fixture = SystemNnnLockHolder::class.java
+        val classes = File(checkNotNull(fixture.protectionDomain?.codeSource?.location).toURI())
+        val child = ProcessBuilder(java.path, "-cp", classes.path, fixture.name, saves.resolve("emberfall.lock").path)
+            .redirectErrorStream(true)
+            .start()
+
+        try {
+            val ready = CompletableFuture.supplyAsync { child.inputStream.bufferedReader().use { it.readLine() } }
+            assertEquals("locked", ready.get(30, TimeUnit.SECONDS))
+
+            val failure = assertThrows(GameSaveException::class.java) {
+                store.access { store.replace(incoming) }
+            }
+            assertEquals(SaveErrorCode.ENGINE_RUNNING, failure.code)
+            assertTrue(failure.cause is SystemNnnHost.SaveBusyException)
+            assertTrue(previous.exists())
+            assertFalse(saves.resolve(replacement.name).exists())
+
+            child.outputStream.close()
+            assertTrue("Lock holder should exit when stdin closes", child.waitFor(10, TimeUnit.SECONDS))
+            assertEquals(0, child.exitValue())
+        } finally {
+            if (child.isAlive) {
+                child.destroyForcibly()
+                child.waitFor(10, TimeUnit.SECONDS)
+            }
+        }
+
+        assertEquals(1, store.access { store.replace(incoming) })
+        assertFalse(previous.exists())
+        assertArrayEquals(replacement.readBytes(), saves.resolve(replacement.name).readBytes())
     }
 
     @Test fun importedCopyUsesTheOriginalPathToFindPrivateLegacySaves() {

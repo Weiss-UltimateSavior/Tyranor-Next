@@ -103,6 +103,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.nio.charset.Charset
+import java.nio.file.Files
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -1074,8 +1075,12 @@ object EngineLauncher {
                 return if (systemNnnSavesWritable(context, imported)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
             }
             requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
-            val root = SystemNnnGameDirectory.accessible(game.uri, path) ?: return LaunchResult.Failure.GameDirUnresolved
-            if (!SystemNnnGameImport.readableBootstrap(root)) return LaunchResult.Failure.GameDirUnresolved
+            val root = SystemNnnGameDirectory.accessible(game.uri, path) ?: return failed(when {
+                Files.notExists(path.toPath()) -> SystemNnnResourceError.SOURCE_MISSING
+                Files.isRegularFile(path.toPath()) -> SystemNnnResourceError.INVALID_SOURCE
+                else -> SystemNnnResourceError.STORAGE_RESTRICTED
+            })
+            if (!SystemNnnGameImport.readableBootstrap(root)) return failed(SystemNnnResourceError.INVALID_SOURCE)
             return if (systemNnnSavesWritable(context, root)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
         } catch (cancelled: CancellationException) {
             throw cancelled

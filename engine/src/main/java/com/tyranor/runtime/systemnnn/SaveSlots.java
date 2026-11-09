@@ -238,7 +238,10 @@ final class SaveSlots {
         }finally{Files.deleteIfExists(pending);}
     }
     private Integer readLastSelection(){
-        File file=paths.file(LAST_SELECTION);
+        Integer selected=readLastSelection(paths.file(LAST_SELECTION));
+        return selected!=null?selected:readLastSelection(paths.file(LAST_SELECTION+".bak"));
+    }
+    private static Integer readLastSelection(File file){
         try(DataInputStream in=new DataInputStream(Files.newInputStream(file.toPath(),LinkOption.NOFOLLOW_LINKS))){
             if(in.readInt()!=LAST_MAGIC)return null;
             int slot=in.readInt();
