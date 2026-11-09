@@ -115,7 +115,7 @@ class MainActivity : ComponentActivity() {
       }
     }
     LaunchedEffect(coachPage) {
-      // 四页常驻组合会保留隐藏页；切页时丢弃旧页坐标，避免把屏外矩形用于新页面。
+      // 主界面常驻组合会保留隐藏页；切页时丢弃旧页坐标，避免把屏外矩形用于新页面。
       coachAnchors = coachAnchors.filterKeys { coachPageOf(it) == coachPage }
     }
     val reportCoachAnchor: (Int, Rect) -> Unit = { index, rect ->

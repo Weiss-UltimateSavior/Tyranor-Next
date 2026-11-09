@@ -54,6 +54,8 @@
     <string name="settings_nav_bar_desc_enhanced">Android 13 and above only</string>
     <string name="settings_nav_bar_desc_floating_button">Floats at the bottom right; tap to expand</string>
     <string name="settings_nav_bar_desc_rail">Shown as a side rail on tablets</string>
+    <string name="settings_show_home_page">Show home page</string>
+    <string name="settings_show_home_page_summary">When off, the home page and its navigation item are hidden; the games page becomes the first page</string>
     <string name="settings_home_style">Home style</string>
     <string name="settings_home_style_native">Default</string>
     <string name="settings_home_style_web">Web</string>

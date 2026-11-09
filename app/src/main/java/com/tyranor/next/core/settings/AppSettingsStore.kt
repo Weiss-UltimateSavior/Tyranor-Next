@@ -85,6 +85,9 @@ object AppSettingsStore {
     /** 首页样式：原生（最近打开/快捷启动）/ 网页。 */
     const val KEY_HOME_STYLE = "home_style"
 
+    /** 显示首页：关闭后首页与导航栏首页入口隐藏，游戏页作为第一页；默认开。 */
+    const val KEY_HOME_PAGE_ENABLED = "home_page_enabled"
+
     /** Web 首页展示的地址。 */
     const val KEY_HOME_WEB_URL = "home_web_url"
 
@@ -220,6 +223,9 @@ object AppSettingsStore {
     /** 首页样式默认值：原生。 */
     const val DEFAULT_HOME_STYLE = HOME_STYLE_NATIVE
 
+    /** 显示首页默认值：开。 */
+    const val DEFAULT_HOME_PAGE_ENABLED = true
+
     /** Web 首页预设：鲲Gal。 */
     const val HOME_WEB_URL_KUNGAL = "https://www.kungal.com"
 
@@ -269,6 +275,9 @@ object AppSettingsStore {
 
     /** 首页样式内存态：设置页切换后主界面首页即时切换原生/网页形态。 */
     val homeStyleState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_STYLE)
+
+    /** 首页显示内存态：设置页切换后主导航即时隐藏/恢复首页入口。 */
+    val homePageEnabledState: MutableStateFlow<Boolean> = MutableStateFlow(DEFAULT_HOME_PAGE_ENABLED)
 
     /** Web 首页地址内存态：设置页修改后网页首页即时加载新地址。 */
     val homeWebUrlState: MutableStateFlow<String> = MutableStateFlow(DEFAULT_HOME_WEB_URL)
@@ -513,6 +522,11 @@ object AppSettingsStore {
         }
     }
 
+    /** 首次组合时从持久化加载首页显示开关到内存态（幂等）。 */
+    fun initHomePageEnabled(c: Context) {
+        homePageEnabledState.value = isHomePageEnabled(c)
+    }
+
     /**
      * 首页样式归一：仅 web 精确接受，其余（含空/未知/历史值 "category"）回退原生
      * （纯函数，便于单测）。
@@ -531,6 +545,15 @@ object AppSettingsStore {
             prefs(c).edit().putString(KEY_HOME_STYLE, normalized).apply()
             homeStyleState.value = normalized
         }
+    }
+
+    /** 是否显示首页（关闭后首页不参与主导航）。 */
+    fun isHomePageEnabled(c: Context): Boolean =
+        prefs(c).getBoolean(KEY_HOME_PAGE_ENABLED, DEFAULT_HOME_PAGE_ENABLED)
+
+    fun setHomePageEnabled(c: Context, enabled: Boolean) {
+        prefs(c).edit().putBoolean(KEY_HOME_PAGE_ENABLED, enabled).apply()
+        homePageEnabledState.value = enabled
     }
 
     /** 当前 Web 首页地址；磁盘值非法/为空时回退默认（一起萌）。 */

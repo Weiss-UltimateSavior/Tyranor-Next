@@ -54,6 +54,8 @@
     <string name="settings_nav_bar_desc_enhanced">仅 Android 13 及以上支持</string>
     <string name="settings_nav_bar_desc_floating_button">悬浮于右下角，点击展开</string>
     <string name="settings_nav_bar_desc_rail">平板上以侧栏显示</string>
+    <string name="settings_show_home_page">显示首页</string>
+    <string name="settings_show_home_page_summary">关闭后隐藏首页与导航栏首页入口，游戏页作为第一页</string>
     <string name="settings_home_style">首页样式切换</string>
     <string name="settings_home_style_native">默认</string>
     <string name="settings_home_style_web">网页</string>

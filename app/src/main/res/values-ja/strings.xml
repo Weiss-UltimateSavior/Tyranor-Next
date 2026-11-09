@@ -54,6 +54,8 @@
     <string name="settings_nav_bar_desc_enhanced">Android 13 以上のみ対応</string>
     <string name="settings_nav_bar_desc_floating_button">右下に浮かび、タップで展開</string>
     <string name="settings_nav_bar_desc_rail">タブレットではサイドレールで表示</string>
+    <string name="settings_show_home_page">ホームを表示</string>
+    <string name="settings_show_home_page_summary">オフにするとホームとナビゲーションのホーム項目が非表示になり、ゲームページが最初のページになります</string>
     <string name="settings_home_style">ホームスタイル</string>
     <string name="settings_home_style_native">デフォルト</string>
     <string name="settings_home_style_web">Web</string>

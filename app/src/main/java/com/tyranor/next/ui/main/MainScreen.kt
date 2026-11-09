@@ -145,13 +145,22 @@ fun MainScreen(
       LaunchFailureBus.clear()
     }
   }
-  var selectedIndex by rememberSaveable { mutableStateOf(0) }
+  // 「显示首页」开关（应用设置，默认开）：关闭后首页不参与导航，游戏页作为第一页
+  val homePageEnabled by AppSettingsStore.homePageEnabledState.collectAsState()
+  var selectedIndex by rememberSaveable {
+    mutableStateOf(if (AppSettingsStore.isHomePageEnabled(context)) 0 else 1)
+  }
   LaunchedEffect(coachPage) {
     if (coachPage != null) selectedIndex = coachPage.coerceIn(tabItems.indices)
   }
+  // 关闭首页时，若当前停在其上则收敛到游戏页（引导页索引同样收敛，避免空白页）
+  LaunchedEffect(homePageEnabled) {
+    if (!homePageEnabled && selectedIndex == 0) selectedIndex = 1
+  }
   // 引导期间由 coachPage 临时接管当前页；其余时间使用用户选择的 selectedIndex。
   // 所有转场、导航和页面交互都使用同一个 activeIndex，避免首帧出现双索引错位。
-  val activeIndex = coachPage?.coerceIn(tabItems.indices) ?: selectedIndex
+  val requestedIndex = coachPage?.coerceIn(tabItems.indices) ?: selectedIndex
+  val activeIndex = if (!homePageEnabled && requestedIndex == 0) 1 else requestedIndex
   val libraryViewModel: MainLibraryViewModel = viewModel()
   val libraryState by libraryViewModel.uiState.collectAsStateWithLifecycle()
   val cleanupError = libraryState.cleanupError
@@ -180,6 +189,7 @@ fun MainScreen(
     AppSettingsStore.gameSortState.value = gameSort
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineTabs(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initEngineCardIcon(context) }
+    withContext(Dispatchers.IO) { AppSettingsStore.initHomePageEnabled(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initSideRail(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardHideTitleTag(context) }
     withContext(Dispatchers.IO) { AppSettingsStore.initGameCardBadge(context) }
@@ -337,12 +347,20 @@ fun MainScreen(
   )
   // 玻璃外观风格 + 默认导航样式：导航栏改为悬浮的圆角玻璃条（描边 + 玻璃底）
   val floatingDefaultNav = AppThemeColors.isGlass && !liquidGlass && !floatingButtonStyle && !railLayout
-  val tabLabels = tabItems.map { stringResource(it.labelRes) }
+  // 可见 Tab：关闭首页后首页不参与导航（游戏页成为第一页）
+  val visibleTabEntries = remember(homePageEnabled) {
+    tabItems.mapIndexedNotNull { index, tab ->
+      if (homePageEnabled || index != 0) index to tab else null
+    }
+  }
+  val tabLabels = visibleTabEntries.map { stringResource(it.second.labelRes) }
   // remember(tabLabels)：labels 内容不变时复用同一份 items，避免每次重组都给增强栏传新 List
   // （增强栏据此跳过重组，进而避免 drawBackdrop 元素被判不等而重建 RenderEffect 管线）
   val liquidGlassTabItems = remember(tabLabels) {
-    tabItems.mapIndexed { index, tab -> LiquidGlassNavItem(tabLabels[index], tab.iconRes) }
+    visibleTabEntries.mapIndexed { index, entry -> LiquidGlassNavItem(tabLabels[index], entry.second.iconRes) }
   }
+  // 导航组件内部使用「可见条目下标」，选中值需从页面下标换算
+  val selectedNavIndex = visibleTabEntries.indexOfFirst { it.first == activeIndex }.coerceAtLeast(0)
 
   // 采样层可用条件：液态玻璃两档或悬浮按钮（底栏形态）
   val backdropSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -362,8 +380,9 @@ fun MainScreen(
     label = "mainTabTransition",
   )
   fun selectPage(index: Int) {
-    // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）
-    if (index !in tabItems.indices) return
+    // 索引保护：宿主可能收到越界请求（例如 items 变化后的晚到回调）；
+    // 关闭首页时首页下标同样不可达
+    if (visibleTabEntries.none { it.first == index }) return
     if (index == activeIndex) return
     // 透镜档需要「转场期间接受新目标」：透镜已经跟手移动，页面却不动会明显脱节。
     // 这里判的是**实际生效的档**（enhancedBarActive）而不是设置值：AGSL 不可用时界面已回退成
@@ -371,6 +390,10 @@ fun MainScreen(
     // 默认路径保持原有守卫，避免把这一行为变更带给未开启该选项的用户（报告 §8.7）。
     if (!enhancedBarActive && !floatingButtonActive && pageTransition.isRunning) return
     selectedIndex = index
+  }
+  // 导航组件回调使用可见条目下标；这里换算回页面下标（关闭首页后二者不同）
+  val onSelectNavPage: (Int) -> Unit = { navIndex ->
+    visibleTabEntries.getOrNull(navIndex)?.let { selectPage(it.first) }
   }
   // 外层只负责布局：内容区 + 底部导航栏（不用 Scaffold，避免与子页顶部栏的 inset 冲突）
   Box(
@@ -445,9 +468,9 @@ fun MainScreen(
       // 平板/大窗口：主导航移到侧边，按外观风格取该主题「默认导航栏」形态
       Row(Modifier.fillMaxSize()) {
         AppNavigationRail(
-          selectedIndex = activeIndex,
+          selectedIndex = selectedNavIndex,
           items = liquidGlassTabItems,
-          onItemClick = { selectPage(it) },
+          onItemClick = onSelectNavPage,
           modifier = Modifier.fillMaxHeight(),
         )
         Column(Modifier.weight(1f).fillMaxHeight().then(contentLayerModifier)) {
@@ -455,6 +478,7 @@ fun MainScreen(
             selectedIndex = activeIndex,
             pageTransition = pageTransition,
             onboarding = coachPage != null,
+            homePageEnabled = homePageEnabled,
             libraryState = libraryState,
             libraryViewModel = libraryViewModel,
             onCoachAnchorChanged = onCoachAnchorChanged,
@@ -467,16 +491,17 @@ fun MainScreen(
           selectedIndex = activeIndex,
           pageTransition = pageTransition,
           onboarding = coachPage != null,
+          homePageEnabled = homePageEnabled,
           libraryState = libraryState,
           libraryViewModel = libraryViewModel,
-            onCoachAnchorChanged = onCoachAnchorChanged,
+          onCoachAnchorChanged = onCoachAnchorChanged,
         )
         if (!liquidGlass && !floatingDefaultNav && !floatingButtonActive) {
           DefaultBottomNavigationBar(
-            selectedIndex = activeIndex,
-            tabLabels = tabLabels,
+            selectedIndex = selectedNavIndex,
+            items = liquidGlassTabItems,
             unselectedColor = unselectedColor,
-            onSelectPage = { selectPage(it) },
+            onSelectPage = onSelectNavPage,
             modifier = reportBottomNavTop,
           )
         }
@@ -492,10 +517,10 @@ fun MainScreen(
         EnhancedLiquidGlassNavigationBar(
           backdrop = navBackdrop,
           // 权威选中值先夹取到合法槽位，避免越界值把透镜放到栏外（组件内部也会再夹一次）
-          selectedIndex = activeIndex.coerceIn(liquidGlassTabItems.indices),
+          selectedIndex = selectedNavIndex,
           colors = rememberGlassBottomBarColors(unselectedColor),
           items = liquidGlassTabItems,
-          onItemClick = { selectPage(it) },
+          onItemClick = onSelectNavPage,
           modifier = reportBottomNavTop
             .align(Alignment.BottomCenter)
             .navigationBarsPadding()
@@ -504,11 +529,11 @@ fun MainScreen(
       } else {
         LiquidGlassNavigationBar(
           backdrop = navBackdrop,
-          selectedIndex = activeIndex,
+          selectedIndex = selectedNavIndex,
           primaryColor = MaterialTheme.colorScheme.primary,
           unselectedColor = unselectedColor,
           items = liquidGlassTabItems,
-          onItemClick = { selectPage(it) },
+          onItemClick = onSelectNavPage,
           modifier = reportBottomNavTop.align(Alignment.BottomCenter),
         )
       }
@@ -525,10 +550,10 @@ fun MainScreen(
           .padding(horizontal = 12.dp, vertical = 12.dp),
       ) {
         DefaultBottomNavigationBar(
-          selectedIndex = activeIndex,
-          tabLabels = tabLabels,
+          selectedIndex = selectedNavIndex,
+          items = liquidGlassTabItems,
           unselectedColor = unselectedColor,
-          onSelectPage = { selectPage(it) },
+          onSelectPage = onSelectNavPage,
           modifier = Modifier
             .fillMaxWidth()
             // 无文字后按图标高度收窄导航条（64dp）；圆角取「应用圆角调整」值
@@ -543,15 +568,15 @@ fun MainScreen(
       }
     }
 
-    // 悬浮按钮导航：右下角一个圆形液态玻璃按钮，点击后四项沿 1/4 圆弧交错展开；
+    // 悬浮按钮导航：右下角一个圆形液态玻璃按钮，点击后各导航项沿 1/4 圆弧交错展开；
     // 悬浮不占布局高度，内容底部留白由 glassNavBottomInset() 统一提供。
     if (floatingButtonActive) {
       FloatingGlassNavButton(
         backdrop = if (floatingButtonBackdrop) navBackdrop else null,
         items = liquidGlassTabItems,
-        selectedIndex = activeIndex.coerceIn(liquidGlassTabItems.indices),
+        selectedIndex = selectedNavIndex,
         primaryColor = MaterialTheme.colorScheme.primary,
-        onItemClick = { selectPage(it) },
+        onItemClick = onSelectNavPage,
         // 组件在安全区内自行摆放（长按可拖动、位置持久化），宿主只负责占满可用区域
         modifier = Modifier.fillMaxSize(),
         outsideTapBridge = floatingNavOutsideTapBridge,
@@ -575,7 +600,8 @@ fun MainScreen(
 }
 
 /**
- * 主界面四页常驻组合：隐藏页只保留已测量节点且 alpha=0，切换时不再重建游戏网格/Miuix 设置页；
+ * 主界面可见页常驻组合（默认四页；应用设置关闭首页后为三页）：隐藏页只保留已测量节点且 alpha=0，
+ * 切换时不再重建游戏网格/Miuix 设置页；
  * 中间 Tab 的 alpha 在任意状态均为 0，跨页时只显示起点和终点的直接水平动画。
  * 底栏形态与平板侧栏形态共用本组件，保证两种布局下的页面与转场完全一致。
  */
@@ -584,15 +610,18 @@ private fun ColumnScope.MainTabPages(
   selectedIndex: Int,
   pageTransition: Transition<Int>,
   onboarding: Boolean,
+  homePageEnabled: Boolean,
   libraryState: MainLibraryUiState,
   libraryViewModel: MainLibraryViewModel,
   onCoachAnchorChanged: (Int, Rect) -> Unit,
 ) {
     Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
       WithoutPressIndication {
-        // 四页常驻组合：隐藏页只保留已测量节点且 alpha=0，切换时不再重建游戏网格/Miuix 设置页。
+        // 可见页面常驻组合：隐藏页只保留已测量节点且 alpha=0，切换时不再重建游戏网格/Miuix 设置页。
         // 中间 Tab 的 alpha 在任意状态均为 0，因此跨页时只显示起点和终点的直接水平动画。
-        tabItems.indices.forEach { page ->
+        // 关闭首页时不再组合首页（下标 0），游戏页成为第一个可见页。
+        val visiblePages = if (homePageEnabled) tabItems.indices.toList() else tabItems.indices.drop(1)
+        visiblePages.forEach { page ->
           val pageOffset by pageTransition.animateFloat(
             transitionSpec = { tween(durationMillis = if (onboarding) 80 else 200) },
             label = "mainTabOffset$page",
@@ -683,7 +712,7 @@ private fun ColumnScope.MainTabPages(
 @Composable
 private fun DefaultBottomNavigationBar(
   selectedIndex: Int,
-  tabLabels: List<String>,
+  items: List<LiquidGlassNavItem>,
   unselectedColor: Color,
   onSelectPage: (Int) -> Unit,
   modifier: Modifier = Modifier,
@@ -699,8 +728,8 @@ private fun DefaultBottomNavigationBar(
       contentColor = LocalContentColor.current,
       windowInsets = windowInsets,
     ) {
-      tabItems.forEachIndexed { index, tab ->
-        val label = tabLabels[index]
+      items.forEachIndexed { index, item ->
+        val label = item.label
         val selected = selectedIndex == index
         val itemColor = if (selected) MaterialTheme.colorScheme.primary else unselectedColor
         NavigationBarItem(
@@ -709,7 +738,7 @@ private fun DefaultBottomNavigationBar(
           icon = {
             // 选中态染色动画与平板侧栏共用同一实现（见 ui/common/NavigationTabIcon.kt）
             NavigationTabIcon(
-              iconRes = tab.iconRes,
+              iconRes = item.iconRes,
               contentDescription = label,
               selected = selected,
               unselectedColor = unselectedColor,
