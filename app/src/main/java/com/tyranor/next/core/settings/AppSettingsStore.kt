@@ -91,7 +91,7 @@ object AppSettingsStore {
     /** 游戏页卡片隐藏名称标签（【】/[]）；默认开。 */
     const val KEY_GAME_CARD_HIDE_TITLE_TAG = "game_card_hide_title_tag"
 
-    /** 游戏页卡片风格：网格 / 列表（封面流）；默认网格。 */
+    /** 游戏页卡片风格：瀑布（默认）/ 网格 / 列表（封面流）。 */
     const val KEY_GAME_CARD_STYLE = "game_card_style"
 
     /** 游戏页卡片左上角引擎类型角标；默认关。 */
@@ -171,11 +171,17 @@ object AppSettingsStore {
     /** 卡片隐藏名称标签默认值：开。 */
     const val DEFAULT_GAME_CARD_HIDE_TITLE_TAG = true
 
-    const val GAME_CARD_STYLE_GRID = "grid"
+    /** 瀑布流（默认）：封面高低错落，标题在封面下方白色信息区内。 */
+    const val GAME_CARD_STYLE_WATERFALL = "waterfall"
+
+    /** 网格：恢复瀑布流之前的等高卡片（3:4 封面 + 封面下方单行标题）。 */
+    const val GAME_CARD_STYLE_GRID = "uniform_grid"
+
+    /** 列表：封面流横向轮播。 */
     const val GAME_CARD_STYLE_COVER_FLOW = "cover_flow"
 
-    /** 卡片风格默认值：网格。 */
-    const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_GRID
+    /** 卡片风格默认值：瀑布。 */
+    const val DEFAULT_GAME_CARD_STYLE = GAME_CARD_STYLE_WATERFALL
 
     /** 卡片引擎角标默认值：关。 */
     const val DEFAULT_GAME_CARD_BADGE = false
@@ -542,9 +548,14 @@ object AppSettingsStore {
     fun getGameCardStyle(c: Context): String =
         normalizeGameCardStyle(prefs(c).getString(KEY_GAME_CARD_STYLE, DEFAULT_GAME_CARD_STYLE))
 
-    /** 卡片风格归一：仅接受 cover_flow / grid，其余（含空）回退网格。 */
+    /** 卡片风格归一：仅接受 waterfall / uniform_grid / cover_flow；历史值 grid 与空值回退瀑布。 */
     fun normalizeGameCardStyle(style: String?): String =
-        if (style?.trim()?.lowercase() == GAME_CARD_STYLE_COVER_FLOW) GAME_CARD_STYLE_COVER_FLOW else GAME_CARD_STYLE_GRID
+        when (style?.trim()?.lowercase()) {
+            GAME_CARD_STYLE_GRID -> GAME_CARD_STYLE_GRID
+            GAME_CARD_STYLE_COVER_FLOW -> GAME_CARD_STYLE_COVER_FLOW
+            // 历史值 "grid"（当时渲染瀑布流）与空值/未知值统一归一到瀑布，避免升级后样式跳变
+            else -> GAME_CARD_STYLE_WATERFALL
+        }
 
     fun setGameCardStyle(c: Context, style: String) {
         val normalized = normalizeGameCardStyle(style)

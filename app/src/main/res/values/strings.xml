@@ -82,6 +82,7 @@
     <string name="settings_sort_alpha">字母大小</string>
     <string name="settings_sort_bracket_tag">括号标签</string>
     <string name="settings_game_card_style">游戏卡片风格</string>
+    <string name="settings_game_card_style_waterfall">瀑布</string>
     <string name="settings_game_card_style_grid">网格</string>
     <string name="settings_game_card_style_cover_flow">列表</string>
     <string name="settings_game_card_badge">卡片引擎角标</string>

@@ -82,6 +82,7 @@
     <string name="settings_sort_alpha">名前順</string>
     <string name="settings_sort_bracket_tag">括弧タグ</string>
     <string name="settings_game_card_style">ゲームカードのスタイル</string>
+    <string name="settings_game_card_style_waterfall">ウォーターフォール</string>
     <string name="settings_game_card_style_grid">グリッド</string>
     <string name="settings_game_card_style_cover_flow">リスト</string>
     <string name="settings_game_card_badge">カードのエンジンバッジ</string>

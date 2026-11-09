@@ -42,8 +42,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -133,6 +135,7 @@ import com.tyranor.next.theme.MiuixSettingsTheme
 import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.NavWhiteOverlay
 import com.tyranor.next.theme.PageSecondaryTextColor
+import com.tyranor.next.theme.PageTextColor
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentShape
@@ -205,7 +208,9 @@ fun GameScreen(
         quickActionsGameUri?.let { uri -> games.firstOrNull { it.uri == uri } }
     }
 
+    // 两套列表状态各自保留滚动位置，切换卡片风格时互不影响
     val gridState = rememberLazyStaggeredGridState()
+    val uniformGridState = rememberLazyGridState()
     val scrapeTaskState by CoverScrapeTaskManager.state.collectAsState()
 
     LaunchedEffect(libraryState.loaded, games, selectedGameUri, quickActionsGameUri) {
@@ -265,6 +270,7 @@ fun GameScreen(
         scanning = libraryState.scanning,
         scrapingCovers = scrapeTaskState.running,
         gridState = gridState,
+        uniformGridState = uniformGridState,
         dirPickerLaunch = { dirPicker.launch(null) },
         syncMissingCovers = { syncMissingCovers() },
         refreshGames = { scanLibrary() },
@@ -371,6 +377,7 @@ private fun GameLibraryContent(
     scanning: Boolean,
     scrapingCovers: Boolean,
     gridState: LazyStaggeredGridState,
+    uniformGridState: LazyGridState,
     dirPickerLaunch: () -> Unit,
     syncMissingCovers: () -> Unit,
     refreshGames: () -> Unit,
@@ -517,15 +524,22 @@ private fun GameLibraryContent(
                         )
                     } else {
                         val cardStyle by AppSettingsStore.gameCardStyleState.collectAsState()
-                        if (cardStyle == AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW) {
-                            // 「列表」风格：封面流横向轮播（列表/搜索/排序数据源相同）
-                            GameCoverFlow(
+                        when (cardStyle) {
+                            // 「列表」风格：封面流横向轮播
+                            AppSettingsStore.GAME_CARD_STYLE_COVER_FLOW -> GameCoverFlow(
                                 games = filteredGames,
                                 onGameClick = onGameClick,
                                 onGameLongClick = onGameLongClick,
                             )
-                        } else {
-                            GameGrid(
+                            // 「网格」风格：恢复瀑布流之前的等高网格
+                            AppSettingsStore.GAME_CARD_STYLE_GRID -> UniformGameGrid(
+                                games = filteredGames,
+                                gridState = uniformGridState,
+                                onGameClick = onGameClick,
+                                onGameLongClick = onGameLongClick,
+                            )
+                            // 「瀑布」风格（默认）
+                            else -> GameGrid(
                                 games = filteredGames,
                                 gridState = gridState,
                                 onGameClick = onGameClick,
@@ -1636,14 +1650,7 @@ internal fun GameCard(
     /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
     showEngineBadge: Boolean = false,
 ) {
-    val engineName = when (game.engine) {
-        EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
-        // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
-        EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
-        // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
-        EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
-        else -> game.engine.displayName
-    }
+    val engineName = gameCardEngineName(game)
     val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
     val pressModifier = if (onLongClick != null) {
         Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -1675,19 +1682,7 @@ internal fun GameCard(
                 .background(game.engine.coverColor()),
             contentAlignment = Alignment.Center,
         ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Tyranor",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.7f),
-                )
-                Text(
-                    engineName,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
-                    modifier = Modifier.padding(top = 4.dp),
-                )
-            }
+            GameCoverPlaceholder(engineName)
             if (bmp != null) {
                 Image(
                     bitmap = bmp,
@@ -1695,22 +1690,11 @@ internal fun GameCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
                 )
-                // 左上角引擎类型角标：开关开启且实际渲染封面的卡片才显示（无封面占位卡不显示）；
-                // 尺寸为标注规格（labelSmall 11sp + 边距减半，AGENTS.md 明文豁免）
-                if (showEngineBadge) Text(
-                    game.engine.abbr,
-                    style = MaterialTheme.typography.labelSmall,
-                    // 角标样式固定（半透明黑底 + 白字，见 theme/Color.kt），不随主题色变化
-                    color = CoverBadgeText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(3.dp)
-                        .graphicsLayer { alpha = coverAlpha }
-                        .clip(AppComponentShape)
-                        .background(CoverBadgeBackground)
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                // 左上角引擎类型角标：开关开启且实际渲染封面的卡片才显示（无封面占位卡不显示）
+                if (showEngineBadge) GameCoverEngineBadge(
+                    engine = game.engine,
+                    alpha = coverAlpha,
+                    modifier = Modifier.align(Alignment.TopStart),
                 )
             }
         }
@@ -1730,6 +1714,171 @@ internal fun GameCard(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
+}
+
+/**
+ * 游戏页「网格」卡片风格：恢复瀑布流之前的等高网格（3:4 封面 + 封面下方单行标题）。
+ * 列数、封面加载优化、名称标签与角标设置与瀑布流一致。
+ */
+@Composable
+internal fun UniformGameGrid(
+    games: List<ScanGame>,
+    gridState: LazyGridState,
+    onGameClick: (ScanGame) -> Unit,
+    onGameLongClick: (ScanGame) -> Unit,
+) {
+    // 液态玻璃导航悬浮时不占布局：列表底部预留导航高度（与瀑布流一致）
+    val glassBottomInset = glassNavBottomInset()
+    val hideTitleTag by AppSettingsStore.gameCardTitleTagState.collectAsState()
+    val showEngineBadge by AppSettingsStore.gameCardBadgeState.collectAsState()
+    // 大屏（横屏/平板）一行六个卡片，窄屏保持一行三个
+    val columns = if (isWideScreen()) 6 else 3
+    val isScrolling = remember(gridState) { { gridState.isScrollInProgress } }
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        state = gridState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp + glassBottomInset),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        gridItems(
+            items = games,
+            key = ::gameCardItemKey,
+            contentType = { "game_card" },
+        ) { game ->
+            UniformGameCard(
+                game = game,
+                onClick = { onGameClick(game) },
+                onLongClick = { onGameLongClick(game) },
+                isScrolling = isScrolling,
+                hideTitleTag = hideTitleTag,
+                showEngineBadge = showEngineBadge,
+            )
+        }
+    }
+}
+
+/**
+ * 「网格」卡片：3:4 封面卡片 + 封面下方单行标题（标题在卡片表面外，沿页面背景）；
+ * 点按/长按作用于整张卡片（封面 + 标题）。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun UniformGameCard(
+    game: ScanGame,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    /** 当前是否正在滑动/惯性滚动的只读查询；在 producer 协程内读取，避免组合期订阅滚动状态。 */
+    isScrolling: () -> Boolean = neverScrolling,
+    /** 卡片名称隐藏【】/[] 标签（应用设置「卡片隐藏名称标签」）。 */
+    hideTitleTag: Boolean = false,
+    /** 左上角引擎类型角标（应用设置「卡片引擎角标」，默认关）。 */
+    showEngineBadge: Boolean = false,
+) {
+    val engineName = gameCardEngineName(game)
+    val coverBitmap by rememberCoverBitmap(game.coverUri, isScrolling)
+    val pressModifier = if (onLongClick != null) {
+        Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
+    } else {
+        Modifier.clickable(onClick = onClick)
+    }
+    val bmp = coverBitmap
+    val coverAlpha by animateFloatAsState(
+        targetValue = if (bmp != null) 1f else 0f,
+        animationSpec = tween(durationMillis = 300),
+        label = "coverFadeIn",
+    )
+    // 整列参与点击：封面与下方标题都可打开操作抽屉 / 长按弹窗
+    Column(modifier.then(pressModifier)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(3f / 4f)
+                .clip(AppComponentShape)
+                .background(game.engine.coverColor())
+                .glassBorder(),
+            contentAlignment = Alignment.Center,
+        ) {
+            GameCoverPlaceholder(engineName)
+            if (bmp != null) {
+                Image(
+                    bitmap = bmp,
+                    contentDescription = game.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha },
+                )
+                if (showEngineBadge) GameCoverEngineBadge(
+                    engine = game.engine,
+                    alpha = coverAlpha,
+                    modifier = Modifier.align(Alignment.TopStart),
+                )
+            }
+        }
+        // 旧网格风格：标题在封面下方单行显示，不使用白色信息区
+        Text(
+            if (hideTitleTag) GameTitleTags.stripAll(game.title) else game.title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = PageTextColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        )
+    }
+}
+
+/** 卡片无封面占位使用的引擎显示名：Switch / Plugin 等短名处理，两种卡片共用。 */
+@Composable
+private fun gameCardEngineName(game: ScanGame): String = when (game.engine) {
+    EngineType.UNKNOWN -> stringResource(R.string.engine_name_unknown)
+    // 无封面占位卡用短名「Switch」，避免「Nintendo Switch」过长
+    EngineType.NINTENDO_SWITCH -> stringResource(R.string.engine_name_switch)
+    // 第三方运行时游戏在游戏库中统一用 Plugin 表示引擎；模块名只在「引擎模块管理」页展示。
+    EngineType.RUNTIME_MODULE -> stringResource(R.string.engine_name_runtime_module)
+    else -> game.engine.displayName
+}
+
+/** 无封面占位（Tyranor + 引擎名）：瀑布流与网格两种卡片共用。 */
+@Composable
+private fun GameCoverPlaceholder(engineName: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "Tyranor",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White.copy(alpha = 0.7f),
+        )
+        Text(
+            engineName,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+/** 封面左上角引擎类型角标：瀑布流与网格两种卡片共用（labelSmall 属 AGENTS.md 明文豁免）。 */
+@Composable
+private fun GameCoverEngineBadge(
+    engine: EngineType,
+    alpha: Float,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        engine.abbr,
+        style = MaterialTheme.typography.labelSmall,
+        // 角标样式固定（半透明黑底 + 白字，见 theme/Color.kt），不随主题色变化
+        color = CoverBadgeText,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .padding(3.dp)
+            .graphicsLayer { this.alpha = alpha }
+            .clip(AppComponentShape)
+            .background(CoverBadgeBackground)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
 }
 
 /** 不感知滚动的默认查询（首页/封面流等非网格调用方复用，避免默认参数每次新建 lambda）。 */
