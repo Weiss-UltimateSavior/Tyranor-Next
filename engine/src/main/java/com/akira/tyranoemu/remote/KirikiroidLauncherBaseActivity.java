@@ -39,6 +39,7 @@ import java.util.Map;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.xmlpull.v1.XmlPullParser;
+import org.xmlpull.v1.XmlPullParserFactory;
 import org.xmlpull.v1.XmlSerializer;
 
 import bridge.NativeBridge;
@@ -330,15 +331,19 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
     }
 
     /**
-     * When a key lands in the global file, removes its stale copy (including any
-     * leftover _rinne_injected_* marker) from the game directory XML so the game
-     * follows the global value. Game files are launcher-managed: removal is
-     * unconditional (legacy pre-marker builds wrote keys without markers).
+     * When a key lands in the global file, removes the launcher's stale copy (including the
+     * _rinne_injected_* marker) from the game directory XML so the game follows the global
+     * value. Removal is ownership-tracked: engine preference keys are real kernel keys, so
+     * the game directory XML may also hold values the user wrote through the kernel's own
+     * preference UI. Those entries carry no marker and must survive the clear (the kernel
+     * applies a per-game value ahead of the global one); only an entry still equal to the
+     * value this launcher injected (marker match) is removed, and an entry the user has
+     * since changed in the kernel UI is disowned by dropping the marker and keeping the value.
      */
-    private static void clearStalePreferenceItem(File target, File gameFile, String name, String markerName)
+    static void clearStalePreferenceItem(File target, File gameFile, String name, String markerName)
             throws Exception {
         if (target == gameFile || gameFile == null || !gameFile.isFile()) return;
-        applyPreferenceItem(gameFile, name, markerName, null, false);
+        applyPreferenceItem(gameFile, name, markerName, null, true);
     }
 
     private String gameRootDir() {
@@ -372,14 +377,14 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         return applyPreferenceItem(file, name, markerName, value, true);
     }
 
-    private static boolean applyPreferenceItem(
+    static boolean applyPreferenceItem(
             File file, String name, String markerName, String value, boolean trackOwnership)
             throws Exception {
         LinkedHashMap<String, String> items = new LinkedHashMap<>();
         List<String[]> customs = new ArrayList<>();
         LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
         if (file.isFile()) {
-            XmlPullParser parser = Xml.newPullParser();
+            XmlPullParser parser = XmlPullParserFactory.newInstance().newPullParser();
             try (FileInputStream in = new FileInputStream(file)) {
                 parser.setInput(in, null);
                 for (int event = parser.getEventType();
@@ -449,7 +454,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             return;
         }
         File tmp = new File(parent, file.getName() + ".tmp");
-        XmlSerializer serializer = Xml.newSerializer();
+        XmlSerializer serializer = XmlPullParserFactory.newInstance().newSerializer();
         try (FileOutputStream out = new FileOutputStream(tmp)) {
             serializer.setOutput(out, "UTF-8");
             serializer.startDocument("UTF-8", true);

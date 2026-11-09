@@ -68,6 +68,7 @@ dependencies {
     //   不初始化内部字段会抛 NPE，纯 JVM 单测无法覆盖这两条路径
     // （与 app 模块 GameOverridePartitionsTest 同一约定）
     testImplementation libs.json
+    testImplementation libs.kxml2
 }
 
 /**
