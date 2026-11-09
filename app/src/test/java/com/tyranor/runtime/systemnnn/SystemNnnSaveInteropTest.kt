@@ -129,6 +129,7 @@ class SystemNnnSaveInteropTest {
         rejectsSnapshot { put(it, "emberfall.sav", "damaged") }
         rejectsSnapshot { putStory(it, "emberfall.sav", 1) }
         rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9)) }
+        rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload(version = 14)) }
         rejectsSnapshot {
             putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload()).apply {
                 val bytes = readBytes()
@@ -512,9 +513,9 @@ class SystemNnnSaveInteropTest {
         assertFalse(SystemNnnHost.hasActiveSaveAccess())
     }
 
-    private fun snapshotPayload(): ByteArray =
+    private fun snapshotPayload(version: Int = 13): ByteArray =
         ByteBuffer.wrap(Random(7).nextBytes(32768)).order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(0x31534e4e).putInt(13).array()
+            .putInt(0x31534e4e).putInt(version).array()
 
     private fun putStory(root: File, name: String, slot: Int, snapshot: ByteArray? = null): File {
         val script = "start.spt"

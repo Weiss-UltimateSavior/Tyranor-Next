@@ -28,8 +28,9 @@ final class GameSave {
     private static final int SNAPSHOT_CURSOR=MAX_TICKS+1;
     private static final int LEGACY_RUN_BYTES=5*Integer.BYTES+1;
     private static final int SNAPSHOT_TAG=0x534e5031, MAX_SNAPSHOT=48*1024*1024;
-    // Raw snapshots start with NNS1 and a little-endian schema version.
+    // Match the NNS1 header and snapshot_version in GameSession::load_snapshot.
     private static final int NATIVE_SNAPSHOT_MAGIC=0x4e4e5331, NATIVE_SNAPSHOT_HEADER=2*Integer.BYTES;
+    private static final int MAX_NATIVE_SNAPSHOT_VERSION=13;
     static final class Run {
         int repeats;
         final int ms,x,y,choice;
@@ -341,7 +342,9 @@ final class GameSave {
         CRC32 crc=new CRC32();
         byte[] buffer=new byte[8192];
         try(DataInputStream zip=new DataInputStream(new CheckedInputStream(new InflaterInputStream(packed),crc))){
-            if(zip.readInt()!=NATIVE_SNAPSHOT_MAGIC||Integer.reverseBytes(zip.readInt())<=0)return false;
+            if(zip.readInt()!=NATIVE_SNAPSHOT_MAGIC)return false;
+            int version=Integer.reverseBytes(zip.readInt());
+            if(version<1||version>MAX_NATIVE_SNAPSHOT_VERSION)return false;
             for(int remaining=size-NATIVE_SNAPSHOT_HEADER;remaining>0;){
                 int count=Math.min(remaining,buffer.length);
                 zip.readFully(buffer,0,count);

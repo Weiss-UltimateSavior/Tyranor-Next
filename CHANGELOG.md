@@ -8,7 +8,7 @@
 - 新增 CMVS 引擎（Purple SOFTWARE，cmvs-rs）接入：NativeActivity + `libcmvs_loader.so`，真实运行库 `libcmvs_android.so` 走 `engine-runtime/cmvs` 分片首启解压；仅支持 19 部登记作品，字体由用户自选，要求 Vulkan，仅触摸输入；独立存档位于 App 私有 `files/cmvs/users/<hash>`，不写游戏目录。
 
 - 内置 SystemNNN-Emberfall 0.6.14。扫描游戏目录中的 `spt/sys.spt` 并直接启动 ARM64 播放器。存档管理及 WebDAV 同步只处理游戏目录内的 Emberfall 存档。
-- SystemNNN 在 ZIP 导入和 WebDAV 恢复前校验实际可读取的剧情槽，保护现有剧情档免受不完整备份覆盖。
+- SystemNNN 在 ZIP 导入和 WebDAV 恢复前校验剧情槽的格式、完整性和快照版本，保护现有剧情档免受不完整备份覆盖。
 - SystemNNN 按游戏配置绘制全屏台词底图、快捷栏、等待时的对话窗、注音和强调。第 31 层效果在台词之后合成，系统菜单背景按原版规则捕获。
 - SystemNNN 普通 DRAW 按配置绘制全屏旁白底图。APPEND 保留已显文字，转场后的续句按原版恢复普通对话版式。已读姓名和选项的注音跟随文字状态。第 31 层 GET 保存台词或选项合成后的画面。
 - SystemNNN 存读档使用游戏的分页配置，标题「继续游戏」读取最近一次成功选择的档。
