@@ -116,6 +116,46 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun flushPendingRetainsSessionWhenSystemNnnLocksAfterUpload() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-reopened-after-upload", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        val before = harness.setActive(game, "before")
+        val progress = harness.setActive(game, "after")
+        val metadata = SaveContentHash.text("progress-metadata")
+        val directoryKey = harness.world.activeKey(game)
+        val key = harness.key(game)
+        val session = JSONObject().put("token", "pending-exit").put("uri", game.uri)
+            .put("activeKey", directoryKey).put("baseline", before)
+        harness.sessions.save(key, session)
+
+        var lockAfterUpload = true
+        suspend fun flush() = SaveSyncRuntime.flushPending(harness.root, harness.world) { target, activeKey ->
+            assertEquals(game, target)
+            assertEquals(directoryKey, activeKey)
+            if (lockAfterUpload && harness.transport.uploadCount(progress) == 1) {
+                throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+            }
+            SaveSyncRuntime.SaveTreeSnapshot(progress, metadata)
+        }
+
+        val busy = flush()
+        assertEquals(1, busy.uploaded)
+        assertEquals(1, busy.busy)
+        assertTrue(busy.failures.isEmpty())
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+        assertEquals(session.toString(), harness.sessions.load(key).toString())
+
+        lockAfterUpload = false
+        val retry = flush()
+        assertEquals(0, retry.busy)
+        assertEquals(emptyList<SaveSyncFailure>(), retry.failures)
+        assertEquals(1, harness.transport.uploadCount(progress))
+        assertFalse(harness.sessions.load(key).has("token"))
+        assertEquals(progress, harness.baselines.load(key).getString("contentHash"))
+    }
+
+    @Test
     fun excludedGameIsSkippedByUriWhileSameTitleGameStillUploads() = runBlocking {
         val harness = Harness(temp)
         val excluded = harness.addGame("same-title")
