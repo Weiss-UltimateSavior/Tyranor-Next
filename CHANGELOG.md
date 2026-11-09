@@ -4,6 +4,7 @@
 
 ### 新增
 
+- 设置页新增「关于应用」入口（灯泡图标 `ic_settings_about`），进入 `AboutAppActivity`：页面以「应用图标（56dp）+ Tyranor NEXT 版本号」一行居中展示，下方为「项目地址 / 致谢说明 / 免责声明」三个条目；整组内容自顶栏下方 60dp 开始；「项目地址」点击打开系统浏览器访问 GitHub 仓库，「免责声明」点击弹出模拟器免责声明弹窗，「致谢说明」点击行为暂未接入。
 - 新增 CMVS 引擎（Purple SOFTWARE，cmvs-rs）接入：NativeActivity + `libcmvs_loader.so`，真实运行库 `libcmvs_android.so` 走 `engine-runtime/cmvs` 分片首启解压；仅支持 19 部登记作品，字体由用户自选，要求 Vulkan，仅触摸输入；独立存档位于 App 私有 `files/cmvs/users/<hash>`，不写游戏目录。
 
 - 新增首次使用七步快速入门教练层：在真实首页、游戏页、引擎页和设置页中展示添加、搜索、封面、重新扫描等入口；新安装用户可跳过或完成引导，已有数据的升级用户默认跳过，通知权限延后到引导完成后请求。

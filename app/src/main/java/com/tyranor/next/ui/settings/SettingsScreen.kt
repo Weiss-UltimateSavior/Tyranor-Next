@@ -371,6 +371,13 @@ fun SettingsScreen(
                         onClick = { showGroupDialog = true },
                     )
                 }
+                item {
+                    SettingsEntryCard(
+                        title = stringResource(R.string.settings_about_app),
+                        iconRes = R.drawable.ic_settings_about,
+                        onClick = { startActivityWithPageTransition(ctx, AboutAppActivity.createIntent(ctx)) },
+                    )
+                }
                 item { BottomInsetSpacer() }
             }
         }

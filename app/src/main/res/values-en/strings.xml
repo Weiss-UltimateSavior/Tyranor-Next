@@ -24,6 +24,12 @@
     <string name="nav_floating_collapse">Collapse navigation</string>
 
     <string name="settings_app_title">App settings</string>
+    <string name="settings_about_app">About app</string>
+    <string name="about_project_url">Project URL</string>
+    <string name="about_app_version">Tyranor NEXT %1$s</string>
+    <string name="about_acknowledgements">Acknowledgements</string>
+    <string name="about_disclaimer">Disclaimer</string>
+    <string name="about_disclaimer_body">This app only provides launching, configuration, and management of game runtime environments. It does not include, host, or distribute any game data, commercial assets, or cracked resources.\n\nThe emulators and compatibility runtimes used by this app (including third-party components) are independent projects, and their copyrights belong to their respective authors. Before use, make sure you legally own and are entitled to run the games concerned, and comply with the licenses of both the games and the emulators.\n\nAny save corruption, data loss, device malfunction, account suspension, or other direct or indirect damages arising from running games with this app are borne solely by the user. The developers make no guarantee regarding game compatibility, stability, or results.\n\nDo not use this app for copyright infringement, piracy, or any purpose that violates applicable laws and regulations.</string>
     <string name="settings_language_title">Language</string>
     <string name="settings_language_system">Follow system</string>
     <string name="settings_language_zh">简体中文</string>
