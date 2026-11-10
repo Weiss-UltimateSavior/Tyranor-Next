@@ -49,6 +49,8 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 junit = { module = "junit:junit", version.ref = "junit" }
 # 本地单测覆盖 android.jar 的 org.json stub（GameOverridePartitionsTest 需要）
 json = { module = "org.json:json", version = "20240303" }
+# 引擎偏好 XML 解析的 JVM 单测需要真实 XmlPullParser 实现（XmlPullParserFactory 按 classpath 加载）
+kxml2 = { module = "net.sf.kxml:kxml2", version = "2.3.0" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "nav3Core" }
 androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "nav3Core" }
