@@ -72,8 +72,6 @@ private val QuickActionCoverHeight = 132.dp
 private val QuickActionCoverOverhang = 34.dp
 private val QuickActionCoverTitleGap = 14.dp
 private val QuickActionItemSpacing = 10.dp
-// 删除游戏整行长按钮的最小高度（与普通条目区分，略高于条目）
-private val QuickActionDeleteButtonHeight = 48.dp
 // 封面在卡片内的可见高度去掉正文顶部内边距，即标题行最小高度（默认与封面底边对齐）。
 private val QuickActionHeaderHeight =
     QuickActionCoverHeight - QuickActionCoverOverhang - AppDialogContentVerticalPadding
@@ -357,7 +355,7 @@ private fun QuickActionItem(
     )
 }
 
-/** 删除游戏：整行纯色长按钮（危险色实底 + 居中图标与文案），与普通条目区分。 */
+/** 删除游戏：整行纯色长按钮，尺寸对齐游戏操作抽屉底部的主操作长按钮。 */
 @Composable
 private fun QuickActionDeleteButton(onClick: () -> Unit) {
     val dangerColor = MaterialTheme.colorScheme.error
@@ -365,7 +363,6 @@ private fun QuickActionDeleteButton(onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = QuickActionDeleteButtonHeight)
             .clip(AppComponentShape)
             .background(dangerColor)
             // 弹窗点击反馈规范：长按钮不使用涟漪
@@ -373,7 +370,9 @@ private fun QuickActionDeleteButton(onClick: () -> Unit) {
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
-            ),
+            )
+            // 与游戏操作抽屉底部 NoRippleButton 相同的 20/10 内边距（内容行高 20dp → 按钮高 40dp）
+            .padding(horizontal = 20.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
