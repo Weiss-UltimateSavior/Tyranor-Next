@@ -65,7 +65,6 @@ class GameShortcutActivity : ComponentActivity() {
                     setContent {
                         TyranorNextTheme {
                             ProvideAppLocale {
-                                SystemNnnCopyDialogs(systemNnnLaunch.copyUi, systemNnnLaunch::cancelCopy)
                             }
                         }
                     }

@@ -175,12 +175,6 @@ object EngineLauncher {
      *  本次 = 仅当次应用；总是 = 记住为全局 auto；不再 = 记住为全局 off。 */
     enum class ArtemisPatchChoice { ONCE, ALWAYS, NEVER }
 
-    /** First-copy consent runs before the save locks. A caller can cancel copying through its launch job. */
-    class SystemNnnCopyInteraction(
-        val confirmFirstCopy: suspend () -> Boolean,
-        val onCopying: suspend (Boolean) -> Unit,
-    )
-
     /** 尝试启动游戏。返回类型化结果（P0-6）；[LaunchResult.Success] 表示成功发起。
      *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。
      *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
@@ -189,7 +183,6 @@ object EngineLauncher {
         context: Context,
         game: ScanGame,
         patchChoice: ArtemisPatchChoice? = null,
-        systemNnnCopy: SystemNnnCopyInteraction? = null,
     ): LaunchResult =
         withContext(Dispatchers.IO) {
             val entry = RuntimeModuleBindings.builtInSystemNnn(game)
@@ -203,7 +196,7 @@ object EngineLauncher {
                 currentCoroutineContext().ensureActive()
                 result = if (entry.engine == EngineType.SYSTEMNNN) {
                     restoreSystemNnn(context, entry)?.let { return@withContext it }
-                    prepareSystemNnnResources(context, entry, systemNnnCopy)?.let { return@withContext it }
+                    prepareSystemNnnResources(context, entry)?.let { return@withContext it }
                     // A source-to-copy rebind also writes the URI's version checkpoint.
                     SaveSyncLocks.versions(entry.uri) { launchAdmitted() }
                 } else launchAdmitted()
@@ -1071,75 +1064,26 @@ object EngineLauncher {
         }
     }
 
-    internal suspend fun checkSystemNnnCopyConsent(
-        restoreResources: Boolean,
-        interaction: SystemNnnCopyInteraction?,
-    ): LaunchResult.Failure.SystemNnnResourcesFailed? {
-        if (restoreResources) return null
-        if (interaction == null) {
-            return LaunchResult.Failure.SystemNnnResourcesFailed(SystemNnnResourceError.COPY_CONFIRMATION_REQUIRED)
-        }
-        if (!interaction.confirmFirstCopy()) throw CancellationException("SystemNNN copy declined")
-        return null
-    }
-
+    /**
+     * SystemNNN opens the game directory in place. A directory that the engine cannot read or write
+     * is reported as a typed failure; the app never copies the game elsewhere.
+     *
+     * Copies committed by older builds stay readable so their saves are not stranded, but they are
+     * never created or rehydrated anymore.
+     */
     private suspend fun prepareSystemNnnResources(
         context: Context,
         game: ScanGame,
-        systemNnnCopy: SystemNnnCopyInteraction?,
     ): LaunchResult.Failure? {
         fun failed(error: SystemNnnResourceError) = LaunchResult.Failure.SystemNnnResourcesFailed(error)
         try {
             val copy = SystemNnnGameDirectory.committed(context, game.uri)
-            val restoreResources = copy != null && SystemNnnCopyStore.resourcesEvicted(copy)
-            if (copy != null && !restoreResources) {
+            if (copy != null) {
+                // Legacy copy from a build that still created them; direct access is not required.
                 if (!SystemNnnCopyStore.readableBootstrap(copy)) return failed(SystemNnnResourceError.CORRUPT_COPY)
                 return if (systemNnnSavesWritable(context, copy)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
             }
             val path = SystemNnnGameDirectory.resolve(game.uri) ?: return LaunchResult.Failure.GameDirUnresolved
-            // Validate the canonical volume boundary before probing any native resource bytes.
-            val accessible = SystemNnnGameDirectory.accessible(game.uri, path)
-            val requiresCopy = Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
-                (accessible == null || !SystemNnnCopyStore.readableBootstrap(accessible) || !systemNnnSavesWritable(context, accessible))
-            if (restoreResources || requiresCopy) {
-                val source = SystemNnnGameDirectory.sourceDocument(game.uri)
-                    ?: return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
-                val granted = SystemNnnCopyStore.findAuthorizedSource(context, source)
-                if (granted == null) {
-                    if (!restoreResources) requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
-                    return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
-                }
-                checkSystemNnnCopyConsent(restoreResources, systemNnnCopy)?.let { return it }
-                val caller = currentCoroutineContext()
-                val sourceId = SystemNnnCopyStore.sourceIdentity(source)
-                // Only the first copy changes the active sav. Wait for in-flight sync writes
-                // before publishing it. Resource rehydration can already hold launch admission.
-                val imported = try {
-                    systemNnnCopy?.onCopying?.invoke(true)
-                    if (restoreResources) {
-                        SystemNnnCopyStore.importDirectory(context, granted, sourceId, false) { caller.ensureActive() }
-                    } else {
-                        SystemNnnCopyStore.stageDirectory(context, granted, sourceId, true) { caller.ensureActive() }.use { staged ->
-                            val original = SystemNnnGameDirectory.resolve(source.toString()) ?: path
-                            val originalRoot = accessible?.path ?: try {
-                                original.canonicalPath
-                            } catch (_: IOException) {
-                                original.absolutePath
-                            }
-                            val originalKey = SAVE_DIRECTORY_KEY_PREFIX + originalRoot
-                            SaveSyncLocks.active(originalKey) {
-                                SaveSyncLocks.mutation {
-                                    SaveSyncRuntime.requireLaunchAvailable(context, originalKey)
-                                    staged.publish()
-                                }
-                            }
-                        }
-                    }
-                } finally {
-                    if (systemNnnCopy != null) withContext(NonCancellable) { systemNnnCopy.onCopying(false) }
-                }
-                return if (systemNnnSavesWritable(context, imported)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
-            }
             requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
             val root = SystemNnnGameDirectory.accessible(game.uri, path) ?: return failed(when {
                 Files.notExists(path.toPath()) -> SystemNnnResourceError.SOURCE_MISSING
@@ -1154,17 +1098,16 @@ object EngineLauncher {
             return LaunchResult.Failure.SavePreparationFailed(failure.code)
         } catch (failure: SystemNnnCopyStore.Failure) {
             return failed(when (failure.reason) {
-                SystemNnnCopyStore.Reason.NO_GRANT -> SystemNnnResourceError.STORAGE_RESTRICTED
                 SystemNnnCopyStore.Reason.SOURCE_MISSING -> SystemNnnResourceError.SOURCE_MISSING
                 SystemNnnCopyStore.Reason.INVALID_SOURCE -> SystemNnnResourceError.INVALID_SOURCE
-                SystemNnnCopyStore.Reason.INCOMPLETE_SOURCE, SystemNnnCopyStore.Reason.BUSY -> SystemNnnResourceError.SOURCE_BUSY
-                SystemNnnCopyStore.Reason.NO_SPACE -> SystemNnnResourceError.NO_SPACE
-                SystemNnnCopyStore.Reason.COMMIT_FAILED -> SystemNnnResourceError.COMMIT_FAILED
+                SystemNnnCopyStore.Reason.BUSY -> SystemNnnResourceError.SOURCE_BUSY
                 SystemNnnCopyStore.Reason.CORRUPT_COPY -> SystemNnnResourceError.CORRUPT_COPY
-                SystemNnnCopyStore.Reason.COPY_FAILED -> SystemNnnResourceError.COPY_FAILED
+                SystemNnnCopyStore.Reason.NO_GRANT,
+                SystemNnnCopyStore.Reason.COPY_FAILED,
+                -> SystemNnnResourceError.STORAGE_RESTRICTED
             })
         } catch (_: IOException) {
-            return failed(SystemNnnResourceError.COPY_FAILED)
+            return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
         } catch (_: SecurityException) {
             return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
         }

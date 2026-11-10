@@ -18,7 +18,6 @@ import kotlinx.coroutines.launch
 internal class SystemNnnLaunchViewModel : ViewModel() {
     data class Completion(val uri: String, val result: LaunchResult?)
 
-    val copyUi = SystemNnnCopyUi()
     var activeUri by mutableStateOf<String?>(null)
         private set
     var completion by mutableStateOf<Completion?>(null)
@@ -33,7 +32,7 @@ internal class SystemNnnLaunchViewModel : ViewModel() {
         job = viewModelScope.launch {
             var result: LaunchResult? = null
             try {
-                result = EngineLauncher.launch(app, game, systemNnnCopy = copyUi.interaction)
+                result = EngineLauncher.launch(app, game)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
@@ -49,6 +48,4 @@ internal class SystemNnnLaunchViewModel : ViewModel() {
     fun dismissCompletion(value: Completion) {
         if (completion === value) completion = null
     }
-
-    fun cancelCopy() { job?.cancel() }
 }

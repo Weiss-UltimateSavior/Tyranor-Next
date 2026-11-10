@@ -33,12 +33,8 @@ private fun LaunchResult.Failure.toUserMessage(context: Context): String {
         is LaunchResult.Failure.SystemNnnResourcesFailed -> localized.getString(when (error) {
             SystemNnnResourceError.SOURCE_MISSING -> R.string.launch_systemnnn_source_missing
             SystemNnnResourceError.STORAGE_RESTRICTED -> R.string.launch_systemnnn_storage_restricted
-            SystemNnnResourceError.COPY_CONFIRMATION_REQUIRED -> R.string.launch_systemnnn_copy_confirmation_required
             SystemNnnResourceError.INVALID_SOURCE -> R.string.launch_systemnnn_invalid_source
             SystemNnnResourceError.SOURCE_BUSY -> R.string.launch_systemnnn_source_busy
-            SystemNnnResourceError.NO_SPACE -> R.string.launch_systemnnn_no_space
-            SystemNnnResourceError.COPY_FAILED -> R.string.launch_systemnnn_copy_failed
-            SystemNnnResourceError.COMMIT_FAILED -> R.string.launch_systemnnn_commit_failed
             SystemNnnResourceError.CORRUPT_COPY -> R.string.launch_systemnnn_corrupt_copy
             SystemNnnResourceError.SAVE_NOT_WRITABLE -> R.string.launch_systemnnn_save_not_writable
         })

@@ -628,7 +628,6 @@ internal fun GameActionsSheet(
     val scope = rememberCoroutineScope()
     var launchError by remember(game.uri) { mutableStateOf<LaunchErrorState?>(null) }
     val systemNnnLaunch: SystemNnnLaunchViewModel = viewModel()
-    val systemNnnCopy = systemNnnLaunch.copyUi
     // The confirmation can arrive after the background launch checks have started.
     fun launchingSystemNnnGame() = systemNnnLaunch.activeUri == game.uri
     var launchJob by remember(game.uri) { mutableStateOf<Job?>(null) }
@@ -1006,7 +1005,6 @@ internal fun GameActionsSheet(
     launchError?.let { state ->
         LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
-    if (launchingSystemNnnGame()) SystemNnnCopyDialogs(systemNnnCopy, systemNnnLaunch::cancelCopy)
 
 }
 
