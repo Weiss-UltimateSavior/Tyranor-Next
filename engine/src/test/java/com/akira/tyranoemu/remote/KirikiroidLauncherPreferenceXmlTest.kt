@@ -122,6 +122,42 @@ class KirikiroidLauncherPreferenceXmlTest {
     }
 
     @Test
+    fun `missing preference file is created on write`() {
+        val dir = tmp.newFolder("pregame")
+        val game = File(dir, "Kirikiroid2Preference.xml")
+        val changed = KirikiroidLauncherBaseActivity.applyPreferenceItem(
+            game, "renderer", "_rinne_injected_renderer", "software", true,
+        )
+        assertTrue(changed)
+        assertTrue(game.isFile)
+        val after = items(game)
+        assertEquals("software", after["renderer"])
+        assertEquals("software", after["_rinne_injected_renderer"])
+    }
+
+    @Test
+    fun `unset on missing file is a no-op without creating it`() {
+        val dir = tmp.newFolder("pregame2")
+        val game = File(dir, "Kirikiroid2Preference.xml")
+        val changed = KirikiroidLauncherBaseActivity.applyPreferenceItem(
+            game, "renderer", "_rinne_injected_renderer", null, true,
+        )
+        assertFalse(changed)
+        assertFalse(game.exists())
+    }
+
+    @Test
+    fun `legacy font migration no-ops on missing file`() {
+        val dir = tmp.newFolder("pregame3")
+        val game = File(dir, "Kirikiroid2Preference.xml")
+        KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
+            game, "default_font", "_rinne_injected_default_font",
+            "/data/user/0/com.tyranor.next/files/fonts",
+        )
+        assertFalse(game.exists())
+    }
+
+    @Test
     fun `value equal to directory prefix is treated as app written`() {
         val game = tmp.newFile("game.xml").apply {
             writeText(xml(*arrayOf("default_font" to "/data/user/0/com.tyranor.next/files/fonts")))

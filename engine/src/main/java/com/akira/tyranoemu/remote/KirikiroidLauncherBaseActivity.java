@@ -387,23 +387,31 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         return applyPreferenceItem(file, name, markerName, value, true);
     }
 
+    /** Preference XML parse outcomes (see {@link #readPreferenceFile}). */
+    private static final int PREF_PARSE_MISSING = 0;
+    private static final int PREF_PARSE_COMPLETE = 1;
+    private static final int PREF_PARSE_INCOMPLETE = 2;
+
     /**
-     * Parses Item/Custom/KeyMap entries out of a preference XML file. Returns whether the
-     * file was parsed to the end: a mid-parse failure (truncated/corrupt file) leaves the
-     * maps holding only the entries before the failure point, and callers must not write
-     * such a partial snapshot back — doing so would permanently drop the tail entries.
+     * Parses Item/Custom/KeyMap entries out of a preference XML file and returns the parse
+     * outcome: {@link #PREF_PARSE_MISSING} when the file does not exist (first launch / new
+     * game directory — callers treat it as an empty configuration and may create it by
+     * writing), {@link #PREF_PARSE_COMPLETE} when parsed to the end, and
+     * {@link #PREF_PARSE_INCOMPLETE} when a mid-parse failure (truncated/corrupt file)
+     * leaves the maps holding only the entries before the failure point — callers must not
+     * write such a partial snapshot back, doing so would permanently drop the tail entries.
      */
-    private static boolean readPreferenceFile(
+    private static int readPreferenceFile(
             File file,
             LinkedHashMap<String, String> items,
             List<String[]> customs,
             LinkedHashMap<Integer, Integer> keyMaps) {
-        if (!file.isFile()) return false;
+        if (!file.isFile()) return PREF_PARSE_MISSING;
         XmlPullParser parser;
         try {
             parser = XmlPullParserFactory.newInstance().newPullParser();
         } catch (Exception error) {
-            return false;
+            return PREF_PARSE_INCOMPLETE;
         }
         boolean complete = false;
         try (FileInputStream in = new FileInputStream(file)) {
@@ -432,7 +440,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         } catch (Exception ignored) {
             // Mid-parse failure: report incomplete so callers skip the write-back.
         }
-        return complete;
+        return complete ? PREF_PARSE_COMPLETE : PREF_PARSE_INCOMPLETE;
     }
 
     /**
@@ -447,9 +455,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         LinkedHashMap<String, String> items = new LinkedHashMap<>();
         List<String[]> customs = new ArrayList<>();
         LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
-        boolean complete = readPreferenceFile(gameFile, items, customs, keyMaps);
+        int parse = readPreferenceFile(gameFile, items, customs, keyMaps);
         String value = items.get(name);
-        if (!complete || value == null || items.containsKey(markerName) ||
+        if (parse != PREF_PARSE_COMPLETE || value == null || items.containsKey(markerName) ||
                 !(value.equals(appFontsDir) || value.startsWith(appFontsDir + "/"))) return;
         items.remove(name);
         writePreferenceXml(gameFile, items, customs, keyMaps);
@@ -461,7 +469,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         LinkedHashMap<String, String> items = new LinkedHashMap<>();
         List<String[]> customs = new ArrayList<>();
         LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
-        boolean complete = readPreferenceFile(file, items, customs, keyMaps);
+        int parse = readPreferenceFile(file, items, customs, keyMaps);
         boolean changed = false;
         if (value != null) {
             changed |= !value.equals(items.put(name, value));
@@ -486,8 +494,9 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             changed |= items.remove(name) != null;
             changed |= items.remove(markerName) != null;
         }
-        // 不完整解析（截断/损坏文件）不写回：部分快照会永久丢失损坏点之后的条目。
-        if (!changed || !complete) return false;
+        // 文件缺失（首次启动/新游戏目录）按空配置创建写入；不完整解析（截断/损坏）
+        // 跳过写回——部分快照会永久丢失损坏点之后的条目。
+        if (!changed || parse == PREF_PARSE_INCOMPLETE) return false;
         writePreferenceXml(file, items, customs, keyMaps);
         return true;
     }
