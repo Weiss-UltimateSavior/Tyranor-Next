@@ -497,58 +497,6 @@ class SystemNnnSaveInteropTest {
         assertFalse(original.resolve("sav").exists())
     }
 
-    @Test fun freshSafCopyAndZipReplacementCannotUseTheSourceAtTheSameTime() {
-        val base = temp.newFolder("systemnnn-imports").canonicalFile
-        val source = "primary:Games/Sample"
-        val original = temp.newFolder().canonicalFile
-        val saves = original.resolve("sav").apply { check(mkdir()) }
-        val oldStory = putStory(saves, "emberfall.sav", 0)
-        val incoming = GameSaveManager.createZipStaging(temp.root)
-        val newStory = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
-        val store = SystemNnnSaveStore(original, saves, ::validateFixture)
-
-        val staged = SystemNnnCopyStore.stageDirectory(base, source, true, {}) {
-            SystemNnnCopyStore.ImportSource { staging ->
-                put(staging, "spt/sys.spt", "script")
-                SystemNnnCopyStore.SaveCopy { publish ->
-                    val busy = assertThrows(SystemNnnCopyStore.Failure::class.java) {
-                        SystemNnnCopyStore.withImportLock(base, source) { error("Save target must wait for publication") }
-                    }
-                    assertEquals(SystemNnnCopyStore.Reason.BUSY, busy.reason)
-                    saves.copyRecursively(staging.resolve("sav"))
-                    publish.run()
-                }
-            }
-        }
-
-        val importedSaves = staged.use {
-            withExternalLock(base.resolve("${SystemNnnCopyStore.key(source)}.lock")) {
-                val busy = assertThrows(SystemNnnCopyStore.Failure::class.java) { staged.publish() }
-                assertEquals(SystemNnnCopyStore.Reason.BUSY, busy.reason)
-            }
-
-            SystemNnnCopyStore.withImportLock(base, source) {
-                assertEquals(null, SystemNnnCopyStore.committedRoot(base, source))
-                val busy = assertThrows(SystemNnnCopyStore.Failure::class.java) { staged.publish() }
-                assertEquals(SystemNnnCopyStore.Reason.BUSY, busy.reason)
-                store.access { store.replace(incoming) }
-            }
-            staged.publish().resolve("sav")
-        }
-        assertFalse(importedSaves.resolve(oldStory.name).exists())
-        assertArrayEquals(newStory.readBytes(), importedSaves.resolve(newStory.name).readBytes())
-    }
-
-    @Test fun resourceRehydrationCannotCreateAReplacementSaveDirectory() {
-        val base = temp.newFolder("systemnnn-imports").canonicalFile
-        val source = "primary:Games/MissingCopy"
-        val failure = assertThrows(SystemNnnCopyStore.Failure::class.java) {
-            SystemNnnCopyStore.stageDirectory(base, source, false, {}) { error("Missing copy must fail first") }
-        }
-        assertEquals(SystemNnnCopyStore.Reason.CORRUPT_COPY, failure.reason)
-        assertEquals(null, SystemNnnCopyStore.committedRoot(base, source))
-    }
-
     @Test fun normalizesSourceIdentitiesConsistently() {
         val cases = mapOf(
             "primary:Games/Sample" to "primary:Games/Sample",
@@ -590,7 +538,7 @@ class SystemNnnSaveInteropTest {
         assertEquals("PC " + source, SystemNnnCopyStore.committedRoot(base, source)!!.resolve("sav/sysfile3.sav").readText())
     }
 
-    @Test fun clearingAndRestoringImportedResourcesKeepsTheOriginalSaveDirectoryAndLock() {
+    @Test fun clearingImportedResourcesKeepsTheOriginalSaveDirectoryAndLock() {
         val base = temp.newFolder("systemnnn-imports").canonicalFile
         val source = "primary:Games/Sample"
         val entry = base.resolve(SystemNnnCopyStore.key(source))
@@ -615,21 +563,6 @@ class SystemNnnSaveInteropTest {
         put(game, "spt/sys.spt", "partial publish")
         assertFalse(SystemNnnCopyStore.readableBootstrap(game))
 
-        val restored = SystemNnnCopyStore.stageDirectory(base, source, false, {}) {
-            SystemNnnCopyStore.ImportSource { staging ->
-                put(staging, "spt/sys.spt", "reimported script")
-                put(staging, "graphics.dat", "reimported graphics")
-                SystemNnnCopyStore.SaveCopy { error("Resource restore must not copy source saves") }
-            }
-        }.use { it.publish() }
-        assertEquals(game, restored)
-        assertFalse(SystemNnnCopyStore.resourcesEvicted(restored))
-        assertTrue(SystemNnnCopyStore.readableBootstrap(restored))
-        assertEquals("reimported script", restored.resolve("spt/sys.spt").readText())
-        assertEquals("reimported graphics", restored.resolve("graphics.dat").readText())
-        assertEquals("autosave", restored.resolve("SaV/emberfall.resume").readText())
-        assertEquals("PC", restored.resolve("SaV/sysfile3.sav").readText())
-        assertEquals(lockIdentity, Files.readAttributes(lock, BasicFileAttributes::class.java).fileKey())
     }
 
     @Test fun readingCorruptProgressRestoresValidatedBackupAndItsExtension() {

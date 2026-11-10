@@ -1064,7 +1064,7 @@
     <string name="launch_systemnnn_invalid_source">The selected folder has no readable spt/sys.spt. Check that the game was fully extracted and select the folder again.</string>
     <string name="launch_systemnnn_source_busy">The game or a save operation is still running. Close the player and try again.</string>
     <string name="launch_systemnnn_corrupt_copy">A game copy created by an older version is unusable. Back it up through save management, delete the game, then add it again from an accessible original folder; the folder is not switched automatically.</string>
-    <string name="launch_systemnnn_save_not_writable">The game's sav folder is not writable. Check the folder permission, storage availability and free space, then try again.</string>
+    <string name="launch_systemnnn_save_not_writable">The sav folder for the game is not writable. Check the folder permission, storage availability and free space, then try again.</string>
     <string name="launch_systemnnn_source_missing">The game directory no longer exists. Select the game folder containing spt/sys.spt again.</string>
     <string name="save_systemnnn_clear_resources">Clear imported game resources</string>
     <string name="save_systemnnn_clear_resources_message">Free space by clearing resources from the imported copy. The original game folder and all saves in the copy will be kept. The next launch imports the resources again from the original folder.</string>

@@ -65,7 +65,7 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 
 大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4 与 `libSDL2x.so`、`libsystemnnn.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖；CMVS 另在 `lib/` 保留 `libcmvs_loader.so`（NativeActivity `android.app.lib_name`），由 loader 从 `files/engine_runtime/cmvs/` dlopen 真实库并转发 `ANativeActivity_onCreate`。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
 
-- SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。导入副本由 App 的 `SystemNnnCopyStore` 创建、标识和回收，引擎只接收绝对路径，不持久化游戏路径、来源标识或副本清单；待回收项由 App 侧持久队列保存并在启动时续做。
+- SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。游戏目录一律原地读写，不做整目录复制；原目录不可访问即返回类型化启动错误。旧版本遗留的副本由 App 的 `SystemNnnCopyStore` 只读识别与回收，引擎只接收绝对路径，不持久化游戏路径或副本清单；待回收项由 App 侧持久队列保存并在启动时续做。
 
 ### 第三方 APK 运行时模块
 
@@ -120,8 +120,8 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 
 ## 7. 其它功能边界
 
-- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 只替换自身格式的白名单文件，目录、锁及 PC 数据原地保留。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。清理导入副本资源时同时持有来源锁和游戏存档锁，并写入逐出标记；App 在启动前按标记拒绝并重导资源，引擎只接收已就绪的路径。存档管理与同步在此期间仍使用同一 `sav`。
-- SystemNNN 的 SAF 副本由 App 侧 `SystemNnnCopyStore` 管理，首次复制先在按来源分开的暂存目录写入游戏资源。复制源 `sav`、复核源存档和原子提交副本时才取得目录准入、独占存档变更准入与来源锁。ZIP 恢复和删档在同一来源锁内解析并锁定当前 `sav`。资源重导沿用原存档目录。
+- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 只替换自身格式的白名单文件，目录、锁及 PC 数据原地保留。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。清理旧副本资源时同时持有来源锁和游戏存档锁，并写入逐出标记；带标记的副本不再启动，由用户删除并从可访问的原目录重新添加。存档管理与同步在此期间仍使用同一 `sav`。
+- SystemNNN 不再创建 SAF 副本；`SystemNnnCopyStore` 仅保留旧副本的识别与资源回收。ZIP 恢复和删档在同一来源锁内解析并锁定当前 `sav`。
 - SystemNNN 的 ZIP 导入在私有 `:systemnnn_validator` 进程通过绑定服务校验。主进程只传应用缓存中的暂存目录名及校验条件，服务只返回结果。服务死亡、校验超时或快照无效时不会替换活动存档。WebDAV 对已核对同源的副本迁移会话基线和已提交的恢复记录，仍有待提交的恢复事务时返回类型化错误。
 
 - 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
