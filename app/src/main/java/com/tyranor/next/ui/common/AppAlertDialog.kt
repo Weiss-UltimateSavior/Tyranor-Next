@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -95,6 +97,8 @@ internal fun AppAlertDialog(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
+    // 键盘可见时 IME 区域已包含底部导航栏，底部避让必须二选一（见下方 imePadding/navigationBarsPadding）
+    val imeVisible = WindowInsets.ime.getBottom(density) > 0
     val windowHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
     // 正文区域高度上限随屏幕自适应：固定 420dp 会在长列表（如 Artemis 全版本）末条截断
     val textMaxHeight = (configuration.screenHeightDp * 0.62f).dp.coerceIn(280.dp, 560.dp)
@@ -119,7 +123,10 @@ internal fun AppAlertDialog(
 
     Dialog(
         onDismissRequest = { dismiss() },
+        // decorFitsSystemWindows = false：insets 统一由 Compose 处理。保留默认 true 时平台会先把
+        // 弹窗窗口避让到键盘之上，Compose 仍上报完整 IME inset，imePadding 会再抬一次（离键盘过远）。
         properties = DialogProperties(usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
             dismissOnBackPress = currentDismissEnabled, dismissOnClickOutside = currentDismissEnabled),
     ) {
         // 窗口变暗遮罩，点击关闭
@@ -139,8 +146,9 @@ internal fun AppAlertDialog(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .imePadding()
+                    // 键盘可见时只用 imePadding（IME inset 已含导航栏）；收起时用 navigationBarsPadding。
+                    // 两者串联会多垫一档导航栏高度，表现就是卡片离键盘顶部过远。
+                    .then(if (imeVisible) Modifier.imePadding() else Modifier.navigationBarsPadding())
                     .padding(12.dp)
                     .widthIn(max = AppDialogMaxWidth)
                     .fillMaxWidth()
