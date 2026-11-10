@@ -115,6 +115,8 @@ import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.core.engine.external.EmulatorLaunchStyle
 import com.tyranor.next.core.engine.external.ExternalEmulatorRegistry
 import com.tyranor.next.core.engine.external.ExternalEngineModuleRegistry
@@ -625,7 +627,10 @@ internal fun GameActionsSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var launchError by remember(game.uri) { mutableStateOf<LaunchErrorState?>(null) }
-    val systemNnnCopy = remember(game.uri) { SystemNnnCopyUi() }
+    val systemNnnLaunch: SystemNnnLaunchViewModel = viewModel()
+    val systemNnnCopy = systemNnnLaunch.copyUi
+    // The confirmation can arrive after the background launch checks have started.
+    fun launchingSystemNnnGame() = systemNnnLaunch.activeUri == game.uri
     var launchJob by remember(game.uri) { mutableStateOf<Job?>(null) }
     var showCoverSourcePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var coverSearchSource by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
@@ -649,6 +654,15 @@ internal fun GameActionsSheet(
     val saveFormatConvertFailedMessage = stringResource(R.string.save_format_convert_failed)
     val saveBusyEngineRunningMessage = stringResource(R.string.save_busy_engine_running)
 
+    val completion = systemNnnLaunch.completion?.takeIf { it.uri == game.uri }
+    LaunchedEffect(completion) {
+        if (completion == null) return@LaunchedEffect
+        systemNnnLaunch.dismissCompletion(completion)
+        val result = completion.result ?: return@LaunchedEffect
+        launchError = result.toErrorState(context)
+        if (launchError == null) onDismiss()
+    }
+
     /** Blocks destructive cover/shortcut actions while a batch scrape is running. */
     fun isBatchScrapingActive(): Boolean {
         if (!CoverScrapeTaskManager.state.value.running) return false
@@ -659,9 +673,13 @@ internal fun GameActionsSheet(
     // 发起启动；Artemis 需要 PFS 基础补丁且策略为“启动时询问”时，先弹窗确认再带选择启动
     /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
+        if (RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN) {
+            systemNnnLaunch.launch(context, game)
+            return
+        }
         if (launchJob?.isCompleted == false) return
         launchJob = scope.launch {
-            launchError = EngineLauncher.launch(context, game, patchChoice, systemNnnCopy.interaction)
+            launchError = EngineLauncher.launch(context, game, patchChoice)
                 .toErrorState(context)
             if (launchError == null) onDismiss()
         }
@@ -687,7 +705,7 @@ internal fun GameActionsSheet(
 
     /** 启动前统一门：先 Artemis 补丁确认，再 MV/MZ 存档格式确认，最后才真正拉起。 */
     fun beginLaunch() {
-        if (launchJob?.isCompleted == false) return
+        if (launchJob?.isCompleted == false || launchingSystemNnnGame()) return
         scope.launch {
             if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                 showPatchConfirm = true
@@ -733,10 +751,10 @@ internal fun GameActionsSheet(
     }
 
     ModalBottomSheet(
-        onDismissRequest = { if (!systemNnnCopy.busy) onDismiss() },
+        onDismissRequest = { if (!launchingSystemNnnGame()) onDismiss() },
         sheetState = rememberModalBottomSheetState(
             skipPartiallyExpanded = true,
-            confirmValueChange = { it != SheetValue.Hidden || !systemNnnCopy.busy },
+            confirmValueChange = { it != SheetValue.Hidden || !launchingSystemNnnGame() },
         ),
         // 与统一弹窗共用最大宽度，避免横屏/大屏拉伸过宽
         sheetMaxWidth = AppDialogMaxWidth,
@@ -884,7 +902,9 @@ internal fun GameActionsSheet(
                                 verticalPadding = 17.dp,
                                 showArrow = action.showArrow,
                                 leadingIconTint = action.iconTint,
-                                onClick = action.onClick,
+                                onClick = {
+                                    if (!launchingSystemNnnGame()) action.onClick()
+                                }.takeUnless { launchingSystemNnnGame() },
                             )
                         }
                     }
@@ -962,7 +982,7 @@ internal fun GameActionsSheet(
                         if (updated != null) {
                             onGameUpdated(updated)
                             coverSearchSource = null
-                            onDismiss()
+                            if (!launchingSystemNnnGame()) onDismiss()
                         } else {
                             coverBindError = coverDownloadFailedMessage
                         }
@@ -986,7 +1006,7 @@ internal fun GameActionsSheet(
     launchError?.let { state ->
         LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
-    SystemNnnCopyDialogs(systemNnnCopy) { launchJob?.cancel() }
+    if (launchingSystemNnnGame()) SystemNnnCopyDialogs(systemNnnCopy, systemNnnLaunch::cancelCopy)
 
 }
 

@@ -14,6 +14,7 @@ import android.text.method.ScrollingMovementMethod;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.Layout;
+import android.graphics.text.LineBreaker;
 import android.text.style.LeadingMarginSpan;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -42,7 +43,7 @@ final class DialoguePanel extends FrameLayout {
         window=image(); nameWindow=image();
         speaker=text(new DialogueTextView(context));speaker.setGravity(Gravity.TOP|Gravity.LEFT);speaker.setTextDirection(TEXT_DIRECTION_LTR);speaker.setSingleLine(true);
         body=text(new DialogueTextView(context));body.setGravity(Gravity.TOP|Gravity.LEFT);body.setTextDirection(TEXT_DIRECTION_LTR);
-        body.setBreakStrategy(Layout.BREAK_STRATEGY_SIMPLE);body.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
+        body.setBreakStrategy(LineBreaker.BREAK_STRATEGY_SIMPLE);body.setHyphenationFrequency(Layout.HYPHENATION_FREQUENCY_NONE);
         body.setAccessibilityDelegate(new AccessibilityDelegate(){
             @Override public void onInitializeAccessibilityNodeInfo(View host,AccessibilityNodeInfo info){
                 super.onInitializeAccessibilityNodeInfo(host,info);

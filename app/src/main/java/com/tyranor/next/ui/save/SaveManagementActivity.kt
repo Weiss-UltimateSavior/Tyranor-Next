@@ -134,17 +134,10 @@ private fun SaveManagementScreen(game: ScanGame) {
     // 目录解析与文件递归遍历均为磁盘 IO：统一切到 IO 线程，避免组合期/主线程卡顿
     suspend fun refresh() {
         try {
-            val snapshot = withContext(Dispatchers.IO) {
-                val resolved = manager.resolveSaveLocation(game)
-                val files = manager.listSaveFiles(
-                    game,
-                    strict = game.engine == EngineType.SYSTEMNNN && resolved.available,
-                )
-                Triple(resolved, files.size, manager.hasImportedSystemNnnResources(game))
-            }
-            location = snapshot.first
-            fileCount = snapshot.second
-            hasImportedResources = snapshot.third
+            val snapshot = withContext(Dispatchers.IO) { manager.inspectSaves(game) }
+            location = snapshot.location
+            fileCount = snapshot.fileCount
+            hasImportedResources = snapshot.hasImportedResources
             refreshError = null
             versionsRevision++
         } catch (cancelled: CancellationException) {
@@ -253,7 +246,7 @@ private fun SaveManagementScreen(game: ScanGame) {
                             Text(game.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             location?.let { loadedLocation ->
                                 Text(
-                                    loadedLocation.description,
+                                    loadedLocation.description(game.engine.displayName),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(top = 8.dp),

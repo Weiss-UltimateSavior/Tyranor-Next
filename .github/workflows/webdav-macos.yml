@@ -20,6 +20,7 @@ on:
       - "app/src/main/java/com/tyranor/next/core/game/model/Xs35Paths.kt"
       - "app/src/main/java/com/tyranor/next/core/game/model/Xs4Paths.kt"
       - "app/src/main/java/com/tyranor/next/core/game/storage/GameLibraryFacade.kt"
+      - "app/src/main/java/com/tyranor/next/core/game/storage/SystemNnnGameDirectory.kt"
       - "app/src/main/java/com/tyranor/next/core/settings/EffectiveEngineSettings.kt"
       - "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt"
       - "app/src/main/java/com/tyranor/next/core/settings/EngineSettingsStore.kt"
@@ -43,8 +44,11 @@ on:
       - "app/src/test/java/com/tyranor/next/core/game/launch/RpgSaveScanDirsTest.kt"
       - "app/src/test/java/com/tyranor/next/core/game/launch/GameLaunchCompletionTest.kt"
       - "app/src/test/java/com/tyranor/next/core/game/launch/KrMirrorOverlayReaderTest.kt"
+      - "app/src/test/java/com/tyranor/next/core/game/storage/GameLibraryWriteGateTest.kt"
       - "app/src/test/java/com/tyranor/next/ui/common/SaveSyncMessagesTest.kt"
       - "app/src/test/java/com/tyranor/next/ui/save/**"
+      - "app/src/test/java/com/tyranor/runtime/systemnnn/**"
+      - "engine/src/main/java/com/tyranor/runtime/systemnnn/**"
 
       # Build-graph inputs for the full :app:testDebugUnitTest task.
       - "app/build.gradle.kts"

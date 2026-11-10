@@ -97,7 +97,7 @@ final class GameProgress {
     private Committed readCommitted(boolean repairExtension) throws IOException {
         Committed committed;
         try{
-            committed=selectBase(file,sibling(file,".bak"),move);
+            committed=selectBase(file,sibling(file,".bak"),move,!repairExtension);
         }catch(InvalidBase e){throw e;}
         catch(IOException|SecurityException e){throw new AccessFailure("基础",e);}
         if(committed==null)return null;
@@ -110,11 +110,11 @@ final class GameProgress {
 
     /** Snapshot validation shares the same preference without altering the staging directory. */
     static boolean hasReadableBase(File primary,File backup) throws IOException {
-        return selectBase(primary==null?null:primary.toPath(),backup==null?null:backup.toPath(),null)!=null;
+        return selectBase(primary==null?null:primary.toPath(),backup==null?null:backup.toPath(),null,false)!=null;
     }
 
     static MigrationFiles migrationFiles(Path file) throws IOException {
-        Committed selected=selectBase(file,sibling(file,".bak"),null);
+        Committed selected=selectBase(file,sibling(file,".bak"),null,false);
         if(selected==null)return null;
         Path ext=sibling(file,".ext");
         for(Path candidate:new Path[]{ext,sibling(ext,".bak")}){
@@ -127,10 +127,24 @@ final class GameProgress {
         }
         return new MigrationFiles(selected.source,null);
     }
-    private static Committed selectBase(Path path,Path legacy,MoveFile repair) throws IOException {
+    private static Committed selectBase(Path path,Path legacy,MoveFile repair,boolean allowUnreadablePrimary) throws IOException {
         InvalidBase damaged=null;
         Committed primary=null;
         try{primary=readBase(path);}catch(InvalidBase e){damaged=e;}
+        catch(IOException|SecurityException unavailable){
+            if(allowUnreadablePrimary){
+                try{
+                    Committed backup=readBase(legacy);
+                    if(backup!=null){
+                        LOG.log(Level.WARNING,"Using global progress backup while the primary cannot be read",unavailable);
+                        return backup;
+                    }
+                }catch(IOException|SecurityException invalidBackup){
+                    unavailable.addSuppressed(invalidBackup);
+                }
+            }
+            throw unavailable;
+        }
         if(primary!=null){
             if(repair!=null)quarantineBadBackup(legacy,repair);
             return primary;

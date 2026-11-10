@@ -83,7 +83,7 @@ internal class AndroidSaveSyncEnvironment(private val context: Context) : SaveSy
             throw SaveSyncException(if (enabled) SaveSyncError.LOCAL_STATE_CHANGED else SaveSyncError.DISABLED)
         }
     }
-    override fun games() = RuntimeModuleBindings.loadMigratedLibrary(context)
+    override fun games() = RuntimeModuleBindings.loadLibraryWithBuiltInSystemNnn(context)
     override fun available(game: ScanGame) = manager.resolveSaveLocation(game).available
     override fun running(game: ScanGame) = SaveSyncRuntime.isGameRunning(context, game)
     override fun activeKey(game: ScanGame) = SaveSyncRuntime.activeKey(context, game)

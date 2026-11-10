@@ -14,7 +14,7 @@ import com.core.engine.LaunchContract
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
-import com.tyranor.next.core.game.model.SystemNnnGameDirectory
+import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
 import com.tyranor.next.core.game.save.GameSaveException
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.SaveErrorCode
@@ -78,6 +78,7 @@ object SaveSyncRuntime {
     fun install(application: Application) {
         val process = processName(application)
         if (process == application.packageName || !process.startsWith(application.packageName + ":")) return
+        if (process == application.packageName + SystemNnnHost.SAVE_VALIDATOR_PROCESS) return
         val hostActivities = HostActivityUriRegistry<Activity>()
         val hostWrite = Mutex()
         val idleSince = java.util.concurrent.atomic.AtomicLong(0L)
@@ -178,13 +179,15 @@ object SaveSyncRuntime {
     }
 
     /** Only a possible source-to-copy rebind needs to exclude mutations in both directories. */
-    private fun needsSystemNnnSessionRebind(context: Context, game: ScanGame, directoryKey: String): Boolean {
+    private fun needsSystemNnnSaveRebind(context: Context, game: ScanGame, directoryKey: String): Boolean {
         if (game.engine != EngineType.SYSTEMNNN) return false
         return try {
             val generation = WebDavSettingsStore.enabledGeneration(context) ?: return false
+            val config = WebDavSettingsStore.load(context)
+            if (!config.active || !config.mode.uploads) return false
             val previous = sessions(context).inspect(SaveContentHash.text(game.uri))
-            previous.has("token") && saveSessionGenerationMatches(previous, generation) &&
-                inheritedSessionBaseline(previous) != null && previous.optString("activeKey") != directoryKey
+                .takeIf { it.has("token") && saveSessionGenerationMatches(it, generation) }
+            systemNnnImportRebindSource(context, game, config, previous, directoryKey) != null
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -197,14 +200,15 @@ object SaveSyncRuntime {
         context: Context,
         game: ScanGame,
         expectedActiveKey: String = activeKey(context, game),
-        rebindSystemNnnSession: Boolean = false,
+        allowSystemNnnSaveRebind: Boolean = false,
     ): LaunchTicket? = SaveSyncLocks.session(SaveContentHash.text(game.uri)) {
-        prepareLaunchLocked(context, game, expectedActiveKey, rebindSystemNnnSession)
+        prepareLaunchLocked(context, game, expectedActiveKey, allowSystemNnnSaveRebind)
     }
 
     private suspend fun prepareLaunchLocked(
-        context: Context, game: ScanGame, expectedActiveKey: String, rebindSystemNnnSession: Boolean,
+        context: Context, game: ScanGame, expectedActiveKey: String, allowSystemNnnSaveRebind: Boolean,
     ): LaunchTicket? {
+        var rebinding = false
         try {
             val enabledGeneration = WebDavSettingsStore.enabledGeneration(context) ?: return null
             requireSameSaveDirectory(expectedActiveKey, activeKey(context, game))
@@ -221,14 +225,29 @@ object SaveSyncRuntime {
             }
             val store = sessions(context)
             val key = SaveContentHash.text(game.uri)
-            val previous = store.load(key).takeIf { it.has("token") && saveSessionGenerationMatches(it, enabledGeneration) }
+            var previous = store.load(key).takeIf { it.has("token") && saveSessionGenerationMatches(it, enabledGeneration) }
             val directoryKey = expectedActiveKey
-            previous?.let {
-                if (it.optString("activeKey") != directoryKey &&
-                    !(rebindSystemNnnSession && continuesSystemNnnImport(context, game, config, it, directoryKey))) {
-                    requireSessionDirectory(it, directoryKey)
+            val prior = previous
+            val originalKey = systemNnnImportRebindSource(context, game, config, prior, directoryKey)
+            if (originalKey != null) {
+                if (prior != null && prior.optString("activeKey") != originalKey) {
+                    requireSessionDirectory(prior, directoryKey)
                 }
+                rebinding = true
+                if (!allowSystemNnnSaveRebind) throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+                WebDavSettingsStore.whileEnabled(context, enabledGeneration, config.revision) {
+                    SaveSyncService(context).rebindSystemNnnPromotion(game, config, originalKey, directoryKey)
+                    if (prior != null && prior.optString("activeKey") == originalKey) {
+                        // The copy is already authoritative, even if the following Activity launch fails.
+                        val moved = JSONObject(prior.toString()).put("activeKey", directoryKey)
+                        moved.remove("baselineMetadata")
+                        store.save(key, moved)
+                        previous = moved
+                    }
+                    Unit
+                } ?: return null
             }
+            previous?.let { requireSessionDirectory(it, directoryKey) }
             val inherited = inheritedSessionBaseline(previous)
             val previousBaseline = inherited.orEmpty()
             val inheritBaseline = inherited != null
@@ -266,25 +285,24 @@ object SaveSyncRuntime {
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
-            recordReport(SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, SaveSyncService.errorCode(failure)))))
+            val code = SaveSyncService.errorCode(failure)
+            if (rebinding) throw SaveSyncException(code, cause = failure)
+            recordReport(SaveSyncReport(failures = listOf(SaveSyncFailure(game.title, code))))
             return null
         }
     }
 
-    private fun continuesSystemNnnImport(context: Context, game: ScanGame, config: WebDavConfig,
-        previous: JSONObject, directoryKey: String): Boolean {
-        if (game.engine != EngineType.SYSTEMNNN || inheritedSessionBaseline(previous) == null) return false
-        val source = SystemNnnGameDirectory.resolve(game.uri) ?: return false
-        val copy = SystemNnnGameDirectory.committed(context, game.uri) ?: return false
+    private fun systemNnnImportRebindSource(context: Context, game: ScanGame, config: WebDavConfig,
+        previous: JSONObject?, directoryKey: String): String? {
+        if (game.engine != EngineType.SYSTEMNNN) return null
+        val sessionKey = previous?.takeIf { inheritedSessionBaseline(it) != null }?.optString("activeKey")
+        val promotionKey = SaveSyncService(context).boundPromotionDirectory(game, config)
+        val candidates = listOfNotNull(sessionKey, promotionKey).filter { it.isNotBlank() && it != directoryKey }
+        if (candidates.isEmpty()) return null
+        val source = SystemNnnGameDirectory.resolve(game.uri) ?: return null
+        val copy = SystemNnnGameDirectory.committed(context, game.uri) ?: return null
         val saves = SystemNnnHost.saveDirectory(context, copy)
-        val originalKey = previous.optString("activeKey")
-        if (!matchesImportedSystemNnnSaves(originalKey, directoryKey, source, saves)) return false
-        // The copy commits the original sav under its source identity. An explicit version
-        // activation has separate ownership and must resolve under its original directory.
-        val activations = directoryActivations(context)
-        activations.requireAvailable(originalKey)
-        return activations.owned(game.uri).isEmpty() &&
-            !SaveSyncService(syncRoot(context), AndroidSaveSyncEnvironment(context)).hasPendingPromotion(game, config)
+        return candidates.firstOrNull { matchesImportedSystemNnnSaves(it, directoryKey, source, saves) }
     }
 
     internal suspend fun finishLaunch(context: Context, game: ScanGame, ticket: LaunchTicket?, success: Boolean) =
@@ -399,7 +417,7 @@ object SaveSyncRuntime {
                     for (key in store.keys()) discardPending(environment, store, key, store.load(key))
                     return@launch
                 }
-                val games = RuntimeModuleBindings.loadMigratedLibrary(app).associateBy { it.uri }
+                val games = RuntimeModuleBindings.loadLibraryWithBuiltInSystemNnn(app).associateBy { it.uri }
                 for (key in store.keys()) {
                     val entry = store.load(key)
                     if (!entry.has("token") || !saveSessionGenerationMatches(entry, WebDavSettingsStore.sessionGeneration(app))) continue
@@ -634,7 +652,7 @@ object SaveSyncRuntime {
 
     private fun isGameRunning(context: Context, game: ScanGame, includeExternal: Boolean): Boolean {
         val manager = GameSaveManager(context)
-        val library = RuntimeModuleBindings.loadMigratedLibrary(context).let { games ->
+        val library = RuntimeModuleBindings.loadLibraryWithBuiltInSystemNnn(context).let { games ->
             if (games.any { it.uri == game.uri }) games else games + game
         }
         val related = relatedSaveUris(game, library) { manager.resolveSaveLocation(it).directory }
@@ -769,7 +787,7 @@ object SaveSyncRuntime {
         val admission = optionalSaveSyncLaunchAdmission({ WebDavSettingsStore.isEnabled(context) }) {
             GameSaveManager(context).resolveSaveLocation(game).directory?.canonicalPath?.let { SAVE_DIRECTORY_KEY_PREFIX + it }
         }
-        return if (admission is SaveSyncLaunchAdmission.Directory && needsSystemNnnSessionRebind(context, game, admission.key)) {
+        return if (admission is SaveSyncLaunchAdmission.Directory && needsSystemNnnSaveRebind(context, game, admission.key)) {
             admission.copy(exclusiveMutation = true)
         } else admission
     }
@@ -854,7 +872,7 @@ object SaveSyncRuntime {
     }
 
     private fun activeKey(context: Context, uri: String): String =
-        RuntimeModuleBindings.loadMigratedLibrary(context).firstOrNull { it.uri == uri }?.let { activeKey(context, it) } ?: uri
+        RuntimeModuleBindings.loadLibraryWithBuiltInSystemNnn(context).firstOrNull { it.uri == uri }?.let { activeKey(context, it) } ?: uri
 
     private fun secondaryActivityProcessNames(context: Context): Set<String>? {
         cachedSecondaryActivityProcessNames?.let { return it }

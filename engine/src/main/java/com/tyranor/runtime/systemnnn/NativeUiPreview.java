@@ -11,7 +11,6 @@ final class NativeUiPreview {
     // Logical width/height, raster width/height, then ARGB pixels. A zero
     // budget returns only the dimensions at the per-texture limit.
     static native int[] chartTextureWithinBudget(long handle,int slot,boolean transparent,int pixelBudget);
-    static {System.loadLibrary("systemnnn");}
     static native long create(byte[] root,long runtime,long assetPeer);
     static native boolean reset(long handle,byte[] script,int mode,byte[] variable,int page,boolean restartOnPage,boolean loop,long runtime,boolean speculative);
     static native boolean claim(long handle,long runtime);

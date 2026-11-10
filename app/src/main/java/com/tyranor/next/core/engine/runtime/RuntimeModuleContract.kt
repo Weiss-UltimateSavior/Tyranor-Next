@@ -1,7 +1,5 @@
 package com.tyranor.next.core.engine.runtime
 
-import com.core.engine.LaunchContract
-
 /**
  * 第三方 APK 运行时模块的 v1 协议常量。
  *
@@ -10,7 +8,7 @@ import com.core.engine.LaunchContract
  */
 object RuntimeModuleContract {
     /** 模块启动入口声明的 action（同时用于发现查询）。 */
-    const val ACTION_LAUNCH = LaunchContract.RUNTIME_MODULE_ACTION
+    const val ACTION_LAUNCH = "com.tyranor.runtime.action.LAUNCH"
 
     /** 模块包名命名约定；不是安全边界。 */
     const val PACKAGE_PREFIX = "com.tyranor.runtime."
@@ -19,14 +17,14 @@ object RuntimeModuleContract {
     const val META_MANIFEST = "com.tyranor.runtime.MANIFEST"
 
     /** 启动 extra：游戏文件夹绝对路径。 */
-    const val EXTRA_FOLDER_PATH = LaunchContract.RUNTIME_MODULE_FOLDER_PATH
+    const val EXTRA_FOLDER_PATH = "com.tyranor.runtime.extra.FOLDER_PATH"
 
     /** 启动 extra：游戏标题（便于模块展示，可不读）。 */
-    const val EXTRA_GAME_TITLE = LaunchContract.RUNTIME_MODULE_GAME_TITLE
+    const val EXTRA_GAME_TITLE = "com.tyranor.runtime.extra.GAME_TITLE"
 
     /** 启动 extra：主 App 协议版本。 */
-    const val EXTRA_PROTOCOL_VERSION = LaunchContract.RUNTIME_MODULE_PROTOCOL_VERSION
+    const val EXTRA_PROTOCOL_VERSION = "com.tyranor.runtime.extra.PROTOCOL_VERSION"
 
     /** 当前主 App 支持的协议版本。 */
-    const val PROTOCOL_VERSION = LaunchContract.RUNTIME_MODULE_VERSION
+    const val PROTOCOL_VERSION = 1
 }

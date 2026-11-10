@@ -3,6 +3,8 @@
 
 import argparse
 from hashlib import sha256
+from io import BytesIO
+import lzma
 import os
 from pathlib import Path
 import re
@@ -10,9 +12,12 @@ import shutil
 import struct
 import subprocess
 import sys
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ENGINE = ROOT / "engine/src/main"
+LIBRARY_NAME = "libsystemnnn.so"
+PACK_PATH = "assets/engine-runtime/systemnnn.zip.xz"
 
 
 def sdk_directories():
@@ -78,9 +83,23 @@ def read_exports(library: Path, override):
     return None
 
 
+def verify_packaged_library(apk: Path, data: bytes) -> None:
+    with zipfile.ZipFile(apk) as package:
+        names = package.namelist()
+        if any(name.startswith("lib/") and name.endswith("/" + LIBRARY_NAME) for name in names):
+            raise ValueError(f"{LIBRARY_NAME} must only ship in the runtime pack")
+        if names.count(PACK_PATH) != 1:
+            raise ValueError(f"Expected one {PACK_PATH} in the APK")
+        container = lzma.decompress(package.read(PACK_PATH))
+    with zipfile.ZipFile(BytesIO(container)) as runtime:
+        if runtime.namelist() != [LIBRARY_NAME] or runtime.read(LIBRARY_NAME) != data:
+            raise ValueError("Packaged SystemNNN runtime does not match the verified source")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--nm", help="path to a compatible llvm-nm or GNU nm (override auto-discovery)")
+    parser.add_argument("--apk", type=Path, help="also verify the APK's SystemNNN runtime pack")
     args = parser.parse_args()
     note = (ENGINE / "assets/licenses/systemnnn/ffmpeg-source.txt").read_text(encoding="utf-8")
     source = re.search(
@@ -91,7 +110,7 @@ def main() -> int:
     if source is None or expected is None:
         print("SystemNNN runtime must have a pinned source commit, size and SHA-256.", file=sys.stderr)
         return 1
-    library = ENGINE / "jniLibs/arm64-v8a/libsystemnnn.so"
+    library = ENGINE / "jniLibs/arm64-v8a" / LIBRARY_NAME
     data = library.read_bytes()
     if len(data) < 64 or data[:7] != b"\x7fELF\x02\x01\x01" or struct.unpack_from("<HH", data, 16) != (3, 183):
         print("Expected an ELF64 AArch64 shared library for SystemNNN.", file=sys.stderr)
@@ -114,6 +133,12 @@ def main() -> int:
     if missing:
         print("Missing SystemNNN JNI exports:\n" + "\n".join(missing), file=sys.stderr)
         return 1
+    if args.apk is not None:
+        try:
+            verify_packaged_library(args.apk, data)
+        except (OSError, ValueError, zipfile.BadZipFile, lzma.LZMAError) as error:
+            print(f"Invalid SystemNNN APK runtime pack: {error}", file=sys.stderr)
+            return 1
     print(f"Verified SystemNNN ARM64 runtime from Emberfall {source[1]}.")
     return 0
 

@@ -425,6 +425,13 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
         File directory=saves.directory();
         if(!(directory.isDirectory()?directory:game).canWrite() && requestGameAccess(true))return;
+        try{NativeGame.load(this);}
+        catch(IOException|LinkageError e){
+            Log.w("SystemNNN","Unable to load the runtime pack",e);
+            message(text(R.string.engine_systemnnn_host_game_interrupted),text(R.string.engine_systemnnn_host_check_versions),
+                text(R.string.engine_systemnnn_host_exit_to_tyn),v->finish());
+            return;
+        }
         root.removeAllViews();
         storyTouchSlop=ViewConfiguration.get(this).getScaledTouchSlop();
         stage=new FrameLayout(this){
@@ -1916,8 +1923,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }); }
     @Override public void resourcesEvicted(){runOnUiThread(()->{
         if(isDestroyed()||isFinishing())return;
-        closePlayerTask();
-        if(runner!=null){runner.close();runner=null;}
+        closeRunner();
         message(getApplicationInfo().loadLabel(getPackageManager()).toString(),
             text(R.string.engine_systemnnn_host_resources_evicted),null,null);
     });}
@@ -2088,8 +2094,14 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(preferences!=null)preferences.unregisterOnSharedPreferenceChangeListener(settingsListener);
         if(userPreferences!=null)userPreferences.unregisterOnSharedPreferenceChangeListener(readingListener);
         for(AlertDialog dialog:new ArrayList<>(openedPanels))dialog.dismiss();
-        closePlayerTask();
-        if(runner!=null){runner.close();runner=null;}super.onDestroy();
+        closeRunner();
+        super.onDestroy();
+    }
+    private void closeRunner(){
+        if(runner==null){closePlayerTask();return;}
+        runner.close(playerTask);
+        playerTask=null;
+        runner=null;
     }
     private void closePlayerTask(){
         if(playerTask==null)return;

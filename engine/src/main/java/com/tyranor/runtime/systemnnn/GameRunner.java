@@ -25,6 +25,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
@@ -172,6 +174,7 @@ final class GameRunner {
     private static final ExecutorService SAVE_FILES=Executors.newSingleThreadExecutor(r->new Thread(r,"SystemNNN-Save"));
     // The latest lifecycle commit per game, retained on failure so reopening can recover it.
     private static final ConcurrentHashMap<File,CompletableFuture<Void>> PROGRESS_HANDOFFS=new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<File,CompletableFuture<Void>> SAVE_RELEASES=new ConcurrentHashMap<>();
     private static final class ProgressWriteFailure extends IOException {
         final GameProgress.State state;
         volatile boolean recovered;
@@ -183,6 +186,7 @@ final class GameRunner {
     private final GalleryStore galleryStore;
     private final GameProgress progressStore;
     private final CompletableFuture<Void> previousProgress;
+    private final CompletableFuture<Void> previousRelease;
     private final Listener ui;
     private final Context context;
     private final SharedPreferences preferences,userPreferences;
@@ -287,6 +291,7 @@ final class GameRunner {
         galleryStore=new GalleryStore(paths.file(GameSavePaths.GALLERY));
         progressStore=new GameProgress(readFile);
         previousProgress=PROGRESS_HANDOFFS.get(readFile);
+        previousRelease=SAVE_RELEASES.get(readFile);
         saveOwner=GameSavePaths.acquireOwner();
         try {
             worker.start();tasks=new Handler(worker.getLooper());
@@ -300,6 +305,10 @@ final class GameRunner {
     }
     boolean initialized(){return initialized;}
     private void initialize() throws IOException {
+        if(previousRelease!=null)try{previousRelease.get(10,TimeUnit.SECONDS);}
+        catch(TimeoutException e){throw new SystemNnnHost.SaveBusyException();}
+        catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException(e);}
+        catch(ExecutionException e){throw new IOException(e.getCause());}
         ProgressWriteFailure recovery=null;
         if(previousProgress!=null)try{saveResult(previousProgress);}catch(ProgressWriteFailure failure){recovery=failure;}
         ProgressWriteFailure pending=recovery;
@@ -2003,17 +2012,24 @@ final class GameRunner {
         if(!initialized&&reason instanceof GameProgress.InvalidBase)ui.progressCorrupt();
         else ui.error(reason);
     }
-    private void releaseSaveAccess(){
-        GameSavePaths.Access access=saveAccess;
+    private void releaseSaveAccess(Closeable playerTask,CompletableFuture<Void> release){
         SAVE_FILES.execute(()->{
-            try{if(access!=null)access.close();}
+            try{if(saveAccess!=null)saveAccess.close();}
             catch(IOException e){Log.w("SystemNNN","Unable to release save directory lock",e);}
-            finally{saveOwner.close();}
+            finally{
+                saveAccess=null;
+                try{if(playerTask!=null)playerTask.close();}
+                catch(IOException e){Log.w("SystemNNN","Unable to release player task",e);}
+                finally{saveOwner.close();release.complete(null);}
+            }
         });
     }
-    void close(){
+    void close(Closeable playerTask){
         if(closing)return;
         closing=true;
+        CompletableFuture<Void> release=new CompletableFuture<>();
+        CompletableFuture<Void> handoff=SAVE_RELEASES.merge(readFile,release,CompletableFuture::allOf);
+        handoff.whenComplete((done,error)->SAVE_RELEASES.remove(readFile,handoff));
         audioForeground=false;
         replaceSurface(0);
         if(!postProgressFlush(() -> {
@@ -2027,9 +2043,9 @@ final class GameRunner {
                     if(handle!=0){NativeGame.close(handle);handle=0;}
                     if(runtime!=null)runtime.close();
                 }finally{
-                    try{releaseSaveAccess();}finally{worker.quitSafely();}
+                    try{releaseSaveAccess(playerTask,release);}finally{worker.quitSafely();}
                 }
             }
-        }))releaseSaveAccess();
+        }))releaseSaveAccess(playerTask,release);
     }
 }

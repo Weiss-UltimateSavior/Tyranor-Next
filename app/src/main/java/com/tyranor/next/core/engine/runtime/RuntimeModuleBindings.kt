@@ -22,14 +22,9 @@ object RuntimeModuleBindings {
             game.copy(engine = EngineType.SYSTEMNNN, runtimeModulePackage = null)
         } else game
 
-    /** Migrate the old built-in identity before save sync resolves the games and their aliases. */
-    internal fun loadMigratedLibrary(context: Context): List<ScanGame> {
-        val current = GameLibraryFacade.loadGames(context)
-        if (current.none { builtInSystemNnn(it) !== it }) return current
-        val updated = GameLibraryFacade.updateGames(context) { games -> games.map(::builtInSystemNnn) }
-        GameLibraryFacade.notifyGamesChanged()
-        return updated
-    }
+    /** Read the old Emberfall identity as built-in until an explicit reconciliation persists it. */
+    internal fun loadLibraryWithBuiltInSystemNnn(context: Context): List<ScanGame> =
+        GameLibraryFacade.loadGames(context).map(::builtInSystemNnn)
 
     /**
      * 批量核对库中所有 [EngineType.RUNTIME_MODULE] 条目：
@@ -40,7 +35,7 @@ object RuntimeModuleBindings {
      * 保留包名而不是清空，是为了让「模块描述暂时失效 / 发现查询失败 / 用户禁用到重装」期间
      * 重扫仍能识别这是运行时条目，不会把整条游戏记录当已删除而丢掉标题/封面/元数据。
      *
-     * @return 本次降级的游戏数量；发现查询失败时按实际启用设置核对现有绑定。
+     * @return 本次降级的游戏数量；发现查询失败时只迁移已知的旧 Emberfall 内置身份。
      */
     suspend fun reconcile(context: Context, restoreReenabled: Boolean = false): Int = withContext(Dispatchers.IO) {
         val discovery = RuntimeModuleDiscovery.discover(context) as? RuntimeModuleDiscoveryResult.Success
@@ -49,38 +44,38 @@ object RuntimeModuleBindings {
         var bindingChanged = false
 
         GameLibraryFacade.updateGames(context) { games ->
-            val enabledPackages = AppSettingsStore.getEnabledRuntimeModules(context)
-            var count = 0
-            bindingChanged = false
-            val updated = games.map { game ->
-                val builtin = builtInSystemNnn(game)
-                if (builtin !== game) {
+            val enabledPackages = if (discoveredPackages != null) AppSettingsStore.getEnabledRuntimeModules(context)
+            else emptySet()
+            games.map { game ->
+                val updated = reconcileBinding(game, discoveredPackages, enabledPackages, restoreReenabled)
+                if (updated !== game) {
                     bindingChanged = true
-                    return@map builtin
+                    if (updated.engine == EngineType.UNKNOWN) degraded++
                 }
-                val packageName = game.runtimeModulePackage
-                val unavailable = packageName == null ||
-                    packageName.isBlank() ||
-                    packageName !in enabledPackages ||
-                    discoveredPackages?.contains(packageName) == false
-                if (game.engine == EngineType.RUNTIME_MODULE && unavailable) {
-                    count++
-                    // 只降级引擎，保留最后已知包名；重扫合并会据此保留条目。
-                    game.copy(engine = EngineType.UNKNOWN)
-                } else if (restoreReenabled && discoveredPackages != null && !unavailable &&
-                    (game.engine == EngineType.UNKNOWN || game.engine == EngineType.SYSTEMNNN)
-                ) {
-                    bindingChanged = true
-                    game.copy(engine = EngineType.RUNTIME_MODULE)
-                } else {
-                    game
-                }
+                updated
             }
-            degraded = count
-            updated
         }
-        if (degraded > 0 || bindingChanged) GameLibraryFacade.notifyGamesChanged()
+        if (bindingChanged) GameLibraryFacade.notifyGamesChanged()
         degraded
+    }
+
+    internal fun reconcileBinding(
+        game: ScanGame,
+        discoveredPackages: Set<String>?,
+        enabledPackages: Set<String>,
+        restoreReenabled: Boolean,
+    ): ScanGame {
+        val builtIn = builtInSystemNnn(game)
+        if (builtIn !== game || discoveredPackages == null) return builtIn
+        val packageName = game.runtimeModulePackage
+        val available = !packageName.isNullOrBlank() && packageName in enabledPackages && packageName in discoveredPackages
+        return when {
+            // Retain the last known package so a later scan can restore the binding.
+            game.engine == EngineType.RUNTIME_MODULE && !available -> game.copy(engine = EngineType.UNKNOWN)
+            restoreReenabled && available && (game.engine == EngineType.UNKNOWN || game.engine == EngineType.SYSTEMNNN) ->
+                game.copy(engine = EngineType.RUNTIME_MODULE)
+            else -> game
+        }
     }
 
     /**

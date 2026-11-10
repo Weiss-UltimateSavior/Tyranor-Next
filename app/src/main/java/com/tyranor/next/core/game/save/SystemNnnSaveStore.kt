@@ -16,6 +16,7 @@ import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 internal class SystemNnnSaveStore(
     private val game: File,
     val directory: File,
+    private val validateSnapshot: (File, Map<String, File>, Set<String>, () -> Unit) -> Boolean,
     private val moveSave: (File, File) -> Unit = { source, target ->
         Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
     },
@@ -76,16 +77,17 @@ internal class SystemNnnSaveStore(
      * Caller holds the engine's lock. A complete backup precedes any changes to live files.
      * [onCommitted] runs after the rollback marker is removed. Cleanup still runs if it throws.
      */
-    fun replace(source: File?, onCommitted: () -> Unit = {}): Int {
+    fun replace(source: File?, checkCancelled: () -> Unit = {}, onCommitted: () -> Unit = {}): Int {
         val incoming = source?.let(::files).orEmpty()
         val existing = files()
         if (source != null) {
             val restorable = try {
-                SystemNnnHost.canReplaceSaveSnapshot(incoming, existing.keys)
-            } catch (invalid: IOException) {
-                throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP, cause = invalid)
+                validateSnapshot(source, incoming, existing.keys, checkCancelled)
+            } catch (unavailable: IOException) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = unavailable)
             }
             if (!restorable) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
+            checkCancelled()
         }
         if (existing.isEmpty() && incoming.isEmpty()) {
             return if (source == null) SystemNnnHost.clearRetiredProgressBackups(directory) else 0

@@ -2,15 +2,19 @@ package com.core.engine
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.content.res.Configuration
 import java.util.Locale
 
 /** Resolves launcher-facing engine text without changing the native engine's compatibility locale. */
 object EngineUiText {
     @JvmStatic
-    fun get(context: Context, resourceId: Int): String {
-        return localizedContext(context).getString(resourceId)
+    fun get(context: Context?, resourceId: Int): String {
+        if (context == null) return ""
+        return try {
+            localizedContext(context).getString(resourceId)
+        } catch (_: Throwable) {
+            context.getString(resourceId)
+        }
     }
 
     /** Resources for the host's UI language. The engine can keep its own game locale. */

@@ -49,7 +49,9 @@ class SaveSyncService internal constructor(
     }
 
     /** A portable identity is independent of storage volume, absolute path and renamed title. */
-    fun identity(game: ScanGame): String = states.load(localKey(game)).optString("identity")
+    fun identity(game: ScanGame): String = identity(game, states.load(localKey(game)))
+
+    private fun identity(game: ScanGame, state: JSONObject): String = state.optString("identity")
         .ifBlank { defaultIdentity(game) }
 
     suspend fun setIdentity(game: ScanGame, identity: String) = withContext(Dispatchers.IO) {
@@ -1053,8 +1055,43 @@ class SaveSyncService internal constructor(
             checkpoint.optBoolean("needsPrune")
     }
 
-    private fun requirePromotionDirectory(state: org.json.JSONObject, promotedAt: Long, directoryKey: String) {
-        if (state.optBoolean("promotionAwaitingChange") || state.optLong("promotionAt") > promotedAt) {
+    /** Inspect without repairing checkpoint files during launch admission. */
+    internal fun boundPromotionDirectory(game: ScanGame, config: WebDavConfig): String? {
+        val state = states.inspect(localKey(game))
+        val directoryKey = state.optString("promotionActiveKey").takeIf { it.isNotBlank() } ?: return null
+        val remoteKey = remoteKey(game, identity(game, state))
+        val promotedAt = states.inspect(checkpointKey(game, config, remoteKey)).optLong("promotedAt")
+        return directoryKey.takeIf { promotionRequiresDirectory(state, promotedAt) }
+    }
+
+    /** The launch holds versions and exclusive mutation and has verified the committed copy's source. */
+    internal fun rebindSystemNnnPromotion(game: ScanGame, config: WebDavConfig, originalKey: String, directoryKey: String) {
+        require(game.engine == EngineType.SYSTEMNNN)
+        requireSameSaveDirectory(directoryKey, environment.activeKey(game))
+        directoryActivations.requireAvailable(originalKey)
+        directoryActivations.requireAvailable(directoryKey)
+        val key = localKey(game)
+        if (activations.load(key) != null || directoryActivations.owned(game.uri).isNotEmpty()) {
+            throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
+        }
+        val state = states.load(key)
+        val promotedAt = states.load(checkpointKey(game, config)).optLong("promotedAt")
+        if (!promotionRequiresDirectory(state, promotedAt)) return
+        // A retry may find that the promotion moved before the session write completed.
+        if (state.optString("promotionActiveKey") == directoryKey) {
+            requirePromotionDirectory(state, promotedAt, directoryKey)
+            return
+        }
+        requirePromotionDirectory(state, promotedAt, originalKey)
+        states.save(key, state.put("promotionActiveKey", directoryKey)
+            .put("promotionDirectoryRevision", directoryActivations.revision(directoryKey)))
+    }
+
+    private fun promotionRequiresDirectory(state: JSONObject, promotedAt: Long): Boolean =
+        state.optBoolean("promotionAwaitingChange") || state.optLong("promotionAt") > promotedAt
+
+    private fun requirePromotionDirectory(state: JSONObject, promotedAt: Long, directoryKey: String) {
+        if (promotionRequiresDirectory(state, promotedAt)) {
             requireSameSaveDirectory(state.optString("promotionActiveKey"), directoryKey)
             if (state.optString("promotionDirectoryRevision") != directoryActivations.revision(directoryKey)) {
                 throw SaveSyncException(SaveSyncError.SELECTION_INCOMPLETE)
@@ -1172,7 +1209,8 @@ class SaveSyncService internal constructor(
         return Normalizer.normalize(folder, Normalizer.Form.NFC).lowercase(Locale.ROOT)
     }
 
-    private fun remoteKey(game: ScanGame) = SaveContentHash.text(game.engine.name + "\n" + identity(game))
+    private fun remoteKey(game: ScanGame, portableIdentity: String = identity(game)) =
+        SaveContentHash.text(game.engine.name + "\n" + portableIdentity)
     private fun remoteKeyForConflict(game: ScanGame): String? = try {
         remoteKey(game)
     } catch (failure: SaveSyncException) {

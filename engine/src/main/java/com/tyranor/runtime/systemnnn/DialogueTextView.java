@@ -11,10 +11,10 @@ import android.text.style.CharacterStyle;
 import android.text.style.UpdateAppearance;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.widget.TextView;
+import androidx.appcompat.widget.AppCompatTextView;
 
 /** Draws ruby above the existing TextView layout without changing the body's wrapping or weight. */
-final class DialogueTextView extends TextView {
+final class DialogueTextView extends AppCompatTextView {
     static final class HiddenText extends CharacterStyle implements UpdateAppearance {
         @Override public void updateDrawState(TextPaint paint){paint.setColor(Color.TRANSPARENT);paint.clearShadowLayer();}
     }
@@ -27,7 +27,7 @@ final class DialogueTextView extends TextView {
     private boolean annotationFollowsTextColor;
     private HiddenText previewHidden;
 
-    DialogueTextView(Context context){super(context);}
+    DialogueTextView(Context context){super(context);setEmojiCompatEnabled(false);}
 
     static DialogueTextView panel(Context context,DialogueMarkup text,DialogueMarkup.Style style,int font,int color){
         DialogueTextView view=new DialogueTextView(context);

@@ -35,10 +35,21 @@ import kotlin.random.Random
 class SystemNnnSaveInteropTest {
     @get:Rule val temp = TemporaryFolder()
 
+    private fun validateFixture(
+        @Suppress("UNUSED_PARAMETER") stage: File,
+        incoming: Map<String, File>,
+        existing: Set<String>,
+        checkCancelled: () -> Unit,
+    ): Boolean {
+        checkCancelled()
+        return try { SystemNnnHost.canReplaceSaveSnapshot(incoming, existing) }
+        catch (_: IOException) { false }
+    }
+
     @Test fun replacesOnlyManagedFilesAndKeepsTheSharedLock() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val pc = saves.resolve("sysfile3.sav").apply { writeText("PC") }
         val temporary = saves.resolve("emberfall.sav.new").apply { writeText("temporary") }
         val incoming = temp.newFolder().canonicalFile
@@ -108,7 +119,7 @@ class SystemNnnSaveInteropTest {
     @Test fun rejectsIncompleteOrDamagedSnapshotsBeforeChangingLiveSaves() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val story = putStory(saves, "emberfall.resume.bak", SaveSlots.AUTO)
         val progress = putProgress(saves, 9)
         val storyBytes = story.readBytes()
@@ -214,7 +225,7 @@ class SystemNnnSaveInteropTest {
     @Test fun restoresAValidBackupOnlyStorySnapshot() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val incoming = temp.newFolder().canonicalFile
         val backup = putStory(incoming, "emberfall.quick.sav.bak", SaveSlots.QUICK)
         store.access {
@@ -236,7 +247,7 @@ class SystemNnnSaveInteropTest {
         putExtension(incoming.resolve("emberfall.read.ext"), primary to 21)
         putExtension(incoming.resolve("emberfall.read.ext.bak"), backup to 9)
 
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         store.access {
             assertEquals(5, store.replace(incoming))
             val installed = checkNotNull(GameProgress(saves.resolve(primary.name)).read())
@@ -249,7 +260,7 @@ class SystemNnnSaveInteropTest {
     @Test fun restoresGlobalProgressOnlyWhenTheDestinationHasNoStoryOrChart() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val incoming = temp.newFolder().canonicalFile
         val progress = putProgress(incoming, 27, "emberfall.read.bak")
         store.access {
@@ -265,7 +276,7 @@ class SystemNnnSaveInteropTest {
     @Test fun interruptedRestoreBlocksStandaloneUntilTyranorRecoversTheOldSaves() {
         val game = temp.newFolder().canonicalFile
         val saves = game.resolve("sav").apply { check(mkdir()) }
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
         val restore = stage.resolve(SystemNnnHost.SAVE_RESTORE_DIRECTORY)
         put(restore, "before/emberfall.sav", "old")
@@ -299,7 +310,7 @@ class SystemNnnSaveInteropTest {
         val saves = game.resolve("sav").apply { check(mkdir()) }
         put(saves, "emberfall.sav", "saved")
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY).apply { check(mkdir()) }
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
 
         store.access {
             assertFalse(stage.exists())
@@ -324,7 +335,7 @@ class SystemNnnSaveInteropTest {
         putProgress(incoming, 34)
         putStory(incoming, "emberfall.quick.sav", SaveSlots.QUICK)
         var interrupted = false
-        val store = SystemNnnSaveStore(game, saves) { source, target ->
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture) { source, target ->
             Files.move(source.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
             if (!interrupted && target == saves.resolve("emberfall.sav")) {
                 interrupted = true
@@ -372,7 +383,7 @@ class SystemNnnSaveInteropTest {
         val previous = putStory(saves, "emberfall.sav", 0)
         val incoming = temp.newFolder().canonicalFile
         val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
         val error = IOException("Could not record the committed save")
 
@@ -395,7 +406,7 @@ class SystemNnnSaveInteropTest {
         val previous = putStory(saves, "emberfall.sav", 0)
         val incoming = temp.newFolder().canonicalFile
         val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         val stage = saves.resolve(SystemNnnHost.SAVE_MIGRATION_DIRECTORY)
         val restore = stage.resolve(SystemNnnHost.SAVE_RESTORE_DIRECTORY)
         val cancelled = CancellationException("Version update cancelled")
@@ -423,7 +434,7 @@ class SystemNnnSaveInteropTest {
         val previous = putStory(saves, "emberfall.sav", 0)
         val incoming = temp.newFolder().canonicalFile
         val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
 
         withExternalLock(saves.resolve("emberfall.lock")) {
             val failure = assertThrows(GameSaveException::class.java) {
@@ -493,34 +504,36 @@ class SystemNnnSaveInteropTest {
         val oldStory = putStory(saves, "emberfall.sav", 0)
         val incoming = GameSaveManager.createZipStaging(temp.root)
         val newStory = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
-        val store = SystemNnnSaveStore(original, saves)
+        val store = SystemNnnSaveStore(original, saves, ::validateFixture)
 
-        fun copy(): File = SystemNnnGameImport.importDirectory(base, source, true, {}) {
-            SystemNnnGameImport.ImportSource { staging, restoring, publish ->
-                assertFalse(restoring)
-                val busy = assertThrows(SystemNnnGameImport.Failure::class.java) {
-                    SystemNnnGameImport.withImportLock(base, source) { error("Save target must wait for publication") }
-                }
-                assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
+        val staged = SystemNnnGameImport.stageDirectory(base, source, true, {}) {
+            SystemNnnGameImport.ImportSource { staging ->
                 put(staging, "spt/sys.spt", "script")
-                saves.copyRecursively(staging.resolve("sav"))
-                publish.run()
+                SystemNnnGameImport.SaveCopy { publish ->
+                    val busy = assertThrows(SystemNnnGameImport.Failure::class.java) {
+                        SystemNnnGameImport.withImportLock(base, source) { error("Save target must wait for publication") }
+                    }
+                    assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
+                    saves.copyRecursively(staging.resolve("sav"))
+                    publish.run()
+                }
             }
         }
 
-        withExternalLock(base.resolve("${SystemNnnGameImport.key(source)}.lock")) {
-            val busy = assertThrows(SystemNnnGameImport.Failure::class.java) { copy() }
-            assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
-        }
+        val importedSaves = staged.use {
+            withExternalLock(base.resolve("${SystemNnnGameImport.key(source)}.lock")) {
+                val busy = assertThrows(SystemNnnGameImport.Failure::class.java) { staged.publish() }
+                assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
+            }
 
-        SystemNnnGameImport.withImportLock(base, source) {
-            assertEquals(null, SystemNnnGameImport.committedRoot(base, source))
-            val busy = assertThrows(SystemNnnGameImport.Failure::class.java) { copy() }
-            assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
-            store.access { store.replace(incoming) }
+            SystemNnnGameImport.withImportLock(base, source) {
+                assertEquals(null, SystemNnnGameImport.committedRoot(base, source))
+                val busy = assertThrows(SystemNnnGameImport.Failure::class.java) { staged.publish() }
+                assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
+                store.access { store.replace(incoming) }
+            }
+            staged.publish().resolve("sav")
         }
-
-        val importedSaves = copy().resolve("sav")
         assertFalse(importedSaves.resolve(oldStory.name).exists())
         assertArrayEquals(newStory.readBytes(), importedSaves.resolve(newStory.name).readBytes())
     }
@@ -529,7 +542,7 @@ class SystemNnnSaveInteropTest {
         val base = temp.newFolder("systemnnn-imports").canonicalFile
         val source = "primary:Games/MissingCopy"
         val failure = assertThrows(SystemNnnGameImport.Failure::class.java) {
-            SystemNnnGameImport.importDirectory(base, source, false, {}) { error("Missing copy must fail first") }
+            SystemNnnGameImport.stageDirectory(base, source, false, {}) { error("Missing copy must fail first") }
         }
         assertEquals(SystemNnnGameImport.Reason.CORRUPT_COPY, failure.reason)
         assertEquals(null, SystemNnnGameImport.committedRoot(base, source))
@@ -560,16 +573,13 @@ class SystemNnnSaveInteropTest {
         put(game, "spt/sys.spt", "partial publish")
         assertFalse(SystemNnnGameImport.readableBootstrap(game))
 
-        val restored = SystemNnnGameImport.importDirectory(base, source, false, {}) {
-            SystemNnnGameImport.ImportSource { staging, restoring, publish ->
-                assertTrue(restoring)
+        val restored = SystemNnnGameImport.stageDirectory(base, source, false, {}) {
+            SystemNnnGameImport.ImportSource { staging ->
                 put(staging, "spt/sys.spt", "reimported script")
                 put(staging, "graphics.dat", "reimported graphics")
-                put(staging, "sav/emberfall.resume", "source autosave")
-                put(staging, "sav/sysfile3.sav", "source PC save")
-                publish.run()
+                SystemNnnGameImport.SaveCopy { error("Resource restore must not copy source saves") }
             }
-        }
+        }.use { it.publish() }
         assertEquals(game, restored)
         assertFalse(SystemNnnGameImport.resourcesEvicted(restored))
         assertTrue(SystemNnnGameImport.readableBootstrap(restored))
@@ -657,6 +667,38 @@ class SystemNnnSaveInteropTest {
             val archived = saves.listFiles()!!.single { it.name.startsWith("emberfall.read.corrupt-") }
             assertArrayEquals(corrupt, archived.readBytes())
         }
+    }
+
+    @Test fun unreadableProgressUsesBackupWithoutRewritingEitherFile() {
+        val saves = temp.newFolder()
+        val primary = saves.resolve("emberfall.read").apply { check(mkdir()) }
+        val backup = putProgress(saves, 42, "emberfall.read.bak")
+        val before = backup.readBytes()
+        val progress = GameProgress(primary)
+
+        assertArrayEquals(intArrayOf(42), checkNotNull(progress.read()).read)
+        val unavailable = assertThrows(IOException::class.java) { progress.write(progressState(43)) }
+        assertFalse(unavailable is GameProgress.InvalidBase)
+        assertTrue(primary.isDirectory)
+        assertArrayEquals(before, backup.readBytes())
+        assertFalse(saves.listFiles().orEmpty().any { ".corrupt-" in it.name })
+    }
+
+    @Test fun unavailableSnapshotValidatorLeavesLiveSavesUntouched() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        val current = putStory(saves, "emberfall.sav", 0)
+        val old = current.readBytes()
+        val stage = GameSaveManager.createZipStaging(temp.root)
+        putStory(stage, "emberfall.resume", SaveSlots.AUTO)
+        val store = SystemNnnSaveStore(game, saves, validateSnapshot = { _, _, _, _ ->
+            throw IOException("Validator disconnected")
+        })
+
+        val failure = assertThrows(GameSaveException::class.java) { store.access { store.replace(stage) } }
+        assertEquals(SaveErrorCode.SAVE_DIR_UNAVAILABLE, failure.code)
+        assertArrayEquals(old, current.readBytes())
+        assertFalse(saves.resolve("emberfall.migrate").exists())
     }
 
     @Test fun validPrimaryWinsAndSelectsItsOwnExtension() {
@@ -797,7 +839,7 @@ class SystemNnnSaveInteropTest {
         put(saves, "emberfall.read.bak.previous", "retired")
         put(saves, "emberfall.read.ext.bak.previous-${UUID.randomUUID()}", "older retired")
         val corrupt = saves.resolve("emberfall.read.corrupt-${UUID.randomUUID()}").apply { writeText("quarantined") }
-        val store = SystemNnnSaveStore(game, saves)
+        val store = SystemNnnSaveStore(game, saves, ::validateFixture)
         assertEquals(2, store.access { store.replace(null) })
         assertTrue(corrupt.isFile)
         assertEquals(0, store.access { store.replace(null) })

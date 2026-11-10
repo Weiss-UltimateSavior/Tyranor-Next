@@ -14,6 +14,7 @@ import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -22,6 +23,11 @@ public final class SystemNnnHost {
     public static final String SAVE_MIGRATION_DIRECTORY = GameSavePaths.PREFIX + ".migrate";
     public static final String SAVE_RESTORE_DIRECTORY = "tyn-restore";
     public static final String SAVE_SLOT_PRESENTATION_FILE = GameSavePaths.PREFIX + SaveSlots.SLOT_UI;
+    public static final String SAVE_ZIP_STAGING_PREFIX = SystemNnnSaveValidationService.ZIP_PREFIX;
+    public static final String SAVE_VALIDATOR_PROCESS = ":systemnnn_validator";
+    // Player task writers live in :systemnnn. The launcher opens records only to check liveness.
+    private static final Map<File,RandomAccessFile> PLAYER_TASKS = new HashMap<>();
+    private static boolean taskRecordsSwept;
 
     private SystemNnnHost() {}
 
@@ -61,26 +67,41 @@ public final class SystemNnnHost {
         return GameSavePaths.hasActiveAccess();
     }
 
-    /** The live Activity keeps this lock until it is destroyed, including during save migration. */
-    static Closeable registerPlayerTask(Activity activity,File game,String sourceUri) throws IOException {
+    /** The player keeps this record through the final save flush. */
+    static synchronized Closeable registerPlayerTask(Activity activity,File game,String sourceUri) throws IOException {
         File record=playerTaskFile(activity,activity.getTaskId());
         File directory=record.getParentFile();
         if(!directory.isDirectory()&&!directory.mkdirs()&&!directory.isDirectory())
             throw new IOException("Cannot create the SystemNNN task directory");
+        if(PLAYER_TASKS.containsKey(record))throw new IOException("SystemNNN task already registered");
+        if(!taskRecordsSwept){
+            File[] stale=directory.listFiles((parent,name)->name.matches("systemnnn-[0-9]+\\.task"));
+            if(stale!=null){
+                taskRecordsSwept=true;
+                for(File file:stale)if(!PLAYER_TASKS.containsKey(file)&&!file.delete())taskRecordsSwept=false;
+            }
+        }
         RandomAccessFile owner=new RandomAccessFile(record,"rw");
         try{
             if(owner.getChannel().tryLock()==null)throw new IOException("SystemNNN task already registered");
             owner.setLength(0);
             owner.writeUTF(sourceUri==null?"":sourceUri);
             owner.writeUTF(game.getCanonicalPath());
-            return owner;
+            PLAYER_TASKS.put(record,owner);
+            return ()->releasePlayerTask(record,owner);
         }catch(IOException|RuntimeException e){
             try{owner.close();}catch(IOException close){e.addSuppressed(close);}
             throw e;
         }
     }
 
-    /** The launcher also verifies that the matching AppTask still displays PlayerActivity. */
+    private static synchronized void releasePlayerTask(File record,RandomAccessFile owner) throws IOException {
+        if(!PLAYER_TASKS.remove(record,owner))return;
+        try{owner.close();}
+        finally{Files.deleteIfExists(record.toPath());}
+    }
+
+    /** The launcher also verifies that the matching AppTask belongs to PlayerActivity. */
     public static boolean isLivePlayerTask(Context context,int taskId,String sourceUri,File gameRoot) {
         if(taskId<0)return false;
         try(RandomAccessFile record=new RandomAccessFile(playerTaskFile(context,taskId),"r")){
@@ -116,7 +137,16 @@ public final class SystemNnnHost {
     }
 
     /** Checks the staged snapshot without promoting any legacy backup files. */
+    public static boolean validateStagedSaveSnapshot(Context context,File stage,Set<String> existing,Runnable checkCancelled)
+        throws IOException {
+        return SystemNnnSaveValidationService.validate(context,stage,requiresStorySnapshot(existing),checkCancelled);
+    }
+
     public static boolean canReplaceSaveSnapshot(Map<String,File> incoming,Set<String> existing) throws IOException {
+        return canReplaceSaveSnapshot(incoming,requiresStorySnapshot(existing));
+    }
+
+    static boolean canReplaceSaveSnapshot(Map<String,File> incoming,boolean requiresStory) throws IOException {
         boolean hasStory=false;
         GameSave.ImportValidation validation=new GameSave.ImportValidation();
         for(Map.Entry<String,File> entry:incoming.entrySet()){
@@ -135,8 +165,12 @@ public final class SystemNnnHost {
         boolean hasProgress=primary!=null||backup!=null;
         if(hasProgress&&!GameProgress.hasReadableBase(primary,backup))return false;
         if(hasStory)return true;
+        return hasProgress&&!requiresStory;
+    }
+
+    private static boolean requiresStorySnapshot(Set<String> existing){
         String chart=GameSavePaths.PREFIX+GameSavePaths.CHART+"/";
-        return hasProgress&&existing.stream().noneMatch(name->storySaveSlot(name)!=null||name.startsWith(chart));
+        return existing.stream().anyMatch(name->storySaveSlot(name)!=null||name.startsWith(chart));
     }
 
     /** Caller holds the game's shared save lock. Retired backups stay outside ZIP imports. */
@@ -151,7 +185,7 @@ public final class SystemNnnHost {
 
     public static final class SaveBusyException extends IOException {
         SaveBusyException() {
-            super("这款游戏的存档正在使用，请退出另一个播放器后重试");
+            super("SAVE_DIR_IN_USE");
         }
     }
 

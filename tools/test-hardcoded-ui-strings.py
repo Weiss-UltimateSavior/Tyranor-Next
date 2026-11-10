@@ -15,13 +15,20 @@ spec.loader.exec_module(checker)
 
 
 class HardcodedUiStringsTest(unittest.TestCase):
-    def scan(self, source: str, filename: str = "PlayerActivity.java") -> list[str]:
+    def scan(self, source: str, filename: str = "PlayerActivity.java", *, exact_baseline=False) -> list[str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / filename
             path.write_text(source, encoding="utf-8")
             with patch.object(checker, "ROOT", root):
-                return checker.check_java_cjk_literals([path])
+                return checker.check_java_cjk_literals([path], exact_baseline=exact_baseline)
+
+    def test_rejects_an_overcounted_baseline(self):
+        source = 'class Sample { String message = "診断"; }'
+        with patch.object(checker, "SYSTEMNNN_LITERAL_BASELINE", {"Sample.java": {'"診断"': 2}}):
+            errors = self.scan(source, "Sample.java", exact_baseline=True)
+        self.assertEqual(1, len(errors))
+        self.assertIn("baseline overcounts", errors[0])
 
     def test_rejects_summary_replacing_an_allowed_diagnostic(self):
         source = '''class GameSave {

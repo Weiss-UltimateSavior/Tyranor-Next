@@ -71,6 +71,18 @@ class EngineScannerSystemNnnTest {
         assertEquals(bound.copy(engine = EngineType.SYSTEMNNN), storedRescanResult(bound, detected, failedQuery))
     }
 
+    @Test fun failedReconciliationPreservesThirdPartyBindingsAndStillMigratesEmberfall() {
+        val bound = ScanGame("Game", "/storage/emulated/0/game", EngineType.RUNTIME_MODULE,
+            EngineScanner.LAUNCH_TARGET_GAME_DIR, runtimeModulePackage = MODULE)
+        val oldEmberfall = bound.copy(runtimeModulePackage = "com.tyranor.runtime.systemnnn")
+
+        assertSame(bound, RuntimeModuleBindings.reconcileBinding(bound, null, emptySet(), restoreReenabled = true))
+        assertEquals(bound.copy(engine = EngineType.UNKNOWN),
+            RuntimeModuleBindings.reconcileBinding(bound, setOf(MODULE), emptySet(), restoreReenabled = false))
+        assertEquals(oldEmberfall.copy(engine = EngineType.SYSTEMNNN, runtimeModulePackage = null),
+            RuntimeModuleBindings.reconcileBinding(oldEmberfall, null, emptySet(), restoreReenabled = false))
+    }
+
     @Test fun rescanKeepsTheOriginalPackageThroughBuiltInFallbackAndRestoresItOnReenable() {
         val detected = ScanGame("Game", "/storage/emulated/0/game", EngineType.SYSTEMNNN,
             EngineScanner.LAUNCH_TARGET_GAME_DIR)

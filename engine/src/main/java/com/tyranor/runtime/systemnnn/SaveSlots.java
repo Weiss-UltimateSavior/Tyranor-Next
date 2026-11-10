@@ -3,6 +3,7 @@ package com.tyranor.runtime.systemnnn;
 import android.graphics.Bitmap;
 import android.content.Context;
 import android.util.AtomicFile;
+import android.util.Log;
 import com.core.engine.EngineUiText;
 import com.core.engine.R;
 import java.io.*;
@@ -291,6 +292,10 @@ final class SaveSlots {
             ByteBuffer.wrap(bytes).asIntBuffer().get(pixels);
             return Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);
         }catch(IOException|RuntimeException e){return null;}
+        catch(OutOfMemoryError exhausted){
+            Log.w("SystemNNN","Unable to allocate a save thumbnail",exhausted);
+            return null;
+        }
     }
     Bitmap writePicture(int slot,long savedAt,int w,int h,int[] pixels) throws IOException {
         if(!pictureSize(w,h)||pixels==null||pixels.length!=w*h)throw new IOException("无效的存档截图");
@@ -303,7 +308,11 @@ final class SaveSlots {
             out.write(bytes.array());
             out.flush();atomic.finishWrite(raw);
         }catch(IOException|RuntimeException e){atomic.failWrite(raw);throw e;}
-        return Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);
+        try{return Bitmap.createBitmap(pixels,w,h,Bitmap.Config.ARGB_8888);}
+        catch(OutOfMemoryError exhausted){
+            Log.w("SystemNNN","Unable to cache a saved thumbnail",exhausted);
+            return null;
+        }
     }
     static boolean valid(int slot) { return slot==AUTO || slot==QUICK || slot>=0 && slot<MAX_MANUAL_SLOTS; }
     static boolean exists(File file) { return file.isFile() || new File(file.getPath()+".bak").isFile(); }

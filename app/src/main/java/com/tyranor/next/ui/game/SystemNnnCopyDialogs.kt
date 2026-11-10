@@ -22,14 +22,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal class SystemNnnCopyUi(private val showDialogs: (SystemNnnCopyUi) -> Unit = {}) {
+internal class SystemNnnCopyUi {
     private var confirmation by mutableStateOf<CompletableDeferred<Boolean>?>(null)
     val confirming: Boolean get() = confirmation != null
     var copying by mutableStateOf(false)
         private set
     var cancelling by mutableStateOf(false)
         private set
-    val busy: Boolean get() = confirming || copying
 
     val interaction = EngineLauncher.SystemNnnCopyInteraction(
         confirmFirstCopy = {
@@ -37,7 +36,6 @@ internal class SystemNnnCopyUi(private val showDialogs: (SystemNnnCopyUi) -> Uni
                 val response = CompletableDeferred<Boolean>()
                 confirmation = response
                 try {
-                    showDialogs(this@SystemNnnCopyUi)
                     response.await()
                 } finally {
                     confirmation = null
@@ -48,7 +46,6 @@ internal class SystemNnnCopyUi(private val showDialogs: (SystemNnnCopyUi) -> Uni
             withContext(Dispatchers.Main.immediate) {
                 copying = running
                 cancelling = false
-                if (running) showDialogs(this@SystemNnnCopyUi)
             }
         },
     )

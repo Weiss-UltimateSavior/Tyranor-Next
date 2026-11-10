@@ -1,11 +1,22 @@
 package com.tyranor.runtime.systemnnn;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.view.Surface;
+import com.core.nativeplugin.NativeRuntimePack;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 final class NativeGame {
-    static { System.loadLibrary("systemnnn"); }
+    private static boolean loaded;
+
+    static synchronized void load(Context context) throws IOException {
+        if (loaded) return;
+        String path = NativeRuntimePack.libraryPath(context, NativeRuntimePack.PACK_SYSTEMNNN, "libsystemnnn.so");
+        if (path == null) throw new IOException("SystemNNN runtime pack unavailable");
+        System.load(path);
+        loaded = true;
+    }
     static final int RUNNING=0, DRAW=1, OVERLAP=2, DIALOGUE=3, CHOICE=4, END=5, TITLE=6, MOVIE=7, PLACE=8, MODAL=9;
     static final int META_SIZE=12, CLOCK_DATE=7, CLOCK_MILLISECONDS=8, SCRIPT_CURSOR=9, DRAW_MESSAGE=10,
         TITLE_BACKGROUND_ENDED=11;

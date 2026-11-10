@@ -199,16 +199,20 @@ final class GameUiAssets {
                 if(pixels<=remaining){loaded.put(file,reused);remaining-=pixels;}
                 continue;
             }
-            byte[] path=file.getBytes(StandardCharsets.ISO_8859_1);
-            int[] raw=file.equals(keyed)?NativeGame.keyedSprite(handle,path):NativeGame.gallerySprite(handle,path);
-            if(raw==null||raw.length<2)continue;
-            int width=raw[0],height=raw[1];
-            long pixels=(long)width*height;
-            if(width<1||height<1||width>4096||height>4096||pixels>MAX_IMAGE_PIXELS||
-                pixels!=raw.length-2L||pixels>remaining)continue;
-            if(opaque)for(int i=2;i<raw.length;i++)raw[i]|=0xff000000;
-            loaded.put(file,Bitmap.createBitmap(raw,2,width,width,height,Bitmap.Config.ARGB_8888));
-            remaining-=pixels;
+            try{
+                byte[] path=file.getBytes(StandardCharsets.ISO_8859_1);
+                int[] raw=file.equals(keyed)?NativeGame.keyedSprite(handle,path):NativeGame.gallerySprite(handle,path);
+                if(raw==null||raw.length<2)continue;
+                int width=raw[0],height=raw[1];
+                long pixels=(long)width*height;
+                if(width<1||height<1||width>4096||height>4096||pixels>MAX_IMAGE_PIXELS||
+                    pixels!=raw.length-2L||pixels>remaining)continue;
+                if(opaque)for(int i=2;i<raw.length;i++)raw[i]|=0xff000000;
+                loaded.put(file,Bitmap.createBitmap(raw,2,width,width,height,Bitmap.Config.ARGB_8888));
+                remaining-=pixels;
+            }catch(OutOfMemoryError exhausted){
+                Log.w("SystemNNN","Unable to allocate a menu sprite",exhausted);
+            }
         }
         return loaded;
     }

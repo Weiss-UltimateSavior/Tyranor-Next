@@ -117,7 +117,9 @@ class SaveSyncServiceTest {
         val session = JSONObject().put("token", "pending-exit").put("uri", game.uri)
             .put("activeKey", directoryKey).put("baseline", before)
         harness.sessions.save(key, session)
-        val saves = SystemNnnSaveStore(gameDirectory, saveDirectory)
+        val saves = SystemNnnSaveStore(gameDirectory, saveDirectory, validateSnapshot = { _, incoming, existing, _ ->
+            SystemNnnHost.canReplaceSaveSnapshot(incoming, existing)
+        })
         var attemptedCapture = false
         suspend fun flush() = SaveSyncRuntime.flushPending(harness.root, harness.world) { target, activeKey ->
             assertEquals(game, target)
@@ -2792,6 +2794,65 @@ class SaveSyncServiceTest {
         assertEquals(playedN, published.contentHash)
         assertTrue(published.restored)
         assertEquals(selected.createdAt, published.previousCreatedAt)
+    }
+
+    @Test
+    fun rebindingSystemNnnCopyPreservesCompletedPromotionAndUploadsNewProgress() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-saf-copy", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        harness.world.directoryKey = "save-directory:/games/systemnnn/sav"
+        val source = harness.world.activeKey(game)
+        harness.setActive(game, "before")
+        val selected = harness.addSnapshot(game, "selected", 1_700_000_000_000L)
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+
+        val copy = "save-directory:/app/systemnnn-imports/copy/game/sav"
+        harness.world.directoryKey = copy
+        repeat(2) { harness.service.rebindSystemNnnPromotion(game, harness.world.config(), source, copy) }
+        assertEquals(copy, harness.states.load(harness.key(game)).getString("promotionActiveKey"))
+        assertTrue(harness.service.hasPendingPromotion(game, harness.world.config()))
+
+        val next = harness.setActive(game, "after-copy")
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(report.failures.isEmpty())
+        assertEquals(1, report.uploaded)
+        val uploaded = harness.transport.versions(harness.remoteGame(game)).single()
+        assertEquals(next, uploaded.contentHash)
+        assertEquals(selected.createdAt, uploaded.previousCreatedAt)
+    }
+
+    @Test
+    fun uploadedUnchangedSystemNnnRestoreCanRebindWithoutALaunchSession() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-restored-before-copy", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        val source = temp.newFolder("systemnnn-source")
+        val sourceKey = SAVE_DIRECTORY_KEY_PREFIX + File(source, "sav").canonicalPath
+        val copiedSaves = temp.newFolder("systemnnn-copy", "sav")
+        val copyKey = SAVE_DIRECTORY_KEY_PREFIX + copiedSaves.canonicalPath
+        harness.world.directoryKey = sourceKey
+        harness.setActive(game, "before")
+        val selected = harness.addSnapshot(game, "selected", 1_700_000_000_000L)
+        assertEquals(SaveActivationResult.APPLIED, harness.service.activateVersion(game, selected.id))
+
+        val initialUpload = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(initialUpload.failures.toString(), initialUpload.failures.isEmpty())
+        assertEquals(1, initialUpload.uploaded)
+        assertFalse(harness.service.hasPendingPromotion(game, harness.world.config()))
+
+        harness.world.directoryKey = copyKey
+        val originalKey = requireNotNull(harness.service.boundPromotionDirectory(game, harness.world.config()))
+        assertEquals(sourceKey, originalKey)
+        assertTrue(matchesImportedSystemNnnSaves(originalKey, copyKey, source, copiedSaves))
+        harness.service.rebindSystemNnnPromotion(game, harness.world.config(), originalKey, copyKey)
+
+        val next = harness.setActive(game, "after-copy")
+        val report = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+        assertTrue(report.failures.toString(), report.failures.isEmpty())
+        assertEquals(1, report.uploaded)
+        assertTrue(harness.transport.versions(harness.remoteGame(game)).any { it.contentHash == next })
+        assertNull(harness.service.boundPromotionDirectory(game, harness.world.config()))
     }
 
     @Test

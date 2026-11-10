@@ -20,7 +20,7 @@
 
 - 文件使用 UTF-8 无 BOM；Kotlin 遵循 `kotlin.code.style=official`，新增 Kotlin 代码通常使用四个空格缩进，已有文件保持局部风格，Gradle 配置也沿用所在文件格式。
 - 类型与 Composable 用 `PascalCase`，函数/属性用 `camelCase`，常量用 `UPPER_SNAKE_CASE`，包名小写；测试命名 `<Subject>Test.kt` / `.java`。
-- 用户可见文案同步维护两模块各自的 `values/`、`values-ja/`、`values-en/` 字符串资源。运行 `python tools/check-hardcoded-ui-strings.py`。脚本覆盖 Kotlin 和 SystemNNN 的 Java，注入 JS 的界面文案须人工复核。
+- 用户可见文案同步维护两模块各自的 `values/`、`values-ja/`、`values-en/strings.xml`。运行 `python tools/check-hardcoded-ui-strings.py`；它不覆盖 Java 与注入 JS 的全部文案，后者须人工复核。
 - 当前未配置 ktlint、detekt 或覆盖率百分比门槛，不要宣称这些检查已通过；Android lint 与专项回归按改动范围执行。
 - 功能变更同步更新规格与 README，架构边界变化更新架构说明，术语变化更新 `CONTEXT.md`；维护 `CHANGELOG.md`，若存在 `README_EN.md` 也同步更新。
 
@@ -110,8 +110,6 @@ PR 说明问题、最终行为、影响的引擎/页面、验证命令及结果�
 - 大体积引擎运行库（当前 `libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、IJK 三件套、System35/4 + `libSDL2x.so`）仍以 `engine/src/main/jniLibs` 为源头，但**不进 APK 的 `lib/`**：Gradle 打成 `app/build/generated/assets/engine-runtime/<pack>.zip.xz`，首次启动对应引擎时由 `com.core.nativeplugin.NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen（IJK 走 `IjkRuntime` 的 `IjkLibLoader`）。新增此类运行库时须同步 `NativeRuntimePack` 的分片常量与 `app/build.gradle.kts` 的 `bundledEngineRuntimePacks`（两处 id 与库名保持一致）；`packaging.jniLibs.excludes` 由该清单自动推导，不要再手写。
 
 - 原生运行库通常是已提交的预编译 `.so`；普通 Gradle 构建只编 JNI 桥，不重建全部运行时。更新运行库时必须同步固定来源、校验清单、许可证与设备验收证据，详见 [ARCHITECTURE.md](ARCHITECTURE.md)。
-
-- SystemNNN 的单个 ARM64 运行库保留在 APK 的压缩 `lib/` 中，由播放器进程的 `System.loadLibrary` 直接加载。更新时同步 `engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt` 的固定源码、大小和 SHA-256，并运行 `python3 tools/check-systemnnn-runtime.py`。
 
 ***
 

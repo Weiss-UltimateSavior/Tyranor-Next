@@ -136,7 +136,7 @@ SYSTEMNNN_LITERAL_BASELINE = {
         '"存档尾部无效"': 2,
         '"选择场景存档缺少有效原生快照"': 1,
         '"缺少恢复状态"': 2,
-        '"系统时间样本缺少对应输入"': 2,
+        '"系统时间样本缺少对应输入"': 1,
         '"缺少系统变量起始记录"': 1,
         '"缺少结果起始记录"': 1,
         '"缺少鉴赏起始记录"': 1,
@@ -166,9 +166,6 @@ SYSTEMNNN_LITERAL_BASELINE = {
         '"无效的存档编号"': 1,
         '"存档编号不匹配"': 1,
         '"无效的存档截图"': 1,
-    },
-    "SystemNnnHost.java": {
-        '"这款游戏的存档正在使用，请退出另一个播放器后重试"': 1,
     },
     "GameRunner.java": {
         '"ムービー番号"': 1,
@@ -287,7 +284,7 @@ def translate_java_unicode(source: str) -> str:
     return "".join(translated)
 
 
-def check_java_cjk_literals(paths) -> list[str]:
+def check_java_cjk_literals(paths, *, exact_baseline: bool = False) -> list[str]:
     errors: list[str] = []
     for path in sorted(paths):
         remaining = SYSTEMNNN_LITERAL_BASELINE.get(path.name, {}).copy()
@@ -302,6 +299,10 @@ def check_java_cjk_literals(paths) -> list[str]:
                 continue
             index = source.count("\n", 0, match.start()) + 1
             errors.append(f"[SystemNNN] {path.relative_to(ROOT)}:{index}: {literal!r}")
+        if exact_baseline:
+            for literal, unused in remaining.items():
+                if unused:
+                    errors.append(f"[SystemNNN] {path.relative_to(ROOT)}: baseline overcounts {literal!r} by {unused}")
     return errors
 
 
@@ -329,7 +330,7 @@ def main() -> int:
     for filename in ("systemnnn_controls.xml", "systemnnn_host.xml"):
         files = [ENGINE_RES / directory / filename for directory in ("values", "values-en", "values-ja")]
         errors += check_resource_parity("SystemNNN", files)
-    errors += check_java_cjk_literals(SYSTEMNNN_JAVA.glob("*.java"))
+    errors += check_java_cjk_literals(SYSTEMNNN_JAVA.glob("*.java"), exact_baseline=True)
     if errors:
         print("Hardcoded UI string check failed:")
         print("\n".join(errors))

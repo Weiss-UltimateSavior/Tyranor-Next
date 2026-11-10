@@ -10,9 +10,10 @@ import android.provider.DocumentsContract;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
@@ -34,6 +35,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
 /** Durable real files for a game whose shared-storage path is blocked but whose SAF tree is readable. */
@@ -53,6 +56,7 @@ public final class SystemNnnGameImport {
     private static final int MAX_ENTRIES=100000,MAX_DEPTH=64,MAX_ID_BYTES=8192,CHUNK=64*1024;
     private static final long FREE_HEADROOM=256L*1024*1024;
     private static final Cancellation NONE=()->{};
+    private static final Logger LOG=Logger.getLogger(SystemNnnGameImport.class.getName());
     private static final Set<Path> OPEN_COPIES=ConcurrentHashMap.newKeySet();
     private static final String[] COLUMNS={DocumentsContract.Document.COLUMN_DOCUMENT_ID,
         DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,
@@ -244,66 +248,120 @@ public final class SystemNnnGameImport {
     }
     /** Imports resources without changing the source or replacing an existing game/sav. */
     public static File importDirectory(Context context,Uri source,String sourceId,boolean allowCreate,Cancellation cancellation) throws IOException {
+        try(StagedCopy staged=stageDirectory(context,source,sourceId,allowCreate,cancellation)){
+            return staged.publish();
+        }
+    }
+
+    /** Only private staging files are written here. The host admits the save change before publish. */
+    public static StagedCopy stageDirectory(Context context,Uri source,String sourceId,boolean allowCreate,Cancellation cancellation) throws IOException {
         Cancellation check=cancellation==null?NONE:cancellation;check.check();
         String identity=normalizeIdentity(sourceId);
         if(!identity.equals(sourceIdentity(source)))throw new Failure(Reason.INVALID_SOURCE);
         File external=context.getExternalFilesDir(null);
         if(external==null)throw new Failure(Reason.COPY_FAILED);
         File base=new File(external,DIRECTORY);
-        return importDirectory(base,identity,allowCreate,check,()->{
+        return stageDirectory(base,identity,allowCreate,check,()->{
             Uri granted=findAuthorizedSource(context,source);
             if(granted==null)throw new Failure(Reason.NO_GRANT);
             Source tree=new Source(context,granted,identity,check);
-            return (game,restoring,publish)->tree.copyGame(base,game,restoring,publish);
+            return game->tree.stageResources(base,game);
         });
     }
 
-    interface ImportSource {
-        // Keep the source save lock held through publication of a fresh copy.
-        File copyGame(File game,boolean restoring,CopyOperation<File> publish) throws IOException;
+    interface ImportSource { SaveCopy stageResources(File game) throws IOException; }
+    interface SaveCopy {
+        // Invoked only for a fresh copy. Keep the source save lock held through publication.
+        File copyAndPublish(CopyOperation<File> publish) throws IOException;
     }
-    static File importDirectory(File base,String identity,boolean allowCreate,Cancellation check,CopyOperation<ImportSource> authorize) throws IOException {
-        File existing=committedRoot(base,identity);
-        if(existing!=null&&!resourcesEvicted(existing))return existing;
-        if(existing==null&&!allowCreate)throw new Failure(Reason.CORRUPT_COPY);
-        ImportSource source=authorize.run();
-        String key=key(identity);
-        try{
-            return withImportLock(base,identity,()->{
-                File current=committedRoot(base,identity);
-                boolean restoring=current!=null;
-                if(!restoring&&!allowCreate)throw new Failure(Reason.CORRUPT_COPY);
-                if(restoring&&!resourcesEvicted(current))return current;
+    public static final class StagedCopy implements AutoCloseable {
+        private final File staging;
+        private final ImportLock lock;
+        private final CopyOperation<File> commit;
+        private boolean closed;
+
+        private StagedCopy(File staging,ImportLock lock,CopyOperation<File> commit){
+            this.staging=staging;this.lock=lock;this.commit=commit;
+        }
+
+        /** Call under the host's save mutation fence when the active sav may change. */
+        public File publish() throws IOException {
+            if(closed)throw new IllegalStateException("Import staging is closed");
+            return copyOperation(commit);
+        }
+
+        @Override public void close(){
+            if(closed)return;
+            closed=true;
+            if(lock!=null)cleanupStage(staging,lock,null);
+        }
+    }
+
+    static StagedCopy stageDirectory(File base,String identity,boolean allowCreate,Cancellation check,
+                                     CopyOperation<ImportSource> authorize) throws IOException {
+        return copyOperation(()->{
+            File existing=committedRoot(base,identity);
+            if(existing!=null&&!resourcesEvicted(existing))return new StagedCopy(null,null,()->existing);
+            if(existing==null&&!allowCreate)throw new Failure(Reason.CORRUPT_COPY);
+            String key=key(identity);
+            // This lock is distinct from the source import lock used by ZIP writes and publication.
+            ImportLock lock=lockImportPath(base,identity,".staging.lock");
+            File staging=new File(base,key+".pending-"+UUID.randomUUID());
+            boolean created=false;
+            try{
+                ImportSource source=authorize.run();
                 File[] leftovers=base.listFiles();
                 if(leftovers==null)throw new Failure(Reason.COPY_FAILED);
                 for(File leftover:leftovers)if(leftover.getName().startsWith(key+".pending-")){
                     check.check();deleteOwnedTree(leftover);
                 }
                 check.check();
-                File staging=new File(base,key+".pending-"+UUID.randomUUID());
-                Files.createDirectory(staging.toPath());
-                Throwable failure=null;
-                try{
-                    File game=new File(staging,GAME);Files.createDirectory(game.toPath());
-                    return source.copyGame(game,restoring,()->{
+                Files.createDirectory(staging.toPath());created=true;
+                File game=new File(staging,GAME);Files.createDirectory(game.toPath());
+                SaveCopy saves=source.stageResources(game);
+                writeIdentity(staging,identity);
+                return new StagedCopy(staging,lock,()->withImportLock(base,identity,()->{
+                    check.check();
+                    File current=committedRoot(base,identity);
+                    if(current!=null){
+                        if(resourcesEvicted(current))restoreResources(current,game);
+                        return current;
+                    }
+                    if(!allowCreate)throw new Failure(Reason.CORRUPT_COPY);
+                    return saves.copyAndPublish(()->{
                         check.check();
-                        if(restoring){
-                            restoreResources(current,game);
-                            return current;
-                        }
-                        File metadata=new File(staging,IDENTITY);
-                        try(FileOutputStream output=new FileOutputStream(metadata)){
-                            output.write(identity.getBytes(StandardCharsets.UTF_8));output.getFD().sync();
-                        }
-                        try{Files.move(staging.toPath(),new File(base,key).toPath(),StandardCopyOption.ATOMIC_MOVE);}
+                        File target=new File(base,key);
+                        try{Files.move(staging.toPath(),target.toPath(),StandardCopyOption.ATOMIC_MOVE);}
                         catch(IOException failed){throw new Failure(Reason.COMMIT_FAILED,failed);}
-                        return new File(new File(base,key),GAME);
+                        return new File(target,GAME);
                     });
-                }catch(IOException|RuntimeException|Error error){failure=error;throw error;}
-                finally{if(Files.exists(staging.toPath(),LinkOption.NOFOLLOW_LINKS))try{deleteOwnedTree(staging);}catch(IOException cleanup){
-                    if(failure!=null)failure.addSuppressed(cleanup);else throw cleanup;
-                }}
-            });
+                }));
+            }catch(IOException|RuntimeException|Error failure){
+                cleanupStage(created?staging:null,lock,failure);
+                throw failure;
+            }
+        });
+    }
+
+    private static void writeIdentity(File staging,String identity) throws IOException {
+        try(FileChannel channel=createFile(new File(staging,IDENTITY))){
+            Channels.newOutputStream(channel).write(identity.getBytes(StandardCharsets.UTF_8));
+            channel.force(true);
+        }
+    }
+
+    private static void cleanupStage(File staging,ImportLock lock,Throwable failure){
+        try(ImportLock held=lock){
+            if(staging!=null&&Files.exists(staging.toPath(),LinkOption.NOFOLLOW_LINKS))deleteOwnedTree(staging);
+        }catch(IOException|SecurityException cleanup){
+            if(failure!=null)failure.addSuppressed(cleanup);
+            else LOG.log(Level.WARNING,"Could not remove SystemNNN import staging",cleanup);
+        }
+    }
+
+    private static <T> T copyOperation(CopyOperation<T> operation) throws IOException {
+        try{
+            return operation.run();
         }catch(Failure e){throw e;}
         catch(CancellationException e){throw e;}
         catch(SecurityException e){throw new Failure(Reason.NO_GRANT,e);}
@@ -330,16 +388,34 @@ public final class SystemNnnGameImport {
         return withImportLock(new File(external,DIRECTORY),sourceId,operation);
     }
     static <T> T withImportLock(File base,String sourceId,CopyOperation<T> operation) throws IOException {
+        try(ImportLock lock=lockImportPath(base,sourceId,".lock")){return operation.run();}
+    }
+    private static ImportLock lockImportPath(File base,String sourceId,String suffix) throws IOException {
         String key=key(normalizeIdentity(sourceId));
         Files.createDirectories(base.toPath());plainDirectory(base);
-        Path path=base.getCanonicalFile().toPath().resolve(key+".lock");
+        Path path=base.getCanonicalFile().toPath().resolve(key+suffix);
         if(!OPEN_COPIES.add(path))throw new Failure(Reason.BUSY);
-        try(FileChannel channel=FileChannel.open(path,StandardOpenOption.CREATE,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS)){
+        FileChannel channel=null;
+        try{
+            channel=FileChannel.open(path,StandardOpenOption.CREATE,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS);
             FileLock lock;
             try{lock=channel.tryLock();}catch(OverlappingFileLockException e){lock=null;}
             if(lock==null)throw new Failure(Reason.BUSY);
-            try(FileLock held=lock){return operation.run();}
-        }finally{OPEN_COPIES.remove(path);}
+            return new ImportLock(path,channel);
+        }catch(IOException|RuntimeException|Error failure){
+            try{if(channel!=null)channel.close();}
+            catch(IOException cleanup){failure.addSuppressed(cleanup);}
+            finally{OPEN_COPIES.remove(path);}
+            throw failure;
+        }
+    }
+    private static final class ImportLock implements AutoCloseable {
+        private final Path path;
+        private final FileChannel channel;
+        ImportLock(Path path,FileChannel channel){this.path=path;this.channel=channel;}
+        @Override public void close() throws IOException {
+            try{channel.close();}finally{OPEN_COPIES.remove(path);}
+        }
     }
     private static final class Entry {
         final String id,name;final boolean directory;final long size,modified;
@@ -355,28 +431,34 @@ public final class SystemNnnGameImport {
         Source(Context context,Uri tree,String identity,Cancellation check){
             this.context=context;this.tree=tree;this.identity=identity;this.check=check;
         }
-        File copyGame(File base,File game,boolean restoring,CopyOperation<File> publish) throws IOException {
+        SaveCopy stageResources(File base,File game) throws IOException {
             requireRoot();
             List<Entry> roots=children(identity);
             requireBootstrap(roots);
-            Entry sav=null;
-            if(restoring)roots.removeIf(entry->entry.name.equalsIgnoreCase("sav"));
-            for(Entry entry:roots)if(entry.name.equalsIgnoreCase("sav")){
-                if(!entry.directory||sav!=null)throw new Failure(Reason.INVALID_SOURCE);sav=entry;
-            }
-            Map<String,String> savesBefore=saveSnapshot(sav);
+            roots.removeIf(entry->entry.name.equalsIgnoreCase("sav"));
+            Budget budget=new Budget(base);
+            copy(roots,game,"",0,budget);
+            if(!readableBootstrap(game))throw new Failure(Reason.INVALID_SOURCE);
+            return publish->copySaves(game,budget,publish);
+        }
+        File copySaves(File game,Budget budget,CopyOperation<File> publish) throws IOException {
+            Entry sav=findSaves();
             try(SourceLock sourceLock=lockSaves(sav)){
-                copy(roots,game,"",0,new Budget(base));
-                if(!readableBootstrap(game))throw new Failure(Reason.INVALID_SOURCE);
-                if(!restoring){
-                    Entry currentSav=null;
-                    for(Entry entry:children(identity))if(entry.directory&&entry.name.equalsIgnoreCase("sav")){
-                        if(currentSav!=null)throw new Failure(Reason.INVALID_SOURCE);currentSav=entry;
-                    }
-                    if(!savesBefore.equals(saveSnapshot(currentSav)))throw new Failure(Reason.INCOMPLETE_SOURCE);
-                }
+                Map<String,String> before=saveSnapshot(sav);
+                if(sav!=null)copy(Collections.singletonList(sav),game,"",0,budget);
+                Entry current=findSaves();
+                if((sav==null)!=(current==null)||sav!=null&&!sav.id.equals(current.id)||
+                    !before.equals(saveSnapshot(current)))throw new Failure(Reason.INCOMPLETE_SOURCE);
                 return publish.run();
             }
+        }
+        Entry findSaves() throws IOException {
+            Entry saves=null;
+            for(Entry entry:children(identity))if(entry.name.equalsIgnoreCase("sav")){
+                if(!entry.directory||saves!=null)throw new Failure(Reason.INVALID_SOURCE);
+                saves=entry;
+            }
+            return saves;
         }
         Uri uri(String id){return DocumentsContract.buildDocumentUriUsingTree(tree,id);}
         void requireBootstrap(List<Entry> roots) throws IOException {
@@ -493,7 +575,8 @@ public final class SystemNnnGameImport {
     }
     static void copyFile(InputStream input,File target,long declared,Budget budget,Cancellation check) throws IOException {
         byte[] block=new byte[CHUNK];long copied=0;
-        try(FileOutputStream output=new FileOutputStream(target)){
+        try(FileChannel channel=createFile(target)){
+            OutputStream output=Channels.newOutputStream(channel);
             while(true){
                 check.check();int size=input.read(block);if(size<0)break;if(size==0)continue;
                 if(size>budget.limit-budget.bytes)throw new Failure(Reason.NO_SPACE);
@@ -504,8 +587,11 @@ public final class SystemNnnGameImport {
                 output.write(block,0,size);copied+=size;budget.bytes+=size;
             }
             if(declared>=0&&copied!=declared)throw new Failure(Reason.INCOMPLETE_SOURCE);
-            output.getFD().sync();
+            channel.force(true);
         }
+    }
+    private static FileChannel createFile(File target) throws IOException {
+        return FileChannel.open(target.toPath(),StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS);
     }
     static void checkName(String name) throws Failure {
         if(name==null||name.isEmpty()||name.equals(".")||name.equals("..")||name.indexOf('/')>=0||

@@ -25,7 +25,8 @@ AliceSoft 的两代引擎，各为独立的引擎类型（XSYS35 对应 System 3
 _Avoid_: System3/4、AliceSoft 引擎
 
 **SystemNNN（SYSTEMNNN）**:
-通过 SystemNNN-Emberfall 在 Android 上运行 SystemNNN 游戏的内置引擎。
+由 tinyan 开发的视觉小说引擎家族。Tyranor Next 的内置实现由 Emberfall 承载。
+_Avoid_: Emberfall 独立播放器、第三方运行时模块
 
 **视觉小说引擎组（Framebuffer 引擎）**:
 Siglus 之外由 game_launcher 运行库承载的三个软件渲染引擎（RealLive、AVG32、UK2）的统称：引擎逐帧输出 RGBA 帧缓冲，宿主 `FramebufferGameActivity` 拷进 Bitmap 呈现并转发指针/键盘/文本输入；文本编码（NLS）按全局/单游戏设置。

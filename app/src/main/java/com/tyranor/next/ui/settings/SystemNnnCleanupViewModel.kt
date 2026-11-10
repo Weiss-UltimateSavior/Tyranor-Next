@@ -11,7 +11,9 @@ import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.GameSaveManager.OrphanResourceCleanup
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -33,7 +35,7 @@ internal class SystemNnnCleanupViewModel(application: Application) : AndroidView
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
 
-    fun removeRoot(root: String) = start {
+    fun removeRoot(root: String) = start(finishAfterClose = true) {
         val removed = GameLibraryFacade.removeRootAndGames(appContext, Uri.parse(root))
         val targets = removed.filter { it.engine == EngineType.SYSTEMNNN }
         if (targets.isEmpty()) null else {
@@ -49,14 +51,15 @@ internal class SystemNnnCleanupViewModel(application: Application) : AndroidView
         else clearPendingGames().copy(unverifiable = mutableState.value.result?.unverifiable ?: 0)
     }
 
-    private fun start(operation: suspend () -> OrphanResourceCleanup?) {
+    private fun start(finishAfterClose: Boolean = false, operation: suspend () -> OrphanResourceCleanup?) {
         val previous = mutableState.value
         if (previous.running) return
         mutableState.value = previous.copy(running = true)
-        viewModelScope.launch {
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             try {
-                val result = withContext(Dispatchers.IO) { operation() }
-                mutableState.value = State(result = result ?: previous.result, canRetry = hasPendingWork())
+                val worker = if (finishAfterClose) Dispatchers.IO + NonCancellable else Dispatchers.IO
+                val result = withContext(worker) { operation() }
+                mutableState.value = State(result = result, canRetry = hasPendingWork())
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {

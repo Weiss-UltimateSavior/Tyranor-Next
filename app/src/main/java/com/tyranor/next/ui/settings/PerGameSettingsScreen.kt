@@ -67,6 +67,7 @@ import com.tyranor.next.theme.NavWhite
 import com.tyranor.next.theme.DialogItemSurface
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.theme.AppComponentCornerRadius
+import com.tyranor.next.ui.save.description
 import com.tyranor.next.ui.common.AppAlertDialog
 import com.tyranor.next.ui.common.NoIndication
 import com.tyranor.next.ui.common.DialogTextButton
@@ -1181,7 +1182,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             // 当前生效存档路径（与存档管理同源）：独立存档 = 应用外部存档目录，关闭 = 游戏目录 save/
                             saveLocation?.let { location ->
                                 Text(
-                                    location.description,
+                                    location.description(game.engine.displayName),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1242,7 +1243,7 @@ fun PerGameSettingsScreen(game: ScanGame) {
                             // 当前生效存档路径（与存档管理同源）：独立存档 = 应用外部存档目录，关闭 = 游戏根 SaveFolder
                             saveLocation?.let { location ->
                                 Text(
-                                    location.description,
+                                    location.description(game.engine.displayName),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),

@@ -15,7 +15,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.widget.TextView;
+import androidx.appcompat.widget.AppCompatTextView;
 import java.io.IOException;
 
 import static com.tyranor.runtime.systemnnn.GameRunner.Modal.BACK;
@@ -299,7 +299,7 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         return super.onTouchEvent(event);
     }
 
-    private final class CatalogRow extends TextView {
+    private final class CatalogRow extends AppCompatTextView {
         final int logicalWidth;
         private final Paint fill=new Paint();
         GameRunner.Modal.Row entry;
@@ -307,6 +307,7 @@ final class GameOptionalCatalogPanel extends GameUiPanel {
         boolean locked,hover;
         CatalogRow(int width){
             super(GameOptionalCatalogPanel.this.getContext());
+            setEmojiCompatEnabled(false);
             logicalWidth=width;
             setSingleLine(true);setEllipsize(null);
             setGravity(Gravity.LEFT|Gravity.TOP);setIncludeFontPadding(false);
