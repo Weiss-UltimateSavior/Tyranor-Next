@@ -5,11 +5,10 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.GameSaveManager.SystemNnnResourceCleanup
+import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -37,16 +36,16 @@ internal class SystemNnnCleanupViewModel(application: Application) : AndroidView
 
     fun removeRoot(root: String) = start(finishAfterClose = true) {
         val removed = GameLibraryFacade.removeRootAndGames(appContext, Uri.parse(root))
-        // Legacy Emberfall module bindings resolve to the built-in engine before filtering.
-        val targets = removed.map(RuntimeModuleBindings::builtInSystemNnn)
-            .filter { it.engine == EngineType.SYSTEMNNN }
-        if (targets.isEmpty()) null else {
-            pendingGames = (pendingGames + targets).distinctBy(ScanGame::uri)
+        if (removed.isEmpty()) null else {
+            pendingGames = (pendingGames + removed).distinctBy(ScanGame::uri)
             clearPendingGames()
         }
     }
 
-    fun retry() = start { clearPendingGames() }
+    fun retry() = start {
+        pendingGames = emptyList()
+        manager.drainSystemNnnCleanupQueue()
+    }
 
     private fun start(finishAfterClose: Boolean = false, operation: suspend () -> SystemNnnResourceCleanup?) {
         val previous = mutableState.value
@@ -68,7 +67,8 @@ internal class SystemNnnCleanupViewModel(application: Application) : AndroidView
         }
     }
 
-    private fun hasPendingWork() = pendingGames.isNotEmpty()
+    private fun hasPendingWork() =
+        pendingGames.isNotEmpty() || SystemNnnCleanupQueue.pending(appContext).isNotEmpty()
 
     private suspend fun clearPendingGames(): SystemNnnResourceCleanup =
         manager.clearSystemNnnResourceTargets(pendingGames).also { pendingGames = it.failedGames }

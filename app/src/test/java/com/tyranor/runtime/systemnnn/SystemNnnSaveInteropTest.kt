@@ -549,6 +549,47 @@ class SystemNnnSaveInteropTest {
         assertEquals(null, SystemNnnCopyStore.committedRoot(base, source))
     }
 
+    @Test fun normalizesSourceIdentitiesConsistently() {
+        val cases = mapOf(
+            "primary:Games/Sample" to "primary:Games/Sample",
+            "PRIMARY:Games/Sample" to "primary:Games/Sample",
+            "0A1B-2C3D:roms/game" to "0A1B-2C3D:roms/game",
+            "primary:" to "primary:",
+        )
+        for ((raw, expected) in cases) {
+            assertEquals(expected, SystemNnnCopyStore.normalizeIdentity(raw))
+            assertEquals(
+                SystemNnnCopyStore.key(expected),
+                SystemNnnCopyStore.key(SystemNnnCopyStore.normalizeIdentity(raw)),
+            )
+        }
+        for (invalid in listOf("", ":missing", "primary:../escape", "primary:a//b", "primary:a\\b")) {
+            val failure = assertThrows(SystemNnnCopyStore.Failure::class.java) {
+                SystemNnnCopyStore.normalizeIdentity(invalid)
+            }
+            assertEquals(SystemNnnCopyStore.Reason.INVALID_SOURCE, failure.reason)
+        }
+    }
+
+    @Test fun clearingOneCopyLeavesOtherCopiesUntouched() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val source = "primary:Games/First"
+        val other = "primary:Games/Second"
+        for ((identity, script) in listOf(source to "first script", other to "second script")) {
+            val entry = base.resolve(SystemNnnCopyStore.key(identity))
+            put(entry, "source.id", identity)
+            put(entry, "game/spt/sys.spt", script)
+            put(entry, "game/sav/sysfile3.sav", "PC " + identity)
+        }
+        assertTrue(SystemNnnCopyStore.clearResources(base, source))
+        assertFalse(SystemNnnCopyStore.hasImportedResources(SystemNnnCopyStore.committedRoot(base, source)!!))
+        val untouched = SystemNnnCopyStore.committedRoot(base, other)!!
+        assertTrue(SystemNnnCopyStore.hasImportedResources(untouched))
+        assertTrue(SystemNnnCopyStore.readableBootstrap(untouched))
+        assertEquals("PC " + other, untouched.resolve("sav/sysfile3.sav").readText())
+        assertEquals("PC " + source, SystemNnnCopyStore.committedRoot(base, source)!!.resolve("sav/sysfile3.sav").readText())
+    }
+
     @Test fun clearingAndRestoringImportedResourcesKeepsTheOriginalSaveDirectoryAndLock() {
         val base = temp.newFolder("systemnnn-imports").canonicalFile
         val source = "primary:Games/Sample"

@@ -29,8 +29,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
-import java.util.logging.Level
-import java.util.logging.Logger
 import java.util.regex.Pattern
 
 /**
@@ -77,13 +75,14 @@ internal object SystemNnnCopyStore {
         fun run(): T
     }
 
-    private const val PROVIDER = "com.android.externalstorage.documents"
+    internal const val STORAGE_PROVIDER = "com.android.externalstorage.documents"
     private const val DIRECTORY = "systemnnn-imports"
     private const val IDENTITY = "source.id"
     private const val GAME = "game"
     private const val EVICTED = "resources-evicted"
     private val COPY_KEY: Pattern = Pattern.compile("[0-9a-f]{64}")
-    private val VOLUME_NAME: Regex = Regex("[A-Za-z0-9_-]+")
+    internal val VOLUME_NAME: Regex = Regex("[A-Za-z0-9_-]+")
+    private const val TAG = "SystemNnnCopyStore"
     private const val MAX_ENTRIES = 100000
     private const val MAX_DEPTH = 64
     private const val MAX_ID_BYTES = 8192
@@ -91,7 +90,6 @@ internal object SystemNnnCopyStore {
     private const val FREE_HEADROOM = 256L * 1024 * 1024
     private const val SPACE_RECHECK_BYTES = 4L * 1024 * 1024
     private val NONE = Cancellation {}
-    private val LOG: Logger = Logger.getLogger(SystemNnnCopyStore::class.java.name)
     private val OPEN_COPIES: MutableSet<Path> = ConcurrentHashMap.newKeySet()
     private val COLUMNS = arrayOf(
         DocumentsContract.Document.COLUMN_DOCUMENT_ID,
@@ -103,7 +101,7 @@ internal object SystemNnnCopyStore {
 
     /** A `primary:` document id is independent of the granting ancestor and the Android user number. */
     fun sourceIdentity(directory: Uri?): String {
-        if (directory == null || "content" != directory.scheme || PROVIDER != directory.authority) {
+        if (directory == null || "content" != directory.scheme || STORAGE_PROVIDER != directory.authority) {
             throw Failure(Reason.INVALID_SOURCE)
         }
         val id = try {
@@ -145,7 +143,7 @@ internal object SystemNnnCopyStore {
         for (permission: UriPermission in context.contentResolver.persistedUriPermissions) {
             if (!permission.isReadPermission) continue
             val tree = permission.uri
-            if ("content" != tree.scheme || PROVIDER != tree.authority) continue
+            if ("content" != tree.scheme || STORAGE_PROVIDER != tree.authority) continue
             try {
                 val parent = normalizeIdentity(DocumentsContract.getTreeDocumentId(tree))
                 if (contains(parent, identity) && parent.length > length) {
@@ -177,14 +175,16 @@ internal object SystemNnnCopyStore {
         return game
     }
 
-    private fun evictionMarker(game: File): Path = File(game.parentFile, EVICTED).toPath()
+    private fun evictionMarker(game: File): Path? =
+        game.parentFile?.let { File(it, EVICTED).toPath() }
 
     fun resourcesEvicted(game: File): Boolean {
         val entry = game.parentFile ?: return false
         val base = entry.parentFile ?: return false
+        val marker = evictionMarker(game) ?: return false
         return GAME == game.name && DIRECTORY == base.name &&
             COPY_KEY.matcher(entry.name).matches() &&
-            !Files.notExists(evictionMarker(game), LinkOption.NOFOLLOW_LINKS)
+            !Files.notExists(marker, LinkOption.NOFOLLOW_LINKS)
     }
 
     fun hasImportedResources(game: File): Boolean = resourceChildren(game).isNotEmpty()
@@ -194,10 +194,10 @@ internal object SystemNnnCopyStore {
             false
         } else {
             val spt = child(root, "spt", true)
-            val script = if (spt == null) null else child(spt, "sys.spt", false)
+            val script = spt?.let { child(it, "sys.spt", false) }
             when {
-                script == null -> false
-                Files.isSymbolicLink(spt!!.toPath()) || Files.isSymbolicLink(script.toPath()) -> false
+                spt == null || script == null -> false
+                Files.isSymbolicLink(spt.toPath()) || Files.isSymbolicLink(script.toPath()) -> false
                 else -> FileInputStream(script).use { input -> input.read() != -1 }
             }
         }
@@ -271,8 +271,9 @@ internal object SystemNnnCopyStore {
     }
 
     /**
-     * Stages game resources next to [base] and publishes them atomically. [authorize] receives the
-     * staging directory so the caller can include source saves or restore an evicted copy.
+     * Stages game resources next to [base] and publishes them atomically. [authorize] produces the
+     * [ImportSource] whose `stageResources` receives the staging directory, so the caller can include
+     * source saves or restore an evicted copy.
      */
     fun stageDirectory(
         base: File,
@@ -330,7 +331,7 @@ internal object SystemNnnCopyStore {
                     }
                 }
             }
-        } catch (failure: Throwable) {
+        } catch (failure: Exception) {
             cleanupStage(if (created) staging else null, lock, failure)
             throw failure
         }
@@ -354,10 +355,10 @@ internal object SystemNnnCopyStore {
             }
         } catch (cleanup: IOException) {
             if (failure != null) failure.addSuppressed(cleanup)
-            else LOG.log(Level.WARNING, "Could not remove SystemNNN import staging", cleanup)
+            else android.util.Log.w(TAG, "Could not remove SystemNNN import staging", cleanup)
         } catch (cleanup: SecurityException) {
             if (failure != null) failure.addSuppressed(cleanup)
-            else LOG.log(Level.WARNING, "Could not remove SystemNNN import staging", cleanup)
+            else android.util.Log.w(TAG, "Could not remove SystemNNN import staging", cleanup)
         }
     }
 
@@ -377,7 +378,7 @@ internal object SystemNnnCopyStore {
 
     // The marker makes an interrupted publish unrunnable while keeping the same save authority.
     private fun restoreResources(game: File, staging: File) {
-        val marker = evictionMarker(game)
+        val marker = evictionMarker(game) ?: throw Failure(Reason.CORRUPT_COPY)
         if (!Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) throw Failure(Reason.CORRUPT_COPY)
         val old = resourceChildren(game)
         try {
@@ -428,7 +429,7 @@ internal object SystemNnnCopyStore {
             }
             if (lock == null) throw Failure(Reason.BUSY)
             return ImportLock(path, opened)
-        } catch (failure: Throwable) {
+        } catch (failure: Exception) {
             try {
                 channel?.close()
             } catch (cleanup: IOException) {
@@ -611,7 +612,7 @@ internal object SystemNnnCopyStore {
                     stream.channel.tryLock(0, Long.MAX_VALUE, true)
                 } catch (failure: IOException) {
                     stream.close()
-                    throw Failure(Reason.BUSY, failure)
+                    throw Failure(Reason.COPY_FAILED, failure)
                 } catch (failure: OverlappingFileLockException) {
                     stream.close()
                     throw Failure(Reason.BUSY, failure)
@@ -662,7 +663,13 @@ internal object SystemNnnCopyStore {
 
     private class SourceLock(private val stream: FileInputStream?, private val lock: FileLock?) : AutoCloseable {
         override fun close() {
-            stream?.close()
+            try {
+                if (lock != null && lock.isValid) lock.release()
+            } catch (_: IOException) {
+                // Closing the stream below is what actually releases the shared lock.
+            } finally {
+                stream?.close()
+            }
         }
     }
 
@@ -782,7 +789,7 @@ internal object SystemNnnCopyStore {
             val resources = resourceChildren(game)
             if (resources.isEmpty()) return@withImportLock false
             SystemNnnHost.lockSaveDirectory(game).use {
-                val marker = evictionMarker(game)
+                val marker = evictionMarker(game) ?: throw Failure(Reason.CORRUPT_COPY)
                 if (Files.notExists(marker, LinkOption.NOFOLLOW_LINKS)) Files.createFile(marker)
                 else if (!Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS)) throw Failure(Reason.CORRUPT_COPY)
                 for (resource in resources) deleteOwnedTree(resource)

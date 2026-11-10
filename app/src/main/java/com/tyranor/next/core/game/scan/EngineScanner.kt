@@ -18,6 +18,7 @@ import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.Xs4Ini
 import com.tyranor.next.core.game.storage.EngineDetectionRepository
+import com.tyranor.next.core.game.save.SystemNnnCleanupQueue
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.storage.GameLibraryRepository
 import com.tyranor.next.core.i18n.AppLocaleController
@@ -116,6 +117,7 @@ object EngineScanner {
         // 在合并扫描结果前核对旧绑定，并恢复已重新启用的原模块。
         RuntimeModuleBindings.reconcile(context.applicationContext, restoreReenabled = true)
         val scanned = scanAll(context)
+        val removedSystemNnn = ArrayList<String>()
         val refreshed = GameLibraryFacade.registerGames(context) { currentGames ->
             // 扫描或等待资源清理期间可能移除目录。只登记仍属于活动扫描根的结果。
             val activeRoots = GameLibraryFacade.loadRoots(context)
@@ -128,10 +130,21 @@ object EngineScanner {
                 AppSettingsStore.getEnabledRuntimeModules(context),
             )
             // 模块暂时不可用时保留原绑定，扫描根移除后不再保留关联条目。
-            merged.filter { game ->
+            val kept = merged.filter { game ->
                 !game.isRuntimeModuleBound() ||
                     activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
             }
+            // 被重扫丢弃的 SystemNNN 条目不再有机会触发删除清理，把副本回收排进应用侧队列。
+            val keptUris = kept.mapTo(HashSet()) { it.uri }
+            currentGames.asSequence()
+                .filter { it.uri !in keptUris }
+                .map(RuntimeModuleBindings::builtInSystemNnn)
+                .filter { it.engine == EngineType.SYSTEMNNN }
+                .mapTo(removedSystemNnn) { it.uri }
+            kept
+        }
+        if (removedSystemNnn.isNotEmpty()) {
+            SystemNnnCleanupQueue.add(context, removedSystemNnn)
         }
         val validUris = refreshed.mapTo(HashSet()) { it.uri }
         // 最近打开/快捷启动为 games 派生视图，消失的游戏行已随差量删除，这里同步内存缓存即可。

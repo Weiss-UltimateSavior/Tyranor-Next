@@ -9,8 +9,8 @@ import java.io.File
 import java.io.IOException
 
 internal object SystemNnnGameDirectory {
-    private const val STORAGE_PROVIDER = "com.android.externalstorage.documents"
-    private val volumeName = Regex("[A-Za-z0-9_-]+")
+    private const val STORAGE_PROVIDER = SystemNnnCopyStore.STORAGE_PROVIDER
+    private val volumeName = SystemNnnCopyStore.VOLUME_NAME
 
     /** A committed local copy remains authoritative even if direct source access later returns. */
     fun committed(context: Context, uriText: String): File? {

@@ -307,10 +307,18 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 if (probe.read()!=-1) { startGame(); return; }
             } catch (IOException ignored) { /* Show the appropriate storage action below. */ }
         }
-        if(!requestGameAccess(false))chooseHome(text(R.string.engine_systemnnn_host_marker_missing));
+        if(!requestStorageAccess(false))chooseHome(text(R.string.engine_systemnnn_host_marker_missing));
     }
-    private boolean requestGameAccess(boolean writing){
-        return requestStorageAccess(writing);
+    /** The caller passes the original directory as the legacy settings/save-migration key. */
+    private File legacyIdentity() {
+        String path=getIntent().getStringExtra(LaunchContract.RUNTIME_MODULE_SOURCE_IDENTITY_PATH);
+        if(path==null||path.isEmpty())return game;
+        try{
+            File candidate=new File(path);
+            return candidate.isAbsolute()?candidate.getCanonicalFile():game;
+        }catch(IOException|SecurityException ignored){
+            return game;
+        }
     }
     private boolean requestStorageAccess(boolean writing) {
         String permission=writing?Manifest.permission.WRITE_EXTERNAL_STORAGE:Manifest.permission.READ_EXTERNAL_STORAGE;
@@ -336,8 +344,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         File legacySource;
         try{
             saves=GameSavePaths.forGame(game);
-            // The app owns the game directory and passes the path; the engine persists no identity.
-            legacySource=game;
+            legacySource=legacyIdentity();
         }
         catch(IOException|SecurityException e){
             Log.w("SystemNNN","Unable to open the save directory",e);
@@ -346,7 +353,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             return;
         }
         File directory=saves.directory();
-        if(!(directory.isDirectory()?directory:game).canWrite() && requestGameAccess(true))return;
+        if(!(directory.isDirectory()?directory:game).canWrite() && requestStorageAccess(true))return;
         try{NativeGame.load(this);}
         catch(IOException|LinkageError e){
             Log.w("SystemNNN","Unable to load the runtime pack",e);

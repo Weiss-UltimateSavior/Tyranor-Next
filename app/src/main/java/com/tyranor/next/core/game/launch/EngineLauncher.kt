@@ -59,9 +59,9 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
 import com.tyranor.runtime.systemnnn.SystemNnnHost
-import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.GameSaveException
@@ -1327,7 +1327,12 @@ object EngineLauncher {
             EngineType.XSYS35 -> buildXs35Intent(context, path, game, settings)
 
             EngineType.XSYS4 -> buildXs4Intent(context, path, game, settings)
-            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(context, File(path), game.title)
+            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(context, File(path), game.title).apply {
+                // The engine keeps no copy identity; pass the original directory as the legacy key.
+                SystemNnnGameDirectory.resolve(game.uri)?.absolutePath?.let {
+                    putExtra(LaunchContract.RUNTIME_MODULE_SOURCE_IDENTITY_PATH, it)
+                }
+            }
 
             EngineType.FVP -> buildFvpIntent(context, path, game, settings)
             EngineType.ETHORNELL -> buildEthornellIntent(context, path, game, settings)

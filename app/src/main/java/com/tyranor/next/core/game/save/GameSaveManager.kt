@@ -20,10 +20,12 @@ import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.sync.SaveSyncLocks
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
+import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
+import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -594,7 +596,7 @@ class GameSaveManager(private val context: Context) {
     fun cleanupAppData(game: ScanGame) = cleanupAppData(game, resolveSaveLocation(game).directory)
 
     internal fun cleanupAppData(game: ScanGame, expectedDirectory: File?) {
-        if (game.engine == EngineType.SYSTEMNNN) {
+        if (RuntimeModuleBindings.builtInSystemNnn(game).engine == EngineType.SYSTEMNNN) {
             val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri) ?: return
             val copy = SystemNnnCopyStore.committedRoot(appContext, sourceId) ?: return
             val directory = SystemNnnHost.saveDirectory(appContext, copy)
@@ -861,17 +863,26 @@ class GameSaveManager(private val context: Context) {
         val failed: Int get() = failedGames.size
     }
 
-    /** Cleans the copies of games that were just removed from the library (root deletion). */
+    /**
+     * Cleans the copies of games that left the library (deletion, root removal, rescan drop).
+     * Failures stay queued in [SystemNnnCleanupQueue] so a later start can retry them.
+     */
     internal suspend fun clearSystemNnnResourceTargets(games: List<ScanGame>): SystemNnnResourceCleanup =
         withContext(Dispatchers.IO) {
             var cleared = 0
             val failed = ArrayList<ScanGame>()
+            val done = ArrayList<String>()
             val seen = HashSet<String>()
-            for (game in games) {
+            // Legacy Emberfall module bindings resolve to the built-in engine before cleanup.
+            for (game in games.map(RuntimeModuleBindings::builtInSystemNnn)) {
                 ensureActive()
                 try {
-                    if (!seen.add(SystemNnnGameDirectory.sourceIdentity(game.uri) ?: game.uri)) continue
+                    if (!seen.add(SystemNnnGameDirectory.sourceIdentity(game.uri) ?: game.uri)) {
+                        done += game.uri
+                        continue
+                    }
                     if (clearImportedSystemNnnResources(game, onlyIfUnreferenced = true)) cleared++
+                    done += game.uri
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (failure: Exception) {
@@ -879,7 +890,27 @@ class GameSaveManager(private val context: Context) {
                     android.util.Log.w("GameSaveManager", "Could not clear SystemNNN copy resources", failure)
                 }
             }
+            if (done.isNotEmpty()) runCatching { SystemNnnCleanupQueue.remove(appContext, done) }
+            if (failed.isNotEmpty()) {
+                runCatching { SystemNnnCleanupQueue.add(appContext, failed.map(ScanGame::uri)) }
+            }
             SystemNnnResourceCleanup(cleared, failed)
+        }
+
+    /** Retries the durable queue; callers only need to run it on a background thread. */
+    internal suspend fun drainSystemNnnCleanupQueue(): SystemNnnResourceCleanup =
+        withContext(Dispatchers.IO) {
+            val pending = SystemNnnCleanupQueue.pending(appContext)
+            if (pending.isEmpty()) return@withContext SystemNnnResourceCleanup(0, emptyList())
+            val games = pending.map { uri ->
+                ScanGame(
+                    title = uri,
+                    uri = uri,
+                    engine = EngineType.SYSTEMNNN,
+                    launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
+                )
+            }
+            clearSystemNnnResourceTargets(games)
         }
 
     private fun evictSystemNnnResources(sourceId: String): Boolean = try {
