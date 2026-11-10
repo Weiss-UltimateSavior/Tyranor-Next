@@ -158,6 +158,20 @@ class KirikiroidLauncherPreferenceXmlTest {
     }
 
     @Test
+    fun `directory at preference path is not treated as empty config`() {
+        val dir = tmp.newFolder("pregame4")
+        // 路径存在但是目录：不能按缺失（空配置）写回——writePreferenceXml 的
+        // 替换重试会删除路径上的空目录，再改名把临时文件顶替进去。
+        val game = File(dir, "Kirikiroid2Preference.xml").apply { mkdirs() }
+        val changed = KirikiroidLauncherBaseActivity.applyPreferenceItem(
+            game, "renderer", "_rinne_injected_renderer", "software", true,
+        )
+        assertFalse(changed)
+        assertTrue(game.isDirectory)
+        assertEquals(listOf("Kirikiroid2Preference.xml"), dir.listFiles()!!.map { it.name })
+    }
+
+    @Test
     fun `value equal to directory prefix is treated as app written`() {
         val game = tmp.newFile("game.xml").apply {
             writeText(xml(*arrayOf("default_font" to "/data/user/0/com.tyranor.next/files/fonts")))
