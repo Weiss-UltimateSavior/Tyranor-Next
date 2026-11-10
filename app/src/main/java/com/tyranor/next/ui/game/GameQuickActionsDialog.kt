@@ -52,7 +52,9 @@ import com.tyranor.next.core.game.shortcut.deleteShortcutCropBitmap
 import com.tyranor.next.theme.AppComponentShape
 import com.tyranor.next.theme.CoverBadgeBackground
 import com.tyranor.next.theme.CoverBadgeText
+import com.tyranor.next.theme.DangerFill
 import com.tyranor.next.theme.DialogItemSurface
+import com.tyranor.next.theme.OnDangerFill
 import com.tyranor.next.theme.TextColor
 import com.tyranor.next.theme.glassBorder
 import com.tyranor.next.ui.common.AppAlertDialog
@@ -358,13 +360,13 @@ private fun QuickActionItem(
 /** 删除游戏：整行纯色长按钮，尺寸对齐游戏操作抽屉底部的主操作长按钮。 */
 @Composable
 private fun QuickActionDeleteButton(onClick: () -> Unit) {
-    val dangerColor = MaterialTheme.colorScheme.error
-    val onDangerColor = MaterialTheme.colorScheme.onError
+    // 实底危险按钮取固定深红 + 白字：深色 scheme 的 error/onError 是浅粉 + 深褐红，
+    // 在复古玻璃的深色面板上会发白失焦，与其它外观风格割裂（见 theme/Color.kt）。
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(AppComponentShape)
-            .background(dangerColor)
+            .background(DangerFill)
             // 弹窗点击反馈规范：长按钮不使用涟漪
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -379,13 +381,13 @@ private fun QuickActionDeleteButton(onClick: () -> Unit) {
         Image(
             painter = painterResource(R.drawable.ic_sheet_delete),
             contentDescription = null,
-            colorFilter = ColorFilter.tint(onDangerColor),
+            colorFilter = ColorFilter.tint(OnDangerFill),
             modifier = Modifier.size(20.dp),
         )
         Text(
             stringResource(R.string.game_delete_title),
             style = MaterialTheme.typography.bodyMedium,
-            color = onDangerColor,
+            color = OnDangerFill,
             modifier = Modifier.padding(start = 8.dp),
         )
     }

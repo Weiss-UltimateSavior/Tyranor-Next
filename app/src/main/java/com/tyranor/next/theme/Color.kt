@@ -35,6 +35,16 @@ val CoverBadgeText = Color.White
 /** 未读/更新提醒红点：固定亮红，不随主题色与深浅色变化。 */
 val NoticeDotRed = Color(0xFFFF2D2D)
 
+// ===== 实底危险按钮（删除等破坏性动作）固定色：不随主题色与外观风格变化 =====
+// 深色 scheme 的 colorScheme.error 是浅粉（#F2B8B5）+ 深褐红字，放在玻璃深色面板上
+// 会发白失焦，与默认/白雾玻璃的深红底白字割裂；实底危险按钮统一取下面这对固定值。
+
+/** 实底危险按钮底色：深红（与浅色 scheme 的 error 一致）。 */
+val DangerFill = Color(0xFFB3261E)
+
+/** 实底危险按钮上的文字/图标色：固定白色。 */
+val OnDangerFill = Color.White
+
 // ===== 玻璃外观风格色板（固定深色，不随外观模式变化） =====
 
 /** 玻璃风格页面渐变背景：起点（顶部冷灰，压暗避免顶部发白）。 */
