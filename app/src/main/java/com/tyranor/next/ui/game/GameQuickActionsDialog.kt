@@ -41,6 +41,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tyranor.next.R
@@ -206,7 +207,7 @@ internal fun GameQuickActionsDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        // 顶部：超出卡片上沿的封面 + 与封面区域同高的游戏标题
+        // 顶部：超出卡片上沿的封面 + 封面右侧空白区内的游戏标题
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth().heightIn(min = QuickActionHeaderHeight),
@@ -220,6 +221,9 @@ internal fun GameQuickActionsDialog(
                     color = TextColor,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    // 只在封面右侧的空白区（去掉 Spacer 后 Text 独占的宽度）内水平居中，
+                    // 不是相对整个弹窗宽度居中。
+                    textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f),
                 )
             }
