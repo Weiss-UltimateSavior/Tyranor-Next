@@ -109,6 +109,9 @@
     <string name="settings_systemnnn_clear_orphan_resources_done">SystemNNN のコピー %1$d 件からゲームデータを削除しました</string>
     <string name="settings_systemnnn_clear_orphan_resources_empty">削除できる未登録の SystemNNN ゲームデータはありません</string>
     <string name="settings_systemnnn_clear_orphan_resources_incomplete">%1$d 件を削除しました。%2$d 件は削除できませんでした。実行中のゲームを終了して再試行してください。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_unverifiable">%1$d 件を削除しました。%2$d 件は削除できませんでした。確認できなかった %3$d 件は保持しました。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_running">SystemNNN のゲームデータを削除しています…</string>
+    <string name="settings_systemnnn_clear_orphan_resources_pending">一部の SystemNNN ゲームデータを削除できませんでした。再試行できます。</string>
     <string name="settings_invalid_suffix">無効</string>
     <string name="settings_add_dir">フォルダを追加</string>
     <string name="settings_input_path">パスを入力</string>
@@ -1066,6 +1069,11 @@
     <string name="launch_systemnnn_source_busy">ゲーム、セーブ移行、またはインポートが進行中です。既存のプレイヤーに戻り、移行を完了して終了してから再試行してください。</string>
     <string name="launch_systemnnn_no_space">ゲーム全体をコピーするためのアプリ専用ストレージ容量が不足しています。空き容量を確保して再試行してください。未完成のコピーでは起動しません。</string>
     <string name="launch_systemnnn_copy_failed">ゲームデータの取り込みに失敗しました。ストレージとフォルダーのアクセス権を確認して再試行してください。元のゲームフォルダーとセーブデータは保持されています。</string>
+    <string name="launch_systemnnn_import_title">ゲームデータをコピー</string>
+    <string name="launch_systemnnn_import_confirm">Android 10 ではこのゲームフォルダーを直接利用できません。ゲーム全体をアプリ専用の領域にコピーするため、数 GB の空き容量が必要な場合があります。以降のセーブはコピー先の sav フォルダーに保存されます。</string>
+    <string name="launch_systemnnn_import_start">コピーして起動</string>
+    <string name="launch_systemnnn_import_progress">ゲームデータをコピーしています。ゲームの容量に応じて時間がかかります。</string>
+    <string name="launch_systemnnn_import_cancelling">コピーをキャンセルしています…</string>
     <string name="launch_systemnnn_commit_failed">ゲームコピーを安全に確定できませんでした。アプリ専用ストレージを確認して再試行してください。未完成のコピーでは起動しません。</string>
     <string name="launch_systemnnn_corrupt_copy">アプリ専用のゲームコピーを利用できません。ストレージを確認してコピーを修復してください。進行状況を保護するため、元のフォルダーには自動で戻しません。修復前にセーブ管理からセーブをバックアップしてください。</string>
     <string name="launch_systemnnn_save_not_writable">ゲームの sav フォルダーに書き込めません。フォルダーの権限、ストレージの状態、空き容量を確認して再試行してください。</string>

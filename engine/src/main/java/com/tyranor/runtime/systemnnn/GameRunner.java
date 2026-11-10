@@ -781,6 +781,8 @@ final class GameRunner {
         journal.recordReplayBaseline(NativeGame.systemVariables(owner),NativeGame.scriptProgress(owner),
             NativeGame.galleryState(owner),random);
     }
+    static final class PcSaveTooLarge extends IOException {}
+
     void importPcSave(java.util.concurrent.Callable<byte[]> read,java.util.function.Consumer<Boolean> done){
         tasks.post(()->{
             boolean success=false;
@@ -791,7 +793,9 @@ final class GameRunner {
                 Log.i("SystemNNN","PC save imported at "+current.script+" word="+meta[1]);
             }catch(IOException|RuntimeException e){
                 Log.w("SystemNNN","Unable to import PC save",e);
-                noticeFailure(R.string.engine_systemnnn_host_pc_load_failed,e);schedule();
+                noticeFailure(e instanceof PcSaveTooLarge?R.string.engine_systemnnn_host_pc_save_too_large:
+                    R.string.engine_systemnnn_host_pc_load_failed,e);
+                schedule();
             }
             finally{done.accept(success);}
         });
@@ -837,7 +841,10 @@ final class GameRunner {
             if(closing&&binding!=0)old=binding;
             else{old=surfaceBinding;surfaceBinding=binding;}
         }
-        if(old!=0)NativeGame.releaseSurface(old);
+        if(old!=0){
+            NativeGame.deactivateSurface(old);
+            if(!tasks.post(()->NativeGame.releaseSurface(old)))NativeGame.releaseSurface(old);
+        }
     }
     private void bindSurface(boolean allowAttach){
         if(handle==0)return;

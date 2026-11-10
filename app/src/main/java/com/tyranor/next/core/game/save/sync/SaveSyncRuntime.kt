@@ -178,13 +178,13 @@ object SaveSyncRuntime {
     }
 
     /** Only a possible source-to-copy rebind needs to exclude mutations in both directories. */
-    internal fun needsSystemNnnSessionRebind(context: Context, game: ScanGame): Boolean {
+    private fun needsSystemNnnSessionRebind(context: Context, game: ScanGame, directoryKey: String): Boolean {
         if (game.engine != EngineType.SYSTEMNNN) return false
         return try {
             val generation = WebDavSettingsStore.enabledGeneration(context) ?: return false
             val previous = sessions(context).inspect(SaveContentHash.text(game.uri))
             previous.has("token") && saveSessionGenerationMatches(previous, generation) &&
-                inheritedSessionBaseline(previous) != null && previous.optString("activeKey") != activeKey(context, game)
+                inheritedSessionBaseline(previous) != null && previous.optString("activeKey") != directoryKey
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -766,9 +766,12 @@ object SaveSyncRuntime {
 
     internal fun launchAdmission(context: Context, game: ScanGame): SaveSyncLaunchAdmission {
         if (!supportsManagedSave(game.engine)) return SaveSyncLaunchAdmission.Unmanaged
-        return optionalSaveSyncLaunchAdmission({ WebDavSettingsStore.isEnabled(context) }) {
+        val admission = optionalSaveSyncLaunchAdmission({ WebDavSettingsStore.isEnabled(context) }) {
             GameSaveManager(context).resolveSaveLocation(game).directory?.canonicalPath?.let { SAVE_DIRECTORY_KEY_PREFIX + it }
         }
+        return if (admission is SaveSyncLaunchAdmission.Directory && needsSystemNnnSessionRebind(context, game, admission.key)) {
+            admission.copy(exclusiveMutation = true)
+        } else admission
     }
 
     /**

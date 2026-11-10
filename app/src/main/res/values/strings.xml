@@ -109,6 +109,9 @@
     <string name="settings_systemnnn_clear_orphan_resources_done">已清理 %1$d 份 SystemNNN 副本中的资源</string>
     <string name="settings_systemnnn_clear_orphan_resources_empty">没有可清理的 SystemNNN 资源副本</string>
     <string name="settings_systemnnn_clear_orphan_resources_incomplete">已清理 %1$d 份，%2$d 份暂时无法清理。请关闭运行中的游戏后重试。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_unverifiable">已清理 %1$d 份，%2$d 份清理失败。另有 %3$d 份无法校验，已保留。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_running">正在清理 SystemNNN 资源…</string>
+    <string name="settings_systemnnn_clear_orphan_resources_pending">部分 SystemNNN 资源尚未清理，可重试。</string>
     <string name="settings_invalid_suffix">已失效</string>
     <string name="settings_add_dir">添加目录</string>
     <string name="settings_input_path">输入路径</string>
@@ -1066,6 +1069,11 @@
     <string name="launch_systemnnn_source_busy">游戏、存档迁移或导入仍在进行。请返回现有播放器，完成迁移并退出后重试。</string>
     <string name="launch_systemnnn_no_space">应用专用存储空间不足，无法导入完整游戏副本。请清理空间后重试；未完成副本不会用于启动。</string>
     <string name="launch_systemnnn_copy_failed">游戏资源导入失败。请检查存储卷和文件夹授权后重试。原游戏目录与已有存档仍保留。</string>
+    <string name="launch_systemnnn_import_title">复制游戏资源</string>
+    <string name="launch_systemnnn_import_confirm">Android 10 无法直接使用这个游戏目录。需要将完整游戏复制到应用专用存储，可能占用数 GB 空间。之后的存档会写入副本的 sav 文件夹。</string>
+    <string name="launch_systemnnn_import_start">复制并启动</string>
+    <string name="launch_systemnnn_import_progress">正在复制游戏资源。所需时间取决于游戏大小。</string>
+    <string name="launch_systemnnn_import_cancelling">正在取消复制…</string>
     <string name="launch_systemnnn_commit_failed">无法完成游戏副本的原子提交。请检查应用专用存储后重试；未完成副本不会用于启动。</string>
     <string name="launch_systemnnn_corrupt_copy">应用专用游戏副本不可用。请检查存储卷并修复副本；为保护进度，不会切回原目录。修复前请通过存档管理备份副本中的存档。</string>
     <string name="launch_systemnnn_save_not_writable">游戏的 sav 目录无法写入。请检查目录权限、存储是否可用及剩余空间，然后重试。</string>

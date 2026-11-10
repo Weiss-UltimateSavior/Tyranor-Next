@@ -119,6 +119,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 
 - SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 只替换自身格式的白名单文件，目录、锁及 PC 数据原地保留。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。清理导入副本资源时同时持有来源锁和游戏存档锁，并用标记阻止启动，直到重新导入的资源全部就绪。存档管理与同步在此期间仍使用同一 `sav`。
 - SystemNNN 首次 SAF 复制从游戏库启动器进入独占存档变更准入，复制期间等待准入的存档操作需等到发布完成。复制、ZIP 恢复和删档共用按 SAF 来源标识划分的跨进程锁，写入前在该锁内解析并锁定当前 `sav`。手动写入在解包后进入独占准入，与 WebDAV 恢复的提交和版本登记互斥。已有副本的资源重导沿用原 `sav`，可在现有启动准入内执行。
+- SystemNNN 导入预检复用场景、脚本、画面和音频的原生快照读取器，只解析保存的结构。副本资源已清理时仍能检查存档。游戏库注册与孤立资源清理的引用复查共用写入门禁。WebDAV 启动在取得准入后复核当前会话，必要时重新取得独占准入。
 
 - 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理已按 capability 开放（`DEVICE_SAVE_IO_VERIFIED=true` 与 `HOST_DISPATCH_PROTOCOL_VERIFIED=true`）；范围仅 App 私有 user-root 的备份/恢复/删除，ZIP 单个文件上限 64 MiB（与 native 原子写一致），总量 1 GiB 预算不等于该上限；不自动导入资源根 `UserData`，不承诺商业游戏内槽位兼容或 PC 格式互通。

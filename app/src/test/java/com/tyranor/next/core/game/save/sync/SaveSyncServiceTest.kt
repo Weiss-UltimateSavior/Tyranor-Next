@@ -61,6 +61,40 @@ class SaveSyncServiceTest {
     }
 
     @Test
+    fun systemNnnSaveLockRetriesPendingActivationWithItsOriginalOwner() = runBlocking {
+        val harness = Harness(temp)
+        val game = harness.addGame("systemnnn-activation-locked", EngineType.SYSTEMNNN)
+        harness.identify(game)
+        val selected = prepareMetadataPendingActivation(harness, game, "before", "selected", 1_700_000_000_000L)
+        val key = harness.key(game)
+        val pending = checkNotNull(harness.journal.load(key))
+        val directories = SaveDirectoryActivationStore(harness.root)
+        val owner = directories.owned(game.uri).single()
+        assertEquals(pending.token, owner.token)
+        harness.world.onCompleteImport = { throw GameSaveException(SaveErrorCode.ENGINE_RUNNING) }
+
+        val busy = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(1, busy.busy)
+        assertTrue(busy.failures.isEmpty())
+        assertEquals(SaveSyncWorkOutcome.RETRY, SaveSyncWorkPolicy.outcome(busy, fallback = true))
+        assertEquals(pending, harness.journal.load(key))
+        assertEquals(owner, directories.owned(game.uri).single())
+        assertEquals(selected.contentHash, harness.world.activeHash(game))
+        assertEquals(1, harness.world.importCount(game))
+
+        harness.world.onCompleteImport = null
+        val retry = harness.service.syncGame(game, SaveSyncDirection.UPLOAD)
+
+        assertEquals(0, retry.busy)
+        assertTrue(retry.failures.isEmpty())
+        assertNull(harness.journal.load(key))
+        assertTrue(directories.owned(game.uri).isEmpty())
+        assertEquals(selected.contentHash, harness.world.activeHash(game))
+        assertEquals(1, harness.world.importCount(game))
+    }
+
+    @Test
     fun flushPendingRetriesWhenSystemNnnSaveLockBlocksSnapshot() = runBlocking {
         val harness = Harness(temp)
         val game = harness.addGame("systemnnn-exit", EngineType.SYSTEMNNN)
@@ -3708,6 +3742,7 @@ class SaveSyncServiceTest {
         @Volatile var externalRunning = false
         var onCleanupAppData: (suspend () -> Unit)? = null
         var onExport: (suspend (ScanGame) -> Unit)? = null
+        var onCompleteImport: (() -> Unit)? = null
         @Volatile
         var recoveryNeeded = false
         @Volatile var directoryKey: String? = null
@@ -3760,6 +3795,7 @@ class SaveSyncServiceTest {
         }
 
         override fun completeImport(game: ScanGame) {
+            onCompleteImport?.invoke()
             synchronized(lock) { completeImports++ }
         }
         override fun needsManualRecovery(game: ScanGame): Boolean = recoveryNeeded

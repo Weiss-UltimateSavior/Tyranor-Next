@@ -5,6 +5,21 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 
 public final class MoviePlaybackClockTest {
+    @Test public void delayedAudioAllowsVideoPrerollAndStartsAtItsOwnTimestamp() {
+        MoviePlayback.Clock clock = new MoviePlayback.Clock();
+        clock.setRunning(true, 0);
+        clock.prepareAudio(800_000, 100_000_000);
+        assertEquals(0, clock.position(100_000_000));
+        assertEquals(300_000, clock.position(400_000_000));
+        clock.setRunning(false, 400_000_000);
+        assertEquals(300_000, clock.position(1_400_000_000));
+        clock.setRunning(true, 1_400_000_000);
+        assertEquals(800_000, clock.position(2_000_000_000));
+        clock.audioPosition(800_000);
+        clock.audioPosition(850_000);
+        assertEquals(850_000, clock.position(2_050_000_000));
+    }
+
     @Test public void silentPlaybackExcludesPauseAndMissingTextureTime() {
         MoviePlayback.Clock clock = new MoviePlayback.Clock();
         clock.setRunning(true, 0);

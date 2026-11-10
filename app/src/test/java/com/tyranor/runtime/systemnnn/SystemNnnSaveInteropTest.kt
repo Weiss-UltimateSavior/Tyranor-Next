@@ -12,6 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayInputStream
+import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
@@ -26,6 +28,7 @@ import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.zip.CRC32
 import kotlin.random.Random
 
 class SystemNnnSaveInteropTest {
@@ -56,7 +59,7 @@ class SystemNnnSaveInteropTest {
         }
         val backup = putStory(incoming, "emberfall.quick.sav.bak", SaveSlots.QUICK)
         put(incoming, "emberfall.chart/chart1/slot0.dat", "chart")
-        val highSlot = putStory(incoming, "emberfall.slot118.sav", 118, snapshotPayload())
+        val highSlot = putStory(incoming, "emberfall.slot118.sav", 118)
         put(incoming, "emberfall.slot118.sav.thumb", "high slot thumbnail")
         put(incoming, "emberfall.last-slot", "last selection")
         put(incoming, "emberfall.last-slot.new", "interrupted selection")
@@ -134,6 +137,37 @@ class SystemNnnSaveInteropTest {
         rejectsSnapshot { putStory(it, "emberfall.sav", 1) }
         rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9)) }
         rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload(version = 14)) }
+        rejectsSnapshot { putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload()) }
+        rejectsSnapshot {
+            val slot = putStory(it, "emberfall.sav", 0)
+            val bytes = slot.readBytes()
+            val raw = ByteArrayInputStream(bytes)
+            DataInputStream(raw).use { input ->
+                input.readInt()
+                input.readInt()
+                input.readLong()
+                input.readUTF()
+                repeat(3) { input.readInt() }
+                input.readUTF()
+                input.readUTF()
+                assertEquals(2, input.readInt())
+                assertEquals("start.spt".length, input.readInt())
+                bytes[bytes.size - raw.available()] = 'x'.code.toByte()
+            }
+            val crc = CRC32().apply { update(bytes, 0, bytes.size - Int.SIZE_BYTES) }
+            ByteBuffer.wrap(bytes, bytes.size - Int.SIZE_BYTES, Int.SIZE_BYTES).putInt(crc.value.toInt())
+            slot.writeBytes(bytes)
+        }
+        rejectsSnapshot {
+            val journal = GameSave().apply {
+                runs.add(GameSave.Run(1, 0, 0, 25, false, -4))
+                ticks++
+                append(20, 0, 0, false, 0)
+            }
+            val metadata = GameSave.Metadata(0, 1L, "start.spt", 1, 0, 1, "", "Story", false)
+            val wrongOrder = GameSave.Loaded(journal, metadata, arrayOf("start.spt".toByteArray(), byteArrayOf()))
+            it.resolve("emberfall.sav").outputStream().use { output -> GameSave.writePayload(output, wrongOrder) }
+        }
         rejectsSnapshot {
             putStory(it, "emberfall.resume", SaveSlots.AUTO, snapshotPayload()).apply {
                 val bytes = readBytes()
@@ -544,9 +578,11 @@ class SystemNnnSaveInteropTest {
         put(staging, "source.id", source)
         put(staging, "game/spt/sys.spt", "staged")
 
-        assertEquals(listOf(source), SystemNnnGameImport.importedResourceSourceIds(base))
+        val inventory = SystemNnnGameImport.importedResources(base)
+        assertEquals(listOf(source), inventory.sourceIds)
+        assertEquals(1, inventory.unverifiable)
         assertTrue(SystemNnnGameImport.clearResources(base, source))
-        assertTrue(SystemNnnGameImport.importedResourceSourceIds(base).isEmpty())
+        assertTrue(SystemNnnGameImport.importedResources(base).sourceIds.isEmpty())
         assertEquals("PC", entry.resolve("game/SaV/sysfile3.sav").readText())
         assertEquals("wrong source", wrongHash.resolve("game/spt/sys.spt").readText())
         assertEquals("staged", staging.resolve("game/spt/sys.spt").readText())
@@ -700,13 +736,49 @@ class SystemNnnSaveInteropTest {
         assertArrayEquals(intArrayOf(21), previous.read)
         assertArrayEquals(byteArrayOf(21), previous.text[0])
         assertFalse(saves.resolve("emberfall.read.new").exists())
-        val archived = saves.listFiles()!!.single { it.name.startsWith("emberfall.read.bak.previous-") }
+        val archived = saves.resolve("emberfall.read.bak.previous")
         assertArrayEquals(old, archived.readBytes())
 
         store.write(pending)
         val recovered = checkNotNull(store.read())
         assertArrayEquals(intArrayOf(34), recovered.read)
         assertArrayEquals(byteArrayOf(34), recovered.text[0])
+    }
+
+    @Test fun legacyProgressMigrationUsesTheValidPrimaryOrMatchingBackupWithoutMutatingTheSource() {
+        for (damagePrimary in listOf(false, true)) {
+            val game = temp.newFolder().canonicalFile
+            val legacy = temp.newFolder()
+            val key = UUID.nameUUIDFromBytes(game.path.toByteArray(Charsets.UTF_8)).toString()
+            val primary = legacy.resolve("$key.read")
+            GameProgress(primary).write(progressState(21, 21))
+            val old = legacy.resolve("old.read")
+            GameProgress(old).write(progressState(9, 9))
+            Files.move(old.toPath(), legacy.resolve("$key.read.bak").toPath())
+            Files.move(legacy.resolve("old.read.ext").toPath(), legacy.resolve("$key.read.ext.bak").toPath())
+            if (damagePrimary) primary.writeText("damaged")
+            val source = legacy.listFiles()!!.associate { it.name to it.readBytes() }
+
+            GameSavePaths.forGame(game).open(legacy, game).use {
+                val progress = checkNotNull(GameProgress(game.resolve("sav/emberfall.read")).read())
+                val expected = if (damagePrimary) 9 else 21
+                assertArrayEquals(intArrayOf(expected), progress.read)
+                assertArrayEquals(byteArrayOf(expected.toByte()), progress.text[0])
+            }
+            source.forEach { (name, bytes) -> assertArrayEquals(bytes, legacy.resolve(name).readBytes()) }
+        }
+    }
+
+    @Test fun deletingSavesAlsoRemovesRecognizedRetiredBackups() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        put(saves, "emberfall.read.bak.previous", "retired")
+        put(saves, "emberfall.read.ext.bak.previous-${UUID.randomUUID()}", "older retired")
+        val corrupt = saves.resolve("emberfall.read.corrupt-${UUID.randomUUID()}").apply { writeText("quarantined") }
+        val store = SystemNnnSaveStore(game, saves)
+        assertEquals(2, store.access { store.replace(null) })
+        assertTrue(corrupt.isFile)
+        assertEquals(0, store.access { store.replace(null) })
     }
 
     @Test fun extensionOnlyCommitSucceedsWhenTheLegacyBackupCannotBeRetired() {

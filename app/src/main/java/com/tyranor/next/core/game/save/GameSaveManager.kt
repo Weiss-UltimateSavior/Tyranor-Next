@@ -28,6 +28,7 @@ import com.tyranor.runtime.systemnnn.SystemNnnGameImport
 import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -570,7 +571,9 @@ class GameSaveManager(private val context: Context) {
             if (directory.canonicalPath != expectedDirectory?.canonicalPath) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
             }
-            if (!referencesSystemNnnCopy(sourceId, excludingUri = game.uri)) evictSystemNnnResources(sourceId)
+            GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId, excludingUri = game.uri) {
+                evictSystemNnnResources(sourceId)
+            }
             return
         }
         if (game.engine == EngineType.ETHORNELL) {
@@ -798,54 +801,73 @@ class GameSaveManager(private val context: Context) {
         val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri)
             ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
         val key = SaveSyncRuntime.activeKey(appContext, game)
+        val coroutine = currentCoroutineContext()
         return SaveSyncLocks.active(key) {
             SaveSyncLocks.mutation(key) {
                 if (SaveSyncRuntime.activeKey(appContext, game) != key) {
                     throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
                 }
-                if (onlyIfUnreferenced && referencesSystemNnnCopy(sourceId)) return@mutation false
-                if (SaveSyncRuntime.isGameRunning(appContext, game)) {
-                    throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                val running = SaveSyncRuntime.isGameRunning(appContext, game)
+                val evictIfIdle = {
+                    coroutine.ensureActive()
+                    if (running) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                    evictSystemNnnResources(sourceId)
                 }
-                evictSystemNnnResources(sourceId)
+                if (onlyIfUnreferenced) {
+                    GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId, evict = evictIfIdle)
+                } else {
+                    evictIfIdle()
+                }
             }
         }
     }
 
-    internal data class OrphanResourceCleanup(val cleared: Int, val failed: Int)
-
-    internal suspend fun clearUnreferencedSystemNnnResources(): OrphanResourceCleanup = withContext(Dispatchers.IO) {
-        val sources = SystemNnnGameImport.importedResourceSourceIds(appContext)
-        val referenced = GameLibraryFacade.loadGames(appContext).mapNotNullTo(HashSet()) {
-            SystemNnnGameDirectory.sourceIdentity(it.uri)
-        }
-        var cleared = 0
-        var failed = 0
-        for (sourceId in sources) {
-            ensureActive()
-            if (sourceId in referenced) continue
-            // Use the same source identity and actual sav directory fence as a registered game.
-            val game = ScanGame(
-                title = sourceId,
-                uri = SystemNnnGameDirectory.sourceUri(sourceId).toString(),
-                engine = EngineType.SYSTEMNNN,
-                launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
-            )
-            try {
-                if (clearImportedSystemNnnResources(game, onlyIfUnreferenced = true)) cleared++
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (failure: Exception) {
-                failed++
-                android.util.Log.w("GameSaveManager", "Could not clear unreferenced SystemNNN resources", failure)
-            }
-        }
-        OrphanResourceCleanup(cleared, failed)
+    internal data class OrphanResourceCleanup(
+        val cleared: Int,
+        val failedGames: List<ScanGame>,
+        val unverifiable: Int = 0,
+    ) {
+        val failed: Int get() = failedGames.size
     }
 
-    private fun referencesSystemNnnCopy(sourceId: String, excludingUri: String? = null): Boolean =
-        GameLibraryFacade.loadGames(appContext).any { other ->
-            other.uri != excludingUri && SystemNnnGameDirectory.sourceIdentity(other.uri) == sourceId
+    internal suspend fun clearUnreferencedSystemNnnResources(pending: List<ScanGame>): OrphanResourceCleanup =
+        withContext(Dispatchers.IO) {
+            val referenced = GameLibraryFacade.loadGames(appContext).mapNotNullTo(HashSet()) {
+                SystemNnnGameDirectory.sourceIdentity(it.uri)
+            }
+            val inventory = SystemNnnGameImport.importedResources(appContext)
+            val pendingBySource = pending.associateBy { SystemNnnGameDirectory.sourceIdentity(it.uri) }
+            val orphans = inventory.sourceIds
+                .filterNot { it in referenced }
+                .map { sourceId ->
+                    pendingBySource[sourceId] ?: ScanGame(
+                        title = sourceId,
+                        uri = SystemNnnGameDirectory.sourceUri(sourceId).toString(),
+                        engine = EngineType.SYSTEMNNN,
+                        launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
+                    )
+                }
+            clearSystemNnnResourceTargets(orphans).copy(unverifiable = inventory.unverifiable)
+        }
+
+    internal suspend fun clearSystemNnnResourceTargets(games: List<ScanGame>): OrphanResourceCleanup =
+        withContext(Dispatchers.IO) {
+            var cleared = 0
+            val failed = ArrayList<ScanGame>()
+            val seen = HashSet<String>()
+            for (game in games) {
+                ensureActive()
+                try {
+                    if (!seen.add(SystemNnnGameDirectory.sourceIdentity(game.uri) ?: game.uri)) continue
+                    if (clearImportedSystemNnnResources(game, onlyIfUnreferenced = true)) cleared++
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    failed += game
+                    android.util.Log.w("GameSaveManager", "Could not clear unreferenced SystemNNN resources", failure)
+                }
+            }
+            OrphanResourceCleanup(cleared, failed)
         }
 
     private fun evictSystemNnnResources(sourceId: String): Boolean = try {

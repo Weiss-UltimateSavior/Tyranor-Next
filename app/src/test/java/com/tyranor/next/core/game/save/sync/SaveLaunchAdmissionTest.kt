@@ -35,15 +35,14 @@ class SaveLaunchAdmissionTest {
         }
         val gameLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
             withSaveSyncLaunchAdmission(
-                resolve = { SaveSyncLaunchAdmission.Directory(imported) },
-                managed = { key ->
+                resolve = { SaveSyncLaunchAdmission.Directory(imported, exclusiveMutation = true) },
+                managed = { admission ->
                     SaveSyncLocks.session(session) {
                         assertTrue(finishedRestore.isCompleted)
-                        enteredLaunch.complete(key)
+                        enteredLaunch.complete(admission?.key)
                     }
                 },
                 unmanaged = { throw AssertionError("Imported saves must stay managed") },
-                exclusiveMutation = true,
             )
         }
         assertFalse(enteredLaunch.isCompleted)
@@ -52,6 +51,58 @@ class SaveLaunchAdmissionTest {
             assertEquals(imported, enteredLaunch.await())
             restore.join()
             gameLaunch.join()
+        }
+    }
+
+    @Test
+    fun waitingLaunchReadmitsExclusivelyWhenAnEarlierLaunchRestoresTheSourceTicket() = runBlocking {
+        val original = "rebind-original-directory"
+        val imported = "rebind-imported-directory"
+        val finishFirstLaunch = CompletableDeferred<Unit>()
+        val finishOriginalWrite = CompletableDeferred<Unit>()
+        val retried = CompletableDeferred<Unit>()
+        val entered = CompletableDeferred<SaveSyncLaunchAdmission.Directory?>()
+        var needsRebind = false
+        var resolutions = 0
+
+        val firstLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
+            SaveSyncLocks.active(imported) {
+                finishFirstLaunch.await()
+                needsRebind = true
+            }
+        }
+        val originalWrite = launch(start = CoroutineStart.UNDISPATCHED) {
+            SaveSyncLocks.active(original) {
+                SaveSyncLocks.mutation(original) { finishOriginalWrite.await() }
+            }
+        }
+        val secondLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
+            withSaveSyncLaunchAdmission(
+                resolve = {
+                    if (++resolutions == 3) retried.complete(Unit)
+                    SaveSyncLaunchAdmission.Directory(imported, exclusiveMutation = needsRebind)
+                },
+                managed = { entered.complete(it) },
+                unmanaged = { throw AssertionError("Imported saves must stay managed") },
+            )
+        }
+
+        try {
+            assertFalse(entered.isCompleted)
+            finishFirstLaunch.complete(Unit)
+            withTimeout(5_000) { retried.await() }
+            assertFalse(entered.isCompleted)
+            finishOriginalWrite.complete(Unit)
+            withTimeout(5_000) {
+                assertEquals(SaveSyncLaunchAdmission.Directory(imported, exclusiveMutation = true), entered.await())
+                firstLaunch.join()
+                originalWrite.join()
+                secondLaunch.join()
+            }
+        } finally {
+            firstLaunch.cancelAndJoin()
+            originalWrite.cancelAndJoin()
+            secondLaunch.cancelAndJoin()
         }
     }
 
@@ -69,8 +120,8 @@ class SaveLaunchAdmissionTest {
         val baseline = launch(start = CoroutineStart.UNDISPATCHED) {
             withSaveSyncLaunchAdmission<Unit>(
                 resolve = { SaveSyncLaunchAdmission.Directory("admission-baseline") },
-                managed = { key ->
-                    baselineEntered.complete(key)
+                managed = { admission ->
+                    baselineEntered.complete(admission?.key)
                     releaseBaseline.await()
                 },
                 unmanaged = { throw AssertionError("A directory baseline must stay managed") },
@@ -88,9 +139,9 @@ class SaveLaunchAdmissionTest {
         val disabled = launch(start = CoroutineStart.UNDISPATCHED) {
             withSaveSyncLaunchAdmission<Unit>(
                 resolve = { SaveSyncLaunchAdmission.Disabled },
-                managed = { key ->
+                managed = { admission ->
                     disabledCallbacks++
-                    disabledEntered.complete(key)
+                    disabledEntered.complete(admission?.key)
                 },
                 unmanaged = { throw AssertionError("Disabled admission must stay managed") },
             )
@@ -98,9 +149,9 @@ class SaveLaunchAdmissionTest {
         val unresolved = launch(start = CoroutineStart.UNDISPATCHED) {
             withSaveSyncLaunchAdmission<Unit>(
                 resolve = { SaveSyncLaunchAdmission.Unresolved },
-                managed = { key ->
+                managed = { admission ->
                     unresolvedCallbacks++
-                    unresolvedEntered.complete(key)
+                    unresolvedEntered.complete(admission?.key)
                 },
                 unmanaged = { throw AssertionError("Unresolved admission must stay managed") },
             )
@@ -208,8 +259,8 @@ class SaveLaunchAdmissionTest {
         val managedLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
             withSaveSyncLaunchAdmission<Unit>(
                 resolve = { admission.get() },
-                managed = { key ->
-                    managedKeys += key
+                managed = { directory ->
+                    managedKeys += directory?.key
                     callbackEntered.complete(Unit)
                     awaitCancellation()
                 },
@@ -265,8 +316,8 @@ class SaveLaunchAdmissionTest {
                     if (resolveCalls == 1) firstResolve.complete(Unit)
                     admission.get()
                 },
-                managed = { key ->
-                    managedKeys += key
+                managed = { directory ->
+                    managedKeys += directory?.key
                     callbackEntered.complete(Unit)
                     releaseCallback.await()
                 },

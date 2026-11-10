@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -73,8 +76,6 @@ import com.tyranor.next.core.settings.GraphicsCapabilities
 import com.tyranor.next.core.settings.GraphicsFamily
 import com.tyranor.next.core.settings.GraphicsSettings
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.next.core.engine.EngineType
-import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.theme.AppSheetTopShape
 import com.tyranor.next.theme.AppThemeColors
@@ -162,10 +163,11 @@ fun SettingsScreen(
     var updateDownloadPhase by remember { mutableStateOf<UpdateDownloadPhase?>(null) }
     var updateDownloadJob by remember { mutableStateOf<Job?>(null) }
     var showGroupDialog by remember { mutableStateOf(false) }
-    var showScanDirs by remember { mutableStateOf(false) }
+    var showScanDirs by rememberSaveable { mutableStateOf(false) }
     var scanDirs by remember { mutableStateOf(emptyList<String>()) }
-    var showOrphanResourceCleanup by remember { mutableStateOf(false) }
-    var clearingOrphanResources by remember { mutableStateOf(false) }
+    var showOrphanResourceCleanup by rememberSaveable { mutableStateOf(false) }
+    val resourceCleanup: SystemNnnCleanupViewModel = viewModel()
+    val cleanupState by resourceCleanup.state.collectAsStateWithLifecycle()
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
@@ -507,25 +509,10 @@ fun SettingsScreen(
                                         .size(36.dp)
                                         .clip(AppComponentShape)
                                         .clickable(
+                                            enabled = !cleanupState.running,
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
-                                            onClick = {
-                                                val removed = GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                                scanDirs = GameLibraryFacade.loadRoots(ctx)
-                                                val imported = removed.filter { it.engine == EngineType.SYSTEMNNN }
-                                                if (imported.isNotEmpty()) scope.launch(Dispatchers.IO) {
-                                                    val manager = GameSaveManager(ctx.applicationContext)
-                                                    for (game in imported) {
-                                                        try {
-                                                            manager.clearImportedSystemNnnResources(game, onlyIfUnreferenced = true)
-                                                        } catch (cancelled: CancellationException) {
-                                                            throw cancelled
-                                                        } catch (failure: Exception) {
-                                                            android.util.Log.w("SettingsScreen", "Could not clear removed SystemNNN resources", failure)
-                                                        }
-                                                    }
-                                                }
-                                            },
+                                            onClick = { resourceCleanup.removeRoot(dir) },
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -543,10 +530,42 @@ fun SettingsScreen(
                             NoRippleButton(
                                 text = stringResource(R.string.settings_systemnnn_clear_orphan_resources),
                                 modifier = Modifier.fillMaxWidth(),
-                                enabled = !clearingOrphanResources,
+                                enabled = !cleanupState.running,
                                 tonal = true,
                                 onClick = { showOrphanResourceCleanup = true },
                             )
+                        }
+                        item {
+                            val result = cleanupState.result
+                            val message = when {
+                                cleanupState.running -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_running)
+                                result != null && result.unverifiable > 0 -> stringResource(
+                                    R.string.settings_systemnnn_clear_orphan_resources_unverifiable,
+                                    result.cleared, result.failed, result.unverifiable,
+                                )
+                                result != null && result.failed > 0 -> stringResource(
+                                    R.string.settings_systemnnn_clear_orphan_resources_incomplete,
+                                    result.cleared, result.failed,
+                                )
+                                cleanupState.canRetry -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_pending)
+                                cleanupState.failed -> stringResource(R.string.save_operation_failed)
+                                result != null && result.cleared > 0 -> stringResource(
+                                    R.string.settings_systemnnn_clear_orphan_resources_done,
+                                    result.cleared,
+                                )
+                                result != null -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_empty)
+                                else -> null
+                            }
+                            if (message != null) {
+                                Text(message, color = PageSecondaryTextColor, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (cleanupState.canRetry && !cleanupState.running) {
+                                NoRippleButton(
+                                    text = stringResource(R.string.common_retry),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = resourceCleanup::retry,
+                                )
+                            }
                         }
                     }
                     // 底部主操作：输入路径 / 添加目录 改为两个长按钮；
@@ -592,35 +611,10 @@ fun SettingsScreen(
             confirmButton = {
                 DialogTextButton(
                     text = stringResource(R.string.common_confirm),
-                    enabled = !clearingOrphanResources,
+                    enabled = !cleanupState.running,
                     onClick = {
                         showOrphanResourceCleanup = false
-                        clearingOrphanResources = true
-                        scope.launch {
-                            try {
-                                val result = GameSaveManager(ctx).clearUnreferencedSystemNnnResources()
-                                val message = when {
-                                    result.failed > 0 -> ctx.getString(
-                                        R.string.settings_systemnnn_clear_orphan_resources_incomplete,
-                                        result.cleared,
-                                        result.failed,
-                                    )
-                                    result.cleared > 0 -> ctx.getString(
-                                        R.string.settings_systemnnn_clear_orphan_resources_done,
-                                        result.cleared,
-                                    )
-                                    else -> ctx.getString(R.string.settings_systemnnn_clear_orphan_resources_empty)
-                                }
-                                Toast.makeText(ctx, message, Toast.LENGTH_LONG).show()
-                            } catch (cancelled: CancellationException) {
-                                throw cancelled
-                            } catch (failure: Exception) {
-                                android.util.Log.w("SettingsScreen", "Could not list imported SystemNNN resources", failure)
-                                Toast.makeText(ctx, R.string.save_operation_failed, Toast.LENGTH_SHORT).show()
-                            } finally {
-                                clearingOrphanResources = false
-                            }
-                        }
+                        resourceCleanup.clearUnused()
                     },
                 )
             },

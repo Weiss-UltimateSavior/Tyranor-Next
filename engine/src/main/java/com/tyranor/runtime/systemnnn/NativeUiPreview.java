@@ -8,7 +8,8 @@ final class NativeUiPreview {
     static native boolean chartNeedsComposite(long handle,int center);
     static native boolean chartComposite(long handle,int center,Bitmap base,Bitmap centerPlane,Bitmap content,Bitmap output);
     static native long[] chartTextureIds(long handle,int tiles,int center);
-    // A texture over the remaining budget supplies only its logical width and height.
+    // Logical width/height, raster width/height, then ARGB pixels. A zero
+    // budget returns only the dimensions at the per-texture limit.
     static native int[] chartTextureWithinBudget(long handle,int slot,boolean transparent,int pixelBudget);
     static {System.loadLibrary("systemnnn");}
     static native long create(byte[] root,long runtime,long assetPeer);

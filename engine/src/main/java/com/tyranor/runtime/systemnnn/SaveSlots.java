@@ -96,6 +96,9 @@ final class SaveSlots {
             this.picture=picture;
             this.artwork=artwork;this.lastSaved=lastSaved;
         }
+        private Entry withoutPicture(){
+            return new Entry(slot,exists,corrupt,legacy,savedAt,script,line,speaker,summary,null,artwork,lastSaved);
+        }
         private Entry withUi(SlotUi state){
             if(!exists||corrupt)return this;
             Artwork art=state.artwork.get(slot);
@@ -168,7 +171,18 @@ final class SaveSlots {
         next.remove(metadata.slot);
         long available=MAX_CACHED_PICTURE_PIXELS;
         for(Entry entry:next.values())available-=picturePixels(entry.picture);
-        next.put(metadata.slot,entry(metadata.slot,metadata,picturePixels(picture)<=available?picture:null));
+        long pixels=picturePixels(picture);
+        if(pixels>available && pixels<=MAX_CACHED_PICTURE_PIXELS){
+            List<Entry> oldPictures=new ArrayList<>();
+            for(Entry entry:next.values())if(entry.picture!=null)oldPictures.add(entry);
+            oldPictures.sort(Comparator.comparingLong(entry->entry.savedAt));
+            for(Entry old:oldPictures){
+                next.put(old.slot,old.withoutPicture());
+                available+=picturePixels(old.picture);
+                if(available>=pixels)break;
+            }
+        }
+        next.put(metadata.slot,entry(metadata.slot,metadata,pixels<=available?picture:null));
         cached=next;
     }
     private static long picturePixels(Bitmap picture){

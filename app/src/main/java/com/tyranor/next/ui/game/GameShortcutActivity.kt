@@ -6,15 +6,19 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.game.shortcut.GameShortcutManager
 import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.theme.TyranorNextTheme
+import com.tyranor.next.ui.common.ProvideAppLocale
 import com.tyranor.next.ui.common.userMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -89,8 +93,23 @@ class GameShortcutActivity : ComponentActivity() {
                     }
                 }
 
-                val error = EngineLauncher.launch(this@GameShortcutActivity, game, patchChoice)
-                    .userMessage(localizedContext)
+                val launchJob = coroutineContext.job
+                var dialogsAttached = false
+                val systemNnnCopy = SystemNnnCopyUi { state ->
+                    if (!dialogsAttached) {
+                        dialogsAttached = true
+                        setContent {
+                            TyranorNextTheme {
+                                ProvideAppLocale {
+                                    SystemNnnCopyDialogs(state) { launchJob.cancel() }
+                                }
+                            }
+                        }
+                    }
+                }
+                val error = EngineLauncher.launch(
+                    this@GameShortcutActivity, game, patchChoice, systemNnnCopy.interaction,
+                ).userMessage(localizedContext)
                 if (error != null) {
                     Toast.makeText(localizedContext, error, Toast.LENGTH_LONG).show()
                 }

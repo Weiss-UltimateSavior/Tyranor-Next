@@ -125,29 +125,40 @@ public final class SystemNnnGameImport {
     public static boolean hasImportedResources(File game) throws IOException {
         return !resourceChildren(game).isEmpty();
     }
-    public static List<String> importedResourceSourceIds(Context context) throws IOException {
+    public static final class ResourceInventory {
+        public final List<String> sourceIds;
+        public final int unverifiable;
+        ResourceInventory(List<String> sourceIds,int unverifiable){
+            this.sourceIds=Collections.unmodifiableList(sourceIds);
+            this.unverifiable=unverifiable;
+        }
+    }
+    public static ResourceInventory importedResources(Context context) throws IOException {
         File external=context.getExternalFilesDir(null);
         if(external==null)throw new Failure(Reason.COPY_FAILED);
-        return importedResourceSourceIds(new File(external,DIRECTORY));
+        return importedResources(new File(external,DIRECTORY));
     }
-    static List<String> importedResourceSourceIds(File base) throws IOException {
-        if(Files.notExists(base.toPath(),LinkOption.NOFOLLOW_LINKS))return Collections.emptyList();
+    static ResourceInventory importedResources(File base) throws IOException {
+        if(Files.notExists(base.toPath(),LinkOption.NOFOLLOW_LINKS))
+            return new ResourceInventory(Collections.emptyList(),0);
         plainDirectory(base);
         File[] entries=base.listFiles();
         if(entries==null)throw new Failure(Reason.COPY_FAILED);
         List<String> sources=new ArrayList<>();
+        int unverifiable=0;
         for(File entry:entries){
-            if(!COPY_KEY.matcher(entry.getName()).matches()||
-                !Files.isDirectory(entry.toPath(),LinkOption.NOFOLLOW_LINKS))continue;
+            if(!COPY_KEY.matcher(entry.getName()).matches())continue;
             try{
+                plainDirectory(entry);
                 String sourceId=readIdentity(entry);
-                if(!sourceId.equals(normalizeIdentity(sourceId))||!entry.getName().equals(key(sourceId)))continue;
+                if(!sourceId.equals(normalizeIdentity(sourceId))||!entry.getName().equals(key(sourceId)))
+                    throw new Failure(Reason.CORRUPT_COPY);
                 if(hasImportedResources(new File(entry,GAME)))sources.add(sourceId);
             }catch(IOException|SecurityException ignored){
-                // An entry whose identity or layout cannot be verified is ineligible for eviction.
+                unverifiable++;
             }
         }
-        return sources;
+        return new ResourceInventory(sources,unverifiable);
     }
     public static boolean clearResources(Context context,String sourceId) throws IOException {
         File external=context.getExternalFilesDir(null);

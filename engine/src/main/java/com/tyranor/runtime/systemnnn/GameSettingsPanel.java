@@ -194,7 +194,21 @@ final class GameSettingsPanel extends GameUiPanel {
     private void mode(OriginalSettingsModel.Choice c){
         boolean value=preferences.getBoolean(c.key,c.defaultValue);int selected=c.key.equals("skipReadOnly")?(value?0:1):(value?1:0);
         for(int i=0;i<c.buttons.length;i++){final int option=i;
-            drawButton(c.buttons[i],selected==i,string(R.string.engine_systemnnn_ctl_settings_option,settingLabel(c.key),i+1),()->{writeBoolean(c.key,c.key.equals("skipReadOnly")?option==0:option!=0);showPage(page);});}
+            drawButton(c.buttons[i],selected==i,modeLabel(c.key,i),()->{
+                writeBoolean(c.key,c.key.equals("skipReadOnly")?option==0:option!=0);
+                showPage(page);
+            });
+        }
+    }
+    private String modeLabel(String key,int choice){
+        int label;
+        switch(key){
+            case "fullscreen": label=choice==0?R.string.engine_systemnnn_ctl_settings_windowed:R.string.engine_systemnnn_ctl_settings_fullscreen;break;
+            case "skipReadOnly": label=choice==0?R.string.engine_systemnnn_ctl_settings_read_only:R.string.engine_systemnnn_ctl_settings_all_text;break;
+            case "autoEnabled": label=choice==0?R.string.engine_systemnnn_ctl_settings_manual:R.string.engine_systemnnn_ctl_settings_auto;break;
+            default: return string(R.string.engine_systemnnn_ctl_settings_option,settingLabel(key),choice+1);
+        }
+        return settingLabel(key)+" · "+string(label);
     }
     private void extended(OriginalSettingsModel.Extended group){
         String key=RuntimeSettingsAdapter.extendedKey(group.parameter());

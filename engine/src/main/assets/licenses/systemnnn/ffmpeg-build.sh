@@ -64,3 +64,10 @@ if [[ ! -f ffbuild/config.mak ]] || ! cmp -s ffbuild/emberfall-options <(printf 
 fi
 make -s -j6
 make -s install
+
+# Keep a displaced tree until extraction, configuration and installation succeed.
+for previous in "$prefix"/source-previous.????????; do
+    if [[ -d "$previous" && ! -L "$previous" && "${previous##*/}" =~ ^source-previous\.[[:alnum:]]{8}$ ]]; then
+        rm -rf -- "$previous"
+    fi
+done

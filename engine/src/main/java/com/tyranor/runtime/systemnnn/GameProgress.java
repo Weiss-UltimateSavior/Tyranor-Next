@@ -13,6 +13,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 /** NNR4 stays readable by the previous player. New fields are paired with its exact contents. */
 final class GameProgress {
@@ -39,6 +41,8 @@ final class GameProgress {
     private static final int MAX_CHART_NODES=256*1024,MAX_CHART=8+2*MAX_CHART_NODES;
     private static final long MAX_FILE=32L*1024*1024,MAX_EXTENSION=2L*1024*1024;
     private static final Logger LOG=Logger.getLogger(GameProgress.class.getName());
+    private static final Pattern RETIRED_BACKUP=Pattern.compile(
+        "emberfall\\.read(?:\\.ext)?\\.bak\\.previous(?:-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})?");
     private static final MoveFile ATOMIC_MOVE=(source,target)->
         Files.move(source,target,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
     private final Path file,extension;
@@ -72,7 +76,15 @@ final class GameProgress {
     private static final class Committed {
         final State state;
         final byte[] fingerprint;
-        Committed(State state,byte[] fingerprint){this.state=state;this.fingerprint=fingerprint;}
+        final Path source;
+        Committed(State state,byte[] fingerprint,Path source){
+            this.state=state;this.fingerprint=fingerprint;this.source=source;
+        }
+    }
+
+    static final class MigrationFiles {
+        final Path base,extension;
+        MigrationFiles(Path base,Path extension){this.base=base;this.extension=extension;}
     }
 
     GameProgress(File path){this(path,ATOMIC_MOVE);}
@@ -92,13 +104,28 @@ final class GameProgress {
         try{
             State state=readExtension(extension,committed,repairExtension);
             if(state==committed.state)state=readExtension(sibling(extension,".bak"),committed,repairExtension);
-            return new Committed(state,committed.fingerprint);
+            return new Committed(state,committed.fingerprint,committed.source);
         }catch(IOException|SecurityException e){throw new AccessFailure("扩展",e);}
     }
 
     /** Snapshot validation shares the same preference without altering the staging directory. */
     static boolean hasReadableBase(File primary,File backup) throws IOException {
         return selectBase(primary==null?null:primary.toPath(),backup==null?null:backup.toPath(),null)!=null;
+    }
+
+    static MigrationFiles migrationFiles(Path file) throws IOException {
+        Committed selected=selectBase(file,sibling(file,".bak"),null);
+        if(selected==null)return null;
+        Path ext=sibling(file,".ext");
+        for(Path candidate:new Path[]{ext,sibling(ext,".bak")}){
+            try{
+                if(decodeExtension(candidate,selected.state,selected.fingerprint)!=selected.state)
+                    return new MigrationFiles(selected.source,candidate);
+            }catch(InvalidExtension invalid){
+                LOG.log(Level.WARNING,"Malformed legacy progress extension ignored",invalid);
+            }
+        }
+        return new MigrationFiles(selected.source,null);
     }
     private static Committed selectBase(Path path,Path legacy,MoveFile repair) throws IOException {
         InvalidBase damaged=null;
@@ -143,7 +170,7 @@ final class GameProgress {
             DataInputStream in=new DataInputStream(new BufferedInputStream(new DigestInputStream(Channels.newInputStream(raw),digest)))){
             if(raw.size()>MAX_FILE)throw new InvalidBase("Global progress exceeds size limit");
             State state=decode(in);
-            return new Committed(state,digest.digest());
+            return new Committed(state,digest.digest(),path);
         }
     }
     private static Path sibling(Path path,String suffix){return path.resolveSibling(path.getFileName()+suffix);}
@@ -285,7 +312,25 @@ final class GameProgress {
     }
     private void retireLegacyBackup(Path target) throws IOException {
         Path backup=sibling(target,".bak");
-        if(regularFile(backup))move.move(backup,sibling(backup,".previous-"+UUID.randomUUID()));
+        if(regularFile(backup)){
+            Path retired=sibling(backup,".previous");
+            regularFile(retired);
+            move.move(backup,retired);
+        }
+    }
+
+    static int clearRetiredBackups(File directory) throws IOException {
+        Path root=directory.toPath();
+        if(!Files.isDirectory(root,LinkOption.NOFOLLOW_LINKS))throw new IOException("Cannot access save directory");
+        int removed=0;
+        try(DirectoryStream<Path> entries=Files.newDirectoryStream(root)){
+            for(Path entry:entries){
+                if(RETIRED_BACKUP.matcher(entry.getFileName().toString()).matches() &&
+                    Files.isRegularFile(entry,LinkOption.NOFOLLOW_LINKS) &&
+                    Files.deleteIfExists(entry))removed++;
+            }
+        }
+        return removed;
     }
 
     static void encode(DataOutputStream out,State state) throws IOException {

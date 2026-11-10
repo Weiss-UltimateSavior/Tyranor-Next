@@ -87,7 +87,9 @@ internal class SystemNnnSaveStore(
             }
             if (!restorable) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
         }
-        if (existing.isEmpty() && incoming.isEmpty()) return 0
+        if (existing.isEmpty() && incoming.isEmpty()) {
+            return if (source == null) SystemNnnHost.clearRetiredProgressBackups(directory) else 0
+        }
         Files.createDirectory(migration.toPath())
         try {
             Files.createDirectory(restore.toPath())
@@ -106,7 +108,7 @@ internal class SystemNnnSaveStore(
             throw failure
         }
         Closeable { clearRestore() }.use { onCommitted() }
-        return if (source == null) existing.size else incoming.size
+        return if (source == null) existing.size + SystemNnnHost.clearRetiredProgressBackups(directory) else incoming.size
     }
 
     private fun recover(allowLegacyMigration: Boolean = false) {

@@ -40,7 +40,6 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     private final Object gate = new Object();
     private final Clock clock = new Clock();
     private SurfaceTexture requestedTexture, boundTexture;
-    private boolean releaseBoundTexture;
     private boolean paused, decoderFinished, audioReady, audioEnded;
     private String audioFailure;
     private volatile boolean stopped;
@@ -144,17 +143,17 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     @Override public void onSurfaceTextureUpdated(SurfaceTexture texture) {}
 
     @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture) {
-        boolean workerOwnsTexture, stillPlaying;
+        boolean stillPlaying;
         synchronized (gate) {
             if (requestedTexture == texture) requestedTexture = null;
-            workerOwnsTexture = boundTexture == texture;
-            // Keep the texture alive through any present already using it.
-            if (workerOwnsTexture) releaseBoundTexture = true;
             updatePlaybackLocked();
             stillPlaying = clock.running;
         }
         if (!stillPlaying) audioFocus.abandon();
-        return !workerOwnsTexture;
+        // Disconnect the old consumer after the view detaches, including when the
+        // decoder is blocked trying to acquire an output buffer from that consumer.
+        owner.post(texture::release);
+        return false;
     }
 
     @Override protected void onSizeChanged(int w, int h, int oldW, int oldH) {
@@ -190,7 +189,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         }
         if (previous != null) {
             setSurface(token, null);
-            releaseBinding();
+            clearBinding();
         }
 
         SurfaceTexture target;
@@ -209,17 +208,11 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
         } finally {
             if (surface != null) surface.release();
         }
-        releaseBinding();
+        clearBinding();
     }
 
-    private void releaseBinding() {
-        SurfaceTexture release;
-        synchronized (gate) {
-            release = releaseBoundTexture ? boundTexture : null;
-            boundTexture = null;
-            releaseBoundTexture = false;
-        }
-        if (release != null) owner.post(release::release);
+    private void clearBinding() {
+        synchronized (gate) { boundTexture = null; }
     }
 
     private boolean currentSurface() {
@@ -302,7 +295,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
             error = reason(e);
         } finally {
             if (token != 0) close(token);
-            releaseBinding();
+            clearBinding();
             synchronized (gate) {
                 decoderFinished = true;
                 gate.notifyAll();
@@ -322,12 +315,18 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     }
 
     private void awaitAudioEnd(long token) throws InterruptedException {
-        long deadline = activeMicros() + 10_000_000;
+        long lastProgress = Long.MIN_VALUE, lastAdvance = activeMicros();
         while (awaitFrame(token, -1)) {
             synchronized (gate) {
                 if (audioEnded) return;
-                if (clock.activeMicros(System.nanoTime()) >= deadline)
-                    throw new IllegalStateException("Movie audio did not finish");
+                long now = System.nanoTime();
+                long active = clock.activeMicros(now), progress = clock.position(now);
+                if (progress > lastProgress) {
+                    lastProgress = progress;
+                    lastAdvance = active;
+                } else if (active - lastAdvance >= 10_000_000) {
+                    throw new IllegalStateException("Movie audio did not advance");
+                }
                 gate.wait(10);
             }
         }
@@ -351,7 +350,11 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
                 .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(buffer, RATE * 4 / 10)).build();
             setGain(track, 0f);
             AudioOutput output = new AudioOutput(track, first);
-            synchronized (gate) { audioReady = true; }
+            synchronized (gate) {
+                audioReady = true;
+                clock.prepareAudio(first, System.nanoTime());
+                gate.notifyAll();
+            }
             owner.post(this::retryFocus);
             short[] data = new short[65536];
             boolean reported = false;
@@ -378,9 +381,13 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
                 if (!output.ready()) return;
             } while (next(token, 0) >= 0);
 
-            long deadline = activeMicros() + 1_000_000;
-            while (output.ready() && activeMicros() < deadline && output.publishPosition() < output.written / 2)
+            while (output.ready() && output.publishPosition() < output.written / 2) {
+                if (output.stalled()) {
+                    Log.w(TAG, "Movie audio tail stalled");
+                    break;
+                }
                 SystemClock.sleep(5);
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             error = reason(e);
@@ -435,6 +442,13 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
                 synchronized (gate) {
                     if (stopped || decoderFinished) return false;
                     run = clock.running;
+                    if (run && !playing) {
+                        long remaining = first - clock.position(System.nanoTime());
+                        if (remaining > 0) {
+                            gate.wait(Math.max(1, Math.min(10, remaining / 1000)));
+                            continue;
+                        }
+                    }
                 }
                 if (run) {
                     // A muted track still drives the A/V clock during focus denial or loss.
@@ -481,6 +495,7 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
     static final class Clock {
         private boolean running;
         private long since, elapsed, position = -1, silentAt = -1;
+        private long audioPrerollAt = -1, firstAudioPts;
 
         void setRunning(boolean value, long now) {
             if (running == value) return;
@@ -493,17 +508,24 @@ final class MoviePlayback extends FrameLayout implements TextureView.SurfaceText
             return (elapsed + (running ? now - since : 0)) / 1000;
         }
 
+        void prepareAudio(long firstPts, long now) {
+            firstAudioPts = firstPts;
+            audioPrerollAt = activeMicros(now);
+        }
+
         void audioPosition(long pts) {
             position = Math.max(position, pts);
         }
 
         void continueSilently(long now) {
-            position = Math.max(0, position);
+            position = Math.max(0, position(now));
             silentAt = activeMicros(now);
         }
 
         long position(long now) {
-            return silentAt < 0 ? position : position + activeMicros(now) - silentAt;
+            if (silentAt >= 0) return position + activeMicros(now) - silentAt;
+            if (position >= 0 || audioPrerollAt < 0) return position;
+            return Math.min(firstAudioPts, activeMicros(now) - audioPrerollAt);
         }
     }
 

@@ -135,8 +135,12 @@ private fun SaveManagementScreen(game: ScanGame) {
     suspend fun refresh() {
         try {
             val snapshot = withContext(Dispatchers.IO) {
-                Triple(manager.resolveSaveLocation(game), manager.listSaveFiles(game).size,
-                    manager.hasImportedSystemNnnResources(game))
+                val resolved = manager.resolveSaveLocation(game)
+                val files = manager.listSaveFiles(
+                    game,
+                    strict = game.engine == EngineType.SYSTEMNNN && resolved.available,
+                )
+                Triple(resolved, files.size, manager.hasImportedSystemNnnResources(game))
             }
             location = snapshot.first
             fileCount = snapshot.second

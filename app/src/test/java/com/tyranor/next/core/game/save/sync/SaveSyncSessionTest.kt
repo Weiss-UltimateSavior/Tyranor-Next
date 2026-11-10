@@ -125,6 +125,15 @@ class SaveSyncSessionTest {
         assertFalse(matchesImportedSystemNnnSaves(oldKey, newKey, source, temp.newFolder("other-copy", "SAV")))
     }
 
+    @Test
+    fun matchingNonSavDirectoriesCannotRebindSystemNnnSession() {
+        val source = temp.newFolder("original")
+        val copiedData = temp.newFolder("copy", "data")
+        val oldKey = SAVE_DIRECTORY_KEY_PREFIX + File(source, copiedData.name).canonicalPath
+        val newKey = SAVE_DIRECTORY_KEY_PREFIX + copiedData.canonicalPath
+        assertFalse(matchesImportedSystemNnnSaves(oldKey, newKey, source, copiedData))
+    }
+
     private suspend fun verifyDirectoryChange(empty: Boolean) {
         val store = SaveSyncStateStore(File(temp.root, "sessions"))
         val original = session("pending").put("baseline", "before-A")

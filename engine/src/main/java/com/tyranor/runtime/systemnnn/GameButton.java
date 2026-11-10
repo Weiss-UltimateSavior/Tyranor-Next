@@ -64,14 +64,15 @@ final class GameButton extends View {
     @Override protected void onDetachedFromWindow(){if(pending!=null)removeCallbacks(pending);pending=null;super.onDetachedFromWindow();}
     @Override public CharSequence getAccessibilityClassName(){return "android.widget.Button";}
     @Override protected void drawableStateChanged(){super.drawableStateChanged();invalidate();}
+    boolean pictureHit(float localX,float localY){
+        float x=localX*spec.states[0].w/Math.max(1,getWidth())-spec.hitX;
+        float y=localY*spec.states[0].h/Math.max(1,getHeight())-spec.hitY;
+        return x>=0&&y>=0&&x<spec.hit.w&&y<spec.hit.h&&
+            (!spec.pixelHit||spec.hit.hit(image,x/spec.hit.w,y/spec.hit.h));
+    }
     @Override public boolean onTouchEvent(MotionEvent event){
         if(pending!=null)return true;
-        if(event.getActionMasked()==MotionEvent.ACTION_DOWN){
-            float x=event.getX()*spec.states[0].w/Math.max(1,getWidth())-spec.hitX;
-            float y=event.getY()*spec.states[0].h/Math.max(1,getHeight())-spec.hitY;
-            if(x<0||y<0||x>=spec.hit.w||y>=spec.hit.h||
-                (spec.pixelHit&&!spec.hit.hit(image,x/spec.hit.w,y/spec.hit.h)))return false;
-        }
+        if(event.getActionMasked()==MotionEvent.ACTION_DOWN&&!pictureHit(event.getX(),event.getY()))return false;
         return super.onTouchEvent(event);
     }
     @Override protected void onDraw(Canvas c){

@@ -66,6 +66,9 @@
     <string name="engine_systemnnn_ctl_settings_read_color">既読テキストの色を変更</string>
     <string name="engine_systemnnn_ctl_settings_choice_color">選択済みの項目の色を変更</string>
     <string name="engine_systemnnn_ctl_settings_screen_mode">表示モード</string>
+    <string name="engine_systemnnn_ctl_settings_windowed">ウィンドウ</string>
+    <string name="engine_systemnnn_ctl_settings_fullscreen">全画面</string>
+    <string name="engine_systemnnn_ctl_settings_manual">手動</string>
     <string name="engine_systemnnn_ctl_settings_skip_scope">スキップ対象</string>
     <string name="engine_systemnnn_ctl_settings_auto">オート再生</string>
     <string name="engine_systemnnn_ctl_settings_option">%1$s · 選択肢 %2$d</string>

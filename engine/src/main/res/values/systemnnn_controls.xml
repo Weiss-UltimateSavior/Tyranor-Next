@@ -66,6 +66,9 @@
     <string name="engine_systemnnn_ctl_settings_read_color">已读台词变色</string>
     <string name="engine_systemnnn_ctl_settings_choice_color">已选选项变色</string>
     <string name="engine_systemnnn_ctl_settings_screen_mode">显示模式</string>
+    <string name="engine_systemnnn_ctl_settings_windowed">窗口</string>
+    <string name="engine_systemnnn_ctl_settings_fullscreen">全屏</string>
+    <string name="engine_systemnnn_ctl_settings_manual">手动</string>
     <string name="engine_systemnnn_ctl_settings_skip_scope">快进范围</string>
     <string name="engine_systemnnn_ctl_settings_auto">自动播放</string>
     <string name="engine_systemnnn_ctl_settings_option">%1$s · 选项 %2$d</string>

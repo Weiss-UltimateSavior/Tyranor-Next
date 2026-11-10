@@ -2,6 +2,7 @@ package com.tyranor.runtime.systemnnn;
 
 import android.util.AtomicFile;
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -11,6 +12,7 @@ import java.util.zip.CheckedOutputStream;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
+import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
 // Input replay and its display metadata commit together in one AtomicFile.
@@ -29,9 +31,6 @@ final class GameSave {
     private static final int SNAPSHOT_CURSOR=MAX_TICKS+1;
     private static final int LEGACY_RUN_BYTES=5*Integer.BYTES+1;
     private static final int SNAPSHOT_TAG=0x534e5031, MAX_SNAPSHOT=48*1024*1024;
-    // Match the NNS1 header and snapshot_version in GameSession::load_snapshot.
-    private static final int NATIVE_SNAPSHOT_MAGIC=0x4e4e5331, NATIVE_SNAPSHOT_HEADER=2*Integer.BYTES;
-    private static final int MAX_NATIVE_SNAPSHOT_VERSION=13;
     static final class Run {
         int repeats;
         final int ms,x,y,choice;
@@ -321,17 +320,10 @@ final class GameSave {
         return true;
     }
     private static byte[] readSnapshot(DataInputStream in){
-        try{
-            int size=in.readInt(),compressedSize=in.readInt(),checksum=in.readInt();
-            if(size<=0||size>MAX_SNAPSHOT||compressedSize<=0||compressedSize>MAX_SNAPSHOT)return null;
-            PackedSnapshotInput compressed=new PackedSnapshotInput(in,compressedSize);
-            byte[] snapshot=new byte[size];
-            try(DataInputStream zip=new DataInputStream(new InflaterInputStream(compressed))){
-                zip.readFully(snapshot);
-                if(zip.read()!=-1||compressed.remaining!=0||in.read()!=-1)return null;
-            }
-            CRC32 crc=new CRC32();crc.update(snapshot);
-            return (int)crc.getValue()==checksum?snapshot:null;
+        try(SnapshotInput snapshot=new SnapshotInput(in)){
+            byte[] raw=new byte[snapshot.size];
+            snapshot.decoded.readFully(raw);
+            return snapshot.complete()?raw:null;
         }catch(IOException e){return null;}
     }
     private static final class PackedSnapshotInput extends InputStream {
@@ -356,22 +348,60 @@ final class GameSave {
             return count;
         }
     }
-    private static boolean validateSnapshot(DataInputStream in) throws IOException {
-        int size=in.readInt(),packedSize=in.readInt(),checksum=in.readInt();
-        if(size<=NATIVE_SNAPSHOT_HEADER||size>MAX_SNAPSHOT||packedSize<=0||packedSize>MAX_SNAPSHOT)return false;
-        PackedSnapshotInput packed=new PackedSnapshotInput(in,packedSize);
-        CRC32 crc=new CRC32();
-        byte[] buffer=new byte[8192];
-        try(DataInputStream zip=new DataInputStream(new CheckedInputStream(new InflaterInputStream(packed),crc))){
-            if(zip.readInt()!=NATIVE_SNAPSHOT_MAGIC)return false;
-            int version=Integer.reverseBytes(zip.readInt());
-            if(version<1||version>MAX_NATIVE_SNAPSHOT_VERSION)return false;
-            for(int remaining=size-NATIVE_SNAPSHOT_HEADER;remaining>0;){
-                int count=Math.min(remaining,buffer.length);
-                zip.readFully(buffer,0,count);
-                remaining-=count;
+    private static final class SnapshotInput implements AutoCloseable {
+        final int size,checksum;
+        final DataInputStream input,decoded;
+        final PackedSnapshotInput packed;
+        final Inflater inflater;
+        final CRC32 crc=new CRC32();
+
+        SnapshotInput(DataInputStream input) throws IOException {
+            this.input=input;
+            size=input.readInt();
+            int packedSize=input.readInt();
+            checksum=input.readInt();
+            if(size<=0||size>MAX_SNAPSHOT||packedSize<=0||packedSize>MAX_SNAPSHOT)
+                throw new IOException("Invalid native snapshot length");
+            packed=new PackedSnapshotInput(input,packedSize);
+            inflater=new Inflater();
+            decoded=new DataInputStream(new CheckedInputStream(new InflaterInputStream(packed,inflater),crc));
+        }
+        boolean complete() throws IOException {
+            return decoded.read()==-1 && inflater.finished() && inflater.getRemaining()==0 &&
+                packed.remaining==0 && input.read()==-1 && (int)crc.getValue()==checksum;
+        }
+        @Override public void close(){inflater.end();}
+    }
+
+    /** Reuses a bounded decode buffer across all native slots in the same import. */
+    static final class ImportValidation {
+        private final byte[] chunk=new byte[8192];
+        private ByteBuffer buffer;
+
+        void snapshot(DataInputStream in,Metadata at,byte[][] content,boolean nativeRequired) throws IOException {
+            try(SnapshotInput snapshot=new SnapshotInput(in)){
+                if(nativeRequired){
+                    if(buffer==null || buffer.capacity()<snapshot.size){
+                        int capacity=buffer==null?snapshot.size:Math.max(snapshot.size,buffer.capacity()*2);
+                        try{buffer=ByteBuffer.allocateDirect(Math.min(MAX_SNAPSHOT,capacity));}
+                        catch(OutOfMemoryError exhausted){throw new IOException("Cannot allocate native save validation buffer",exhausted);}
+                    }
+                    buffer.clear();
+                }
+                for(int remaining=snapshot.size;remaining>0;){
+                    int count=Math.min(remaining,chunk.length);
+                    snapshot.decoded.readFully(chunk,0,count);
+                    if(nativeRequired)buffer.put(chunk,0,count);
+                    remaining-=count;
+                }
+                if(!snapshot.complete())throw new IOException("Invalid compressed native snapshot");
+                if(nativeRequired){
+                    boolean valid;
+                    try{valid=NativeGame.inspectSaveSnapshot(buffer,snapshot.size,at.wait,at.word,at.line,content);}
+                    catch(LinkageError unavailable){throw new IOException("Native snapshot validation is unavailable",unavailable);}
+                    if(!valid)throw new IOException("Invalid native snapshot structure or save position");
+                }
             }
-            return zip.read()==-1&&packed.remaining==0&&in.read()==-1&&(int)crc.getValue()==checksum;
         }
     }
     static Metadata readMetadata(File file) throws IOException {
@@ -406,6 +436,13 @@ final class GameSave {
         return metadata;
     }
     static Loaded readFrom(InputStream raw,long modified,int legacySlot,boolean keepRuns) throws IOException {
+        return readFrom(raw,modified,legacySlot,keepRuns?null:new ImportValidation());
+    }
+    static Loaded readForImport(InputStream raw,long modified,int legacySlot,ImportValidation validation) throws IOException {
+        return readFrom(raw,modified,legacySlot,validation);
+    }
+    private static Loaded readFrom(InputStream raw,long modified,int legacySlot,ImportValidation validation) throws IOException {
+        boolean keepRuns=validation==null;
         BufferedInputStream buffered=new BufferedInputStream(raw); CRC32 crc=new CRC32();
         DataInputStream in=new DataInputStream(new CheckedInputStream(buffered,crc));
         int magic=in.readInt(); boolean modern=magic==MAGIC_NS2;
@@ -415,19 +452,25 @@ final class GameSave {
             metadata=readModernMetadata(in);
             int fields=in.readInt();
             if (fields<2 || fields>1024) throw new IOException("存档文本数量无效");
-            if (keepRuns) content=new byte[fields][];
-            int bytes=0; byte[] scratch=keepRuns?null:new byte[4096];
+            content=new byte[fields][];
+            int bytes=0;
             for (int i=0;i<fields;i++) {
                 int length=in.readInt();
                 if (length<0 || length>MAX_CONTENT_BYTES-bytes) throw new IOException("存档文本过大");
                 bytes+=length;
-                if (keepRuns) { content[i]=new byte[length]; in.readFully(content[i]); }
-                else for (int left=length;left>0;) { int n=Math.min(left,scratch.length); in.readFully(scratch,0,n); left-=n; }
+                content[i]=new byte[length];
+                in.readFully(content[i]);
             }
+            if(!keepRuns && !matchesScript(metadata.script,content[0]))
+                throw new IOException("Save script differs from the saved script field");
+            if(!keepRuns && (metadata.wait==NativeGame.CHOICE ? fields<3 : fields!=2))
+                throw new IOException("Save choices differ from the saved wait state");
         }
         int count=in.readInt();
         if (count<1 || count>MAX_RUNS) throw new IOException("存档长度无效");
         GameSave save=keepRuns?new GameSave():null; int total=0;boolean hasInput=false,needsSnapshot=false;
+        ReplayOrder order=keepRuns?null:new ReplayOrder();
+        IOException replayFailure=null;
         for (int i=0;i<count;i++) {
             int repeats=in.readInt(),ms=in.readInt(),x=in.readInt(),y=in.readInt();
             boolean advance=readFlag(in); int choice=in.readInt(); boolean skip=modern && readFlag(in);
@@ -435,6 +478,8 @@ final class GameSave {
             Run run=new Run(repeats,ms,x,y,advance,choice,skip);
             validateRun(run,total); total+=repeats;hasInput|=choice>=TIMED_OUT||choice==NATIVE_BASELINE;
             needsSnapshot|=choice==NATIVE_BASELINE;
+            if(order!=null&&!needsSnapshot&&replayFailure==null)try{order.accept(run);}
+            catch(IOException invalid){replayFailure=invalid;}
             if (keepRuns) save.runs.add(run);
         }
         if(!hasInput)throw new IOException("缺少存档输入");
@@ -444,7 +489,12 @@ final class GameSave {
             if (actual!=expected) throw new IOException("存档校验失败，文件可能已损坏");
         }
         byte[] snapshot=null;
-        boolean validRequiredSnapshot=false;
+        if(order!=null&&!needsSnapshot&&replayFailure==null)try{order.finish();}
+        catch(IOException invalid){replayFailure=invalid;}
+        if(metadata.wait==NativeGame.MODAL && !needsSnapshot)
+            throw new IOException("Modal save has no native baseline");
+        boolean nativeRequired=needsSnapshot||replayFailure!=null;
+        boolean validatedSnapshot=false;
         int first=buffered.read();
         if(first!=-1){
             if(!modern||first!=(SNAPSHOT_TAG>>>24))throw new IOException("存档尾部无效");
@@ -453,10 +503,14 @@ final class GameSave {
             if(second>=0&&third>=0&&fourth>=0){
                 if((first<<24|second<<16|third<<8|fourth)!=SNAPSHOT_TAG)throw new IOException("存档尾部无效");
                 if(keepRuns)snapshot=readSnapshot(extension);
-                else if(needsSnapshot)validRequiredSnapshot=validateSnapshot(extension);
-            }
+                else{
+                    validation.snapshot(extension,metadata,content,nativeRequired);
+                    validatedSnapshot=true;
+                }
+            }else if(!keepRuns)throw new EOFException("Incomplete native snapshot marker");
         }
-        if(!keepRuns&&(needsSnapshot||metadata.wait==NativeGame.MODAL)&&!validRequiredSnapshot)
+        if(!keepRuns && replayFailure!=null && !validatedSnapshot)throw replayFailure;
+        if(!keepRuns && nativeRequired && !validatedSnapshot)
             throw new IOException("Missing or invalid required native save snapshot");
         if (save!=null) {
             if(metadata.wait==NativeGame.MODAL&&(!save.requiresSnapshot()||snapshot==null))
@@ -466,7 +520,7 @@ final class GameSave {
                 Run last=save.lastInput();save.useNativeBaseline(last.x,last.y);
             }
         }
-        return new Loaded(save,metadata,content,snapshot);
+        return new Loaded(save,metadata,keepRuns?content:null,snapshot);
     }
     static Loaded read(File file) throws IOException {
         Loaded loaded;
@@ -502,37 +556,71 @@ final class GameSave {
         },nativeMeta);
         if(nativeMeta!=meta)System.arraycopy(nativeMeta,0,meta,0,meta.length);
     }
+    /** State-record ordering shared by archive inspection and playback. */
+    private static final class ReplayOrder {
+        private boolean system,progress,gallery,recorded,clock,input;
+        private int galleryKeys,lastGalleryKey;
+
+        void accept(Run run) throws IOException {
+            if(clock && run.choice<TIMED_OUT)finish();
+            switch(run.choice){
+                case RESET_SYSTEM_VARIABLES: system=true; return;
+                case SET_SYSTEM_VARIABLE:
+                    if(!system)throw new IOException("缺少系统变量起始记录");
+                    return;
+                case RESET_SCRIPT_PROGRESS: progress=true; return;
+                case SET_SCRIPT_PROGRESS:
+                    if(!progress)throw new IOException("缺少结果起始记录");
+                    return;
+                case RESET_GALLERY:
+                    gallery=true;galleryKeys=0;lastGalleryKey=-1;return;
+                case GALLERY_BITS:
+                    if(!gallery)throw new IOException("缺少鉴赏起始记录");
+                    for(int bits=run.y;bits!=0;bits&=bits-1){
+                        int key=run.x+Integer.numberOfTrailingZeros(bits);
+                        if(++galleryKeys>MAX_GALLERY_KEYS || key<=lastGalleryKey)
+                            throw new IOException("无效的鉴赏起始记录");
+                        lastGalleryKey=key;
+                    }
+                    return;
+                case RANDOM_STATE: recorded=true;return;
+                case CLOCK_SAMPLE:
+                    if(!recorded)throw new IOException("缺少随机数起始记录");
+                    clock=true;return;
+                default:
+                    if(run.choice==TRIM_BACKLOG && !input)throw new IOException("Missing replay input before backlog trim");
+                    if(clock && run.repeats!=1)throw new IOException("系统时间样本对应多条输入");
+                    input|=run.choice>=TIMED_OUT;
+                    clock=system=progress=gallery=false;
+            }
+        }
+        void finish() throws IOException {
+            if(clock)throw new IOException("系统时间样本缺少对应输入");
+        }
+    }
+
     static void replay(Loaded loaded,Replay engine,int[] meta) throws IOException {
         if (loaded.save==null || meta==null || meta.length<7) throw new IOException("缺少恢复状态");
         loaded.save.requireReplayable();
         int[] system=null,progress=null;
         ArrayList<Integer> gallery=null;
-        boolean recorded=false;
+        ReplayOrder order=new ReplayOrder();
         int clockDate=0,clockMilliseconds=0;
         for (Run r:loaded.save.runs) {
-            if(clockDate!=0&&r.choice<TIMED_OUT)throw new IOException("系统时间样本缺少对应输入");
+            order.accept(r);
             switch(r.choice){
                 case RESET_SYSTEM_VARIABLES: system=new int[NativeGame.SYSTEM_VARIABLES];continue;
                 case SET_SYSTEM_VARIABLE:
-                    if(system==null)throw new IOException("缺少系统变量起始记录");
                     system[r.x]=r.y;continue;
                 case RESET_SCRIPT_PROGRESS: progress=new int[NativeGame.SCRIPT_PROGRESS];continue;
                 case SET_SCRIPT_PROGRESS:
-                    if(progress==null)throw new IOException("缺少结果起始记录");
                     progress[r.x]=r.y;continue;
                 case RESET_GALLERY: gallery=new ArrayList<>();continue;
                 case GALLERY_BITS:
-                    if(gallery==null)throw new IOException("缺少鉴赏起始记录");
-                    for(int bits=r.y;bits!=0;bits&=bits-1){
-                        int key=r.x+Integer.numberOfTrailingZeros(bits);
-                        if(gallery.size()==MAX_GALLERY_KEYS||!gallery.isEmpty()&&gallery.get(gallery.size()-1)>=key)
-                            throw new IOException("无效的鉴赏起始记录");
-                        gallery.add(key);
-                    }
+                    for(int bits=r.y;bits!=0;bits&=bits-1)gallery.add(r.x+Integer.numberOfTrailingZeros(bits));
                     continue;
-                case RANDOM_STATE: engine.randomState(r.x);recorded=true;continue;
+                case RANDOM_STATE: engine.randomState(r.x);continue;
                 case CLOCK_SAMPLE:
-                    if(!recorded)throw new IOException("缺少随机数起始记录");
                     clockDate=r.x;clockMilliseconds=r.y;continue;
                 default: break;
             }
@@ -540,7 +628,6 @@ final class GameSave {
             if(progress!=null){engine.scriptProgress(progress);progress=null;}
             if(gallery!=null){applyGallery(engine,gallery);gallery=null;}
             if(r.choice==TRIM_BACKLOG){engine.trimBacklog(r.x);continue;}
-            if(clockDate!=0&&r.repeats!=1)throw new IOException("系统时间样本对应多条输入");
             for (int left=r.repeats;left>0;) {
                 int n=1;
                 // Skip may advance a dialogue per logical tick, so never combine skip ticks.
@@ -550,19 +637,19 @@ final class GameSave {
                     else if ((meta[0]==NativeGame.DRAW || meta[0]==NativeGame.OVERLAP) && r.ms==meta[5])
                         n=Math.max(1,Math.min(left,Math.min(60000/r.ms,meta[6])));
                 }
-                engine.clock(clockDate!=0?clockDate:recorded?-1:0,clockMilliseconds);
+                engine.clock(clockDate!=0?clockDate:order.recorded?-1:0,clockMilliseconds);
                 engine.setSkip(r.skip); engine.tick(r.ms*n,r.x,r.y,r.advance,r.choice,meta); left-=n;
                 clockDate=clockMilliseconds=0;
             }
         }
-        if(clockDate!=0)throw new IOException("系统时间样本缺少对应输入");
+        order.finish();
         if(system!=null)engine.systemVariables(system);
         if(progress!=null)engine.scriptProgress(progress);
         if(gallery!=null)applyGallery(engine,gallery);
         Metadata m=loaded.metadata; byte[][] actual=engine.content();
         if (actual==null || actual.length<1 || actual[0]==null || meta[0]!=m.wait || meta[1]!=m.word || meta[2]!=m.line ||
             !matchesScript(m.script,actual[0]) || (!m.legacy && !Arrays.deepEquals(loaded.content,actual)))
-            throw new IOException("存档与此游戏目录中的脚本、对白或选项不匹配"+(recorded?"":"，旧输入日志没有随机数和本地时间记录"));
+            throw new IOException("存档与此游戏目录中的脚本、对白或选项不匹配"+(order.recorded?"":"，旧输入日志没有随机数和本地时间记录"));
     }
     private static boolean matchesScript(String stored,byte[] raw){
         // Older summaries used UTF-8 replacement. NS2 still compares every raw field.

@@ -16,8 +16,8 @@ import kotlinx.coroutines.withContext
  */
 object RuntimeModuleBindings {
     internal fun builtInSystemNnn(game: ScanGame): ScanGame =
-        if ((game.engine == EngineType.RUNTIME_MODULE || game.engine == EngineType.UNKNOWN) &&
-            game.runtimeModulePackage == "com.tyranor.runtime.systemnnn"
+        if (game.runtimeModulePackage == "com.tyranor.runtime.systemnnn" &&
+            (game.engine == EngineType.RUNTIME_MODULE || game.engine == EngineType.UNKNOWN || game.engine == EngineType.SYSTEMNNN)
         ) {
             game.copy(engine = EngineType.SYSTEMNNN, runtimeModulePackage = null)
         } else game
@@ -35,20 +35,21 @@ object RuntimeModuleBindings {
      * 批量核对库中所有 [EngineType.RUNTIME_MODULE] 条目：
      * 模块不在已发现集合、或不在已启用集合、或包名为空 → 降级为 [EngineType.UNKNOWN]，
      * **保留最后已知的 `runtimeModulePackage`**（供重新启用/重装后重扫恢复，不作为启动依据）。
+     * 重扫也能恢复使用内置 SystemNNN 回退的原绑定。
      *
      * 保留包名而不是清空，是为了让「模块描述暂时失效 / 发现查询失败 / 用户禁用到重装」期间
      * 重扫仍能识别这是运行时条目，不会把整条游戏记录当已删除而丢掉标题/封面/元数据。
      *
-     * @return 本次降级的游戏数量；发现查询失败返回 0。
+     * @return 本次降级的游戏数量；发现查询失败时按实际启用设置核对现有绑定。
      */
     suspend fun reconcile(context: Context, restoreReenabled: Boolean = false): Int = withContext(Dispatchers.IO) {
         val discovery = RuntimeModuleDiscovery.discover(context) as? RuntimeModuleDiscoveryResult.Success
-        val enabledPackages = if (discovery != null) AppSettingsStore.getEnabledRuntimeModules(context) else emptySet()
         val discoveredPackages = discovery?.modules?.mapTo(HashSet()) { it.packageName }
         var degraded = 0
         var bindingChanged = false
 
         GameLibraryFacade.updateGames(context) { games ->
+            val enabledPackages = AppSettingsStore.getEnabledRuntimeModules(context)
             var count = 0
             bindingChanged = false
             val updated = games.map { game ->
@@ -57,17 +58,18 @@ object RuntimeModuleBindings {
                     bindingChanged = true
                     return@map builtin
                 }
-                if (discoveredPackages == null) return@map game
                 val packageName = game.runtimeModulePackage
                 val unavailable = packageName == null ||
                     packageName.isBlank() ||
                     packageName !in enabledPackages ||
-                    packageName !in discoveredPackages
+                    discoveredPackages?.contains(packageName) == false
                 if (game.engine == EngineType.RUNTIME_MODULE && unavailable) {
                     count++
                     // 只降级引擎，保留最后已知包名；重扫合并会据此保留条目。
                     game.copy(engine = EngineType.UNKNOWN)
-                } else if (restoreReenabled && game.engine == EngineType.UNKNOWN && !unavailable) {
+                } else if (restoreReenabled && discoveredPackages != null && !unavailable &&
+                    (game.engine == EngineType.UNKNOWN || game.engine == EngineType.SYSTEMNNN)
+                ) {
                     bindingChanged = true
                     game.copy(engine = EngineType.RUNTIME_MODULE)
                 } else {

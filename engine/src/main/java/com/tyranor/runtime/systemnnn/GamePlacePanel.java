@@ -18,6 +18,7 @@ final class GamePlacePanel extends GameUiPanel {
     private final Runnable menu;
     private final boolean menuAllowed;
     private final PortraitLayer portraits;
+    private final ArrayList<PreviewTarget> previewTargets=new ArrayList<>();
     private int preview;
 
     GamePlacePanel(Context context,GameUiAssets assets,GameRunner.Frame frame,Runnable click,Runnable menu,IntConsumer choose){
@@ -41,18 +42,10 @@ final class GamePlacePanel extends GameUiPanel {
             GameButton button=(GameButton)button(cfg,key,"place1",label,()->choose.accept(place),0,0,w,h);
             boolean enabled=frame.places[i]==2;
             button.setEnabled(enabled);
+            if(!enabled)button.setClickable(false);
             if(enabled||cfg.number("autoPicCannotOk",0)!=0){
                 int enter=cfg.number(key+"EnterSound",cfg.number("place1EnterSound",0))-1;
-                button.setOnHoverListener((v,event)->{
-                    if(event.getActionMasked()==MotionEvent.ACTION_HOVER_ENTER)preview(place,enter);
-                    else if(event.getActionMasked()==MotionEvent.ACTION_HOVER_EXIT)preview(0,-1);
-                    return false;
-                });
-                button.setOnTouchListener((v,event)->{
-                    if(event.getActionMasked()==MotionEvent.ACTION_DOWN)preview(place,enter);
-                    else if(event.getActionMasked()==MotionEvent.ACTION_CANCEL)preview(0,-1);
-                    return false;
-                });
+                previewTargets.add(new PreviewTarget(button,place,enter));
             }
         }
         if(portraits!=null&&portraitsAbove)put(portraits,0,0,canvasWidth,canvasHeight);
@@ -67,6 +60,35 @@ final class GamePlacePanel extends GameUiPanel {
     @Override void uiActive(boolean active){
         super.uiActive(active);
         if(portraits!=null)portraits.active(active);
+    }
+
+    // CCommonSelectPlace::GetOnPlace checks the configured picture masks in place order.
+    private void previewAt(MotionEvent event){
+        for(PreviewTarget target:previewTargets){
+            GameButton button=target.button;
+            if(button.pictureHit(event.getX()-button.getLeft(),event.getY()-button.getTop())){
+                preview(target.place,target.cue);
+                return;
+            }
+        }
+        preview(0,-1);
+    }
+    @Override void panelPointer(MotionEvent event){
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN)previewAt(event);
+        else if(action==MotionEvent.ACTION_CANCEL)preview(0,-1);
+    }
+    @Override public boolean dispatchHoverEvent(MotionEvent event){
+        if(event.getActionMasked()==MotionEvent.ACTION_HOVER_EXIT)preview(0,-1);
+        else if(!openingRunning())previewAt(event);
+        return super.dispatchHoverEvent(event)||!previewTargets.isEmpty();
+    }
+    private static final class PreviewTarget {
+        final GameButton button;
+        final int place,cue;
+        PreviewTarget(GameButton button,int place,int cue){
+            this.button=button;this.place=place;this.cue=cue;
+        }
     }
 
     private void preview(int place,int cue){

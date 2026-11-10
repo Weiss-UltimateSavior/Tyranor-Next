@@ -28,6 +28,7 @@ final class LegacySaveMigration {
     private final Path saves, stage, ready;
     private final Map<Path,Path> copies=new LinkedHashMap<>();
     private boolean foundLegacy;
+    private Path damagedProgress;
 
     LegacySaveMigration(Path saves) {
         this.saves=saves;
@@ -47,6 +48,10 @@ final class LegacySaveMigration {
             plan(files,key);
             Path host=files.resolve("systemnnn");
             if(exists(host,true))plan(host.resolve(key),key);
+            // Keep the player's existing recovery prompt reachable if neither legacy layout
+            // has a readable generation. Other migrated slots can still be committed.
+            if(damagedProgress!=null)
+                copies.putIfAbsent(saves.resolve(PREFIX+READ).getFileName(),damagedProgress);
             if(!copies.isEmpty()){
                 Files.createDirectory(stage);
                 for(Map.Entry<Path,Path> copy:copies.entrySet()){
@@ -76,7 +81,7 @@ final class LegacySaveMigration {
             }
         }
         planFile(files,key,SaveSlots.LAST_SELECTION,null);
-        planFile(files,key,READ,".ext");
+        planProgress(files,key);
         planFile(files,key,GALLERY,null);
         planChart(files.resolve(key+CHART));
     }
@@ -90,12 +95,31 @@ final class LegacySaveMigration {
         if(companion!=null){
             Path sideName=saves.getFileSystem().getPath(PREFIX+suffix+companion);
             Path existing=committed(saves.resolve(sideName));
-            if(suffix.equals(READ) && existing!=null)
-                throw new IOException("目标已有全局进度扩展，但缺少对应的基础文件 · "+existing);
             Path side=committed(files.resolve(key+suffix+companion));
             if(existing==null && side!=null)copies.put(sideName,side);
         }
         copies.put(name,source);
+    }
+
+    private void planProgress(Path files,String key) throws IOException {
+        Path source=files.resolve(key+READ);
+        Path backup=source.resolveSibling(source.getFileName()+".bak");
+        boolean primary=exists(source,false);
+        if(!primary && !exists(backup,false))return;
+        foundLegacy=true;
+        Path name=saves.getFileSystem().getPath(PREFIX+READ);
+        if(copies.containsKey(name) || committed(saves.resolve(name))!=null)return;
+        Path sideName=saves.getFileSystem().getPath(PREFIX+READ+".ext");
+        Path existing=committed(saves.resolve(sideName));
+        if(existing!=null)throw new IOException("目标已有全局进度扩展，但缺少对应的基础文件 · "+existing);
+        try{
+            GameProgress.MigrationFiles selected=GameProgress.migrationFiles(source);
+            if(selected==null)throw new IOException("Legacy progress disappeared during migration");
+            if(selected.extension!=null)copies.put(sideName,selected.extension);
+            copies.put(name,selected.base);
+        }catch(GameProgress.InvalidBase invalid){
+            if(damagedProgress==null)damagedProgress=primary?source:backup;
+        }
     }
 
     private void planChart(Path old) throws IOException {

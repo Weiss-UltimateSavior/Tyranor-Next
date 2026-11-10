@@ -175,6 +175,7 @@ final class GameChartPanel extends GameUiPanel {
         chartBackground(config,SELECT_CHART,page,centerLayer,count,frame->{
             if(usesComposer(backdropFrame)!=usesComposer(frame))compositionEpoch++;
             backdropFrame=frame;
+            if(frame==null){composition=null;composited=null;}
             invalidateMap();
         });
     }
@@ -645,7 +646,7 @@ final class GameChartPanel extends GameUiPanel {
         boolean advance=foreground&&activeFrameReady()&&!overlayLocked&&isAttachedToWindow();
         if(useExact&&advance&&!compositionUnavailable){
             try{
-                if(composition==null)composition=new ChartComposition();
+                if(composition==null)composition=new ChartComposition(backdropFrame);
                 composition.request(backdropFrame,frame);
             }catch(OutOfMemoryError error){
                 compositionUnavailable=true;
@@ -698,14 +699,25 @@ final class GameChartPanel extends GameUiPanel {
 
     /** One job owns the input pixels until the preview worker returns. */
     private final class ChartComposition {
-        private final Bitmap base=bitmap(),center=bitmap(),content=bitmap();
-        private final Canvas baseCanvas=new Canvas(base),centerCanvas=new Canvas(center),contentCanvas=new Canvas(content);
+        private final int width,height;
+        private final Bitmap base,center,content;
+        private final Canvas baseCanvas,centerCanvas,contentCanvas;
         private final Bitmap[] outputs=new Bitmap[2];
         private int front=-1,frontPage,frontScroll,frontTabs;
         private long frontEpoch=-1,lastRevision=-1,lastFrame=-1;
         private boolean pending,animated,failed;
 
-        private Bitmap bitmap(){return Bitmap.createBitmap(canvasWidth,canvasHeight,Bitmap.Config.ARGB_8888);}
+        ChartComposition(ChartBackdrop.Frame backdrop){
+            width=backdrop.rasterWidth;height=backdrop.rasterHeight;
+            base=bitmap();center=bitmap();content=bitmap();
+            baseCanvas=logicalCanvas(base);centerCanvas=logicalCanvas(center);contentCanvas=logicalCanvas(content);
+        }
+        private Bitmap bitmap(){return Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888);}
+        private Canvas logicalCanvas(Bitmap image){
+            Canvas canvas=new Canvas(image);
+            canvas.scale(width/(float)canvasWidth,height/(float)canvasHeight);
+            return canvas;
+        }
 
         Bitmap current(){
             return front>=0&&frontEpoch==compositionEpoch&&frontPage==modal.page&&frontScroll==chart.scroll&&
@@ -827,7 +839,7 @@ final class GameChartPanel extends GameUiPanel {
                 int y=chart.limit<=0?0:-(int)(scrollDistance()/chart.limit);
                 for(ChartBackdrop.Tile tile:backdrop.tiles){
                     if(tile==null)continue;
-                    image(c,tile.image,0,y);
+                    blit(c,tile.image,0,0,tile.image.getWidth(),tile.image.getHeight(),0,y,tile.width,tile.height,255);
                     y+=tile.height;
                 }
             }else for(ChartView.Tile tile:chart.tiles){
@@ -837,12 +849,17 @@ final class GameChartPanel extends GameUiPanel {
         }
 
         private boolean center(Canvas c,ChartBackdrop.Frame backdrop,long frame){
-            Bitmap center=scriptTiles&&backdrop!=null?backdrop.center:sprite(chart.center);
-            if(center!=null){
-                long dy=chart.limit<=0?0:-(scrollDistance()*centerMulti)/(100L*chart.limit);
-                repeatCenter(c,center,frame,dy);
+            long dy=chart.limit<=0?0:-(scrollDistance()*centerMulti)/(100L*chart.limit);
+            if(scriptTiles&&backdrop!=null){
+                ChartBackdrop.Tile tile=backdrop.center;
+                if(tile==null)return false;
+                repeatCenter(c,tile.image,tile.width,tile.height,frame,dy);
+            }else{
+                Bitmap center=sprite(chart.center);
+                if(center==null)return false;
+                repeatCenter(c,center,center.getWidth(),center.getHeight(),frame,dy);
             }
-            return center!=null&&centerSpeed!=0;
+            return centerSpeed!=0;
         }
 
         private boolean content(Canvas c,long frame){
@@ -858,15 +875,15 @@ final class GameChartPanel extends GameUiPanel {
             return animated;
         }
 
-        private void repeatCenter(Canvas c,Bitmap center,long frame,long dy){
+        private void repeatCenter(Canvas c,Bitmap center,int w,int h,long frame,long dy){
             if(centerBitmap!=center){
                 centerBitmap=center;
                 centerPattern=new BitmapShader(center,Shader.TileMode.REPEAT,Shader.TileMode.REPEAT);
             }
-            int w=center.getWidth(),h=center.getHeight();
             int x=(int)Math.floorMod(-frame*centerSpeed,(long)canvasWidth);
             int y=dy<0?(int)(dy%h):(int)Math.min(dy,canvasHeight+(long)h)-h;
-            patternOrigin.setTranslate(-(x%w),y);
+            patternOrigin.setScale(w/(float)center.getWidth(),h/(float)center.getHeight());
+            patternOrigin.postTranslate(-(x%w),y);
             centerPattern.setLocalMatrix(patternOrigin);
             paint.setShader(centerPattern);
             paint.setAlpha(255);

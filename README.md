@@ -57,7 +57,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
-| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.14](https://github.com/PorisRora/SystemNNN-Emberfall/tree/fc7c786ecfc019b71eb6e1571a6dc0995434b4b7)（ARM64） |
+| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.14](https://github.com/PorisRora/SystemNNN-Emberfall/tree/2150bab078ffa4fb2e1cea054d1551fb13a0d186)（ARM64） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -82,10 +82,10 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 - 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
 - SystemNNN 的阅读字号与 PC 存档操作可通过对应页面的悬浮按钮打开。剧情正文字号默认 85%，可选择 100% 恢复原版大小。
 - SystemNNN 影片切到后台后暂停，返回时接着播放。剧情音频未取得焦点时，回到播放器或操作即可重试。
-- SystemNNN 的 ZIP 导入和 WebDAV 恢复会先校验剧情档及随包全局进度。全局进度优先使用有效主档，主档缺失或损坏时才选用有效备份。仅含有效全局进度的备份可恢复到没有剧情档和流程图检查点的目录。
+- SystemNNN 的 ZIP 导入和 WebDAV 恢复会先校验剧情档的输入日志、原生快照结构和随包全局进度。全局进度读取及旧私有目录迁移优先使用有效主档及其匹配扩展。仅含有效全局进度的备份可恢复到没有剧情档和流程图检查点的目录。
 - 使用导入副本的 SystemNNN 游戏可在存档管理中清理资源。移除最后一个库条目时会清理该副本的资源。未入库的残留副本可在「设置 → 游戏目录」中清理。原游戏目录和副本中的全部存档都会保留，再次启动时按原目录授权重新导入资源。
 - SystemNNN 的标题、设置、鉴赏和错误提示跟随应用语言。游戏提供的界面文字和贴图按游戏配置显示。
-- SystemNNN 的最近存档索引缺失或损坏时会读取有效备份。从直连目录转入同源 SAF 副本且原目录没有待完成的版本恢复时，WebDAV 可沿用原待上传会话的存档基线。首次复制从 TYN 游戏库发起。手动恢复 ZIP 会在解包后确认当前存档目录。
+- SystemNNN 的最近存档索引缺失或损坏时会读取有效备份。从直连目录转入同源 SAF 副本且原目录没有待完成的版本恢复时，WebDAV 可沿用原待上传会话的存档基线。首次复制从 TYN 游戏库发起，复制前确认，复制中可取消。手动恢复 ZIP 会在解包后确认当前存档目录。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。
 

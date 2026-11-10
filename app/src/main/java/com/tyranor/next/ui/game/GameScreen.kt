@@ -60,6 +60,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -624,6 +625,8 @@ internal fun GameActionsSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var launchError by remember(game.uri) { mutableStateOf<LaunchErrorState?>(null) }
+    val systemNnnCopy = remember(game.uri) { SystemNnnCopyUi() }
+    var launchJob by remember(game.uri) { mutableStateOf<Job?>(null) }
     var showCoverSourcePicker by rememberSaveable(game.uri) { mutableStateOf(false) }
     var coverSearchSource by rememberSaveable(game.uri) { mutableStateOf<String?>(null) }
     var coverBinding by remember { mutableStateOf(false) }
@@ -656,8 +659,10 @@ internal fun GameActionsSheet(
     // 发起启动；Artemis 需要 PFS 基础补丁且策略为“启动时询问”时，先弹窗确认再带选择启动
     /** Launches the selected game, optionally applying an explicit Artemis policy. */
     fun startLaunch(patchChoice: EngineLauncher.ArtemisPatchChoice? = null) {
-        scope.launch {
-            launchError = EngineLauncher.launch(context, game, patchChoice).toErrorState(context)
+        if (launchJob?.isCompleted == false) return
+        launchJob = scope.launch {
+            launchError = EngineLauncher.launch(context, game, patchChoice, systemNnnCopy.interaction)
+                .toErrorState(context)
             if (launchError == null) onDismiss()
         }
     }
@@ -682,6 +687,7 @@ internal fun GameActionsSheet(
 
     /** 启动前统一门：先 Artemis 补丁确认，再 MV/MZ 存档格式确认，最后才真正拉起。 */
     fun beginLaunch() {
+        if (launchJob?.isCompleted == false) return
         scope.launch {
             if (EngineLauncher.needsArtemisPatchConfirm(context, game)) {
                 showPatchConfirm = true
@@ -727,8 +733,11 @@ internal fun GameActionsSheet(
     }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        onDismissRequest = { if (!systemNnnCopy.busy) onDismiss() },
+        sheetState = rememberModalBottomSheetState(
+            skipPartiallyExpanded = true,
+            confirmValueChange = { it != SheetValue.Hidden || !systemNnnCopy.busy },
+        ),
         // 与统一弹窗共用最大宽度，避免横屏/大屏拉伸过宽
         sheetMaxWidth = AppDialogMaxWidth,
         // 关闭抽屉拖拽手势：M3 默认「位移 > 56dp 或速度 > 125dp/s」即关闭，用户快速滑动内容时
@@ -977,6 +986,7 @@ internal fun GameActionsSheet(
     launchError?.let { state ->
         LaunchErrorDialog(state = state, onDismiss = { launchError = null })
     }
+    SystemNnnCopyDialogs(systemNnnCopy) { launchJob?.cancel() }
 
 }
 

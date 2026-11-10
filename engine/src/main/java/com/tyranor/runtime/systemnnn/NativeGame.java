@@ -20,6 +20,7 @@ final class NativeGame {
     static native void close(long handle);
     static native long createSurface(Surface target);
     static native void releaseSurface(long token);
+    static native void deactivateSurface(long token);
     static native void bindSurface(long handle,long token);
     static native void presentSurface(long handle);
     static native boolean configureMenuBackground(long handle,int mode,byte[] script,byte[] background,boolean repeat);
@@ -31,6 +32,7 @@ final class NativeGame {
     static native int[] keyedSprite(long handle,byte[] name);
     static native boolean musicWave(long handle,float[] wave);
     static native byte[] snapshot(long handle);
+    static native boolean inspectSaveSnapshot(ByteBuffer data,int length,int wait,int word,int line,byte[][] content);
     static native void restorePcSave(long handle,byte[] save,int[] meta);
     static native byte[] exportPcSave(long handle);
     static native boolean restoreSnapshot(long handle,byte[] data,int wait,int word,int line,byte[][] content,int[] meta,

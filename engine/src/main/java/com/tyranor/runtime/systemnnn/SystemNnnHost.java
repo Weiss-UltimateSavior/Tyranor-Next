@@ -118,6 +118,7 @@ public final class SystemNnnHost {
     /** Checks the staged snapshot without promoting any legacy backup files. */
     public static boolean canReplaceSaveSnapshot(Map<String,File> incoming,Set<String> existing) throws IOException {
         boolean hasStory=false;
+        GameSave.ImportValidation validation=new GameSave.ImportValidation();
         for(Map.Entry<String,File> entry:incoming.entrySet()){
             String name=entry.getKey();
             Integer slot=storySaveSlot(name);
@@ -125,7 +126,7 @@ public final class SystemNnnHost {
             if(slot==null||incoming.containsKey(name+".bak"))continue;
             File file=entry.getValue();
             try(InputStream in=Files.newInputStream(file.toPath(),LinkOption.NOFOLLOW_LINKS)){
-                if(GameSave.readFrom(in,file.lastModified(),slot,false).metadata.slot!=slot)return false;
+                if(GameSave.readForImport(in,file.lastModified(),slot,validation).metadata.slot!=slot)return false;
             }
             hasStory=true;
         }
@@ -136,6 +137,11 @@ public final class SystemNnnHost {
         if(hasStory)return true;
         String chart=GameSavePaths.PREFIX+GameSavePaths.CHART+"/";
         return hasProgress&&existing.stream().noneMatch(name->storySaveSlot(name)!=null||name.startsWith(chart));
+    }
+
+    /** Caller holds the game's shared save lock. Retired backups stay outside ZIP imports. */
+    public static int clearRetiredProgressBackups(File directory) throws IOException {
+        return GameProgress.clearRetiredBackups(directory);
     }
 
     private static Integer storySaveSlot(String name){

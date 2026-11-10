@@ -3,6 +3,7 @@
 
 import argparse
 from hashlib import sha256
+import os
 from pathlib import Path
 import re
 import shutil
@@ -10,16 +11,77 @@ import struct
 import subprocess
 import sys
 
-ENGINE = Path(__file__).resolve().parents[1] / "engine/src/main"
+ROOT = Path(__file__).resolve().parents[1]
+ENGINE = ROOT / "engine/src/main"
+
+
+def sdk_directories():
+    try:
+        properties = (ROOT / "local.properties").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        properties = ""
+    configured = re.search(r"^[ \t]*sdk\.dir[ \t]*=[ \t]*([^\r\n]+)", properties, re.MULTILINE)
+    if configured and (directory := configured[1].strip()):
+        yield Path(re.sub(r"\\([\\:= ])", r"\1", directory))
+    for variable in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
+        if directory := os.environ.get(variable):
+            yield Path(directory)
+    if sys.platform == "win32":
+        if directory := os.environ.get("LOCALAPPDATA"):
+            yield Path(directory) / "Android/Sdk"
+    elif sys.platform == "darwin":
+        yield Path.home() / "Library/Android/sdk"
+    elif sys.platform == "linux":
+        yield Path.home() / "Android/Sdk"
+
+
+def nm_candidates():
+    if llvm_nm := shutil.which("llvm-nm"):
+        yield llvm_nm
+    ndks = []
+    for variable in ("ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"):
+        if directory := os.environ.get(variable):
+            ndks.append(Path(directory))
+    for sdk in sdk_directories():
+        ndks.extend(sorted((sdk / "ndk").glob("*"), reverse=True))
+        ndks.append(sdk / "ndk-bundle")
+    host = "windows" if sys.platform == "win32" else sys.platform
+    executable = "llvm-nm.exe" if host == "windows" else "llvm-nm"
+    for ndk in ndks:
+        for llvm_nm in sorted((ndk / "toolchains/llvm/prebuilt").glob(f"{host}-*/bin/{executable}")):
+            yield str(llvm_nm)
+    if nm := shutil.which("nm"):
+        yield nm
+
+
+def read_exports(library: Path, override):
+    failures = {}
+    candidates = (override,) if override is not None else nm_candidates()
+    for nm in candidates:
+        if nm in failures:
+            continue
+        try:
+            output = subprocess.check_output(
+                [nm, "-D", "--defined-only", "-j", str(library)],
+                stderr=subprocess.PIPE, text=True, errors="replace",
+            )
+            return set(output.splitlines())
+        except OSError as error:
+            failures[nm] = str(error)
+        except subprocess.CalledProcessError as error:
+            stderr = error.stderr.strip().splitlines()
+            failures[nm] = stderr[0] if stderr else f"exit status {error.returncode}"
+    print("No compatible nm could read the SystemNNN ELF exports. "
+          "Install the Android NDK or pass --nm with the path to its llvm-nm.", file=sys.stderr)
+    for nm, detail in failures.items():
+        print(f"  {nm}: {detail}", file=sys.stderr)
+    return None
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--nm", default=shutil.which("llvm-nm") or shutil.which("nm"),
-                        help="path to llvm-nm or GNU nm")
+    parser.add_argument("--nm", help="path to a compatible llvm-nm or GNU nm (override auto-discovery)")
     args = parser.parse_args()
-    if args.nm is None:
-        parser.error("install nm or pass --nm with the Android NDK's llvm-nm")
     note = (ENGINE / "assets/licenses/systemnnn/ffmpeg-source.txt").read_text(encoding="utf-8")
     source = re.search(
         r"^Emberfall native build source: https://github\.com/PorisRora/SystemNNN-Emberfall/tree/([0-9a-f]{40})$",
@@ -37,9 +99,9 @@ def main() -> int:
     if len(data) != int(expected[1]) or sha256(data).hexdigest() != expected[2]:
         print("SystemNNN runtime size or SHA-256 does not match ffmpeg-source.txt.", file=sys.stderr)
         return 1
-    exported = set(subprocess.check_output(
-        [args.nm, "-D", "--defined-only", "-j", str(library)], text=True,
-    ).splitlines())
+    exported = read_exports(library, args.nm)
+    if exported is None:
+        return 1
     missing = []
     java = ENGINE / "java/com/tyranor/runtime/systemnnn"
     for name in ("NativeGame", "NativeUiPreview", "MoviePlayback"):

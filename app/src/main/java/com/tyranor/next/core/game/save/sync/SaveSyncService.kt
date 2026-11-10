@@ -483,6 +483,11 @@ class SaveSyncService internal constructor(
             finishActivation(game, pending, directoryKey)
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (failure: GameSaveException) {
+            if (game.engine == EngineType.SYSTEMNNN && failure.code == SaveErrorCode.ENGINE_RUNNING) {
+                throw failure
+            }
+            SaveActivationResult.METADATA_PENDING
         } catch (_: Exception) {
             SaveActivationResult.METADATA_PENDING
         }

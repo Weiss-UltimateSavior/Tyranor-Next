@@ -446,7 +446,8 @@ final class GameGalleryPanel extends GameUiPanel {
             this.cell=cell; this.image=image; this.source=source; this.frame=frame; this.cursor=cursor; this.dark=dark;
             ColorMatrix matrix=new ColorMatrix(); matrix.setSaturation(0); gray=new ColorMatrixColorFilter(matrix);
             label=cellLabel(cell);
-            setContentDescription(cell.enabled?label:hostText(R.string.engine_systemnnn_ctl_gallery_locked,label));
+            setContentDescription(cell.missingMovie?label+" · "+hostText(R.string.engine_systemnnn_host_movie_missing):
+                cell.enabled?label:hostText(R.string.engine_systemnnn_ctl_gallery_locked,label));
             setSoundEffectsEnabled(false);
         }
         boolean startMovieSelection(){

@@ -157,13 +157,17 @@ final class GalleryCatalog {
     static final class Cell {
         final int index;
         final String label,picture,detail;
-        final boolean enabled,animated;
+        final boolean enabled,animated,missingMovie;
 
         Cell(int index,String label,String picture,String detail,boolean enabled) {
             this(index,label,picture,detail,enabled,false);
         }
         Cell(int index,String label,String picture,String detail,boolean enabled,boolean animated) {
+            this(index,label,picture,detail,enabled,animated,false);
+        }
+        Cell(int index,String label,String picture,String detail,boolean enabled,boolean animated,boolean missingMovie) {
             this.index=index; this.label=label; this.picture=picture; this.detail=detail; this.enabled=enabled;this.animated=animated;
+            this.missingMovie=missingMovie;
         }
     }
     static final class Page {
@@ -482,7 +486,7 @@ final class GalleryCatalog {
                 if (i<from || i>=to) continue;
                 String prefix=cfg.value(open?"prefixOn":"prefixOff",open?"ta_sm_movie_on":"ta_sm_movie_off");
                 cells.add(new Cell(movie.number,movie.title,GameUiAssets.systemImageKey(prefix+movie.number),
-                    "",open&&movie.file!=null));
+                    "",open,false,open&&movie.file==null));
             }
         } else if (screen==Screen.CG) {
             List<Cg> album=albums.get(group);

@@ -223,7 +223,7 @@ class MainLibraryViewModel(application: Application) : AndroidViewModel(applicat
         val revision = stateRevision.incrementAndGet()
         _uiState.update { MainLibraryStateReducer.acceptGames(it, it.games + game) }
         enqueuePersistence(revision) {
-            GameLibraryFacade.updateGames(appContext) { games ->
+            GameLibraryFacade.registerGames(appContext) { games ->
                 if (games.any { it.uri == game.uri }) games else games + game
             }
         }

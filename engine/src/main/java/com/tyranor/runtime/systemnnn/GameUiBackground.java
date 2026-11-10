@@ -87,8 +87,14 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
     });}
     private void publishChart(){
         if(chartFramePending||closed)return;
-        ChartBackdrop.Frame frame=chart.render(handle(),ids->
-            (base,center,content,output,done)->composeChart(ids,base,center,content,output,done));
+        ChartBackdrop.Frame frame;
+        try{
+            frame=chart.render(handle(),ids->
+                (base,center,content,output,done)->composeChart(ids,base,center,content,output,done));
+        }catch(OutOfMemoryError exhausted){
+            abandonChart(exhausted);
+            return;
+        }
         if(frame==null)return;
         chartFramePending=true;
         main.post(()->{
@@ -99,6 +105,11 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
             tasks.post(()->chartFramePending=false);
         });
     }
+    private void abandonChart(OutOfMemoryError exhausted){
+        chart.discard();
+        main.post(()->chart.display.accept(null));
+        failed(exhausted);
+    }
     private void composeChart(long[] ids,Bitmap base,Bitmap center,Bitmap content,Bitmap output,Consumer<Boolean> done){
         if(!tasks.post(()->{
             boolean drawn=false;
@@ -106,6 +117,8 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
                 long handle=handle();
                 if(handle!=0&&chart.matchesTextures(handle,ids))
                     drawn=NativeUiPreview.chartComposite(handle,chart.centerLayer,base,center,content,output);
+            }catch(OutOfMemoryError exhausted){
+                abandonChart(exhausted);
             }catch(RuntimeException|LinkageError e){
                 if(!chartCompositionWarning){chartCompositionWarning=true;Log.w("SystemNNN","Chart screen effect could not use its background",e);}
             }
@@ -201,9 +214,9 @@ final class GameUiBackground extends TextureView implements TextureView.SurfaceT
                 if(lease!=null)lease.surface(null);
                 connectedTexture=null;schedule();
             }catch(RuntimeException|LinkageError e){failed(e);}
-            finally{texture.release();}
         });
-        // The preview pool releases its native windows before quitting this queue.
+        // Abandon the detached consumer even if the preview worker is waiting for a buffer.
+        if(posted)main.post(texture::release);
         return !posted;
     }
     @Override public void onSurfaceTextureSizeChanged(SurfaceTexture s,int w,int h){}

@@ -66,6 +66,9 @@
     <string name="engine_systemnnn_ctl_settings_read_color">Color previously read text</string>
     <string name="engine_systemnnn_ctl_settings_choice_color">Color previously selected choices</string>
     <string name="engine_systemnnn_ctl_settings_screen_mode">Display mode</string>
+    <string name="engine_systemnnn_ctl_settings_windowed">Windowed</string>
+    <string name="engine_systemnnn_ctl_settings_fullscreen">Fullscreen</string>
+    <string name="engine_systemnnn_ctl_settings_manual">Manual</string>
     <string name="engine_systemnnn_ctl_settings_skip_scope">Skip scope</string>
     <string name="engine_systemnnn_ctl_settings_auto">Auto-play</string>
     <string name="engine_systemnnn_ctl_settings_option">%1$s · Option %2$d</string>
