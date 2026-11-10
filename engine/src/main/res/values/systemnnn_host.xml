@@ -6,6 +6,7 @@
     <string name="engine_systemnnn_host_path_not_absolute">TYN 传入的目录需要是绝对路径</string>
     <string name="engine_systemnnn_host_open_failed">无法打开游戏</string>
     <string name="engine_systemnnn_host_pick_hint">选择解压后的 SystemNNN 游戏文件夹，里面应有 spt/sys.spt。</string>
+    <string name="engine_systemnnn_host_pick_copy_hint">如果新目录需要首次复制，请返回 TYN 游戏库启动。</string>
     <string name="engine_systemnnn_host_pick_directory">选择游戏目录</string>
     <string name="engine_systemnnn_host_open_selected_failed">无法打开选中的文件</string>
     <string name="engine_systemnnn_host_local_directory_only">请在文件选择器的「此设备」或 SD 卡中选择目录。</string>

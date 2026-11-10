@@ -48,7 +48,7 @@
     <string name="engine_systemnnn_ctl_title_website">官方网站</string>
     <string name="engine_systemnnn_ctl_title_extension">扩展</string>
     <string name="engine_systemnnn_ctl_settings_page">设置第 %1$d 页</string>
-    <string name="engine_systemnnn_ctl_settings_audio">音效设置</string>
+    <string name="engine_systemnnn_ctl_settings_audio">声音设置</string>
     <string name="engine_systemnnn_ctl_settings_text">文字设置</string>
     <string name="engine_systemnnn_ctl_settings_text_speed">文字速度</string>
     <string name="engine_systemnnn_ctl_settings_auto_speed">自动播放速度</string>

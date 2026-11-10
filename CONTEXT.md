@@ -9,7 +9,7 @@ Tyranor Next 是面向 Android 的多引擎视觉小说（Galgame）聚合启动
 _Avoid_: 游戏类型、格式
 
 **内置引擎**:
-随 App 分发、无需外置安装的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、RealLive / AVG32 / UK2（siglus_rs game_launcher 软渲染运行时）、FVP（rfvp Rust 运行时）、System35（xsystem35）、System4（xsystem4，与 System35 共用 libSDL2x）、Ethornell / BGI（实验接入，兼容性未验收）、CMVS（cmvs-rs Rust 运行时，NativeActivity + loader）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
+随 App 分发、无需外置安装的引擎运行时（Kirikiroid2 / krkrsdl3、ONScripter、Artemis、Siglus（siglus_rs Rust 运行时）、RealLive / AVG32 / UK2（siglus_rs game_launcher 软渲染运行时）、FVP（rfvp Rust 运行时）、System35（xsystem35）、System4（xsystem4，与 System35 共用 libSDL2x）、SystemNNN、Ethornell / BGI（实验接入，兼容性未验收）、CMVS（cmvs-rs Rust 运行时，NativeActivity + loader）、Tyrano 网页壳）。RPG Maker MV/MZ 由内置 Web 运行环境承载。
 _Avoid_: 预制引擎、捆绑引擎
 
 **引擎运行库包（Runtime Pack）**:

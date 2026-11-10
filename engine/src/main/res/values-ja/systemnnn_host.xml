@@ -6,6 +6,7 @@
     <string name="engine_systemnnn_host_path_not_absolute">TYN からゲームフォルダーの絶対パスを指定してください。</string>
     <string name="engine_systemnnn_host_open_failed">ゲームを開けません</string>
     <string name="engine_systemnnn_host_pick_hint">spt/sys.spt が入っている展開済みの SystemNNN ゲームフォルダーを選択してください。</string>
+    <string name="engine_systemnnn_host_pick_copy_hint">初回コピーが必要な場合は、TYN のライブラリに戻ってゲームを起動してください。</string>
     <string name="engine_systemnnn_host_pick_directory">ゲームフォルダーを選択</string>
     <string name="engine_systemnnn_host_open_selected_failed">選択したファイルを開けません</string>
     <string name="engine_systemnnn_host_local_directory_only">この端末または SD カード内のフォルダーを選択してください。</string>

@@ -195,6 +195,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     }
     private void chooseHome(String reason) {
         String hint=text(R.string.engine_systemnnn_host_pick_hint);
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+            hint += "\n" + text(R.string.engine_systemnnn_host_pick_copy_hint);
+        }
         message(getApplicationInfo().loadLabel(getPackageManager()).toString(),reason==null?hint:reason+"\n"+hint,text(R.string.engine_systemnnn_host_pick_directory),
             v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),32));
     }

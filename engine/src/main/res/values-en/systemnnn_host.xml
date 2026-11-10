@@ -6,6 +6,7 @@
     <string name="engine_systemnnn_host_path_not_absolute">TYN must provide an absolute game path.</string>
     <string name="engine_systemnnn_host_open_failed">Cannot open game</string>
     <string name="engine_systemnnn_host_pick_hint">Select the extracted SystemNNN game folder containing spt/sys.spt.</string>
+    <string name="engine_systemnnn_host_pick_copy_hint">If the folder needs to be copied first, return to the TYN library to launch the game.</string>
     <string name="engine_systemnnn_host_pick_directory">Select game folder</string>
     <string name="engine_systemnnn_host_open_selected_failed">Cannot open the selected file</string>
     <string name="engine_systemnnn_host_local_directory_only">Select a folder on this device or its SD card.</string>
