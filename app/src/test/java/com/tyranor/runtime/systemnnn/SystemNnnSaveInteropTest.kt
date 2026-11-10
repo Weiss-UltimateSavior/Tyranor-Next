@@ -368,19 +368,8 @@ class SystemNnnSaveInteropTest {
         val incoming = temp.newFolder().canonicalFile
         val replacement = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
         val store = SystemNnnSaveStore(game, saves)
-        val java = File(System.getProperty("java.home"), "bin/java").let {
-            if (it.isFile) it else File(it.parentFile, "java.exe")
-        }
-        val fixture = SystemNnnLockHolder::class.java
-        val classes = File(checkNotNull(fixture.protectionDomain?.codeSource?.location).toURI())
-        val child = ProcessBuilder(java.path, "-cp", classes.path, fixture.name, saves.resolve("emberfall.lock").path)
-            .redirectErrorStream(true)
-            .start()
 
-        try {
-            val ready = CompletableFuture.supplyAsync { child.inputStream.bufferedReader().use { it.readLine() } }
-            assertEquals("locked", ready.get(30, TimeUnit.SECONDS))
-
+        withExternalLock(saves.resolve("emberfall.lock")) {
             val failure = assertThrows(GameSaveException::class.java) {
                 store.access { store.replace(incoming) }
             }
@@ -388,7 +377,27 @@ class SystemNnnSaveInteropTest {
             assertTrue(failure.cause is SystemNnnHost.SaveBusyException)
             assertTrue(previous.exists())
             assertFalse(saves.resolve(replacement.name).exists())
+        }
 
+        assertEquals(1, store.access { store.replace(incoming) })
+        assertFalse(previous.exists())
+        assertArrayEquals(replacement.readBytes(), saves.resolve(replacement.name).readBytes())
+    }
+
+    private fun withExternalLock(path: File, block: () -> Unit) {
+        val java = File(System.getProperty("java.home"), "bin/java").let {
+            if (it.isFile) it else File(it.parentFile, "java.exe")
+        }
+        val fixture = SystemNnnLockHolder::class.java
+        val classes = File(checkNotNull(fixture.protectionDomain?.codeSource?.location).toURI())
+        val child = ProcessBuilder(java.path, "-cp", classes.path, fixture.name, path.path)
+            .redirectErrorStream(true)
+            .start()
+
+        try {
+            val ready = CompletableFuture.supplyAsync { child.inputStream.bufferedReader().use { it.readLine() } }
+            assertEquals("locked", ready.get(30, TimeUnit.SECONDS))
+            block()
             child.outputStream.close()
             assertTrue("Lock holder should exit when stdin closes", child.waitFor(10, TimeUnit.SECONDS))
             assertEquals(0, child.exitValue())
@@ -399,9 +408,6 @@ class SystemNnnSaveInteropTest {
             }
         }
 
-        assertEquals(1, store.access { store.replace(incoming) })
-        assertFalse(previous.exists())
-        assertArrayEquals(replacement.readBytes(), saves.resolve(replacement.name).readBytes())
     }
 
     @Test fun importedCopyUsesTheOriginalPathToFindPrivateLegacySaves() {
@@ -421,6 +427,56 @@ class SystemNnnSaveInteropTest {
         }
         assertTrue(source.isFile)
         assertFalse(original.resolve("sav").exists())
+    }
+
+    @Test fun freshSafCopyAndZipReplacementCannotUseTheSourceAtTheSameTime() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val source = "primary:Games/Sample"
+        val original = temp.newFolder().canonicalFile
+        val saves = original.resolve("sav").apply { check(mkdir()) }
+        val oldStory = putStory(saves, "emberfall.sav", 0)
+        val incoming = temp.newFolder()
+        val newStory = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
+        val store = SystemNnnSaveStore(original, saves)
+
+        fun copy(): File = SystemNnnGameImport.importDirectory(base, source, true, {}) {
+            SystemNnnGameImport.ImportSource { staging, restoring, publish ->
+                assertFalse(restoring)
+                val busy = assertThrows(SystemNnnGameImport.Failure::class.java) {
+                    SystemNnnGameImport.withImportLock(base, source) { error("Save target must wait for publication") }
+                }
+                assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
+                put(staging, "spt/sys.spt", "script")
+                saves.copyRecursively(staging.resolve("sav"))
+                publish.run()
+            }
+        }
+
+        withExternalLock(base.resolve("${SystemNnnGameImport.key(source)}.lock")) {
+            val busy = assertThrows(SystemNnnGameImport.Failure::class.java) { copy() }
+            assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
+        }
+
+        SystemNnnGameImport.withImportLock(base, source) {
+            assertEquals(null, SystemNnnGameImport.committedRoot(base, source))
+            val busy = assertThrows(SystemNnnGameImport.Failure::class.java) { copy() }
+            assertEquals(SystemNnnGameImport.Reason.BUSY, busy.reason)
+            store.access { store.replace(incoming) }
+        }
+
+        val importedSaves = copy().resolve("sav")
+        assertFalse(importedSaves.resolve(oldStory.name).exists())
+        assertArrayEquals(newStory.readBytes(), importedSaves.resolve(newStory.name).readBytes())
+    }
+
+    @Test fun resourceRehydrationCannotCreateAReplacementSaveDirectory() {
+        val base = temp.newFolder("systemnnn-imports").canonicalFile
+        val source = "primary:Games/MissingCopy"
+        val failure = assertThrows(SystemNnnGameImport.Failure::class.java) {
+            SystemNnnGameImport.importDirectory(base, source, false, {}) { error("Missing copy must fail first") }
+        }
+        assertEquals(SystemNnnGameImport.Reason.CORRUPT_COPY, failure.reason)
+        assertEquals(null, SystemNnnGameImport.committedRoot(base, source))
     }
 
     @Test fun clearingAndRestoringImportedResourcesKeepsTheOriginalSaveDirectoryAndLock() {
@@ -448,7 +504,7 @@ class SystemNnnSaveInteropTest {
         put(game, "spt/sys.spt", "partial publish")
         assertFalse(SystemNnnGameImport.readableBootstrap(game))
 
-        val restored = SystemNnnGameImport.importDirectory(base, source, {}) {
+        val restored = SystemNnnGameImport.importDirectory(base, source, false, {}) {
             SystemNnnGameImport.ImportSource { staging, restoring, publish ->
                 assertTrue(restoring)
                 put(staging, "spt/sys.spt", "reimported script")

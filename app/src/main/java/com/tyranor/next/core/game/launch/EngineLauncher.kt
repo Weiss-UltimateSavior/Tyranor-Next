@@ -72,6 +72,8 @@ import com.tyranor.next.core.game.save.RpgSavePendingStore
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.RpgSaveSyncState
+import com.tyranor.next.core.game.save.sync.SAVE_DIRECTORY_KEY_PREFIX
+import com.tyranor.next.core.game.save.sync.SaveSyncLocks
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.save.sync.SaveSyncError
@@ -211,7 +213,7 @@ object EngineLauncher {
             SystemNnnGameDirectory.accessible(context, game.uri)?.let(SystemNnnGameImport::resourcesEvicted) == true
         ) {
             // Cleanup may have won the fence after the initial resource check.
-            prepareSystemNnnResources(context, game)?.let { return it }
+            prepareSystemNnnResources(context, game, allowNewCopy = false)?.let { return it }
         }
         recoverSystemNnnSaves(context, game)?.let { return it }
         var ticket: SaveSyncRuntime.LaunchTicket? = null
@@ -1049,10 +1051,15 @@ object EngineLauncher {
         }
     }
 
-    private suspend fun prepareSystemNnnResources(context: Context, game: ScanGame): LaunchResult.Failure? {
+    private suspend fun prepareSystemNnnResources(
+        context: Context,
+        game: ScanGame,
+        allowNewCopy: Boolean = true,
+    ): LaunchResult.Failure? {
         fun failed(error: SystemNnnResourceError) = LaunchResult.Failure.SystemNnnResourcesFailed(error)
         try {
             val copy = SystemNnnGameDirectory.committed(context, game.uri)
+            if (copy == null && !allowNewCopy) return failed(SystemNnnResourceError.CORRUPT_COPY)
             val restoreResources = copy != null && SystemNnnGameImport.resourcesEvicted(copy)
             if (copy != null && !restoreResources) {
                 if (!SystemNnnGameImport.readableBootstrap(copy)) return failed(SystemNnnResourceError.CORRUPT_COPY)
@@ -1072,8 +1079,22 @@ object EngineLauncher {
                     return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
                 }
                 val caller = currentCoroutineContext()
-                val imported = SystemNnnGameImport.importDirectory(context, granted, SystemNnnGameImport.sourceIdentity(source)) {
-                    caller.ensureActive()
+                val sourceId = SystemNnnGameImport.sourceIdentity(source)
+                // Only the first copy changes the active sav. Wait for in-flight sync writes
+                // before publishing it. Resource rehydration can already hold launch admission.
+                val imported = if (restoreResources) {
+                    SystemNnnGameImport.importDirectory(context, granted, sourceId, false) { caller.ensureActive() }
+                } else {
+                    SaveSyncLocks.mutation {
+                        val original = SystemNnnGameDirectory.resolve(source.toString()) ?: path
+                        val originalRoot = accessible?.path ?: try {
+                            original.canonicalPath
+                        } catch (_: IOException) {
+                            original.absolutePath
+                        }
+                        SaveSyncRuntime.requireLaunchAvailable(context, SAVE_DIRECTORY_KEY_PREFIX + originalRoot)
+                        SystemNnnGameImport.importDirectory(context, granted, sourceId, true) { caller.ensureActive() }
+                    }
                 }
                 return if (systemNnnSavesWritable(context, imported)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
             }
@@ -1087,6 +1108,8 @@ object EngineLauncher {
             return if (systemNnnSavesWritable(context, root)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (failure: SaveSyncException) {
+            return LaunchResult.Failure.SavePreparationFailed(failure.code)
         } catch (failure: SystemNnnGameImport.Failure) {
             return failed(when (failure.reason) {
                 SystemNnnGameImport.Reason.NO_GRANT -> SystemNnnResourceError.STORAGE_RESTRICTED

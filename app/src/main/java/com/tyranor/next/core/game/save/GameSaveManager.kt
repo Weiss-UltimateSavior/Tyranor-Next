@@ -14,6 +14,7 @@ import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.model.SystemNnnGameDirectory
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.sync.SaveSyncLocks
@@ -402,11 +403,14 @@ class GameSaveManager(private val context: Context) {
         onDirectoryCommitted: (() -> Unit)? = null,
     ): Int {
         if (game.engine == EngineType.SYSTEMNNN) {
-            val store = systemNnnStore(game, expectedDirectory)
             val temporary = createTemporaryDirectory()
             try {
                 extractZip(sourceUri, temporary)
-                return store.access { store.replace(temporary) { onDirectoryCommitted?.invoke() } }
+                val replace: (SystemNnnSaveStore) -> Int = { store ->
+                    store.access { store.replace(temporary) { onDirectoryCommitted?.invoke() } }
+                }
+                return if (expectedDirectory == null) withManualSystemNnnSaveWrite(game, replace)
+                else withSystemNnnSaveTarget(game, expectedDirectory, replace)
             } finally {
                 deleteImportTree(temporary)
             }
@@ -538,8 +542,7 @@ class GameSaveManager(private val context: Context) {
     @Throws(IOException::class)
     suspend fun deleteSaves(game: ScanGame): Int {
         if (game.engine == EngineType.SYSTEMNNN) {
-            val store = systemNnnStore(game)
-            return store.access { store.replace(null) }
+            return withManualSystemNnnSaveWrite(game) { store -> store.access { store.replace(null) } }
         }
         requireCmvsIdle(game.engine)
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { it.delete() }
@@ -728,6 +731,43 @@ class GameSaveManager(private val context: Context) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = error)
             }
         }
+
+    // Manual operations do not have a pinned directory yet. Exclude WebDAV writes
+    // through version bookkeeping, then resolve the target under the import lock.
+    private suspend fun <T> withManualSystemNnnSaveWrite(game: ScanGame, operation: (SystemNnnSaveStore) -> T): T =
+        SaveSyncLocks.mutation {
+            withSystemNnnSaveTarget(game, null) { store ->
+                SaveSyncRuntime.requireLaunchAvailable(appContext, SaveSyncRuntime.activeKey(appContext, game))
+                operation(store)
+            }
+        }
+
+    private fun <T> withSystemNnnSaveTarget(
+        game: ScanGame,
+        expectedDirectory: File?,
+        operation: (SystemNnnSaveStore) -> T,
+    ): T = try {
+        val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri)
+        if (sourceId == null) {
+            operation(systemNnnStore(game, expectedDirectory))
+        } else {
+            SystemNnnGameImport.withImportLock(appContext, sourceId) {
+                operation(systemNnnStore(game, expectedDirectory))
+            }
+        }
+    } catch (failure: GameSaveException) {
+        throw failure
+    } catch (failure: SaveSyncException) {
+        throw failure
+    } catch (failure: SystemNnnGameImport.Failure) {
+        val code = if (failure.reason == SystemNnnGameImport.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
+        else SaveErrorCode.SAVE_DIR_UNAVAILABLE
+        throw GameSaveException(code, cause = failure)
+    } catch (failure: IOException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+    } catch (failure: SecurityException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+    }
 
     private fun systemNnnStore(game: ScanGame, expectedDirectory: File? = null): SystemNnnSaveStore {
         val root = SystemNnnGameDirectory.accessible(appContext, game.uri)

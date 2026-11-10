@@ -97,8 +97,7 @@
     <string name="engine_systemnnn_host_replay_interrupted">回想が中断しました</string>
     <string name="engine_systemnnn_host_global_progress_failed">全体の進行状況を保存できません</string>
     <string name="engine_systemnnn_host_copy_game">ゲームをコピー</string>
-    <string name="engine_systemnnn_host_copy_offer">選択したフォルダーに直接アクセスできません。ゲームをアプリの領域にコピーすると起動できます。セーブはコピー先の sav フォルダーに保存されます。</string>
-    <string name="engine_systemnnn_host_copy_to_app">アプリ領域にコピー</string>
+    <string name="engine_systemnnn_host_copy_offer">選択したフォルダーに直接アクセスできません。TYN のライブラリに戻り、フォルダーへのアクセスを許可してからゲームを起動してください。</string>
     <string name="engine_systemnnn_host_copy_running">ゲームをコピーしています。ゲームの容量により時間がかかります。</string>
     <string name="engine_systemnnn_host_copy_cancel">コピーをキャンセル</string>
     <string name="engine_systemnnn_host_copy_cancelled">ゲームのコピーをキャンセルしました</string>

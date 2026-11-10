@@ -343,8 +343,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private boolean requestGameAccess(boolean writing){
         if(Build.VERSION.SDK_INT!=29||selectedGameTree==null||usingGameCopy)return requestStorageAccess(writing);
         if(Environment.isExternalStorageLegacy()&&requestStorageAccess(writing))return true;
+        // A first copy changes the active save directory. Only the library launcher can publish it.
         message(text(R.string.engine_systemnnn_host_copy_game),text(R.string.engine_systemnnn_host_copy_offer),
-            text(R.string.engine_systemnnn_host_copy_to_app),v->copySelectedGame());
+            text(R.string.engine_systemnnn_host_exit_to_tyn),v->finish());
         return true;
     }
     private void copySelectedGame(){
@@ -357,7 +358,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
             File copy=null;
             String failure=null;
             try{
-                copy=SystemNnnGameImport.importDirectory(this,tree,SystemNnnGameImport.sourceIdentity(tree),()->{
+                copy=SystemNnnGameImport.importDirectory(this,tree,SystemNnnGameImport.sourceIdentity(tree),false,()->{
                     if(cancelGameCopy)throw new java.util.concurrent.CancellationException();
                 });
             }catch(java.util.concurrent.CancellationException e){failure=text(R.string.engine_systemnnn_host_copy_cancelled);}

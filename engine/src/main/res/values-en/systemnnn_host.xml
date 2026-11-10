@@ -97,8 +97,7 @@
     <string name="engine_systemnnn_host_replay_interrupted">Scene replay interrupted</string>
     <string name="engine_systemnnn_host_global_progress_failed">Cannot save global progress</string>
     <string name="engine_systemnnn_host_copy_game">Copy game</string>
-    <string name="engine_systemnnn_host_copy_offer">Android cannot access this folder directly. Copy the game to app storage to play. Saves will be stored in the copy\'s sav folder.</string>
-    <string name="engine_systemnnn_host_copy_to_app">Copy to app storage</string>
+    <string name="engine_systemnnn_host_copy_offer">Android cannot access this folder directly. Return to the TYN library, grant access to the folder, and launch the game there.</string>
     <string name="engine_systemnnn_host_copy_running">Copying the game. The time depends on the game size.</string>
     <string name="engine_systemnnn_host_copy_cancel">Cancel copy</string>
     <string name="engine_systemnnn_host_copy_cancelled">Game copy cancelled</string>

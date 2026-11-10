@@ -157,7 +157,7 @@ public final class SystemNnnGameImport {
     static boolean clearResources(File base,String sourceId) throws IOException {
         String identity=normalizeIdentity(sourceId);
         if(committedRoot(base,identity)==null)return false;
-        return withCopyLock(base,key(identity),()->{
+        return withImportLock(base,identity,()->{
             File game=committedRoot(base,identity);
             if(game==null)return false;
             List<File> resources=resourceChildren(game);
@@ -232,14 +232,14 @@ public final class SystemNnnGameImport {
         return found;
     }
     /** Imports resources without changing the source or replacing an existing game/sav. */
-    public static File importDirectory(Context context,Uri source,String sourceId,Cancellation cancellation) throws IOException {
+    public static File importDirectory(Context context,Uri source,String sourceId,boolean allowCreate,Cancellation cancellation) throws IOException {
         Cancellation check=cancellation==null?NONE:cancellation;check.check();
         String identity=normalizeIdentity(sourceId);
         if(!identity.equals(sourceIdentity(source)))throw new Failure(Reason.INVALID_SOURCE);
         File external=context.getExternalFilesDir(null);
         if(external==null)throw new Failure(Reason.COPY_FAILED);
         File base=new File(external,DIRECTORY);
-        return importDirectory(base,identity,check,()->{
+        return importDirectory(base,identity,allowCreate,check,()->{
             Uri granted=findAuthorizedSource(context,source);
             if(granted==null)throw new Failure(Reason.NO_GRANT);
             Source tree=new Source(context,granted,identity,check);
@@ -251,16 +251,17 @@ public final class SystemNnnGameImport {
         // Keep the source save lock held through publication of a fresh copy.
         File copyGame(File game,boolean restoring,CopyOperation<File> publish) throws IOException;
     }
-    static File importDirectory(File base,String identity,Cancellation check,CopyOperation<ImportSource> authorize) throws IOException {
+    static File importDirectory(File base,String identity,boolean allowCreate,Cancellation check,CopyOperation<ImportSource> authorize) throws IOException {
         File existing=committedRoot(base,identity);
         if(existing!=null&&!resourcesEvicted(existing))return existing;
+        if(existing==null&&!allowCreate)throw new Failure(Reason.CORRUPT_COPY);
         ImportSource source=authorize.run();
-        Files.createDirectories(base.toPath());plainDirectory(base);
         String key=key(identity);
         try{
-            return withCopyLock(base,key,()->{
+            return withImportLock(base,identity,()->{
                 File current=committedRoot(base,identity);
                 boolean restoring=current!=null;
+                if(!restoring&&!allowCreate)throw new Failure(Reason.CORRUPT_COPY);
                 if(restoring&&!resourcesEvicted(current))return current;
                 File[] leftovers=base.listFiles();
                 if(leftovers==null)throw new Failure(Reason.COPY_FAILED);
@@ -310,8 +311,16 @@ public final class SystemNnnGameImport {
             Files.delete(marker);
         }catch(SystemNnnHost.SaveBusyException e){throw new Failure(Reason.BUSY,e);}
     }
-    interface CopyOperation<T>{T run() throws IOException;}
-    private static <T> T withCopyLock(File base,String key,CopyOperation<T> operation) throws IOException {
+    public interface CopyOperation<T>{T run() throws IOException;}
+    /** Holds the same source lock used for publishing a copy. Resolve and write the active sav inside it. */
+    public static <T> T withImportLock(Context context,String sourceId,CopyOperation<T> operation) throws IOException {
+        File external=context.getExternalFilesDir(null);
+        if(external==null)throw new Failure(Reason.COPY_FAILED);
+        return withImportLock(new File(external,DIRECTORY),sourceId,operation);
+    }
+    static <T> T withImportLock(File base,String sourceId,CopyOperation<T> operation) throws IOException {
+        String key=key(normalizeIdentity(sourceId));
+        Files.createDirectories(base.toPath());plainDirectory(base);
         Path path=base.getCanonicalFile().toPath().resolve(key+".lock");
         if(!OPEN_COPIES.add(path))throw new Failure(Reason.BUSY);
         try(FileChannel channel=FileChannel.open(path,StandardOpenOption.CREATE,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS)){

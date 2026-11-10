@@ -97,8 +97,7 @@
     <string name="engine_systemnnn_host_replay_interrupted">回想中断</string>
     <string name="engine_systemnnn_host_global_progress_failed">全局进度保存失败</string>
     <string name="engine_systemnnn_host_copy_game">复制游戏</string>
-    <string name="engine_systemnnn_host_copy_offer">系统无法直接访问所选目录。可复制游戏到应用目录后启动，存档会保存在副本的 sav 目录。</string>
-    <string name="engine_systemnnn_host_copy_to_app">复制到应用目录</string>
+    <string name="engine_systemnnn_host_copy_offer">系统无法直接访问所选目录。请返回 TYN 游戏库，授权该目录后启动游戏。</string>
     <string name="engine_systemnnn_host_copy_running">正在复制游戏。所需时间取决于游戏大小。</string>
     <string name="engine_systemnnn_host_copy_cancel">取消复制</string>
     <string name="engine_systemnnn_host_copy_cancelled">已取消复制游戏</string>
