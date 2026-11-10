@@ -214,9 +214,12 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
      * the launcher wants a key removed (empty font / restore), a global XML entry is
      * removed only while it still holds the value we injected last time (tracked via
      * a hidden _rinne_injected_* Item); a value the user changed in the engine UI is
-     * left alone. Game directory files are launcher-managed and cleared unconditionally.
+     * left alone. Game directory clear is ownership-tracked as well: only an entry still
+     * equal to the injected value (marker match) is removed, a user-changed entry is
+     * disowned by dropping the marker, and unmarked kernel-written entries are kept.
      * Known limitation: keys written by pre-marker builds carry no marker and survive
-     * one restore cycle; picking a launcher font again re-establishes the marker.
+     * the ownership-tracked clear; the legacy app-written font values are migrated
+     * separately via clearLegacyAppPrivateFontItem (private fonts directory prefix).
      */
     private void applyFontPreferences() {
         Intent intent = getIntent();
@@ -243,7 +246,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                 // Kernel-UI-picked fonts (paths outside the private fonts directory)
                 // carry no such prefix and are kept.
                 clearLegacyAppPrivateFontItem(gameFile, "default_font", markerFor("default_font"),
-                        new File(getFilesDir(), "fonts").getPath() + File.separatorChar);
+                        new File(getFilesDir(), "fonts").getPath());
             } catch (Exception error) {
                 Log.w(TAG, "apply default_font failed", error);
             }
@@ -384,19 +387,25 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         return applyPreferenceItem(file, name, markerName, value, true);
     }
 
-    /** Parses Item/Custom/KeyMap entries out of a preference XML file (maps stay empty when absent). */
-    private static void readPreferenceFile(
+    /**
+     * Parses Item/Custom/KeyMap entries out of a preference XML file. Returns whether the
+     * file was parsed to the end: a mid-parse failure (truncated/corrupt file) leaves the
+     * maps holding only the entries before the failure point, and callers must not write
+     * such a partial snapshot back — doing so would permanently drop the tail entries.
+     */
+    private static boolean readPreferenceFile(
             File file,
             LinkedHashMap<String, String> items,
             List<String[]> customs,
             LinkedHashMap<Integer, Integer> keyMaps) {
-        if (!file.isFile()) return;
+        if (!file.isFile()) return false;
         XmlPullParser parser;
         try {
             parser = XmlPullParserFactory.newInstance().newPullParser();
         } catch (Exception error) {
-            return;
+            return false;
         }
+        boolean complete = false;
         try (FileInputStream in = new FileInputStream(file)) {
             parser.setInput(in, null);
             for (int event = parser.getEventType();
@@ -419,9 +428,11 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
                     }
                 }
             }
+            complete = true;
         } catch (Exception ignored) {
-            // Malformed or unreadable file: keep whatever was parsed so far.
+            // Mid-parse failure: report incomplete so callers skip the write-back.
         }
+        return complete;
     }
 
     /**
@@ -432,13 +443,14 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
      * be recognized and removed. Kernel-UI-written values point elsewhere and are kept.
      */
     static void clearLegacyAppPrivateFontItem(
-            File gameFile, String name, String markerName, String appFontsDirPrefix) throws Exception {
+            File gameFile, String name, String markerName, String appFontsDir) throws Exception {
         LinkedHashMap<String, String> items = new LinkedHashMap<>();
         List<String[]> customs = new ArrayList<>();
         LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
-        readPreferenceFile(gameFile, items, customs, keyMaps);
+        boolean complete = readPreferenceFile(gameFile, items, customs, keyMaps);
         String value = items.get(name);
-        if (value == null || items.containsKey(markerName) || !value.startsWith(appFontsDirPrefix)) return;
+        if (!complete || value == null || items.containsKey(markerName) ||
+                !(value.equals(appFontsDir) || value.startsWith(appFontsDir + "/"))) return;
         items.remove(name);
         writePreferenceXml(gameFile, items, customs, keyMaps);
     }
@@ -449,7 +461,7 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
         LinkedHashMap<String, String> items = new LinkedHashMap<>();
         List<String[]> customs = new ArrayList<>();
         LinkedHashMap<Integer, Integer> keyMaps = new LinkedHashMap<>();
-        readPreferenceFile(file, items, customs, keyMaps);
+        boolean complete = readPreferenceFile(file, items, customs, keyMaps);
         boolean changed = false;
         if (value != null) {
             changed |= !value.equals(items.put(name, value));
@@ -474,7 +486,8 @@ public abstract class KirikiroidLauncherBaseActivity extends KR2Activity {
             changed |= items.remove(name) != null;
             changed |= items.remove(markerName) != null;
         }
-        if (!changed) return false;
+        // 不完整解析（截断/损坏文件）不写回：部分快照会永久丢失损坏点之后的条目。
+        if (!changed || !complete) return false;
         writePreferenceXml(file, items, customs, keyMaps);
         return true;
     }

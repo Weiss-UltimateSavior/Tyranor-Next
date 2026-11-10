@@ -88,7 +88,7 @@ class KirikiroidLauncherPreferenceXmlTest {
         }
         KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
             game, "default_font", "_rinne_injected_default_font",
-            "/data/user/0/com.tyranor.next/files/fonts/",
+            "/data/user/0/com.tyranor.next/files/fonts",
         )
         assertFalse(items(game).containsKey("default_font"))
     }
@@ -100,7 +100,7 @@ class KirikiroidLauncherPreferenceXmlTest {
         }
         KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
             game, "default_font", "_rinne_injected_default_font",
-            "/data/user/0/com.tyranor.next/files/fonts/",
+            "/data/user/0/com.tyranor.next/files/fonts",
         )
         assertEquals("/storage/emulated/0/Fonts/picked.ttf", items(game)["default_font"])
     }
@@ -115,10 +115,54 @@ class KirikiroidLauncherPreferenceXmlTest {
         }
         KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
             game, "default_font", "_rinne_injected_default_font",
-            "/data/user/0/com.tyranor.next/files/fonts/",
+            "/data/user/0/com.tyranor.next/files/fonts",
         )
         assertEquals("/data/user/0/com.tyranor.next/files/fonts/new.ttf", items(game)["default_font"])
         assertTrue(items(game).containsKey("_rinne_injected_default_font"))
+    }
+
+    @Test
+    fun `value equal to directory prefix is treated as app written`() {
+        val game = tmp.newFile("game.xml").apply {
+            writeText(xml(*arrayOf("default_font" to "/data/user/0/com.tyranor.next/files/fonts")))
+        }
+        KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
+            game, "default_font", "_rinne_injected_default_font",
+            "/data/user/0/com.tyranor.next/files/fonts",
+        )
+        assertFalse(items(game).containsKey("default_font"))
+    }
+
+    @Test
+    fun `similar directory fonts2 is not matched by fonts prefix`() {
+        val game = tmp.newFile("game.xml").apply {
+            writeText(xml("default_font" to "/data/user/0/com.tyranor.next/files/fonts2/picked.ttf"))
+        }
+        KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
+            game, "default_font", "_rinne_injected_default_font",
+            "/data/user/0/com.tyranor.next/files/fonts",
+        )
+        assertEquals("/data/user/0/com.tyranor.next/files/fonts2/picked.ttf", items(game)["default_font"])
+    }
+
+    @Test
+    fun `truncated xml is left untouched by writes`() {
+        val game = tmp.newFile("game.xml").apply {
+            // 截断的偏好文件：末尾 Item 无闭合标签与文档结尾
+            writeText(
+                "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?><GlobalPreference>" +
+                                        "<Item key=\"keep_me\" value=\"1\" /><Item key=\"renderer\" value=\"op",
+            )
+        }
+        val before = game.readText()
+        KirikiroidLauncherBaseActivity.applyPreferenceItem(
+            game, "renderer", "_rinne_injected_renderer", "software", true,
+        )
+        KirikiroidLauncherBaseActivity.clearLegacyAppPrivateFontItem(
+            game, "default_font", "_rinne_injected_default_font",
+            "/data/user/0/com.tyranor.next/files/fonts",
+        )
+        assertEquals(before, game.readText())
     }
 
     @Test
