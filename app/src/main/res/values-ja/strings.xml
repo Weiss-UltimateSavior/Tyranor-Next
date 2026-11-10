@@ -225,10 +225,10 @@
     <string name="game_launch_action">ゲームを起動</string>
     <string name="game_launch_file">起動ファイル</string>
     <string name="game_launch_file_auto_summary">自動 - 問題がある場合は手動で起動ファイルを選択</string>
-    <string name="game_remove_quick_launch">クイック起動から削除</string>
-    <string name="game_add_quick_launch">クイック起動に追加</string>
+    <string name="game_remove_quick_launch">ホームから削除</string>
+    <string name="game_add_quick_launch">ホームに追加</string>
     <string name="game_quick_launch_full">ホームのクイック起動は最大 3 件までです</string>
-    <string name="game_add_desktop_shortcut">ホーム画面に追加</string>
+    <string name="game_add_desktop_shortcut">デスクトップに追加</string>
     <string name="game_desktop_shortcut_requested">システムダイアログで追加を確認してください</string>
     <string name="game_desktop_shortcut_updated">ホーム画面ショートカットを更新しました</string>
     <string name="game_desktop_shortcut_unsupported">現在のランチャーは固定ショートカットに対応していません</string>
@@ -268,7 +268,7 @@
     <string name="game_launch_file_empty">フォルダ内に xp3 または exe ファイルが見つかりません</string>
 
     <string name="home_recent_empty">最近開いたゲームはありません</string>
-    <string name="home_quick_launch">クイック起動</string>
+    <string name="home_quick_launch">ホームに追加</string>
     <string name="home_empty_slot_content_description">空きスロット</string>
 
     <string name="engine_settings_save_content_description">設定を保存</string>
