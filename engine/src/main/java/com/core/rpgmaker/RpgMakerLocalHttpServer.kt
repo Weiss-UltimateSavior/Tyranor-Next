@@ -326,13 +326,13 @@ internal class RpgMakerLocalHttpServer(
         // ASAR 大条目（>256KiB，媒体为主）流式分支必须在 404 判空之前：
         // 流式结果 file/data 均为 null，放在后面会被判 404 且泄漏已打开的文件句柄
         // （PR review Critical 意见）
-        if (resolved != null && resolved.stream != null) {
+        if (resolved.stream != null) {
             val sent = sendStream(
                 socket, resolved.stream, resolved.streamLen, uri, headers["range"], headOnly, keepAlive, cacheControl,
             )
             return sent && keepAlive
         }
-        if (resolved == null || (resolved.file == null && resolved.data == null)) {
+        if (resolved.file == null && resolved.data == null) {
             Log.w(TAG, "404 uri=$uri")
             sendText(socket, 404, "Not Found", "not found: $uri")
             return false

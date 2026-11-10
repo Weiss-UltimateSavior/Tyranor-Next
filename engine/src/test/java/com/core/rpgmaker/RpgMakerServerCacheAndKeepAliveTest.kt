@@ -45,8 +45,13 @@ class RpgMakerServerCacheAndKeepAliveTest {
 
     private class Response(val code: Int, val headers: Map<String, String>)
 
-    /** 读一个响应（状态行 + 头 + 按 Content-Length 跳过 body）。 */
-    private fun readResponse(input: InputStream): Response {
+    /**
+     * 读一个响应（状态行 + 头 + 跳过 body）。
+     *
+     * [hasBody] 必须按**请求方法**给：HEAD 响应会带 `Content-Length` 但**没有 body**
+     * （RFC 9110 §9.3.2），照 Content-Length 去读会把下一个响应的字节吃掉。
+     */
+    private fun readResponse(input: InputStream, hasBody: Boolean = true): Response {
         val head = StringBuilder()
         while (!head.endsWith("\r\n\r\n")) {
             val b = input.read()
@@ -59,7 +64,7 @@ class RpgMakerServerCacheAndKeepAliveTest {
             val idx = line.indexOf(':')
             if (idx <= 0) null else line.substring(0, idx).trim().lowercase() to line.substring(idx + 1).trim()
         }.toMap()
-        var left = headers["content-length"]?.toIntOrNull() ?: 0
+        var left = if (hasBody) (headers["content-length"]?.toIntOrNull() ?: 0) else 0
         val buf = ByteArray(8 * 1024)
         while (left > 0) {
             val n = input.read(buf, 0, minOf(buf.size, left))
@@ -169,7 +174,8 @@ class RpgMakerServerCacheAndKeepAliveTest {
 
             out.write(("HEAD /img/pic.png HTTP/1.1\r\nHost: 127.0.0.1\r\nCookie: $cookie\r\n\r\n").toByteArray(StandardCharsets.US_ASCII))
             out.flush()
-            val head = readResponse(input)
+            // HEAD 没有 body：不能按 Content-Length 去读，否则会吃掉下一个响应的前 3 字节
+            val head = readResponse(input, hasBody = false)
             assertEquals(200, head.code)
             assertEquals("3", head.headers["content-length"])
 
