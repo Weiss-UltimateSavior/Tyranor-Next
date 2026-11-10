@@ -61,7 +61,7 @@ import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
 import com.tyranor.runtime.systemnnn.SystemNnnHost
-import com.tyranor.runtime.systemnnn.SystemNnnGameImport
+import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.GameSaveException
@@ -227,7 +227,7 @@ object EngineLauncher {
             return LaunchResult.Failure.SavePreparationFailed(failure.code)
         }
         if (game.engine == EngineType.SYSTEMNNN &&
-            SystemNnnGameDirectory.accessible(context, game.uri)?.let(SystemNnnGameImport::resourcesEvicted) == true
+            SystemNnnGameDirectory.accessible(context, game.uri)?.let(SystemNnnCopyStore::resourcesEvicted) == true
         ) {
             // Cleanup won after the initial resource check. Restage outside the save fence.
             return null
@@ -1048,7 +1048,7 @@ object EngineLauncher {
         return try {
             val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return null
             val root = SystemNnnGameDirectory.committed(context, game.uri) ?: SystemNnnGameDirectory.resolve(game.uri)
-            if (root?.let(SystemNnnGameImport::resourcesEvicted) == true) return null
+            if (root?.let(SystemNnnCopyStore::resourcesEvicted) == true) return null
             val player = android.content.ComponentName(context.packageName, "com.tyranor.runtime.systemnnn.PlayerActivity")
             val task = manager.appTasks.firstOrNull { candidate ->
                 val info = candidate.taskInfo ?: return@firstOrNull false
@@ -1091,35 +1091,35 @@ object EngineLauncher {
         fun failed(error: SystemNnnResourceError) = LaunchResult.Failure.SystemNnnResourcesFailed(error)
         try {
             val copy = SystemNnnGameDirectory.committed(context, game.uri)
-            val restoreResources = copy != null && SystemNnnGameImport.resourcesEvicted(copy)
+            val restoreResources = copy != null && SystemNnnCopyStore.resourcesEvicted(copy)
             if (copy != null && !restoreResources) {
-                if (!SystemNnnGameImport.readableBootstrap(copy)) return failed(SystemNnnResourceError.CORRUPT_COPY)
+                if (!SystemNnnCopyStore.readableBootstrap(copy)) return failed(SystemNnnResourceError.CORRUPT_COPY)
                 return if (systemNnnSavesWritable(context, copy)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
             }
             val path = SystemNnnGameDirectory.resolve(game.uri) ?: return LaunchResult.Failure.GameDirUnresolved
             // Validate the canonical volume boundary before probing any native resource bytes.
             val accessible = SystemNnnGameDirectory.accessible(game.uri, path)
             val requiresCopy = Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
-                (accessible == null || !SystemNnnGameImport.readableBootstrap(accessible) || !systemNnnSavesWritable(context, accessible))
+                (accessible == null || !SystemNnnCopyStore.readableBootstrap(accessible) || !systemNnnSavesWritable(context, accessible))
             if (restoreResources || requiresCopy) {
                 val source = SystemNnnGameDirectory.sourceDocument(game.uri)
                     ?: return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
-                val granted = SystemNnnGameImport.findAuthorizedSource(context, source)
+                val granted = SystemNnnCopyStore.findAuthorizedSource(context, source)
                 if (granted == null) {
                     if (!restoreResources) requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
                     return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
                 }
                 checkSystemNnnCopyConsent(restoreResources, systemNnnCopy)?.let { return it }
                 val caller = currentCoroutineContext()
-                val sourceId = SystemNnnGameImport.sourceIdentity(source)
+                val sourceId = SystemNnnCopyStore.sourceIdentity(source)
                 // Only the first copy changes the active sav. Wait for in-flight sync writes
                 // before publishing it. Resource rehydration can already hold launch admission.
                 val imported = try {
                     systemNnnCopy?.onCopying?.invoke(true)
                     if (restoreResources) {
-                        SystemNnnGameImport.importDirectory(context, granted, sourceId, false) { caller.ensureActive() }
+                        SystemNnnCopyStore.importDirectory(context, granted, sourceId, false) { caller.ensureActive() }
                     } else {
-                        SystemNnnGameImport.stageDirectory(context, granted, sourceId, true) { caller.ensureActive() }.use { staged ->
+                        SystemNnnCopyStore.stageDirectory(context, granted, sourceId, true) { caller.ensureActive() }.use { staged ->
                             val original = SystemNnnGameDirectory.resolve(source.toString()) ?: path
                             val originalRoot = accessible?.path ?: try {
                                 original.canonicalPath
@@ -1146,22 +1146,22 @@ object EngineLauncher {
                 Files.isRegularFile(path.toPath()) -> SystemNnnResourceError.INVALID_SOURCE
                 else -> SystemNnnResourceError.STORAGE_RESTRICTED
             })
-            if (!SystemNnnGameImport.readableBootstrap(root)) return failed(SystemNnnResourceError.INVALID_SOURCE)
+            if (!SystemNnnCopyStore.readableBootstrap(root)) return failed(SystemNnnResourceError.INVALID_SOURCE)
             return if (systemNnnSavesWritable(context, root)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: SaveSyncException) {
             return LaunchResult.Failure.SavePreparationFailed(failure.code)
-        } catch (failure: SystemNnnGameImport.Failure) {
+        } catch (failure: SystemNnnCopyStore.Failure) {
             return failed(when (failure.reason) {
-                SystemNnnGameImport.Reason.NO_GRANT -> SystemNnnResourceError.STORAGE_RESTRICTED
-                SystemNnnGameImport.Reason.SOURCE_MISSING -> SystemNnnResourceError.SOURCE_MISSING
-                SystemNnnGameImport.Reason.INVALID_SOURCE -> SystemNnnResourceError.INVALID_SOURCE
-                SystemNnnGameImport.Reason.INCOMPLETE_SOURCE, SystemNnnGameImport.Reason.BUSY -> SystemNnnResourceError.SOURCE_BUSY
-                SystemNnnGameImport.Reason.NO_SPACE -> SystemNnnResourceError.NO_SPACE
-                SystemNnnGameImport.Reason.COMMIT_FAILED -> SystemNnnResourceError.COMMIT_FAILED
-                SystemNnnGameImport.Reason.CORRUPT_COPY -> SystemNnnResourceError.CORRUPT_COPY
-                SystemNnnGameImport.Reason.COPY_FAILED -> SystemNnnResourceError.COPY_FAILED
+                SystemNnnCopyStore.Reason.NO_GRANT -> SystemNnnResourceError.STORAGE_RESTRICTED
+                SystemNnnCopyStore.Reason.SOURCE_MISSING -> SystemNnnResourceError.SOURCE_MISSING
+                SystemNnnCopyStore.Reason.INVALID_SOURCE -> SystemNnnResourceError.INVALID_SOURCE
+                SystemNnnCopyStore.Reason.INCOMPLETE_SOURCE, SystemNnnCopyStore.Reason.BUSY -> SystemNnnResourceError.SOURCE_BUSY
+                SystemNnnCopyStore.Reason.NO_SPACE -> SystemNnnResourceError.NO_SPACE
+                SystemNnnCopyStore.Reason.COMMIT_FAILED -> SystemNnnResourceError.COMMIT_FAILED
+                SystemNnnCopyStore.Reason.CORRUPT_COPY -> SystemNnnResourceError.CORRUPT_COPY
+                SystemNnnCopyStore.Reason.COPY_FAILED -> SystemNnnResourceError.COPY_FAILED
             })
         } catch (_: IOException) {
             return failed(SystemNnnResourceError.COPY_FAILED)

@@ -20,11 +20,10 @@ import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.sync.SaveSyncLocks
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
-import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
-import com.tyranor.runtime.systemnnn.SystemNnnGameImport
+import com.tyranor.next.core.game.storage.SystemNnnCopyStore
 import com.tyranor.runtime.systemnnn.SystemNnnHost
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -597,7 +596,7 @@ class GameSaveManager(private val context: Context) {
     internal fun cleanupAppData(game: ScanGame, expectedDirectory: File?) {
         if (game.engine == EngineType.SYSTEMNNN) {
             val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri) ?: return
-            val copy = SystemNnnGameImport.committedRoot(appContext, sourceId) ?: return
+            val copy = SystemNnnCopyStore.committedRoot(appContext, sourceId) ?: return
             val directory = SystemNnnHost.saveDirectory(appContext, copy)
             if (directory.canonicalPath != expectedDirectory?.canonicalPath) {
                 throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
@@ -787,14 +786,14 @@ class GameSaveManager(private val context: Context) {
         if (sourceId == null) {
             operation()
         } else {
-            SystemNnnGameImport.withImportLock(appContext, sourceId) { operation() }
+            SystemNnnCopyStore.withImportLock(appContext, sourceId) { operation() }
         }
     } catch (failure: GameSaveException) {
         throw failure
     } catch (failure: SaveSyncException) {
         throw failure
-    } catch (failure: SystemNnnGameImport.Failure) {
-        val code = if (failure.reason == SystemNnnGameImport.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
+    } catch (failure: SystemNnnCopyStore.Failure) {
+        val code = if (failure.reason == SystemNnnCopyStore.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
         else SaveErrorCode.SAVE_DIR_UNAVAILABLE
         throw GameSaveException(code, cause = failure)
     } catch (failure: IOException) {
@@ -826,7 +825,7 @@ class GameSaveManager(private val context: Context) {
     internal fun hasImportedSystemNnnResources(game: ScanGame): Boolean =
         game.engine == EngineType.SYSTEMNNN && runCatching {
             SystemNnnGameDirectory.committed(appContext, game.uri)
-                ?.let(SystemNnnGameImport::hasImportedResources) == true
+                ?.let(SystemNnnCopyStore::hasImportedResources) == true
         }.getOrDefault(false)
 
     internal suspend fun clearImportedSystemNnnResources(game: ScanGame, onlyIfUnreferenced: Boolean = false): Boolean {
@@ -855,35 +854,15 @@ class GameSaveManager(private val context: Context) {
         }
     }
 
-    internal data class OrphanResourceCleanup(
+    internal data class SystemNnnResourceCleanup(
         val cleared: Int,
         val failedGames: List<ScanGame>,
-        val unverifiable: Int = 0,
     ) {
         val failed: Int get() = failedGames.size
     }
 
-    internal suspend fun clearUnreferencedSystemNnnResources(pending: List<ScanGame>): OrphanResourceCleanup =
-        withContext(Dispatchers.IO) {
-            val referenced = GameLibraryFacade.loadGames(appContext).mapNotNullTo(HashSet()) {
-                SystemNnnGameDirectory.sourceIdentity(it.uri)
-            }
-            val inventory = SystemNnnGameImport.importedResources(appContext)
-            val pendingBySource = pending.associateBy { SystemNnnGameDirectory.sourceIdentity(it.uri) }
-            val orphans = inventory.sourceIds
-                .filterNot { it in referenced }
-                .map { sourceId ->
-                    pendingBySource[sourceId] ?: ScanGame(
-                        title = sourceId,
-                        uri = SystemNnnGameDirectory.sourceUri(sourceId).toString(),
-                        engine = EngineType.SYSTEMNNN,
-                        launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
-                    )
-                }
-            clearSystemNnnResourceTargets(orphans).copy(unverifiable = inventory.unverifiable)
-        }
-
-    internal suspend fun clearSystemNnnResourceTargets(games: List<ScanGame>): OrphanResourceCleanup =
+    /** Cleans the copies of games that were just removed from the library (root deletion). */
+    internal suspend fun clearSystemNnnResourceTargets(games: List<ScanGame>): SystemNnnResourceCleanup =
         withContext(Dispatchers.IO) {
             var cleared = 0
             val failed = ArrayList<ScanGame>()
@@ -897,18 +876,18 @@ class GameSaveManager(private val context: Context) {
                     throw cancelled
                 } catch (failure: Exception) {
                     failed += game
-                    android.util.Log.w("GameSaveManager", "Could not clear unreferenced SystemNNN resources", failure)
+                    android.util.Log.w("GameSaveManager", "Could not clear SystemNNN copy resources", failure)
                 }
             }
-            OrphanResourceCleanup(cleared, failed)
+            SystemNnnResourceCleanup(cleared, failed)
         }
 
     private fun evictSystemNnnResources(sourceId: String): Boolean = try {
-        SystemNnnGameImport.clearResources(appContext, sourceId)
+        SystemNnnCopyStore.clearResources(appContext, sourceId)
     } catch (failure: SystemNnnHost.SaveBusyException) {
         throw GameSaveException(SaveErrorCode.ENGINE_RUNNING, cause = failure)
-    } catch (failure: SystemNnnGameImport.Failure) {
-        val code = if (failure.reason == SystemNnnGameImport.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
+    } catch (failure: SystemNnnCopyStore.Failure) {
+        val code = if (failure.reason == SystemNnnCopyStore.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
         else SaveErrorCode.SAVE_DIR_UNAVAILABLE
         throw GameSaveException(code, cause = failure)
     } catch (failure: IOException) {

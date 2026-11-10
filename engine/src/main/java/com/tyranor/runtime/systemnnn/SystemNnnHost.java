@@ -197,7 +197,6 @@ public final class SystemNnnHost {
     }
 
     private static boolean hasMarker(File game) {
-        if(SystemNnnGameImport.resourcesEvicted(game))return false;
         File marker = GameResourcePaths.file(game, "spt", "sys.spt");
         return marker != null && marker.canRead();
     }

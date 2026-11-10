@@ -6,9 +6,10 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tyranor.next.core.engine.EngineType
+import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.game.model.ScanGame
 import com.tyranor.next.core.game.save.GameSaveManager
-import com.tyranor.next.core.game.save.GameSaveManager.OrphanResourceCleanup
+import com.tyranor.next.core.game.save.GameSaveManager.SystemNnnResourceCleanup
 import com.tyranor.next.core.game.storage.GameLibraryFacade
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -23,7 +24,7 @@ import kotlinx.coroutines.withContext
 internal class SystemNnnCleanupViewModel(application: Application) : AndroidViewModel(application) {
     data class State(
         val running: Boolean = false,
-        val result: OrphanResourceCleanup? = null,
+        val result: SystemNnnResourceCleanup? = null,
         val failed: Boolean = false,
         val canRetry: Boolean = false,
     )
@@ -31,27 +32,23 @@ internal class SystemNnnCleanupViewModel(application: Application) : AndroidView
     private val appContext = application.applicationContext
     private val manager = GameSaveManager(appContext)
     private var pendingGames = emptyList<ScanGame>()
-    private var retryInventory = false
     private val mutableState = MutableStateFlow(State())
     val state = mutableState.asStateFlow()
 
     fun removeRoot(root: String) = start(finishAfterClose = true) {
         val removed = GameLibraryFacade.removeRootAndGames(appContext, Uri.parse(root))
-        val targets = removed.filter { it.engine == EngineType.SYSTEMNNN }
+        // Legacy Emberfall module bindings resolve to the built-in engine before filtering.
+        val targets = removed.map(RuntimeModuleBindings::builtInSystemNnn)
+            .filter { it.engine == EngineType.SYSTEMNNN }
         if (targets.isEmpty()) null else {
             pendingGames = (pendingGames + targets).distinctBy(ScanGame::uri)
             clearPendingGames()
         }
     }
 
-    fun clearUnused() = start { sweep() }
+    fun retry() = start { clearPendingGames() }
 
-    fun retry() = start {
-        if (retryInventory) sweep()
-        else clearPendingGames().copy(unverifiable = mutableState.value.result?.unverifiable ?: 0)
-    }
-
-    private fun start(finishAfterClose: Boolean = false, operation: suspend () -> OrphanResourceCleanup?) {
+    private fun start(finishAfterClose: Boolean = false, operation: suspend () -> SystemNnnResourceCleanup?) {
         val previous = mutableState.value
         if (previous.running) return
         mutableState.value = previous.copy(running = true)
@@ -71,16 +68,8 @@ internal class SystemNnnCleanupViewModel(application: Application) : AndroidView
         }
     }
 
-    private fun hasPendingWork() = retryInventory || pendingGames.isNotEmpty()
+    private fun hasPendingWork() = pendingGames.isNotEmpty()
 
-    private suspend fun clearPendingGames(): OrphanResourceCleanup =
+    private suspend fun clearPendingGames(): SystemNnnResourceCleanup =
         manager.clearSystemNnnResourceTargets(pendingGames).also { pendingGames = it.failedGames }
-
-    private suspend fun sweep(): OrphanResourceCleanup {
-        retryInventory = true
-        return manager.clearUnreferencedSystemNnnResources(pendingGames).also {
-            pendingGames = it.failedGames
-            retryInventory = false
-        }
-    }
 }

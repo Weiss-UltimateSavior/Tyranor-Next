@@ -89,9 +89,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     private int storyTouchSlop;
     private boolean storyDrag;
     private boolean foreground,permissionPending;
-    private Uri selectedGameTree;
-    private boolean copyingGame,usingGameCopy;
-    private volatile boolean cancelGameCopy;
     private boolean uiHidden,autoMode,skipMode,typing,refreshAfterLoad;
     private int panelsOpen,revealed;
     private String fullBody="";
@@ -167,11 +164,7 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         String path=i.getStringExtra(LaunchContract.RUNTIME_MODULE_FOLDER_PATH);
         fromTyn=LaunchContract.RUNTIME_MODULE_ACTION.equals(i.getAction());
         if (!fromTyn) {
-            if (saved!=null){
-                path=saved.getString("selectedGame");
-                String tree=saved.getString("selectedGameTree");
-                if(tree!=null)selectedGameTree=Uri.parse(tree);
-            }
+            if (saved!=null) path=saved.getString("selectedGame");
             if (path==null || path.isEmpty()) { chooseHome(null); return; }
         } else if (path==null || path.isEmpty()) {
             chooseHome(text(R.string.engine_systemnnn_host_launch_path_missing)); return;
@@ -249,10 +242,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
                 chooseHome(text(R.string.engine_systemnnn_host_invalid_directory));
                 return;
             }
-            selectedGameTree=uri;
-            if(Build.VERSION.SDK_INT==29)try{
-                getContentResolver().takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            }catch(SecurityException ignored){}
             game=selected; inspectAccess();
         }catch(IOException|IllegalArgumentException|SecurityException e){
             Log.w("SystemNNN","Unable to resolve the selected game directory",e);
@@ -306,21 +295,9 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
         if (!fromTyn && game!=null) state.putString("selectedGame",game.getPath());
-        if (!fromTyn && selectedGameTree!=null)state.putString("selectedGameTree",selectedGameTree.toString());
     }
     private void inspectAccess() {
-        if (game==null || runner!=null || copyingGame) return;
-        try{
-            String identity=sourceIdentity();
-            File copy=identity==null?null:SystemNnnGameImport.committedRoot(this,identity);
-            usingGameCopy=copy!=null;
-            if(usingGameCopy)game=copy;
-        }catch(IOException e){chooseHome(gameCopyFailure(e));return;}
-        if(SystemNnnGameImport.resourcesEvicted(game)){
-            if(selectedGameTree!=null)copySelectedGame();
-            else resourcesEvicted();
-            return;
-        }
+        if (game==null || runner!=null) return;
         File script=GameResourcePaths.file(game,"spt","sys.spt");
         if (script!=null) {
             // Scoped storage may allow stat() and directory listings while denying open().
@@ -332,67 +309,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         }
         if(!requestGameAccess(false))chooseHome(text(R.string.engine_systemnnn_host_marker_missing));
     }
-    private String sourceIdentity() throws IOException {
-        if(selectedGameTree!=null)return SystemNnnGameImport.sourceIdentity(selectedGameTree);
-        if(!fromTyn)return null;
-        // The external-module launch protocol supplies an absolute path instead of a tree URI.
-        java.nio.file.Path source=game.toPath();
-        java.nio.file.Path primary=Environment.getExternalStorageDirectory().getCanonicalFile().toPath();
-        if(source.startsWith(primary))return SystemNnnGameImport.normalizeIdentity("primary:"+primary.relativize(source));
-        java.nio.file.Path storage=new File("/storage").toPath();
-        if(!source.startsWith(storage)||source.getNameCount()<2)return null;
-        String volume=source.getName(1).toString();
-        if("emulated".equals(volume)||"self".equals(volume))return null;
-        return SystemNnnGameImport.normalizeIdentity(volume+":"+storage.resolve(volume).relativize(source));
-    }
     private boolean requestGameAccess(boolean writing){
-        if(Build.VERSION.SDK_INT!=29||selectedGameTree==null||usingGameCopy)return requestStorageAccess(writing);
-        if(Environment.isExternalStorageLegacy()&&requestStorageAccess(writing))return true;
-        // A first copy changes the active save directory. Only the library launcher can publish it.
-        message(text(R.string.engine_systemnnn_host_copy_game),text(R.string.engine_systemnnn_host_copy_offer),
-            text(R.string.engine_systemnnn_host_exit_to_tyn),v->finish());
-        return true;
-    }
-    private void copySelectedGame(){
-        if(copyingGame||selectedGameTree==null)return;
-        Uri tree=selectedGameTree;
-        copyingGame=true;
-        cancelGameCopy=false;
-        message(text(R.string.engine_systemnnn_host_copy_game),text(R.string.engine_systemnnn_host_copy_running),text(R.string.engine_systemnnn_host_copy_cancel),v->cancelGameCopy=true);
-        new Thread(()->{
-            File copy=null;
-            String failure=null;
-            try{
-                copy=SystemNnnGameImport.importDirectory(this,tree,SystemNnnGameImport.sourceIdentity(tree),false,()->{
-                    if(cancelGameCopy)throw new java.util.concurrent.CancellationException();
-                });
-            }catch(java.util.concurrent.CancellationException e){failure=text(R.string.engine_systemnnn_host_copy_cancelled);}
-            catch(IOException e){failure=gameCopyFailure(e);}
-            File imported=copy;
-            String reason=failure;
-            ui.post(()->{
-                if(isDestroyed()||isFinishing())return;
-                copyingGame=false;
-                if(imported==null){chooseHome(reason);return;}
-                game=imported;
-                usingGameCopy=true;
-                startGame();
-            });
-        },"SystemNNN-Import").start();
-    }
-    private String gameCopyFailure(IOException error){
-        if(error instanceof SystemNnnGameImport.Failure){
-            switch(((SystemNnnGameImport.Failure)error).reason){
-                case NO_GRANT:return text(R.string.engine_systemnnn_host_copy_grant_lost);
-                case SOURCE_MISSING:case INVALID_SOURCE:return text(R.string.engine_systemnnn_host_copy_invalid);
-                case INCOMPLETE_SOURCE:return text(R.string.engine_systemnnn_host_copy_save_busy);
-                case NO_SPACE:return text(R.string.engine_systemnnn_host_copy_space);
-                case BUSY:return text(R.string.engine_systemnnn_host_copy_busy);
-                case CORRUPT_COPY:return text(R.string.engine_systemnnn_host_copy_unavailable);
-            }
-        }
-        android.util.Log.w("SystemNNN","Could not import the selected game",error);
-        return text(R.string.engine_systemnnn_host_copy_failed);
+        return requestStorageAccess(writing);
     }
     private boolean requestStorageAccess(boolean writing) {
         String permission=writing?Manifest.permission.WRITE_EXTERNAL_STORAGE:Manifest.permission.READ_EXTERNAL_STORAGE;
@@ -418,7 +336,8 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         File legacySource;
         try{
             saves=GameSavePaths.forGame(game);
-            legacySource=SystemNnnGameImport.originalGame(this,game);
+            // The app owns the game directory and passes the path; the engine persists no identity.
+            legacySource=game;
         }
         catch(IOException|SecurityException e){
             Log.w("SystemNNN","Unable to open the save directory",e);
@@ -1924,12 +1843,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override public void notice(String text) { runOnUiThread(() -> {
         if(!isDestroyed()) Toast.makeText(this,text,Toast.LENGTH_SHORT).show();
     }); }
-    @Override public void resourcesEvicted(){runOnUiThread(()->{
-        if(isDestroyed()||isFinishing())return;
-        closeRunner();
-        message(getApplicationInfo().loadLabel(getPackageManager()).toString(),
-            text(R.string.engine_systemnnn_host_resources_evicted),null,null);
-    });}
     @Override public void progressCorrupt(){runOnUiThread(()->{
         GameRunner owner=runner;
         if(isDestroyed()||isFinishing()||owner==null)return;
@@ -2051,7 +1964,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
         if(x!=lastX||y!=lastY){lastX=x;lastY=y;runner.pointer(x,y);}
     }
     @Override public void onBackPressed() {
-        if(copyingGame){cancelGameCopy=true;return;}
         if(pcSaveBusy)return;
         panelWarmup=null;
         if(moviePlayback!=null){moviePlayback.skip();return;}
@@ -2090,7 +2002,6 @@ public final class PlayerActivity extends Activity implements GameRunner.Listene
     @Override protected void onPause() {foreground=false;if(gamePanel!=null)gamePanel.uiActive(false);statusActive(false); if(runner!=null) runner.active(false);
         if(moviePlayback!=null)moviePlayback.pause();super.onPause();}
     @Override protected void onDestroy() {
-        cancelGameCopy=true;
         if(moviePlayback!=null){moviePlayback.dispose();moviePlayback=null;}
         ui.removeCallbacksAndMessages(null);
         discardPanelPreparation();

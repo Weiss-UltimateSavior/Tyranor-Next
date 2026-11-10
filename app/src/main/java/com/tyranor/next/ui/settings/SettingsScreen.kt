@@ -165,7 +165,6 @@ fun SettingsScreen(
     var showGroupDialog by remember { mutableStateOf(false) }
     var showScanDirs by rememberSaveable { mutableStateOf(false) }
     var scanDirs by remember { mutableStateOf(emptyList<String>()) }
-    var showOrphanResourceCleanup by rememberSaveable { mutableStateOf(false) }
     val resourceCleanup: SystemNnnCleanupViewModel = viewModel()
     val cleanupState by resourceCleanup.state.collectAsStateWithLifecycle()
     var showPathDialog by remember { mutableStateOf(false) }
@@ -527,33 +526,20 @@ fun SettingsScreen(
                             }
                         }
                         item {
-                            NoRippleButton(
-                                text = stringResource(R.string.settings_systemnnn_clear_orphan_resources),
-                                modifier = Modifier.fillMaxWidth(),
-                                enabled = !cleanupState.running,
-                                tonal = true,
-                                onClick = { showOrphanResourceCleanup = true },
-                            )
-                        }
-                        item {
                             val result = cleanupState.result
                             val message = when {
-                                cleanupState.running -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_running)
-                                result != null && result.unverifiable > 0 -> stringResource(
-                                    R.string.settings_systemnnn_clear_orphan_resources_unverifiable,
-                                    result.cleared, result.failed, result.unverifiable,
-                                )
+                                cleanupState.running -> stringResource(R.string.settings_systemnnn_copy_cleanup_running)
                                 result != null && result.failed > 0 -> stringResource(
-                                    R.string.settings_systemnnn_clear_orphan_resources_incomplete,
+                                    R.string.settings_systemnnn_copy_cleanup_incomplete,
                                     result.cleared, result.failed,
                                 )
-                                cleanupState.canRetry -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_pending)
+                                cleanupState.canRetry -> stringResource(R.string.settings_systemnnn_copy_cleanup_pending)
                                 cleanupState.failed -> stringResource(R.string.save_operation_failed)
                                 result != null && result.cleared > 0 -> stringResource(
-                                    R.string.settings_systemnnn_clear_orphan_resources_done,
+                                    R.string.settings_systemnnn_copy_cleanup_done,
                                     result.cleared,
                                 )
-                                result != null -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_empty)
+                                result != null -> stringResource(R.string.settings_systemnnn_copy_cleanup_empty)
                                 else -> null
                             }
                             if (message != null) {
@@ -591,40 +577,6 @@ fun SettingsScreen(
                 }
             }
         }
-    }
-
-    if (showOrphanResourceCleanup) {
-        AppAlertDialog(
-            onDismissRequest = { showOrphanResourceCleanup = false },
-            title = {
-                Text(
-                    stringResource(R.string.settings_systemnnn_clear_orphan_resources),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            },
-            text = {
-                Text(
-                    stringResource(R.string.settings_systemnnn_clear_orphan_resources_message),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.common_confirm),
-                    enabled = !cleanupState.running,
-                    onClick = {
-                        showOrphanResourceCleanup = false
-                        resourceCleanup.clearUnused()
-                    },
-                )
-            },
-            dismissButton = {
-                DialogTextButton(
-                    text = stringResource(R.string.common_cancel),
-                    onClick = { showOrphanResourceCleanup = false },
-                )
-            },
-        )
     }
 
     if (showPathDialog) {

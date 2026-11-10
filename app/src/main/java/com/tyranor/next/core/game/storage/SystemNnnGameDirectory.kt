@@ -5,7 +5,6 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import bridge.PrimaryStorageRoot
 import com.tyranor.next.core.game.model.GamePathUtils
-import com.tyranor.runtime.systemnnn.SystemNnnGameImport
 import java.io.File
 import java.io.IOException
 
@@ -16,11 +15,11 @@ internal object SystemNnnGameDirectory {
     /** A committed local copy remains authoritative even if direct source access later returns. */
     fun committed(context: Context, uriText: String): File? {
         val sourceId = sourceIdentity(uriText) ?: return null
-        return SystemNnnGameImport.committedRoot(context, sourceId)
+        return SystemNnnCopyStore.committedRoot(context, sourceId)
     }
 
     fun sourceIdentity(uriText: String): String? =
-        sourceDocument(uriText)?.let(SystemNnnGameImport::sourceIdentity)
+        sourceDocument(uriText)?.let(SystemNnnCopyStore::sourceIdentity)
 
     fun sourceUri(sourceId: String): Uri = DocumentsContract.buildDocumentUri(STORAGE_PROVIDER, sourceId)
 
@@ -39,7 +38,7 @@ internal object SystemNnnGameDirectory {
         if (uri.scheme == "content") {
             if (uri.authority != STORAGE_PROVIDER) return null
             return runCatching {
-                sourceUri(SystemNnnGameImport.sourceIdentity(uri))
+                sourceUri(SystemNnnCopyStore.sourceIdentity(uri))
             }.getOrNull()
         }
         val path = resolve(uriText)?.path ?: return null
@@ -54,7 +53,7 @@ internal object SystemNnnGameDirectory {
         }
         return runCatching {
             val source = sourceUri(id)
-            SystemNnnGameImport.sourceIdentity(source)
+            SystemNnnCopyStore.sourceIdentity(source)
             source
         }.getOrNull()
     }

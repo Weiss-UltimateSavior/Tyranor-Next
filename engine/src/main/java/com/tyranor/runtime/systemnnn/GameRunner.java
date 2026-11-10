@@ -160,7 +160,6 @@ final class GameRunner {
         void statusOverlays(int mode,Modal[] overlays);
         void titleReturnCancelled();
         void notice(String message);
-        void resourcesEvicted();
         void progressCorrupt();
         void error(Throwable reason);
     }
@@ -312,19 +311,12 @@ final class GameRunner {
         ProgressWriteFailure recovery=null;
         if(previousProgress!=null)try{saveResult(previousProgress);}catch(ProgressWriteFailure failure){recovery=failure;}
         ProgressWriteFailure pending=recovery;
-        boolean resourcesReady=saveResult(SAVE_FILES.submit(()->{
+        saveResult(SAVE_FILES.submit(()->{
             if(saveAccess==null)saveAccess=savePaths.open(legacyFiles,legacySource);
-            if(SystemNnnGameImport.resourcesEvicted(root)){
-                GameSavePaths.Access access=saveAccess;
-                saveAccess=null;
-                access.close();
-                return false;
-            }
             if(pending==null)readReadLines();else recoverProgress(previousProgress,pending);
             slots.preload(SaveSlots.configuredManualCount(root,codec));
             return true;
         }));
-        if(!resourcesReady){ui.resourcesEvicted();return;}
         codec=GameTextDecoder.load(root);
         openTitle();
         initialized=true;
