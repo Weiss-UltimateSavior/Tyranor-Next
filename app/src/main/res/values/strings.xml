@@ -104,6 +104,14 @@
     <string name="settings_join_group">加入群聊</string>
     <string name="settings_game_dirs_title">游戏目录</string>
     <string name="settings_no_game_dirs">暂无游戏目录</string>
+    <string name="settings_systemnnn_clear_orphan_resources">清理未入库的 SystemNNN 资源</string>
+    <string name="settings_systemnnn_clear_orphan_resources_message">清理游戏库未使用的 SystemNNN 导入副本中的游戏资源。原游戏目录和全部存档会保留，重新添加游戏后可再次导入资源。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_done">已清理 %1$d 份 SystemNNN 副本中的资源</string>
+    <string name="settings_systemnnn_clear_orphan_resources_empty">没有可清理的 SystemNNN 资源副本</string>
+    <string name="settings_systemnnn_clear_orphan_resources_incomplete">已清理 %1$d 份，%2$d 份暂时无法清理。请关闭运行中的游戏后重试。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_unverifiable">已清理 %1$d 份，%2$d 份清理失败。另有 %3$d 份无法校验，已保留。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_running">正在清理 SystemNNN 资源…</string>
+    <string name="settings_systemnnn_clear_orphan_resources_pending">部分 SystemNNN 资源尚未清理，可重试。</string>
     <string name="settings_invalid_suffix">已失效</string>
     <string name="settings_add_dir">添加目录</string>
     <string name="settings_input_path">输入路径</string>
@@ -791,6 +799,8 @@
     <string name="launch_failed">启动失败</string>
     <string name="launch_all_files_access_request">请在系统页面允许“管理所有文件”，返回后再次启动游戏</string>
     <string name="launch_all_files_access_missing">缺少“管理所有文件”权限，无法让原生引擎读取游戏目录</string>
+    <string name="launch_storage_access_request">请在系统的应用权限中允许存储访问，返回后再次启动游戏</string>
+    <string name="launch_storage_access_missing">缺少存储访问权限，请在系统设置中为 Tyranor-Next 授权</string>
     <string name="launch_krkr_save_path_not_dir">KRKR 存档路径已存在但不是目录：%1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">无法创建 KRKR 应用独立存档目录：%1$s</string>
     <string name="launch_create_krkr_save_failed">无法创建 KRKR 存档目录：%1$s</string>
@@ -1027,6 +1037,7 @@
     <string name="engine_module_management_disable_confirm">禁用</string>
     <string name="engine_module_management_load_failed">模块列表加载失败</string>
     <string name="engine_settings_runtime_module_hint">该游戏由第三方运行时模块运行；模块设置与存档由模块自身管理。</string>
+    <string name="engine_settings_systemnnn_hint">请在游戏的环境设定中调整 SystemNNN 设置。</string>
     <string name="engine_desc_runtime_module">第三方 APK 运行时模块；由模块自行扫描与运行，主 App 只负责发现、启用和传入文件夹路径。</string>
     <string name="launch_runtime_module_missing">运行时模块不可用，游戏已降级为未知，请重新扫描</string>
     <string name="launch_runtime_module_disabled">运行时模块未启用，游戏已降级为未知；请到「引擎模块管理」启用后重新扫描</string>
@@ -1052,4 +1063,22 @@
     <string name="launch_cmvs_unregistered">CMVS 仅支持 19 部登记作品，当前游戏未登记</string>
     <string name="launch_cmvs_audio_unavailable">CMVS 音频初始化失败</string>
     <string name="launch_cmvs_init_failed">CMVS 引擎启动失败</string>
+    <string name="launch_systemnnn_source_missing">游戏目录已不存在。请重新选择包含 spt/sys.spt 的游戏目录。</string>
+    <string name="launch_systemnnn_storage_restricted">导入游戏资源需要文件夹授权。请在游戏库中重新添加并授权原游戏文件夹，再启动游戏。副本中的存档保存在 sav 中。</string>
+    <string name="launch_systemnnn_invalid_source">所选目录没有可读取的 spt/sys.spt，或包含无法原样复制的文件名。请检查游戏是否完整解压并重新选择游戏文件夹。</string>
+    <string name="launch_systemnnn_source_busy">游戏、存档迁移或导入仍在进行。请返回现有播放器，完成迁移并退出后重试。</string>
+    <string name="launch_systemnnn_no_space">应用专用存储空间不足，无法导入完整游戏副本。请清理空间后重试；未完成副本不会用于启动。</string>
+    <string name="launch_systemnnn_copy_failed">游戏资源导入失败。请检查存储卷和文件夹授权后重试。原游戏目录与已有存档仍保留。</string>
+    <string name="launch_systemnnn_import_title">复制游戏资源</string>
+    <string name="launch_systemnnn_import_confirm">Android 10 无法直接使用这个游戏目录。需要将完整游戏复制到应用专用存储，可能占用数 GB 空间。之后的存档会写入副本的 sav 文件夹。</string>
+    <string name="launch_systemnnn_copy_confirmation_required">首次启动需要确认复制游戏资源。请从游戏库打开游戏并确认复制。</string>
+    <string name="launch_systemnnn_import_start">复制并启动</string>
+    <string name="launch_systemnnn_import_progress">正在复制游戏资源。所需时间取决于游戏大小。</string>
+    <string name="launch_systemnnn_import_cancelling">正在取消复制…</string>
+    <string name="launch_systemnnn_commit_failed">无法完成游戏副本的原子提交。请检查应用专用存储后重试；未完成副本不会用于启动。</string>
+    <string name="launch_systemnnn_corrupt_copy">应用专用游戏副本不可用。请检查存储卷并修复副本；为保护进度，不会切回原目录。修复前请通过存档管理备份副本中的存档。</string>
+    <string name="launch_systemnnn_save_not_writable">游戏的 sav 目录无法写入。请检查目录权限、存储是否可用及剩余空间，然后重试。</string>
+    <string name="save_systemnnn_clear_resources">清理导入的游戏资源</string>
+    <string name="save_systemnnn_clear_resources_message">清理应用内副本的游戏资源可以释放空间，原游戏目录和副本中的全部存档都会保留。下次启动时需要从原目录重新导入资源。</string>
+    <string name="save_systemnnn_clear_resources_done">已清理导入的游戏资源</string>
 </resources>

@@ -12,6 +12,7 @@ import com.tyranor.next.core.engine.runtime.RuntimeModuleBindings
 import com.tyranor.next.core.engine.runtime.RuntimeModuleEntry
 import com.tyranor.next.core.engine.runtime.RuntimeModuleIndex
 import com.tyranor.next.core.engine.runtime.RuntimeModuleRegistry
+import com.tyranor.next.core.engine.runtime.RuntimeModuleSnapshot
 import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
@@ -112,44 +113,21 @@ object EngineScanner {
 
     /** 全量刷新游戏库：以当前扫描结果为准，移除已删除/改名路径的旧缓存条目。 */
     suspend fun rescanLibrary(context: Context): List<ScanGame> = withContext(Dispatchers.IO) {
-        // 先用最新模块集合核对旧绑定：卸载/禁用模块的游戏先降级，避免拿过期绑定参与重扫合并。
-        RuntimeModuleBindings.reconcile(context.applicationContext)
+        // 在合并扫描结果前核对旧绑定，并恢复已重新启用的原模块。
+        RuntimeModuleBindings.reconcile(context.applicationContext, restoreReenabled = true)
         val scanned = scanAll(context)
-        // 扫描可能耗时较长；提交结果前再次读取当前 roots，避免扫描期间设置页删除目录后，
-        // 旧 root 的扫描结果在任务结束时被重新写回游戏库。
-        val activeRoots = GameLibraryFacade.loadRoots(context)
-        val activeScanned = scanned.filter { game ->
-            activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
-        }
-        val refreshed = GameLibraryFacade.updateGames(context) { currentGames ->
-            val existingByUri = currentGames.associateBy { it.uri }
-            val scanned = activeScanned.map { current ->
-                existingByUri[current.uri]?.let { previous ->
-                    current.copy(
-                        coverUri = previous.coverUri ?: current.coverUri,
-                        coverSource = previous.coverSource
-                            ?: current.coverSource?.takeIf {
-                                previous.coverUri == null || previous.coverUri == current.coverUri
-                            },
-                        vndbId = previous.vndbId,
-                        metadataTitle = previous.metadataTitle,
-                        externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
-                        // 旧绑定优先：仅旧记录本身是运行时模块时保留旧包名；当前识别为内置引擎则清空，
-                        // 当前识别为其它模块时采用当前包名，避免“内置引擎 + 残留包名”或错绑。
-                        runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {
-                            (if (previous.engine == EngineType.RUNTIME_MODULE) previous.runtimeModulePackage else null)
-                                ?: current.runtimeModulePackage
-                        } else {
-                            null
-                        },
-                        launchFile = previous.launchFile,
-                        openTime = previous.openTime,
-                    )
-                } ?: current
+        val refreshed = GameLibraryFacade.registerGames(context) { currentGames ->
+            // 扫描或等待资源清理期间可能移除目录。只登记仍属于活动扫描根的结果。
+            val activeRoots = GameLibraryFacade.loadRoots(context)
+            val activeScanned = scanned.filter { game ->
+                activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
             }
-            val merged = mergeScannedWithManual(currentGames, scanned)
-            // 运行时绑定条目（含已降级为 UNKNOWN 但仍保留最后已知包名的条目）只在仍属于
-            // 活动扫描根时保留，避免扫描根删除后残留；模块暂时不可用/描述失效时不会误删。
+            // 读取落库时的发现结果与开关。注册等待清理期间，模块可能已被禁用。
+            val merged = mergeRescanResults(
+                currentGames, activeScanned, RuntimeModuleRegistry.state.value,
+                AppSettingsStore.getEnabledRuntimeModules(context),
+            )
+            // 模块暂时不可用时保留原绑定，扫描根移除后不再保留关联条目。
             merged.filter { game ->
                 !game.isRuntimeModuleBound() ||
                     activeRoots.any { root -> isGameUnderRoot(root, game.uri) }
@@ -232,7 +210,7 @@ object EngineScanner {
      * 重扫合并：手动添加的条目（PC 游戏 / 安卓游戏，[EngineType.isManual]）不参与扫描（不依赖扫描根），
      * 重扫时必须原样保留；安卓条目额外按 uri 前缀识别，避免 engine 字段损坏（回退 UNKNOWN）时被丢弃。
      *
-     * 运行时模块条目（`RUNTIME_MODULE`，或降级为 `UNKNOWN` 但仍保留最后已知包名）同样保留：
+     * 运行时模块条目和保留了最后已知模块包名的回退条目同样保留：
      * 模块描述暂时失效、发现查询失败或用户禁用期间，本次扫描可能识别不到它，但不应因此删除
      * 游戏记录及其标题/封面/元数据。调用方（rescanLibrary）会再按活动扫描根过滤。
      * 同 uri 若被扫描命中则以扫描结果为准（避免重复条目）。
@@ -246,10 +224,68 @@ object EngineScanner {
         return manual + scanned
     }
 
-    /** 运行时绑定条目：引擎仍是 RUNTIME_MODULE，或已降级为 UNKNOWN 但保留最后已知包名。 */
+    internal fun mergeRescanResults(
+        savedGames: List<ScanGame>,
+        scannedGames: List<ScanGame>,
+        runtimeSnapshot: RuntimeModuleSnapshot,
+        enabledPackages: Set<String>,
+    ): List<ScanGame> {
+        val discoverySucceeded = runtimeSnapshot.lastError == null
+        val allowedModules = if (discoverySucceeded) {
+            runtimeSnapshot.modules.mapNotNullTo(HashSet()) { it.packageName.takeIf(enabledPackages::contains) }
+        } else {
+            // Existing enabled bindings survive a failed query. Restoring one requires discovery.
+            enabledPackages
+        }
+        val savedByUri = savedGames.associateBy { it.uri }
+        val merged = scannedGames.map { current ->
+            savedByUri[current.uri]?.let { mergeScannedGame(current, it, allowedModules, discoverySucceeded) } ?: current
+        }
+        return mergeScannedWithManual(savedGames, merged).map { game ->
+            if (game.engine == EngineType.RUNTIME_MODULE && game.runtimeModulePackage !in allowedModules) {
+                game.copy(engine = EngineType.UNKNOWN)
+            } else game
+        }
+    }
+
+    private fun mergeScannedGame(
+        current: ScanGame,
+        saved: ScanGame,
+        allowedModules: Set<String>,
+        discoverySucceeded: Boolean,
+    ): ScanGame {
+        val previous = RuntimeModuleBindings.builtInSystemNnn(saved)
+        val fallbackPackage = previous.runtimeModulePackage?.takeIf {
+            current.engine == EngineType.SYSTEMNNN && previous.isRuntimeModuleBound() && it.isNotBlank()
+        }
+        if (fallbackPackage != null && fallbackPackage in allowedModules) {
+            if (previous.engine == EngineType.RUNTIME_MODULE) return previous
+            if (discoverySucceeded) return previous.copy(engine = EngineType.RUNTIME_MODULE)
+        }
+        return current.copy(
+            coverUri = previous.coverUri ?: current.coverUri,
+            coverSource = previous.coverSource
+                ?: current.coverSource?.takeIf {
+                    previous.coverUri == null || previous.coverUri == current.coverUri
+                },
+            vndbId = previous.vndbId,
+            metadataTitle = previous.metadataTitle,
+            externalModuleAlias = previous.externalModuleAlias ?: current.externalModuleAlias,
+            runtimeModulePackage = if (current.engine == EngineType.RUNTIME_MODULE) {
+                previous.runtimeModulePackage?.takeIf { previous.engine == EngineType.RUNTIME_MODULE && it in allowedModules }
+                    ?: current.runtimeModulePackage
+            } else {
+                fallbackPackage
+            },
+            launchFile = previous.launchFile,
+            openTime = previous.openTime,
+        )
+    }
+
+    /** 运行时绑定条目包含保留最后已知模块包名的内置 SystemNNN 回退。 */
     private fun ScanGame.isRuntimeModuleBound(): Boolean =
         engine == EngineType.RUNTIME_MODULE ||
-            (engine == EngineType.UNKNOWN && !runtimeModulePackage.isNullOrBlank())
+            ((engine == EngineType.UNKNOWN || engine == EngineType.SYSTEMNNN) && !runtimeModulePackage.isNullOrBlank())
 
     /**
      * 增量扫描（游戏库已有数据时调用）：遍历根目录时对已识别游戏目录剪枝跳过，
@@ -1073,6 +1109,7 @@ object EngineScanner {
         var hasMkxpZRubyRuntime = false
         var hasFvpScript = false
         var hasFvpPack = false
+        var hasSystemNnnEntry = false
         var hasAldScript = false
         var aldCount = 0
         var hasXs35Support = false
@@ -1105,6 +1142,11 @@ object EngineScanner {
                 if (lower == "renpy") hasRenpyDir = true
                 if (lower == "game") hasGameDir = true
                 if (lower == "app.asar" || childRel.endsWith("/app.asar")) hasAppAsar = true
+                if (rel.isEmpty() && lower == "spt") {
+                    hasSystemNnnEntry = hasSystemNnnEntry || childrenOf(entry).any {
+                        !isDirectory(it) && nameOf(it).equals("sys.spt", ignoreCase = true)
+                    }
+                }
                 if (lower == "config") {
                     // CatSystem2：config/startup.xml 是高价值目录特征（不递归，只看该文件名）
                     childrenOf(entry).forEach { child ->
@@ -1445,7 +1487,7 @@ object EngineScanner {
         ) {
             return Detection(EngineType.RUFFLE, 88, ruffleSwf, RUFFLE_MODULE_ALIAS)
         }
-        if (hasIndex) {
+        if (hasIndex && !hasSystemNnnEntry) {
             return Detection(EngineType.WEB_OTHER, 70, LAUNCH_TARGET_GAME_DIR)
         }
         if (xp3Files.isNotEmpty() || hasStartupTjs || hasConfigTjs) {
@@ -1465,6 +1507,9 @@ object EngineScanner {
         }
         if (isSystem4) {
             return Detection(EngineType.XSYS4, 90, LAUNCH_TARGET_GAME_DIR, titleHint = system4Title())
+        }
+        if (hasSystemNnnEntry) {
+            return Detection(EngineType.SYSTEMNNN, 96, LAUNCH_TARGET_GAME_DIR)
         }
         if (hasCmvsScript && hasCmvsStart && cmvsStartCount == 1) {
             return Detection(

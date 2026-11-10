@@ -1,9 +1,11 @@
 package com.tyranor.next.core.game.launch
 
+import android.Manifest
 import android.app.ActivityManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -57,6 +59,9 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
+import com.tyranor.runtime.systemnnn.SystemNnnHost
+import com.tyranor.runtime.systemnnn.SystemNnnGameImport
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
 import com.tyranor.next.core.game.save.GameSaveException
@@ -67,8 +72,12 @@ import com.tyranor.next.core.game.save.RpgSavePendingStore
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.RpgSaveSync
 import com.tyranor.next.core.game.save.RpgSaveSyncState
+import com.tyranor.next.core.game.save.sync.SAVE_DIRECTORY_KEY_PREFIX
+import com.tyranor.next.core.game.save.sync.SaveSyncLaunchAdmission
+import com.tyranor.next.core.game.save.sync.SaveSyncLocks
 import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
 import com.tyranor.next.core.game.save.sync.SaveSyncException
+import com.tyranor.next.core.game.save.sync.SaveSyncError
 import com.tyranor.next.core.game.save.sync.withSaveSyncLaunchAdmission
 import com.tyranor.next.core.game.scan.EngineScanner
 import com.tyranor.next.core.game.storage.GameLibraryFacade
@@ -89,13 +98,16 @@ import com.tyranor.next.core.unpack.ArtemisPfsUnpacker
 import com.yuri.onscripter.ONScripter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.nio.charset.Charset
+import java.nio.file.Files
 import java.util.Collections
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
@@ -142,6 +154,7 @@ object EngineLauncher {
         EngineType.AVG32,
         EngineType.XSYS35,
         EngineType.XSYS4,
+        EngineType.SYSTEMNNN,
         EngineType.UK2,
         EngineType.FVP,
         EngineType.ETHORNELL,
@@ -162,17 +175,40 @@ object EngineLauncher {
      *  本次 = 仅当次应用；总是 = 记住为全局 auto；不再 = 记住为全局 off。 */
     enum class ArtemisPatchChoice { ONCE, ALWAYS, NEVER }
 
+    /** First-copy consent runs before the save locks. A caller can cancel copying through its launch job. */
+    class SystemNnnCopyInteraction(
+        val confirmFirstCopy: suspend () -> Boolean,
+        val onCopying: suspend (Boolean) -> Unit,
+    )
+
     /** 尝试启动游戏。返回类型化结果（P0-6）；[LaunchResult.Success] 表示成功发起。
      *  [patchChoice] 为 Artemis 补丁确认弹窗（见 [needsArtemisPatchConfirm]）的选择结果。
      *  全链路（SAF 查询/文件扫描/patch 与 Steam overlay 写盘/PFS 解包）均为重 IO，
      *  统一切到 IO 线程执行，避免大游戏目录/慢存储上阻塞调用方主线程导致 ANR。 */
-    suspend fun launch(context: Context, game: ScanGame, patchChoice: ArtemisPatchChoice? = null): LaunchResult =
+    suspend fun launch(
+        context: Context,
+        game: ScanGame,
+        patchChoice: ArtemisPatchChoice? = null,
+        systemNnnCopy: SystemNnnCopyInteraction? = null,
+    ): LaunchResult =
         withContext(Dispatchers.IO) {
-            withSaveSyncLaunchAdmission(
-                resolve = { SaveSyncRuntime.launchAdmission(context, game) },
-                managed = { key -> launchManaged(context, game, patchChoice, key) },
-                unmanaged = { launchInternal(context, game, patchChoice) },
+            val entry = RuntimeModuleBindings.builtInSystemNnn(game)
+            suspend fun launchAdmitted(): LaunchResult? = withSaveSyncLaunchAdmission(
+                resolve = { SaveSyncRuntime.launchAdmission(context, entry) },
+                managed = { admission -> launchManaged(context, entry, patchChoice, admission) },
+                unmanaged = { recoverSystemNnnSaves(context, entry) ?: launchInternal(context, entry, patchChoice) },
             )
+            var result: LaunchResult?
+            do {
+                currentCoroutineContext().ensureActive()
+                result = if (entry.engine == EngineType.SYSTEMNNN) {
+                    restoreSystemNnn(context, entry)?.let { return@withContext it }
+                    prepareSystemNnnResources(context, entry, systemNnnCopy)?.let { return@withContext it }
+                    // A source-to-copy rebind also writes the URI's version checkpoint.
+                    SaveSyncLocks.versions(entry.uri) { launchAdmitted() }
+                } else launchAdmitted()
+            } while (result == null)
+            result
         }
 
     /** Known directories share the operation fence; unknown directories hold it exclusively. */
@@ -180,8 +216,9 @@ object EngineLauncher {
         context: Context,
         game: ScanGame,
         patchChoice: ArtemisPatchChoice?,
-        directoryKey: String?,
-    ): LaunchResult {
+        admission: SaveSyncLaunchAdmission.Directory?,
+    ): LaunchResult? {
+        val directoryKey = admission?.key
         try {
             // A pending selection owns this directory even in manual/pull-only mode.
             // Keep this outside prepareLaunch's best-effort bookkeeping error handler.
@@ -189,11 +226,22 @@ object EngineLauncher {
         } catch (failure: SaveSyncException) {
             return LaunchResult.Failure.SavePreparationFailed(failure.code)
         }
+        if (game.engine == EngineType.SYSTEMNNN &&
+            SystemNnnGameDirectory.accessible(context, game.uri)?.let(SystemNnnGameImport::resourcesEvicted) == true
+        ) {
+            // Cleanup won after the initial resource check. Restage outside the save fence.
+            return null
+        }
+        recoverSystemNnnSaves(context, game)?.let { return it }
         var ticket: SaveSyncRuntime.LaunchTicket? = null
         var grace: String? = null
         var dispatched = false
         try {
-            ticket = directoryKey?.let { SaveSyncRuntime.prepareLaunch(context, game, it) }
+            ticket = try {
+                admission?.let { SaveSyncRuntime.prepareLaunch(context, game, it.key, it.exclusiveMutation) }
+            } catch (failure: SaveSyncException) {
+                return LaunchResult.Failure.SavePreparationFailed(failure.code)
+            }
             // Optional persistence may fail; every actual start still needs a protected handoff.
             grace = SaveSyncRuntime.prepareOptionalLaunchGrace(context, game, directoryKey)
             return launchInternal(context, game, patchChoice) {
@@ -400,7 +448,8 @@ object EngineLauncher {
         if (path == null) {
             return LaunchResult.Failure.GameDirUnresolved
         }
-        requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
+        // SystemNNN already admitted its selected root; an app-private imported copy needs no broad grant.
+        if (game.engine != EngineType.SYSTEMNNN) requestAllFilesAccessIfNeeded(context, game, path)?.let { return it }
         if (game.engine == EngineType.ETHORNELL) {
             prepareEthornell(context, game, path, settings)?.let { return it }
         }
@@ -994,6 +1043,170 @@ object EngineLauncher {
         }
     }
 
+    /** Resuming a verified live player must not re-enter save recovery or start a second Activity. */
+    private suspend fun restoreSystemNnn(context: Context, game: ScanGame): LaunchResult? {
+        return try {
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return null
+            val root = SystemNnnGameDirectory.committed(context, game.uri) ?: SystemNnnGameDirectory.resolve(game.uri)
+            if (root?.let(SystemNnnGameImport::resourcesEvicted) == true) return null
+            val player = android.content.ComponentName(context.packageName, "com.tyranor.runtime.systemnnn.PlayerActivity")
+            val task = manager.appTasks.firstOrNull { candidate ->
+                val info = candidate.taskInfo ?: return@firstOrNull false
+                val base = info.baseIntent
+                val baseUri = base.getStringExtra(LaunchContract.ROOT_URI)
+                @Suppress("DEPRECATION")
+                val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.taskId else info.id
+                id >= 0 && info.numActivities > 0 &&
+                    ((base.component == player && (baseUri == null || baseUri == game.uri)) || info.topActivity == player) &&
+                    SystemNnnHost.isLivePlayerTask(context, id, game.uri, root)
+            } ?: return null
+            currentCoroutineContext().ensureActive()
+            task.moveToFront()
+            completeLaunch(context, game) {}
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w(TAG, "Could not restore the SystemNNN task; attempting a new launch", failure)
+            null
+        }
+    }
+
+    internal suspend fun checkSystemNnnCopyConsent(
+        restoreResources: Boolean,
+        interaction: SystemNnnCopyInteraction?,
+    ): LaunchResult.Failure.SystemNnnResourcesFailed? {
+        if (restoreResources) return null
+        if (interaction == null) {
+            return LaunchResult.Failure.SystemNnnResourcesFailed(SystemNnnResourceError.COPY_CONFIRMATION_REQUIRED)
+        }
+        if (!interaction.confirmFirstCopy()) throw CancellationException("SystemNNN copy declined")
+        return null
+    }
+
+    private suspend fun prepareSystemNnnResources(
+        context: Context,
+        game: ScanGame,
+        systemNnnCopy: SystemNnnCopyInteraction?,
+    ): LaunchResult.Failure? {
+        fun failed(error: SystemNnnResourceError) = LaunchResult.Failure.SystemNnnResourcesFailed(error)
+        try {
+            val copy = SystemNnnGameDirectory.committed(context, game.uri)
+            val restoreResources = copy != null && SystemNnnGameImport.resourcesEvicted(copy)
+            if (copy != null && !restoreResources) {
+                if (!SystemNnnGameImport.readableBootstrap(copy)) return failed(SystemNnnResourceError.CORRUPT_COPY)
+                return if (systemNnnSavesWritable(context, copy)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
+            }
+            val path = SystemNnnGameDirectory.resolve(game.uri) ?: return LaunchResult.Failure.GameDirUnresolved
+            // Validate the canonical volume boundary before probing any native resource bytes.
+            val accessible = SystemNnnGameDirectory.accessible(game.uri, path)
+            val requiresCopy = Build.VERSION.SDK_INT == Build.VERSION_CODES.Q &&
+                (accessible == null || !SystemNnnGameImport.readableBootstrap(accessible) || !systemNnnSavesWritable(context, accessible))
+            if (restoreResources || requiresCopy) {
+                val source = SystemNnnGameDirectory.sourceDocument(game.uri)
+                    ?: return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
+                val granted = SystemNnnGameImport.findAuthorizedSource(context, source)
+                if (granted == null) {
+                    if (!restoreResources) requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
+                    return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
+                }
+                checkSystemNnnCopyConsent(restoreResources, systemNnnCopy)?.let { return it }
+                val caller = currentCoroutineContext()
+                val sourceId = SystemNnnGameImport.sourceIdentity(source)
+                // Only the first copy changes the active sav. Wait for in-flight sync writes
+                // before publishing it. Resource rehydration can already hold launch admission.
+                val imported = try {
+                    systemNnnCopy?.onCopying?.invoke(true)
+                    if (restoreResources) {
+                        SystemNnnGameImport.importDirectory(context, granted, sourceId, false) { caller.ensureActive() }
+                    } else {
+                        SystemNnnGameImport.stageDirectory(context, granted, sourceId, true) { caller.ensureActive() }.use { staged ->
+                            val original = SystemNnnGameDirectory.resolve(source.toString()) ?: path
+                            val originalRoot = accessible?.path ?: try {
+                                original.canonicalPath
+                            } catch (_: IOException) {
+                                original.absolutePath
+                            }
+                            val originalKey = SAVE_DIRECTORY_KEY_PREFIX + originalRoot
+                            SaveSyncLocks.active(originalKey) {
+                                SaveSyncLocks.mutation {
+                                    SaveSyncRuntime.requireLaunchAvailable(context, originalKey)
+                                    staged.publish()
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    if (systemNnnCopy != null) withContext(NonCancellable) { systemNnnCopy.onCopying(false) }
+                }
+                return if (systemNnnSavesWritable(context, imported)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
+            }
+            requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
+            val root = SystemNnnGameDirectory.accessible(game.uri, path) ?: return failed(when {
+                Files.notExists(path.toPath()) -> SystemNnnResourceError.SOURCE_MISSING
+                Files.isRegularFile(path.toPath()) -> SystemNnnResourceError.INVALID_SOURCE
+                else -> SystemNnnResourceError.STORAGE_RESTRICTED
+            })
+            if (!SystemNnnGameImport.readableBootstrap(root)) return failed(SystemNnnResourceError.INVALID_SOURCE)
+            return if (systemNnnSavesWritable(context, root)) null else failed(SystemNnnResourceError.SAVE_NOT_WRITABLE)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: SaveSyncException) {
+            return LaunchResult.Failure.SavePreparationFailed(failure.code)
+        } catch (failure: SystemNnnGameImport.Failure) {
+            return failed(when (failure.reason) {
+                SystemNnnGameImport.Reason.NO_GRANT -> SystemNnnResourceError.STORAGE_RESTRICTED
+                SystemNnnGameImport.Reason.SOURCE_MISSING -> SystemNnnResourceError.SOURCE_MISSING
+                SystemNnnGameImport.Reason.INVALID_SOURCE -> SystemNnnResourceError.INVALID_SOURCE
+                SystemNnnGameImport.Reason.INCOMPLETE_SOURCE, SystemNnnGameImport.Reason.BUSY -> SystemNnnResourceError.SOURCE_BUSY
+                SystemNnnGameImport.Reason.NO_SPACE -> SystemNnnResourceError.NO_SPACE
+                SystemNnnGameImport.Reason.COMMIT_FAILED -> SystemNnnResourceError.COMMIT_FAILED
+                SystemNnnGameImport.Reason.CORRUPT_COPY -> SystemNnnResourceError.CORRUPT_COPY
+                SystemNnnGameImport.Reason.COPY_FAILED -> SystemNnnResourceError.COPY_FAILED
+            })
+        } catch (_: IOException) {
+            return failed(SystemNnnResourceError.COPY_FAILED)
+        } catch (_: SecurityException) {
+            return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
+        }
+    }
+
+    private fun systemNnnSavesWritable(context: Context, root: File): Boolean = try {
+        val saves = SystemNnnHost.saveDirectory(context, root)
+        (if (saves.exists()) saves else root).canWrite()
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+
+    private fun requestSystemNnnStorage(context: Context, game: ScanGame, path: String): LaunchResult.Failure? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return requestAllFilesAccessIfNeeded(context, game, path)
+        if (!needsAllFilesAccess(path) && !path.startsWith("/storage/")) return null
+        val app = context.applicationContext
+        if (app.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+            app.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        ) return null
+        val opened = runCatching {
+            app.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }.isSuccess
+        return if (opened) LaunchResult.Failure.StorageAccessRequested else LaunchResult.Failure.StorageAccessMissing
+    }
+
+    private fun recoverSystemNnnSaves(context: Context, game: ScanGame): LaunchResult.Failure? {
+        if (game.engine != EngineType.SYSTEMNNN) return null
+        return try {
+            GameSaveManager(context).recoverSystemNnnSavesForLaunch(game)
+            null
+        } catch (failure: GameSaveException) {
+            LaunchResult.Failure.SavePreparationFailed(
+                if (failure.code == SaveErrorCode.ENGINE_RUNNING) SaveSyncError.GAME_RUNNING else SaveSyncError.SAVE_UNAVAILABLE,
+            )
+        }
+    }
+
     /** 判断路径是否位于共享存储（原生引擎无法仅凭 SAF 授权读取），供启动前与手动添加目录共用。 */
     internal fun needsAllFilesAccess(path: String): Boolean {
         val normalized = path.replace('\\', '/')
@@ -1021,6 +1234,7 @@ object EngineLauncher {
             EngineType.ETHORNELL -> add(NativeRuntimePack.PACK_ETHORNELL)
 
             EngineType.CMVS -> add(NativeRuntimePack.PACK_CMVS)
+            EngineType.SYSTEMNNN -> add(NativeRuntimePack.PACK_SYSTEMNNN)
 
             // 视频播放（ONS 覆盖层 / Artemis VideoView）依赖 IJK 三件套。
             EngineType.ONS,
@@ -1113,6 +1327,7 @@ object EngineLauncher {
             EngineType.XSYS35 -> buildXs35Intent(context, path, game, settings)
 
             EngineType.XSYS4 -> buildXs4Intent(context, path, game, settings)
+            EngineType.SYSTEMNNN -> SystemNnnHost.createLaunchIntent(context, File(path), game.title)
 
             EngineType.FVP -> buildFvpIntent(context, path, game, settings)
             EngineType.ETHORNELL -> buildEthornellIntent(context, path, game, settings)
@@ -2672,6 +2887,7 @@ object EngineLauncher {
      */
     private fun resolveGameDirectory(context: Context, game: ScanGame): String? {
         val uriText = game.uri
+        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(context, uriText)?.absolutePath
         if (game.engine == EngineType.ETHORNELL) {
             return try {
                 val uri = Uri.parse(uriText)

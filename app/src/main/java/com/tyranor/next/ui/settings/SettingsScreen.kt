@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,6 +67,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.tyranor.next.R
 import com.tyranor.next.core.game.launch.EngineLauncher
 import com.tyranor.next.core.settings.AppSettingsStore
@@ -160,8 +163,11 @@ fun SettingsScreen(
     var updateDownloadPhase by remember { mutableStateOf<UpdateDownloadPhase?>(null) }
     var updateDownloadJob by remember { mutableStateOf<Job?>(null) }
     var showGroupDialog by remember { mutableStateOf(false) }
-    var showScanDirs by remember { mutableStateOf(false) }
+    var showScanDirs by rememberSaveable { mutableStateOf(false) }
     var scanDirs by remember { mutableStateOf(emptyList<String>()) }
+    var showOrphanResourceCleanup by rememberSaveable { mutableStateOf(false) }
+    val resourceCleanup: SystemNnnCleanupViewModel = viewModel()
+    val cleanupState by resourceCleanup.state.collectAsStateWithLifecycle()
     var showPathDialog by remember { mutableStateOf(false) }
     var pathInput by remember { mutableStateOf("") }
     val settingsUpdateLatestMessage = stringResource(R.string.settings_update_latest)
@@ -503,12 +509,10 @@ fun SettingsScreen(
                                         .size(36.dp)
                                         .clip(AppComponentShape)
                                         .clickable(
+                                            enabled = !cleanupState.running,
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
-                                            onClick = {
-                                                GameLibraryFacade.removeRootAndGames(ctx, android.net.Uri.parse(dir))
-                                                scanDirs = GameLibraryFacade.loadRoots(ctx)
-                                            },
+                                            onClick = { resourceCleanup.removeRoot(dir) },
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -520,6 +524,47 @@ fun SettingsScreen(
                                         modifier = Modifier.size(24.dp),
                                     )
                                 }
+                            }
+                        }
+                        item {
+                            NoRippleButton(
+                                text = stringResource(R.string.settings_systemnnn_clear_orphan_resources),
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !cleanupState.running,
+                                tonal = true,
+                                onClick = { showOrphanResourceCleanup = true },
+                            )
+                        }
+                        item {
+                            val result = cleanupState.result
+                            val message = when {
+                                cleanupState.running -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_running)
+                                result != null && result.unverifiable > 0 -> stringResource(
+                                    R.string.settings_systemnnn_clear_orphan_resources_unverifiable,
+                                    result.cleared, result.failed, result.unverifiable,
+                                )
+                                result != null && result.failed > 0 -> stringResource(
+                                    R.string.settings_systemnnn_clear_orphan_resources_incomplete,
+                                    result.cleared, result.failed,
+                                )
+                                cleanupState.canRetry -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_pending)
+                                cleanupState.failed -> stringResource(R.string.save_operation_failed)
+                                result != null && result.cleared > 0 -> stringResource(
+                                    R.string.settings_systemnnn_clear_orphan_resources_done,
+                                    result.cleared,
+                                )
+                                result != null -> stringResource(R.string.settings_systemnnn_clear_orphan_resources_empty)
+                                else -> null
+                            }
+                            if (message != null) {
+                                Text(message, color = PageSecondaryTextColor, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (cleanupState.canRetry && !cleanupState.running) {
+                                NoRippleButton(
+                                    text = stringResource(R.string.common_retry),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = resourceCleanup::retry,
+                                )
                             }
                         }
                     }
@@ -546,6 +591,40 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showOrphanResourceCleanup) {
+        AppAlertDialog(
+            onDismissRequest = { showOrphanResourceCleanup = false },
+            title = {
+                Text(
+                    stringResource(R.string.settings_systemnnn_clear_orphan_resources),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            },
+            text = {
+                Text(
+                    stringResource(R.string.settings_systemnnn_clear_orphan_resources_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_confirm),
+                    enabled = !cleanupState.running,
+                    onClick = {
+                        showOrphanResourceCleanup = false
+                        resourceCleanup.clearUnused()
+                    },
+                )
+            },
+            dismissButton = {
+                DialogTextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { showOrphanResourceCleanup = false },
+                )
+            },
+        )
     }
 
     if (showPathDialog) {

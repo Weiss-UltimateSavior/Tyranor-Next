@@ -57,6 +57,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | CMVS                 | `data/pack/script.cpz` + `start.ps3/ps2`（仅 19 部登记作品）              | 内置 CMVS 原生运行时（cmvs-rs，NativeActivity） |
 | System35             | `*.ALD`（`SA.ALD` 等；根目录或 `GAMEDATA/`）、`System39.ain`/`System39.ini`/`*.wai`/`*.bgi`/`*.alk` | 内置 System3.x 运行时（xsystem35） |
 | System4              | `System40.ini` 或 `AliceStart.ini`（根目录；`*.ain` 为辅助特征）                    | 内置 System4 运行时（xsystem4）      |
+| SystemNNN            | 游戏目录下的 `spt/sys.spt`（不区分大小写）                            | 内置 [SystemNNN-Emberfall 0.6.14](https://github.com/PorisRora/SystemNNN-Emberfall)（ARM64） |
 | YU-RIS               | `yscfg.dat`、`pac/*.ypf`、`YS*.DLL`、`.ymv`                          | 外置 Winlator（winlator-cn）        |
 | CatSystem2           | `config/startup.xml`、`*.int`、`*.cst`、`*.hg3`、`*.kcs` 等组合         | 外置 Winlator（winlator-cn）        |
 | PC（手动添加）        | 游戏页顶栏「添加 PC 游戏」选择目录并指定启动 exe                          | 外置 Winlator（winlator-cn）        |
@@ -79,6 +80,12 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 
 - Android 8.0（API 26）及以上。
 - 当前原生引擎库仅提供 `arm64-v8a`，设备需为 64 位 ARM 架构。
+- SystemNNN 的阅读字号与 PC 存档操作可通过对应页面的悬浮按钮打开。剧情正文字号默认 85%，可选择 100% 恢复原版大小。
+- SystemNNN 影片切到后台后暂停，返回时接着播放。剧情音频未取得焦点时，回到播放器或操作即可重试。
+- SystemNNN 首次使用时解压运行库包。ZIP 导入和 WebDAV 恢复在独立校验进程读取剧情档的输入日志、原生快照结构和随包全局进度，通过后再替换存档。仅含有效全局进度的备份可恢复到没有剧情档和流程图检查点的目录。
+- 使用导入副本的 SystemNNN 游戏可在存档管理中清理资源。移除最后一个库条目时会清理该副本的资源。未入库的残留副本可在「设置 → 游戏目录」中清理。原游戏目录和副本中的全部存档都会保留，再次启动时按原目录授权重新导入资源。
+- SystemNNN 的标题、设置、鉴赏和错误提示跟随应用语言。游戏提供的界面文字和贴图按游戏配置显示。
+- SystemNNN 从直连目录转入同源 SAF 副本时，WebDAV 可继承原会话基线及已提交的恢复链。Android 10 上，首次复制从游戏库启动，需要用户确认。复制可以取消，旋转屏幕后可继续。手动恢复 ZIP 会在解包后确认当前存档目录。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。KRKR 游戏的渲染器、FPS 限制、内存占用等引擎偏好按 Kirikiroid2 内核原生键名写入引擎偏好文件，全局与单游戏覆盖均可生效。
 
@@ -160,6 +167,7 @@ docs/、.archify/                     专题方案、审查记录与可视化
 - Siglus / RealLive / AVG32 / UK2 引擎运行库来自 [siglus_rs](https://github.com/xmoezzz/siglus_rs)（MPL-2.0，上述引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
 - FVP 引擎运行库来自 [rfvp](https://github.com/xmoezzz/rfvp)（MPL-2.0，FVP 引擎的非官方 Rust 重写/移植），以其自身许可证引入；相应源码可于上游或其 fork 仓库获取
 - CMVS 引擎运行库来自 fork [cmvs-rs](https://github.com/Weiss-UltimateSavior/cmvs-rs)（上游 MIT OR Apache-2.0，Purple SOFTWARE CMVS 引擎的 Rust 重实现），固定上游 commit 并在构建时应用绝对路径补丁；源码与补丁清单见 `tools/cmvs/`
+- SystemNNN 运行库 `libsystemnnn.so` 由 PorisRora（Rooboko）维护的 Emberfall 源码构建。Emberfall 自有代码采用 GPL-2.0-only。原版 SystemNNN 由 tinyan 开发。默认碎裂网格由 Emberfall 自行生成，供全屏转场和图层碎裂共用。 [运行库对应源码](https://github.com/PorisRora/SystemNNN-Emberfall/tree/d0170741089e9f29de7329a5e0d4e37d06ff5c71) · [对应构建记录](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt) · [归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt)
 - System35 引擎运行库来自 [xsystem35-sdl2](https://github.com/kichikuou/xsystem35-sdl2)（GPL-2.0-or-later，AliceSoft System 3.x 开源重实现的 SDL2 移植），引擎源码与修改声明见 fork [xsystem35-sdl2](https://github.com/Weiss-UltimateSavior/xsystem35-sdl2)；本仓库仅保留预构建运行库、构建剧本与补丁记录（见 `engine/xsystem35/BUILD.md`）；其依赖 SDL2 / SDL2_mixer（zlib）、freetype（FTL/GPLv2）、libwebp（BSD-3-Clause）按各自许可证引入，许可证文本随 `engine/xsystem35/licenses/` 保留
 - System4 引擎运行库来自 [xsystem4](https://github.com/nunuhara/xsystem4)（GPL-2.0-or-later，AliceSoft System 4 引擎的开源重实现），引擎源码与修改声明见 fork [xsystem4](https://github.com/Weiss-UltimateSavior/xsystem4)；其依赖 libsys4（GPL-2.0-or-later，上游 [libsys4](https://github.com/nunuhara/libsys4)）同样取自 fork [libsys4](https://github.com/Weiss-UltimateSavior/libsys4)。Android 构建仅参考 `kichikuou/xsystem4-android` 的事实信息，未拷贝其任何文件。静态链入的依赖包括 libsndfile fork [libsndfile](https://github.com/Weiss-UltimateSavior/libsndfile)（`xsystem4` 分支，LGPL-2.1-or-later）、libogg / libvorbis / libwebp（BSD-3-Clause）、libjpeg-turbo（BSD-3-Clause / IJG）、libpng、libffi / libdeflate / cglm（MIT）及 freetype（同 System35）；SDL2（zlib）与 System35 共用 `libSDL2x.so`；xsystem4 与 libsys4 内的第三方例外（如 cJSON、pl_mpeg（MIT）、queue.h、base64.c（BSD）、kvec.h（MIT；`vector.h` 与之同声明）、sts_mixer（Unlicense，公有领域）、mt19937int（libsys4，LGPL-2.0-or-later 声明））按各自许可证引入。预构建运行库、构建剧本与补丁记录见 `engine/xsystem4/BUILD.md`，许可证文本随 `engine/xsystem4/licenses/` 保留
 - Anime4K GLSL 着色器（`engine/src/main/assets/anime4k/`）来自 [bloc97/Anime4K](https://github.com/bloc97/Anime4K)，按其 MIT 许可证引入（版权声明保留于各着色器文件头部）
@@ -178,4 +186,3 @@ docs/、.archify/                     专题方案、审查记录与可视化
 - [Anime4K](https://github.com/bloc97/Anime4K):（bloc97，MIT）：KRKR 游戏画面实时超分（线条重建 CNN 着色器）
 - [OnscripterYuri](https://github.com/YuriSizuku/OnscripterYuri): ONS引擎
 - [UsefulUnpack](https://github.com/znso4pa/usefulunpack)（znso4pa，MIT）：XP3 / KSD 解封包 Rust 实现（`engine/rust` 的 `lib.rs` / `common.rs` / `ksd.rs` 来源，许可证见 `engine/rust/LICENSE.usefulunpack`）
-- 各引擎运行时均基于其开源许可引入

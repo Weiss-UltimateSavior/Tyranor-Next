@@ -25,6 +25,8 @@ enum class MirrorPrepareStage {
 }
 
 enum class EthornellPrepareError { RESOURCE_ROOT, BOOTSTRAP, FONT, USER_DATA, SESSION_BUSY }
+enum class SystemNnnResourceError { SOURCE_MISSING, STORAGE_RESTRICTED, COPY_CONFIRMATION_REQUIRED, INVALID_SOURCE, SOURCE_BUSY,
+    NO_SPACE, COPY_FAILED, COMMIT_FAILED, CORRUPT_COPY, SAVE_NOT_WRITABLE }
 
 /**
  * 引擎启动结果（P0-6 错误协议）：成功 / 失败两类，失败携带可程序化区分的类型，
@@ -41,6 +43,7 @@ sealed interface LaunchResult {
         /** 无法把游戏 URI 解析为本地目录路径。 */
         data object GameDirUnresolved : Failure
         data class EthornellPrepareFailed(val error: EthornellPrepareError) : Failure
+        data class SystemNnnResourcesFailed(val error: SystemNnnResourceError) : Failure
         data class SavePreparationFailed(val error: SaveSyncError) : Failure
 
         /** 已打开「管理所有文件」系统授权页，用户返回后需再次启动。 */
@@ -48,6 +51,10 @@ sealed interface LaunchResult {
 
         /** 无法打开授权页且缺少「管理所有文件」权限。 */
         data object AllFilesAccessMissing : Failure
+
+        /** Android 8–10 uses the app's legacy storage permissions. */
+        data object StorageAccessRequested : Failure
+        data object StorageAccessMissing : Failure
 
         /** 内置引擎原生插件保障失败。 */
         data class PluginBootstrapFailed(val reason: EnginePluginBootstrap.Failure) : Failure

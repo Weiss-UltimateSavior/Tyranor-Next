@@ -126,7 +126,7 @@ class SaveLaunchAdmissionRuntimeTest {
             val pendingLaunch = launch(start = CoroutineStart.UNDISPATCHED) {
                 withSaveSyncLaunchAdmission(
                     resolve = { SaveSyncRuntime.launchAdmission(context, game) },
-                    managed = { key -> admitted.complete(key) },
+                    managed = { admission -> admitted.complete(admission?.key) },
                     unmanaged = { throw AssertionError("Verified Ethornell must use managed admission") },
                 )
             }

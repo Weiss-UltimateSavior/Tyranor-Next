@@ -203,6 +203,20 @@
             android:taskAffinity="com.core.Xsys4"
             android:theme="@style/Theme.Xsys4" />
 
+        <activity
+            android:name="com.tyranor.runtime.systemnnn.PlayerActivity"
+            android:exported="false"
+            android:process=":systemnnn"
+            android:taskAffinity="${applicationId}.systemnnn"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/SystemNnnPlayerTheme"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density|fontScale|locale|layoutDirection" />
+
+        <service
+            android:name="com.tyranor.runtime.systemnnn.SystemNnnSaveValidationService"
+            android:exported="false"
+            android:process=":systemnnn_validator" />
+
         <!-- ONS（ons）SDL2 宿主 -->
         <activity
             android:name="com.yuri.onscripter.ONScripter"

@@ -115,16 +115,20 @@ fun HomeScreen(
     }
     val homeWebUrl by AppSettingsStore.homeWebUrlState.collectAsState()
     var webReloadSignal by remember { mutableIntStateOf(0) }
-    var selectedGame by remember { mutableStateOf<ScanGame?>(null) }
+    var selectedGameUri by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedGame = remember(libraryState.games, selectedGameUri) {
+        selectedGameUri?.let { uri -> libraryState.games.firstOrNull { it.uri == uri } }
+    }
     // 卡片长按的操作弹窗目标：只存 uri，每次从最新列表解析（改名/封面更新后仍是新对象）
     var quickActionsGameUri by rememberSaveable { mutableStateOf<String?>(null) }
     val quickActionsGame = remember(libraryState.games, quickActionsGameUri) {
         quickActionsGameUri?.let { uri -> libraryState.games.firstOrNull { it.uri == uri } }
     }
 
-    LaunchedEffect(libraryState.games, quickActionsGameUri) {
-        selectedGame = selectedGame?.let { selected ->
-            libraryState.games.firstOrNull { it.uri == selected.uri }
+    LaunchedEffect(libraryState.loaded, libraryState.games, selectedGameUri, quickActionsGameUri) {
+        if (!libraryState.loaded) return@LaunchedEffect
+        selectedGameUri?.let { uri ->
+            if (libraryState.games.none { it.uri == uri }) selectedGameUri = null
         }
         quickActionsGameUri?.let { uri ->
             if (libraryState.games.none { it.uri == uri }) quickActionsGameUri = null
@@ -132,7 +136,6 @@ fun HomeScreen(
     }
 
     fun replaceGame(updated: ScanGame) {
-        selectedGame = selectedGame?.let { if (it.uri == updated.uri) updated else it }
         onGameUpdated(updated)
     }
 
@@ -167,7 +170,7 @@ fun HomeScreen(
     NativeHomeContent(
         modifier = modifier,
         libraryState = libraryState,
-        onGameClick = { selectedGame = it },
+        onGameClick = { selectedGameUri = it.uri },
         // 长按不再直接启动：打开统一操作弹窗（快捷启动 / 桌面快捷方式 / 改名 / 改封面 / 删除）
         onGameLongClick = { quickActionsGameUri = it.uri },
         onRecentRemoved = onRecentRemoved,
@@ -180,11 +183,11 @@ fun HomeScreen(
         key(game.uri) {
             GameActionsSheet(
                 game = game,
-                onDismiss = { selectedGame = null },
+                onDismiss = { selectedGameUri = null },
                 onGameUpdated = { replaceGame(it) },
                 onEngineSettings = {
                     startActivityWithPageTransition(context, PerGameSettingsActivity.createIntent(context, game))
-                    selectedGame = null
+                    selectedGameUri = null
                 },
             )
         }

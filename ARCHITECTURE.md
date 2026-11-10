@@ -63,7 +63,9 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 4. 内置启动解析真实目录及生效设置，检查权限、插件、存档位置和适用补丁；Kirikiri 的 SAF 镜像等特殊路径由 core 负责准备。SD 卡镜像（`KrSafMirror.prepare`，engine 内 `bridge/`）产出 0 字节占位树 + v2 索引 + 类型化 bootstrap/诊断载荷，经 Intent extras（`SAF_MIRROR_INDEX`/`SAF_MIRROR_ROOT`）传给 `:kirikiri2` 宿主；宿主 `NativeBridge.configureSafMirror` 装载会话快照，libc（open/fopen/freopen/stat/rename 等）GOT 钩子按「相对路径改基 → scoped 存档重定向 → 镜像路由（只读 SAF / 写 copy-up，`KrMirrorOpenRouter`）→ libc 原实现」分流，所有权标记与分片锁由 `KrMirrorLocalFiles` 维护，失败以哨兵（-2→EIO）或类型化阶段（`PrepareException`）回传 core/UI。
 5. App 与宿主使用 [LaunchContract.kt](engine/src/main/java/com/core/engine/LaunchContract.kt) 的常量传递 Intent extras。启动结果为 `LaunchResult`；`Success` 表示已发起启动，不代表游戏已显示首帧或能够通关。
 
-大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4 与 `libSDL2x.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖；CMVS 另在 `lib/` 保留 `libcmvs_loader.so`（NativeActivity `android.app.lib_name`），由 loader 从 `files/engine_runtime/cmvs/` dlopen 真实库并转发 `ANativeActivity_onCreate`。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
+大体积引擎运行库（`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4 与 `libSDL2x.so`、`libsystemnnn.so`）不随 `lib/` 在安装期解压：构建期打成 `assets/engine-runtime/<pack>.zip.xz`，`EngineLauncher` 在拉起对应引擎前于 IO 线程调用 `NativeRuntimePack.ensure` 解压到 `files/engine_runtime/<pack>/`（以 APK `lastUpdateTime:versionName` 判定是否重新解压），宿主进程再按绝对路径 `dlopen`；除 IJK 仅服务视频覆盖层、解压失败只记日志继续启动外，其余分片失败返回 `LaunchResult.Failure.EngineLibraryPackFailed`。`libSDL3.so`、`libSDL2_mixer_xs35.so` 仍留在 `lib/` 作为依赖；CMVS 另在 `lib/` 保留 `libcmvs_loader.so`（NativeActivity `android.app.lib_name`），由 loader 从 `files/engine_runtime/cmvs/` dlopen 真实库并转发 `ANativeActivity_onCreate`。这与 native plugin（Kirikiroid2 / ONS / Artemis）的资产形态一致，但分片按引擎家族划分，为后续单独下载留出入口。
+
+- SystemNNN 在读取游戏文件前解析真实路径并完成共享存储授权。支持绝对路径、文件 URI 及系统外部存储文档 URI。私有 `:systemnnn` 宿主通过显式 Intent 启动，原 Emberfall 独立 APK 的绑定迁为内置类型。
 
 ### 第三方 APK 运行时模块
 
@@ -73,19 +75,20 @@ Schema 导出到 `app/schemas/`。v1→v2 及降级仍允许破坏性恢复并�
 2. `RuntimeModuleRegistry` 保存发现快照与 `AppSettingsStore.KEY_RUNTIME_MODULE_ENABLED`（StringSet，默认空集），经 `StateFlow` 提供给 `ui/runtime/EngineModuleManagementScreen`；刷新、启用/禁用与扫描索引构建在同一互斥区内串行。新模块默认关闭，启用只写开关。
 3. 扫描开始时 `EngineScanner` 取 `RuntimeModuleIndex`（已发现 + 已启用 + 有扫描描述），仅在 `UNKNOWN` / `WEB_OTHER` 等弱结果上调用 `RuntimeModuleMatcher` 匹配 `extensions` / `markers`；命中写入 `ScanGame.runtimeModulePackage`。多模块按 `all` > `any` → marker 数 → 包名排序，旧 URI 绑定优先；扫描是唯一入库入口。
 4. `EngineLauncher` 对 `RUNTIME_MODULE` 直接调用 `RuntimeModuleLauncher`：显式 `ComponentName` + 文件夹绝对路径/标题/协议版本；`Dispatched` 只表示交棒，`ModuleMissing` / `ModuleDisabled` 触发 `RuntimeModuleBindings.degradeGame`。
-5. `RuntimeModuleBindings.reconcile` 在重扫前与应用回前台等时机核对绑定：模块未发现、未启用或包名为空 → `EngineType.UNKNOWN`（保留最后已知 `runtimeModulePackage` 供重扫合并），保留其它字段；发现查询失败时跳过，避免误降级。
+5. `RuntimeModuleBindings.reconcile` 在重扫前与应用回前台等时机核对绑定：模块未发现、未启用或包名为空 → `EngineType.UNKNOWN`（保留最后已知 `runtimeModulePackage` 供重扫合并），保留其它字段；发现查询失败时跳过第三方绑定的降级。旧 Emberfall 内置身份的迁移独立进行。
 6. 绑定经 `ScanGame` → `GameEntity.runtime_module_package`（Room v3）→ `GameRecordCodec` prefs 镜像传播；v2→v3 使用显式 `Migration(2,3)`。
 
 [EngineSettingsResolver](app/src/main/java/com/tyranor/next/core/settings/EngineSettingsResolver.kt) 统一读取引擎全局与单游戏覆盖，`EffectiveEngineSettings` 处理归一化与回退。启动和存档消费同一份生效规则，页面不得另写优先级逻辑。
 
 ## 5. 引擎进程与生命周期
 
-以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
+以 [engine Manifest](engine/src/main/AndroidManifest.xml) 为准，内置宿主均为 `exported=false`，主要分为 `:kirikiri2`、`:krkrsdl3`、`:ons`、多档 `:artemis*`、`:siglus`、`:fbgames`、`:fvp`、`:ethornell`、`:cmvs`、`:systemnnn`、`:xsys35`、`:xsys4`、`:tyrano`、`:rpgmaker`。进程隔离用于控制原生库、全局状态与符号冲突；不提供通用跨引擎热切换保证。第三方 APK 运行时模块运行在用户安装的独立 APK 进程中，不属于上述宿主，也不由 App 建立 JNI 会话。
 
 - FVP、Framebuffer 及 Siglus 关闭滤镜的路径仍由主线程 `Choreographer` 同步驱动原生调用。
 - Siglus 有效滤镜链才启用专用 engine owner 与 GLES consumer；关闭、空链或无效链沿用 SurfaceView 原路径。两种路径共享原生实例准入，不能同时启动第二个 owner。
 - Ethornell 由专用 owner 线程管理 JNI 会话，Surface 世代、会话 token、退出 ACK 与存档操作门禁独立约束。宿主已对齐上游 `0cfff1d` 的 ABI v1 接口面：15 个导出（含 `request_payload`）、Event kind 5 输入对话框与 JSON 回答；kind 5 的 payload 只在 owner 线程两段式读取，UI 线程只持有已解析字符串。随包库当前带 1 个已记录的本地补丁（收敛启动期双重 `bgi-resource` 前缀，并放行顶层 `BGI.gdb` / `BGI####.cad` 到私有 user-root；provenance `dirty=true`）；`--local-static` 通过，严格来源审计要求 clean/已发布源码，见 §6。`EthornellPauseDeviceTest` 已重写为多 stage/step 模型并 3/3 通过；暂停/恢复与 Surface 通过，但精确 guest tick/held 序列不在该夹具覆盖范围。
 - `Surface` 消失、Activity `finish()`、原生销毁完成与进程退出是不同事件。修改宿主必须维护线程归属、资源租约、回调世代和释放时序，不能用强杀结果冒充正常退出。
+- SystemNNN 的播放器在最终存档写入和目录锁释放后撤销任务记录。相同游戏快速重开时，工作线程有界等待上一会话释放存档。只读校验服务运行在单独的 `:systemnnn_validator`，不登记播放器会话。
 
 WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano` 保留历史默认目录，`:rpgmaker` 自设后缀。更改 profile 或本地 HTTP 端口会影响历史网页存储作用域，须同时评估存档兼容。
 
@@ -96,7 +99,7 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 | `engine/src/main/assets/` | Web 注入脚本、字体与运行资源；选定的五个共享 JS 同步到 `app/build/generated/assets/engine/` |
 | `engine/src/main/nativeplugins/` + `app/src/main/nativeplugins/` | 合并共享 `.so` 与 App manifest，重名失败；先打未压缩 zip 容器，再压成 `app/build/generated/assets/nativeplugins/{kirikiroid2,ons,artemis}.zip.xz`（LZMA2 共享字典，运行时解压安装到私有目录） |
 | `app/src/main/assets/` | App 自有资源，当前主要为 `rtp/`；不在此手工保存生成插件 zip |
-| `engine/src/main/jniLibs/arm64-v8a/` | 随 APK 分发的预编译运行库；`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套与 System35/4（含 `libSDL2x.so`）只作为运行库包源，打进 `app/build/generated/assets/engine-runtime/{siglus,fvp,ethornell,krkrsdl3,cmvs,ijk,xsystem}.zip.xz`（CMVS 另有 `libcmvs_loader.so` 留在 `lib/`，由 NativeActivity `lib_name` 加载并转发），不再进 APK 的 `lib/`（首次启动该引擎时由 `NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen） |
+| `engine/src/main/jniLibs/arm64-v8a/` | 随 APK 分发的预编译运行库；`libsiglus.so`、`librfvp.so`、`libethornell.so`、`libkrkrsdl3.so`、`libcmvs_android.so`、IJK 三件套、System35/4（含 `libSDL2x.so`）与 `libsystemnnn.so` 只作为运行库包源，打进 `app/build/generated/assets/engine-runtime/{siglus,fvp,ethornell,krkrsdl3,cmvs,ijk,xsystem,systemnnn}.zip.xz`（CMVS 另有 `libcmvs_loader.so` 留在 `lib/`，由 NativeActivity `lib_name` 加载并转发），不再进 APK 的 `lib/`（首次启动该引擎时由 `NativeRuntimePack` 解压到 `files/engine_runtime/<pack>/`，JNI 桥按绝对路径 dlopen） |
 | `engine/src/main/cpp/` | CMake 现场编译 JNI/图形桥，动态连接既有运行库 |
 | `engine/src/main/graphicsfilters/*.json`、`engine/patches/*.json` | 描述滤镜贡献与固定来源；buildSrc 生成目录并校验资源、许可与相关库哈希。滤镜资产按描述符声明顶左/底左行序契约（见 docs/graphics-filter-coordinates.md）；`asset: null` 的条目为纯重采样节点（Bilinear/Bicubic/Lanczos），不加载卷积着色器 |
 
@@ -105,11 +108,21 @@ WebView 数据目录另行隔离：API 28+ 主进程用 `home` 后缀，`:tyrano
 - XP3 源码与固定依赖在 [engine/rust](engine/rust/Cargo.toml)；`build-archives.sh` 先运行宿主测试，再用 cargo-ndk 生成 `libarchive_xp3_core.so`。JNI panic 防护依赖 unwind，不改为 `panic=abort`。
 - System35/4 的固定来源构建脚本位于 `engine/xsystem35/scripts/`、`engine/xsystem4/scripts/`；共享 `libSDL2x.so` / `org.libsdl.app32`，与 ONS 的 `libSDL2.so` / `org.libsdl.app` 分开维护。
 - Siglus 保留已固定的原始运行库，来源与哈希见 [说明](engine/patches/siglus/README.md)；当前 CI 不重编其 Rust 源码。
+- SystemNNN 从 `assets/engine-runtime/systemnnn.zip.xz` 解压运行库。播放器和校验进程各自核对当前 APK 标记，再按绝对路径调用 `System.load`。CI 核对固定来源、大小、SHA-256、JNI 导出及实际 APK 的分包。Emberfall 自行生成默认碎裂网格，自有代码按 GPL-2.0-only 分发。 [运行库来源](engine/src/main/assets/licenses/systemnnn/ffmpeg-source.txt) · [归属与许可](engine/src/main/assets/licenses/systemnnn/upstream-source.txt)
+- Emberfall `2150bab` 的分包曾在 Android 11（API 30）`sdk_gphone_x86_64` 模拟器通过 ARM64 转译运行《死终Ω神盾》简体版开场并进入标题。该版设备 ZIP 测试确认有效全局进度可导入，损坏包被拒绝且原存档字节保持一致，主进程没有加载 SystemNNN 原生库。
+- Emberfall `d017074` 的独立版与 TYN 测试包均在 Android 11 ARM64 转译模拟器安装成功。TYN 在设备解压后的运行库与 APK 分包一致。新默认网格的全屏转场与图层碎裂在 Host 上通过 800×600 和 1280×720 的渲染检查。
+- 旧版 APK 在 Android 11（API 30）`sdk_gphone_x86_64` 模拟器上通过 ARM64 转译运行《死终Ω神盾》简体版。TYN 从游戏库扫描并启动，读取独立版的自动档，推进一条台词、写入同目录的快存并返回标题。临时用普通文件占用 `sav` 路径时，TYN 在启动播放器前显示写入失败。
+- 同一模拟器验证了独立版的全局进度主备恢复。有效主档配损坏备份时隔离备份，损坏主档配有效备份时恢复进度并保留原文件。两次检查都保留扩展和剧情存档。用游戏原片头临时开启不可跳过，切后台暂停，回前台恢复音频焦点并在播放完成后进入标题。
+- Android 8、Android 10、ARM64 真机和真实 WebDAV 服务的设备验收待执行。存档替换与锁冲突另有 JVM 回归。
 - Ethornell `.so`、provenance JSON 与 ABI header 必须成套核对。当前随包库为 `043fef05…`（27,259,224 B；`0cfff1d` + 1 个已记录的本地补丁 `77b99d93…`，`dirty=true`），补丁同时收敛双重 `bgi-resource` 的 `UserData` 前缀，并把顶层 `BGI.gdb` / `BGI####.cad` 全局数据映射到私有 user-root；发布门禁使用的 `--local-static` 已在本轮校验来源记录和产物字节并通过，但严格源码审计要求 clean/已发布源码，dirty 本地补丁产物不能通过（`release_ready=false`），也不等价于可复现构建。
 
 预编译源码归属决策见 [ADR 0002](docs/adr/0002-prebuilt-engine-libs-source-in-fork.md)。所有生成目录禁止手工维护；共享字体保持不压缩，并兼顾 System35、System4 与 ONS。
 
 ## 7. 其它功能边界
+
+- SystemNNN 在同一 `sav` 目录中通过 `emberfall.lock` 与独立播放器协调存档访问。TYN 只替换自身格式的白名单文件，目录、锁及 PC 数据原地保留。中断恢复材料保存在 `emberfall.migrate/tyn-restore`，独立播放器会拒绝打开该未完成事务，TYN 在持锁时恢复。清理导入副本资源时同时持有来源锁和游戏存档锁，并用标记阻止启动，直到重新导入的资源全部就绪。存档管理与同步在此期间仍使用同一 `sav`。
+- SystemNNN 首次 SAF 复制先在按来源分开的暂存目录写入游戏资源。复制源 `sav`、复核源存档和原子提交副本时才取得目录准入、独占存档变更准入与来源锁。ZIP 恢复和删档在同一来源锁内解析并锁定当前 `sav`。资源重导沿用原存档目录。
+- SystemNNN 的 ZIP 导入在私有 `:systemnnn_validator` 进程通过绑定服务校验。主进程只传应用缓存中的暂存目录名及校验条件，服务只返回结果。服务死亡、校验超时或快照无效时不会替换活动存档。WebDAV 对已核对同源的副本迁移会话基线和已提交的恢复记录，仍有待提交的恢复事务时返回类型化错误。
 
 - 封面：`CoverScraperService` 聚合在线来源，`CoverScrapeTaskManager` 管理应用级批量任务；UI 使用缩略图缓存，不在重组期同步抓取/解码。
 - 存档：`GameSaveManager` 解析位置并导入/导出 ZIP；MV/MZ 的格式转化与互通独立于存档镜像，均采用同源目录解析。Ethornell 存档管理已按 capability 开放（`DEVICE_SAVE_IO_VERIFIED=true` 与 `HOST_DISPATCH_PROTOCOL_VERIFIED=true`）；范围仅 App 私有 user-root 的备份/恢复/删除，ZIP 单个文件上限 64 MiB（与 native 原子写一致），总量 1 GiB 预算不等于该上限；不自动导入资源根 `UserData`，不承诺商业游戏内槽位兼容或 PC 格式互通。

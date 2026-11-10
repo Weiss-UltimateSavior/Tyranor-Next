@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.documentfile.provider.DocumentFile
+import com.core.nativeplugin.NativeRuntimePack
 import com.tyranor.next.R
 import com.tyranor.next.core.engine.EngineType
 import com.tyranor.next.core.game.launch.CmvsLaunchFiles
@@ -13,12 +14,23 @@ import com.tyranor.next.core.game.manual.AndroidAppGames
 import com.tyranor.next.core.game.model.EthornellPaths
 import com.tyranor.next.core.game.model.GamePathUtils
 import com.tyranor.next.core.game.model.ScanGame
+import com.tyranor.next.core.game.storage.SystemNnnGameDirectory
+import com.tyranor.next.core.game.save.sync.SaveSyncException
 import com.tyranor.next.core.game.model.Xs35Paths
 import com.tyranor.next.core.game.model.Xs4Paths
-import com.tyranor.next.core.i18n.AppLocaleController
+import com.tyranor.next.core.game.save.sync.SaveSyncLocks
+import com.tyranor.next.core.game.save.sync.SaveSyncRuntime
+import com.tyranor.next.core.game.scan.EngineScanner
+import com.tyranor.next.core.game.storage.GameLibraryFacade
 import com.tyranor.next.core.settings.EngineSettingsResolver
 import com.tyranor.next.core.settings.EngineSettingsStore
+import com.tyranor.runtime.systemnnn.SystemNnnGameImport
+import com.tyranor.runtime.systemnnn.SystemNnnHost
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -32,12 +44,10 @@ import java.util.zip.ZipOutputStream
 
 class GameSaveManager(private val context: Context) {
     private val appContext = context.applicationContext
-    private val localizedContext: Context
-        get() = AppLocaleController.wrap(appContext)
 
     data class SaveLocation(
         val directory: File?,
-        val description: String,
+        @get:StringRes val descriptionRes: Int,
         val available: Boolean,
         /** 存档路径被 SD 镜像强制接管（与独立存档开关无关），UI 据此置灰开关并显示引导。 */
         val mirrorForced: Boolean = false,
@@ -49,7 +59,7 @@ class GameSaveManager(private val context: Context) {
         if (AndroidAppGames.isAndroidApp(game)) {
             return SaveLocation(
                 null,
-                text(R.string.save_location_engine_no_file_interface, game.engine.displayName),
+                R.string.save_location_engine_no_file_interface,
                 false,
             )
         }
@@ -58,7 +68,7 @@ class GameSaveManager(private val context: Context) {
         if (game.engine == EngineType.RUFFLE) {
             return SaveLocation(
                 null,
-                text(R.string.save_location_engine_no_file_interface, game.engine.displayName),
+                R.string.save_location_engine_no_file_interface,
                 false,
             )
         }
@@ -69,7 +79,7 @@ class GameSaveManager(private val context: Context) {
                 .userDataDir(appContext.filesDir, game.uri)
             return SaveLocation(
                 directory,
-                text(R.string.save_location_engine_scoped, game.engine.displayName),
+                R.string.save_location_engine_scoped,
                 directory.isDirectory || directory.mkdirs(),
             )
         }
@@ -88,12 +98,12 @@ class GameSaveManager(private val context: Context) {
             }
             return SaveLocation(
                 directory,
-                text(R.string.save_location_engine_scoped, game.engine.displayName),
+                R.string.save_location_engine_scoped,
                 directory != null && EthornellSaveCapability.available,
             )
         }
         val root = resolveGameDirectory(game)
-            ?: return SaveLocation(null, text(R.string.save_error_resolve_game_dir), false)
+            ?: return SaveLocation(null, R.string.save_error_resolve_game_dir, false)
         // 三级设置统一解析（应用级 + 单游戏覆盖），避免本类重复逐字段合并（P0-3）
         val settings = EngineSettingsResolver.resolve(appContext, game, root)
 
@@ -104,7 +114,7 @@ class GameSaveManager(private val context: Context) {
                 if (GamePathUtils.isRemovableStoragePath(root)) {
                     return SaveLocation(
                         File(bridge.KrSafMirror.mirrorRootFor(appContext, game.uri, root), "savedata"),
-                        text(R.string.save_location_krkr_sd_mirror),
+                        R.string.save_location_krkr_sd_mirror,
                         true,
                         mirrorForced = true,
                     )
@@ -112,32 +122,32 @@ class GameSaveManager(private val context: Context) {
                 if (settings.krScopedSaveDir) {
                     if (settings.krKernel == EngineSettingsStore.KERNEL_KRKRSDL3) {
                         val external = appContext.getExternalFilesDir(null)
-                            ?: return SaveLocation(null, text(R.string.save_error_krkr_sdl3_external_unavailable), false)
+                            ?: return SaveLocation(null, R.string.save_error_krkr_sdl3_external_unavailable, false)
                         SaveLocation(
                             File(File(external, "save"), GamePathUtils.safeSaveName(root)),
-                            text(R.string.save_location_krkr_sdl3_scoped),
+                            R.string.save_location_krkr_sdl3_scoped,
                             true,
                         )
                     } else {
                         val internal = appContext.filesDir
-                            ?: return SaveLocation(null, text(R.string.save_error_app_internal_unavailable), false)
+                            ?: return SaveLocation(null, R.string.save_error_app_internal_unavailable, false)
                         SaveLocation(
                             File(File(File(internal, "krkr_mirror"), GamePathUtils.safeSaveName(root)), "savedata"),
-                            text(R.string.save_location_krkr_scoped),
+                            R.string.save_location_krkr_scoped,
                             true,
                         )
                     }
                 } else {
-                    SaveLocation(File(root, "savedata"), text(R.string.save_location_krkr_game_dir), true)
+                    SaveLocation(File(root, "savedata"), R.string.save_location_krkr_game_dir, true)
                 }
             }
             EngineType.ONS -> {
                 if (settings.ons.scopedSaveDir) {
                     val external = appContext.getExternalFilesDir(null)
-                        ?: return SaveLocation(null, text(R.string.save_error_ons_external_unavailable), false)
-                    SaveLocation(File(File(external, "save"), File(root).name), text(R.string.save_location_ons_scoped), true)
+                        ?: return SaveLocation(null, R.string.save_error_ons_external_unavailable, false)
+                    SaveLocation(File(File(external, "save"), File(root).name), R.string.save_location_ons_scoped, true)
                 } else {
-                    SaveLocation(File(root, "save"), text(R.string.save_location_ons_game_dir), true)
+                    SaveLocation(File(root, "save"), R.string.save_location_ons_game_dir, true)
                 }
             }
             EngineType.TYRANO,
@@ -146,16 +156,16 @@ class GameSaveManager(private val context: Context) {
                 // Tyrano 与 RPG Maker Web 共用 TyranoActivity，存档目录开关保持同一套配置。
                 if (settings.webScopedSaveDir) {
                     val external = appContext.getExternalFilesDir(null)
-                        ?: return SaveLocation(null, text(R.string.save_error_tyrano_external_unavailable), false)
+                        ?: return SaveLocation(null, R.string.save_error_tyrano_external_unavailable, false)
                     SaveLocation(
                         File(File(File(external, "save"), "tyrano"), GamePathUtils.safeSaveName(root)),
-                        text(R.string.save_location_engine_scoped, game.engine.displayName),
+                        R.string.save_location_engine_scoped,
                         true,
                     )
                 } else {
                     SaveLocation(
                         File(root, "savedata"),
-                        text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                        R.string.save_location_engine_game_dir,
                         true,
                     )
                 }
@@ -170,17 +180,17 @@ class GameSaveManager(private val context: Context) {
             EngineType.PSP, EngineType.NINTENDO_SWITCH, EngineType.CATSYSTEM2, EngineType.PC,
             // ANDROID_APP 在函数开头已提前返回（无文件存档接口），此分支仅为 when 完备性
             EngineType.ANDROID_APP ->
-                SaveLocation(null, text(R.string.save_location_engine_no_file_interface, game.engine.displayName), false)
-            EngineType.ARTEMIS -> SaveLocation(File(root), text(R.string.save_location_artemis_game_dir), true)
+                SaveLocation(null, R.string.save_location_engine_no_file_interface, false)
+            EngineType.ARTEMIS -> SaveLocation(File(root), R.string.save_location_artemis_game_dir, true)
             EngineType.SIGLUS -> SaveLocation(
                 File(root, "savedata"),
-                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                R.string.save_location_engine_game_dir,
                 true,
             )
             // RealLive：存档固定在游戏目录 savedata_rs/
             EngineType.REALLIVE -> SaveLocation(
                 File(root, "savedata_rs"),
-                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                R.string.save_location_engine_game_dir,
                 true,
             )
             // AVG32（SAVE.INI）/ UK2（FLAGnn.DAT）：存档是游戏目录内的单个/多个文件，
@@ -189,13 +199,13 @@ class GameSaveManager(private val context: Context) {
             EngineType.AVG32,
             EngineType.UK2 -> SaveLocation(
                 File(root),
-                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                R.string.save_location_engine_game_dir,
                 true,
             )
             // FVP（rfvp）：存档固定在游戏目录 save/（rfvp_s###.bin，读取兼容 s###.bin）
             EngineType.FVP -> SaveLocation(
                 File(root, "save"),
-                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                R.string.save_location_engine_game_dir,
                 true,
             )
             // System35（xsystem35）：独立存档开（默认）→ 应用外部存档目录；关闭 → `<生效游戏目录>/save`。
@@ -203,16 +213,16 @@ class GameSaveManager(private val context: Context) {
             EngineType.XSYS35 -> {
                 if (settings.xs35ScopedSaveDir) {
                     val external = appContext.getExternalFilesDir(null)
-                        ?: return SaveLocation(null, text(R.string.save_error_xsys35_external_unavailable), false)
+                        ?: return SaveLocation(null, R.string.save_error_xsys35_external_unavailable, false)
                     SaveLocation(
                         Xs35Paths.scopedSaveDir(external, root),
-                        text(R.string.save_location_engine_scoped, game.engine.displayName),
+                        R.string.save_location_engine_scoped,
                         true,
                     )
                 } else {
                     SaveLocation(
                         Xs35Paths.gameDirSaveDir(Xs35Paths.effectiveGameDir(File(root))),
-                        text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                        R.string.save_location_engine_game_dir,
                         true,
                     )
                 }
@@ -223,16 +233,16 @@ class GameSaveManager(private val context: Context) {
             EngineType.XSYS4 -> {
                 if (settings.xs4ScopedSaveDir) {
                     val external = appContext.getExternalFilesDir(null)
-                        ?: return SaveLocation(null, text(R.string.save_error_xsys4_external_unavailable), false)
+                        ?: return SaveLocation(null, R.string.save_error_xsys4_external_unavailable, false)
                     SaveLocation(
                         Xs4Paths.scopedSaveDir(external, root),
-                        text(R.string.save_location_engine_scoped, game.engine.displayName),
+                        R.string.save_location_engine_scoped,
                         true,
                     )
                 } else {
                     SaveLocation(
                         Xs4Paths.gameDirSaveDir(File(root)),
-                        text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                        R.string.save_location_engine_game_dir,
                         true,
                     )
                 }
@@ -240,10 +250,20 @@ class GameSaveManager(private val context: Context) {
             // YU-RIS：存档固定在游戏目录 save/（经 Winlator 运行但落盘在游戏目录，可纳入统一存档管理）
             EngineType.YURIS -> SaveLocation(
                 File(root, "save"),
-                text(R.string.save_location_engine_game_dir, game.engine.displayName),
+                R.string.save_location_engine_game_dir,
                 true,
             )
-            EngineType.UNKNOWN -> SaveLocation(null, text(R.string.save_location_unknown_unsupported), false)
+            EngineType.SYSTEMNNN -> {
+                val directory = try {
+                    SystemNnnHost.saveDirectory(appContext, File(root))
+                } catch (_: IOException) {
+                    null
+                } catch (_: SecurityException) {
+                    null
+                }
+                SaveLocation(directory, R.string.save_location_engine_game_dir, directory != null)
+            }
+            EngineType.UNKNOWN -> SaveLocation(null, R.string.save_location_unknown_unsupported, false)
         }
     }
 
@@ -260,6 +280,14 @@ class GameSaveManager(private val context: Context) {
     }
 
     suspend fun listSaveFiles(game: ScanGame, strict: Boolean = false, expectedDirectory: File? = null): List<File> {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            return try {
+                withSystemNnnSaveFiles(game, expectedDirectory) { it }
+            } catch (failure: GameSaveException) {
+                if (strict) throw failure
+                emptyList()
+            }
+        }
         if (game.engine == EngineType.ETHORNELL) {
             // Sync snapshots must distinguish an empty save from unavailable or busy data;
             // otherwise an empty fingerprint could retire a pending upload session.
@@ -283,7 +311,15 @@ class GameSaveManager(private val context: Context) {
                 }
             }
         }
-        val location = resolveSaveLocation(game)
+        return listDirectorySaveFiles(game.engine, resolveSaveLocation(game), strict, expectedDirectory)
+    }
+
+    private fun listDirectorySaveFiles(
+        engine: EngineType,
+        location: SaveLocation,
+        strict: Boolean = false,
+        expectedDirectory: File? = null,
+    ): List<File> {
         val resolved = location.directory ?: return emptyList()
         val directory = if (strict) checkedSyncDirectory(resolved) else resolved
         if (expectedDirectory != null && directory != checkedSyncDirectory(expectedDirectory)) {
@@ -295,8 +331,26 @@ class GameSaveManager(private val context: Context) {
             return emptyList()
         }
         return buildList {
-            collectFiles(directory, this, excludeFor(game.engine), location.mirrorForced, strict)
+            collectFiles(directory, this, excludeFor(engine), location.mirrorForced, strict)
         }
+    }
+
+    internal data class SaveListSnapshot(
+        val location: SaveLocation,
+        val fileCount: Int,
+        val hasImportedResources: Boolean = false,
+    )
+
+    internal suspend fun inspectSaves(game: ScanGame): SaveListSnapshot {
+        if (game.engine == EngineType.SYSTEMNNN) return withSystemNnnSourceLock(game) {
+            val location = resolveSaveLocation(game)
+            val count = if (location.available) withSystemNnnSaveFiles(game, location.directory, List<File>::size) else 0
+            SaveListSnapshot(location, count, hasImportedSystemNnnResources(game))
+        }
+        val location = resolveSaveLocation(game)
+        val files = if (game.engine == EngineType.ETHORNELL) listSaveFiles(game)
+        else listDirectorySaveFiles(game.engine, location)
+        return SaveListSnapshot(location, files.size)
     }
 
     /** 存档导出格式：Tyranor 原生 / JoiPlay+PC 标准（仅 RPG Maker MV/MZ 可选，内容字节一致仅换名）。 */
@@ -310,6 +364,23 @@ class GameSaveManager(private val context: Context) {
         strict: Boolean = false,
         expectedDirectory: File? = null,
     ): Int {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            val store = systemNnnStore(game, expectedDirectory)
+            return store.access {
+                val files = store.files()
+                if (files.isEmpty()) throw GameSaveException(SaveErrorCode.NO_EXPORTABLE_FILES)
+                val output = appContext.contentResolver.openOutputStream(destinationUri, "w")
+                    ?: throw GameSaveException(SaveErrorCode.CREATE_EXPORT_ZIP)
+                ZipOutputStream(output).use { zip ->
+                    for ((name, file) in files) {
+                        zip.putNextEntry(ZipEntry(safeZipEntryName(name)).apply { time = file.lastModified() })
+                        file.inputStream().use { it.copyTo(zip) }
+                        zip.closeEntry()
+                    }
+                }
+                files.size
+            }
+        }
         requireCmvsIdle(game.engine)
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { store ->
             store.export {
@@ -356,6 +427,26 @@ class GameSaveManager(private val context: Context) {
         expectedDirectory: File? = null,
         onDirectoryCommitted: (() -> Unit)? = null,
     ): Int {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            return withContext(Dispatchers.IO) {
+                val temporary = createZipStaging(appContext.cacheDir)
+                try {
+                    extractZip(sourceUri, temporary)
+                    val caller = currentCoroutineContext()
+                    caller.ensureActive()
+                    if (!NativeRuntimePack.ensure(appContext, NativeRuntimePack.PACK_SYSTEMNNN)) {
+                        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                    }
+                    val replace: (SystemNnnSaveStore) -> Int = { store ->
+                        store.access { store.replace(temporary, { caller.ensureActive() }) { onDirectoryCommitted?.invoke() } }
+                    }
+                    if (expectedDirectory == null) withManualSystemNnnSaveWrite(game, replace)
+                    else withSystemNnnSaveTarget(game, expectedDirectory, replace)
+                } finally {
+                    deleteImportTree(temporary)
+                }
+            }
+        }
         requireCmvsIdle(game.engine)
         if (manualSelection) {
             resolveSaveLocation(game).directory?.let(::checkedSyncDirectory)
@@ -385,13 +476,17 @@ class GameSaveManager(private val context: Context) {
     /** Completes excluded-resource recovery for an interrupted cloud version import, without importing again. */
     internal fun completePendingVersionImport(game: ScanGame, expectedDirectory: File? = null): Unit = synchronized(importLock) {
         synchronized(RpgSaveSyncState.INTEROP_LOCK) {
-            val destination = syncSaveDirectory(game)
-            if (expectedDirectory != null && destination != checkedSyncDirectory(expectedDirectory)) {
-                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            if (game.engine == EngineType.SYSTEMNNN) {
+                systemNnnStore(game, expectedDirectory).access {}
+            } else {
+                val destination = syncSaveDirectory(game)
+                if (expectedDirectory != null && destination != checkedSyncDirectory(expectedDirectory)) {
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                }
+                val backup = File(destination.parentFile, destination.name + ".import_backup")
+                checkedSyncDirectory(backup)
+                recoverImportBackup(game, destination, backup)
             }
-            val backup = File(destination.parentFile, destination.name + ".import_backup")
-            checkedSyncDirectory(backup)
-            recoverImportBackup(game, destination, backup)
         }
     }
 
@@ -467,7 +562,7 @@ class GameSaveManager(private val context: Context) {
             return importSaveDirectory(destination, excludeFor(game.engine), restoreExcluded,
                 transaction = SaveImportTransaction(destination, game.uri),
                 onDirectoryCommitted = onDirectoryCommitted) {
-                val extracted = createTemporaryDirectory().also { temp = it }
+                val extracted = createZipStaging(appContext.cacheDir).also { temp = it }
                 if (extractZip(sourceUri, extracted) == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
                 unwrapOuterDirs(extracted, game.engine)
             }
@@ -478,6 +573,9 @@ class GameSaveManager(private val context: Context) {
 
     @Throws(IOException::class)
     suspend fun deleteSaves(game: ScanGame): Int {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            return withManualSystemNnnSaveWrite(game) { store -> store.access { store.replace(null) } }
+        }
         requireCmvsIdle(game.engine)
         if (game.engine == EngineType.ETHORNELL) return ethornellOperation(game) { it.delete() }
         return synchronized(RpgSaveSyncState.INTEROP_LOCK) {
@@ -497,6 +595,18 @@ class GameSaveManager(private val context: Context) {
     fun cleanupAppData(game: ScanGame) = cleanupAppData(game, resolveSaveLocation(game).directory)
 
     internal fun cleanupAppData(game: ScanGame, expectedDirectory: File?) {
+        if (game.engine == EngineType.SYSTEMNNN) {
+            val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri) ?: return
+            val copy = SystemNnnGameImport.committedRoot(appContext, sourceId) ?: return
+            val directory = SystemNnnHost.saveDirectory(appContext, copy)
+            if (directory.canonicalPath != expectedDirectory?.canonicalPath) {
+                throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+            }
+            GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId, excludingUri = game.uri) {
+                evictSystemNnnResources(sourceId)
+            }
+            return
+        }
         if (game.engine == EngineType.ETHORNELL) {
             // Retain on busy, disabled, damaged path, or incomplete recovery.
             // Library removal is not permission to delete an uncertain tree.
@@ -656,7 +766,164 @@ class GameSaveManager(private val context: Context) {
             }
         }
 
+    // Manual operations do not have a pinned directory yet. Exclude WebDAV writes
+    // through version bookkeeping, then resolve the target under the import lock.
+    private suspend fun <T> withManualSystemNnnSaveWrite(game: ScanGame, operation: (SystemNnnSaveStore) -> T): T =
+        SaveSyncLocks.mutation {
+            withSystemNnnSaveTarget(game, null) { store ->
+                SaveSyncRuntime.requireLaunchAvailable(appContext, SaveSyncRuntime.activeKey(appContext, game))
+                operation(store)
+            }
+        }
+
+    private fun <T> withSystemNnnSaveTarget(
+        game: ScanGame,
+        expectedDirectory: File?,
+        operation: (SystemNnnSaveStore) -> T,
+    ): T = withSystemNnnSourceLock(game) { operation(systemNnnStore(game, expectedDirectory)) }
+
+    private fun <T> withSystemNnnSourceLock(game: ScanGame, operation: () -> T): T = try {
+        val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri)
+        if (sourceId == null) {
+            operation()
+        } else {
+            SystemNnnGameImport.withImportLock(appContext, sourceId) { operation() }
+        }
+    } catch (failure: GameSaveException) {
+        throw failure
+    } catch (failure: SaveSyncException) {
+        throw failure
+    } catch (failure: SystemNnnGameImport.Failure) {
+        val code = if (failure.reason == SystemNnnGameImport.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
+        else SaveErrorCode.SAVE_DIR_UNAVAILABLE
+        throw GameSaveException(code, cause = failure)
+    } catch (failure: IOException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+    } catch (failure: SecurityException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+    }
+
+    private fun systemNnnStore(game: ScanGame, expectedDirectory: File? = null): SystemNnnSaveStore {
+        val root = SystemNnnGameDirectory.accessible(appContext, game.uri)
+            ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val directory = try {
+            SystemNnnHost.saveDirectory(appContext, root)
+        } catch (failure: IOException) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+        } catch (failure: SecurityException) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+        }
+        if (expectedDirectory != null && checkedSyncDirectory(directory) != checkedSyncDirectory(expectedDirectory)) {
+            throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+        }
+        return SystemNnnSaveStore(root, directory, validateSnapshot = { stage, _, existing, checkCancelled ->
+            SystemNnnHost.validateStagedSaveSnapshot(appContext, stage, existing, checkCancelled)
+        })
+    }
+
+    internal fun recoverSystemNnnSavesForLaunch(game: ScanGame) = systemNnnStore(game).recoverForLaunch()
+
+    internal fun hasImportedSystemNnnResources(game: ScanGame): Boolean =
+        game.engine == EngineType.SYSTEMNNN && runCatching {
+            SystemNnnGameDirectory.committed(appContext, game.uri)
+                ?.let(SystemNnnGameImport::hasImportedResources) == true
+        }.getOrDefault(false)
+
+    internal suspend fun clearImportedSystemNnnResources(game: ScanGame, onlyIfUnreferenced: Boolean = false): Boolean {
+        if (game.engine != EngineType.SYSTEMNNN) return false
+        val sourceId = SystemNnnGameDirectory.sourceIdentity(game.uri)
+            ?: throw GameSaveException(SaveErrorCode.RESOLVE_SAVE_DIR_FAILED)
+        val key = SaveSyncRuntime.activeKey(appContext, game)
+        val coroutine = currentCoroutineContext()
+        return SaveSyncLocks.active(key) {
+            SaveSyncLocks.mutation(key) {
+                if (SaveSyncRuntime.activeKey(appContext, game) != key) {
+                    throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE)
+                }
+                val running = SaveSyncRuntime.isGameRunning(appContext, game)
+                val evictIfIdle = {
+                    coroutine.ensureActive()
+                    if (running) throw GameSaveException(SaveErrorCode.ENGINE_RUNNING)
+                    evictSystemNnnResources(sourceId)
+                }
+                if (onlyIfUnreferenced) {
+                    GameLibraryFacade.evictUnusedSystemNnnCopy(appContext, sourceId, evict = evictIfIdle)
+                } else {
+                    evictIfIdle()
+                }
+            }
+        }
+    }
+
+    internal data class OrphanResourceCleanup(
+        val cleared: Int,
+        val failedGames: List<ScanGame>,
+        val unverifiable: Int = 0,
+    ) {
+        val failed: Int get() = failedGames.size
+    }
+
+    internal suspend fun clearUnreferencedSystemNnnResources(pending: List<ScanGame>): OrphanResourceCleanup =
+        withContext(Dispatchers.IO) {
+            val referenced = GameLibraryFacade.loadGames(appContext).mapNotNullTo(HashSet()) {
+                SystemNnnGameDirectory.sourceIdentity(it.uri)
+            }
+            val inventory = SystemNnnGameImport.importedResources(appContext)
+            val pendingBySource = pending.associateBy { SystemNnnGameDirectory.sourceIdentity(it.uri) }
+            val orphans = inventory.sourceIds
+                .filterNot { it in referenced }
+                .map { sourceId ->
+                    pendingBySource[sourceId] ?: ScanGame(
+                        title = sourceId,
+                        uri = SystemNnnGameDirectory.sourceUri(sourceId).toString(),
+                        engine = EngineType.SYSTEMNNN,
+                        launchTarget = EngineScanner.LAUNCH_TARGET_GAME_DIR,
+                    )
+                }
+            clearSystemNnnResourceTargets(orphans).copy(unverifiable = inventory.unverifiable)
+        }
+
+    internal suspend fun clearSystemNnnResourceTargets(games: List<ScanGame>): OrphanResourceCleanup =
+        withContext(Dispatchers.IO) {
+            var cleared = 0
+            val failed = ArrayList<ScanGame>()
+            val seen = HashSet<String>()
+            for (game in games) {
+                ensureActive()
+                try {
+                    if (!seen.add(SystemNnnGameDirectory.sourceIdentity(game.uri) ?: game.uri)) continue
+                    if (clearImportedSystemNnnResources(game, onlyIfUnreferenced = true)) cleared++
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    failed += game
+                    android.util.Log.w("GameSaveManager", "Could not clear unreferenced SystemNNN resources", failure)
+                }
+            }
+            OrphanResourceCleanup(cleared, failed)
+        }
+
+    private fun evictSystemNnnResources(sourceId: String): Boolean = try {
+        SystemNnnGameImport.clearResources(appContext, sourceId)
+    } catch (failure: SystemNnnHost.SaveBusyException) {
+        throw GameSaveException(SaveErrorCode.ENGINE_RUNNING, cause = failure)
+    } catch (failure: SystemNnnGameImport.Failure) {
+        val code = if (failure.reason == SystemNnnGameImport.Reason.BUSY) SaveErrorCode.ENGINE_RUNNING
+        else SaveErrorCode.SAVE_DIR_UNAVAILABLE
+        throw GameSaveException(code, cause = failure)
+    } catch (failure: IOException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+    } catch (failure: SecurityException) {
+        throw GameSaveException(SaveErrorCode.SAVE_DIR_UNAVAILABLE, cause = failure)
+    }
+
+    internal fun <T> withSystemNnnSaveFiles(game: ScanGame, expectedDirectory: File?, use: (List<File>) -> T): T {
+        val store = systemNnnStore(game, expectedDirectory)
+        return store.access { use(store.files().values.toList()) }
+    }
+
     private fun resolveGameDirectory(game: ScanGame): String? {
+        if (game.engine == EngineType.SYSTEMNNN) return SystemNnnGameDirectory.accessible(appContext, game.uri)?.absolutePath
         // 与 EngineLauncher.resolveGameDirectory 保持同源：镜像 key 由 (uri, path) 派生，
         // 两边解析出不同路径会让存档管理/清理指向错误镜像。
         GamePathUtils.safUriToPath(game.uri)?.let { path ->
@@ -790,17 +1057,6 @@ class GameSaveManager(private val context: Context) {
             normalized.endsWith(".pak") || normalized.endsWith(".dat.arc")
     }
 
-    @Throws(IOException::class)
-    private fun createTemporaryDirectory(): File {
-        val directory = File.createTempFile("save_zip_", "", appContext.cacheDir)
-        if (!directory.delete() || !directory.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_TEMP_DIR)
-        return directory
-    }
-
-    /** 存档位置描述文案（UI 展示用，非异常协议；P0-5 后续收敛为错误码）。 */
-    private fun text(@StringRes id: Int, vararg args: Any): String =
-        localizedContext.getString(id, *args)
-
     companion object {
         /** Only the admitted active directory may be deleted, never an inactive sibling/root. */
         internal fun appDataCleanupTarget(guardedDirectory: File?, candidate: File, appRoots: List<File>): File? {
@@ -819,7 +1075,7 @@ class GameSaveManager(private val context: Context) {
             EngineType.KIRIKIRI, EngineType.ONS, EngineType.TYRANO, EngineType.RPG_MV, EngineType.RPG_MZ,
             EngineType.ARTEMIS, EngineType.SIGLUS, EngineType.REALLIVE, EngineType.AVG32, EngineType.UK2,
             EngineType.FVP, EngineType.XSYS35, EngineType.XSYS4, EngineType.YURIS, EngineType.ETHORNELL,
-            EngineType.CMVS -> true
+            EngineType.CMVS, EngineType.SYSTEMNNN -> true
             else -> false
         }
 
@@ -933,6 +1189,13 @@ class GameSaveManager(private val context: Context) {
                 directory.name + ".import_backup_retained2",
             ).map { File(parent, it) }.filter { Files.exists(it.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS) } +
                 SaveImportTransaction.recoveryCopies(directory)
+        }
+
+        /** Resolve aliases on the app-owned cache root before validating the staged archive. */
+        internal fun createZipStaging(cacheDirectory: File): File = try {
+            Files.createTempDirectory(cacheDirectory.canonicalFile.toPath(), SystemNnnHost.SAVE_ZIP_STAGING_PREFIX).toFile()
+        } catch (failure: IOException) {
+            throw GameSaveException(SaveErrorCode.CREATE_TEMP_DIR, cause = failure)
         }
 
         /** Parse the actual import stream independently of Android URI acquisition. */

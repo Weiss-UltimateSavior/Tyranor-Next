@@ -104,6 +104,14 @@
     <string name="settings_join_group">コミュニティに参加</string>
     <string name="settings_game_dirs_title">ゲームフォルダ</string>
     <string name="settings_no_game_dirs">ゲームフォルダはありません</string>
+    <string name="settings_systemnnn_clear_orphan_resources">未登録の SystemNNN ゲームデータを削除</string>
+    <string name="settings_systemnnn_clear_orphan_resources_message">ゲームライブラリに登録されていない SystemNNN の取り込み済みコピーから、ゲームデータを削除します。元のゲームフォルダとすべてのセーブデータは残ります。ゲームを再登録すると、ゲームデータを取り込み直せます。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_done">SystemNNN のコピー %1$d 件からゲームデータを削除しました</string>
+    <string name="settings_systemnnn_clear_orphan_resources_empty">削除できる未登録の SystemNNN ゲームデータはありません</string>
+    <string name="settings_systemnnn_clear_orphan_resources_incomplete">%1$d 件を削除しました。%2$d 件は削除できませんでした。実行中のゲームを終了して再試行してください。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_unverifiable">%1$d 件を削除しました。%2$d 件は削除できませんでした。確認できなかった %3$d 件は保持しました。</string>
+    <string name="settings_systemnnn_clear_orphan_resources_running">SystemNNN のゲームデータを削除しています…</string>
+    <string name="settings_systemnnn_clear_orphan_resources_pending">一部の SystemNNN ゲームデータを削除できませんでした。再試行できます。</string>
     <string name="settings_invalid_suffix">無効</string>
     <string name="settings_add_dir">フォルダを追加</string>
     <string name="settings_input_path">パスを入力</string>
@@ -791,6 +799,8 @@
     <string name="launch_failed">起動に失敗しました</string>
     <string name="launch_all_files_access_request">システム設定で「すべてのファイルの管理」を許可し、戻ってから再度ゲームを起動してください</string>
     <string name="launch_all_files_access_missing">「すべてのファイルの管理」権限がないため、ネイティブエンジンがゲームフォルダを読み取れません</string>
+    <string name="launch_storage_access_request">システム設定でストレージへのアクセスを許可し、戻ってからゲームを起動してください</string>
+    <string name="launch_storage_access_missing">システム設定で Tyranor-Next にストレージへのアクセスを許可してください</string>
     <string name="launch_krkr_save_path_not_dir">KRKR セーブパスは存在しますがフォルダではありません：%1$s</string>
     <string name="launch_create_krkr_scoped_save_failed">KRKR アプリ個別セーブフォルダを作成できません：%1$s</string>
     <string name="launch_create_krkr_save_failed">KRKR セーブフォルダを作成できません：%1$s</string>
@@ -1027,6 +1037,7 @@
     <string name="engine_module_management_disable_confirm">無効化</string>
     <string name="engine_module_management_load_failed">モジュール一覧の読み込みに失敗しました</string>
     <string name="engine_settings_runtime_module_hint">このゲームはサードパーティのランタイムモジュールで動作します。モジュールの設定とセーブデータはモジュール側で管理されます。</string>
+    <string name="engine_settings_systemnnn_hint">SystemNNN の設定はゲーム内の環境設定から変更できます。</string>
     <string name="engine_desc_runtime_module">サードパーティ APK ランタイムモジュール。スキャンと実行はモジュールが行い、本体アプリは検出・有効化・フォルダーパスの受け渡しのみを担当します。</string>
     <string name="launch_runtime_module_missing">ランタイムモジュールを利用できません。ゲームは不明に降格されました。再スキャンしてください</string>
     <string name="launch_runtime_module_disabled">ランタイムモジュールが有効になっていません。ゲームは不明に降格されました。「エンジンモジュール管理」で有効化してから再スキャンしてください</string>
@@ -1052,4 +1063,22 @@
     <string name="launch_cmvs_unregistered">CMVS は登録済み 19 作品のみ対応しています。このゲームは未登録です</string>
     <string name="launch_cmvs_audio_unavailable">CMVS のオーディオ初期化に失敗しました</string>
     <string name="launch_cmvs_init_failed">CMVS エンジンの起動に失敗しました</string>
+    <string name="launch_systemnnn_source_missing">ゲームフォルダーが見つかりません。spt/sys.spt を含むフォルダーを選び直してください。</string>
+    <string name="launch_systemnnn_storage_restricted">ゲームデータの取り込みにはフォルダーへのアクセス許可が必要です。ライブラリで元のゲームフォルダーを追加し直し、アクセスを許可して起動してください。セーブデータはコピー内の sav に保存されます。</string>
+    <string name="launch_systemnnn_invalid_source">読み取り可能な spt/sys.spt がないか、そのままコピーできないファイル名が含まれています。ゲームの展開状態を確認し、フォルダーを選び直してください。</string>
+    <string name="launch_systemnnn_source_busy">ゲーム、セーブ移行、またはインポートが進行中です。既存のプレイヤーに戻り、移行を完了して終了してから再試行してください。</string>
+    <string name="launch_systemnnn_no_space">ゲーム全体をコピーするためのアプリ専用ストレージ容量が不足しています。空き容量を確保して再試行してください。未完成のコピーでは起動しません。</string>
+    <string name="launch_systemnnn_copy_failed">ゲームデータの取り込みに失敗しました。ストレージとフォルダーのアクセス権を確認して再試行してください。元のゲームフォルダーとセーブデータは保持されています。</string>
+    <string name="launch_systemnnn_import_title">ゲームデータをコピー</string>
+    <string name="launch_systemnnn_import_confirm">Android 10 ではこのゲームフォルダーを直接利用できません。ゲーム全体をアプリ専用の領域にコピーするため、数 GB の空き容量が必要な場合があります。以降のセーブはコピー先の sav フォルダーに保存されます。</string>
+    <string name="launch_systemnnn_copy_confirmation_required">初回起動時はゲームデータのコピー確認が必要です。ライブラリからゲームを起動し、コピーを許可してください。</string>
+    <string name="launch_systemnnn_import_start">コピーして起動</string>
+    <string name="launch_systemnnn_import_progress">ゲームデータをコピーしています。ゲームの容量に応じて時間がかかります。</string>
+    <string name="launch_systemnnn_import_cancelling">コピーをキャンセルしています…</string>
+    <string name="launch_systemnnn_commit_failed">ゲームコピーを安全に確定できませんでした。アプリ専用ストレージを確認して再試行してください。未完成のコピーでは起動しません。</string>
+    <string name="launch_systemnnn_corrupt_copy">アプリ専用のゲームコピーを利用できません。ストレージを確認してコピーを修復してください。進行状況を保護するため、元のフォルダーには自動で戻しません。修復前にセーブ管理からセーブをバックアップしてください。</string>
+    <string name="launch_systemnnn_save_not_writable">ゲームの sav フォルダーに書き込めません。フォルダーの権限、ストレージの状態、空き容量を確認して再試行してください。</string>
+    <string name="save_systemnnn_clear_resources">取り込んだゲームデータを削除</string>
+    <string name="save_systemnnn_clear_resources_message">アプリ内のコピーからゲームデータを削除して空き容量を増やします。元のゲームフォルダーとコピー内のすべてのセーブデータは残ります。次回の起動時に元のフォルダーからゲームデータを取り込み直します。</string>
+    <string name="save_systemnnn_clear_resources_done">取り込んだゲームデータを削除しました</string>
 </resources>
