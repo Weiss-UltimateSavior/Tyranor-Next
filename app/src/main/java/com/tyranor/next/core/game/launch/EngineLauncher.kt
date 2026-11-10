@@ -1063,6 +1063,18 @@ object EngineLauncher {
         }
     }
 
+    internal suspend fun checkSystemNnnCopyConsent(
+        restoreResources: Boolean,
+        interaction: SystemNnnCopyInteraction?,
+    ): LaunchResult.Failure.SystemNnnResourcesFailed? {
+        if (restoreResources) return null
+        if (interaction == null) {
+            return LaunchResult.Failure.SystemNnnResourcesFailed(SystemNnnResourceError.COPY_CONFIRMATION_REQUIRED)
+        }
+        if (!interaction.confirmFirstCopy()) throw CancellationException("SystemNNN copy declined")
+        return null
+    }
+
     private suspend fun prepareSystemNnnResources(
         context: Context,
         game: ScanGame,
@@ -1091,9 +1103,7 @@ object EngineLauncher {
                     if (!restoreResources) requestSystemNnnStorage(context, game, path.absolutePath)?.let { return it }
                     return failed(SystemNnnResourceError.STORAGE_RESTRICTED)
                 }
-                if (!restoreResources && systemNnnCopy?.confirmFirstCopy?.invoke() != true) {
-                    throw CancellationException("SystemNNN copy was not confirmed")
-                }
+                checkSystemNnnCopyConsent(restoreResources, systemNnnCopy)?.let { return it }
                 val caller = currentCoroutineContext()
                 val sourceId = SystemNnnGameImport.sourceIdentity(source)
                 // Only the first copy changes the active sav. Wait for in-flight sync writes

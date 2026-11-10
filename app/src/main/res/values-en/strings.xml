@@ -1071,6 +1071,7 @@
     <string name="launch_systemnnn_copy_failed">Game resource import failed. Check the storage volume and folder permission, then retry. The original game folder and existing saves are kept.</string>
     <string name="launch_systemnnn_import_title">Copy game resources</string>
     <string name="launch_systemnnn_import_confirm">Android 10 cannot use this game folder directly. Copying the full game to app storage may require several gigabytes. New saves will go in the copy’s sav folder.</string>
+    <string name="launch_systemnnn_copy_confirmation_required">Open the game from your library to confirm copying its resources for the first launch.</string>
     <string name="launch_systemnnn_import_start">Copy and launch</string>
     <string name="launch_systemnnn_import_progress">Copying game resources. This can take a while for large games.</string>
     <string name="launch_systemnnn_import_cancelling">Cancelling the copy…</string>

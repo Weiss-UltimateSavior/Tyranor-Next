@@ -1071,6 +1071,7 @@
     <string name="launch_systemnnn_copy_failed">游戏资源导入失败。请检查存储卷和文件夹授权后重试。原游戏目录与已有存档仍保留。</string>
     <string name="launch_systemnnn_import_title">复制游戏资源</string>
     <string name="launch_systemnnn_import_confirm">Android 10 无法直接使用这个游戏目录。需要将完整游戏复制到应用专用存储，可能占用数 GB 空间。之后的存档会写入副本的 sav 文件夹。</string>
+    <string name="launch_systemnnn_copy_confirmation_required">首次启动需要确认复制游戏资源。请从游戏库打开游戏并确认复制。</string>
     <string name="launch_systemnnn_import_start">复制并启动</string>
     <string name="launch_systemnnn_import_progress">正在复制游戏资源。所需时间取决于游戏大小。</string>
     <string name="launch_systemnnn_import_cancelling">正在取消复制…</string>

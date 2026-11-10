@@ -404,7 +404,7 @@ class GameSaveManager(private val context: Context) {
         onDirectoryCommitted: (() -> Unit)? = null,
     ): Int {
         if (game.engine == EngineType.SYSTEMNNN) {
-            val temporary = createTemporaryDirectory()
+            val temporary = createZipStaging(appContext.cacheDir)
             try {
                 extractZip(sourceUri, temporary)
                 val replace: (SystemNnnSaveStore) -> Int = { store ->
@@ -531,7 +531,7 @@ class GameSaveManager(private val context: Context) {
             return importSaveDirectory(destination, excludeFor(game.engine), restoreExcluded,
                 transaction = SaveImportTransaction(destination, game.uri),
                 onDirectoryCommitted = onDirectoryCommitted) {
-                val extracted = createTemporaryDirectory().also { temp = it }
+                val extracted = createZipStaging(appContext.cacheDir).also { temp = it }
                 if (extractZip(sourceUri, extracted) == 0) throw GameSaveException(SaveErrorCode.NO_FILES_IN_ZIP)
                 unwrapOuterDirs(extracted, game.engine)
             }
@@ -1024,13 +1024,6 @@ class GameSaveManager(private val context: Context) {
             normalized.endsWith(".pak") || normalized.endsWith(".dat.arc")
     }
 
-    @Throws(IOException::class)
-    private fun createTemporaryDirectory(): File {
-        val directory = File.createTempFile("save_zip_", "", appContext.cacheDir)
-        if (!directory.delete() || !directory.mkdirs()) throw GameSaveException(SaveErrorCode.CREATE_TEMP_DIR)
-        return directory
-    }
-
     /** 存档位置描述文案（UI 展示用，非异常协议；P0-5 后续收敛为错误码）。 */
     private fun text(@StringRes id: Int, vararg args: Any): String =
         localizedContext.getString(id, *args)
@@ -1167,6 +1160,13 @@ class GameSaveManager(private val context: Context) {
                 directory.name + ".import_backup_retained2",
             ).map { File(parent, it) }.filter { Files.exists(it.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS) } +
                 SaveImportTransaction.recoveryCopies(directory)
+        }
+
+        /** Resolve aliases on the app-owned cache root before validating the staged archive. */
+        internal fun createZipStaging(cacheDirectory: File): File = try {
+            Files.createTempDirectory(cacheDirectory.canonicalFile.toPath(), "save_zip_").toFile()
+        } catch (failure: IOException) {
+            throw GameSaveException(SaveErrorCode.CREATE_TEMP_DIR, cause = failure)
         }
 
         /** Parse the actual import stream independently of Android URI acquisition. */

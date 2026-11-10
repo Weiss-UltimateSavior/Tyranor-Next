@@ -1071,6 +1071,7 @@
     <string name="launch_systemnnn_copy_failed">ゲームデータの取り込みに失敗しました。ストレージとフォルダーのアクセス権を確認して再試行してください。元のゲームフォルダーとセーブデータは保持されています。</string>
     <string name="launch_systemnnn_import_title">ゲームデータをコピー</string>
     <string name="launch_systemnnn_import_confirm">Android 10 ではこのゲームフォルダーを直接利用できません。ゲーム全体をアプリ専用の領域にコピーするため、数 GB の空き容量が必要な場合があります。以降のセーブはコピー先の sav フォルダーに保存されます。</string>
+    <string name="launch_systemnnn_copy_confirmation_required">初回起動時はゲームデータのコピー確認が必要です。ライブラリからゲームを起動し、コピーを許可してください。</string>
     <string name="launch_systemnnn_import_start">コピーして起動</string>
     <string name="launch_systemnnn_import_progress">ゲームデータをコピーしています。ゲームの容量に応じて時間がかかります。</string>
     <string name="launch_systemnnn_import_cancelling">コピーをキャンセルしています…</string>

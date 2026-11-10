@@ -787,7 +787,11 @@ final class GameRunner {
         tasks.post(()->{
             boolean success=false;
             try{
-                if(handle==0||failed||replaying||moviePlaying)throw new IOException(text(R.string.engine_systemnnn_host_cannot_import_pc));
+                if(handle==0||failed||replaying||moviePlaying){
+                    ui.notice(text(R.string.engine_systemnnn_host_cannot_import_pc));
+                    schedule();
+                    return;
+                }
                 open(null,true,saveResult(SAVE_FILES.submit(read)));
                 success=true;
                 Log.i("SystemNNN","PC save imported at "+current.script+" word="+meta[1]);
@@ -804,9 +808,10 @@ final class GameRunner {
         tasks.post(()->{
             byte[] data=null;
             try{
-                if(handle==0||failed||onTitle||replaying||moviePlaying)throw new IOException(text(R.string.engine_systemnnn_host_cannot_export_pc));
-                data=NativeGame.exportPcSave(handle);
-            }catch(IOException|RuntimeException e){noticeFailure(R.string.engine_systemnnn_host_pc_export_failed,e);}
+                if(handle==0||failed||onTitle||replaying||moviePlaying)
+                    ui.notice(text(R.string.engine_systemnnn_host_cannot_export_pc));
+                else data=NativeGame.exportPcSave(handle);
+            }catch(RuntimeException e){noticeFailure(R.string.engine_systemnnn_host_pc_export_failed,e);}
             ready.accept(data);
         });
     }

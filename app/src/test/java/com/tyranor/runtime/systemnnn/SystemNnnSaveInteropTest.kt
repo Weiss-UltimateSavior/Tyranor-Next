@@ -1,6 +1,7 @@
 package com.tyranor.runtime.systemnnn
 
 import com.tyranor.next.core.game.save.GameSaveException
+import com.tyranor.next.core.game.save.GameSaveManager
 import com.tyranor.next.core.game.save.SaveErrorCode
 import com.tyranor.next.core.game.save.SystemNnnSaveStore
 import org.junit.Assert.assertArrayEquals
@@ -222,6 +223,27 @@ class SystemNnnSaveInteropTest {
         }
         assertFalse(incoming.resolve("emberfall.quick.sav").exists())
         assertFalse(saves.resolve("emberfall.quick.sav").exists())
+    }
+
+    @Test fun replacementKeepsValidPrimaryProgressAndItsOwnExtension() {
+        val game = temp.newFolder().canonicalFile
+        val saves = game.resolve("sav").apply { check(mkdir()) }
+        putProgress(saves, 3)
+        val incoming = GameSaveManager.createZipStaging(temp.root)
+        putStory(incoming, "emberfall.sav", 0)
+        val primary = putProgress(incoming, 21)
+        val backup = putProgress(incoming, 9, "emberfall.read.bak")
+        putExtension(incoming.resolve("emberfall.read.ext"), primary to 21)
+        putExtension(incoming.resolve("emberfall.read.ext.bak"), backup to 9)
+
+        val store = SystemNnnSaveStore(game, saves)
+        store.access {
+            assertEquals(5, store.replace(incoming))
+            val installed = checkNotNull(GameProgress(saves.resolve(primary.name)).read())
+            assertArrayEquals(intArrayOf(21), installed.read)
+            assertArrayEquals(byteArrayOf(21), installed.text[0])
+            assertArrayEquals(backup.readBytes(), saves.resolve(backup.name).readBytes())
+        }
     }
 
     @Test fun restoresGlobalProgressOnlyWhenTheDestinationHasNoStoryOrChart() {
@@ -469,7 +491,7 @@ class SystemNnnSaveInteropTest {
         val original = temp.newFolder().canonicalFile
         val saves = original.resolve("sav").apply { check(mkdir()) }
         val oldStory = putStory(saves, "emberfall.sav", 0)
-        val incoming = temp.newFolder()
+        val incoming = GameSaveManager.createZipStaging(temp.root)
         val newStory = putStory(incoming, "emberfall.resume", SaveSlots.AUTO)
         val store = SystemNnnSaveStore(original, saves)
 
@@ -903,6 +925,28 @@ class SystemNnnSaveInteropTest {
         }.readText())
         assertEquals("PC", pc.readText())
         assertEquals("autosave", autosave.readText())
+    }
+
+    @Test fun failedQuarantineRestoresFilesMovedEarlier() {
+        val saves = temp.newFolder()
+        val base = saves.resolve("emberfall.read").apply { writeText("truncated base") }
+        val backup = saves.resolve("emberfall.read.bak").apply { writeText("truncated backup") }
+        val extension = saves.resolve("emberfall.read.ext").apply { writeText("progress extension") }
+        val original = listOf(base, backup, extension).associateWith { it.readBytes() }
+        val failure = IOException("cannot isolate the backup")
+
+        val thrown = assertThrows(IOException::class.java) {
+            GameProgress.recoverCorruptBase(base) { from, to ->
+                if (from == backup.toPath()) {
+                    assertFalse(extension.exists())
+                    throw failure
+                }
+                Files.move(from, to, ATOMIC_MOVE)
+            }
+        }
+        assertSame(failure, thrown)
+        assertEquals(original.keys.map(File::getName).toSet(), saves.list()!!.toSet())
+        for ((file, bytes) in original) assertArrayEquals(bytes, file.readBytes())
     }
 
     @Test fun countsAPlayerOwnerBeforeAndAfterTheFileLock() {

@@ -184,6 +184,10 @@ final class GameProgress {
 
     /** Called with the game's save lock held, after explicit confirmation. */
     static void recoverCorruptBase(File file) throws IOException {
+        recoverCorruptBase(file,(source,target)->Files.move(source,target,StandardCopyOption.ATOMIC_MOVE));
+    }
+
+    static void recoverCorruptBase(File file,MoveFile move) throws IOException {
         Path base=file.toPath(),backup=sibling(base,".bak"),ext=sibling(base,".ext");
         Committed primary=null,legacy=null;
         boolean corruptPrimary=false,corruptBackup=false;
@@ -200,13 +204,13 @@ final class GameProgress {
         List<Path> moved=new ArrayList<>();
         try{
             for(Path source:sources){
-                Files.move(source,sibling(source,suffix),StandardCopyOption.ATOMIC_MOVE);
+                move.move(source,sibling(source,suffix));
                 moved.add(source);
             }
         }catch(IOException e){
             for(int i=moved.size()-1;i>=0;i--){
                 Path source=moved.get(i);
-                try{Files.move(sibling(source,suffix),source,StandardCopyOption.ATOMIC_MOVE);}
+                try{move.move(sibling(source,suffix),source);}
                 catch(IOException rollback){e.addSuppressed(rollback);}
             }
             throw e;
