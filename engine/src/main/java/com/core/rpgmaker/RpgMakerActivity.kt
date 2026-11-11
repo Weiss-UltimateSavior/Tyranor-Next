@@ -951,8 +951,12 @@ class RpgMakerActivity : Activity() {
         /**
          * 销毁时等待落盘回调的上限：渲染进程已死时 `evaluateJavascript` 不会回调，
          * 由看门狗兜底销毁 WebView（避免为了等一次落盘而泄漏 WebView）。
+         *
+         * 必须**大于** JS 侧 `__nwjs_polyfill_v2.js` 的 `FLUSH_ALL_BUDGET_MS`（800ms）加调度
+         * 余量：慢存储上正常刷盘也可能超过 250ms，超时太短会在刷盘中途把页面拆掉，
+         * 那比不刷还糟（半批已写、剩余丢失且无 warn）。
          */
-        private const val FLUSH_TEARDOWN_WATCHDOG_MS = 250L
+        private const val FLUSH_TEARDOWN_WATCHDOG_MS = 1_200L
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"
@@ -1013,7 +1017,14 @@ class RpgMakerActivity : Activity() {
         private val RPG_MAKER_MOD_FLAGS = arrayOf(
             "godMode", "oneHit", "alwaysCrit", "noclip", "eventSpeed", "msgSkip",
         )
-        private const val PROCESS_EXIT_DELAY_MS = 500L
+        /**
+         * `finish()` 到 `killProcess` 的延迟。
+         *
+         * 必须**大于** [FLUSH_TEARDOWN_WATCHDOG_MS]，否则进程会在 localStorage 落盘完成前
+         * 被杀掉（退出动画/界面早已不可见，多留 1 秒只是让收尾跑完，用户无感）。
+         * 不变量：`PROCESS_EXIT_DELAY_MS > FLUSH_TEARDOWN_WATCHDOG_MS > FLUSH_ALL_BUDGET_MS`。
+         */
+        private const val PROCESS_EXIT_DELAY_MS = 1_500L
         private const val MAX_ENTRY_SEARCH_DEPTH = 2
         private val WEB_ENTRY_SUBDIRS = arrayOf("www", "resources", "app.asar", "app", "tyrano", "data", "scenario", "system", "game")
 
