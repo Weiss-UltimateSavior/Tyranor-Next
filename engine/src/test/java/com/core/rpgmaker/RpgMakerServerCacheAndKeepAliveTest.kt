@@ -44,6 +44,82 @@ class RpgMakerServerCacheAndKeepAliveTest {
         return srv.port
     }
 
+    /**
+     * 回归：`data/`、`save/` 里的**图片**同样可被插件原地改写（截图/头像），
+     * 不能因为扩展名是 `.png` 就落到 `max-age=3600`——判定必须先看目录再看扩展名。
+     */
+    @Test
+    fun rewritableDirectoriesOverrideTheAssetWhitelist() {
+        val root = newRoot()
+        File(root, "index.html").writeText("<html></html>")
+        File(root, "img").mkdirs()
+        File(root, "img/pic.png").writeText("PNG")
+        File(root, "data").mkdirs()
+        File(root, "data/cover.png").writeText("PNG")
+        File(root, "save").mkdirs()
+        File(root, "save/icon.png").writeText("PNG")
+        val port = start(root)
+
+        Socket("127.0.0.1", port).use { socket ->
+            socket.soTimeout = 5_000
+            val out = socket.getOutputStream()
+            val input = BufferedInputStream(socket.getInputStream())
+            request(out, "index.html")
+            val cookie = readResponse(input).headers["set-cookie"]?.substringBefore(';')
+
+            request(out, "img/pic.png", cookie)
+            assertEquals("img/ 下的纯素材仍走 max-age", "max-age=3600", readResponse(input).headers["cache-control"])
+
+            for (path in listOf("data/cover.png", "save/icon.png", "./data/cover.png")) {
+                request(out, path, cookie)
+                val response = readResponse(input)
+                assertEquals("$path 必须 no-cache", "no-cache", response.headers["cache-control"])
+                assertNull("$path 不得带 ETag", response.headers["etag"])
+            }
+        }
+    }
+
+    /** 内存/内部资源用内容哈希做 ETag（无 mtime 粒度问题），200 与 304 同策略。 */
+    @Test
+    fun internalResourcesUseContentHashEtag() {
+        val root = newRoot()
+        File(root, "index.html").writeText("<html></html>")
+        val port = startWithResources(root, mapOf("__tyranor__/cfg.json" to "{\"a\":1}".toByteArray()))
+
+        Socket("127.0.0.1", port).use { socket ->
+            socket.soTimeout = 5_000
+            val out = socket.getOutputStream()
+            val input = BufferedInputStream(socket.getInputStream())
+            request(out, "index.html")
+            val cookie = readResponse(input).headers["set-cookie"]?.substringBefore(';')
+
+            request(out, "__tyranor__/cfg.json", cookie)
+            val first = readResponse(input)
+            assertEquals(200, first.code)
+            assertEquals("no-cache", first.headers["cache-control"])
+            val etag = first.headers["etag"]
+            assertTrue("内存内容必须带内容哈希 ETag", !etag.isNullOrBlank())
+
+            request(out, "__tyranor__/cfg.json", cookie, "If-None-Match: $etag\r\n")
+            val second = readResponse(input)
+            assertEquals("内容未变必须 304", 304, second.code)
+            assertEquals("304 与 200 同策略", "no-cache", second.headers["cache-control"])
+        }
+    }
+
+    private fun startWithResources(root: File, resources: Map<String, ByteArray>): Int {
+        val srv = RpgMakerLocalHttpServer(
+            root = root,
+            tyranoHook = ByteArray(0),
+            v12Compat = true,
+            fuzzyNames = true,
+            internalResources = resources,
+        )
+        srv.start()
+        server = srv
+        return srv.port
+    }
+
     private class Response(val code: Int, val headers: Map<String, String>)
 
     /**

@@ -472,7 +472,13 @@ internal class RpgMakerLocalHttpServer(
      * 其余（img/audio/fonts/css/脚本）按会话内可复用处理，ETag 兜住改动后的重新验证。
      */
     private fun cacheControlFor(uri: String): String {
-        val path = uri.lowercase(Locale.ROOT)
+        // 归一成「无前导 ./ 与 /」的相对路径：`./data/cover.png` 也要按 data/ 判定
+        var path = uri.lowercase(Locale.ROOT)
+        while (path.startsWith("./")) path = path.substring(2)
+        while (path.startsWith("/")) path = path.substring(1)
+        // 先按目录判定：`data/` 与 `save/` 是插件会原地改写的目录，**里面的图片同样可改写**
+        // （`data/cover.png`、`save/icon.png` 这类截图/头像），不能因为扩展名是 .png 就长缓存
+        if (path.startsWith("data/") || path.startsWith("save/")) return REWRITABLE_CACHE_CONTROL
         // 白名单而非黑名单：v2 的 fs 桥对 contentRoot 是全目录可写的，插件可能改写
         // js/*.js、*.html、*.css 甚至重新生成素材后 location.reload()。只有「纯素材」
         // 才允许命中 max-age；其余一律每次回源（可改写路径也不发 ETag，见 serveOne）。

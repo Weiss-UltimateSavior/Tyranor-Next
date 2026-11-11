@@ -58,14 +58,19 @@ global.removeEventListener = () => {};
 global.dispatchEvent = () => true;
 global.location = global.location || { href: 'http://localhost/index.html', reload: () => {} };
 // Storage/localStorage：WebView 必有的宿主存储接口（兼容层会劫持其 prototype）
-global.localStorage = {
-    _d: {},
-    setItem(k, v) { this._d[k] = String(v); },
-    getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
-    removeItem(k) { delete this._d[k]; },
-};
-global.Storage = function Storage() {};
-global.Storage.prototype = global.localStorage;
+// 每装一次都给一份**干净的原生桩**：否则新会话捕获到的 nativeSet/nativeGet 是上一会话
+// 已被 polyfill 改写的方法，原生兜底与「读不到磁盘」的断言就都不再可信。
+function installStorageStub() {
+    global.localStorage = {
+        _d: {},
+        setItem(k, v) { this._d[k] = String(v); },
+        getItem(k) { return Object.prototype.hasOwnProperty.call(this._d, k) ? this._d[k] : null; },
+        removeItem(k) { delete this._d[k]; },
+    };
+    global.Storage = function Storage() {};
+    global.Storage.prototype = global.localStorage;
+}
+installStorageStub();
 global.setTimeout_ = setTimeout;
 global.setInterval_ = setInterval;
 
@@ -81,14 +86,16 @@ run(BASE_ASSET);
 run(V2_ASSET);
 
 // 模拟「重启」：两层 polyfill 的安装标记与 localStorage 闭包状态都是进程内的，
-// 清掉标记后按真实注入顺序重新执行 = 新会话（磁盘目录保持不变）。
+// 清掉标记 + 重建干净的原生 Storage 桩后按真实注入顺序重新执行 = 新会话（磁盘目录保持不变）。
 // 这正是超长键（哈希文件名）跨会话回归唯一能被发现的形态。
 function newSession() {
     delete global.__tyranorNwPolyfill;
     delete global.__tyranorNwPolyfillV2;
     delete global.__tyranorLocalStoragePersisted;
     delete global.__tyranorLocalStorageFlush;
+    delete global.__tyranorLocalStorageFlushAll;
     delete global.__tyranorLocalStorageMode;
+    installStorageStub();
     run(BASE_ASSET);
     run(V2_ASSET);
 }
@@ -422,6 +429,11 @@ check(
 check(
     '重复 getItem 不再过桥（内存镜像）',
     (() => {
+        const s = Object.create(global.Storage.prototype);
+        s.setItem('ConfigManager.data', '{"volume":80}');
+        // 先落盘并清空内存镜像：否则两次 getItem 都命中 values，`calls === 0` 恒真，
+        // 即使磁盘读取完全不缓存这条断言也会通过
+        window.__tyranorLocalStorageFlushAll();
         // 首读会走 existsSync/readFileSync，缓存后必须 0 次桥调用；两个都计数才测得出来
         const bridgeFs = global.TyranorFs;
         const origExists = bridgeFs.exists;
@@ -430,10 +442,10 @@ check(
         bridgeFs.exists = function (p) { calls++; return origExists.call(this, p); };
         bridgeFs.readText = function (p) { calls++; return origReadText.call(this, p); };
         try {
-            const s = Object.create(global.Storage.prototype);
-            s.getItem('ConfigManager.data');
-            s.getItem('ConfigManager.data');
-            return calls === 0;
+            const first = s.getItem('ConfigManager.data');
+            const afterFirst = calls;
+            const second = s.getItem('ConfigManager.data');
+            return first === '{"volume":80}' && second === first && afterFirst > 0 && calls === afterFirst;
         } finally {
             bridgeFs.exists = origExists;
             bridgeFs.readText = origReadText;
@@ -1318,6 +1330,25 @@ console.log('\n== localStorage 跨会话（模拟重启）==');
         newSession();
         const fresh = Object.create(global.Storage.prototype);
         return fresh.getItem('restart.short') === null && fresh.getItem(longKey) === null;
+    })());
+
+    // 回归：Storage 规范允许空字符串作键；空键落盘成 `.dat`，重启后必须仍能被枚举到
+    // （旧实现 `hexToText("")` 直接返回 null，length/key() 会漏掉它）
+    check('空键跨会话可枚举且可读回', (() => {
+        newSession();
+        const empty = Object.create(global.Storage.prototype);
+        empty.setItem('', 'EMPTY');
+        window.__tyranorLocalStorageFlushAll();
+        newSession();
+        const back = Object.create(global.Storage.prototype);
+        const keys = [];
+        for (let i = 0; i < back.length; i++) keys.push(back.key(i));
+        return back.getItem('') === 'EMPTY' && keys.indexOf('') >= 0;
+    })(), (() => {
+        const back = Object.create(global.Storage.prototype);
+        const keys = [];
+        for (let i = 0; i < back.length; i++) keys.push(back.key(i));
+        return JSON.stringify(keys);
     })());
 }
 

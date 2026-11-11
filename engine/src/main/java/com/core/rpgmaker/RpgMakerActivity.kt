@@ -772,14 +772,26 @@ class RpgMakerActivity : Activity() {
         DoubleBackExit.clear(this)
         runCatching { inputRemap?.onDestroy() }
         inputRemap = null
-        runCatching {
-            // 销毁前尽力落盘：loadUrl 是异步的，紧跟 destroy() 时 pagehide 不一定跑得完
-            webView?.evaluateJavascript(FLUSH_LOCAL_STORAGE_JS, null)
-            webView?.stopLoading()
-            webView?.loadUrl("about:blank")
-            webView?.destroy()
-        }
+        // 销毁前必须等 localStorage 同步刷完：evaluateJavascript 是异步的，紧跟着 destroy()
+        // 会让 FLUSH_LOCAL_STORAGE_JS 从未执行，200ms 合并窗口内的写入随之丢失。
+        // 回调在 UI 线程投递，所以这里「回调触发销毁 + 看门狗兜底」：渲染进程已死时
+        // evaluateJavascript 不会回调，看门狗负责把 WebView 销毁掉（避免泄漏）。
+        val dying = webView
         webView = null
+        if (dying != null) {
+            val destroyed = java.util.concurrent.atomic.AtomicBoolean(false)
+            val teardown = Runnable {
+                if (destroyed.compareAndSet(false, true)) {
+                    runCatching { dying.stopLoading() }
+                    runCatching { dying.loadUrl("about:blank") }
+                    runCatching { dying.destroy() }
+                }
+            }
+            Handler(Looper.getMainLooper()).postDelayed(teardown, FLUSH_TEARDOWN_WATCHDOG_MS)
+            runCatching {
+                dying.evaluateJavascript(FLUSH_LOCAL_STORAGE_JS) { _ -> teardown.run() }
+            }.onFailure { teardown.run() }
+        }
         runCatching { localServer?.stop() }
         localServer = null
         runCatching { asarArchive?.close() }
@@ -935,6 +947,12 @@ class RpgMakerActivity : Activity() {
         private const val FLUSH_LOCAL_STORAGE_JS =
             "try{if(window.__tyranorLocalStorageFlushAll){window.__tyranorLocalStorageFlushAll();}}" +
                 "catch(e){try{if(window.__tyranorLocalStorageFlush){window.__tyranorLocalStorageFlush();}}catch(e2){}}"
+
+        /**
+         * 销毁时等待落盘回调的上限：渲染进程已死时 `evaluateJavascript` 不会回调，
+         * 由看门狗兜底销毁 WebView（避免为了等一次落盘而泄漏 WebView）。
+         */
+        private const val FLUSH_TEARDOWN_WATCHDOG_MS = 250L
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"

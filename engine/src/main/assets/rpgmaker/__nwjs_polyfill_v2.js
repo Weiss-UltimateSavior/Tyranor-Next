@@ -3304,8 +3304,9 @@
             var MAX_FLUSH_RETRY = 1;
             // 单次 flush 的键数上限：切后台/退出时 flush 跑在渲染线程上，连续 fsync 会卡界面
             var MAX_FLUSH_KEYS = 32;
-            // flushAll 的批次数上限（32 × 32 = 1024 键；正常插件远低于此）
-            var MAX_FLUSH_ROUNDS = 32;
+            // flushAll 的总耗时预算（毫秒）：宿主在 onPause/销毁前同步调用它，不能无限跑。
+            // 超出预算的键留在 dirty 里交给重试定时器，并记一条 warn（不静默丢）。
+            var FLUSH_ALL_BUDGET_MS = 800;
 
             // 键名 → 文件名。用「UTF-8 字节的十六进制」编码：
             // 之前用 encodeURIComponent 再替换 '%' 为 '_' 的方案有歧义——
@@ -3321,9 +3322,10 @@
                 }
                 return out;
             }
-            // 文件名 → 键（哈希名无法还原，返回 null 由调用方跳过枚举）
+            // 文件名 → 键（哈希名无法还原，返回 null 由调用方跳过枚举）。
+            // 空文件名（`.dat`）合法：Storage 规范允许空字符串作键，因此只拒绝奇数长度。
             function hexToText(hex) {
-                if (!hex || hex.length % 2 !== 0) return null;
+                if (hex === null || hex === undefined || hex.length % 2 !== 0) return null;
                 var bin = "";
                 for (var i = 0; i < hex.length; i += 2) {
                     var code = parseInt(hex.substr(i, 2), 16);
@@ -3365,6 +3367,10 @@
             var removedKeys = Object.create(null);
             var order = [];
             var dirty = Object.create(null);
+            // 删除失败的文件名：镜像里已经没有这个键，但磁盘文件还在。必须挡住
+            // 「按文件名重新索引」与「按 key 直接读」两条路径，否则旧值会复活；
+            // 每次 flush 再尝试删一次，成功后移出。
+            var suppressedNames = Object.create(null);
             var flushTimer = null;
             var flushRetries = 0;
 
@@ -3391,12 +3397,25 @@
                 for (var i = 0; i < names.length; i++) {
                     var name = String(names[i]);
                     if (!/\.dat$/.test(name)) continue;
+                    // 删除失败留下的文件：镜像里已无此键，不能再索引回来
+                    if (suppressedNames[name]) continue;
                     var hex = name.slice(0, -4);
                     if (hex.charAt(0) === "h") continue;   // 哈希名无法还原原键，读取时按 key 兜底
                     var key = hexToText(hex);
                     if (key === null || files[key]) continue;
                     files[key] = name;
                     order.push(key);
+                }
+            }
+
+            /** 重试删除失败的文件；成功后移出抑制表（失败的下次 flush 再试）。 */
+            function retrySuppressedDeletes() {
+                var names = Object.keys(suppressedNames);
+                for (var i = 0; i < names.length; i++) {
+                    try {
+                        realFs.rmSync(joinPath(STORE_DIR, names[i]), { force: true });
+                        delete suppressedNames[names[i]];
+                    } catch (e) {}
                 }
             }
 
@@ -3414,7 +3433,8 @@
                 }
                 // 超长键的文件名是哈希、索引里没有原键：直接按 key 算路径再试一次。
                 // 少了这一步，跨会话（重启后）长键内容永久读不回（旧实现按 key 算路径，没有该缺陷）。
-                if (!name) {
+                // 但删除失败的文件必须挡住：否则 clear()/removeItem() 之后旧值会从这里复活。
+                if (!name && !suppressedNames[fileNameFor(key)]) {
                     var fallback = readFileIfExists(pathFor(key));
                     if (fallback !== null) {
                         values[key] = fallback;
@@ -3430,15 +3450,13 @@
                 if (flushTimer === null) flushTimer = setTimeout(flush, FLUSH_DELAY_MS);
             }
 
-            function flush() {
-                flushTimer = null;
-                var pending = Object.keys(dirty);
-                if (!pending.length) return;
-                // 单次最多写 MAX_FLUSH_KEYS 个键：切后台/退出时的 flush 跑在渲染线程上，
-                // 连续几十次 fsync 会卡住界面（甚至 ANR）。剩余批次用 0ms 定时器续跑。
-                var keys = pending.slice(0, MAX_FLUSH_KEYS);
-                for (var d = 0; d < keys.length; d++) delete dirty[keys[d]];
-                if (pending.length > keys.length && flushTimer === null) flushTimer = setTimeout(flush, 0);
+            /**
+             * 写一批键，返回失败列表。
+             *
+             * 调用方负责先把这批键从 dirty 摘掉：这样「某批全失败」不会让后续批次永远排在
+             * 它后面（旧实现按 dirty 数量判断是否有进展，首批失败就整体放弃）。
+             */
+            function writeBatch(keys) {
                 var failed = [];
                 try {
                     try { if (!realFs.existsSync(STORE_DIR)) realFs.mkdirSync(STORE_DIR); } catch (eDir) {}
@@ -3457,6 +3475,11 @@
                 } catch (eOuter) {
                     for (var j = 0; j < keys.length; j++) if (hasOwn(values, keys[j])) failed.push(keys[j]);
                 }
+                return failed;
+            }
+
+            /** 失败处理：先排一次重试，连续失败则写原生存储保住当前会话（原生跨启动无效）。 */
+            function handleFailed(failed) {
                 if (!failed.length) { flushRetries = 0; return; }
                 for (var f = 0; f < failed.length; f++) dirty[failed[f]] = true;
                 flushRetries++;
@@ -3476,21 +3499,57 @@
                 console.warn("[nw-polyfill-v2] localStorage flush fell back to native storage for " + failed.length + " key(s)");
             }
 
+            function flush() {
+                flushTimer = null;
+                retrySuppressedDeletes();
+                var pending = Object.keys(dirty);
+                if (!pending.length) return;
+                // 单次最多写 MAX_FLUSH_KEYS 个键：flush 跑在渲染线程上，连续几十次 fsync
+                // 会卡住界面（甚至 ANR）。剩余批次用 0ms 定时器续跑。
+                var keys = pending.slice(0, MAX_FLUSH_KEYS);
+                for (var d = 0; d < keys.length; d++) delete dirty[keys[d]];
+                if (pending.length > keys.length && flushTimer === null) flushTimer = setTimeout(flush, 0);
+                handleFailed(writeBatch(keys));
+            }
+
             /**
              * 同步刷完全部脏键（宿主在 onPause / 销毁前调用）。
              *
              * flush() 每批只写 MAX_FLUSH_KEYS 个键，剩余批次靠 setTimeout 续跑；而宿主
              * 紧接着会 webView.onPause()/destroy()，JS 定时器不再有机会执行 —— 只调 flush()
-             * 最多保住 32 个键。这里循环把批次跑完（同一拍内，不依赖定时器）。
+             * 最多保住 32 个键。
+             *
+             * 这里按**快照**分批跑完：失败的批次只登记、不打断后续批次（否则首批全失败会让
+             * 后面本来能写的配置键一起丢失）。总耗时受 FLUSH_ALL_BUDGET_MS 约束，超出预算的
+             * 键留在 dirty 里交给重试定时器，并明确记一条 warn（不再静默依赖定时器）。
              */
             function flushAll() {
-                for (var round = 0; round < MAX_FLUSH_ROUNDS; round++) {
-                    var before = Object.keys(dirty).length;
-                    if (!before) return;
-                    if (flushTimer !== null) { try { clearTimeout(flushTimer); } catch (e) {} flushTimer = null; }
-                    flush();
-                    // 没有进展（写失败）：把剩余键留给重试定时器，不在同步路径里空转
-                    if (Object.keys(dirty).length >= before) return;
+                if (flushTimer !== null) { try { clearTimeout(flushTimer); } catch (e) {} flushTimer = null; }
+                retrySuppressedDeletes();
+                var pending = Object.keys(dirty);
+                if (!pending.length) return;
+                var deadline = Date.now() + FLUSH_ALL_BUDGET_MS;
+                var failed = [];
+                var next = 0;
+                for (; next < pending.length; next += MAX_FLUSH_KEYS) {
+                    if (Date.now() > deadline) break;
+                    var batch = pending.slice(next, next + MAX_FLUSH_KEYS);
+                    for (var d = 0; d < batch.length; d++) delete dirty[batch[d]];
+                    var bad = writeBatch(batch);
+                    for (var f = 0; f < bad.length; f++) failed.push(bad[f]);
+                }
+                // 预算内没跑到的键：保持 dirty，由重试定时器接手（并记 warn）
+                var skipped = 0;
+                for (var r = next; r < pending.length; r++) {
+                    if (!hasOwn(dirty, pending[r])) { dirty[pending[r]] = true; skipped++; }
+                }
+                if (failed.length) {
+                    for (var g = 0; g < failed.length; g++) dirty[failed[g]] = true;
+                    flushRetries = 0;
+                    if (flushTimer === null) flushTimer = setTimeout(flush, FLUSH_RETRY_MS);
+                }
+                if (skipped > 0) {
+                    console.warn("[nw-polyfill-v2] localStorage flushAll hit its " + FLUSH_ALL_BUDGET_MS + "ms budget with " + skipped + " key(s) still pending");
                 }
             }
 
@@ -3572,7 +3631,11 @@
                             try {
                                 var path = pathFor(k);
                                 if (realFs.existsSync(path)) realFs.rmSync(path, { force: true });
-                            } catch (eRm) {}
+                            } catch (eRm) {
+                                // 删不掉就把它挡在索引/直读之外，否则旧值会在本会话复活
+                                suppressedNames[fileNameFor(k)] = true;
+                                console.warn("[nw-polyfill-v2] localStorage removeItem could not delete its file, value suppressed: " + k);
+                            }
                         } catch (e) {}
                         // 原生侧同步删除：否则 getItem 的兜底会把已删的键「复活」
                         if (nativeRemove) { try { nativeRemove.call(this, key); } catch (e2) {} }
@@ -3587,7 +3650,11 @@
                                 for (var i = 0; i < names.length; i++) {
                                     var name = String(names[i]);
                                     if (!/\.dat$/.test(name)) continue;
-                                    try { realFs.rmSync(joinPath(STORE_DIR, name), { force: true }); } catch (e1) {}
+                                    try { realFs.rmSync(joinPath(STORE_DIR, name), { force: true }); }
+                                    catch (e1) {
+                                        // 删不掉的文件必须挡住：ensureIndex 与按 key 直读都会查它
+                                        suppressedNames[name] = true;
+                                    }
                                 }
                             } catch (e2) {}
                             if (flushTimer !== null) { clearTimeout(flushTimer); flushTimer = null; }

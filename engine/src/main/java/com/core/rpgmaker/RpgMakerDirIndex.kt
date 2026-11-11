@@ -16,7 +16,9 @@ import java.util.LinkedHashMap
  *  2. 写入方主动 [invalidate] / [invalidateAll]（fs 桥自己的写/删/建目录）。
  *
  * 刻意接受的取舍：条目变更与 mtime 落在同一毫秒（或 exFAT 这类粗粒度时间戳的文件
- * 系统）时，索引可能短暂偏旧。风险被调用方的结构挡住——匹配结果只是「候选名字」，
+ * 系统）时，索引可能短暂偏旧。为此缓存项带 [MAX_AGE_MS] 的年龄上限——即使 mtime 没变，
+ * 超过这个年龄也会重新 readdir，把「偏旧」限制在有界窗口内（本桥自己的写会立即定向
+ * 失效，年龄上限只兜外部写入）。风险还被调用方的结构挡住——匹配结果只是「候选名字」，
  * 拿到路径后仍会 `exists()`/`isFile()` 校验，最坏情况退化为未命中，不会读到别的文件。
  *
  * 与 [RpgMakerNameMatcher.DEFAULT_MAX_FUZZY_ENTRIES] 的关系：两个 4096 是**不同策略**。
@@ -29,7 +31,7 @@ import java.util.LinkedHashMap
  */
 internal class RpgMakerDirIndex {
 
-    private class Entry(val stamp: Long, val children: List<String>)
+    private class Entry(val stamp: Long, val children: List<String>, val cachedAt: Long)
 
     private val cache = object : LinkedHashMap<String, Entry>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>): Boolean =
@@ -41,14 +43,19 @@ internal class RpgMakerDirIndex {
     fun children(dir: File): List<String>? {
         val path = dir.path
         val stamp = dir.lastModified()
+        val now = System.currentTimeMillis()
         // mtime 为 0（stat 失败/文件系统不提供时间戳）时无法判断是否变更 → 不缓存
-        if (stamp != 0L) cache[path]?.let { if (it.stamp == stamp) return it.children }
+        if (stamp != 0L) {
+            cache[path]?.let { entry ->
+                if (entry.stamp == stamp && now - entry.cachedAt <= MAX_AGE_MS) return entry.children
+            }
+        }
         // list() 返回 null 是 IO 错误：不缓存，让下次仍有机会读到
         val listed = dir.list() ?: return null
         val children = listed.toList()
         // 超大目录只读不缓存：名字列表本身可能占几 MB，而条目数不会因为缓存而减少扫描成本
         if (stamp != 0L && children.size <= MAX_CACHED_NAMES_PER_DIR) {
-            cache[path] = Entry(stamp, children)
+            cache[path] = Entry(stamp, children, now)
         }
         return children
     }
@@ -76,5 +83,14 @@ internal class RpgMakerDirIndex {
 
         /** 单目录缓存的名字上限（与匹配器阈值无关，见类注释）。 */
         const val MAX_CACHED_NAMES_PER_DIR = 4096
+
+        /**
+         * 缓存项的年龄上限：mtime 未变也强制重新 readdir。
+         *
+         * 粗粒度时间戳（exFAT 约 2s）下，外部写入可能与上一次 readdir 落在同一刻度，
+         * 只靠 mtime 会一直返回旧列表；30s 把这个窗口限制成有界值，同时保住
+         * 「一次场景加载内几百个请求只 readdir 一次」的收益。
+         */
+        const val MAX_AGE_MS = 30_000L
     }
 }
