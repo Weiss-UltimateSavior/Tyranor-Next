@@ -385,7 +385,9 @@ internal class RpgMakerFsBridge(
             val parentExisted = dir.parentFile?.isDirectory == true
             val done = existed || dir.mkdirs() || dir.isDirectory
             if (done && !existed) {
-                if (parentExisted) dirIndex.invalidate(dir.parentFile) else dirIndex.invalidateAll()
+                // 上级目录也变了（parentExisted 已保证 parentFile 非空）；多级创建则整表失效
+                val parent = dir.parentFile
+                if (parentExisted && parent != null) dirIndex.invalidate(parent) else dirIndex.invalidateAll()
                 // 新目录自身的条目也是空的（缓存里可能还留着同名旧目录的名字列表）
                 dirIndex.invalidate(dir)
             }
