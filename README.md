@@ -66,8 +66,8 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 | RPG Maker VX         | `.rgss2a`、`Game.ini` + `Data/*.rvdata`                              | 外置 RPGM APK 模块               |
 | RPG Maker VX Ace     | `.rgss3a`、`Game.ini` + `Data/*.rvdata2`                             | 外置 RPGM APK 模块               |
 | mkxp-z               | 用户选择/内部别名 `internal.mkxp-z`                                         | 外置 RPGM APK 模块               |
-| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境                  |
-| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境                  |
+| RPG Maker MV         | `www/`、`js/rpg_core.js`                                             | 内置 Web 运行环境（Tyranor-2.3.4 / TynMV-0.1 / TynMV-0.2） |
+| RPG Maker MZ         | `www/`、`js/rmmz_core.js`                                            | 内置 Web 运行环境（Tyranor-2.3.4 / TynMV-0.2） |
 | VN                   | `globalData.vndata`                                                 | 内置 Web 运行环境                  |
 | WebOther             | 通用 `index.html` 网页游戏                                                | 内置 Web 运行环境                  |
 | Ren'Py               | `.rpa`、`game/script.rpy`、`game/options.rpy`、`renpy/` + `.rpy/.rpyc` | 外置 RenPy APK 模块              |
@@ -88,6 +88,7 @@ iOS版本计划中...  鸿蒙设备可使用卓易通安装
 - SystemNNN 不再进行整目录复制，WebDAV 直接使用游戏目录下的 `sav`。手动恢复 ZIP 会在解包后确认当前存档目录。
 - 游戏目录需位于 Android 可访问的本地存储，并通过系统文件选择器（SAF）授权；启动时目录必须能够映射为真实文件路径，外置存储上的部分引擎可能需要“所有文件访问”权限。
 - 实际兼容性取决于游戏使用的引擎版本、封包/加密方式和脚本特性；特殊修改版可能需要调整引擎设置或补丁。KRKR 游戏的渲染器、FPS 限制、内存占用等引擎偏好按 Kirikiroid2 内核原生键名写入引擎偏好文件，全局与单游戏覆盖均可生效。
+- RPG Maker MV/MZ 可在引擎设置里选运行版本：`Tyranor-2.3.4` 走 Tyrano 宿主（旧版行为，兼容性最稳）；`TynMV-0.1` / `TynMV-0.2` 走 TynMV 宿主，由内置 NW.js 兼容层接管 `require` / `process` / `nw` 与本地文件读写，v2 额外接管 `fs` 与 `localStorage` 落盘。选 TynMV 后游戏资源经本地 HTTP 提供：图片、音频、字体等只读素材在单次会话内复用，`data/`、`save/` 以及脚本、网页、JSON 每次都回源，因此插件改完文件能立即读到新内容。TyranoBuilder 与 `Tyranor-2.3.4` 仍使用原有的资源分发路径。
 
 ## 参与贡献
 
