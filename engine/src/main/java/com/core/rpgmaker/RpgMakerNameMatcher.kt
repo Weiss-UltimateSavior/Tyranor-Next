@@ -63,9 +63,12 @@ internal object RpgMakerNameMatcher {
         children.firstOrNull { it == requested }?.let { return it }
         uniqueIgnoreCase(children, requested)?.let { return it }
         if (maxFuzzyEntries > 0 && children.size > maxFuzzyEntries) return null
-        uniqueByKey(children, requested, ::whitespaceClassKey)?.let { return it }
-        uniqueByKey(children, requested, ::trailingWhitespaceTrimmedKey)?.let { return it }
-        return null
+        // 第 3 级歧义即终止：类注释的契约是「后两级要求唯一命中，歧义时宁可不匹配」，
+        // 不能拿第 4 级去替第 3 级「猜」一个结果
+        val whitespaceHits = byKey(children, requested, ::whitespaceClassKey)
+        if (whitespaceHits.size == 1) return whitespaceHits[0]
+        if (whitespaceHits.size > 1) return null
+        return byKey(children, requested, ::trailingWhitespaceTrimmedKey).singleOrNull()
     }
 
     private fun uniqueIgnoreCase(children: List<String>, requested: String): String? {
@@ -73,13 +76,12 @@ internal object RpgMakerNameMatcher {
         return hits.singleOrNull()
     }
 
-    private fun uniqueByKey(
+    private fun byKey(
         children: List<String>,
         requested: String,
         key: (String) -> String,
-    ): String? {
+    ): List<String> {
         val target = key(requested).lowercase(Locale.ROOT)
-        val hits = children.filter { key(it).lowercase(Locale.ROOT) == target }
-        return hits.singleOrNull()
+        return children.filter { key(it).lowercase(Locale.ROOT) == target }
     }
 }

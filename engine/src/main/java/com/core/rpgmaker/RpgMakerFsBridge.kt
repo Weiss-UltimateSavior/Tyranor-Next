@@ -27,6 +27,14 @@ internal class RpgMakerFsBridge(
     gameRoot: File,
     private val contentRoot: File,
     private val asar: AsarArchive? = null,
+    /**
+     * 与本地 HTTP 服务器**共享**的目录名索引。
+     *
+     * 必须共用同一个实例：本桥的写/删/建目录只会失效自己持有的索引，而服务器用另一份
+     * 索引做 `fuzzyNames` 回退。两份互不失效时，插件写出「需要宽松名匹配才能命中」的
+     * 新文件后会出现「XHR 404、`fs.existsSync` 为真」的分裂（仅在 mtime 同刻度时）。
+     */
+    private val dirIndex: RpgMakerDirIndex = RpgMakerDirIndex(),
 ) {
     private val root: File = gameRoot.canonicalFile
 
@@ -37,9 +45,6 @@ internal class RpgMakerFsBridge(
      * 写入始终落磁盘（压缩包不可写），与 NW.js 下写 save/ 目录的行为一致。
      */
     private val asarPrefix: String = if (asar == null) "" else AsarWebRoot.prefixFor { asar.has(it) }
-
-    /** 宽松名解析用的目录名索引；本桥的写/删/建目录操作会让它整体失效。 */
-    private val dirIndex = RpgMakerDirIndex()
 
     /**
      * 原始路径 → 规范化路径（realpath）缓存。
@@ -380,7 +385,8 @@ internal class RpgMakerFsBridge(
             val parentExisted = dir.parentFile?.isDirectory == true
             val done = existed || dir.mkdirs() || dir.isDirectory
             if (done && !existed) {
-                if (parentExisted) dirIndex.invalidate(dir.parentFile) else dirIndex.invalidate()
+                if (parentExisted) dirIndex.invalidate(dir.parentFile) else dirIndex.invalidateAll()
+                // 新目录自身的条目也是空的（缓存里可能还留着同名旧目录的名字列表）
                 dirIndex.invalidate(dir)
             }
             done
@@ -399,7 +405,8 @@ internal class RpgMakerFsBridge(
             } else {
                 file.delete().also { removed ->
                     if (removed) {
-                        dirIndex.invalidate(file.parentFile)
+                        // 父目录少了一个条目；若删的是目录，它自身的名字列表缓存也要丢
+                        dirIndex.invalidate(file.parentFile ?: file)
                         dirIndex.invalidate(file)
                     }
                 }
@@ -469,7 +476,7 @@ internal class RpgMakerFsBridge(
             }
             tmp = null
             // 目录条目已变：只失效这一层；若刚补建了整条路径（上级目录也变了）则整体失效
-            if (parentExisted) dirIndex.invalidate(parent) else dirIndex.invalidate()
+            if (parentExisted) dirIndex.invalidate(parent) else dirIndex.invalidateAll()
             true
         } catch (error: Throwable) {
             Log.w(TAG, "fs write failed: ${file.path}", error)
@@ -507,8 +514,10 @@ internal class RpgMakerFsBridge(
         // 注意不要 trim()：文件名里的尾随空格是真实存在的（部分素材名带尾随空格），
         // trim 会让这类文件永远无法访问（Node 的 fs 同样不做 trim）。
         val raw = path?.takeIf { it.isNotEmpty() && it.any { c -> !c.isWhitespace() } } ?: return null
-        // realpath 是每个 fs 调用里最贵的一步，且结果在会话内稳定：命中即返回
-        synchronized(pathCache) { pathCache[raw]?.let { return it } }
+        // realpath 是每个 fs 调用里最贵的一步，且结果在会话内稳定：命中即返回。
+        // 仍复核一次 isInsideRoot（纯字符串比较）：缓存值只在「填充时」合法，若祖先目录
+        // 之后被换成指向游戏根之外的符号链接，这里必须重新拒绝而不是直接放行。
+        synchronized(pathCache) { pathCache[raw]?.let { if (isInsideRoot(it)) return it } }
         if (raw.any { it == '\u0000' || it.isISOControl() }) return null
         val normalized = raw.removePrefix("file://").replace('\\', '/')
         val candidate = if (normalized.startsWith("/")) File(normalized) else File(contentRoot, normalized)

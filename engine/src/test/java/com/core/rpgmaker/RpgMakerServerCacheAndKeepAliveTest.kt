@@ -62,7 +62,7 @@ class RpgMakerServerCacheAndKeepAliveTest {
         val code = lines.firstOrNull()?.split(" ")?.getOrNull(1)?.toIntOrNull() ?: -1
         val headers = lines.drop(1).mapNotNull { line ->
             val idx = line.indexOf(':')
-            if (idx <= 0) null else line.substring(0, idx).trim().lowercase() to line.substring(idx + 1).trim()
+            if (idx <= 0) null else line.substring(0, idx).trim().lowercase(java.util.Locale.ROOT) to line.substring(idx + 1).trim()
         }.toMap()
         var left = if (hasBody) (headers["content-length"]?.toIntOrNull() ?: 0) else 0
         val buf = ByteArray(8 * 1024)
@@ -121,6 +121,12 @@ class RpgMakerServerCacheAndKeepAliveTest {
             val dataResponse = readResponse(input)
             assertEquals(200, dataResponse.code)
             assertEquals("no-cache", dataResponse.headers["cache-control"])
+            // 可改写路径不发 ETag：mtime 粒度内同长度改写会 304 出旧内容
+            assertNull("可改写路径不得带 ETag", dataResponse.headers["etag"])
+
+            // 路径拼写不同（`./data/...`）也必须落到 no-cache：判定按解析后的磁盘相对路径
+            request(out, "./data/table.json", cookie)
+            assertEquals("no-cache", readResponse(input).headers["cache-control"])
 
             request(out, "img/pic.png", cookie, "If-None-Match: $etag\r\n")
             val second = readResponse(input)
@@ -217,7 +223,10 @@ class RpgMakerServerCacheAndKeepAliveTest {
     /**
      * keep-alive 下 worker 会阻塞在「等下一个请求」上，若线程池 core=max=2，第 3 条及之后的
      * 连接会排队到空闲超时才被服务（首页并发取 3 个兼容层脚本就会命中）。这里同时开 6 条
-     * 连接（Chromium 同源上限）并断言都在 2s 内返回。
+     * 连接（Chromium 同源上限）并断言都在 1200ms 内返回。
+     *
+     * 上界必须明显小于服务端空闲超时（1500ms）：否则「排队等到超时」这条回退路径
+     * （约 1500ms）也能通过，断言就失去区分度。
      */
     @Test
     fun sixConcurrentConnectionsAreServedInParallel() {
@@ -237,7 +246,10 @@ class RpgMakerServerCacheAndKeepAliveTest {
             val codes = sockets.map { readResponse(BufferedInputStream(it.getInputStream())).code }
             val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
             assertTrue("6 条并发连接必须全部成功，实际 $codes", codes.all { it == 200 })
-            assertTrue("并发请求不得排队到空闲超时（实际 ${elapsedMs}ms）", elapsedMs < 2_000L)
+            assertTrue(
+                "并发请求不得排队到空闲超时（实际 ${elapsedMs}ms，上界 1200ms 必须小于服务端 1500ms 空闲超时）",
+                elapsedMs < 1_200L,
+            )
         } finally {
             sockets.forEach { runCatching { it.close() } }
         }

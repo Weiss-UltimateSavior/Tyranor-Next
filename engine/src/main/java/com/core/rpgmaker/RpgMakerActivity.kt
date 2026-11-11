@@ -65,6 +65,15 @@ class RpgMakerActivity : Activity() {
     private var asarArchive: AsarArchive? = null
     private var firstResume = true
 
+    /**
+     * fs 桥与本地 HTTP 服务器**共享**的目录名索引。
+     *
+     * 共用同一个实例，桥的写/删/建目录才会同时失效服务器的 `fuzzyNames` 回退缓存；
+     * 两份互不失效时，插件写出「需要宽松名匹配才能命中」的新文件后会出现
+     * 「XHR 404、fs.existsSync 为真」的分裂。
+     */
+    private val rpgDirIndex = RpgMakerDirIndex()
+
     // WebView 回调线程（shouldInterceptRequest）会读取这两项，onCreate 主线程写入
     @Volatile
     private var localServer: RpgMakerLocalHttpServer? = null
@@ -184,6 +193,18 @@ class RpgMakerActivity : Activity() {
         setupGameUi(saves, bundle)
     }
 
+    /**
+     * 一份兼容层脚本：外链资源键 + 该脚本加载成功后应设置的全局标记。
+     *
+     * [flag] 用于生成首页末尾的完整性哨兵——只校验**实际注入**的脚本，资产缺失时
+     * 不会因为「期望有 v2」而误报致命错误。
+     */
+    private class PolyfillScript(
+        val resourceKey: String,
+        val flag: String,
+        val bytes: ByteArray,
+    )
+
     /** 注入内容与本地服务器构造参数的一次性装配结果（onCreate 编排用）。 */
     private data class InjectionBundle(
         val contentRoot: File,
@@ -259,23 +280,27 @@ class RpgMakerActivity : Activity() {
                 emptyMap()
             }
             val modHtml = if (rpgMakerModEnabled) buildRpgMakerModHtml() else ""
-            // v1/v2 会话注入 NWJS 兼容层，v0 兜底会话不注入（与 v0 宿主一致）。
+            // v1/v2 会话注入 NWJS 兼容层（v0 走 TyranoActivity，不经过本宿主）。
             // 兼容层改为**外链脚本**（`/__tyranor__/…`），首页只留三个 <script src>：
             // 过去把 41 KB + 4.6 KB（+230 KB）拼成一段内联脚本塞进 </head>，每次启动
-            // 都要把 276 KB 脚本重新解析一遍，且无法利用 WebView 的脚本缓存。
-            // base 是地基（require/process/fs 桩/全局装配）：缺了就整组放弃并报错，
+            // 都要把 276 KB 脚本重新解析一遍，也让首页响应体大一倍多。
+            // base 是地基（require/process/fs 桩/全局装配）：缺了就整组放弃并记错误日志，
             // 拼半套只会让后续插件异常更难定位。
-            val polyfillAssets: List<Pair<String, ByteArray>> = if (v12Session) {
+            val polyfillAssets: List<PolyfillScript> = if (v12Session) {
                 val base = loadAssetOrNull(NWJS_POLYFILL_ASSET)
                 if (base == null) {
                     Log.e(TAG, "nw.js compat base asset missing: $NWJS_POLYFILL_ASSET")
                     emptyList()
                 } else {
                     buildList {
-                        add(NWJS_POLYFILL_RESOURCE to base)
-                        loadAssetOrNull(NWJS_POLYFILL_V1_EXTRA_ASSET)?.let { add(NWJS_POLYFILL_V1_RESOURCE to it) }
+                        add(PolyfillScript(NWJS_POLYFILL_RESOURCE, "window.__tyranorNwPolyfill", base))
+                        loadAssetOrNull(NWJS_POLYFILL_V1_EXTRA_ASSET)?.let {
+                            add(PolyfillScript(NWJS_POLYFILL_V1_RESOURCE, "window.__tyranorNwPolyfillV1", it))
+                        }
                         if (isRpgMvV2 || isRpgMzV2) {
-                            loadAssetOrNull(NWJS_POLYFILL_V2_EXTRA_ASSET)?.let { add(NWJS_POLYFILL_V2_RESOURCE to it) }
+                            loadAssetOrNull(NWJS_POLYFILL_V2_EXTRA_ASSET)?.let {
+                                add(PolyfillScript(NWJS_POLYFILL_V2_RESOURCE, "window.__tyranorNwPolyfillV2", it))
+                            }
                         }
                     }
                 }
@@ -283,20 +308,21 @@ class RpgMakerActivity : Activity() {
                 emptyList()
             }
             // 顺序即执行顺序（经典脚本同步执行）；末尾哨兵把「脚本没加载/404/半套」从
-            // 静默降级变成一条可检索的错误日志（按本次会话的期望逐层校验）。
-            val sentinel = buildString {
-                append("window.__tyranorNwPolyfill&&window.__tyranorNwPolyfillV1")
-                if (isRpgMvV2 || isRpgMzV2) append("&&window.__tyranorNwPolyfillV2")
-            }
+            // 静默降级变成一条可检索的错误日志。哨兵由**实际注入的资产**生成，资产缺失时
+            // 不会因为「期望有 v2」而每次都误报致命错误。
+            val sentinel = polyfillAssets.joinToString("&&") { it.flag }
             val earlyHtml = if (polyfillAssets.isEmpty()) {
                 ""
             } else {
-                polyfillAssets.joinToString(separator = "") { (name, _) ->
-                    "<script src='/__tyranor__/$name'></script>"
+                polyfillAssets.joinToString(separator = "") { script ->
+                    // 键本身已含 `__tyranor__/` 前缀（它同时是 internalResources 的查找键），
+                    // 这里只补前导 '/'，否则会拼成 `/__tyranor__/__tyranor__/...` 而 404
+                    "<script src='${internalResourceUrl(script.resourceKey)}'></script>"
                 } + "<script>if(!($sentinel)){console.error('[tyranor] nw.js compat layer incomplete');}</script>"
             }
-            val internalResources = modResources + v1Overlay + polyfillAssets.toMap()
-            Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} earlyHtml=${earlyHtml.length} polyfill=${polyfillAssets.map { it.first }} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
+            val internalResources = modResources + v1Overlay +
+                polyfillAssets.associate { it.resourceKey to it.bytes }
+            Log.i(TAG, "asset loaded $hookAsset bytes=${lateHook.size} earlyHtml=${earlyHtml.length} polyfill=${polyfillAssets.map { it.resourceKey }} scriptAppends=${scriptAppends.keys} v1Overlay=${v1Overlay.keys} rpgMakerVersion=$rpgMakerVersion v12Session=$v12Session useCoreScriptOverlay=$useCoreScriptOverlay")
             val legacyRenderer = intent.getBooleanExtra(LaunchContract.RPG_LEGACY_RENDERER, false)
             InjectionBundle(contentRoot, lateHook, scriptAppends, internalResources, earlyHtml, modHtml, legacyRenderer)
         } catch (error: Throwable) {
@@ -315,14 +341,14 @@ class RpgMakerActivity : Activity() {
                     bundle.modHtml, bundle.internalResources,
                     // earlyHook 仅保留给历史内联形态；生产路径已改用 earlyHtml 外链
                     earlyHook = null, v12Compat = v12Session, fuzzyNames = v2Session,
-                    earlyHtml = bundle.earlyHtml,
+                    earlyHtml = bundle.earlyHtml, dirIndex = rpgDirIndex,
                 )
             } else {
                 RpgMakerLocalHttpServer(
                     bundle.contentRoot, bundle.lateHook, true, bundle.scriptAppends,
                     bundle.modHtml, bundle.internalResources,
                     earlyHook = null, v12Compat = v12Session, fuzzyNames = v2Session,
-                    earlyHtml = bundle.earlyHtml,
+                    earlyHtml = bundle.earlyHtml, dirIndex = rpgDirIndex,
                 )
             }.also { it.start() }
         } catch (error: Throwable) {
@@ -370,8 +396,9 @@ class RpgMakerActivity : Activity() {
             gameDir?.let { dir ->
                 browser.addJavascriptInterface(
                     // asar 会话传入压缩包：游戏资源在包内、磁盘上不存在，
-                    // 桥采用与本地 HTTP 服务器一致的「磁盘优先、asar 兜底」覆盖层语义
-                    RpgMakerFsBridge(File(dir), bundle.contentRoot, asarArchive),
+                    // 桥采用与本地 HTTP 服务器一致的「磁盘优先、asar 兜底」覆盖层语义；
+                    // dirIndex 与服务器共享，写操作会同时失效两边的宽松名缓存
+                    RpgMakerFsBridge(File(dir), bundle.contentRoot, asarArchive, rpgDirIndex),
                     RPG_MAKER_FS_BRIDGE_NAME,
                 )
             }
@@ -904,9 +931,10 @@ class RpgMakerActivity : Activity() {
         private const val NWJS_POLYFILL_V1_RESOURCE = "__tyranor__/nwjs_polyfill_v1.js"
         private const val NWJS_POLYFILL_V2_RESOURCE = "__tyranor__/nwjs_polyfill_v2.js"
 
-        /** v2 会话的 localStorage 合并落盘入口（见 `__nwjs_polyfill_v2.js` 的 `__tyranorLocalStorageFlush`）。 */
+        /** v2 会话的 localStorage 合并落盘入口（见 `__nwjs_polyfill_v2.js` 的 `__tyranorLocalStorageFlushAll`）。 */
         private const val FLUSH_LOCAL_STORAGE_JS =
-            "try{if(window.__tyranorLocalStorageFlush){window.__tyranorLocalStorageFlush();}}catch(e){}"
+            "try{if(window.__tyranorLocalStorageFlushAll){window.__tyranorLocalStorageFlushAll();}}" +
+                "catch(e){try{if(window.__tyranorLocalStorageFlush){window.__tyranorLocalStorageFlush();}}catch(e2){}}"
         private const val RPG_MZ_CORE_HOOK_ASSET = "__hook_rmmz_core.js"
         private const val RPG_MZ_MANAGERS_HOOK_ASSET = "__hook_rmmz_managers.js"
         private const val RPG_MAKER_SAVE_BRIDGE_NAME = "saveDataManager"

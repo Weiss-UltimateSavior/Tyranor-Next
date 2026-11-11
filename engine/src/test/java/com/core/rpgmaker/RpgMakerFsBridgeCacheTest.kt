@@ -13,7 +13,7 @@ import org.junit.Test
  * 关键不变量：宽松名解析可以用「目录 + mtime」缓存，但**写操作必须让它立刻失效**，
  * 且未命中不得被缓存成永久不存在——否则插件「先写后读」会读到自己刚写的数据为 null。
  *
- * 注意：删除后能否命中是自证的（[RpgMakerFsBridge.fuzzyEntry] 末尾会 `exists()` 复核），
+ * 注意：删除后能否命中是自证的（`RpgMakerFsBridge.fuzzyEntry` 末尾会 `exists()` 复核），
  * 所以这里锁的是更严格的那半：**新写入的名字**必须立刻可被宽松名命中。
  */
 class RpgMakerFsBridgeCacheTest {

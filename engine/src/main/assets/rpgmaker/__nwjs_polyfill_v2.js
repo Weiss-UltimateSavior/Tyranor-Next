@@ -3304,6 +3304,8 @@
             var MAX_FLUSH_RETRY = 1;
             // 单次 flush 的键数上限：切后台/退出时 flush 跑在渲染线程上，连续 fsync 会卡界面
             var MAX_FLUSH_KEYS = 32;
+            // flushAll 的批次数上限（32 × 32 = 1024 键；正常插件远低于此）
+            var MAX_FLUSH_ROUNDS = 32;
 
             // 键名 → 文件名。用「UTF-8 字节的十六进制」编码：
             // 之前用 encodeURIComponent 再替换 '%' 为 '_' 的方案有歧义——
@@ -3377,12 +3379,15 @@
 
             function ensureIndex() {
                 if (indexLoaded) return;
-                indexLoaded = true;
                 var names = null;
                 try {
                     if (realFs.existsSync(STORE_DIR)) names = realFs.readdirSync(STORE_DIR);
                 } catch (e) { names = null; }
-                if (!names || !names.length) return;
+                // 只有真的读到目录才置位：瞬时 IO 失败若把 indexLoaded 置 true，整会话
+                // 都不会再建索引，length/key() 恒为空，只能靠重启恢复
+                if (names === null) return;
+                indexLoaded = true;
+                if (!names.length) return;
                 for (var i = 0; i < names.length; i++) {
                     var name = String(names[i]);
                     if (!/\.dat$/.test(name)) continue;
@@ -3409,9 +3414,8 @@
                 }
                 // 超长键的文件名是哈希、索引里没有原键：直接按 key 算路径再试一次。
                 // 少了这一步，跨会话（重启后）长键内容永久读不回（旧实现按 key 算路径，没有该缺陷）。
-                var direct = pathFor(key);
-                if (!name || direct !== joinPath(STORE_DIR, name)) {
-                    var fallback = readFileIfExists(direct);
+                if (!name) {
+                    var fallback = readFileIfExists(pathFor(key));
                     if (fallback !== null) {
                         values[key] = fallback;
                         rememberKey(key);
@@ -3434,7 +3438,7 @@
                 // 连续几十次 fsync 会卡住界面（甚至 ANR）。剩余批次用 0ms 定时器续跑。
                 var keys = pending.slice(0, MAX_FLUSH_KEYS);
                 for (var d = 0; d < keys.length; d++) delete dirty[keys[d]];
-                if (pending.length > keys.length) flushTimer = setTimeout(flush, 0);
+                if (pending.length > keys.length && flushTimer === null) flushTimer = setTimeout(flush, 0);
                 var failed = [];
                 try {
                     try { if (!realFs.existsSync(STORE_DIR)) realFs.mkdirSync(STORE_DIR); } catch (eDir) {}
@@ -3472,6 +3476,24 @@
                 console.warn("[nw-polyfill-v2] localStorage flush fell back to native storage for " + failed.length + " key(s)");
             }
 
+            /**
+             * 同步刷完全部脏键（宿主在 onPause / 销毁前调用）。
+             *
+             * flush() 每批只写 MAX_FLUSH_KEYS 个键，剩余批次靠 setTimeout 续跑；而宿主
+             * 紧接着会 webView.onPause()/destroy()，JS 定时器不再有机会执行 —— 只调 flush()
+             * 最多保住 32 个键。这里循环把批次跑完（同一拍内，不依赖定时器）。
+             */
+            function flushAll() {
+                for (var round = 0; round < MAX_FLUSH_ROUNDS; round++) {
+                    var before = Object.keys(dirty).length;
+                    if (!before) return;
+                    if (flushTimer !== null) { try { clearTimeout(flushTimer); } catch (e) {} flushTimer = null; }
+                    flush();
+                    // 没有进展（写失败）：把剩余键留给重试定时器，不在同步路径里空转
+                    if (Object.keys(dirty).length >= before) return;
+                }
+            }
+
             var nativeSet = null, nativeGet = null, nativeRemove = null, nativeKey = null;
             var nativeStorageLength = function () { return 0; };
             var nativeStorageKey = function () { return null; };
@@ -3500,7 +3522,10 @@
                         if (document.visibilityState === "hidden") flush();
                     });
                 } catch (eVis) {}
-                // 宿主（RpgMakerActivity.onPause / 销毁前）也会显式调用它
+                // 宿主（RpgMakerActivity.onPause / 销毁前）调用 flushAll：它同步跑完全部批次，
+                // 不依赖 JS 定时器（宿主紧接着会 onPause/destroy，定时器不会再执行）。
+                window.__tyranorLocalStorageFlushAll = flushAll;
+                // 兼容入口：只刷一批，供页面内脚本使用
                 window.__tyranorLocalStorageFlush = flush;
                 window.__tyranorLocalStoragePersisted = true;
                 window.__tyranorLocalStorageMode = "file-backed";

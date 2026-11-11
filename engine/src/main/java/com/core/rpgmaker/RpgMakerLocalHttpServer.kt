@@ -18,11 +18,21 @@ import java.util.HashMap
 import com.core.web.AsarWebRoot
 import java.util.Locale
 import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 // ASAR 条目走流式的体积阈值：低于此值一次性读取更简单高效
 internal const val ASAR_STREAM_THRESHOLD = 256L * 1024L
+
+/**
+ * 内部资源的注入 URL = `"/" + 资源键`。
+ *
+ * 服务器把请求 URI 去掉前导 `/` 后**按同一个键**查 `internalResources`，所以宿主拼
+ * `<script src>` 时必须遵守这条映射；两边各自硬编码前缀会拼出
+ * `/__tyranor__/__tyranor__/...` 这类 404 地址（曾真实发生）。
+ */
+internal fun internalResourceUrl(resourceKey: String): String = "/" + resourceKey.trimStart('/')
 
 // 路径归一规则：每个请求都要用到，不要在热路径里新建 Regex。
 // 注意 Kotlin 块注释可以嵌套，注释文本里不要出现「斜杠 + 星号」组合（会多开一层注释）。
@@ -47,6 +57,11 @@ internal class RpgMakerLocalHttpServer(
      * 首页不再内联 276 KB 脚本）。与 [earlyHook] 并存，earlyHtml 先于内联 earlyHook 执行。
      */
     private val earlyHtml: String = "",
+    /**
+     * 目录名索引：与 fs 桥**共享同一实例**，这样桥的写/删/建目录会同时失效服务器的
+     * `fuzzyNames` 回退缓存，避免「XHR 404、fs.existsSync 为真」的分裂。
+     */
+    private val dirIndex: RpgMakerDirIndex = RpgMakerDirIndex(),
 ) : Runnable {
     private val root: File
     private val asar: AsarArchive?
@@ -64,16 +79,8 @@ internal class RpgMakerLocalHttpServer(
     private var running = true
     private val clients: ThreadPoolExecutor
 
-    /**
-     * 目录名索引：fuzzy 名匹配的目录枚举按「目录 + mtime」缓存。
-     *
-     * 服务器本身不写盘，但同进程的 fs 桥会写 `contentRoot` 内的文件——靠 mtime 兜底刷新；
-     * 同毫秒窗口被「匹配结果只是候选名、最终仍 `exists()` 复核」挡住。
-     */
-    private val dirIndex = RpgMakerDirIndex()
-
     /** 活跃/排队中的客户端 socket：`stop()` 时逐个关闭，避免线程与 FD 滞留。 */
-    private val clientSockets: MutableSet<Socket> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val clientSockets: MutableSet<Socket> = ConcurrentHashMap.newKeySet()
 
     // 每实例随机鉴权 token：绑定 127.0.0.1 不限制同设备其他应用，端口扫描可读取
     // 游戏目录内文件（含存档，PR review 意见）。index 页为引导入口无条件下发
@@ -114,7 +121,8 @@ internal class RpgMakerLocalHttpServer(
         fuzzyNames: Boolean = false,
         preferredPort: Int = com.core.web.WebShellServerSocket.RANDOM_PORT,
         earlyHtml: String = "",
-    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames, preferredPort, earlyHtml)
+        dirIndex: RpgMakerDirIndex = RpgMakerDirIndex(),
+    ) : this(root, null, tyranoHook, injectBeforeBody, scriptAppends, injectedHtml, internalResources, earlyHook, v12Compat, fuzzyNames, preferredPort, earlyHtml, dirIndex)
 
     fun start() { thread.start() }
     val port: Int get() = serverSocket.localPort
@@ -166,9 +174,6 @@ internal class RpgMakerLocalHttpServer(
         /** keep-alive 空闲等待上限；同时写进 Keep-Alive 响应头。 */
         private const val KEEPALIVE_IDLE_TIMEOUT_MS = 1_500
 
-        /** 可改写文件用内容哈希做 ETag 的体积上限（超出只看 mtime，避免为大文件多读一遍）。 */
-        private const val MAX_CONTENT_ETAG_BYTES = 1L * 1024L * 1024L
-
         /**
          * 只读素材/脚本的缓存策略：允许 WebView 在会话内直接复用（旧实现一律 `no-cache`，
          * 切图/读档时几百个请求全量重传）。
@@ -195,20 +200,29 @@ internal class RpgMakerLocalHttpServer(
         val streamLen: Long = 0L,
     )
 
-    // 单行读取带长度上限：readLine 本身不限长，本地任意应用可发超长行触发 OOM
-    // （PR review 意见）；超限时排空该行剩余内容并返回 null，调用方按失败处理
-    private fun readBoundedLine(reader: BufferedReader, maxChars: Int): String? {
+    /** 单行读取结果：必须区分「正常一行」「流结束」「超长被截断」，三者处理方式不同。 */
+    private sealed interface LineRead {
+        class Line(val value: String) : LineRead
+        object EndOfStream : LineRead
+        object TooLong : LineRead
+    }
+
+    // 单行读取带长度上限：readLine 本身不限长，本地任意应用可发超长行触发 OOM。
+    // 超限时排空该行剩余内容并返回 [LineRead.TooLong]——调用方必须回 431 并关闭连接；
+    // 若把它当成「头结束」，请求会带着被截断的 header 集继续处理（Cookie 被切 → 403，
+    // `Connection: close` 被丢 → 白等空闲超时）。
+    private fun readBoundedLine(reader: BufferedReader, maxChars: Int): LineRead {
         val sb = StringBuilder(256)
         while (true) {
             val c = reader.read()
-            if (c < 0) return if (sb.isEmpty()) null else sb.toString()
-            if (c == '\n'.code) return sb.toString().trimEnd('\r')
+            if (c < 0) return if (sb.isEmpty()) LineRead.EndOfStream else LineRead.Line(sb.toString())
+            if (c == '\n'.code) return LineRead.Line(sb.toString().trimEnd('\r'))
             if (sb.length >= maxChars) {
                 while (true) {
                     val d = reader.read()
                     if (d < 0 || d == '\n'.code) break
                 }
-                return null
+                return LineRead.TooLong
             }
             sb.append(c.toChar())
         }
@@ -224,19 +238,37 @@ internal class RpgMakerLocalHttpServer(
             // 旧实现每个响应都带 `Connection: close`，一次切图就要重建几百条 TCP 连接。
             while (running && served < MAX_KEEPALIVE_REQUESTS) {
                 socket.soTimeout = idleTimeout
-                val requestLine = readBoundedLine(reader, MAX_REQUEST_LINE_CHARS)
-                if (requestLine.isNullOrEmpty()) return
+                val requestLine = when (val read = readBoundedLine(reader, MAX_REQUEST_LINE_CHARS)) {
+                    is LineRead.Line -> read.value
+                    // 空闲超时/客户端关闭：正常回收连接
+                    LineRead.EndOfStream -> return
+                    LineRead.TooLong -> {
+                        sendText(socket, 414, "URI Too Long", "request line too long")
+                        return
+                    }
+                }
+                if (requestLine.isEmpty()) return
                 val headers = HashMap<String, String>()
                 var headerCount = 0
                 while (true) {
-                    val line = readBoundedLine(reader, MAX_HEADER_LINE_CHARS) ?: break
-                    if (line.isEmpty()) break
-                    if (++headerCount > MAX_HEADER_COUNT) {
-                        sendText(socket, 431, "Request Header Fields Too Large", "headers too large")
-                        return
+                    when (val read = readBoundedLine(reader, MAX_HEADER_LINE_CHARS)) {
+                        LineRead.EndOfStream -> return
+                        LineRead.TooLong -> {
+                            // 与 header 计数超限同一处理：必须拒绝，不能当成「头结束」继续
+                            sendText(socket, 431, "Request Header Fields Too Large", "header line too long")
+                            return
+                        }
+                        is LineRead.Line -> {
+                            val line = read.value
+                            if (line.isEmpty()) break
+                            if (++headerCount > MAX_HEADER_COUNT) {
+                                sendText(socket, 431, "Request Header Fields Too Large", "headers too large")
+                                return
+                            }
+                            val idx = line.indexOf(':')
+                            if (idx > 0) headers[line.substring(0, idx).trim().lowercase(Locale.ROOT)] = line.substring(idx + 1).trim()
+                        }
                     }
-                    val idx = line.indexOf(':')
-                    if (idx > 0) headers[line.substring(0, idx).trim().lowercase(Locale.ROOT)] = line.substring(idx + 1).trim()
                 }
                 val parts = requestLine.split(" ")
                 if (parts.size < 2) { sendText(socket, 400, "Bad Request", "bad request"); return }
@@ -254,14 +286,23 @@ internal class RpgMakerLocalHttpServer(
                 val normalizedLookup = uri.replace(DOT_SEGMENT, "/").replace(DOUBLE_SLASH, "/").lowercase(Locale.ROOT)
                 // 最后一个可复用名额用显式 close 收尾：否则客户端会把下一个请求发进我们将要关闭的连接
                 val keepAlive = wantsKeepAlive(parts.getOrNull(2), headers) && served + 1 < MAX_KEEPALIVE_REQUESTS
-                val keepOpen = serveOne(
-                    socket = socket,
-                    headOnly = method.equals("HEAD", true),
-                    uri = uri,
-                    normalizedLookup = normalizedLookup,
-                    headers = headers,
-                    keepAlive = keepAlive,
-                )
+                // 响应一旦开始写出（状态行/头/部分 body），异常就不能再补 500：那会拼进
+                // 残缺响应并毒化 keep-alive 连接（客户端把 500 头当成上一个响应的 body）。
+                // 因此这里就地兜住，只记日志并关闭连接；handle 的 catch 只负责「还没写任何
+                // 字节」的请求行/头解析阶段。
+                val keepOpen = try {
+                    serveOne(
+                        socket = socket,
+                        headOnly = method.equals("HEAD", true),
+                        uri = uri,
+                        normalizedLookup = normalizedLookup,
+                        headers = headers,
+                        keepAlive = keepAlive,
+                    )
+                } catch (t: Throwable) {
+                    logServingFailure(t, uri)
+                    false
+                }
                 if (!keepOpen) return
                 served++
                 idleTimeout = KEEPALIVE_IDLE_TIMEOUT_MS
@@ -282,6 +323,21 @@ internal class RpgMakerLocalHttpServer(
         } finally {
             clientSockets.remove(socket)
             close(socket)
+        }
+    }
+
+    /**
+     * 响应写出阶段的异常分类：预期断连/超时降为 debug，其余记 warn；一律不补错误响应
+     * （此时状态行或 body 可能已写出，补 500 只会制造毒化响应）。
+     */
+    private fun logServingFailure(error: Throwable, uri: String) {
+        when {
+            error is java.net.SocketTimeoutException ->
+                Log.d(TAG, "connection idle timeout while serving uri=$uri")
+            isExpectedClientDisconnect(error) ->
+                Log.d(TAG, "client disconnected while serving uri=$uri: ${error.javaClass.simpleName}")
+            else ->
+                Log.w(TAG, "serving uri=$uri failed: ${error.javaClass.simpleName}", error)
         }
     }
 
@@ -309,8 +365,9 @@ internal class RpgMakerLocalHttpServer(
             return false
         }
         val ifNoneMatch = headers["if-none-match"]
-        // 每请求只算一次缓存策略：200 与 304 必须是同一个值。若 200 走请求路径、304 走
-        // 磁盘相对路径，`./data/x.json` 这类写法会让 304 把可改写文件钉成 max-age。
+        // 内存/内部资源分支按请求路径判定；磁盘文件分支在下面按**解析后的相对路径**再判一次
+        // （`./data/x.json` 这类写法只有后者能识别成可改写路径）。两条分支各自的 200 与 304
+        // 都用同一个变量，不会出现「200 是 no-cache、304 却是 max-age」的分裂。
         val cacheControl = cacheControlFor(uri)
 
         internalResources[normalizedLookup]?.let { resource ->
@@ -362,9 +419,10 @@ internal class RpgMakerLocalHttpServer(
             return keepAlive
         }
         if (file != null && hasScriptAppend(uri)) {
-            val patched = appendedBytes(file.readBytes(), uri)
+            val original = file.readBytes()
+            val patched = appendedBytes(original, uri)
             val etag = contentEtag(patched)
-            Log.i(TAG, "served patched script uri=$uri append=${patched.size}")
+            Log.i(TAG, "served patched script uri=$uri original=${original.size} append=${patched.size - original.size}")
             if (matchesEtag(ifNoneMatch, etag)) sendNotModified(socket, etag, cacheControl, keepAlive)
             else sendBytes(socket, patched, uri, headOnly, keepAlive, cacheControl, etag)
             return keepAlive
@@ -376,11 +434,12 @@ internal class RpgMakerLocalHttpServer(
         // 缓存策略按**解析后的磁盘相对路径**判定：`./data/x.json`、`a/../data/x.json`
         // 这类写法同样要落到 no-cache，否则插件改完同会话内会读到旧内容。
         val fileCacheControl = cacheControlFor(relativeToRoot(file))
-        val rewritable = fileCacheControl == REWRITABLE_CACHE_CONTROL
-        // 可改写文件用内容哈希做 ETag：length+mtime 在粗粒度时间戳（exFAT 2s）或
-        // 「同长度同毫秒改写」下不变，会 304 出旧 JSON。大文件不读内容，退回 mtime。
-        val etag = fileEtag(file, contentHash = rewritable)
-        if (matchesEtag(ifNoneMatch, etag)) {
+        // 可改写文件**不发 ETag**：它的校验要么靠 mtime（exFAT 2 秒粒度或同长度同毫秒
+        // 改写时不变 → 304 出旧内容），要么靠内容哈希（每次重新验证都整读一遍，200 路径
+        // 还会再读一遍）。既然已经是 no-cache（每次都要回源），直接 200 回原文件既少一次
+        // I/O，也不存在「拿旧内容」的窗口。
+        val etag = if (fileCacheControl == REWRITABLE_CACHE_CONTROL) null else fileEtag(file)
+        if (etag != null && matchesEtag(ifNoneMatch, etag)) {
             sendNotModified(socket, etag, fileCacheControl, keepAlive)
             return keepAlive
         }
@@ -414,18 +473,36 @@ internal class RpgMakerLocalHttpServer(
      */
     private fun cacheControlFor(uri: String): String {
         val path = uri.lowercase(Locale.ROOT)
-        return if (path.startsWith("data/") || path.startsWith("save/") || path.endsWith(".json")) {
-            REWRITABLE_CACHE_CONTROL
-        } else {
-            ASSET_CACHE_CONTROL
+        // 白名单而非黑名单：v2 的 fs 桥对 contentRoot 是全目录可写的，插件可能改写
+        // js/*.js、*.html、*.css 甚至重新生成素材后 location.reload()。只有「纯素材」
+        // 才允许命中 max-age；其余一律每次回源（可改写路径也不发 ETag，见 serveOne）。
+        return if (isImmutableAsset(path)) ASSET_CACHE_CONTROL else REWRITABLE_CACHE_CONTROL
+    }
+
+    private fun isImmutableAsset(path: String): Boolean {
+        val dot = path.lastIndexOf('.')
+        if (dot < 0 || dot == path.length - 1) return false
+        return when (path.substring(dot)) {
+            ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
+            ".ogg", ".m4a", ".mp3", ".wav", ".aac", ".flac",
+            ".mp4", ".m4v", ".webm",
+            ".ttf", ".otf", ".woff", ".woff2",
+            -> true
+            else -> false
         }
     }
 
-    /** 磁盘文件 → 相对网页根的路径（root 与 file 都已 canonicalize，纯字符串运算）。 */
+    /**
+     * 磁盘文件 → 相对网页根的路径（root 与 file 都已 canonicalize，纯字符串运算）。
+     *
+     * 分隔符统一归一成 `/`：`cacheControlFor` 的白名单按 `/` 分段匹配，而 JVM 测试在
+     * Windows 上跑时 `File.separator` 是 `\`，不归一会得到与真机相反的结论。
+     */
     private fun relativeToRoot(file: File): String {
         val rootPath = root.path
         val path = file.path
-        return if (path == rootPath) "" else path.removePrefix(rootPath + File.separator)
+        val relative = if (path == rootPath) "" else path.removePrefix(rootPath + File.separator)
+        return relative.replace(File.separatorChar, '/')
     }
 
     /** 内存内容（内部资源/补丁脚本）的强校验：内容 CRC + 长度，内容一变即失效。 */
@@ -436,23 +513,16 @@ internal class RpgMakerLocalHttpServer(
     }
 
     /**
-     * 磁盘文件的校验：默认「长度 + mtime」（不读内容，图片/音频零成本）；
-     * [contentHash] 为真（可被插件改写的 JSON）时改用内容哈希，避免同长度同时间刻度改写
-     * 命中 304 拿到旧内容。超过 [MAX_CONTENT_ETAG_BYTES] 不读内容，退回 mtime。
+     * 只读磁盘文件的校验：长度 + mtime（不读内容，图片/音频零成本）。
+     *
+     * 只用于 `max-age` 的只读资源——它们不会被插件原地改写，mtime 足够；
+     * 可改写路径（`data/`、`save/`、`*.json`）不发 ETag，见 [serveOne] 的说明。
      */
-    private fun fileEtag(file: File, contentHash: Boolean = false): String {
-        if (contentHash && file.length() <= MAX_CONTENT_ETAG_BYTES) {
-            return runCatching { contentEtag(file.readBytes()) }
-                .getOrElse { mtimeEtag(file) }
-        }
-        return mtimeEtag(file)
-    }
-
-    private fun mtimeEtag(file: File): String =
+    private fun fileEtag(file: File): String =
         "\"${file.length().toString(16)}-${file.lastModified().toString(16)}\""
 
     private fun connectionHeader(keepAlive: Boolean): String =
-        if (keepAlive) "Connection: keep-alive\r\nKeep-Alive: timeout=${KEEPALIVE_IDLE_TIMEOUT_MS / 1000}\r\n"
+        if (keepAlive) "Connection: keep-alive\r\nKeep-Alive: timeout=${(KEEPALIVE_IDLE_TIMEOUT_MS + 999) / 1000}\r\n"
         else "Connection: close\r\n"
 
     private fun sendNotModified(socket: Socket, etag: String, cacheControl: String, keepAlive: Boolean) {
@@ -516,7 +586,7 @@ internal class RpgMakerLocalHttpServer(
             }
         }
         if (asar != null) {
-            val normalizedUri = uri.replace(Regex("/\\./"), "/").replace(Regex("//+"), "/")
+            val normalizedUri = uri.replace(DOT_SEGMENT, "/").replace(DOUBLE_SLASH, "/")
             // 大条目优先流式：媒体需要 Range/seek，整段 ByteArray 有 OOM 风险（PR review 意见）
             for (p in listOf(asarRootPrefix + normalizedUri, normalizedUri,
                     asarRootPrefix + normalizedUri.lowercase(Locale.ROOT), normalizedUri.lowercase(Locale.ROOT))) {
@@ -561,7 +631,10 @@ internal class RpgMakerLocalHttpServer(
      * 条目上限在 [RpgMakerNameMatcher] 内部统一处理（fs 桥用同一函数，两端结论必须一致）。
      */
     private fun resolveByName(uri: String?, allowWhitespaceTolerance: Boolean): File? {
-        if (uri == null || uri.isEmpty() || uri.contains("..")) return null
+        if (uri == null || uri.isEmpty()) return null
+        // 只拒绝真正的 `..` 段：`a..png` 这类合法文件名此前被整体拒绝，导致服务器 404 而
+        // fs 桥能命中（同一路径两端结论不一致）
+        if (uri.split("/").any { it == ".." }) return null
         val parts = uri.split("/")
         var current: File = root
         for (part in parts) {
@@ -633,7 +706,7 @@ internal class RpgMakerLocalHttpServer(
         val hasEarly = earlyHtml.isNotBlank() || (earlyHook != null && earlyHook.isNotEmpty())
         val data = if (hasEarly) {
             buildInjectedHtmlTwoPhase(
-                html.orEmpty(), earlyHook ?: ByteArray(0), tyranoHook, injectedHtml, injectBeforeBody, earlyHtml,
+                html.orEmpty(), earlyHook ?: ByteArray(0), tyranoHook, injectedHtml, earlyHtml,
             )
         } else {
             buildInjectedHtml(html.orEmpty(), tyranoHook, injectedHtml, injectBeforeBody)
@@ -918,7 +991,6 @@ internal fun buildInjectedHtmlTwoPhase(
     earlyHook: ByteArray,
     lateHook: ByteArray,
     injectedHtml: String,
-    injectBeforeBody: Boolean,
     earlyHtml: String = "",
 ): ByteArray {
     val withEarly = insertEarlyHtml(html, earlyHook, earlyHtml)
